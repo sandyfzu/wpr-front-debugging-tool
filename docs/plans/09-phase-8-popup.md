@@ -1,0 +1,43 @@
+# Phase 8 — Popup (optimization toggles via Diagnoser URL params)
+
+**Depends on:** P1, P3 (detections), P5 (design system). **Effort:** M. **Parallelizable with:** P9, P10.
+
+## Goal
+
+Port the popup that turns WP Rocket optimizations on/off by rewriting Diagnoser-plugin URL params, with parity on the param semantics and a far better, keyboard-accessible UI.
+
+## Legacy reference
+
+- `entrypoints/popup/App.tsx` — state machine: no active tab → error; non-http URL → "Page incompatible with this feature"; else fetch `getWPRDetections` (tab-targeted) → options page; loading text states are bare strings.
+- `entrypoints/popup/pages/activate-deactivate-options.tsx` — param list: `wpr_cache` + `minify_css, minify_js, minify_concatenate_js, remove_unused_css, async_css, delay_js, defer_all_js, lazyload, lazyload_iframes, lazyload_css_bg_img, cdn`; initial switch state from detections (`wpr.cached` → cache; each option `present` — skipping `cdn` and `minify_concatenate_js` which are never auto-detected); **Apply:** all params set to `0`, active ones to `1`, delete `nowprocket`/`wpr_activate_all`/`wpr_deactivate_all`, `chrome.tabs.update`, window close; **Reset:** delete all params + `nowprocket`/`wpr_activate_all`/`wpr_deactivate_all`/`wpr_new_cache`; strips `nowprocket` from the working URL before anything; footer link to the Diagnoser plugin releases; switches are `<input>` + `<span onClick>` (not keyboard accessible — master #15).
+- `entrypoints/popup/style.css` — custom legacy stylesheet (replaced by the design system).
+
+## Tasks
+
+- [ ] `entrypoints/popup/` — `popup.html` + Solid app; size parity (legacy is **320 × 576 px** per `popup/style.css`) and compact theme.
+- [ ] **State flow** (typed store): `fetching → incompatible | error | ready(tabUrl, detections)`; tab query via `browser.tabs.query({ active: true, currentWindow: true })`; **warm-up ping (parity decision):** legacy's `main.tsx` sends `processPageData` when the popup opens; in the port `getWprDetections` already triggers lazy processing synchronously as part of the request, so the separate ping is redundant — record this as an intentional simplification (behavior observable to users is unchanged: opening the popup always yields fresh detections).
+- [ ] URL read requires host permissions (P0 decision) — **verification task:** confirm `tab.url` is readable for web pages without the `tabs` permission; if not, restore `tabs` permission with why-comment + CLAUDE.md update (record outcome here).
+- [ ] **View-model (pure, tested)** `toggles.ts`: param registry (id, human name via `getRealOptionName`, detection mapping); `initialState(detections): Set<ParamId>` (cache + detectable options only — parity); **Enable All / Disable All operate on the full 12-param set including `cdn` and `minify_concatenate_js` (parity with legacy's `allOptions`)**; `buildApplyUrl(url, active): URL` (all → `0`, active → `1`, strip `nowprocket`, `wpr_activate_all`, `wpr_deactivate_all` — parity incl. ordering-insensitive set ops); `buildResetUrl(url): URL` (strips the 12 params **plus `nowprocket`, `wpr_activate_all`, `wpr_deactivate_all`, `wpr_new_cache`** — the exact legacy reset set); both return new URLs (no mutation).
+- [ ] **UI:** header (rocket mark + "Disable or enable optimizations" title); toolbar (Enable all / Disable all — parity); list of switches via `switch.tsx` (real Kobalte controls, labels clickable, keyboard operable — fixes #15), Cache row first (parity), groups visually ordered like legacy; sticky footer: Apply (primary) + Reset URL (secondary, tooltip "Removes all the querystrings related to the diagnoser" — parity); footer note with link to `https://github.com/wp-media/wp-rocket-diagnoser/releases` (target `_blank`, `rel="noopener noreferrer"` — legacy lacked rel).
+- [ ] Apply/Reset: `browser.tabs.update({ url })` + `window.close()`; guard: if `tabs.update` rejects (e.g. restricted URL race) show error toast instead of closing (enhancement).
+- [ ] Status line (enhancement): "Detected on this page: Cache ✅, Delay JS ✅ …" — the toggles initialize from detections, make the initialization visible with a subtle "detected" tick on rows that came from detection vs untouched.
+
+## Explicit enhancements over legacy
+
+- Keyboard/AT-complete switches; real loading skeleton + friendly incompatible/error states; apply-error toast; detected-vs-untouched affordance; safe external link; pure URL builders unit-tested (legacy's was inline and untested).
+
+## Tests
+
+- `toggles.test.ts` — initial-state matrix (cached or not, each option present/absent, cdn/concat never pre-set), apply (params `0`/`1` + strip set), reset (**full param set: 12 + `nowprocket` + `wpr_activate_all` + `wpr_deactivate_all` + `wpr_new_cache`**), `nowprocket` handling (pre-present and absent), param preservation of unrelated querystrings, **Enable All = the full 12-param set**; **`detectedIds` input set for the "detected" tick** (pure selector: which rows came from detection vs untouched) so the tick affordance has an owned test.
+
+## Verification checklist
+
+- [ ] Gates green; `pnpm check:budgets` — popup ≤ 50 KB raw.
+- [ ] Manual vs legacy on the same page: identical resulting URL after Apply (diff the two URLs) and after Reset; toggles reflect detections identically; **rows that came from detection show the "detected" tick**.
+- [ ] Manual: on `chrome://` page → incompatible state; with CS absent → error state with retry (enhancement).
+- [ ] Keyboard-only: tab through all switches, space toggles, Apply triggers.
+- [ ] Firefox: popup works (URL param flow is cross-browser).
+
+## Docs to update
+
+CLAUDE.md if `tabs` permission had to be restored (decision point above).
