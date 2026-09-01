@@ -6,7 +6,7 @@ Operating guide for AI agents (and humans) working in this repository. Keep it a
 
 Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder`, `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
 
-> **Porting rule:** treat the legacy repo as the **behavioral** reference, not the code reference. Port features by their observed behavior — verify parity against the real legacy extension (`pnpm dev` + load both builds and compare), never from memory of its code.
+> **Porting rule:** treat the legacy repo as the **behavioral** reference, not the code reference. Port features by their observed behavior — verify parity against the real legacy extension (`pnpm dev` + load both builds and compare), never from memory of its code. It must also aim to be faster and more efficient than the legacy extension, so don't blindly port inefficient patterns, always improve and enhance.
 
 ## Key technologies
 
