@@ -18,16 +18,12 @@ function App() {
       </div>
       <h1>WXT + Solid</h1>
       <div class="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count()}
-        </button>
+        <button onClick={() => setCount((count) => count + 1)}>count is {count()}</button>
         <p>
           Edit <code>popup/App.tsx</code> and save to test HMR
         </p>
       </div>
-      <p class="read-the-docs">
-        Click on the WXT and Solid logos to learn more
-      </p>
+      <p class="read-the-docs">Click on the WXT and Solid logos to learn more</p>
     </>
   );
 }

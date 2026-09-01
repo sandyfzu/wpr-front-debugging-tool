@@ -1,0 +1,19 @@
+# Build output & generated
+.output
+.wxt
+dist
+node_modules
+
+# Lockfiles
+pnpm-lock.yaml
+package-lock.json
+
+# Husky internals (generated)
+.husky/_
+
+# Dotfiles with meaningful formatting
+.prettierignore
+.nvmrc
+.gitignore
+.gitattributes
+.editorconfig

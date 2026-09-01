@@ -1,0 +1,2 @@
+echo "[Husky] running pre-commit tasks..."
+pnpm exec lint-staged
