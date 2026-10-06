@@ -1,6 +1,6 @@
 # Master Port Plan — WPR Front Debugging Tool (modernized port)
 
-> **Source of truth for behavior:** `../wpr-front-debugging-tool-legacy` @ v2.2.4 (WXT 0.19.11 + React 18.3.1).
+> **Source of truth for behavior (legacy):** `../wpr-front-debugging-tool-legacy` @ v2.2.4 (WXT 0.19.11 + React 18.3.1).
 > **Target:** this repo (WXT 0.21.4 installed + SolidJS ^1.9.15 installed + TypeScript strict, Node 24, pnpm).
 > Every fact below was verified by reading the legacy source or its built output (`.output/chrome-mv3/`) on 2026-08-31 — file paths are cited so claims can be re-checked. §1.4 re-verified against the npm registry on 2026-10-06 (Kobalte ratified; versions refreshed).
 
