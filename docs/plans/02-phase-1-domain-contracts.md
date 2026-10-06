@@ -41,6 +41,8 @@ Build the pure, fully-tested core that every surface consumes: the typed message
 
   **TabId contract decision:** content scripts never pass a tabId — the background resolves it from `sender`; devtools/popup target tabs via `sendMessage(type, data, tabId)`. No `{ tabId }` payload exists anywhere in the protocol (removes the spoofable field entirely).
 
+  **Additive protocol policy:** later phases extend this map additively, never by editing established rows — the second baseline's live-test channels land in P13/P14 (`runRucssTest`, `fetchRucssShakenCss`, `runBeaconTest`, `runLcpAnalysis`, `getScriptRuntimeStatuses`), each addition shipping here with its payload validators + tests in the owning phase.
+
 - [ ] **Push tab-scoping (master #42):** pushes carry no tabId, but receivers must check the runtime sender's tabId — the devtools page ignores pushes whose sender tab ≠ `inspectedWindow.tabId` (with two devtools windows open, legacy's un-scoped pushes could reload the wrong panel). Documented in the protocol map so no consumer forgets.
 
 - [ ] `validate.ts` — boundary guards: `parseFdtData`, `parseWprDetections`, `parseDiagnoserData`, `parseErrorWords` (string[], ≤ 50 items, each ≤ 200 chars, printable), `parsePageHeaders` (`{name,value}[]`, name/value ≤ 512/4096 chars), `parseDetectionSummary` (exact `{ wprPresent: boolean; cached: boolean }`), `parseDbUpdateResult` (`{ updatedAt: number } | null`). Every guard: unit-tested valid/invalid/malicious inputs. Message data originating from the inspected page is **untrusted** (it encodes page content).
@@ -96,7 +98,7 @@ Build the pure, fully-tested core that every surface consumes: the typed message
 ## Tests
 
 - `lib/detection/*.test.ts` — every check × every fixture; parity assertions vs `reference/` on all fixtures (including the two adversarial lazyload fixtures above); perf smoke (each fixture < 25 ms in CI, no assertion on machine speed beyond a generous bound).
-- **`lib/detection/bench/detection.bench.ts` (the automated ≥ 30 % enforcement, master §5.6):** warm up 3×, then run `run-detection()` **and** the `reference/` legacy engine over every fixture × 10 iterations; print a per-fixture median table (fixture | new ms | reference ms | ratio); assert **aggregate `median(new) ≤ 0.70 × median(reference)`** — wired as `pnpm bench:detection`, run in P3/P11; a perf regression fails the gate instead of being eyeballed.
+- **`lib/detection/bench/detection.bench.ts` (the automated ≥ 30 % enforcement, master §5.6):** warm up 3×, then run `run-detection()` **and** the `reference/` legacy engine over every fixture × 10 iterations; print a per-fixture median table (fixture | new ms | reference ms | ratio); assert **aggregate `median(new) ≤ 0.70 × median(reference)`** — wired as `pnpm bench:detection`, run in P3/P15; a perf regression fails the gate instead of being eyeballed.
 - `lib/messaging/validate.test.ts` — all guards, including hostile inputs (oversized arrays/strings, wrong types, prototype-pollution keys like `__proto__`).
 - `lib/diagnostics/extract.test.ts` — valid JSON, malformed JSON repaired, missing elements, wrong element contents.
 - `lib/known-conflicts/match.test.ts` — HS + WP modes, punctuation variants, name/URL-less entries.

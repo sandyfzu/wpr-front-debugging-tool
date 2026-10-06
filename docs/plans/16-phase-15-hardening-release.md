@@ -1,6 +1,6 @@
-# Phase 11 — Hardening, audits & release
+# Phase 15 — Hardening, audits & release
 
-**Depends on:** P0–P10 complete. **Effort:** M. **Parallelizable:** none (final gate).
+**Depends on:** P0–P14 complete. **Effort:** M. **Parallelizable:** none (final gate; requires everything else done first).
 
 ## Goal
 
@@ -19,10 +19,11 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 ### 2. Security audit
 
 - [ ] Enumerate every boundary (message types × senders, storage keys, fetched KC JSON, page-derived DOM strings, file input) and verify a validator + test exists (walk `lib/*/validate` + P1 protocol).
+- [ ] **Injected-UI isolation audit (release gate, AGENTS.md rule):** every UI injected into host pages (Known Conflicts, Side-by-Side, on-page strip, tool banners) verified shadow-rooted via `createShadowRootUi` with adopted styles only — grep gate for un-scoped injection patterns (`document.head.append`, `document.adoptedStyleSheets`, root-level `<style>` creation outside a shadow root) = 0 hits; hostile-CSS host page re-run for every injected surface (P12's audit repeated for the older P3 overlays).
 - [ ] Confirm no `innerHTML`/`insertAdjacentHTML` with any non-static string anywhere (`grep` gate), all external links `rel="noopener noreferrer"`, all `window.open` targets explicit.
 - [ ] Manifest review: least privilege final state documented in `wxt.config.ts` why-comments; CSP untouched (default MV3); no remote code (KC fetch is data-only, validated).
 - [ ] Error-word cap & KC item caps confirmed effective (hostile fixture page).
-- [ ] **Dependency-ban gate:** `pnpm ls --depth 0` output diffed against the master §1.4 stack table and committed — none of `framer-motion`/`wouter`/`react-hot-toast`/`react-syntax-highlighter` (nor any React package) present (the eslint rules from P0 are the per-commit guard; this is the release gate).
+- [ ] **Dependency-ban gate:** `pnpm ls --depth 0` output diffed against the master §1.4 stack table and committed — none of `framer-motion`/`wouter`/`react-hot-toast`/`react-syntax-highlighter` (nor any React package) present (the eslint rules from P0 are the per-commit guard; this is the release gate). The one accepted runtime addition from the second baseline (`wp-rocket-scripts`, P14) must appear at its pinned version and is the only extra entry on the diff.
 
 ### 3. Reliability & cross-browser pass
 
@@ -35,7 +36,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 ### 4. UI/UX polish & a11y final pass
 
 - [ ] Full keyboard-only walkthrough of all surfaces; axe run on every page/state with **0 violations** as the pass bar; focus management on route change.
-- [ ] **"Better UI" acceptance gate — all five green or the claim fails:** (a) axe 0 violations everywhere; (b) keyboard-only checklist 100 % ticked; (c) P6 long-task gate green on the 5,000-row fixture; (d) motion-token gate — grep for bare `transition:`/`animation:` outside the P0 motion tokens/`theme.css` = 0 hits (`prefers-reduced-motion` coverage); (e) palette-token gate — grep for hardcoded palette classes (`bg-gray-*`, inline hex colors) outside `assets/css` = 0 hits, plus a committed light-mode screenshot set of every page.
+- [ ] **"Better UI" acceptance gate — all five green or the claim fails:** (a) axe 0 violations everywhere; (b) keyboard-only checklist 100 % ticked; (c) P6 long-task gate green on the 5,000-row fixture; (d) motion-token gate — grep for bare `transition:`/`animation:` outside the P0 motion tokens/`theme.css` = 0 hits (`prefers-reduced-motion` coverage); (e) palette-token gate — grep for hardcoded palette classes (`bg-gray-*`, inline hex colors) outside `assets/css` = 0 hits, plus a committed light-mode screenshot set of every page; (f) **design-craft pass:** per surface, spacing/alignment on the grid, one semantic accent, type ramp consistent, icon set unified, empty/error/skeleton states present everywhere (the P5 UX-study decisions respected — deviations re-audit against the study, not against taste).
 - [ ] Copy sweep (grep gate): no "FDT legacy", no legacy typos ("Trucated", "ocurred", "Know conflict", "Resouces"), no double periods (".."), "Non-delayed"/"Non-Deferred" consistent, "if there are any" (not "in there are any"), "No known conflicts found" (not "No Know conflict found"), garbled options label rewritten, consistent product name "WPR Front Debugging Tool".
 
 ### 5. Documentation
@@ -46,7 +47,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 
 ### 6. Enhancement re-audit (closes README rule 3)
 
-- [ ] Walk every phase file's **Explicit enhancements over legacy** section (P0–P10) bullet by bullet: mark each **DELIVERED / DEFERRED / DROPPED** with evidence (test name, measurement, or manual-check note). Deferred/Dropped entries need a written justification. This is the enforcement point promised by README rule 3 ("must ship in that phase, not 'later'") — a phase cannot be considered done with unaccounted enhancements. Walk master §8's committed-extensions table (toolbar badge, support report, headers viewer, exclusion bridge, KC freshness, sidebar inventory, CI) row by row with the same discipline.
+- [ ] Walk every phase file's **Explicit enhancements section** (P0–P14) bullet by bullet: mark each **DELIVERED / DEFERRED / DROPPED** with evidence (test name, measurement, or manual-check note). Deferred/Dropped entries need a written justification. This is the enforcement point promised by README rule 3 ("must ship in that phase, not 'later'") — a phase cannot be considered done with unaccounted enhancements. Walk master §8's committed-extensions table (toolbar badge, support report, headers viewer, exclusion bridge, KC freshness, sidebar inventory, CI) **and master §9's second-baseline table (phases 11–14)** row by row with the same discipline.
 - [ ] Re-check cross-phase promises that phases defer to each other (e.g. P0 → P9 theme toggle; P1 logger → P2/P3; P6 gate → here) — each resolved in its owning phase.
 
 ### 7. Release
@@ -54,7 +55,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 - [ ] Version bump to `1.0.0` (SemVer; store-ready milestone), changelog section in README or `docs/` summarizing the port + enhancements.
 - [ ] `pnpm zip` + `pnpm zip:firefox` produce store artifacts; verify zips contain no dev artifacts (`.output` hygiene, `.gitignore` respected).
 - [ ] Store listing assets: 128-px icon check, description text, screenshots from the new UI (panel Detections, Diagnoser, Exclusion Builder).
-- [ ] Re-verify legacy HEAD hasn't moved past v2.2.5 before release (it moved once during planning — the WP 7.x KC-selector fix); fold any newer legacy commits into the affected phase docs first.
+- [ ] Re-verify both behavioral sources haven't moved before release: the legacy tool past v2.2.5 (it moved once during planning — the WP 7.x KC-selector fix) **and** `wp-media/wpr-inspector` HEAD (P11–P14 build from its v4.1.1 audit — fold any newer commits into the affected phase docs first).
 - [ ] Tag `v1.0.0`, Conventional-Commits history clean.
 
 ## Verification checklist (phase exit = project exit)

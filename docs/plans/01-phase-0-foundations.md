@@ -33,7 +33,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 - [ ] **Coverage thresholds (enforces the "logic is tested" promise):** configure `coverage.thresholds` in `vitest.config.ts` — `lines`/`functions` ≥ 90 restricted to `lib/**` + `utils/**`, excluding `**/reference/**` and entrypoint glue — so `pnpm test` fails below the bar.
 - [ ] **Budget script (enforces master §1.3):** `scripts/check-budgets.mjs` + `"check:budgets": "node scripts/check-budgets.mjs"` — reads a committed budget table (surface | output glob | max raw KB | max gzip KB, straight from master §1.3), measures the `pnpm build` output (raw + gzip), prints a pass/fail table, exits non-zero on breach. Every later phase's checklist runs it for the surfaces it owns. Add `pnpm check:budgets` to AGENTS.md gates.
 - [ ] **Dependency bans (enforces master §1.4):** add `no-restricted-imports` patterns for `framer-motion`, `wouter`, `react-hot-toast`, `react-syntax-highlighter` (message: banned by master §1.4 — use CSS motion / the hash router / the custom toast / shiki).
-- [ ] **CI workflow (enforces the gates machine-side, master §8):** `.github/workflows/ci.yml` — Node 24 (`.nvmrc`) + pnpm via the `packageManager` field, `pnpm install --frozen-lockfile`, then `pnpm compile && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm check:budgets` on PRs and pushes to main; P11 adds `build:firefox` to the matrix. The speed bench (`bench:detection`) stays local — its ≥ 30 % ratio assertion is machine-relative and would flake on shared runners; CI's `build` + `check:budgets` still guard size.
+- [ ] **CI workflow (enforces the gates machine-side, master §8):** `.github/workflows/ci.yml` — Node 24 (`.nvmrc`) + pnpm via the `packageManager` field, `pnpm install --frozen-lockfile`, then `pnpm compile && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm check:budgets` on PRs and pushes to main; P15 adds `build:firefox` to the matrix. The speed bench (`bench:detection`) stays local — its ≥ 30 % ratio assertion is machine-relative and would flake on shared runners; CI's `build` + `check:budgets` still guard size.
 - [ ] **Update AGENTS.md:** add `pnpm test` to commands and to the required workflow gates (it currently says "The `test` gate is added together with the test runner — wire it here when it exists").
 - [ ] Update `lint-staged` no (it lints TS/TSX already); ensure prettier handles `.md` under docs/plans (check `.prettierignore`).
 
@@ -44,10 +44,12 @@ Make this scaffold a real extension project: correct manifest with justified per
   - Surfaces: `--color-surface-0..4` (devtools-dark scale), borders per level.
   - Accent: blue→violet gradient ramp (successor of legacy's `from-blue-400 to-purple-600` headings).
   - Status: `--color-status-ok / warn / error / info / neutral` (+ soft backgrounds) — replaces legacy's scattered emerald/rose/amber inline choices.
+  - **Status vocabulary extension (second baseline, P11/P12):** a fourth semantic `--color-status-attention` (amber family) + a "how detected" neutral chip style — the three-state model (`enabled / disabled / attention-unsure`) shares these tokens across the panel cards and the on-page strip so the two never drift.
   - Typography: system UI stack; `--font-mono` for URLs/code; panel density sizes (11/12/13 px classes).
   - Radii, spacing, focus ring, shadows; motion tokens (duration/ease) + global `prefers-reduced-motion` handling.
 - [ ] Dark is the default; light palette via `@media (prefers-color-scheme: light)` + a `[data-theme]` override hook for an options toggle (P9 wires the toggle; token names must be palette-agnostic from day one).
 - [ ] Deliver a tiny "tokens showcase" unlisted route or story-style page **only if** cheap; otherwise verify via P5 components (do not build a docs site).
+- [ ] **Token-pair contrast gate:** the status/attention/accent-on-surface pairs used by text are committed as pairs in one table (token × surface) and unit-tested at P0 for WCAG AA (4.5:1 normal text / 3:1 large) in **both** palettes — P5 components and P12's strip then inherit contrast rather than re-deriving it (verified mechanically, not by eye).
 
 ### 4. `utils/` (pure, feature-agnostic, each with unit tests)
 
@@ -68,6 +70,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 - Host permissions declared + `tabs` permission dropped (least privilege, fixes silent header risk).
 - Real test gate exists from the start (legacy had none).
 - Token-based theming (light mode possible; legacy hardcoded dark grays inline in every page).
+- **Status-vocabulary tokens carry both baselines' state models (incl. the second baseline's amber `attention-unsure`) with AA contrast verified at the token level** — the P6 cards and P12 strip can't drift apart on state colors.
 - CI runs every gate on every PR (legacy had no lint, no tests, no CI at all).
 
 ## Tests

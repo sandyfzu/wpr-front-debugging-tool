@@ -18,7 +18,7 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 
 ### 1. `entrypoints/isolated.content.ts`
 
-- [ ] `defineContentScript({ matches: ['http://*/*','https://*/*'], runAt: 'document_start', main(ctx) { ... } })` wiring the four modules; each module receives `ctx` and registers cleanup via `ctx.onInvalidated`.
+- [ ] `defineContentScript({ matches: ['http://*/*','https://*/*'], runAt: 'document_start', main(ctx) { ... } })` wiring the four modules; each module receives `ctx` and registers cleanup via `ctx.onInvalidated`. **Forward note (second baseline, P12–P14):** this entrypoint later gains more colocated modules — the on-page inspector strip (P12) and the live-test executors (P13/P14) — keep the wiring registry-style (a list of `{ setup(ctx) }` modules), never positional one-off code, so every feature stays addable/deletable without touching siblings.
 
 ### 2. `lib/…` vs entrypoint placement decision (enforced here)
 

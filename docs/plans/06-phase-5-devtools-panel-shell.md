@@ -6,6 +6,8 @@
 
 Register the devtools panel + Elements sidebar pane, and build the panel's application shell and the shared design-system components that P6–P10 consume. This is the phase that makes the UI categorically better: a purpose-built, compact, keyboard-complete devtools design system.
 
+**UX studies happen here, at design time (user requirement, enforced):** before any shell/page/component code is written, this phase produces a committed UX study — user-journey map for the three real personas (support engineer diagnosing "is WP Rocket caching this page?", QA engineer verifying an optimization after a change, developer inspecting scripts/references), a usability-heuristics audit of the planned information architecture, an interaction-load budget per task ("How many clicks/keystrokes to the answer?" — e.g. _open panel → see cached-or-not_ must be ≤ 1 interaction), and an information-hierarchy decision per page (what's glanceable, what's one click deep, what's hidden until needed). The study's decisions are recorded in `docs/plans/` (this file's checklist) and bind the P6–P12 implementations; a task later than P5 cannot contradict them without revising the study first.
+
 ## Legacy reference
 
 - `entrypoints/devtools/main.ts` — `chrome.devtools.panels.create('WPR FDT legacy', 'icon/32.png', 'fdt.html')`; `panel.onSearch` → `devToolsSearch` messages to devtools target with inspected `tabId`; `createSidebarPane('WPR Lazyload')` in Elements: static eval expression against `$0` (lazyload detected / imageLoaded / excludedReasonsFound / src) set via `setObject`, re-eval on `onSelectionChanged`; sends `processPageData` at startup. The eval callback ignores its `isException` argument — a failed eval calls `setObject(undefined)` (master #36).
@@ -17,7 +19,7 @@ Register the devtools panel + Elements sidebar pane, and build the panel's appli
 ### 1. `entrypoints/devtools/` (registration page)
 
 - [ ] `defineUnlistedScript`-style devtools entry (`main.ts`): create panel `WPR FDT` (icon `icon/32.png`, target `panel.html`) + Elements sidebar pane `WPR Lazyload` (parity: same pane name, same evaluated object shape `{ lazyloadDetected, imageLoaded | excludedReasonsFound, src }` / `{ please: 'Select an IMG element' }`), re-eval on selection change + initial eval (parity).
-- [ ] **Sidebar-pane hardening + extension (master #36 + §8):** the eval callback handles its `isException` argument — a failed eval logs and `setObject`s an error object instead of `undefined`. For non-IMG selections, instead of legacy's dead-end `{ please: 'Select an IMG element' }`, report the element's WP Rocket attribute inventory (`data-rocket-src`, `data-rocket-defer`, a DelayJS `type`, `data-wpr-lazyrender`, `data-wpr-fdt-excluded`, `data-lazy-src`(-srcset)) as `{ rocketAttributes: [...] }`, `{ please: 'Select an element' }` only when nothing applies (copy delta from legacy, tracked in the P11 sweep). Same static-eval architecture — the string embeds no untrusted input.
+- [ ] **Sidebar-pane hardening + extension (master #36 + §8):** the eval callback handles its `isException` argument — a failed eval logs and `setObject`s an error object instead of `undefined`. For non-IMG selections, instead of legacy's dead-end `{ please: 'Select an IMG element' }`, report the element's WP Rocket attribute inventory (`data-rocket-src`, `data-rocket-defer`, a DelayJS `type`, `data-wpr-lazyrender`, `data-wpr-fdt-excluded`, `data-lazy-src`(-srcset)) as `{ rocketAttributes: [...] }`, `{ please: 'Select an element' }` only when nothing applies (copy delta from legacy, tracked in the P15 copy sweep). Same static-eval architecture — the string embeds no untrusted input.
 - [ ] Use `browser.devtools` from `@wxt-dev/browser` — **verified typed** (devtools.panels / inspectedWindow incl. `onSearch`); no shim needed.
 - [ ] The lazyload sidebar expression (parity): legacy already builds its eval string from `LAZYLOAD_EXCLUSIONS_LIST` (the duplication is only the runtime stringified copy inside the eval — unavoidable for `inspectedWindow.eval`); the port keeps the same architecture with one hygiene improvement: generate the embedded array via `JSON.stringify(...)` instead of legacy's hand-rolled `reduce` string concatenation (correct quoting, same constant as single source). Eval string is a static constant (no untrusted input; documented).
 - [ ] `panel.onSearch` → `panelSearch` messages (typed protocol) with `{ action, queryString }` for **all four** actions (perform/cancel/next/prev — fixes dead protocol, master #8).
@@ -25,7 +27,9 @@ Register the devtools panel + Elements sidebar pane, and build the panel's appli
 
 ### 2. `entrypoints/panel/` — app shell
 
+- [ ] **UX-study deliverables (committed before shell code):** the journey map + interaction-load budget + per-page information-hierarchy table (see Goal). The layout decisions below must trace to a study row — layout is a product decision here, not a parroting of legacy's visual order.
 - [ ] `panel.html` + `main.tsx` mounting the Solid app; global CSS = P0 theme.
+- [ ] **On-page-inspector strip design language (owned here, consumed by P12):** the strip is the extension's public face on host pages — design it alongside the panel so the two read as one product. Deliverables in this phase: the chip/strip visual spec (grouped chips with the P0 status tokens incl. the amber attention state; iconography per group; density + typography scale for a page-floating element; interaction states incl. hover/press/drag; entrance/motion spec under the motion tokens; outcome-banner pattern for tool results). Committed as a design brief section here; P12 implements it and reports deviations, not designs ad hoc.
 - [ ] **Hash router (~30 lines, `lib`-quality util colocated in the entrypoint):** `createHashRoute()` returning a signal of the current route (default `detections`), `navigate()`, `<a>`-friendly; preserves parity behavior (hash survives reloads, tab restored) without wouter.
 - [ ] **Data layer (`use-fdt-data.ts`):** on mount → `sendMessage('getFdtData', undefined, inspectedTabId)` (tab targeted from devtools context); states `fetching / error / ready` (typed discriminated store, not symbol hack); subscribes to pushes (`allScriptsLoaded`, `undefinedReferencesUpdated`) updating signals granularly; `panelSearch` handling: **250 ms debounce — intentional delta from legacy's 400 ms** (snappier search; listed per the master §4.6 delta rule) → `searchQuery` signal + match navigation signals (`next/prev` increment a cursor — consumed by P6 pages, completing master #18's cleanup of the legacy bouncer); retry button on error (enhancement over legacy's dead-end error page). **Handler registration timing (master #32):** all message handlers (`panelSearch`, pushes, reload) register at mount — never inside the data promise's `.then` — so early searches are handled or dropped-with-log, never silently lost; `cancelSearch` clears query + cursor (legacy's Esc no-oped). **Push tab-scoping (master #42):** the panel ignores pushes whose sender tabId differs from `inspectedWindow.tabId` — with two devtools windows open, legacy's un-scoped pushes could reload the wrong panel.
 - [ ] On `notifyPanelReload` (from CS `DOMContentLoaded`) → `window.location.reload()` (parity).
@@ -47,12 +51,20 @@ Register the devtools panel + Elements sidebar pane, and build the panel's appli
 
 ### 4. Panel page scaffolding consumed by P6
 
-- [ ] `panel/routes.ts` — route ids + labels + icons (Detections, Diagnoser, JavaScript, Lazyload, Preloaded Resources, **Undefined References** — intentional copy delta: legacy's menu says "Undefined Reference" singular, fixed here; tracked in the P11 copy sweep).
+- [ ] `panel/routes.ts` — route ids + labels + icons (Detections, Diagnoser, JavaScript, Lazyload, Preloaded Resources, **Undefined References** — intentional copy delta: legacy's menu says "Undefined Reference" singular, fixed here; tracked in the P15 copy sweep).
 - [ ] `panel/state/` — the store singletons (data, search) with typed selectors; pages never touch messaging directly.
+
+### 5. Injectable-UI isolation standard (binding for P12 + every current/future injected surface)
+
+- [ ] **Every UI injected into a host page lives inside its own shadow root** — WXT `createShadowRootUi` + Solid components, styles via adopted stylesheet injected into that root only. No surface injects un-scoped `<style>`/`<link>` into the host document, no surface relies on host-page CSS (fonts excepted via explicit `@font-face` rules inside the shadow root), no host CSS leaks into the strip (shadow isolation gives this for free — verified, not assumed: the P12 checklist walks a hostile-CSS host page).
+- [ ] The devtools panel, popup, options, exclusion-builder and tester pages are extension-owned documents (no host page) — they are exempt from shadow-rooting but still consume the shared tokens/design system.
+- [ ] Known Conflicts (P3), Side-by-Side (P3), the on-page strip (P12) and any future injected UI implement this standard; the P15 audit greps for un-scoped injections (`document.head.append(style`, unscoped `adoptedStyleSheets` on `document`, etc.) as a release gate.
 
 ## Explicit enhancements over legacy
 
 - Full design system (tokens, light-ready, compact density, a11y-complete) vs per-page hardcoded Tailwind.
+- **Committed UX studies at design time** (journey map, interaction-load budget, per-page information hierarchy) — the "better UI" claim is designed and recorded before build, not asserted after.
+- **Strip design language owned with the panel** (one product, two surfaces); injectable-UI isolation standard = shadow-root everything page-facing.
 - Search next/prev implemented end-to-end; retry on error; toasts; copy buttons; virtualization; skeleton loaders; reduced-motion; keyboard-complete nav.
 - Panel nav with icons + arrow-key navigation; route store; zero router dep.
 - Sidebar pane: eval-failure handling (#36) + rocket-attribute inventory for any selected element (new capability); push messages tab-scoped (#42); no stagger storms or infinite idle loops (#31); built-HTML stylesheet check (#25).
@@ -68,11 +80,14 @@ Register the devtools panel + Elements sidebar pane, and build the panel's appli
 ## Verification checklist
 
 - [ ] Gates green; panel bundle measured (main chunk ≤ 600 KB hard; shiki excluded until P6).
+- [ ] **UX-study artifacts committed** (journey map + interaction-load budget + per-page hierarchy table); the shell composition demonstrably traces to them (spot-check two decisions live).
+- [ ] **Strip design brief committed** (chip spec, states, motion, outcome-banner pattern) — P12 has no design decisions left to invent.
 - [ ] Built-output check (master #25): every entrypoint HTML in `.output/chrome-mv3` references the emitted CSS — no silently dropped stylesheets (legacy dropped `common.css` on itself).
 - [ ] Manual: open DevTools → "WPR FDT" panel appears; without a WP Rocket page shows fetching → error/retry path (CS missing) gracefully; with P3 landed: ready state + all 6 tabs navigable, hash deep-link survives reload; Elements sidebar shows lazyload info for `$0` on an IMG, the rocket-attribute inventory on another element, and an error object on a failed eval (master #36).
 - [ ] Manual: Ctrl/Cmd+F in the panel triggers `panelSearch` (typing streams debounced into the store); Escape cancels and immediately clears filtering (legacy no-oped); a second devtools window on another tab does not reload with this one (master #42).
 - [ ] Keyboard-only pass: nav reachable, focus visible, ARIA tabs semantics valid (axe devtools run on panel page).
 - [ ] `pnpm dev:firefox` smoke: devtools page + panel load.
+- [ ] Design-craft pass on the shell itself (the standard P6/P12 will enforce back): spacing/alignment on a grid, one accent used semantically, no dead gradient decoration, headings/type ramp consistent, icons from one set at one size grid, motion only on the allowed tokens.
 
 ## Docs to update
 

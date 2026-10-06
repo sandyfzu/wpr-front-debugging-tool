@@ -2,13 +2,13 @@
 
 > **Source of truth for behavior (legacy):** `../wpr-front-debugging-tool-legacy` @ v2.2.5 (tag `v2.2.5`, HEAD — WXT 0.19.11 + React 18.3.1; the original 2026-08-31 audit targeted v2.2.4, whose on-disk zip is stale — v2.2.5 shipped a WordPress-7.x KC-selector fix that is folded in below).
 > **Target:** this repo (WXT 0.21.4 installed + SolidJS ^1.9.15 installed + TypeScript strict, Node 24, pnpm).
-> Every fact below was verified by reading the legacy source or its built output (`.output/chrome-mv3/`) on 2026-08-31 — file paths are cited so claims can be re-checked. §1.4 re-verified against the npm registry on 2026-10-06 (Kobalte ratified; versions refreshed). Full plan audit on 2026-10-06: legacy re-read end-to-end (source + built output + git history), every §1 fact re-verified, bugs #25–#50 added to §6, and the §8 extensions committed.
+> Every fact below was verified by reading the legacy source or its built output (`.output/chrome-mv3/`) on 2026-08-31 — file paths are cited so claims can be re-checked. §1.4 re-verified against the npm registry on 2026-10-06 (Kobalte ratified; versions refreshed). Full plan audit on 2026-10-06: legacy re-read end-to-end (source + built output + git history), every §1 fact re-verified, bugs #25–#50 added to §6, and the §8 extensions committed. Second baseline (`wpr-inspector` v4.1.1) audited the same day — full source read, every selector/regex/quote in §9 + P11–P14 verified; its npm dep (`wp-rocket-scripts`) version targets re-checked against the registry.
 
 ---
 
 ## TL;DR
 
-Port the **entire** legacy extension — 8 entrypoint surfaces, 2 content scripts (isolated + MAIN world), a 13-check WP Rocket detection engine, Known Conflicts DB syncing, Side-by-Side compare, undefined-references finder, WP Rocket Diagnoser support, popup option-toggling, options page, context menus, devtools sidebar pane, and the Exclusion Builder — across **12 ordered phases (P0–P11)**.
+Port the **entire** legacy extension — 8 entrypoint surfaces, 2 content scripts (isolated + MAIN world), a 13-check WP Rocket detection engine, Known Conflicts DB syncing, Side-by-Side compare, undefined-references finder, WP Rocket Diagnoser support, popup option-toggling, options page, context menus, devtools sidebar pane, and the Exclusion Builder — plus the feature set of the second behavioral baseline, [`wp-media/wpr-inspector`](https://github.com/wp-media/wpr-inspector) @ v4.1.1 (§9 — meta-tag-driven detection coverage, the on-page inspector strip, the RUCSS live tester, and the runtime analysis tools), across **16 ordered phases (P0–P15)**.
 
 Ordering logic: **foundations → shared contracts/engine → data producers (background, content scripts) → data consumers (devtools panel, popup, options) → independent satellite (exclusion builder) → hardening/release.** Each phase is independently verifiable and ends with all quality gates green.
 
@@ -20,7 +20,7 @@ Non-negotiable direction on every ported feature:
 - **Better UI, categorically** — a purpose-built Kobalte + Tailwind v4 design system (dark-first, devtools-compact density, light mode, keyboard-complete, `prefers-reduced-motion`-aware) replacing legacy's shadcn/framer-motion look; virtualized resource lists; real JSON tree instead of syntax-highlighted dumps; inline regex validation in the Exclusion Builder; skeleton loaders; empty/error states everywhere.
 - **Extends where it pays for itself** — toolbar action badge (WPR presence/cached at a glance per tab), copyable markdown support report + detections summary strip, response-headers viewer, undefined-references → exclusion-builder bridge, Elements-pane rocket-attribute inventory, KC-DB freshness UI, CI on every PR. Each has an owning phase and a verification hook (§8).
 
-Estimated flow: P0–P1 foundations (1 unit), P2–P4 producers (1–2 units), P5–P7 the devtools panel (2–3 units), P8–P10 satellites (1–2 units), P11 release (1 unit). Phases P2/P3/P4 can proceed in parallel after P1; P8–P10 in parallel after their stated deps.
+Estimated flow: P0–P1 foundations (1 unit), P2–P4 producers (1–2 units), P5–P7 the devtools panel (2–3 units), P8–P10 satellites (1–2 units), P11–P14 second-baseline integration (2 units; see §3), P15 release (1 unit). Phases P2/P3/P4 can proceed in parallel after P1; P8–P10 in parallel after their stated deps; P11–P14 after their own (each phase doc states them).
 
 ---
 
@@ -110,6 +110,20 @@ components/  components/ui/               # shared Solid components + design-sys
 utils/                                    # generic pure helpers
 ```
 
+### 1.6 Second behavioral baseline — wpr-inspector (verified 2026-10-06, full source read)
+
+`../wpr-inspector` @ v4.1.1 (Vite + `vite-plugin-web-extension`, vanilla JS, no background/permissions/messaging — one content script on `*://*/*`; all persistence via host-page cookies + page `localStorage`; all output via the host console + an injected shadow-DOM strip). Its features port as phases **P11–P14** (§9); the complete per-feature inventories with verbatim selectors/regexes/strings live in those four phase docs. Summary:
+
+| Inspector surface                       | Source file(s)                                          | Behavior summary                                                                                                                                                                                                             | Owning phase |
+| --------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Feature detection pass                  | `wpr-inspector/inspector.js`                            | `data-wpr-features` generator meta as primary source + footprint fallbacks; checks incl. self-hosted fonts, image dimensions, ALR, auto preload fonts (dead code); page-cache signature/exclusion markers; WordPress version | P11          |
+| Floating detection strip + tools row    | `templates/inspector.html` + `css/` + `js/draggable.js` | Shadow-DOM chip strip (green/red/amber states), draggable with cookie-persisted position, Alt+H/Alt+0 toggle, host-page quirks fixed                                                                                         | P12          |
+| RUCSS live tester                       | `wpr-inspector/RUCSSTester.js`                          | Strip styles → `mega.wp-rocket.me/support/wpr-rucss-v2.php` POST (url + unix ts + `&mobile`/`&home`, safelist-only body) → inject shaken CSS (`#rucss_test_result_style`)                                                    | P13          |
+| Beacon tester / LCP sub-parts / scripts | `wpr-inspector/BeaconTester.js` + inspector tools       | Test-harnessized `BeaconManager` (ATF/LRC dumps), LCP sub-parts via PerformanceObserver, DJE `data-rocket-status` + grouped script tables                                                                                    | P14          |
+| Popup                                   | `popup.{html,js}`                                       | Placeholder ("WPR Inspector UP and Running") — no controls; NOT a feature to port (this extension's popup carries real function already — P8)                                                                                | — (non-goal) |
+
+Known insufficiencies in that source are itemized **inside each phase doc** (each verified in source, each with its fix). The baseline's _production = incognito-only_ gate (`extension.inIncognitoContext`) is deliberately not ported: this extension is a full-time debugging tool, not a private-testing-only aid — recorded as a committed deviation in §9.
+
 ---
 
 ## 2. Architecture (target data flow)
@@ -125,7 +139,9 @@ utils/                                    # generic pure helpers
 │ error capture    │ messenger │ │ data hub: serialize HTML on DOMContentLoaded → headers → notify     │ │
 │ (regex extract,  ├───────────┼─▶ devtools; lazy process on demand; serve FDT/detections/diagnoser  │ │
 │  dedupe, cap 50) │ (validated│ │ known-conflicts UI (shadow root); side-by-side UI (shadow root);    │ │
-└──────────────────┘  batches) │ │ improvements (D-bugger menu entry)                                  │ │
+└──────────────────┘  batches) │ │ improvements (D-bugger menu entry); on-page inspector strip (opt-in,│ │
+                               │ │ shadow root); live-test executors (RUCSS tester, beacon harness,    │ │
+                               │ │ LCP analysis, script runtime view) triggered via panel/strip        │ │
                                └──────────▲──────────────────▲──────────────────────────────────────┘ │
                                           │ tab messaging    │
                     ┌─────────────────────┴───┐   ┌──────────┴─────────┐   ┌──────────────────────┐
@@ -155,23 +171,28 @@ P0 Foundations ──► P1 Domain & contracts ──┬─► P2 Background ─
                                                                         ├─► P8 Popup
                                                                         ├─► P9 Options
                                                                         └─► P10 Exclusion Builder
-                                     P6..P10 ─► P11 Hardening & release
+              P1/P3/P5/P6 ─► P11 Detection coverage ─► P12 On-page inspector ─┬─► P13 RUCSS tester ─┐
+                                                                             └─► P14 Live analysis ─┴─► P15 Hardening & release
+              (P13/P14 also need P5 + P6; P12's toggles need P8/P9 when they exist)
 ```
 
-| Phase      | Depends on                                            | Parallelizable with              |
-| ---------- | ----------------------------------------------------- | -------------------------------- |
-| P0         | —                                                     | —                                |
-| P1         | P0                                                    | —                                |
-| P2, P3, P4 | P1                                                    | each other                       |
-| P5         | P0, P1 (mockable data; real verification needs P3/P4) | P2–P4 (with mocked data)         |
-| P6         | P5 (+P3 for live data)                                | P7 (after P6 shell), P8, P9, P10 |
-| P7         | P6, P1 (diagnoser parser)                             | P8, P9, P10                      |
-| P8         | P1, P3 (detections), P5 (design system)               | P9, P10                          |
-| P9         | P1, P5                                                | P8, P10                          |
-| P10        | P1 (engine is standalone), P5                         | P6–P9                            |
-| P11        | all                                                   | —                                |
+| Phase      | Depends on                                                                              | Parallelizable with              |
+| ---------- | --------------------------------------------------------------------------------------- | -------------------------------- |
+| P0         | —                                                                                       | —                                |
+| P1         | P0                                                                                      | —                                |
+| P2, P3, P4 | P1                                                                                      | each other                       |
+| P5         | P0, P1 (mockable data; real verification needs P3/P4)                                   | P2–P4 (with mocked data)         |
+| P6         | P5 (+P3 for live data)                                                                  | P7 (after P6 shell), P8, P9, P10 |
+| P7         | P6, P1 (diagnoser parser)                                                               | P8, P9, P10                      |
+| P8         | P1, P3 (detections), P5 (design system)                                                 | P9, P10                          |
+| P9         | P1, P5                                                                                  | P8, P10                          |
+| P10        | P1 (engine is standalone), P5                                                           | P6–P9                            |
+| P11        | P1, P6                                                                                  | — (sequenced after P10)          |
+| P12        | P11, P3, P5 (toggle rows need P8/P9 when they exist)                                    | P13/P14 once P11 is done         |
+| P13, P14   | P11, P12 (strip hooks degrade gracefully), P3, P5, P6 (P14 adds P13's executor pattern) | each other, after P12            |
+| P15        | all                                                                                     | —                                |
 
-Ordering rationale: contracts before consumers (P1 first prevents rework); producers before panel so the panel is verified against real data, not mocks alone; panel shell before pages so pages share one navigation/loading/search skeleton; popup/options/builder last among features because they are small satellites; hardening last so it audits the real surface area.
+Ordering rationale: contracts before consumers (P1 first prevents rework); producers before panel so the panel is verified against real data, not mocks alone; panel shell before pages so pages share one navigation/loading/search skeleton; popup/options/builder last among features because they are small satellites; the second-baseline phases (§9) come after the first baseline's features so every surface reads one detection registry and one set of executors; hardening last so it audits the real surface area.
 
 ---
 
@@ -185,6 +206,7 @@ Ordering rationale: contracts before consumers (P1 first prevents rework); produ
 6. **Naming** — ports keep user-facing strings identical unless listed as an enhancement (e.g. "Excluded by FDT legacy" → "Excluded by FDT"); internal names follow WXT layout above.
 7. **Logging** — single `lib/logger` prefix `[WPR FDT]`; page-processing keeps a timing log (new format, see §1.3) so manual comparisons stay possible; no logging of page content or sensitive data.
 8. **Commit / docs** — Conventional Commits; AGENTS.md updated whenever a phase adds scripts, deps, permissions, or surfaces (each phase file lists exactly which updates).
+9. **Design bar is uniform.** UX studies happen at design time (P5 owns the committed study; phases consuming it trace to it rather than redesign ad hoc); every page-facing UI is shadow-isolated per AGENTS.md; all surfaces share one design language (P0 tokens incl. the status/attention vocabulary), and 'better UI' claims carry the mechanical gates in P11's/15's checklists (axe AA, token-pair contrast, reduced-motion, isolation audit).
 
 ---
 
@@ -196,13 +218,13 @@ Ordering rationale: contracts before consumers (P1 first prevents rework); produ
 4. **Budget checks:** after each producer/consumer phase, `pnpm build` + measure `du -k` per surface against §1.3; regressions block the phase.
 5. **Security pass per phase:** enumerate every new boundary (message type, storage key, DOM injection) and confirm a validator exists + is tested.
 6. **Improvement enforcement (how "better than legacy" is made fail-able):** the headline claims are not aspirations — each has a mechanism that can fail:
-   - **Speed (≥ 30 % median):** automated bench harness (`pnpm bench:detection`, P1) times the port engine against the test-only reference implementation over the whole fixture corpus and asserts the ratio; a scripted real-page protocol (P11) cross-checks in a real browser.
+   - **Speed (≥ 30 % median):** automated bench harness (`pnpm bench:detection`, P1) times the port engine against the test-only reference implementation over the whole fixture corpus and asserts the ratio; a scripted real-page protocol (P15) cross-checks in a real browser.
    - **Size:** `pnpm check:budgets` (P0) measures every built surface (raw + gzip) against the §1.3 table and exits non-zero on breach; each building phase runs it (its checklist names the surfaces it owns).
-   - **Dependency bans:** eslint `no-restricted-imports` blocks `framer-motion`/`wouter`/`react-hot-toast`/`react-syntax-highlighter` (P0); P11 diffs `pnpm ls --depth 0` against the §1.4 stack table.
+   - **Dependency bans:** eslint `no-restricted-imports` blocks `framer-motion`/`wouter`/`react-hot-toast`/`react-syntax-highlighter` (P0); P15 diffs `pnpm ls --depth 0` against the §1.4 stack table.
    - **Test coverage:** vitest coverage thresholds on `lib/**` + `utils/**` fail `pnpm test` below the bar (P0).
-   - **UI:** axe 0-violations, keyboard-only checklists, automated long-task gate on a committed 5,000-row fixture (P6), grep gates for motion-token and palette-token usage (P11).
-   - **Per-phase enhancements:** P11 re-audits every phase's _Explicit enhancements_ list item-by-item (DELIVERED / DEFERRED / DROPPED + evidence) — a phase cannot pass having shipped parity-only work silently.
-7. **CI (P0):** a GitHub Actions workflow runs the whole gate set (`compile`/`lint`/`format:check`/`test`/`build`/`check:budgets`; `build:firefox` added in P11) on every PR and push to main — the gates are enforced machine-side, not only locally. The speed bench stays local (its ratio assertion is machine-relative and would flake on shared runners).
+   - **UI:** axe 0-violations, keyboard-only checklists, automated long-task gate on a committed 5,000-row fixture (P6), grep gates for motion-token and palette-token usage (+ P15); injected-UI isolation audit (shadow-root only, no un-scoped CSS — hostile-CSS host page, P12/P15) and design-brief conformance pass for the strip (P5 brief → P12 implementation).
+   - **Per-phase enhancements:** P15 re-audits every phase's _Explicit enhancements_ list item-by-item (DELIVERED / DEFERRED / DROPPED + evidence) — a phase cannot pass having shipped parity-only work silently.
+7. **CI (P0):** a GitHub Actions workflow runs the whole gate set (`compile`/`lint`/`format:check`/`test`/`build`/`check:budgets`; `build:firefox` added in P15) on every PR and push to main — the gates are enforced machine-side, not only locally. The speed bench stays local (its ratio assertion is machine-relative and would flake on shared runners).
 
 ---
 
@@ -234,7 +256,7 @@ Ordering rationale: contracts before consumers (P1 first prevents rework); produ
 | 22  | Undefined References renders inline-script definitions as broken links: the asset is named `'In an Inline Script.'` but the renderer compares `def === 'Inline Script'` (never true) → `<a href="In an Inline Script.">`                                                         | P6 (render inline entries as chips)         |
 | 23  | `OptimizationInfoItem`: the expanded-JSON block condition is `Array.isArray(v) \|\| (longString && expanded)` — arrays always render expanded, so the chevron toggle is a no-op for them                                                                                         | P7 (consistent collapse via `json-value`)   |
 | 24  | `useLazyLoad`'s IntersectionObserver is never disconnected (`TODO` in source) — leaks one observer per rendered code block                                                                                                                                                       | P5 (observer util with cleanup)             |
-| 25  | Legacy's `<link href="@/assets/common.css">` is silently **dropped from the built HTML** (verified in `.output` — no such asset exists): its scrollbar/body styles never shipped on fdt/exclusion-builder/options                                                                | P5 (built-HTML check), P11 (grep gate)      |
+| 25  | Legacy's `<link href="@/assets/common.css">` is silently **dropped from the built HTML** (verified in `.output` — no such asset exists): its scrollbar/body styles never shipped on fdt/exclusion-builder/options                                                                | P5 (built-HTML check), P15 (grep gate)      |
 | 26  | Popup's outer `chrome.tabs.query().then()` has no `.catch` — stuck on "Loading.." forever; a debug `console.log(data)` is left in                                                                                                                                                | P8                                          |
 | 27  | Popup toggles initialize in a post-render effect (first frame renders all-off); every row carries the same `id="option-name"` with no label association                                                                                                                          | P8                                          |
 | 28  | Popup's fixed 320×576 body has no scrollable region — content clips with 12 rows + toolbar + footer                                                                                                                                                                              | P8                                          |
@@ -243,7 +265,7 @@ Ordering rationale: contracts before consumers (P1 first prevents rework); produ
 | 31  | Unbounded staggered entrances (`delay: index * 0.02–0.1 s`) — long-list tails animate seconds late; infinite pulse loops on idle/error/empty states (`prefers-reduced-motion` ignored)                                                                                           | P5                                          |
 | 32  | Panel message handlers register only after `getFDTData` resolves — early searches are dropped; `cancelSearch` (Esc) is a no-op                                                                                                                                                   | P5                                          |
 | 33  | Dead Tailwind classes: `bg-gray-750`/`hover:bg-gray-750` (×4 files) and `min-h-[65px]:` (trailing colon) — intended styles silently missing                                                                                                                                      | P5/P6 (token-based rebuild)                 |
-| 34  | Copy defects: "ocurred" ×3, "Resouces", "Non-delayed" vs "Non-Deferred" (internal cache key "Non-delated"), double periods ".." ×~9, "in there are any", KC overlay "No Know conflict found", garbled options label                                                              | owning phases + P11 copy sweep              |
+| 34  | Copy defects: "ocurred" ×3, "Resouces", "Non-delayed" vs "Non-Deferred" (internal cache key "Non-delated"), double periods ".." ×~9, "in there are any", KC overlay "No Know conflict found", garbled options label                                                              | owning phases + P15 copy sweep              |
 | 35  | Exclusion-builder IO: `HTMLFileEmpty` laundered into `SavingFileError`, writable stream never closed/aborted on failure, `resetHTMLFile` can leave `working=true` forever, file content never re-read (external edits silently overwritten)                                      | P10                                         |
 | 36  | Sidebar-pane eval callback ignores `isException` — failed evals call `setObject(undefined)`                                                                                                                                                                                      | P5                                          |
 | 37  | Options: the load effect mutates module-level `sections` in place (module constants become state); no loading state (toggles flash default-off)                                                                                                                                  | P9                                          |
@@ -265,23 +287,27 @@ Ordering rationale: contracts before consumers (P1 first prevents rework); produ
 
 ## 7. Risk register
 
-| Risk                                                                                                              | Mitigation                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `@webext-core/messaging` v4's `chrome`-global vs WXT's `browser` interop                                          | P0 spike: one message round-trip (bg ↔ CS ↔ devtools) before P1 contracts are finalized                                          |
-| Chrome MV3 `webRequest` needs host permissions (legacy gap)                                                       | Declared in P0 manifest with why-comment; P2 verifies header capture on real pages                                               |
-| Devtools contexts are flaky messaging peers (panel reloads on navigation)                                         | Keep legacy's reload-on-`DOMContentLoaded` flow; panel treats "no content script" as a first-class error state with retry (P5)   |
-| `showOpenFilePicker` unsupported in Firefox                                                                       | P10 ships an `<input type="file">` + download fallback (feature-detected)                                                        |
-| Kobalte minor churn during the port                                                                               | Pin exact minor; wrap in `components/ui/*` so surface code never imports Kobalte directly                                        |
-| Shiki bundle bloat in panel                                                                                       | Fine-grained bundle, 2 languages, 1 theme, dynamic import, virtualized rows; budget check per phase                              |
-| Parity drift from "improvements"                                                                                  | Every enhancement lists its parity delta explicitly in the phase file; fixture corpus + side-by-side run guard detections        |
-| Legacy moves mid-port (it already did: v2.2.4 → v2.2.5 shipped a WP 7.x KC-selector fix after the original audit) | Every phase re-verifies its _Legacy reference_ against legacy HEAD before starting (README rule 6); P11 re-checks before release |
-| Toolbar badge races fast navigations (summary arrives after the next navigation)                                  | Badge cleared at navigation start (`onResponseStarted`), set after processing — worst case transiently absent, never stale       |
+| Risk                                                                                                                | Mitigation                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `@webext-core/messaging` v4's `chrome`-global vs WXT's `browser` interop                                            | P0 spike: one message round-trip (bg ↔ CS ↔ devtools) before P1 contracts are finalized                                           |
+| Chrome MV3 `webRequest` needs host permissions (legacy gap)                                                         | Declared in P0 manifest with why-comment; P2 verifies header capture on real pages                                                |
+| Devtools contexts are flaky messaging peers (panel reloads on navigation)                                           | Keep legacy's reload-on-`DOMContentLoaded` flow; panel treats "no content script" as a first-class error state with retry (P5)    |
+| `showOpenFilePicker` unsupported in Firefox                                                                         | P10 ships an `<input type="file">` + download fallback (feature-detected)                                                         |
+| Kobalte minor churn during the port                                                                                 | Pin exact minor; wrap in `components/ui/*` so surface code never imports Kobalte directly                                         |
+| Shiki bundle bloat in panel                                                                                         | Fine-grained bundle, 2 languages, 1 theme, dynamic import, virtualized rows; budget check per phase                               |
+| Parity drift from "improvements"                                                                                    | Every enhancement lists its parity delta explicitly in the phase file; fixture corpus + side-by-side run guard detections         |
+| Legacy moves mid-port (it already did: v2.2.4 → v2.2.5 shipped a WP 7.x KC-selector fix after the original audit)   | Every phase re-verifies its _Legacy reference_ against legacy HEAD before starting (README rule 6); P15 re-checks before release  |
+| Second baseline drifts (P11–P14 build from wpr-inspector v4.1.1)                                                    | Phase docs verbatim-quote the audited strings; P15 re-checks the repo HEAD before release; deviations are committed, not silent   |
+| `wp-rocket-scripts` API churn (verified: pinned 1.0.6 → current 1.2.2 changed `_finalize`/`_saveFinalResultIntoDB`) | The P14 harness adapter is the only file touching package internals; exact-pin + engines check at install; live verification task |
+| RUCSS endpoint contract (`mega.wp-rocket.me`) changes or goes offline                                               | User-triggered tool with typed failure states; overlay unaffected; the endpoint contract task re-verifies at build time           |
+| On-page strip grows the CS footprint                                                                                | Opt-in activation; a strip budget row (P12); the beacon dep loads as a dynamic-import chunk (P14) so the default budget stands    |
+| Toolbar badge races fast navigations (summary arrives after the next navigation)                                    | Badge cleared at navigation start (`onResponseStarted`), set after processing — worst case transiently absent, never stale        |
 
 ---
 
 ## 8. Extensions beyond parity (committed) & deliberate non-goals
 
-New capabilities legacy never had — each with an owner and a verification hook. P11's enhancement re-audit (its §6) walks this table like the per-phase _Explicit enhancements_ lists: DELIVERED / DEFERRED / DROPPED with evidence, no silent drops.
+New capabilities legacy never had — each with an owner and a verification hook. P15's enhancement re-audit (its §6) walks this table and §9's second-baseline table like the per-phase _Explicit enhancements_ lists: DELIVERED / DEFERRED / DROPPED with evidence, no silent drops.
 
 | Extension                         | What it adds                                                                                                                                                                             | Owner(s)                                             | Verified by                         |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------- |
@@ -292,7 +318,31 @@ New capabilities legacy never had — each with an owner and a verification hook
 | Undefined-refs → exclusion bridge | Per-definition `Copy as exclusion` affordance feeding the Exclusion Builder workflow                                                                                                     | P6                                                   | unit test + manual                  |
 | Elements-pane attribute inventory | Rocket-attribute inventory for any selected element (`data-rocket-*`, `data-wpr-*`), not just IMG                                                                                        | P5                                                   | eval-builder test                   |
 | KC-DB freshness UI                | Options row with last-update time + `Refresh now` (drives the background updater)                                                                                                        | P1 (request) + P2 (serve) + P9 (UI)                  | storage-meta test + manual          |
-| CI on every PR                    | All quality gates (plus both-browser build from P11) run in GitHub Actions — machine-side enforcement                                                                                    | P0 (workflow) + P11 (matrix)                         | green run required to merge         |
+| CI on every PR                    | All quality gates (plus both-browser build from P15) run in GitHub Actions — machine-side enforcement                                                                                    | P0 (workflow) + P15 (matrix)                         | green run required to merge         |
 | Light/dark/system theme toggle    | Theme persisted in `sync:options` (`appearance`), applied via the `[data-theme]` hook                                                                                                    | P0 (tokens) + P9 (UI)                                | P9 checklist + manual               |
 
 **Deliberate non-goals** (documented decisions, not omissions): i18n (the audience is WP Rocket support, English-first — revisit if the tool is distributed to the general public); an in-PSI-page split view (fragile against a third-party SPA — the two-tab parity flow is kept); `commands` API keyboard shortcuts (context menus suffice); differential KC-DB syncing (an hourly full refetch of a ~46 KB file is cheaper than diffing infrastructure).
+
+---
+
+## 9. Second baseline: `wp-media/wpr-inspector` (phases P11–P14)
+
+The features of [`wpr-inspector`](https://github.com/wp-media/wpr-inspector) — the team's companion WP Rocket inspector extension (v4.1.1, full-source audit 2026-10-06, §1.6) — must become part of this extension, ported with the same philosophy as everything else: **re-implemented by behavior, improved and enhanced, never copied**; no reference to that repo in code or comments (its provenance lives here and in the phase docs only).
+
+| Feature (inspector source)                                                                                             | Lands in this extension as                                                                                                                                                                                                                          | Owner | Verified by                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| `data-wpr-features` meta detection pass                                                                                | Primary/footprint source model in the detection registry + `source` badge on the Detections cards                                                                                                                                                   | P11   | `feature-meta.test.ts` + fixture corpus + live side-by-side                                  |
+| Overlapping footprint merges (minify scope, RocketCDN anchor, preload-links union, CPCSS surface, DJE marker adoption) | Per-check merge verdicts in P11 §3 — strongest marker set wins, fixture-pinned                                                                                                                                                                      | P11   | merge-verdict fixtures + live side-by-side                                                   |
+| New checks: fonts / dimensions / ALR / preloading fonts                                                                | 4 registry rows + cards (+ the dead auto-preload-fonts check resurrected with corrected fallbacks)                                                                                                                                                  | P11   | fixture tests + live-site verification                                                       |
+| Page-cache exclusions + unsure state                                                                                   | Cached/WPR card subtitles + amber `unsure` status (headers from the existing capture, no sync XHR)                                                                                                                                                  | P11   | view-model tests + headers fixtures                                                          |
+| WordPress version                                                                                                      | Summary strip + support report line                                                                                                                                                                                                                 | P11   | version-variant tests + golden report                                                        |
+| Delay-JS minified version signature                                                                                    | `delay_js.version` extraction regression-proofed against both payload variants                                                                                                                                                                      | P11   | fixture tests                                                                                |
+| Floating chip strip + drag + toggle                                                                                    | On-page inspector strip — **completely redesigned** under the P5 strip design brief (own visual language, not a re-skin), **opt-in per origin**, extension storage instead of cookies, drag position persisted, `Alt+H` only, fully shadow-isolated | P12   | storage/strip tests + design-brief conformance + hostile-CSS isolation audit + manual matrix |
+| RUCSS tester (endpoint + strip + inject)                                                                               | Panel page `rucss-tester` + strip chip + tab CS executor + background fetch + TEST MODE badge; fetch-then-strip sequencing                                                                                                                          | P13   | pure-core tests + manual vs the source's same-page result                                    |
+| Beacon tester (ATF/LRC)                                                                                                | New panel page + `wp-rocket-scripts` subclass harness in the CS (dynamic-import chunk), results as panel tables, host page untouched                                                                                                                | P14   | validator/harness tests + real-site parity run                                               |
+| LCP sub-parts breakdown                                                                                                | `lib/performance` pure math + panel page + optional cleaned-up element highlight                                                                                                                                                                    | P14   | golden math fixture + real-site parity                                                       |
+| Script tables (`check scripts`/grouping)                                                                               | JS page "Runtime states" section (`data-rocket-status` aware) + group chips incl. the `Other` group the source dropped                                                                                                                              | P14   | classifier tests + delayed-page verification                                                 |
+
+**Committed deviations and corrections** (each verified; the full item lists live in the phase docs): no incognito-only production gate (this extension is a full-time tool); opt-in per site instead of blanket-on; extension storage instead of host-visible cookies/page localStorage; tool forms in the panel with on-page triggers (the source's whole-forms-on-page model duplicates UI we already have); strips removed as one element; zero host-console output from detection/results; background-side endpoint fetch with URL validation; RUCSS strip-then-fetch→fetch-then-strip ordering; subclass (not prototype-patch) beacon harness pinned at the latest `wp-rocket-scripts`; real `_finalize` host-page write suppressed; `Alt+H` only.
+
+**Deliberate non-goals from the inspector source** (documented, not omissions): its placeholder popup (no controls — this extension's popup already carries real function, P8); its Notion documentation link in the strip footer; its per-run `console.table` dumps on the host page; the ad-hoc `test_*.cjs`/`test_script.js` experiment scripts (not features — though their richer `data-rocket-status` executed/failed classification IS ported, P14); its per-feature host-console narration.
