@@ -10,13 +10,13 @@ Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress 
 
 ## Key technologies
 
-| Area      | Tech                                                                                                                                                |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn` |
-| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                       |
-| Language  | **TypeScript**, strict                                                                                                                              |
-| Targets   | Chrome & Firefox, Manifest V3 (Chrome: `minimum_chrome_version: 120` in legacy — this one `145`)                                                    |
-| Build     | Vite (via WXT)                                                                                                                                      |
+| Area      | Tech                                                                                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                    |
+| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                          |
+| Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it |
+| Targets   | Chrome & Firefox, Manifest V3 (Chrome: `minimum_chrome_version: 120` in legacy — this one `145`)                                                                       |
+| Build     | Vite (via WXT)                                                                                                                                                         |
 
 ## Repository structure
 
