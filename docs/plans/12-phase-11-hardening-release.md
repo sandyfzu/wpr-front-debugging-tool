@@ -42,7 +42,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 
 - [ ] README rewrite: what the tool does (with screenshots), dev setup, build/zip, browser notes, link to `docs/`.
 - [ ] `docs/`: architecture deep-dive (data flow diagram from master §2), detection-engine reference (each check's footprint + fixtures), messaging protocol table.
-- [ ] CLAUDE.md final sync (scripts incl. `test`/`check:budgets`/`bench:detection`, permissions, structure, conventions that changed during the port).
+- [ ] AGENTS.md final sync (scripts incl. `test`/`check:budgets`/`bench:detection`, permissions, structure, conventions that changed during the port).
 
 ### 6. Enhancement re-audit (closes README rule 3)
 
@@ -69,4 +69,4 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 
 ## Docs to update
 
-README (full), docs/ (architecture), CLAUDE.md (final sync), this file (audit tables).
+README (full), docs/ (architecture), AGENTS.md (final sync), this file (audit tables).

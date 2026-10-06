@@ -17,7 +17,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 
 ### 1. `entrypoints/background/index.ts`
 
-- [ ] `defineBackground(() => { ... })` (module type default in MV3) wiring the three modules; top-level `try/catch` per module init so one failing subsystem can't blank the others; structured logs via `lib/logger`. Every init call awaited/branched (legacy fired them un-awaited — master #46); global `error` + `unhandledrejection` handlers registered first (log + continue, per CLAUDE.md); all listener registration inside `main()` (legacy registered `onStartup` at import time — master #46).
+- [ ] `defineBackground(() => { ... })` (module type default in MV3) wiring the three modules; top-level `try/catch` per module init so one failing subsystem can't blank the others; structured logs via `lib/logger`. Every init call awaited/branched (legacy fired them un-awaited — master #46); global `error` + `unhandledrejection` handlers registered first (log + continue, per AGENTS.md); all listener registration inside `main()` (legacy registered `onStartup` at import time — master #46).
 
 ### 2. `entrypoints/background/headers.ts`
 
@@ -68,4 +68,4 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 
 ## Docs to update
 
-CLAUDE.md permissions table if any change vs P0 plan (none expected).
+AGENTS.md permissions table if any change vs P0 plan (none expected).

@@ -44,8 +44,8 @@ Update the Status column as phases complete (`⬜ planned → 🟨 in progress �
 ## Rules that apply to every phase
 
 1. **Never guess.** Verify APIs against installed packages and official docs; verify behavior against the legacy build (`pnpm dev` in both repos, load both extensions, compare). Cite evidence when declaring parity.
-2. **Definition of done for every phase:** `pnpm compile` + `pnpm lint` + `pnpm format:check` + `pnpm test` all pass; manual runtime verification done per the phase's checklist; docs updated (CLAUDE.md when it lists scripts/deps/permissions/structure; README when setup changes); Conventional Commits per logical unit.
-3. **Port + enhance, never copy.** Every legacy behavior has a checklist item; every phase has an explicit _Enhancements_ section that must ship in that phase, not "later".
+2. **Definition of done for every phase:** `pnpm compile` + `pnpm lint` + `pnpm format:check` + `pnpm test` all pass; manual runtime verification done per the phase's checklist; docs updated (AGENTS.md when it lists scripts/deps/permissions/structure; README when setup changes); Conventional Commits per logical unit.
+3. **Port + enhance, never copy.** Every legacy behavior has a checklist item; every phase has an explicit _Enhancements_ section that must ship in that phase, not "later". Legacy is never mentioned in code or comments — mappings and parity evidence live here in `docs/plans/` only (AGENTS.md, "No legacy in code").
 4. **Tests first for logic.** All parsing/detection/messaging-contract/exclusion logic is pure and unit-tested; only entrypoint wiring and thin UI glue may go untested.
 5. **Security & least privilege always.** Validate every message/storage/DOM payload at the boundary; every manifest permission has a why-comment; no new permission without a phase justification.
 6. **Legacy is a moving target.** Before starting a phase, re-verify its _Legacy reference_ against legacy HEAD — it moved once already (v2.2.4 → v2.2.5 shipped a WordPress-7.x Known-Conflicts selector fix after the original audit). Fold any newer legacy commits into the phase doc before building from it; P11 re-checks before release.

@@ -15,13 +15,13 @@ Make this scaffold a real extension project: correct manifest with justified per
 
 ### 1. Manifest & config (`wxt.config.ts`)
 
-- [ ] `manifest.name: 'WPR Front Debugging Tool'`, `description` kept from package.json ("A tool for debugging WP Rocket WordPress plugin."), `minimum_chrome_version: '145'` (per CLAUDE.md).
+- [ ] `manifest.name: 'WPR Front Debugging Tool'`, `description` kept from package.json ("A tool for debugging WP Rocket WordPress plugin."), `minimum_chrome_version: '145'` (per AGENTS.md).
 - [ ] `permissions` (each with a why-comment):
   - `storage` — options (`sync:options`) + Known Conflicts DB cache (`local:known-conflicts-db`).
   - `alarms` — hourly Known Conflicts DB refresh.
   - `webRequest` — read main-frame response headers (Server / Known Platform cards).
   - `contextMenus` — Side-by-Side, PSI Side-by-Side, Exclusion Builder, Update KC DB.
-- [ ] `host_permissions: ['http://*/*', 'https://*/*']` with why-comment: required for `webRequest` main-frame header capture (legacy omitted these — master risk #2) and required so the popup can read the active web tab's URL without the `tabs` permission (least privilege: **drop** legacy's `tabs` permission; P8 verifies popup URL access and P2 verifies `tabs.create` for the exclusion builder needs no permission — restore `tabs` only if verification fails, documented in CLAUDE.md).
+- [ ] `host_permissions: ['http://*/*', 'https://*/*']` with why-comment: required for `webRequest` main-frame header capture (legacy omitted these — master risk #2) and required so the popup can read the active web tab's URL without the `tabs` permission (least privilege: **drop** legacy's `tabs` permission; P8 verifies popup URL access and P2 verifies `tabs.create` for the exclusion builder needs no permission — restore `tabs` only if verification fails, documented in AGENTS.md).
 - [ ] Content scripts configured in P3/P4 (not now); devtools/panel/popup/options entrypoints added by their phases.
 - [ ] Verify generated `.output/chrome-mv3/manifest.json` matches intent after first build.
 
@@ -31,10 +31,10 @@ Make this scaffold a real extension project: correct manifest with justified per
 - [ ] `vitest.config.ts`: happy-dom (or jsdom if Solid testing-library prefers — verify), globals off (explicit imports), coverage provider v8, `environmentMatchGlobs` not needed — colocated tests import what they need.
 - [ ] `package.json`: `"test": "vitest run"`, `"test:watch": "vitest"`, `"test:coverage": "vitest run --coverage"`.
 - [ ] **Coverage thresholds (enforces the "logic is tested" promise):** configure `coverage.thresholds` in `vitest.config.ts` — `lines`/`functions` ≥ 90 restricted to `lib/**` + `utils/**`, excluding `**/reference/**` and entrypoint glue — so `pnpm test` fails below the bar.
-- [ ] **Budget script (enforces master §1.3):** `scripts/check-budgets.mjs` + `"check:budgets": "node scripts/check-budgets.mjs"` — reads a committed budget table (surface | output glob | max raw KB | max gzip KB, straight from master §1.3), measures the `pnpm build` output (raw + gzip), prints a pass/fail table, exits non-zero on breach. Every later phase's checklist runs it for the surfaces it owns. Add `pnpm check:budgets` to CLAUDE.md gates.
+- [ ] **Budget script (enforces master §1.3):** `scripts/check-budgets.mjs` + `"check:budgets": "node scripts/check-budgets.mjs"` — reads a committed budget table (surface | output glob | max raw KB | max gzip KB, straight from master §1.3), measures the `pnpm build` output (raw + gzip), prints a pass/fail table, exits non-zero on breach. Every later phase's checklist runs it for the surfaces it owns. Add `pnpm check:budgets` to AGENTS.md gates.
 - [ ] **Dependency bans (enforces master §1.4):** add `no-restricted-imports` patterns for `framer-motion`, `wouter`, `react-hot-toast`, `react-syntax-highlighter` (message: banned by master §1.4 — use CSS motion / the hash router / the custom toast / shiki).
 - [ ] **CI workflow (enforces the gates machine-side, master §8):** `.github/workflows/ci.yml` — Node 24 (`.nvmrc`) + pnpm via the `packageManager` field, `pnpm install --frozen-lockfile`, then `pnpm compile && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm check:budgets` on PRs and pushes to main; P11 adds `build:firefox` to the matrix. The speed bench (`bench:detection`) stays local — its ≥ 30 % ratio assertion is machine-relative and would flake on shared runners; CI's `build` + `check:budgets` still guard size.
-- [ ] **Update CLAUDE.md:** add `pnpm test` to commands and to the required workflow gates (it currently says "The `test` gate is added together with the test runner — wire it here when it exists").
+- [ ] **Update AGENTS.md:** add `pnpm test` to commands and to the required workflow gates (it currently says "The `test` gate is added together with the test runner — wire it here when it exists").
 - [ ] Update `lint-staged` no (it lints TS/TSX already); ensure prettier handles `.md` under docs/plans (check `.prettierignore`).
 
 ### 3. Tailwind v4 + design tokens
@@ -79,8 +79,8 @@ Make this scaffold a real extension project: correct manifest with justified per
 - [ ] `pnpm compile && pnpm lint && pnpm format:check && pnpm test` green.
 - [ ] `pnpm build` produces a loadable extension; manifest inspected matches §Tasks-1.
 - [ ] Messaging spike results recorded here (or issues escalated into P1 spec).
-- [ ] CLAUDE.md updated (test gate).
+- [ ] AGENTS.md updated (test gate).
 
 ## Docs to update
 
-CLAUDE.md (commands + test gate), README (dev setup once Tailwind lands).
+AGENTS.md (commands + test gate), README (dev setup once Tailwind lands).

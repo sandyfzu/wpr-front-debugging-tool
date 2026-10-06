@@ -21,7 +21,7 @@ Build the pure, fully-tested core that every surface consumes: the typed message
 
 ### 1. `lib/messaging/` — typed protocol + validators
 
-- [ ] `protocol.ts` — single `ProtocolMap` for `defineExtensionMessaging`, one entry per legacy-used channel (10 — `getDiagnoserData` is receive-only-dead in legacy: registered, never sent; diagnoser data travels inside `getFdtData`, so it is not ported — master #43) plus the new KC-DB/badge/refresh requests (master §8), renamed to intent-revealing names (map table in code comments noting the legacy channel):
+- [ ] `protocol.ts` — single `ProtocolMap` for `defineExtensionMessaging`, one entry per legacy-used channel (10 — `getDiagnoserData` is receive-only-dead in legacy: registered, never sent; diagnoser data travels inside `getFdtData`, so it is not ported — master #43) plus the new KC-DB/badge/refresh requests (master §8), renamed to intent-revealing names (the legacy → new channel mapping table lives in this document only — never in code comments; no-legacy rule in AGENTS.md):
 
   | New                          | Legacy                                         | Data → Return                                                                              |
   | ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -107,10 +107,10 @@ Build the pure, fully-tested core that every surface consumes: the typed message
 ## Verification checklist
 
 - [ ] All gates green (`compile/lint/format/test`).
-- [ ] Fixture corpus committed (incl. the two adversarial lazyload fixtures); parity harness reports 0 diffs vs legacy reference; any intentional deltas are documented in `run-detection.ts` TSDoc.
+- [ ] Fixture corpus committed (incl. the two adversarial lazyload fixtures); parity harness reports 0 diffs vs the reference implementation; intentional deltas are documented in this phase doc, not in code or TSDoc (no-legacy rule, AGENTS.md).
 - [ ] `pnpm bench:detection` run; its median table committed here — the ≥ 30 % aggregate target holds **automatically** (the assertion is in the bench).
 - [ ] `pnpm build` shows detection/`lib` code is not yet bundled into any surface (or is, only via P3+ consumers).
 
 ## Docs to update
 
-CLAUDE.md if directory layout diverges from §1.5 of master (it shouldn't).
+AGENTS.md if directory layout diverges from §1.5 of master (it shouldn't).

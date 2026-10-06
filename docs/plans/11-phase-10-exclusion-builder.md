@@ -25,7 +25,7 @@ Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested 
 
 ### 1. `lib/exclusions/` (pure engine, no DOM globals beyond `DOMParser` input)
 
-- [ ] `errors.ts` — `InvalidExclusionError` (carries invalid list), `DocumentCreationError`, `EmptyHtmlError` (renamed from legacy `HTMLFileEmpty`, clearer), `FileWriteError` (successor of legacy `SavingFileError`; carry the legacy name in the TSDoc so mapping is greppable). No type laundering — `EmptyHtmlError` is never re-wrapped (master #35); set `Error.prototype.name` — legacy's `static name` on Error subclasses is a TS anti-pattern.
+- [ ] `errors.ts` — `InvalidExclusionError` (carries invalid list), `DocumentCreationError`, `EmptyHtmlError` (renamed from legacy `HTMLFileEmpty`, clearer), `FileWriteError` (successor of legacy `SavingFileError`; the legacy → new mapping lives in this file — never in code TSDoc, per the no-legacy rule in AGENTS.md). No type laundering — `EmptyHtmlError` is never re-wrapped (master #35); set `Error.prototype.name` — legacy's `static name` on Error subclasses is a TS anti-pattern.
 - [ ] `parse.ts` — `createDocument`, `linesToArray`, `validateExclusions` (returns `{ valid, invalid }`; keep legacy's validate-all-first throw behavior in the orchestrator).
 - [ ] `apply.ts` — the four `applyXExclusions` + four `disableX` ports **verbatim in semantics**, operating on `Document` + `ParsedPage`-style pre-classification where cheap (e.g. reuse `delayJSScriptSelector`); per-element tagging via `setFdtExcludedAttribute(element, feature)` (CSV parity); regex compile cached per call batch (perf: legacy `new RegExp` per script × exclusion).
 - [ ] `notice.ts` — `buildChromeOverridesNotice()` importing `override-notice.html` (kept byte-identical — it runs on the _target site_, not the extension; only change: nothing). Known cosmetic quirks kept and documented (byte-parity wins over cosmetics): the invalid `transition-timing-function: line` value falls back to the browser default, and removal is `transitionend`-gated with an 810 ms timeout — the notice can linger until click if the transition never runs (backgrounded tab).
@@ -60,4 +60,4 @@ Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested 
 
 ## Docs to update
 
-CLAUDE.md: nothing structural (unlisted page already anticipated); README: Firefox limitation note.
+AGENTS.md: nothing structural (unlisted page already anticipated); README: Firefox limitation note.

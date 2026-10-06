@@ -76,4 +76,4 @@ Register the devtools panel + Elements sidebar pane, and build the panel's appli
 
 ## Docs to update
 
-CLAUDE.md: add `panel/`, `devtools/` surfaces to structure section when landed (it already names them — verify wording matches final names).
+AGENTS.md: add `panel/`, `devtools/` surfaces to structure section when landed (it already names them — verify wording matches final names).

@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Operating guide for AI agents (and humans) working in this repository. Keep it accurate and in sync with the code — see [When to update this file](#when-to-update-this-file).
 
@@ -7,6 +7,8 @@ Operating guide for AI agents (and humans) working in this repository. Keep it a
 Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder`, `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
 
 > **Porting rule:** treat the legacy repo as the **behavioral** reference, not the code reference. Port features by their observed behavior — verify parity against the real legacy extension (`pnpm dev` + load both builds and compare), never from memory of its code. It must also aim to be faster and more efficient than the legacy extension, so don't blindly port inefficient patterns, always improve and enhance.
+>
+> **No legacy in code — ever.** Code and comments in this project must never mention the legacy project or its code: no `legacy` identifiers, strings, comments, TSDoc, or error messages referencing legacy files, functions, or behavior. Name things by what they do; legacy mappings, parity proofs, and bug references live in `docs/plans/` — and only there.
 
 ## Key technologies
 
@@ -138,6 +140,6 @@ Requirements, not suggestions:
 
 ## When to update this file
 
-Whoever makes the code change owns the doc update. Update CLAUDE.md when you: add/rename an NPM script; add/remove a dependency or a manifest permission; add an entrypoint or restructure directories; add a quality gate (lint/format/test); change a convention stated here. Put detail too long for this file in `README.md` (setup/run) or `docs/` (architecture), and link it from here.
+Whoever makes the code change owns the doc update. Update AGENTS.md when you: add/rename an NPM script; add/remove a dependency or a manifest permission; add an entrypoint or restructure directories; add a quality gate (lint/format/test); change a convention stated here. Put detail too long for this file in `README.md` (setup/run) or `docs/` (architecture), and link it from here.
 
 In any file, a `NOTE FROM DEV:` comment is an instruction for the next AI/human reading that file — read it carefully and act on it.

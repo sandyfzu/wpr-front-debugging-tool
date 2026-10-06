@@ -4,7 +4,7 @@
 
 ## Goal
 
-Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page improvements, the Known Conflicts UI, and Side-by-Side. Content-script safety rules from CLAUDE.md apply to everything here: wrap risky work, clean up via `ContentScriptContext`, never break the host page.
+Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page improvements, the Known Conflicts UI, and Side-by-Side. Content-script safety rules from AGENTS.md apply to everything here: wrap risky work, clean up via `ContentScriptContext`, never break the host page.
 
 ## Legacy reference
 
@@ -22,7 +22,7 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 
 ### 2. `lib/…` vs entrypoint placement decision (enforced here)
 
-- [ ] Data hub is consumed by two surfaces conceptually (CS + devtools contract) — its _logic_ is pure in P1; the CS-specific glue (`entrypoints/isolated.content.ts` + a colocated `data-hub.ts` in the same folder since only this surface uses it) owns messaging listeners. Promote to `lib/` only if a second surface needs it (per CLAUDE.md promotion rule).
+- [ ] Data hub is consumed by two surfaces conceptually (CS + devtools contract) — its _logic_ is pure in P1; the CS-specific glue (`entrypoints/isolated.content.ts` + a colocated `data-hub.ts` in the same folder since only this surface uses it) owns messaging listeners. Promote to `lib/` only if a second surface needs it (per AGENTS.md promotion rule).
 - [ ] `data-hub.ts`:
   - [ ] `DOMContentLoaded` (plus a `document.readyState` guard for late injection): serialize HTML once, fetch headers via `getPageHeaders` (no payload — background resolves `sender`, per the P1 contract), send `notifyPanelReload` to devtools (best-effort; errors logged not swallowed).
   - [ ] Lazy processing exactly once (`processPageData` or first data request); result cached; processing wrapped in try/catch → returns `null` + error log (panel shows error state).
@@ -80,4 +80,4 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 
 ## Docs to update
 
-None beyond CLAUDE.md if promotion to `lib/` happens (note it).
+None beyond AGENTS.md if promotion to `lib/` happens (note it).

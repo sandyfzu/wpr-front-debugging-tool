@@ -38,4 +38,4 @@ Port the options page (Improvements section) with honest saving, error surfacing
 
 ## Docs to update
 
-CLAUDE.md only if an option key or permission changes (none expected).
+AGENTS.md only if an option key or permission changes (none expected).

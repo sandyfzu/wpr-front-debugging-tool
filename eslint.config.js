@@ -30,7 +30,7 @@ export default tseslint.config(
     }
   },
 
-  // Layered dependency direction (see CLAUDE.md):
+  // Layered dependency direction (see AGENTS.md):
   // entrypoints/ → components/ → lib/ → utils/, never upward.
   // Entryoints must not import each other — shared code belongs in components/ or lib/.
   {

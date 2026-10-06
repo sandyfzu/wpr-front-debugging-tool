@@ -39,8 +39,8 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 - [ ] The P0 spike record for the MAIN↔ISOLATED `postMessage` round-trip is confirmed here (master #41 — if the bridge also fails cross-world, escalate to P1 for a data-attribute fallback before building on it).
 - [ ] Manual: open a page with a known undefined reference (fixture page from P1 corpus or a local test page throwing `ReferenceError: foo is not defined` after 2 s) → P3 data hub log shows the validated batch; the page's own console output is unchanged.
 - [ ] Manual: page with cross-origin script error → `__EXTERNAL_ORIGIN_ERROR__` reaches the panel data (**this must work; in legacy it silently never did** — bug #21).
-- [ ] Manual Firefox: MAIN-world CS runs (WXT `world: 'MAIN'` Firefox support verified — if Firefox lacks `world: 'MAIN'` in its manifest schema, use WXT's `injectScript`-style fallback **only if needed**; record outcome and reflect it in CLAUDE.md if the entrypoint shape changes).
+- [ ] Manual Firefox: MAIN-world CS runs (WXT `world: 'MAIN'` Firefox support verified — if Firefox lacks `world: 'MAIN'` in its manifest schema, use WXT's `injectScript`-style fallback **only if needed**; record outcome and reflect it in AGENTS.md if the entrypoint shape changes).
 
 ## Docs to update
 
-CLAUDE.md only if the MAIN-world strategy changes from a plain content script.
+AGENTS.md only if the MAIN-world strategy changes from a plain content script.
