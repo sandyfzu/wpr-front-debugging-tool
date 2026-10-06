@@ -87,7 +87,17 @@ The project must be stable, reliable, secure, safe, production-ready, well docum
 - **Dependencies: latest stable.** Any dependency added to the project MUST be the latest stable version (`latest` dist-tag) unless it is incompatible with the installed stack — verify `engines` and peer ranges before adding. Never add outdated versions "just in case".
 - **Security.** Never log or persist sensitive data. Validate untrusted input — page DOM, `storage`, message payloads — at the boundary before use.
 - **Content scripts must never break the host page.** They run on sites being debugged: wrap risky work, clean up listeners/observers, and keep main-world vs isolated-world responsibilities explicit.
-- **Tests & testability.** Design for unit testing by default: keep logic (parsing, messaging/storage contracts, exclusion rules, decisions) in pure functions/modules, decoupled from I/O, DOM, `browser.*` APIs, and UI — inject or pass dependencies instead of hardcoding them. Unit-test all such logic; test first, not as an afterthought. The only acceptable exceptions are thin UI glue and entrypoint wiring — a limitation, never a design goal. When code is hard to unit test, restructure it until it isn't (or justify why it can't be).
+- **Tests & testability.** Design for unit testing by default: keep logic (parsing, detection, messaging/storage contracts, exclusion rules, decisions) in pure functions/modules, decoupled from I/O, DOM, `browser.*` APIs, and UI — inject or pass dependencies instead of hardcoding them. Unit-test all such logic; test first, not as an afterthought. The only acceptable exceptions are thin UI glue and entrypoint wiring — a limitation, never a design goal. When code is hard to unit test, restructure it until it isn't (or justify why it can't be).
+
+### Extensibility & maintainability
+
+The extension must stay **easily extensible and cheap to maintain**: adding a feature is a local, predictable change; removing or reworking one never breaks its siblings.
+
+- **Locality.** A new feature lands as a self-contained `lib/<domain>/` module (logic, types, data, tests) plus its thin wiring in the owning surface — never by reaching into or editing other features' internals. Single-surface code stays in its entrypoint; promote when a second surface needs it.
+- **Registries over branching.** Anything that comes in "many of a kind" (detection checks, message channels, storage items, exclusion rules, panel pages/tabs, options rows, context menus…) is defined in one typed table/list owned by the module that owns the concept, and consumers map over it. Adding one = adding one row + its tests, not new `if`/`switch` arms sprinkled across surfaces.
+- **Stable, additive contracts.** `lib/messaging/` and `lib/storage/` are the seams every feature plugs into: evolve them additively, validate with discriminated types, and read back tolerant of unknown fields so new data never breaks existing consumers.
+- **Deletability is the test.** A feature is properly isolated when removing it = deleting its folder + its registry entries. If removal cascades into unrelated files, fix the structure before building on top of it.
+- **Extensible ≠ speculative.** Prefer the smallest structure that makes the _next_ feature a local change; introduce a registry or abstraction when the second instance of a concept appears, never "just in case".
 
 ### Error management
 
