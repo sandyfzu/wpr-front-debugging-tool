@@ -18,23 +18,23 @@ Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested 
   - `disableDelayJS/DeferJS/ALR` — full-feature disable: remove the three runner inline scripts (userAgent match script, `RocketLazyLoadScripts.run`, `RocketElementorAnimation.run`), then exclude everything; `disableALR` also removes `#rocket-lazyrender-inline-css`.
   - `outerHTMLWithDocType(doc)` — `<!DOCTYPE html> \n` + `documentElement.outerHTML`.
   - `setFDTExcludeAttribute` — appends to existing attr CSV.
-- `pages/ExclusionBuilderPage.tsx` (UI): file pick via `showOpenFilePicker({ types: [text/html] })` + `requestPermission({ mode: 'readwrite' })`; empty-file guard (`HTMLFileEmpty`); reset file to original content; 4 textareas (Delay JS / Defer JS / ALR / Lazyload) + 3 enable-disable toggles (when disabled → apply full `disableX` instead of exclusions); Apply: parse → per-feature apply → append `ChromeOverridesNotice` (script+style that flashes "Please remember that you are viewing an overwritten page!") → save back to the file handle; toasts for success/error; disabled buttons while working/unselected.
+- `pages/ExclusionBuilderPage.tsx` (UI): file pick via `showOpenFilePicker({ types: [text/html] })` + `requestPermission({ mode: 'readwrite' })`; empty-file guard (`HTMLFileEmpty`); reset file to original content; 4 textareas (Delay JS / Defer JS / ALR / Lazyload) + 3 enable-disable toggles (when disabled → apply full `disableX` instead of exclusions); Apply: parse → per-feature apply → append `ChromeOverridesNotice` (script+style that flashes "Please remember that you are viewing an overwritten page!") → save back to the file handle; toasts for success/error; disabled buttons while working/unselected. Invalid regexes are reported toast-only — which lines are invalid is console-only (the per-line validation below replaces this). `saveFile` wraps even `HTMLFileEmpty` as `SavingFileError` (type laundering) and never closes/aborts the writable stream on failure; `resetHTMLFile` can leave `working=true` permanently; the selected file's content is never re-read, so external edits are silently overwritten (all master #35).
 - `override-notice.html` — the injected notice (script + styles) — port as a data file.
 
 ## Tasks
 
 ### 1. `lib/exclusions/` (pure engine, no DOM globals beyond `DOMParser` input)
 
-- [ ] `errors.ts` — `InvalidExclusionError` (carries invalid list), `DocumentCreationError`, `EmptyHtmlError` (renamed from legacy `HTMLFileEmpty`, clearer), `FileWriteError` (successor of legacy `SavingFileError`; carry the legacy name in the TSDoc so mapping is greppable).
+- [ ] `errors.ts` — `InvalidExclusionError` (carries invalid list), `DocumentCreationError`, `EmptyHtmlError` (renamed from legacy `HTMLFileEmpty`, clearer), `FileWriteError` (successor of legacy `SavingFileError`; carry the legacy name in the TSDoc so mapping is greppable). No type laundering — `EmptyHtmlError` is never re-wrapped (master #35); set `Error.prototype.name` — legacy's `static name` on Error subclasses is a TS anti-pattern.
 - [ ] `parse.ts` — `createDocument`, `linesToArray`, `validateExclusions` (returns `{ valid, invalid }`; keep legacy's validate-all-first throw behavior in the orchestrator).
 - [ ] `apply.ts` — the four `applyXExclusions` + four `disableX` ports **verbatim in semantics**, operating on `Document` + `ParsedPage`-style pre-classification where cheap (e.g. reuse `delayJSScriptSelector`); per-element tagging via `setFdtExcludedAttribute(element, feature)` (CSV parity); regex compile cached per call batch (perf: legacy `new RegExp` per script × exclusion).
-- [ ] `notice.ts` — `buildChromeOverridesNotice()` importing `override-notice.html` (kept byte-identical — it runs on the _target site_, not the extension; only change: nothing).
+- [ ] `notice.ts` — `buildChromeOverridesNotice()` importing `override-notice.html` (kept byte-identical — it runs on the _target site_, not the extension; only change: nothing). Known cosmetic quirks kept and documented (byte-parity wins over cosmetics): the invalid `transition-timing-function: line` value falls back to the browser default, and removal is `transitionend`-gated with an 810 ms timeout — the notice can linger until click if the transition never runs (backgrounded tab).
 - [ ] `serialize.ts` — `outerHTMLWithDocType` (parity, trailing-space quirk kept — files are re-read by the tool only).
 
 ### 2. Unlisted page `entrypoints/exclusion-builder/`
 
 - [ ] Registered as unlisted page (`exclusion-builder.html`); context menu opens it (P2); **no auto-close behaviors** (full page).
-- [ ] **File handling (`file-io.ts`):** feature-detect `window.showOpenFilePicker` — Chrome path parity (text/html accept, readwrite permission request, **MIME re-check `file.type !== 'text/html'` → "File must be HTML"**, empty-file error, AbortError silence); **Firefox fallback (enhancement):** `<input type="file" accept=".html,.htm">` read + modified output via `URL.createObjectURL` download (`<a download>`) with a notice that in-place write isn't available (master risk covered); drag-and-drop file support (enhancement); file identity card (name, size, last-modified) + "unsaved changes" marker.
+- [ ] **File handling (`file-io.ts`):** feature-detect `window.showOpenFilePicker` — Chrome path parity (text/html accept, readwrite permission request, **MIME re-check `file.type !== 'text/html'` → "File must be HTML"**, empty-file error, AbortError silence); **Firefox fallback (enhancement):** `<input type="file" accept=".html,.htm">` read + modified output via `URL.createObjectURL` download (`<a download>`) with a notice that in-place write isn't available (master risk covered); drag-and-drop file support (enhancement); file identity card (name, size, last-modified) + "unsaved changes" marker. Stream hygiene (master #35): the writable is closed/aborted on every failure path and `working` resets in a `finally` (legacy could wedge it permanently). On every Apply/Reset, re-stat the handle (`getFile()`) and warn when size/lastModified changed since selection — external edits are no longer silently overwritten (legacy re-derived from the original snapshot with only a static sentence as warning).
 - [ ] **State store (`builder-store.ts`):** file (handle + original content + name), per-feature `{ enabled, text }` for delay/defer/alr/lazyload (lazyload has no disable toggle — parity), `working` flag, per-feature result counts.
 - [ ] **UI:** two-column layout (file card; actions card with the 3 disable toggles + Apply — parity behaviors, redesigned presentation); four exclusion editors rebuilt as `exclusion-editor.tsx`: line-numbered textarea (overlay gutter), **live per-line regex validation** with invalid lines highlighted + error summary (uses `validateExclusions` — replaces legacy's toast-only feedback), "plain-string" mode badge on the Lazyload editor (parity: lazyload matches `includes`, not regex — legacy never told the user; document in the editor's hint), clear button, counts (N lines). Apply pipeline with per-feature result counts rendered as toasts + a summary strip ("Excluded 4 scripts from Delay JS, 12 images from Lazyload, …" — enhancement; legacy said only "applied successfully").
 - [ ] Reset file button (parity) + confirmation when edits exist (enhancement); Unselect file (parity).
@@ -42,11 +42,12 @@ Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested 
 
 ## Explicit enhancements over legacy
 
-- Engine 100 % pure + unit-tested (legacy: zero tests, all inline); cached regex compilation; inline validation UX; result counts; Firefox file fallback + drag-drop; unsaved-changes guard; plain-string vs regex mode made explicit; clearer error taxonomy.
+- Engine 100 % pure + unit-tested (legacy: zero tests, all inline); cached regex compilation; inline validation UX; result counts; Firefox file fallback + drag-drop; unsaved-changes guard; plain-string vs regex mode made explicit; clearer error taxonomy. Stream hygiene + external-edit detection (master #35); `working` can never wedge; no type laundering.
 
 ## Tests
 
 - `lib/exclusions/*.test.ts` — the big one: fixture HTML pages (from P1 corpus, plus ALR/DelayJS-heavy fixtures) × operations matrix: apply per feature (matched/unmatched/non-trimmed exclusions), disable per feature (three runner scripts removed, CSS removed for ALR), FDT attr CSV accumulation, invalid-regex throw carrying the right list, empty-lines handling, lazyload clone-simulation matching (verify a `srcset`-only image is excluded via restored markup), doctype serialization round-trip. Snapshot assertions on output HTML for each fixture × operation.
+- Failure-path hygiene (master #35): the writable stream is closed/aborted on failure, `working` always resets, and external file changes (size/lastModified drift since selection) produce the warning state (mocked handle).
 
 ## Verification checklist
 
@@ -55,6 +56,7 @@ Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested 
 - [ ] Manual Chrome: full flow (pick → exclusions → apply → reopen file in browser → behaviors gone, notice flashes; Reset → original behavior back).
 - [ ] Manual Firefox: fallback flow produces a correct downloadable file.
 - [ ] Invalid regex per-line UX: type `(` → line flagged, Apply blocked with actionable message naming the line.
+- [ ] External-edit guard: modify the file on disk after selecting it → Apply warns instead of silently overwriting.
 
 ## Docs to update
 

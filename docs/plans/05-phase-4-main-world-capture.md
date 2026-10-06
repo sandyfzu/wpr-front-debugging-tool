@@ -9,7 +9,7 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 ## Legacy reference
 
 - `entrypoints/mainWord.content.ts` — `matches: http/https all`, `runAt: 'document_start'`, `world: 'MAIN'`, runs `undefinedReferencesCapture()`.
-- `content-scripts/undefinedReferencesCapture.ts` — window `error` + `unhandledrejection` listeners; extraction regexes: `ReferenceError: (.*) is not defined`, `TypeError: Cannot read properties of undefined \(reading '(.*)'\)`, `TypeError: (.*) is not a function` (→ last `.`-segment); "Script error." → `__EXTERNAL_ORIGIN_ERROR__` sentinel; dedupe via `words` Set; 500 ms debounced batches sent as document `CustomEvent` with `detail.words`; buffer cleared after send. **Dead:** `errors`/`LIMIT = 50` never enforced (master #11).
+- `content-scripts/undefinedReferencesCapture.ts` — window `error` + `unhandledrejection` listeners; extraction regexes: `ReferenceError: (.*) is not defined`, `TypeError: Cannot read properties of undefined \(reading '(.*)'\)`, `TypeError: (.*) is not a function` (→ last `.`-segment); "Script error." → `__EXTERNAL_ORIGIN_ERROR__` sentinel; dedupe via `words` Set; 500 ms debounced batches sent as document `CustomEvent` with `detail.words`; buffer cleared after send. **Dead:** `errors`/`LIMIT = 50` never enforced (master #11). Deeper risk (master #41): the hop itself — `document` CustomEvents with a `detail` payload created in the page world are generally **unreadable from the isolated world** in Chromium, so the entire pipeline (not just the #21 sentinel) may never have delivered a word in legacy Chrome. The P0 spike verifies the `postMessage`-based bridge before this phase relies on it — the replacement is a resurrection, not just hygiene.
 
 ## Tasks
 
@@ -27,7 +27,7 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 
 ## Explicit enhancements over legacy
 
-- Real cap + length limits (flood safety); typed window bridge with validation on both ends; pure extractable matcher; cleanup discipline; ≤ 2 KB world footprint.
+- Real cap + length limits (flood safety); typed window bridge with validation on both ends; pure extractable matcher; cleanup discipline; ≤ 2 KB world footprint. The bridge replaces a hop that was likely entirely dead in Chromium (#41) — the undefined-references feature is expected to _start working_ in the port.
 
 ## Tests
 
@@ -36,6 +36,7 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 ## Verification checklist
 
 - [ ] Gates green; main-world bundle ≤ 2 KB (measure `content-scripts/main-world.js`).
+- [ ] The P0 spike record for the MAIN↔ISOLATED `postMessage` round-trip is confirmed here (master #41 — if the bridge also fails cross-world, escalate to P1 for a data-attribute fallback before building on it).
 - [ ] Manual: open a page with a known undefined reference (fixture page from P1 corpus or a local test page throwing `ReferenceError: foo is not defined` after 2 s) → P3 data hub log shows the validated batch; the page's own console output is unchanged.
 - [ ] Manual: page with cross-origin script error → `__EXTERNAL_ORIGIN_ERROR__` reaches the panel data (**this must work; in legacy it silently never did** — bug #21).
 - [ ] Manual Firefox: MAIN-world CS runs (WXT `world: 'MAIN'` Firefox support verified — if Firefox lacks `world: 'MAIN'` in its manifest schema, use WXT's `injectScript`-style fallback **only if needed**; record outcome and reflect it in CLAUDE.md if the entrypoint shape changes).

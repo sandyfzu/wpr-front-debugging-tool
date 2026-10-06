@@ -33,6 +33,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 - [ ] **Coverage thresholds (enforces the "logic is tested" promise):** configure `coverage.thresholds` in `vitest.config.ts` — `lines`/`functions` ≥ 90 restricted to `lib/**` + `utils/**`, excluding `**/reference/**` and entrypoint glue — so `pnpm test` fails below the bar.
 - [ ] **Budget script (enforces master §1.3):** `scripts/check-budgets.mjs` + `"check:budgets": "node scripts/check-budgets.mjs"` — reads a committed budget table (surface | output glob | max raw KB | max gzip KB, straight from master §1.3), measures the `pnpm build` output (raw + gzip), prints a pass/fail table, exits non-zero on breach. Every later phase's checklist runs it for the surfaces it owns. Add `pnpm check:budgets` to CLAUDE.md gates.
 - [ ] **Dependency bans (enforces master §1.4):** add `no-restricted-imports` patterns for `framer-motion`, `wouter`, `react-hot-toast`, `react-syntax-highlighter` (message: banned by master §1.4 — use CSS motion / the hash router / the custom toast / shiki).
+- [ ] **CI workflow (enforces the gates machine-side, master §8):** `.github/workflows/ci.yml` — Node 24 (`.nvmrc`) + pnpm via the `packageManager` field, `pnpm install --frozen-lockfile`, then `pnpm compile && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm check:budgets` on PRs and pushes to main; P11 adds `build:firefox` to the matrix. The speed bench (`bench:detection`) stays local — its ≥ 30 % ratio assertion is machine-relative and would flake on shared runners; CI's `build` + `check:budgets` still guard size.
 - [ ] **Update CLAUDE.md:** add `pnpm test` to commands and to the required workflow gates (it currently says "The `test` gate is added together with the test runner — wire it here when it exists").
 - [ ] Update `lint-staged` no (it lints TS/TSX already); ensure prettier handles `.md` under docs/plans (check `.prettierignore`).
 
@@ -58,7 +59,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 
 ### 5. Messaging + window-bridge spike (risk retirement, not production code)
 
-- [ ] Install `@webext-core/messaging` v4 (note: `defineWindowMessaging` lives in the `@webext-core/messaging/page` subpath).
+- [ ] Install `@webext-core/messaging` v4 (note: `defineWindowMessaging` lives in the `@webext-core/messaging/page` subpath). v4 peers on `@types/chrome` (verified in its package manifest) — add it as a devDependency for the `chrome`-global typings.
 - [ ] Throwaway verification (deleted after P1 lands its real contracts): background ↔ isolated-CS round-trip via `defineExtensionMessaging` with tab targeting; MAIN → isolated round-trip via `defineWindowMessaging`; devtools context `sendMessage(type, data, tabId)` to CS. Record findings in this file's checklist notes (interop with WXT `browser`, Firefox behavior).
 - [ ] `browser.devtools` typing via `@wxt-dev/browser` — **pre-verified as typed** (devtools.panels/inspectedWindow/onSearch); confirm at build time only.
 
@@ -67,6 +68,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 - Host permissions declared + `tabs` permission dropped (least privilege, fixes silent header risk).
 - Real test gate exists from the start (legacy had none).
 - Token-based theming (light mode possible; legacy hardcoded dark grays inline in every page).
+- CI runs every gate on every PR (legacy had no lint, no tests, no CI at all).
 
 ## Tests
 

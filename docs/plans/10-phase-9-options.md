@@ -8,7 +8,7 @@ Port the options page (Improvements section) with honest saving, error surfacing
 
 ## Legacy reference
 
-- `entrypoints/options/App.tsx` — section "Improvements" ("Injects little scripts or styles to improve tools we use daily") with one option `wp-dashboard-dbugger-entry` (label "Add an entry to access the D-bugger to WP Rocket's menu", description "Adds a convenient entry in the WP Rocket menu for quick access to the D-bugger tool"); loads `OptionsStore`, populates toggles, Save writes `improvements` map; **fake 1000 ms saving UX; errors swallowed into a bare "Some kind of error ocurred.." screen** (master #16); commented-out "Miscellaneous" section (do not port dead code; keep the section architecture extensible).
+- `entrypoints/options/App.tsx` — section "Improvements" ("Injects little scripts or styles to improve tools we use daily") with one option `wp-dashboard-dbugger-entry` (label "Add an entry to access the D-bugger to WP Rocket's menu", description "Adds a convenient entry in the WP Rocket menu for quick access to the D-bugger tool"); loads `OptionsStore`, populates toggles, Save writes `improvements` map; **fake 1000 ms saving UX; errors swallowed into a bare "Some kind of error ocurred.." screen** (master #16); commented-out "Miscellaneous" section (do not port dead code; keep the section architecture extensible). The load effect mutates the module-level `sections` objects in place (module constants become state) and there is no loading state — toggles flash default-off before storage resolves (master #37).
 - `options_ui: { open_in_tab: true }` (legacy built manifest) — keep parity (full tab, not embedded dialog).
 
 ## Tasks
@@ -18,20 +18,22 @@ Port the options page (Improvements section) with honest saving, error surfacing
 - [ ] **Store:** `use-options-page.ts` — load (`optionsStore.getValue()`), dirty tracking (enhancement: Save enabled only when dirty), save (`optionsStore.setValue(...)` awaited), toasts for success/failure (`toast-store`), real error surfacing with message (fixes #16), loading skeleton on first load.
 - [ ] **UI:** page header (product name + version from `browser.runtime.getManifest().version` — enhancement); section card per registry section: title + description + switch rows (`switch.tsx`, tooltip with description, keyboard-complete); Save button (loading state, disabled when clean); footer: version + "Legacy-equivalent behavior" note not needed — keep clean.
 - [ ] `prefers-color-scheme` light/dark follows the P0 tokens; explicit theme toggle (light/dark/system) stored in `sync:options` (`appearance` key) — **committed enhancement** (trivial with the P0 `[data-theme]` hook: sets the attribute on `<html>` and persists); tokens are palette-agnostic regardless.
+- [ ] **KC-DB freshness row (extension, master §8):** a registry-driven row showing "Known Conflicts DB: updated <relative time>" from the storage meta (`lastUpdate`, P1) with a `Refresh now` button that sends the `updateKnownConflictsDb` request (P1 protocol) and reflects the outcome — a stale DB silently misses conflicts, and legacy's only refresh affordance was a buried context-menu item.
+- [ ] **Toolbar-badge toggle (extension, master §8):** registry entry `features.toolbarBadge` (default on) gating the P2/P3 action badge; the background listens via `optionsStore.watch`, so it applies without restart.
 
 ## Explicit enhancements over legacy
 
-- Real awaited save with toasts and error details; dirty-state Save; version display; registry-driven extensibility; a11y-complete switches; no fake delays; no swallow-all error screen.
+- Real awaited save with toasts and error details; dirty-state Save; version display; registry-driven extensibility; a11y-complete switches; no fake delays; no swallow-all error screen. KC-DB freshness display + refresh; toolbar-badge toggle (master §8); registry objects never mutated in place (#37).
 
 ## Tests
 
-- `use-options-page.test.ts` with `fakeBrowser` — load → populate, toggle → dirty, save persists to `sync:options`, save failure → error state + toast path; registry integrity (unique ids, labels non-empty).
+- `use-options-page.test.ts` with `fakeBrowser` — load → populate, toggle → dirty, save persists to `sync:options`, save failure → error state + toast path; registry integrity (unique ids, labels non-empty). KC-freshness row renders from storage meta and sends the refresh request (mock messaging); the badge toggle persists and the storage-watch notification reaches the background (mocked).
 
 ## Verification checklist
 
 - [ ] Gates green; `pnpm check:budgets` — options ≤ 50 KB raw.
 - [ ] Manual: toggle off → save → WP admin bar no longer shows the D-bugger entry (with P3 live); toggle on → entry returns; storage inspected (`sync:options`) matches; **theme toggle persists and switches the palette immediately**.
-- [ ] Manual: error path (block storage via test build or temporary mock) shows a readable error, not the legacy dead-end.
+- [ ] Manual: error path (block storage via test build or temporary mock) shows a readable error, not the legacy dead-end. KC row shows the last update and `Refresh now` updates the meta; toggling the toolbar badge off/on changes the badge without an extension restart.
 - [ ] Keyboard/axe pass.
 
 ## Docs to update
