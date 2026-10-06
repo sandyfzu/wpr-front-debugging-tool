@@ -15,7 +15,7 @@ Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress 
 | Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                    |
 | Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                          |
 | Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it |
-| Targets   | Chrome & Firefox, Manifest V3 (Chrome: `minimum_chrome_version: 120` in legacy — this one `145`)                                                                       |
+| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                     |
 | Build     | Vite (via WXT)                                                                                                                                                         |
 
 ## Repository structure
@@ -87,6 +87,24 @@ The project must be stable, reliable, secure, safe, production-ready, well docum
 - **Content scripts must never break the host page.** They run on sites being debugged: wrap risky work, clean up listeners/observers, and keep main-world vs isolated-world responsibilities explicit.
 - **Tests & testability.** Design for unit testing by default: keep logic (parsing, messaging/storage contracts, exclusion rules, decisions) in pure functions/modules, decoupled from I/O, DOM, `browser.*` APIs, and UI — inject or pass dependencies instead of hardcoding them. Unit-test all such logic; test first, not as an afterthought. The only acceptable exceptions are thin UI glue and entrypoint wiring — a limitation, never a design goal. When code is hard to unit test, restructure it until it isn't (or justify why it can't be).
 
+### Error management
+
+Extension surfaces fail differently from web apps (asynchronous API errors, listeners, cross-world hops, extension reloads mid-flight) — handle them deliberately, never incidentally:
+
+- **Every extension API call is failure-aware.** Promise-style (the default via WXT's `browser`) — always `await` and branch on rejection; never fire-and-forget a promise (unhandled rejection). Callback-style APIs — check **`runtime.lastError` inside the callback**; it is set on error and cleared when read, and leaving it unread raises "Unchecked runtime.lastError" console errors. Where both styles exist, prefer promises.
+- **Branch ≠ throw, expected ≠ unexpected.** Expected failures (tab closed mid-query, content script not injected yet, extension context invalidated after reload, missing/corrupt storage, invalid untrusted payload) are results — branch, recover, or degrade explicitly. "Couldn't run at all" (bad arguments, broken invariant) throws — fail fast with a message naming the offending input. Best-effort side work must never mask a real failure.
+- **No silent failures.** No empty catch blocks: every catch branches, logs with context, rethrows, or degrades explicitly. Log under one stable prefix (`[WPR FDT]`) with actionable context (operation, offending input, cause); never sensitive data.
+- **Listeners are isolated.** Each `browser.*`/DOM event listener body is guarded so one failing listener cannot break sibling listeners; the background service worker and content scripts register global `error` + `unhandledrejection` handlers that log and continue — a service worker or content script must not die on one error.
+- **Messaging errors reach the sender.** Handlers validate payloads and report typed error results; senders always await responses and handle no-receiver/timeout (e.g., content script not injected). Receiver-side failures must never vanish.
+- **Content scripts: page safety first.** An error in our code must never break the host page or spam its console; risky work (DOM probing, cross-world messaging, eval) is wrapped. On extension reload ("Extension context invalidated") stop cleanly — disconnect observers, timers, listeners — and never retry-loop against a dead context.
+- **UI never dead-ends.** Every async surface renders its error state with an actionable message and retry where sensible; `console.error` alone is not UI error handling.
+
+### Cross-browser compatibility
+
+- **Chromium-based browsers are the primary target** (Chrome/Chromium, Edge, Brave, Arc, …): every feature must work there; size/perf budgets are measured on Chromium.
+- **Firefox is a first-class secondary:** keep it compatible whenever that costs Chromium nothing. Where an API or capability differs, the Chromium path wins and Firefox degrades explicitly — feature-detect, then hide or disable with a message — never a half-working feature.
+- **One codebase.** Write against WXT's auto-imported `browser.*` (never `chrome.*`); branch on feature detection (`'x' in api`), never user-agent sniffing; per-browser manifest differences live in `wxt.config.ts` (WXT generates per-browser output), not source forks. `pnpm build:firefox` stays green for whatever it currently builds.
+
 ### Required workflow after every edit
 
 ```bash
@@ -102,7 +120,6 @@ The `test` gate is added together with the test runner — wire it here when it 
 Requirements, not suggestions:
 
 - **Strict, explicit types.** No implicit `any`; type parameters and return types. Narrow `unknown` at boundaries (messages, storage, DOM). `tsconfig` extends WXT's — keep it strict.
-- **Explicit error handling.** Distinguish "operation failed" (branch on the result) from "couldn't run at all" (throw). Extension APIs reject or set `lastError` — always check. Best-effort side work must never mask a real failure.
 - **Document with TSDoc — always, and only TSDoc.** Every function and non-obvious constant gets a doc comment. Say **why**, not just what; use `@param`, `@returns`, `@throws {@link ErrorType}`. Never JSDoc type annotations (`@param {type}`) in `.ts` files.
 - **Dense over long.** Documentation, comments, this file — keep everything as short as clarity allows while staying understandable and detailed enough. No overexplaining.
 - **Code is self-contained.** No references to plans/design docs in code, comments, TSDoc, or error messages — explain reasoning inline. (Markdown docs may cite plans.)
