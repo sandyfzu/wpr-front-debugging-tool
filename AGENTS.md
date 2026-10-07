@@ -19,7 +19,10 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 | Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                    |
 | Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                          |
 | Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it |
+| Styling   | **Tailwind CSS v4** — design tokens in `assets/css/theme.css` (`@theme inline` over `light-dark()` values; appearance = `system`/`dark`/`light` via `[data-theme]`)    |
+| Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom`; coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands))                                    |
 | Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                     |
+| Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                   |
 | Build     | Vite (via WXT)                                                                                                                                                         |
 
 ## Repository structure
@@ -29,7 +32,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 ```
 ├── docs/                      # architecture deep-dives, linked from this file
 ├── public/                    # copied to the build output as-is (icons, …)
-├── assets/                    # bundled assets: images, fonts, shared styles
+├── assets/                    # bundled assets: images, fonts, `assets/css/theme.css` design tokens
 ├── entrypoints/               # one folder/file per extension surface
 │   ├── background/            # service worker — listener wiring only; logic lives in lib/
 │   ├── popup/                 # browser-action popup
@@ -47,6 +50,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── detection/             # WP Rocket footprint detection
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
+├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
 └── wxt.config.ts              # manifest fields, permissions (each with a why), modules
 ```
 
@@ -68,7 +72,13 @@ pnpm lint            # eslint — strict typescript-eslint + Solid rules + depen
 pnpm lint:fix        # eslint --fix
 pnpm format          # prettier --write .
 pnpm format:check    # prettier --check .
+pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions)
+pnpm test:watch      # vitest in watch mode (no coverage in the loop)
+pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
+pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
 ```
+
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`.
 
 ## Non-negotiable rules
 
@@ -133,7 +143,7 @@ pnpm lint            # must pass
 pnpm format:check    # must pass (run pnpm format if it fails)
 ```
 
-The `test` gate is added together with the test runner — wire it here when it exists. Don't rely on git hooks (pre-commit runs lint-staged on staged files only), run the gates yourself. Verify runtime behavior in the browser for anything the compiler cannot catch (messaging, content scripts, storage).
+The `test` gate exists and runs with coverage. Run the gates yourself: `pnpm compile && pnpm lint && pnpm format:check && pnpm test`, plus `pnpm build && pnpm check:budgets` after any change that could shift bundle sizes. Verify runtime behavior in the browser for anything the compiler cannot catch (messaging, content scripts, storage).
 
 ## Coding conventions
 

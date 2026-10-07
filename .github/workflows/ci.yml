@@ -1,0 +1,50 @@
+name: CI
+
+# Every gate runs on every PR and on pushes to the main branches — quality gates are
+# enforced machine-side, not only locally. `build:firefox` joins the matrix later in
+# the port (hardening phase); the speed bench stays local because its ≥30% ratio
+# assertion is machine-relative and would flake on shared runners.
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Least privilege: the workflow only needs to read the code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pnpm (version from package.json `packageManager`)
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm compile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Tests (with coverage thresholds)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Size budgets
+        run: pnpm check:budgets

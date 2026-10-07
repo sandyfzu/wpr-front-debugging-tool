@@ -32,7 +32,7 @@ Update the Status column as phases complete (`⬜ planned → 🟨 in progress �
 
 | Phase | Status |
 | ----- | ------ |
-| P0    | ⬜     |
+| P0    | ✅     |
 | P1    | ⬜     |
 | P2    | ⬜     |
 | P3    | ⬜     |

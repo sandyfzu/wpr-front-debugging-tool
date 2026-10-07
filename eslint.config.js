@@ -3,6 +3,29 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import wxtAutoImports from './.wxt/eslint-auto-imports.mjs';
 
+// Dependencies whose roles are covered by committed, lighter alternatives
+// (CSS motion, the ~30-line hash router, the local toast store, shiki). Importing
+// them is a mistake — they bloat bundles or pull in React-only peers.
+const bannedDependencies = [
+  {
+    group: ['framer-motion', 'framer-motion/*'],
+    message:
+      'Animation is CSS transitions/keyframes (prefers-reduced-motion is handled in the token stylesheet).'
+  },
+  {
+    group: ['wouter', 'wouter/*'],
+    message: 'Routing is the local hash router from the panel shell; no router library.'
+  },
+  {
+    group: ['react-hot-toast'],
+    message: 'Toasts are the local toast store + components/ui/toast.'
+  },
+  {
+    group: ['react-syntax-highlighter'],
+    message: 'Code highlighting is shiki (fine-grained bundle, dynamically imported, panel-only).'
+  }
+];
+
 export default tseslint.config(
   { ignores: ['.output/**', '.wxt/**'] },
 
@@ -26,7 +49,8 @@ export default tseslint.config(
     },
     rules: {
       // tsconfig enables verbatimModuleSyntax — keep type-only imports explicit.
-      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }]
+      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
+      'no-restricted-imports': ['error', { patterns: bannedDependencies }]
     }
   },
 
@@ -40,6 +64,7 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            ...bannedDependencies,
             {
               group: ['**/entrypoints/**'],
               message:
@@ -57,6 +82,7 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            ...bannedDependencies,
             { group: ['**/entrypoints/**'], message: 'components/ must not import entrypoints/.' }
           ]
         }
@@ -70,6 +96,7 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            ...bannedDependencies,
             {
               group: ['**/entrypoints/**', '**/components/**'],
               message: 'Dependency direction: lib/ must not import entrypoints/ or components/.'
@@ -86,6 +113,7 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            ...bannedDependencies,
             {
               group: ['**/entrypoints/**', '**/components/**', '**/lib/**'],
               message:

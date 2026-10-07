@@ -1,0 +1,42 @@
+[
+  {
+    "surface": "background service worker",
+    "globs": ["background.js"],
+    "maxKb": { "raw": 25 }
+  },
+  {
+    "surface": "popup JS",
+    "globs": ["chunks/popup-*.js", "popup.js"],
+    "maxKb": { "raw": 50 }
+  },
+  {
+    "surface": "options JS",
+    "globs": ["chunks/options-*.js", "options.js"],
+    "maxKb": { "raw": 50 }
+  },
+  {
+    "surface": "exclusion builder JS",
+    "globs": ["chunks/exclusion-builder-*.js", "exclusion-builder.js"],
+    "maxKb": { "raw": 50 }
+  },
+  {
+    "surface": "isolated content script",
+    "globs": ["content-scripts/isolated*.js"],
+    "maxKb": { "raw": 60, "gzip": 20 }
+  },
+  {
+    "surface": "main-world content script",
+    "globs": ["content-scripts/main-world*.js"],
+    "maxKb": { "raw": 2 }
+  },
+  {
+    "surface": "devtools panel JS (all panel chunks)",
+    "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js"],
+    "maxKb": { "raw": 600 }
+  },
+  {
+    "surface": "whole build (all JS output — ungameable backstop)",
+    "globs": ["*.js", "chunks/*.js", "content-scripts/*.js"],
+    "maxKb": { "raw": 837 }
+  }
+]
