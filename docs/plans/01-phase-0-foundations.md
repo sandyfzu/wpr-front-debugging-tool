@@ -47,7 +47,7 @@ Make this scaffold a real extension project: correct manifest with justified per
   - **Status vocabulary extension (second baseline, P11/P12):** a fourth semantic `--color-status-attention` (amber family) + a "how detected" neutral chip style — the three-state model (`enabled / disabled / attention-unsure`) shares these tokens across the panel cards and the on-page strip so the two never drift.
   - Typography: system UI stack; `--font-mono` for URLs/code; panel density sizes (11/12/13 px classes).
   - Radii, spacing, focus ring, shadows; motion tokens (duration/ease) + global `prefers-reduced-motion` handling.
-- [ ] Dark is the default; light palette via `@media (prefers-color-scheme: light)` + a `[data-theme]` override hook for an options toggle (P9 wires the toggle; token names must be palette-agnostic from day one).
+- [ ] **Appearance: exactly three options — `system` (default, follows `prefers-color-scheme`), `dark`, `light`.** Dark palette is the CSS default; light via `@media (prefers-color-scheme: light)`; a `[data-theme="dark" | "light"]` attribute on `<html>` always wins over the media query. Ship a pure `resolveTheme(appearance, systemPrefersDark)` util + tests with the tokens (the storage key lands in P1; P9 wires the toggle UI) — every page resolves the stored option and sets `[data-theme]` before first paint (no wrong-palette flash), injected UIs set it on their shadow-root container (both palettes verified by the token-pair contrast gate above). Token names must be palette-agnostic from day one.
 - [ ] Deliver a tiny "tokens showcase" unlisted route or story-style page **only if** cheap; otherwise verify via P5 components (do not build a docs site).
 - [ ] **Token-pair contrast gate:** the status/attention/accent-on-surface pairs used by text are committed as pairs in one table (token × surface) and unit-tested at P0 for WCAG AA (4.5:1 normal text / 3:1 large) in **both** palettes — P5 components and P12's strip then inherit contrast rather than re-deriving it (verified mechanically, not by eye).
 
@@ -69,7 +69,7 @@ Make this scaffold a real extension project: correct manifest with justified per
 
 - Host permissions declared + `tabs` permission dropped (least privilege, fixes silent header risk).
 - Real test gate exists from the start (legacy had none).
-- Token-based theming (light mode possible; legacy hardcoded dark grays inline in every page).
+- Token-based theming with the three-way appearance model (system default / dark / light) usable from day one; legacy hardcoded dark grays inline in every page.
 - **Status-vocabulary tokens carry both baselines' state models (incl. the second baseline's amber `attention-unsure`) with AA contrast verified at the token level** — the P6 cards and P12 strip can't drift apart on state colors.
 - CI runs every gate on every PR (legacy had no lint, no tests, no CI at all).
 

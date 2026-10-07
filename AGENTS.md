@@ -120,6 +120,11 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 - **Firefox is a first-class secondary:** keep it compatible whenever that costs Chromium nothing. Where an API or capability differs, the Chromium path wins and Firefox degrades explicitly — feature-detect, then hide or disable with a message — never a half-working feature.
 - **One codebase.** Write against WXT's auto-imported `browser.*` (never `chrome.*`); branch on feature detection (`'x' in api`), never user-agent sniffing; per-browser manifest differences live in `wxt.config.ts` (WXT generates per-browser output), not source forks. `pnpm build:firefox` stays green for whatever it currently builds.
 
+### UI themes: light & dark
+
+- **Every user-facing surface supports both palettes** — panel, popup, options, exclusion-builder, and every injected UI (strips, badges, overlays): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
+- **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
+
 ### Required workflow after every edit
 
 ```bash
