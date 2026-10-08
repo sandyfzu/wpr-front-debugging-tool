@@ -49,42 +49,68 @@ Read `00-master-port-plan.md` first. Then execute phases in the dependency order
 
 Update the Status column as phases complete (`⬜ planned → 🟨 in progress → ✅ done`).
 
-| Phase | Status                                                                                        |
-| ----- | --------------------------------------------------------------------------------------------- |
-| P0    | ✅                                                                                            |
-| P1    | ✅                                                                                            |
-| P1.1  | 🟨 (code + gates done; real-site matrix + second-baseline side-by-side pending — see its doc) |
-| P2    | 🟨 (implemented + adversarially audited + gates green, uncommitted — browser checks via P4.3) |
-| P3    | 🟨 (implemented + adversarially audited + gates green, uncommitted — browser checks via P4.3) |
-| P4    | 🟨 (implemented + adversarially audited + gates green, uncommitted — browser checks via P4.1) |
-| P4.1  | ⬜ (**next to implement** — with P4.2)                                                        |
-| P4.2  | ⬜ (**next to implement** — with P4.1)                                                        |
-| P4.3  | ⬜ (after P4.1 + P4.2)                                                                        |
-| P16   | ⬜ (after P4.3, before the panel phases — owner-committed 2026-10-08)                         |
-| P16.1 | ⬜ (after P16)                                                                                |
-| P5    | ⬜                                                                                            |
-| P5.1  | ⬜ (with/after P5)                                                                            |
-| P6    | ⬜                                                                                            |
-| P6.1  | ⬜ (with/after P6)                                                                            |
-| P7    | ⬜                                                                                            |
-| P7.1  | ⬜ (with/after P7)                                                                            |
-| P8    | ⬜                                                                                            |
-| P8.1  | ⬜ (with/after P8)                                                                            |
-| P9    | ⬜                                                                                            |
-| P9.1  | ⬜ (with/after P9)                                                                            |
-| P10   | 🟨 **parked** — owner ditched the current plan; re-think/re-plan pending (see its doc)        |
-| P10.1 | ⬜ parked with P10 — suites re-derived when the re-plan lands                                 |
-| P11   | ⬜                                                                                            |
-| P11.1 | ⬜ (with/after P11)                                                                           |
-| P12   | ⬜                                                                                            |
-| P12.1 | ⬜ (with/after P12)                                                                           |
-| P13   | ⬜                                                                                            |
-| P13.1 | ⬜ (with/after P13)                                                                           |
-| P14   | ⬜                                                                                            |
-| P14.1 | ⬜ (with/after P14)                                                                           |
-| P14.5 | ⬜                                                                                            |
-| P14.6 | ⬜ (last test step before P15; owner's external site decision-gated)                          |
-| P15   | ⬜                                                                                            |
+| Phase | Status                                                                                                                                          |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0    | ✅                                                                                                                                              |
+| P1    | ✅                                                                                                                                              |
+| P1.1  | 🟨 (code + gates done; real-site matrix + second-baseline side-by-side pending — see its doc)                                                   |
+| P2    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 audit-fix pass lives in its Shipped deltas)       |
+| P3    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 owner-decision deltas live in its Shipped deltas) |
+| P4    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.1)                                                                  |
+| P4.1  | ⬜ (**next to implement** — with P4.2)                                                                                                          |
+| P4.2  | ⬜ (**next to implement** — with P4.1)                                                                                                          |
+| P4.3  | ⬜ (after P4.1 + P4.2)                                                                                                                          |
+| P16   | ⬜ (after P4.3, before the panel phases — owner-committed 2026-10-08)                                                                           |
+| P16.1 | ⬜ (after P16)                                                                                                                                  |
+| P5    | ⬜                                                                                                                                              |
+| P5.1  | ⬜ (with/after P5)                                                                                                                              |
+| P6    | ⬜                                                                                                                                              |
+| P6.1  | ⬜ (with/after P6)                                                                                                                              |
+| P7    | ⬜                                                                                                                                              |
+| P7.1  | ⬜ (with/after P7)                                                                                                                              |
+| P8    | ⬜                                                                                                                                              |
+| P8.1  | ⬜ (with/after P8)                                                                                                                              |
+| P9    | ⬜                                                                                                                                              |
+| P9.1  | ⬜ (with/after P9)                                                                                                                              |
+| P10   | 🟨 **parked** — owner ditched the current plan; re-think/re-plan pending (see its doc)                                                          |
+| P10.1 | ⬜ parked with P10 — suites re-derived when the re-plan lands                                                                                   |
+| P11   | ⬜                                                                                                                                              |
+| P11.1 | ⬜ (with/after P11)                                                                                                                             |
+| P12   | ⬜                                                                                                                                              |
+| P12.1 | ⬜ (with/after P12)                                                                                                                             |
+| P13   | ⬜                                                                                                                                              |
+| P13.1 | ⬜ (with/after P13)                                                                                                                             |
+| P14   | ⬜                                                                                                                                              |
+| P14.1 | ⬜ (with/after P14)                                                                                                                             |
+| P14.5 | ⬜                                                                                                                                              |
+| P14.6 | ⬜ (last test step before P15; owner's external site decision-gated)                                                                            |
+| P15   | ⬜                                                                                                                                              |
+
+### Reconciliation record (2026-10-08)
+
+The producer commit (`52da84a`) was followed by an owner-session fix/decision pass. Each delta is
+recorded in its owning phase doc's _Shipped deltas_ section — listed here so the drift is findable
+in one place:
+
+- **Toolbar badge redesigned (P2/P3):** every processed page states itself — green cached / blue
+  present / **gray no WP Rocket** (absence is a state, not silence) — a colored `●` glyph on a
+  transparent tile; clears are unconditional so a service-worker restart can never strand a
+  pre-restart badge. Master §8's row reflects this; `badge.test.ts` re-pinned.
+- **Processing went eager (P3):** the single detection pass starts at capture, not on panel
+  request — the badge and the timing log work with no devtools panel open; panel reads are cache
+  hits of the same pass. Master §2's architecture/rules lines updated.
+- **Page-analysis console print (P3):** `lib/detection/describe.ts` — one organized info line per
+  processed page (per-feature states, counts, version + cache timestamp); the earlier "drop the
+  detections console.log" delta is superseded. Tracked as a master §8 extension row.
+- **Error handlers attribute by source (P2/P3):** shared `lib/uncaught-errors.ts` — real message +
+  source/line for `error`/`unhandledrejection`; the content script claims only errors under the
+  runtime URL prefix (host-page errors stay the page's business).
+- **Exclusion-builder menu entry opens from private windows too (P2):** the parity incognito skip
+  is ditched (P10 stays parked).
+- **Budget rows re-derived on the gate's documented legitimate-breach path:** background 25 → 27
+  KiB, isolated content script 80 → 85 KiB raw (measured 81.0 / 28.7 gzip-holding), KC-DB seed
+  asset 50 → 85 (the release-rule re-sync grew the snapshot). Master §1.3 now points at
+  `scripts/budgets.json` as the living table.
 
 ## Rules that apply to every phase
 
