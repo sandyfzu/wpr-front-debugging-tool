@@ -8,9 +8,9 @@
 
 ## TL;DR
 
-Port the **entire** legacy extension — 8 entrypoint surfaces, 2 content scripts (isolated + MAIN world), a 13-check WP Rocket detection engine, Known Conflicts DB syncing, Side-by-Side compare, undefined-references finder, WP Rocket Diagnoser support, popup option-toggling, options page, context menus, devtools sidebar pane, and the Exclusion Builder — plus the feature set of the second behavioral baseline, [`wp-media/wpr-inspector`](https://github.com/wp-media/wpr-inspector) @ v4.1.1 (§9 — meta-tag-driven detection coverage, the on-page inspector strip, the RUCSS live tester, and the runtime analysis tools), across **18 ordered phases (P0, P1, P1.1, P2–P14, P14.5, P15)**.
+Port the **entire** legacy extension — 8 entrypoint surfaces, 2 content scripts (isolated + MAIN world), a 13-check WP Rocket detection engine, Known Conflicts DB syncing, Side-by-Side compare, undefined-references finder, WP Rocket Diagnoser support, popup option-toggling, options page, context menus, devtools sidebar pane, and the Exclusion Builder — plus the feature set of the second behavioral baseline, [`wp-media/wpr-inspector`](https://github.com/wp-media/wpr-inspector) @ v4.1.1 (§9 — meta-tag-driven detection coverage, the on-page inspector strip, the RUCSS live tester, and the runtime analysis tools), across **32 ordered phases** (P0, P1, P1.1, P2–P4, P4.1–P4.3 browser-test infra + retro suites, P5–P14 each with its own browser-suite sub-phase `X.1`, P14.5, P14.6 external-site track, P15).
 
-Ordering logic: **foundations → shared contracts/engine → data producers (background, content scripts) → data consumers (devtools panel, popup, options) → independent satellite (exclusion builder) → hardening/release.** Each phase is independently verifiable and ends with all quality gates green. P1.1 is an engine-correctness insert right after P1: the measurement beacon is shared by four WP Rocket Priority-Elements features (Optimize critical images, Automatic Lazy Rendering, Preload fonts, Preconnect to external domains — verified against the plugin source), so the beacon gets its own detection row and each feature is detected independently, before any consumer (P3 data hub, P6 cards) can render the beacon-mislabeled verdict.
+Ordering logic: **foundations → shared contracts/engine → data producers (background, content scripts) → browser-test infrastructure + retro suites (P4.1–P4.3, the next thing implemented) → data consumers (devtools panel, popup, options) → independent satellite (exclusion builder) → hardening/release.** Each phase is independently verifiable and ends with all quality gates green; every feature phase also gets a browser-suite sub-phase (`X.1`) that runs its browser-observable checklist through the local Playwright harness + dockerized WP site (§3's Browser-test track). P1.1 is an engine-correctness insert right after P1: the measurement beacon is shared by four WP Rocket Priority-Elements features (Optimize critical images, Automatic Lazy Rendering, Preload fonts, Preconnect to external domains — verified against the plugin source), so the beacon gets its own detection row and each feature is detected independently, before any consumer (P3 data hub, P6 cards) can render the beacon-mislabeled verdict.
 
 Non-negotiable direction on every ported feature:
 
@@ -20,7 +20,7 @@ Non-negotiable direction on every ported feature:
 - **Better UI, categorically** — a purpose-built Kobalte + Tailwind v4 design system (dark-first, devtools-compact density, both palettes behind a three-way appearance setting — system/dark/light — on every surface, keyboard-complete, `prefers-reduced-motion`-aware) replacing legacy's shadcn/framer-motion look; virtualized resource lists; real JSON tree instead of syntax-highlighted dumps; inline regex validation in the Exclusion Builder; skeleton loaders; empty/error states everywhere.
 - **Extends where it pays for itself** — toolbar action badge (WPR presence/cached at a glance per tab), copyable markdown support report + detections summary strip, response-headers viewer, undefined-references → exclusion-builder bridge, Elements-pane rocket-attribute inventory, KC-DB freshness UI, CI on every PR. Each has an owning phase and a verification hook (§8).
 
-Estimated flow: P0–P1.1 foundations (1 unit), P2–P4 producers (1–2 units), P5–P7 the devtools panel (2–3 units), P8–P10 satellites (1–2 units), P11–P14 second-baseline integration (2 units; see §3), P14.5 feature coverage & tooling (1–2 units; §10), P15 release (1 unit). Phases P2/P3/P4 can proceed in parallel after P1.1; P8–P10 in parallel after their stated deps; P11–P14 after their own (each phase doc states them).
+Estimated flow: P0–P1.1 foundations (1 unit), P2–P4 producers (1–2 units), {P4.1 harness ∥ P4.2 local-WP site} + P4.3 retro suites (1–2 units — **the next thing implemented**), P5–P7 the devtools panel (2–3 units) with P5.1–P7.1 suites, P8–P10 satellites (1–2 units) with P8.1–P10.1 suites, P11–P14 second-baseline integration (2 units; see §3) with P11.1–P14.1 suites, P14.5 feature coverage & tooling (1–2 units; §10), P14.6 external-site track (decision-gated), P15 release (1 unit). Phases P2/P3/P4 ran as the implemented set — P4.1∥P4.2 come next, then P4.3; P8–P10 in parallel after their stated deps; P11–P14 after their own (each phase doc states them).
 
 ---
 
@@ -165,15 +165,13 @@ Rules baked into this architecture:
 
 ```
 P0 Foundations ──► P1 Domain & contracts ──► P1.1 Beacon & Priority Elements ──┬─► P2 Background ──┐
-                                                                               ├─► P3 Isolated CS ─┼─► P5 Panel shell & design system
-                                                                               └─► P4 MAIN-world CS┘        │
-                                                                                            ├─► P6 Panel pages ─► P7 Diagnoser
-                                                                                            ├─► P8 Popup
-                                                                                            ├─► P9 Options
-                                                                                            └─► P10 Exclusion Builder
-              P1/P1.1/P3/P5/P6 ─► P11 Detection coverage ─► P12 On-page inspector ─┬─► P13 RUCSS tester ─┐
-                                                                                   └─► P14 Live analysis ─┴─► P14.5 Coverage & tooling ─► P15 Hardening & release
-              (P13/P14 also need P5 + P6; P12's toggles need P8/P9 when they exist)
+                                                                               ├─► P3 Isolated CS ─┼─► { P4.1 e2e harness ∥ P4.2 local WP site } ──► P4.3 retro browser suites ──┐
+                                                                               └─► P4 MAIN-world CS┘                                                                            │
+                                                                                                                                                                                ├─► P5 Panel shell (suite P5.1) ──► P6 Panel pages (suite P6.1) ──► P7 Diagnoser (suite P7.1)
+                                                                                                                                                                                ├──► P8 Popup (suite P8.1)      ├─► P9 Options (suite P9.1)      ├─► P10 Exclusion Builder (suite P10.1)
+              P1/P1.1/P3/P5/P6 (+P4.2·P4.3 rounds for live checks) ─► P11 Detection coverage (suite P11.1) ─► P12 On-page inspector (suite P12.1) ─┬─► P13 RUCSS tester (suite P13.1) ─┐
+                                                                                                                                                   └─► P14 Live analysis (suite P14.1) ─┴─► P14.5 Coverage & tooling ─► P14.6 External site ─► P15 Hardening & release
+              (P13/P14 also need P5 + P6; P12's toggles need P8/P9 when they exist; each feature phase X hands its browser-observable checklist to a suite sub-phase X.1)
 ```
 
 | Phase      | Depends on                                                                              | Parallelizable with              |
@@ -192,9 +190,21 @@ P0 Foundations ──► P1 Domain & contracts ──► P1.1 Beacon & Priority 
 | P12        | P11, P3, P5 (toggle rows need P8/P9 when they exist)                                    | P13/P14 once P11 is done         |
 | P13, P14   | P11, P12 (strip hooks degrade gracefully), P3, P5, P6 (P14 adds P13's executor pattern) | each other, after P12            |
 | P14.5      | P11, P12, P13, P14 (extends their rows, cards and pages)                                | — (sequenced right before P15)   |
+| P4.1       | — (covers the implemented P0–P4)                                                        | P4.2, any P5+ implementation     |
+| P4.2       | —                                                                                       | P4.1, any P5+ implementation     |
+| P4.3       | P4.1, P4.2 (the retro suites over the local site)                                       | P5 implementation                |
+| X.1 suites | the suite's own phase X + P4.1 (harness); site-driven ones + P4.2                       | after X's phase doc              |
+| P14.6      | P4.1, P14.5 (+ the owner's external test site in play — else a documented scope skip)   | — (last test step before P15)    |
 | P15        | all                                                                                     | —                                |
 
 Ordering rationale: contracts before consumers (P1 first prevents rework); P1.1 before any producer so the beacon-backed feature rows exist before anything renders them (its engine shape changes one P1 row — consumers must never be built against the mislabeled shape); producers before panel so the panel is verified against real data, not mocks alone; panel shell before pages so pages share one navigation/loading/search skeleton; popup/options/builder last among features because they are small satellites; the second-baseline phases (§9) come after the first baseline's features so every surface reads one detection registry and one set of executors; the feature-coverage phase (P14.5, §10) runs last-but-one so its detection upgrades and new tools are decided and built against a re-verified current plugin and land as registry rows just before hardening; hardening last so it audits the real surface area.
+
+### Browser-test track (owner decision, 2026-10-08)
+
+- **`X.Y` convention:** every feature phase hands its browser-observable checklist to a suite sub-phase (`X.1`), written as plan docs now and executed with the P4.1 harness. Only browser-observable items convert; each suite doc names its assert surface (page state, SW state via CDP, shadow-DOM probe, network log) and records what stays manual with a reason — assertions are grounded, never decorative.
+- **Retroactive first:** `P4.3` (with `P4.1` harness + `P4.2` local-WP site) is the _next thing implemented_: docker compose + mu-plugin fixtures + the `apvm`-built WP Rocket, then browser suites covering the implemented P2–P4 surfaces (including the permanent regression pin for the header-capture wiring the P2 audit caught unwired). Full docs: 05b/05c/05d.
+- **Last before release:** `P14.6` holds the _future-scoped_ tests that need an owner-provided external test site (live external-service runs). It executes only when that site is in play; otherwise it records a documented scope skip — never silent. Full doc: 15d.
+- **CI rule:** e2e never enters CI (owner; headless Chromium can't host extensions). `pnpm test:e2e` stays local-only; unit/coverage remains the CI gate. Firefox e2e is out of harness reach by limitation (Playwright can't load extensions there) — Firefox keeps manual smokes, recorded per suite.
 
 ---
 
