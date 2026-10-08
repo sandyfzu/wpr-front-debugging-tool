@@ -180,11 +180,12 @@ async function main() {
     const gzipOver = maxKb.gzip !== undefined && gzipBytes > maxKb.gzip * 1024;
     breached ||= rawOver || gzipOver;
     console.log(
-      `  ${surface.padEnd(40)}  ${formatKb(rawBytes)} ${rawOver ? '>' : '<'}   ${String(
-        maxKb.raw ?? '—'
-      ).padStart(5)}   ${formatKb(gzipBytes, maxKb.gzip !== undefined)}  ${String(
-        maxKb.gzip ?? '—'
-      ).padStart(5)}`
+      `  ${surface.padEnd(40)}  ${formatKb(rawBytes, maxKb.raw !== undefined)} ${
+        rawOver ? '>' : '<'
+      }   ${String(maxKb.raw ?? '—').padStart(5)}   ${formatKb(
+        gzipBytes,
+        maxKb.gzip !== undefined
+      )}  ${String(maxKb.gzip ?? '—').padStart(5)}`
     );
   }
   console.log('');
