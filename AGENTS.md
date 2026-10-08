@@ -16,16 +16,16 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 
 ## Key technologies
 
-| Area      | Tech                                                                                                                                                                   |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                    |
-| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                          |
-| Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it |
-| Styling   | **Tailwind CSS v4** — design tokens in `assets/css/theme.css` (`@theme inline` over `light-dark()` values; appearance = `system`/`dark`/`light` via `[data-theme]`)    |
-| Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom`; coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands))                                    |
-| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                     |
-| Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                   |
-| Build     | Vite (via WXT)                                                                                                                                                         |
+| Area      | Tech                                                                                                                                                                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                                                                                                                     |
+| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                                                                                                                           |
+| Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it                                                                                                  |
+| Styling   | **Tailwind CSS v4** — design tokens in `assets/css/tokens.css` (`@theme inline` over `light-dark()` values in `theme.css`; appearance = `system`/`dark`/`light` via `[data-theme]`; `tokens.css` is the module injected UIs import so shadow roots get the same values) |
+| Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom`; coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands))                                                                                                                                     |
+| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                                                                                                                      |
+| Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                                                                                                                    |
+| Build     | Vite (via WXT)                                                                                                                                                                                                                                                          |
 
 ## Repository structure
 
@@ -43,6 +43,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── exclusion-builder/     # unlisted page (exclusion-builder.html)
 │   ├── options/               # options page
 │   ├── isolated.content.ts    # content script — isolated world
+│   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
+│   │   │                      #    colocated feature modules; see docs/plans for the list)
 │   └── main-world.content.ts  # content script — MAIN world
 ├── components/                # Solid components shared by ≥2 entrypoints
 │   └── ui/                    # design-system primitives
@@ -138,6 +140,7 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 
 - **Every user-facing surface supports both palettes** — panel, popup, options, exclusion-builder, and every injected UI (strips, badges, overlays): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
 - **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
+- **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs and the popup only read it.
 
 ### Required workflow after every edit
 
