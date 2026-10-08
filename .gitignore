@@ -15,6 +15,11 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Local secrets (test-site credentials etc.) — never commit
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
