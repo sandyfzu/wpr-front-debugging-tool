@@ -83,8 +83,41 @@
       "present": false
     },
     "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 23
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
       "present": true,
-      "beacon": true
+      "status": {
+        "atf": true,
+        "lrc": true,
+        "preconnect_external_domain": true
+      },
+      "isMobile": false,
+      "elements": "img, video, picture, p, main, div, li, svg, section, header, span",
+      "preconnect_external_domain_elements": ["link", "script", "iframe"],
+      "preconnect_external_domain_exclusions": [
+        "static.cloudflareinsights.com",
+        "rel=\"profile\"",
+        "rel=\"preconnect\"",
+        "rel=\"dns-prefetch\"",
+        "rel=\"icon\""
+      ]
     },
     "minify_css": {
       "present": true

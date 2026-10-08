@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="WP Rocket 3.20">
+<title>Adversarial Priority Elements — nothing may assert wrongly</title>
+<link rel="preload" as="font" href="https://example.com/manual.woff2" crossorigin>
+<link rel="preload" as="font" href="https://cdn.thirdparty.com/x.woff2">
+<img src="https://example.com/big.jpg" fetchpriority="high" alt="">
+<link rel="dns-prefetch" href="https://cdn.rocketcdn.me">
+<link rel="dns-prefetch" href="https://unrelated.example.net">
+<link data-rocket-prefetch href="https://fonts.bunny.net" rel="dns-prefetch">
+</head>
+<body>
+<div id="main"><h1>Hostile markup</h1><p>A mutated beacon tag (the marker attribute was
+stripped — the src fallback must catch it), a malformed config JSON, unattributed font
+preloads, a third-party fetchpriority image, bare dns-prefetch hints, and one attributed
+hint (which alone asserts the preconnect row).</p></div>
+<script>var rocket_beacon_data = {"ajax_url":"https:\/\/example.com\/wp-admin/admin-ajax.php","nonce":"corrupted</script>
+<script src='https://example.com/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js' async></script>
+</body>
+</html>

@@ -19,7 +19,16 @@ export function minimalDetections(): Record<string, unknown> {
     minify_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
-    rocket_above_the_fold_optimization: { present: false, beacon: false }
+    rocket_above_the_fold_optimization: { present: false, lcpComment: false },
+    automatic_lazy_rendering: {
+      present: false,
+      lazyRenderElements: 0,
+      inlineCssPresent: false,
+      locationHashes: 0
+    },
+    auto_preload_fonts: { present: false, fonts: [] },
+    preconnect_external_domains: { present: false, domains: [], preconnectCount: 0 },
+    priority_elements_beacon: { present: false, status: null, isMobile: null }
   };
 }
 
@@ -67,7 +76,36 @@ export function validDetections(): Record<string, unknown> {
     minify_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
-    rocket_above_the_fold_optimization: { present: false, beacon: false }
+    rocket_above_the_fold_optimization: {
+      present: true,
+      lcpComment: true,
+      preloadedImages: ['https://s.com/hero.webp']
+    },
+    automatic_lazy_rendering: {
+      present: true,
+      lazyRenderElements: 3,
+      inlineCssPresent: true,
+      locationHashes: 0
+    },
+    auto_preload_fonts: {
+      present: true,
+      fonts: ['https://s.com/fonts/headings.woff2']
+    },
+    preconnect_external_domains: {
+      present: true,
+      domains: ['https://fonts.gstatic.com', 'https://example.org'],
+      preconnectCount: 1
+    },
+    priority_elements_beacon: {
+      present: true,
+      status: { atf: true, lrc: true, preload_fonts: false, preconnect_external_domain: true },
+      isMobile: false,
+      elements: 'img, video, picture, p, main, div, li, svg, section, header, span',
+      preconnect_external_domain_elements: ['link', 'script', 'iframe'],
+      preload_fonts_exclusions: [],
+      processed_extensions: ['woff2'],
+      external_font_exclusions: []
+    }
   };
 }
 

@@ -472,10 +472,42 @@
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
-      "beacon": false,
+      "lcpComment": false,
       "preloadedImages": [
         "https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png"
       ]
+    },
+    "automatic_lazy_rendering": {
+      "present": true,
+      "lazyRenderElements": 1,
+      "inlineCssPresent": true,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": true,
+      "fonts": [
+        "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-regular.woff2",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-700.woff2",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v51-latin-600.woff2",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/Gotham-Medium.woff2"
+      ]
+    },
+    "preconnect_external_domains": {
+      "present": true,
+      "domains": [
+        "https://sst.wp-rocket.me/",
+        "https://app.termly.io/",
+        "https://static-tracking.klaviyo.com/",
+        "https://static.klaviyo.com/",
+        "https://www.dwin1.com/",
+        "https://lantern.roeyecdn.com/"
+      ],
+      "preconnectCount": 6
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
     },
     "minify_css": {
       "present": false

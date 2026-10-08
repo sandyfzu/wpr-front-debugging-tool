@@ -7,7 +7,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB,
+  BEACON_CONFIG_LIST_FIELDS,
+  BEACON_CONFIG_LIMITS,
+  BEACON_CONFIG_PATTERN,
+  BEACON_CONFIG_TRAILING_NOISE,
   BEACON_DATA_NAME,
+  BEACON_SRC_PATTERN,
+  BEACON_STATUS_KEYS,
   CACHE_COMMENT_MARKER,
   CACHE_DEBUG_MARKER,
   CACHE_TIMESTAMP_PATTERN,
@@ -23,6 +29,7 @@ import {
   DELAY_JS_TYPE_OLD,
   DELAY_JS_VERSION_PATTERN,
   extractWprVersion,
+  FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
   GENERATOR_META_SELECTOR,
   isDelayJSType,
@@ -34,10 +41,16 @@ import {
   LAZYLOAD_IMG_OPTIONS_PATTERN,
   LAZYLOAD_SCRIPT_PATTERN,
   LAZYLOAD_YOUTUBE_PATTERN,
+  LAZY_RENDER_ATTRIBUTE,
+  LAZY_RENDER_INLINE_CSS_ID,
+  LOCATION_HASH_ATTRIBUTE,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
+  OPTIMIZE_CRITICAL_IMAGES_COMMENT,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
+  ROCKET_PREFETCH_ATTRIBUTE,
+  ROCKET_PRECONNECT_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
   URL_PATTERNS,
   WPR_DEFER_ATTRIBUTE
@@ -126,6 +139,52 @@ describe('other feature footprints', () => {
     );
     expect(MINIFY_JS_URL_PATTERN.test('https://x/wp-content/cache/min/1/abc.js?ver=1')).toBe(true);
     expect(MINIFY_CSS_URL_PATTERN.test('https://x/style.css')).toBe(false);
+  });
+
+  it('pins the Priority Elements vocabulary', () => {
+    // Beacon: marker attribute value + min-agnostic src fallback.
+    expect(BEACON_SRC_PATTERN.test('/wp-rocket/assets/js/wpr-beacon.min.js')).toBe(true);
+    expect(BEACON_SRC_PATTERN.test('/wp-rocket/assets/js/wpr-beacon.js')).toBe(true);
+    expect(BEACON_SRC_PATTERN.test('/wp-rocket/assets/js/wpr-beacon-2.min.js')).toBe(false);
+    expect(BEACON_SRC_PATTERN.test('/other/js/app.js')).toBe(false);
+    // Inline config: assignment anchor, tolerated trailing semicolons.
+    expect(BEACON_CONFIG_PATTERN.test('var rocket_beacon_data = {"a":1}')).toBe(true);
+    expect(BEACON_CONFIG_PATTERN.test(' var  rocket_beacon_data=  {"a":1}')).toBe(true);
+    expect(BEACON_CONFIG_PATTERN.test('window.rocket_beacon_data = {}')).toBe(false);
+    expect('{"a":1}; '.replace(BEACON_CONFIG_TRAILING_NOISE, '')).toBe('{"a":1}');
+    expect('{"a":1}\n;'.replace(BEACON_CONFIG_TRAILING_NOISE, '')).toBe('{"a":1}');
+    // Enablement keys (plugin spellings; preconnect singular) + payload fields.
+    expect(BEACON_STATUS_KEYS).toEqual([
+      'atf',
+      'lrc',
+      'preload_fonts',
+      'preconnect_external_domain'
+    ]);
+    expect(BEACON_CONFIG_LIST_FIELDS).toEqual([
+      'preconnect_external_domain_elements',
+      'preconnect_external_domain_exclusions',
+      'preload_fonts_exclusions',
+      'processed_extensions',
+      'external_font_exclusions'
+    ]);
+    // Lazy-Rendering + preconnect attribution attributes.
+    expect(LAZY_RENDER_ATTRIBUTE).toBe('data-wpr-lazyrender');
+    expect(LAZY_RENDER_INLINE_CSS_ID).toBe('rocket-lazyrender-inline-css');
+    expect(LOCATION_HASH_ATTRIBUTE).toBe('data-rocket-location-hash');
+    expect(ROCKET_PREFETCH_ATTRIBUTE).toBe('data-rocket-prefetch');
+    expect(ROCKET_PRECONNECT_ATTRIBUTE).toBe('data-rocket-preconnect');
+    // Feature comments: the id pattern + the critical-images id.
+    expect(FEATURE_COMMENT_PATTERN.test(' wpr_oci ')).toBe(true);
+    expect(FEATURE_COMMENT_PATTERN.test('wpr_automatic_lazy_rendering')).toBe(true);
+    expect(FEATURE_COMMENT_PATTERN.test('not a wpr_ comment')).toBe(false);
+    expect(OPTIMIZE_CRITICAL_IMAGES_COMMENT).toBe('wpr_oci');
+    // Config-parse caps (the contract both engines and the validator share).
+    expect(BEACON_CONFIG_LIMITS).toEqual({
+      text: 65_536,
+      elements: 4096,
+      lists: { count: 500, chars: 4096 },
+      status: { keys: 32, chars: 4096 }
+    });
   });
 
   it('pins the name/version/cache-comment markers', () => {

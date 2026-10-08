@@ -154,8 +154,91 @@ export const ROCKET_CDN_DOMAIN = '.rocketcdn.me';
 export const LAZYLOAD_BG_CONTAINER_ID = 'wpr-lazyload-bg-container';
 export const LAZYLOAD_BG_EXCLUSION_ID = 'wpr-lazyload-bg-exclusion';
 
+/**
+ * Automatic Lazy Rendering: attribute stamping the elements the feature
+ * converted (present only on a page whose applied row was used).
+ */
+export const LAZY_RENDER_ATTRIBUTE = 'data-wpr-lazyrender';
+/** …and the inline style id the feature adds when ≥ 1 element was converted. */
+export const LAZY_RENDER_INLINE_CSS_ID = 'rocket-lazyrender-inline-css';
+/**
+ * Attribute carrying the render hash the plugin stamps on every render while
+ * Lazy Rendering is enabled and strips once applied (or bypassed) — the
+ * collecting-phase evidence for that feature.
+ */
+export const LOCATION_HASH_ATTRIBUTE = 'data-rocket-location-hash';
+
+/** Prefetch-variant attribution attribute on the dns-prefetch hints the plugin emits. */
+export const ROCKET_PREFETCH_ATTRIBUTE = 'data-rocket-prefetch';
+/** Preconnect-variant attribution attribute (the filter variant's crossorigin hints). */
+export const ROCKET_PRECONNECT_ATTRIBUTE = 'data-rocket-preconnect';
+
 /** The measurement beacon script's marker attribute value. */
 export const BEACON_DATA_NAME = 'wpr-wpr-beacon';
+
+/**
+ * Beacon script URL fallback: the assets path, min-agnostic — catches builds
+ * whose tags were mutated by other optimizers and the SCRIPT_DEBUG variant
+ * that drops the `.min` suffix. (Same match-by-substring shape as
+ * `LAZYLOAD_SCRIPT_PATTERN`.)
+ */
+export const BEACON_SRC_PATTERN = /(wp-rocket\/assets\/js\/wpr-beacon(\.min)?\.js)/;
+
+/**
+ * The inline config script that precedes the beacon tag; everything after the
+ * match (trailing `;`/whitespace tolerated) is the config JSON.
+ */
+export const BEACON_CONFIG_PATTERN = /^\s*var\s+rocket_beacon_data\s*=/;
+
+/** Trailing semicolons/whitespace tolerated after the inline config's JSON. */
+export const BEACON_CONFIG_TRAILING_NOISE = /[\s;]+$/;
+
+/**
+ * The beacon config's per-feature enablement keys, plugin-verified: a present
+ * boolean key = that feature's context was allowed at injection time; an
+ * absent key (or an explicit `false`) = disabled/blocked. The preconnect key
+ * is singular — the plugin's own spelling.
+ */
+export const BEACON_STATUS_KEYS = [
+  'atf',
+  'lrc',
+  'preload_fonts',
+  'preconnect_external_domain'
+] as const;
+
+/**
+ * The beacon config's array-payload fields (the plugin's own field names,
+ * kept verbatim — they are the support value a config viewer renders).
+ */
+export const BEACON_CONFIG_LIST_FIELDS = [
+  'preconnect_external_domain_elements',
+  'preconnect_external_domain_exclusions',
+  'preload_fonts_exclusions',
+  'processed_extensions',
+  'external_font_exclusions'
+] as const;
+
+/**
+ * Size caps for parsing the inline beacon config (untrusted page data):
+ * every violation degrades the whole config (the beacon tag stays the row's
+ * evidence). Generous — real configs sit orders of magnitude below.
+ */
+export const BEACON_CONFIG_LIMITS = {
+  /** The config JSON/literal text before parsing (bounds the parse itself). */
+  text: 65_536,
+  /** The comma-joined `elements` selector string. */
+  elements: 4096,
+  /** Each array-payload field: item count and per-item length. */
+  lists: { count: 500, chars: 4096 },
+  /** The `status` map: key count, and per-value length for preserved strings. */
+  status: { keys: 32, chars: 4096 }
+} as const;
+
+/** A WP Rocket feature-support comment's data (`wpr_oci`, …) after trimming. */
+export const FEATURE_COMMENT_PATTERN = /^\s*wpr_[a-z0-9_]+\s*$/;
+
+/** Optimize critical images' feature comment (corroboration only — see below). */
+export const OPTIMIZE_CRITICAL_IMAGES_COMMENT = 'wpr_oci';
 
 /** Generator meta declaring the active optimization plugins. */
 export const GENERATOR_META_SELECTOR = 'meta[name="generator"]';

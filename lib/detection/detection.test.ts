@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 import { parsePage } from './parse-page';
 import { detectWpr } from './detect-wpr';
 import {
-  detectAboveTheFold,
   detectAsyncCss,
   detectDeferAllJs,
   detectDelayJs,
@@ -23,6 +22,7 @@ import {
   detectRemoveUnusedCss,
   detectRocketCdn
 } from './detect-optimizations';
+import { detectOptimizeCriticalImages } from './priority-elements';
 import { runDetection } from './run-detection';
 import { DELAY_JS_TYPES, isDelayJSType, LAZYLOAD_EXCLUSIONS_LIST } from '../wp-rocket/constants';
 
@@ -456,17 +456,17 @@ describe('detectRocketCdn', () => {
   });
 });
 
-describe('detectAboveTheFold / detectPreloadedResources', () => {
+describe('detectOptimizeCriticalImages / detectPreloadedResources', () => {
   const html = `<html><head>
       <link data-rocket-preload href="https://s.com/hero.webp" as="image">
       <link data-rocket-preload href="https://s.com/logo.png" as="image">
       <link data-rocket-preload href="https://s.com/app.js" as="script">
     </head></html>`;
-  it('reports preloaded images with the link list when there is no beacon', () => {
+  it('reports preloaded images with the link list; the comment stays false', () => {
     const parsed = page(html);
-    expect(detectAboveTheFold(parsed)).toEqual({
+    expect(detectOptimizeCriticalImages(parsed)).toEqual({
       present: true,
-      beacon: false,
+      lcpComment: false,
       preloadedImages: ['https://s.com/hero.webp', 'https://s.com/logo.png']
     });
     expect(detectPreloadedResources(parsed)).toEqual({
@@ -479,19 +479,25 @@ describe('detectAboveTheFold / detectPreloadedResources', () => {
     });
   });
 
-  it('the beacon wins over the image list entirely', () => {
+  it('collects the image list regardless of the beacon (partial pages stay truthful)', () => {
     const parsed = page(
       `<html><head>
         <link data-rocket-preload href="https://s.com/hero.webp" as="image">
         <script data-name="wpr-wpr-beacon" src="/beacon.js"></script>
       </head></html>`
     );
-    expect(detectAboveTheFold(parsed)).toEqual({ present: true, beacon: true });
+    expect(detectOptimizeCriticalImages(parsed)).toEqual({
+      present: true,
+      lcpComment: false,
+      preloadedImages: ['https://s.com/hero.webp']
+    });
   });
 
   it('marks case-sensitively: only as="image" counts for critical images', () => {
-    const result = detectAboveTheFold(page('<link data-rocket-preload href="/x.jpg" AS="IMAGE">'));
-    expect(result).toEqual({ present: false, beacon: false });
+    const result = detectOptimizeCriticalImages(
+      page('<link data-rocket-preload href="/x.jpg" AS="IMAGE">')
+    );
+    expect(result).toEqual({ present: false, lcpComment: false });
   });
 });
 
@@ -519,6 +525,10 @@ describe('run-detection — propagation and timing', () => {
       'lazyload_iframes',
       'lazyload_css_bg_img',
       'rocket_above_the_fold_optimization',
+      'automatic_lazy_rendering',
+      'auto_preload_fonts',
+      'preconnect_external_domains',
+      'priority_elements_beacon',
       'minify_css',
       'minify_js',
       'preload_links',

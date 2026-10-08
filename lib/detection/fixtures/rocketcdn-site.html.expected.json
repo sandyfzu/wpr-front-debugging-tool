@@ -224,10 +224,34 @@
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
-      "beacon": false,
+      "lcpComment": false,
       "preloadedImages": [
         "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg"
       ]
+    },
+    "automatic_lazy_rendering": {
+      "present": true,
+      "lazyRenderElements": 4,
+      "inlineCssPresent": true,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": true,
+      "fonts": [
+        "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/ubuntu-v15-latin-700.woff2",
+        "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-regular.woff2",
+        "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-500.woff2"
+      ]
+    },
+    "preconnect_external_domains": {
+      "present": true,
+      "domains": ["https://www.googletagmanager.com/", "https://app.termly.io/"],
+      "preconnectCount": 2
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
     },
     "minify_css": {
       "present": false

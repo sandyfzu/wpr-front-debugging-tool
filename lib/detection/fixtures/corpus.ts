@@ -30,5 +30,16 @@ export const FIXTURES = [
   // Crafted integrations/adversarial cases (see the file headers).
   'synthetic-all-features.html',
   'adversarial-lazyload-classes.html',
-  'adversarial-exclusion-tokens.html'
+  'adversarial-exclusion-tokens.html',
+  // Crafted Priority-Elements states: pending (beacon + config), applied,
+  // collecting, mixed, and the adversarial markup/degrade cases.
+  'priority-elements-pending.html',
+  'priority-elements-pending-no-fonts.html',
+  'priority-elements-applied-oci.html',
+  'priority-elements-applied-lrc.html',
+  'priority-elements-applied-fonts.html',
+  'priority-elements-applied-preconnect.html',
+  'priority-elements-collecting-lrc.html',
+  'mixed-partial-applied.html',
+  'priority-elements-adversarial.html'
 ] as const;

@@ -46,6 +46,136 @@ export interface LazyloadImageRecord {
 }
 
 /**
+ * Optimize critical images (Priority Elements family; the plugin's filter
+ * identifier as the registry key — KB: "Optimize critical images").
+ */
+export interface OptimizeCriticalImagesDetection {
+  present: boolean;
+  /**
+   * The `<!-- wpr_oci -->` feature comment survived on the page. Corroboration
+   * only: the plugin strips these comments when the meta generator runs (and
+   * always under white-label or for logged-in users), so a `false` proves
+   * nothing; `fetchpriority="high"` alone also proves nothing — it is a
+   * standard attribute third parties set.
+   */
+  lcpComment: boolean;
+  /**
+   * Resolved URLs of `data-rocket-preload` image links, document order.
+   * Present ⇔ non-empty (the applied evidence; an empty list means not
+   * applied, with or without the beacon).
+   */
+  preloadedImages?: string[];
+}
+
+/**
+ * Automatic Lazy Rendering (Priority Elements family; registry key = the
+ * plugin's real feature-comment id, KB: "Automatic Lazy Rendering").
+ *
+ * Evidence-pure: `present` requires applied markup; the collecting phase
+ * (feature enabled, not yet applied) surfaces through `locationHashes` > 0
+ * with `present: false` — the view model composes "collecting" with the
+ * beacon row's status map.
+ */
+export interface AutomaticLazyRenderingDetection {
+  /** ≥ 1 element stamped `data-wpr-lazyrender`. */
+  present: boolean;
+  /** Count of stamped elements. */
+  lazyRenderElements: number;
+  /**
+   * The feature's inline `content-visibility` style is present — corroborates
+   * `present` (the plugin adds it iff ≥ 1 element was converted) but a page
+   * may carry it in any combination.
+   */
+  inlineCssPresent: boolean;
+  /** Render hashes still on the page (0 once applied or bypassed). */
+  locationHashes: number;
+}
+
+/**
+ * Preload fonts (Priority Elements family; registry key = the plugin option
+ * `auto_preload_fonts`, KB: "Preload fonts").
+ *
+ * The attribution attribute (`data-rocket-preload`) is what separates the
+ * automatic feature from pre-3.19 manual font preloads and third-party font
+ * preloads — same markup, no attribute.
+ */
+export interface AutoPreloadFontsDetection {
+  present: boolean;
+  /** Resolved hrefs of attributed font preloads, document order. Present ⇔ non-empty. */
+  fonts: string[];
+}
+
+/**
+ * Preconnect to external domains (Priority Elements family; registry key = the
+ * plugin's feature-comment id, KB: "Preconnect to external domains").
+ */
+export interface PreconnectExternalDomainsDetection {
+  present: boolean;
+  /**
+   * Attributed hint hrefs (both variants), first-occurrence order — a bare
+   * dns-prefetch hint (e.g. the RocketCDN one) asserts nothing here; the
+   * attribution attributes are the whole claim. Present ⇔ non-empty.
+   */
+  domains: string[];
+  /** Count of the `data-rocket-preconnect` (crossorigin) variant links. */
+  preconnectCount: number;
+}
+
+/**
+ * Per-feature enablement from the inline beacon config's `status` map: a
+ * present boolean key = that feature's context was allowed at injection time;
+ * an absent key = disabled (option/filter/helper). Keys are the plugin's own
+ * identifiers, kept verbatim; future releases' keys stay readable through the
+ * index signature. Note the plugin's asymmetry (verified in source): the
+ * fonts controller omits its key when disallowed while the others set theirs
+ * to `false` — both states mean "not enabled here".
+ */
+export interface BeaconFeatureStatus {
+  /** Optimize critical images. */
+  atf?: boolean;
+  /** Automatic Lazy Rendering. */
+  lrc?: boolean;
+  /** Preload fonts. */
+  preload_fonts?: boolean;
+  /** Preconnect to external domains (singular key, plugin-verified). */
+  preconnect_external_domain?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * The Priority Elements measurement beacon (the family all four features
+ * above share): `<script data-name="wpr-wpr-beacon" …>` plus its inline
+ * config (`var rocket_beacon_data = {…}`). The plugin injects the pair iff
+ * ≥ 1 enabled feature still lacks its applied row for this URL+device, so
+ * presence proves "collecting / not yet applied for at least one feature" —
+ * never an error state, and never any single feature's verdict. Once every
+ * enabled feature is applied the beacon is gone from the cached page; a
+ * pending state can also persist legitimately (ineligible viewports, headless
+ * visits, no pre-warmup).
+ */
+export interface PriorityElementsBeaconDetection {
+  present: boolean;
+  /**
+   * Per-feature enablement from the inline config — null when the config is
+   * absent, unparsable or hostile (the beacon tag alone is still evidence).
+   */
+  status: BeaconFeatureStatus | null;
+  /** Visiting device the config was generated for; null when not declared/usable. */
+  isMobile: boolean | null;
+  /**
+   * Comma-joined selector list the beacon was told to process (config field
+   * `elements`, kept verbatim — it is a single string in the plugin's output).
+   */
+  elements?: string;
+  /** Config payload lists (plugin field names kept verbatim): support value. */
+  preconnect_external_domain_elements?: string[];
+  preconnect_external_domain_exclusions?: string[];
+  preload_fonts_exclusions?: string[];
+  processed_extensions?: string[];
+  external_font_exclusions?: string[];
+}
+
+/**
  * The complete page classification. Structural keys are fixed; extend only
  * additively (new optimizations ship with their own key + validators + tests).
  */
@@ -99,13 +229,11 @@ export interface WprDetections {
   rocket_cdn: {
     present: boolean;
   };
-  rocket_above_the_fold_optimization: {
-    present: boolean;
-    /** The beacon script is present (as opposed to preloaded images only). */
-    beacon: boolean;
-    /** Resolved URLs of `data-rocket-preload` image links, document order. */
-    preloadedImages?: string[];
-  };
+  rocket_above_the_fold_optimization: OptimizeCriticalImagesDetection;
+  automatic_lazy_rendering: AutomaticLazyRenderingDetection;
+  auto_preload_fonts: AutoPreloadFontsDetection;
+  preconnect_external_domains: PreconnectExternalDomainsDetection;
+  priority_elements_beacon: PriorityElementsBeaconDetection;
 }
 
 /** WP Rocket-preloaded resources collected for the panel page. */

@@ -1,0 +1,89 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": false,
+      "version": "3.20",
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": []
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": true,
+      "fonts": [
+        "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/roboto-v30.woff2",
+        "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/opensans-v35.woff2"
+      ]
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": true,
+    "resources": [
+      {
+        "href": "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/roboto-v30.woff2",
+        "type": "font"
+      },
+      {
+        "href": "https://example.com/wp-content/cache/fonts/1/fonts.gstatic.com/s/opensans-v35.woff2",
+        "type": "font"
+      }
+    ]
+  }
+}

@@ -17,8 +17,8 @@ describe('option name maps', () => {
     }
   });
 
-  it('carries the expected set sizes (39 plugin options + 5 labels)', () => {
-    expect(Object.keys(optionNames).length).toBe(39);
+  it('carries the expected set sizes (40 plugin options + 5 labels)', () => {
+    expect(Object.keys(optionNames).length).toBe(40);
     expect(Object.keys(otherNames).length).toBe(5);
   });
 

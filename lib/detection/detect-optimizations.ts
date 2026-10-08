@@ -18,7 +18,6 @@ import type {
   WprDetections
 } from '../wp-rocket/types';
 import {
-  BEACON_DATA_NAME,
   CPCSS_MARK,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
@@ -236,27 +235,9 @@ export function detectRocketCdn(page: ParsedPage): WprDetections['rocket_cdn'] {
 }
 
 /**
- * Optimize Critical Images: the measurement beacon, or WP Rocket-preloaded
- * image links with their URL list.
+ * Optimize Critical Images lives in `./priority-elements` (the beacon
+ * subsystem — its evidence and the beacon's are one family).
  */
-export function detectAboveTheFold(
-  page: ParsedPage
-): WprDetections['rocket_above_the_fold_optimization'] {
-  const beacon = page.scripts.some(
-    (script) => script.getAttribute('data-name') === BEACON_DATA_NAME
-  );
-  if (beacon) return { present: true, beacon: true };
-
-  const preloadedImages = page.links
-    .filter(
-      (link) => link.hasAttribute(WPR_PRELOAD_ATTRIBUTE) && link.getAttribute('as') === 'image'
-    )
-    .map((link) => link.href);
-  if (preloadedImages.length > 0) {
-    return { present: true, beacon: false, preloadedImages };
-  }
-  return { present: false, beacon: false };
-}
 
 /** Preloaded subresources: WP Rocket-preloaded links with their `as` type. */
 export function detectPreloadedResources(page: ParsedPage): PreloadedResources {

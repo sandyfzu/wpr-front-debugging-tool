@@ -33,26 +33,26 @@ Read `00-master-port-plan.md` first. Then execute phases in the dependency order
 
 Update the Status column as phases complete (`⬜ planned → 🟨 in progress → ✅ done`).
 
-| Phase | Status |
-| ----- | ------ |
-| P0    | ✅     |
-| P1    | ✅     |
-| P1.1  | ⬜     |
-| P2    | ⬜     |
-| P3    | ⬜     |
-| P4    | ⬜     |
-| P5    | ⬜     |
-| P6    | ⬜     |
-| P7    | ⬜     |
-| P8    | ⬜     |
-| P9    | ⬜     |
-| P10   | ⬜     |
-| P11   | ⬜     |
-| P12   | ⬜     |
-| P13   | ⬜     |
-| P14   | ⬜     |
-| P14.5 | ⬜     |
-| P15   | ⬜     |
+| Phase | Status                                                                                        |
+| ----- | --------------------------------------------------------------------------------------------- |
+| P0    | ✅                                                                                            |
+| P1    | ✅                                                                                            |
+| P1.1  | 🟨 (code + gates done; real-site matrix + second-baseline side-by-side pending — see its doc) |
+| P2    | ⬜                                                                                            |
+| P3    | ⬜                                                                                            |
+| P4    | ⬜                                                                                            |
+| P5    | ⬜                                                                                            |
+| P6    | ⬜                                                                                            |
+| P7    | ⬜                                                                                            |
+| P8    | ⬜                                                                                            |
+| P9    | ⬜                                                                                            |
+| P10   | ⬜                                                                                            |
+| P11   | ⬜                                                                                            |
+| P12   | ⬜                                                                                            |
+| P13   | ⬜                                                                                            |
+| P14   | ⬜                                                                                            |
+| P14.5 | ⬜                                                                                            |
+| P15   | ⬜                                                                                            |
 
 ## Rules that apply to every phase
 

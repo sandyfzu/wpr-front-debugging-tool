@@ -1,0 +1,114 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": false,
+      "version": "3.20",
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "var rocket_beacon_data = {\"ajax_url\":\"https:\\/\\/example.com\\/wp-admin\\/admin-ajax.php\",\"nonce\":\"77cc11dd\",\"url\":\"https:\\/\\/example.com\\/\",\"is_mobile\":true,\"width_threshold\":393,\"height_threshold\":830,\"delay\":500,\"debug\":false,\"status\":{\"atf\":true,\"lrc\":true,\"preconnect_external_domain\":false},\"elements\":\"img, video, picture, p, main, div, li, svg, section, header, span\",\"preconnect_external_domain_elements\":[\"link\",\"script\",\"iframe\"],\"preconnect_external_domain_exclusions\":[],\"external_font_exclusions\":[]}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://example.com/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": [
+        {
+          "src": "https://example.com/wp-content/uploads/hero.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": true,
+      "lcpComment": true,
+      "preloadedImages": ["https://example.com/wp-content/uploads/hero.jpg"]
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 2
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": true,
+      "status": {
+        "atf": true,
+        "lrc": true,
+        "preconnect_external_domain": false
+      },
+      "isMobile": true,
+      "elements": "img, video, picture, p, main, div, li, svg, section, header, span",
+      "preconnect_external_domain_elements": ["link", "script", "iframe"],
+      "preconnect_external_domain_exclusions": [],
+      "external_font_exclusions": []
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": true,
+    "resources": [
+      {
+        "href": "https://example.com/wp-content/uploads/hero.jpg",
+        "type": "image"
+      }
+    ]
+  }
+}

@@ -251,25 +251,273 @@ describe('parseWprDetections — rejection arms', () => {
     expect(
       parseWprDetections({
         ...payload,
-        rocket_above_the_fold_optimization: { present: false, beacon: true }
+        rocket_above_the_fold_optimization: { present: true, lcpComment: 'yes' }
+      })
+    ).toBeNull();
+    // The old pre-P1.1 shape (beacon field) is foreign now.
+    expect(
+      parseWprDetections({
+        ...payload,
+        rocket_above_the_fold_optimization: { present: true, beacon: true }
       })
     ).toBeNull();
     expect(
       parseWprDetections({
         ...payload,
-        rocket_above_the_fold_optimization: { present: true, beacon: true, extra: 1 }
+        rocket_above_the_fold_optimization: {
+          present: true,
+          lcpComment: false,
+          preloadedImages: [5]
+        }
       })
     ).toBeNull();
     expect(
       parseWprDetections({
         ...payload,
-        rocket_above_the_fold_optimization: { present: true, beacon: false }
+        rocket_above_the_fold_optimization: {
+          present: false,
+          lcpComment: false,
+          preloadedImages: ['/a.jpg']
+        }
+      })
+    ).toBeNull();
+  });
+
+  it('rejects lazy-render rows with wrong counts, types or key sets', () => {
+    const payload = validDetections();
+    const row = {
+      present: true,
+      lazyRenderElements: 1,
+      inlineCssPresent: true,
+      locationHashes: 0
+    };
+    expect(parseWprDetections({ ...payload, automatic_lazy_rendering: row })).not.toBeNull();
+    expect(
+      parseWprDetections({ ...payload, automatic_lazy_rendering: { ...row, extra: 1 } })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        automatic_lazy_rendering: { ...row, lazyRenderElements: 1.5 }
       })
     ).toBeNull();
     expect(
       parseWprDetections({
         ...payload,
-        rocket_above_the_fold_optimization: { present: true, beacon: false, preloadedImages: [5] }
+        automatic_lazy_rendering: { ...row, lazyRenderElements: -1 }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        automatic_lazy_rendering: { ...row, lazyRenderElements: Number.POSITIVE_INFINITY }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({ ...payload, automatic_lazy_rendering: { ...row, locationHashes: '0' } })
+    ).toBeNull();
+    // present ⇔ count ≥ 1, enforced both directions.
+    expect(
+      parseWprDetections({
+        ...payload,
+        automatic_lazy_rendering: { ...row, present: false }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        automatic_lazy_rendering: { ...row, present: true, lazyRenderElements: 0 }
+      })
+    ).toBeNull();
+  });
+
+  it('rejects font-preload rows that are inconsistent or oversized', () => {
+    const payload = validDetections();
+    expect(
+      parseWprDetections({
+        ...payload,
+        auto_preload_fonts: { present: true, fonts: ['https://s.com/a.woff2'] }
+      })
+    ).not.toBeNull();
+    expect(
+      parseWprDetections({ ...payload, auto_preload_fonts: { present: true, fonts: [] } })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        auto_preload_fonts: { present: false, fonts: ['https://s.com/a.woff2'] }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({ ...payload, auto_preload_fonts: { present: true, fonts: [''] } })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        auto_preload_fonts: { present: true, fonts: Array.from({ length: 1_001 }, () => 'x') }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        auto_preload_fonts: { present: true, fonts: ['x'.repeat(4097)] }
+      })
+    ).toBeNull();
+  });
+
+  it('rejects preconnect rows with wrong counts or oversized domain lists', () => {
+    const payload = validDetections();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: true,
+          domains: ['https://example.org/'],
+          preconnectCount: 1
+        }
+      })
+    ).not.toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: true,
+          domains: [],
+          preconnectCount: 0
+        }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: false,
+          domains: ['https://example.org/'],
+          preconnectCount: 0
+        }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: true,
+          domains: ['https://example.org/'],
+          preconnectCount: -1
+        }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: true,
+          domains: ['https://example.org/'],
+          preconnectCount: 1.5
+        }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        preconnect_external_domains: {
+          present: true,
+          domains: Array.from({ length: 501 }, () => 'https://d.com/'),
+          preconnectCount: 0
+        }
+      })
+    ).toBeNull();
+  });
+
+  it('rejects beacon rows with config violations', () => {
+    const payload = validDetections();
+    const base = { present: true, status: { atf: true }, isMobile: false };
+    expect(parseWprDetections({ ...payload, priority_elements_beacon: base })).not.toBeNull();
+    // A known status key must be boolean.
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, status: { atf: 'yes' } }
+      })
+    ).toBeNull();
+    // Unknown status keys survive only as bounded primitives.
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, status: { atf: true, future: 'kept' } }
+      })
+    ).not.toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, status: { atf: true, future: [1] } }
+      })
+    ).toBeNull();
+    // The status key cap.
+    const manyKeys = Object.fromEntries(
+      Array.from({ length: 33 }, (_, i) => [`k${String(i)}`, true])
+    );
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, status: manyKeys }
+      })
+    ).toBeNull();
+    // Own `__proto__` keys are hostile (assignment would hit the inherited
+    // setter instead of preserving a value) — reject the whole payload. Built
+    // via JSON.parse: an object literal would trigger the setter, not the
+    // own key the boundary receives.
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: {
+          ...base,
+          status: JSON.parse('{"__proto__": "evil", "atf": true}') as Record<string, unknown>
+        }
+      })
+    ).toBeNull();
+    // Wrong-typed device context, config-carried fields, degraded-config
+    // inconsistencies, payload list violations and unknown row keys.
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, isMobile: 'yes' }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, elements: ['array-not-string'] }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { present: true, status: null, isMobile: null, elements: 'img' }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, processed_extensions: [5] }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, elements: 42 }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { ...base, hostile: true }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        priority_elements_beacon: { present: true, status: 5, isMobile: null }
       })
     ).toBeNull();
   });

@@ -1,0 +1,101 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": false,
+      "version": "3.20",
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "var rocket_beacon_data = {\"ajax_url\":\"https:\\/\\/example.com\\/wp-admin\\/admin-ajax.php\",\"nonce\":\"1a2b3c4d\",\"url\":\"https:\\/\\/example.com\\/blog\\/\",\"is_mobile\":false,\"width_threshold\":1600,\"height_threshold\":700,\"delay\":500,\"debug\":false,\"status\":{\"atf\":true,\"lrc\":true,\"preconnect_external_domain\":true},\"elements\":\"img, video, picture, p, main, div, li, svg, section, header, span\",\"preconnect_external_domain_elements\":[\"link\",\"script\",\"iframe\"],\"preconnect_external_domain_exclusions\":[],\"external_font_exclusions\":[]}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://example.com/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": []
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": true,
+      "status": {
+        "atf": true,
+        "lrc": true,
+        "preconnect_external_domain": true
+      },
+      "isMobile": false,
+      "elements": "img, video, picture, p, main, div, li, svg, section, header, span",
+      "preconnect_external_domain_elements": ["link", "script", "iframe"],
+      "preconnect_external_domain_exclusions": [],
+      "external_font_exclusions": []
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

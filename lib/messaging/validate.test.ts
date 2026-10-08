@@ -188,11 +188,26 @@ describe('parsePreloadedResources', () => {
     expect(
       parsePreloadedResources({ present: true, resources: [{ href: 1, type: '' }] })
     ).toBeNull();
-    expect(
-      parsePreloadedResources({ present: true, resources: [{ href: '', type: '' }] })
-    ).toBeNull();
     expect(parsePreloadedResources({ present: false, resources: [] })).toBeNull();
     expect(parsePreloadedResources([{ present: false }])).toBeNull();
+  });
+
+  it('accepts empty href/type rows — engine outputs for srcset-only hints and as-less links', () => {
+    expect(
+      parsePreloadedResources({
+        present: true,
+        resources: [
+          { href: 'https://s.com/hero.jpg', type: 'image' },
+          { href: '', type: 'image' }
+        ]
+      })
+    ).toEqual({
+      present: true,
+      resources: [
+        { href: 'https://s.com/hero.jpg', type: 'image' },
+        { href: '', type: 'image' }
+      ]
+    });
   });
 });
 
@@ -231,35 +246,129 @@ describe('parseWprDetections', () => {
     });
   });
 
-  it('keeps the beacon and preloaded-images variants separate', () => {
+  it('keeps the priority-elements rows consistent with their evidence', () => {
     const detections = minimalDetections();
-    const withBeacon = {
+    // Applied critical images: present ⇔ the list is non-empty, comment either way.
+    expect(
+      parseWprDetections({
+        ...detections,
+        rocket_above_the_fold_optimization: {
+          present: true,
+          lcpComment: true,
+          preloadedImages: ['/a.jpg']
+        }
+      })?.rocket_above_the_fold_optimization
+    ).toEqual({ present: true, lcpComment: true, preloadedImages: ['/a.jpg'] });
+    expect(
+      parseWprDetections({
+        ...detections,
+        rocket_above_the_fold_optimization: { present: false, lcpComment: true }
+      })?.rocket_above_the_fold_optimization
+    ).toEqual({ present: false, lcpComment: true });
+    // present without the list is not engine output.
+    expect(
+      parseWprDetections({
+        ...detections,
+        rocket_above_the_fold_optimization: { present: true, lcpComment: false }
+      })
+    ).toBeNull();
+    // Lazy rendering: present ⇔ converted elements ≥ 1.
+    expect(
+      parseWprDetections({
+        ...detections,
+        automatic_lazy_rendering: {
+          present: true,
+          lazyRenderElements: 3,
+          inlineCssPresent: true,
+          locationHashes: 0
+        }
+      })?.automatic_lazy_rendering
+    ).toEqual({ present: true, lazyRenderElements: 3, inlineCssPresent: true, locationHashes: 0 });
+    expect(
+      parseWprDetections({
+        ...detections,
+        automatic_lazy_rendering: {
+          present: false,
+          lazyRenderElements: 2,
+          inlineCssPresent: false,
+          locationHashes: 5
+        }
+      })
+    ).toBeNull();
+    // Fonts + preconnect: present ⇔ non-empty lists.
+    expect(
+      parseWprDetections({
+        ...detections,
+        auto_preload_fonts: { present: true, fonts: ['https://s.com/a.woff2'] },
+        preconnect_external_domains: {
+          present: true,
+          domains: ['https://example.org/'],
+          preconnectCount: 0
+        }
+      })
+    ).not.toBeNull();
+    expect(
+      parseWprDetections({
+        ...detections,
+        auto_preload_fonts: { present: true, fonts: [] }
+      })
+    ).toBeNull();
+  });
+
+  it('keeps the beacon row and its config payload separate from the feature rows', () => {
+    const detections = minimalDetections();
+    // Degraded config: the beacon tag alone is evidence.
+    expect(
+      parseWprDetections({
+        ...detections,
+        priority_elements_beacon: { present: true, status: null, isMobile: null }
+      })?.priority_elements_beacon
+    ).toEqual({ present: true, status: null, isMobile: null });
+    // Parsed config with payloads.
+    const withConfig = {
       ...detections,
-      rocket_above_the_fold_optimization: { present: true, beacon: true }
-    };
-    expect(parseWprDetections(withBeacon)?.rocket_above_the_fold_optimization).toEqual({
-      present: true,
-      beacon: true
-    });
-    const withImages = {
-      ...detections,
-      rocket_above_the_fold_optimization: {
+      priority_elements_beacon: {
         present: true,
-        beacon: false,
-        preloadedImages: ['/a.jpg']
+        status: { atf: true, lrc: false },
+        isMobile: false,
+        elements: 'img, video',
+        preconnect_external_domain_elements: ['link'],
+        processed_extensions: ['woff2']
       }
     };
-    expect(parseWprDetections(withImages)?.rocket_above_the_fold_optimization).toEqual({
-      present: true,
-      beacon: false,
-      preloadedImages: ['/a.jpg']
-    });
-    // present ⇔ preloadedImages non-empty (inconsistent rows are rejected).
-    const inconsistent = {
-      ...detections,
-      rocket_above_the_fold_optimization: { present: true, beacon: false, preloadedImages: [] }
-    };
-    expect(parseWprDetections(inconsistent)).toBeNull();
+    expect(parseWprDetections(withConfig)?.priority_elements_beacon).toEqual(
+      withConfig.priority_elements_beacon
+    );
+    // A degraded config carries no device context and no payload.
+    expect(
+      parseWprDetections({
+        ...detections,
+        priority_elements_beacon: { present: true, status: null, isMobile: false }
+      })
+    ).toBeNull();
+    // An absent beacon carries nothing at all.
+    expect(
+      parseWprDetections({
+        ...detections,
+        priority_elements_beacon: {
+          present: false,
+          status: { atf: true },
+          isMobile: null
+        }
+      })
+    ).toBeNull();
+    // Payloads without a parsed status are not engine output.
+    expect(
+      parseWprDetections({
+        ...detections,
+        priority_elements_beacon: {
+          present: true,
+          status: null,
+          isMobile: null,
+          elements: 'img'
+        }
+      })
+    ).toBeNull();
   });
 });
 

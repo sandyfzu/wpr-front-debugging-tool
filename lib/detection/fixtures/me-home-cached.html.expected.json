@@ -650,8 +650,39 @@
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
-      "beacon": false,
+      "lcpComment": false,
       "preloadedImages": ["https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg"]
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": true,
+      "domains": [
+        "https://static.olark.com/",
+        "https://www.googletagmanager.com/",
+        "https://sst.wp-rocket.me/",
+        "https://app.termly.io/",
+        "https://googleads.g.doubleclick.net/",
+        "https://static-tracking.klaviyo.com/",
+        "https://static.klaviyo.com/",
+        "https://widget.trustpilot.com/",
+        "https://www.dwin1.com/",
+        "https://lantern.roeyecdn.com/"
+      ],
+      "preconnectCount": 10
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
     },
     "minify_css": {
       "present": false

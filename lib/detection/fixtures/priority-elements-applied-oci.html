@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="WP Rocket 3.20">
+<title>Optimize critical images — applied (beacon gone)</title>
+<link rel="preload" data-rocket-preload as="image" href="https://example.com/wp-content/uploads/hero.jpg" fetchpriority="high">
+<link rel="preload" data-rocket-preload as="image" href="https://example.com/wp-content/uploads/hero.avif" imagesrcset="https://example.com/wp-content/uploads/hero.avif 1x, https://example.com/wp-content/uploads/hero-2x.avif 2x" imagesizes="100vw" fetchpriority="high">
+<link rel="preload" data-rocket-preload as="image" imagesrcset="https://example.com/wp-content/uploads/bg-layer-1.avif, https://example.com/wp-content/uploads/bg-layer-2.avif 2x" media="(max-width: 768px)" imagesizes="100vw" fetchpriority="high">
+<link rel="preload" data-rocket-preload as="image" href="https://example.com/wp-content/uploads/source-1.avif" media="(min-width: 769px)" imagesizes="50vw" fetchpriority="high">
+<link rel="preload" data-rocket-preload as="image" imagesrcset="https://example.com/wp-content/uploads/source-2.avif 1x" fetchpriority="high">
+<img src="https://example.com/wp-content/uploads/hero.jpg" fetchpriority="high" alt="">
+</head>
+<body>
+<div id="main"><h1>Landing</h1><p>Every enabled feature applied: no beacon, no config — the
+LCP image carries fetchpriority and five preload link variants (href, srcset, bg-img-set,
+bg-img per-set, picture sources with one srcset-only hint).</p></div>
+</body>
+</html>
+<!-- wpr_oci -->

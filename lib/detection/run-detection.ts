@@ -5,13 +5,14 @@
  *
  * WP Rocket is "present" when its footprints say so OR when any optimization
  * was detected — except the deferral check (other tools also defer scripts)
- * and the `wpr` row itself. The rule runs after every check.
+ * and the `wpr` row itself. The rule runs after every check. The beacon
+ * counts as presence: a beacon-only page (features pending, zero applied
+ * markers) is a WP Rocket page.
  */
 
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 import { detectWpr } from './detect-wpr';
 import {
-  detectAboveTheFold,
   detectAsyncCss,
   detectDeferAllJs,
   detectDelayJs,
@@ -25,6 +26,14 @@ import {
   detectRemoveUnusedCss,
   detectRocketCdn
 } from './detect-optimizations';
+import {
+  detectAutoPreloadFonts,
+  detectAutomaticLazyRendering,
+  detectBeacon,
+  detectOptimizeCriticalImages,
+  detectPreconnectExternalDomains,
+  parseBeaconConfig
+} from './priority-elements';
 import { parsePage } from './parse-page';
 import type { ParsedPage } from './parse-page';
 
@@ -53,11 +62,17 @@ export function runDetection(html: string): DetectionResult {
 
 /**
  * Run every check once over an already-parsed page. Single-sourced so the
- * bench and the orchestrator can never drift apart.
+ * bench and the orchestrator can never drift apart. The beacon config is
+ * parsed once here and fed to the beacon row's check (pending-state
+ * composition stays out of the engine entirely — the four feature checks
+ * read page markup only).
  */
 export function runChecks(page: ParsedPage): WprDetections {
   // Registry order matches the reference engine's (it is also output key
-  // order, so serialized payloads compare shape-for-shape).
+  // order, so serialized payloads compare shape-for-shape). The Priority
+  // Elements rows sit together: the four feature checks, then the family's
+  // shared beacon.
+  const beaconConfig = parseBeaconConfig(page);
   return {
     wpr: detectWpr(page.document),
     remove_unused_css: detectRemoveUnusedCss(page),
@@ -67,7 +82,11 @@ export function runChecks(page: ParsedPage): WprDetections {
     lazyload: detectLazyload(page),
     lazyload_iframes: detectLazyloadIframes(page),
     lazyload_css_bg_img: detectLazyloadCssBgImg(page),
-    rocket_above_the_fold_optimization: detectAboveTheFold(page),
+    rocket_above_the_fold_optimization: detectOptimizeCriticalImages(page),
+    automatic_lazy_rendering: detectAutomaticLazyRendering(page),
+    auto_preload_fonts: detectAutoPreloadFonts(page),
+    preconnect_external_domains: detectPreconnectExternalDomains(page),
+    priority_elements_beacon: detectBeacon(page, beaconConfig),
     minify_css: detectMinifyCss(page),
     minify_js: detectMinifyJs(page),
     preload_links: detectPreloadLinks(page),

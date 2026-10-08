@@ -167,7 +167,28 @@
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
-      "beacon": true
+      "lcpComment": false,
+      "preloadedImages": ["https://all.example/hero.webp", "https://all.example/logo.png"]
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": true,
+      "status": null,
+      "isMobile": null
     },
     "minify_css": {
       "present": true

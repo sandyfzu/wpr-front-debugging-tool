@@ -15,6 +15,7 @@
  */
 
 import type {
+  BeaconFeatureStatus,
   DiagnoserDocData,
   FdtData,
   PageHeaders,
@@ -23,8 +24,14 @@ import type {
   WprDetections
 } from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
-import { LAZYLOAD_EXCLUSIONS_LIST } from '../wp-rocket/constants';
+import {
+  BEACON_CONFIG_LIMITS,
+  BEACON_CONFIG_LIST_FIELDS,
+  BEACON_STATUS_KEYS,
+  LAZYLOAD_EXCLUSIONS_LIST
+} from '../wp-rocket/constants';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
+import { isRecord } from '../../utils/is-record';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
@@ -46,6 +53,9 @@ const LIMITS = {
   preloaded: { count: 5_000, href: 4096, type: 64 },
   /** Preloaded critical-image URL lists. */
   preloadedImages: { count: 1_000, chars: 4096 },
+  /** Priority-Elements: font-preload list and preconnect domain list. */
+  fonts: { count: 1_000, chars: 4096 },
+  domains: { count: 500, chars: 2048 },
   /** Known-conflicts rows and their fields. */
   knownConflicts: {
     count: 500,
@@ -58,13 +68,10 @@ const LIMITS = {
     url: 2_048
   },
   /** DevTools search query. */
-  searchQuery: 200
+  searchQuery: 200,
+  /** Detection version strings (`wpr`, `delay_js`) — never empty (engines return null otherwise). */
+  versions: 64
 } as const;
-
-/** Whether `input` is a plain object (not null, not an array). */
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
-}
 
 /** All members are strings. */
 function isStringArray(value: unknown): value is string[] {
@@ -237,6 +244,12 @@ function isBoundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length <= max;
 }
 
+/** Null, or a non-empty string within a cap (the engines' version semantics). */
+function isBoundedNullableString(value: unknown, max: number): value is string | null {
+  if (value === null) return true;
+  return isUsableString(value, max);
+}
+
 /** A non-empty string within a cap. */
 function isUsableString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length >= 1 && value.length <= max;
@@ -255,7 +268,9 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
   for (const item of input['resources']) {
     if (!isRecord(item)) return null;
     if (Object.keys(item).length !== 2) return null;
-    if (!isUsableString(item['href'], LIMITS.preloaded.href)) return null;
+    // An empty href is legitimate engine output (a srcset-only preload hint
+    // has no href attribute — the same '' entry the image lists carry).
+    if (!isBoundedString(item['href'], LIMITS.preloaded.href)) return null;
     if (!isBoundedString(item['type'], LIMITS.preloaded.type)) return null;
     out.push({ href: item['href'], type: item['type'] });
   }
@@ -276,7 +291,7 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (
     typeof wpr['present'] !== 'boolean' ||
     typeof wpr['cached'] !== 'boolean' ||
-    (wpr['version'] !== null && typeof wpr['version'] !== 'string') ||
+    !isBoundedNullableString(wpr['version'], LIMITS.versions) ||
     (wpr['timeStamp'] !== null &&
       (typeof wpr['timeStamp'] !== 'number' || !Number.isFinite(wpr['timeStamp']))) ||
     Object.keys(wpr).length !== 4
@@ -295,7 +310,11 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   const deferAllJs = parseDeferRow(input['defer_all_js']);
   const lazyload = parseLazyloadRow(input['lazyload']);
   const lazyloadIframes = parseIframesRow(input['lazyload_iframes']);
-  const aboveTheFold = parseAboveTheFoldRow(input['rocket_above_the_fold_optimization']);
+  const aboveTheFold = parseOptimizeCriticalImagesRow(input['rocket_above_the_fold_optimization']);
+  const lazyRender = parseLazyRenderRow(input['automatic_lazy_rendering']);
+  const preloadFonts = parsePreloadFontsRow(input['auto_preload_fonts']);
+  const preconnectDomains = parsePreconnectRow(input['preconnect_external_domains']);
+  const beacon = parseBeaconRow(input['priority_elements_beacon']);
   if (
     removeUnusedCss === null ||
     asyncCss === null ||
@@ -308,7 +327,11 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     deferAllJs === null ||
     lazyload === null ||
     lazyloadIframes === null ||
-    aboveTheFold === null
+    aboveTheFold === null ||
+    lazyRender === null ||
+    preloadFonts === null ||
+    preconnectDomains === null ||
+    beacon === null
   ) {
     return null;
   }
@@ -330,7 +353,11 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     defer_all_js: deferAllJs,
     lazyload,
     lazyload_iframes: lazyloadIframes,
-    rocket_above_the_fold_optimization: aboveTheFold
+    rocket_above_the_fold_optimization: aboveTheFold,
+    automatic_lazy_rendering: lazyRender,
+    auto_preload_fonts: preloadFonts,
+    preconnect_external_domains: preconnectDomains,
+    priority_elements_beacon: beacon
   };
 }
 
@@ -348,7 +375,7 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   const row = { ...input };
   if (
     typeof row['present'] !== 'boolean' ||
-    (typeof row['version'] !== 'string' && row['version'] !== null) ||
+    !isBoundedNullableString(row['version'], LIMITS.versions) ||
     typeof row['delayedScripts'] !== 'number' ||
     !Number.isFinite(row['delayedScripts']) ||
     row['delayedScripts'] < 0 ||
@@ -455,29 +482,25 @@ function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | nu
 }
 
 /**
- * Above-the-fold row: beacon present → no image list; otherwise the image
- * list decides presence (the engines' contract: present ⇔ images non-empty), with
- * the empty row also allowed (beacon and images both absent).
+ * Optimize-critical-images row: the applied evidence decides presence
+ * (present ⇔ image list non-empty — the engines' contract); the feature
+ * comment is independent corroboration carried either way.
  */
-function parseAboveTheFoldRow(
+function parseOptimizeCriticalImagesRow(
   input: unknown
 ): WprDetections['rocket_above_the_fold_optimization'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
   const present = row['present'];
-  const beacon = row['beacon'];
-  if (typeof present !== 'boolean' || typeof beacon !== 'boolean') return null;
+  const lcpComment = row['lcpComment'];
+  if (typeof present !== 'boolean' || typeof lcpComment !== 'boolean') return null;
   const keys = new Set(Object.keys(row));
-  if (!keys.has('present') || !keys.has('beacon')) return null;
-  if (beacon) {
-    if (!present || keys.size !== 2) return null;
-    return { present: true, beacon: true };
-  }
+  if (!keys.has('present') || !keys.has('lcpComment')) return null;
   if (!present) {
-    // The engines emit exactly `{ present: false, beacon: false }` — an
-    // empty image list alongside it is not engine output, so it rejects.
+    // The engines emit exactly `{ present: false, lcpComment }` — an image
+    // list alongside it is not engine output, so it rejects.
     if (keys.size !== 2) return null;
-    return { present: false, beacon: false };
+    return { present: false, lcpComment };
   }
   if (!keys.has('preloadedImages') || keys.size !== 3 || !isStringArray(row['preloadedImages'])) {
     return null;
@@ -487,9 +510,186 @@ function parseAboveTheFoldRow(
   if (row['preloadedImages'].some((url) => url.length > LIMITS.preloadedImages.chars)) return null;
   return {
     present,
-    beacon: false,
+    lcpComment,
     preloadedImages: [...row['preloadedImages']]
   };
+}
+
+/**
+ * Automatic-Lazy-Rendering row: present ⇔ converted elements ≥ 1 (the
+ * applied verdict); the style marker and hash count ride along as page facts.
+ */
+function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rendering'] | null {
+  if (!isRecord(input)) return null;
+  const row = { ...input };
+  if (Object.keys(row).length !== 4) return null;
+  const present = row['present'];
+  const inlineCssPresent = row['inlineCssPresent'];
+  if (typeof present !== 'boolean' || typeof inlineCssPresent !== 'boolean') return null;
+  const lazyRenderElements = parseElementCount(row['lazyRenderElements']);
+  const locationHashes = parseElementCount(row['locationHashes']);
+  if (lazyRenderElements === null || locationHashes === null) return null;
+  if (present !== lazyRenderElements > 0) return null;
+  return { present, lazyRenderElements, inlineCssPresent, locationHashes };
+}
+
+/** A non-negative finite integer element count (a scalar — no size cap). */
+function parseElementCount(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null;
+  return value;
+}
+
+/** Preload-fonts row: present ⇔ the attributed font list is non-empty. */
+function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts'] | null {
+  if (!isRecord(input)) return null;
+  const row = { ...input };
+  if (Object.keys(row).length !== 2) return null;
+  const present = row['present'];
+  if (typeof present !== 'boolean') return null;
+  if (present) {
+    const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
+    if (fonts === null || fonts.length < 1) return null;
+    return { present: true, fonts };
+  }
+  // Absent feature: the engines emit an empty list, never a populated one.
+  if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return null;
+  return { present: false, fonts: [] };
+}
+
+/** Preconnect row: present ⇔ the attributed domain list is non-empty. */
+function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_domains'] | null {
+  if (!isRecord(input)) return null;
+  const row = { ...input };
+  if (Object.keys(row).length !== 3) return null;
+  const present = row['present'];
+  if (typeof present !== 'boolean') return null;
+  const preconnectCount = parseElementCount(row['preconnectCount']);
+  if (preconnectCount === null) return null;
+  if (present) {
+    const domains = parseCappedStringList(row['domains'], LIMITS.domains);
+    if (domains === null || domains.length < 1) return null;
+    return { present: true, domains, preconnectCount };
+  }
+  if (!isStringArray(row['domains']) || row['domains'].length !== 0) return null;
+  return { present: false, domains: [], preconnectCount };
+}
+
+/** Row keys beyond the three base ones the beacon row may carry. */
+const BEACON_ROW_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  'elements',
+  ...BEACON_CONFIG_LIST_FIELDS
+]);
+
+/**
+ * Priority-Elements beacon row: the three base keys always; the config
+ * payload only on a present beacon whose config parsed — status null ⇒ no
+ * payload fields and isMobile null (a degraded config degrades wholesale).
+ * The status map itself re-runs the config rules (known keys boolean,
+ * unknown keys bounded primitives) so a forged sender gains nothing.
+ */
+function parseBeaconRow(input: unknown): WprDetections['priority_elements_beacon'] | null {
+  if (!isRecord(input)) return null;
+  const row = { ...input };
+  const present = row['present'];
+  if (typeof present !== 'boolean') return null;
+  const keys = new Set(Object.keys(row));
+  if (!keys.has('present') || !keys.has('status') || !keys.has('isMobile')) return null;
+
+  const isMobile = row['isMobile'];
+  if (isMobile !== null && typeof isMobile !== 'boolean') return null;
+  const status = row['status'];
+  if (status !== null && !isRecord(status)) return null;
+
+  if (!present) {
+    // Absent beacon: no config, no device context.
+    if (keys.size !== 3 || status !== null || isMobile !== null) return null;
+    return { present: false, status: null, isMobile: null };
+  }
+
+  // Payload fields are config-carried: they require a parsed status map, and
+  // any unknown key is not engine output.
+  const unknownKeys = [...keys].filter(
+    (key) =>
+      !BEACON_ROW_PAYLOAD_KEYS.has(key) &&
+      key !== 'present' &&
+      key !== 'status' &&
+      key !== 'isMobile'
+  );
+  if (status === null) {
+    if (isMobile !== null || keys.size !== 3) return null;
+    return { present: true, status: null, isMobile: null };
+  }
+  if (unknownKeys.length > 0) return null;
+
+  const parsedStatus = parseBeaconStatusMap(status);
+  if (parsedStatus === null) return null;
+  const out: WprDetections['priority_elements_beacon'] = {
+    present: true,
+    status: parsedStatus,
+    isMobile
+  };
+  // The payload checks below reject any unknown key (only known config
+  // fields survive), so `payloadKeys` needs no separate allowlist pass.
+  if (row['elements'] !== undefined) {
+    if (
+      typeof row['elements'] !== 'string' ||
+      row['elements'].length > BEACON_CONFIG_LIMITS.elements
+    ) {
+      return null;
+    }
+    out.elements = row['elements'];
+  }
+  for (const field of BEACON_CONFIG_LIST_FIELDS) {
+    if (row[field] === undefined) continue;
+    // Empty lists are legitimate config values (the plugin's defaults).
+    const list = parseCappedStringList(row[field], BEACON_CONFIG_LIMITS.lists);
+    if (list === null) return null;
+    out[field] = list;
+  }
+  return out;
+}
+
+/**
+ * The status map at the messaging boundary: same rules as the engine's parse
+ * (independently enforced so a corrupt or forged payload never reaches the
+ * panel) — known keys boolean, unknown keys bounded primitives, caps held.
+ */
+function parseBeaconStatusMap(status: Record<string, unknown>): BeaconFeatureStatus | null {
+  const keys = Object.keys(status);
+  if (keys.length > BEACON_CONFIG_LIMITS.status.keys) return null;
+  const parsed: BeaconFeatureStatus = {};
+  for (const key of keys) {
+    const value = status[key];
+    // An own `__proto__` key is never engine output; assigning through the
+    // name would invoke the inherited setter — hostile, reject the row.
+    if (key === '__proto__') return null;
+    if ((BEACON_STATUS_KEYS as readonly string[]).includes(key)) {
+      if (typeof value !== 'boolean') return null;
+      parsed[key] = value;
+    } else if (isBoundedStatusPrimitive(value)) {
+      parsed[key] = value;
+    } else {
+      return null;
+    }
+  }
+  return parsed;
+}
+
+function isBoundedStatusPrimitive(value: unknown): boolean {
+  if (typeof value === 'boolean' || value === null) return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'string') return value.length <= BEACON_CONFIG_LIMITS.status.chars;
+  return false;
+}
+
+/** An array of non-empty bounded strings, rebuilt fresh (rejects wholesale on violation). */
+function parseCappedStringList(
+  value: unknown,
+  limits: { count: number; chars: number }
+): string[] | null {
+  if (!isStringArray(value) || value.length > limits.count) return null;
+  if (value.some((item) => item.length < 1 || item.length > limits.chars)) return null;
+  return [...value];
 }
 
 /** Full panel payload. Every part is validated; any miss rejects the payload. */

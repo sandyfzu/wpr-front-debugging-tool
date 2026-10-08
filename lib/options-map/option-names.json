@@ -33,9 +33,10 @@
   "image_dimensions": "Add missing image dimensions",
   "purge_cron_interval": "Cache lifespan",
   "dns_prefetch": "URLs to prefetch",
+  "auto_preload_fonts": "Preload fonts",
   "preload_fonts": "Fonts to preload",
   "minify_concatenate_js": "Combine JavaScript files",
   "critical_css": "Fallback critical CSS",
   "preload_links": "Preload Links",
-  "rocket_above_the_fold_optimization": "Optimize Critical Images"
+  "rocket_above_the_fold_optimization": "Optimize critical images"
 }
