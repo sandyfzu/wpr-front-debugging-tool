@@ -6,7 +6,8 @@
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getOptions, optionsStore, parseStoredOptions } from './options';
-import { KNOWN_CONFLICTS_SEED_LENGTH, knownConflictsStore } from './known-conflicts';
+import { getKnownConflicts, knownConflictsStore } from './known-conflicts';
+import { KNOWN_CONFLICTS_SEED_LENGTH, getKnownConflictsSeed } from './known-conflicts-seed';
 import { parseKnownConflicts } from '../messaging/validate';
 import seedJson from '../known-conflicts/known-conflicts-db.json';
 
@@ -94,14 +95,23 @@ describe('parseStoredOptions', () => {
 });
 
 describe('knownConflictsStore', () => {
-  it('seeds from the committed snapshot on fresh storage', async () => {
-    const rows = await knownConflictsStore.getValue();
+  it("reads empty on fresh storage — seeding is the background bundle's job", async () => {
+    // The committed snapshot ships only in the background bundle (as its own
+    // asset); every other surface must see "no usable value" and ask the
+    // background, never carry the ~46 KB data file to degrade into.
+    expect(await knownConflictsStore.getValue()).toBeNull();
+    expect(await getKnownConflicts()).toBeNull();
+  });
+
+  it('the committed snapshot stays valid and is pinned at exactly 137 rows', () => {
     // Exact-count pin: silently losing rows (a truncated data file, a bad
     // import) would pass shape checks but ship a blind spot in conflict UIs.
     expect(KNOWN_CONFLICTS_SEED_LENGTH).toBe(137);
-    expect(rows).toHaveLength(KNOWN_CONFLICTS_SEED_LENGTH);
+    expect(seedJson).toHaveLength(KNOWN_CONFLICTS_SEED_LENGTH);
+    // A mutating consumer must not be able to corrupt the shared seed.
+    expect(Object.isFrozen(getKnownConflictsSeed())).toBe(true);
     // The committed snapshot must pass the shared validator outright — a
-    // corrupt seed would corrupt every fresh install.
+    // corrupt seed would poison every background serve.
     expect(parseKnownConflicts(seedJson)).toHaveLength((seedJson as unknown[]).length);
   });
 
@@ -123,17 +133,9 @@ describe('knownConflictsStore', () => {
     expect(await knownConflictsStore.getMeta()).toEqual({ updatedAt: 1720110000 });
   });
 
-  it('degrades corrupt storage reads to the committed seed (validated access)', async () => {
+  it('degrades corrupt storage reads to null, never to foreign rows (validated access)', async () => {
     await knownConflictsStore.setValue([{ id: 'x', type: 'Plugin' }] as never);
-    const { getKnownConflicts } = await import('./known-conflicts');
-    const rows = await getKnownConflicts();
-    expect(rows).toHaveLength(137);
-    // A fresh array is handed out (mutating it locally is safe), and its rows
-    // are frozen committed seed objects — a caller-side mutation of a row
-    // throws instead of corrupting the shared seed.
-    rows.push(rows[0] as (typeof rows)[number]);
-    expect(rows).toHaveLength(138);
-    expect(Object.isFrozen(rows[0])).toBe(true);
+    expect(await getKnownConflicts()).toBeNull();
   });
 
   it('validates wrong-typed rows away (corrupt fetches never store)', () => {

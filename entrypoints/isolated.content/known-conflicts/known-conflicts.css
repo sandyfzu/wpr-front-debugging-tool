@@ -1,0 +1,178 @@
+/*
+ * Known Conflicts badge + list, injected into a host page's shadow root.
+ *
+ * Only feature-local rules live here; the token definitions come in through
+ * the entrypoint stylesheet (`styles.css` imports the token file once, and
+ * one stylesheet is one fetched asset per entrypoint).
+ * Positioning rides an inner element (`position: fixed`), because the shadow
+ * host is reset with `all: initial !important` (verified against a live
+ * Chromium: an :host rule cannot win that; an inner element styles normally).
+ */
+
+/* The chrome wrapper is the fixed positioning surface: bottom-left, above
+ * every host layer (the same stacking imperative the surface shipped). */
+.kc-chrome {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  z-index: 999999;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-primary);
+  background: var(--surface-1);
+}
+
+/* Both panels swap through this class alone: no transition bookkeeping is
+ * involved in the state change. The swap is instant if motion is off. */
+.kc-hidden {
+  display: none;
+}
+
+/* ---- List panel ------------------------------------------------------------ */
+
+.kc-list {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 250px;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface-2);
+  color: var(--fg-primary);
+  border-right: 1px solid var(--line-1);
+  box-shadow: var(--shadow-elev-3);
+}
+
+.kc-list-head {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.kc-eyebrow {
+  font-size: 0.8em;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.kc-close {
+  border: none;
+  background: none;
+  color: var(--line-strong);
+  font-size: 1.6em;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.kc-close:hover {
+  color: var(--status-error);
+}
+
+.kc-title {
+  margin: 8px 0 6px;
+  text-align: center;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.kc-items {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One finding: name (strong) + summary, clickable to the support article. */
+.kc-item {
+  border-left: 3px solid var(--status-error);
+  padding-inline: 8px;
+  padding-block: 4px;
+  cursor: pointer;
+}
+.kc-item:not(:last-child) {
+  margin-bottom: 12px;
+}
+.kc-item:hover {
+  background: var(--surface-3);
+}
+
+/* Empty / loading lines occupy the same slot as findings. */
+.kc-none {
+  padding: 8px;
+  color: var(--fg-secondary);
+}
+
+/* ---- Badge row -------------------------------------------------------------- */
+
+.kc-badges {
+  max-width: max-content;
+  display: flex;
+  flex-direction: row;
+}
+
+.kc-badge {
+  width: 234px;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+  white-space: pre;
+  text-align: left;
+  background: var(--surface-2);
+  color: var(--fg-primary);
+  border: 1px solid var(--line-strong);
+  border-right-color: var(--line-1);
+  border-left: none;
+  border-bottom: none;
+}
+
+.kc-badge:hover {
+  background: var(--surface-3);
+}
+
+/* Collapse = the width transition only; the element keeps existing so the
+ * next slide-in is a plain class toggle (never a mount/unmount). While
+ * collapsed nothing receives clicks (width 0). */
+.kc-badge.kc-collapsed {
+  width: 0;
+  padding-inline: 0;
+  margin-inline: 0;
+  border: none;
+  pointer-events: none;
+}
+
+.kc-badge,
+.kc-furl {
+  transition: var(--motion-slow) var(--ease-standard);
+  transition-property: width, padding, border-color;
+}
+
+.kc-warning {
+  width: 1em;
+  height: 1em;
+  margin-right: 2px;
+  fill: var(--status-error);
+  stroke: none;
+}
+
+.kc-furl {
+  width: 16px;
+  padding-inline: 4px;
+  border: 1px solid var(--line-strong);
+  border-left: none;
+  border-bottom: none;
+  background: var(--surface-2);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+.kc-furl:hover {
+  background: var(--surface-3);
+}

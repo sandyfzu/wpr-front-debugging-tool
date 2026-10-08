@@ -2,7 +2,12 @@
   {
     "surface": "background service worker",
     "globs": ["background.js"],
-    "maxKb": { "raw": 25 }
+    "maxKb": { "raw": 26 }
+  },
+  {
+    "surface": "known-conflicts DB seed asset (background-owned)",
+    "globs": ["assets/background.json"],
+    "maxKb": { "raw": 50 }
   },
   {
     "surface": "popup JS",
@@ -22,12 +27,12 @@
   {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
-    "maxKb": { "raw": 60, "gzip": 20 }
+    "maxKb": { "raw": 80, "gzip": 30 }
   },
   {
     "surface": "main-world content script",
     "globs": ["content-scripts/main-world*.js"],
-    "maxKb": { "raw": 2 }
+    "maxKb": { "raw": 8 }
   },
   {
     "surface": "devtools panel JS (all panel chunks)",
@@ -37,6 +42,6 @@
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "content-scripts/*.js"],
-    "maxKb": { "raw": 837 }
+    "maxKb": { "raw": 857 }
   }
 ]

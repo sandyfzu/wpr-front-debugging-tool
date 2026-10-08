@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  isPrintable,
   parseDbUpdateResult,
   parseDetectionSummary,
   parseDiagnoserData,
@@ -49,6 +50,25 @@ describe('parseErrorWords', () => {
     expect(parseErrorWords(['has\x7fdel'])).toBeNull();
     expect(parseErrorWords(['a\tb', 'c\nd', 'e\rf'])).toEqual(['a\tb', 'c\nd', 'e\rf']);
     expect(parseErrorWords(['раз-два'])).toEqual(['раз-два']);
+  });
+
+  it('refuses lone surrogates; paired astral code points pass through', () => {
+    // Direct pin of the shared printability rule (`isPrintable`, one contract
+    // for the receiving guard and the MAIN-world capture). The lone-surrogate
+    // branch is what these rows guard:
+    // - `\ud800`/`\udfff` iterate as unpaired 0xD800–0xDFFF code points and
+    //   must be refused — this kills the branch-removed mutation (the check
+    //   degrading to always-true), which would forward replacement garbage;
+    // - `𝛕` is U+1D6D5, a paired astral code point that iterates whole (≥
+    //   0x10000) and must pass — this kills the opposite mutation (checking
+    //   UTF-16 units, which would reject every astral character).
+    expect(isPrintable('\ud800')).toBe(false);
+    expect(isPrintable('\udfff')).toBe(false);
+    expect(isPrintable('𝛕')).toBe(true);
+    // End to end, the same rule guards whole batches: an astral word stays a
+    // word, a lone surrogate can never sneak in through the validator.
+    expect(parseErrorWords(['𝛕 in a word'])).toEqual(['𝛕 in a word']);
+    expect(parseErrorWords(['lone \ud800 surrogate'])).toBeNull();
   });
 });
 

@@ -307,7 +307,7 @@ export const KNOWN_PLATFORMS: ReadonlyMap<string, readonly KnownPlatformHeader[]
 /** Identifier the main world substitutes for cross-origin "Script error." messages. */
 export const UNDEFINED_REFERENCE_EXTERNAL_ERROR = '__EXTERNAL_ORIGIN_ERROR__';
 
-/** Daily-ish KC-DB refresh alarm name (background owns firing, storage owns data). */
+/** Hourly KC-DB refresh alarm name (background owns firing, storage owns data). */
 export const ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB = 'update-known-conflicts-db';
 
 /** Context menu ids created by the background; click handlers must match exactly. */

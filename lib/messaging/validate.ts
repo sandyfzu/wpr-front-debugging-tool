@@ -32,15 +32,18 @@ import {
 } from '../wp-rocket/constants';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
 import { isRecord } from '../../utils/is-record';
+import { ERROR_WORD_LIMITS, isPrintable } from './error-words';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
  * of magnitude below), uniform in behavior: violation ⇒ the guard returns
- * `null` for the whole row.
+ * `null` for the whole row. The word row is the error-words contract, shared
+ * with the MAIN-world capture side (see `./error-words`).
  */
 const LIMITS = {
-  /** Word list (undefined references): ≤ 50 words × 200 printable chars. */
-  words: { count: 50, chars: 200 },
+  // The word row's acceptance caps live in the shared contract (`./error-words`),
+  // sourced once by both sides of the window bridge.
+  words: ERROR_WORD_LIMITS,
   /** Captured response headers: rows, and per-row name/value lengths. */
   headers: { count: 256, name: 512, value: 4096 },
   /** Delay JS: script rows, src URL, inline content. */
@@ -56,7 +59,6 @@ const LIMITS = {
   /** Priority-Elements: font-preload list and preconnect domain list. */
   fonts: { count: 1_000, chars: 4096 },
   domains: { count: 500, chars: 2048 },
-  /** Known-conflicts rows and their fields. */
   knownConflicts: {
     count: 500,
     id: 64,
@@ -67,9 +69,7 @@ const LIMITS = {
     issue_description: 8_192,
     url: 2_048
   },
-  /** DevTools search query. */
   searchQuery: 200,
-  /** Detection version strings (`wpr`, `delay_js`) — never empty (engines return null otherwise). */
   versions: 64
 } as const;
 
@@ -78,29 +78,10 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
-/**
- * Control characters that never belong in user-visible text: C0 (except
- * tab/newline/carriage-return), DEL, and the C1 range. Everything else,
- * including non-ASCII letters, passes.
- */
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0080-\u009F]/;
-
-/**
- * Whether a string is renderable as text: no control characters beyond
- * tab/newline/carriage-return and no lone surrogates (unpaired halves are
- * replacement-garbage, not words).
- */
-function isPrintable(value: string): boolean {
-  if (CONTROL_CHARS.test(value)) return false;
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint === undefined) return false;
-    // A paired surrogate iterates as one code point ≥ 0x10000; a lone one
-    // keeps its 0xD800–0xDFFF value and is rejected.
-    if (codePoint >= 0xd800 && codePoint <= 0xdfff) return false;
-  }
-  return true;
-}
+// The printability rule and the word caps' canonical home is the shared
+// contract; re-exported so every caller of this guard module reads one public
+// path while the MAIN-world capture side imports the (side-effect-free) leaf.
+export { ERROR_WORD_LIMITS, isPrintable } from './error-words';
 
 /** Toolbar badge input: exactly two booleans about the page. */
 export interface DetectionSummary {
@@ -161,6 +142,13 @@ export function parsePageHeaders(input: unknown): PageHeaders | null {
       : { name: row.name };
   });
 }
+
+/**
+ * Total number of undefined-reference words a page's list may hold. Derived
+ * from the batch cap above: whether the words arrive in one batch or several,
+ * the accumulated list can never exceed what a single valid batch could carry.
+ */
+export const ERROR_WORD_LIMIT = LIMITS.words.count;
 
 /** Exact two-boolean page summary consumed by the toolbar badge. */
 export function parseDetectionSummary(input: unknown): DetectionSummary | null {

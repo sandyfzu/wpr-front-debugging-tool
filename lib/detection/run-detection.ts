@@ -100,9 +100,11 @@ const NON_PROPAGATING_KEYS: ReadonlySet<keyof WprDetections> = new Set(['wpr', '
 /**
  * An optimization found on the page implies WP Rocket handled the page. Driven
  * from the record's own keys, so a new check row propagates without a second
- * list to maintain; the exclusions above are the whole rule.
+ * list to maintain; the exclusions above are the whole rule. Exported so the
+ * content script's data hub can own the pass end-to-end over one parsed page —
+ * the rule has exactly this one declaring site.
  */
-function applyPresencePropagation(detections: WprDetections): void {
+export function applyPresencePropagation(detections: WprDetections): void {
   if (detections.wpr.present) return;
   const rows = Object.keys(detections) as Array<keyof WprDetections>;
   if (rows.some((key) => !NON_PROPAGATING_KEYS.has(key) && detections[key].present)) {

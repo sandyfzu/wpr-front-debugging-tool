@@ -1,0 +1,98 @@
+/*
+ * Side-by-Side compare overlay inside a host page's shadow root.
+ *
+ * Feature-local rules only (tokens arrive through the entrypoint's
+ * stylesheet, which imports the token file once) and plain CSS; the
+ * overlay positions from an inner element — `position: fixed; inset: 0` —
+ * avoiding the `:host { all: initial }` reset by never styling the host at
+ * all.
+ */
+
+/* Full-viewport layer that holds both frames; hidden until opened via the
+ * open class (visibility + opacity), so a closed overlay never intercepts
+ * events. State changes are the class alone — no transition bookkeeping. */
+.sbs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999999;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  color: var(--fg-primary);
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--motion-slow) var(--ease-standard),
+    visibility 0s var(--motion-slow);
+}
+
+.sbs-overlay--open {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity var(--motion-slow) var(--ease-standard);
+}
+
+/* ---- Header bar ------------------------------------------------------------- */
+
+.sbs-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line-2);
+}
+
+.sbs-side-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 24px;
+}
+
+.sbs-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--fg-primary);
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 0;
+}
+.sbs-button:hover {
+  opacity: 1;
+}
+.sbs-button:active {
+  opacity: 0.5;
+}
+.sbs-button svg {
+  width: 1.5em;
+  height: 1.5em;
+  stroke: currentColor;
+}
+
+/* ---- Frames ------------------------------------------------------------------ */
+
+.sbs-frames {
+  display: flex;
+  flex-direction: row;
+  height: calc(100% - 40px);
+  box-sizing: border-box;
+  background: var(--surface-3);
+}
+
+.sbs-frame {
+  width: 50%;
+  height: 100%;
+  display: inline-block;
+  border: none;
+}

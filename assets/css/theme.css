@@ -1,20 +1,20 @@
 /*
- * WPR FDT design tokens — the single source of truth for every surface's styling.
- * Every entrypoint stylesheet imports this file and nothing else defines colors,
- * motion or densities.
+ * Page stylesheet entry: the Tailwind layer on top of the shared design tokens.
  *
- * Appearance model (exactly three options, resolved before first paint):
- * - `system` (default) follows the OS `prefers-color-scheme`;
- * - an explicit choice is set as `data-theme="dark" | "light"` on `<html>` (pages)
- *   or on the shadow-root container (injected UI) before its content renders, and
- *   always wins over the media query because it pins `color-scheme`.
+ * Every page surface imports this file and nothing else defines colors, motion
+ * or densities. The tokens themselves (palette values, the three-way appearance
+ * model, reduced-motion handling) live in `tokens.css` — imported here for
+ * page surfaces and imported directly by the stylesheets injected into host
+ * pages' shadow roots, where the Tailwind layer below has no meaning.
  *
- * All palette-dependent values are written once as `light-dark(<light>, <dark>)`
- * on palette-agnostic token names; the browser resolves them against the *used*
- * color scheme of the element that consumes the token. Text/background pairs are
- * unit-tested for WCAG AA in both palettes (see the colocated contrast test) —
- * never change a value without running them.
+ * Appearance model (owned by tokens.css, summarized here): `system` (default)
+ * follows the OS `prefers-color-scheme`; an explicit choice is set as
+ * `data-theme="dark" | "light"` on `<html>` (pages) or on the shadow-root
+ * container (injected UI) before its content renders, and always wins over the
+ * media query because it pins `color-scheme`.
  */
+
+@import './tokens.css';
 
 @import 'tailwindcss';
 
@@ -22,95 +22,11 @@
  * scanner out of that directory so documentation can never generate CSS. */
 @source not '../../docs';
 
-/* ---- Appearance model ---------------------------------------------------- */
-
-/* Unset / system default: dark until the OS asks for light (matching the legacy
- * devtools-first look; `prefers-color-scheme: no-preference` falls through to dark). */
-:root {
-  color-scheme: dark;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']):not([data-theme='light']) {
-    color-scheme: light;
-  }
-}
-/* An explicit appearance always wins over the media query — on <html> for pages
- * and on any injected UI's shadow-root container in the host page. */
-[data-theme='dark'] {
-  color-scheme: dark;
-}
-[data-theme='light'] {
-  color-scheme: light;
-}
-
-/* ---- Palette-agnostic tokens --------------------------------------------- */
-/* Values switch with the color scheme above; names never mention a palette.
- * NOTE on ordering: `light-dark(lightValue, darkValue)` — the light palette is
- * always the first argument per the CSS Color 5 spec. */
-
-:root {
-  /* Surfaces: 5-level elevation scale (darkest at the bottom in the dark palette,
-   * light gray base with white panels in the light palette). */
-  --surface-0: light-dark(#f4f5f8, #0b0d10);
-  --surface-1: light-dark(#fafbfc, #111418);
-  --surface-2: light-dark(#ffffff, #171b21);
-  --surface-3: light-dark(#eef0f5, #1e242c);
-  --surface-4: light-dark(#e6e9f0, #262e38);
-
-  /* Borders per surface level: use border-line-N with bg-surface-N. */
-  --line-0: light-dark(#dcdfe6, #1d232b);
-  --line-1: light-dark(#d2d7e0, #242b34);
-  --line-2: light-dark(#c7cdd9, #2c3441);
-  --line-3: light-dark(#b9c1ce, #35404e);
-  --line-4: light-dark(#a9b2c2, #3f4b5b);
-  --line-strong: light-dark(#9aa4b8, #55637a);
-
-  /* Text hierarchy. */
-  --fg-primary: light-dark(#171a20, #e8eaf0);
-  --fg-secondary: light-dark(#414957, #aab4c4);
-  --fg-muted: light-dark(#5d6675, #8b96a9);
-
-  /* Accent: blue→violet ramp (headings, links, focus, primary actions).
-   * - `accent`        interactive text/icons/links and the focus ring;
-   * - `accent-strong` solid fill under light text (buttons, badges);
-   * - `accent-from/to` decorative gradient, mainly as gradient-clipped text. */
-  --accent: light-dark(#2f56e8, #7d9bff);
-  --accent-strong: light-dark(#4338ca, #4f46e5);
-  --accent-from: light-dark(#3554e8, #6390ff);
-  --accent-to: light-dark(#7c3aed, #a78bfa);
-  --on-accent: light-dark(#ffffff, #ffffff);
-
-  /* Status vocabulary — shared by panel cards and the on-page strip:
-   * `ok` enabled/passing · `error` absent/failed · `warn` degraded/unusual ·
-   * `info` informational · `neutral` plain/idle · `attention` "present but
-   * unsure" (fourth semantic, amber family). `*-soft` are the matching chip
-   * backgrounds; status text always sits on `*-soft` or a surface. */
-  --status-ok: light-dark(#0d6e3e, #3ddc84);
-  --status-ok-soft: light-dark(#dcf2e6, #0f2a1c);
-  --status-warn: light-dark(#8a6100, #fbbf24);
-  --status-warn-soft: light-dark(#f8f2da, #2d2410);
-  --status-error: light-dark(#bf1e1e, #f87171);
-  --status-error-soft: light-dark(#fbe6e6, #2b1518);
-  --status-info: light-dark(#175cd3, #60a5fa);
-  --status-info-soft: light-dark(#e2edfb, #12233d);
-  --status-neutral: light-dark(#4b5563, #9aa4b2);
-  --status-neutral-soft: light-dark(#e8eaf0, #1b2027);
-  --status-attention: light-dark(#8a4b00, #f59e0b);
-  --status-attention-soft: light-dark(#f7ebd8, #2c2210);
-
-  /* Motion: durations and easing for transitions/keyframes. Keep animations
-   * meaningful and short; `prefers-reduced-motion` is neutralized globally below. */
-  --motion-fast: 120ms;
-  --motion-base: 180ms;
-  --motion-slow: 280ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-entrance: cubic-bezier(0, 0, 0.2, 1);
-}
-
 /* ---- Tailwind namespace mappings ------------------------------------------ */
-/* `inline` so utilities resolve straight against the tokens above instead of
- * snapshotting values into generated `:root` variables — palette switches apply
- * without re-rendering. Namespaces: color-* → bg-/text-/border-…, font/text/shadow. */
+/* `inline` so utilities resolve straight against the tokens in tokens.css
+ * instead of snapshotting values into generated `:root` variables — palette
+ * switches apply without re-rendering. Namespaces: color-* → bg-/text-/border-…,
+ * font/text/shadow. */
 
 @theme inline {
   --color-surface-0: var(--surface-0);
@@ -149,9 +65,11 @@
   --color-status-attention: var(--status-attention);
   --color-status-attention-soft: var(--status-attention-soft);
 
-  /* System UI stack (sans is Tailwind's default, kept); mono for URLs/code. */
-  --font-mono:
-    ui-monospace, 'SFMono-Regular', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* System UI stack: sans is Tailwind's default, kept; mono and the shadow
+   * elevations live as tokens in tokens.css — this block only maps the
+   * Tailwind namespace names to those same custom properties, so every
+   * surface (page or shadow root) reads one declaring site. */
+  --font-mono: var(--font-mono);
 
   /* Panel density: overrides of Tailwind's xs/sm for devtools-compact text.
    * Everything ≥ base stays at Tailwind's scale. */
@@ -162,26 +80,9 @@
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
 
-  /* Elevation: shadows only, palettes differ in strength; keep shapes identical. */
-  --shadow-elev-1: 0 1px 2px light-dark(rgb(10 14 22 / 12%), rgb(0 0 0 / 35%));
-  --shadow-elev-2:
-    0 1px 2px light-dark(rgb(10 14 22 / 10%), rgb(0 0 0 / 30%)),
-    0 4px 12px light-dark(rgb(10 14 22 / 10%), rgb(0 0 0 / 35%));
-  --shadow-elev-3:
-    0 2px 4px light-dark(rgb(10 14 22 / 12%), rgb(0 0 0 / 30%)),
-    0 10px 28px light-dark(rgb(10 14 22 / 16%), rgb(0 0 0 / 45%));
-}
-
-/* ---- Reduced motion --------------------------------------------------------- */
-/* Users who opt out of motion get near-instant state changes everywhere. */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  /* Elevation: the values are the tokens'; this mapping keeps the
+   * `shadow-elev-*` utilities generated with the same behavior. */
+  --shadow-elev-1: var(--shadow-elev-1);
+  --shadow-elev-2: var(--shadow-elev-2);
+  --shadow-elev-3: var(--shadow-elev-3);
 }

@@ -1,0 +1,13 @@
+/*
+ * The isolated-world content script's stylesheet: the one CSS asset the
+ * entrypoint fetches (WXT's `cssInjectionMode: "ui"`), containing the shared
+ * design tokens once and both injected UIs' rules. Everything renders inside
+ * host-page shadow roots; page CSS cannot pierce the `all: initial` reset
+ * WXT prepends, and this stylesheet's `:host`/media rules are mapped to the
+ * shadow host by the injection pipeline.
+ */
+
+@import '../../assets/css/tokens.css';
+
+@import './known-conflicts/known-conflicts.css';
+@import './side-by-side/side-by-side.css';

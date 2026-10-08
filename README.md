@@ -16,6 +16,6 @@ pnpm compile && pnpm lint && pnpm format:check   # types, eslint, prettier
 pnpm build && pnpm check:budgets   # production build + size-budget gate
 ```
 
-Design tokens (light/dark/system appearance, status vocabulary, motion) live in `assets/css/theme.css`; every surface imports them and a unit test pins WCAG AA contrast for the committed text/background pairs in both palettes.
+Design tokens (light/dark/system appearance, status vocabulary, motion) live in `assets/css/tokens.css` (definitions) and `assets/css/theme.css` (Tailwind layer; every page surface imports it, injected shadow UIs import the tokens file); a unit test pins WCAG AA contrast for the committed text/background pairs in both palettes.
 
 See `AGENTS.md` for the full operating guide and `docs/plans/` for the port plan.
