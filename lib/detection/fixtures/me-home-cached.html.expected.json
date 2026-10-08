@@ -1,0 +1,678 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": true,
+      "version": "3.20.0.2",
+      "timeStamp": 1791342241
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": true,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "if(navigator.userAgent.match(/MSIE|Internet Explorer/i)||navigator.userAgent.match(/Trident\\/7\\..*?rv:11/i)){var href=document.location.href;if(!href.match(/[?&]nowprocket/)){if(href.indexOf(\"?\")==-1){if(href.indexOf(\"#\")==-1){document.location.href=href+\"?nowprocket=1\"}else{document.location.href=href.replace(\"#\",\"?nowprocket=1#\")}}else{if(href.indexOf(\"#\")==-1){document.location.href=href+\"&nowprocket=1\"}else{document.location.href=href.replace(\"#\",\"&nowprocket=1#\")}}}}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "(()=>{class RocketLazyLoadScripts{constructor(){this.v=\"2.0.4\",this.userEvents=[\"keydown\",\"keyup\",\"mousedown\",\"mouseup\",\"mousemove\",\"mouseover\",\"mouseout\",\"touchmove\",\"touchstart\",\"touchend\",\"touchcancel\",\"wheel\",\"click\",\"dblclick\",\"input\"],this.attributeEvents=[\"onblur\",\"onclick\",\"oncontextmenu\",\"ondblclick\",\"onfocus\",\"onmousedown\",\"onmouseenter\",\"onmouseleave\",\"onmousemove\",\"onmouseout\",\"onmouseover\",\"onmouseup\",\"onmousewheel\",\"onscroll\",\"onsubmit\"]}async t(){this.i(),this.o(),/iP(ad|hone)/.test(navigator.userAgent)&&this.h(),this.u(),this.l(this),this.m(),this.k(this),this.p(this),this._(),await Promise.all([this.R(),this.L()]),this.lastBreath=Date.now(),this.S(this),this.P(),this.D(),this.O(),this.M(),await this.C(this.delayedScripts.normal),await this.C(this.delayedScripts.defer),await this.C(this.delayedScripts.async),await this.T(),await this.F(),await this.j(),await this.A(),window.dispatchEvent(new Event(\"rocket-allScriptsLoaded\")),this.everythingLoaded=!0,this.lastTouchEnd&&await new Promise(t=>setTimeout(t,500-Date.now()+this.lastTouchEnd)),this.I(),this.H(),this.U(),this.W()}i(){this.CSPIssue=sessionStorage.getItem(\"rocketCSPIssue\"),document.addEventListener(\"securitypolicyviolation\",t=>{this.CSPIssue||\"script-src-elem\"!==t.violatedDirective||\"data\"!==t.blockedURI||(this.CSPIssue=!0,sessionStorage.setItem(\"rocketCSPIssue\",!0))},{isRocket:!0})}o(){window.addEventListener(\"pageshow\",t=>{this.persisted=t.persisted,this.realWindowLoadedFired=!0},{isRocket:!0}),window.addEventListener(\"pagehide\",()=>{this.onFirstUserAction=null},{isRocket:!0})}h(){let t;function e(e){t=e}window.addEventListener(\"touchstart\",e,{isRocket:!0}),window.addEventListener(\"touchend\",function i(o){o.changedTouches[0]&&t.changedTouches[0]&&Math.abs(o.changedTouches[0].pageX-t.changedTouches[0].pageX)<10&&Math.abs(o.changedTouches[0].pageY-t.changedTouches[0].pageY)<10&&o.timeStamp-t.timeStamp<200&&(window.removeEventListener(\"touchstart\",e,{isRocket:!0}),window.removeEventListener(\"touchend\",i,{isRocket:!0}),\"INPUT\"===o.target.tagName&&\"text\"===o.target.type||(o.target.dispatchEvent(new TouchEvent(\"touchend\",{target:o.target,bubbles:!0})),o.target.dispatchEvent(new MouseEvent(\"mouseover\",{target:o.target,bubbles:!0})),o.target.dispatchEvent(new PointerEvent(\"click\",{target:o.target,bubbles:!0,cancelable:!0,detail:1,clientX:o.changedTouches[0].clientX,clientY:o.changedTouches[0].clientY})),event.preventDefault()))},{isRocket:!0})}q(t){this.userActionTriggered||(\"mousemove\"!==t.type||this.firstMousemoveIgnored?\"keyup\"===t.type||\"mouseover\"===t.type||\"mouseout\"===t.type||(this.userActionTriggered=!0,this.onFirstUserAction&&this.onFirstUserAction()):this.firstMousemoveIgnored=!0),\"click\"===t.type&&t.preventDefault(),t.stopPropagation(),t.stopImmediatePropagation(),\"touchstart\"===this.lastEvent&&\"touchend\"===t.type&&(this.lastTouchEnd=Date.now()),\"click\"===t.type&&(this.lastTouchEnd=0),this.lastEvent=t.type,t.composedPath&&t.composedPath()[0].getRootNode()instanceof ShadowRoot&&(t.rocketTarget=t.composedPath()[0]),this.savedUserEvents.push(t)}u(){this.savedUserEvents=[],this.userEventHandler=this.q.bind(this),this.userEvents.forEach(t=>window.addEventListener(t,this.userEventHandler,{passive:!1,isRocket:!0})),document.addEventListener(\"visibilitychange\",this.userEventHandler,{isRocket:!0})}U(){this.userEvents.forEach(t=>window.removeEventListener(t,this.userEventHandler,{passive:!1,isRocket:!0})),document.removeEventListener(\"visibilitychange\",this.userEventHandler,{isRocket:!0}),this.savedUserEvents.forEach(t=>{(t.rocketTarget||t.target).dispatchEvent(new window[t.constructor.name](t.type,t))})}m(){const t=\"return false\",e=Array.from(this.attributeEvents,t=>\"data-rocket-\"+t),i=\"[\"+this.attributeEvents.join(\"],[\")+\"]\",o=\"[data-rocket-\"+this.attributeEvents.join(\"],[data-rocket-\")+\"]\",s=(e,i,o)=>{o&&o!==t&&(e.setAttribute(\"data-rocket-\"+i,o),e[\"rocket\"+i]=new Function(\"event\",o),e.setAttribute(i,t))};new MutationObserver(t=>{for(const n of t)\"attributes\"===n.type&&(n.attributeName.startsWith(\"data-rocket-\")||this.everythingLoaded?n.attributeName.startsWith(\"data-rocket-\")&&this.everythingLoaded&&this.N(n.target,n.attributeName.substring(12)):s(n.target,n.attributeName,n.target.getAttribute(n.attributeName))),\"childList\"===n.type&&n.addedNodes.forEach(t=>{if(t.nodeType===Node.ELEMENT_NODE)if(this.everythingLoaded)for(const i of[t,...t.querySelectorAll(o)])for(const t of i.getAttributeNames())e.includes(t)&&this.N(i,t.substring(12));else for(const e of[t,...t.querySelectorAll(i)])for(const t of e.getAttributeNames())this.attributeEvents.includes(t)&&s(e,t,e.getAttribute(t))})}).observe(document,{subtree:!0,childList:!0,attributeFilter:[...this.attributeEvents,...e]})}I(){this.attributeEvents.forEach(t=>{document.querySelectorAll(\"[data-rocket-\"+t+\"]\").forEach(e=>{this.N(e,t)})})}N(t,e){const i=t.getAttribute(\"data-rocket-\"+e);i&&(t.setAttribute(e,i),t.removeAttribute(\"data-rocket-\"+e))}k(t){Object.defineProperty(HTMLElement.prototype,\"onclick\",{get(){return this.rocketonclick||null},set(e){this.rocketonclick=e,this.setAttribute(t.everythingLoaded?\"onclick\":\"data-rocket-onclick\",\"this.rocketonclick(event)\")}})}S(t){function e(e,i){let o=e[i];e[i]=null,Object.defineProperty(e,i,{get:()=>o,set(s){t.everythingLoaded?o=s:e[\"rocket\"+i]=o=s}})}e(document,\"onreadystatechange\"),e(window,\"onload\"),e(window,\"onpageshow\");try{Object.defineProperty(document,\"readyState\",{get:()=>t.rocketReadyState,set(e){t.rocketReadyState=e},configurable:!0}),document.readyState=\"loading\"}catch(t){console.log(\"WPRocket DJE readyState conflict, bypassing\")}}l(t){this.originalAddEventListener=EventTarget.prototype.addEventListener,this.originalRemoveEventListener=EventTarget.prototype.removeEventListener,this.savedEventListeners=[],EventTarget.prototype.addEventListener=function(e,i,o){o&&o.isRocket||!t.B(e,this)&&!t.userEvents.includes(e)||t.B(e,this)&&!t.userActionTriggered||e.startsWith(\"rocket-\")||t.everythingLoaded?t.originalAddEventListener.call(this,e,i,o):(t.savedEventListeners.push({target:this,remove:!1,type:e,func:i,options:o}),\"mouseenter\"!==e&&\"mouseleave\"!==e||t.originalAddEventListener.call(this,e,t.savedUserEvents.push,o))},EventTarget.prototype.removeEventListener=function(e,i,o){o&&o.isRocket||!t.B(e,this)&&!t.userEvents.includes(e)||t.B(e,this)&&!t.userActionTriggered||e.startsWith(\"rocket-\")||t.everythingLoaded?t.originalRemoveEventListener.call(this,e,i,o):t.savedEventListeners.push({target:this,remove:!0,type:e,func:i,options:o})}}J(t,e){this.savedEventListeners=this.savedEventListeners.filter(i=>{let o=i.type,s=i.target||window;return e!==o||t!==s||(this.B(o,s)&&(i.type=\"rocket-\"+o),this.$(i),!1)})}H(){EventTarget.prototype.addEventListener=this.originalAddEventListener,EventTarget.prototype.removeEventListener=this.originalRemoveEventListener,this.savedEventListeners.forEach(t=>this.$(t))}$(t){t.remove?this.originalRemoveEventListener.call(t.target,t.type,t.func,t.options):this.originalAddEventListener.call(t.target,t.type,t.func,t.options)}p(t){let e;function i(e){return t.everythingLoaded?e:e.split(\" \").map(t=>\"load\"===t||t.startsWith(\"load.\")?\"rocket-jquery-load\":t).join(\" \")}function o(o){function s(e){const s=o.fn[e];o.fn[e]=o.fn.init.prototype[e]=function(){return this[0]===window&&t.userActionTriggered&&(\"string\"==typeof arguments[0]||arguments[0]instanceof String?arguments[0]=i(arguments[0]):\"object\"==typeof arguments[0]&&Object.keys(arguments[0]).forEach(t=>{const e=arguments[0][t];delete arguments[0][t],arguments[0][i(t)]=e})),s.apply(this,arguments),this}}if(o&&o.fn&&!t.allJQueries.includes(o)){const e={DOMContentLoaded:[],\"rocket-DOMContentLoaded\":[]};for(const t in e)document.addEventListener(t,()=>{e[t].forEach(t=>t())},{isRocket:!0});o.fn.ready=o.fn.init.prototype.ready=function(i){function s(){parseInt(o.fn.jquery)>2?setTimeout(()=>i.bind(document)(o)):i.bind(document)(o)}return\"function\"==typeof i&&(t.realDomReadyFired?!t.userActionTriggered||t.fauxDomReadyFired?s():e[\"rocket-DOMContentLoaded\"].push(s):e.DOMContentLoaded.push(s)),o([])},s(\"on\"),s(\"one\"),s(\"off\"),t.allJQueries.push(o)}e=o}t.allJQueries=[],o(window.jQuery),Object.defineProperty(window,\"jQuery\",{get:()=>e,set(t){o(t)}})}P(){const t=new Map;document.write=document.writeln=function(e){const i=document.currentScript,o=document.createRange(),s=i.parentElement;let n=t.get(i);void 0===n&&(n=i.nextSibling,t.set(i,n));const c=document.createDocumentFragment();o.setStart(c,0),c.appendChild(o.createContextualFragment(e)),s.insertBefore(c,n)}}async R(){return new Promise(t=>{this.userActionTriggered?t():this.onFirstUserAction=t})}async L(){return new Promise(t=>{document.addEventListener(\"DOMContentLoaded\",()=>{this.realDomReadyFired=!0,t()},{isRocket:!0})})}async j(){return this.realWindowLoadedFired?Promise.resolve():new Promise(t=>{window.addEventListener(\"load\",t,{isRocket:!0})})}M(){this.pendingScripts=[];this.scriptsMutationObserver=new MutationObserver(t=>{for(const e of t)e.addedNodes.forEach(t=>{\"SCRIPT\"!==t.tagName||t.noModule||t.isWPRocket||this.pendingScripts.push({script:t,promise:new Promise(e=>{const i=()=>{const i=this.pendingScripts.findIndex(e=>e.script===t);i>=0&&this.pendingScripts.splice(i,1),e()};t.addEventListener(\"load\",i,{isRocket:!0}),t.addEventListener(\"error\",i,{isRocket:!0}),setTimeout(i,1e3)})})})}),this.scriptsMutationObserver.observe(document,{childList:!0,subtree:!0})}async F(){await this.X(),this.pendingScripts.length?(await this.pendingScripts[0].promise,await this.F()):this.scriptsMutationObserver.disconnect()}D(){this.delayedScripts={normal:[],async:[],defer:[]},document.querySelectorAll(\"script[type$=rocketlazyloadscript]\").forEach(t=>{t.hasAttribute(\"data-rocket-src\")?t.hasAttribute(\"async\")&&!1!==t.async?this.delayedScripts.async.push(t):t.hasAttribute(\"defer\")&&!1!==t.defer||\"module\"===t.getAttribute(\"data-rocket-type\")?this.delayedScripts.defer.push(t):this.delayedScripts.normal.push(t):this.delayedScripts.normal.push(t)})}async _(){await this.L();let t=[];document.querySelectorAll(\"script[type$=rocketlazyloadscript][data-rocket-src]\").forEach(e=>{let i=e.getAttribute(\"data-rocket-src\");if(i&&!i.startsWith(\"data:\")){i.startsWith(\"//\")&&(i=location.protocol+i);try{const o=new URL(i).origin;o!==location.origin&&t.push({src:o,crossOrigin:e.crossOrigin||\"module\"===e.getAttribute(\"data-rocket-type\")})}catch(t){}}}),t=[...new Map(t.map(t=>[JSON.stringify(t),t])).values()],this.Y(t,\"preconnect\")}async G(t){if(await this.K(),!0!==t.noModule||!(\"noModule\"in HTMLScriptElement.prototype))return new Promise(e=>{let i;function o(){(i||t).setAttribute(\"data-rocket-status\",\"executed\"),e()}try{if(navigator.userAgent.includes(\"Firefox/\")||\"\"===navigator.vendor||this.CSPIssue)i=document.createElement(\"script\"),[...t.attributes].forEach(t=>{let e=t.nodeName;\"type\"!==e&&(\"data-rocket-type\"===e&&(e=\"type\"),\"data-rocket-src\"===e&&(e=\"src\"),i.setAttribute(e,t.nodeValue))}),t.text&&(i.text=t.text),t.nonce&&(i.nonce=t.nonce),i.hasAttribute(\"src\")?(i.addEventListener(\"load\",o,{isRocket:!0}),i.addEventListener(\"error\",()=>{i.setAttribute(\"data-rocket-status\",\"failed-network\"),e()},{isRocket:!0}),setTimeout(()=>{i.isConnected||e()},1)):(i.text=t.text,o()),i.isWPRocket=!0,t.parentNode.replaceChild(i,t);else{const i=t.getAttribute(\"data-rocket-type\"),s=t.getAttribute(\"data-rocket-src\");i?(t.type=i,t.removeAttribute(\"data-rocket-type\")):t.removeAttribute(\"type\"),t.addEventListener(\"load\",o,{isRocket:!0}),t.addEventListener(\"error\",i=>{this.CSPIssue&&i.target.src.startsWith(\"data:\")?(console.log(\"WPRocket: CSP fallback activated\"),t.removeAttribute(\"src\"),this.G(t).then(e)):(t.setAttribute(\"data-rocket-status\",\"failed-network\"),e())},{isRocket:!0}),s?(t.fetchPriority=\"high\",t.removeAttribute(\"data-rocket-src\"),t.src=s):t.src=\"data:text/javascript;base64,\"+window.btoa(unescape(encodeURIComponent(t.text)))}}catch(i){t.setAttribute(\"data-rocket-status\",\"failed-transform\"),e()}});t.setAttribute(\"data-rocket-status\",\"skipped\")}async C(t){const e=t.shift();return e?(e.isConnected&&await this.G(e),this.C(t)):Promise.resolve()}O(){this.Y([...this.delayedScripts.normal,...this.delayedScripts.defer,...this.delayedScripts.async],\"preload\")}Y(t,e){this.trash=this.trash||[];let i=!0;var o=document.createDocumentFragment();t.forEach(t=>{const s=t.getAttribute&&t.getAttribute(\"data-rocket-src\")||t.src;if(s&&!s.startsWith(\"data:\")){const n=document.createElement(\"link\");n.href=s,n.rel=e,\"preconnect\"!==e&&(n.as=\"script\",n.fetchPriority=i?\"high\":\"low\"),t.getAttribute&&\"module\"===t.getAttribute(\"data-rocket-type\")&&(n.crossOrigin=!0),t.crossOrigin&&(n.crossOrigin=t.crossOrigin),t.integrity&&(n.integrity=t.integrity),t.nonce&&(n.nonce=t.nonce),o.appendChild(n),this.trash.push(n),i=!1}}),document.head.appendChild(o)}W(){this.trash.forEach(t=>t.remove())}async T(){try{document.readyState=\"interactive\"}catch(t){}this.fauxDomReadyFired=!0;try{await this.K(),this.J(document,\"readystatechange\"),document.dispatchEvent(new Event(\"rocket-readystatechange\")),await this.K(),document.rocketonreadystatechange&&document.rocketonreadystatechange(),await this.K(),this.J(document,\"DOMContentLoaded\"),document.dispatchEvent(new Event(\"rocket-DOMContentLoaded\")),await this.K(),this.J(window,\"DOMContentLoaded\"),window.dispatchEvent(new Event(\"rocket-DOMContentLoaded\"))}catch(t){console.error(t)}}async A(){try{document.readyState=\"complete\"}catch(t){}try{await this.K(),this.J(document,\"readystatechange\"),document.dispatchEvent(new Event(\"rocket-readystatechange\")),await this.K(),document.rocketonreadystatechange&&document.rocketonreadystatechange(),await this.K(),this.J(window,\"load\"),window.dispatchEvent(new Event(\"rocket-load\")),await this.K(),window.rocketonload&&window.rocketonload(),await this.K(),this.allJQueries.forEach(t=>t(window).trigger(\"rocket-jquery-load\")),await this.K(),this.J(window,\"pageshow\");const t=new Event(\"rocket-pageshow\");t.persisted=this.persisted,window.dispatchEvent(t),await this.K(),window.rocketonpageshow&&window.rocketonpageshow({persisted:this.persisted})}catch(t){console.error(t)}}async K(){Date.now()-this.lastBreath>45&&(await this.X(),this.lastBreath=Date.now())}async X(){return document.hidden?new Promise(t=>setTimeout(t)):new Promise(t=>requestAnimationFrame(t))}B(t,e){return e===document&&\"readystatechange\"===t||(e===document&&\"DOMContentLoaded\"===t||(e===window&&\"DOMContentLoaded\"===t||(e===window&&\"load\"===t||e===window&&\"pageshow\"===t)))}static run(){(new RocketLazyLoadScripts).t()}}RocketLazyLoadScripts.run()})();",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "document.documentElement.className = 'js';",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://app.termly.io/resource-blocker/7469f79f-475d-41de-b658-73e577c087f8?autoBlock=off",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "window.dataLayer = window.dataLayer || [];window.dataLayer.push({\"page_type\":\"home\",\"language\":\"en\",\"page_locale\":\"en_US\",\"display_currency\":\"USD\",\"logged_in\":false,\"user_id\":null,\"customer_type\":\"prospect\"});",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n\tvar gtm4wp_datalayer_name = \"dataLayer\";\n\tvar dataLayer = dataLayer || [];\n\tconst gtm4wp_use_sku_instead = 1;\n\tconst gtm4wp_currency = 'USD';\n\tconst gtm4wp_product_per_impression = 10;\n\tconst gtm4wp_clear_ecommerce = false;\n\tconst gtm4wp_datalayer_max_timeout = 2000;\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebPage\",\"@id\":\"https://wp-rocket.me/\",\"url\":\"https://wp-rocket.me/\",\"name\":\"Speed up Your WordPress Website with WP Rocket\",\"isPartOf\":{\"@id\":\"https://wp-rocket.me/#website\"},\"about\":{\"@id\":\"https://wp-rocket.me/#organization\"},\"primaryImageOfPage\":{\"@id\":\"https://wp-rocket.me/#primaryimage\"},\"image\":{\"@id\":\"https://wp-rocket.me/#primaryimage\"},\"thumbnailUrl\":\"https://wp-rocket.me/wp-content/uploads/2025/12/RocketCareHomepageIllustration.svg\",\"datePublished\":\"2017-02-16T09:33:46+00:00\",\"dateModified\":\"2026-10-05T08:59:30+00:00\",\"description\":\"Make your website reach the stars. Use the most powerful caching plugin for WordPress. WP Rocket is easy to use, ready to improve your SEO and conversions.\",\"breadcrumb\":{\"@id\":\"https://wp-rocket.me/#breadcrumb\"},\"inLanguage\":\"en-US\",\"potentialAction\":[{\"@type\":\"ReadAction\",\"target\":[\"https://wp-rocket.me/\"]}]},{\"@type\":\"ImageObject\",\"inLanguage\":\"en-US\",\"@id\":\"https://wp-rocket.me/#primaryimage\",\"url\":\"https://wp-rocket.me/wp-content/uploads/2025/12/RocketCareHomepageIllustration.svg\",\"contentUrl\":\"https://wp-rocket.me/wp-content/uploads/2025/12/RocketCareHomepageIllustration.svg\",\"width\":493,\"height\":365,\"caption\":\"RocketCare icon pointing to settings illustration pointing to live web page illustration\"},{\"@type\":\"BreadcrumbList\",\"@id\":\"https://wp-rocket.me/#breadcrumb\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Home\"}]},{\"@type\":\"WebSite\",\"@id\":\"https://wp-rocket.me/#website\",\"url\":\"https://wp-rocket.me/\",\"name\":\"WP Rocket\",\"description\":\"Plugin d&#039;optimisation de sites WordPress\",\"publisher\":{\"@id\":\"https://wp-rocket.me/#organization\"},\"potentialAction\":[{\"@type\":\"SearchAction\",\"target\":{\"@type\":\"EntryPoint\",\"urlTemplate\":\"https://wp-rocket.me/?s={search_term_string}\"},\"query-input\":{\"@type\":\"PropertyValueSpecification\",\"valueRequired\":true,\"valueName\":\"search_term_string\"}}],\"inLanguage\":\"en-US\"},{\"@type\":\"Organization\",\"@id\":\"https://wp-rocket.me/#organization\",\"name\":\"WP Rocket\",\"url\":\"https://wp-rocket.me/\",\"logo\":{\"@type\":\"ImageObject\",\"inLanguage\":\"en-US\",\"@id\":\"https://wp-rocket.me/#/schema/logo/image/\",\"url\":\"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png\",\"contentUrl\":\"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png\",\"width\":150,\"height\":41,\"caption\":\"WP Rocket\"},\"image\":{\"@id\":\"https://wp-rocket.me/#/schema/logo/image/\"},\"sameAs\":[\"https://www.facebook.com/pages/WP-Rocket/631942253526829\",\"https://x.com/wp_rocket\",\"https://www.youtube.com/channel/UC1ozThXHd1IWIZ5wkshgp_Q\",\"https://en.wikipedia.org/wiki/WP_Rocket\",\"https://www.crunchbase.com/organization/wp-media\",\"https://www.linkedin.com/company/wp-media/\"],\"alternateName\":\"WP Media\",\"foundingDate\":\"2013\",\"founder\":[{\"@type\":\"Person\",\"name\":\"Jonathan Buttigieg\"},{\"@type\":\"Person\",\"name\":\"Jean-Baptiste Marchand-Arvier\"}],\"parentOrganization\":{\"@type\":\"Organization\",\"name\":\"group.one\",\"url\":\"https://group.one/\"}},{\"@type\":[\"SoftwareApplication\",\"Product\"],\"@id\":\"https://wp-rocket.me/#softwareapplication\",\"name\":\"WP Rocket\",\"applicationCategory\":[\"BusinessApplication\",\"UtilitiesApplication\"],\"operatingSystem\":\"WordPress 5.0+\",\"url\":\"https://wp-rocket.me/\",\"brand\":{\"@id\":\"https://wp-rocket.me/#organization\"},\"publisher\":{\"@id\":\"https://wp-rocket.me/#organization\"},\"offers\":{\"@type\":\"AggregateOffer\",\"lowPrice\":\"59.95\",\"priceCurrency\":\"USD\",\"url\":\"https://wp-rocket.me/pricing/\",\"availability\":\"https://schema.org/InStock\"}}]}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/plugins/wp-sentry-integration/public/wp-sentry-browser.min.js?ver=8.4.0",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar wp_sentry = {\"environment\":\"prod\",\"release\":\"unknown\",\"context\":{\"tags\":{\"wordpress\":\"6.9.9\",\"language\":\"en-US\"}},\"dsn\":\"https://a4d5ec735e1f038ce08b8d509ccb582d@o172969.ingest.sentry.io/4506038457073664\"};\n//# sourceURL=wp-sentry-browser-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/wp-sentry-integration/public/wp-sentry-init.js?ver=1791299187",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\nconsole.warn( \"Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-editor-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059\" );\nconsole.warn( \"Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-view-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059\" );\n//# sourceURL=wc-settings-dep-in-header-js-after\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\nwindow._vwo_code ||(function(){var w=window,d=document;var account_id=1131264,version=2.2,settings_tolerance=2000,hide_element='body',hide_element_style='opacity:0 !important;filter:alpha(opacity=0) !important;background:none !important';var f=0,v;if(f=!1,v=d.querySelector('#vwoCode'),cc={},-1<d.URL.indexOf('__vwo_disable__')||w._vwo_code)return;try{var e=JSON.parse(localStorage.getItem('_vwo_'+account_id+'_config'));cc=e&&'object'==typeof e?e:{}}catch(e){}function r(t){try{return decodeURIComponent(t)}catch(e){return t}}var s=function(){var e={combination:[],combinationChoose:[],split:[],exclude:[],uuid:null,consent:null,optOut:null},t=d.cookie||'';if(!t)return e;for(var n,i,o=/(?:^|;\\s*)(?:(_vis_opt_exp_(\\d+)_combi=([^;]*))|(_vis_opt_exp_(\\d+)_combi_choose=([^;]*))|(_vis_opt_exp_(\\d+)_split=([^:;]*))|(_vis_opt_exp_(\\d+)_exclude=[^;]*)|(_vis_opt_out=([^;]*))|(_vwo_global_opt_out=[^;]*)|(_vwo_uuid=([^;]*))|(_vwo_consent=([^;]*)))/g;null!==(n=o.exec(t));)try{n[1]?e.combination.push({id:n[2],value:r(n[3])}):n[4]?e.combinationChoose.push({id:n[5],value:r(n[6])}):n[7]?e.split.push({id:n[8],value:r(n[9])}):n[10]?e.exclude.push({id:n[11]}):n[12]?e.optOut=r(n[13]):n[14]?e.optOut=!0:n[15]?e.uuid=r(n[16]):n[17]&&(i=r(n[18]),e.consent=i&&3<=i.length?i.substring(0,3):null)}catch(e){}return e}();function i(){var e=function(){if(w.VWO&&Array.isArray(w.VWO))for(var e=0;e<w.VWO.length;e++){var t=w.VWO[e];if(Array.isArray(t)&&('setVisitorId'===t[0]||'setSessionId'===t[0]))return!0}return!1}(),t='a='+account_id+'&u='+encodeURIComponent(w._vis_opt_url||d.URL)+'&vn='+version+'&ph=1'+('undefined'!=typeof platform?'&p='+platform:'')+'&st='+w.performance.now();e||((n=function(){var e,t=[],n={},i=w.VWO&&w.VWO.appliedCampaigns||{};for(e in i){var o=i[e]&&i[e].v;o&&(t.push(e+'-'+o+'-1'),n[e]=!0)}if(s&&s.combination)for(var r=0;r<s.combination.length;r++){var a=s.combination[r];n[a.id]||t.push(a.id+'-'+a.value)}return t.join('|')}())&&(t+='&c='+n),(n=function(){var e=[],t={};if(s&&s.combinationChoose)for(var n=0;n<s.combinationChoose.length;n++){var i=s.combinationChoose[n];e.push(i.id+'-'+i.value),t[i.id]=!0}if(s&&s.split)for(var o=0;o<s.split.length;o++)t[(i=s.split[o]).id]||e.push(i.id+'-'+i.value);return e.join('|')}())&&(t+='&cc='+n),(n=function(){var e={},t=[];if(w.VWO&&Array.isArray(w.VWO))for(var n=0;n<w.VWO.length;n++){var i=w.VWO[n];if(Array.isArray(i)&&'setVariation'===i[0]&&i[1]&&Array.isArray(i[1]))for(var o=0;o<i[1].length;o++){var r,a=i[1][o];a&&'object'==typeof a&&(r=a.e,a=a.v,r&&a&&(e[r]=a))}}for(r in e)t.push(r+'-'+e[r]);return t.join('|')}())&&(t+='&sv='+n)),s&&s.optOut&&(t+='&o='+s.optOut);var n=function(){var e=[],t={};if(s&&s.exclude)for(var n=0;n<s.exclude.length;n++){var i=s.exclude[n];t[i.id]||(e.push(i.id),t[i.id]=!0)}return e.join('|')}();return n&&(t+='&e='+n),s&&s.uuid&&(t+='&id='+s.uuid),s&&s.consent&&(t+='&consent='+s.consent),w.name&&-1<w.name.indexOf('_vis_preview')&&(t+='&pM=true'),w.VWO&&w.VWO.ed&&(t+='&ed='+w.VWO.ed),t}code={nonce:v&&v.nonce,library_tolerance:function(){return'undefined'!=typeof library_tolerance?library_tolerance:void 0},settings_tolerance:function(){return cc.sT||settings_tolerance},hide_element_style:function(){return'{'+(cc.hES||hide_element_style)+'}'},hide_element:function(){return performance.getEntriesByName('first-contentful-paint')[0]?'':'string'==typeof cc.hE?cc.hE:hide_element},getVersion:function(){return version},finish:function(e){var t;f||(f=!0,(t=d.getElementById('_vis_opt_path_hides'))&&t.parentNode.removeChild(t),e&&((new Image).src='https://dev.visualwebsiteoptimizer.com/ee.gif?a='+account_id+e))},finished:function(){return f},addScript:function(e){var t=d.createElement('script');t.type='text/javascript',e.src?t.src=e.src:t.text=e.text,v&&t.setAttribute('nonce',v.nonce),d.getElementsByTagName('head')[0].appendChild(t)},load:function(e,t){t=t||{};var n=new XMLHttpRequest;n.open('GET',e,!0),n.withCredentials=!t.dSC,n.responseType=t.responseType||'text',n.onload=function(){if(t.onloadCb)return t.onloadCb(n,e);200===n.status?_vwo_code.addScript({text:n.responseText}):_vwo_code.finish('&e=loading_failure:'+e)},n.onerror=function(){if(t.onerrorCb)return t.onerrorCb(e);_vwo_code.finish('&e=loading_failure:'+e)},n.send()},init:function(){var e,t=this.settings_tolerance();w._vwo_settings_timer=setTimeout(function(){_vwo_code.finish()},t),'body'!==this.hide_element()?(n=d.createElement('style'),e=(t=this.hide_element())?t+this.hide_element_style():'',t=d.getElementsByTagName('head')[0],n.setAttribute('id','_vis_opt_path_hides'),v&&n.setAttribute('nonce',v.nonce),n.setAttribute('type','text/css'),n.styleSheet?n.styleSheet.cssText=e:n.appendChild(d.createTextNode(e)),t.appendChild(n)):(n=d.getElementsByTagName('head')[0],(e=d.createElement('div')).style.cssText='z-index: 2147483647 !important;position: fixed !important;left: 0 !important;top: 0 !important;width: 100% !important;height: 100% !important;background: white !important;',e.setAttribute('id','_vis_opt_path_hides'),e.classList.add('_vis_hide_layer'),n.parentNode.insertBefore(e,n.nextSibling));var n='https://dev.visualwebsiteoptimizer.com/j.php?'+i();-1!==w.location.search.indexOf('_vwo_xhr')?this.addScript({src:n}):this.load(n+'&x=true',{l:1})}};w._vwo_code=code;code.init();})();\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n\tvar dataLayer_content = {\"pagePostType\":\"frontpage\",\"pagePostType2\":\"single-page\",\"pagePostAuthor\":\"Jonathan Buttigieg\",\"customerTotalOrders\":0,\"customerTotalOrderValue\":0,\"customerFirstName\":\"\",\"customerLastName\":\"\",\"customerBillingFirstName\":\"\",\"customerBillingLastName\":\"\",\"customerBillingCompany\":\"\",\"customerBillingAddress1\":\"\",\"customerBillingAddress2\":\"\",\"customerBillingCity\":\"\",\"customerBillingState\":\"\",\"customerBillingPostcode\":\"\",\"customerBillingCountry\":\"\",\"customerBillingEmail\":\"\",\"customerBillingEmailHash\":\"\",\"customerBillingPhone\":\"\",\"customerShippingFirstName\":\"\",\"customerShippingLastName\":\"\",\"customerShippingCompany\":\"\",\"customerShippingAddress1\":\"\",\"customerShippingAddress2\":\"\",\"customerShippingCity\":\"\",\"customerShippingState\":\"\",\"customerShippingPostcode\":\"\",\"customerShippingCountry\":\"\",\"cartContent\":{\"totals\":{\"applied_coupons\":[],\"discount_total\":0,\"subtotal\":0,\"total\":0},\"items\":[]}};\n\tdataLayer.push( dataLayer_content );\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n\t\tif (typeof gtag == \"undefined\") {\n\t\t\tfunction gtag(){dataLayer.push(arguments);}\n\t\t}\n\n\t\tgtag(\"consent\", \"default\", {\n\t\t\t\"analytics_storage\": \"granted\",\n\t\t\t\"ad_storage\": \"granted\",\n\t\t\t\"ad_user_data\": \"granted\",\n\t\t\t\"ad_personalization\": \"granted\",\n\t\t\t\"functionality_storage\": \"granted\",\n\t\t\t\"security_storage\": \"granted\",\n\t\t\t\"personalization_storage\": \"granted\",\n\t\t});\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':\nnew Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],\nj=d.createElement(s),dl=l!='dataLayer'?'&amp;l='+l:'';j.async=true;j.src=\n'https://sst.wp-rocket.me/tm?origin='+i+dl;f.parentNode.insertBefore(j,f);\n})(window,document,'script','dataLayer',window.location.origin);\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n{\"prefetch\":[{\"source\":\"document\",\"where\":{\"and\":[{\"href_matches\":\"/*\"},{\"not\":{\"href_matches\":[\"/wp-*.php\",\"/wp-admin/*\",\"/wp-content/uploads/*\",\"/wp-content/*\",\"/wp-content/plugins/*\",\"/wp-content/themes/V4/*\",\"/*\\\\?(.+)\"]}},{\"not\":{\"selector_matches\":\"a[rel~=\\\"nofollow\\\"]\"}},{\"not\":{\"selector_matches\":\".no-prefetch, .no-prefetch a\"}}]},\"eagerness\":\"conservative\"}]}\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\n\t\t(function () {\n\t\t\tvar c = document.body.className;\n\t\t\tc = c.replace(/woocommerce-no-js/, 'woocommerce-js');\n\t\t\tdocument.body.className = c;\n\t\t})();\n\t",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar wc_price_based_country_ajax_geo_params = {\"wc_ajax_url\":\"/?wc-ajax=%%endpoint%%\"};\n//# sourceURL=wc-price-based-country-ajax-geo-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/plugins/woocommerce-product-price-based-on-countries/assets/js/ajax-geolocation.min.js?ver=4.2.2",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/blocks/compatibilities.min.js?ver=1791299149",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://www.dwin1.com/52401.js?ver=2.0.5",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-ecommerce-generic.js?ver=1791299187",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-woocommerce.js?ver=1791299187",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\n\"use strict\";var _createClass=function(){function defineProperties(target,props){for(var i=0;i<props.length;i++){var descriptor=props[i];descriptor.enumerable=descriptor.enumerable||!1,descriptor.configurable=!0,\"value\"in descriptor&&(descriptor.writable=!0),Object.defineProperty(target,descriptor.key,descriptor)}}return function(Constructor,protoProps,staticProps){return protoProps&&defineProperties(Constructor.prototype,protoProps),staticProps&&defineProperties(Constructor,staticProps),Constructor}}();function _classCallCheck(instance,Constructor){if(!(instance instanceof Constructor))throw new TypeError(\"Cannot call a class as a function\")}var RocketBrowserCompatibilityChecker=function(){function RocketBrowserCompatibilityChecker(options){_classCallCheck(this,RocketBrowserCompatibilityChecker),this.passiveSupported=!1,this._checkPassiveOption(this),this.options=!!this.passiveSupported&&options}return _createClass(RocketBrowserCompatibilityChecker,[{key:\"_checkPassiveOption\",value:function(self){try{var options={get passive(){return!(self.passiveSupported=!0)}};window.addEventListener(\"test\",null,options),window.removeEventListener(\"test\",null,options)}catch(err){self.passiveSupported=!1}}},{key:\"initRequestIdleCallback\",value:function(){!1 in window&&(window.requestIdleCallback=function(cb){var start=Date.now();return setTimeout(function(){cb({didTimeout:!1,timeRemaining:function(){return Math.max(0,50-(Date.now()-start))}})},1)}),!1 in window&&(window.cancelIdleCallback=function(id){return clearTimeout(id)})}},{key:\"isDataSaverModeOn\",value:function(){return\"connection\"in navigator&&!0===navigator.connection.saveData}},{key:\"supportsLinkPrefetch\",value:function(){var elem=document.createElement(\"link\");return elem.relList&&elem.relList.supports&&elem.relList.supports(\"prefetch\")&&window.IntersectionObserver&&\"isIntersecting\"in IntersectionObserverEntry.prototype}},{key:\"isSlowConnection\",value:function(){return\"connection\"in navigator&&\"effectiveType\"in navigator.connection&&(\"2g\"===navigator.connection.effectiveType||\"slow-2g\"===navigator.connection.effectiveType)}}]),RocketBrowserCompatibilityChecker}();\n//# sourceURL=rocket-browser-checker-js-after\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar RocketPreloadLinksConfig = {\"excludeUris\":\"/support/|/supporto/|/soporte/|/(.*)pagespeed-submissions/|/pagespeed-submissions/|/discover-rocketcare/|/pricing/|/express-checkout/|/freelancers-agencies/|/rocket-insights/|/(?:.+/)?feed(?:/(?:.+/?)?)?$|/(?:.+/)?embed/|/order/??(.*)|/fr/commande/??(.*)|/de/bestellen/??(.*)|/it/ordine/??(.*)|/ja/order/??(.*)|/es/tu-pedido/??(.*)|/account/??(.*)|/fr/account/??(.*)|/de/account/??(.*)|/it/account/??(.*)|/ja/account/??(.*)|/es/account/??(.*)|/(index.php/)?(.*)wp-json(/.*|$)|/refer/|/go/|/recommend/|/recommends/\",\"usesTrailingSlash\":\"1\",\"imageExt\":\"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php\",\"fileExt\":\"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php|html|htm\",\"siteUrl\":\"https://wp-rocket.me\",\"onHoverDelay\":\"100\",\"rateThrottle\":\"3\"};\n//# sourceURL=rocket-preload-links-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\n(function() {\n\"use strict\";var r=\"function\"==typeof Symbol&&\"symbol\"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&\"function\"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?\"symbol\":typeof e},e=function(){function i(e,t){for(var n=0;n<t.length;n++){var i=t[n];i.enumerable=i.enumerable||!1,i.configurable=!0,\"value\"in i&&(i.writable=!0),Object.defineProperty(e,i.key,i)}}return function(e,t,n){return t&&i(e.prototype,t),n&&i(e,n),e}}();function i(e,t){if(!(e instanceof t))throw new TypeError(\"Cannot call a class as a function\")}var t=function(){function n(e,t){i(this,n),this.browser=e,this.config=t,this.options=this.browser.options,this.prefetched=new Set,this.eventTime=null,this.threshold=1111,this.numOnHover=0}return e(n,[{key:\"init\",value:function(){!this.browser.supportsLinkPrefetch()||this.browser.isDataSaverModeOn()||this.browser.isSlowConnection()||(this.regex={excludeUris:RegExp(this.config.excludeUris,\"i\"),images:RegExp(\".(\"+this.config.imageExt+\")$\",\"i\"),fileExt:RegExp(\".(\"+this.config.fileExt+\")$\",\"i\")},this._initListeners(this))}},{key:\"_initListeners\",value:function(e){-1<this.config.onHoverDelay&&document.addEventListener(\"mouseover\",e.listener.bind(e),e.listenerOptions),document.addEventListener(\"mousedown\",e.listener.bind(e),e.listenerOptions),document.addEventListener(\"touchstart\",e.listener.bind(e),e.listenerOptions)}},{key:\"listener\",value:function(e){var t=e.target.closest(\"a\"),n=this._prepareUrl(t);if(null!==n)switch(e.type){case\"mousedown\":case\"touchstart\":this._addPrefetchLink(n);break;case\"mouseover\":this._earlyPrefetch(t,n,\"mouseout\")}}},{key:\"_earlyPrefetch\",value:function(t,e,n){var i=this,r=setTimeout(function(){if(r=null,0===i.numOnHover)setTimeout(function(){return i.numOnHover=0},1e3);else if(i.numOnHover>i.config.rateThrottle)return;i.numOnHover++,i._addPrefetchLink(e)},this.config.onHoverDelay);t.addEventListener(n,function e(){t.removeEventListener(n,e,{passive:!0}),null!==r&&(clearTimeout(r),r=null)},{passive:!0})}},{key:\"_addPrefetchLink\",value:function(i){return this.prefetched.add(i.href),new Promise(function(e,t){var n=document.createElement(\"link\");n.rel=\"prefetch\",n.href=i.href,n.onload=e,n.onerror=t,document.head.appendChild(n)}).catch(function(){})}},{key:\"_prepareUrl\",value:function(e){if(null===e||\"object\"!==(void 0===e?\"undefined\":r(e))||!1 in e||-1===[\"http:\",\"https:\"].indexOf(e.protocol))return null;var t=e.href.substring(0,this.config.siteUrl.length),n=this._getPathname(e.href,t),i={original:e.href,protocol:e.protocol,origin:t,pathname:n,href:t+n};return this._isLinkOk(i)?i:null}},{key:\"_getPathname\",value:function(e,t){var n=t?e.substring(this.config.siteUrl.length):e;return n.startsWith(\"/\")||(n=\"/\"+n),this._shouldAddTrailingSlash(n)?n+\"/\":n}},{key:\"_shouldAddTrailingSlash\",value:function(e){return this.config.usesTrailingSlash&&!e.endsWith(\"/\")&&!this.regex.fileExt.test(e)}},{key:\"_isLinkOk\",value:function(e){return null!==e&&\"object\"===(void 0===e?\"undefined\":r(e))&&(!this.prefetched.has(e.href)&&e.origin===this.config.siteUrl&&-1===e.href.indexOf(\"?\")&&-1===e.href.indexOf(\"#\")&&!this.regex.excludeUris.test(e.href)&&!this.regex.images.test(e.href))}}],[{key:\"run\",value:function(){\"undefined\"!=typeof RocketPreloadLinksConfig&&new n(new RocketBrowserCompatibilityChecker({capture:!0,passive:!0}),RocketPreloadLinksConfig).init()}}]),n}();t.run();\n}());\n\n//# sourceURL=rocket-preload-links-js-after\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/bootstrap/v5/tp.widget.bootstrap.min.js?ver=1791299187",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar siteVariables = {\"ajax_url\":\"https://wp-rocket.me/wp-admin/admin-ajax.php\",\"locale\":\"en_US\"};\nvar WPRocketBenefitsConfig = [\"imagify\",\"antagonist-benefits\",\"zoner-benefits\",\"one-benefits\",\"wpml-benefits\",\"websavers-benefits\",\"wpengine-benefits\",\"a2-benefits\",\"hosting4real-benefits\",\"seopress-benefits\",\"wattspeed-benefits\",\"wpcrafter-benefits\",\"codeable-benefits\",\"ezfrontiers-benefits\",\"wpoptimizers-benefits\",\"heimdal-benefits\",\"wpx-benefits\",\"bangmod-benefits\",\"o2switch-benefits\",\"crocoblock-benefits\",\"stupidsimpleseo-benefits\",\"hostinger-benefits\",\"debugbear-benefits\",\"eskimoz-benefits\",\"visualcomposer-benefits\",\"proisp-benefits\",\"bigscoots-benefits\",\"perksflow-benefits\",\"wpumbrella-benefits\",\"rankmath-benefits\",\"wordcamp-benefits\",\"termly-benefits\",\"wpsessions-benefits\",\"bloggerspassion-benefits\",\"aiseo-benefits\",\"gtmetrix-benefits\",\"instawp-benefits\",\"extendify-benefits\",\"imagify-benefits\",\"daniel-benefits\",\"peter-benefits\"];\n//# sourceURL=scripts-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/scripts.min.js?ver=1791299145",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/front-page.min.js?ver=1791299131",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/gravity-forms.min.js?ver=1791299146",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar wprCurrencyData = {\"ajax_url\":\"https://wp-rocket.me/wp-admin/admin-ajax.php\",\"is_logged_in\":\"\",\"user_hash\":\"guest\"};\n//# sourceURL=wpr-bundle-currency-cache-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\nvar klUser = {\"current_user_email\":\"\",\"commenter_email\":\"\"};\n//# sourceURL=kl-identify-browser-js-extra\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=1791299187",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "window.lazyLoadOptions={elements_selector:\"iframe[data-lazy-src]\",data_src:\"lazy-src\",data_srcset:\"lazy-srcset\",data_sizes:\"lazy-sizes\",class_loading:\"lazyloading\",class_loaded:\"lazyloaded\",threshold:300,callback_loaded:function(element){if(element.tagName===\"IFRAME\"&&element.dataset.rocketLazyload==\"fitvidscompatible\"){if(element.classList.contains(\"lazyloaded\")){if(typeof window.jQuery!=\"undefined\"){if(jQuery.fn.fitVids){jQuery(element).parent().fitVids()}}}}}};window.addEventListener('LazyLoad::Initialized',function(e){var lazyLoadInstance=e.detail.instance;if(window.MutationObserver){var observer=new MutationObserver(function(mutations){var image_count=0;var iframe_count=0;var rocketlazy_count=0;mutations.forEach(function(mutation){for(var i=0;i<mutation.addedNodes.length;i++){if(typeof mutation.addedNodes[i].getElementsByTagName!=='function'){continue}\nif(typeof mutation.addedNodes[i].getElementsByClassName!=='function'){continue}\nimages=mutation.addedNodes[i].getElementsByTagName('img');is_image=mutation.addedNodes[i].tagName==\"IMG\";iframes=mutation.addedNodes[i].getElementsByTagName('iframe');is_iframe=mutation.addedNodes[i].tagName==\"IFRAME\";rocket_lazy=mutation.addedNodes[i].getElementsByClassName('rocket-lazyload');image_count+=images.length;iframe_count+=iframes.length;rocketlazy_count+=rocket_lazy.length;if(is_image){image_count+=1}\nif(is_iframe){iframe_count+=1}}});if(image_count>0||iframe_count>0||rocketlazy_count>0){lazyLoadInstance.update()}});var b=document.getElementsByTagName(\"body\")[0];var config={childList:!0,subtree:!0};observer.observe(b,config)}},!1)",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://wp-rocket.me/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "function lazyLoadThumb(e,alt,l){var t='<img src=\"https://i.ytimg.com/vi/ID/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\">',a='<button class=\"play\" aria-label=\"Play Youtube video\"></button>';if(l){t=t.replace('data-lazy-','');t=t.replace('loading=\"lazy\"','');t=t.replace(/<noscript>.*?<\\/noscript>/g,'');}t=t.replace('alt=\"\"','alt=\"'+alt+'\"');return t.replace(\"ID\",e)+a}function lazyLoadYoutubeIframe(){var e=document.createElement(\"iframe\"),t=\"ID?autoplay=1\";t+=0===this.parentNode.dataset.query.length?\"\":\"&\"+this.parentNode.dataset.query;e.setAttribute(\"src\",t.replace(\"ID\",this.parentNode.dataset.src)),e.setAttribute(\"frameborder\",\"0\"),e.setAttribute(\"allowfullscreen\",\"1\"),e.setAttribute(\"allow\",\"accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture\"),this.parentNode.parentNode.replaceChild(e,this.parentNode)}document.addEventListener(\"DOMContentLoaded\",function(){var exclusions=[];var e,t,p,u,l,a=document.getElementsByClassName(\"rll-youtube-player\");for(t=0;t<a.length;t++)(e=document.createElement(\"div\")),(u='https://i.ytimg.com/vi/ID/hqdefault.jpg'),(u=u.replace('ID',a[t].dataset.id)),(l=exclusions.some(exclusion=>u.includes(exclusion))),e.setAttribute(\"data-id\",a[t].dataset.id),e.setAttribute(\"data-query\",a[t].dataset.query),e.setAttribute(\"data-src\",a[t].dataset.src),(e.innerHTML=lazyLoadThumb(a[t].dataset.id,a[t].dataset.alt,l)),a[t].appendChild(e),(p=e.querySelector(\".play\")),(p.onclick=lazyLoadYoutubeIframe)});",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": "2.0.4",
+      "delayedScripts": 17
+    },
+    "defer_all_js": {
+      "present": true,
+      "scripts": [
+        "https://wp-rocket.me/wp-content/plugins/wp-sentry-integration/public/wp-sentry-browser.min.js?ver=8.4.0",
+        "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/wp-sentry-integration/public/wp-sentry-init.js?ver=1791299187",
+        "https://wp-rocket.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1",
+        "https://wp-rocket.me/wp-content/plugins/woocommerce-product-price-based-on-countries/assets/js/ajax-geolocation.min.js?ver=4.2.2",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/blocks/compatibilities.min.js?ver=1791299149",
+        "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-ecommerce-generic.js?ver=1791299187",
+        "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-woocommerce.js?ver=1791299187",
+        "https://wp-rocket.me/wp-content/cache/min/1/bootstrap/v5/tp.widget.bootstrap.min.js?ver=1791299187",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/scripts.min.js?ver=1791299145",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/front-page.min.js?ver=1791299131",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/gravity-forms.min.js?ver=1791299146",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147",
+        "https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150",
+        "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=1791299187"
+      ]
+    },
+    "lazyload": {
+      "present": false,
+      "images": [
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2026/09/wprocket.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2026/09/imagify-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2026/09/rankmath-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2026/09/backwpup.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2026/09/gtmetrix-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/homepage-skeleton.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2022/02/Easy-Set-up.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2022/02/Powerful-Features.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2021/03/logo-elegantthemes-gallery-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/fly-images/3158738/nick-roach-374x517-c-187x259-c.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/uploads/2025/12/RocketCareHomepageIllustration.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/personas/personas.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-1.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-2.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-3.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-4.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-5.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-6.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-7.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-8.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-9.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-10.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-11.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-12.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-13.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-14.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-15.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-16.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-17.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-18.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-19.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-20.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-21.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-22.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-23.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-24.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-25.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-26.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-27.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-28.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-29.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-30.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-31.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/compatibilities/logo-32.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/blocks/support/support.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket-dark.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/facebook.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/x.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/youtube.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/linkedin.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/stripe.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/paypal.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": true,
+      "replaceImage": true
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": true,
+      "beacon": false,
+      "preloadedImages": ["https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg"]
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": true
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": true,
+    "resources": [
+      {
+        "href": "https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg",
+        "type": "image"
+      }
+    ]
+  }
+}

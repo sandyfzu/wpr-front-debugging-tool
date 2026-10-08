@@ -1,0 +1,119 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": false,
+      "cached": false,
+      "version": null,
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "/wp-content/plugins/wp-rocket/assets/js/lazyload/16.1/lazyload.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      window.lazyLoadOptions = { elements_selector: 'img' };\n      window.lazyLoadOptions.img = [{ elements_selector: 'img[data-lazy-src]' }];\n    ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": [
+        {
+          "src": "https://traps.example/1.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://traps.example/2.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-src", "data-no-lazy", "data-srcset"]
+        },
+        {
+          "src": "https://traps.example/3.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-src"]
+        },
+        {
+          "src": "https://traps.example/4.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "",
+          "lazyloadDetected": true,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-src"]
+        },
+        {
+          "src": "https://traps.example/7.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-skip-lazy", "skip-lazy"]
+        },
+        {
+          "src": "https://traps.example/8.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://traps.example/9.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-lazy-original"]
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "beacon": false
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

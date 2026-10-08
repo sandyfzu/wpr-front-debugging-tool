@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  Crafted integration fixture: one page exercising every true branch of the
+  detection engine with footprint markup exactly as WP Rocket writes it
+  (strings transcribed from real served pages: the generator meta with its
+  feature list, both Delay JS type variants, the controller with its
+  version, defer markers, the lazyload pair — served shape: unspaced blob —
+  plus the iframe/youtube replacement trio, minified asset URLs on
+  non-delayed elements, the preload-links blob, RocketCDN's dns-prefetch,
+  the CSS-background container, the measuring beacon and preloaded critical
+  images). Also carries the diagnoser json elements.
+  Snapshot note: minify_css present, minify_js present (non-delayed cache URL),
+  lazyload + lazyload_iframes + replaceImage + lazyload_css_bg_img present.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="WP Rocket 3.20.6.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_minify_js wpr_minify_css wpr_lazyload_images wpr_lazyload_iframes wpr_lazyload_css_bg_img wpr_oci wpr_preload_links wpr_desktop">
+  <title>all features present</title>
+  <!-- Remove Unused CSS block. -->
+  <style id="wpr-usedcss">body{margin:0}</style>
+  <!-- Minified CSS (deferred by WPR — the minify_css link check still reads the URL). -->
+  <link rel="stylesheet" href="https://all.example/wp-content/cache/min/1/wp-content/themes/rkt/style-4a2b9.css?ver=1700000000" data-minify="1">
+  <link rel="stylesheet" href="https://all.example/wp-includes/css/unminified.css">
+  <!-- Lazyload for CSS background images: the reserved container. -->
+  <div id="wpr-lazyload-bg-container"><span class="rocket-lazyload" style="background-image:url(https://all.example/bg.jpg);"></span></div>
+  <!-- RocketCDN dns-prefetch + unrelated prefetch hints. -->
+  <link rel="dns-prefetch" href="https://cdn.rocketcdn.me">
+  <link rel="dns-prefetch" href="https://stats.wp.com">
+  <link rel="preload" href="/font.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Critical-image preloads (Optimize Critical Images + Preloaded Resources). -->
+  <link data-rocket-preload href="https://all.example/hero.webp" as="image" fetchpriority="high">
+  <link data-rocket-preload href="https://all.example/logo.png" as="image">
+  <link data-rocket-preload href="https://all.example/app.js" as="script">
+</head>
+<body>
+  <!-- The Delay JS controller: plain undelayed script printed before any
+       delayed one (as served) — its `this.v` version marker is what the
+       check extracts. -->
+  <script>(()=>{class RocketLazyLoadScripts{constructor(){this.v="3.20.6";}}RocketLazyLoadScripts.run()})();</script>
+  <!-- Old-type delayed script (pre-3.20.6 payload). -->
+  <script type="rocketlazyloadscript" data-rocket-src="https://all.example/wp-content/plugins/site-widgets/widget.js"></script>
+  <!-- New-type delayed script (3.20.6+ payload). -->
+  <script type="text/rocketlazyloadscript" data-rocket-src="https://all.example/wp-content/cache/min/1/forms.min.js" data-minify="1"></script>
+  <!-- Non-delayed external + deferred-by-wpr scripts (plus one delayed inline
+       variant without data-rocket-src: content kept verbatim). -->
+  <script type="text/rocketlazyloadscript">
+    // A delayed inline script without a moved source keeps its full text.
+    window.rocketLateTweaks=function(){return this.v;};
+  </script>
+  <script src="https://all.example/jquery.min.js" data-wpr-fdt-excluded="excluded-by-tool"></script>
+  <script src="https://all.example/late.js" data-rocket-defer="defer" defer></script>
+  <script data-rocket-defer="defer" defer>/* deferred inline, filtered from list */</script>
+  <!-- Minified NON-delayed script: the minify_js true branch (delayed/minified
+       scripts legitimately hide behind data-rocket-src and stay invisible). -->
+  <script src="https://all.example/wp-content/cache/min/1/analytics-77f.js"></script>
+  <!-- The idle-class fallback script (async_css true branch). -->
+  <script>function wprRemoveCPCSS(){document.getElementById('rocket-waiting-for-cpcss')?.remove();}</script>
+  <!-- Lazyload pair, served shape: unspaced options blob right next to the file script. -->
+  <script src="https://all.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+  <script type="text/javascript">window.lazyLoadOptions={elements_selector:"img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]",data_src:"lazy-src",data_srcset:"lazy-srcset",data_sizes:"lazy-sizes",class_loading:"lazyloading",class_loaded:"lazyloaded",threshold:300,callback_loaded:function(element){if(element.tagName==="IFRAME"&&element.dataset.rocketLazyload=="fitvidscompatible"){if(element.classList.contains("lazyloaded")){if(window.jQuery){if(window.jQuery.fn.fitVids){window.jQuery.fn.fitVids(element)}}}}}};
+
+window.addEventListener('lazyloadready',function(e){var i=document.querySelectorAll("iframe[data-lazy-src]");for(var k=0;k<i.length;k++){}});</script>
+  <!-- YouTube thumbnail replacement helper, served single-line shape
+       (the multi-line blob above must NOT trip the one-line-only regexes). -->
+  <script type="text/javascript">function lazyLoadThumb(e){var t='<img data-lazy-src="https://i.ytimg.com/vi/ID/hqdefault.jpg">',a='<div class="play"></div>';return t.replace("ID",e)+a}function lazyLoadYoutubeIframe(){var e=document.createElement("iframe");e.setAttribute("data-lazy-src","ID");this.parentNode.replaceChild(e,this)}document.addEventListener("DOMContentLoaded",function(){var e=document.querySelectorAll("iframe[data-lazy-src]");e.forEach(function(t){});});</script>
+  <!-- Lazyload iframe variants. -->
+  <img data-lazy-src="https://all.example/media/city.webp" src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" alt="lazy">
+  <img data-src="https://all.example/media/data-src.jpg" data-skip-lazy="1" src="https://all.example/media/data-src.jpg" alt="skipped">
+  <iframe data-lazy-src="https://www.youtube-nocookie.com/embed/ID" title="video"></iframe>
+  <!-- Preload links options blob. -->
+  <script id="rocket-preload-links-js-extra">var RocketPreloadLinksConfig = {"excludeUris":"\/cart|\/my-account","ttl":"3600"}</script>
+  <!-- The measuring beacon. -->
+  <script data-name="wpr-wpr-beacon" src="https://all.example/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js"></script>
+  <!-- Diagnoser report slots. -->
+  <script id="wpr-diagnoser-no-rocket-json-data">{"wpr_plugin":{"version":"3.20.6.1"},"get_rocket_option":{"delay_js":{"option_value":true},"version":"3.20.6.1"},"server_info":{"server_load":"1.4","web_server":"nginx","php_memory_limit":"256M"},"wpr_diagnoser_version":"2.1"}</script>
+  <script id="wpr-diagnoser-rocket-json-data">{"options":{"delay_js":{"option_name":"delay_js","get_rocket_option":{"value":"1"}}},"post_meta_excluded_options":{"cdn":false}}</script>
+</body>
+</html><!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1699999999 -->

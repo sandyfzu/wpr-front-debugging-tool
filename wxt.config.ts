@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
+import { URL_PATTERNS } from './lib/wp-rocket/constants';
 
 // Extension name rendered in the browser UI.
 const NAME = 'WPR Front Debugging Tool';
@@ -30,6 +31,7 @@ export default defineConfig({
     // putting that feature at risk) and lets the popup read the active web tab's URL
     // without the `tabs` permission. `tabs` is intentionally NOT requested; the
     // phases that would need it must first verify they cannot work without it.
-    host_permissions: ['http://*/*', 'https://*/*']
+    // Same list the runtime listeners use — single-sourced in lib/wp-rocket/constants.
+    host_permissions: [...URL_PATTERNS]
   }
 });

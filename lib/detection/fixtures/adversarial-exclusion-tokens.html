@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Crafted adversarial fixture: every serialization-substring trap. An image
+  whose quoted-attribute values embed tokens (&quot; escaping), an unquoted
+  boolean-ish loading attribute, an empty (valueless) marker, tokens placed
+  so the class-anchored entries match only the class attribute — with the
+  reference implementation (same runner, same DOM) pinning whatever the
+  serialization rules decide.
+  Snapshot note: lazyload present is FALSE (the blob text here lacks the
+  img[data-lazy-src] tail) — the exclusion matrix is the subject, not presence.
+-->
+<html lang="en">
+  <head>
+    <title>adversarial exclusion tokens</title>
+  </head>
+  <body>
+    <script src="/wp-content/plugins/wp-rocket/assets/js/lazyload/16.1/lazyload.min.js"></script>
+    <script type="text/javascript">
+      window.lazyLoadOptions = { elements_selector: 'img' };
+      window.lazyLoadOptions.img = [{ elements_selector: 'img[data-lazy-src]' }];
+    </script>
+
+    <!-- Quote inside an attribute value: escaped in serialization, so the
+       class-anchored exclusion entries cannot match it. -->
+    <img data-tooltip='you may try class="ls-l here"' src="https://traps.example/1.jpg" />
+    <!-- Valueless attribute: serialized bare (no =""), cannot match
+       `data-srcset="…" anchors but preserves the name. -->
+    <img data-srcset data-no-lazy src="https://traps.example/2.jpg" />
+    <!-- Attribute-name substring (data-src inside data-srcc). -->
+    <img data-srcc="real-value" src="https://traps.example/3.jpg" />
+    <!-- Unquoted loading attribute. -->
+    <img loading="eager" src="https://traps.example/4.jpg" />
+    <!-- Empty attribute values. -->
+    <img data-lazy-src="" src="https://traps.example/5.jpg" />
+    <img data-src="" src="https://traps.example/6.jpg" />
+    <!-- Duplicate attributes: parsers keep the first occurrence. -->
+    <img data-skip-lazy="first" data-skip-lazy="second" src="https://traps.example/7.jpg" />
+    <!-- Exclusion token split across attribute boundaries (never matches). -->
+    <img data-h="skip" data-t="lazy" class="skip" src="https://traps.example/8.jpg" />
+    <!-- Uppercase UCASE exclusion tokens (case-sensitive matches only). -->
+    <img data-lazy-ORIGINAL="x" src="https://traps.example/9.jpg" />
+  </body>
+</html>

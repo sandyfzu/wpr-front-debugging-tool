@@ -1,0 +1,167 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": false,
+      "version": "3.20.0.2",
+      "timeStamp": null
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      window.lazyLoadOptions = [\n        {\n          elements_selector: 'img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]',\n          data_src: 'lazy-src'\n        }\n      ];\n    ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      function lazyLoadThumb(e) {\n        var t = '<img data-lazy-src=\"https://i.ytimg.com/vi/ID/hqdefault.jpg\">';\n      }\n      function lazyLoadYoutubeIframe() {\n        var e = document.createElement('iframe');\n      }\n    ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": [
+        {
+          "src": "https://site.example/wp-content/themes/media/alpine.jpg",
+          "lazyloadDetected": true,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "",
+          "lazyloadDetected": true,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://site.example/banner.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://site.example/slider-1.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["class=\"ls-l"]
+        },
+        {
+          "src": "https://site.example/slider-bg.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["class=\"ls-bg"]
+        },
+        {
+          "src": "https://site.example/kept.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["skip-lazy"]
+        },
+        {
+          "src": "https://site.example/exactly-skipped.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["skip-lazy", "class=\"skip-lazy\""]
+        },
+        {
+          "src": "https://site.example/xclass.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["class=\"ls-l"]
+        },
+        {
+          "src": "https://cdn.example.com/photos/fullurl.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["fullurl"]
+        },
+        {
+          "src": "https://cdn.example.com/data-srcc-photo.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-src"]
+        },
+        {
+          "src": "https://cdn.example.com/loader-soliloquy-image-2.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["soliloquy-image"]
+        },
+        {
+          "src": "https://cdn.example.com/plugin/image-compare__viewer.js.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["image-compare__"]
+        },
+        {
+          "src": "https://cdn.example.com/envira-small.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-envira-src"]
+        },
+        {
+          "src": "https://site.example/eager.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://site.example/eager-uppercase.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://site.example/fallback.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-lazy-original"]
+        },
+        {
+          "src": "https://site.example/fallback2.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-lazysrc"]
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "beacon": false
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

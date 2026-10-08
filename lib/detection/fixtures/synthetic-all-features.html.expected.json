@@ -1,0 +1,202 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": true,
+      "version": "3.20.6.1",
+      "timeStamp": 1699999999
+    },
+    "remove_unused_css": {
+      "present": true
+    },
+    "async_css": {
+      "present": true
+    },
+    "delay_js": {
+      "present": true,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "(()=>{class RocketLazyLoadScripts{constructor(){this.v=\"3.20.6\";}}RocketLazyLoadScripts.run()})();",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://all.example/wp-content/plugins/site-widgets/widget.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": false,
+          "src": "https://all.example/wp-content/cache/min/1/forms.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": true,
+          "inline": true,
+          "content": "\n    // A delayed inline script without a moved source keeps its full text.\n    window.rocketLateTweaks=function(){return this.v;};\n  ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://all.example/jquery.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": "excluded-by-tool"
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://all.example/late.js",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "/* deferred inline, filtered from list */",
+          "deferred": true,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://all.example/wp-content/cache/min/1/analytics-77f.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "function wprRemoveCPCSS(){document.getElementById('rocket-waiting-for-cpcss')?.remove();}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://all.example/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "window.lazyLoadOptions={elements_selector:\"img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]\",data_src:\"lazy-src\",data_srcset:\"lazy-srcset\",data_sizes:\"lazy-sizes\",class_loading:\"lazyloading\",class_loaded:\"lazyloaded\",threshold:300,callback_loaded:function(element){if(element.tagName===\"IFRAME\"&&element.dataset.rocketLazyload==\"fitvidscompatible\"){if(element.classList.contains(\"lazyloaded\")){if(window.jQuery){if(window.jQuery.fn.fitVids){window.jQuery.fn.fitVids(element)}}}}}};\n\nwindow.addEventListener('lazyloadready',function(e){var i=document.querySelectorAll(\"iframe[data-lazy-src]\");for(var k=0;k<i.length;k++){}});</script>\n  <!-- YouTube thumbnail replacement helper, served single-line shape\n       (the multi-line blob above must NOT trip the one-line-only regexes). -->\n  <script type=\"text/javascript\">function lazyLoadThumb(e){var t='<img data-lazy-src=\"https://i.ytimg.com/vi/ID/hqdefault.jpg\">',a='<div class=\"play\"></div>';return t.replace(\"ID\",e)+a}function lazyLoadYoutubeIframe(){var e=document.createElement(\"iframe\");e.setAttribute(\"data-lazy-src\",\"ID\");this.parentNode.replaceChild(e,this)}document.addEventListener(\"DOMContentLoaded\",function(){var e=document.querySelectorAll(\"iframe[data-lazy-src]\");e.forEach(function(t){});});",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "var RocketPreloadLinksConfig = {\"excludeUris\":\"\\/cart|\\/my-account\",\"ttl\":\"3600\"}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://all.example/wp-content/plugins/wp-rocket/assets/js/wpr-beacon.min.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "{\"wpr_plugin\":{\"version\":\"3.20.6.1\"},\"get_rocket_option\":{\"delay_js\":{\"option_value\":true},\"version\":\"3.20.6.1\"},\"server_info\":{\"server_load\":\"1.4\",\"web_server\":\"nginx\",\"php_memory_limit\":\"256M\"},\"wpr_diagnoser_version\":\"2.1\"}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "{\"options\":{\"delay_js\":{\"option_name\":\"delay_js\",\"get_rocket_option\":{\"value\":\"1\"}}},\"post_meta_excluded_options\":{\"cdn\":false}}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": "3.20.6",
+      "delayedScripts": 3
+    },
+    "defer_all_js": {
+      "present": true,
+      "scripts": ["https://all.example/late.js"]
+    },
+    "lazyload": {
+      "present": true,
+      "images": [
+        {
+          "src": "https://all.example/media/city.webp",
+          "lazyloadDetected": true,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://all.example/media/data-src.jpg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["data-src", "data-skip-lazy", "skip-lazy"]
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": true,
+      "replaceImage": true
+    },
+    "lazyload_css_bg_img": {
+      "present": true
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": true,
+      "beacon": true
+    },
+    "minify_css": {
+      "present": true
+    },
+    "minify_js": {
+      "present": true
+    },
+    "preload_links": {
+      "present": true
+    },
+    "rocket_cdn": {
+      "present": true
+    }
+  },
+  "preloadedResources": {
+    "present": true,
+    "resources": [
+      {
+        "href": "https://all.example/hero.webp",
+        "type": "image"
+      },
+      {
+        "href": "https://all.example/logo.png",
+        "type": "image"
+      },
+      {
+        "href": "https://all.example/app.js",
+        "type": "script"
+      }
+    ]
+  }
+}

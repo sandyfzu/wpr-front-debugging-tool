@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  Crafted adversarial fixture: lazyload-class hiding. Pairs a real WP Rocket
+  delayed-script shape with images whose classes/attributes *look like* they
+  should trip substring matches that must not fire (value not at the anchor),
+  plus tokens embedded in src values that must fire. Pin: identical outputs
+  from the port engine and the reference implementation, every field.
+  Snapshot note: lazyload present is FALSE here on purpose — the options blob
+  below targets youtube-style markup with a SPACE before '=' (never served
+  that way); keep it so the options-regex's exactness stays pinned.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="generator"
+      content="WP Rocket 3.20.0.2"
+      data-wpr-features="wpr_delay_js wpr_lazyload_images wpr_lazyload_iframes"
+    />
+    <title>adversarial lazyload classes</title>
+  </head>
+  <body>
+    <!-- Real controller, preserved shape from the served cache. -->
+    <script type="text/javascript" id="wpr-lazyload-js-extra">
+      window.lazyLoadOptions = [
+        {
+          elements_selector: 'img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]',
+          data_src: 'lazy-src'
+        }
+      ];
+    </script>
+    <script type="text/javascript">
+      function lazyLoadThumb(e) {
+        var t = '<img data-lazy-src="https://i.ytimg.com/vi/ID/hqdefault.jpg">';
+      }
+      function lazyLoadYoutubeIframe() {
+        var e = document.createElement('iframe');
+      }
+    </script>
+    <script src="/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+    <!-- The real img canonical: lazyloaded. -->
+    <img
+      src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%201%201'%3E%3C/svg%3E"
+      data-lazy-src="https://site.example/wp-content/themes/media/alpine.jpg"
+      alt="real"
+    />
+    <!-- srcset-only variant: lazyloadDetected without data-lazy-src. -->
+    <img
+      src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E"
+      data-lazy-srcset="https://site.example/gallery-1x.jpg 1x"
+    />
+    <!-- Class contains the ls-l token but NOT at the value start: not an exclusion on its anchor... -->
+    <img class="banner ls-lazy" src="https://site.example/banner.jpg" />
+    <!-- ...unless the class value legitimately starts with it (slider library). -->
+    <img class="ls-l" src="https://site.example/slider-1.jpg" />
+    <img class="ls-bg" src="https://site.example/slider-bg.jpg" />
+    <img class="skip-lazy extra" src="https://site.example/kept.jpg" />
+    <img class="skip-lazy" src="https://site.example/exactly-skipped.jpg" />
+    <!-- Attribute NAMED like a class anchor (hostile markup). -->
+    <img xclass="ls-l" src="https://site.example/xclass.jpg" />
+    <!-- Exclusion tokens inside URL VALUES (the engines' substring semantics fire). -->
+    <img src="https://cdn.example.com/photos/fullurl.jpg" />
+    <img src="https://cdn.example.com/data-srcc-photo.jpg" />
+    <img src="https://cdn.example.com/loader-soliloquy-image-2.jpg" />
+    <img src="https://cdn.example.com/plugin/image-compare__viewer.js.jpg" />
+    <img
+      data-envira-src="https://cdn.example.com/envira/gallery.jpg"
+      src="https://cdn.example.com/envira-small.jpg"
+    />
+    <!-- Native-attribute variants. -->
+    <img loading="eager" src="https://site.example/eager.jpg" />
+    <img loading="EAGER" src="https://site.example/eager-uppercase.jpg" />
+    <!-- data-lazy-original / data-lazysrc: old plugin attribute names. -->
+    <img
+      data-lazy-original="https://old.example/orig.jpg"
+      src="https://site.example/fallback.jpg"
+    />
+    <img data-lazysrc="https://old.example/lazy.jpg" src="https://site.example/fallback2.jpg" />
+  </body>
+</html>

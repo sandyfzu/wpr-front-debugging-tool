@@ -1,0 +1,1393 @@
+<!doctype html>
+<html class="no-js" lang="en-US">
+<head>
+	<meta charset="utf-8"/>
+<script>
+var gform;gform||(document.addEventListener("gform_main_scripts_loaded",function(){gform.scriptsLoaded=!0}),document.addEventListener("gform/theme/scripts_loaded",function(){gform.themeScriptsLoaded=!0}),window.addEventListener("DOMContentLoaded",function(){gform.domLoaded=!0}),gform={domLoaded:!1,scriptsLoaded:!1,themeScriptsLoaded:!1,isFormEditor:()=>"function"==typeof InitializeEditor,callIfLoaded:function(o){return!(!gform.domLoaded||!gform.scriptsLoaded||!gform.themeScriptsLoaded&&!gform.isFormEditor()||(gform.isFormEditor()&&console.warn("The use of gform.initializeOnLoaded() is deprecated in the form editor context and will be removed in Gravity Forms 3.1."),o(),0))},initializeOnLoaded:function(o){gform.callIfLoaded(o)||(document.addEventListener("gform_main_scripts_loaded",()=>{gform.scriptsLoaded=!0,gform.callIfLoaded(o)}),document.addEventListener("gform/theme/scripts_loaded",()=>{gform.themeScriptsLoaded=!0,gform.callIfLoaded(o)}),window.addEventListener("DOMContentLoaded",()=>{gform.domLoaded=!0,gform.callIfLoaded(o)}))},hooks:{action:{},filter:{}},addAction:function(o,r,e,t){gform.addHook("action",o,r,e,t)},addFilter:function(o,r,e,t){gform.addHook("filter",o,r,e,t)},doAction:function(o){gform.doHook("action",o,arguments)},applyFilters:function(o){return gform.doHook("filter",o,arguments)},removeAction:function(o,r){gform.removeHook("action",o,r)},removeFilter:function(o,r,e){gform.removeHook("filter",o,r,e)},addHook:function(o,r,e,t,n){null==gform.hooks[o][r]&&(gform.hooks[o][r]=[]);var d=gform.hooks[o][r];null==n&&(n=r+"_"+d.length),gform.hooks[o][r].push({tag:n,callable:e,priority:t=null==t?10:t})},doHook:function(r,o,e){var t;if(e=Array.prototype.slice.call(e,1),null!=gform.hooks[r][o]&&((o=gform.hooks[r][o]).sort(function(o,r){return o.priority-r.priority}),o.forEach(function(o){"function"!=typeof(t=o.callable)&&(t=window[t]),"action"==r?t.apply(null,e):e[0]=t.apply(null,e)})),"filter"==r)return e[0]},removeHook:function(o,r,t,n){var e;null!=gform.hooks[o][r]&&(e=(e=gform.hooks[o][r]).filter(function(o,r,e){return!!(null!=n&&n!=o.tag||null!=t&&t!=o.priority)}),gform.hooks[o][r]=e)}});
+</script>
+
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<script>document.documentElement.className = 'js';</script>
+	<link rel="shortcut icon" href="/favicon.ico">
+
+	<script type="text/javascript" src="https://app.termly.io/resource-blocker/7469f79f-475d-41de-b658-73e577c087f8?autoBlock=off"></script>
+
+<link rel="preload" as="image" href="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg"  ><script>window.dataLayer = window.dataLayer || [];window.dataLayer.push({"page_type":"other","language":"en","page_locale":"en_US","display_currency":"USD","logged_in":false,"user_id":null,"customer_type":"prospect"});</script>
+<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />
+<link rel="alternate" hreflang="en" href="https://wp-rocket.me/support/" />
+<link rel="alternate" hreflang="fr" href="https://wp-rocket.me/fr/support/" />
+<link rel="alternate" hreflang="de" href="https://wp-rocket.me/de/support/" />
+<link rel="alternate" hreflang="it" href="https://wp-rocket.me/it/supporto/" />
+<link rel="alternate" hreflang="es" href="https://wp-rocket.me/es/soporte/" />
+<link rel="alternate" hreflang="x-default" href="https://wp-rocket.me/support/" />
+
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var gtm4wp_datalayer_name = "dataLayer";
+	var dataLayer = dataLayer || [];
+	const gtm4wp_use_sku_instead = 1;
+	const gtm4wp_currency = 'USD';
+	const gtm4wp_product_per_impression = 10;
+	const gtm4wp_clear_ecommerce = false;
+	const gtm4wp_datalayer_max_timeout = 2000;
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com -->
+	<!-- This site is optimized with the Yoast SEO plugin v25.3 - https://yoast.com/wordpress/plugins/seo/ -->
+	<title>WP Rocket Help Center | WordPress Caching Plugin</title>
+	<meta name="description" content="Need help with your WP Rocket plugin? Read our documentation, watch our video tutorials, or join our Facebook group to make your WordPress even better!" />
+	<link rel="canonical" href="https://wp-rocket.me/support/" />
+	<meta property="og:locale" content="en_US" />
+	<meta property="og:type" content="article" />
+	<meta property="og:title" content="WP Rocket Help Center | WordPress Caching Plugin" />
+	<meta property="og:description" content="Need help with your WP Rocket plugin? Read our documentation, watch our video tutorials, or join our Facebook group to make your WordPress even better!" />
+	<meta property="og:url" content="https://wp-rocket.me/support/" />
+	<meta property="og:site_name" content="WP Rocket" />
+	<meta property="article:publisher" content="https://www.facebook.com/pages/WP-Rocket/631942253526829" />
+	<meta property="article:modified_time" content="2025-03-27T20:33:04+00:00" />
+	<meta property="og:image" content="https://wp-rocket.me/wp-content/uploads/2021/03/Featured-image.png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="800" />
+	<meta property="og:image:type" content="image/png" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:image" content="https://wp-rocket.me/wp-content/uploads/2021/03/Featured-image.png" />
+	<meta name="twitter:site" content="@wp_rocket" />
+	<script type="application/ld+json" class="yoast-schema-graph">{"@context":"https://schema.org","@graph":[{"@type":"WebPage","@id":"https://wp-rocket.me/support/","url":"https://wp-rocket.me/support/","name":"WP Rocket Help Center | WordPress Caching Plugin","isPartOf":{"@id":"https://wp-rocket.me/#website"},"primaryImageOfPage":{"@id":"https://wp-rocket.me/support/#primaryimage"},"image":{"@id":"https://wp-rocket.me/support/#primaryimage"},"thumbnailUrl":"https://wp-rocket.me/wp-content/uploads/2021/03/Featured-image.png","datePublished":"2014-09-12T01:24:25+00:00","dateModified":"2025-03-27T20:33:04+00:00","description":"Need help with your WP Rocket plugin? Read our documentation, watch our video tutorials, or join our Facebook group to make your WordPress even better!","breadcrumb":{"@id":"https://wp-rocket.me/support/#breadcrumb"},"inLanguage":"en-US","potentialAction":[{"@type":"ReadAction","target":["https://wp-rocket.me/support/"]}]},{"@type":"ImageObject","inLanguage":"en-US","@id":"https://wp-rocket.me/support/#primaryimage","url":"https://wp-rocket.me/wp-content/uploads/2021/03/Featured-image.png","contentUrl":"https://wp-rocket.me/wp-content/uploads/2021/03/Featured-image.png","width":1200,"height":800},{"@type":"BreadcrumbList","@id":"https://wp-rocket.me/support/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://wp-rocket.me"},{"@type":"ListItem","position":2,"name":"WP Rocket Help Center"}]},{"@type":"WebSite","@id":"https://wp-rocket.me/#website","url":"https://wp-rocket.me/","name":"WP Rocket","description":"Plugin d&#039;optimisation de sites WordPress","publisher":{"@id":"https://wp-rocket.me/#organization"},"potentialAction":[{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://wp-rocket.me/?s={search_term_string}"},"query-input":{"@type":"PropertyValueSpecification","valueRequired":true,"valueName":"search_term_string"}}],"inLanguage":"en-US"},{"@type":"Organization","@id":"https://wp-rocket.me/#organization","name":"WP Rocket","url":"https://wp-rocket.me/","logo":{"@type":"ImageObject","inLanguage":"en-US","@id":"https://wp-rocket.me/#/schema/logo/image/","url":"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png","contentUrl":"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png","width":150,"height":41,"caption":"WP Rocket"},"image":{"@id":"https://wp-rocket.me/#/schema/logo/image/"},"sameAs":["https://www.facebook.com/pages/WP-Rocket/631942253526829","https://x.com/wp_rocket","https://www.youtube.com/channel/UC1ozThXHd1IWIZ5wkshgp_Q"]}]}</script>
+	<!-- / Yoast SEO plugin. -->
+
+
+<link rel='dns-prefetch' href='//static.klaviyo.com' />
+<link rel='dns-prefetch' href='//www.dwin1.com' />
+<link href='https://fonts.gstatic.com' crossorigin rel='preconnect' />
+<link rel="alternate" title="oEmbed (JSON)" type="application/json+oembed" href="https://wp-rocket.me/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwp-rocket.me%2Fsupport%2F" />
+<link rel="alternate" title="oEmbed (XML)" type="text/xml+oembed" href="https://wp-rocket.me/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fwp-rocket.me%2Fsupport%2F&#038;format=xml" />
+<style id='wp-img-auto-sizes-contain-inline-css'>
+img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
+/*# sourceURL=wp-img-auto-sizes-contain-inline-css */
+</style>
+<link rel='stylesheet' id='wc-price-based-country-frontend-css' href='https://wp-rocket.me/wp-content/plugins/woocommerce-product-price-based-on-countries/assets/css/frontend.min.css?ver=4.2.2' media='all' />
+<style id='wp-emoji-styles-inline-css'>
+
+	img.wp-smiley, img.emoji {
+		display: inline !important;
+		border: none !important;
+		box-shadow: none !important;
+		height: 1em !important;
+		width: 1em !important;
+		margin: 0 0.07em !important;
+		vertical-align: -0.1em !important;
+		background: none !important;
+		padding: 0 !important;
+	}
+/*# sourceURL=wp-emoji-styles-inline-css */
+</style>
+<link rel='stylesheet' id='style-css' href='https://wp-rocket.me/wp-content/themes/V4/assets/css/common.min.css?ver=1791299144' media='all' />
+<link rel='stylesheet' id='changelog-css' href='https://wp-rocket.me/wp-content/themes/V4/assets/css/pages/changelog.min.css?ver=1791299151' media='all' />
+<link rel='stylesheet' id='page-support-css' href='https://wp-rocket.me/wp-content/themes/V4/assets/css/pages/support.min.css?ver=1791299155' media='all' />
+<script src="https://wp-rocket.me/wp-content/plugins/wp-sentry-integration/public/wp-sentry-browser.min.js?ver=8.4.0" id="wp-sentry-browser-bundle-js"></script>
+<script id="wp-sentry-browser-js-extra">
+var wp_sentry = {"environment":"prod","release":"unknown","context":{"tags":{"wordpress":"6.9.9","language":"en-US"}},"dsn":"https://a4d5ec735e1f038ce08b8d509ccb582d@o172969.ingest.sentry.io/4506038457073664"};
+//# sourceURL=wp-sentry-browser-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/plugins/wp-sentry-integration/public/wp-sentry-init.js?ver=8.4.0" id="wp-sentry-browser-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1" id="jquery-core-js"></script>
+<script src="https://wp-rocket.me/wp-content/plugins/woocommerce/assets/js/select2/select2.full.min.js?ver=4.0.3-wc.10.6.1" id="wc-select2-js" defer data-wp-strategy="defer"></script>
+<script id="wc-settings-dep-in-header-js-after">
+console.warn( "Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-editor-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059" );
+console.warn( "Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-view-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059" );
+//# sourceURL=wc-settings-dep-in-header-js-after
+</script>
+<link rel="https://api.w.org/" href="https://wp-rocket.me/wp-json/" /><link rel="alternate" title="JSON" type="application/json" href="https://wp-rocket.me/wp-json/wp/v2/pages/605" /><link rel='shortlink' href='https://wp-rocket.me/?p=605' />
+<meta name="generator" content="WPML ver:4.7.2 stt:1,4,3,27,28,2;" />
+<!-- Start VWO Async SmartCode -->
+<link rel="preconnect" href="https://dev.visualwebsiteoptimizer.com"/>
+<!-- IMPORTANT: data-cfasync="false" must be preserved on any future SmartCode updates.
+     It instructs Cloudflare Rocket Loader to skip deferred loading for this script,
+     preserving the synchronous execution order required by VWO SmartCode. -->
+<script type='text/javascript' id='vwoCode' data-cfasync='false'>
+window._vwo_code ||(function(){var w=window,d=document;var account_id=1131264,version=2.2,settings_tolerance=2000,hide_element='body',hide_element_style='opacity:0 !important;filter:alpha(opacity=0) !important;background:none !important';var f=0,v;if(f=!1,v=d.querySelector('#vwoCode'),cc={},-1<d.URL.indexOf('__vwo_disable__')||w._vwo_code)return;try{var e=JSON.parse(localStorage.getItem('_vwo_'+account_id+'_config'));cc=e&&'object'==typeof e?e:{}}catch(e){}function r(t){try{return decodeURIComponent(t)}catch(e){return t}}var s=function(){var e={combination:[],combinationChoose:[],split:[],exclude:[],uuid:null,consent:null,optOut:null},t=d.cookie||'';if(!t)return e;for(var n,i,o=/(?:^|;\s*)(?:(_vis_opt_exp_(\d+)_combi=([^;]*))|(_vis_opt_exp_(\d+)_combi_choose=([^;]*))|(_vis_opt_exp_(\d+)_split=([^:;]*))|(_vis_opt_exp_(\d+)_exclude=[^;]*)|(_vis_opt_out=([^;]*))|(_vwo_global_opt_out=[^;]*)|(_vwo_uuid=([^;]*))|(_vwo_consent=([^;]*)))/g;null!==(n=o.exec(t));)try{n[1]?e.combination.push({id:n[2],value:r(n[3])}):n[4]?e.combinationChoose.push({id:n[5],value:r(n[6])}):n[7]?e.split.push({id:n[8],value:r(n[9])}):n[10]?e.exclude.push({id:n[11]}):n[12]?e.optOut=r(n[13]):n[14]?e.optOut=!0:n[15]?e.uuid=r(n[16]):n[17]&&(i=r(n[18]),e.consent=i&&3<=i.length?i.substring(0,3):null)}catch(e){}return e}();function i(){var e=function(){if(w.VWO&&Array.isArray(w.VWO))for(var e=0;e<w.VWO.length;e++){var t=w.VWO[e];if(Array.isArray(t)&&('setVisitorId'===t[0]||'setSessionId'===t[0]))return!0}return!1}(),t='a='+account_id+'&u='+encodeURIComponent(w._vis_opt_url||d.URL)+'&vn='+version+'&ph=1'+('undefined'!=typeof platform?'&p='+platform:'')+'&st='+w.performance.now();e||((n=function(){var e,t=[],n={},i=w.VWO&&w.VWO.appliedCampaigns||{};for(e in i){var o=i[e]&&i[e].v;o&&(t.push(e+'-'+o+'-1'),n[e]=!0)}if(s&&s.combination)for(var r=0;r<s.combination.length;r++){var a=s.combination[r];n[a.id]||t.push(a.id+'-'+a.value)}return t.join('|')}())&&(t+='&c='+n),(n=function(){var e=[],t={};if(s&&s.combinationChoose)for(var n=0;n<s.combinationChoose.length;n++){var i=s.combinationChoose[n];e.push(i.id+'-'+i.value),t[i.id]=!0}if(s&&s.split)for(var o=0;o<s.split.length;o++)t[(i=s.split[o]).id]||e.push(i.id+'-'+i.value);return e.join('|')}())&&(t+='&cc='+n),(n=function(){var e={},t=[];if(w.VWO&&Array.isArray(w.VWO))for(var n=0;n<w.VWO.length;n++){var i=w.VWO[n];if(Array.isArray(i)&&'setVariation'===i[0]&&i[1]&&Array.isArray(i[1]))for(var o=0;o<i[1].length;o++){var r,a=i[1][o];a&&'object'==typeof a&&(r=a.e,a=a.v,r&&a&&(e[r]=a))}}for(r in e)t.push(r+'-'+e[r]);return t.join('|')}())&&(t+='&sv='+n)),s&&s.optOut&&(t+='&o='+s.optOut);var n=function(){var e=[],t={};if(s&&s.exclude)for(var n=0;n<s.exclude.length;n++){var i=s.exclude[n];t[i.id]||(e.push(i.id),t[i.id]=!0)}return e.join('|')}();return n&&(t+='&e='+n),s&&s.uuid&&(t+='&id='+s.uuid),s&&s.consent&&(t+='&consent='+s.consent),w.name&&-1<w.name.indexOf('_vis_preview')&&(t+='&pM=true'),w.VWO&&w.VWO.ed&&(t+='&ed='+w.VWO.ed),t}code={nonce:v&&v.nonce,library_tolerance:function(){return'undefined'!=typeof library_tolerance?library_tolerance:void 0},settings_tolerance:function(){return cc.sT||settings_tolerance},hide_element_style:function(){return'{'+(cc.hES||hide_element_style)+'}'},hide_element:function(){return performance.getEntriesByName('first-contentful-paint')[0]?'':'string'==typeof cc.hE?cc.hE:hide_element},getVersion:function(){return version},finish:function(e){var t;f||(f=!0,(t=d.getElementById('_vis_opt_path_hides'))&&t.parentNode.removeChild(t),e&&((new Image).src='https://dev.visualwebsiteoptimizer.com/ee.gif?a='+account_id+e))},finished:function(){return f},addScript:function(e){var t=d.createElement('script');t.type='text/javascript',e.src?t.src=e.src:t.text=e.text,v&&t.setAttribute('nonce',v.nonce),d.getElementsByTagName('head')[0].appendChild(t)},load:function(e,t){t=t||{};var n=new XMLHttpRequest;n.open('GET',e,!0),n.withCredentials=!t.dSC,n.responseType=t.responseType||'text',n.onload=function(){if(t.onloadCb)return t.onloadCb(n,e);200===n.status?_vwo_code.addScript({text:n.responseText}):_vwo_code.finish('&e=loading_failure:'+e)},n.onerror=function(){if(t.onerrorCb)return t.onerrorCb(e);_vwo_code.finish('&e=loading_failure:'+e)},n.send()},init:function(){var e,t=this.settings_tolerance();w._vwo_settings_timer=setTimeout(function(){_vwo_code.finish()},t),'body'!==this.hide_element()?(n=d.createElement('style'),e=(t=this.hide_element())?t+this.hide_element_style():'',t=d.getElementsByTagName('head')[0],n.setAttribute('id','_vis_opt_path_hides'),v&&n.setAttribute('nonce',v.nonce),n.setAttribute('type','text/css'),n.styleSheet?n.styleSheet.cssText=e:n.appendChild(d.createTextNode(e)),t.appendChild(n)):(n=d.getElementsByTagName('head')[0],(e=d.createElement('div')).style.cssText='z-index: 2147483647 !important;position: fixed !important;left: 0 !important;top: 0 !important;width: 100% !important;height: 100% !important;background: white !important;',e.setAttribute('id','_vis_opt_path_hides'),e.classList.add('_vis_hide_layer'),n.parentNode.insertBefore(e,n.nextSibling));var n='https://dev.visualwebsiteoptimizer.com/j.php?'+i();-1!==w.location.search.indexOf('_vwo_xhr')?this.addScript({src:n}):this.load(n+'&x=true',{l:1})}};w._vwo_code=code;code.init();})();
+</script>
+<!-- End VWO Async SmartCode -->
+
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<!-- GTM Container placement set to manual -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var dataLayer_content = {"pagePostType":"page","pagePostType2":"single-page","pagePostAuthor":"Jonathan Buttigieg","customerTotalOrders":0,"customerTotalOrderValue":0,"customerFirstName":"","customerLastName":"","customerBillingFirstName":"","customerBillingLastName":"","customerBillingCompany":"","customerBillingAddress1":"","customerBillingAddress2":"","customerBillingCity":"","customerBillingState":"","customerBillingPostcode":"","customerBillingCountry":"","customerBillingEmail":"","customerBillingEmailHash":"","customerBillingPhone":"","customerShippingFirstName":"","customerShippingLastName":"","customerShippingCompany":"","customerShippingAddress1":"","customerShippingAddress2":"","customerShippingCity":"","customerShippingState":"","customerShippingPostcode":"","customerShippingCountry":"","cartContent":{"totals":{"applied_coupons":[],"discount_total":0,"subtotal":0,"total":0},"items":[]}};
+	dataLayer.push( dataLayer_content );
+</script>
+<script data-cfasync="false" data-pagespeed-no-defer>
+		if (typeof gtag == "undefined") {
+			function gtag(){dataLayer.push(arguments);}
+		}
+
+		gtag("consent", "default", {
+			"analytics_storage": "granted",
+			"ad_storage": "granted",
+			"ad_user_data": "granted",
+			"ad_personalization": "granted",
+			"functionality_storage": "granted",
+			"security_storage": "granted",
+			"personalization_storage": "granted",
+		});
+</script>
+<script data-cfasync="false" data-pagespeed-no-defer>
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&amp;l='+l:'';j.async=true;j.src=
+'https://sst.wp-rocket.me/tm?origin='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer',window.location.origin);
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com --><style id='wp-block-heading-inline-css'>
+h1:where(.wp-block-heading).has-background,h2:where(.wp-block-heading).has-background,h3:where(.wp-block-heading).has-background,h4:where(.wp-block-heading).has-background,h5:where(.wp-block-heading).has-background,h6:where(.wp-block-heading).has-background{padding:1.25em 2.375em}h1.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h1.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]),h2.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h2.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]),h3.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h3.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]),h4.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h4.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]),h5.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h5.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]),h6.has-text-align-left[style*=writing-mode]:where([style*=vertical-lr]),h6.has-text-align-right[style*=writing-mode]:where([style*=vertical-rl]){rotate:180deg}
+/*# sourceURL=https://wp-rocket.me/wp-includes/blocks/heading/style.min.css */
+</style>
+<style id='wp-block-columns-inline-css'>
+.wp-block-columns{box-sizing:border-box;display:flex;flex-wrap:wrap!important}@media (min-width:782px){.wp-block-columns{flex-wrap:nowrap!important}}.wp-block-columns{align-items:normal!important}.wp-block-columns.are-vertically-aligned-top{align-items:flex-start}.wp-block-columns.are-vertically-aligned-center{align-items:center}.wp-block-columns.are-vertically-aligned-bottom{align-items:flex-end}@media (max-width:781px){.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column{flex-basis:100%!important}}@media (min-width:782px){.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column{flex-basis:0;flex-grow:1}.wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column[style*=flex-basis]{flex-grow:0}}.wp-block-columns.is-not-stacked-on-mobile{flex-wrap:nowrap!important}.wp-block-columns.is-not-stacked-on-mobile>.wp-block-column{flex-basis:0;flex-grow:1}.wp-block-columns.is-not-stacked-on-mobile>.wp-block-column[style*=flex-basis]{flex-grow:0}:where(.wp-block-columns){margin-bottom:1.75em}:where(.wp-block-columns.has-background){padding:1.25em 2.375em}.wp-block-column{flex-grow:1;min-width:0;overflow-wrap:break-word;word-break:break-word}.wp-block-column.is-vertically-aligned-top{align-self:flex-start}.wp-block-column.is-vertically-aligned-center{align-self:center}.wp-block-column.is-vertically-aligned-bottom{align-self:flex-end}.wp-block-column.is-vertically-aligned-stretch{align-self:stretch}.wp-block-column.is-vertically-aligned-bottom,.wp-block-column.is-vertically-aligned-center,.wp-block-column.is-vertically-aligned-top{width:100%}
+/*# sourceURL=https://wp-rocket.me/wp-includes/blocks/columns/style.min.css */
+</style>
+<style id='wp-block-group-inline-css'>
+.wp-block-group{box-sizing:border-box}:where(.wp-block-group.wp-block-group-is-layout-constrained){position:relative}
+/*# sourceURL=https://wp-rocket.me/wp-includes/blocks/group/style.min.css */
+</style>
+<style id='wp-block-paragraph-inline-css'>
+.is-small-text{font-size:.875em}.is-regular-text{font-size:1em}.is-large-text{font-size:2.25em}.is-larger-text{font-size:3em}.has-drop-cap:not(:focus):first-letter{float:left;font-size:8.4em;font-style:normal;font-weight:100;line-height:.68;margin:.05em .1em 0 0;text-transform:uppercase}body.rtl .has-drop-cap:not(:focus):first-letter{float:none;margin-left:.1em}p.has-drop-cap.has-background{overflow:hidden}:root :where(p.has-background){padding:1.25em 2.375em}:where(p.has-text-color:not(.has-link-color)) a{color:inherit}p.has-text-align-left[style*="writing-mode:vertical-lr"],p.has-text-align-right[style*="writing-mode:vertical-rl"]{rotate:180deg}
+/*# sourceURL=https://wp-rocket.me/wp-includes/blocks/paragraph/style.min.css */
+</style>
+<style id='wp-block-spacer-inline-css'>
+.wp-block-spacer{clear:both}
+/*# sourceURL=https://wp-rocket.me/wp-includes/blocks/spacer/style.min.css */
+</style>
+<link rel='stylesheet' id='wc-stripe-blocks-checkout-style-css' href='https://wp-rocket.me/wp-content/plugins/woocommerce-gateway-stripe/build/upe-blocks.css?ver=22f4dbe653d393134010' media='all' />
+<link rel='stylesheet' id='wc-blocks-style-css' href='https://wp-rocket.me/wp-content/plugins/woocommerce/assets/client/blocks/wc-blocks.css?ver=wc-10.6.1' media='all' />
+
+</head>
+<body class="wp-singular page-template-default page page-id-605 wp-embed-responsive wp-theme-V4 theme-V4 woocommerce-no-js page-support en">
+
+
+
+<div class="brand-switcher">
+	<div class="brand-switcher__wrapper wrapper">
+		<ul class="brand-switcher__items">
+							<li class="brand-switcher__item brand-switcher__item--current">
+					<a
+						class="brand-switcher__link"
+						href="https://wp-rocket.me"
+													aria-current="page"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/wprocket.svg"
+								alt="wp rocket"
+																									style="height:18px;transform:translateY(3px);"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://imagify.io/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/imagify-1.svg"
+								alt="imagify"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://rankmath.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/rankmath-1.svg"
+								alt="rank math"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://backwpup.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/backwpup.svg"
+								alt="BackWPup"
+																									style="height:12px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://gtmetrix.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/gtmetrix-1.svg"
+								alt="GTmetrix"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+					</ul>
+	</div>
+</div>
+
+<header class="header" role="banner">
+	<div class="main-navigation">
+		<div class="main-navigation__wrapper wrapper">
+			<div class="main-navigation__logo">
+				<a href="https://wp-rocket.me/" aria-label="Go to the homepage">
+					<img src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg" width="155" height="43" alt="WordPress Caching Plugin" loading="eager">
+				</a>
+			</div>
+
+			
+			
+<div class="main-navigation__lang main-navigation__lang--mobile has-children">
+	<button class="main-navigation__lang-selector" aria-controls="main-navigation-langs-mobile" aria-expanded="false" aria-haspopup="true">
+		<svg class="main-navigation__lang-icon" aria-hidden="true" focusable="false" fill="currentColor" width="18" height="18" viewBox="0 0 640 640"><path d="M395.9 491.2C373.2 537.2 345.2 560 320 560C294.8 560 266.8 537.2 244.1 491.2C223 448.3 209.2 389.9 208.1 328L432 328C430.9 389.9 417.1 448.3 395.9 491.2zM431.9 312L208 312C209.2 250.1 223 191.7 244.1 148.8C266.8 102.8 294.8 80 320 80C345.2 80 373.2 102.8 395.9 148.8C417 191.7 430.9 250 432 312zM447.9 328L559.8 328C556.1 440 475.7 532.6 369.4 554.9C414.1 515.4 446.2 425.5 447.9 328zM559.8 312L447.9 312C446.3 214.5 414.1 124.6 369.4 85.1C475.7 107.4 556.2 200 559.9 312zM192 312L80.1 312C83.8 200 164.2 107.4 270.5 85.1C225.8 124.6 193.7 214.5 192 312zM80.1 328L192 328C193.7 425.5 225.9 515.4 270.6 554.9C164.3 532.6 83.8 440 80.1 328zM320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576z"/></svg>
+		<span class="screen-reader-text">Select your language</span>
+		<span class="main-navigation__lang-current" aria-hidden="true">EN</span>
+	</button>
+
+	<ul id="main-navigation-langs-mobile" class="main-navigation__dropdown main-navigation__lang-dropdown">
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link active"
+					href="https://wp-rocket.me/support/"
+					hreflang="en"
+					 aria-current="true">English</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/fr/support/"
+					hreflang="fr"
+					>Français</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/de/support/"
+					hreflang="de"
+					>Deutsch</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/it/supporto/"
+					hreflang="it"
+					>Italiano</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/es/soporte/"
+					hreflang="es"
+					>Español</a>
+			</li>
+			</ul>
+</div>
+
+			<div class="burger" id="mobile-indicator" aria-controls="main-navigation" aria-expanded="false">
+				<div class="burger__line burger__line--first-child"></div>
+				<div class="burger__line burger__line--second-child"></div>
+				<div class="burger__line burger__line--last-child"></div>
+			</div>
+
+			<nav id="main-navigation" class="main-navigation__menu">
+
+								<ul class="main-navigation__items">
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Why WP Rocket?</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/bloggers/" class="main-navigation__dropdown__link">For Bloggers</a>							</li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/ecommerce/" class="main-navigation__dropdown__link">For eCommerce</a></li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/freelancers-agencies/" class="main-navigation__dropdown__link">For Freelancers &amp; Agencies</a></li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/testimonials/" class="main-navigation__dropdown__link">Testimonials</a></li>
+						</ul>
+					</li>
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Features</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/features/" class="main-navigation__dropdown__link">How it works</a></li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/compatibilities/" class="main-navigation__dropdown__link">Compatibilities</a></li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY2hhbmdlbG9nLw==" tabindex="0">Changelog</span>
+</li>
+						</ul>
+					</li>
+                                        <li class="main-navigation__item"><a href="https://wp-rocket.me/pricing/" class="main-navigation__item-selector">Pricing</a>                                        </li>
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Resources</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item">
+								<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/blog/">Blog</a>
+							</li>
+															<li class="main-navigation__dropdown__item">
+									<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/google-core-web-vitals-wordpress/">Core
+										Web Vitals</a>
+								</li>
+								<li class="main-navigation__dropdown__item">
+									<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/lighthouse-performance-score-wordpress/">Lighthouse
+										Performance</a>
+								</li>
+																	<li class="main-navigation__dropdown__item">
+										<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/wordpress-cache/">WordPress Cache</a>
+									</li>
+																										<li class="main-navigation__dropdown__item">
+										<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/mcp-wordpress/">Performance &amp; AI</a>
+									</li>
+																							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29tbXVuaXR5Lw==" tabindex="0">Community</span>
+</li>
+							<li class="main-navigation__dropdown__item"><span target="_blank" class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly9kb2NzLndwLXJvY2tldC5tZS8=" tabindex="0">Documentation</span>
+</li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/support/" class="main-navigation__dropdown__link">Help center</a></li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29udGFjdC8=" tabindex="0">Contact</span>
+</li>
+						</ul>
+					</li>
+				</ul>
+				
+<div class="main-navigation__lang main-navigation__lang--desktop has-children">
+	<button class="main-navigation__lang-selector" aria-controls="main-navigation-langs-desktop" aria-expanded="false" aria-haspopup="true">
+		<svg class="main-navigation__lang-icon" aria-hidden="true" focusable="false" fill="currentColor" width="18" height="18" viewBox="0 0 640 640"><path d="M395.9 491.2C373.2 537.2 345.2 560 320 560C294.8 560 266.8 537.2 244.1 491.2C223 448.3 209.2 389.9 208.1 328L432 328C430.9 389.9 417.1 448.3 395.9 491.2zM431.9 312L208 312C209.2 250.1 223 191.7 244.1 148.8C266.8 102.8 294.8 80 320 80C345.2 80 373.2 102.8 395.9 148.8C417 191.7 430.9 250 432 312zM447.9 328L559.8 328C556.1 440 475.7 532.6 369.4 554.9C414.1 515.4 446.2 425.5 447.9 328zM559.8 312L447.9 312C446.3 214.5 414.1 124.6 369.4 85.1C475.7 107.4 556.2 200 559.9 312zM192 312L80.1 312C83.8 200 164.2 107.4 270.5 85.1C225.8 124.6 193.7 214.5 192 312zM80.1 328L192 328C193.7 425.5 225.9 515.4 270.6 554.9C164.3 532.6 83.8 440 80.1 328zM320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576z"/></svg>
+		<span class="screen-reader-text">Select your language</span>
+		<span class="main-navigation__lang-current" aria-hidden="true">EN</span>
+	</button>
+
+	<ul id="main-navigation-langs-desktop" class="main-navigation__dropdown main-navigation__lang-dropdown">
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link active"
+					href="https://wp-rocket.me/support/"
+					hreflang="en"
+					 aria-current="true">English</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/fr/support/"
+					hreflang="fr"
+					>Français</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/de/support/"
+					hreflang="de"
+					>Deutsch</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/it/supporto/"
+					hreflang="it"
+					>Italiano</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/es/soporte/"
+					hreflang="es"
+					>Español</a>
+			</li>
+			</ul>
+</div>
+<span class="main-navigation__signin-link is-hover-animated-link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYWNjb3VudC8=" tabindex="0">Sign in</span>
+
+				<div class="wp-block-button is-style-oval-small">
+					<span class="wp-block-button__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJpY2luZy8=" tabindex="0">Get started</span>
+				</div>
+			</nav><!--/main_navigation__menu-->
+
+					</div>
+	</div>
+
+			<div class="header__content wrapper--800">
+			<h1 class="header__title h1-like">WP&nbsp;Rocket Help Center</h1>
+			<div class="header__extract"><p>If you have any general curiosity about WP&nbsp;Rocket, you&#8217;re likely to find your answer here.</p>
+</div>
+		</div><!--/header__content-->
+	</header>
+<main role="main">
+	<div class="entry-content wrapper--800">
+		
+<div class="wp-block-group block-support-documentation-highlight"><div class="wp-block-group__inner-container is-layout-constrained wp-block-group-is-layout-constrained">
+<h2 class="wp-block-heading has-text-align-center">Documentation Highlights</h2>
+
+
+
+<p class="has-text-align-center aligncenter">Do you have a question? You’re not alone.</p>
+
+
+
+<p class="has-text-align-center aligncenter">Explore our most visited knowledge base articles to get answers.</p>
+
+
+
+<div style="height:46px" aria-hidden="true" class="wp-block-spacer"></div>
+
+
+
+<div class="wp-block-columns wrapper--1100 documentation-highlight-columns is-layout-flex wp-container-core-columns-is-layout-9d6595d7 wp-block-columns-is-layout-flex">
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
+<h3 class="wp-block-heading has-text-align-center">Most Popular</h3>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1402-how-to-improve-your-mobile-pagespeed-score?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article How to Improve Your Mobile PageSpeed Score"
+	   title="Link for article How to Improve Your Mobile PageSpeed Score">How to Improve Your Mobile PageSpeed Score</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/106-my-site-is-broken?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article My Site Is Broken"
+	   title="Link for article My Site Is Broken">My Site Is Broken</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1267-troubleshooting-critical-css-generation-issues?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Troubleshooting Critical CSS generation issues"
+	   title="Link for article Troubleshooting Critical CSS generation issues">Troubleshooting Critical CSS generation issues</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1349-delay-javascript-execution?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Delay JavaScript Execution"
+	   title="Link for article Delay JavaScript Execution">Delay JavaScript Execution</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1560-delay-javascript-execution-compatibility-exclusions?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Delay JavaScript Execution compatibility exclusions"
+	   title="Link for article Delay JavaScript Execution compatibility exclusions">Delay JavaScript Execution compatibility exclusions</a>
+</div>
+
+
+
+<div style="height:35px" aria-hidden="true" class="wp-block-spacer"></div>
+</div>
+
+
+
+<div class="wp-block-column is-layout-flow wp-block-column-is-layout-flow">
+<h3 class="wp-block-heading has-text-align-center">Recommended</h3>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1529-remove-unused-css?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Remove Unused CSS"
+	   title="Link for article Remove Unused CSS">Remove Unused CSS</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1266-optimize-css-delivery?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Optimize CSS Delivery"
+	   title="Link for article Optimize CSS Delivery">Optimize CSS Delivery</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/18-using-wp-rocket-with-cloudflare?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Using WP Rocket with Cloudflare"
+	   title="Link for article Using WP Rocket with Cloudflare">Using WP Rocket with Cloudflare</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/99-pages-not-cached-or-minify-cssjs-not-working?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Pages not cached, or Minify CSS/JS not working"
+	   title="Link for article Pages not cached, or Minify CSS/JS not working">Pages not cached, or Minify CSS/JS not working</a>
+</div>
+
+
+<div class="wp-block-button is-style-block block-support-documentation-highlight__item">
+	<a href="https://docs.wp-rocket.me/article/1407-eliminate-render-blocking-resources?utm_source=help_center&#038;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link"
+	   aria-label="Link for article Eliminate Render Blocking Resources"
+	   title="Link for article Eliminate Render Blocking Resources">Eliminate Render Blocking Resources</a>
+</div>
+</div>
+</div>
+</div></div>
+		<div class="wp-block-group alignfull has-gray-background-color block-select-topic is-targeted">
+			<div class="wp-block-group__inner-container">
+				<h2 class="has-text-align-center">Customer support</h2>
+				<p class="has-text-align-center">Need extra help? Ask our team of knowledgeable and friendly Rocketeers!</p>
+				<h3 class="has-text-align-center">What is Your Question About?</h3>
+
+				<div class="style-select">
+					<select>
+						<option value="none">Select a topic</option>
+						
+						<option value="topic-getting-started">Getting Started with WP Rocket</option>
+						<option value="topic-google-pagespeed-insight">Google PageSpeed Insights / Loading Time</option>
+						<option value="topic-site-broken">My site is broken</option>
+						<option value="topic-rucss">I&#039;m having trouble with Remove Unused CSS</option>
+						<option value="topic-cpcss">I&#039;m having trouble with Load CSS Asynchronously / Critical CSS / FOUC</option>
+						<option value="topic-not-working">WP Rocket Is Not Working</option>
+						<option value="topic-images-not-showing-up">Images are not showing up</option>
+						<option value="topic-cloudflare">Using WP Rocket with Cloudflare or a CDN</option>
+						<option value="topic-preload">I&#039;m having issues with preload</option>
+						<option value="topic-license-validation">Problems With License Validation</option>
+						<option value="topic-500-error">500 error</option>
+						<option value="topic-rocketcdn">RocketCDN</option>
+						<option value="topic-refund">I want to be refunded</option>
+					</select>
+				</div>
+
+				<div class="topic-content" id="topic-staggered-release">
+					<p class="has-text-align-center">
+						The 3.23.5.1 version is now available for a random sample of <span class="has-style-bold">70%</span> of our users.<br class="hide-if-mobile">We will release this version to 100% of our users in the next few days. <a href="https://docs.wp-rocket.me/article/1293-wp-rocket-release-process" target="_blank" rel="noopener">More Information.</a>					</p>
+				</div>
+
+				<div class="topic-content" id="topic-getting-started">
+					<p class="has-text-align-center">WP Rocket doesn’t require you to be a rocket scientist to make the most of it!<br> We created WP Rocket to be the most user-friendly cache plugin around and with the easiest set-up.</p>
+					<div class="wp-block-columns">
+						
+							<div class="wp-block-column">
+								<h3 lang="en-US">Installing WP Rocket</h3>
+								<p class="has-normal-font-size" lang="en-US">There are two WP Rocket installation options: Automatic or Manual. See our instructions to find out how to proceed.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/6-installing-wp-rocket" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="54171751e4b01e2a68fe8440" data-nonce="4d84a97e43">Read Documentation</a>
+								</div>
+							</div>
+
+							
+							<div class="wp-block-column">
+								<h3 lang="en-US">You've activated WP Rocket—what now?</h3>
+								<p class="has-normal-font-size" lang="en-US">You're mostly ready! The most important feature is automatically enabled upon activation. Check our step-by-step for the next thing you'll want to do once you’ve activated WP Rocket.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/59-getting-started" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5537fd8fe4b0a2d7e23f7299" data-nonce="06aebd21cf">Read Documentation</a>
+								</div>
+							</div>
+
+												</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">Getting Started with WP Rocket</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/7seqacq2ol.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_7seqacq2ol videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/7seqacq2ol/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-getting-started -->
+
+				<div class="topic-content" id="topic-license-validation">
+					<p class="has-text-align-center">Get help with license validation issues and uploading/installing WP Rocket.<br>These articles walk you through troubleshooting steps and solutions.</p>
+					<div class="wp-block-columns">
+						
+							<div class="wp-block-column">
+								<h3 lang="en-US">Resolving problems</h3>
+								<p class="has-normal-font-size" lang="en-US">When you install and activate WP Rocket, the validation of your license happens in the background. If the license validation isn't working correctly, this article will guide you through troubleshooting errors.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/100-resolving-problems-with-license-validation" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5569b6eae4b01a224b4276f6" data-nonce="d9f036237e">Read Documentation</a>
+								</div>
+							</div>
+
+							
+							<div class="wp-block-column">
+								<h3 lang="en-US">Can't upload/install WP Rocket</h3>
+								<p class="has-normal-font-size" lang="en-US">If you are seeing an error message when you try to upload WP Rocket, it means there is a low limit on the file size you can upload to your site. See how to set this limitation.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/1153-cant-upload-install-wp-rocket" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5cf5c84204286333a2641f26" data-nonce="80f4122865">Read Documentation</a>
+								</div>
+							</div>
+
+												</div>
+				</div><!-- #topic-license-validation -->
+
+				<div class="topic-content" id="topic-not-working">
+					<p class="has-text-align-center">Find out if WP Rocket is caching your pages correctly.<br>And if it’s not, we have a step-by-step troubleshooting guide for the most common issues.</p>
+					<div class="wp-block-columns">
+						<div class="wp-block-column">
+							<h3 lang="en-US">Check if WP Rocket is caching your pages</h3>
+							<p class="has-normal-font-size" lang="en-US">See our 4 simple methods to check that WP Rocket is optimizing and caching your pages.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/46-how-to-check-if-wp-rocket-is-caching-your-pages" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="54e6f7e5e4b034c37ea9095f" data-nonce="89e1286abe">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Why is WP Rocket not working?</h3>
+							<p class="has-normal-font-size" lang="en-US">If you notice some issues after the activation of our plugin, don't panic! These possible issues are all reversible. Check our documentation to troubleshoot the cause of the problem.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/882-why-is-wp-rocket-not-working" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="57ed429ec697914f2103339d" data-nonce="bc5838b018">Read Documentation</a>
+							</div>
+
+							</div><div class="wp-block-column">
+							<h3 lang="en-US">Pages not cached, or Minify CSS/JS not working</h3>
+							<p class="has-normal-font-size" lang="en-US">If you believe that WP Rocket is not caching your page, first make sure that you’ve logged out of WordPress. If the problem persists, see our troubleshooting guide.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/99-pages-not-cached-or-minify-cssjs-not-working" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5569b671e4b027e1978e3c51" data-nonce="0a1bbd24bb">Read Documentation</a>
+							</div>
+
+							</div>					</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">How to Check if WP Rocket is Caching Your Site</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/z1qxl7s2zn.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_z1qxl7s2zn videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/z1qxl7s2zn/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-not-working -->
+
+				<div class="topic-content" id="topic-site-broken">
+					<div class="wp-block-group alignwide has-white-background-color">
+						<div class="wp-block-group__inner-container">
+							<div class="alert alert--warning">
+								<p>Issues like this are often related to one of the additional options in WP Rocket.<br> To identify which option causes the problem, proceed as follows:</p>
+							</div>
+							<ol>
+								<li>On the <span class="has-style-bold">Media</span> tab, uncheck <span class="has-style-bold">LazyLoad</span></li>
+								<li>On the <span class="has-style-bold">File Optimization</span> tab, uncheck each option, <span class="has-style-bold">one at a time</span>.</li>
+								<li>Each time you deactivate an option, check your site in a private/incognito browser window where you&#039;re not logged in as a WordPress user.</li>
+								<li>Reload the page a couple of times to make sure it&#039;s cached. When the issue resolves, you know it was caused by the last option you disabled.</li>
+								<li>Once you know the option that causes it, consult this guide for possible fixes: <a href="https://docs.wp-rocket.me/article/106-my-site-is-broken" target="_blank" rel="noopener">Resolving Issues with File Optimization</a></li>
+							</ol>
+						</div>
+					</div>
+
+					<div class="wp-block-spacer" style="height: 40px;"></div>
+
+					<p class="has-text-align-center">Have you activated some settings and now your site appears broken?<br>Don’t worry, all changes are reversible! These guides help you troubleshoot and fix display issues.</p>
+
+					<div class="wp-block-columns">
+						<div class="wp-block-column">
+							<h3 lang="en-US">My Site Is Broken</h3>
+							<p class="has-normal-font-size" lang="en-US">Sometimes when you start tinkering with WP Rocket’s settings, you may notice missing images or other display issues on your site. These issues are usually easy to fix.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/106-my-site-is-broken" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="556ef48ce4b01a224b428691" data-nonce="3c8d26619b">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Find the right JavaScript files to exclude</h3>
+							<p class="has-normal-font-size" lang="en-US">You can use this process when troubleshooting any of the JavaScript related options: Minify/Combine, Load JavaScript Deferred, Delay JavaScript Execution.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/915-find-the-right-js-files-to-exclude-from-minification" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="587904cf90336009736c678e" data-nonce="b8093c1e13">Read Documentation</a>
+							</div>
+
+							</div><div class="wp-block-column">
+							<h3 lang="en-US">My site loads unstyled for a second</h3>
+							<p class="has-normal-font-size" lang="en-US">Your site loads without styles for a few moments before correcting itself? You could be experiencing FOUC (flash of unstyled content). Learn what a FOUC is, and how you can correct it.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1321-critical-css-issues-fouc" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5ec5c4072c7d3a5ea54b7de7" data-nonce="874d58cfa1">Read Documentation</a>
+							</div>
+
+							</div>					</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">Troubleshooting Display Issues with file Optimization</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/frwm2xrksl.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_frwm2xrksl videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/frwm2xrksl/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+				</div><!-- #topic-site-broken -->
+
+				<div class="topic-content" id="topic-rucss">
+					<p class="has-text-align-center">If your site display is incorrect while this option is activated <br class="hide-if-mobile"> or the option doesn&#039;t work check out the articles below.</p>
+					<div class="wp-block-columns wrapper--1100">
+						<div class="wp-block-column">
+													
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1529-remove-unused-css#basic-requirements?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Why my Remove Unused CSS progress bar is stuck?</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1529-remove-unused-css#css-safelist?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">How to retain selected CSS rules on a page?</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1623-reduce-unused-css-still-present-pagespeed-insight?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Reduce Unused CSS recommendation is still present on PageSpeed Insight</a>
+							</div>
+
+														</div><div class="wp-block-column">
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1627-database-size-increases-with-remove-unused-css?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Database size increases with Remove Unused CSS</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1559-disable-remove-unused-css-for-specific-pages-or-posts?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Disable Remove Unused CSS For Specific Pages or Posts</a>
+							</div>
+
+													</div>
+					</div>
+				</div><!-- #topic-rucss -->
+
+				<div class="topic-content" id="topic-cpcss">
+					<p class="has-text-align-center">If your site display is incorrect while this option is activated, check out the &quot;fouc&quot; article below.<br> If the trouble is with generating the Critical CSS, we have troubleshooting information for that!</p>
+					<div class="wp-block-columns">
+						<div class="wp-block-column">
+							<h3 lang="en-US">Troubleshooting Critical CSS Generation Issues</h3>
+							<p class="has-normal-font-size" lang="en-US">If you receive any error while generating the critical CSS this guide will help you find out why. Most issues are related to inaccessible pages or firewall protections that block our tool.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1267-troubleshooting-critical-css-generation-issues" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5d5214d10428631e94f94ae6" data-nonce="ea0cf0540e">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">"Cloudflare protection" error when generating CSS</h3>
+							<p class="has-normal-font-size" lang="en-US">If you see the Cloudflare-specific error related to critical CSS, please read this guide for the common fixes. Usually it's related to allowing access to our IP addresses.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1186-cloudflare-fix-critical-css-errors" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5d127be42c7d3a6ebd2287f3" data-nonce="1d3a21f311">Read Documentation</a>
+							</div>
+
+							</div><div class="wp-block-column">
+							<h3 lang="en-US">"Flash of Unstyled Content" when Optimize CSS Delivery is active</h3>
+							<p class="has-normal-font-size" lang="en-US">FOUC can lead to a poor page loading experience. This guide provides some possible solutions.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1321-critical-css-issues-fouc" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5ec5c4072c7d3a5ea54b7de7" data-nonce="874d58cfa1">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Exclude files from Optimize CSS Delivery</h3>
+							<p class="has-normal-font-size" lang="en-US">You may need to exclude some files to prevent "FOUC" issues. Find out how to do that with this guide.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/977-exclude-files-from-optimize-css-delivery" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5923772c2c7d3a074e8ab8b9" data-nonce="13c54b5649">Read Documentation</a>
+							</div>
+
+							</div>					</div>
+				</div><!-- #topic-cpcss -->
+
+				<div class="topic-content" id="topic-cloudflare">
+					<p class="has-text-align-center">WP Rocket is compatible with most CDN providers. Depending on your needs, you can of course use a CDN in addition to Cloudflare.</p>
+					<div class="wp-block-columns">
+						
+							<div class="wp-block-column">
+								<h3 lang="en-US">Using WP Rocket with a CDN</h3>
+								<p class="has-normal-font-size" lang="en-US">WP Rocket is compatible with most CDN providers, including Amazon Cloudfront, MaxCDN, KeyCDN and others. Read our documentation to learn more about each compatibility.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/42-using-wp-rocket-with-a-cdn" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="54c7fa3de4b0512429885b5c" data-nonce="58d1027f6e">Read Documentation</a>
+								</div>
+							</div>
+
+							
+							<div class="wp-block-column">
+								<h3 lang="en-US">Using WP Rocket with Cloudflare</h3>
+								<p class="has-normal-font-size" lang="en-US">WP Rocket is totally compatible and complementary with Cloudflare. Learn more about our add-on, our recommended settings and how to troubleshoot in our documentation.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/18-using-wp-rocket-with-cloudflare" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="54205619e4b0e7b8127bf849" data-nonce="6e33823ae4">Read Documentation</a>
+								</div>
+							</div>
+
+												</div>
+				</div><!-- #topic-cloudflare -->
+
+				<div class="topic-content" id="topic-preload">
+					<p class="has-text-align-center">Cache preloading ensures your visitors get the speedier, cached versions of your site right away.<br> These articles walk you through how preloading works and its most common issues</p>
+					<div class="wp-block-columns">
+						<div class="wp-block-column">
+							<h3 lang="en-US">How is the cache preloaded</h3>
+							<p class="has-normal-font-size" lang="en-US">Preload is one of our most awesome features: WP Rocket will generate the cached files so the visitors have great speed from the first visit. Find answers to the most common questions about preloading.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/8-how-the-cache-is-preloaded" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="541780fde4b005ed2d11784c" data-nonce="bcc649c702">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Preload is slow or not pages are preloaded at all</h3>
+							<p class="has-normal-font-size" lang="en-US">Are you having issues with the preload feature? Find the most common causes of preload related issues and how to fix them.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1065-sitemap-preload-is-slow-or-some-pages-are-not-preloaded-at-all" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5a71c8ab2c7d3a4a4198a9b3" data-nonce="25d7dcc377">Read Documentation</a>
+							</div>
+
+							</div><div class="wp-block-column">
+							<h3 lang="en-US">Resolving issues with CRON</h3>
+							<p class="has-normal-font-size" lang="en-US">WP Cron plays a big role in preloading and other features too! Learn how to fix the most common CRON related issues.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1279-cron-and-wp-rocket" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5a71c8ab2c7d3a4a4198a9b3" data-nonce="25d7dcc377">Read Documentation</a>
+							</div>
+
+							</div>					</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">How Preloading Works in WP Rocket</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/803tlui8oi.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_803tlui8oi videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/803tlui8oi/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-preload -->
+
+				<div class="topic-content" id="topic-images-not-showing-up">
+					<p class="has-text-align-center">If you’ve activated LazyLoad and now some of your images are missing, there are a few possible solutions.<br>Find the one that suits your situation.</p>
+					<div class="wp-block-columns">
+						
+							<div class="wp-block-column">
+								<h3 lang="en-US">Disabling LazyLoad on Specific Posts</h3>
+								<p class="has-normal-font-size" lang="en-US">If you want to disable LazyLoad on a specific post or page, you can do so directly on the Edit screen using the WP Rocket Options meta box or utilizing a WordPress filter.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/16-disabling-lazyload-on-specific-posts" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5419e246e4b099def9b5561e" data-nonce="657765d33b">Read Documentation</a>
+								</div>
+							</div>
+
+							
+							<div class="wp-block-column">
+								<h3 lang="en-US">Disabling LazyLoad on Specific Images</h3>
+								<p class="has-normal-font-size" lang="en-US">You can disable LazyLoad on an image, an image class, avatars, or by image source. All exclusion methods can be used for background images as well as standard images.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/15-disabling-lazy-load-on-specific-images" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5418c792e4b0e7b8127bed99" data-nonce="eba5f86b40">Read Documentation</a>
+								</div>
+							</div>
+
+												</div>
+				</div><!-- #topic-images-not-showing-up -->
+
+				<div class="topic-content" id="topic-500-error">
+					<p class="has-text-align-center">500 errors can be alarming, but these guides will walk you through how to fix it.</p>
+					<div class="wp-block-columns">
+						
+							<div class="wp-block-column">
+								<h3 lang="en-US">Resolve 500 Internal Server Error</h3>
+								<p class="has-normal-font-size" lang="en-US">You are facing an error message announcing a "500 Internal Server Error"? Here is what you can do about it.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/110-resolve-500-internal-server-error" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="55843820e4b01a224b42ce74" data-nonce="7928071933">Read Documentation</a>
+								</div>
+							</div>
+
+							
+							<div class="wp-block-column">
+								<h3 lang="en-US">High CPU usage</h3>
+								<p class="has-normal-font-size" lang="en-US">If you are experiencing high CPU usage on your site, there are 3 possible ways WP Rocket could cause this. Let's see how to fix this issue.</p>
+								<div class="wp-block-button is-style-underline">
+									<a href="https://docs.wp-rocket.me/article/48-high-cpu-usage" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="54e708a2e4b034c37ea9097c" data-nonce="b279928695">Read Documentation</a>
+								</div>
+							</div>
+
+												</div>
+				</div><!-- #topic-500-error -->
+
+				<div class="topic-content" id="topic-google-pagespeed-insight">
+					<p class="has-text-align-center">WP Rocket will improve the overall performance of your site, including PageSpeed.<br> But not every recommendation can be automatically resolved.<br> In case you open a ticket, we will provide you any tips and direction to help you solve specific issues but please note we don&#039;t provide optimization service.</p>
+
+					<div class="wp-block-columns">
+						<div class="wp-block-column">
+							<h3 lang="en-US">Google PageSpeed Grade does not Improve</h3>
+							<p class="has-normal-font-size" lang="en-US">A PageSpeed report can contain a number of recommendations that can cause confusion and make you feel at a loss with questions. In this guide, see how to fix the most common PageSpeed Insights recommendations.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/85-google-page-speed-grade-does-not-improve" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="556778c8e4b01a224b426fad" data-nonce="71416aaf08">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">How to Improve Your Mobile PageSpeed Score</h3>
+							<p class="has-normal-font-size" lang="en-US">It's normal for your mobile score to be lower than the desktop score. This guide will show you which areas to pay attention to for mobile specifically.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1402-how-to-improve-your-mobile-pagespeed-score" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5fffb8031c64ad47e4b6f0c1" data-nonce="5b9845da41">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Render-blocking JavaScript and CSS</h3>
+							<p class="has-normal-font-size" lang="en-US">Learn about the 2 options WP Rocket offers to address this PageSpeed Insights’ recommendation.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1407-eliminate-render-blocking-resources" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="6001a83b2e764327f87bf189" data-nonce="8da0c5304d">Read Documentation</a>
+							</div>
+
+							</div><div class="wp-block-column">
+							<h3 lang="en-US">Largest Contentful Paint (LCP)</h3>
+							<p class="has-normal-font-size" lang="en-US">Learn the best practices to optimize for this Core Web Vital, and the tweaks to WP Rocket settings that can help.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1387-largest-contentful-paint" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5ff71eddb5efec03af3f0ddf" data-nonce="1b435b0797">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Total Blocking Time (TBT) / First Input Delay (FID)</h3>
+							<p class="has-normal-font-size" lang="en-US">There's a lot of technicalities involved in this Core Web Vital, but our guide will show you how to improve it!</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1398-total-blocking-time-first-input-delay" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="5ffc9c5dbb5c6f7434e0fb03" data-nonce="48f22ecea6">Read Documentation</a>
+							</div>
+
+							
+							<h3 lang="en-US">Cumulative Layout Shift (CLS)</h3>
+							<p class="has-normal-font-size" lang="en-US">Find out the common causes of layout shift and how to address them. WP Rocket has some options to help you.</p>
+							<div class="wp-block-button is-style-underline">
+								<a href="https://docs.wp-rocket.me/article/1406-cumulative-layout-shift" target="_blank" rel="noopener" class="wp-block-button__link" data-post-id="60018e532e764327f87bf0fc" data-nonce="22f7a8671b">Read Documentation</a>
+							</div>
+
+							</div>					</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">How to Measure the Speed of Your Site</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/j042jylrre.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_j042jylrre videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/j042jylrre/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-google-pagespeed-insight -->
+
+				<div class="topic-content" id="topic-rocketcdn">
+					<p class="has-text-align-center">Learn how to use RocketCDN and how it improves your site’s performance.</p>
+					<div class="wp-block-columns wrapper--1100">
+						<div class="wp-block-column">
+													
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1307-rocketcdn?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">How to use RocketCDN</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1534-how-to-check-if-rocketcdn-is-working?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">How to check if RocketCDN is working?</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1411-how-to-cancel-rocketcdn-subscription?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">No subscription: How to (re)activate RocketCDN on my site</a>
+							</div>
+
+														</div><div class="wp-block-column">
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1609-errors-issues-while-using-rocketcdn?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Errors/issues while using RocketCDN</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1608-error-notices-during-the-rocketcdn-subscription-process?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">Error notices during the RocketCDN subscription process</a>
+							</div>
+
+														
+							<div class="wp-block-button is-style-block">
+								<a href="https://docs.wp-rocket.me/article/1411-how-to-cancel-rocketcdn-subscription?utm_source=help_center&amp;utm_medium=wp_rocket" target="_blank" rel="noopener" class="wp-block-button__link" lang="en-US">How to unsubscribe from RocketCDN</a>
+							</div>
+
+													</div>
+					</div>
+
+					<hr class="wp-block-separator is-style-wide">
+
+					<h3 class="has-text-align-center">Introducing RocketCDN - WP Rocket CDN Service</h3>
+
+					<script src="https://fast.wistia.com/embed/medias/pt70kun7g2.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_pt70kun7g2 videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/pt70kun7g2/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-rocketcdn -->
+
+				<div class="topic-content" id="topic-refund">
+					<h3 class="has-text-align-center">14 Days Money Back Guarantee</h3>
+					<p>If the plugin doesn’t meet your expectations, we will refund you within 14 days of your original purchase. You can ask for a refund by simply clicking the &quot;Get Refunded&quot; link in the billing section of your account.</p>
+
+					<p>Please watch our video to know how to get refunded by yourself:</p>
+
+					<script src="https://fast.wistia.com/embed/medias/ekwd47b8ox.jsonp" async></script><script src="https://fast.wistia.com/assets/external/E-v1.js" async></script><div class="wistia_responsive_padding" style="padding:56.25% 0 0 0;position:relative;"><div class="wistia_responsive_wrapper" style="height:100%;left:0;position:absolute;top:0;width:100%;"><div class="wistia_embed wistia_async_ekwd47b8ox videoFoam=true" style="height:100%;position:relative;width:100%"><div class="wistia_swatch" style="height:100%;left:0;opacity:0;overflow:hidden;position:absolute;top:0;transition:opacity 200ms;width:100%;"><img src="https://fast.wistia.com/embed/medias/ekwd47b8ox/swatch" style="filter:blur(5px);height:100%;object-fit:contain;width:100%;" alt="" aria-hidden="true" onload="this.parentNode.style.opacity=1;" /></div></div></div></div>
+
+				</div><!-- #topic-refund -->
+
+				<div class="topic-content__defaut">
+					<hr class="wp-block-separator is-style-wide">
+
+					<div class="has-text-align-center">
+						<svg xmlns="http://www.w3.org/2000/svg" width="63" height="48" viewBox="0 0 180 114" aria-hidden="true"><g transform="translate(56)" fill="none" fill-rule="evenodd"><rect fill="#FFD147" x="16" y="53" width="35" height="61" rx="4.4"/><path d="M23.2 0A34.4 34.4 0 000 32.6C0 51.6 15.2 67 34 67s34-15.4 34-34.4c0-15.2-9.7-28-23.2-32.6v31.8c0 6-4.8 11-10.8 11-6 0-10.8-5-10.8-11V0z" fill="#172153"/><path d="M51 62.2A11 11 0 0040.1 53H27c-5.5 0-10 4-10.9 9.2a34 34 0 0035 0z" fill="#F56F46"/></g></svg>					</div>
+
+					<h3 class="h3-like has-text-align-center">Still need help? We’re just one click away!</h3>
+
+					<p class="has-text-align-center">Our Rocketeers work every day to provide you with support across multiple time zones.<br>Support is available for anyone <span class="has-style-bold">with an active WP Rocket license</span>.</p>
+					<p class="has-text-align-center"><span class="has-style-bold"><a href="https://wp-rocket.me/check-helpcenter-tips/" class="ajax-modal">Check our tips</a> for getting great support!</span></p>
+
+					<p class="has-text-align-center">If you have a pre-sales question, send us a message through our <span class="has-style-bold"><a href="https://wp-rocket.me/contact/">Contact page</a></span>.</p>
+
+					
+					<div class="block-check-user-email has-text-align-center">
+						<p>Enter the email address associated with your WP Rocket account:</p>
+
+						<div class="alert alert--warning" aria-hidden="true">
+							<p>This email is not registered in our customer database: please check and try again</p>
+						</div>
+
+						<form class="simple-form form-check-user-email" action="" method="post">
+							<label for="user_email" class="screen-reader-text">Email</label>
+							<input id="user_email" class="simple-form__input" name="user_email" type="email" placeholder="Email" required>
+
+							<input type="hidden" id="_wpnonce" name="_wpnonce" value="1e1d04cd4b" /><input type="hidden" name="_wp_http_referer" value="/support/" />
+							<button class="simple-form__button wp-block-button is-style-oval-small" type="submit">
+								<span class="wp-block-button__link">OK</span>
+							</button>
+						</form>
+					</div>
+
+                        <div class="block-check-reseller-domain has-text-align-center">
+                            <p>If you bought WP Rocket from a reseller, enter your domain below:</p>
+
+                            <div class="alert alert--warning" aria-hidden="true">
+                                <p>This domains is not registered in any of our resellers. please check and try again.</p>
+                            </div>
+
+                            <form class="simple-form form-check-reseller-domain" action="" method="post">
+                                <label for="reseller_user_email" class="screen-reader-text">Email</label>
+                                <input id="reseller_user_email" class="simple-form__input" name="user_email" type="email" placeholder="Email" required>
+
+                                <label for="reseller_user_domain" class="screen-reader-text">Email</label>
+                                <input id="reseller_user_domain" class="simple-form__input" name="user_domain" type="text" placeholder="Domain" required>
+
+								<input type="hidden" id="_wpnonce" name="_wpnonce" value="4690e8dce4" /><input type="hidden" name="_wp_http_referer" value="/support/" />
+                                <button class="simple-form__button wp-block-button is-style-oval-small" type="submit">
+                                    <span class="wp-block-button__link">OK</span>
+                                </button>
+                            </form>
+                        </div>
+
+					
+					<div class="form-open-ticket wrapper--800">
+						
+                <div class='gf_browser_unknown gform_wrapper gform_legacy_markup_wrapper gform-theme--no-framework' data-form-theme='legacy' data-form-index='0' id='gform_wrapper_8' style='display:none'><div id='gf_8' class='gform_anchor' tabindex='-1'></div><form method='post' enctype='multipart/form-data' target='gform_ajax_frame_8' id='gform_8'  action='/support/#gf_8' data-formid='8' novalidate>
+                        <div class='gform-body gform_body'><ul id='gform_fields_8' class='gform_fields top_label form_sublabel_below description_below validation_below'><li id="field_8_33" class="gfield gfield--type-html gfield--width-full gfield_html gfield_html_formatted gfield_no_follows_desc field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_33" ><p style="
+    
+    font-style: italic;
+    color: #F56F46;
+">Due to a high volume of support requests, response times are currently higher than usual. We apologize for any inconvenience caused and appreciate your patience.</p></li><li id="field_8_28" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_28" ><div class='ginput_container ginput_container_text'><input name='input_28' id='input_8_28' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_18" class="gfield gfield--type-select select-select2 field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_hidden"  data-js-reload="field_8_18" ><div class="admin-hidden-markup"><i class="gform-icon gform-icon--hidden" aria-hidden="true" title="This field is hidden when viewing the form"></i><span>This field is hidden when viewing the form</span></div><label class='gfield_label gform-field-label' for='input_8_18'>Select your website</label><div class='ginput_container ginput_container_select'><select name='input_18' id='input_8_18' class='large gfield_select'     aria-invalid="false" ><option value='' ></option></select></div></li><li id="field_8_19" class="gfield gfield--type-text gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_19" ><label class='gfield_label gform-field-label' for='input_8_19'>Subject<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class='ginput_container ginput_container_text'><input name='input_19' id='input_8_19' type='text' value='' class='large'     aria-required="true" aria-invalid="false"   /></div></li><li id="field_8_6" class="gfield gfield--type-textarea gfield_contains_required field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_6" ><label class='gfield_label gform-field-label' for='input_8_6'>Message<span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class='ginput_container ginput_container_textarea'><textarea name='input_6' id='input_8_6' class='textarea large'    placeholder='Please provide the specific url(s) where we can see each issue. e.g. the gallery doesn’t work on this page: domain.com/gallery-page Please let us know how we will recognize the issue or can reproduce the issue. What is supposed to happen, and what is actually happening instead? e.g. At the bottom of the post there are related posts which are supposed to have thumbnails, but no thumbnails are displaying. If you are enquiring about a speed test result, please provide the URL (not screenshot) of your Pingdom/GTmetrix report If you’re sending a screencast, it should be less than 2 minutes.' aria-required="true" aria-invalid="false"   rows='10' cols='50'></textarea></div></li><li id="field_8_31" class="gfield gfield--type-fileupload field_sublabel_below gfield--has-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_31" ><label class='gfield_label gform-field-label screen-reader-text' for='gform_browse_button_8_31'>Add only Images, Audio, and Video file types are allowed. Share text with pastebin links.</label><div class='ginput_container ginput_container_fileupload'><div id='gform_multifile_upload_8_31' data-settings='{&quot;runtimes&quot;:&quot;html5,flash,html4&quot;,&quot;browse_button&quot;:&quot;gform_browse_button_8_31&quot;,&quot;container&quot;:&quot;gform_multifile_upload_8_31&quot;,&quot;drop_element&quot;:&quot;gform_drag_drop_area_8_31&quot;,&quot;filelist&quot;:&quot;gform_preview_8_31&quot;,&quot;unique_names&quot;:true,&quot;file_data_name&quot;:&quot;file&quot;,&quot;url&quot;:&quot;https:\/\/wp-rocket.me\/?gf_page=c0f6d58101d47b4&quot;,&quot;flash_swf_url&quot;:&quot;https:\/\/wp-rocket.me\/wp-includes\/js\/plupload\/plupload.flash.swf&quot;,&quot;silverlight_xap_url&quot;:&quot;https:\/\/wp-rocket.me\/wp-includes\/js\/plupload\/plupload.silverlight.xap&quot;,&quot;filters&quot;:{&quot;mime_types&quot;:[{&quot;title&quot;:&quot;Allowed Files&quot;,&quot;extensions&quot;:&quot;*&quot;}],&quot;max_file_size&quot;:&quot;12582912b&quot;},&quot;multipart&quot;:true,&quot;urlstream_upload&quot;:false,&quot;multipart_params&quot;:{&quot;form_id&quot;:8,&quot;field_id&quot;:31},&quot;gf_vars&quot;:{&quot;max_files&quot;:0,&quot;message_id&quot;:&quot;gform_multifile_messages_8_31&quot;,&quot;disallowed_extensions&quot;:[&quot;php&quot;,&quot;asp&quot;,&quot;aspx&quot;,&quot;cmd&quot;,&quot;csh&quot;,&quot;bat&quot;,&quot;html&quot;,&quot;htm&quot;,&quot;hta&quot;,&quot;jar&quot;,&quot;exe&quot;,&quot;com&quot;,&quot;js&quot;,&quot;lnk&quot;,&quot;htaccess&quot;,&quot;phtml&quot;,&quot;ps1&quot;,&quot;ps2&quot;,&quot;php3&quot;,&quot;php4&quot;,&quot;php5&quot;,&quot;php6&quot;,&quot;py&quot;,&quot;rb&quot;,&quot;tmp&quot;]}}' class='gform_fileupload_multifile'>
+										<div id='gform_drag_drop_area_8_31' class='gform_drop_area gform-theme-field-control'>
+											<span class='gform_drop_instructions'>Drop files here or </span>
+											<button type='button' id='gform_browse_button_8_31' class='button gform_button_select_files gform-theme-button gform-theme-button--control' aria-describedby="gfield_upload_rules_8_31 gfield_description_8_31"  >Select files</button>
+										</div>
+									</div><span class='gfield_description gform_fileupload_rules' id='gfield_upload_rules_8_31'>Max. file size: 12 MB.</span><ul class='validation_message--hidden-on-empty gform-ul-reset' id='gform_multifile_messages_8_31'></ul> <!-- Leave <ul> empty to support CSS :empty selector. --></div><div id='gform_preview_8_31' class='ginput_preview_list'></div><div class='gfield_description' id='gfield_description_8_31'>Add only Images, Audio, and Video file types are allowed. Share text with pastebin links.</div></li><li id="field_8_29" class="gfield gfield--type-checkbox gfield--type-choice gfield_contains_required field_sublabel_below gfield--no-description field_description_below hidden_label field_validation_below gfield_visibility_visible"  data-js-reload="field_8_29" ><label class='gfield_label gform-field-label screen-reader-text gfield_label_before_complex' ><span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class='ginput_container ginput_container_checkbox'><ul class='gfield_checkbox' id='input_8_29'><li class='gchoice gchoice_8_29_1'>
+								<input class='gfield-choice-input' name='input_29.1' type='checkbox'  value='By submitting this form, I agree to the WP Rocket&#039;s &lt;a href=&quot;https://wp-rocket.me/support-policy/&quot; class=&quot;ajax-modal&quot;&gt;Support Policy&lt;/a&gt;&lt;span class=&quot;gfield_required&quot;&gt;*&lt;/span&gt;'  id='choice_8_29_1'   />
+								<label for='choice_8_29_1' id='label_8_29_1' class='gform-field-label gform-field-label--type-inline'>By submitting this form, I agree to the WP Rocket's <a href="https://wp-rocket.me/support-policy/" class="ajax-modal">Support Policy</a><span class="gfield_required">*</span></label>
+							</li></ul></div></li><li id="field_8_17" class="gfield gfield--type-checkbox gfield--type-choice gfield-gdpr-confirmation gfield_contains_required field_sublabel_below gfield--no-description field_description_below hidden_label field_validation_below gfield_visibility_visible"  data-js-reload="field_8_17" ><label class='gfield_label gform-field-label screen-reader-text gfield_label_before_complex' ><span class="gfield_required"><span class="gfield_required gfield_required_asterisk">*</span></span></label><div class='ginput_container ginput_container_checkbox'><ul class='gfield_checkbox' id='input_8_17'><li class='gchoice gchoice_8_17_1'>
+								<input class='gfield-choice-input' name='input_17.1' type='checkbox'  value='GDPR Validated'  id='choice_8_17_1'   />
+								<label for='choice_8_17_1' id='label_8_17_1' class='gform-field-label gform-field-label--type-inline'>By submitting this form, I agree that the information entered will be used as part of the contact request.<span class="gfield_required">*</span><p>You can find how we use your information on our <a href="https://wp-rocket.me/privacy-policy/" class="ajax-modal">Privacy Policy</a>.</p></label>
+							</li></ul></div></li><li id="field_8_30" class="gfield gfield--type-captcha field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_30" ><label class='gfield_label gform-field-label screen-reader-text' for='input_8_30'></label><div id='input_8_30' class='ginput_container ginput_recaptcha' data-sitekey='6LdRzXoaAAAAAPEx6loSeaeCbSIZI2_-t_5B16K1'  data-theme='light' data-tabindex='0'  data-badge=''></div></li><li id="field_8_21" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_21" ><div class='ginput_container ginput_container_text'><input name='input_21' id='input_8_21' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_22" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_22" ><div class='ginput_container ginput_container_text'><input name='input_22' id='input_8_22' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_23" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_23" ><div class='ginput_container ginput_container_text'><input name='input_23' id='input_8_23' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_24" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_24" ><div class='ginput_container ginput_container_text'><input name='input_24' id='input_8_24' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_25" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_25" ><div class='ginput_container ginput_container_text'><input name='input_25' id='input_8_25' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_26" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_26" ><div class='ginput_container ginput_container_text'><input name='input_26' id='input_8_26' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li><li id="field_8_32" class="gfield gfield--type-hidden gform_hidden field_sublabel_below gfield--no-description field_description_below field_validation_below gfield_visibility_visible"  data-js-reload="field_8_32" ><div class='ginput_container ginput_container_text'><input name='input_32' id='input_8_32' type='hidden' class='gform_hidden'  aria-invalid="false" value='' /></div></li></ul></div>
+        <div class='gform-footer gform_footer top_label'> <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><input type="submit" id="gform_submit_button_8" class="gform_button button" onclick="gform.submission.handleButtonClick(this);" data-submission-type="submit" value="Open a Ticket"></body></html>
+ <input type='hidden' name='gform_ajax' value='form_id=8&amp;title=&amp;description=&amp;tabindex=0&amp;theme=legacy&amp;styles=[]&amp;hash=ec4b45896a87a2348e61f43da6b01028' />
+            <input type='hidden' class='gform_hidden' name='gform_submission_method' data-js='gform_submission_method_8' value='iframe' />
+            <input type='hidden' class='gform_hidden' name='gform_theme' data-js='gform_theme_8' id='gform_theme_8' value='legacy' />
+            <input type='hidden' class='gform_hidden' name='gform_style_settings' data-js='gform_style_settings_8' id='gform_style_settings_8' value='[]' />
+            <input type='hidden' class='gform_hidden' name='is_submit_8' value='1' />
+            <input type='hidden' class='gform_hidden' name='gform_submit' value='8' />
+            
+            <input type='hidden' class='gform_hidden' name='gform_unique_id' value='' />
+            <input type='hidden' class='gform_hidden' name='state_8' value='WyJbXSIsIjQyYmFjOTRlODVmM2IzODE0MjZjMWM5YThiODQ4MGFjIl0=' />
+            <input type='hidden' autocomplete='off' class='gform_hidden' name='gform_target_page_number_8' id='gform_target_page_number_8' value='0' />
+            <input type='hidden' autocomplete='off' class='gform_hidden' name='gform_source_page_number_8' id='gform_source_page_number_8' value='1' />
+            <input type='hidden' name='gform_field_values' value='' />
+            <input type='hidden' name='gform_uploaded_files' id='gform_uploaded_files_8' value='' />
+        </div>
+                        </form>
+                        </div>
+		                <iframe style='display:none;width:0px;height:0px;' src='about:blank' name='gform_ajax_frame_8' id='gform_ajax_frame_8' title='This iframe contains the logic required to handle Ajax powered Gravity Forms.'></iframe>
+		                <script>
+gform.initializeOnLoaded( function() {gformInitSpinner( 8, 'https://wp-rocket.me/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery('#gform_ajax_frame_8').on('load',function(){var contents = jQuery(this).contents().find('*').html();var is_postback = contents.indexOf('GF_AJAX_POSTBACK') >= 0;if(!is_postback){return;}var form_content = jQuery(this).contents().find('#gform_wrapper_8');var is_confirmation = jQuery(this).contents().find('#gform_confirmation_wrapper_8').length > 0;var is_redirect = contents.indexOf('gformRedirect(){') >= 0;var is_form = form_content.length > 0 && ! is_redirect && ! is_confirmation;var mt = parseInt(jQuery('html').css('margin-top'), 10) + parseInt(jQuery('body').css('margin-top'), 10) + 100;if(is_form){form_content.find('form').css('opacity', 0);jQuery('#gform_wrapper_8').html(form_content.html());if(form_content.hasClass('gform_validation_error')){jQuery('#gform_wrapper_8').addClass('gform_validation_error');} else {jQuery('#gform_wrapper_8').removeClass('gform_validation_error');}setTimeout( function() { /* delay the scroll by 50 milliseconds to fix a bug in chrome */ jQuery(document).scrollTop(jQuery('#gform_wrapper_8').offset().top - mt); }, 50 );if(window['gformInitDatepicker']) {gformInitDatepicker();}if(window['gformInitPriceFields']) {gformInitPriceFields();}var current_page = jQuery('#gform_source_page_number_8').val();gformInitSpinner( 8, 'https://wp-rocket.me/wp-content/plugins/gravityforms/images/spinner.svg', true );jQuery(document).trigger('gform_page_loaded', [8, current_page]);window['gf_submitting_8'] = false;}else if(!is_redirect){var confirmation_content = jQuery(this).contents().find('.GF_AJAX_POSTBACK').html();if(!confirmation_content){confirmation_content = contents;}jQuery('#gform_wrapper_8').replaceWith(confirmation_content);jQuery(document).scrollTop(jQuery('#gf_8').offset().top - mt);jQuery(document).trigger('gform_confirmation_loaded', [8]);window['gf_submitting_8'] = false;wp.a11y.speak(jQuery('#gform_confirmation_message_8').text());}else{jQuery('#gform_8').append(contents);if(window['gformRedirect']) {gformRedirect();}}jQuery(document).trigger("gform_pre_post_render", [{ formId: "8", currentPage: "current_page", abort: function() { this.preventDefault(); } }]);                if (event && event.defaultPrevented) {                return;         }        const gformWrapperDiv = document.getElementById( "gform_wrapper_8" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_8";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_8" );        let postRenderFired = false;                function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 8, current_page );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } );} );
+</script>
+					</div>
+
+				</div>
+			</div>
+		</div>
+
+		<div class="wp-block-group alignfull has-yellow-background-color has-text-align-center block-expired-user-alert">
+			<div class="wp-block-group__inner-container">
+				<h3 class="has-normal-heading-size">Your WP Rocket License is expired!</h3>
+				<p class="has-normal-font-size"><span class="has-style-bold">Your website could be much faster</span> if you could take advantage of our new features and enhancements. 🚀</p>
+				<p class="has-normal-font-size">By renewing your license, you’ll access to <span class="has-style-bold">the lastest and greatest version</span> of WP Rocket, <br class="hide-if-mobile">and to the wonderful <span class="has-style-bold">assistance of our Support Team</span> for 1 more year!</p>
+				<div class="wp-block-button">
+											<a href="https://wp-rocket.me/account/" class="wp-block-button__link has-blue-background-color">Renew Now</a>
+										</div>
+			</div>
+		</div>
+	</div><!--/entry-content-->
+
+		<section class="support">
+		<div class="block-support-section">
+			<a href="https://docs.wp-rocket.me/" target="_blank" rel="noopener" rel="noopener"
+			   class="block-support-section__column rounded-corner">
+				<div class="block-support-section__item">
+					<svg xmlns="http://www.w3.org/2000/svg" width="63" height="48" viewBox="0 0 180 114" aria-hidden="true"><g transform="translate(34)" fill="none"><path d="M.2 13.8A13 13 0 0113.2 1h35.7c19.7 0 35.6 16 35.6 35.6v53.1c0 8.5-6.9 15.4-15.3 15.4h-56a13 13 0 01-13-13V13.8z" fill="#172153"/><circle fill="#FFD147" cx="80.2" cy="81.6" r="31.6"/><path d="M84.5 50.4v39.2c0 8.5-6.9 15.4-15.3 15.4H59a31.5 31.5 0 0125.5-54.6z" fill="#F56F46"/><path d="M80.9 72.6c-9.7 0-16.1 4.7-18.6 9 1.6 2.1 7.5 9.2 18.6 9.1 11 0 17-6 18.5-9-2-4-7.4-9.1-18.5-9.1z" fill="#FFF"/></g></svg>					<h2>Documentation</h2>
+					<p>Everything you need to know about WP Rocket’s features, its settings and how to solve the most common technical hitches.</p>
+					<div class="wp-block-button is-style-underline wp-block-button--external">
+						<div class="wp-block-button__link"
+							 target="_blank">Documentation</div>
+					</div>
+				</div><!-- .block-support-section__item -->
+			</a>
+			<a href="https://www.youtube.com/playlist?list=PL1W4eiyFeFxckt-bu8UFCv7TSFX376JiF" target="_blank"
+			   rel="noopener" class="block-support-section__column rounded-corner">
+				<div class="block-support-section__item">
+					<svg xmlns="http://www.w3.org/2000/svg" width="63" height="48" viewBox="0 0 180 114" aria-hidden="true"><rect fill="#ECECEC" fill-rule="nonzero" width="126" height="100" rx="12"/><path d="M0 11.2C0 5 5.1 0 11.5 0h103C121 0 126 5 126 11.2V14H0v-2.8z" fill="#0C0F1F" fill-rule="nonzero"/><rect fill="#0C0F1F" fill-rule="nonzero" x="11" y="39" width="37" height="9" rx="1.5"/><rect fill="#D0D3D8" fill-rule="nonzero" x="11" y="58" width="23" height="4" rx=".8"/><rect fill="#D0D3D8" fill-rule="nonzero" x="11" y="66" width="17" height="4" rx=".8"/><path d="M66 40.6v29.8A8.6 8.6 0 0078.6 78l25.8-13.5c5.9-3 6.2-11.3.6-14.8L79.2 33.3A8.6 8.6 0 0066 40.6z" fill="#F56F46" fill-rule="nonzero"/><path d="M105.7 49.4l-12.4-8A8.6 8.6 0 0080 48.8V77l24.4-13a8.8 8.8 0 001.3-14.6z" fill="#FFD147"/></g></svg>					<h2>Video Tutorials</h2>
+					<p>No time to read? From the first installation to the most advanced customization techniques, our tutorial videos cover all aspects of WP Rocket!</p>
+					<div class="wp-block-button is-style-underline">
+						<div class="wp-block-button__link"
+							 target="_blank">Watch Video Tutorials</div>
+					</div>
+				</div><!-- .block-support-section__item -->
+			</a>
+			<a href="https://www.facebook.com/groups/WPRocketUsers/" target="_blank" rel="noopener"
+			   class="block-support-section__column rounded-corner">
+				<div class="block-support-section__item">
+					<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><path d="M34 36a2 2 0 002-2V2a2 2 0 00-2-2H2a2 2 0 00-2 2v32c0 1.1.9 2 2 2h32z" fill="#485A96"/><path d="M24.8 36V22h4.7l.7-5.4h-5.4v-3.4c0-1.6.5-2.7 2.7-2.7h3V5.7c-.6-.1-2.3-.3-4.3-.3-4.1 0-7 2.6-7 7.2v4h-4.7v5.5h4.7V36h5.6z" fill="#fff"/></svg>					<h2>Facebook Group</h2>
+					<p>Connect with other WP Rocket users around the world: share your experience with WP Rocket and learn new tricks to improve the speed of your site.</p>
+					<div class="wp-block-button is-style-underline">
+						<div class="wp-block-button__link"
+							 target="_blank">Join the Facebook Group</div>
+					</div>
+				</div><!-- .block-support-section__item -->
+			</a>
+		</div>
+	</section>
+</main>
+<footer class="footer wrapper">
+	<div class="footer__sup">
+		<img class="footer_logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket-dark.svg" width="268" height="73" loading="lazy" alt="" draggable="false"/>
+
+		
+			<ul class="menu-social-networks">
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cuZmFjZWJvb2suY29tL3dwcm9ja2V0cGx1Z2luLw==" aria-label="Follow us on Facebook">
+					<img class="menu-social-networks__logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/facebook.svg" width="36" height="36" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly90d2l0dGVyLmNvbS93cF9yb2NrZXQ=" aria-label="Follow us on X">
+					<img class="menu-social-networks__logo menu-social-networks__logo--x" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/x.svg" width="36" height="30" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQzFvelRoWEhkMUlXSVo1d2tzaGdwX1E=" aria-label="Follow us on Youtube">
+					<img class="menu-social-networks__logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/youtube.svg" width="46" height="32" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cubGlua2VkaW4uY29tL2NvbXBhbnkvd3Atcm9ja2V0Lw==" aria-label="Follow us on LinkedIn">
+					<img class="menu-social-networks__logo menu-social-networks__logo--linkedin" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/linkedin.svg" width="46" height="32" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+			</ul>
+
+			</div>
+
+	
+		<div class="footer__inner-container has-hover-animated-link">
+			<div class="newsletter-form">
+				<span class="h3-like">Newsletter</span>
+				<p class="newsletter-form__legend">Keep me in touch with new posts!</p>
+				<form class="simple-form" action="https://manage.kmail-lists.com/subscriptions/subscribe?a=PD7as8&g=JMReQ5" method="post" target="_blank" rel="noopener">
+					<label for="newsletter__email" class="screen-reader-text">Email</label>
+					<input id="newsletter__email" class="simple-form__input" name="EMAIL" type="email" placeholder="Email">
+					<button class="simple-form__button wp-block-button is-style-oval-small" type="submit">
+					<span class="wp-block-button__link">
+						Subscribe					</span>
+					</button>
+				</form>
+			</div>
+			<nav class="menu-footer">
+				<span id="company-nav" class="h3-like">Company</span>
+				<ul aria-labelledby="company-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYWJvdXQv" tabindex="0">Our story</span>
+</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvdGVzdGltb25pYWxzLw==" tabindex="0">Testimonials</span>
+</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvaW1hZ2lmeS8=" tabindex="0">Imagify</span>
+</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								  data-url="aHR0cHM6Ly9yb2NrZXRjZG4ubWUv" target="_blank">RocketCDN</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								  data-url="aHR0cHM6Ly9yYW5rbWF0aC5jb20=" target="_blank">Rank Math</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								data-url="aHR0cHM6Ly93d3cuc29jaWFscGlsb3QuY28v" target="_blank">Social Pilot</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								data-url="aHR0cHM6Ly90ZXJtbHkuaW8v" target="_blank">Termly</span>
+											</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY2FyZWVyLw==" tabindex="0">Careers</span>
+</li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29udGFjdC8=" tabindex="0">Contact</span>
+</li>
+				</ul>
+			</nav>
+			<nav class="menu-footer">
+				<span id="resources-nav" class="h3-like">Resources</span>
+				<ul aria-labelledby="resources-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYmxvZy8=" tabindex="0">Blog</span>
+</li>
+											<li class="menu-footer__item">
+							<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvZ29vZ2xlLWNvcmUtd2ViLXZpdGFscy13b3JkcHJlc3Mv">Core Web Vitals</span>
+						</li>
+						<li class="menu-footer__item">
+							<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbGlnaHRob3VzZS1wZXJmb3JtYW5jZS1zY29yZS13b3JkcHJlc3Mv">Lighthouse Performance</span>
+						</li>
+													<li class="menu-footer__item">
+								<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvd29yZHByZXNzLWNhY2hlLw==">WordPress Cache</span>
+							</li>
+																				<li class="menu-footer__item">
+								<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbWNwLXdvcmRwcmVzcy8=">WordPress MCP</span>
+							</li>
+													<li class="menu-footer__item"><a href="https://wp-rocket.me/wordpress-cache/best-caching-plugins/">Best WordPress Caching Plugins</a>						</li>
+										<li class="menu-footer__item"><span target="_blank" class="menu-footer__link" data-url="aHR0cHM6Ly9kb2NzLndwLXJvY2tldC5tZS8=" tabindex="0">Documentation</span>
+</li>
+					<li class="menu-footer__item"><a href="https://wp-rocket.me/faq/">FAQ</a></li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcmVmdW5kLXBvbGljeS8=" tabindex="0">Refund Policy</span>
+</li>
+				</ul>
+			</nav>
+			<nav class="menu-footer">
+				<span id="partners-nav" class="h3-like">Partners</span>
+				<ul aria-labelledby="partners-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvd3Atcm9ja2V0LWFmZmlsaWF0ZS1wcm9ncmFtLw==" tabindex="0">Affiliate program</span>
+</li>
+											<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcmVzZWxsZXItcHJvZ3JhbS8=" tabindex="0">Reseller program</span>
+</li>
+						
+					<li class="menu-footer__item"><span data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcGFydG5lcnMv" tabindex="0">Recommended tools</span>
+</li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJlc3Mv" tabindex="0">Press</span>
+</li>
+				</ul>
+			</nav>
+		</div>
+
+	
+	<div class="footer__sub has-hover-animated-link">
+		<button class="lang-switcher-mobile-controller" aria-controls="langs-list" arial-label="Select your language" aria-haspopup="true">
+			English		</button>
+
+		
+			<ul id="langs-list" class="lang-switcher">
+									<li class="lang-switcher__item ">
+						<a class="active lang-switcher__link" href="https://wp-rocket.me/support/">English</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/fr/support/">Français</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/de/support/">Deutsch</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/it/supporto/">Italiano</a>
+					</li>
+
+										<li class="lang-switcher__item lang-switcher__item--last-child">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/es/soporte/">Español</a>
+					</li>
+
+								</ul>
+
+		
+		<div class="secure-payment-with" aria-hidden="true">
+			<span class="secure-payment-with__label">Secure payment with</span>
+			<img class="secure-payment-with__stripe" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/stripe.svg" width="37" height="15" alt="Stripe" loading="lazy"/>
+			<img class="secure-payment-with__paypal" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/paypal.svg" width="54" height="18" alt="Paypal" loading="lazy"/>
+		</div>
+
+		<ul class="menu-terms">
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJpdmFjeS1wb2xpY3kv" tabindex="0">Privacy Policy</span>
+</li>
+
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29va2llLXBvbGljeS8=" tabindex="0">Cookie Policy</span>
+</li>
+
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvdGVybXMv" tabindex="0">Terms</span>
+</li>
+			<li class="menu-terms__item"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbGVnYWwv" tabindex="0">Legal</span>
+</li>
+		</ul>
+	</div>
+</footer>
+<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp-*.php","/wp-admin/*","/wp-content/uploads/*","/wp-content/*","/wp-content/plugins/*","/wp-content/themes/V4/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+	<script>
+		(function () {
+			var c = document.body.className;
+			c = c.replace(/woocommerce-no-js/, 'woocommerce-js');
+			document.body.className = c;
+		})();
+	</script>
+	<script async src='//static.klaviyo.com/onsite/js/PD7as8/klaviyo.js?ver=3.7.3'></script><script id="wc-price-based-country-ajax-geo-js-extra">
+var wc_price_based_country_ajax_geo_params = {"wc_ajax_url":"/support/?wc-ajax=%%endpoint%%"};
+//# sourceURL=wc-price-based-country-ajax-geo-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/plugins/woocommerce-product-price-based-on-countries/assets/js/ajax-geolocation.min.js?ver=4.2.2" id="wc-price-based-country-ajax-geo-js"></script>
+<script src="https://www.dwin1.com/52401.js?ver=2.0.5" id="awin-journey-tag-js"></script>
+<script src="https://wp-rocket.me/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-ecommerce-generic.js?ver=1.22.3" id="gtm4wp-ecommerce-generic-js"></script>
+<script src="https://wp-rocket.me/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-woocommerce.js?ver=1.22.3" id="gtm4wp-woocommerce-js"></script>
+<script id="rocket-browser-checker-js-after">
+"use strict";var _createClass=function(){function defineProperties(target,props){for(var i=0;i<props.length;i++){var descriptor=props[i];descriptor.enumerable=descriptor.enumerable||!1,descriptor.configurable=!0,"value"in descriptor&&(descriptor.writable=!0),Object.defineProperty(target,descriptor.key,descriptor)}}return function(Constructor,protoProps,staticProps){return protoProps&&defineProperties(Constructor.prototype,protoProps),staticProps&&defineProperties(Constructor,staticProps),Constructor}}();function _classCallCheck(instance,Constructor){if(!(instance instanceof Constructor))throw new TypeError("Cannot call a class as a function")}var RocketBrowserCompatibilityChecker=function(){function RocketBrowserCompatibilityChecker(options){_classCallCheck(this,RocketBrowserCompatibilityChecker),this.passiveSupported=!1,this._checkPassiveOption(this),this.options=!!this.passiveSupported&&options}return _createClass(RocketBrowserCompatibilityChecker,[{key:"_checkPassiveOption",value:function(self){try{var options={get passive(){return!(self.passiveSupported=!0)}};window.addEventListener("test",null,options),window.removeEventListener("test",null,options)}catch(err){self.passiveSupported=!1}}},{key:"initRequestIdleCallback",value:function(){!1 in window&&(window.requestIdleCallback=function(cb){var start=Date.now();return setTimeout(function(){cb({didTimeout:!1,timeRemaining:function(){return Math.max(0,50-(Date.now()-start))}})},1)}),!1 in window&&(window.cancelIdleCallback=function(id){return clearTimeout(id)})}},{key:"isDataSaverModeOn",value:function(){return"connection"in navigator&&!0===navigator.connection.saveData}},{key:"supportsLinkPrefetch",value:function(){var elem=document.createElement("link");return elem.relList&&elem.relList.supports&&elem.relList.supports("prefetch")&&window.IntersectionObserver&&"isIntersecting"in IntersectionObserverEntry.prototype}},{key:"isSlowConnection",value:function(){return"connection"in navigator&&"effectiveType"in navigator.connection&&("2g"===navigator.connection.effectiveType||"slow-2g"===navigator.connection.effectiveType)}}]),RocketBrowserCompatibilityChecker}();
+//# sourceURL=rocket-browser-checker-js-after
+</script>
+<script id="rocket-preload-links-js-extra">
+var RocketPreloadLinksConfig = {"excludeUris":"/support/|/supporto/|/soporte/|/(.*)pagespeed-submissions/|/pagespeed-submissions/|/discover-rocketcare/|/pricing/|/express-checkout/|/freelancers-agencies/|/rocket-insights/|/(?:.+/)?feed(?:/(?:.+/?)?)?$|/(?:.+/)?embed/|/order/??(.*)|/fr/commande/??(.*)|/de/bestellen/??(.*)|/it/ordine/??(.*)|/ja/order/??(.*)|/es/tu-pedido/??(.*)|/account/??(.*)|/fr/account/??(.*)|/de/account/??(.*)|/it/account/??(.*)|/ja/account/??(.*)|/es/account/??(.*)|/(index.php/)?(.*)wp-json(/.*|$)|/refer/|/go/|/recommend/|/recommends/","usesTrailingSlash":"1","imageExt":"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php","fileExt":"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php|html|htm","siteUrl":"https://wp-rocket.me","onHoverDelay":"100","rateThrottle":"3"};
+//# sourceURL=rocket-preload-links-js-extra
+</script>
+<script id="rocket-preload-links-js-after">
+(function() {
+"use strict";var r="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e},e=function(){function i(e,t){for(var n=0;n<t.length;n++){var i=t[n];i.enumerable=i.enumerable||!1,i.configurable=!0,"value"in i&&(i.writable=!0),Object.defineProperty(e,i.key,i)}}return function(e,t,n){return t&&i(e.prototype,t),n&&i(e,n),e}}();function i(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}var t=function(){function n(e,t){i(this,n),this.browser=e,this.config=t,this.options=this.browser.options,this.prefetched=new Set,this.eventTime=null,this.threshold=1111,this.numOnHover=0}return e(n,[{key:"init",value:function(){!this.browser.supportsLinkPrefetch()||this.browser.isDataSaverModeOn()||this.browser.isSlowConnection()||(this.regex={excludeUris:RegExp(this.config.excludeUris,"i"),images:RegExp(".("+this.config.imageExt+")$","i"),fileExt:RegExp(".("+this.config.fileExt+")$","i")},this._initListeners(this))}},{key:"_initListeners",value:function(e){-1<this.config.onHoverDelay&&document.addEventListener("mouseover",e.listener.bind(e),e.listenerOptions),document.addEventListener("mousedown",e.listener.bind(e),e.listenerOptions),document.addEventListener("touchstart",e.listener.bind(e),e.listenerOptions)}},{key:"listener",value:function(e){var t=e.target.closest("a"),n=this._prepareUrl(t);if(null!==n)switch(e.type){case"mousedown":case"touchstart":this._addPrefetchLink(n);break;case"mouseover":this._earlyPrefetch(t,n,"mouseout")}}},{key:"_earlyPrefetch",value:function(t,e,n){var i=this,r=setTimeout(function(){if(r=null,0===i.numOnHover)setTimeout(function(){return i.numOnHover=0},1e3);else if(i.numOnHover>i.config.rateThrottle)return;i.numOnHover++,i._addPrefetchLink(e)},this.config.onHoverDelay);t.addEventListener(n,function e(){t.removeEventListener(n,e,{passive:!0}),null!==r&&(clearTimeout(r),r=null)},{passive:!0})}},{key:"_addPrefetchLink",value:function(i){return this.prefetched.add(i.href),new Promise(function(e,t){var n=document.createElement("link");n.rel="prefetch",n.href=i.href,n.onload=e,n.onerror=t,document.head.appendChild(n)}).catch(function(){})}},{key:"_prepareUrl",value:function(e){if(null===e||"object"!==(void 0===e?"undefined":r(e))||!1 in e||-1===["http:","https:"].indexOf(e.protocol))return null;var t=e.href.substring(0,this.config.siteUrl.length),n=this._getPathname(e.href,t),i={original:e.href,protocol:e.protocol,origin:t,pathname:n,href:t+n};return this._isLinkOk(i)?i:null}},{key:"_getPathname",value:function(e,t){var n=t?e.substring(this.config.siteUrl.length):e;return n.startsWith("/")||(n="/"+n),this._shouldAddTrailingSlash(n)?n+"/":n}},{key:"_shouldAddTrailingSlash",value:function(e){return this.config.usesTrailingSlash&&!e.endsWith("/")&&!this.regex.fileExt.test(e)}},{key:"_isLinkOk",value:function(e){return null!==e&&"object"===(void 0===e?"undefined":r(e))&&(!this.prefetched.has(e.href)&&e.origin===this.config.siteUrl&&-1===e.href.indexOf("?")&&-1===e.href.indexOf("#")&&!this.regex.excludeUris.test(e.href)&&!this.regex.images.test(e.href))}}],[{key:"run",value:function(){"undefined"!=typeof RocketPreloadLinksConfig&&new n(new RocketBrowserCompatibilityChecker({capture:!0,passive:!0}),RocketPreloadLinksConfig).init()}}]),n}();t.run();
+}());
+
+//# sourceURL=rocket-preload-links-js-after
+</script>
+<script id="scripts-js-extra">
+var siteVariables = {"ajax_url":"https://wp-rocket.me/wp-admin/admin-ajax.php","locale":"en_US"};
+var WPRocketBenefitsConfig = ["imagify","antagonist-benefits","zoner-benefits","one-benefits","wpml-benefits","websavers-benefits","wpengine-benefits","a2-benefits","hosting4real-benefits","seopress-benefits","wattspeed-benefits","wpcrafter-benefits","codeable-benefits","ezfrontiers-benefits","wpoptimizers-benefits","heimdal-benefits","wpx-benefits","bangmod-benefits","o2switch-benefits","crocoblock-benefits","stupidsimpleseo-benefits","hostinger-benefits","debugbear-benefits","eskimoz-benefits","visualcomposer-benefits","proisp-benefits","bigscoots-benefits","perksflow-benefits","wpumbrella-benefits","rankmath-benefits","wordcamp-benefits","termly-benefits","wpsessions-benefits","bloggerspassion-benefits","aiseo-benefits","gtmetrix-benefits","instawp-benefits","extendify-benefits","imagify-benefits","daniel-benefits","peter-benefits"];
+//# sourceURL=scripts-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/scripts.min.js?ver=1791299145" id="scripts-js"></script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/gravity-forms.min.js?ver=1791299146" id="gravity-forms-input-js"></script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/pages/support.min.js?ver=1791299150" id="page-support-js"></script>
+<script id="select2-js-extra">
+var select2i18n = {"input_8_18":"Select your website"};
+//# sourceURL=select2-js-extra
+</script>
+<script importance="low" src="https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147" id="obf-js"></script>
+<script id="wpr-bundle-currency-cache-js-extra">
+var wprCurrencyData = {"ajax_url":"https://wp-rocket.me/wp-admin/admin-ajax.php","is_logged_in":"","user_hash":"guest"};
+//# sourceURL=wpr-bundle-currency-cache-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150" id="wpr-bundle-currency-cache-js"></script>
+<script id="kl-identify-browser-js-extra">
+var klUser = {"current_user_email":"","commenter_email":""};
+//# sourceURL=kl-identify-browser-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=3.7.3" id="kl-identify-browser-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/dist/dom-ready.min.js?ver=f77871ff7694fffea381" id="wp-dom-ready-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/dist/hooks.min.js?ver=dd5603f07f9220ed27f1" id="wp-hooks-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/dist/i18n.min.js?ver=c26c3dc7bed366793375" id="wp-i18n-js"></script>
+<script id="wp-i18n-js-after">
+wp.i18n.setLocaleData( { 'text direction\u0004ltr': [ 'ltr' ] } );
+//# sourceURL=wp-i18n-js-after
+</script>
+<script src="https://wp-rocket.me/wp-includes/js/dist/a11y.min.js?ver=cb460b4676c94bd228ed" id="wp-a11y-js"></script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/js/jquery.json.min.js?ver=2.9.5.2" id="gform_json-js"></script>
+<script id="gform_gravityforms-js-extra">
+var gform_i18n = {"datepicker":{"days":{"monday":"Mo","tuesday":"Tu","wednesday":"We","thursday":"Th","friday":"Fr","saturday":"Sa","sunday":"Su"},"months":{"january":"January","february":"February","march":"March","april":"April","may":"May","june":"June","july":"July","august":"August","september":"September","october":"October","november":"November","december":"December"},"firstDay":1,"iconText":"Select date"}};
+var gf_legacy_multi = [];
+var gform_gravityforms = {"strings":{"invalid_file_extension":"This type of file is not allowed. Must be one of the following:","delete_file":"Delete this file","in_progress":"in progress","file_exceeds_limit":"File exceeds size limit","illegal_extension":"This type of file is not allowed.","max_reached":"Maximum number of files reached","unknown_error":"There was a problem while saving the file on the server","currently_uploading":"Please wait for the uploading to complete","cancel":"Cancel","cancel_upload":"Cancel this upload","cancelled":"Cancelled"},"vars":{"images_url":"https://wp-rocket.me/wp-content/plugins/gravityforms/images"}};
+var gf_legacy = {"is_legacy":"1"};
+var gf_global = {"gf_currency_config":{"name":"U.S. Dollar","symbol_left":"$","symbol_right":"","symbol_padding":"","thousand_separator":",","decimal_separator":".","decimals":2,"code":"USD"},"base_url":"https://wp-rocket.me/wp-content/plugins/gravityforms","number_formats":[],"spinnerUrl":"https://wp-rocket.me/wp-content/plugins/gravityforms/images/spinner.svg","version_hash":"c3a905955ff3857c63e2db11dad6ad24","strings":{"newRowAdded":"New row added.","rowRemoved":"Row removed","formSaved":"The form has been saved.  The content contains the link to return and complete the form."}};
+//# sourceURL=gform_gravityforms-js-extra
+</script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/js/gravityforms.min.js?ver=2.9.5.2" id="gform_gravityforms-js"></script>
+<script id="gform_conditional_logic-js-extra">
+var gf_legacy = {"is_legacy":"1"};
+//# sourceURL=gform_conditional_logic-js-extra
+</script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/js/conditional_logic.min.js?ver=2.9.5.2" id="gform_conditional_logic-js"></script>
+<script defer='defer' src="https://www.google.com/recaptcha/api.js?hl=en&amp;ver=6.9.9#038;render=explicit" id="gform_recaptcha-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/plupload/moxie.min.js?ver=1.3.5.1" id="moxiejs-js"></script>
+<script src="https://wp-rocket.me/wp-includes/js/plupload/plupload.min.js?ver=2.1.9" id="plupload-js"></script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/js/placeholders.jquery.min.js?ver=2.9.5.2" id="gform_placeholder-js"></script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/assets/js/dist/utils.min.js?ver=a8f8e72876ba5bc3f797026fe4225946" id="gform_gravityforms_utils-js"></script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/assets/js/dist/vendor-theme.min.js?ver=639b4ac21c17c9dc304b05db4a3d3293" id="gform_gravityforms_theme_vendors-js"></script>
+<script id="gform_gravityforms_theme-js-extra">
+var gform_theme_config = {"common":{"form":{"honeypot":{"version_hash":"c3a905955ff3857c63e2db11dad6ad24"},"ajax":{"ajaxurl":"https://wp-rocket.me/wp-admin/admin-ajax.php","ajax_submission_nonce":"efae2820b1","i18n":{"step_announcement":"Step %1$s of %2$s, %3$s","unknown_error":"There was an unknown error processing your request. Please try again."}}}},"hmr_dev":"","public_path":"https://wp-rocket.me/wp-content/plugins/gravityforms/assets/js/dist/","config_nonce":"c1e4ce1426"};
+//# sourceURL=gform_gravityforms_theme-js-extra
+</script>
+<script defer='defer' src="https://wp-rocket.me/wp-content/plugins/gravityforms/assets/js/dist/scripts-theme.min.js?ver=70431fefc0e81fcee7b2fc9fd4ad2388" id="gform_gravityforms_theme-js"></script>
+<script>
+gform.initializeOnLoaded( function() { jQuery(document).on('gform_post_render', function(event, formId, currentPage){if(formId == 8) {gf_global["number_formats"][8] = {"33":{"price":false,"value":false},"28":{"price":false,"value":false},"18":{"price":false,"value":false},"19":{"price":false,"value":false},"6":{"price":false,"value":false},"31":{"price":false,"value":false},"29":{"price":false,"value":false},"17":{"price":false,"value":false},"30":{"price":false,"value":false},"21":{"price":false,"value":false},"22":{"price":false,"value":false},"23":{"price":false,"value":false},"24":{"price":false,"value":false},"25":{"price":false,"value":false},"26":{"price":false,"value":false},"32":{"price":false,"value":false}};if(window['jQuery']){if(!window['gf_form_conditional_logic'])window['gf_form_conditional_logic'] = new Array();window['gf_form_conditional_logic'][8] = { logic: { 33: {"field":{"enabled":true,"actionType":"show","logicType":"all","rules":[{"fieldId":"28","operator":"is","value":""}]},"nextButton":null,"section":null} }, dependents: { 33: [33] }, animation: 0, defaults: {"18":""}, fields: {"33":[],"28":[33],"18":[],"19":[],"6":[],"31":[],"29":[],"17":[],"30":[],"21":[],"22":[],"23":[],"24":[],"25":[],"26":[],"32":[]} }; if(!window['gf_number_format'])window['gf_number_format'] = 'decimal_dot';jQuery(document).ready(function(){gform.utils.trigger({ event: 'gform/conditionalLogic/init/start', native: false, data: { formId: 8, fields: null, isInit: true } });window['gformInitPriceFields']();gf_apply_rules(8, [33], true);jQuery('#gform_wrapper_8').show();jQuery('#gform_wrapper_8 form').css('opacity', '');jQuery(document).trigger('gform_post_conditional_logic', [8, null, true]);gform.utils.trigger({ event: 'gform/conditionalLogic/init/end', native: false, data: { formId: 8, fields: null, isInit: true } });} );} if(typeof Placeholders != 'undefined'){
+                        Placeholders.enable();
+                    }} } );jQuery(document).on('gform_post_conditional_logic', function(event, formId, fields, isInit){} ) } );
+</script>
+<script>
+gform.initializeOnLoaded( function() {jQuery(document).trigger("gform_pre_post_render", [{ formId: "8", currentPage: "1", abort: function() { this.preventDefault(); } }]);                if (event && event.defaultPrevented) {                return;         }        const gformWrapperDiv = document.getElementById( "gform_wrapper_8" );        if ( gformWrapperDiv ) {            const visibilitySpan = document.createElement( "span" );            visibilitySpan.id = "gform_visibility_test_8";            gformWrapperDiv.insertAdjacentElement( "afterend", visibilitySpan );        }        const visibilityTestDiv = document.getElementById( "gform_visibility_test_8" );        let postRenderFired = false;                function triggerPostRender() {            if ( postRenderFired ) {                return;            }            postRenderFired = true;            gform.core.triggerPostRenderEvents( 8, 1 );            if ( visibilityTestDiv ) {                visibilityTestDiv.parentNode.removeChild( visibilityTestDiv );            }        }        function debounce( func, wait, immediate ) {            var timeout;            return function() {                var context = this, args = arguments;                var later = function() {                    timeout = null;                    if ( !immediate ) func.apply( context, args );                };                var callNow = immediate && !timeout;                clearTimeout( timeout );                timeout = setTimeout( later, wait );                if ( callNow ) func.apply( context, args );            };        }        const debouncedTriggerPostRender = debounce( function() {            triggerPostRender();        }, 200 );        if ( visibilityTestDiv && visibilityTestDiv.offsetParent === null ) {            const observer = new MutationObserver( ( mutations ) => {                mutations.forEach( ( mutation ) => {                    if ( mutation.type === 'attributes' && visibilityTestDiv.offsetParent !== null ) {                        debouncedTriggerPostRender();                        observer.disconnect();                    }                });            });            observer.observe( document.body, {                attributes: true,                childList: false,                subtree: true,                attributeFilter: [ 'style', 'class' ],            });        } else {            triggerPostRender();        }    } );
+</script>
+</body>
+</html>

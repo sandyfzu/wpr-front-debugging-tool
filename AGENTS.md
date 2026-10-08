@@ -10,6 +10,8 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 
 > **Porting rule:** treat both source repos as the **behavioral** reference, not the code reference. Port features by their observed behavior — verify parity against a real build of the source you are porting (`pnpm dev` + load both builds and compare), never from memory of its code. It must also aim to be faster and more efficient than any source surface, so don't blindly port inefficient patterns, always improve and enhance.
 >
+> **Never port structures as-is.** A source repo's type shapes, file layout, registries, and the names of types, properties, variables, constants, and functions are a starting point to reshape, never a spec to copy: rework them into the port's clearer shape and intent-revealing names (only behavior and user-facing strings stay identical). When a ported surface looks "the same, just renamed", the port didn't happen.
+>
 > **No legacy in code — ever.** Code and comments in this project must never mention either source project or their code: no `legacy`/`inspector`-origin identifiers, strings, comments, TSDoc, or error messages referencing legacy files, functions, or behavior. Name things by what they do; provenance, mappings, parity proofs, and bug references live in `docs/plans/` — and only there.
 
 ## Key technologies
@@ -30,7 +32,7 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 WXT conventions govern the layout — follow them, don't invent a new one. The manifest is generated from `entrypoints/` into `.output/**` — never hand-edit it there.
 
 ```
-├── docs/                      # architecture deep-dives, linked from this file
+├── docs/                      # the port plan: master plan + phase docs (linked from this file)
 ├── public/                    # copied to the build output as-is (icons, …)
 ├── assets/                    # bundled assets: images, fonts, `assets/css/theme.css` design tokens
 ├── entrypoints/               # one folder/file per extension surface
@@ -66,7 +68,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 pnpm dev             # dev build + watch → load .output/chrome-mv3 unpacked
 pnpm dev:firefox
 pnpm build           # production build   (pnpm build:firefox)
-pnpm zip             # production build + store zip
+pnpm zip             # production build + store zip (pnpm zip:firefox for Firefox)
 pnpm compile         # tsc --noEmit — type check
 pnpm lint            # eslint — strict typescript-eslint + Solid rules + dependency direction
 pnpm lint:fix        # eslint --fix
@@ -75,6 +77,7 @@ pnpm format:check    # prettier --check .
 pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions)
 pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
+pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
 ```
 
@@ -108,6 +111,7 @@ The extension must stay **easily extensible and cheap to maintain**: adding a fe
 
 - **Locality.** A new feature lands as a self-contained `lib/<domain>/` module (logic, types, data, tests) plus its thin wiring in the owning surface — never by reaching into or editing other features' internals. Single-surface code stays in its entrypoint; promote when a second surface needs it.
 - **Registries over branching.** Anything that comes in "many of a kind" (detection checks, message channels, storage items, exclusion rules, panel pages/tabs, options rows, context menus…) is defined in one typed table/list owned by the module that owns the concept, and consumers map over it. Adding one = adding one row + its tests, not new `if`/`switch` arms sprinkled across surfaces.
+- **One declaring site.** A constant, data table, regex/selector, type, or helper is declared exactly once — in the module that owns the concept — and imported wherever it is needed. The same value re-typed in a second file under any name (e.g. `DELAYJS_SRC` next to `DELAY_JS_SRC`) is a defect: move it to its owner and import. Sanctioned exceptions: test assertions may repeat literals to pin behavior; the test-only reference engine (`lib/detection/reference/`) shares its vocabulary and contract types from `lib/wp-rocket/` and deliberately duplicates only control flow (its whole job is to be an independent implementation the port is compared against); standard web-platform literals (tag names, universal attributes like `src`/`defer`/`rel`) stay inline.
 - **Stable, additive contracts.** `lib/messaging/` and `lib/storage/` are the seams every feature plugs into: evolve them additively, validate with discriminated types, and read back tolerant of unknown fields so new data never breaks existing consumers.
 - **Deletability is the test.** A feature is properly isolated when removing it = deleting its folder + its registry entries. If removal cascades into unrelated files, fix the structure before building on top of it.
 - **Extensible ≠ speculative.** Prefer the smallest structure that makes the _next_ feature a local change; introduce a registry or abstraction when the second instance of a concept appears, never "just in case".

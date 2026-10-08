@@ -172,9 +172,12 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      jsonrepair:
+        specifier: ^3.15.0
+        version: 3.15.0
       solid-js:
-        specifier: ^1.9.15
-        version: 1.9.15
+        specifier: ^1.9.16
+        version: 1.9.16
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
@@ -187,10 +190,10 @@ importers:
         version: 21.2.3
       '@solidjs/testing-library':
         specifier: ^0.8.10
-        version: 0.8.10(solid-js@1.9.15)
+        version: 0.8.10(solid-js@1.9.16)
       '@tailwindcss/vite':
         specifier: ^4.3.3
-        version: 4.3.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+        version: 4.3.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       '@types/chrome':
         specifier: ^0.3.4
         version: 0.3.4
@@ -202,13 +205,13 @@ importers:
         version: 5.0.3(vitest@5.0.3)
       '@wxt-dev/module-solid':
         specifier: ^1.1.4
-        version: 1.1.4(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))
+        version: 1.1.4(solid-js@1.9.16)(supports-color@7.2.0)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))
       eslint:
         specifier: ^10.12.0
         version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
       eslint-plugin-solid:
-        specifier: ^0.17.1
-        version: 0.17.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
+        specifier: ^0.18.1
+        version: 0.18.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       globals:
         specifier: ^17.13.0
         version: 17.13.0
@@ -234,17 +237,17 @@ importers:
         specifier: ^8.71.1
         version: 8.71.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vite:
-        specifier: ^8.3.2
-        version: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+        specifier: ^8.3.3
+        version: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
       vitest:
         specifier: 5.0.3
-        version: 5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+        version: 5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       web-ext:
         specifier: ^10.7.0
         version: 10.7.0(jiti@2.7.0)(supports-color@7.2.0)
       wxt:
         specifier: ^0.21.4
-        version: 0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
+        version: 0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
 
 packages:
 
@@ -1529,8 +1532,8 @@ packages:
     peerDependencies:
       eslint: ^9 || ^10
 
-  eslint-plugin-solid@0.17.1:
-    resolution: {integrity: sha512-SXxDBB2PAdxe3bvUFZfqEzZvJAS6b29P/opkp0CPo1fEm2zsMpacPVbYihhkxKOjQPRkD2zJdUEedyvxEZ1UnA==}
+  eslint-plugin-solid@0.18.1:
+    resolution: {integrity: sha512-zxGSWGEfaVCujuOT358UVrBWuKEf91RP6bRbEIQaoX2d3VVP6R2+4NchdSajtpwNliw7eAJDjYBviuyPuSwmUQ==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
       eslint: ^9.0.0 || ^10.0.0
@@ -1963,6 +1966,10 @@ packages:
 
   jsonfile@6.2.1:
     resolution: {integrity: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==}
+
+  jsonrepair@3.15.0:
+    resolution: {integrity: sha512-wy8OTjwsJwQRnQJkKnMJJ9vcytRdBPAgIF/Hy6+s1dAj42BHMKiyL8JzEieIl3JY7idt8eyHwBWTO8mh/+mtwA==}
+    hasBin: true
 
   jsonwebtoken@9.0.3:
     resolution: {integrity: sha512-MT/xP0CrubFRNLNKvxJ2BYfy53Zkm++5bX9dtuPbqAeQpTVe0MQTFhao8+Cp//EmJp244xt6Drw/GVEGCUj40g==}
@@ -2531,14 +2538,14 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  seroval-plugins@1.5.6:
-    resolution: {integrity: sha512-HXuLAX2pu/UByPpaeo/TaMfvMIi+1QqIoPJYCcAtU8QkVNwgR6MPlGuCQTErV1JwraaMbYaWVIBX7mppzGLATQ==}
+  seroval-plugins@1.6.8:
+    resolution: {integrity: sha512-N7mWAMydj89EnYTHtRpS3LBrAz3J9O6oVrqpuXuvlAHfAUG8WEKqtbAd7SBiJNY5NfCAFhSdyAh7wI4Shjqy4g==}
     engines: {node: '>=10'}
     peerDependencies:
       seroval: ^1.0
 
-  seroval@1.5.6:
-    resolution: {integrity: sha512-rVQVWjjSvlINzaQPZH5JFqsqEsIWdTxY3iJZCnTL/5gQbXIRooVZKI60tVCkOVfzcRPejboxO2t0P89dg5mQaA==}
+  seroval@1.6.8:
+    resolution: {integrity: sha512-HlSgSAkTk4EqHcje1ptJjfZi1YDv5KbhVJ/d3P7T/nAXua2VmDu+AKDX5VTdFfZf48nDkWB2TKYt0DrCSa+3wg==}
     engines: {node: '>=10'}
 
   setimmediate@1.0.5:
@@ -2556,8 +2563,8 @@ packages:
     resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
     engines: {node: '>= 0.4'}
 
-  solid-js@1.9.15:
-    resolution: {integrity: sha512-EeiY2xfpZJqPLjXspVEKjAII4yv8NyG//NxZ3IpOFHdUNnnTyL0uJOeS9LWGvA7cFCz5y94cjFwYlmw5Luncsg==}
+  solid-js@1.9.16:
+    resolution: {integrity: sha512-vESESWrNRebA0sQv+Vr9/2wOFOL6NK2QQow7F5/WCBH4c+OVoDyQNEbiVKVL7YqE1M7MPd7z7p27KElLkaD0bw==}
 
   solid-refresh@0.6.3:
     resolution: {integrity: sha512-F3aPsX6hVw9ttm5LYlth8Q15x6MlI/J3Dn+o3EQyRTtTxidepSTwAYdozt01/YA+7ObcciagGEyXIopGZzQtbA==}
@@ -2838,8 +2845,8 @@ packages:
       '@testing-library/jest-dom':
         optional: true
 
-  vite@8.3.2:
-    resolution: {integrity: sha512-SQr1x6W5vVSbROg7vsyXIaxK9b0G7zsT68acdWWRmnBUsgDieLCRG+Rep9WdZgcposvv/GSnr4GUUBqB3vXq6w==}
+  vite@8.3.3:
+    resolution: {integrity: sha512-cTAldKPImjg6c+gk48U19POPn3GCBzZwpdsN8ZMEEcbpes+6/wvfqUd0C2y3qYY4wsj8PwgFwrZ/1jBPVttMSg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -3557,10 +3564,10 @@ snapshots:
 
   '@simple-libs/stream-utils@2.0.0': {}
 
-  '@solidjs/testing-library@0.8.10(solid-js@1.9.15)':
+  '@solidjs/testing-library@0.8.10(solid-js@1.9.16)':
     dependencies:
       '@testing-library/dom': 10.4.2
-      solid-js: 1.9.15
+      solid-js: 1.9.16
 
   '@tailwindcss/node@4.3.3':
     dependencies:
@@ -3623,12 +3630,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
+  '@tailwindcss/vite@4.3.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
   '@testing-library/dom@10.4.2':
     dependencies:
@@ -3809,7 +3816,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      vitest: 5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
 
   '@vitest/istanbul-lib-coverage@1.0.2': {}
 
@@ -3817,14 +3824,14 @@ snapshots:
     dependencies:
       '@vitest/istanbul-lib-coverage': 1.0.2
 
-  '@vitest/mocker@5.0.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
+  '@vitest/mocker@5.0.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.3
       estree-walker: 3.0.3
       magic-string: 1.4.3
     optionalDependencies:
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
   '@vitest/spy@5.0.3': {}
 
@@ -3850,10 +3857,10 @@ snapshots:
       '@types/filesystem': 0.0.36
       '@types/har-format': 1.2.16
 
-  '@wxt-dev/module-solid@1.1.4(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))':
+  '@wxt-dev/module-solid@1.1.4(solid-js@1.9.16)(supports-color@7.2.0)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))':
     dependencies:
-      vite-plugin-solid: 2.11.14(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
-      wxt: 0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
+      vite-plugin-solid: 2.11.14(solid-js@1.9.16)(supports-color@7.2.0)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      wxt: 0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
     transitivePeerDependencies:
       - '@testing-library/jest-dom'
       - solid-js
@@ -3987,12 +3994,12 @@ snapshots:
       html-entities: 2.3.3
       parse5: 7.3.0
 
-  babel-preset-solid@1.9.15(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.15):
+  babel-preset-solid@1.9.15(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.16):
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
       babel-plugin-jsx-dom-expressions: 0.40.10(@babel/core@7.29.7(supports-color@7.2.0))
     optionalDependencies:
-      solid-js: 1.9.15
+      solid-js: 1.9.16
 
   balanced-match@1.0.2: {}
 
@@ -4396,7 +4403,7 @@ snapshots:
     dependencies:
       eslint: 9.39.4(jiti@2.7.0)(supports-color@7.2.0)
 
-  eslint-plugin-solid@0.17.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3):
+  eslint-plugin-solid@0.18.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3):
     dependencies:
       '@typescript-eslint/utils': 8.71.1(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       eslint: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
@@ -4809,6 +4816,8 @@ snapshots:
       universalify: 2.0.1
     optionalDependencies:
       graceful-fs: 4.2.11
+
+  jsonrepair@3.15.0: {}
 
   jsonwebtoken@9.0.3:
     dependencies:
@@ -5355,11 +5364,11 @@ snapshots:
 
   semver@7.8.5: {}
 
-  seroval-plugins@1.5.6(seroval@1.5.6):
+  seroval-plugins@1.6.8(seroval@1.6.8):
     dependencies:
-      seroval: 1.5.6
+      seroval: 1.6.8
 
-  seroval@1.5.6: {}
+  seroval@1.6.8: {}
 
   setimmediate@1.0.5: {}
 
@@ -5371,18 +5380,18 @@ snapshots:
 
   shell-quote@1.10.0: {}
 
-  solid-js@1.9.15:
+  solid-js@1.9.16:
     dependencies:
       csstype: 3.2.3
-      seroval: 1.5.6
-      seroval-plugins: 1.5.6(seroval@1.5.6)
+      seroval: 1.6.8
+      seroval-plugins: 1.6.8(seroval@1.6.8)
 
-  solid-refresh@0.6.3(solid-js@1.9.15)(supports-color@7.2.0):
+  solid-refresh@0.6.3(solid-js@1.9.16)(supports-color@7.2.0):
     dependencies:
       '@babel/generator': 7.29.8
       '@babel/helper-module-imports': 7.29.7(supports-color@7.2.0)
       '@babel/types': 7.29.8
-      solid-js: 1.9.15
+      solid-js: 1.9.16
     transitivePeerDependencies:
       - supports-color
 
@@ -5539,7 +5548,7 @@ snapshots:
 
   undici@7.30.0: {}
 
-  unimport@6.5.0(rolldown@1.2.12)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+  unimport@6.5.0(rolldown@1.2.12)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       acorn: 8.19.0
       escape-string-regexp: 5.0.0
@@ -5553,7 +5562,7 @@ snapshots:
       scule: 1.3.0
       strip-literal: 4.0.0
       tinyglobby: 0.2.17
-      unplugin: 3.4.0(rolldown@1.2.12)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      unplugin: 3.4.0(rolldown@1.2.12)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       unplugin-utils: 0.3.2
     optionalDependencies:
       rolldown: 1.2.12
@@ -5575,14 +5584,14 @@ snapshots:
       pathe: 2.0.3
       picomatch: 4.0.7
 
-  unplugin@3.4.0(rolldown@1.2.12)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+  unplugin@3.4.0(rolldown@1.2.12)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
       picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
       rolldown: 1.2.12
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
   upath@3.0.8: {}
 
@@ -5613,20 +5622,20 @@ snapshots:
 
   verkit@0.5.0: {}
 
-  vite-plugin-solid@2.11.14(solid-js@1.9.15)(supports-color@7.2.0)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+  vite-plugin-solid@2.11.14(solid-js@1.9.16)(supports-color@7.2.0)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
       '@types/babel__core': 7.20.5
-      babel-preset-solid: 1.9.15(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.15)
+      babel-preset-solid: 1.9.15(@babel/core@7.29.7(supports-color@7.2.0))(solid-js@1.9.16)
       merge-anything: 5.1.7
-      solid-js: 1.9.15
-      solid-refresh: 0.6.3(solid-js@1.9.15)(supports-color@7.2.0)
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
-      vitefu: 1.1.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      solid-js: 1.9.16
+      solid-refresh: 0.6.3(solid-js@1.9.16)(supports-color@7.2.0)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vitefu: 1.1.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
     transitivePeerDependencies:
       - supports-color
 
-  vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1):
+  vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -5639,14 +5648,14 @@ snapshots:
       jiti: 2.7.0
       yaml: 2.9.1
 
-  vitefu@1.1.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+  vitefu@1.1.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
     optionalDependencies:
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
 
-  vitest@5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
+  vitest@5.0.3(@types/node@24.19.1)(@vitest/coverage-v8@5.0.3)(happy-dom@20.14.5)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.3(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      '@vitest/mocker': 5.0.3(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -5657,7 +5666,7 @@ snapshots:
       tinybench: 6.2.0
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 24.19.1
@@ -5757,7 +5766,7 @@ snapshots:
       is-wsl: 3.1.1
       powershell-utils: 0.2.1
 
-  wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)):
+  wxt@0.21.4(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.12)(typescript@5.9.3)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
       '@1natsu/wait-element': 4.2.0
       '@aklinker1/rollup-plugin-visualizer': 5.12.0
@@ -5787,8 +5796,8 @@ snapshots:
       tiny-open: 1.3.0
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      unimport: 6.5.0(rolldown@1.2.12)(vite@8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
-      vite: 8.3.2(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
+      unimport: 6.5.0(rolldown@1.2.12)(vite@8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))
+      vite: 8.3.3(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1)
     optionalDependencies:
       eslint: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 5.9.3

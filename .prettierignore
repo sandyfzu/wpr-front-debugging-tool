@@ -7,6 +7,9 @@ node_modules
 # Lockfiles
 pnpm-lock.yaml
 
+# Fixture corpus: raw captured pages are byte-stable data, never reformatted.
+lib/detection/fixtures/*.html
+
 # Husky internals (generated)
 .husky/_
 

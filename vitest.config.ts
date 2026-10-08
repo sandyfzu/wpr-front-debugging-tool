@@ -1,24 +1,44 @@
 import { defineConfig } from 'vitest/config';
+import { WxtVitest } from 'wxt/testing/vitest-plugin';
+import { HAPPY_DOM_SETTINGS, filterDisabledLoadNoise } from './vitest.shared';
 
 /**
  * Test runner configuration.
  *
- * - `happy-dom` so DOM-touching logic (`applyTheme`, Solid components from the panel
- *   phases onward) is testable without a browser; pure utils run under it too.
+ * - `WxtVitest` wires the WXT storage/testing runtime (fake browser, module
+ *   aliases, import auto-types) so `lib/` code that touches `wxt/utils/storage`
+ *   runs without a real extension context.
+ * - `happy-dom` so DOM-touching logic (detection, Solid components from the
+ *   panel phases onward, theme application) is testable without a browser;
+ *   its resource loading is fully disabled — parsed URLs are data, not
+ *   network requests (the fixture corpus is offline).
  * - Globals stay off: every test imports from `vitest` explicitly.
- * - Coverage is restricted to the port's logic layers (`lib`, `utils`) with a hard
- *   floor (aggregate across those layers) so untested logic fails the standard gate,
- *   not just the coverage script. Colocated `*.test.ts(x)` files, any test-only
- *   reference-implementation directory and throwaway `spike-*.ts` files never count.
+ * - Coverage is restricted to the port's logic layers (`lib`, `utils`) with a
+ *   hard floor (aggregate across those layers) so untested logic fails the
+ *   standard gate, not just the coverage script. Colocated `*.test.ts(x)`
+ *   files, the test-only reference engine, detection benches and throwaway
+ *   `spike-*.ts` files never count.
  */
 export default defineConfig({
+  plugins: [WxtVitest()],
   test: {
     environment: 'happy-dom',
+    // The machine-relative speed bench runs only via `pnpm bench:detection`;
+    // it must never flake CI on shared runners.
+    exclude: ['**/node_modules/**', '**/.git/**', 'lib/detection/bench/**'],
+    // happy-dom reports disabled iframe/CSS/JS loads on its own console —
+    // expected offline noise, filtered from the gate signal (shared module).
+    onConsoleLog: filterDisabledLoadNoise,
+    environmentOptions: {
+      happyDOM: {
+        settings: HAPPY_DOM_SETTINGS
+      }
+    },
     coverage: {
       provider: 'v8',
       include: ['lib/**/*.{ts,tsx}', 'utils/**/*.{ts,tsx}'],
-      exclude: ['**/*.test.{ts,tsx}', '**/reference/**', '**/spike-*.ts'],
-      thresholds: { lines: 90, functions: 90 }
+      exclude: ['**/*.test.{ts,tsx}', '**/reference/**', '**/bench/**', '**/spike-*.ts'],
+      thresholds: { lines: 90, functions: 90, branches: 90 }
     }
   }
 });

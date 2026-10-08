@@ -1,0 +1,847 @@
+<!doctype html>
+<html class="no-js" lang="en-US">
+<head><meta charset="utf-8"/><script>if(navigator.userAgent.match(/MSIE|Internet Explorer/i)||navigator.userAgent.match(/Trident\/7\..*?rv:11/i)){var href=document.location.href;if(!href.match(/[?&]nowprocket/)){if(href.indexOf("?")==-1){if(href.indexOf("#")==-1){document.location.href=href+"?nowprocket=1"}else{document.location.href=href.replace("#","?nowprocket=1#")}}else{if(href.indexOf("#")==-1){document.location.href=href+"&nowprocket=1"}else{document.location.href=href.replace("#","&nowprocket=1#")}}}}</script><script>(()=>{class RocketLazyLoadScripts{constructor(){this.v="2.0.4",this.userEvents=["keydown","keyup","mousedown","mouseup","mousemove","mouseover","mouseout","touchmove","touchstart","touchend","touchcancel","wheel","click","dblclick","input"],this.attributeEvents=["onblur","onclick","oncontextmenu","ondblclick","onfocus","onmousedown","onmouseenter","onmouseleave","onmousemove","onmouseout","onmouseover","onmouseup","onmousewheel","onscroll","onsubmit"]}async t(){this.i(),this.o(),/iP(ad|hone)/.test(navigator.userAgent)&&this.h(),this.u(),this.l(this),this.m(),this.k(this),this.p(this),this._(),await Promise.all([this.R(),this.L()]),this.lastBreath=Date.now(),this.S(this),this.P(),this.D(),this.O(),this.M(),await this.C(this.delayedScripts.normal),await this.C(this.delayedScripts.defer),await this.C(this.delayedScripts.async),await this.T(),await this.F(),await this.j(),await this.A(),window.dispatchEvent(new Event("rocket-allScriptsLoaded")),this.everythingLoaded=!0,this.lastTouchEnd&&await new Promise(t=>setTimeout(t,500-Date.now()+this.lastTouchEnd)),this.I(),this.H(),this.U(),this.W()}i(){this.CSPIssue=sessionStorage.getItem("rocketCSPIssue"),document.addEventListener("securitypolicyviolation",t=>{this.CSPIssue||"script-src-elem"!==t.violatedDirective||"data"!==t.blockedURI||(this.CSPIssue=!0,sessionStorage.setItem("rocketCSPIssue",!0))},{isRocket:!0})}o(){window.addEventListener("pageshow",t=>{this.persisted=t.persisted,this.realWindowLoadedFired=!0},{isRocket:!0}),window.addEventListener("pagehide",()=>{this.onFirstUserAction=null},{isRocket:!0})}h(){let t;function e(e){t=e}window.addEventListener("touchstart",e,{isRocket:!0}),window.addEventListener("touchend",function i(o){o.changedTouches[0]&&t.changedTouches[0]&&Math.abs(o.changedTouches[0].pageX-t.changedTouches[0].pageX)<10&&Math.abs(o.changedTouches[0].pageY-t.changedTouches[0].pageY)<10&&o.timeStamp-t.timeStamp<200&&(window.removeEventListener("touchstart",e,{isRocket:!0}),window.removeEventListener("touchend",i,{isRocket:!0}),"INPUT"===o.target.tagName&&"text"===o.target.type||(o.target.dispatchEvent(new TouchEvent("touchend",{target:o.target,bubbles:!0})),o.target.dispatchEvent(new MouseEvent("mouseover",{target:o.target,bubbles:!0})),o.target.dispatchEvent(new PointerEvent("click",{target:o.target,bubbles:!0,cancelable:!0,detail:1,clientX:o.changedTouches[0].clientX,clientY:o.changedTouches[0].clientY})),event.preventDefault()))},{isRocket:!0})}q(t){this.userActionTriggered||("mousemove"!==t.type||this.firstMousemoveIgnored?"keyup"===t.type||"mouseover"===t.type||"mouseout"===t.type||(this.userActionTriggered=!0,this.onFirstUserAction&&this.onFirstUserAction()):this.firstMousemoveIgnored=!0),"click"===t.type&&t.preventDefault(),t.stopPropagation(),t.stopImmediatePropagation(),"touchstart"===this.lastEvent&&"touchend"===t.type&&(this.lastTouchEnd=Date.now()),"click"===t.type&&(this.lastTouchEnd=0),this.lastEvent=t.type,t.composedPath&&t.composedPath()[0].getRootNode()instanceof ShadowRoot&&(t.rocketTarget=t.composedPath()[0]),this.savedUserEvents.push(t)}u(){this.savedUserEvents=[],this.userEventHandler=this.q.bind(this),this.userEvents.forEach(t=>window.addEventListener(t,this.userEventHandler,{passive:!1,isRocket:!0})),document.addEventListener("visibilitychange",this.userEventHandler,{isRocket:!0})}U(){this.userEvents.forEach(t=>window.removeEventListener(t,this.userEventHandler,{passive:!1,isRocket:!0})),document.removeEventListener("visibilitychange",this.userEventHandler,{isRocket:!0}),this.savedUserEvents.forEach(t=>{(t.rocketTarget||t.target).dispatchEvent(new window[t.constructor.name](t.type,t))})}m(){const t="return false",e=Array.from(this.attributeEvents,t=>"data-rocket-"+t),i="["+this.attributeEvents.join("],[")+"]",o="[data-rocket-"+this.attributeEvents.join("],[data-rocket-")+"]",s=(e,i,o)=>{o&&o!==t&&(e.setAttribute("data-rocket-"+i,o),e["rocket"+i]=new Function("event",o),e.setAttribute(i,t))};new MutationObserver(t=>{for(const n of t)"attributes"===n.type&&(n.attributeName.startsWith("data-rocket-")||this.everythingLoaded?n.attributeName.startsWith("data-rocket-")&&this.everythingLoaded&&this.N(n.target,n.attributeName.substring(12)):s(n.target,n.attributeName,n.target.getAttribute(n.attributeName))),"childList"===n.type&&n.addedNodes.forEach(t=>{if(t.nodeType===Node.ELEMENT_NODE)if(this.everythingLoaded)for(const i of[t,...t.querySelectorAll(o)])for(const t of i.getAttributeNames())e.includes(t)&&this.N(i,t.substring(12));else for(const e of[t,...t.querySelectorAll(i)])for(const t of e.getAttributeNames())this.attributeEvents.includes(t)&&s(e,t,e.getAttribute(t))})}).observe(document,{subtree:!0,childList:!0,attributeFilter:[...this.attributeEvents,...e]})}I(){this.attributeEvents.forEach(t=>{document.querySelectorAll("[data-rocket-"+t+"]").forEach(e=>{this.N(e,t)})})}N(t,e){const i=t.getAttribute("data-rocket-"+e);i&&(t.setAttribute(e,i),t.removeAttribute("data-rocket-"+e))}k(t){Object.defineProperty(HTMLElement.prototype,"onclick",{get(){return this.rocketonclick||null},set(e){this.rocketonclick=e,this.setAttribute(t.everythingLoaded?"onclick":"data-rocket-onclick","this.rocketonclick(event)")}})}S(t){function e(e,i){let o=e[i];e[i]=null,Object.defineProperty(e,i,{get:()=>o,set(s){t.everythingLoaded?o=s:e["rocket"+i]=o=s}})}e(document,"onreadystatechange"),e(window,"onload"),e(window,"onpageshow");try{Object.defineProperty(document,"readyState",{get:()=>t.rocketReadyState,set(e){t.rocketReadyState=e},configurable:!0}),document.readyState="loading"}catch(t){console.log("WPRocket DJE readyState conflict, bypassing")}}l(t){this.originalAddEventListener=EventTarget.prototype.addEventListener,this.originalRemoveEventListener=EventTarget.prototype.removeEventListener,this.savedEventListeners=[],EventTarget.prototype.addEventListener=function(e,i,o){o&&o.isRocket||!t.B(e,this)&&!t.userEvents.includes(e)||t.B(e,this)&&!t.userActionTriggered||e.startsWith("rocket-")||t.everythingLoaded?t.originalAddEventListener.call(this,e,i,o):(t.savedEventListeners.push({target:this,remove:!1,type:e,func:i,options:o}),"mouseenter"!==e&&"mouseleave"!==e||t.originalAddEventListener.call(this,e,t.savedUserEvents.push,o))},EventTarget.prototype.removeEventListener=function(e,i,o){o&&o.isRocket||!t.B(e,this)&&!t.userEvents.includes(e)||t.B(e,this)&&!t.userActionTriggered||e.startsWith("rocket-")||t.everythingLoaded?t.originalRemoveEventListener.call(this,e,i,o):t.savedEventListeners.push({target:this,remove:!0,type:e,func:i,options:o})}}J(t,e){this.savedEventListeners=this.savedEventListeners.filter(i=>{let o=i.type,s=i.target||window;return e!==o||t!==s||(this.B(o,s)&&(i.type="rocket-"+o),this.$(i),!1)})}H(){EventTarget.prototype.addEventListener=this.originalAddEventListener,EventTarget.prototype.removeEventListener=this.originalRemoveEventListener,this.savedEventListeners.forEach(t=>this.$(t))}$(t){t.remove?this.originalRemoveEventListener.call(t.target,t.type,t.func,t.options):this.originalAddEventListener.call(t.target,t.type,t.func,t.options)}p(t){let e;function i(e){return t.everythingLoaded?e:e.split(" ").map(t=>"load"===t||t.startsWith("load.")?"rocket-jquery-load":t).join(" ")}function o(o){function s(e){const s=o.fn[e];o.fn[e]=o.fn.init.prototype[e]=function(){return this[0]===window&&t.userActionTriggered&&("string"==typeof arguments[0]||arguments[0]instanceof String?arguments[0]=i(arguments[0]):"object"==typeof arguments[0]&&Object.keys(arguments[0]).forEach(t=>{const e=arguments[0][t];delete arguments[0][t],arguments[0][i(t)]=e})),s.apply(this,arguments),this}}if(o&&o.fn&&!t.allJQueries.includes(o)){const e={DOMContentLoaded:[],"rocket-DOMContentLoaded":[]};for(const t in e)document.addEventListener(t,()=>{e[t].forEach(t=>t())},{isRocket:!0});o.fn.ready=o.fn.init.prototype.ready=function(i){function s(){parseInt(o.fn.jquery)>2?setTimeout(()=>i.bind(document)(o)):i.bind(document)(o)}return"function"==typeof i&&(t.realDomReadyFired?!t.userActionTriggered||t.fauxDomReadyFired?s():e["rocket-DOMContentLoaded"].push(s):e.DOMContentLoaded.push(s)),o([])},s("on"),s("one"),s("off"),t.allJQueries.push(o)}e=o}t.allJQueries=[],o(window.jQuery),Object.defineProperty(window,"jQuery",{get:()=>e,set(t){o(t)}})}P(){const t=new Map;document.write=document.writeln=function(e){const i=document.currentScript,o=document.createRange(),s=i.parentElement;let n=t.get(i);void 0===n&&(n=i.nextSibling,t.set(i,n));const c=document.createDocumentFragment();o.setStart(c,0),c.appendChild(o.createContextualFragment(e)),s.insertBefore(c,n)}}async R(){return new Promise(t=>{this.userActionTriggered?t():this.onFirstUserAction=t})}async L(){return new Promise(t=>{document.addEventListener("DOMContentLoaded",()=>{this.realDomReadyFired=!0,t()},{isRocket:!0})})}async j(){return this.realWindowLoadedFired?Promise.resolve():new Promise(t=>{window.addEventListener("load",t,{isRocket:!0})})}M(){this.pendingScripts=[];this.scriptsMutationObserver=new MutationObserver(t=>{for(const e of t)e.addedNodes.forEach(t=>{"SCRIPT"!==t.tagName||t.noModule||t.isWPRocket||this.pendingScripts.push({script:t,promise:new Promise(e=>{const i=()=>{const i=this.pendingScripts.findIndex(e=>e.script===t);i>=0&&this.pendingScripts.splice(i,1),e()};t.addEventListener("load",i,{isRocket:!0}),t.addEventListener("error",i,{isRocket:!0}),setTimeout(i,1e3)})})})}),this.scriptsMutationObserver.observe(document,{childList:!0,subtree:!0})}async F(){await this.X(),this.pendingScripts.length?(await this.pendingScripts[0].promise,await this.F()):this.scriptsMutationObserver.disconnect()}D(){this.delayedScripts={normal:[],async:[],defer:[]},document.querySelectorAll("script[type$=rocketlazyloadscript]").forEach(t=>{t.hasAttribute("data-rocket-src")?t.hasAttribute("async")&&!1!==t.async?this.delayedScripts.async.push(t):t.hasAttribute("defer")&&!1!==t.defer||"module"===t.getAttribute("data-rocket-type")?this.delayedScripts.defer.push(t):this.delayedScripts.normal.push(t):this.delayedScripts.normal.push(t)})}async _(){await this.L();let t=[];document.querySelectorAll("script[type$=rocketlazyloadscript][data-rocket-src]").forEach(e=>{let i=e.getAttribute("data-rocket-src");if(i&&!i.startsWith("data:")){i.startsWith("//")&&(i=location.protocol+i);try{const o=new URL(i).origin;o!==location.origin&&t.push({src:o,crossOrigin:e.crossOrigin||"module"===e.getAttribute("data-rocket-type")})}catch(t){}}}),t=[...new Map(t.map(t=>[JSON.stringify(t),t])).values()],this.Y(t,"preconnect")}async G(t){if(await this.K(),!0!==t.noModule||!("noModule"in HTMLScriptElement.prototype))return new Promise(e=>{let i;function o(){(i||t).setAttribute("data-rocket-status","executed"),e()}try{if(navigator.userAgent.includes("Firefox/")||""===navigator.vendor||this.CSPIssue)i=document.createElement("script"),[...t.attributes].forEach(t=>{let e=t.nodeName;"type"!==e&&("data-rocket-type"===e&&(e="type"),"data-rocket-src"===e&&(e="src"),i.setAttribute(e,t.nodeValue))}),t.text&&(i.text=t.text),t.nonce&&(i.nonce=t.nonce),i.hasAttribute("src")?(i.addEventListener("load",o,{isRocket:!0}),i.addEventListener("error",()=>{i.setAttribute("data-rocket-status","failed-network"),e()},{isRocket:!0}),setTimeout(()=>{i.isConnected||e()},1)):(i.text=t.text,o()),i.isWPRocket=!0,t.parentNode.replaceChild(i,t);else{const i=t.getAttribute("data-rocket-type"),s=t.getAttribute("data-rocket-src");i?(t.type=i,t.removeAttribute("data-rocket-type")):t.removeAttribute("type"),t.addEventListener("load",o,{isRocket:!0}),t.addEventListener("error",i=>{this.CSPIssue&&i.target.src.startsWith("data:")?(console.log("WPRocket: CSP fallback activated"),t.removeAttribute("src"),this.G(t).then(e)):(t.setAttribute("data-rocket-status","failed-network"),e())},{isRocket:!0}),s?(t.fetchPriority="high",t.removeAttribute("data-rocket-src"),t.src=s):t.src="data:text/javascript;base64,"+window.btoa(unescape(encodeURIComponent(t.text)))}}catch(i){t.setAttribute("data-rocket-status","failed-transform"),e()}});t.setAttribute("data-rocket-status","skipped")}async C(t){const e=t.shift();return e?(e.isConnected&&await this.G(e),this.C(t)):Promise.resolve()}O(){this.Y([...this.delayedScripts.normal,...this.delayedScripts.defer,...this.delayedScripts.async],"preload")}Y(t,e){this.trash=this.trash||[];let i=!0;var o=document.createDocumentFragment();t.forEach(t=>{const s=t.getAttribute&&t.getAttribute("data-rocket-src")||t.src;if(s&&!s.startsWith("data:")){const n=document.createElement("link");n.href=s,n.rel=e,"preconnect"!==e&&(n.as="script",n.fetchPriority=i?"high":"low"),t.getAttribute&&"module"===t.getAttribute("data-rocket-type")&&(n.crossOrigin=!0),t.crossOrigin&&(n.crossOrigin=t.crossOrigin),t.integrity&&(n.integrity=t.integrity),t.nonce&&(n.nonce=t.nonce),o.appendChild(n),this.trash.push(n),i=!1}}),document.head.appendChild(o)}W(){this.trash.forEach(t=>t.remove())}async T(){try{document.readyState="interactive"}catch(t){}this.fauxDomReadyFired=!0;try{await this.K(),this.J(document,"readystatechange"),document.dispatchEvent(new Event("rocket-readystatechange")),await this.K(),document.rocketonreadystatechange&&document.rocketonreadystatechange(),await this.K(),this.J(document,"DOMContentLoaded"),document.dispatchEvent(new Event("rocket-DOMContentLoaded")),await this.K(),this.J(window,"DOMContentLoaded"),window.dispatchEvent(new Event("rocket-DOMContentLoaded"))}catch(t){console.error(t)}}async A(){try{document.readyState="complete"}catch(t){}try{await this.K(),this.J(document,"readystatechange"),document.dispatchEvent(new Event("rocket-readystatechange")),await this.K(),document.rocketonreadystatechange&&document.rocketonreadystatechange(),await this.K(),this.J(window,"load"),window.dispatchEvent(new Event("rocket-load")),await this.K(),window.rocketonload&&window.rocketonload(),await this.K(),this.allJQueries.forEach(t=>t(window).trigger("rocket-jquery-load")),await this.K(),this.J(window,"pageshow");const t=new Event("rocket-pageshow");t.persisted=this.persisted,window.dispatchEvent(t),await this.K(),window.rocketonpageshow&&window.rocketonpageshow({persisted:this.persisted})}catch(t){console.error(t)}}async K(){Date.now()-this.lastBreath>45&&(await this.X(),this.lastBreath=Date.now())}async X(){return document.hidden?new Promise(t=>setTimeout(t)):new Promise(t=>requestAnimationFrame(t))}B(t,e){return e===document&&"readystatechange"===t||(e===document&&"DOMContentLoaded"===t||(e===window&&"DOMContentLoaded"===t||(e===window&&"load"===t||e===window&&"pageshow"===t)))}static run(){(new RocketLazyLoadScripts).t()}}RocketLazyLoadScripts.run()})();</script>
+	
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<script type="rocketlazyloadscript">document.documentElement.className = 'js';</script>
+	<link rel="shortcut icon" href="/favicon.ico">
+
+	<script type="text/javascript" src="https://app.termly.io/resource-blocker/7469f79f-475d-41de-b658-73e577c087f8?autoBlock=off"></script>
+
+<link rel="preload" as="image" href="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg"  ><script type="rocketlazyloadscript">window.dataLayer = window.dataLayer || [];window.dataLayer.push({"page_type":"blog","language":"en","page_locale":"en_US","display_currency":"EUR","logged_in":false,"user_id":null,"customer_type":"prospect"});</script>
+<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />
+<link rel="alternate" hreflang="en" href="https://wp-rocket.me/blog/" />
+<link rel="alternate" hreflang="fr" href="https://wp-rocket.me/fr/blog/" />
+<link rel="alternate" hreflang="de" href="https://wp-rocket.me/de/blog/" />
+<link rel="alternate" hreflang="it" href="https://wp-rocket.me/it/blog/" />
+<link rel="alternate" hreflang="es" href="https://wp-rocket.me/es/blog/" />
+<link rel="alternate" hreflang="ja" href="https://wp-rocket.me/ja/blog/" />
+<link rel="alternate" hreflang="x-default" href="https://wp-rocket.me/blog/" />
+
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var gtm4wp_datalayer_name = "dataLayer";
+	var dataLayer = dataLayer || [];
+	const gtm4wp_use_sku_instead = 1;
+	const gtm4wp_currency = 'EUR';
+	const gtm4wp_product_per_impression = 10;
+	const gtm4wp_clear_ecommerce = false;
+	const gtm4wp_datalayer_max_timeout = 2000;
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com -->
+	<!-- This site is optimized with the Yoast SEO plugin v25.3 - https://yoast.com/wordpress/plugins/seo/ -->
+	<title>WP Rocket Blog: Cache Plugin for WordPress</title>
+<link crossorigin data-rocket-preconnect href="https://sst.wp-rocket.me" rel="preconnect">
+<link crossorigin data-rocket-preconnect href="https://app.termly.io" rel="preconnect">
+<link crossorigin data-rocket-preconnect href="https://static-tracking.klaviyo.com" rel="preconnect">
+<link crossorigin data-rocket-preconnect href="https://static.klaviyo.com" rel="preconnect">
+<link crossorigin data-rocket-preconnect href="https://www.dwin1.com" rel="preconnect">
+<link crossorigin data-rocket-preconnect href="https://lantern.roeyecdn.com" rel="preconnect">
+<link crossorigin data-rocket-preload as="font" href="https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-regular.woff2" rel="preload">
+<link crossorigin data-rocket-preload as="font" href="https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-700.woff2" rel="preload">
+<link crossorigin data-rocket-preload as="font" href="https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v51-latin-600.woff2" rel="preload">
+<link crossorigin data-rocket-preload as="font" href="https://wp-rocket.me/wp-content/themes/V4/assets/fonts/Gotham-Medium.woff2" rel="preload">
+<style id="wpr-usedcss">img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}.wcpbc-price.loading :not(.wcpbc-placeholder){display:none}.wcpbc-price.loading{visibility:hidden;color:inherit}img.emoji{display:inline!important;border:none!important;box-shadow:none!important;height:1em!important;width:1em!important;margin:0 .07em!important;vertical-align:-.1em!important;background:0 0!important;padding:0!important}.screen-reader-text{border:0;clip:rect(1px,1px,1px,1px);-webkit-clip-path:inset(50%);clip-path:inset(50%);height:1px;margin:-1px;overflow:hidden;padding:0;position:absolute!important;width:1px;word-wrap:normal!important}@font-face{font-family:Roboto;src:url(https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-regular.woff2) format("woff2");font-weight:400;font-display:swap}@font-face{font-family:Roboto;src:url(https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-700.woff2) format("woff2");font-weight:700;font-display:swap}@font-face{font-family:Roboto;src:url(https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v51-latin-600.woff2) format("woff2");font-weight:600;font-display:swap}@font-face{font-family:Gotham;src:url(https://wp-rocket.me/wp-content/themes/V4/assets/fonts/Gotham-Medium.woff2) format("woff2");font-display:swap}a,body,canvas,caption,code,div,fieldset,footer,form,h1,h2,header,html,iframe,img,label,legend,li,nav,object,ol,p,span,table,tbody,td,th,tr,tt,ul,var{margin:0;padding:0;border:0;font-size:100%;font:inherit;vertical-align:initial}footer,header,nav{display:block}body{line-height:1}ol,ul{list-style:none}table{border-collapse:collapse;border-spacing:0}a{text-decoration:none;color:inherit}input{-webkit-appearance:none;border-radius:0}input[type=checkbox]{-webkit-appearance:checkbox}input[type=radio]{-webkit-appearance:radio}input[type=search]{-webkit-appearance:textfield;-webkit-box-sizing:content-box}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none}*{box-sizing:border-box}button{background:0 0;border:none;color:inherit;font-family:inherit;padding:0;font-size:inherit}body,html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}html{scroll-behavior:smooth;scroll-padding:100px 0 0 0}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}html.scrollblock{height:100%;overflow:hidden;width:100%;position:fixed}body{font-family:Roboto,sans-serif;text-rendering:optimizeSpeed;line-height:normal;color:#454f59;overflow-x:hidden}a,button{transition:all .3s ease-out .07s}img{height:auto;max-width:100%;box-sizing:border-box}.mb0{margin-bottom:0!important}.has-hover-animated-link a,.has-hover-animated-link span[data-url],.is-hover-animated-link{position:relative}.has-hover-animated-link a:before,.has-hover-animated-link span[data-url]:before,.is-hover-animated-link:before{content:"";position:absolute;left:0;bottom:-10px;width:100%;height:1px;background-color:#454f59;transition:all .5s cubic-bezier(.345,0,.145,.995);transform:scaleX(0);transform-origin:left}.has-hover-animated-link a:active:before,.has-hover-animated-link a:focus:before,.has-hover-animated-link a:hover:before,.has-hover-animated-link span[data-url]:active:before,.has-hover-animated-link span[data-url]:focus:before,.has-hover-animated-link span[data-url]:hover:before,.is-hover-animated-link:active:before,.is-hover-animated-link:focus:before,.is-hover-animated-link:hover:before{transform:scaleX(1)}span[data-url]{cursor:pointer}.has-text-align-center{text-align:center}.alignfull{margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}.wrapper{max-width:1200px;margin-right:auto;margin-left:auto}@media (max-width:1250px){.wrapper{width:100%;padding-right:50px;padding-left:50px}}@media (max-width:700px){.hide-if-mobile{display:none!important}.wrapper{width:100%;padding-right:20px;padding-left:20px}}.wrapper .wp-block-group .wp-block-group__inner-container,.wrapper--1200{max-width:1200px;margin-right:auto;margin-left:auto}.entry-content .wrapper .wp-block-group .wp-block-group__inner-container,.entry-content .wrapper--1200,.wrapper .wp-block-group .entry-content .wp-block-group__inner-container{margin-left:-200px;margin-right:-200px;width:auto}@media (max-width:1250px){.wrapper .wp-block-group .wp-block-group__inner-container,.wrapper--1200{width:100%;padding-right:50px;padding-left:50px}.entry-content .wrapper .wp-block-group .wp-block-group__inner-container,.entry-content .wrapper--1200,.wrapper .wp-block-group .entry-content .wp-block-group__inner-container{margin-left:-30px;margin-right:-30px;padding-left:0;padding-right:0}}@media (max-width:700px){.wrapper .wp-block-group .wp-block-group__inner-container,.wrapper--1200{width:100%;padding-right:20px;padding-left:20px}.entry-content .wrapper .wp-block-group .wp-block-group__inner-container,.entry-content .wrapper--1200,.wrapper .wp-block-group .entry-content .wp-block-group__inner-container{margin-left:0;margin-right:0;padding-left:0;padding-right:0}}.wp-block-group .wp-block-group__inner-container,.wrapper--800{max-width:800px;margin-right:auto;margin-left:auto}@media (max-width:1250px){.alignfull .wrapper .wp-block-group .wp-block-group__inner-container,.alignfull .wrapper--1200,.wrapper .wp-block-group .alignfull .wp-block-group__inner-container{padding-left:25px;padding-right:25px}.wp-block-group__inner-container .wrapper .wp-block-group .wp-block-group__inner-container,.wp-block-group__inner-container .wrapper--1200,.wrapper .wp-block-group .wp-block-group__inner-container .wp-block-group__inner-container{padding-left:0;padding-right:0}.wp-block-group .wp-block-group__inner-container,.wrapper--800{width:100%;padding-right:50px;padding-left:50px}}@media (max-width:700px){.wp-block-group .wp-block-group__inner-container,.wrapper--800{width:100%;padding-right:20px;padding-left:20px}}.entry-content h1,.h1-like{line-height:1.2;font-family:Gotham,sans-serif;font-size:3.75rem}@media (max-width:1250px){.entry-content h1,.h1-like{font-size:2.5rem}}.entry-content h2,.h2-like{line-height:1.2;color:#0c0f1f;font-family:Gotham,sans-serif;font-size:2.875rem}@media (max-width:1250px){.entry-content h2,.h2-like{font-size:2rem}}.h3-like{line-height:1.2;color:#0c0f1f;font-family:Gotham,sans-serif;font-size:1.375rem}.has-white-color.has-white-color{color:#fff}.has-blue-background-color{background-color:#172153;color:#fff}.has-blue-background-color h1,.has-blue-background-color h2{color:#fff}.has-gray-background-color{background-color:#f5f7fa}.header{position:relative;padding:175px 0 134px;background-color:#172153;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='1436' height='12' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M5.5 9.9a4.4 4.4 0 110-8.8 4.4 4.4 0 010 8.8z' fill='%2352C0FF'/%3E%3Cpath d='M80.5 1l4.9 8.3h-9.8L80.5 1z' fill='%23F56F46'/%3E%3Crect x='155.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 155.5 .5)' fill='%23FFD147'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M230.5 9.9a4.4 4.4 0 110-8.8 4.4 4.4 0 010 8.8z' fill='%23fff'/%3E%3Cpath d='M305.5 1l4.9 8.3h-9.8l4.9-8.4z' fill='%23D0D3D8'/%3E%3Crect x='380.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 380.5 .5)' fill='%23D0D3D8'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M455.5 9.9a4.4 4.4 0 110-8.8 4.4 4.4 0 010 8.8z' fill='%23FFD0D8'/%3E%3Cpath d='M530.5 1l4.9 8.3h-9.8l4.9-8.4z' fill='%2399D1DE'/%3E%3Crect x='605.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 605.5 .5)' fill='%23005BC6'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M680.5 9.9a4.4 4.4 0 110-8.8 4.4 4.4 0 010 8.8z' fill='%23F56F46'/%3E%3Cg clip-path='url(%23clip0)'%3E%3Cpath d='M755.5 1l4.9 8.3h-9.8l4.9-8.4z' fill='%2352C0FF'/%3E%3C/g%3E%3Crect x='830.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 830.5 .5)' fill='%23D0D3D8'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M905.5 9.9a4.4 4.4 0 110-8.8 4.4 4.4 0 010 8.8z' fill='%23FFD147'/%3E%3Cpath d='M980.5 1l4.9 8.3h-9.8l4.9-8.4z' fill='%23fff'/%3E%3Crect x='1055.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 1055.5 .5)' fill='%2399D1DE'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M1130.5 9.9a4.4 4.4 0 010-8.8c2.4 0 4.3 2 4.3 4.4a4.3 4.3 0 01-4.3 4.4z' fill='%23D0D3D8'/%3E%3Cpath d='M1205.5 1l4.9 8.3h-9.8l4.9-8.4z' fill='%23FFD0D8'/%3E%3Crect x='1280.5' y='.5' width='7.1' height='7.1' rx='.9' transform='rotate(45 1280.5 .5)' fill='%23F56F46'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M1355.5 10.9a4.4 4.4 0 010-8.8c2.4 0 4.3 2 4.3 4.4a4.3 4.3 0 01-4.3 4.4z' fill='%2352C0FF'/%3E%3Cpath d='M1430.5 2l4.9 8.3h-9.8l4.9-8.4z' fill='%23FFD147'/%3E%3Cdefs%3E%3CclipPath id='clip0'%3E%3Cpath fill='%23fff' transform='translate(750)' d='M0 0h11v11H0z'/%3E%3C/clipPath%3E%3C/defs%3E%3C/svg%3E");background-position:center bottom 37px;background-repeat:repeat-x}.main-navigation{margin-top:25px;position:absolute;z-index:1100;width:100%;top:0}@media (max-width:1250px){.h3-like{font-size:1.25rem}.header{padding:90px 0 80px;background-position-y:bottom 27px}.main-navigation{margin-top:0;left:0;height:80px}.main-navigation__wrapper.wrapper:not(--1100):not(--1000):not(--800){padding:20px 25px;background:#172153;height:80px}}.main-navigation__wrapper{position:relative;padding:15px 0;display:flex;justify-content:space-between;align-items:center}.main-navigation__menu{flex-grow:2;flex-shrink:0;display:flex;justify-content:space-around;align-items:stretch}.main-navigation__menu .is-hover-animated-link:before{background-color:#fff}@media (max-width:1250px){.main-navigation__menu{padding:25px 50px;background-color:#172153;height:calc(100vh - 68px);transition:all .4s ease;transform:translateY(calc(-100% - 68px));flex-direction:column;align-items:normal;justify-content:normal;position:absolute;left:0;right:0;z-index:-1;overflow:auto}.main-navigation__menu.is-active{top:80px}.main-navigation__menu .is-hover-animated-link:hover:before{transform:scale(0)}.main-navigation__menu .wp-block-button__link{order:1;justify-content:center;display:block}}.main-navigation__logo{margin-top:5px;margin-right:70px}@media (max-width:700px){.main-navigation__menu{padding:25px}.main-navigation__logo{position:relative;width:148px;height:40px}}.main-navigation__items{flex:1;display:flex;align-items:stretch}@media (max-width:1250px){.main-navigation__items{order:2;margin-top:40px;display:list-item;flex:initial}}.main-navigation__item{list-style:none;position:relative;margin-right:35px;display:flex;align-items:center}.main-navigation__item:after{content:"";position:absolute;display:block;width:100%;height:20px;bottom:-20px}.main-navigation__item:active .main-navigation__dropdown,.main-navigation__item:focus .main-navigation__dropdown,.main-navigation__item:hover .main-navigation__dropdown{display:flex}@media (max-width:1250px){.main-navigation__item{margin-right:0;position:static;display:block}.main-navigation__item:not(:last-child){margin-bottom:40px}.main-navigation__item:after{display:none}.main-navigation__item:active .main-navigation__dropdown,.main-navigation__item:focus .main-navigation__dropdown,.main-navigation__item:hover .main-navigation__dropdown{display:none}}.main-navigation__item-selector{cursor:pointer;display:flex;align-items:center;transition:all .25s ease;text-decoration:none;color:#fff;line-height:19px;font-size:1.125rem}@media (max-width:1250px){.main-navigation__item-selector{display:inline;font-size:1.25rem;line-height:1.2;font-family:Gotham,sans-serif}}.main-navigation__item-selector:hover{opacity:.6!important}.main-navigation__dropdown{padding:20px 0;position:absolute;top:0;left:50%;width:270px;display:none;flex-direction:column;border-radius:16px;background-color:#fff;transition:all .5s ease;transform:translateX(-50%) translateY(55px);box-shadow:0 24px 40px rgba(0,0,0,.15)}@media (max-width:1250px){.main-navigation__dropdown{margin-top:24px;padding:0;position:static;width:auto;border-radius:0;background:0 0;transition:unset;transform:none;box-shadow:none}}.main-navigation__dropdown__item{list-style:none;width:100%;transition:all .25s ease}.main-navigation__dropdown__item:active,.main-navigation__dropdown__item:focus,.main-navigation__dropdown__item:hover{background-color:#f5f7fa}.main-navigation__dropdown__link{padding:7px 25px;display:block;text-decoration:none;color:#172153;line-height:1.5;font-size:1.125rem}.main-navigation__dropdown__link[target=_blank]:after{content:"";display:inline-block;width:16px;height:16px;margin-left:16px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none'%3E%3Cpath d='M14.56 5.37V1.44h-3.94m3.94 0l-8.75 8.75m1.75-6.13H2.31a.88.88 0 00-.87.88v8.75c0 .48.39.87.87.87h8.75a.88.88 0 00.88-.88V8.45' stroke='%230C0F1F' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}.main-navigation__lang{position:relative;display:flex;align-items:center}.main-navigation__lang:after{content:"";position:absolute;display:block;width:100%;height:20px;bottom:-20px}.main-navigation__lang:active .main-navigation__lang-dropdown,.main-navigation__lang:focus .main-navigation__lang-dropdown,.main-navigation__lang:hover .main-navigation__lang-dropdown{display:flex}.main-navigation__lang--desktop{margin-left:20px;margin-right:40px}.main-navigation__lang--mobile{display:none}@media (max-width:1250px){.main-navigation__dropdown__item{width:auto;transition:unset}.main-navigation__dropdown__item:not(:last-child){margin-bottom:10px}.main-navigation__dropdown__item:active,.main-navigation__dropdown__item:focus,.main-navigation__dropdown__item:hover{background:0 0}.main-navigation__dropdown__link{transition:all .25s ease;font-family:Gotham,sans-serif;line-height:1.2;font-size:1.25rem;color:#fff}.main-navigation__lang:after{display:none}.main-navigation__lang--desktop{display:none}.main-navigation__lang--mobile{display:flex;margin-left:auto;margin-right:20px}.main-navigation__lang--mobile .main-navigation__lang-dropdown{position:absolute;top:100%;right:0;left:auto;width:180px;margin-top:12px;padding:12px 0;border-radius:16px;background-color:#fff;box-shadow:0 24px 40px rgba(0,0,0,.15);transform:none;z-index:3}.main-navigation__lang--mobile .main-navigation__lang-dropdown .main-navigation__dropdown__link{padding:7px 25px;color:#172153;font-size:1.125rem}}.main-navigation__lang-selector{cursor:pointer;display:flex;align-items:center;gap:6px;color:#fff;font-size:16px;font-weight:700;line-height:19px;transition:all .25s ease}.main-navigation__lang-selector:after{content:"";display:inline-block;width:8px;height:5px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg' fill='%23fff'%3E%3Cpath d='M4.02 4.499l-3.464-4h6.928l-3.464 4z'/%3E%3C/svg%3E")}.main-navigation__lang-selector:hover{opacity:.6!important}.main-navigation__lang-icon{flex-shrink:0;display:block;width:22px;height:22px}.main-navigation__lang-dropdown{width:200px;left:auto;right:0;transform:translateX(0) translateY(55px)}.main-navigation__signin-link{position:relative;margin-right:30px;color:#fff;text-decoration:none;font-size:16px;transition:all .25s ease;font-weight:700;display:flex;align-items:center}.main-navigation__signin-link:before{bottom:7px}.burger{display:none}.main-navigation__item.has-children>a.main-navigation__item-selector:after,button.main-navigation__item-selector:after{content:"";display:inline-block;width:8px;height:5px;margin-left:7px;transform:translateY(2px);background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg' fill='%23fff'%3E%3Cpath d='M4.02 4.499l-3.464-4h6.928l-3.464 4z'/%3E%3C/svg%3E")}footer{content-visibility:auto;position:relative;clear:both;padding-top:80px}@media (max-width:1250px){.main-navigation__lang-dropdown{width:auto;right:auto;transform:none}.main-navigation__signin-link{order:3;margin-top:40px;padding-bottom:50px;font-weight:400;font-family:Gotham,sans-serif;font-size:1.25rem;line-height:1.2}.burger{cursor:pointer;z-index:2;width:19px;height:15px;display:flex;flex-direction:column;justify-content:space-between}.burger__line{width:100%;height:1px;transition:all .25s ease;background-color:#fff}.main-navigation__item.has-children>a.main-navigation__item-selector:after,button.main-navigation__item-selector:after{vertical-align:20%}.main-navigation.active .burger__line--first-child{transform:translate(-2px,4px) rotate(-45deg)}.main-navigation.active .burger__line--second-child{opacity:0}.main-navigation.active .burger__line--last-child{transform:translate(-2px,-10px) rotate(45deg)}.main-navigation.active .main-navigation__menu{transform:translateY(0)}footer{padding-top:40px}}.footer__sup{display:flex;justify-content:space-between;align-items:flex-end}@media (max-width:700px){.footer__sup{flex-wrap:wrap}.footer_logo{width:196px;height:53px}}.menu-social-networks{flex:0 1 215px;display:flex;justify-content:space-between}@media (max-width:700px){.menu-social-networks{flex:0 1 170px;margin-top:20px}}.menu-social-networks__item{align-self:center}.menu-social-networks__item img{vertical-align:middle}.menu-social-networks__link:active,.menu-social-networks__link:focus,.menu-social-networks__link:hover{opacity:.7}.menu-social-networks__logo--x{padding:7px;background:#0f1419}.menu-social-networks__logo--linkedin{padding:2px}.footer__inner-container{padding-right:25px;margin-top:50px;display:flex;justify-content:space-between}@media (max-width:1250px){.footer__inner-container{flex-wrap:wrap;padding-right:0;margin-top:45px}}@media (max-width:700px){.footer__inner-container{margin-top:30px}}.menu-footer,.newsletter-form{display:flex;flex-direction:column}.newsletter-form{margin-right:80px}@media (max-width:1250px){.newsletter-form{flex:0 0 100%;margin-bottom:38px}}.newsletter-form__legend{margin-top:8px;color:#454f59;font-size:1.125rem;line-height:1.5}@media (max-width:700px){.newsletter-form__legend{margin:0}}@media (max-width:1250px){.menu-footer{flex:0 1 135px;margin:0 20px 38px 0}}.menu-footer .h3-like{margin-bottom:15px}.menu-footer__item{margin-bottom:10px}.menu-footer__link{transition:all .25s ease;line-height:1.5}.menu-footer__link:before{bottom:-4px}.menu-footer__link[target=_blank]{padding-right:1.5rem;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='17' height='15' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16.7 1.2c0-.3-.2-.4-.4-.4H12c-.3 0-.4.1-.4.4V2c0 .2.1.4.4.4l2-.1L6.4 10c-.1.1-.1.3 0 .4l.6.7h.5L15 3.5v2.1c0 .2.2.4.4.4h1c.1 0 .3-.2.3-.4V1.2zm-4 6l-.7.6v5.5l-.3.1H2.4l-.1-.1V4l.1-.2h8.3c.3 0 .4-.3.2-.5l-.6-.7-.3-.1H2.3c-.8 0-1.3.6-1.3 1.3v9.6c0 .8.5 1.3 1.3 1.3h9.6c.7 0 1.3-.5 1.3-1.3v-6c0-.3-.3-.4-.6-.3z' fill='%23292631'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position-x:right}.footer__sub{position:relative;display:flex;justify-content:space-between;margin-top:105px;margin-bottom:45px;border-top:1px solid #dadada;padding:20px 0;align-items:center}.lang-switcher-mobile-controller{display:none;cursor:pointer}.lang-switcher-mobile-controller:after{content:"";display:inline-block;width:8px;height:5px;margin-left:7px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.02 4.499l-3.464-4h6.928l-3.464 4z'/%3E%3C/svg%3E")}@media (max-width:1250px){.footer__sub{margin-top:15px;border-top:none;border-bottom:1px solid #dadada;padding:0 0 15px}.lang-switcher-mobile-controller{display:flex;align-items:center}.lang-switcher{display:none}.lang-switcher.active{display:flex;min-width:125px;position:absolute;flex-direction:column;background-color:#fff;padding:20px;border-radius:16px;bottom:50px;box-shadow:0 24px 40px rgba(0,0,0,.15)}}.lang-switcher__item{display:inline-block;margin-right:16px}.lang-switcher__link{line-height:1.5}.lang-switcher__link.active,.lang-switcher__link:active,.lang-switcher__link:focus,.lang-switcher__link:hover{color:#0c0f1f}.secure-payment-with{display:flex;align-items:center;position:absolute;top:23px;left:50%;transform:translateX(-50%)}.secure-payment-with__label{font-size:.6875rem;line-height:1.3}@media (max-width:1250px){.lang-switcher__item{margin-bottom:10px;margin-right:0}.lang-switcher__item--last-child{margin-bottom:0}.secure-payment-with{top:auto;bottom:-30px}.secure-payment-with__label{white-space:nowrap}}.secure-payment-with__stripe{margin-left:20px;margin-right:20px}@media (max-width:700px){.secure-payment-with{left:45%}.secure-payment-with__stripe{width:37px;height:15px;margin-left:10px;margin-right:10px}.secure-payment-with__paypal{width:54px;height:18px}}.menu-terms__item{display:inline-block}.menu-terms__item--first-child{margin-right:16px}.menu-terms__link:active,.menu-terms__link:focus,.menu-terms__link:hover{color:#0c0f1f}.brand-switcher{background-color:#242e5b}@media (max-width:1250px){.brand-switcher{display:none}}.brand-switcher__items{display:flex;flex-direction:row;align-items:stretch;margin:0;padding:0;list-style:none}.brand-switcher__item{margin:0;padding:0}.brand-switcher__item:before{display:none}.brand-switcher__item--current{background-color:#182352;border-radius:4px 4px 0 0}.brand-switcher__link{display:flex;flex-direction:row;align-items:center;gap:.5rem;padding:0 .75rem;height:2.125rem;font-family:Roboto,sans-serif;font-size:.8125rem;line-height:1;color:#fff;text-decoration:none;opacity:.7;transition:opacity .15s ease-out,background-color .15s ease-out}.brand-switcher__item:not(.brand-switcher__item--current) .brand-switcher__link:active,.brand-switcher__item:not(.brand-switcher__item--current) .brand-switcher__link:focus,.brand-switcher__item:not(.brand-switcher__item--current) .brand-switcher__link:hover{background-color:#3d4878;opacity:1;border-radius:4px 4px 0 0}.brand-switcher__item--current .brand-switcher__link{opacity:1}.brand-switcher__logo{display:block}.brand-switcher__logo--brand{max-width:9rem;width:auto}.entry-content{position:relative;font-size:1.125rem}.entry-content>p:first-child{margin-top:3.75rem}.entry-content p{line-height:1.5;margin-bottom:1.67em;margin-top:.5rem}.entry-content a{font-weight:700;text-decoration:underline}.entry-content a:active,.entry-content a:focus,.entry-content a:hover{color:#f56f46}.entry-content a[target=_blank]:after{content:"";display:inline-block;width:16px;height:16px;margin:0 0 0 .33em;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none'%3E%3Cpath d='M14.6 5.4v-4h-4m4 0l-8.8 8.8M7.6 4H2.3a.9.9 0 00-.9.8v8.8c0 .5.4.9 1 .9H11a.9.9 0 00.8-1v-5' stroke='%230C0F1F' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");vertical-align:-.1rem}.entry-content h2{margin-top:2.5rem}.entry-content ul:not(.gform_fields):not(.gfield_radio):not(.select-dropdown):not(.gform-ul-reset):not(.gfield_checkbox):not(.blocks-gallery-grid):not(.woocommerce-message):not(.wc_payment_methods):not(.has-not-default-style){margin-top:40px;margin-bottom:40px}.entry-content ul:not(.gform_fields):not(.gfield_radio):not(.select-dropdown):not(.gform-ul-reset):not(.gfield_checkbox):not(.blocks-gallery-grid):not(.woocommerce-message):not(.wc_payment_methods):not(.has-not-default-style) li{display:block;line-height:1.5;margin:1.6em 0;position:relative;padding-left:37px}.entry-content ul:not(.gform_fields):not(.gfield_radio):not(.select-dropdown):not(.gform-ul-reset):not(.gfield_checkbox):not(.blocks-gallery-grid):not(.woocommerce-message):not(.wc_payment_methods):not(.has-not-default-style) li:before{display:block;content:"";width:10px;height:10px;border-radius:5px;background:#f56f46;margin-right:27px;margin-top:calc(1em - 8px);left:0;position:absolute}.entry-content ul:not(.gform_fields):not(.gfield_radio):not(.select-dropdown):not(.gform-ul-reset):not(.gfield_checkbox):not(.blocks-gallery-grid):not(.woocommerce-message):not(.wc_payment_methods):not(.has-not-default-style) ul{padding-left:15px}.entry-content ol{margin-bottom:40px;counter-reset:item-counter attr(start,number,0)}.entry-content ol li{display:block;line-height:1.5;margin:1.6em 0;counter-increment:item-counter;position:relative;padding-left:30px}.entry-content ol li:before{content:counter(item-counter) " -";margin-right:10px;color:#f56f46;font-weight:700;left:0;position:absolute}.entry-content ol ol{padding-left:15px}.entry-content .block-chrono-text{line-height:1.2;color:#0c0f1f;font-family:Gotham,sans-serif;font-size:1.375rem;padding:.4375rem .625rem;background-color:#fff;border-radius:4px;color:#f56f46;margin:0 1.5625rem;display:inline-block}.entry-content .block-chrono-text:before{content:"";display:inline-block;width:17px;height:16px;margin-right:12px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='16' fill='none'%3E%3Cpath d='M13.45 3.05a7 7 0 11-9.9 9.9 7 7 0 019.9-9.9m.001-.004l1.312-1.312m-.368-.367l.736.737M8.5 8l3.063-3.063' stroke='%23F56F46' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");vertical-align:-.1rem}.wp-block-group{border-radius:24px}.wp-block-group .wp-block-group__inner-container{padding-top:80px;padding-bottom:80px}.wp-block-group.alignfull{border-radius:0}.entry-content>.wp-block-group.alignfull:first-child{margin-top:0}.wp-block-group.alignfull.has-gray-background-color{overflow:hidden}.wp-block-group.alignfull.has-gray-background-color .wp-block-group__inner-container{position:relative;z-index:100}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-left,.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-right{position:absolute;fill:none}@media (max-width:1250px){.entry-content .wp-block-group__inner-container>h2:first-child{margin-top:2rem}.entry-content .block-chrono-text{font-size:1.25rem}.wp-block-group .wp-block-group__inner-container{padding-top:40px;padding-bottom:40px}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-left,.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-right{display:none}}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-left{width:764px;height:207px;top:0;right:800px;stroke-dasharray:1000;stroke-dashoffset:650;transform:rotateY(180deg);transition:all 2s ease}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-left.reach{stroke-dashoffset:0}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-right{width:1100px;height:419px;left:800px;bottom:-120px;stroke-dasharray:1000;stroke-dashoffset:2000;transition:all 1.5s ease}@media screen and (min-width:1900px){.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-left{right:50vw}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-right{left:50vw}}.wp-block-group.alignfull.has-gray-background-color .gray-background-pattern-right.reach{stroke-dashoffset:1000}.wp-block-button__link{color:#fff;background-color:#32373c;border:none;border-radius:1.55em;box-shadow:none;cursor:pointer;display:inline-block;font-size:1.125em;padding:.667em 1.333em;text-align:center;text-decoration:none;overflow-wrap:break-word}.wp-block-button.loading .wp-block-button__link:after,.wp-block-button.loading .wp-block-button__link[target=_blank]:after{content:"";display:inline-block;width:1em;height:1em;margin-left:.5em;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='40' height='40' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='20' cy='20' r='18' stroke='%23fff' stroke-width='4' stroke-opacity='.2'/%3E%3Cpath d='M38 20a18 18 0 01-18 18' stroke='%23fff' stroke-width='4'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 20 20' to='360 20 20' dur='1s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");background-size:contain;background-repeat:no-repeat}.wp-block-button .wp-block-button__link,.wp-block-button .wp-block-button__link[target=_blank]{font-size:1.125rem;font-weight:700;text-decoration:none;background-color:#f56f46;border-radius:80px;padding:21px 32px;white-space:nowrap;transition:all .3s ease-out .07s}.wp-block-button .wp-block-button__link:after,.wp-block-button .wp-block-button__link[target=_blank]:after{content:"";display:inline-block;margin:0 0 0 .89em;height:16px;width:16px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23fff'%3E%3Cpath d='M11.2 2.8a.8.8 0 00-1.3 1L12.6 7h-11a.8.8 0 100 1.7h11L10 12a.8.8 0 101.3 1L15 8.6a.8.8 0 000-1.2l-3.8-4.5z'/%3E%3C/svg%3E");vertical-align:-10%}.wp-block-button .wp-block-button__link:active,.wp-block-button .wp-block-button__link:focus,.wp-block-button .wp-block-button__link:hover,.wp-block-button .wp-block-button__link[target=_blank]:active,.wp-block-button .wp-block-button__link[target=_blank]:focus,.wp-block-button .wp-block-button__link[target=_blank]:hover{transform:scale(.95);color:#fff;transition:all .3s ease-out .07s}.wp-block-button .wp-block-button__link.has-blue-background-color,.wp-block-button .wp-block-button__link[target=_blank].has-blue-background-color{background-color:#172153}.wp-block-button.is-style-oval-small .wp-block-button__link{padding-top:15.5px;padding-bottom:15.5px;font-size:1rem}.wp-block-button.is-style-oval-small .wp-block-button__link:after{margin-left:.5em;vertical-align:-14%}.rocket-modal{z-index:2000;position:fixed;top:0;right:0;bottom:0;left:0;display:flex;justify-content:center;align-items:center;background:rgba(11,11,11,.9);opacity:0;transition:opacity .5s;pointer-events:none}.rocket-modal.modal-visible{opacity:1;pointer-events:auto}.modal-block{position:relative;display:flex;flex-direction:column;padding:3rem;width:800px;max-height:calc(100vh - 2rem);background:#fff;border-radius:24px;overflow:hidden;transform:translateY(-50px);opacity:0;transition:all .475s}@media (max-width:700px){.modal-block{padding:3rem 2.25rem}}.modal-block.loading{background:url(https://wp-rocket.me/wp-content/themes/V4/assets/images/loader.gif) 50% no-repeat #fff;background-size:48px auto}.modal-content-visible .modal-block{opacity:1;transform:translateY(0)}.modal-title{padding-bottom:1.5625rem}.modal-title p{font-size:2.25rem}.modal-content{flex:1;overflow:auto}.modal-inner{height:100%;overflow:auto}.modal-inner.entry-content .alignfull{margin-left:inherit;margin-right:inherit}.modal-inner.entry-content h2{font-size:1.875rem}.modal-inner.entry-content p:first-child{margin-top:0!important}.modal-inner.entry-content p{line-height:1.7!important}.modal-inner.entry-content p,.modal-inner.entry-content ul{margin-top:1.2em!important;margin-bottom:0!important}.modal-inner.entry-content li{margin:1.2em 0 0!important;line-height:1.5!important}.modal-inner.entry-content li:before{top:-5px}.modal-inner.entry-content .currency-right{display:flex;justify-content:center;align-items:center}.modal-inner.entry-content .currency-right .price-currency{order:2}.modal-inner.entry-content .currency-left{display:flex;justify-content:center;align-items:center}.modal-footer{display:flex;justify-content:space-around;align-items:start;padding-top:1.5625rem}.modal-footer:empty{display:none}.modal-footer button.wp-block-button,.modal-footer button.wp-block-button .wp-block-button__link{width:100%}.modal-footer .wp-block-button:first-child{margin-left:0}.modal-footer .wp-block-button:last-child{margin-right:0}.modal-footer .wp-block-button p{margin-top:1rem;text-align:center;font-style:italic}.modal-close{position:absolute;top:32px;right:32px;cursor:pointer}.modal-close:hover:before{opacity:.5;transition:all .3s ease-out .07s}.modal-close:before{content:"";display:block;width:32px;height:32px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34' fill='none'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M25.5 9.5a.7.7 0 10-1-1L17 15.9 9.6 8.5a.7.7 0 10-1 1l7.3 7.5-7.4 7.4a.8.8 0 001 1L17 18l7.4 7.5a.8.8 0 001-1.1L18.2 17l7.4-7.5z' fill='%23000'/%3E%3C/svg%3E");transition:all .3s ease-out .07s}.simple-form{position:relative;margin-top:1.125rem;width:420px;height:50px;border-radius:58px;border:1px solid #dadada}@media (max-width:700px){.modal-footer{display:block}.modal-footer .wp-block-button+.wp-block-button{margin-top:1.25rem}.simple-form{width:100%;display:flex}}.simple-form__input{border:none;width:calc(100% - 175px);height:100%;background:0 0;padding-left:25px;font-weight:700;font-size:1rem;box-shadow:none;outline:0;opacity:.7}@media (max-width:700px){.simple-form__input{flex:2 2 auto;max-width:calc(100% - 150px);width:auto;padding-left:10px}}.simple-form__input:focus{opacity:1}.simple-form__input::-webkit-input-placeholder{color:#454f59;opacity:.7}.simple-form__input:-moz-placeholder,.simple-form__input::-moz-placeholder{color:#454f59;opacity:.7}.simple-form__input:-ms-input-placeholder{color:#454f59;opacity:.7}.simple-form__button{position:absolute;top:-1px;right:-3px;border:none;font-weight:700;width:170px}.simple-form__button:active,.simple-form__button:focus,.simple-form__button:hover{transform:translateX(8px)}.simple-form__button .wp-block-button__link{padding-left:0;padding-right:0;width:100%}.simple-form__button .wp-block-button__link:active,.simple-form__button .wp-block-button__link:focus,.simple-form__button .wp-block-button__link:hover{transform:none}@media (max-width:700px){.simple-form__button{width:150px;display:flex}}.breadcrumb{max-width:1200px;font-size:.875rem;line-height:1.14;margin:40px auto}.breadcrumb__item{display:inline;font-weight:700}.breadcrumb__item:after{content:">";margin-left:10px}.breadcrumb__item:last-child:after{display:none}.breadcrumb__item span{display:inline;text-decoration:none;color:#f56f46}a.breadcrumb__link{text-decoration:underline}a.breadcrumb__link:active,a.breadcrumb__link:focus,a.breadcrumb__link:hover{color:#f56f46;text-decoration:none}.pagination{text-align:center;position:relative;font-weight:600;max-width:350px;margin-left:auto;margin-right:auto}.pagination ul li{display:inline-block;margin:0;vertical-align:top}.pagination ul li:before{display:none}.pagination ul li .page-numbers{min-width:18px;display:inline-block;line-height:1.5;padding:0 10px 6px;border-bottom:1px solid transparent;font-size:1.125rem;color:#0c0f1f}.pagination ul li .current{border-bottom-color:#f56f46;color:#f56f46}.pagination ul li .next{position:absolute;top:50%;transform:translateY(-50%);right:0;white-space:nowrap;width:auto;text-transform:uppercase}.pagination ul li .next:active,.pagination ul li .next:focus,.pagination ul li .next:hover{opacity:.7}.pagination ul li a:active,.pagination ul li a:focus,.pagination ul li a:hover{color:#f56f46}body.blog .header{padding:175px 0 260px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg width='284' height='149' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1397 323H880.5c-22.091 0-40-17.909-40-40V84c0-22.091-17.909-40-40-40h-710c-22.091 0-40 17.909-40 40v607' stroke='%23fff' stroke-width='2'/%3E%3Cpath d='M1396.5 280.5h-494c-11.046 0-20-8.954-20-20v-179c0-44.183-35.817-80-80-80H88c-44.183 0-80 35.817-80 80V694' stroke='%23F56F46' stroke-width='2'/%3E%3Cpath d='M1399 365.5H878c-44.183 0-80-35.817-80-80v-179c0-11.046-8.954-20-20-20H113c-11.046 0-20 8.954-20 20v585' stroke='%23FFD147' stroke-width='2'/%3E%3C/svg%3E");background-position:100% 100%;background-repeat:no-repeat}.blog-list{display:flex;flex-wrap:wrap}.blog-item{flex:0 1 388px;margin-right:16px;margin-bottom:80px}.blog-item:nth-of-type(10),.blog-item:nth-of-type(13),.blog-item:nth-of-type(3),.blog-item:nth-of-type(6){margin-right:0}@media (max-width:1250px){.breadcrumb{width:100%;padding-right:50px;padding-left:50px}body.blog .header{padding:90px 0 80px;background-image:none}.blog-item{flex:0 1 calc(50% - 8px);margin-right:16px}.blog-item:nth-of-type(10),.blog-item:nth-of-type(13),.blog-item:nth-of-type(3),.blog-item:nth-of-type(6){margin-right:16px}.blog-item:nth-of-type(11),.blog-item:nth-of-type(13),.blog-item:nth-of-type(2),.blog-item:nth-of-type(4),.blog-item:nth-of-type(6),.blog-item:nth-of-type(9){margin-right:0}}@media (max-width:700px){.breadcrumb{width:100%;padding-right:20px;padding-left:20px}.pagination ul li .next{display:none}.blog-list{display:block}.blog-item{margin-right:0;margin-bottom:40px}.blog-item:nth-of-type(10),.blog-item:nth-of-type(13),.blog-item:nth-of-type(3),.blog-item:nth-of-type(6){margin-right:0}}.blog-item a,.blog-item>span{display:block;height:100%;border:1px solid #d0d3d8;border-radius:24px;background:#fff;position:relative;padding-bottom:80px}.blog-item a:active,.blog-item a:focus,.blog-item a:hover,.blog-item>span:active,.blog-item>span:focus,.blog-item>span:hover{box-shadow:0 4.96386px 49.6386px rgba(0,0,0,.15)}.blog-item .wp-post-image{border-radius:24px 24px 0 0;display:block;width:100%;object-fit:cover}.blog-item p{padding:24px 40px 0;color:rgba(69,79,89,.8);line-height:1.5}.blog-item__title{display:block;padding:24px 40px 0;line-height:1.2;color:#0c0f1f;font-family:Gotham,sans-serif;font-size:1.375rem;min-height:78px;word-break:break-word}@media (max-width:1250px){.blog-item__title{font-size:1.25rem}}.blog-item__date{display:block;padding:0 40px;font-size:.6875rem;line-height:1.3;position:absolute;bottom:40px}.blog-item__categories{padding:24px 40px 0}.blog-item__categories span{background-color:#172153;font-size:.6875rem;line-height:1.3;display:inline-block;padding:3px 11px;border-radius:11px}.block-cta{content-visibility:auto;padding:90px 0;background:#f56f46;color:#fff}.block-cta.reach .path,.no-js .block-cta .path{opacity:1}.block-cta .block-cta__wrapper{position:relative;display:flex;justify-content:center;width:1200px;margin-left:auto;margin-right:auto}.block-cta .block-cta__wrapper .wp-block-button{margin-top:32px}.block-cta p:first-child{line-height:1.2;color:#0c0f1f;font-family:Gotham,sans-serif;font-size:2.875rem;color:#fff;margin-top:0;margin-bottom:32px}.block-cta__pattern-left,.block-cta__pattern-right{position:absolute;top:50%;width:275px;height:275px}.block-cta__pattern-left .path,.block-cta__pattern-right .path{opacity:0;transition:opacity .25s ease}.block-cta__pattern-left .path.path-0,.block-cta__pattern-right .path.path-0{transition-delay:.5s}.block-cta__pattern-left .path.path-1,.block-cta__pattern-right .path.path-1{transition-delay:.58s}.block-cta__pattern-left .path.path-2,.block-cta__pattern-right .path.path-2{transition-delay:.66s}.block-cta__pattern-left .path.path-3,.block-cta__pattern-right .path.path-3{transition-delay:.74s}.block-cta__pattern-left .path.path-4,.block-cta__pattern-right .path.path-4{transition-delay:.82s}.block-cta__pattern-left .path.path-5,.block-cta__pattern-right .path.path-5{transition-delay:.9s}.block-cta__pattern-left .path.path-6,.block-cta__pattern-right .path.path-6{transition-delay:.98s}.block-cta__pattern-left .path.path-7,.block-cta__pattern-right .path.path-7{transition-delay:1.06s}.block-cta__pattern-left .path.path-8,.block-cta__pattern-right .path.path-8{transition-delay:1.14s}.block-cta__pattern-left .path.path-9,.block-cta__pattern-right .path.path-9{transition-delay:1.22s}.block-cta__pattern-left .path.path-10,.block-cta__pattern-right .path.path-10{transition-delay:1.3s}.block-cta__pattern-left{left:0;transform:translateY(-50%)}.block-cta__pattern-right{right:0;transform:translateY(-50%) rotate(180deg)}.block-cta__content{width:590px;text-align:center}@media (max-width:1250px) and (orientation:portrait){.block-cta__pattern-left,.block-cta__pattern-right{display:none}}@media (max-width:1250px){.block-cta p:first-child{font-size:2rem}.block-cta .block-cta__wrapper{width:auto}.block-cta__content{display:flex;flex-direction:column;align-items:center;width:100%}}@media (max-width:1250px) and (orientation:landscape){.block-cta__pattern-left{top:35%}.block-cta__pattern-right{top:65%}}@media (max-width:700px){.block-cta .block-cta__wrapper .wp-block-button{margin-top:23px}.block-cta p:first-child{margin-bottom:15px;margin-left:25px;margin-right:25px}.block-cta p:first-child br{display:none}.block-cta{padding:70px 0}.block-cta__pattern-left,.block-cta__pattern-right{display:none}.block-cta__content{width:100%}.block-cta-optin .gray-background-pattern-left{display:none}}.block-cta-optin{border-radius:16px;position:relative;overflow-x:hidden;padding:0 0 60px}.block-cta-optin .gray-background-pattern-left{left:-430px;right:auto;top:-80px}.block-cta-optin .gray-background-pattern-left.reach{stroke-dashoffset:0}.block-cta-optin__title{display:block;margin-top:66px;margin-bottom:8px}.block-cta-optin__description{margin-left:auto;margin-right:auto}.block-cta-optin__form{width:550px;margin:0 auto}.block-cta-optin__container-input{position:relative;margin-top:18px;height:50px;border-radius:58px;border:1px solid #dadada;background:#fff}.block-cta-optin__container-input .input_email{border:none;width:300px;height:100%;background:0 0;padding-left:25px;font-weight:700;font-size:1rem;box-shadow:none;outline:0;opacity:.7}.block-cta-optin__container-input .input_email:focus{opacity:1}.block-cta-optin__container-input .input_email::-webkit-input-placeholder{color:#454f59;opacity:.7}.block-cta-optin__container-input .input_email:-moz-placeholder,.block-cta-optin__container-input .input_email::-moz-placeholder{color:#454f59;opacity:.7}.block-cta-optin__container-input .input_email:-ms-input-placeholder{color:#454f59;opacity:.7}.block-cta-optin__container-input .wp-block-button{position:absolute;top:-1px;right:-3px}@media (max-width:700px){.block-cta-optin__form{width:auto}.block-cta-optin__container-input{width:100%;display:flex}.block-cta-optin__container-input .input_email{flex:2 2 auto;max-width:calc(100% - 150px);width:auto;padding-left:10px}.block-cta-optin__container-input .wp-block-button{width:150px;display:flex}}.block-cta-optin__container-input .wp-block-button .wp-block-button__link:active,.block-cta-optin__container-input .wp-block-button .wp-block-button__link:focus,.block-cta-optin__container-input .wp-block-button .wp-block-button__link:hover{transform:none}.block-cta-optin__container-input .wp-block-button:active,.block-cta-optin__container-input .wp-block-button:focus,.block-cta-optin__container-input .wp-block-button:hover{transform:translateX(8px)}.block-cta-optin__container-checkbox{display:flex;align-items:flex-start;margin:24px 0 0}.block-cta-optin__checkbox-label{font-size:.875rem;color:rgba(69,79,89,.8);line-height:1.3}.gray-background-pattern-left,.gray-background-pattern-right{position:absolute;fill:none}.gray-background-pattern-left{width:764px;height:207px;top:0;right:800px;stroke-dasharray:1000;stroke-dashoffset:650;transform:rotateY(180deg);transition:all 2s ease}.gray-background-pattern-right{width:1100px;height:419px;left:800px;bottom:-120px;stroke-dasharray:1000;stroke-dashoffset:2000;transition:all 1.5s ease}body.blog .header{padding:115px 0 0}body.blog .block-cta{margin-top:120px}.blog-header{overflow:hidden;padding:15px 0 40px}.blog-header .wrapper{min-height:280px;display:flex;align-items:center}.blog-header__content{flex:1 1 66.7%;padding-right:10px}.blog-header__skeleton{flex:1 1 33.3%;position:relative}.blog-header__pattern-lines{position:absolute;top:-58px;left:160px;height:668px;width:1399px}@media (max-width:700px){body.blog .block-cta{margin-top:80px}.blog-header{padding-bottom:30px}.blog-header .wrapper{display:block;min-height:0}.blog-header__content{padding-right:0;padding-bottom:31px}.blog-header__pattern-lines{display:none}}.blog-header__pattern-lines svg{height:100%}.blog-header__pattern-lines svg .line{stroke-dasharray:10000;stroke-dashoffset:17500}.blog-header__pattern-lines.start svg .line{transition:all 3.75s cubic-bezier(.89,.11,.68,.31);stroke-dashoffset:20000}.blog-submenu__container{background:#172153;color:#fff;border-top:1px solid rgba(229,234,240,.3)}.blog-submenu{position:relative}.blog-submenu__ul{display:flex}.blog-submenu__li{flex:1 1 auto}@media (max-width:1250px){body.blog .header{padding-top:80px}.blog-header__pattern-lines{left:0}.blog-submenu{padding-left:0;padding-right:0}.blog-submenu__ul{display:none;position:absolute;color:#454f59;background:#fff;border-radius:0 0 16px 16px;width:320px;left:50%;transform:translateX(-50%);padding:10px 16px;z-index:1;filter:drop-shadow(0 4.96386px 49.6386px rgba(0, 0, 0, .15))}.blog-submenu__li:first-of-type{display:none}}.blog-submenu__link,.blog-submenu__search{padding:0 20px;width:100%;border-bottom:3px solid #172153;height:80px;display:flex;align-items:center;justify-content:center;font-size:1.125rem;line-height:1.5}.blog-submenu__link:active,.blog-submenu__link:focus,.blog-submenu__link:hover,.blog-submenu__search:active,.blog-submenu__search:focus,.blog-submenu__search:hover{color:#f56f46}.blog-submenu__link.current,.blog-submenu__search.current{color:#f56f46;border-bottom-color:#f56f46;background-color:hsla(0,0%,98%,.1)}.blog-submenu__search{cursor:pointer}.blog-submenu__search.mobile-display{display:none}.blog-submenu__lever{display:none}@media (max-width:1250px){.blog-submenu__link,.blog-submenu__search{height:auto;padding:11px 0}.blog-submenu__search.mobile-display{display:block;position:absolute;height:100%;width:auto;left:50px;padding:0 10px}.blog-submenu__link{border-bottom:none}.blog-submenu__link.current-mob{display:none}.blog-submenu__lever{cursor:pointer;display:flex;width:287px;margin-left:auto;margin-right:auto;align-items:center;position:relative;font-size:1.125rem;padding:22px 0;color:#f56f46}.blog-submenu__lever:after{content:"";display:block;border:.3em solid transparent;border-top-color:#fff;position:absolute;right:0;top:50%}}.blog-submenu__lever .blog-submenu__lever-value{flex:1 1 auto;padding-right:38px;padding-left:38px}.blog-submenu__lever.active:after{transform:rotate(180deg);margin-top:-.3em}.form-search{position:absolute;width:691px;filter:drop-shadow(0 4.96386px 49.6386px rgba(0, 0, 0, .15));border-radius:0 0 16px 16px;background:#fff;display:flex;align-items:stretch;transition:all .3s ease-out .07s;opacity:0;height:0}@media (max-width:1250px){.form-search{left:50px;width:600px}}.form-search.active{height:64px;opacity:1}.form-search__input{border:none;background:0 0;font-family:Roboto,sans-serif;font-size:1.125rem;color:#0c0f1f;line-height:1.5;padding-left:24px;flex:1 0 auto;opacity:.7;height:100%}.form-search__input::-webkit-input-placeholder{color:#0c0f1f;opacity:.7}.form-search__input:-moz-placeholder,.form-search__input::-moz-placeholder{color:#0c0f1f;opacity:.7}.form-search__input:-ms-input-placeholder{color:#0c0f1f;opacity:.7}.form-search__input:focus{outline:0;opacity:1}.form-search__submit{color:#0c0f1f;padding-right:24px;padding-left:24px;flex:0 0 68px;cursor:pointer}.form-search__submit:active,.form-search__submit:focus,.form-search__submit:hover{color:#f56f46}.insert-newsletter{flex:1 0 100%;margin-bottom:120px}@media (max-width:700px){.blog-submenu__search.mobile-display{left:25px;z-index:1}.form-search{left:0;width:100%}.insert-newsletter{margin-top:70px;margin-bottom:70px}}.insert-newsletter .block-cta-optin{margin-right:auto;margin-left:auto}.screen-reader-text{clip:rect(1px,1px,1px,1px);word-wrap:normal!important;border:0;clip-path:inset(50%);height:1px;margin:-1px;overflow:hidden;overflow-wrap:normal!important;padding:0;position:absolute!important;width:1px}.screen-reader-text:focus{clip:auto!important;background-color:#fff;border-radius:3px;box-shadow:0 0 2px 2px rgba(0,0,0,.6);clip-path:none;color:#2b2d2f;display:block;font-size:.875rem;font-weight:700;height:auto;left:5px;line-height:normal;padding:15px 23px 14px;text-decoration:none;top:5px;width:auto;z-index:100000}</style><link rel="preload" data-rocket-preload as="image" href="https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png" imagesrcset="https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-776x396-c.png 776w" imagesizes="388px" fetchpriority="high">
+	<meta name="description" content="Discover WP Rocket (cache plugin for WordPress ) blog: tips, snippets, case studies." />
+	<link rel="canonical" href="https://wp-rocket.me/blog/" />
+	<meta property="og:locale" content="en_US" />
+	<meta property="og:type" content="article" />
+	<meta property="og:title" content="WP Rocket Blog: Cache Plugin for WordPress" />
+	<meta property="og:description" content="Discover WP Rocket (cache plugin for WordPress ) blog: tips, snippets, case studies." />
+	<meta property="og:url" content="https://wp-rocket.me/blog/" />
+	<meta property="og:site_name" content="WP Rocket" />
+	<meta property="og:image" content="https://wp-rocket.me/wp-content/uploads/2024/10/1200x800-Featured-Image.png" />
+	<meta property="og:image:width" content="2048" />
+	<meta property="og:image:height" content="1365" />
+	<meta property="og:image:type" content="image/png" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:site" content="@wp_rocket" />
+	<script type="application/ld+json" class="yoast-schema-graph">{"@context":"https://schema.org","@graph":[{"@type":["WebPage","CollectionPage"],"@id":"https://wp-rocket.me/blog/","url":"https://wp-rocket.me/blog/","name":"WP Rocket Blog: Cache Plugin for WordPress","isPartOf":{"@id":"https://wp-rocket.me/#website"},"datePublished":"2017-02-15T18:28:17+00:00","dateModified":"2020-12-23T13:58:52+00:00","description":"Discover WP Rocket (cache plugin for WordPress ) blog: tips, snippets, case studies.","breadcrumb":{"@id":"https://wp-rocket.me/blog/#breadcrumb"},"inLanguage":"en-US"},{"@type":"BreadcrumbList","@id":"https://wp-rocket.me/blog/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://wp-rocket.me"},{"@type":"ListItem","position":2,"name":"Blog"}]},{"@type":"WebSite","@id":"https://wp-rocket.me/#website","url":"https://wp-rocket.me/","name":"WP Rocket","description":"Plugin d&#039;optimisation de sites WordPress","publisher":{"@id":"https://wp-rocket.me/#organization"},"potentialAction":[{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://wp-rocket.me/?s={search_term_string}"},"query-input":{"@type":"PropertyValueSpecification","valueRequired":true,"valueName":"search_term_string"}}],"inLanguage":"en-US"},{"@type":"Organization","@id":"https://wp-rocket.me/#organization","name":"WP Rocket","url":"https://wp-rocket.me/","logo":{"@type":"ImageObject","inLanguage":"en-US","@id":"https://wp-rocket.me/#/schema/logo/image/","url":"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png","contentUrl":"https://wp-rocket.me/wp-content/uploads/1/logo-wp-rocket-paypal-2.png","width":150,"height":41,"caption":"WP Rocket"},"image":{"@id":"https://wp-rocket.me/#/schema/logo/image/"},"sameAs":["https://www.facebook.com/pages/WP-Rocket/631942253526829","https://x.com/wp_rocket","https://www.youtube.com/channel/UC1ozThXHd1IWIZ5wkshgp_Q"]}]}</script>
+	<!-- / Yoast SEO plugin. -->
+
+
+<link rel='dns-prefetch' href='//static.klaviyo.com' />
+<link rel='dns-prefetch' href='//www.dwin1.com' />
+
+<style id='wp-img-auto-sizes-contain-inline-css'></style>
+
+<style id='wp-emoji-styles-inline-css'></style>
+
+
+
+<style id='rocket-lazyload-inline-css'>
+.rll-youtube-player{position:relative;padding-bottom:56.23%;height:0;overflow:hidden;max-width:100%;}.rll-youtube-player:focus-within{outline: 2px solid currentColor;outline-offset: 5px;}.rll-youtube-player iframe{position:absolute;top:0;left:0;width:100%;height:100%;z-index:100;background:0 0}.rll-youtube-player img{bottom:0;display:block;left:0;margin:auto;max-width:100%;width:100%;position:absolute;right:0;top:0;border:none;height:auto;-webkit-transition:.4s all;-moz-transition:.4s all;transition:.4s all}.rll-youtube-player img:hover{-webkit-filter:brightness(75%)}.rll-youtube-player .play{height:100%;width:100%;left:0;top:0;position:absolute;background:url(https://wp-rocket.me/wp-content/plugins/wp-rocket/assets/img/youtube.png) no-repeat center;background-color: transparent !important;cursor:pointer;border:none;}.wp-embed-responsive .wp-has-aspect-ratio .rll-youtube-player{position:absolute;padding-bottom:0;width:100%;height:100%;top:0;bottom:0;left:0;right:0}
+/*# sourceURL=rocket-lazyload-inline-css */
+</style>
+<script type="rocketlazyloadscript" data-rocket-src="https://wp-rocket.me/wp-content/plugins/wp-sentry-integration/public/wp-sentry-browser.min.js?ver=8.4.0" id="wp-sentry-browser-bundle-js" data-rocket-defer defer></script>
+<script id="wp-sentry-browser-js-extra">
+var wp_sentry = {"environment":"prod","release":"unknown","context":{"tags":{"wordpress":"6.9.9","language":"en-US"}},"dsn":"https://a4d5ec735e1f038ce08b8d509ccb582d@o172969.ingest.sentry.io/4506038457073664"};
+//# sourceURL=wp-sentry-browser-js-extra
+</script>
+<script type="rocketlazyloadscript" data-minify="1" data-rocket-src="https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/wp-sentry-integration/public/wp-sentry-init.js?ver=1791299187" id="wp-sentry-browser-js" data-rocket-defer defer></script>
+<script type="rocketlazyloadscript" id="wc-settings-dep-in-header-js-after">
+console.warn( "Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-editor-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059" );
+console.warn( "Scripts that have a dependency on [wc-settings, wc-blocks-checkout] must be loaded in the footer, klaviyo-klaviyo-checkout-block-view-script was registered to load in the header, but has been switched to load in the footer instead. See https://github.com/woocommerce/woocommerce-gutenberg-products-block/pull/5059" );
+//# sourceURL=wc-settings-dep-in-header-js-after
+</script>
+<link rel="https://api.w.org/" href="https://wp-rocket.me/wp-json/" /><meta name="generator" content="WPML ver:4.7.2 stt:1,4,3,27,28,2;" />
+<!-- Start VWO Async SmartCode -->
+<link rel="preconnect" href="https://dev.visualwebsiteoptimizer.com"/>
+<!-- IMPORTANT: data-cfasync="false" must be preserved on any future SmartCode updates.
+     It instructs Cloudflare Rocket Loader to skip deferred loading for this script,
+     preserving the synchronous execution order required by VWO SmartCode. -->
+<script type="rocketlazyloadscript" data-rocket-type='text/javascript' id='vwoCode' data-cfasync='false'>
+window._vwo_code ||(function(){var w=window,d=document;var account_id=1131264,version=2.2,settings_tolerance=2000,hide_element='body',hide_element_style='opacity:0 !important;filter:alpha(opacity=0) !important;background:none !important';var f=0,v;if(f=!1,v=d.querySelector('#vwoCode'),cc={},-1<d.URL.indexOf('__vwo_disable__')||w._vwo_code)return;try{var e=JSON.parse(localStorage.getItem('_vwo_'+account_id+'_config'));cc=e&&'object'==typeof e?e:{}}catch(e){}function r(t){try{return decodeURIComponent(t)}catch(e){return t}}var s=function(){var e={combination:[],combinationChoose:[],split:[],exclude:[],uuid:null,consent:null,optOut:null},t=d.cookie||'';if(!t)return e;for(var n,i,o=/(?:^|;\s*)(?:(_vis_opt_exp_(\d+)_combi=([^;]*))|(_vis_opt_exp_(\d+)_combi_choose=([^;]*))|(_vis_opt_exp_(\d+)_split=([^:;]*))|(_vis_opt_exp_(\d+)_exclude=[^;]*)|(_vis_opt_out=([^;]*))|(_vwo_global_opt_out=[^;]*)|(_vwo_uuid=([^;]*))|(_vwo_consent=([^;]*)))/g;null!==(n=o.exec(t));)try{n[1]?e.combination.push({id:n[2],value:r(n[3])}):n[4]?e.combinationChoose.push({id:n[5],value:r(n[6])}):n[7]?e.split.push({id:n[8],value:r(n[9])}):n[10]?e.exclude.push({id:n[11]}):n[12]?e.optOut=r(n[13]):n[14]?e.optOut=!0:n[15]?e.uuid=r(n[16]):n[17]&&(i=r(n[18]),e.consent=i&&3<=i.length?i.substring(0,3):null)}catch(e){}return e}();function i(){var e=function(){if(w.VWO&&Array.isArray(w.VWO))for(var e=0;e<w.VWO.length;e++){var t=w.VWO[e];if(Array.isArray(t)&&('setVisitorId'===t[0]||'setSessionId'===t[0]))return!0}return!1}(),t='a='+account_id+'&u='+encodeURIComponent(w._vis_opt_url||d.URL)+'&vn='+version+'&ph=1'+('undefined'!=typeof platform?'&p='+platform:'')+'&st='+w.performance.now();e||((n=function(){var e,t=[],n={},i=w.VWO&&w.VWO.appliedCampaigns||{};for(e in i){var o=i[e]&&i[e].v;o&&(t.push(e+'-'+o+'-1'),n[e]=!0)}if(s&&s.combination)for(var r=0;r<s.combination.length;r++){var a=s.combination[r];n[a.id]||t.push(a.id+'-'+a.value)}return t.join('|')}())&&(t+='&c='+n),(n=function(){var e=[],t={};if(s&&s.combinationChoose)for(var n=0;n<s.combinationChoose.length;n++){var i=s.combinationChoose[n];e.push(i.id+'-'+i.value),t[i.id]=!0}if(s&&s.split)for(var o=0;o<s.split.length;o++)t[(i=s.split[o]).id]||e.push(i.id+'-'+i.value);return e.join('|')}())&&(t+='&cc='+n),(n=function(){var e={},t=[];if(w.VWO&&Array.isArray(w.VWO))for(var n=0;n<w.VWO.length;n++){var i=w.VWO[n];if(Array.isArray(i)&&'setVariation'===i[0]&&i[1]&&Array.isArray(i[1]))for(var o=0;o<i[1].length;o++){var r,a=i[1][o];a&&'object'==typeof a&&(r=a.e,a=a.v,r&&a&&(e[r]=a))}}for(r in e)t.push(r+'-'+e[r]);return t.join('|')}())&&(t+='&sv='+n)),s&&s.optOut&&(t+='&o='+s.optOut);var n=function(){var e=[],t={};if(s&&s.exclude)for(var n=0;n<s.exclude.length;n++){var i=s.exclude[n];t[i.id]||(e.push(i.id),t[i.id]=!0)}return e.join('|')}();return n&&(t+='&e='+n),s&&s.uuid&&(t+='&id='+s.uuid),s&&s.consent&&(t+='&consent='+s.consent),w.name&&-1<w.name.indexOf('_vis_preview')&&(t+='&pM=true'),w.VWO&&w.VWO.ed&&(t+='&ed='+w.VWO.ed),t}code={nonce:v&&v.nonce,library_tolerance:function(){return'undefined'!=typeof library_tolerance?library_tolerance:void 0},settings_tolerance:function(){return cc.sT||settings_tolerance},hide_element_style:function(){return'{'+(cc.hES||hide_element_style)+'}'},hide_element:function(){return performance.getEntriesByName('first-contentful-paint')[0]?'':'string'==typeof cc.hE?cc.hE:hide_element},getVersion:function(){return version},finish:function(e){var t;f||(f=!0,(t=d.getElementById('_vis_opt_path_hides'))&&t.parentNode.removeChild(t),e&&((new Image).src='https://dev.visualwebsiteoptimizer.com/ee.gif?a='+account_id+e))},finished:function(){return f},addScript:function(e){var t=d.createElement('script');t.type='text/javascript',e.src?t.src=e.src:t.text=e.text,v&&t.setAttribute('nonce',v.nonce),d.getElementsByTagName('head')[0].appendChild(t)},load:function(e,t){t=t||{};var n=new XMLHttpRequest;n.open('GET',e,!0),n.withCredentials=!t.dSC,n.responseType=t.responseType||'text',n.onload=function(){if(t.onloadCb)return t.onloadCb(n,e);200===n.status?_vwo_code.addScript({text:n.responseText}):_vwo_code.finish('&e=loading_failure:'+e)},n.onerror=function(){if(t.onerrorCb)return t.onerrorCb(e);_vwo_code.finish('&e=loading_failure:'+e)},n.send()},init:function(){var e,t=this.settings_tolerance();w._vwo_settings_timer=setTimeout(function(){_vwo_code.finish()},t),'body'!==this.hide_element()?(n=d.createElement('style'),e=(t=this.hide_element())?t+this.hide_element_style():'',t=d.getElementsByTagName('head')[0],n.setAttribute('id','_vis_opt_path_hides'),v&&n.setAttribute('nonce',v.nonce),n.setAttribute('type','text/css'),n.styleSheet?n.styleSheet.cssText=e:n.appendChild(d.createTextNode(e)),t.appendChild(n)):(n=d.getElementsByTagName('head')[0],(e=d.createElement('div')).style.cssText='z-index: 2147483647 !important;position: fixed !important;left: 0 !important;top: 0 !important;width: 100% !important;height: 100% !important;background: white !important;',e.setAttribute('id','_vis_opt_path_hides'),e.classList.add('_vis_hide_layer'),n.parentNode.insertBefore(e,n.nextSibling));var n='https://dev.visualwebsiteoptimizer.com/j.php?'+i();-1!==w.location.search.indexOf('_vwo_xhr')?this.addScript({src:n}):this.load(n+'&x=true',{l:1})}};w._vwo_code=code;code.init();})();
+</script>
+<!-- End VWO Async SmartCode -->
+
+<!-- Google Tag Manager for WordPress by gtm4wp.com -->
+<!-- GTM Container placement set to manual -->
+<script data-cfasync="false" data-pagespeed-no-defer>
+	var dataLayer_content = {"pagePostType":"bloghome","customerTotalOrders":0,"customerTotalOrderValue":0,"customerFirstName":"","customerLastName":"","customerBillingFirstName":"","customerBillingLastName":"","customerBillingCompany":"","customerBillingAddress1":"","customerBillingAddress2":"","customerBillingCity":"","customerBillingState":"","customerBillingPostcode":"","customerBillingCountry":"","customerBillingEmail":"","customerBillingEmailHash":"","customerBillingPhone":"","customerShippingFirstName":"","customerShippingLastName":"","customerShippingCompany":"","customerShippingAddress1":"","customerShippingAddress2":"","customerShippingCity":"","customerShippingState":"","customerShippingPostcode":"","customerShippingCountry":"","cartContent":{"totals":{"applied_coupons":[],"discount_total":0,"subtotal":0,"total":0},"items":[]}};
+	dataLayer.push( dataLayer_content );
+</script>
+<script data-cfasync="false" data-pagespeed-no-defer>
+		if (typeof gtag == "undefined") {
+			function gtag(){dataLayer.push(arguments);}
+		}
+
+		gtag("consent", "default", {
+			"analytics_storage": "granted",
+			"ad_storage": "granted",
+			"ad_user_data": "granted",
+			"ad_personalization": "granted",
+			"functionality_storage": "granted",
+			"security_storage": "granted",
+			"personalization_storage": "granted",
+		});
+</script>
+<script data-cfasync="false" data-pagespeed-no-defer>
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&amp;l='+l:'';j.async=true;j.src=
+'https://sst.wp-rocket.me/tm?origin='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer',window.location.origin);
+</script>
+<!-- End Google Tag Manager for WordPress by gtm4wp.com --><noscript><style id="rocket-lazyload-nojs-css">.rll-youtube-player, [data-lazy-src]{display:none !important;}</style></noscript>
+
+
+<style id="rocket-lazyrender-inline-css">[data-wpr-lazyrender] {content-visibility: auto;}</style><meta name="generator" content="WP Rocket 3.20.0.2" data-wpr-features="wpr_remove_unused_css wpr_delay_js wpr_defer_js wpr_minify_js wpr_lazyload_iframes wpr_preconnect_external_domains wpr_automatic_lazy_rendering wpr_oci wpr_preload_links wpr_desktop" /></head>
+<body class="blog wp-embed-responsive wp-theme-V4 theme-V4 woocommerce-no-js en">
+
+
+
+<div  class="brand-switcher">
+	<div  class="brand-switcher__wrapper wrapper">
+		<ul class="brand-switcher__items">
+							<li class="brand-switcher__item brand-switcher__item--current">
+					<a
+						class="brand-switcher__link"
+						href="https://wp-rocket.me"
+													aria-current="page"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/wprocket.svg"
+								alt="wp rocket"
+																									style="height:18px;transform:translateY(3px);"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://imagify.io/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/imagify-1.svg"
+								alt="imagify"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://rankmath.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/rankmath-1.svg"
+								alt="rank math"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://backwpup.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/backwpup.svg"
+								alt="BackWPup"
+																									style="height:12px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+							<li class="brand-switcher__item">
+					<a
+						class="brand-switcher__link"
+						href="https://gtmetrix.com/"
+													target="_blank" rel="noopener nofollow"
+											>
+													<img
+								class="brand-switcher__logo brand-switcher__logo--brand"
+								src="https://wp-rocket.me/wp-content/uploads/2026/09/gtmetrix-1.svg"
+								alt="GTmetrix"
+																									style="height:10px;"
+																loading="eager"
+							>
+											</a>
+				</li>
+					</ul>
+	</div>
+</div>
+
+<header  class="header" role="banner">
+	<div  class="main-navigation">
+		<div  class="main-navigation__wrapper wrapper">
+			<div class="main-navigation__logo">
+				<a href="https://wp-rocket.me/" aria-label="Go to the homepage">
+					<img src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket.svg" width="155" height="43" alt="WordPress Caching Plugin" loading="eager">
+				</a>
+			</div>
+
+			
+			
+<div class="main-navigation__lang main-navigation__lang--mobile has-children">
+	<button class="main-navigation__lang-selector" aria-controls="main-navigation-langs-mobile" aria-expanded="false" aria-haspopup="true">
+		<svg class="main-navigation__lang-icon" aria-hidden="true" focusable="false" fill="currentColor" width="18" height="18" viewBox="0 0 640 640"><path d="M395.9 491.2C373.2 537.2 345.2 560 320 560C294.8 560 266.8 537.2 244.1 491.2C223 448.3 209.2 389.9 208.1 328L432 328C430.9 389.9 417.1 448.3 395.9 491.2zM431.9 312L208 312C209.2 250.1 223 191.7 244.1 148.8C266.8 102.8 294.8 80 320 80C345.2 80 373.2 102.8 395.9 148.8C417 191.7 430.9 250 432 312zM447.9 328L559.8 328C556.1 440 475.7 532.6 369.4 554.9C414.1 515.4 446.2 425.5 447.9 328zM559.8 312L447.9 312C446.3 214.5 414.1 124.6 369.4 85.1C475.7 107.4 556.2 200 559.9 312zM192 312L80.1 312C83.8 200 164.2 107.4 270.5 85.1C225.8 124.6 193.7 214.5 192 312zM80.1 328L192 328C193.7 425.5 225.9 515.4 270.6 554.9C164.3 532.6 83.8 440 80.1 328zM320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576z"/></svg>
+		<span class="screen-reader-text">Select your language</span>
+		<span class="main-navigation__lang-current" aria-hidden="true">EN</span>
+	</button>
+
+	<ul id="main-navigation-langs-mobile" class="main-navigation__dropdown main-navigation__lang-dropdown">
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link active"
+					href="https://wp-rocket.me/blog/"
+					hreflang="en"
+					 aria-current="true">English</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/fr/blog/"
+					hreflang="fr"
+					>Français</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/de/blog/"
+					hreflang="de"
+					>Deutsch</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/it/blog/"
+					hreflang="it"
+					>Italiano</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/es/blog/"
+					hreflang="es"
+					>Español</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/ja/blog/"
+					hreflang="ja"
+					>日本語</a>
+			</li>
+			</ul>
+</div>
+
+			<div class="burger" id="mobile-indicator" aria-controls="main-navigation" aria-expanded="false">
+				<div class="burger__line burger__line--first-child"></div>
+				<div class="burger__line burger__line--second-child"></div>
+				<div class="burger__line burger__line--last-child"></div>
+			</div>
+
+			<nav id="main-navigation" class="main-navigation__menu">
+
+								<ul class="main-navigation__items">
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Why WP Rocket?</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/bloggers/" class="main-navigation__dropdown__link">For Bloggers</a>							</li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/ecommerce/" class="main-navigation__dropdown__link">For eCommerce</a></li>
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/freelancers-agencies/" class="main-navigation__dropdown__link">For Freelancers &amp; Agencies</a></li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvdGVzdGltb25pYWxzLw==" tabindex="0">Testimonials</span>
+</li>
+						</ul>
+					</li>
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Features</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item"><a href="https://wp-rocket.me/features/" class="main-navigation__dropdown__link">How it works</a></li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29tcGF0aWJpbGl0aWVzLw==" tabindex="0">Compatibilities</span>
+</li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY2hhbmdlbG9nLw==" tabindex="0">Changelog</span>
+</li>
+						</ul>
+					</li>
+                                        <li class="main-navigation__item"><a href="https://wp-rocket.me/pricing/" class="main-navigation__item-selector">Pricing</a>                                        </li>
+					<li class="main-navigation__item has-children">
+						<button class="main-navigation__item-selector is-hover-animated-link">Resources</button>
+						<ul class="main-navigation__dropdown">
+							<li class="main-navigation__dropdown__item">
+								<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/blog/">Blog</a>
+							</li>
+															<li class="main-navigation__dropdown__item">
+									<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/google-core-web-vitals-wordpress/">Core
+										Web Vitals</a>
+								</li>
+								<li class="main-navigation__dropdown__item">
+									<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/lighthouse-performance-score-wordpress/">Lighthouse
+										Performance</a>
+								</li>
+																	<li class="main-navigation__dropdown__item">
+										<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/wordpress-cache/">WordPress Cache</a>
+									</li>
+																										<li class="main-navigation__dropdown__item">
+										<a class="main-navigation__dropdown__link" href="https://wp-rocket.me/mcp-wordpress/">Performance &amp; AI</a>
+									</li>
+																							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29tbXVuaXR5Lw==" tabindex="0">Community</span>
+</li>
+							<li class="main-navigation__dropdown__item"><span target="_blank" class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly9kb2NzLndwLXJvY2tldC5tZS8=" tabindex="0">Documentation</span>
+</li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvc3VwcG9ydC8=" tabindex="0">Help center</span>
+</li>
+							<li class="main-navigation__dropdown__item"><span class="main-navigation__dropdown__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29udGFjdC8=" tabindex="0">Contact</span>
+</li>
+						</ul>
+					</li>
+				</ul>
+				
+<div class="main-navigation__lang main-navigation__lang--desktop has-children">
+	<button class="main-navigation__lang-selector" aria-controls="main-navigation-langs-desktop" aria-expanded="false" aria-haspopup="true">
+		<svg class="main-navigation__lang-icon" aria-hidden="true" focusable="false" fill="currentColor" width="18" height="18" viewBox="0 0 640 640"><path d="M395.9 491.2C373.2 537.2 345.2 560 320 560C294.8 560 266.8 537.2 244.1 491.2C223 448.3 209.2 389.9 208.1 328L432 328C430.9 389.9 417.1 448.3 395.9 491.2zM431.9 312L208 312C209.2 250.1 223 191.7 244.1 148.8C266.8 102.8 294.8 80 320 80C345.2 80 373.2 102.8 395.9 148.8C417 191.7 430.9 250 432 312zM447.9 328L559.8 328C556.1 440 475.7 532.6 369.4 554.9C414.1 515.4 446.2 425.5 447.9 328zM559.8 312L447.9 312C446.3 214.5 414.1 124.6 369.4 85.1C475.7 107.4 556.2 200 559.9 312zM192 312L80.1 312C83.8 200 164.2 107.4 270.5 85.1C225.8 124.6 193.7 214.5 192 312zM80.1 328L192 328C193.7 425.5 225.9 515.4 270.6 554.9C164.3 532.6 83.8 440 80.1 328zM320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576z"/></svg>
+		<span class="screen-reader-text">Select your language</span>
+		<span class="main-navigation__lang-current" aria-hidden="true">EN</span>
+	</button>
+
+	<ul id="main-navigation-langs-desktop" class="main-navigation__dropdown main-navigation__lang-dropdown">
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link active"
+					href="https://wp-rocket.me/blog/"
+					hreflang="en"
+					 aria-current="true">English</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/fr/blog/"
+					hreflang="fr"
+					>Français</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/de/blog/"
+					hreflang="de"
+					>Deutsch</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/it/blog/"
+					hreflang="it"
+					>Italiano</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/es/blog/"
+					hreflang="es"
+					>Español</a>
+			</li>
+					<li class="main-navigation__dropdown__item">
+				<a class="main-navigation__dropdown__link"
+					href="https://wp-rocket.me/ja/blog/"
+					hreflang="ja"
+					>日本語</a>
+			</li>
+			</ul>
+</div>
+<span class="main-navigation__signin-link is-hover-animated-link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYWNjb3VudC8=" tabindex="0">Sign in</span>
+
+				<div class="wp-block-button is-style-oval-small">
+					<span class="wp-block-button__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJpY2luZy8=" tabindex="0">Get started</span>
+				</div>
+			</nav><!--/main_navigation__menu-->
+
+					</div>
+	</div>
+
+	
+<div  class="blog-header">
+	<div  class="wrapper">
+		<div class="blog-header__content">
+			
+			<h1 class="has-white-color h2-like">WP Rocket Blog: Inspirations to Boost WordPress Web Performance</h1>
+
+					</div>
+		<div class="blog-header__skeleton">
+			
+			<div class="blog-header__pattern-lines is-targeted">
+				<svg aria-hidden="true" viewBox="0 0 1399 668" fill="none" xmlns="http://www.w3.org/2000/svg"><path class="line line-1" d="M1397 310.9H880.5c-22 0-40-18-40-40V82.4c0-22.1-18-40-40-40h-710c-22 0-40 17.9-40 40V665" stroke="#fff" stroke-width="2"/><path class="line line-2" d="M1396.5 270h-494c-11 0-20-9-20-20V81.5a80 80 0 00-80-80H88a80 80 0 00-80 80v586.4" stroke="#F56F46" stroke-width="2"/><path class="line line-3" d="M1399 351.8H878a80 80 0 01-80-80V103.3c0-11-9-20-20-20H113c-11 0-20 9-20 20v562.2" stroke="#FFD147" stroke-width="2"/></svg>
+			</div>
+		</div>
+	</div>
+</div>
+</header>
+
+<div  class="blog-submenu__container">
+	<nav class="blog-submenu wrapper--1200">
+		<button class="blog-submenu__search mobile-display" aria-hidden="true">
+			<svg fill="currentColor" width="20" height="20"><path d="M19.5 18L14 12.6a7.7 7.7 0 10-1.4 1.4l5.4 5.5a1 1 0 001.5 0 1 1 0 000-1.5zM2.3 8a5.6 5.6 0 1111.2 0A5.6 5.6 0 012.3 8z"/></svg>
+		</button>
+
+		<button class="blog-submenu__lever" aria-hidden="true">
+			<span class="blog-submenu__lever-value"></span>
+		</button>
+		<ul class="blog-submenu__ul">
+			<li class="blog-submenu__li">
+				<button class="blog-submenu__search" aria-hidden="true">
+					<svg fill="currentColor" width="20" height="20"><path d="M19.5 18L14 12.6a7.7 7.7 0 10-1.4 1.4l5.4 5.5a1 1 0 001.5 0 1 1 0 000-1.5zM2.3 8a5.6 5.6 0 1111.2 0A5.6 5.6 0 012.3 8z"/></svg>
+				</button>
+			</li>
+			<li class="blog-submenu__li">
+				<span data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYmxvZy8=" class="blog-submenu__link current current-mob">
+					<span class="blog-submenu__text">All posts</span>
+				</span>
+			</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/case-studies/" class="blog-submenu__link">
+						<span class="blog-submenu__text">Case Studies</span>
+					</a>
+				</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/ecommerce/" class="blog-submenu__link">
+						<span class="blog-submenu__text">Ecommerce</span>
+					</a>
+				</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/inside-wp-rocket/" class="blog-submenu__link">
+						<span class="blog-submenu__text">Inside WP Rocket</span>
+					</a>
+				</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/wordpress-cache/" class="blog-submenu__link">
+						<span class="blog-submenu__text">Page speed and caching</span>
+					</a>
+				</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/seo/" class="blog-submenu__link">
+						<span class="blog-submenu__text">SEO</span>
+					</a>
+				</li>
+							<li class="blog-submenu__li">
+					<a href="https://wp-rocket.me/blog/wordpress-themes-plugin/" class="blog-submenu__link">
+						<span class="blog-submenu__text">Themes &amp; Plugins</span>
+					</a>
+				</li>
+					</ul>
+		<form method="get" action="https://wp-rocket.me/" class="form-search" id="form-search">
+			<label class="screen-reader-text" for="search">Search</label>
+			<input name="s" id="search" class="form-search__input" type="search" title="Enter your search" placeholder="Enter your search"/>
+			<button class="form-search__submit" type="submit" aria-label="Start research">
+				<svg aria-hidden="true" fill="currentColor" width="20" height="20"><path d="M19.5 18L14 12.6a7.7 7.7 0 10-1.4 1.4l5.4 5.5a1 1 0 001.5 0 1 1 0 000-1.5zM2.3 8a5.6 5.6 0 1111.2 0A5.6 5.6 0 012.3 8z"/></svg>
+				</svg>
+			</button>
+
+		</form>
+	</nav>
+</div>
+
+<main  role="main">
+	<ol class="breadcrumb"><li class="breadcrumb__item"><a href="https://wp-rocket.me" class="breadcrumb__link">Home</a></li>  <li class="breadcrumb__item"><span class="breadcrumb__link" aria-current="page">Blog</span></li></ol>
+	<div  class="wrapper">
+		
+		
+			<ul class="blog-list">
+				
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/gruffygoat-wordpress-agency-wp-rocket/">
+        		    <img fetchpriority="high" class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Case Studies</span></div>		<h2 class="blog-item__title">How GruffyGoat Keeps Hundreds of WordPress Sites Fast with WP&nbsp;Rocket</h2>		<p>How GruffyGoat, a support-first WordPress agency, made WP&nbsp;Rocket standard equipment on every site it builds and keeps fast for clients.</p>
+		<span class="blog-item__date">
+			Last update on September 23, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/wordpress-7-1-outage-post-mortem/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9637644/The-WordPress-7.1-Outage-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9637644/The-WordPress-7.1-Outage-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9637644/The-WordPress-7.1-Outage-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Inside WP Rocket</span></div>		<h2 class="blog-item__title">The WordPress 7.1 Outage: What Went Wrong, and What Changes Now</h2>		<p>WP&nbsp;Rocket&#8217;s WordPress 7.1 compatibility issue: what caused it, our response timeline, and the changes we&#8217;re making to prevent a repeat.</p>
+		<span class="blog-item__date">
+			Last update on August 26, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/best-wordpress-plugins/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9572099/30-Best-WordPress-Plugins-in-2026-The-Only-List-You-Need-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9572099/30-Best-WordPress-Plugins-in-2026-The-Only-List-You-Need-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9572099/30-Best-WordPress-Plugins-in-2026-The-Only-List-You-Need-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Themes &amp; Plugins</span></div>		<h2 class="blog-item__title">30 Best WordPress Plugins in 2026: The Only List You Need</h2>		<p>Explore the best WordPress plugins in 2026 for performance, security, SEO, image optimization, backups, and more. Find the right tools for your website.</p>
+		<span class="blog-item__date">
+			Last update on September 3, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/google-psi/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/8162566/Google-PageSpeed-Insights-a-Beginner-Guide-to-Balance-Scores-with-Site-Functionality-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/8162566/Google-PageSpeed-Insights-a-Beginner-Guide-to-Balance-Scores-with-Site-Functionality-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/8162566/Google-PageSpeed-Insights-a-Beginner-Guide-to-Balance-Scores-with-Site-Functionality-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Page speed and caching</span></div>		<h2 class="blog-item__title">Google PageSpeed Insights Guide: How to Read Reports and Improve Scores</h2>		<p>Learn how to use Google PageSpeed Insights for WordPress. Understand field data, lab data, Core Web Vitals and which PageSpeed Insights recommendations to fix first.</p>
+		<span class="blog-item__date">
+			Last update on September 8, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/gtmetrix/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/1251762/How-to-read-GTMetrix-reports-Featured-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/1251762/How-to-read-GTMetrix-reports-Featured-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/1251762/How-to-read-GTMetrix-reports-Featured-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Page speed and caching</span></div>		<h2 class="blog-item__title">How to Read a GTmetrix Report and Fix WordPress Speed Issues </h2>		<p>Learn how to read GTmetrix reports, grades, Web Vitals and waterfall charts. See which WordPress speed issues to fix first with WP&nbsp;Rocket and Imagify.</p>
+		<span class="blog-item__date">
+			Last update on September 8, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/wp-rocket-3-23/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9486937/Template-1900x800-Blog-Post-1-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9486937/Template-1900x800-Blog-Post-1-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9486937/Template-1900x800-Blog-Post-1-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Inside WP Rocket</span></div>		<h2 class="blog-item__title">WP&nbsp;Rocket 3.23: Introducing MCP, The Fastest Way to Manage Performance Across Your Client Sites</h2>		<p>WP&nbsp;Rocket 3.23 comes with MCP! Your AI can now monitor, fix, and report on your client sites using real performance data and WP&nbsp;Rocket settings for free.</p>
+		<span class="blog-item__date">
+			Last update on July 28, 2026		</span>
+	</a>
+</li>						<li class="insert-newsletter entry-content">
+							
+<div class="block-cta-optin wrapper--1200 has-gray-background-color">
+	<svg aria-hidden="true" class="is-targeted gray-background-pattern gray-background-pattern-left" viewBox="0 0 205 207" xmlns="http://www.w3.org/2000/svg"><path class="path" d="M-442.5-116H-110c22 0 40 18 40 40v199c0 22 18 40 40 40h710c22 0 40-18 40-40v-654" stroke="#172153" stroke-width="2"/><path class="path" d="M-442.5-73.5H-132c11 0 20 9 20 20v179a80 80 0 0080 80h714.5a80 80 0 0080-80V-531" stroke="#FFD147" stroke-width="2"/><path class="path" d="M-442.5-158.5h335a80 80 0 0180 80v179c0 11 9 20 20 20h665c11 0 20-9 20-20v-632" stroke="#F56F46" stroke-width="2"/></svg>
+	<div class="block-cta-optin__inner-container wrapper--800">
+		<span class="block-cta-optin__title h2-like has-text-align-center">Subscribe to Our Newsletter</span>
+		<p class="block-cta-optin__description has-text-align-center">Stay in the loop with the latest WordPress and web performance updates.<br>Straight to your inbox every two weeks.</p>
+
+		<form action="https://manage.kmail-lists.com/subscriptions/subscribe?a=PD7as8&#038;g=JMReQ5" class="block-cta-optin__form" method="post" target="_blank" rel="noopener">
+			<div class="block-cta-optin__container-input">
+				<label for="block-cta-optin__input_email-6ac5b6ad57844" class="screen-reader-text">
+					Email				</label>
+				<input id="block-cta-optin__input_email-6ac5b6ad57844" name="email" class="input_email" type="email" placeholder="Email" required>
+				<button class="wp-block-button is-style-oval-small" type="submit">
+					<span class="wp-block-button__link">
+						Subscribe					</span>
+				</button>
+			</div>
+
+			
+			<div class="block-cta-optin__container-checkbox">
+				<input type="checkbox" id="block-cta-optin__input_checkbox-6ac5b6ad57844" name="checkbox" checked required>
+				<label for="block-cta-optin__input_checkbox-6ac5b6ad57844" class="block-cta-optin__checkbox-label">
+					I confirm I want to subscribe to the WP Rocket newsletter. To find out more about how we use your data, check out our Privacy Policy.				</label>
+			</div>
+
+			
+		</form>
+	</div>
+
+</div><!--/block-cta-optin-->
+						</li>
+						
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/conversion-rate-optimization-techniques/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9489593/12-Conversion-Rate-Optimization-Techniques-for-Faster-WordPress-Sites-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9489593/12-Conversion-Rate-Optimization-Techniques-for-Faster-WordPress-Sites-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9489593/12-Conversion-Rate-Optimization-Techniques-for-Faster-WordPress-Sites-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Page speed and caching</span></div>		<h2 class="blog-item__title">12 Conversion Rate Optimization Techniques for Faster WordPress Sites in 2026</h2>		<p>Speed up your WordPress site with 12 proven CRO techniques that reduce friction, build trust, and help visitors convert faster.</p>
+		<span class="blog-item__date">
+			Last update on July 8, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/wp-rocket-3-22/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9424215/Template-1900x800-Blog-Post-1-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9424215/Template-1900x800-Blog-Post-1-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9424215/Template-1900x800-Blog-Post-1-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">Inside WP Rocket</span></div>		<h2 class="blog-item__title">WP&nbsp;Rocket 3.22: Introducing Built-in CDN for Faster Loading Time </h2>		<p>Discover WP&nbsp;Rocket 3.22 and the new built-in Content Delivery tab powered by RocketCDN to speed up your top pages easily with unlimited traffic included.</p>
+		<span class="blog-item__date">
+			Last update on June 25, 2026		</span>
+	</a>
+</li>
+<li class="blog-item">
+	<a href="https://wp-rocket.me/blog/optimize-wordpress-website-ai-search/">
+        		    <img class="wp-post-image" srcset="https://wp-rocket.me/wp-content/uploads/fly-images/9441936/How-to-Optimize-Your-WordPress-Website-for-AI-Search-388x198-c.png 388w, https://wp-rocket.me/wp-content/uploads/fly-images/9441936/How-to-Optimize-Your-WordPress-Website-for-AI-Search-776x396-c.png 776w" sizes="388px" src="https://wp-rocket.me/wp-content/uploads/fly-images/9441936/How-to-Optimize-Your-WordPress-Website-for-AI-Search-388x198-c.png" alt="" loading="lazy" width="388" height="198">
+		        <div class="blog-item__categories"><span class="has-white-color">SEO</span></div>		<h2 class="blog-item__title">How to Optimize Your WordPress Website for AI Search Performance</h2>		<p>Not showing up in AI search results? Discover 10 WordPress optimization strategies to boost visibility in ChatGPT, Google AI Overviews, Perplexity, and beyond.</p>
+		<span class="blog-item__date">
+			Last update on June 22, 2026		</span>
+	</a>
+</li>			</ul>
+
+			<div data-wpr-lazyrender="1" class="pagination"><ul class='page-numbers'>
+	<li><span aria-label="Page 1" aria-current="page" class="page-numbers current">1</span></li>
+	<li><a aria-label="Page 2" class="page-numbers" href="https://wp-rocket.me/blog/page/2/">2</a></li>
+	<li><a aria-label="Page 3" class="page-numbers" href="https://wp-rocket.me/blog/page/3/">3</a></li>
+	<li><span class="page-numbers dots">&hellip;</span></li>
+	<li><a aria-label="Page 43" class="page-numbers" href="https://wp-rocket.me/blog/page/43/">43</a></li>
+	<li><a class="next page-numbers" href="https://wp-rocket.me/blog/page/2/"><svg width="10" height="8" fill="none" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#clip0)"><path d="M6.9.8L9.5 4H.7" stroke="#0C0F1F" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.9 7.2L9.5 4 7 7.2z" fill="#0C0F1F"/><path d="M6.9 7.2L9.5 4" stroke="#0C0F1F" stroke-linecap="round" stroke-linejoin="round"/></g><defs><clipPath id="clip0"><path fill="#fff" d="M0 0h10v8H0z"/></clipPath></defs></svg></a></li>
+</ul>
+</div>
+				<div  class="entry-content">
+			<div class="block-cta alignfull is-targeted">
+	<div class="block-cta__wrapper">
+		<svg aria-hidden="true" class="block-cta__pattern-left svg" fill="none" xmlns="http://www.w3.org/2000/svg"><rect class="path path-10" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 226.2 -70.4)" fill="#454F59"/><path class="path path-1" fill-rule="evenodd" clip-rule="evenodd" d="M91.5 171.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#D0D3D8"/><path class="path path-3" fill-rule="evenodd" clip-rule="evenodd" d="M166.5 95.1a4.4 4.4 0 110 8.8 4.4 4.4 0 010-8.8z" fill="#FFD147"/><path class="path path-6" d="M91.5 104l-4.9-8.3h9.8l-4.9 8.4z" fill="#99D1DE"/><rect class="path path-5" x="16.5" y="104.5" width="7.1" height="7.1" rx=".9" transform="rotate(-135 16.5 104.5)" fill="#FFD0D8"/><path class="path path-2" fill-rule="evenodd" clip-rule="evenodd" d="M16.5 247.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#FFD147"/><rect class="path path-7" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 355.4 -17.8)" fill="#F56F46"/><path class="path path-4" fill-rule="evenodd" clip-rule="evenodd" d="M16.5 19.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#FFD147"/><path class="path path-0" fill-rule="evenodd" clip-rule="evenodd" d="M241.5 19.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#fff"/><path class="path path-8" d="M166.5 28l4.9-8.3h-9.8l4.9 8.4z" fill="#005BC6"/><rect class="path path-9" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 80.2 96.2)" fill="#172153"/></svg>
+		<svg aria-hidden="true" class="block-cta__pattern-right svg" fill="none" xmlns="http://www.w3.org/2000/svg"><rect class="path path-9" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 226.2 -70.4)" fill="#454F59"/><path class="path path-2" fill-rule="evenodd" clip-rule="evenodd" d="M91.5 171.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#D0D3D8"/><path class="path path-1" fill-rule="evenodd" clip-rule="evenodd" d="M166.5 95.1a4.4 4.4 0 110 8.8 4.4 4.4 0 010-8.8z" fill="#FFD147"/><path class="path path-0" d="M91.5 104l-4.9-8.3h9.8l-4.9 8.4z" fill="#99D1DE"/><rect class="path path-8" x="16.5" y="104.5" width="7.1" height="7.1" rx=".9" transform="rotate(-135 16.5 104.5)" fill="#FFD0D8"/><path class="path path-6" fill-rule="evenodd" clip-rule="evenodd" d="M16.5 247.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#FFD147"/><rect class="path path-10" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 355.4 -17.8)" fill="#F56F46"/><path class="path path-3" fill-rule="evenodd" clip-rule="evenodd" d="M16.5 19.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#FFD147"/><path class="path path-4" fill-rule="evenodd" clip-rule="evenodd" d="M241.5 19.1a4.4 4.4 0 100 8.8 4.4 4.4 0 000-8.8z" fill="#fff"/><path class="path path-7" d="M166.5 28l4.9-8.3h-9.8l4.9 8.4z" fill="#005BC6"/><rect class="path path-5" width="7.1" height="7.1" rx=".9" transform="scale(1 -1) rotate(45 80.2 96.2)" fill="#172153"/></svg>
+		<div class="block-cta__content">
+			
+				<p>Get a Faster Website <br class="hide-if-mobile"> in a Few Clicks</p>
+
+				<div class="block-chrono-text">
+					Setup Takes 3 Minutes Flat				</div>
+
+				<div class="wp-block-button">
+					<span class="wp-block-button__link has-blue-background-color" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJpY2luZy8=" tabindex="0">Get Started</span>
+				</div>
+
+
+					</div>
+	</div>
+</div>
+		</div>
+	</div>
+</main>
+
+<footer  class="footer wrapper">
+	<div  class="footer__sup">
+		<img class="footer_logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/wp-rocket-dark.svg" width="268" height="73" loading="lazy" alt="" draggable="false"/>
+
+		
+			<ul class="menu-social-networks">
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cuZmFjZWJvb2suY29tL3dwcm9ja2V0cGx1Z2luLw==" aria-label="Follow us on Facebook">
+					<img class="menu-social-networks__logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/facebook.svg" width="36" height="36" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly90d2l0dGVyLmNvbS93cF9yb2NrZXQ=" aria-label="Follow us on X">
+					<img class="menu-social-networks__logo menu-social-networks__logo--x" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/x.svg" width="36" height="30" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQzFvelRoWEhkMUlXSVo1d2tzaGdwX1E=" aria-label="Follow us on Youtube">
+					<img class="menu-social-networks__logo" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/youtube.svg" width="46" height="32" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+				<li class="menu-social-networks__item">
+				<span class="menu-social-networks__link" tabindex="0" data-url="aHR0cHM6Ly93d3cubGlua2VkaW4uY29tL2NvbXBhbnkvd3Atcm9ja2V0Lw==" aria-label="Follow us on LinkedIn">
+					<img class="menu-social-networks__logo menu-social-networks__logo--linkedin" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/icons/linkedin.svg" width="46" height="32" loading="lazy" alt="" draggable="false"/>
+				</span>
+				</li>
+			</ul>
+
+			</div>
+
+	
+		<div  class="footer__inner-container has-hover-animated-link">
+			<div  class="newsletter-form">
+				<span class="h3-like">Newsletter</span>
+				<p class="newsletter-form__legend">Keep me in touch with new posts!</p>
+				<form class="simple-form" action="https://manage.kmail-lists.com/subscriptions/subscribe?a=PD7as8&g=JMReQ5" method="post" target="_blank" rel="noopener">
+					<label for="newsletter__email" class="screen-reader-text">Email</label>
+					<input id="newsletter__email" class="simple-form__input" name="EMAIL" type="email" placeholder="Email">
+					<button class="simple-form__button wp-block-button is-style-oval-small" type="submit">
+					<span class="wp-block-button__link">
+						Subscribe					</span>
+					</button>
+				</form>
+			</div>
+			<nav class="menu-footer">
+				<span id="company-nav" class="h3-like">Company</span>
+				<ul aria-labelledby="company-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYWJvdXQv" tabindex="0">Our story</span>
+</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvdGVzdGltb25pYWxzLw==" tabindex="0">Testimonials</span>
+</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvaW1hZ2lmeS8=" tabindex="0">Imagify</span>
+</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								  data-url="aHR0cHM6Ly9yb2NrZXRjZG4ubWUv" target="_blank">RocketCDN</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								  data-url="aHR0cHM6Ly9yYW5rbWF0aC5jb20=" target="_blank">Rank Math</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								data-url="aHR0cHM6Ly93d3cuc29jaWFscGlsb3QuY28v" target="_blank">Social Pilot</span>
+											</li>
+					<li class="menu-footer__item">
+													<span class="menu-footer__link" tabindex="0"
+								data-url="aHR0cHM6Ly90ZXJtbHkuaW8v" target="_blank">Termly</span>
+											</li>
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY2FyZWVyLw==" tabindex="0">Careers</span>
+</li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29udGFjdC8=" tabindex="0">Contact</span>
+</li>
+				</ul>
+			</nav>
+			<nav class="menu-footer">
+				<span id="resources-nav" class="h3-like">Resources</span>
+				<ul aria-labelledby="resources-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvYmxvZy8=" tabindex="0">Blog</span>
+</li>
+											<li class="menu-footer__item">
+							<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvZ29vZ2xlLWNvcmUtd2ViLXZpdGFscy13b3JkcHJlc3Mv">Core Web Vitals</span>
+						</li>
+						<li class="menu-footer__item">
+							<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbGlnaHRob3VzZS1wZXJmb3JtYW5jZS1zY29yZS13b3JkcHJlc3Mv">Lighthouse Performance</span>
+						</li>
+													<li class="menu-footer__item">
+								<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvd29yZHByZXNzLWNhY2hlLw==">WordPress Cache</span>
+							</li>
+																				<li class="menu-footer__item">
+								<span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbWNwLXdvcmRwcmVzcy8=">WordPress MCP</span>
+							</li>
+													<li class="menu-footer__item"><a href="https://wp-rocket.me/wordpress-cache/best-caching-plugins/">Best WordPress Caching Plugins</a>						</li>
+										<li class="menu-footer__item"><span target="_blank" class="menu-footer__link" data-url="aHR0cHM6Ly9kb2NzLndwLXJvY2tldC5tZS8=" tabindex="0">Documentation</span>
+</li>
+					<li class="menu-footer__item"><a href="https://wp-rocket.me/faq/">FAQ</a></li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcmVmdW5kLXBvbGljeS8=" tabindex="0">Refund Policy</span>
+</li>
+				</ul>
+			</nav>
+			<nav class="menu-footer">
+				<span id="partners-nav" class="h3-like">Partners</span>
+				<ul aria-labelledby="partners-nav">
+					<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvd3Atcm9ja2V0LWFmZmlsaWF0ZS1wcm9ncmFtLw==" tabindex="0">Affiliate program</span>
+</li>
+											<li class="menu-footer__item"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcmVzZWxsZXItcHJvZ3JhbS8=" tabindex="0">Reseller program</span>
+</li>
+						
+					<li class="menu-footer__item"><span data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcGFydG5lcnMv" tabindex="0">Recommended tools</span>
+</li>
+					<li class="menu-footer__item mb0"><span class="menu-footer__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJlc3Mv" tabindex="0">Press</span>
+</li>
+				</ul>
+			</nav>
+		</div>
+
+	
+	<div  class="footer__sub has-hover-animated-link">
+		<button class="lang-switcher-mobile-controller" aria-controls="langs-list" arial-label="Select your language" aria-haspopup="true">
+			English		</button>
+
+		
+			<ul id="langs-list" class="lang-switcher">
+									<li class="lang-switcher__item ">
+						<a class="active lang-switcher__link" href="https://wp-rocket.me/blog/">English</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/fr/blog/">Français</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/de/blog/">Deutsch</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/it/blog/">Italiano</a>
+					</li>
+
+										<li class="lang-switcher__item ">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/es/blog/">Español</a>
+					</li>
+
+										<li class="lang-switcher__item lang-switcher__item--last-child">
+						<a class=" lang-switcher__link" href="https://wp-rocket.me/ja/blog/">日本語</a>
+					</li>
+
+								</ul>
+
+		
+		<div  class="secure-payment-with" aria-hidden="true">
+			<span class="secure-payment-with__label">Secure payment with</span>
+			<img class="secure-payment-with__stripe" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/stripe.svg" width="37" height="15" alt="Stripe" loading="lazy"/>
+			<img class="secure-payment-with__paypal" src="https://wp-rocket.me/wp-content/themes/V4/assets/images/logo/paypal.svg" width="54" height="18" alt="Paypal" loading="lazy"/>
+		</div>
+
+		<ul class="menu-terms">
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvcHJpdmFjeS1wb2xpY3kv" tabindex="0">Privacy Policy</span>
+</li>
+
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvY29va2llLXBvbGljeS8=" tabindex="0">Cookie Policy</span>
+</li>
+
+			<li class="menu-terms__item menu-terms__item--first-child"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvdGVybXMv" tabindex="0">Terms</span>
+</li>
+			<li class="menu-terms__item"><span class="menu-terms__link" data-url="aHR0cHM6Ly93cC1yb2NrZXQubWUvbGVnYWwv" tabindex="0">Legal</span>
+</li>
+		</ul>
+	</div>
+</footer>
+<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp-*.php","/wp-admin/*","/wp-content/uploads/*","/wp-content/*","/wp-content/plugins/*","/wp-content/themes/V4/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+	<script type="rocketlazyloadscript">
+		(function () {
+			var c = document.body.className;
+			c = c.replace(/woocommerce-no-js/, 'woocommerce-js');
+			document.body.className = c;
+		})();
+	</script>
+	<script type="rocketlazyloadscript" data-minify="1" async data-rocket-src='https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187'></script><script src="https://wp-rocket.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1" id="jquery-core-js" data-rocket-defer defer></script>
+<script id="wc-price-based-country-ajax-geo-js-extra">
+var wc_price_based_country_ajax_geo_params = {"wc_ajax_url":"/blog/?wc-ajax=%%endpoint%%"};
+//# sourceURL=wc-price-based-country-ajax-geo-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/plugins/woocommerce-product-price-based-on-countries/assets/js/ajax-geolocation.min.js?ver=4.2.2" id="wc-price-based-country-ajax-geo-js" data-rocket-defer defer></script>
+<script src="https://www.dwin1.com/52401.js?ver=2.0.5" id="awin-journey-tag-js"></script>
+<script type="rocketlazyloadscript" data-minify="1" data-rocket-src="https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-ecommerce-generic.js?ver=1791299187" id="gtm4wp-ecommerce-generic-js" data-rocket-defer defer></script>
+<script type="rocketlazyloadscript" data-minify="1" data-rocket-src="https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/duracelltomi-google-tag-manager/dist/js/gtm4wp-woocommerce.js?ver=1791299187" id="gtm4wp-woocommerce-js" data-rocket-defer defer></script>
+<script type="rocketlazyloadscript" id="rocket-browser-checker-js-after">
+"use strict";var _createClass=function(){function defineProperties(target,props){for(var i=0;i<props.length;i++){var descriptor=props[i];descriptor.enumerable=descriptor.enumerable||!1,descriptor.configurable=!0,"value"in descriptor&&(descriptor.writable=!0),Object.defineProperty(target,descriptor.key,descriptor)}}return function(Constructor,protoProps,staticProps){return protoProps&&defineProperties(Constructor.prototype,protoProps),staticProps&&defineProperties(Constructor,staticProps),Constructor}}();function _classCallCheck(instance,Constructor){if(!(instance instanceof Constructor))throw new TypeError("Cannot call a class as a function")}var RocketBrowserCompatibilityChecker=function(){function RocketBrowserCompatibilityChecker(options){_classCallCheck(this,RocketBrowserCompatibilityChecker),this.passiveSupported=!1,this._checkPassiveOption(this),this.options=!!this.passiveSupported&&options}return _createClass(RocketBrowserCompatibilityChecker,[{key:"_checkPassiveOption",value:function(self){try{var options={get passive(){return!(self.passiveSupported=!0)}};window.addEventListener("test",null,options),window.removeEventListener("test",null,options)}catch(err){self.passiveSupported=!1}}},{key:"initRequestIdleCallback",value:function(){!1 in window&&(window.requestIdleCallback=function(cb){var start=Date.now();return setTimeout(function(){cb({didTimeout:!1,timeRemaining:function(){return Math.max(0,50-(Date.now()-start))}})},1)}),!1 in window&&(window.cancelIdleCallback=function(id){return clearTimeout(id)})}},{key:"isDataSaverModeOn",value:function(){return"connection"in navigator&&!0===navigator.connection.saveData}},{key:"supportsLinkPrefetch",value:function(){var elem=document.createElement("link");return elem.relList&&elem.relList.supports&&elem.relList.supports("prefetch")&&window.IntersectionObserver&&"isIntersecting"in IntersectionObserverEntry.prototype}},{key:"isSlowConnection",value:function(){return"connection"in navigator&&"effectiveType"in navigator.connection&&("2g"===navigator.connection.effectiveType||"slow-2g"===navigator.connection.effectiveType)}}]),RocketBrowserCompatibilityChecker}();
+//# sourceURL=rocket-browser-checker-js-after
+</script>
+<script id="rocket-preload-links-js-extra">
+var RocketPreloadLinksConfig = {"excludeUris":"/support/|/supporto/|/soporte/|/(.*)pagespeed-submissions/|/pagespeed-submissions/|/discover-rocketcare/|/pricing/|/express-checkout/|/freelancers-agencies/|/rocket-insights/|/(?:.+/)?feed(?:/(?:.+/?)?)?$|/(?:.+/)?embed/|/order/??(.*)|/fr/commande/??(.*)|/de/bestellen/??(.*)|/it/ordine/??(.*)|/ja/order/??(.*)|/es/tu-pedido/??(.*)|/account/??(.*)|/fr/account/??(.*)|/de/account/??(.*)|/it/account/??(.*)|/ja/account/??(.*)|/es/account/??(.*)|/(index.php/)?(.*)wp-json(/.*|$)|/refer/|/go/|/recommend/|/recommends/","usesTrailingSlash":"1","imageExt":"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php","fileExt":"jpg|jpeg|gif|png|tiff|bmp|webp|avif|pdf|doc|docx|xls|xlsx|php|html|htm","siteUrl":"https://wp-rocket.me","onHoverDelay":"100","rateThrottle":"3"};
+//# sourceURL=rocket-preload-links-js-extra
+</script>
+<script type="rocketlazyloadscript" id="rocket-preload-links-js-after">
+(function() {
+"use strict";var r="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e},e=function(){function i(e,t){for(var n=0;n<t.length;n++){var i=t[n];i.enumerable=i.enumerable||!1,i.configurable=!0,"value"in i&&(i.writable=!0),Object.defineProperty(e,i.key,i)}}return function(e,t,n){return t&&i(e.prototype,t),n&&i(e,n),e}}();function i(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}var t=function(){function n(e,t){i(this,n),this.browser=e,this.config=t,this.options=this.browser.options,this.prefetched=new Set,this.eventTime=null,this.threshold=1111,this.numOnHover=0}return e(n,[{key:"init",value:function(){!this.browser.supportsLinkPrefetch()||this.browser.isDataSaverModeOn()||this.browser.isSlowConnection()||(this.regex={excludeUris:RegExp(this.config.excludeUris,"i"),images:RegExp(".("+this.config.imageExt+")$","i"),fileExt:RegExp(".("+this.config.fileExt+")$","i")},this._initListeners(this))}},{key:"_initListeners",value:function(e){-1<this.config.onHoverDelay&&document.addEventListener("mouseover",e.listener.bind(e),e.listenerOptions),document.addEventListener("mousedown",e.listener.bind(e),e.listenerOptions),document.addEventListener("touchstart",e.listener.bind(e),e.listenerOptions)}},{key:"listener",value:function(e){var t=e.target.closest("a"),n=this._prepareUrl(t);if(null!==n)switch(e.type){case"mousedown":case"touchstart":this._addPrefetchLink(n);break;case"mouseover":this._earlyPrefetch(t,n,"mouseout")}}},{key:"_earlyPrefetch",value:function(t,e,n){var i=this,r=setTimeout(function(){if(r=null,0===i.numOnHover)setTimeout(function(){return i.numOnHover=0},1e3);else if(i.numOnHover>i.config.rateThrottle)return;i.numOnHover++,i._addPrefetchLink(e)},this.config.onHoverDelay);t.addEventListener(n,function e(){t.removeEventListener(n,e,{passive:!0}),null!==r&&(clearTimeout(r),r=null)},{passive:!0})}},{key:"_addPrefetchLink",value:function(i){return this.prefetched.add(i.href),new Promise(function(e,t){var n=document.createElement("link");n.rel="prefetch",n.href=i.href,n.onload=e,n.onerror=t,document.head.appendChild(n)}).catch(function(){})}},{key:"_prepareUrl",value:function(e){if(null===e||"object"!==(void 0===e?"undefined":r(e))||!1 in e||-1===["http:","https:"].indexOf(e.protocol))return null;var t=e.href.substring(0,this.config.siteUrl.length),n=this._getPathname(e.href,t),i={original:e.href,protocol:e.protocol,origin:t,pathname:n,href:t+n};return this._isLinkOk(i)?i:null}},{key:"_getPathname",value:function(e,t){var n=t?e.substring(this.config.siteUrl.length):e;return n.startsWith("/")||(n="/"+n),this._shouldAddTrailingSlash(n)?n+"/":n}},{key:"_shouldAddTrailingSlash",value:function(e){return this.config.usesTrailingSlash&&!e.endsWith("/")&&!this.regex.fileExt.test(e)}},{key:"_isLinkOk",value:function(e){return null!==e&&"object"===(void 0===e?"undefined":r(e))&&(!this.prefetched.has(e.href)&&e.origin===this.config.siteUrl&&-1===e.href.indexOf("?")&&-1===e.href.indexOf("#")&&!this.regex.excludeUris.test(e.href)&&!this.regex.images.test(e.href))}}],[{key:"run",value:function(){"undefined"!=typeof RocketPreloadLinksConfig&&new n(new RocketBrowserCompatibilityChecker({capture:!0,passive:!0}),RocketPreloadLinksConfig).init()}}]),n}();t.run();
+}());
+
+//# sourceURL=rocket-preload-links-js-after
+</script>
+<script id="scripts-js-extra">
+var siteVariables = {"ajax_url":"https://wp-rocket.me/wp-admin/admin-ajax.php","locale":"en_US"};
+var WPRocketBenefitsConfig = ["imagify","antagonist-benefits","zoner-benefits","one-benefits","wpml-benefits","websavers-benefits","wpengine-benefits","a2-benefits","hosting4real-benefits","seopress-benefits","wattspeed-benefits","wpcrafter-benefits","codeable-benefits","ezfrontiers-benefits","wpoptimizers-benefits","heimdal-benefits","wpx-benefits","bangmod-benefits","o2switch-benefits","crocoblock-benefits","stupidsimpleseo-benefits","hostinger-benefits","debugbear-benefits","eskimoz-benefits","visualcomposer-benefits","proisp-benefits","bigscoots-benefits","perksflow-benefits","wpumbrella-benefits","rankmath-benefits","wordcamp-benefits","termly-benefits","wpsessions-benefits","bloggerspassion-benefits","aiseo-benefits","gtmetrix-benefits","instawp-benefits","extendify-benefits","imagify-benefits","daniel-benefits","peter-benefits"];
+//# sourceURL=scripts-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/scripts.min.js?ver=1791299145" id="scripts-js" data-rocket-defer defer></script>
+<script type="rocketlazyloadscript" data-rocket-src="https://wp-rocket.me/wp-content/themes/V4/assets/js/pages/blog.min.js?ver=1791299147" id="blog-js" data-rocket-defer defer></script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/gravity-forms.min.js?ver=1791299146" id="gravity-forms-input-js" data-rocket-defer defer></script>
+<script type="rocketlazyloadscript" importance="low" data-rocket-src="https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147" id="obf-js" data-rocket-defer defer></script>
+<script id="wpr-bundle-currency-cache-js-extra">
+var wprCurrencyData = {"ajax_url":"https://wp-rocket.me/wp-admin/admin-ajax.php","is_logged_in":"","user_hash":"guest"};
+//# sourceURL=wpr-bundle-currency-cache-js-extra
+</script>
+<script src="https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150" id="wpr-bundle-currency-cache-js" data-rocket-defer defer></script>
+<script id="kl-identify-browser-js-extra">
+var klUser = {"current_user_email":"","commenter_email":""};
+//# sourceURL=kl-identify-browser-js-extra
+</script>
+<script type="rocketlazyloadscript" data-minify="1" data-rocket-src="https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=1791299187" id="kl-identify-browser-js" data-rocket-defer defer></script>
+<script>window.lazyLoadOptions={elements_selector:"iframe[data-lazy-src]",data_src:"lazy-src",data_srcset:"lazy-srcset",data_sizes:"lazy-sizes",class_loading:"lazyloading",class_loaded:"lazyloaded",threshold:300,callback_loaded:function(element){if(element.tagName==="IFRAME"&&element.dataset.rocketLazyload=="fitvidscompatible"){if(element.classList.contains("lazyloaded")){if(typeof window.jQuery!="undefined"){if(jQuery.fn.fitVids){jQuery(element).parent().fitVids()}}}}}};window.addEventListener('LazyLoad::Initialized',function(e){var lazyLoadInstance=e.detail.instance;if(window.MutationObserver){var observer=new MutationObserver(function(mutations){var image_count=0;var iframe_count=0;var rocketlazy_count=0;mutations.forEach(function(mutation){for(var i=0;i<mutation.addedNodes.length;i++){if(typeof mutation.addedNodes[i].getElementsByTagName!=='function'){continue}
+if(typeof mutation.addedNodes[i].getElementsByClassName!=='function'){continue}
+images=mutation.addedNodes[i].getElementsByTagName('img');is_image=mutation.addedNodes[i].tagName=="IMG";iframes=mutation.addedNodes[i].getElementsByTagName('iframe');is_iframe=mutation.addedNodes[i].tagName=="IFRAME";rocket_lazy=mutation.addedNodes[i].getElementsByClassName('rocket-lazyload');image_count+=images.length;iframe_count+=iframes.length;rocketlazy_count+=rocket_lazy.length;if(is_image){image_count+=1}
+if(is_iframe){iframe_count+=1}}});if(image_count>0||iframe_count>0||rocketlazy_count>0){lazyLoadInstance.update()}});var b=document.getElementsByTagName("body")[0];var config={childList:!0,subtree:!0};observer.observe(b,config)}},!1)</script><script data-no-minify="1" async src="https://wp-rocket.me/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script><script>function lazyLoadThumb(e,alt,l){var t='<img src="https://i.ytimg.com/vi/ID/hqdefault.jpg" alt="" width="480" height="360">',a='<button class="play" aria-label="Play Youtube video"></button>';if(l){t=t.replace('data-lazy-','');t=t.replace('loading="lazy"','');t=t.replace(/<noscript>.*?<\/noscript>/g,'');}t=t.replace('alt=""','alt="'+alt+'"');return t.replace("ID",e)+a}function lazyLoadYoutubeIframe(){var e=document.createElement("iframe"),t="ID?autoplay=1";t+=0===this.parentNode.dataset.query.length?"":"&"+this.parentNode.dataset.query;e.setAttribute("src",t.replace("ID",this.parentNode.dataset.src)),e.setAttribute("frameborder","0"),e.setAttribute("allowfullscreen","1"),e.setAttribute("allow","accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"),this.parentNode.parentNode.replaceChild(e,this.parentNode)}document.addEventListener("DOMContentLoaded",function(){var exclusions=[];var e,t,p,u,l,a=document.getElementsByClassName("rll-youtube-player");for(t=0;t<a.length;t++)(e=document.createElement("div")),(u='https://i.ytimg.com/vi/ID/hqdefault.jpg'),(u=u.replace('ID',a[t].dataset.id)),(l=exclusions.some(exclusion=>u.includes(exclusion))),e.setAttribute("data-id",a[t].dataset.id),e.setAttribute("data-query",a[t].dataset.query),e.setAttribute("data-src",a[t].dataset.src),(e.innerHTML=lazyLoadThumb(a[t].dataset.id,a[t].dataset.alt,l)),a[t].appendChild(e),(p=e.querySelector(".play")),(p.onclick=lazyLoadYoutubeIframe)});</script></body>
+</html>
+
+<!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1791342253 -->

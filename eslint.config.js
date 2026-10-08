@@ -123,5 +123,45 @@ export default tseslint.config(
         }
       ]
     }
+  },
+
+  // The test-only reference engine (lib/detection/reference) is deliberately
+  // legacy-shaped (loose untyped payloads are part of the replicated
+  // semantics). It must never import the port's logic — importing the engine
+  // under test would make the parity harness circular and meaningless — so the
+  // only upward imports allowed are the shared footprint vocabulary
+  // (lib/wp-rocket/constants, its values literal-pinned by their own tests)
+  // and the shared contract types (lib/wp-rocket/types, type-only, erased at
+  // runtime). Loose typing stays; this one guard stays on. (Placed after the
+  // strict block on purpose: last matching config wins.)
+  {
+    files: ['lib/detection/reference/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              // Any relative import reaching upward (`../` the port's
+              // detection modules, `../../` the rest of lib/) except the two
+              // shared modules above.
+              regex: '^(?!(?:\\.\\./)+wp-rocket/(constants|types)$)(?:\\.{1,2}/)+',
+              message:
+                'The reference engine is an independent behavioral baseline: the only shared modules it may import are lib/wp-rocket/constants and lib/wp-rocket/types (types-only) — never the port logic it is compared against.'
+            }
+          ]
+        }
+      ],
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+      '@typescript-eslint/no-unnecessary-type-conversion': 'off',
+      '@typescript-eslint/prefer-nullish-coalescing': 'off'
+    }
   }
 );

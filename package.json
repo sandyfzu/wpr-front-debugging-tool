@@ -24,6 +24,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bench:detection": "vitest run --config lib/detection/bench/vitest.bench.config.ts --silent=false",
     "check:budgets": "node scripts/check-budgets.mjs",
     "postinstall": "wxt prepare",
     "prepare": "husky"
@@ -44,7 +45,8 @@
   "dependencies": {
     "@webext-core/messaging": "^4.0.0",
     "clsx": "^2.1.1",
-    "solid-js": "^1.9.15",
+    "jsonrepair": "^3.15.0",
+    "solid-js": "^1.9.16",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
@@ -57,7 +59,7 @@
     "@vitest/coverage-v8": "5.0.3",
     "@wxt-dev/module-solid": "^1.1.4",
     "eslint": "^10.12.0",
-    "eslint-plugin-solid": "^0.17.1",
+    "eslint-plugin-solid": "^0.18.1",
     "globals": "^17.13.0",
     "happy-dom": "^20.14.5",
     "husky": "^9.1.7",
@@ -66,7 +68,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.71.1",
-    "vite": "^8.3.2",
+    "vite": "^8.3.3",
     "vitest": "5.0.3",
     "web-ext": "^10.7.0",
     "wxt": "^0.21.4"

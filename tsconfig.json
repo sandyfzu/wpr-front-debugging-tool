@@ -2,6 +2,10 @@
   "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
     "jsx": "preserve",
-    "jsxImportSource": "solid-js"
-  }
+    "jsxImportSource": "solid-js",
+    "resolveJsonModule": true
+  },
+  // The test-only reference engine is eslint-exempt (legacy-shaped); it must
+  // still type-check so nothing hides behind the exemption.
+  "exclude": ["node_modules"]
 }

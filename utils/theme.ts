@@ -1,5 +1,8 @@
+/** The appearance choices every user-facing surface offers, in registry order. */
+export const APPEARANCES = ['system', 'dark', 'light'] as const;
+
 /** What every user-facing surface offers as its appearance choice. */
-export type Appearance = 'system' | 'dark' | 'light';
+export type Appearance = (typeof APPEARANCES)[number];
 
 /** The palette CSS actually renders — what the three-way choice collapses to. */
 export type Theme = 'dark' | 'light';

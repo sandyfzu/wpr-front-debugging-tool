@@ -1,0 +1,266 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cached": true,
+      "version": "3.19.1.1",
+      "timeStamp": 1791341822
+    },
+    "remove_unused_css": {
+      "present": true
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": false,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "document.documentElement.className = 'js';",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n\tvar gtm4wp_datalayer_name = \"dataLayer\";\n\tvar dataLayer = dataLayer || [];\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "{\"@context\":\"https://schema.org\",\"@graph\":[{\"@type\":\"WebPage\",\"@id\":\"https://rocketcdn.me/\",\"url\":\"https://rocketcdn.me/\",\"name\":\"RocketCDN | Fast, Simple and Easy Content Delivery Network\",\"isPartOf\":{\"@id\":\"https://rocketcdn.me/#website\"},\"primaryImageOfPage\":{\"@id\":\"https://rocketcdn.me/#primaryimage\"},\"image\":{\"@id\":\"https://rocketcdn.me/#primaryimage\"},\"thumbnailUrl\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\",\"datePublished\":\"2021-10-09T13:21:16+00:00\",\"dateModified\":\"2025-06-28T03:57:04+00:00\",\"description\":\"Propel your content at the speed of light with RocketCDN! You’ll get automatic configuration and easy integration to reach your users worldwide.\",\"breadcrumb\":{\"@id\":\"https://rocketcdn.me/#breadcrumb\"},\"inLanguage\":\"en-US\",\"potentialAction\":[{\"@type\":\"ReadAction\",\"target\":[\"https://rocketcdn.me/\"]}]},{\"@type\":\"ImageObject\",\"inLanguage\":\"en-US\",\"@id\":\"https://rocketcdn.me/#primaryimage\",\"url\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\",\"contentUrl\":\"https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg\"},{\"@type\":\"BreadcrumbList\",\"@id\":\"https://rocketcdn.me/#breadcrumb\",\"itemListElement\":[{\"@type\":\"ListItem\",\"position\":1,\"name\":\"Home\"}]},{\"@type\":\"WebSite\",\"@id\":\"https://rocketcdn.me/#website\",\"url\":\"https://rocketcdn.me/\",\"name\":\"RocketCDN\",\"description\":\"\",\"potentialAction\":[{\"@type\":\"SearchAction\",\"target\":{\"@type\":\"EntryPoint\",\"urlTemplate\":\"https://rocketcdn.me/?s={search_term_string}\"},\"query-input\":{\"@type\":\"PropertyValueSpecification\",\"valueRequired\":true,\"valueName\":\"search_term_string\"}}],\"inLanguage\":\"en-US\"}]}",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n\tvar dataLayer_content = {\"pagePostType\":\"frontpage\",\"pagePostType2\":\"single-page\",\"pagePostAuthor\":\"jonathan\"};\n\tdataLayer.push( dataLayer_content );\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':\nnew Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],\nj=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=\n'//www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);\n})(window,document,'script','dataLayer','GTM-TJMKZZJ');\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n{\"prefetch\":[{\"source\":\"document\",\"where\":{\"and\":[{\"href_matches\":\"/*\"},{\"not\":{\"href_matches\":[\"/wp-*.php\",\"/wp-admin/*\",\"/wp-content/uploads/*\",\"/wp-content/*\",\"/wp-content/plugins/*\",\"/wp-content/themes/v1/*\",\"/*\\\\?(.+)\"]}},{\"not\":{\"selector_matches\":\"a[rel~=\\\"nofollow\\\"]\"}},{\"not\":{\"selector_matches\":\".no-prefetch, .no-prefetch a\"}}]},\"eagerness\":\"conservative\"}]}\n",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://rocketcdn.me/wp-includes/js/jquery/jquery.min.js?ver=3.7.1",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/js/blocks/pricing.min.js?ver=1790585966",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/js/scripts.min.js?ver=1790585966",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0
+    },
+    "defer_all_js": {
+      "present": false,
+      "scripts": []
+    },
+    "lazyload": {
+      "present": false,
+      "images": [
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": ["loading=\"eager\""]
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/enhancement.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/customize.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/license.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/launch.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/performance.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/low-price.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/award.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/illustration-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/illustration-2.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/icon-wordpress.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/icon-magento.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/icon-drupal.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/icon-joomla.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/icon-custom.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/step-1.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/step-2.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/step-3.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/uploads/meet-romain-601x396.png",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/white-background.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/facebook.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/icons/twitter.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        },
+        {
+          "src": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/stripe.svg",
+          "lazyloadDetected": false,
+          "excludedReasonsFound": []
+        }
+      ]
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": true,
+      "beacon": false,
+      "preloadedImages": [
+        "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg"
+      ]
+    },
+    "minify_css": {
+      "present": false
+    },
+    "minify_js": {
+      "present": false
+    },
+    "preload_links": {
+      "present": false
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": true,
+    "resources": [
+      {
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/ubuntu-v15-latin-700.woff2",
+        "type": "font"
+      },
+      {
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-regular.woff2",
+        "type": "font"
+      },
+      {
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-500.woff2",
+        "type": "font"
+      },
+      {
+        "href": "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg",
+        "type": "image"
+      }
+    ]
+  }
+}
