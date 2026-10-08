@@ -98,15 +98,15 @@ describe('knownConflictsStore', () => {
   it("reads empty on fresh storage — seeding is the background bundle's job", async () => {
     // The committed snapshot ships only in the background bundle (as its own
     // asset); every other surface must see "no usable value" and ask the
-    // background, never carry the ~46 KB data file to degrade into.
+    // background, never carry the ~77 KB data file to degrade into.
     expect(await knownConflictsStore.getValue()).toBeNull();
     expect(await getKnownConflicts()).toBeNull();
   });
 
-  it('the committed snapshot stays valid and is pinned at exactly 137 rows', () => {
+  it('the committed snapshot stays valid and is pinned at exactly 175 rows', () => {
     // Exact-count pin: silently losing rows (a truncated data file, a bad
     // import) would pass shape checks but ship a blind spot in conflict UIs.
-    expect(KNOWN_CONFLICTS_SEED_LENGTH).toBe(137);
+    expect(KNOWN_CONFLICTS_SEED_LENGTH).toBe(175);
     expect(seedJson).toHaveLength(KNOWN_CONFLICTS_SEED_LENGTH);
     // A mutating consumer must not be able to corrupt the shared seed.
     expect(Object.isFrozen(getKnownConflictsSeed())).toBe(true);

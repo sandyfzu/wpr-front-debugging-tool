@@ -171,6 +171,7 @@ Requirements, not suggestions:
 
 - **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files. Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
 - **Semantic Versioning** — bump `package.json` version for every store upload.
+- **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the `known-conflicts DB seed asset` ceiling in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising that one row is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).
 
 ## When to update this file

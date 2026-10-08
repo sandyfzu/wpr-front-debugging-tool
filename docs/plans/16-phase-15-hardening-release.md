@@ -56,6 +56,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 - [ ] `pnpm zip` + `pnpm zip:firefox` produce store artifacts; verify zips contain no dev artifacts (`.output` hygiene, `.gitignore` respected).
 - [ ] Store listing assets: 128-px icon check, description text, screenshots from the new UI (panel Detections, Diagnoser, Exclusion Builder).
 - [ ] Re-verify both behavioral sources haven't moved before release: the legacy tool past v2.2.5 (it moved once during planning — the WP 7.x KC-selector fix) **and** `wp-media/wpr-inspector` HEAD (P11–P14 build from its v4.1.1 audit — fold any newer commits into the affected phase docs first).
+- [ ] Re-sync the committed Known Conflicts DB snapshot with the live endpoint (AGENTS.md rule): refresh `lib/known-conflicts/known-conflicts-db.json`, re-pin the row count, and re-derive the seed-asset budget row.
 - [ ] Tag `v1.0.0`, Conventional-Commits history clean.
 
 ## Verification checklist (phase exit = project exit)

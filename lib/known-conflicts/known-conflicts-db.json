@@ -1,12 +1,318 @@
 [
   {
+    "id": "3f0ed22a-22f0-80ce-b536-c072f36998a1",
+    "type": "Plugin",
+    "name": "API Manager for WooCommerce",
+    "detection_pattern": "woocommerce-api-manager",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Disable Homepage caching and optimization",
+    "url": "https:\/\/app.notion.com\/p\/API-Manager-for-WooCommerce-3f0ed22a22f080ceb536c072f36998a1"
+  },
+  {
+    "id": "3d5ed22a-22f0-802f-9469-ded5bc7cd0e9",
+    "type": "Plugin",
+    "name": "Clickcease - Click Fraud Protection",
+    "detection_pattern": "clickcease-click-fraud-protection\/clickcease.php",
+    "summary": "Other",
+    "issue_description": "",
+    "url": "https:\/\/app.notion.com\/p\/Clickcease-Click-Fraud-Protection-3d5ed22a22f0802f9469ded5bc7cd0e9"
+  },
+  {
+    "id": "3cfed22a-22f0-800f-8123-d212ef580c31",
+    "type": "Plugin",
+    "name": "ReCrawler",
+    "detection_pattern": null,
+    "summary": "Causes Fatal Errors",
+    "issue_description": "Generate a Fatal error on plugin activation",
+    "url": "https:\/\/app.notion.com\/p\/ReCrawler-3cfed22a22f0800f8123d212ef580c31"
+  },
+  {
+    "id": "3bced22a-22f0-8017-b29a-f41975045610",
+    "type": "Plugin",
+    "name": "WP Hide & Security Enhancer PRO",
+    "detection_pattern": "breaks WP Rocket UI when activated",
+    "summary": "Broken Layout",
+    "issue_description": "breaks WP Rocket UI when activated",
+    "url": "https:\/\/app.notion.com\/p\/WP-Hide-Security-Enhancer-PRO-3bced22a22f08017b29af41975045610"
+  },
+  {
+    "id": "3b2ed22a-22f0-807b-b8e4-d49a083c9ea6",
+    "type": "Plugin",
+    "name": "Borlabs Cookie",
+    "detection_pattern": null,
+    "summary": "File Optimization Conflicts",
+    "issue_description": "Prevents rewrite of self-hosted Google fonts",
+    "url": "https:\/\/app.notion.com\/p\/Borlabs-Cookie-3b2ed22a22f0807bb8e4d49a083c9ea6"
+  },
+  {
+    "id": "397ed22a-22f0-8019-a974-f1c145b04c26",
+    "type": "3rd Party",
+    "name": "Thrive Architect Must Use Plugin",
+    "detection_pattern": "Disabled \u201cReplace YouTube iframe with preview image\u201d",
+    "summary": "Other",
+    "issue_description": "The Replace YouTube iframe with preview image will not update in the settings",
+    "url": "https:\/\/app.notion.com\/p\/Thrive-Architect-Must-Use-Plugin-397ed22a22f08019a974f1c145b04c26"
+  },
+  {
+    "id": "38fed22a-22f0-80e6-85a2-f8d244122453",
+    "type": "Plugin",
+    "name": "Consenta",
+    "detection_pattern": "consenta",
+    "summary": "Causes Fatal Errors",
+    "issue_description": "Generate a Fatal error when Consenta is activated",
+    "url": "https:\/\/app.notion.com\/p\/Consenta-38fed22a22f080e685a2f8d244122453"
+  },
+  {
+    "id": "37ded22a-22f0-805a-9a8e-d99d266d8cbe",
+    "type": "Plugin",
+    "name": "Filter Everything PRO",
+    "detection_pattern": "filter-everything-pro",
+    "summary": "Other",
+    "issue_description": "The filters can generate thousands of cached pages, causing the cache folder to grow significantly over time.",
+    "url": "https:\/\/app.notion.com\/p\/Filter-Everything-PRO-37ded22a22f0805a9a8ed99d266d8cbe"
+  },
+  {
+    "id": "368ed22a-22f0-803f-bfb8-eb41f3a9d05a",
+    "type": "Plugin",
+    "name": "Business Reviews Bundle",
+    "detection_pattern": "\/business-reviews-bundle\/",
+    "summary": "Cache Clearing",
+    "issue_description": "",
+    "url": "https:\/\/app.notion.com\/p\/Business-Reviews-Bundle-368ed22a22f0803fbfb8eb41f3a9d05a"
+  },
+  {
+    "id": "367ed22a-22f0-800f-89ed-e056d5cd50b3",
+    "type": "Plugin",
+    "name": "EWWW Image optimizer CDN 403 error",
+    "detection_pattern": "\/ewww-image-optimizer",
+    "summary": "Broken Layout",
+    "issue_description": "Broken Layout and 403 Errors When Using the CSS Background Images Feature with EWWW CDN",
+    "url": "https:\/\/app.notion.com\/p\/EWWW-Image-optimizer-CDN-403-error-367ed22a22f0800f89ede056d5cd50b3"
+  },
+  {
+    "id": "333ed22a-22f0-80d7-9a2a-f0b18910a09b",
+    "type": "Plugin",
+    "name": "IP Location Block",
+    "detection_pattern": "ip-location-block",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Set a DONOTCACHEPAGE Constant",
+    "url": "https:\/\/app.notion.com\/p\/IP-Location-Block-333ed22a22f080d79a2af0b18910a09b"
+  },
+  {
+    "id": "326ed22a-22f0-8013-a2e5-e8026bd83c3e",
+    "type": "Plugin",
+    "name": "Divi Form Builder",
+    "detection_pattern": "\/divi-form-builder\/",
+    "summary": "Cache Clearing",
+    "issue_description": "They implement a fix in version 5.0.4.\n\nDivi Form Builder is executing: ET_Core_PageResource::remove_static_resources() during every WordPress load.\n\/wp-content\/plugins\/divi-form-builder\/divi-form-builder.php line 70;\nThis generates excessive cache clearing, affecting WP Rocket cache generation.",
+    "url": "https:\/\/app.notion.com\/p\/Divi-Form-Builder-326ed22a22f08013a2e5e8026bd83c3e"
+  },
+  {
+    "id": "31fed22a-22f0-8095-ab93-ef3435970866",
+    "type": "Plugin",
+    "name": "ELEX WooCommerce Product Price Custom Text (Before & After Text) and Discount",
+    "detection_pattern": "elex-product-price-custom-text-before-after-text-and-discount-for-woocommerce",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffer is cleaned incorrectly preventing the cache files from being generated. On this file",
+    "url": "https:\/\/app.notion.com\/p\/ELEX-WooCommerce-Product-Price-Custom-Text-Before-After-Text-and-Discount-1-31fed22a22f08095ab93ef3435970866"
+  },
+  {
+    "id": "319ed22a-22f0-8091-be44-e0d5b1bc8027",
+    "type": "Plugin",
+    "name": "DIGITS: WordPress Mobile Number Signup and Login",
+    "detection_pattern": "digits",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The plugin sets the\u00a0DONOTCACHEPAGE\u00a0constant.",
+    "url": "https:\/\/app.notion.com\/p\/DIGITS-WordPress-Mobile-Number-Signup-and-Login-319ed22a22f08091be44e0d5b1bc8027"
+  },
+  {
+    "id": "2f0ed22a-22f0-80fe-b899-d433c4e71ae4",
+    "type": "Plugin",
+    "name": "Wechat Shop",
+    "detection_pattern": "\/wechat-shop\/",
+    "summary": "License Validation",
+    "issue_description": "This plugin changes our user agent, causing Cloudflare to block the licence validation request. ",
+    "url": "https:\/\/app.notion.com\/p\/Wechat-Shop-2f0ed22a22f080feb899d433c4e71ae4"
+  },
+  {
+    "id": "277ed22a-22f0-8053-992b-d35092b1d901",
+    "type": "Plugin",
+    "name": "UpdraftPlus",
+    "detection_pattern": "\/",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to TRUE when the website is cloned",
+    "url": "https:\/\/app.notion.com\/p\/UpdraftPlus-277ed22a22f08053992bd35092b1d901"
+  },
+  {
+    "id": "26aed22a-22f0-8000-8ffa-ce96f419232a",
+    "type": "Plugin",
+    "name": "PublishPress Autors",
+    "detection_pattern": "publishpress-authors",
+    "summary": "Cache Clearing",
+    "issue_description": "When using PublishPress Authors plugin, they clear the post cache on each page load.",
+    "url": "https:\/\/app.notion.com\/p\/PublishPress-Autors-26aed22a22f080008fface96f419232a"
+  },
+  {
+    "id": "256ed22a-22f0-8015-ab02-c43bb6f5141c",
+    "type": "Plugin",
+    "name": "SIBS Payments plugin for WooCommerce",
+    "detection_pattern": "https:\/\/www.docs.pay.sibs.com\/integrations\/plugins\/woocommerce\/",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents new cache files from being created (pre-existing cache files are still served)",
+    "url": "https:\/\/app.notion.com\/p\/SIBS-Payments-plugin-for-WooCommerce-256ed22a22f08015ab02c43bb6f5141c"
+  },
+  {
+    "id": "240ed22a-22f0-8074-9945-fcaf9b42749a",
+    "type": "Plugin",
+    "name": "\u00a0IP2Location Redirection",
+    "detection_pattern": "ip2location-redirection",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "When the redirection option is enabled for any secondary language (e.g., ?lang=en), the redirection process causes a timeout for that language. As a result, the Used CSS generated for that page is not only larger than the expected size, but this also leaves the page broken.",
+    "url": "https:\/\/app.notion.com\/p\/IP2Location-Redirection-240ed22a22f080749945fcaf9b42749a"
+  },
+  {
+    "id": "239ed22a-22f0-808f-8767-f7bd3a2e0af1",
+    "type": "Plugin",
+    "name": "Rank Math SEO",
+    "detection_pattern": "rank-math",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When the Rewrite Titles feature is active: https:\/\/jmp.sh\/ME2vVoWz",
+    "url": "https:\/\/app.notion.com\/p\/Rank-Math-SEO-239ed22a22f0808f8767f7bd3a2e0af1"
+  },
+  {
+    "id": "224ed22a-22f0-80b4-b1fc-d008278e1ef0",
+    "type": "Plugin",
+    "name": "OneTap (One Click Accessibility) plugin",
+    "detection_pattern": "accessibility-onetap",
+    "summary": "Other",
+    "issue_description": "This plugin adds its own event listener that overrides WP Rocket's one, preventing clicks from working correctly in our dashboard. Instead of triggering the intended actions, it causes the page to scroll upwards.",
+    "url": "https:\/\/app.notion.com\/p\/OneTap-One-Click-Accessibility-plugin-224ed22a22f080b4b1fcd008278e1ef0"
+  },
+  {
+    "id": "223ed22a-22f0-8043-afa8-fada8e1a337a",
+    "type": "Plugin",
+    "name": "Molongui Authorship",
+    "detection_pattern": "molongui-authorship",
+    "summary": "Causes Fatal Errors",
+    "issue_description": "There is a conflict with the Molongui Authorship\u00a0plugin triggering a Fatal error:",
+    "url": "https:\/\/app.notion.com\/p\/Molongui-Authorship-223ed22a22f08043afa8fada8e1a337a"
+  },
+  {
+    "id": "21ded22a-22f0-8085-80a9-e81fb2c19300",
+    "type": "Theme",
+    "name": "Ashton",
+    "detection_pattern": "ashton",
+    "summary": "License Validation",
+    "issue_description": "This theme modifies the User Agent, which results in blocking the validation of the WP Rocket license.",
+    "url": "https:\/\/app.notion.com\/p\/Ashton-21ded22a22f0808580a9e81fb2c19300"
+  },
+  {
+    "id": "21bed22a-22f0-80d5-9485-fcf8577cab8a",
+    "type": "Plugin",
+    "name": "Slider by Soliloquy \u2013 Responsive Image Slider for WordPress",
+    "detection_pattern": "soliloquy",
+    "summary": "Causes Fatal Errors",
+    "issue_description": "The author fixed this issue on version 2.7.1 of the paid version\n\nThere is a conflict between the new Lazy Loading control feature in the Slider plugin and the WP Rocket Lazyload.",
+    "url": "https:\/\/app.notion.com\/p\/Slider-by-Soliloquy-Responsive-Image-Slider-for-WordPress-21bed22a22f080d59485fcf8577cab8a"
+  },
+  {
+    "id": "20fed22a-22f0-80f9-bfab-e5de6c31bdde",
+    "type": "Plugin",
+    "name": "Website LLMs.txt ",
+    "detection_pattern": "website-llms-txt",
+    "summary": "Cache Clearing",
+    "issue_description": "The plugin generates total cache cleans very frequently in versions prior to 6.1.1 In later versions, although it does not perform total clears as frequently, it still performs clears in some cases. Therefore, if there is a case of very frequent cache clearing and the plugin is installed, it is best to install the WP Rocket | Logging Cache Clearing helper and check if the clears are being performed by this plugin. Ticket: https:\/\/secure.helpscout.net\/conversation\/2963936347\/565983  ",
+    "url": "https:\/\/app.notion.com\/p\/Website-LLMs-txt-20fed22a22f080f9bfabe5de6c31bdde"
+  },
+  {
+    "id": "20fed22a-22f0-808b-8594-e300858bf92c",
+    "type": "Plugin",
+    "name": "Yoast SEO",
+    "detection_pattern": "wordpress-seo",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "The  ?wpr_imagedimensions=1&nowprocket=1&no_optimize=1 is redirected to the base URL, which is cached.",
+    "url": "https:\/\/app.notion.com\/p\/Yoast-SEO-20fed22a22f0808b8594e300858bf92c"
+  },
+  {
+    "id": "20fed22a-22f0-80f6-aebe-c3aa638cfa6f",
+    "type": "Theme",
+    "name": "Bridge Theme",
+    "detection_pattern": "bridge",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "This is an edge case, described here: The problem is that the layout of the page\u00a0https:\/\/tubotermoretractil.com\/blog\/\u00a0breaks when accessed from the menu.If you access the page directly, i.e., by copying and pasting the URL\u00a0https:\/\/tubotermoretractil.com\/blog\/\u00a0into the browser, the site will display correctly. The problem is that if you go to the same page from the menu, i.e., first accessing\u00a0https:\/\/tubotermoretractil.com\/\u00a0and then selecting blog from the menu, the layout will be broken.Please note that if you access the site directly from\u00a0https:\/\/tubotermoretractil.com\/blog\/, you will see the correct layout because Remove unused CSS is disabled on that page, and it will be shown as inactive in the inspector, but if you access it from the menu, Remove unused CSS will be shown as active in the inspector and the layout will be broken.I assume that the site has some Ajax functionality that does not reload the page\u00a0https:\/\/tubotermoretractil.com\/blog\u00a0when accessed from the menu. The issue is caused when the option Page Transition is set in Fade",
+    "url": "https:\/\/app.notion.com\/p\/Bridge-Theme-20fed22a22f080f6aebec3aa638cfa6f"
+  },
+  {
+    "id": "20fed22a-22f0-80fb-85a6-e547efc8f399",
+    "type": "Plugin",
+    "name": "Safelayout Cute Preloader plugin",
+    "detection_pattern": "safelayout-cute-preloader",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "They use our pre_get_rocket_option_remove_unused_css_safelist filter in the wrong way to set an item in our Remove Unused CSS safe list.",
+    "url": "https:\/\/app.notion.com\/p\/Safelayout-Cute-Preloader-plugin-20fed22a22f080fb85a6e547efc8f399"
+  },
+  {
+    "id": "1e4ed22a-22f0-8048-abdf-e3349ca9d0f5",
+    "type": "Plugin",
+    "name": "UpSolution Core",
+    "detection_pattern": "us-core",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "JS conflict with our Delay JavaScript Execution feature",
+    "url": "https:\/\/app.notion.com\/p\/UpSolution-Core-1e4ed22a22f08048abdfe3349ca9d0f5"
+  },
+  {
+    "id": "1d6ed22a-22f0-80d7-9fb3-d9f4a5136a31",
+    "type": "Plugin",
+    "name": "Really Simple Security",
+    "detection_pattern": "really-simple-ssl",
+    "summary": "Other",
+    "issue_description": "This plugin adds HTACCESS rules within the WP Rocket HTACCESS section, specifically right after # BEGIN WP Rocket.",
+    "url": "https:\/\/app.notion.com\/p\/Really-Simple-Security-1d6ed22a22f080d79fb3d9f4a5136a31"
+  },
+  {
+    "id": "1c4ed22a-22f0-8011-8288-e26e6f01a72e",
+    "type": "Theme",
+    "name": "Hoteller Theme",
+    "detection_pattern": "hoteller",
+    "summary": "Other",
+    "issue_description": "This theme prevents our license validation.",
+    "url": "https:\/\/app.notion.com\/p\/Hoteller-Theme-1c4ed22a22f080118288e26e6f01a72e"
+  },
+  {
+    "id": "18ced22a-22f0-804b-bfbb-e882826cd122",
+    "type": "Plugin",
+    "name": "Flying Fonts",
+    "detection_pattern": "flying-fonts",
+    "summary": "Broken Layout",
+    "issue_description": "Stripes out RUCSS and OCI from the title tag",
+    "url": "https:\/\/app.notion.com\/p\/Flying-Fonts-18ced22a22f0804bbfbbe882826cd122"
+  },
+  {
+    "id": "18ced22a-22f0-80ec-b49c-eee1cac72fbd",
+    "type": "Plugin",
+    "name": "html after URL",
+    "detection_pattern": "html after URL",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevent URL not processed by Preload",
+    "url": "https:\/\/app.notion.com\/p\/html-after-URL-18ced22a22f080ecb49ceee1cac72fbd"
+  },
+  {
+    "id": "14ded22a-22f0-802a-8a70-fb27f645147c",
+    "type": "Plugin",
+    "name": "Socialmark",
+    "detection_pattern": "socialmark",
+    "summary": "File Optimization Conflicts",
+    "issue_description": "Prevent Optimizations hooked  to wp_head (DJE, RUCSS, OCI, ALR, etc)",
+    "url": "https:\/\/app.notion.com\/p\/Socialmark-14ded22a22f0802a8a70fb27f645147c"
+  },
+  {
     "id": "123ed22a-22f0-8018-9c4f-c6c934f35efe",
     "type": "Plugin",
     "name": "Menu Caching",
-    "detection_pattern": "menu-caching/menu-caching.php",
+    "detection_pattern": "menu-caching\/menu-caching.php",
     "summary": "Causes Fatal Errors",
     "issue_description": "Causes a fatal error when clearing WP Rocket\u2019s cache",
-    "url": "https://www.notion.so/Menu-Caching-123ed22a22f080189c4fc6c934f35efe"
+    "url": "https:\/\/app.notion.com\/p\/Menu-Caching-123ed22a22f080189c4fc6c934f35efe"
   },
   {
     "id": "120ed22a-22f0-80ea-b3e0-ed4b071fea87",
@@ -14,17 +320,17 @@
     "name": "Quill Forms",
     "detection_pattern": "quillforms",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/Quill-Forms-120ed22a22f080eab3e0ed4b071fea87"
+    "issue_description": "Fixed as of Quill Forms version 3.10.0",
+    "url": "https:\/\/app.notion.com\/p\/Quill-Forms-120ed22a22f080eab3e0ed4b071fea87"
   },
   {
     "id": "f08bbf77-5c0f-4763-890b-329e45a034a8",
     "type": "Plugin",
     "name": "Kreativo Pro Speed Optimization",
     "detection_pattern": "kreativo-pro-speed-optimization",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Kreativo-Pro-Speed-Optimization-f08bbf775c0f4763890b329e45a034a8"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The Kreativo Pro Speed Optimization plugin is injecting their own script with ID: cz8MjVA6ko  as seen below when you bypass WP Rocket",
+    "url": "https:\/\/app.notion.com\/p\/Kreativo-Pro-Speed-Optimization-f08bbf775c0f4763890b329e45a034a8"
   },
   {
     "id": "bb468592-bec1-4eea-b7d6-000e08a618a8",
@@ -33,7 +339,7 @@
     "detection_pattern": "contact-form-7-success-page-redirects",
     "summary": "Other",
     "issue_description": "This plugin disables Contact Form 7 AJAX for redirects to work\n\nBut, CF7 uses AJAX when cache is enabled. and this causes a Console  error in CF7 JSON AJAX response when the form is submitted.\n\nEven excluding the page from the cache doesn\u2019t fix the issue, because CF7 detects our caching plugin and puts itself in \u201cAJAX mode\u201d.So, no solution from our end here.",
-    "url": "https://www.notion.so/Contact-Form-7-Success-Page-Redirects-bb468592bec14eeab7d6000e08a618a8"
+    "url": "https:\/\/app.notion.com\/p\/Contact-Form-7-Success-Page-Redirects-bb468592bec14eeab7d6000e08a618a8"
   },
   {
     "id": "9dda816e-d404-4290-aa7e-be5e77a48ec9",
@@ -41,17 +347,53 @@
     "name": "Super Progressive Web Apps",
     "detection_pattern": null,
     "summary": null,
-    "issue_description": "Super Progressive Web Apps prevents the generation of the Used CSS\nfor a percentage of URLs, the Used CSS is partially generated. The bad CSS is not completely different (like in those cases where the request is fully blocked)\nIn these cases, it seems only a portion of the CSS is returning from SaaS.\nWhen tested with postman, the result is the complete css.\nCan be fixed by adding\n\nno_optimize=1,nowprocket=1,wpr_imagedimensions=1\n\nin \u201cExclude URLs from Cache list\u201d in the advanced settings tab\nslack : https://wp-media.slack.com/archives/C056ZJMHG0P/p1722880043713009",
-    "url": "https://www.notion.so/Super-Progressive-Web-Apps-9dda816ed4044290aa7ebe5e77a48ec9"
+    "issue_description": "Super Progressive Web Apps prevents the generation of the Used CSS\nfor a percentage of URLs, the Used CSS is partially generated. The bad CSS is not completely different (like in those cases where the request is fully blocked)\nIn these cases, it seems only a portion of the CSS is returning from SaaS.\nWhen tested with postman, the result is the complete css.\nCan be fixed by adding\n\nno_optimize=1,nowprocket=1,wpr_imagedimensions=1\n\nin \u201cExclude URLs from Cache list\u201d in the advanced settings tab\nslack : https:\/\/wp-media.slack.com\/archives\/C056ZJMHG0P\/p1722880043713009",
+    "url": "https:\/\/app.notion.com\/p\/Super-Progressive-Web-Apps-9dda816ed4044290aa7ebe5e77a48ec9"
   },
   {
     "id": "d024cd3a-bc69-4b4a-9da2-59bc07db1fa9",
     "type": "Plugin",
-    "name": "Nelio A/B Testing",
+    "name": "Nelio A\/B Testing",
     "detection_pattern": "nelio-ab-testing",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "Unknown/wrong usage of mandatory cookies. The mandatory cookies are never set.",
-    "url": "https://www.notion.so/Nelio-A-B-Testing-d024cd3abc694b4a9da259bc07db1fa9"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Unknown\/wrong usage of mandatory cookies. The mandatory cookies are never set.",
+    "url": "https:\/\/app.notion.com\/p\/Nelio-A-B-Testing-d024cd3abc694b4a9da259bc07db1fa9"
+  },
+  {
+    "id": "4531dfa2-4015-4afa-bce7-7ab3cda1958b",
+    "type": "Plugin",
+    "name": "Pixel Your Site",
+    "detection_pattern": "pixelyoursite",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When this option is active: https:\/\/imgur.com\/eMYz6Lx They are incorrectly clearing the PHP buffer. It is happening on this file:\u00a0wp-content\/plugins\/pixelyoursite\/modules\/google_tags\/gatags.phpOn line 48, they are hooking into\u00a0wp_footer\u00a0a function called\u00a0end_output_bufferWhich triggers this function:ob_end_flush();",
+    "url": "https:\/\/app.notion.com\/p\/Pixel-Your-Site-4531dfa240154afabce77ab3cda1958b"
+  },
+  {
+    "id": "abc5c68a-3cc3-416d-9c9c-ddc9cc0348ce",
+    "type": "Plugin",
+    "name": "Spectra",
+    "detection_pattern": "ultimate-addons-for-gutenberg",
+    "summary": "Broken Layout",
+    "issue_description": "Asset Generation for CSS breaks layout in the frontend",
+    "url": "https:\/\/app.notion.com\/p\/Spectra-abc5c68a3cc3416d9c9cddc9cc0348ce"
+  },
+  {
+    "id": "eba9f330-2908-4284-94e5-711a8ae3cc12",
+    "type": "Plugin",
+    "name": "Visual Visitor",
+    "detection_pattern": "\/",
+    "summary": "Other",
+    "issue_description": "It breaks the import settings option by not allowing to display the file selector popup",
+    "url": "https:\/\/app.notion.com\/p\/Visual-Visitor-eba9f3302908428494e5711a8ae3cc12"
+  },
+  {
+    "id": "584b6686-4b76-4ead-99e2-173f84a139de",
+    "type": "Plugin",
+    "name": "Search Engine Labs Content",
+    "detection_pattern": "metasync",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "There is an option called Enable Otto. When it\u2019s enabled, it prevents WP Rocket\u2019s optimizations from being applied.",
+    "url": "https:\/\/app.notion.com\/p\/Search-Engine-Labs-Content-584b66864b764ead99e2173f84a139de"
   },
   {
     "id": "d36d1a1d-fdf5-4951-90fa-c72818d4cd46",
@@ -59,44 +401,44 @@
     "name": "bbp style pack",
     "detection_pattern": "bbp-style-pack",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/bbp-style-pack-d36d1a1dfdf5495190fac72818d4cd46"
+    "issue_description": "The BBP Style Pack plugin is trying to call our function rocket_clean_domain (in plugins_loaded hook) and that is calling the function rocket_is_importing, which is defined in api.php file here and this api.php file is loaded inside the rocket_init function, which fired in the hook plugins_loaded here.",
+    "url": "https:\/\/app.notion.com\/p\/bbp-style-pack-d36d1a1dfdf5495190fac72818d4cd46"
   },
   {
     "id": "043765fe-7f7b-4c8f-a4ba-b81a3fa6a188",
     "type": "Plugin",
     "name": "Forminator Pro",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Forminator-Pro-043765fe7f7b4c8fa4bab81a3fa6a188"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Has an option which prevents caching, located inside the Form edit > Behavior tab, Rendering is at the bottom",
+    "url": "https:\/\/app.notion.com\/p\/Forminator-Pro-043765fe7f7b4c8fa4bab81a3fa6a188"
   },
   {
     "id": "db319e0c-f001-4825-a95a-2c5607a36486",
     "type": "Plugin",
     "name": "FunnelKit Funnel Builder Pro",
     "detection_pattern": "funnel-builder-pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/FunnelKit-Funnel-Builder-Pro-db319e0cf0014825a95a2c5607a36486"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "They pass the command \u201cDONOTCACHEPAGE\u201d to tell caching plugins to exclude their offer pages, due to compatibility reasons. ",
+    "url": "https:\/\/app.notion.com\/p\/FunnelKit-Funnel-Builder-Pro-db319e0cf0014825a95a2c5607a36486"
   },
   {
     "id": "aaba275f-a3a6-4e34-ac22-411232db383b",
     "type": "Plugin",
     "name": "FunnelKit Funnel Builder",
     "detection_pattern": "funnel-builder",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/FunnelKit-Funnel-Builder-aaba275fa3a64e34ac22411232db383b"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "They pass the command \u201cDONOTCACHEPAGE\u201d to tell caching plugins to exclude their offer pages, due to compatibility reasons.",
+    "url": "https:\/\/app.notion.com\/p\/FunnelKit-Funnel-Builder-aaba275fa3a64e34ac22411232db383b"
   },
   {
     "id": "6c36d517-4c1f-4284-9442-09a14302e3ac",
     "type": "Plugin",
     "name": "BookingPress Appointment Booking",
     "detection_pattern": "bookingpress pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/BookingPress-Appointment-Booking-6c36d5174c1f4284944209a14302e3ac"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "With this\u00a0BookingPress Pro - Appointment Booking plugin  activated on the site, WP Rocket Delay JavaScript Execution feature is not applied to some pages.",
+    "url": "https:\/\/app.notion.com\/p\/BookingPress-Appointment-Booking-6c36d5174c1f4284944209a14302e3ac"
   },
   {
     "id": "ee8cbdad-58a3-4752-9033-eef792cf5645",
@@ -104,26 +446,26 @@
     "name": "Hide My WP Ghost",
     "detection_pattern": "hide-my-wp",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Hide-My-WP-Ghost-ee8cbdad58a347529033eef792cf5645"
+    "issue_description": "This plugin removes our DNS Prefetch URLs",
+    "url": "https:\/\/app.notion.com\/p\/Hide-My-WP-Ghost-ee8cbdad58a347529033eef792cf5645"
   },
   {
     "id": "0efbef7a-18f7-4597-88ef-a521a7d25da1",
     "type": "Plugin",
     "name": "PowerPack for Beaver Builder",
     "detection_pattern": "bbpowerpack",
-    "summary": "Prevent Caching and/or Optimizations",
+    "summary": "Prevent Caching and\/or Optimizations",
     "issue_description": "",
-    "url": "https://www.notion.so/PowerPack-for-Beaver-Builder-0efbef7a18f7459788efa521a7d25da1"
+    "url": "https:\/\/app.notion.com\/p\/PowerPack-for-Beaver-Builder-0efbef7a18f7459788efa521a7d25da1"
   },
   {
     "id": "d48b83ae-a1cc-4719-9bba-1e3e310d6db9",
     "type": "Plugin",
     "name": "Ad Inserter Pro",
     "detection_pattern": "ad-inserter-pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ad-Inserter-Pro-d48b83aea1cc47199bba1e3e310d6db9"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "\u2022 Includes an option to \u201cDisable Caching\u201d.\n\u2022 This sets \u201cDONOTCACHEPAGE\u201d to true and prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/Ad-Inserter-Pro-d48b83aea1cc47199bba1e3e310d6db9"
   },
   {
     "id": "6c57267f-982a-4c07-83bc-6c34b88993e5",
@@ -131,17 +473,17 @@
     "name": "Linguise",
     "detection_pattern": "linguise",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/Linguise-6c57267f982a4c0783bc6c34b88993e5"
+    "issue_description": "It seems to modify the global `$wp_rewrite` variable, which is set to null, causing WP Rocket to show \/ log warnings",
+    "url": "https:\/\/app.notion.com\/p\/Linguise-6c57267f982a4c0783bc6c34b88993e5"
   },
   {
     "id": "126c4bfa-ade3-4b95-83c5-07d2702c7366",
     "type": "Plugin",
     "name": "HandL UTM Grabber v3",
     "detection_pattern": "handl-utm-grabber-v3",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/HandL-UTM-Grabber-v3-126c4bfaade34b9583c507d2702c7366"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin rewrites all the link href=\"#\" to include the values of query strings.",
+    "url": "https:\/\/app.notion.com\/p\/HandL-UTM-Grabber-v3-126c4bfaade34b9583c507d2702c7366"
   },
   {
     "id": "b884483a-494e-4b4c-b5e5-05ad2755a27c",
@@ -149,26 +491,26 @@
     "name": "Sonaar",
     "detection_pattern": "sonaar",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Sonaar-b884483a494e4b4cb5e505ad2755a27c"
+    "issue_description": "This theme has an option called \u201cEnable Continuous Audio Player and AJAX\u201d that prevents the site from being reloaded.",
+    "url": "https:\/\/app.notion.com\/p\/Sonaar-b884483a494e4b4cb5e505ad2755a27c"
   },
   {
     "id": "761b7bb7-569b-440a-b662-531cffeb28ac",
     "type": "Theme",
     "name": "Nuss",
     "detection_pattern": "nuss",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Nuss-761b7bb7569b440ab662531cffeb28ac"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The lightbox used by the theme to display images of the rooms will cause\n the thumbnails on the pop-up not to display if the image hasn't been \nLazyLoaded by swiping through all the images before opening the lightbox\n modal.",
+    "url": "https:\/\/app.notion.com\/p\/Nuss-761b7bb7569b440ab662531cffeb28ac"
   },
   {
     "id": "e82699ef-b76f-4729-95cc-d89128cfcbd7",
     "type": "Theme",
     "name": "ProPhoto 7",
     "detection_pattern": "prophoto7",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/ProPhoto-7-e82699efb76f472995ccd89128cfcbd7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The ProPhoto theme has a caching feature located at ProPhoto > Settings > Site Settings > Misc.\nIf enabled, it will add a DONOTCACHEPAGE directive preventing WP Rocket from building cache and processing our optimizations.",
+    "url": "https:\/\/app.notion.com\/p\/ProPhoto-7-e82699efb76f472995ccd89128cfcbd7"
   },
   {
     "id": "fdad6b47-c777-4075-865d-f69ec8e3bd50",
@@ -176,8 +518,8 @@
     "name": "FacetWP",
     "detection_pattern": "facetwp",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/FacetWP-fdad6b47c7774075865df69ec8e3bd50"
+    "issue_description": "This plugin removes type=\"rocketlazyloadscript\u201d and defer from jquery.min.js",
+    "url": "https:\/\/app.notion.com\/p\/FacetWP-fdad6b47c7774075865df69ec8e3bd50"
   },
   {
     "id": "2a439b68-d4cf-45dd-a516-655cd576021b",
@@ -185,8 +527,8 @@
     "name": "WooCommerce Prices By User Role",
     "detection_pattern": "woocommerce-prices-by-user-role",
     "summary": "Causes White Screen",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Prices-By-User-Role-2a439b68d4cf45dda516655cd576021b"
+    "issue_description": "Causes a Buffer content under 255 caracters error, and an incomplete\/blank cached page",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Prices-By-User-Role-2a439b68d4cf45dda516655cd576021b"
   },
   {
     "id": "e7c66b2d-675f-4b08-bfdf-e9de1207b6be",
@@ -194,8 +536,8 @@
     "name": "User Activity Log",
     "detection_pattern": "user-activity-log",
     "summary": "Causes White Screen",
-    "issue_description": "",
-    "url": "https://www.notion.so/User-Activity-Log-e7c66b2d675f4b08bfdfe9de1207b6be"
+    "issue_description": "Causes a white screen when customers try to clear the cache or Used CSS. The cache is not cleared. ",
+    "url": "https:\/\/app.notion.com\/p\/User-Activity-Log-e7c66b2d675f4b08bfdfe9de1207b6be"
   },
   {
     "id": "cd1e5b0f-3887-47bb-8fda-4a488ea13bc8",
@@ -203,8 +545,8 @@
     "name": "SiteOrigin Widgets Bundle",
     "detection_pattern": "so-widgets-bundle",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/SiteOrigin-Widgets-Bundle-cd1e5b0f388747bb8fda4a488ea13bc8"
+    "issue_description": "Clears the whole cache 4 times every time a widget is updated, this can cause CPU problems and server crashes.",
+    "url": "https:\/\/app.notion.com\/p\/SiteOrigin-Widgets-Bundle-cd1e5b0f388747bb8fda4a488ea13bc8"
   },
   {
     "id": "72856132-85b4-42bb-9c62-35354ca2b6a5",
@@ -212,17 +554,17 @@
     "name": "WP Engine",
     "detection_pattern": null,
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-Engine-7285613285b442bb9c6235354ca2b6a5"
+    "issue_description": "If a URL contains utm_ or gclid WP Engine will handle it as if there were no query string on the request.",
+    "url": "https:\/\/app.notion.com\/p\/WP-Engine-7285613285b442bb9c6235354ca2b6a5"
   },
   {
     "id": "b28ae007-4855-459e-8783-69289e8d13ac",
     "type": "Plugin",
     "name": "YayCurrency Pro",
     "detection_pattern": "multi-currency-switcher",
-    "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/YayCurrency-Pro-b28ae0074855459e878369289e8d13ac"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Plugin flushes the htaccess rules and regenerate the config file using flush_htaccess_and_generate_config_file() every time the init hook fires, i.e. every time WordPress loads. \nUPDATE starting from version\u00a02.0.9\u00a0we are fully compatible with them ",
+    "url": "https:\/\/app.notion.com\/p\/YayCurrency-Pro-b28ae0074855459e878369289e8d13ac"
   },
   {
     "id": "931e0cdb-da2d-4a3f-95bd-a3ff4bd7d182",
@@ -230,8 +572,8 @@
     "name": "Themify Ultra",
     "detection_pattern": "Themify",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Themify-Ultra-931e0cdbda2d4a3f95bda3ff4bd7d182"
+    "issue_description": "This theme has a file performance optimizations built in. The Concate CSS optimization in the theme does the same thing as Combine CSS files in WP Rocket https:\/\/i.imgur.com\/cyEU0OI.png.",
+    "url": "https:\/\/app.notion.com\/p\/Themify-Ultra-931e0cdbda2d4a3f95bda3ff4bd7d182"
   },
   {
     "id": "b87439db-0b5a-4a5f-a6ee-595b62616131",
@@ -239,8 +581,8 @@
     "name": "wp-Typography",
     "detection_pattern": "wp-typography",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/wp-Typography-b87439db0b5a4a5fa6ee595b62616131"
+    "issue_description": "The plugin is preventing image loading when the LazyLoad for images is enabled.",
+    "url": "https:\/\/app.notion.com\/p\/wp-Typography-b87439db0b5a4a5fa6ee595b62616131"
   },
   {
     "id": "481e75cb-f6f2-4d02-8f07-52a256f7a2dd",
@@ -248,8 +590,8 @@
     "name": "Woodmart",
     "detection_pattern": "woodmart",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Woodmart-481e75cbf6f24d028f0752a256f7a2dd"
+    "issue_description": "The desktop menu disappears when the Woodmart option PERFORMANCE > Mobile DOM optimization (experimental) is enabled, and the cache is generated on a mobile device first. ",
+    "url": "https:\/\/app.notion.com\/p\/Woodmart-481e75cbf6f24d028f0752a256f7a2dd"
   },
   {
     "id": "52c6c135-52df-49bf-8a3b-f5c60ca0fa4f",
@@ -257,8 +599,8 @@
     "name": "WooCommerce Show Single Variations by Iconic",
     "detection_pattern": "iconic-woo-show-single-variations",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Show-Single-Variations-by-Iconic-52c6c13552df49bf8a3bf5c60ca0fa4f"
+    "issue_description": "Clears the full cache after saving every product variation. It calls the switch_theme hook when a variation is saving, which forces WP Rocket to clear its cache.\n",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Show-Single-Variations-by-Iconic-52c6c13552df49bf8a3bf5c60ca0fa4f"
   },
   {
     "id": "0f90d698-f600-4a19-866f-5ad911ed2a7f",
@@ -266,8 +608,8 @@
     "name": "WooCommerce Multi-currency",
     "detection_pattern": "multi-currency",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Multi-currency-0f90d698f6004a19866f5ad911ed2a7f"
+    "issue_description": "This plugin can cause errors with image encoding in PSI reports: ",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Multi-currency-0f90d698f6004a19866f5ad911ed2a7f"
   },
   {
     "id": "54c05a74-3e86-4cf3-9d60-b8ea66b390b8",
@@ -275,8 +617,8 @@
     "name": "Pixel Manager for WooCommerce",
     "detection_pattern": "woocommerce-google-adwords-conversion-tracking-tag",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Pixel-Manager-for-WooCommerce-54c05a743e864cf39d60b8ea66b390b8"
+    "issue_description": "This plugin is adding its own exclusions to our JS boxes (Inline, Files, Defer) ",
+    "url": "https:\/\/app.notion.com\/p\/Pixel-Manager-for-WooCommerce-54c05a743e864cf39d60b8ea66b390b8"
   },
   {
     "id": "d6aa3cda-3122-4a0e-8646-65873babda09",
@@ -284,8 +626,8 @@
     "name": "JetWidgets For Elementor",
     "detection_pattern": "jetwidgets-for-elementor",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/JetWidgets-For-Elementor-d6aa3cda31224a0e864665873babda09"
+    "issue_description": "The plugin uses the Cherry framework. It adds an inline script that will cause errors if delayed using our Delay JS feature",
+    "url": "https:\/\/app.notion.com\/p\/JetWidgets-For-Elementor-d6aa3cda31224a0e864665873babda09"
   },
   {
     "id": "c1b0e77f-9fad-4fe6-a620-ccbbc0fdbe0d",
@@ -293,8 +635,8 @@
     "name": "WooCommerce Stripe Payment Gateway",
     "detection_pattern": "woocommerce-gateway-stripe",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Stripe-Payment-Gateway-c1b0e77f9fad4fe6a620ccbbc0fdbe0d"
+    "issue_description": "The official Woocommerce Stripe Gateway Express Checkout is not working when the \u201cPay Now\u201d buttons are clicked from a cached Product Page.",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Stripe-Payment-Gateway-c1b0e77f9fad4fe6a620ccbbc0fdbe0d"
   },
   {
     "id": "d914b327-4dfd-4b3f-9fa6-1c156ce137d2",
@@ -302,8 +644,8 @@
     "name": "WooCommerce Color or Image Variation Swatches",
     "detection_pattern": "woocommerce-colororimage-variation-select",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Color-or-Image-Variation-Swatches-d914b3274dfd4b3f9fa61c156ce137d2"
+    "issue_description": "No issues with WP Rocket directly, but apparently can cause huge numbers of queries (customer counted 1700) on pages with product variations.",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Color-or-Image-Variation-Swatches-d914b3274dfd4b3f9fa61c156ce137d2"
   },
   {
     "id": "0db12deb-ce18-4ef9-b9eb-e024c8cb9d9b",
@@ -311,8 +653,8 @@
     "name": "WooCommerce PayPal Checkout Payment Gateway",
     "detection_pattern": "woocommerce-gateway-paypal-express-checkout",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-PayPal-Checkout-Payment-Gateway-0db12debce184ef9b9ebe024c8cb9d9b"
+    "issue_description": "This isn't compatible because of two reasons:",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-PayPal-Checkout-Payment-Gateway-0db12debce184ef9b9ebe024c8cb9d9b"
   },
   {
     "id": "1661ad4b-b940-45db-962b-194f87987ba3",
@@ -320,8 +662,8 @@
     "name": "User Registration",
     "detection_pattern": "user-registration",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/User-Registration-1661ad4bb94045db962b194f87987ba3"
+    "issue_description": "They are clearing cache every time the registration form is rendered.",
+    "url": "https:\/\/app.notion.com\/p\/User-Registration-1661ad4bb94045db962b194f87987ba3"
   },
   {
     "id": "68d220fd-720d-4241-ac58-c945165bba88",
@@ -329,8 +671,8 @@
     "name": "WP GraphQL",
     "detection_pattern": "wp-graphql-cache",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-GraphQL-68d220fd720d4241ac58c945165bba88"
+    "issue_description": "Caching their JSON output will only work partially. ",
+    "url": "https:\/\/app.notion.com\/p\/WP-GraphQL-68d220fd720d4241ac58c945165bba88"
   },
   {
     "id": "d3d082cc-51d2-4ae9-aee7-81db68c77703",
@@ -338,8 +680,8 @@
     "name": "Unbloater",
     "detection_pattern": "unbloater",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Unbloater-d3d082cc51d24ae9aee781db68c77703"
+    "issue_description": "This plugin includes an option to disable WooCommerce\u2019s cart fragments that breaks the functionality of mini-cart plugins.",
+    "url": "https:\/\/app.notion.com\/p\/Unbloater-d3d082cc51d24ae9aee781db68c77703"
   },
   {
     "id": "3fe8776d-5a74-4bb8-82f4-f611c3adb97d",
@@ -347,8 +689,8 @@
     "name": "ShortPixel Image Optimizer",
     "detection_pattern": "shortpixel-image-optimiser",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/ShortPixel-Image-Optimizer-3fe8776d5a744bb882f4f611c3adb97d"
+    "issue_description": "Setting the ShortPixel option \"Deliver the WebP versions of the images in the front-end",
+    "url": "https:\/\/app.notion.com\/p\/ShortPixel-Image-Optimizer-3fe8776d5a744bb882f4f611c3adb97d"
   },
   {
     "id": "0a331cef-32dc-4d2d-9aa9-4c119e01cedb",
@@ -356,8 +698,8 @@
     "name": "Squirrly SEO",
     "detection_pattern": "squirrly seo",
     "summary": "Cache Clearing",
-    "issue_description": "",
-    "url": "https://www.notion.so/Squirrly-SEO-0a331cef32dc4d2d9aa94c119e01cedb"
+    "issue_description": "It causes too much cache clearing, each time a post SEO snippet is edited, created, etc, the full cache is cleared because they trigger rocket_clean_domain.",
+    "url": "https:\/\/app.notion.com\/p\/Squirrly-SEO-0a331cef32dc4d2d9aa94c119e01cedb"
   },
   {
     "id": "7e1a7912-5e43-4a7a-8851-2c6f3bc0c37d",
@@ -365,8 +707,8 @@
     "name": "Rehub Theme",
     "detection_pattern": "rehub-theme",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Rehub-Theme-7e1a79125e434a7a88512c6f3bc0c37d"
+    "issue_description": "When our Database optimization runs, it will trigger a PHP Error",
+    "url": "https:\/\/app.notion.com\/p\/Rehub-Theme-7e1a79125e434a7a88512c6f3bc0c37d"
   },
   {
     "id": "07fce717-554d-444a-96c5-c95d0272fe97",
@@ -374,8 +716,8 @@
     "name": "LayerSlider WP",
     "detection_pattern": null,
     "summary": "Cache Clearing",
-    "issue_description": "",
-    "url": "https://www.notion.so/LayerSlider-WP-07fce717554d444a96c5c95d0272fe97"
+    "issue_description": "It causes too much cache clearing with the Clear 3rd party caches option, which will call  rocket_clean_domain() and clear WP Rocket on every slider update (new, edit) but also in other random occasions.",
+    "url": "https:\/\/app.notion.com\/p\/LayerSlider-WP-07fce717554d444a96c5c95d0272fe97"
   },
   {
     "id": "0af2d692-91a5-4dbb-982f-c57673141ffc",
@@ -383,8 +725,8 @@
     "name": "MWB HubSpot for WooCommerce",
     "detection_pattern": "makewebbetter-hubspot-for-woocommerce",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/MWB-HubSpot-for-WooCommerce-0af2d69291a54dbb982fc57673141ffc"
+    "issue_description": "\u2022 Preload stucks at 1\n\u2022 It uses the same WP Background Processing library creating the problem",
+    "url": "https:\/\/app.notion.com\/p\/MWB-HubSpot-for-WooCommerce-0af2d69291a54dbb982fc57673141ffc"
   },
   {
     "id": "c633922d-11e5-478b-80b3-84993fb1c4bc",
@@ -392,8 +734,8 @@
     "name": "Docket Cache - Object Cache Accelerator",
     "detection_pattern": "docket-cache",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Docket-Cache-Object-Cache-Accelerator-c633922d11e5478b80b384993fb1c4bc"
+    "issue_description": "The Docket cache plugin is a persistent WordPress Object Cache and some features prevent WPR preload from working as expected.",
+    "url": "https:\/\/app.notion.com\/p\/Docket-Cache-Object-Cache-Accelerator-c633922d11e5478b80b384993fb1c4bc"
   },
   {
     "id": "3b626e6a-b5f9-4640-915c-6103456bb3f1",
@@ -401,8 +743,8 @@
     "name": "Disable Bloat for WordPress & WooCommerce",
     "detection_pattern": "disable-dashboard-for-woocommerce",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Disable-Bloat-for-WordPress-WooCommerce-3b626e6ab5f94640915c6103456bb3f1"
+    "issue_description": "This plugin allows disabling WooCommerce Cart Fragments: https:\/\/i.imgur.com\/hlHdZBl.png",
+    "url": "https:\/\/app.notion.com\/p\/Disable-Bloat-for-WordPress-WooCommerce-3b626e6ab5f94640915c6103456bb3f1"
   },
   {
     "id": "d59f720d-565c-4e7a-bcf7-4d3465a5fb2f",
@@ -410,8 +752,8 @@
     "name": "Custom Permalinks",
     "detection_pattern": "custom-permalinks",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Custom-Permalinks-d59f720d565c4e7abcf74d3465a5fb2f"
+    "issue_description": "Prevents preloading and caching for any URL for which a custom permalink has been created. ",
+    "url": "https:\/\/app.notion.com\/p\/Custom-Permalinks-d59f720d565c4e7abcf74d3465a5fb2f"
   },
   {
     "id": "b84a911c-6869-4074-b515-585939ba912e",
@@ -419,8 +761,8 @@
     "name": "Yasr - Yet Another Stars Rating",
     "detection_pattern": "yet-another-stars-rating",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Yasr-Yet-Another-Stars-Rating-b84a911c68694074b515585939ba912e"
+    "issue_description": "Stars disappear when Minify JS is enabled. ",
+    "url": "https:\/\/app.notion.com\/p\/Yasr-Yet-Another-Stars-Rating-b84a911c68694074b515585939ba912e"
   },
   {
     "id": "5e6f9e8a-13e0-4176-81d8-a0fd18e6108e",
@@ -428,8 +770,8 @@
     "name": "Rey Theme",
     "detection_pattern": "rey",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Rey-Theme-5e6f9e8a13e0417681d8a0fd18e6108e"
+    "issue_description": "The theme applies changes while ?nowprocket&no_optimize=1 query strings are applied.",
+    "url": "https:\/\/app.notion.com\/p\/Rey-Theme-5e6f9e8a13e0417681d8a0fd18e6108e"
   },
   {
     "id": "812b3df6-ee40-4346-b906-b23325cb01f5",
@@ -437,8 +779,8 @@
     "name": "WP Content Copy Protection & No Right Click",
     "detection_pattern": "wp-content-copy-protector",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-Content-Copy-Protection-No-Right-Click-812b3df6ee404346b906b23325cb01f5"
+    "issue_description": "This plugin prevent our CPCSS to be generated.",
+    "url": "https:\/\/app.notion.com\/p\/WP-Content-Copy-Protection-No-Right-Click-812b3df6ee404346b906b23325cb01f5"
   },
   {
     "id": "4dfc219e-1abe-40b4-ba02-93ca8e954385",
@@ -446,17 +788,17 @@
     "name": "Showcase IDX",
     "detection_pattern": "showcase-idx",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Showcase-IDX-4dfc219e1abe40b4ba0293ca8e954385"
+    "issue_description": "This plugin uses a CSS file that contains parse errors. ",
+    "url": "https:\/\/app.notion.com\/p\/Showcase-IDX-4dfc219e1abe40b4ba0293ca8e954385"
   },
   {
     "id": "e0c1fa61-c952-4c9e-815a-ed58194e9f52",
     "type": "Plugin",
     "name": "Pre* Party Resource Hints",
     "detection_pattern": "pre-party-browser-hints",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Pre-Party-Resource-Hints-e0c1fa61c9524c9e815aed58194e9f52"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents our DNS Prefetches being added",
+    "url": "https:\/\/app.notion.com\/p\/Pre-Party-Resource-Hints-e0c1fa61c9524c9e815aed58194e9f52"
   },
   {
     "id": "43c3539d-de6f-4257-a0ba-eb62449839a8",
@@ -464,8 +806,8 @@
     "name": "ShortPixel Adaptive Images",
     "detection_pattern": "shortpixel-adaptive-images",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/ShortPixel-Adaptive-Images-43c3539dde6f4257a0baeb62449839a8"
+    "issue_description": "They have 2 options that can conflict with our Minify CSS",
+    "url": "https:\/\/app.notion.com\/p\/ShortPixel-Adaptive-Images-43c3539dde6f4257a0baeb62449839a8"
   },
   {
     "id": "44cdef54-4d03-48cb-886a-18cde1bf8478",
@@ -473,8 +815,8 @@
     "name": "Plugin for Google Reviews",
     "detection_pattern": null,
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Plugin-for-Google-Reviews-44cdef544d0348cb886a18cde1bf8478"
+    "issue_description": "This plugin is using our filter in a wrong way to set an item in our safelist",
+    "url": "https:\/\/app.notion.com\/p\/Plugin-for-Google-Reviews-44cdef544d0348cb886a18cde1bf8478"
   },
   {
     "id": "26892fc5-6df4-43d7-a87f-494e1f9becda",
@@ -482,17 +824,17 @@
     "name": "Hide My WP Ghost Lite",
     "detection_pattern": "hide-my-wp",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Hide-My-WP-Ghost-Lite-26892fc56df443d7a87f494e1f9becda"
+    "issue_description": "\u2022 This plugin removes our DNS Prefetch URLs\n\u2022 This plugin also removes the ?ver= query strings on CSS and JS assets:",
+    "url": "https:\/\/app.notion.com\/p\/Hide-My-WP-Ghost-Lite-26892fc56df443d7a87f494e1f9becda"
   },
   {
     "id": "704b932c-a69f-4fee-b380-0aac00d3a3e4",
     "type": "Plugin",
-    "name": "iubenda | All-in-one Compliance for GDPR / CCPA Cookie Consent + more",
+    "name": "iubenda | All-in-one Compliance for GDPR \/ CCPA Cookie Consent + more",
     "detection_pattern": "iubenda-cookie-law-solution",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/iubenda-All-in-one-Compliance-for-GDPR-CCPA-Cookie-Consent-more-704b932ca69f4feeb3800aac00d3a3e4"
+    "issue_description": "The plugin has a setting that will modify source code and may break e.g. some icons. ",
+    "url": "https:\/\/app.notion.com\/p\/iubenda-All-in-one-Compliance-for-GDPR-CCPA-Cookie-Consent-more-704b932ca69f4feeb3800aac00d3a3e4"
   },
   {
     "id": "91c12a14-cfda-413a-890d-cd26979599a3",
@@ -500,8 +842,8 @@
     "name": "Strong Testimonials",
     "detection_pattern": "strong testimonials",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/Strong-Testimonials-91c12a14cfda413a890dcd26979599a3"
+    "issue_description": "The plugin is trying to manipulate Lazyload and pass one argument to wp_lazy_loading_enabled causing maybe_disable_core_lazyload to prompt a fatal error. ",
+    "url": "https:\/\/app.notion.com\/p\/Strong-Testimonials-91c12a14cfda413a890dcd26979599a3"
   },
   {
     "id": "0e541bab-8282-45e5-8912-637bfd4171f9",
@@ -509,8 +851,8 @@
     "name": "SW WooCommerce",
     "detection_pattern": "SW Woocommerce",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/SW-WooCommerce-0e541bab828245e58912637bfd4171f9"
+    "issue_description": "Updating post might cause fatal errors, the problem is exactly the same as the above one and we also won\u2019t fix it on our end.",
+    "url": "https:\/\/app.notion.com\/p\/SW-WooCommerce-0e541bab828245e58912637bfd4171f9"
   },
   {
     "id": "ee3ea58d-00d7-49d8-85f7-ee592d34f860",
@@ -518,8 +860,8 @@
     "name": "Serverbolt Optimizer",
     "detection_pattern": "servebolt-optimizer",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/Serverbolt-Optimizer-ee3ea58d00d749d885f7ee592d34f860"
+    "issue_description": "A Fatal error is triggered after installing WP Rocket and Servebolt Optimizer plugin on Serverbolt hosting. ",
+    "url": "https:\/\/app.notion.com\/p\/Serverbolt-Optimizer-ee3ea58d00d749d885f7ee592d34f860"
   },
   {
     "id": "ecc0332d-7f9a-4e31-ae54-2d238eb9726b",
@@ -527,8 +869,8 @@
     "name": "P3 Profiler",
     "detection_pattern": null,
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/P3-Profiler-ecc0332d7f9a4e31ae542d238eb9726b"
+    "issue_description": "This is causing\u00a0PHP fatal error\u00a0when the plugin's scan process runs:",
+    "url": "https:\/\/app.notion.com\/p\/P3-Profiler-ecc0332d7f9a4e31ae542d238eb9726b"
   },
   {
     "id": "0f5fcb4c-f98b-490d-84f8-0629d7bac059",
@@ -536,8 +878,8 @@
     "name": "Classified Listing Pro",
     "detection_pattern": "classified-listing",
     "summary": "Causes Fatal Errors",
-    "issue_description": "",
-    "url": "https://www.notion.so/Classified-Listing-Pro-0f5fcb4cf98b490d84f80629d7bac059"
+    "issue_description": "Updating custom post types might cause fatal errors, explanation and solution are present here:https:\/\/secure.helpscout.net\/conversation\/1077095726\/145005",
+    "url": "https:\/\/app.notion.com\/p\/Classified-Listing-Pro-0f5fcb4cf98b490d84f80629d7bac059"
   },
   {
     "id": "bd4404bd-5f66-4ffe-bd70-ceffb61e7577",
@@ -545,8 +887,8 @@
     "name": "SV Proven Expert",
     "detection_pattern": "provenexpert",
     "summary": "Causes White Screen",
-    "issue_description": "",
-    "url": "https://www.notion.so/SV-Proven-Expert-bd4404bd5f664ffebd70ceffb61e7577"
+    "issue_description": "Buffer conflict causes white screen on the front end",
+    "url": "https:\/\/app.notion.com\/p\/SV-Proven-Expert-bd4404bd5f664ffebd70ceffb61e7577"
   },
   {
     "id": "645eaed2-3658-4bb6-bbcb-66f291c38592",
@@ -554,8 +896,8 @@
     "name": "VdoCipher",
     "detection_pattern": "vdocipher",
     "summary": "Nonce Issues",
-    "issue_description": "",
-    "url": "https://www.notion.so/VdoCipher-645eaed236584bb6bbcb66f291c38592"
+    "issue_description": "Embed videos using VdoCipher expire quickly, which makes them unusable with page cache. ",
+    "url": "https:\/\/app.notion.com\/p\/VdoCipher-645eaed236584bb6bbcb66f291c38592"
   },
   {
     "id": "740c94a0-94fe-4db1-b09f-2f14aeb6bf9c",
@@ -563,8 +905,8 @@
     "name": "ReviewX",
     "detection_pattern": "reviewx",
     "summary": "Nonce Issues",
-    "issue_description": "",
-    "url": "https://www.notion.so/ReviewX-740c94a094fe4db1b09f2f14aeb6bf9c"
+    "issue_description": "When the caching is enabled, pagination of the reviews is not working. The review pagination feature of this plugin is generating a new security token for each session, which causes the issue.",
+    "url": "https:\/\/app.notion.com\/p\/ReviewX-740c94a094fe4db1b09f2f14aeb6bf9c"
   },
   {
     "id": "b63fa40a-5f25-4d3d-a4d3-ee6f9783a061",
@@ -572,8 +914,8 @@
     "name": "WooCommerce Bookings",
     "detection_pattern": "woocommerce-bookings",
     "summary": "Nonce Issues",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Bookings-b63fa40a5f254d3da4d3ee6f9783a061"
+    "issue_description": "When the cache is enabled, the booking calendar has a wheel that keeps spinning and throws a 403 error.  This happens because this plugin is generating different security tokens for each session, and the cache is saving one token in the HTML. So the cached token will work only for one session.",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Bookings-b63fa40a5f254d3da4d3ee6f9783a061"
   },
   {
     "id": "63488bdd-2ac6-42da-b60f-0d49d1999499",
@@ -581,8 +923,8 @@
     "name": "Email to Download",
     "detection_pattern": "email-to-download",
     "summary": "Nonce Issues",
-    "issue_description": "",
-    "url": "https://www.notion.so/Email-to-Download-63488bdd2ac642dab60f0d49d1999499"
+    "issue_description": "Nonce-related issue",
+    "url": "https:\/\/app.notion.com\/p\/Email-to-Download-63488bdd2ac642dab60f0d49d1999499"
   },
   {
     "id": "81f5bb53-812e-49fa-b265-735a840cc7ed",
@@ -590,359 +932,359 @@
     "name": "HTTP Headers",
     "detection_pattern": "http-headers",
     "summary": "GZIP Issues: Weird Characters",
-    "issue_description": "",
-    "url": "https://www.notion.so/HTTP-Headers-81f5bb53812e49fab265735a840cc7ed"
+    "issue_description": "Has an option to apply compression.",
+    "url": "https:\/\/app.notion.com\/p\/HTTP-Headers-81f5bb53812e49fab265735a840cc7ed"
   },
   {
     "id": "467a1e24-ae5e-45de-8390-a8b5d1ae447b",
     "type": "Plugin",
     "name": "WP Emember by Tips and Tricks HQ",
     "detection_pattern": "wp-eMember",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-Emember-by-Tips-and-Tricks-HQ-467a1e24ae5e45de8390a8b5d1ae447b"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to true on pages.",
+    "url": "https:\/\/app.notion.com\/p\/WP-Emember-by-Tips-and-Tricks-HQ-467a1e24ae5e45de8390a8b5d1ae447b"
   },
   {
     "id": "fb155964-9b9c-42a2-90a2-57fd4c2648a2",
     "type": "Plugin",
     "name": "HandL UTM Grabber",
     "detection_pattern": "handl-utm-grabber",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/HandL-UTM-Grabber-fb1559649b9c42a290a257fd4c2648a2"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin rewrites all the link href=\"#\" to include the values of query strings.",
+    "url": "https:\/\/app.notion.com\/p\/HandL-UTM-Grabber-fb1559649b9c42a290a257fd4c2648a2"
   },
   {
     "id": "01380c69-4e67-4200-a1df-964e8d68c59b",
     "type": "Plugin",
     "name": "Shopping Cart & eCommerce Store",
     "detection_pattern": "wp-easycart",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Shopping-Cart-eCommerce-Store-01380c694e674200a1df964e8d68c59b"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Sets DONOTCACHEPAGE when shortcodes are used.",
+    "url": "https:\/\/app.notion.com\/p\/Shopping-Cart-eCommerce-Store-01380c694e674200a1df964e8d68c59b"
   },
   {
     "id": "6abf0f27-b1ac-4494-8619-70e35484ab28",
     "type": "Plugin",
     "name": "WP Social SEO Booster",
     "detection_pattern": "wp-social-seo-booster",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-Social-SEO-Booster-6abf0f27b1ac4494861970e35484ab28"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Clears output buffer prematurely. WP Rocket optimizations are not applied",
+    "url": "https:\/\/app.notion.com\/p\/WP-Social-SEO-Booster-6abf0f27b1ac4494861970e35484ab28"
   },
   {
     "id": "8d1545aa-51d7-4f51-8721-6093c4bbf58e",
     "type": "Plugin",
     "name": "Webcraftic Clearfy \u2013 WordPress optimization plugin",
     "detection_pattern": "clearfy",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Webcraftic-Clearfy-WordPress-optimization-plugin-8d1545aa51d74f5187216093c4bbf58e"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin HTML minification is breaking our WebP caching feature.",
+    "url": "https:\/\/app.notion.com\/p\/Webcraftic-Clearfy-WordPress-optimization-plugin-8d1545aa51d74f5187216093c4bbf58e"
   },
   {
     "id": "91c1b7e8-7c49-488a-981e-25f197bca700",
     "type": "Plugin",
     "name": "Woocommerce Uploads",
     "detection_pattern": "woocommerce-uploads",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Woocommerce-Uploads-91c1b7e87c49488a981e25f197bca700"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/Woocommerce-Uploads-91c1b7e87c49488a981e25f197bca700"
   },
   {
     "id": "e3ff5ddb-caa4-46de-af91-04b9afceccf7",
     "type": "Plugin",
     "name": "WE Varnish Cache",
     "detection_pattern": "WE-Varnish-Cache",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WE-Varnish-Cache-e3ff5ddbcaa446deaf9104b9afceccf7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Spanish host\u00a0Webempresa\u00a0automatically disables WP Rocket\u2019s caching using:\u00a0add_filter ('do_rocket_generate_caching_files', '__return_false');\u00a0in their own plugin:\u00a0WE WP-Varnish-Cache",
+    "url": "https:\/\/app.notion.com\/p\/WE-Varnish-Cache-e3ff5ddbcaa446deaf9104b9afceccf7"
   },
   {
     "id": "f3b43605-82f2-4de4-9322-641be8ae7ab7",
     "type": "Plugin",
     "name": "WP Shield Content Protector PRO",
     "detection_pattern": "wp-social-seo-booster",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WP-Shield-Content-Protector-PRO-f3b4360582f24de49322641be8ae7ab7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffer is cleaned up. Prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/WP-Shield-Content-Protector-PRO-f3b4360582f24de49322641be8ae7ab7"
   },
   {
     "id": "5de999ca-d386-41cf-890e-beb794c5ed27",
     "type": "Plugin",
     "name": "WooCommerce Login Popup and Shortcodes",
     "detection_pattern": "woocommerce-login-popup-and-shortcodes",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WooCommerce-Login-Popup-and-Shortcodes-5de999cad38641cf890ebeb794c5ed27"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching due to output buffering.",
+    "url": "https:\/\/app.notion.com\/p\/WooCommerce-Login-Popup-and-Shortcodes-5de999cad38641cf890ebeb794c5ed27"
   },
   {
     "id": "a6956301-3e71-4fbf-80fe-16d57748de4e",
     "type": "Plugin",
     "name": "Woostify Pro",
     "detection_pattern": "woostify-pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Woostify-Pro-a69563013e714fbf80fe16d57748de4e"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Woostify clears the Elementor cache after adding their scripts in the frontend, which in turn triggers WP Rocket cache clearing. ",
+    "url": "https:\/\/app.notion.com\/p\/Woostify-Pro-a69563013e714fbf80fe16d57748de4e"
   },
   {
     "id": "c17bd4cb-b313-4be1-9c6a-b680d3ef0c9c",
     "type": "Plugin",
     "name": "Weglot",
     "detection_pattern": "weglot",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Weglot-c17bd4cbb3134be19c6ab680d3ef0c9c"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Page caching\/optimizations aren't applied unless the \"Auto redirection\" option is enabled",
+    "url": "https:\/\/app.notion.com\/p\/Weglot-c17bd4cbb3134be19c6ab680d3ef0c9c"
   },
   {
     "id": "56eb085e-08db-46f2-9a6e-bee89e8d45f3",
     "type": "Plugin",
     "name": "Ultimate Reviews from Etoile Web Design",
     "detection_pattern": "ultimate-reviews",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ultimate-Reviews-from-Etoile-Web-Design-56eb085e08db46f29a6ebee89e8d45f3"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This is a WooCommerce Reviews plugin, it manipulates the buffer preventing our optimizations from working (minify HTMl and minify and combine CSS and JS). They are cleaning the buffer by using ob_end_clean() in multiple locations",
+    "url": "https:\/\/app.notion.com\/p\/Ultimate-Reviews-from-Etoile-Web-Design-56eb085e08db46f29a6ebee89e8d45f3"
   },
   {
     "id": "7b8bc751-947e-4f16-8f3c-d40f7356fca1",
     "type": "Plugin",
     "name": "WCFM - WooCommerce Frontend Manager",
     "detection_pattern": "wc-frontend-manager",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/WCFM-WooCommerce-Frontend-Manager-7b8bc751947e4f168f3cd40f7356fca1"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The DONOTCACHEPAGE defined in \/wp-content\/plugins\/wc-frontend-manager\/core\/class-wcfm.php",
+    "url": "https:\/\/app.notion.com\/p\/WCFM-WooCommerce-Frontend-Manager-7b8bc751947e4f168f3cd40f7356fca1"
   },
   {
     "id": "b7ce5d17-fd05-44e8-86ef-b6112ba9aef1",
     "type": "Plugin",
     "name": "Thrive Optimize",
     "detection_pattern": "optimize",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Thrive-Optimize-b7ce5d17fd0544e886efb6112ba9aef1"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to true on pages where A\/B tests run.",
+    "url": "https:\/\/app.notion.com\/p\/Thrive-Optimize-b7ce5d17fd0544e886efb6112ba9aef1"
   },
   {
     "id": "ee9d9c0f-cb4c-429a-a665-f1d19a46fa84",
     "type": "Plugin",
     "name": "Ti WooCommerce Wishlist",
     "detection_pattern": "ti-woocommerce-wishlist",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ti-WooCommerce-Wishlist-ee9d9c0fcb4c429aa665f1d19a46fa84"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Automatically prevents caching for their cookie: tinv_wishlist",
+    "url": "https:\/\/app.notion.com\/p\/Ti-WooCommerce-Wishlist-ee9d9c0fcb4c429aa665f1d19a46fa84"
   },
   {
     "id": "08a47f88-4f4b-44e0-8051-f2c84730ec51",
     "type": "Plugin",
     "name": "Search and Filter Pro",
     "detection_pattern": "search-filter-pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Search-and-Filter-Pro-08a47f884f4b44e08051f2c84730ec51"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The plugin is forcing is_search() to be true on search pages either on a multisite or regular site, which prevents those pages from caching. ",
+    "url": "https:\/\/app.notion.com\/p\/Search-and-Filter-Pro-08a47f884f4b44e08051f2c84730ec51"
   },
   {
     "id": "533e2ef9-74b5-4c3c-9d73-584b559bd6bf",
     "type": "Plugin",
     "name": "Thrive Architect",
     "detection_pattern": "architect",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Thrive-Architect-533e2ef974b54c3c9d73584b559bd6bf"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When a page is edited using Thrive Architect, lazy loading for images is not working. ",
+    "url": "https:\/\/app.notion.com\/p\/Thrive-Architect-533e2ef974b54c3c9d73584b559bd6bf"
   },
   {
     "id": "c9838221-cc44-4988-b0d3-6869610ba2e6",
     "type": "Plugin",
     "name": "ThemeREX Addons",
     "detection_pattern": "ThemeRex Addons",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/ThemeREX-Addons-c9838221cc444988b0d36869610ba2e6"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Move styles to the head option in General settings causes output buffering issue that prevents caching and causes white screen.",
+    "url": "https:\/\/app.notion.com\/p\/ThemeREX-Addons-c9838221cc444988b0d36869610ba2e6"
   },
   {
     "id": "479ee400-6639-47b6-ab37-856d3488b3ec",
     "type": "Plugin",
     "name": "Sprout Invoices",
     "detection_pattern": "sprout invoices",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Sprout-Invoices-479ee400663947b6ab37856d3488b3ec"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to true on pages.",
+    "url": "https:\/\/app.notion.com\/p\/Sprout-Invoices-479ee400663947b6ab37856d3488b3ec"
   },
   {
     "id": "8729826d-3d30-451c-9e38-e419f2a12e4d",
     "type": "Plugin",
     "name": "Anti-Spam by CleanTalk",
-    "detection_pattern": "cleantalk-spam-protect/",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Anti-Spam-by-CleanTalk-8729826d3d30451c9e38e419f2a12e4d"
+    "detection_pattern": "cleantalk-spam-protect\/",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When the \u201cCapture buffer\u201d option is enabled in the plugin\u2019s advanced settings, caching and file optimization doesn\u2019t work.",
+    "url": "https:\/\/app.notion.com\/p\/Anti-Spam-by-CleanTalk-8729826d3d30451c9e38e419f2a12e4d"
   },
   {
     "id": "07599dd4-b2b6-4ced-a892-ed91cdc970a2",
     "type": "Plugin",
     "name": "SHE Media Infuse",
     "detection_pattern": "sheknows-infuse",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/SHE-Media-Infuse-07599dd4b2b64ceda892ed91cdc970a2"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents their ads from getting delayed.",
+    "url": "https:\/\/app.notion.com\/p\/SHE-Media-Infuse-07599dd4b2b64ceda892ed91cdc970a2"
   },
   {
     "id": "6ced6cd8-5cc8-4e12-b0f9-c1e71956c3bb",
     "type": "Plugin",
     "name": "Simple Webp Images",
     "detection_pattern": "simple-webp-images",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Simple-Webp-Images-6ced6cd85cc84e12b0f9c1e71956c3bb"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When their HTML Output Buffering is enabled feature is enabled, it prevents WP Rocket from generating cache for pages. ",
+    "url": "https:\/\/app.notion.com\/p\/Simple-Webp-Images-6ced6cd85cc84e12b0f9c1e71956c3bb"
   },
   {
     "id": "afc57571-24bb-4cf5-95f7-23e6cb9bf4c0",
     "type": "Plugin",
     "name": "Soil",
     "detection_pattern": "soil",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Soil-afc5757124bb4cf595f723e6cb9bf4c0"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents CSS\/JS minify\/combine",
+    "url": "https:\/\/app.notion.com\/p\/Soil-afc5757124bb4cf595f723e6cb9bf4c0"
   },
   {
     "id": "2fc26c24-d488-4ecd-b06f-4ab56c60e973",
     "type": "Plugin",
     "name": "Remove Yoast SEO Comments",
     "detection_pattern": "remove-yoast-seo-comments",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Remove-Yoast-SEO-Comments-2fc26c24d4884ecdb06f4ab56c60e973"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Uses output buffering functions, resulting in truncated HTML when WP Rocket caches the page.",
+    "url": "https:\/\/app.notion.com\/p\/Remove-Yoast-SEO-Comments-2fc26c24d4884ecdb06f4ab56c60e973"
   },
   {
     "id": "55fe5273-4887-4298-8802-e9e0e42519bf",
     "type": "Theme",
     "name": "Sango Theme",
     "detection_pattern": "sango-theme",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Sango-Theme-55fe5273488742988802e9e0e42519bf"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents optimizations from being applied",
+    "url": "https:\/\/app.notion.com\/p\/Sango-Theme-55fe5273488742988802e9e0e42519bf"
   },
   {
     "id": "87fdda22-d8c9-4f73-b3cb-c5b69aba5045",
     "type": "Plugin",
     "name": "SEOPressor Connect",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/SEOPressor-Connect-87fdda22d8c94f73b3cbc5b69aba5045"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffering issue, which stops optimizations from working.",
+    "url": "https:\/\/app.notion.com\/p\/SEOPressor-Connect-87fdda22d8c94f73b3cbc5b69aba5045"
   },
   {
     "id": "0dce382e-fa08-4d9c-af1e-4b45e82aecbd",
     "type": "Plugin",
     "name": "Request a Quote for WooCommerce",
     "detection_pattern": "woocommerce-request-a-quote",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Request-a-Quote-for-WooCommerce-0dce382efa084d9caf1e4b45e82aecbd"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The plugin uses PHP to control the quote \u201cmini cart\u201d, so it will not display the correct number of products in the quote cart. ",
+    "url": "https:\/\/app.notion.com\/p\/Request-a-Quote-for-WooCommerce-0dce382efa084d9caf1e4b45e82aecbd"
   },
   {
     "id": "5dff15eb-2851-44f5-9a37-1dfc52e13215",
     "type": "3rd Party",
     "name": "RAIDBOXES",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/RAIDBOXES-5dff15eb285144f59a371dfc52e13215"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When WP Rocket page cache is disabled and the customer is using caching in RAIDBOXES, the critical CSS may not be applied on pages even when the Optimize CSS Delivery is enabled and CPCSS is generated. ",
+    "url": "https:\/\/app.notion.com\/p\/RAIDBOXES-5dff15eb285144f59a371dfc52e13215"
   },
   {
     "id": "ab1ad32c-c136-4efc-9fe4-0541b822e113",
     "type": "Plugin",
     "name": "Query Monitor",
     "detection_pattern": "query-monitor",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Query-Monitor-ab1ad32cc1364efc9fe40541b822e113"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to true on pages and prevents the cache when User Cache is activated.",
+    "url": "https:\/\/app.notion.com\/p\/Query-Monitor-ab1ad32cc1364efc9fe40541b822e113"
   },
   {
     "id": "ffef15e2-bf91-4793-a91c-b8986a7d5695",
     "type": "Plugin",
     "name": "TikTok Feed",
     "detection_pattern": "wp-tiktok-feed",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/TikTok-Feed-ffef15e2bf914793a91cb8986a7d5695"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching by clearing the buffer (other optimizations applied)",
+    "url": "https:\/\/app.notion.com\/p\/TikTok-Feed-ffef15e2bf914793a91cb8986a7d5695"
   },
   {
     "id": "8b2eb5fa-b07c-4a08-ae70-dccb3f90fae3",
     "type": "Plugin",
     "name": "Polylang",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Polylang-8b2eb5fab07c4a08ae70dccb3f90fae3"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When Detect browser language option is enabled, the homepage won\u2019t be cached until  pll_language cookie is set.",
+    "url": "https:\/\/app.notion.com\/p\/Polylang-8b2eb5fab07c4a08ae70dccb3f90fae3"
   },
   {
     "id": "e2a09cec-c0d3-4397-b66c-a76729c2a735",
     "type": "Theme",
     "name": "MH Purity lite",
     "detection_pattern": "mh-purity-lite",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/MH-Purity-lite-e2a09cecc0d34397b66ca76729c2a735"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The theme sets the DONOTCACHEPAGE constant to true, thus disabling WP Rocket\u2019s caching.",
+    "url": "https:\/\/app.notion.com\/p\/MH-Purity-lite-e2a09cecc0d34397b66ca76729c2a735"
   },
   {
     "id": "52b8c267-4fe0-4e94-aa81-15d61b5c4eb9",
     "type": "3rd Party",
     "name": "Plesk clone website",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Plesk-clone-website-52b8c2674fe04e94aa8115d61b5c4eb9"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "If the website is cloned using Plesk, the staging website will have the wrong path to access WP Rocket config file. ",
+    "url": "https:\/\/app.notion.com\/p\/Plesk-clone-website-52b8c2674fe04e94aa8115d61b5c4eb9"
   },
   {
     "id": "abddc62a-9491-48da-99d5-bfb7180d76df",
     "type": "Plugin",
     "name": "Plugin Load Filter",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Plugin-Load-Filter-abddc62a949148da99d5bfb7180d76df"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin allows to change the way plugins are loaded. ",
+    "url": "https:\/\/app.notion.com\/p\/Plugin-Load-Filter-abddc62a949148da99d5bfb7180d76df"
   },
   {
     "id": "f72a5d3d-395a-4178-864e-7833ee0b1cd4",
     "type": "Plugin",
     "name": "Password Protected",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Password-Protected-f72a5d3d395a4178864e7833ee0b1cd4"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Sets the\u00a0\u201cDONOTCACHEPAGE\u201d constant to true and prevents caching",
+    "url": "https:\/\/app.notion.com\/p\/Password-Protected-f72a5d3d395a4178864e7833ee0b1cd4"
   },
   {
     "id": "555896ac-acd2-46c7-8faf-f1f90ff8e1e5",
     "type": "Plugin",
     "name": "OptimizePress Dashboard",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/OptimizePress-Dashboard-555896acacd246c78faff1f90ff8e1e5"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffering issue, which stops caching and optimizations from working. ",
+    "url": "https:\/\/app.notion.com\/p\/OptimizePress-Dashboard-555896acacd246c78faff1f90ff8e1e5"
   },
   {
     "id": "891e3baf-d236-4024-8b19-62358f309dd0",
     "type": "Plugin",
     "name": "Nexcess hosting",
     "detection_pattern": "Nexcess",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Nexcess-hosting-891e3bafd23640248b1962358f309dd0"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This feature is not compatible with WP Rocket's page caching, and it's recommended to keep it deactivated.",
+    "url": "https:\/\/app.notion.com\/p\/Nexcess-hosting-891e3bafd23640248b1962358f309dd0"
   },
   {
     "id": "d2087a95-1196-442f-826b-4466deb97f22",
     "type": "Plugin",
     "name": "MemberPress Developer Tools",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/MemberPress-Developer-Tools-d2087a951196442f826b4466deb97f22"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin disables Preload Links option.",
+    "url": "https:\/\/app.notion.com\/p\/MemberPress-Developer-Tools-d2087a951196442f826b4466deb97f22"
   },
   {
     "id": "ae2a415e-095b-40fd-bd95-bc99b0f8b8f5",
     "type": "Plugin",
     "name": "Memberium for ActiveCampaign",
-    "detection_pattern": "/memberium-ac/classes/pagehandling.php",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Memberium-for-ActiveCampaign-ae2a415e095b40fdbd95bc99b0f8b8f5"
+    "detection_pattern": "\/memberium-ac\/classes\/pagehandling.php",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "They are disabling the page cache by setting the DONOTCACHEPAGE constant to true. ",
+    "url": "https:\/\/app.notion.com\/p\/Memberium-for-ActiveCampaign-ae2a415e095b40fdbd95bc99b0f8b8f5"
   },
   {
     "id": "cc562960-e7ab-4835-baef-26f98efd4aa7",
@@ -950,35 +1292,35 @@
     "name": "MainWP",
     "detection_pattern": "MainWP",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/MainWP-cc562960e7ab4835baef26f98efd4aa7"
+    "issue_description": "MainWP is a WordPress manager that can manage multiple WordPress websites from one dashboard.",
+    "url": "https:\/\/app.notion.com\/p\/MainWP-cc562960e7ab4835baef26f98efd4aa7"
   },
   {
     "id": "02cf0af1-dbf9-4ae9-ad25-c19846624a5a",
     "type": "Plugin",
     "name": "Mailster",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Mailster-02cf0af1dbf94ae9ad25c19846624a5a"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Includes an option when enabled adds \u201cDONOTCACHEPAGE\u201d that prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/Mailster-02cf0af1dbf94ae9ad25c19846624a5a"
   },
   {
     "id": "8e3d5074-c146-44a1-a107-8b2020aff94c",
     "type": "Theme",
     "name": "JupiterX",
     "detection_pattern": "jupiter",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/JupiterX-8e3d5074c14644a1a1078b2020aff94c"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The Jupiter theme sets the DONOTCACHEPAGE constant to true on pages where their CPCSS feature is active, thus disabling caching.",
+    "url": "https:\/\/app.notion.com\/p\/JupiterX-8e3d5074c14644a1a1078b2020aff94c"
   },
   {
     "id": "a29102ab-58d0-4ca8-b93e-b022f08deb28",
     "type": "Plugin",
     "name": "LegalBlink Policy",
     "detection_pattern": "lbp_cookie_accepted",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/LegalBlink-Policy-a29102ab58d04ca8b93eb022f08deb28"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The plugin will prevent optimizations from happening. ",
+    "url": "https:\/\/app.notion.com\/p\/LegalBlink-Policy-a29102ab58d04ca8b93eb022f08deb28"
   },
   {
     "id": "2cae517c-f0a8-4888-924c-228a5eb11f0e",
@@ -986,188 +1328,188 @@
     "name": "Jevelin",
     "detection_pattern": "jevelin",
     "summary": "File Optimization Conflicts",
-    "issue_description": "",
-    "url": "https://www.notion.so/Jevelin-2cae517cf0a84888924c228a5eb11f0e"
+    "issue_description": "The Jevelin theme has a faulty CSS on their \/wp-content\/themes\/jevelin\/css\/plugins.css file. When using RUCSS, it will result in breaking the layout. ",
+    "url": "https:\/\/app.notion.com\/p\/Jevelin-2cae517cf0a84888924c228a5eb11f0e"
   },
   {
     "id": "9eb36d36-1281-40f9-9bdf-54e131e8a027",
     "type": "Plugin",
     "name": "Groovy Menu",
     "detection_pattern": "groovy-menu-free",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Groovy-Menu-9eb36d36128140f99bdf54e131e8a027"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin uses ob_get_clean and ob_end_clean clearing the buffer before WP Rocket's optimizations are applied.",
+    "url": "https:\/\/app.notion.com\/p\/Groovy-Menu-9eb36d36128140f99bdf54e131e8a027"
   },
   {
     "id": "aeaebcb7-5a22-4829-bbdd-60187e976a2c",
     "type": "Plugin",
     "name": "Geolocation IP Detection",
     "detection_pattern": "geoip-detect",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Geolocation-IP-Detection-aeaebcb75a224829bbdd60187e976a2c"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Default settings prevent caching",
+    "url": "https:\/\/app.notion.com\/p\/Geolocation-IP-Detection-aeaebcb75a224829bbdd60187e976a2c"
   },
   {
     "id": "e727d8f9-beb9-4d5d-8935-473b4633bf51",
     "type": "Plugin",
     "name": "Ginger",
     "detection_pattern": "ginger",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ginger-e727d8f9beb94d5d8935473b4633bf51"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching: visitors can\u2019t access the cached page until the cookie is accepted.",
+    "url": "https:\/\/app.notion.com\/p\/Ginger-e727d8f9beb94d5d8935473b4633bf51"
   },
   {
     "id": "6be4f3e1-cfc5-46e7-a5dd-664e1d604c2c",
     "type": "Plugin",
     "name": "Fresh Forms for Gravity",
     "detection_pattern": "fresh-forms-for-gravity",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Fresh-Forms-for-Gravity-6be4f3e1cfc546e7a5dd664e1d604c2c"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Fresh Forms prevents caching of pages that contain Gravity Forms shortcodes",
+    "url": "https:\/\/app.notion.com\/p\/Fresh-Forms-for-Gravity-6be4f3e1cfc546e7a5dd664e1d604c2c"
   },
   {
     "id": "88915f52-55c2-4aa1-9457-7170678d381e",
     "type": "Plugin",
     "name": "CookieYes",
     "detection_pattern": "cookie-law-info",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "\u2022 Output buffering issue, which stops caching and optimizations from working.\n\u2022 This is from the same developer that sells a cookie plugin we recommend as compatible in our doc:\u00a0https://docs.wp-rocket.me/article/687-which-cookie-law-plugins-are-compatible-with-wp-rocket\n\u2022 HelpScout ticket:\u00a0https://secure.helpscout.net/conversation/897777489/114877?folderId=273766\n\u2022 The plugin sets mandatory cookie cli_user_preference which in some configurations cannot be set for locations outside EU, thus pages are not being served from cache. Example ticket: https://secure.helpscout.net/conversation/1517037064/264919/\n\u2022 When used along the Delay JavaScript execution feature, pages can be reloaded continually.",
-    "url": "https://www.notion.so/CookieYes-88915f5255c24aa194577170678d381e"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "\u2022 Output buffering issue, which stops caching and optimizations from working R\n\u2022 This is from the same developer that sells a cookie plugin we recommend as compatible in our doc:\u00a0https:\/\/docs.wp-rocket.me\/article\/687-which-cookie-law-plugins-are-compatible-with-wp-rocket\n\u2022 HelpScout ticket:\u00a0https:\/\/secure.helpscout.net\/conversation\/897777489\/114877?folderId=273766  (Fixed in Nov2025)\n\u2022 The plugin sets mandatory cookie cli_user_preference which in some configurations cannot be set for locations outside EU, thus pages are not being served from cache. Example ticket: https:\/\/secure.helpscout.net\/conversation\/1517037064\/264919\/\n\u2022 When used along the Delay JavaScript execution feature, pages can be reloaded continually.",
+    "url": "https:\/\/app.notion.com\/p\/CookieYes-88915f5255c24aa194577170678d381e"
   },
   {
     "id": "1b89caca-39ee-48f8-8338-871ead3e1cc7",
     "type": "Plugin",
     "name": "Fidelo Snippet",
     "detection_pattern": "thebing-snippet",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Fidelo-Snippet-1b89caca39ee48f88338871ead3e1cc7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents optimizations (pages are cached, but no optimizations are applied).",
+    "url": "https:\/\/app.notion.com\/p\/Fidelo-Snippet-1b89caca39ee48f88338871ead3e1cc7"
   },
   {
     "id": "7bc4d740-9b7d-43b6-861c-a875492eb9f2",
     "type": "Plugin",
     "name": "Forminator",
     "detection_pattern": "forminator",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Forminator-7bc4d7409b7d43b6861ca875492eb9f2"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Has an option which prevents caching, located inside the Form edit > Behavior tab, Rendering is at the bottom",
+    "url": "https:\/\/app.notion.com\/p\/Forminator-7bc4d7409b7d43b6861ca875492eb9f2"
   },
   {
     "id": "db85bd80-05e9-4470-8ab3-7ace4bb3696f",
     "type": "Plugin",
-    "name": "ELEX WooCommerce Product Price Custom Text (Before & After Text) and Discount",
-    "detection_pattern": "elex-product-price-custom-text-before-after-text-and-discount-for-woocommerce",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/ELEX-WooCommerce-Product-Price-Custom-Text-Before-After-Text-and-Discount-db85bd8005e944708ab37ace4bb3696f"
+    "name": "Elementor",
+    "detection_pattern": "elementor",
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Interactions features are adding a huge JS inline block starting with ElementorInteractionsConfig which prevents Delay JavaScript Execution to work. \n\nAdding ini_set('pcre.backtrack_limit', '2000000'); in wp-config.php fixes the issue.",
+    "url": "https:\/\/app.notion.com\/p\/Elementor-db85bd8005e944708ab37ace4bb3696f"
   },
   {
     "id": "8ed01bf0-80a5-4b85-a741-802285b5a4b7",
     "type": "Plugin",
     "name": "Dynamically Inserted Phone Numbers",
     "detection_pattern": null,
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Dynamically-Inserted-Phone-Numbers-8ed01bf080a54b85a741802285b5a4b7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "It prevents WP Rocket from working by deleting WP Rocket's folders every time the WordPress\u00a0plugins_loaded\u00a0hook fires",
+    "url": "https:\/\/app.notion.com\/p\/Dynamically-Inserted-Phone-Numbers-8ed01bf080a54b85a741802285b5a4b7"
   },
   {
     "id": "e7042eed-df11-4a53-ba9c-b797b2587ba5",
     "type": "Plugin",
     "name": "Ezoic",
     "detection_pattern": "ezoic-integration",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ezoic-e7042eeddf114a53ba9cb797b2587ba5"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffer is cleaned up incorrectly. Prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/Ezoic-e7042eeddf114a53ba9cb797b2587ba5"
   },
   {
     "id": "81f9014b-5373-4583-a321-be996af25175",
     "type": "Plugin",
     "name": "Download Monitor",
     "detection_pattern": "download-monitor",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Download-Monitor-81f9014b53734583a321be996af25175"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When Download Monitor is on the site, using our HTACCESS file makes downloading files fail.",
+    "url": "https:\/\/app.notion.com\/p\/Download-Monitor-81f9014b53734583a321be996af25175"
   },
   {
     "id": "4ff04a07-7789-4a3c-864a-23b54e8981bf",
     "type": "Plugin",
     "name": "Disable XML-RPC-API",
     "detection_pattern": "disable-xml-rpc-api",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Disable-XML-RPC-API-4ff04a0777894a3c864a23b54e8981bf"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffer cleaned incorrectly. While caching is fine, other optimizations fail.",
+    "url": "https:\/\/app.notion.com\/p\/Disable-XML-RPC-API-4ff04a0777894a3c864a23b54e8981bf"
   },
   {
     "id": "7758f170-a0e0-460c-8a1a-a02d567d00f7",
     "type": "Plugin",
     "name": "Divi LearnDash Kit",
     "detection_pattern": "divi-learndash-kit",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Divi-LearnDash-Kit-7758f170a0e0460c8a1aa02d567d00f7"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The cache is constantly cleared whenever a non-cached page of the sfwd-courses CPT is accessed.\nThis can lead to high CPU usage on busy sites.\n",
+    "url": "https:\/\/app.notion.com\/p\/Divi-LearnDash-Kit-7758f170a0e0460c8a1aa02d567d00f7"
   },
   {
     "id": "4ead54f1-2f02-45d4-9a87-e3fb5609c672",
     "type": "Plugin",
     "name": "Cartflows",
     "detection_pattern": "cartflows",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Cartflows-4ead54f12f0245d49a87e3fb5609c672"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "It sets the DONOTCACHEPAGE constant to true for the step custom post type, and prevents WP Rocket from caching this kind of posts.",
+    "url": "https:\/\/app.notion.com\/p\/Cartflows-4ead54f12f0245d49a87e3fb5609c672"
   },
   {
     "id": "6a688f74-df65-47f7-b756-be17f9fe4605",
     "type": "Plugin",
     "name": "Coming Soon Page, Maintenance Mode, Landing Pages & WordPress Website Builder by SeedProd",
     "detection_pattern": "coming-soon",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Coming-Soon-Page-Maintenance-Mode-Landing-Pages-WordPress-Website-Builder-by-SeedProd-6a688f74df6547f7b756be17f9fe4605"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin sets the DONOTCACHEPAGE constant to true for logged out pages. Caching for logged in users still works.",
+    "url": "https:\/\/app.notion.com\/p\/Coming-Soon-Page-Maintenance-Mode-Landing-Pages-WordPress-Website-Builder-by-SeedProd-6a688f74df6547f7b756be17f9fe4605"
   },
   {
     "id": "0d44cd69-7ea2-44ef-90ee-9b7459179393",
     "type": "Plugin",
     "name": "Calculated Fields Form",
     "detection_pattern": "calculated-fields-form",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Calculated-Fields-Form-0d44cd697ea244ef90ee9b7459179393"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "It sets a public static function rocket_exclude_js to exclude jquery from WPR DJE and LJD optimizations.\n",
+    "url": "https:\/\/app.notion.com\/p\/Calculated-Fields-Form-0d44cd697ea244ef90ee9b7459179393"
   },
   {
     "id": "23075ea7-f233-4b8b-9d3a-f680b550ca5e",
     "type": "Plugin",
     "name": "BIALTY - Bulk Image Alt Text (Alt tag, Alt Attribute) with Yoast SEO + WooCommerce",
     "detection_pattern": "bulk-image-alt-text-with-yoast",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/BIALTY-Bulk-Image-Alt-Text-Alt-tag-Alt-Attribute-with-Yoast-SEO-WooCommerce-23075ea7f2334b8b9d3af680b550ca5e"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Output buffer is cleaned up incorrectly. Prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/BIALTY-Bulk-Image-Alt-Text-Alt-tag-Alt-Attribute-with-Yoast-SEO-WooCommerce-23075ea7f2334b8b9d3af680b550ca5e"
   },
   {
     "id": "7627e99b-f25b-49fc-916f-68f8d89045de",
     "type": "Plugin",
     "name": "Bookly",
     "detection_pattern": "bookly-responsive-appointment-booking-tool",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Bookly-7627e99bf25b49fc916f68f8d89045de"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching with a DONOTCACHEPAGE",
+    "url": "https:\/\/app.notion.com\/p\/Bookly-7627e99bf25b49fc916f68f8d89045de"
   },
   {
     "id": "7c0317d7-86e1-4cdd-b080-0c0fdb6c5c99",
     "type": "Plugin",
     "name": "Bertha AI",
     "detection_pattern": "bertha-ai-free",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Bertha-AI-7c0317d786e14cddb0800c0fdb6c5c99"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin is creating taxonomies (idea_template) and triggering maybe_purge_cache_on_term_change clearing the cache constantly.",
+    "url": "https:\/\/app.notion.com\/p\/Bertha-AI-7c0317d786e14cddb0800c0fdb6c5c99"
   },
   {
     "id": "c43cdeef-c4a7-43eb-a18b-21877ab1321a",
     "type": "Theme",
     "name": "Beaver Builder Plugin (Lite Version)",
     "detection_pattern": "bb-plugin",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Beaver-Builder-Plugin-Lite-Version-c43cdeefc4a743eba18b21877ab1321a"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents caching and optimizations on front when Cache Clearing Tool option is active.",
+    "url": "https:\/\/app.notion.com\/p\/Beaver-Builder-Plugin-Lite-Version-c43cdeefc4a743eba18b21877ab1321a"
   },
   {
     "id": "426b57e8-c96e-4459-a37c-5f7106fb598e",
@@ -1175,61 +1517,61 @@
     "name": "Bamboo Theme (by Mediavine)",
     "detection_pattern": "mediavine-trellis",
     "summary": "Other",
-    "issue_description": "",
-    "url": "https://www.notion.so/Bamboo-Theme-by-Mediavine-426b57e8c96e4459a37c5f7106fb598e"
+    "issue_description": "This plugin is triggering a full cache clear on each page load, which is also causing scheduled preload actions to pile up in the DB, effectively preventing pages from being cached. ",
+    "url": "https:\/\/app.notion.com\/p\/Bamboo-Theme-by-Mediavine-426b57e8c96e4459a37c5f7106fb598e"
   },
   {
     "id": "eda087d2-f268-4b81-b38c-7d87a54b355f",
     "type": "Plugin",
     "name": "Advanced Ads Pro",
     "detection_pattern": "advanced-ads-pro",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Advanced-Ads-Pro-eda087d2f2684b81b38c7d87a54b355f"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "No optimizations are applied when the \"Placement positioning\" (Advanced Ads > settings > Pro):",
+    "url": "https:\/\/app.notion.com\/p\/Advanced-Ads-Pro-eda087d2f2684b81b38c7d87a54b355f"
   },
   {
     "id": "f932de04-8484-4154-8661-6603a01fbf1d",
     "type": "Plugin",
     "name": "Asset CleanUp: Page Speed Booster",
     "detection_pattern": "wp-asset-clean-up",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Asset-CleanUp-Page-Speed-Booster-f932de048484415486616603a01fbf1d"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "WP Rocket caching does not work for logged-in users when the option Settings -> Plugin Usage Preferences -> Manage in the Front-end is activated.",
+    "url": "https:\/\/app.notion.com\/p\/Asset-CleanUp-Page-Speed-Booster-f932de048484415486616603a01fbf1d"
   },
   {
     "id": "86382a4d-985a-4d99-9b7a-ad8f3956bd02",
     "type": "Plugin",
     "name": "Ad Inserter",
     "detection_pattern": "ad-inserter",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/Ad-Inserter-86382a4d985a4d999b7aad8f3956bd02"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "\u2022 Includes an option to \u201cDisable Caching\u201d.\n\u2022 This sets \u201cDONOTCACHEPAGE\u201d to true and prevents caching.",
+    "url": "https:\/\/app.notion.com\/p\/Ad-Inserter-86382a4d985a4d999b7aad8f3956bd02"
   },
   {
     "id": "5f118beb-bd0f-41f0-9bdb-2751a6963873",
     "type": "Plugin",
     "name": "ActiveMember360",
     "detection_pattern": "activemember360\n",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/ActiveMember360-5f118bebbd0f41f09bdb2751a6963873"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "Prevents WP Rocket's optimizations from being applied, due to incorrect output buffering clearing.",
+    "url": "https:\/\/app.notion.com\/p\/ActiveMember360-5f118bebbd0f41f09bdb2751a6963873"
   },
   {
     "id": "7ad23d86-8e6f-4e74-a75b-0fa4e11a6c47",
     "type": "Plugin",
     "name": "AMP",
     "detection_pattern": "amp",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/AMP-7ad23d868e6f4e74a75b0fa4e11a6c47"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "When the Standard Template mode is selected, none of WP Rocket's optimizations are being applied.",
+    "url": "https:\/\/app.notion.com\/p\/AMP-7ad23d868e6f4e74a75b0fa4e11a6c47"
   },
   {
     "id": "95a4d819-af24-44c4-b872-82d5d6223f64",
     "type": "Plugin",
     "name": "10Web Booster",
     "detection_pattern": "tenweb-speed-optimizer",
-    "summary": "Prevent Caching and/or Optimizations",
-    "issue_description": "",
-    "url": "https://www.notion.so/10Web-Booster-95a4d819af2444c4b87282d5d6223f64"
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "This plugin prevents WPR Rocket page caching and some WPR optimizations features",
+    "url": "https:\/\/app.notion.com\/p\/10Web-Booster-95a4d819af2444c4b87282d5d6223f64"
   }
 ]

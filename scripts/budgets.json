@@ -7,7 +7,7 @@
   {
     "surface": "known-conflicts DB seed asset (background-owned)",
     "globs": ["assets/background.json"],
-    "maxKb": { "raw": 50 }
+    "maxKb": { "raw": 85 }
   },
   {
     "surface": "popup JS",

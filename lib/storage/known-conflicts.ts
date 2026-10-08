@@ -6,7 +6,7 @@
  * the store on first install from the snapshot bundled in its own surface and
  * refreshes it from the plugin's public endpoint — every other surface gets
  * rows through messaging (`getKnownConflictsDb`) and must never import the
- * ~46 KB data file. Two consequences by design:
+ * ~77 KB data file. Two consequences by design:
  *
  * - **Seeding is explicit, never a fallback.** A fallback on the item would
  *   bake the seed JSON into every importing bundle, so an unset value reads

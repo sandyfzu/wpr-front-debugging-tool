@@ -28,7 +28,7 @@ const TYPED_SEED: readonly KnownConflict[] = Object.freeze(
   typedSeed.map((row) => Object.freeze({ ...row }))
 );
 
-/** Row count of the committed snapshot (pinned to exactly 137 by a unit test). */
+/** Row count of the committed snapshot (pinned to exactly 175 by a unit test). */
 export const KNOWN_CONFLICTS_SEED_LENGTH = TYPED_SEED.length;
 
 /** The frozen committed rows, DB order preserved. */
