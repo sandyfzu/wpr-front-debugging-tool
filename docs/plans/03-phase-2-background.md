@@ -91,6 +91,20 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
   Tests that pinned the skipped-write optimization were re-pinned to the survival contract —
   the old pins encoded a memory-truth assumption that is false across restarts.
 - **Logger tags aligned to the dominant convention** (bare module/feature names): `headers`, `known-conflicts`, `badge`, `context-menus` (the `background.headers` / `background.context-menus` dot forms were the outliers).
+- **Uncaught-error reporting gets real details and attribution (owner-reported defect, 2026-10-08):** the
+  worker-scope global handlers logged the event wrapper itself (`[object ErrorEvent]` on the
+  extensions error page — no message, no stack, no location). They now log through the shared
+  `lib/uncaught-errors.ts` (used by the isolated content script too, where the same line once
+  claimed host-page errors): `error` events render the failure's own message with source/line and
+  the raw error object; `unhandledrejection` renders the reason. In the content script, only
+  errors sourced under the runtime URL prefix are claimed — the page's own broken scripts are the
+  page's business (native reporting) and no longer pollute the extension's error page under our
+  prefix.
+- **Background service-worker budget row 26 → 27 KiB raw** (deliberate, sanctioned path): the shared
+  `lib/uncaught-errors.ts` module + its wiring landed in the worker bundle; measured 26.2 KiB raw
+  (9.3 KiB gzip, no gzip row for this surface) after the badge rendering constants joined the
+  bundle. Row at 27 gives the standard ~4 % headroom; the whole-build backstop (857) continues to
+  cover the build ungameably.
 - **Exclusion-builder incognito skip ditched (owner, 2026-10-08):** the §4 task's parity skip no
   longer ships — the context-menu entry opens the standalone builder page from private windows
   too. The historical text above still describes the legacy behavior; P10 is parked pending the

@@ -22,6 +22,7 @@ import { setupDataHub } from './data-hub';
 import { setupImprovements } from './improvements';
 import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
+import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import './styles.css';
 
 const log = createLogger('isolated');
@@ -60,15 +61,14 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
  * @param ctx The content script's context the handlers register through.
  */
 function initGlobalErrorReporting(ctx: ContentScriptContext): void {
-  // An uncaught error surfaces here as an ErrorEvent; the rejection event
-  // carries its reason. Logging the object itself keeps both cases on one
-  // line without losing their content.
-  ctx.addEventListener(window, 'error', (event) => {
-    log.error('Uncaught error', event);
-  });
-  ctx.addEventListener(window, 'unhandledrejection', (event) => {
-    log.error('Unhandled promise rejection', event);
-  });
+  // The window is shared with the host page: only errors raised by our own
+  // scripts are claimed (attribution by runtime URL — see lib/uncaught-errors).
+  // Page scripts' own failures stay the page's business; reporting them here
+  // once polluted the extension's error page with `[object ErrorEvent]` noise
+  // that read as our fault and carried no details either way.
+  const ownPrefix = browser.runtime.getURL('');
+  ctx.addEventListener(window, 'error', onUncaughtError({ log, ownPrefix }));
+  ctx.addEventListener(window, 'unhandledrejection', onUnhandledRejection({ log, ownPrefix }));
 }
 
 export default defineContentScript({

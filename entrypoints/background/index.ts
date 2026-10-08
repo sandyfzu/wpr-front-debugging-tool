@@ -21,6 +21,7 @@
 
 import { createLogger } from '../../lib/logger';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
+import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import { createDisabledBadgeRuntime, initBadge, watchBadgeGate, type BadgeRuntime } from './badge';
 import { initHeaderCapture } from './headers';
 import { registerKnownConflictsService } from './known-conflicts';
@@ -41,15 +42,11 @@ export default defineBackground(() => {
  * prefix — the service worker stays alive for its sibling listeners.
  */
 function initGlobalErrorReporting(): void {
-  // A service worker's uncaught error surfaces here as an ErrorEvent; the
-  // rejection event carries its reason. Logging the object itself keeps both
-  // cases on one line without losing their content.
-  self.addEventListener('error', (event) => {
-    log.error('Uncaught error', event);
-  });
-  self.addEventListener('unhandledrejection', (event) => {
-    log.error('Unhandled promise rejection', event);
-  });
+  // Everything in a worker scope is ours — no attribution filter needed, so
+  // no runtime prefix is passed and every escaping error lands here with its
+  // real message, source location and the error object itself.
+  self.addEventListener('error', onUncaughtError({ log }));
+  self.addEventListener('unhandledrejection', onUnhandledRejection({ log }));
 }
 
 /**
