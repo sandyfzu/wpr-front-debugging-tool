@@ -2,6 +2,15 @@
 
 **Depends on:** P1 (constants/types), P5 (design system). **Effort:** L. **Parallelizable with:** P6–P9 (UI part needs P5 only).
 
+> **OWNER DECISION (2026-10-08) — PARKED FOR A RE-PLAN.** The owner **ditched the current way**
+> of building and planning the Exclusion Builder (this document's legacy-parity shape, including
+> its incognito parity skip) and asked to **re-think and re-plan it** before anything here is
+> built. Until that re-plan lands, this document is historical context for the port's parity
+> answers, not the build spec. Immediate behavioral consequence already applied: the context-menu
+> entry opens the standalone builder page from private windows too (no incognito skip — the
+> parity skip is gone; supersedition recorded in P2's deltas). The re-plan's new shape is the
+> owner's next call.
+
 ## Goal
 
 Port the Exclusion Builder: the exclusion engine as a pure, exhaustively-tested library plus a rebuilt unlisted page with inline validation, counts, and a Firefox fallback for file writes.

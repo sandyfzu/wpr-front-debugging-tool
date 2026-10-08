@@ -68,8 +68,8 @@ Update the Status column as phases complete (`⬜ planned → 🟨 in progress �
 | P8.1  | ⬜ (with/after P8)                                                                            |
 | P9    | ⬜                                                                                            |
 | P9.1  | ⬜ (with/after P9)                                                                            |
-| P10   | ⬜                                                                                            |
-| P10.1 | ⬜ (with/after P10)                                                                           |
+| P10   | 🟨 **parked** — owner ditched the current plan; re-think/re-plan pending (see its doc)        |
+| P10.1 | ⬜ parked with P10 — suites re-derived when the re-plan lands                                 |
 | P11   | ⬜                                                                                            |
 | P11.1 | ⬜ (with/after P11)                                                                           |
 | P12   | ⬜                                                                                            |

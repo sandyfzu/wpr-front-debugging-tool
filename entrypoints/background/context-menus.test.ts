@@ -150,14 +150,16 @@ describe('dispatchMenuClickEvent', () => {
     expect(recorded.refreshes).toBe(0);
   });
 
-  it('the exclusion builder skips private-window tabs entirely', async () => {
+  it('the exclusion builder opens from private windows too (owner ditched the skip)', async () => {
     const { deps, recorded } = recordingDeps();
     await dispatchMenuClickEvent(
       { menuItemId: CONTEXT_MENU_IDS.exclusionBuilderPage },
       { id: 7, incognito: true },
       deps
     );
-    expect(recorded.opened).toHaveLength(0);
+    // The builder is a standalone extension page: an owner decision (2026-10-08)
+    // ditched the legacy parity skip for private windows — it opens like any tab.
+    expect(recorded.opened).toEqual(['exclusion-builder.html']);
     expect(recorded.sent).toHaveLength(0);
     expect(recorded.refreshes).toBe(0);
   });

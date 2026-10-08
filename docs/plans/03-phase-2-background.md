@@ -87,6 +87,10 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
   Tests that pinned the skipped-write optimization were re-pinned to the survival contract —
   the old pins encoded a memory-truth assumption that is false across restarts.
 - **Logger tags aligned to the dominant convention** (bare module/feature names): `headers`, `known-conflicts`, `badge`, `context-menus` (the `background.headers` / `background.context-menus` dot forms were the outliers).
+- **Exclusion-builder incognito skip ditched (owner, 2026-10-08):** the §4 task's parity skip no
+  longer ships — the context-menu entry opens the standalone builder page from private windows
+  too. The historical text above still describes the legacy behavior; P10 is parked pending the
+  owner's re-plan of the builder's UX.
 - **Budget row raised deliberately 25 → 26 KiB** (`scripts/budgets.json`, via the gate's documented legitimate-breach path): the audit-mandated correctness work above restored ~500 B of genuinely used code — the previously-unwired capture path, independent boot guards, and the testable seams — measured at 26 073 B raw on the final build. The row's projection predates the audit fixes; the 26 KiB ceiling still guards the surface (a doubled capture+menu tree breaches it), and the whole-build backstop is unchanged. No behavior was cut to mask the delta.
 
 ## Docs to update

@@ -2,6 +2,10 @@
 
 **Depends on:** P4.1, P10 (site flows reuse the P4.2 fixture pages the builder targets). **Effort:** S–M. **Parallelizable with:** P11 implementation.
 
+> **Parked with P10's re-plan (owner, 2026-10-08):** P10 is ditched and awaiting its re-think;
+> these suites are re-derived when that re-plan lands, since every suite below traces to the
+> old plan's flows.
+
 ## TLDR
 
 Automate the exclusion-builder checklist: the engine's byte-parity proof becomes an automated diff on identical HTML files, the invalid-regex-per-line UX, the external-edit guard, and the full apply→reopen→behaviors-gone→reset flow on the local site's fixture pages.
