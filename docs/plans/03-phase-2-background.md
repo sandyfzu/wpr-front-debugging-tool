@@ -77,6 +77,15 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 - **Alarm creation dropped `persistAcrossSessions`:** that property is Chrome 150+ on a manifest whose floor is 145 — on 145–149 the `alarms.create` call rejects and the hourly alarm would never exist. Alarms persist by default where the browser supports it and the worker re-provisions the alarm on every start, so no behavior is lost (module TSDoc updated).
 - **Boot steps decoupled:** `prime` now guards alarm provisioning and the boot-time seed/refresh independently — a rejected alarm step logs its own cause and the first-install seed still runs (and vice versa), never a blank subsystem from one cause.
 - **Context menus:** the creation mapping (`menuCreateParams`) and the click dispatch (`dispatchMenuClickEvent` over injected `MenuClickDeps`) are testable pure functions; behavior is unchanged — the real `browser.*` calls (`sendMessage`, `getURL` + `tabs.create`, the `lastError` acknowledgment) remain thin glue.
+- **Cold-start badge reconciliation (owner-session fix, 2026-10-08):** the state machine cleared
+  only what its memory said it had applied, but Chrome keeps rendering per-tab badges across the
+  service-worker restarts that empty that memory — after a wake, a navigation to a non-WPR page
+  stranded the previous page's badge indefinitely, and a gate resolving off could not reach
+  pre-restart badges. Clears are now unconditional (every navigation and every absence report
+  writes its clear; idempotent and cheap), and a gate resolving off sweeps every tab via the
+  permission-free `tabs.query({})` id list (sweep helper `sweepRenderedBadges`).
+  Tests that pinned the skipped-write optimization were re-pinned to the survival contract —
+  the old pins encoded a memory-truth assumption that is false across restarts.
 - **Logger tags aligned to the dominant convention** (bare module/feature names): `headers`, `known-conflicts`, `badge`, `context-menus` (the `background.headers` / `background.context-menus` dot forms were the outliers).
 - **Budget row raised deliberately 25 → 26 KiB** (`scripts/budgets.json`, via the gate's documented legitimate-breach path): the audit-mandated correctness work above restored ~500 B of genuinely used code — the previously-unwired capture path, independent boot guards, and the testable seams — measured at 26 073 B raw on the final build. The row's projection predates the audit fixes; the 26 KiB ceiling still guards the surface (a doubled capture+menu tree breaches it), and the whole-build backstop is unchanged. No behavior was cut to mask the delta.
 

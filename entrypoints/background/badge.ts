@@ -16,6 +16,11 @@
  * - Before the gate is known (the first moments after a service worker wake),
  *   summaries are recorded but nothing renders — a badge can appear once the
  *   gate resolves, never a wrong one in between.
+ * - Clears are unconditional, never membership-vetoed: the browser keeps
+ *   rendering per-tab badges across the very restarts that empty this
+ *   model's memory, so after a wake a stranded badge can exist that this
+ *   instance never heard of. A redundant clear write is free; a wrong badge
+ *   is not.
  */
 
 import { createLogger } from '../../lib/logger';
@@ -107,20 +112,25 @@ class BadgeStateModelImpl implements BadgeStateModel {
 
   processSummary(tabId: number, summary: DetectionSummary): BadgeEffect | null {
     this.#summaries.set(tabId, summary);
-    // Unknown or off: nothing renders for this report. A later gate change
-    // re-resolves from the kept summary; navigation always re-checks first.
-    if (this.#gate !== true) return null;
     const display = badgeFor(summary);
     if (display !== null) {
+      // Unknown or off: nothing renders for this report. A later gate change
+      // re-resolves from the kept summary; navigation always re-checks first.
+      if (this.#gate !== true) return null;
       this.#applied.add(tabId);
       return { kind: 'set', tabId, display };
     }
-    return this.#applied.has(tabId) ? this.#clearEffect(tabId) : null;
+    // Absence always clears (see the header's restart guarantee): membership
+    // checks cannot veto a clear, because this model's memory is a subset of
+    // what Chrome may still be rendering after this worker last died.
+    return this.#clearEffect(tabId);
   }
 
   navigationStarted(tabId: number): BadgeEffect | null {
     this.#summaries.delete(tabId);
-    return this.#applied.has(tabId) ? this.#clearEffect(tabId) : null;
+    // Unconditional, same restart reason: the old page's badge must die with
+    // its page even when this model never saw it applied.
+    return this.#clearEffect(tabId);
   }
 
   tabRemoved(tabId: number): void {
@@ -243,6 +253,23 @@ export function createDisabledBadgeRuntime(): BadgeRuntime {
 }
 
 /**
+ * Clear the feature's badge on every tab without consulting memory: Chrome
+ * keeps rendering per-tab badges across the service-worker restarts that
+ * empty the state model, so a gate turning off (or boot resolving off) must
+ * reach badges it lost track of.
+ *
+ * `tabs.query({})` needs no `tabs` permission: ids are always served — only
+ * url/title-class fields are withheld without it, and this sweep reads
+ * nothing else.
+ */
+async function sweepRenderedBadges(): Promise<void> {
+  const ids = (await browser.tabs.query({}))
+    .map((tab) => tab.id)
+    .filter((id): id is number => typeof id === 'number');
+  await Promise.allSettled(ids.map((id) => applyBadgeEffect({ kind: 'clear', tabId: id })));
+}
+
+/**
  * Resolve the toolbar-badge option once and keep following it: the options
  * toggle must apply without a service worker restart.
  *
@@ -250,7 +277,12 @@ export function createDisabledBadgeRuntime(): BadgeRuntime {
  */
 export async function watchBadgeGate(badge: BadgeRuntime): Promise<void> {
   const applyGate = async (): Promise<void> => {
-    for (const effect of badge.setFeatureEnabled((await getOptions()).features.toolbarBadge)) {
+    const enabled = (await getOptions()).features.toolbarBadge;
+    // A gate resolving off must also reach stranded badges: memory cannot
+    // enumerate what Chrome still renders from before a restart — ids can.
+    // The model's own clears cover exactly the membership it still knows.
+    if (!enabled) await sweepRenderedBadges();
+    for (const effect of badge.setFeatureEnabled(enabled)) {
       void applyBadgeEffect(effect);
     }
   };
