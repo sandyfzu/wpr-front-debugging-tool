@@ -1,6 +1,6 @@
 # Phase 8.1 — Popup browser suites
 
-**Depends on:** P4.1, P4.2, P7, P8. **Effort:** S. **Parallelizable with:** P9–P10 implementation.
+**Depends on:** P4.1, P4.2, P7, P8, P16 (the device-simulation row's mechanism). **Effort:** S. **Parallelizable with:** P9–P10 implementation.
 
 ## TLDR
 
@@ -12,6 +12,7 @@ Automate the popup checklist: open/interact the browser action as its extension 
 2. **Apply/Reset contract:** resulting URL after Apply / Reset is asserted against the diagnoser plugin's parameter contract (the P4.2 site + plugin carry the target — URL shape and state reflected in `wp-admin` are checked by url contract + one site round).
 3. **Incompatible states:** no valid active context → the tool's incompatible/error state with the retry affordance (asserted from the page state machine, per the port's enhancement).
 4. **Layout + keyboard:** 576-px viewport holds 12 rows + footer with the mandated scroll behavior; keyboard-only tab/space/Apply pass.
+5. **Device-simulation row (P16 mechanism):** the row reflects the clicked tab's per-tab state and flips it (the harness asserts the SW-side rule and the immediate-not-Apply boundary); the option switches' Apply/Reset flow is proven untouched by the row's actions; the unavailable state renders where the API is absent (recorded manual smoke on Firefox).
 
 ## Definition of done
 

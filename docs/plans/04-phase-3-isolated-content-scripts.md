@@ -53,6 +53,8 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 - [x] Refresh fix (#19): via `iframe.contentWindow?.location.reload()` when same-origin-safe, else re-assign `src` (keep assignment fallback; document choice); open/close via CSS class transitions — state changes never depend on `transitionend` (guards: `{ once: true }` + fallback timeout; reduced-motion skips animation entirely — fixes master #49's stuck-container hazard; replaces legacy's `setTimeout(10)`/1 ms hacks); overflow save/restore exactly like legacy (html+body); re-open after close shows the previously loaded iframes (parity with legacy's `first` flag — do not reset `src` on close).
 - [x] Iframes `sandbox`/`credentialless` evaluation: **decision — do not sandbox** (the whole point is loading the real page authenticated); document why in TSDoc (security reviewer note).
 
+**Forward note (P16):** the overlay's scroll-sync toggle and the header chip for an active mobile simulation land in P16 (`lib/side-by-side/scroll-sync.ts` engine + the device-sim relay, budgets re-checked there) — no rework in this phase; P16's doc owns placement, mechanism and tests.
+
 ## Explicit enhancements over legacy
 
 - Observer/listener cleanup on invalidation (legacy leaked the HS observer and window listeners).

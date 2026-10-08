@@ -17,7 +17,8 @@ Make the "real site" checklists (P2–P4 retro suites in P4.3, later X.1 suites,
 - **mu-plugin fixture plugin** (`docker/fixtures/`, mounted into `wp-content/mu-plugins`): the fixture strategy is code-injection (owner-delegated decision) —
   - query-flags flip scenarios per page (`?fdt-error=reference|reading|notfunction`, `?fdt-delay=1` making Delay JS genuinely produce the undefined reference, controlled `data-rocket-status` markup when DelayJS executes, beacon-friendly pages);
   - behavior fixtures that the Exclusion Builder (P10) targets;
-  - self-resetting: nothing in the admin UI needs hand-configuring between runs.
+  - self-resetting: nothing in the admin UI needs hand-configuring between runs;
+  - (added by P16.1, recorded here to keep one fixture list) an UA-echo fixture page (server-side echo of the request `User-Agent`), a separate-mobile-cache toggle fixture state for the mobile-simulation rounds, and a `?fdt-redirect=cross` cross-origin redirect flag for the scroll-sync degrade round — same self-resetting pattern.
 - Preinstalled **free conflict plugins** filtered from the committed 121-row KC DB (`docker/conflicts.txt` committed list; wp.org-installable only) so `plugins.php` produces real matches.
 - Slot for the **Support Diagnoser plugin** (P7) — included at build time when its phase lands, same install path.
 - `.env.example` + gitignored `.env` (already ignored repo-wide as of 2026-10-08); credentials copied into place by the harness if missing, never logged.

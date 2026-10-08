@@ -126,7 +126,7 @@ This phase lands all of that in one go — **after** the second-baseline phases 
 
 ### Deferred & rejected (kept visible so nobody re-proposes them blindly)
 
-- **T8 — Mobile-UA cache snapshot — DEFERRED:** it would require the extension to refetch the page while pretending to be a phone, which needs a request-header-override permission (`declarativeNetRequest`). That is a real permission cost, and the least-privilege rule says: don't until support demand materializes. The workarounds (documented manual flow: open a device-emulated tab and use the tool there) cover the need today.
+- **T8 — Mobile-UA cache snapshot — DEFERRED:** it would require the extension to refetch the page while pretending to be a phone, which needs a request-header-override permission (`declarativeNetRequest`). That is a real permission cost, and the least-privilege rule says: don't until support demand materializes. The workarounds (documented manual flow: open a device-emulated tab and use the tool there) cover the need today. **Related note (2026-10-08):** a separate owner-committed phase, P16, added a per-tab mobile **simulation** — changing the live tab's UA identity, not snapshotting a page — which makes this manual flow trivial; T8's own decision stays as recorded here, and the two mechanisms must not be conflated.
 - **T9 — Speculation-rules viewer — REJECTED:** WP Rocket 3.23.5.1 does not emit speculation rules — nothing in the plugin does (verified: the develop tree contains no such emission; the plugin's head engine only adds preconnect/preload items). Building a viewer for another plugin's territory would be inventing a feature.
 
 ## 4. Corrections this phase applies to earlier phase docs

@@ -39,12 +39,16 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 - [x] Click handler: `openSideBySide` / `openSideBySidePerformance` messages targeted to the clicked tab (`sendMessage(type, undefined, tabId)`), with **real error handling** — if the CS is not there (chrome://, store pages), log + no-op visibly in console rather than swallowed catch (fixes master #3). Use the click event's own `tab` — no re-query (legacy's `tabs.query({ active, currentWindow })` approximated the SW's notion of the current window; master #45). Done — the dispatch decision surface (`dispatchMenuClickEvent`, injected effects) is table-tested: both channels with tab targeting, absent-CS branch resolves with a visible log, private-window skip, refresh trigger, tabless/foreign clicks ignored.
 - [x] `exclusionBuilderPage`: skip incognito (parity), `browser.runtime.getURL('exclusion-builder.html')` + `tabs.create` — verify no `tabs` permission needed for `tabs.create` (it isn't; verification note here). Done — the dispatch hands the page path to the injected `openTab` glue, which does `getURL` + `tabs.create` (the only `tabs` use); the manifest carries no `tabs` permission and creation works (build + manual hook).
 
+**Forward note (P16):** the registry gains the page-scoped "Debug this tab as mobile" click-toggle entry (one row + its action arm + an injected toggle hook, the refresh entry's pattern) — the state itself lives in P16's device-simulation service, this file only routes the click.
+
 ### 5. Toolbar action badge (new capability — master §8)
 
 - [x] Receive `reportDetectionSummary` (P1 protocol): set the per-tab toolbar badge — green dot when `{ wprPresent, cached }` are both true, blue dot when `wprPresent`, clear otherwise (`browser.action.setBadge*({ tabId })`; no new permission). Done — sender-validated, malformed/tabless senders ignored and logged.
 - [x] Clear a tab's badge on every `main_frame` `onResponseStarted` (navigation started — the headers.ts listener already fires; it notifies this module) and on `tabs.onRemoved`, so stale badges never survive navigation. Worst case (the CS never reports) the badge is transiently absent, never wrong. Done — the response half is the badge-clear step in `handleResponseStarted`; removal drops both cache rows and badge state.
 - [x] Gate on `features.toolbarBadge` from `optionsStore`: read once at init + `optionsStore.watch` to apply P9's toggle without restart. Done — resolved after boot; unresolved/off gates render nothing, re-applies from recorded values on toggle.
 - [x] Pure core (`entrypoints/background/badge.ts`): `badgeFor(summary | null): { text: string; color: string } | null` + the navigation/removed state machine — unit-tested; `browser.action` calls stay thin glue. Done — the state machine effect surfaces are the tests; `applyBadgeEffect` is the glue.
+
+**Forward note (P16):** the badge renders a "simulated" mark over the presence colors while that tab has an active mobile simulation — a `badgeFor` pure-core extension owned and tested by P16; the existing color verbs keep their meaning and the mark clears with the state.
 
 ## Explicit enhancements over legacy
 

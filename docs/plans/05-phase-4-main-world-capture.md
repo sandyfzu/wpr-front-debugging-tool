@@ -25,6 +25,8 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 - [x] Cleanup: remove both `window` listeners when the CS context is invalidated. **Verified at implementation time (read from the installed WXT 0.21.4's `dist/virtual/content-script-main-world-entrypoint.mjs`): MAIN-world content scripts get no `ContentScriptContext` — the wrapper calls `definition.main()` bare (only the isolated-world wrapper constructs one). There is no invalidation handshake, so the capture keeps page-lifetime listeners (the correct lifetime for an error capture anyway) and exposes its own stop handle (`removeEventListener` ×2 + debounce `cancel`) for teardown by whoever has a context — recorded here per the task.**
 - [x] Listeners are `capture: false` (parity) and never re-thrown — a capture failure must not alter page error handling (no `event.preventDefault`, no rethrow). (Every listener body is wrapped; a synthetic throw-hostile `stack` getter is pinned by a test.)
 
+**Forward note (P16):** this entrypoint later gains a tiny colocated `ua-identity.ts` module — the page-world `navigator.userAgent` shadow driven over the additive bridge channel while the per-tab mobile simulation is on (P16 owns its design, tests and the main-world budget re-check). No change lands here in P4.
+
 ## Explicit enhancements over legacy
 
 - Real cap + length limits (flood safety); typed window bridge with validation on both ends; pure extractable matcher; cleanup discipline; ≤ 2 KB world footprint. The bridge replaces a hop that was likely entirely dead in Chromium (#41) — the undefined-references feature is expected to _start working_ in the port.
