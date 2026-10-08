@@ -2,7 +2,7 @@
   {
     "surface": "background service worker",
     "globs": ["background.js"],
-    "maxKb": { "raw": 26 }
+    "maxKb": { "raw": 27 }
   },
   {
     "surface": "known-conflicts DB seed asset (background-owned)",
@@ -27,7 +27,7 @@
   {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
-    "maxKb": { "raw": 80, "gzip": 30 }
+    "maxKb": { "raw": 85, "gzip": 30 }
   },
   {
     "surface": "main-world content script",

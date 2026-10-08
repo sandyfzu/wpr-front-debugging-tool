@@ -93,6 +93,50 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 - **Budget row re-derived (committed change).** Measured composition of the finished surface (rollup visualizer + build deltas): Solid runtime ≈ 27 KB raw (P1.4 stack decision; every injected UI surface carries its own copy), `@wxt-dev/storage` ≈ 8 KB, the P1 engine + validators ≈ 10 KB, `jsonrepair` ≈ 7.5 KB (P1 committed it for diagnoser tolerance; IIFE content scripts cannot split dynamic imports), WXT messaging/context/UI helpers ≈ 16 KB, and ~24 KB of this phase's feature code. The committed stack sums past 60 KB before page features begin; the honest floor after the icon decision is **77.1 KB raw / 27.5 KB gzip**. `scripts/budgets.json` rows updated to raw 80 / gzip 30 (measured + ~4 % headroom; still −35 % raw / −21 % gzip vs the 122/35 baseline) and the whole-build backstop to 857 (the same sum-safe update). **Post-integration measurement:** the P1.1 panel-engine integration landed shared modules into this bundle and consumed the planned headroom — the committed surface measures **78.97 KB raw / 27.5 KB gzip** at that point, and **79.7 KB / 27.7 KB** (79,699 / 28,341 bytes) after the audit's content-script fixes — the 80/30 row still holds throughout. The P15 re-audit owns re-deriving the table when P12–P14 extend this surface.
 - **PSI auto-open also fires for late injection** (deliberate, behavior-superior delta). The compare flow's PageSpeed Insights auto-open runs once now when the content script injects after DOM load (`document.readyState !== 'loading'`), where the source only auto-opened from a DOMContentLoaded listener — a late-injected analysis page (restored navigation, extension-driven reload) gets the two-analysis comparison instead of silently skipping it.
 - **Component-render tests are P5's setup** (per the P0 note: "tsx component tests later feed configs through `vite-plugin-solid`, owned by P5"). This phase test-covers the logic layers fully (scan-state, extract, urls, conflicts-db, improvements derivation, data-hub pass + word merge) and deliberately leaves UI atom renders to P5's configuration.
+- **Processing is eager, not panel-gated (owner decision, 2026-10-08).** Task §2's "Lazy processing
+  exactly once (`processPageData` or first data request)" is superseded: the single pass starts at
+  the capture moment (`onParserReady`) — the toolbar badge (`reportDetectionSummary`, master §8
+  "at a glance per tab") and the `[WPR FDT] Page data processed in X ms` timing log must work with
+  no devtools panel ever opened; a panel gating both made the badge worthless (the panel already
+  shows everything). Panel requests are unchanged as callers — they are cache hits of that same
+  single-flight pass (one `DOMParser` construction per page still holds). The deliberate tradeoff,
+  owned here: the engine pass now runs on every http/https page load (the ≥30 %-faster benchmark
+  still governs its cost), and the multi-MB snapshot is released on every page instead of being
+  retained for the page lifetime — strictly better than the panel-gated retention. The
+  summary-push failure log moved debug → warn: a live context failing to deliver is abnormal
+  (the background owns the listener from boot) and must not be prod-silent. Site-round verification
+  (badge without a panel, log format, elapsed benchmarks) rides the P4.3 rounds.
+- **Global error handlers attribute by source (owner-reported defect, 2026-10-08).** The
+  page-safety last line logged the `ErrorEvent` wrapper itself (`[object ErrorEvent]`, no details)
+  and sat on the page-shared `window`, so every uncaught _host-page_ error was claimed under our
+  prefix on the extensions error page. The handlers are now the shared `lib/uncaught-errors.ts`
+  factories through `ctx`: only errors sourced under the runtime URL prefix are claimed (rejections
+  by stack), reported with the real message + source/line + the error object; foreign events are
+  skipped — the page reports its own failures natively, and our error page stays ours. Tests pin
+  the attribution rule, the detail shape, and the worker-scope no-prefix mode.
+- **Badge is a three-state, transparent-tile dot (owner decision, 2026-10-08).** Every reported
+  page now carries a visible state dot — green cached, blue present-uncached, **gray no WP Rocket**
+  (the plan's "none = absent" is superseded: a badge only worth having when the panel shows the
+  same info was absurd, and with the eager pass the absent state is known per page). Rendering fix
+  from the owner's real-browser report: the dot is the `●` glyph in its state color over a
+  **transparent tile** (`setBadgeTextColor` + `setBadgeBackgroundColor([0,0,0,0])`) — Chrome's
+  default colored-tile-with-white-text rendered the glyph off-center inside the square, which read
+  as a defect. State-machine shape: absence reports render now (overwriting stranded dots truthfully)
+  instead of clearing; navigation clears, the gate's record/restore, and the gate-off sweep are
+  unchanged. Badge tests re-pinned with the decision cited.
+- **Page-analysis console print (owner decision, 2026-10-08).** The timing-log delta that dropped
+  the legacy's full-detections `console.log` is superseded — the owner wants the console line back,
+  organized. `lib/detection/describe.ts` is the view model the checks deferred family composition
+  to: real feature names (labels verified by the coverage audit), one honest state per feature
+  (plain markup evidence → applied/not applied; the beacon family → applied/collecting/not
+  enabled/not applied per the parsed config), counts instead of raw page content (URLs/srcs stay
+  out of the console; the no-page-content rule holds), version + UTC cache timestamp. The data hub
+  logs it at info right after the timing line on every processed page; P6's Detections page may
+  reuse the same view model.
+- **Isolated content-script budget row 80 → 85 KiB raw** (deliberate, sanctioned path): the
+  analysis view model landed in the bundle; measured **81.0 KiB raw / 28.7 KiB gzip** — gzip's
+  30 row holds, raw re-derived at the standard ~4 % headroom (85). The P15 re-audit still owns the
+  table when P12–P14 extend this surface.
 
 ## Docs to update
 

@@ -1,10 +1,10 @@
 /**
  * The badge state machine's guarantees, end to end as effects (the glue's
- * browser action calls stay thin): presence decides the dot, navigation
- * clears before any new page answers, absence clears regardless of what this
- * worker's memory thinks (the browser outlives it), a closed tab leaves no
- * state, and the option gate can never render a badge the user didn't ask
- * for — including the stranded ones a restart left behind.
+ * browser action calls stay thin): every reported page gets its state dot —
+ * green cached, blue present-uncached, gray no WP Rocket (owner decision,
+ * 2026-10-08) — navigation clears before any new page answers, a closed tab
+ * leaves no state, and the option gate can never render a badge the user
+ * didn't ask for — including the stranded ones a restart left behind.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { describe, expect, it } from 'vitest';
@@ -31,18 +31,21 @@ function dotFor(summary: DetectionSummary): NonNullable<ReturnType<typeof badgeF
 }
 
 describe('badgeFor', () => {
-  it('gives the cached state one color and present-but-uncached another, as dots', () => {
+  it('gives the cached, present-uncached and absent states three distinct dots', () => {
     const cached = badgeFor(CACHED_WPR);
     const uncached = badgeFor(UNCACHED_WPR);
+    const absent = badgeFor(NO_WPR);
     // The exact colors are pinned: green reads as cached, blue as present,
-    // and the two states must always stay distinguishable at a glance.
+    // gray as no WP Rocket, and the three states must always stay
+    // distinguishable at a glance (every reported page carries one — owner
+    // decision, 2026-10-08).
     expect(cached).toEqual({ text: '●', color: '#1a7f37' });
     expect(uncached).toEqual({ text: '●', color: '#0969da' });
-    expect(cached?.color).not.toBe(uncached?.color);
+    expect(absent).toEqual({ text: '●', color: '#6e7781' });
+    expect(new Set([cached?.color, uncached?.color, absent?.color]).size).toBe(3);
   });
 
-  it('clears non-present summaries and gives null inputs nothing', () => {
-    expect(badgeFor(NO_WPR)).toBeNull();
+  it('gives null inputs nothing', () => {
     expect(badgeFor(null)).toBeNull();
   });
 });
@@ -82,25 +85,27 @@ describe('feature gate', () => {
     ]);
   });
 
-  it('absence reports always clear, applied and never-applied tabs alike', () => {
+  it('absence reports render the neutral dot, replacing whatever the tab showed', () => {
     const state = createBadgeState();
     state.setFeatureEnabled(true);
     state.processSummary(9, CACHED_WPR);
+    // A non-WP-Rocket page is a visible state of its own (owner decision,
+    // 2026-10-08): the gray dot replaces the old page's dot, applied or not,
+    // and repeating the report repeats the honest write.
     expect(state.processSummary(9, NO_WPR)).toEqual<BadgeEffect | null>({
-      kind: 'clear',
-      tabId: 9
+      kind: 'set',
+      tabId: 9,
+      display: dotFor(NO_WPR)
     });
-    // Memory cannot veto a clear: after a service-worker restart Chrome may
-    // still render a badge this fresh instance never saw, so every absence
-    // report answers with the write that removes it — for an applied tab
-    // again, and for a tab whose badge it cannot recall at all.
     expect(state.processSummary(9, NO_WPR)).toEqual<BadgeEffect | null>({
-      kind: 'clear',
-      tabId: 9
+      kind: 'set',
+      tabId: 9,
+      display: dotFor(NO_WPR)
     });
     expect(state.processSummary(12, NO_WPR)).toEqual<BadgeEffect | null>({
-      kind: 'clear',
-      tabId: 12
+      kind: 'set',
+      tabId: 12,
+      display: dotFor(NO_WPR)
     });
   });
 
@@ -151,14 +156,35 @@ describe('navigation and cleanup', () => {
   });
 });
 
+describe('the applier (the browser seam behind the effects)', () => {
+  it('renders the dot as a colored glyph over a transparent tile; clear leaves nothing', async () => {
+    fakeBrowser.reset();
+    await fakeBrowser.tabs.create({ url: 'https://site.test/badge' });
+    const tabId = (await fakeBrowser.tabs.query({}))[0]?.id;
+    if (tabId === undefined) throw new RangeError('expected a seeded tab');
+    await applyBadgeEffect({ kind: 'set', tabId, display: dotFor(CACHED_WPR) });
+    // The fake answers the callback-shaped values (bare string for the text,
+    // the raw color values) — exactly what a debug pane would see.
+    expect(await fakeBrowser.action.getBadgeText({ tabId })).toBe('●');
+    expect(await fakeBrowser.action.getBadgeTextColor({ tabId })).toBe('#1a7f37');
+    expect(await fakeBrowser.action.getBadgeBackgroundColor({ tabId })).toEqual([0, 0, 0, 0]);
+    await applyBadgeEffect({ kind: 'clear', tabId });
+    expect(await fakeBrowser.action.getBadgeText({ tabId })).toBe('');
+  });
+});
+
 describe('restart guarantee (the browser outlives this worker)', () => {
-  it('an absence report clears before the gate ever resolves; badge-worthy stays unrendered', () => {
+  it('pre-gate reports render nothing; the gate resolving on re-renders them all', () => {
     const state = createBadgeState();
-    expect(state.processSummary(11, NO_WPR)).toEqual<BadgeEffect | null>({
-      kind: 'clear',
-      tabId: 11
-    });
+    // Absence and badge-worthy alike stay unrendered before the gate resolves:
+    // no wrong badge in between, no flash before options are read.
+    expect(state.processSummary(11, NO_WPR)).toBeNull();
     expect(state.processSummary(11, CACHED_WPR)).toBeNull();
+    // The gate resolves on — the kept records now carry their states,
+    // gray absence included (the last report on the tab wins).
+    expect(state.setFeatureEnabled(true)).toEqual<BadgeEffect[]>([
+      { kind: 'set', tabId: 11, display: dotFor(CACHED_WPR) }
+    ]);
   });
 
   it('a gate resolving off sweeps stranded badges across every tab (glue)', async () => {

@@ -42,8 +42,12 @@ const BADGE_DOT = '●';
  */
 const CACHED_STATE_COLOR = '#1a7f37';
 const UNCACHED_PRESENT_COLOR = '#0969da';
+/** The state every page without WP Rocket carries: clearly not something the plugin produced. */
+const ABSENT_STATE_COLOR = '#6e7781';
+/** The tile is transparent: the dot is the glyph in its state color (see `applyBadgeEffect`). */
+const TRANSPARENT_TILE: [number, number, number, number] = [0, 0, 0, 0];
 
-/** What a tab's action badge must display: dot text plus background color. */
+/** What a tab's action badge must display: the dot glyph plus its color. */
 export interface BadgeDisplay {
   text: string;
   color: string;
@@ -77,17 +81,20 @@ export type BadgeStateModel = Omit<BadgeRuntime, 'apply'>;
 
 /**
  * Summary → badge state: green while the page is served cached, blue while
- * WP Rocket is present but the visit was uncached, nothing otherwise (an
- * absent WP Rocket, or a summary that describes neither state is a clear).
+ * WP Rocket is present but the visit was uncached, gray while the page
+ * carries no WP Rocket at all — every reported page gets a visible state
+ * (owner decision, 2026-10-08); only an unreported tab (browser-internal
+ * pages, or the moments before a page's content script answers) shows
+ * nothing.
  *
  * @param summary The two booleans a content push reported, or null.
  * @returns A dot to apply, or null when the tab must show no badge.
  */
 export function badgeFor(summary: DetectionSummary | null): BadgeDisplay | null {
   if (summary === null) return null;
-  if (summary.wprPresent && summary.cached) return { text: BADGE_DOT, color: CACHED_STATE_COLOR };
-  if (summary.wprPresent) return { text: BADGE_DOT, color: UNCACHED_PRESENT_COLOR };
-  return null;
+  if (!summary.wprPresent) return { text: BADGE_DOT, color: ABSENT_STATE_COLOR };
+  if (summary.cached) return { text: BADGE_DOT, color: CACHED_STATE_COLOR };
+  return { text: BADGE_DOT, color: UNCACHED_PRESENT_COLOR };
 }
 
 /**
@@ -113,17 +120,15 @@ class BadgeStateModelImpl implements BadgeStateModel {
   processSummary(tabId: number, summary: DetectionSummary): BadgeEffect | null {
     this.#summaries.set(tabId, summary);
     const display = badgeFor(summary);
-    if (display !== null) {
-      // Unknown or off: nothing renders for this report. A later gate change
-      // re-resolves from the kept summary; navigation always re-checks first.
-      if (this.#gate !== true) return null;
-      this.#applied.add(tabId);
-      return { kind: 'set', tabId, display };
+    if (this.#gate !== true) return null;
+    if (display === null) {
+      // Unreachable with a validated summary (`badgeFor` is total over
+      // summaries) — the shape stays for the type, producing no browser
+      // write on an impossible branch.
+      return null;
     }
-    // Absence always clears (see the header's restart guarantee): membership
-    // checks cannot veto a clear, because this model's memory is a subset of
-    // what Chrome may still be rendering after this worker last died.
-    return this.#clearEffect(tabId);
+    this.#applied.add(tabId);
+    return { kind: 'set', tabId, display };
   }
 
   navigationStarted(tabId: number): BadgeEffect | null {
@@ -176,10 +181,17 @@ export async function applyBadgeEffect(effect: BadgeEffect | null): Promise<void
       await browser.action.setBadgeText({ tabId: effect.tabId, text: '' });
       return;
     }
+    // The dot is the glyph itself in its state color, over a transparent
+    // tile — Chrome's default (a colored tile with white text) renders the
+    // glyph off-center inside the square and reads as a defect. The
+    // transparent tile is a fixed browser-chrome value, outside theme
+    // resolution. The text lands last, so any earlier failure leaves nothing
+    // rendered rather than a half-applied badge; the next report re-runs all.
     await browser.action.setBadgeBackgroundColor({
       tabId: effect.tabId,
-      color: effect.display.color
+      color: TRANSPARENT_TILE
     });
+    await browser.action.setBadgeTextColor({ tabId: effect.tabId, color: effect.display.color });
     await browser.action.setBadgeText({ tabId: effect.tabId, text: effect.display.text });
     return;
   } catch (cause) {

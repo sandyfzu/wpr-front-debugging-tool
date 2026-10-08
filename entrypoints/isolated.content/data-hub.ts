@@ -5,13 +5,15 @@
  * Capture: the isolated world serializes the document once at
  * `DOMContentLoaded` (plus a `readyState` guard so late injections still
  * capture) — snapshot semantics are the feature, because late DOM mutations
- * must stay invisible to the panel. Processing: exactly one pass on demand,
- * over the serialized HTML, results cached for the page lifetime.
+ * must stay invisible to the panel. Processing: exactly one pass, started
+ * eagerly at the capture moment and cached for the page lifetime — the
+ * toolbar badge and the timing log must work with no devtools panel ever
+ * opened (owner decision, 2026-10-08), and panel requests read the cached
+ * result.
  *
  * Memory contract: the multi-megabyte snapshot is released as soon as the
- * processing pass completes — callers read the results, never the source
- * HTML. An unprocessed capture (no devtools ever opens the panel) still
- * occupies the snapshot: capturing is part of the semantics, not waste.
+ * eager processing pass completes — callers read the results, never the
+ * source HTML.
  *
  * Anything crossing a boundary is validated (`parseErrorWords` for the
  * window bridge; detection results are our own engine output); every push to
@@ -33,6 +35,7 @@ import type {
 } from '../../lib/wp-rocket/types';
 import { parsePage } from '../../lib/detection/parse-page';
 import { applyPresencePropagation, runChecks } from '../../lib/detection/run-detection';
+import { describeDetections } from '../../lib/detection/describe';
 import { detectPreloadedResources } from '../../lib/detection/detect-optimizations';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
@@ -142,6 +145,12 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     void fetchHeaders().then(() => {
       notifyPanel();
     });
+    // The pass feeds the toolbar badge and prints the timing log — both must
+    // work with no devtools panel ever opened (owner decision, 2026-10-08).
+    // Starting it here also releases the snapshot immediately instead of
+    // holding it for the page lifetime; panel requests then read the cached
+    // result (single-flight, no second parse).
+    void processData();
   };
 
   if (document.readyState === 'loading') {
@@ -183,7 +192,20 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       }
       if (data !== null) {
         log.info(`Page data processed in ${(performance.now() - started).toFixed(1)} ms`);
+        // The badge push first: the at-a-glance surface answers before any
+        // presentation can fail. The organized analysis print (owner
+        // decision, 2026-10-08) is presentation — a view-model bug there must
+        // kill neither the badge nor the panel responses, so it rides its own
+        // guard and reports itself.
         pushDetectionSummary();
+        try {
+          log.info('Page analysis', describeDetections(data.detections));
+        } catch (error) {
+          log.error(
+            'Building the page analysis report failed',
+            error instanceof Error ? error.message : error
+          );
+        }
       } else {
         log.info(
           `Page data processing failed after ${(performance.now() - started).toFixed(1)} ms`
@@ -201,8 +223,10 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     };
     sendMessage('reportDetectionSummary', summary).catch((error: unknown) => {
       // Powers the background's toolbar badge; its absence is not page work.
+      // A live context failing to deliver is abnormal — the background owns
+      // this listener from boot — so it must not vanish at debug level.
       if (ctx.isInvalid) return;
-      log.debug('Detection summary push skipped', error instanceof Error ? error.message : error);
+      log.warn('Detection summary push failed', error instanceof Error ? error.message : error);
     });
   };
 
