@@ -30,6 +30,15 @@ const chrome = spawn(
   ],
   { stdio: 'ignore' }
 );
+// The spawned Chrome must not outlive a failed run: every exit path (including an
+// uncaught error mid-run) terminates it.
+process.on('exit', () => {
+  chrome.kill();
+});
+process.on('uncaughtException', (err) => {
+  console.error('FAIL: uncaught — ' + (err?.message ?? err));
+  process.exit(1); // the exit hook above kills Chrome
+});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Wait for the CDP endpoint, then use the *browser-level* websocket (targets deduped there).
@@ -49,9 +58,22 @@ if (!wsUrlBase) {
 }
 
 const ws = new WebSocket(wsUrlBase);
+// The two real failure modes are bounded explicitly: a server that answered the HTTP
+// probe but never completed the WebSocket handshake, and connection refusal — either
+// must fail the run fast instead of awaiting forever (Node WebSocket has no `onreject`).
 await new Promise((res, rej) => {
-  ws.onopen = res;
-  ws.onreject = rej;
+  const timeout = setTimeout(
+    () => rej(new Error(`CDP WebSocket on :${CDP_PORT} never opened`)),
+    10000
+  );
+  ws.onopen = () => {
+    clearTimeout(timeout);
+    res();
+  };
+  ws.onerror = () => {
+    clearTimeout(timeout);
+    rej(new Error(`CDP WebSocket to :${CDP_PORT} failed to open`));
+  };
 });
 
 let msgId = 0;
@@ -118,8 +140,11 @@ for (const [flag, want] of [
 results.immediateExtras = immediateAll;
 
 // ---- Scenario 0b: ?nowprocket must bypass optimization entirely -------------------
+// The bypass check uses a URL that still carries a fixture flag: the proof is that the
+// flag's own script ENQUEUES as a plain script (WordPress flow) while WP Rocket's
+// optimization pipeline — the thing the bypass removes — adds nothing.
 const fromNp = Date.now();
-await navigate(`${SITE}/fdt/?nowprocket=1`);
+await navigate(`${SITE}/fdt/?fdt-error=reference&nowprocket=1`);
 await sleep(1500);
 const np = await send(
   'Runtime.evaluate',
@@ -211,7 +236,7 @@ if (!results.immediateExtras.every((e) => e.got))
   );
 if (results.nowprocket.delayed !== 0 || results.nowprocket.footprinted)
   fail('scenario 0b: ?nowprocket did not bypass optimization');
+if (results.nowprocket.plain < 1)
+  fail('scenario 0b: the flagged script never enqueued as a plain script under ?nowprocket');
 console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
-ws.close();
-chrome.kill();
-process.exit(ok ? 0 : 1);
+process.exit(ok ? 0 : 1); // the exit hook kills Chrome; the WebSocket dies with the process
