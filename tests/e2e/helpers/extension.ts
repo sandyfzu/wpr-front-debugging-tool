@@ -37,6 +37,15 @@ import {
   type Worker
 } from '@playwright/test';
 
+/**
+ * Bounded launch wait. Playwright applies its launch `timeout` only with the
+ * explicit option here: verified live on this Chromium build, a wrong
+ * `--load-extension` path leaves the launch promise unsettled for minutes
+ * with the default, so the harness bounds it itself and reports the bundle
+ * path on failure.
+ */
+const LAUNCH_TIMEOUT_MS = 30_000;
+
 /** The unpacked bundle the harness loads (the current `pnpm build` output). */
 export const EXTENSION_PATH = path.resolve(
   import.meta.dirname, // tests/e2e/helpers
@@ -146,16 +155,52 @@ export class ExtensionDriver {
 
   /** Start (or restart) the persistent context on {@link profileDir}. */
   private async openContext(): Promise<void> {
-    this.context = await chromium.launchPersistentContext(this.profileDir, {
-      channel: 'chromium',
-      headless: false,
-      viewport: { width: 1280, height: 800 },
-      args: [`--disable-extensions-except=${EXTENSION_PATH}`, `--load-extension=${EXTENSION_PATH}`]
-    });
+    try {
+      this.context = await chromium.launchPersistentContext(this.profileDir, {
+        channel: 'chromium',
+        headless: false,
+        viewport: { width: 1280, height: 800 },
+        timeout: LAUNCH_TIMEOUT_MS,
+        args: [
+          `--disable-extensions-except=${EXTENSION_PATH}`,
+          `--load-extension=${EXTENSION_PATH}`
+        ]
+      });
+    } catch (cause) {
+      throw new Error(
+        [
+          `Launching headed Chromium with the unpacked extension timed out or failed after ${String(LAUNCH_TIMEOUT_MS)} ms.`,
+          `extension path: ${EXTENSION_PATH}`,
+          'usual causes: the bundle is missing or not a valid unpacked build (manifest.json present) — rebuild with `pnpm build`'
+        ].join('\n'),
+        { cause }
+      );
+    }
     // The install event has already fired by the time the worker target
     // exists, so the menu registry is complete the moment it appears —
     // waiting here gives every suite a settled extension.
-    await this.serviceWorker();
+    try {
+      await this.serviceWorker();
+    } catch (cause) {
+      // Close the half-working context so failed launches leave no headed
+      // windows behind and no 90 s teardown hang; close failures surface
+      // next to the launch failure instead of dying silently.
+      try {
+        await this.context.close();
+      } catch (closeCause: unknown) {
+        console.error(
+          `[e2e] closing the browser after the failed extension launch also failed: ${String(closeCause)}`
+        );
+      }
+      throw new Error(
+        [
+          `The extension service worker did not appear within 20 s after the launch.`,
+          `extension path: ${EXTENSION_PATH}`,
+          'usual causes: the bundle has no background entrypoint registered, or the MV3 worker crashed — rebuild with `pnpm build`'
+        ].join('\n'),
+        { cause }
+      );
+    }
   }
 
   /**
