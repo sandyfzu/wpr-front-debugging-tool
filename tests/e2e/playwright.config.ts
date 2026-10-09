@@ -27,7 +27,12 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 90_000,
   retries: 0,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [
+    ['list'],
+    // Cwd-independent: the report lands inside the tier's directory (which is
+    // gitignored), whatever the caller's cwd was.
+    ['html', { outputFolder: './playwright-report', open: 'never' }]
+  ],
   outputDir: './test-results',
   use: {
     viewport: { width: 1280, height: 800 },
