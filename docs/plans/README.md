@@ -49,42 +49,42 @@ Read `00-master-port-plan.md` first. Then execute phases in the dependency order
 
 Update the Status column as phases complete (`⬜ planned → 🟨 in progress → ✅ done`).
 
-| Phase | Status                                                                                                                                          |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0    | ✅                                                                                                                                              |
-| P1    | ✅                                                                                                                                              |
-| P1.1  | 🟨 (code + gates done; real-site matrix + second-baseline side-by-side pending — see its doc)                                                   |
-| P2    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 audit-fix pass lives in its Shipped deltas)       |
-| P3    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 owner-decision deltas live in its Shipped deltas) |
-| P4    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.1)                                                                  |
-| P4.1  | ✅ (harness + five fixture suites green; reload-leg environment facts + deviations recorded in its doc)                                         |
-| P4.2  | ⬜ (**next to implement** — with P4.1)                                                                                                          |
-| P4.3  | ⬜ (after P4.1 + P4.2)                                                                                                                          |
-| P16   | ⬜ (after P4.3, before the panel phases — owner-committed 2026-10-08)                                                                           |
-| P16.1 | ⬜ (after P16)                                                                                                                                  |
-| P5    | ⬜                                                                                                                                              |
-| P5.1  | ⬜ (with/after P5)                                                                                                                              |
-| P6    | ⬜                                                                                                                                              |
-| P6.1  | ⬜ (with/after P6)                                                                                                                              |
-| P7    | ⬜                                                                                                                                              |
-| P7.1  | ⬜ (with/after P7)                                                                                                                              |
-| P8    | ⬜                                                                                                                                              |
-| P8.1  | ⬜ (with/after P8)                                                                                                                              |
-| P9    | ⬜                                                                                                                                              |
-| P9.1  | ⬜ (with/after P9)                                                                                                                              |
-| P10   | 🟨 **parked** — owner ditched the current plan; re-think/re-plan pending (see its doc)                                                          |
-| P10.1 | ⬜ parked with P10 — suites re-derived when the re-plan lands                                                                                   |
-| P11   | ⬜                                                                                                                                              |
-| P11.1 | ⬜ (with/after P11)                                                                                                                             |
-| P12   | ⬜                                                                                                                                              |
-| P12.1 | ⬜ (with/after P12)                                                                                                                             |
-| P13   | ⬜                                                                                                                                              |
-| P13.1 | ⬜ (with/after P13)                                                                                                                             |
-| P14   | ⬜                                                                                                                                              |
-| P14.1 | ⬜ (with/after P14)                                                                                                                             |
-| P14.5 | ⬜                                                                                                                                              |
-| P14.6 | ⬜ (last test step before P15; owner's external site decision-gated)                                                                            |
-| P15   | ⬜                                                                                                                                              |
+| Phase | Status                                                                                                                                                                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0    | ✅                                                                                                                                                                                                |
+| P1    | ✅                                                                                                                                                                                                |
+| P1.1  | 🟨 (code + gates done; real-site matrix + second-baseline side-by-side pending — see its doc)                                                                                                     |
+| P2    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 audit-fix pass lives in its Shipped deltas)                                                         |
+| P3    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 owner-decision deltas live in its Shipped deltas)                                                   |
+| P4    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.1)                                                                                                                    |
+| P4.1  | ✅ (harness + five fixture suites green; adversarial audit pass committed 2026-10-09 — loopback-only bind, bounded launch, tightened asserts; deviations + environment facts recorded in its doc) |
+| P4.2  | ⬜ (**next to implement** — with P4.1)                                                                                                                                                            |
+| P4.3  | ⬜ (after P4.1 + P4.2)                                                                                                                                                                            |
+| P16   | ⬜ (after P4.3, before the panel phases — owner-committed 2026-10-08)                                                                                                                             |
+| P16.1 | ⬜ (after P16)                                                                                                                                                                                    |
+| P5    | ⬜                                                                                                                                                                                                |
+| P5.1  | ⬜ (with/after P5)                                                                                                                                                                                |
+| P6    | ⬜                                                                                                                                                                                                |
+| P6.1  | ⬜ (with/after P6)                                                                                                                                                                                |
+| P7    | ⬜                                                                                                                                                                                                |
+| P7.1  | ⬜ (with/after P7)                                                                                                                                                                                |
+| P8    | ⬜                                                                                                                                                                                                |
+| P8.1  | ⬜ (with/after P8)                                                                                                                                                                                |
+| P9    | ⬜                                                                                                                                                                                                |
+| P9.1  | ⬜ (with/after P9)                                                                                                                                                                                |
+| P10   | 🟨 **parked** — owner ditched the current plan; re-think/re-plan pending (see its doc)                                                                                                            |
+| P10.1 | ⬜ parked with P10 — suites re-derived when the re-plan lands                                                                                                                                     |
+| P11   | ⬜                                                                                                                                                                                                |
+| P11.1 | ⬜ (with/after P11)                                                                                                                                                                               |
+| P12   | ⬜                                                                                                                                                                                                |
+| P12.1 | ⬜ (with/after P12)                                                                                                                                                                               |
+| P13   | ⬜                                                                                                                                                                                                |
+| P13.1 | ⬜ (with/after P13)                                                                                                                                                                               |
+| P14   | ⬜                                                                                                                                                                                                |
+| P14.1 | ⬜ (with/after P14)                                                                                                                                                                               |
+| P14.5 | ⬜                                                                                                                                                                                                |
+| P14.6 | ⬜ (last test step before P15; owner's external site decision-gated)                                                                                                                              |
+| P15   | ⬜                                                                                                                                                                                                |
 
 ### Reconciliation record (2026-10-08)
 
