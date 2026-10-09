@@ -55,6 +55,9 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
 ├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
+├── docker/                    # local WP site: compose stack (WP+MariaDB+wp-cli bootstrap), lifecycle + smoke
+│   │                          #   + conflict-derivation scripts, mu-plugin fixtures, KC conflict list —
+│   │                          #   machine state (`.env`, the `apvm`-built zip, `docker/certs/`) is git-ignored
 └── wxt.config.ts              # manifest fields, permissions (each with a why), modules
 ```
 
@@ -81,6 +84,8 @@ pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
+docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh / reset.sh; URLs, credentials
+                     #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
 CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`.
