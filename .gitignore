@@ -30,3 +30,7 @@ web-ext.config.ts
 *.njsproj
 *.sln
 *.sw?
+
+# git-ignored WP Rocket build artifact (proved uninstallable from git, boot-built only)
+docker/wpr/
+docker/certs/

@@ -1,0 +1,217 @@
+/**
+ * Phase 4.2 smoke proof: drive system Chrome headless over raw CDP (Node's built-in
+ * WebSocket only, zero dependencies) and verify the fixture site's scripted problems.
+ *
+ *  1. /fdt/?fdt-error=reference  -> an immediate ReferenceError at load (no interaction)
+ *  2. /fdt/?fdt-delay=1          -> the delayed scripts are held until interaction, and
+ *     dispatching a real mousemove (WP Rocket's delay queue listens for it; verified in
+ *     the 3.23.5.1 lazyload-scripts runtime) runs the queue: the delayed script throws
+ *     its ReferenceError at execution time, the benign one tags itself
+ *     data-fdt-delay="executed", and WP Rocket sets data-rocket-status on both nodes.
+ *
+ * Exits nonzero on any expectation miss: a missing proof is a failure, never a pass.
+ */
+const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CDP_PORT = Number(process.env.FDT_CDP_PORT ?? 19222);
+const SITE = process.env.FDT_SITE_URL ?? 'http://127.0.0.1:8493';
+const { spawn } = await import('node:child_process');
+
+const chrome = spawn(
+  CHROME,
+  [
+    `--remote-debugging-port=${CDP_PORT}`,
+    `--user-data-dir=/tmp/fdt-cdp-${Date.now()}`,
+    '--headless=new',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-gpu',
+    '--window-size=1280,900',
+    'about:blank'
+  ],
+  { stdio: 'ignore' }
+);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Wait for the CDP endpoint, then use the *browser-level* websocket (targets deduped there).
+let wsUrlBase = null;
+for (let i = 0; i < 60; i++) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`);
+    wsUrlBase = (await res.json()).webSocketDebuggerUrl;
+    break;
+  } catch {
+    await sleep(250);
+  }
+}
+if (!wsUrlBase) {
+  console.error('FAIL: chrome CDP endpoint never came up');
+  process.exit(1);
+}
+
+const ws = new WebSocket(wsUrlBase);
+await new Promise((res, rej) => {
+  ws.onopen = res;
+  ws.onreject = rej;
+});
+
+let msgId = 0;
+const pending = new Map();
+const events = [];
+ws.onmessage = (ev) => {
+  const data = JSON.parse(ev.data);
+  if (data.id !== undefined && pending.has(data.id)) {
+    pending.get(data.id)(data);
+    pending.delete(data.id);
+  } else if (data.method) events.push(data);
+};
+const send = (method, params = {}, sessionId) =>
+  new Promise((res) => {
+    const id = ++msgId;
+    pending.set(id, res);
+    ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }));
+  });
+
+const {
+  result: { targetInfos }
+} = await send('Target.getTargets');
+// Use the initial about:blank target as our tab.
+const target = targetInfos.find((t) => t.type === 'page');
+const {
+  result: { sessionId }
+} = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+
+const navigate = (url) => send('Page.navigate', { url }, sessionId);
+await send('Runtime.enable', {}, sessionId);
+await send('Page.enable', {}, sessionId);
+
+const errorsFor = (sinceTs) => events.filter((e) => e.params?.timestamp >= sinceTs);
+const thrown = (sinceTs) =>
+  errorsFor(sinceTs).filter((e) => e.method === 'Runtime.exceptionThrown');
+const statusOf = (selector, attrs) =>
+  send(
+    'Runtime.evaluate',
+    {
+      expression: `JSON.stringify([...document.querySelectorAll(${JSON.stringify(selector)})].map(n => ({${attrs.map((a) => `[${JSON.stringify(a)}]: n.getAttribute(${JSON.stringify(a)})`).join(',')}})))`,
+      returnByValue: true
+    },
+    sessionId
+  ).then((r) => JSON.parse(r.result.result.value));
+
+const results = { immediate: null, delay: null };
+
+// ---- Scenario 0: the remaining two immediate classes (reading / notfunction) ----
+const immediateAll = [];
+for (const [flag, want] of [
+  ['reading', "Cannot read properties of undefined (reading 'fdtFixtureProperty')"],
+  ['notfunction', 'document.body.fdtFixtureNotAFunction is not a function']
+]) {
+  const from = Date.now();
+  await navigate(`${SITE}/fdt/?fdt-error=${flag}`);
+  await sleep(1800);
+  const got = thrown(from).map((e) => e.params.exceptionDetails?.exception?.description || '');
+  immediateAll.push({
+    flag,
+    got: got.filter(Boolean).find((m) => m.includes(want)) || null,
+    raw: got[0] || null
+  });
+}
+results.immediateExtras = immediateAll;
+
+// ---- Scenario 0b: ?nowprocket must bypass optimization entirely -------------------
+const fromNp = Date.now();
+await navigate(`${SITE}/fdt/?nowprocket=1`);
+await sleep(1500);
+const np = await send(
+  'Runtime.evaluate',
+  {
+    expression: `JSON.stringify({
+  delayed: [...document.querySelectorAll('script[type$="rocketlazyloadscript"]')].length,
+  plain: [...document.querySelectorAll('script[src*="fdt-error-reference"]')].length,
+  footprinted: document.documentElement.outerHTML.includes('Performance optimized by WP Rocket'),
+})`,
+    returnByValue: true
+  },
+  sessionId
+);
+results.nowprocket = JSON.parse(np.result.result.value);
+
+// ---- Scenario 1: immediate load-time ReferenceError -----------------------------
+let t0 = Date.now();
+await navigate(`${SITE}/fdt/?fdt-error=reference`);
+await sleep(2500);
+const im = thrown(t0).map((e) => e.params);
+results.immediate = im.map((e) => ({
+  text: e.exceptionDetails?.exception?.description || e.exceptionDetails?.text,
+  cls: e.exceptionDetails?.exception?.className
+}));
+
+// ---- Scenario 2: delay queue throws on interaction ------------------------------
+events.length = 0;
+t0 = Date.now() / 1000;
+await navigate(`${SITE}/fdt/?fdt-delay=1`);
+await sleep(2500);
+const beforeStatus = await statusOf('[data-fdt-delay], [data-rocket-status]', [
+  'data-rocket-status',
+  'data-fdt-delay'
+]);
+const thrownBefore = thrown(t0).length;
+// a real user action: move + press + release (the runtime listens on mousemove & co.)
+await send('Input.dispatchMouseEvent', { type: 'mousemove', x: 200, y: 200 }, sessionId);
+await send(
+  'Input.dispatchMouseEvent',
+  { type: 'mousePressed', x: 200, y: 200, button: 'left', clickCount: 1 },
+  sessionId
+);
+await send(
+  'Input.dispatchMouseEvent',
+  { type: 'mouseReleased', x: 200, y: 200, button: 'left', clickCount: 1 },
+  sessionId
+);
+await sleep(3500);
+const afterStatus = await statusOf('[data-rocket-status], [data-fdt-delay]', [
+  'data-rocket-status',
+  'data-fdt-delay'
+]);
+const delayErrs = thrown(t0).map(
+  (e) => e.params.exceptionDetails?.exception?.description || e.params.exceptionDetails?.text
+);
+results.delay = {
+  beforeStatus,
+  afterStatus,
+  thrownBeforeInteraction: thrownBefore,
+  errorsAfter: delayErrs
+};
+
+// ---- Report ---------------------------------------------------------------------
+console.log(JSON.stringify(results, null, 2));
+
+let ok = true;
+const fail = (msg) => {
+  ok = false;
+  console.error('FAIL: ' + msg);
+};
+const imm = results.immediate.find(
+  (e) => e.text?.includes('ReferenceError') && e.text?.includes('is not defined')
+);
+if (!imm) fail('scenario 1: no immediate ReferenceError captured');
+const refMsg = results.delay.errorsAfter.find(
+  (m) => m?.includes('ReferenceError') && m?.includes('fdtDelayTypedDependency')
+);
+if (results.delay.thrownBeforeInteraction !== 0)
+  fail('scenario 2: errors before the interaction — delay queue did not hold the scripts');
+if (!refMsg) fail('scenario 2: the delayed ReferenceError for fdtDelayTypedDependency never fired');
+if (!results.delay.afterStatus.some((s) => s['data-rocket-status'] === 'executed'))
+  fail('scenario 2: no data-rocket-status="executed" observed after interaction');
+if (!results.delay.afterStatus.some((s) => s['data-fdt-delay'] === 'executed'))
+  fail('scenario 2: the benign delayed script never tagged data-fdt-delay="executed"');
+if (!results.immediateExtras.every((e) => e.got))
+  fail(
+    'scenario 0: reading/notfunction immediate errors incomplete: ' +
+      JSON.stringify(results.immediateExtras)
+  );
+if (results.nowprocket.delayed !== 0 || results.nowprocket.footprinted)
+  fail('scenario 0b: ?nowprocket did not bypass optimization');
+console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
+ws.close();
+chrome.kill();
+process.exit(ok ? 0 : 1);
