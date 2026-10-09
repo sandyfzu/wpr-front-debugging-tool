@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Undefined-reference fixture</title>
+  </head>
+  <body>
+    <h1>Throws one ReferenceError 2 s after load</h1>
+    <p>
+      Parity with the undefined-references checklist timing: uncaught throws
+      <code>ReferenceError: foo is not defined</code> two seconds after this page has loaded, so the
+      capture pipeline observes a page-lifetime error, not a document_start race.
+    </p>
+    <script>
+      setTimeout(function throwsAfterTwoSeconds() {
+        foo;
+      }, 2000);
+    </script>
+  </body>
+</html>

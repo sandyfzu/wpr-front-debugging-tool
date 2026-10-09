@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cross-origin error fixture</title>
+  </head>
+  <body>
+    <h1>A script from the second origin throws uncaught</h1>
+    <p>
+      Loads <code>cross-origin-throw.js</code> from <code>127.0.0.1</code> while this page itself is
+      served from <code>localhost</code> — distinct origins for the browser, so the uncaught error's
+      message is withheld and reported as <code>Script error.</code>
+      (the sentinel path of the undefined-references capture).
+    </p>
+    <p>
+      The injection is deferred so the page has fully loaded first: the browser-test suite then
+      starts observing from a settled baseline and measures the throw → receiver round-trip with
+      page-local clocks.
+    </p>
+    <script>
+      // Bridge acknowledgment listener: the isolated world's receiver
+      // replies to the sentinel batch; its arrival is measured on this
+      // page's own clock (the same performance.now timeline as the throw).
+      window.__sentinelErrorAt = null;
+      window.__sentinelAckAt = null;
+      window.addEventListener('message', function trackSentinelAck(event) {
+        if (
+          event.data &&
+          event.data.type === '@webext-core/messaging/window/response' &&
+          event.data.namespace === 'wpr-fdt-undefined-references' &&
+          event.data.message &&
+          event.data.message.type === 'undefinedReferenceBatch'
+        ) {
+          window.__sentinelAckAt = performance.now();
+        }
+      });
+      window.addEventListener('error', function recordCrossOriginError() {
+        // The uncaught cross-origin error itself (message withheld by the
+        // browser); the timestamp stamps the throw for the round-trip delta.
+        if (window.__sentinelErrorAt === null) window.__sentinelErrorAt = performance.now();
+      });
+      setTimeout(function injectCrossOriginThrower() {
+        const script = document.createElement('script');
+        script.src = 'http://127.0.0.1:8891/errors/cross-origin-throw.js';
+        document.head.appendChild(script);
+      }, 800);
+    </script>
+  </body>
+</html>

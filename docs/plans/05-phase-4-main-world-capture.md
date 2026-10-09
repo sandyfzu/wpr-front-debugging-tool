@@ -60,6 +60,8 @@ Port the MAIN-world error capture that powers the Undefined References page, rep
 
 **Firefox (build-side verified, runtime pending):** `pnpm build:firefox` emits the MV2 manifest carrying `world: "MAIN"` for this entry (verified in `.output/firefox-mv2/manifest.json`); MDN's `content_scripts` schema documents the `world` key with `MAIN` semantics for Firefox. Live injection remains the manual item below.
 
+**Browser-suite pointer (P4.1):** this capture's runtime behavior is pinned by `tests/e2e/suites/undefined-references.spec.ts` (2 s `ReferenceError` → validated batch observable at the `getFdtData` seam; hostile `stack` getter and malformed bridge batches cannot break it; the page's own console output unchanged) and `cross-origin-sentinel.spec.ts` (the sentinel word reaches the isolated receiver immediately, not debounced — page-clock round-trip measurement).
+
 ## Docs to update
 
 AGENTS.md only if the MAIN-world strategy changes from a plain content script. **No change — the strategy is the planned one** (a plain `world: 'MAIN'` manifest content script over the shared window bridge; no fallback mechanism was needed). The budgets row's value lives only in `scripts/budgets.json` + this record.

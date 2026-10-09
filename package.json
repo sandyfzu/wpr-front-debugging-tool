@@ -24,6 +24,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "bench:detection": "vitest run --config lib/detection/bench/vitest.bench.config.ts --silent=false",
     "check:budgets": "node scripts/check-budgets.mjs",
     "postinstall": "wxt prepare",
@@ -52,6 +53,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
+    "@playwright/test": "^1.64.0",
     "@solidjs/testing-library": "^0.8.10",
     "@tailwindcss/vite": "^4.3.3",
     "@types/chrome": "^0.3.4",
