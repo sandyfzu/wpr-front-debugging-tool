@@ -5,10 +5,10 @@ into CI** (headless runners cannot host extensions — the env contract is in th
 master plan's browser-test track).
 
 ```bash
-pnpm test:e2e            # all suites, headed Chromium, ~1–2 min
+pnpm test:e2e            # all suites, headed Chromium, ~10–20 s
 E2E_BUILD_STRICT=1 pnpm test:e2e   # refuse to auto-rebuild: fail fast with the diff instead
 E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five headed windows)
-pnpm exec playwright show-report   # inspect the last run's HTML report
+pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the last run's HTML report
 ```
 
 ## What runs
@@ -19,14 +19,16 @@ pnpm exec playwright show-report   # inspect the last run's HTML report
   extension-loading path). Real windows open on your screen for the run and
   close again — that is the tier's environment contract.
 - **`global-setup.ts` refuses a stale build**: it fingerprints every file the
-  build reads (`entrypoints/`, `lib/`, `utils/`, `assets/`, `public/`,
-  `wxt.config.ts`, `package.json`) and compares against
+  build reads (`entrypoints/`, `components/`, `lib/`, `utils/`, `assets/`,
+  `public/`, `wxt.config.ts`, `package.json`) and compares against
   `tests/e2e/.build-stamp.json` (gitignored, derived data). On a mismatch the
   harness runs `pnpm build` first (or, with `E2E_BUILD_STRICT=1`, fails fast
   printing the changed-file list).
 - **`server.mjs` is the fixture webServer**: one local port (8891) is bound to
   both `http://localhost:8891/` and `http://127.0.0.1:8891/` — distinct origins,
-  so cross-origin script errors and origin-tagged comparisons are real. Fixtures
+  so cross-origin script errors and origin-tagged comparisons are real — over
+  **loopback-only** sockets (`127.0.0.1` + `::1`; nothing answers on the
+  machine's network interfaces). Fixtures
   are committed under `fixtures/`; every response is `no-store` so each reload
   is a genuine network round-trip, and the `__E2E_FRAME_TOKEN__` placeholder in
   any served `.html` is replaced with a fresh per-request random token (a

@@ -131,15 +131,21 @@ test.describe('side-by-side mechanics', () => {
       bypassedTokenBefore
     );
 
-    // Bypassed-side refresh: same independence, mirrored.
+    // Bypassed-side refresh: same independence, mirrored — the cached frame's
+    // body is not merely still there but still the EXACT body the cached
+    // refresh left (no re-navigation onto the untouched side).
+    const cachedBodyAfterRefresh = await readFrameToken(fixture.page, 'Cached');
+    expect(cachedBodyAfterRefresh, 'the cached body the refresh left behind').toBeTruthy();
     await fixture.page.getByRole('button', { name: 'Refresh the not-cached version' }).click();
     await expect
       .poll(async () => await readFrameToken(fixture.page, 'Not cached'), {
         timeout: RELOAD_TIMEOUT
       })
       .not.toBe(bypassedTokenBefore);
-    const cachedTokenAfter = await readFrameToken(fixture.page, 'Cached');
-    expect(cachedTokenAfter, 'cached body untouched by the other refresh').toBeTruthy();
+    expect(
+      await readFrameToken(fixture.page, 'Cached'),
+      'cached body untouched by the other refresh'
+    ).toBe(cachedBodyAfterRefresh);
   });
 
   test('close restores html/body overflow and scroll exactly; re-show keeps the frames', async ({

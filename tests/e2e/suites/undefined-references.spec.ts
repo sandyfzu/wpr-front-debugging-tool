@@ -93,12 +93,17 @@ test.describe('undefined-references capture', () => {
   test('a hostile thrown value cannot break the capture', async ({ extension }) => {
     /** @type {string[]} */
     const pageErrors: string[] = [];
+    /** @type {string[]} */
+    const consoleErrors: string[] = [];
     const fixture = await openFixturePage(
       extension,
       '/errors/hostile-stack.html',
       undefined,
       (page) => {
         page.on('pageerror', (error) => pageErrors.push(`${error.name}: ${error.message}`));
+        page.on('console', (message) => {
+          if (message.type() === 'error') consoleErrors.push(message.text());
+        });
       }
     );
 
@@ -113,15 +118,19 @@ test.describe('undefined-references capture', () => {
       .toEqual(['afterHostileWord']);
     // Page noise check: uncaught errors on the page are exactly the
     // fixture's own real throw (which is what proves the capture survived);
-    // the hostile reads regurgitated nothing.
+    // the hostile reads regurgitated nothing — and no error-level console
+    // line from the capture either.
     expect(pageErrors, 'exactly the fixture throw, no hostile noise').toEqual([
       'ReferenceError: afterHostileWord is not defined'
     ]);
+    expect(consoleErrors, 'the capture must stay silent at error level').toEqual([]);
   });
 
   test('a malformed batch is rejected without breaking the capture', async ({ extension }) => {
     /** @type {string[]} */
     const rejectedWarnings: string[] = [];
+    /** @type {string[]} */
+    const consoleErrors: string[] = [];
     const fixture = await openFixturePage(
       extension,
       '/errors/malformed-batch.html',
@@ -134,6 +143,7 @@ test.describe('undefined-references capture', () => {
           ) {
             rejectedWarnings.push(message.text());
           }
+          if (message.type() === 'error') consoleErrors.push(message.text());
         });
       }
     );
@@ -147,10 +157,10 @@ test.describe('undefined-references capture', () => {
       )
       .toEqual(['survivedMalformedWord']);
 
-    // One rejection warn per malformed batch (three were posted); the
-    // guard's recovery is designed to be visible in a debugging tool.
-    expect(rejectedWarnings.length, 'one rejection log per malformed batch').toBeGreaterThanOrEqual(
-      3
-    );
+    // One rejection warn per malformed batch (three were posted — the guard's
+    // recovery is designed to be visible in a debugging tool); an error level
+    // line from the capture would be injected page noise, not recovery.
+    expect(rejectedWarnings, 'one rejection log per malformed batch').toHaveLength(3);
+    expect(consoleErrors, 'the capture must stay silent at error level').toEqual([]);
   });
 });
