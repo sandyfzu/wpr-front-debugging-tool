@@ -1,8 +1,8 @@
 /**
  * Shared last-line reporting for uncaught `error` and `unhandledrejection`
  * events: the renderer gets real details (message, source location, the
- * error itself) instead of an event wrapper, and host-page errors are never
- * claimed.
+ * error itself, the throw site's frames) instead of an event wrapper, and
+ * host-page errors are never claimed.
  *
  * Why attribution matters: a content script's `window` is shared with the
  * host page, so every uncaught page-script error also fires there. Those are
@@ -12,6 +12,20 @@
  * bundles live under the runtime URL, so an event `filename` starting with
  * it (or a rejection stack naming it) means ours. Events that cannot be
  * attributed to us are skipped, not guessed.
+ *
+ * Why a claimed event is cancelled (`preventDefault`): the extensions error
+ * page files our console.error lines as entries, and the browser ALSO files
+ * its native "Uncaught …"/"Uncaught (in promise)" record for the same
+ * failure — one error read as two entries and doubled the card's error
+ * count. Claiming an event takes over its reporting, so the native record
+ * is cancelled and the throw site's frames ride along as a text detail
+ * (flat surfaces render strings, never objects).
+ *
+ * Why both listener bodies are guarded: the event payloads are cross-world
+ * readable DOM data, so a hostile host page can attach values whose getters
+ * throw (`stack`, `message`, string coercion). The last line must never
+ * throw out or claim-without-reporting — a failing report degrades to one
+ * plain line about the report itself.
  */
 
 import type { Logger } from './logger';
@@ -42,27 +56,30 @@ export function isOwnScriptSource(prefix: string, url: string | undefined): bool
 }
 
 /**
- * Whether a rejected reason is attributable to our scripts: rejection events
- * carry no `filename`, so attribution falls back to the stack naming our
- * runtime URL — frames raised by our bundle are always listed with it.
+ * The error's stack, hostile-getter safe: cross-world payloads can carry a
+ * throwing `stack` getter, and one read feeds both rejection attribution
+ * and the pass-along detail, so repeated access can never disagree.
  *
- * @param prefix The runtime URL prefix, e.g. `chrome-extension://<id>/`.
- * @param reason The rejection's `reason` value.
- * @returns True only when the reason's stack names one of our script files.
+ * @param error The object whose stack is read (if it has one at all).
+ * @returns The stack only when it is a string; undefined otherwise.
  */
-export function isOwnRejectionSource(prefix: string, reason: unknown): boolean {
-  return (
-    reason instanceof Error && typeof reason.stack === 'string' && reason.stack.includes(prefix)
-  );
+function readErrorStack(error: unknown): string | undefined {
+  try {
+    const stack = error instanceof Error ? error.stack : undefined;
+    return typeof stack === 'string' ? stack : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
  * Build the `error`-event listener: our-source errors become one line whose
  * message is the failure itself (flat surfaces like the extensions page
  * render strings, never objects — the old `[object ErrorEvent]` line told
- * nothing), with the source location and the raw error as trailing details
- * for consoles that can expand them. Foreign-source events are skipped: the
- * host page reports its own errors natively.
+ * nothing), with the source location, the raw error and its stack as
+ * trailing details for consoles that can expand them. Claimed events are
+ * cancelled (the native record would double ours). Foreign-source events
+ * are skipped untouched: the host page reports its own errors natively.
  *
  * @param options The surface logger plus the optional own-source prefix.
  * @returns The listener; register it where cleanup is owned — through the
@@ -73,31 +90,43 @@ export function onUncaughtError(
 ): (event: ErrorEvent) => void {
   return (event) => {
     const { log, ownPrefix } = options;
-    if (ownPrefix !== undefined && !isOwnScriptSource(ownPrefix, event.filename)) return;
-    const cause: unknown = event.error;
-    const summary =
-      cause instanceof Error
-        ? cause.message || String(cause)
-        : event.message.trim() !== ''
-          ? event.message
-          : 'unknown error';
-    log.error(
-      `Uncaught error: ${summary}`,
-      {
-        source: event.filename,
-        line: event.lineno > 0 ? event.lineno : undefined,
-        column: event.colno > 0 ? event.colno : undefined
-      },
-      cause
-    );
+    try {
+      if (ownPrefix !== undefined && !isOwnScriptSource(ownPrefix, event.filename)) return;
+      event.preventDefault();
+      const cause: unknown = event.error;
+      const summary =
+        cause instanceof Error
+          ? cause.message || String(cause)
+          : event.message.trim() !== ''
+            ? event.message
+            : 'unknown error';
+      const details: unknown[] = [
+        {
+          source: event.filename,
+          line: event.lineno > 0 ? event.lineno : undefined,
+          column: event.colno > 0 ? event.colno : undefined
+        },
+        cause
+      ];
+      const stack = readErrorStack(cause);
+      if (stack !== undefined) details.push(stack);
+      log.error(`Uncaught error: ${summary}`, ...details);
+    } catch (failure) {
+      // The last line never throws, and a claim must never go unreported:
+      // a hostile event payload degrades to one plain line about itself.
+      log.error(
+        `Uncaught error report failed: ${failure instanceof Error ? failure.message : String(failure)}`
+      );
+    }
   };
 }
 
 /**
  * Build the `unhandledrejection` listener, same attribution rule as the
  * error listener's: our-source rejections log the reason's own string form
- * (with the reason itself for stack inspection); foreign ones are skipped —
- * the page's console reports its rejections natively.
+ * plus its stack (the frames the cancelled native record carried); foreign
+ * ones are skipped untouched — the page's console reports its rejections
+ * natively.
  *
  * @param options The surface logger plus the optional own-source prefix.
  * @returns The listener; register it where cleanup is owned, like
@@ -108,11 +137,26 @@ export function onUnhandledRejection(
 ): (event: PromiseRejectionEvent) => void {
   return (event) => {
     const { log, ownPrefix } = options;
-    const reason: unknown = event.reason;
-    if (ownPrefix !== undefined && !isOwnRejectionSource(ownPrefix, reason)) return;
-    log.error(
-      `Unhandled promise rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
-      reason
-    );
+    try {
+      const reason: unknown = event.reason;
+      const stack = readErrorStack(reason);
+      if (ownPrefix !== undefined && (stack === undefined || !stack.includes(ownPrefix))) return;
+      event.preventDefault();
+      const details: unknown[] = [reason];
+      if (stack !== undefined) details.push(stack);
+      // Same summary form as the error listener: an own-name fallback for
+      // empty-message reasons ('Unhandled promise rejection: Error').
+      log.error(
+        `Unhandled promise rejection: ${
+          reason instanceof Error ? reason.message || String(reason) : String(reason)
+        }`,
+        ...details
+      );
+    } catch (failure) {
+      // Same contract as the error listener: one plain, honest line.
+      log.error(
+        `Unhandled rejection report failed: ${failure instanceof Error ? failure.message : String(failure)}`
+      );
+    }
   };
 }

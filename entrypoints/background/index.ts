@@ -44,7 +44,8 @@ export default defineBackground(() => {
 function initGlobalErrorReporting(): void {
   // Everything in a worker scope is ours — no attribution filter needed, so
   // no runtime prefix is passed and every escaping error lands here with its
-  // real message, source location and the error object itself.
+  // real message, source location, throw-site stack and the error object
+  // itself.
   self.addEventListener('error', onUncaughtError({ log }));
   self.addEventListener('unhandledrejection', onUnhandledRejection({ log }));
 }

@@ -100,6 +100,22 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
   errors sourced under the runtime URL prefix are claimed — the page's own broken scripts are the
   page's business (native reporting) and no longer pollute the extension's error page under our
   prefix.
+- **One error-page entry per failure, not two (owner-reported follow-up, 2026-10-08):** the error
+  page files our console.error lines AND the browser's native "Uncaught …"/"Uncaught (in promise)"
+  record for the same failure, so one real defect — a stale mid-development content-script build
+  (pre-dating 2026-10-08 17:51) reading the Priority Elements status map while it was null on
+  wp-rocket.me (no beacon tag, ATF applied) — read as two entries and doubled the card's error
+  count. Claiming an event now cancels the native record (`preventDefault` immediately after the
+  attribution check passes; foreign events are skipped untouched, so page reporting still behaves
+  natively) and carries the throw site's frames as a text detail — the frames only the cancelled
+  native entry used to have. Reporting itself is hardened for its last-line role: the event
+  payloads are cross-world readable, so stack/message reads capture once behind a hostile-getter
+  guard and every listener body degrades a poisoned payload to one plain line instead of throwing
+  out or claiming without reporting. The stale entries are fossils of the old build and clear with
+  an extension reload + "Clear all" (verified after the fix: with preventDefault the native report
+  leaves the pipeline entirely while our console.error lines still flow). Change confined to
+  `lib/uncaught-errors.ts` (+ its pins). Budget rows hold without re-derivation: background 26.2 →
+  26.5 KiB raw (budget 27), isolated 81.1 → 81.5 KiB raw / 28.8 gzip (budgets 85/30).
 - **Background service-worker budget row 26 → 27 KiB raw** (deliberate, sanctioned path): the shared
   `lib/uncaught-errors.ts` module + its wiring landed in the worker bundle; measured 26.2 KiB raw
   (9.3 KiB gzip, no gzip row for this surface) after the badge rendering constants joined the
