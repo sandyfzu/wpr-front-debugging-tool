@@ -2,8 +2,10 @@
 # Known-Conflicts DB (lib/known-conflicts/known-conflicts-db.json) by
 # docker/scripts/derive-conflicts.sh. Re-run that script after every DB re-sync;
 # do not hand-edit. One wp.org slug per line, installed inactive at bootstrap.
+consenta-se
 ip-location-block
 ip2location-redirection
+seo-by-rank-math
 molongui-authorship
 website-llms-txt
 wordpress-seo

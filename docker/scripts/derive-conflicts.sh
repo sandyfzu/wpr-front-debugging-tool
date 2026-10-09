@@ -14,6 +14,24 @@
 #   3. the slug exists on WordPress.org, is not closed, and the plugin's display name
 #      contains the row name case-insensitively (same containment the scan applies).
 #
+# Vendor alias: a handful of rows whose free plugin lives at a DIFFERENT WordPress.org
+# slug than the pattern derives ("rank-math" -> "seo-by-rank-math" et al). Every alias
+# below was verified when pinned to be the row vendor's own wp.org listing — open, and
+# with a display name that contains the row name AND whose INSTALLED main-file header
+# reproduces it on plugins.php ("Consenta.se - Svenskt Cookie Consent", "Rank Math SEO",
+# both present in the live admin HTML). Each still re-passes the same containment leg at
+# run time, so a stale alias degrades to a documented drop, never a blind install.
+# Known rejected alias: sv-provenexpert (for the "SV Proven Expert" row) — its on-disk
+# header is "SV ProvenExpert" (no spaces), which fails the containment the scan applies;
+# verified in the live admin HTML on this stack.
+# Note: WordPress.org can rename a plugin between the API's advertised name and its
+# on-disk header (the directory lags vendor header edits — e.g. hide-my-wp became
+# "WP Ghost Lite" while its API name still contains the row name). Those slugs stay
+# committed while the API leg passes, but their rows stop matching page text; the
+# re-derivation can only catch them once the advertised name drifts too.
+# Generic name-only look-alikes are deliberately NOT aliased: they would
+# fabricate scanner matches for rows whose real plugin cannot exist (e.g. closed rows).
+#
 # Output: docker/conflicts.txt — one slug per line; the bootstrap installs each slug
 # inactive (`wp plugin install <slug>` fetches .latest-stable.zip at install time).
 #
@@ -90,7 +108,16 @@ def probe_serial(slugs: list):
         time.sleep(1)
     return out
 
-unique_slugs = sorted({slug for _, slug in rows})
+# Row-slug fallbacks verified against the live directory at pin time (the listing is
+# open and owned by the row's vendor; see the header comment). Key = the pattern-derived
+# slug, consulted for every failing primary state. Each alias must still clear the same
+# legs below or the row drops with its reason — this table never guarantees an install.
+alias_slugs = {
+    "rank-math": "seo-by-rank-math",
+    "consenta": "consenta-se",
+}
+
+unique_slugs = sorted(set({slug for _, slug in rows} | set(alias_slugs.values())))
 with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
     results = list(pool.map(probe, unique_slugs))
 probed = dict(zip(unique_slugs, results))
@@ -101,16 +128,29 @@ if undecided:
 
 chosen, dropped = [], []
 for name, slug in rows:
-    result = probed[slug]
-    if result.get("ok") is not True:
-        dropped.append((name, slug, result.get("reason")))
+    # Primary first, then the row's verified vendor alias (if any): a candidate passes
+    # only when its probe is open+present AND the display name contains the row name.
+    # The alias is consulted for every failing primary state — absent, closed, or a
+    # display-name containment miss.
+    candidates = [slug]
+    alias = alias_slugs.get(slug)
+    if alias and alias != slug:
+        candidates.append(alias)
+    picked, fail_reason = None, None
+    for candidate in candidates:
+        result = probed.get(candidate) or {"ok": None, "reason": "probe_error"}
+        if result.get("ok") is not True:
+            fail_reason = result.get("reason")
+            continue
+        if result["name"].strip().lower().find(name.lower()) == -1:
+            fail_reason = "display_name_does_not_contain_row_name"
+            continue
+        picked = result
+        break
+    if not picked:
+        dropped.append((name, slug, fail_reason))
         continue
-    # Containment mirrors the scan itself: the page text shows the plugin's display name,
-    # a row only ever matches when the row name sits inside it.
-    if result["name"].strip().lower().find(name.lower()) == -1:
-        dropped.append((name, slug, "display_name_does_not_contain_row_name"))
-        continue
-    chosen.append({"slug": result["slug"], "row": name, "display": result["name"]})
+    chosen.append({"slug": picked["slug"], "row": name, "display": picked["name"]})
 
 # One slug can back several DB rows (a Pro row and its free twin): install it once.
 unique, seen = [], set()
