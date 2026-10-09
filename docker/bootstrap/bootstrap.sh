@@ -175,6 +175,11 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 # stay at their untouched defaults so the delay queue mirrors a real site's baseline.
 # NOTE: `cache` is not a settings key: page caching is unconditional in WP Rocket
 # (verified in the 3.23.5.1 defaults), so there is nothing to force about it.
+# NOTE: `remove_unused_css` (and `async_css`) are forced here at the option-row level,
+# but 3.23.5.1's license check masks their RUNTIME reads to 0 (License/Renewal "expired
+# >15 days" gate hooks the option read at PHP_INT_MAX; a synthetic local key has no
+# expiration, so it always reads as expired). RUCSS/Async-CSS therefore never engage on
+# this site by plugin design — see the runbook's baseline table and 05c's record.
 step "wp-rocket: applying baseline settings"
 for key in cache_mobile do_caching_mobile_files minify_css minify_js lazyload defer_all_js delay_js remove_unused_css; do
 	run_wp option patch update wp_rocket_settings "$key" 1 >/dev/null

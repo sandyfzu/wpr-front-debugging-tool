@@ -5,19 +5,19 @@ The one-page operating guide for the local site phase (P4.2). The compose stack 
 
 ## Quick facts
 
-| Item             | Value                                                                    |
-| ---------------- | ------------------------------------------------------------------------ |
-| Site URL         | `http://127.0.0.1:8493` (pinned by `docker/.env`)                        |
-| Fixture hub      | `http://127.0.0.1:8493/fdt/`                                             |
-| Beacon page      | `http://127.0.0.1:8493/fdt-beacon/`                                      |
-| wp-admin         | `http://127.0.0.1:8493/wp-admin/`                                        |
-| Credentials      | inside `docker/.env` (`WPR_FDT_ADMIN_*`) — never logged, never committed |
-| Port             | loopback-only publish; free-port check runs in `up.sh`                   |
-| WP / PHP         | WordPress 7.1.3 on PHP 8.4 (`wordpress:7.1.3-php8.4-apache`)             |
-| Database         | MariaDB 11.8.9 (container-only, no published port)                       |
-| wp-cli           | one-shot bootstrap container (`wordpress:cli-2.12.0-php8.4`, uid 33)     |
-| WP Rocket        | 3.23.5.1 via `apvm build` — `tag:v3.23.5.1 @ 8e89a59`                    |
-| Conflict plugins | 60 free wp.org plugins installed inactive (`docker/conflicts.txt`)       |
+| Item             | Value                                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site URL         | `http://127.0.0.1:8493` (pinned by `docker/.env`)                                                                                                    |
+| Fixture hub      | `http://127.0.0.1:8493/fdt/`                                                                                                                         |
+| Beacon page      | `http://127.0.0.1:8493/fdt-beacon/`                                                                                                                  |
+| wp-admin         | `http://127.0.0.1:8493/wp-admin/`                                                                                                                    |
+| Credentials      | inside `docker/.env` (`WPR_FDT_ADMIN_*`) — never logged, never committed                                                                             |
+| Port             | loopback-only publish; free-port check runs in `up.sh`                                                                                               |
+| WP / PHP         | WordPress 7.1.3 on PHP 8.4 (`wordpress:7.1.3-php8.4-apache`)                                                                                         |
+| Database         | MariaDB 11.8.9 (container-only, no published port)                                                                                                   |
+| wp-cli           | one-shot bootstrap container (`wordpress:cli-2.12.0-php8.4`, uid 33)                                                                                 |
+| WP Rocket        | 3.23.5.1 via `apvm build` — `tag:v3.23.5.1 @ 8e89a59`                                                                                                |
+| Conflict plugins | 62 free wp.org plugins installed inactive (`docker/conflicts.txt` — 60 pattern-derived + 2 vendor aliases, see `docker/scripts/derive-conflicts.sh`) |
 
 ## One-command lifecycle
 
@@ -31,7 +31,7 @@ docker/scripts/reset.sh   # hard reset: down -v + up — fully rebuilt, zero man
 `apvm`-built zip exists, verifies the port is free, boots, runs the one-shot bootstrap in
 the foreground (its output streams here), then smoke-checks the site. The bootstrap is
 idempotent and re-applies the fixture baselines on EVERY boot; the first boot takes a
-few minutes (WP Rocket + the 60-plugin conflict set), later boots converge in seconds.
+few minutes (WP Rocket + the 62-plugin conflict set), later boots converge in seconds.
 
 ## Building WP Rocket into place (once)
 
@@ -92,21 +92,21 @@ activation does not seed it; verified against the bundled WP-CLI 2.12.0).
 
 ## What the bootstrap enforces every boot (identical-run guarantees)
 
-| Forced baseline (patch every boot)                                              | Why                                                                                                                                                       |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cache_mobile` + `do_caching_mobile_files` = 1                                  | mobile cache state exists for the P16.1 rounds                                                                                                            |
-| `lazyload` = 1                                                                  | `data-lazy-src` fixture images                                                                                                                            |
-| `defer_all_js` = 1                                                              | `data-rocket-defer` fixtures                                                                                                                              |
-| `delay_js` = 1                                                                  | the delay-queue scenario (`?fdt-delay=1`)                                                                                                                 |
-| `minify_css`/`minify_js` = 1                                                    | `/wp-content/cache/min/` asset markers                                                                                                                    |
-| `remove_unused_css` = 1                                                         | the RUCSS gate (this version's used-CSS/beacon switch)                                                                                                    |
-| `cache_query_strings` = `[fdt-error, fdt-delay]`                                | makes flagged URLs cached URLs (the buffer only processes listed params)                                                                                  |
-| permalink structure = `/%postname%/`                                            | non-home URLs resolve (plain permalinks 404 and never cache — observed)                                                                                   |
-| `WP_CACHE` / `WP_ROCKET_DEBUG` in wp-config                                     | the page cache + the plugin's own debug log                                                                                                               |
-| `WP_ROCKET_KEY` / `WP_ROCKET_EMAIL` in wp-config                                | the plugin's local licence-override channel — its empty `licence-data.php` shim otherwise shadows the DB values and no optimization engine ever registers |
-| synthetic local key (`fdtlocal` / `local-fdt-fixture@127.0.0.1` + crc32 secret) | `rocket_valid_key()` must pass locally or every front-end optimization is skipped (observed first-hand)                                                   |
-| fixture pages exist (`/fdt/`, `/fdt-beacon/`)                                   | created by slug, content is a fixed string                                                                                                                |
-| conflict plugins installed inactive                                             | plugins.php produces real name matches without touching front-end behavior                                                                                |
+| Forced baseline (patch every boot)                                              | Why                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cache_mobile` + `do_caching_mobile_files` = 1                                  | mobile cache state exists for the P16.1 rounds                                                                                                                                                                                                                                                                                         |
+| `lazyload` = 1                                                                  | `data-lazy-src` fixture images                                                                                                                                                                                                                                                                                                         |
+| `defer_all_js` = 1                                                              | `data-rocket-defer` fixtures                                                                                                                                                                                                                                                                                                           |
+| `delay_js` = 1                                                                  | the delay-queue scenario (`?fdt-delay=1`)                                                                                                                                                                                                                                                                                              |
+| `minify_css`/`minify_js` = 1                                                    | `/wp-content/cache/min/` asset markers                                                                                                                                                                                                                                                                                                 |
+| `remove_unused_css` = 1                                                         | forced at the option-row level — but 3.23.5.1 masks the RUNTIME read to 0 (the license check's "expired >15 days" gate; a synthetic local key has no expiration, so it always reads as expired). RUCSS and Async-CSS therefore never engage on this site — fixture-scale only; a suite needing live RUCSS must not rely on this toggle |
+| `cache_query_strings` = `[fdt-error, fdt-delay]`                                | makes flagged URLs cached URLs (the buffer only processes listed params)                                                                                                                                                                                                                                                               |
+| permalink structure = `/%postname%/`                                            | non-home URLs resolve (plain permalinks 404 and never cache — observed)                                                                                                                                                                                                                                                                |
+| `WP_CACHE` / `WP_ROCKET_DEBUG` in wp-config                                     | the page cache + the plugin's own debug log                                                                                                                                                                                                                                                                                            |
+| `WP_ROCKET_KEY` / `WP_ROCKET_EMAIL` in wp-config                                | the plugin's local licence-override channel — its empty `licence-data.php` shim otherwise shadows the DB values and no optimization engine ever registers                                                                                                                                                                              |
+| synthetic local key (`fdtlocal` / `local-fdt-fixture@127.0.0.1` + crc32 secret) | `rocket_valid_key()` must pass locally or every front-end optimization is skipped (observed first-hand)                                                                                                                                                                                                                                |
+| fixture pages exist (`/fdt/`, `/fdt-beacon/`)                                   | created by slug, content is a fixed string                                                                                                                                                                                                                                                                                             |
+| conflict plugins installed inactive                                             | plugins.php produces real name matches without touching front-end behavior                                                                                                                                                                                                                                                             |
 
 Note: `cache` is not a settings key — page caching is unconditional in WP Rocket
 (verified in the 3.23.5.1 defaults), so there is nothing to force about it.
@@ -115,7 +115,7 @@ Note: `cache` is not a settings key — page caching is unconditional in WP Rock
 
 - `down` + `up` (no `-v`): volumes kept — the site returns as it was; the bootstrap
   still re-applies every baseline above, so settings cannot drift.
-- `reset` (`down -v` + `up`): everything rebuilt — core, WP Rocket from the zip, all 60
+- `reset` (`down -v` + `up`): everything rebuilt — core, WP Rocket from the zip, all 62
   conflict plugins, fixture pages, baseline. Proven: the post-reset state compares
   byte-identical (plugins+statuses, pages, picked settings) against the pre-reset one;
   the full CDP smoke passes again on the fresh stack.
@@ -124,7 +124,7 @@ Note: `cache` is not a settings key — page caching is unconditional in WP Rock
 
 ## Observability
 
-- WP Rocket's own debug log: `wp-content/cache/` — `wp-content/wp-rocket-config/wp-rocket-debug.log.html` (enabled by `WP_ROCKET_DEBUG`).
+- WP Rocket's own debug log: `wp-content/wp-rocket-config/wp-rocket-debug.log.html` (enabled by `WP_ROCKET_DEBUG`; rotates older files under the same directory).
 - Page cache tree: `wp-content/cache/wp-rocket/<host>/<path>/index.html` (+ `_gzip` twin)
   — the port is dropped from the cached host path (observed: `127.0.0.1/...` while the
   site URL is `127.0.0.1:8493`).
@@ -144,11 +144,11 @@ assumes TLS today.
 
 ## Troubleshooting
 
-| Symptom                                 | Where to look                                                                   |
-| --------------------------------------- | ------------------------------------------------------------------------------- |
-| `up: missing docker/wpr/wpr-rocket.zip` | run the `apvm build` command above                                              |
-| `up: port … is already taken`           | free the port or change `WPR_FDT_TCP_PORT` in `docker/.env`                     |
-| bootstrap fails at `wpr_pin`            | the zip's version differs from the recorded pin — rebuild/re-pin                |
-| bootstrap log messages                  | `docker compose -f docker/docker-compose.yml --env-file .env logs wp-bootstrap` |
-| site unreachable                        | `docker compose -f docker/docker-compose.yml --env-file .env logs wordpress`    |
-| a conflict slug fails to install        | wp.org moved it — re-derive the list: `docker/scripts/derive-conflicts.sh`      |
+| Symptom                                 | Where to look                                                                                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `up: missing docker/wpr/wpr-rocket.zip` | run the `apvm build` command above                                                                                                                       |
+| `up: port … is already taken`           | free the port or change `WPR_FDT_TCP_PORT` **and keep `WPR_FDT_SITE_URL` in sync with it** (the bootstrap pins the site URL from there) in `docker/.env` |
+| bootstrap fails at `wpr_pin`            | the zip's version differs from the recorded pin — rebuild/re-pin                                                                                         |
+| bootstrap log messages                  | `docker compose -f docker/docker-compose.yml --env-file .env logs wp-bootstrap`                                                                          |
+| site unreachable                        | `docker compose -f docker/docker-compose.yml --env-file .env logs wordpress`                                                                             |
+| a conflict slug fails to install        | wp.org moved it — re-derive the list: `docker/scripts/derive-conflicts.sh`                                                                               |
