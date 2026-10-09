@@ -6,6 +6,15 @@
 
 The WordPress-backed half of the retroactive test track: run P2–P4's real-site behaviors through the P4.1 harness against the P4.2 site — header capture on real responses, the badge pipeline, Known-Conflicts scans and DB flows over real plugin tables, the improvements entry on wp-admin, side-by-side on genuinely cached pages. Includes the permanent regression pin for the header-capture wiring the P2 audit caught (dead glue that no unit gate could see).
 
+## Handover notes (2026-10-08 cross-phase audit; verified seams — P4.4/`X.Y` phases inherit them)
+
+- **Add the site as a second `webServer`** (Playwright supports a `webServer` array — verified against the installed 1.64.0 types): command `docker/scripts/up.sh`, readiness URL `/fdt/` (exists only post-bootstrap — the site answers HTTP before fixtures exist), raised timeout (first full boot ≈ 4–5 min; converged ≈ 25 s); `reuseExistingServer` skips it when the stack is up.
+- **Origin owning stays split**: suite helpers own `ORIGIN_A/B` in `tests/e2e/helpers/extension.ts` and never hardcode ports; read the site URL from `docker/.env` (`WPR_FDT_SITE_URL`) so docker remains the site's single declaring site. The manifest needs nothing — patterns are port-blind and already cover the site.
+- **Auth**: one worker-scoped `wp-login.php` fixture; the cookie persists across the worker's tests and the reload leg (same profile dir). Credentials come from `docker/.env`, never printed.
+- **`?e2e-tab` uncached trap**: `openFixturePage` stamps `?e2e-tab=N` and WP Rocket only caches params listed in `cache_query_strings` (`fdt-error`/`fdt-delay` in the baseline) — every stamped URL is uncached. Suite 6 (SBS on a _cached_ page) must navigate param-free flagged URLs directly.
+- **Raise the worker fixture's 60 s timeout** when a suite group needs a real `docker/scripts/reset.sh` between groups (first boot is minutes); `workers:1` already serializes the run.
+- **Offline-first-boot** (suite 3) via `browserContext.setOffline()` (present in the installed API); **`refreshFrame`'s cross-origin fallback** stays manual until a real PSI page (P14.6 reach); helpers already bound extension launches (30 s) — inherited by every `X.Y` suite.
+
 ## Suites (each names its assert source)
 
 1. **Header capture — the permanent pin.** Navigate real pages (fixture + normal) → from the SW context request `getPageHeaders` → validated row pairs returned (P1 shape), tab-scoped; tabless/malformed senders ignored (assert from the SW side); a navigation clears/supersedes a tab's rows; `null` when the tab never produced headers.

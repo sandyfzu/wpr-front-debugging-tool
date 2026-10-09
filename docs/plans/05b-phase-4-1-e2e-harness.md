@@ -1,4 +1,4 @@
-# Phase 4.1 — Browser-test harness + fixture-page suites (retroactive, next to implement)
+# Phase 4.1 — Browser-test harness + fixture-page suites
 
 **Depends on:** — (covers the implemented P0–P4 surfaces). **Effort:** M. **Parallelizable with:** P4.2, any P5+ implementation work.
 
@@ -37,7 +37,7 @@ Convert the unsampled browser-checklist items ("manual" tiers of P2–P4) into r
 
 HelpScout/real-site flows (P4.3+), devtools-attached visuals, context-menu clicks, Firefox runtime — each named in the parent phase's checklist.
 
-## Implementation record (2026-10-09)
+## Implementation record (2026-10-08)
 
 **What shipped** (the automation floor every `X.Y` test phase plugs into):
 
@@ -45,7 +45,7 @@ HelpScout/real-site flows (P4.3+), devtools-attached visuals, context-menu click
 - **Stale-build refusal** (`tests/e2e/global-setup.ts`): fingerprints every build input (`entrypoints/`, `components/`, `lib/`, `utils/`, `assets/`, `public/`, `wxt.config.ts`, `package.json`) against `tests/e2e/.build-stamp.json` (gitignored derived data); on mismatch it either rebuilds first (default) or fails fast printing the changed-file diff (`E2E_BUILD_STRICT=1`). All three paths verified live: skip (fresh), fail-with-diff, auto-rebuild-then-run.
 - **Fixture server** (`tests/e2e/server.mjs`): one Node process on port 8891 serving `tests/e2e/fixtures/` over both `localhost` and `127.0.0.1` (distinct origins, one port; loopback-only bind — `127.0.0.1` + `::1`, verified unreachable from the machine's LAN address). A taken port fails with the port, the remedy, and the underlying `EADDRINUSE`. Every response `no-store` (every reload is a real network round-trip); the `__E2E_FRAME_TOKEN__` placeholder in any served `.html` is replaced per request (a page can prove its body is from the latest request); `/__e2e/health` for the runner's readiness; `/favicon.ico` answers 204 so fixture consoles stay clean error baselines.
 - **The drive plane** (`tests/e2e/helpers/extension.ts`): `Worker.evaluate` into the extension service worker (Playwright exposes the MV3 background as a `Worker`; the handle survives Chromium's idle suspension); protocol rows sent from the SW in the library's wire shape (`{ id, type, data, timestamp }`, read from the installed `@webext-core/messaging` v4 dist — `getFdtData` pull-through, `openSideBySide`, …); duplicate-create menu probes with an absence control; profile relaunch helper.
-- **Five suites, 12 tests, all green, repeatable** (full runs measure ~9 s; the 2026-10-09 audit re-ran the battery: full runs 8.8–9.7 s over nine runs, sentinel deltas 0.3–0.8 ms over 10 runs, plus single-suite ×4–×10 repeat bags — boot ×8, side-by-side ×6, undefined-references ×4, pipeline ×4 — all green): boot & registry (3), cross-origin sentinel (1), processed-page pipeline (2), side-by-side mechanics (3), undefined-references capture (3).
+- **Five suites, 12 tests, all green, repeatable** (full runs measure ~9 s; the 2026-10-08 audit re-ran the battery: full runs 8.8–9.7 s over nine runs, sentinel deltas 0.3–0.8 ms over 10 runs, plus single-suite ×4–×10 repeat bags — boot ×8, side-by-side ×6, undefined-references ×4, pipeline ×4 — all green): boot & registry (3), cross-origin sentinel (1), processed-page pipeline (2), side-by-side mechanics (3), undefined-references capture (3).
 - `tests/e2e/README.md` (committed): how to run, the SW drive plane, the manifest-API limitation, the manual remainder, environment facts.
 - Vitest/Playwright disjointness: vitest `exclude` gained `tests/e2e/**` (`pnpm test` — 426 unit tests green, coverage thresholds hold); Playwright's `testDir`+`testMatch` (`**/*.spec.ts` under `tests/e2e/suites`) can never see the unit files.
 - e2e artifacts (`test-results/`, `playwright-report/`, stamp) gitignored; `scripts/budgets.json` untouched (the tier adds no shipped bytes).
