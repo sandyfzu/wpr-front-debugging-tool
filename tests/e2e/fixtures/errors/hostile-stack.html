@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hostile error fixture</title>
+  </head>
+  <body>
+    <h1>Hostile thrown values must never break the capture</h1>
+    <p>
+      Dispatches synthetic events whose thrown value carries a throwing
+      <code>stack</code> getter — then throws a real ReferenceError afterwards. The real error must
+      still reach the extension: the hostile read must be swallowed, not fatal.
+    </p>
+    <script>
+      (function hostileStackGetter() {
+        const hostileValue = {};
+        Object.defineProperty(hostileValue, 'stack', {
+          get() {
+            throw new TypeError('hostile stack getter refuses');
+          }
+        });
+        window.dispatchEvent(
+          new ErrorEvent('error', {
+            message: 'ReferenceError: hostileLet is not defined',
+            error: hostileValue
+          })
+        );
+        window.dispatchEvent(
+          new ErrorEvent('unhandledrejection', {
+            reason: hostileValue,
+            promise: Promise.resolve()
+          })
+        );
+      })();
+      setTimeout(function afterHostile() {
+        afterHostileWord;
+      }, 300);
+    </script>
+  </body>
+</html>
