@@ -43,7 +43,21 @@ test.describe('cross-origin sentinel', () => {
   test('the second-origin throw reaches the isolated receiver immediately', async ({
     extension
   }) => {
-    const fixture = await openFixturePage(extension, '/errors/cross-origin.html');
+    /** @type {string[]} */
+    const pageErrors: string[] = [];
+    /** @type {string[]} */
+    const consoleErrors: string[] = [];
+    const fixture = await openFixturePage(
+      extension,
+      '/errors/cross-origin.html',
+      undefined,
+      (page) => {
+        page.on('pageerror', (error) => pageErrors.push(`${error.name}: ${error.message}`));
+        page.on('console', (message) => {
+          if (message.type() === 'error') consoleErrors.push(message.text());
+        });
+      }
+    );
 
     const fdt = await extension.sendToTab<{
       undefinedReferencesOnPage?: string[];
@@ -59,6 +73,12 @@ test.describe('cross-origin sentinel', () => {
         return data?.undefinedReferencesOnPage;
       }, SENTINEL_POLL_OPTIONS)
       .toEqual([CROSS_ORIGIN_SENTINEL_WORD]);
+
+    // The cross-origin throw is one uncaught error, and nothing of our own
+    // printed at error level (the message's details stay the browser's
+    // business — the fixed sentinel word is the capture's whole answer).
+    expect(pageErrors, "the cross-origin throw is the page's only uncaught error").toHaveLength(1);
+    expect(consoleErrors, 'the capture must stay silent at error level').toEqual([]);
 
     const timing = await fixture.page.evaluate((): SentinelTiming => {
       // The fixture stores the two page-clock timestamps as plain window
