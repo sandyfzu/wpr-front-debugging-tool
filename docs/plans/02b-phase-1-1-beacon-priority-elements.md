@@ -130,6 +130,8 @@ Post-implementation audit with empirical probes (each finding fixed immediately,
 - **Boundary arms left untested** (isMobile type, `elements` as array at the row level, degraded-config-with-payload inconsistency, `__proto__` over messaging, first-match-wins config, hostile-first config) — all verified rejecting empirically, then pinned.
 - **Comment-walk cost.** `parsePage`'s new TreeWalker measured at ≈ 0.22 ms on the biggest fixture (~2 % of parse) — recorded above with the bench numbers.
 
+**Browser-suite pointer (P4.1):** the beacon-backed detection rows are exercised end-to-end (real browser, real page pass, real capture) through the fixture corpus served by the harness — the marked fixture in `tests/e2e/fixtures/pipeline/markers.html` plus the assertion surfaces in `tests/e2e/suites/processed-page-pipeline.spec.ts` (mandated log + badge summary push rendered from the same single-flight pass this phase introduced).
+
 ## Docs to update
 
 README status row at phase end; master §6 #51 / §9 rows closed; AGENTS.md only if layout diverges (it should not — the subsystem is one `lib/detection/` file plus `types.ts`/`validate.ts` extensions).

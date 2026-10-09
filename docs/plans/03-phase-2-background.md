@@ -111,6 +111,8 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
   owner's re-plan of the builder's UX.
 - **Budget row raised deliberately 25 → 26 KiB** (`scripts/budgets.json`, via the gate's documented legitimate-breach path): the audit-mandated correctness work above restored ~500 B of genuinely used code — the previously-unwired capture path, independent boot guards, and the testable seams — measured at 26 073 B raw on the final build. The row's projection predates the audit fixes; the 26 KiB ceiling still guards the surface (a doubled capture+menu tree breaches it), and the whole-build backstop is unchanged. No behavior was cut to mask the delta.
 
+**Browser-suite pointer (P4.1):** the context-menu registry's runtime state (ids exactly once after install **and** after extension reload, absence-controlled probes) is pinned by `tests/e2e/suites/boot-and-registry.spec.ts`; title/contexts/documentUrlPatterns stay unit-pinned (no runtime read-back). Shared-item context-menu routing (`reportDetectionSummary` → badge seam) rides the P3/P4 suites.
+
 ## Docs to update
 
 AGENTS.md permissions table if any change vs P0 plan (none expected).

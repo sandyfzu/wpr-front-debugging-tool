@@ -57,7 +57,7 @@ Update the Status column as phases complete (`⬜ planned → 🟨 in progress �
 | P2    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 audit-fix pass lives in its Shipped deltas)       |
 | P3    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.3; the 2026-10-08 owner-decision deltas live in its Shipped deltas) |
 | P4    | 🟨 (implemented + adversarially audited + committed — browser checks via P4.1)                                                                  |
-| P4.1  | ⬜ (**next to implement** — with P4.2)                                                                                                          |
+| P4.1  | ✅ (harness + five fixture suites green; reload-leg environment facts + deviations recorded in its doc)                                         |
 | P4.2  | ⬜ (**next to implement** — with P4.1)                                                                                                          |
 | P4.3  | ⬜ (after P4.1 + P4.2)                                                                                                                          |
 | P16   | ⬜ (after P4.3, before the panel phases — owner-committed 2026-10-08)                                                                           |
