@@ -25,7 +25,10 @@ export default defineConfig({
     environment: 'happy-dom',
     // The machine-relative speed bench runs only via `pnpm bench:detection`;
     // it must never flake CI on shared runners.
-    exclude: ['**/node_modules/**', '**/.git/**', 'lib/detection/bench/**'],
+    // tests/e2e is the Playwright (browser) tier — `*.spec.ts` there belongs
+    // to that runner (`pnpm test:e2e`), never to this one; keeping the two
+    // runners disjoint is a deliberate contract guard, not organizational.
+    exclude: ['**/node_modules/**', '**/.git/**', 'lib/detection/bench/**', 'tests/e2e/**'],
     // happy-dom reports disabled iframe/CSS/JS loads on its own console —
     // expected offline noise, filtered from the gate signal (shared module).
     onConsoleLog: filterDisabledLoadNoise,

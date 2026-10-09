@@ -7,6 +7,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Browser-test tier artifacts (local-only tier)
+tests/e2e/.build-stamp.json
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+tests/e2e/.e2e-fixture-server.log
+
 node_modules
 .output
 coverage
