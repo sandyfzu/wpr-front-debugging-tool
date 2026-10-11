@@ -15,6 +15,7 @@ import { APPEARANCES, type Appearance } from '../../utils/theme';
 /** Canonical storage keys, declared once and reused by every slot below. */
 const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
 const TOOLBAR_BADGE = 'toolbarBadge';
+const SBS_SCROLL_SYNC = 'sbsScrollSync';
 
 /**
  * Registered option storage.
@@ -24,6 +25,8 @@ const TOOLBAR_BADGE = 'toolbarBadge';
  * - `appearance` — one of exactly `system` (follows the OS palette),
  *   `dark`, `light`; rendered UI sets `data-theme` from it before paint.
  * - `features.toolbarBadge` — the per-tab toolbar action badge.
+ * - `features.sbsScrollSync` — the compare overlay's scroll sync (default
+ *   off; the overlay's own header switch writes it).
  */
 export interface StoredOptions {
   improvements: {
@@ -34,6 +37,9 @@ export interface StoredOptions {
   appearance: Appearance;
   features: {
     [TOOLBAR_BADGE]: boolean;
+    [SBS_SCROLL_SYNC]: boolean;
+    /** Future feature ids land here as additive boolean keys. */
+    [key: string]: boolean | undefined;
   };
 }
 
@@ -43,7 +49,8 @@ const FALLBACK: Readonly<StoredOptions> = Object.freeze({
   }),
   appearance: 'system',
   features: Object.freeze({
-    [TOOLBAR_BADGE]: true
+    [TOOLBAR_BADGE]: true,
+    [SBS_SCROLL_SYNC]: false
   })
 });
 
@@ -61,6 +68,11 @@ export const optionsStore = storage.defineItem<StoredOptions>('sync:options', {
  *   documented default (`true`) when it is absent or wrong-typed.
  * - `appearance` must be one of the three documented values, else default.
  * - `features.toolbarBadge` must be boolean, else default.
+ * - `features.sbsScrollSync` must be boolean, else default (off).
+ * - `features` keeps every own boolean-valued key — known ids and future
+ *   ones alike (tolerant read, like `improvements`): shapes are written
+ *   read-modify-write, so a later writer reading through this validator
+ *   must not erase a key it does not know yet.
  *
  * @returns Options, or null when the storage value is not an object at all.
  */
@@ -84,18 +96,24 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
   const appearanceOk =
     typeof appearance === 'string' && (APPEARANCES as readonly string[]).includes(appearance);
 
+  // Same tolerant treatment as `improvements` above, seed-first: known flags
+  // start from their documented defaults and every own boolean-valued key is
+  // carried (a later read-modify-write writer must not erase a future id).
+  const featuresRows: StoredOptions['features'] = {
+    [TOOLBAR_BADGE]: FALLBACK.features[TOOLBAR_BADGE],
+    [SBS_SCROLL_SYNC]: FALLBACK.features[SBS_SCROLL_SYNC]
+  };
   const features = value['features'];
-  const badge =
-    typeof features === 'object' && features !== null && !Array.isArray(features)
-      ? (features as Record<string, unknown>)['toolbarBadge']
-      : undefined;
+  if (typeof features === 'object' && features !== null && !Array.isArray(features)) {
+    for (const [key, entry] of Object.entries(features)) {
+      if (typeof entry === 'boolean') featuresRows[key] = entry;
+    }
+  }
 
   return {
     improvements: improvementsRows,
     appearance: appearanceOk ? (appearance as StoredOptions['appearance']) : FALLBACK.appearance,
-    features: {
-      [TOOLBAR_BADGE]: typeof badge === 'boolean' ? badge : FALLBACK.features[TOOLBAR_BADGE]
-    }
+    features: featuresRows
   };
 }
 

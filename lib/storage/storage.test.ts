@@ -23,7 +23,8 @@ describe('optionsStore', () => {
       },
       appearance: 'system',
       features: {
-        toolbarBadge: true
+        toolbarBadge: true,
+        sbsScrollSync: false
       }
     });
   });
@@ -32,18 +33,19 @@ describe('optionsStore', () => {
     await optionsStore.setValue({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false }
+      features: { toolbarBadge: false, sbsScrollSync: true }
     });
     expect(await getOptions()).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false }
+      features: { toolbarBadge: false, sbsScrollSync: true }
     });
     // Absence must resolve to defaults, not falsy values.
     await optionsStore.removeValue();
     const reset = await getOptions();
     expect(reset.appearance).toBe('system');
     expect(reset.features.toolbarBadge).toBe(true);
+    expect(reset.features.sbsScrollSync).toBe(false);
     expect(reset.improvements['wp-dashboard-dbugger-entry']).toBe(true);
   });
 });
@@ -86,11 +88,54 @@ describe('parseStoredOptions', () => {
     ).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'light',
-      features: { toolbarBadge: false }
+      features: { toolbarBadge: false, sbsScrollSync: false }
     });
     expect(parseStoredOptions(null)).toBeNull();
     expect(parseStoredOptions('black')).toBeNull();
     expect(parseStoredOptions([])).toBeNull();
+  });
+
+  it('validates each feature flag on its own, defaulting the absent or wrong-typed one', () => {
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: { toolbarBadge: false, sbsScrollSync: true }
+      })?.features
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: true });
+    // Wrong-typed scroll sync → documented default (off); the sibling flag keeps its value.
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: { toolbarBadge: false, sbsScrollSync: 'on' }
+      })?.features
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: false });
+    // A corrupt features slot self-heals both known flags (the improvements slot's twin rule).
+    expect(
+      parseStoredOptions({ improvements: {}, appearance: 'dark', features: 'nope' })?.features
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: false });
+  });
+
+  it('keeps future additive boolean feature ids so read-modify-write never erases them', () => {
+    // The same seam rule the improvements slot carries: a feature added by a
+    // later version must survive the round trip through this validator.
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: { toolbarBadge: true, sbsScrollSync: false, 'future-feature': true }
+      })?.features
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: false, 'future-feature': true });
+    // Non-boolean future ids are not engine output — dropped, not trusted,
+    // while the known flags take their values (absent → defaults).
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: { 'future-feature': 'yes' }
+      })?.features
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: false });
   });
 });
 
