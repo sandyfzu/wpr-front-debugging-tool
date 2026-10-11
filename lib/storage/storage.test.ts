@@ -24,7 +24,7 @@ describe('optionsStore', () => {
       appearance: 'system',
       features: {
         toolbarBadge: true,
-        sbsScrollSync: false
+        sbsScrollSync: true
       }
     });
   });
@@ -45,7 +45,7 @@ describe('optionsStore', () => {
     const reset = await getOptions();
     expect(reset.appearance).toBe('system');
     expect(reset.features.toolbarBadge).toBe(true);
-    expect(reset.features.sbsScrollSync).toBe(false);
+    expect(reset.features.sbsScrollSync).toBe(true);
     expect(reset.improvements['wp-dashboard-dbugger-entry']).toBe(true);
   });
 });
@@ -88,7 +88,7 @@ describe('parseStoredOptions', () => {
     ).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'light',
-      features: { toolbarBadge: false, sbsScrollSync: false }
+      features: { toolbarBadge: false, sbsScrollSync: true }
     });
     expect(parseStoredOptions(null)).toBeNull();
     expect(parseStoredOptions('black')).toBeNull();
@@ -103,18 +103,18 @@ describe('parseStoredOptions', () => {
         features: { toolbarBadge: false, sbsScrollSync: true }
       })?.features
     ).toEqual({ toolbarBadge: false, sbsScrollSync: true });
-    // Wrong-typed scroll sync → documented default (off); the sibling flag keeps its value.
+    // Wrong-typed scroll sync → documented default (on); the sibling flag keeps its value.
     expect(
       parseStoredOptions({
         improvements: {},
         appearance: 'dark',
-        features: { toolbarBadge: false, sbsScrollSync: 'on' }
+        features: { toolbarBadge: false, sbsScrollSync: 'off' }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: false });
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: true });
     // A corrupt features slot self-heals both known flags (the improvements slot's twin rule).
     expect(
       parseStoredOptions({ improvements: {}, appearance: 'dark', features: 'nope' })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: false });
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: true });
   });
 
   it('keeps future additive boolean feature ids so read-modify-write never erases them', () => {
@@ -135,7 +135,7 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { 'future-feature': 'yes' }
       })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: false });
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: true });
   });
 });
 

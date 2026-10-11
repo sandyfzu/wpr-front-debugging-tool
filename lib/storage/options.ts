@@ -26,7 +26,8 @@ const SBS_SCROLL_SYNC = 'sbsScrollSync';
  *   `dark`, `light`; rendered UI sets `data-theme` from it before paint.
  * - `features.toolbarBadge` — the per-tab toolbar action badge.
  * - `features.sbsScrollSync` — the compare overlay's scroll sync (default
- *   off; the overlay's own header switch writes it).
+ *   on since the owner's 2026-10-11 decision — off at plan time; the
+ *   overlay's own header switch writes it).
  */
 export interface StoredOptions {
   improvements: {
@@ -50,7 +51,7 @@ const FALLBACK: Readonly<StoredOptions> = Object.freeze({
   appearance: 'system',
   features: Object.freeze({
     [TOOLBAR_BADGE]: true,
-    [SBS_SCROLL_SYNC]: false
+    [SBS_SCROLL_SYNC]: true
   })
 });
 
@@ -68,7 +69,7 @@ export const optionsStore = storage.defineItem<StoredOptions>('sync:options', {
  *   documented default (`true`) when it is absent or wrong-typed.
  * - `appearance` must be one of the three documented values, else default.
  * - `features.toolbarBadge` must be boolean, else default.
- * - `features.sbsScrollSync` must be boolean, else default (off).
+ * - `features.sbsScrollSync` must be boolean, else default (on).
  * - `features` keeps every own boolean-valued key — known ids and future
  *   ones alike (tolerant read, like `improvements`): shapes are written
  *   read-modify-write, so a later writer reading through this validator

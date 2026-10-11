@@ -6,7 +6,7 @@
 
 ## Goal (plain language)
 
-1. **Side-by-Side scroll sync.** The compare overlay gains synced scrolling: **disabled by default**, a toggle **in the overlay's own header**, and when active, scrolling one half moves the other to the same part of its page — **mapped proportionally**, because the two copies regularly differ in height (a cached copy vs its `?nowprocket=1` twin; device variants diverge more).
+1. **Side-by-Side scroll sync.** The compare overlay gains synced scrolling: **on by default** (owner decision 2026-10-11 — planned default was off), a toggle **in the overlay's own header**, and when active, scrolling one half moves the other to the same part of its page — **mapped proportionally**, because the two copies regularly differ in height (a cached copy vs its `?nowprocket=1` twin; device variants diverge more).
 2. **Mobile simulation, per tab.** A debugging state on the current tab: its requests carry a mobile `User-Agent`, and while the state is on, the page world's `navigator.userAgent` matches it. After a reload the server answers the phone question — WP Rocket's separate-mobile-cache branch becomes observable in place, and every surface (badge, overlay chip, popup row) can say why what is being seen looks the way it does. Desktop-vs-mobile comparisons run across two tabs (the pattern the PSI flow already establishes); inside one overlay both halves inherit the same tab rule, and the overlay says so.
 
 **Deliberately not simulated** (scoped honesty): viewport, touch input, device pixel ratio, form factor, user-agent client hints — only the UA identity, server-side (the request header, which is what the plugin's server-side mobile decision reads) and in-page (`navigator.userAgent`). A wrong-viewport mobile bug is a different ticket and stays visible as such.
@@ -15,7 +15,7 @@
 
 ### Design
 
-- [x] **Setting:** `features.sbsScrollSync: boolean` — additive key in the existing `StoredOptions` shape (`lib/storage/options.ts`, the table that already owns `features.toolbarBadge`), default **false**; the chosen value persists across pages and sessions via the sync options store.
+- [x] **Setting:** `features.sbsScrollSync: boolean` — additive key in the existing `StoredOptions` shape (`lib/storage/options.ts`, the table that already owns `features.toolbarBadge`), default **true** (owner decision 2026-10-11 — planned default was off); the chosen value persists across pages and sessions via the sync options store.
 - [x] **Toggle:** a header-bar switch in the overlay (`entrypoints/isolated.content/side-by-side/`, plain Solid + P0 tokens like the rest of the overlay). A real labelled, keyboard-operable control — no animation to gate under reduced motion. Clicking applies **live**: it switches the sync engine for the open overlay on/off and writes the setting; an overlay reads the persisted value when it opens. Mid-life external changes (another surface writing the key) apply next open — stated behavior, no watcher.
 - [x] **Engine (pure, tested):** `lib/side-by-side/scroll-sync.ts` — `computeSyncTarget(source: FrameScrollState, target: FrameScrollState): number | null` computes `ratio = source.y / source.range` (range = `scrollHeight − clientHeight`) and maps it onto the target's own range: `clamp(round(ratio × target.range))`. A zero-range source is never a driver (returns null); a zero-range target applies nothing; invalid inputs (NaN, negative, out-of-bounds) are refused per AGENTS.md's fail-fast rule. No DOM, no listeners, no extension APIs.
 - [x] **Wiring:** the overlay attaches `scroll` listeners (wheel/drag/keyboard/touch all surface as `scroll`) to each half's `window` — same-origin halves only (see the degrade row) — through the overlay's `ContentScriptContext`. rAF-coalesced: one mapped application per scroll burst; while repositioning programmatically, a suppression flag ignores the receiving half's own scroll for that burst (no feedback loop; the next user scroll retakes driver control). Per-side refresh re-reads that half's metrics; open, close and context invalidation tear the engine down (listeners removed, flags reset); re-open honors the persisted setting like a fresh overlay.
@@ -36,6 +36,7 @@
 - **Budget (deliberate re-derivation):** the isolated content script measured 85.1 KiB raw / 30.1 gzip (develop measured 83,509 B → branch **87,140 B**: the engine, session, switch and markers cost 3,631 B); the row moved 85/30 → **88/31** in `scripts/budgets.json` — a feature-committed raise, not a nudge.
 - **Verified:** gates green; the full e2e tier green in three consecutive runs (36/36 each); a throwaway Playwright probe (run, then deleted — the permanent pin is P16.1's) exercised the real overlay: default-off switch, live apply, proportional 40 % → 40 % mapping across differing ranges, no oscillation after an application, reverse drive bottom→bottom, toggle-off stops syncing, close restores overflow, and a fresh page's overlay honors the persisted choice.
 - **Deferred to its own rows:** the cross-origin degrade's permanent browser pin and the site round trip ride P16.1 (the degrade mechanics themselves were verified once through the throwaway fixture of the audit pass, below).
+- **Owner decision (2026-10-11):** after testing, the default flips to **on** — `sbsScrollSync` now defaults to true (FALLBACK, validators, and the pinned shapes re-derived; the toggle still persists an explicit off). The plan-time default-off is kept visible in the Goal line as a dated note, not erased.
 
 ### Audit record (2026-10-11, Feature A adversarial pass)
 
@@ -70,7 +71,7 @@ Also verified in a real browser for the first time (throwaway dual-origin redire
 
 ## Explicit enhancements (both features are new capability — there is no parity baseline)
 
-- Scroll sync: persisted setting (default off), live toggle in the overlay itself, proportional mapping for size differences, per-side honest degrade, listener hygiene.
+- Scroll sync: persisted setting (default on — the owner's 2026-10-11 decision), live toggle in the overlay itself, proportional mapping for size differences, per-side honest degrade, listener hygiene.
 - Mobile sim: honest scope (UA identity only), per-tab isolation, rule-as-state reliability (no remembered memory to go stale), page truth (`navigator.userAgent`), visible state everywhere (badge mark, overlay chip, popup row), typed Firefox degrade.
 - Pairing note: P14.5's `mobile_cache` row (D1) later reports "which copy is served" — under an active simulation that card says the mobile copy's story; the two are recorded as related-but-distinct mechanisms in P14.5's deferred note.
 
