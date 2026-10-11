@@ -1,7 +1,13 @@
 /**
- * The extension driver: launches headed Chromium with the unpacked
- * `.output/chrome-mv3` bundle and drives everything beyond page DOM from the
- * service worker context.
+ * The extension driver: launches Chromium (headless by default, headed via
+ * `E2E_HEADED=1`) with the unpacked `.output/chrome-mv3` bundle and drives
+ * everything beyond page DOM from the service worker context.
+ *
+ * Headless is the gate's mode so a regression run never seizes the
+ * developer's foreground; the opt-in headed mode remains for debugging.
+ * Extension hosting in headless uses the `chromium` channel's modern
+ * headless (the legacy headless shell cannot host extensions — the reason
+ * the tier was headed-only when it was built).
  *
  * Drive surface (what the README calls the "SW drive plane"):
  * - `evaluateInWorker` runs code inside the extension service worker. The MV3
@@ -134,8 +140,8 @@ export class ExtensionDriver {
   }
 
   /**
-   * Launch the driver: headed Chromium with the unpacked extension on a
-   * fresh profile.
+   * Launch the driver: Chromium (headless by default, headed via
+   * `E2E_HEADED=1`) with the unpacked extension on a fresh profile.
    *
    * Extension loading uses the only supported command-line pair
    * (`--disable-extensions-except` + `--load-extension`, Playwright docs),
@@ -156,9 +162,13 @@ export class ExtensionDriver {
   /** Start (or restart) the persistent context on {@link profileDir}. */
   private async openContext(extraArgs: readonly string[] = []): Promise<void> {
     try {
+      // Headless unless `E2E_HEADED=1`: the gate must not seize the
+      // developer's foreground, and the `chromium` channel's modern headless
+      // hosts extensions (the legacy headless shell cannot — the reason this
+      // tier launched headed-only when it was built).
       this.context = await chromium.launchPersistentContext(this.profileDir, {
         channel: 'chromium',
-        headless: false,
+        headless: process.env.E2E_HEADED !== '1',
         viewport: { width: 1280, height: 800 },
         timeout: LAUNCH_TIMEOUT_MS,
         args: [
@@ -170,7 +180,7 @@ export class ExtensionDriver {
     } catch (cause) {
       throw new Error(
         [
-          `Launching headed Chromium with the unpacked extension timed out or failed after ${String(LAUNCH_TIMEOUT_MS)} ms.`,
+          `Launching Chromium with the unpacked extension timed out or failed after ${String(LAUNCH_TIMEOUT_MS)} ms.`,
           `extension path: ${EXTENSION_PATH}`,
           'usual causes: the bundle is missing or not a valid unpacked build (manifest.json present) — rebuild with `pnpm build`'
         ].join('\n'),

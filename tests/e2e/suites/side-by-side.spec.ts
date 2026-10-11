@@ -21,7 +21,7 @@ import { expect, openFixturePage, test } from '../helpers/extension';
 /** Overlay host element (WXT shadow-root UI name, feature-scoped). */
 const OVERLAY_HOST_NAME = 'wpr-fdt-side-by-side';
 
-/** How long a refresh's re-navigation may take (local server, headed). */
+/** How long a refresh's re-navigation may take (local server, real reload). */
 const RELOAD_TIMEOUT = 4_000;
 
 /** The inline overflow baselines the fixture page itself pins (plain literals). */
@@ -124,9 +124,17 @@ test.describe('side-by-side mechanics', () => {
 
     // Cached-side refresh: its own body goes fresh; the other side's stays.
     await fixture.page.getByRole('button', { name: 'Refresh the cached version' }).click();
+    // A mid-reload read reports a vanished document (null contentDocument) —
+    // "not the old token" is not a new body; demand a fresh truthy body.
     await expect
-      .poll(async () => await readFrameToken(fixture.page, 'Cached'), { timeout: RELOAD_TIMEOUT })
-      .not.toBe(cachedTokenBefore);
+      .poll(
+        async (): Promise<boolean> => {
+          const token = await readFrameToken(fixture.page, 'Cached');
+          return token !== null && token !== cachedTokenBefore;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
     expect(await readFrameToken(fixture.page, 'Not cached'), 'bypassed body untouched').toBe(
       bypassedTokenBefore
     );
@@ -138,10 +146,14 @@ test.describe('side-by-side mechanics', () => {
     expect(cachedBodyAfterRefresh, 'the cached body the refresh left behind').toBeTruthy();
     await fixture.page.getByRole('button', { name: 'Refresh the not-cached version' }).click();
     await expect
-      .poll(async () => await readFrameToken(fixture.page, 'Not cached'), {
-        timeout: RELOAD_TIMEOUT
-      })
-      .not.toBe(bypassedTokenBefore);
+      .poll(
+        async (): Promise<boolean> => {
+          const token = await readFrameToken(fixture.page, 'Not cached');
+          return token !== null && token !== bypassedTokenBefore;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
     expect(
       await readFrameToken(fixture.page, 'Cached'),
       'cached body untouched by the other refresh'

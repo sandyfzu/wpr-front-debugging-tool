@@ -5,19 +5,16 @@ into CI** (headless runners cannot host extensions — the env contract is in th
 master plan's browser-test track).
 
 ```bash
-pnpm test:e2e            # all suites, headed Chromium, ~10–20 s
+pnpm test:e2e            # all suites, headless Chromium, ~10–20 s
+E2E_HEADED=1 pnpm test:e2e   # headed windows (the debugging opt-in)
 E2E_BUILD_STRICT=1 pnpm test:e2e   # refuse to auto-rebuild: fail fast with the diff instead
-E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five headed windows)
+E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five browsers)
 pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the last run's HTML report
 ```
 
 ## What runs
 
-- **Playwright (latest stable) launches headed Chromium** from the `chromium`
-  channel with the unpacked extension preloaded from `.output/chrome-mv3/`
-  (`--disable-extensions-except` + `--load-extension`, the documented
-  extension-loading path). Real windows open on your screen for the run and
-  close again — that is the tier's environment contract.
+- **Playwright (latest stable) launches Chromium from the `chromium` channel with the unpacked extension preloaded** from `.output/chrome-mv3/` (`--disable-extensions-except` + `--load-extension`, the documented extension-loading path). Runs are **headless by default** — a gate run never opens windows or steals the foreground; `E2E_HEADED=1` is the debugging opt-in (real windows open and close). The channel's modern headless hosts extensions (verified against the installed build); the legacy headless shell cannot, which is why the tier launched headed-only when it was built.
 - **`global-setup.ts` refuses a stale build**: it fingerprints every file the
   build reads (`entrypoints/`, `components/`, `lib/`, `utils/`, `assets/`,
   `public/`, `wxt.config.ts`, `package.json`) and compares against

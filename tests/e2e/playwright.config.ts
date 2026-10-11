@@ -1,10 +1,12 @@
 /**
  * Playwright configuration for the local browser-test tier.
  *
- * Local-only by rule: this tier is never wired into CI (headless runners
- * cannot host extensions, owner policy). Runs are headed — real Chromium
- * windows open on the caller's machine for the duration of the suites and
- * close again (that is the tier's environment contract).
+ * Local-only by rule: this tier is never wired into CI (it needs this
+ * machine's real Chrome build and the docker site). Runs are **headless by
+ * default** so a gate can't seize the developer's foreground — real windows
+ * open only with `E2E_HEADED=1` (the debugging opt-in). Extensions host in
+ * the `chromium` channel's modern headless (the shell cannot); empirically
+ * verified against the installed build.
  *
  * Layout:
  * - `global-setup.ts` refuses stale extension builds (rebuild or fail with
@@ -33,8 +35,8 @@ export default defineConfig({
   globalSetup: './global-setup.ts',
   testDir: './suites',
   testMatch: '**/*.spec.ts',
-  // One at a time: headed windows share the developer's screen, and suites
-  // assert real browser state (menus-once, extension reload) serially.
+  // One at a time: suites assert real browser state (menus-once, extension
+  // reload) serially, and the shared fixture server assumes one browser.
   workers: Number(process.env.E2E_WORKERS ?? 1),
   fullyParallel: false,
   timeout: 90_000,
