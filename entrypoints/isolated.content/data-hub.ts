@@ -107,6 +107,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   let data: PageData | null = null;
   /** The single-flight processing promise; null while idle or already done. */
   let processing: Promise<void> | null = null;
+  /** The once-flight headers fetch, awaited by every serve path that renders it. */
+  let headersFetched: Promise<void> | null = null;
 
   /** Serialize the document once (the snapshot; later calls are no-ops). */
   const capture = (): void => {
@@ -138,11 +140,25 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     });
   };
 
+  /**
+   * Ensure the page's (already captured) main-frame headers are fetched,
+   * exactly once per page. The ask is idempotent against the background's
+   * per-tab cache (a read never consumes the rows), so a late ensure simply
+   * re-asks and receives the same set — without it, a panel request racing
+   * the fetch would serve null and lose the Server card for the page.
+   *
+   * @returns The fetch's settlement (errors caught inside).
+   */
+  const ensureHeaders = (): Promise<void> => {
+    if (headersFetched === null) headersFetched = fetchHeaders();
+    return headersFetched;
+  };
+
   // The single capture moment: serialize, ask for the page's (already
   // captured) main-frame headers, then tell devtools to reload its panel.
   const onParserReady = (): void => {
     capture();
-    void fetchHeaders().then(() => {
+    void ensureHeaders().then(() => {
       notifyPanel();
     });
     // The pass feeds the toolbar badge and prints the timing log — both must
@@ -252,6 +268,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   ctx.onInvalidated(
     onMessage('getFdtData', async () => {
       await processData();
+      await ensureHeaders();
       return fdtData();
     })
   );
