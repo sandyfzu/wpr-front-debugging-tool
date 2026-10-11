@@ -4,25 +4,30 @@
  * resolved and applied to the container before the first paint.
  *
  * Injection isolation the caller gets by mounting through here: everything
- * renders inside the shadow root, and the container carries the appearance
- * pin — `data-theme` only for an explicit dark/light choice, never for
- * `system` (the token stylesheet's media query rules the system case, so the
- * UI follows live OS scheme changes).
+ * renders inside the shadow root, and the container carries the appearance —
+ * `data-theme="system"|"dark"|"light"`. Declaring all three (system included)
+ * is required inside a shadow root: the mount's `:host { all: initial
+ * !important }` isolation reset aborts the documented scheme chain, so only
+ * the owned container's schema declarations rule — `system` accepts both
+ * palettes and the browser follows live OS changes from there.
  */
 
 import { render } from 'solid-js/web';
 import { getOptions } from '../../../lib/storage/options';
-import { applyTheme, type Appearance } from '../../../utils/theme';
+import { applyTheme, type Appearance, type Theme } from '../../../utils/theme';
 import type { JSX } from 'solid-js';
 
 /**
- * The palette an appearance choice pins on a container: explicit choices win
- * over the media query by attribute; `system` leaves the attribute unset.
+ * The theme an injected container carries: the system choice is declared
+ * itself (`data-theme="system"`), because inside the shadow root the `:host`
+ * scheme chain is aborted by the mount's isolation reset — only an
+ * on-container declaration rules. Explicit choices pin dark/light on the
+ * spot.
  *
  * @param appearance The stored three-way choice.
  */
-function pinnedTheme(appearance: Appearance): 'dark' | 'light' | null {
-  return appearance === 'system' ? null : appearance;
+function containerTheme(appearance: Appearance): Theme | 'system' {
+  return appearance === 'system' ? 'system' : appearance;
 }
 
 /**
@@ -48,6 +53,6 @@ export async function mountShadowUi(
   view: () => JSX.Element
 ): Promise<() => void> {
   const options = await getOptions();
-  applyTheme(container, pinnedTheme(options.appearance));
+  applyTheme(container, containerTheme(options.appearance));
   return render(view, container);
 }

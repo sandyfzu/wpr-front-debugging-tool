@@ -25,16 +25,22 @@ export function resolveTheme(appearance: Appearance, systemPrefersDark: boolean)
 }
 
 /**
- * Set the explicit theme override on an element's `data-theme` attribute.
+ * Set the theme over an element's `data-theme` attribute.
  *
- * Passing `null` clears the attribute, which hands control back to the
- * system scheme via the stylesheet's media query. Only `dark`/`light` may be
- * written — an explicit attribute is what "wins" per the token stylesheet.
+ * `'dark'`/`'light'` pin an explicit palette; they always win over the system
+ * scheme per the token stylesheet. Passing `'system'` declares the system
+ * choice explicitly — the injected-UI container contract: the shadow-root
+ * mount's isolation reset aborts the documented `:host` scheme chain, so the
+ * container must declare `"light dark"` itself for `light-dark()` to follow
+ * the user's OS preference (live) inside the tree.
+ *
+ * Passing `null` clears the attribute, handing control back to the
+ * stylesheet's `:root` media query — the `<html>` (extension page) contract.
  *
  * @param root The element the theme applies to (`<html>` or a shadow-root container).
- * @param theme The palette to pin, or `null` to follow the system.
+ * @param theme The theme to pin, or `null` to follow the system through the media query.
  */
-export function applyTheme(root: HTMLElement, theme: Theme | null): void {
+export function applyTheme(root: HTMLElement, theme: Theme | 'system' | null): void {
   if (theme === null) root.removeAttribute('data-theme');
   else root.dataset.theme = theme;
 }

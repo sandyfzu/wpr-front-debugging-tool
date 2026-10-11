@@ -18,6 +18,13 @@
  *   (pages) or on the shadow-root container (injected UI) before its content
  *   renders, and always wins over the media query because it pins
  *   `color-scheme`.
+ * - an injected shadow-root container declares `system` itself as
+ *   `data-theme="system"`: its host is reset by the shadow-root mount's
+ *   `all: initial !important`, which aborts the documented `:host` scheme
+ *   chain below — declaring `light dark` on the owned container is what lets
+ *   `light-dark()` follow the OS preference (live, browser-resolved) inside
+ *   the tree. Pages need no such attribute: the `:root` media query rules
+ *   there.
  *
  * All palette-dependent values are written once as `light-dark(<light>, <dark>)`
  * on palette-agnostic token names; the browser resolves them against the *used*
@@ -43,12 +50,17 @@
 /* An explicit appearance always wins over the media query — on <html> for pages
  * and on any injected UI's shadow-root container in the host page. The bare
  * attribute form (no :root/:host) works for both and pins the palette on any
- * element, per-element. */
+ * element, per-element. `system` is only ever written on an injected container
+ * (see the appearance model above): `"light dark"` accepts both palettes so
+ * every `light-dark()` in the tree resolves against the user's preference. */
 [data-theme='dark'] {
   color-scheme: dark;
 }
 [data-theme='light'] {
   color-scheme: light;
+}
+[data-theme='system'] {
+  color-scheme: light dark;
 }
 
 /* ---- Palette-agnostic tokens --------------------------------------------- */
