@@ -51,6 +51,8 @@ Also verified in a real browser for the first time (throwaway dual-origin redire
 
 ## Feature B — Mobile simulation (per tab)
 
+> **Superseded (owner refinement, 2026-10-11):** the shape below was refined into an **overlay-scoped mobile-comparison mode** — strictly live while the compare overlay is open (close resets the UA), real viewport presentation in the halves (one device: UA + resolution), reload both halves on every state change, PSI side-by-side untouched, no per-tab generic control. The living contract is `docs/plans/05g-phase-16-2-sbs-mobile-comparison.md`; the rows below are the superseded first design, kept for history.
+
 ### Design
 
 - [ ] **Module:** `lib/device-simulation/` — self-contained: a `DeviceProfile` table (one mobile row initially — a current-generation Android Chrome UA string; extensible shape: adding a profile is a row plus its tests), pure rule derivation, state/validator shapes, all unit-tested. The shipped UA string is **verified in this phase** against the plugin's current server-side mobile decision on the P4.2 site (the P16.1 round trip is the gate; a needed correction is recorded, never assumed — modern UA reduction means the string must keep the device-class tokens the decision listens for).
