@@ -38,7 +38,12 @@ export interface ScrollSyncSessionDeps {
 
 /** A running (or stopped) scroll-sync session over the overlay's halves. */
 export interface ScrollSyncSession {
-  /** Begin syncing the halves; starting twice is a no-op. */
+  /**
+   * Begin syncing the halves; starting twice is a no-op. Callers must have
+   * both halves registered first (the open path awaits the overlay's mount):
+   * an unregistered slot attaches nothing and a debug log names it — a
+   * deaf start is never retried by the session itself.
+   */
   start(): void;
   /** Tear the engine down: listeners off, driver disposed, flags reset; stopping twice is a no-op. */
   stop(): void;
@@ -130,7 +135,14 @@ export function createScrollSyncSession(deps: ScrollSyncSessionDeps): ScrollSync
     detachHalf[side]?.();
     detachHalf[side] = undefined;
     const frame = deps.frames()[side];
-    if (frame === undefined) return;
+    if (frame === undefined) {
+      // Not a silent skip: a start over an unregistered slot attaches
+      // nothing, and the start guard would keep the engine deaf until a
+      // fresh start (callers must start after the view's frames exist —
+      // the open path awaits the overlay's mount for exactly this).
+      deps.log.debug(`The ${side} half's frame is not registered; this start cannot attach it`);
+      return;
+    }
     const onFrameLoad = (): void => {
       if (driver === null) return; // the session stopped between events
       attachHalf(side);

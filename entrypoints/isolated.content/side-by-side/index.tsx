@@ -14,8 +14,10 @@
  *
  * Scroll sync rides the same lifecycle: the persisted setting is re-read at
  * every open, the header switch applies live (and writes the setting), and
- * the engine tears down on close and invalidation. On the analysis host no
- * sync exists at all — the two halves are analyses, not correlated pages.
+ * the engine tears down on close and invalidation. The engine arms only once
+ * the overlay's frames exist — the open awaits the view's mount (the slots
+ * register through its render) before starting, and on the analysis host no
+ * sync exists at all (the two halves are analyses, not correlated pages).
  */
 
 import { createSignal } from 'solid-js';
@@ -57,6 +59,12 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   let ui: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
   /** The Solid disposer, once the render has completed. */
   let disposeRoot: (() => void) | null = null;
+  /**
+   * The view's settled mount: the frame slots register through its render,
+   * so every engine start must follow this promise — starting earlier arms
+   * nothing (see the open path and the sync session's start contract).
+   */
+  let viewMounted: Promise<void> = Promise.resolve();
   /** Captured inline `overflow` styles of html+body, restored on close. */
   const overflow = { html: '', body: '' };
   /** Frames discovered through the component's ref callbacks. */
@@ -173,6 +181,12 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       );
     }
     await ensureUi(urls);
+    // The engine must not outrun its halves: `registerFrame`'s slots fill
+    // during the render that `ensureUi` started but did not await. Starting
+    // from an unregistered slot attaches nothing — and the session's start
+    // guard would then keep a "running" engine deaf to the halves until a
+    // switch cycle re-armed it (the reported default-on regression).
+    await viewMounted;
     // The analyses drive themselves — no correlated structure to sync there.
     if (syncOn() && !isAutoFlowPage()) startSync();
     show();
@@ -205,7 +219,10 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
         position: 'inline',
         isolateEvents: true,
         onMount: (container) => {
-          void mountShadowUi(container, () => (
+          // The mount promise is owned, not fire-and-forget: the open path
+          // awaits it before starting the sync engine (the failure branch
+          // logs and continues — the overlay's UI failure is its own error).
+          viewMounted = mountShadowUi(container, () => (
             <SideBySideOverlay
               urls={() => pair}
               open={isOpen}

@@ -37,6 +37,35 @@ interface ScrollState {
   scrollY: number;
 }
 
+/** One compare half's scroll facts, read through the open shadow root and its frame. */
+interface HalfScroll {
+  /** The half's current scrollTop. */
+  y: number;
+  /** The half's scrollable range (`scrollHeight − clientHeight`). */
+  range: number;
+}
+
+/**
+ * Read one half's scroll facts through the open shadow root (the genuine
+ * main-world probe; same-document halves must agree after a mapped sync).
+ *
+ * @param page The fixture page with the overlay open.
+ * @param frameTitle Which overlay frame to read.
+ */
+async function readHalfScroll(page: Page, frameTitle: string): Promise<HalfScroll> {
+  return await page.evaluate((title: string): HalfScroll => {
+    const frame =
+      document
+        .querySelector('wpr-fdt-side-by-side')
+        ?.shadowRoot?.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`) ?? null;
+    if (frame === null) throw new Error(`the ${title} frame is not in the shadow root`);
+    const win = frame.contentWindow;
+    if (win === null) throw new Error(`the ${title} frame has no window yet`);
+    const scrolling = win.document.scrollingElement ?? win.document.documentElement;
+    return { y: scrolling.scrollTop, range: scrolling.scrollHeight - scrolling.clientHeight };
+  }, frameTitle);
+}
+
 /**
  * Read the overflow state the page actually carries (inline styles — the
  * overlay's save/restore contract), plus the scroll position.
@@ -223,5 +252,65 @@ test.describe('side-by-side mechanics', () => {
     expect(cachedTokenAfterReopen, 're-open reveals the previous frames (same loaded body)').toBe(
       cachedTokenOpen
     );
+  });
+
+  test('scroll sync runs from the open itself — no switch interaction', async ({ extension }) => {
+    // The seed mirrors the user's persisted profile (the setting is on, its
+    // default): the overlay's OPEN must arm the engine itself. The reported
+    // regression: the open path started the engine before the view's render
+    // had registered the frames, leaving a "running" session with no
+    // listeners — a working sync only after a switch off/on cycle.
+    await extension.evaluateInWorker(
+      (seed: Record<string, unknown>) => {
+        void chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsScrollSync: true } }
+    );
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1);
+
+    // Both halves load their own bodies (and the listener re-adopt runs on
+    // the frame load). The untouched half must sit at the top of a real
+    // range — sync is the only thing that may move it.
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          const cached = await readHalfScroll(fixture.page, 'Cached');
+          const bypassed = await readHalfScroll(fixture.page, 'Not cached');
+          return cached.range > 0 && bypassed.range > 0;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
+    const atRest = await readHalfScroll(fixture.page, 'Not cached');
+    expect(
+      atRest.y,
+      'the unscrolled half rests at its top — any motion below is sync'
+    ).toBeLessThan(atRest.range);
+
+    // Drive ONLY the cached half to its bottom: the user's gesture. Proportional
+    // mapping (same document, same frame size ⇒ equal ranges) must deliver the
+    // bypassed half to its exact own bottom — rounded, without any toggle.
+    await fixture.page.evaluate(() => {
+      const frame = document
+        .querySelector('wpr-fdt-side-by-side')
+        ?.shadowRoot?.querySelector<HTMLIFrameElement>('iframe[title="Cached"]');
+      const win = frame?.contentWindow;
+      if (frame === null || win === null || win === undefined)
+        throw new Error('the cached half is not driveable');
+      win.scrollTo(0, win.document.documentElement.scrollHeight);
+    });
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          const half = await readHalfScroll(fixture.page, 'Not cached');
+          return half.range > 0 && half.y === half.range;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
   });
 });
