@@ -5,19 +5,16 @@ into CI** (headless runners cannot host extensions — the env contract is in th
 master plan's browser-test track).
 
 ```bash
-pnpm test:e2e            # all suites, headed Chromium, ~10–20 s
+pnpm test:e2e            # all suites, headless Chromium, ~10–20 s
+E2E_HEADED=1 pnpm test:e2e   # headed windows (the debugging opt-in)
 E2E_BUILD_STRICT=1 pnpm test:e2e   # refuse to auto-rebuild: fail fast with the diff instead
-E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five headed windows)
+E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five browsers)
 pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the last run's HTML report
 ```
 
 ## What runs
 
-- **Playwright (latest stable) launches headed Chromium** from the `chromium`
-  channel with the unpacked extension preloaded from `.output/chrome-mv3/`
-  (`--disable-extensions-except` + `--load-extension`, the documented
-  extension-loading path). Real windows open on your screen for the run and
-  close again — that is the tier's environment contract.
+- **Playwright (latest stable) launches Chromium from the `chromium` channel with the unpacked extension preloaded** from `.output/chrome-mv3/` (`--disable-extensions-except` + `--load-extension`, the documented extension-loading path). Runs are **headless by default** — a gate run never opens windows or steals the foreground; `E2E_HEADED=1` is the debugging opt-in (real windows open and close). The channel's modern headless hosts extensions (verified against the installed build); the legacy headless shell cannot, which is why the tier launched headed-only when it was built.
 - **`global-setup.ts` refuses a stale build**: it fingerprints every file the
   build reads (`entrypoints/`, `components/`, `lib/`, `utils/`, `assets/`,
   `public/`, `wxt.config.ts`, `package.json`) and compares against
@@ -66,19 +63,20 @@ worker context**:
 
 ## Suites → parent phase docs
 
-| Suite (`suites/*.spec.ts`) | Phase contract it pins                                                                                                                                                       |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `boot-and-registry`        | P2 background: SW alive; menu ids exactly once after install **and** after extension reload                                                                                  |
-| `undefined-references`     | P4 MAIN-world capture (+ P3 receiving guard): validated batch on the panel seam; host safety (hostile `stack` getter, malformed bridge batches); page console unchanged      |
-| `cross-origin-sentinel`    | P4 sentinel path (the cross-origin resurrection): the fixed sentinel word reaches the isolated receiver immediately, not debounced                                           |
-| `side-by-side`             | P3 Side-by-Side mechanics: message-driven open, URL rules, per-side refresh, exact overflow/scroll restore, re-open keeps frames                                             |
-| `processed-page-pipeline`  | P3 data hub: mandated timing log format + page-analysis print; P2/P3 badge seam: summary push rendered per state                                                             |
-| `site-header-capture`      | P4.3 over the real site: the P2-audit BLOCKER re-run (real responses → served row pairs), tab scoping + navigation supersede, the tabless sender, the over-cap reject        |
-| `site-badge-pipeline`      | P4.3 over the real site: the blue present-but-uncached state, supersede, the post-`chrome://` clear, the live `toolbarBadge` flip                                            |
-| `site-known-conflicts`     | P4.3 over the real plugin tables: containment-counted scan, the corrected empty state, the no-reload storage-watch rescan, the serve path, the offline boot seed (unstamped) |
-| `site-data-hub`            | P4.3 over the real site: the mandated log lines, the console whitelist (no page content), the `rocket-allScriptsLoaded` flip, the real error page's served words             |
-| `site-improvements-admin`  | P4.3 over real wp-admin: the option-on D-bugger entry (built once), the option-off removal, the restore                                                                      |
-| `site-side-by-side`        | P4.3 on genuinely cached pages: the two frames' real cache-state bodies (footprint + delay markers in the cached frame, none in the bypassed), real refresh, scroll restore  |
+| Suite (`suites/*.spec.ts`) | Phase contract it pins                                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `boot-and-registry`        | P2 background: SW alive; menu ids exactly once after install **and** after extension reload                                                                                                                              |
+| `undefined-references`     | P4 MAIN-world capture (+ P3 receiving guard): validated batch on the panel seam; host safety (hostile `stack` getter, malformed bridge batches); page console unchanged                                                  |
+| `cross-origin-sentinel`    | P4 sentinel path (the cross-origin resurrection): the fixed sentinel word reaches the isolated receiver immediately, not debounced                                                                                       |
+| `side-by-side`             | P3 Side-by-Side mechanics: message-driven open, URL rules, per-side refresh, exact overflow/scroll restore, re-open keeps frames                                                                                         |
+| `processed-page-pipeline`  | P3 data hub: mandated timing log format + page-analysis print; P2/P3 badge seam: summary push rendered per state                                                                                                         |
+| `site-header-capture`      | P4.3 over the real site: the P2-audit BLOCKER re-run (real responses → served row pairs), tab scoping + navigation supersede, the tabless sender, the over-cap reject                                                    |
+| `site-badge-pipeline`      | P4.3 over the real site: the blue present-but-uncached state, supersede, the post-`chrome://` clear, the live `toolbarBadge` flip                                                                                        |
+| `site-known-conflicts`     | P4.3 over the real plugin tables: containment-counted scan, the corrected empty state, the no-reload storage-watch rescan, the serve path, the offline boot seed (unstamped)                                             |
+| `site-data-hub`            | P4.3 over the real site: the mandated log lines, the console whitelist (no page content), the `rocket-allScriptsLoaded` flip, the real error page's served words                                                         |
+| `site-improvements-admin`  | P4.3 over real wp-admin: the option-on D-bugger entry (built once), the option-off removal, the restore                                                                                                                  |
+| `site-side-by-side`        | P4.3 on genuinely cached pages: the two frames' real cache-state bodies (footprint + delay markers in the cached frame, none in the bypassed), real refresh, scroll restore                                              |
+| `theme`                    | The injected-UI palette (every shadow-rooted UI through `mount.ts`): `system` declared on the container resolves dark under a dark OS and follows it in real time; explicit dark wins — see 05e's 2026-10-11 palette fix |
 
 ## Manual remainder (recorded, never silently dropped)
 

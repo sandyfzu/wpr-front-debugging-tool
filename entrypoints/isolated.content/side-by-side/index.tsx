@@ -11,6 +11,11 @@
  * exactly as they were captured at first open (the sticky html+body pair);
  * a re-open shows the previously loaded frames — first open assigns the
  * URLs, later ones only reveal the overlay — never fresh navigations.
+ *
+ * Scroll sync rides the same lifecycle: the persisted setting is re-read at
+ * every open, the header switch applies live (and writes the setting), and
+ * the engine tears down on close and invalidation. On the analysis host no
+ * sync exists at all — the two halves are analyses, not correlated pages.
  */
 
 import { createSignal } from 'solid-js';
@@ -18,10 +23,13 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { onMessage } from '../../../lib/messaging/index';
 import { createLogger } from '../../../lib/logger';
+import { getOptions, optionsStore } from '../../../lib/storage/options';
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../ui/mount';
 import { getOverlayUrls, importedSiteUrl, isPsiHost, psiEntryUrl } from './urls';
-import { SideBySideOverlay, type SideBySideOverlaySide } from './ui';
+import { createScrollSyncSession } from './sync-session';
+import { SideBySideOverlay } from './ui';
+import type { CompareSide } from '../../../lib/side-by-side/scroll-sync';
 import type { CompareUrls } from './urls';
 import './side-by-side.css';
 
@@ -39,6 +47,10 @@ const UI_NAME = 'wpr-fdt-side-by-side';
 export function setupSideBySide(ctx: ContentScriptContext): void {
   /** Whether the overlay currently covers the page (drives its class). */
   const [isOpen, setOpen] = createSignal(false);
+  /** Whether scroll sync is on for this overlay (persisted setting, applied live). */
+  const [syncOn, setSyncOn] = createSignal(false);
+  /** Sides whose document refused access; each renders its per-side marker while sync is on. */
+  const [syncBlocked, setSyncBlocked] = createSignal<Partial<Record<CompareSide, true>>>({});
   /** The overlay's URL pair, resolved at first open and never re-resolved. */
   let urls: CompareUrls | null = null;
   /** The mounted UI handle; created at first open. */
@@ -48,7 +60,58 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   /** Captured inline `overflow` styles of html+body, restored on close. */
   const overflow = { html: '', body: '' };
   /** Frames discovered through the component's ref callbacks. */
-  const frames: Partial<Record<SideBySideOverlaySide, HTMLIFrameElement>> = {};
+  const frames: Partial<Record<CompareSide, HTMLIFrameElement>> = {};
+
+  /** The scroll-sync session: DOM halves + driver, built over the frames above. */
+  const syncSession = createScrollSyncSession({
+    frames: () => frames,
+    onHalfBlocked: (side) => {
+      setSyncBlocked((current) => ({ ...current, [side]: true }));
+    },
+    log
+  });
+
+  /** Start syncing (fresh probe: markers from the previous run reset). */
+  const startSync = (): void => {
+    setSyncBlocked({});
+    syncSession.start();
+  };
+
+  const stopSync = (): void => {
+    syncSession.stop();
+  };
+
+  /**
+   * Persist the switch choice. Read-modify-write over the validated shape,
+   * so the other option slots keep their values; a failed write degrades to
+   * "not persisted" — the live toggle already applied, and the next open
+   * reads the stored value again.
+   */
+  const persistScrollSyncSetting = async (next: boolean): Promise<void> => {
+    try {
+      const current = await getOptions();
+      await optionsStore.setValue({
+        ...current,
+        features: { ...current.features, sbsScrollSync: next }
+      });
+    } catch (cause) {
+      log.warn(
+        'Persisting the scroll-sync setting failed; the choice resets on the next open',
+        cause instanceof Error ? cause.message : cause
+      );
+    }
+  };
+
+  /**
+   * The header switch: apply live, then persist. The engine starts/stops
+   * with the switch — a running overlay follows without a reload.
+   */
+  const onToggleSync = (next: boolean): void => {
+    setSyncOn(next);
+    if (next) startSync();
+    else stopSync();
+    void persistScrollSyncSetting(next);
+  };
 
   /**
    * The.PageSpeed Insights auto-open case: the analysis host with this
@@ -70,7 +133,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    * both get their `src` re-assigned, which always re-navigates the frame.
    * The assignment is the deliberate fallback, not an accident.
    */
-  const refreshFrame = (side: SideBySideOverlaySide): void => {
+  const refreshFrame = (side: CompareSide): void => {
     const frame = frames[side];
     if (frame === undefined) return;
     const renavigate = (): void => {
@@ -96,7 +159,22 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       overflow.body = document.body.style.overflow;
       urls = getOverlayUrls(new URL(window.location.href));
     }
+    // The persisted setting is read at every open (mid-life external changes
+    // apply next open); a failed read degrades to off — the overlay itself
+    // must not dead-end on a broken options store.
+    try {
+      const options = await getOptions();
+      setSyncOn(options.features.sbsScrollSync);
+    } catch (cause) {
+      setSyncOn(false);
+      log.error(
+        'Reading the scroll-sync setting failed; the overlay opens with sync off',
+        cause instanceof Error ? cause.message : cause
+      );
+    }
     await ensureUi(urls);
+    // The analyses drive themselves — no correlated structure to sync there.
+    if (syncOn() && !isAutoFlowPage()) startSync();
     show();
   };
 
@@ -107,6 +185,8 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   };
 
   const close = (): void => {
+    // The engine is the open state's companion: off when the overlay hides.
+    stopSync();
     document.documentElement.style.overflow = overflow.html;
     document.body.style.overflow = overflow.body;
     setOpen(false);
@@ -137,6 +217,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
               }}
               refresh={refreshFrame}
               close={close}
+              syncEnabled={syncOn}
+              syncBlocked={(side) => syncBlocked()[side] === true}
+              onToggleSync={onToggleSync}
             />
           ))
             .then((dispose) => {
@@ -206,6 +289,8 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   // context is dead — nothing re-drives it), so the tracked-scope
   // heuristic is silenced for this one call.
   const restoreScrollOnInvalidation = (): void => {
+    // The engine goes down with the context, like every other listener.
+    syncSession.stop();
     if (isOpen()) {
       document.documentElement.style.overflow = overflow.html;
       document.body.style.overflow = overflow.body;

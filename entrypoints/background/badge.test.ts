@@ -194,7 +194,7 @@ describe('restart guarantee (the browser outlives this worker)', () => {
     await optionsStore.setValue({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'system',
-      features: { toolbarBadge: false }
+      features: { toolbarBadge: false, sbsScrollSync: false }
     });
     // Stranded state: badges Chrome holds that no fresh state model knows of.
     const ids = (await fakeBrowser.tabs.query({}))

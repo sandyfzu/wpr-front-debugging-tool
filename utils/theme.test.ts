@@ -29,4 +29,13 @@ describe('applyTheme', () => {
     applyTheme(root, null);
     expect(root.hasAttribute('data-theme')).toBe(false);
   });
+
+  it('declares system on injected containers, where the media query cannot rule', () => {
+    // Inside a shadow root the mount's :host isolation reset aborts the scheme
+    // chain; the container must carry the choice itself — system as "system",
+    // whose tokens rule declares `color-scheme: light dark` (live-following).
+    const container = document.createElement('div');
+    applyTheme(container, 'system');
+    expect(container.getAttribute('data-theme')).toBe('system');
+  });
 });

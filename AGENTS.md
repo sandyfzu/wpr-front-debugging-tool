@@ -16,16 +16,16 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 
 ## Key technologies
 
-| Area      | Tech                                                                                                                                                                                                                                                                                                        |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                                                                                                                                                         |
-| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                                                                                                                                                               |
-| Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it                                                                                                                                      |
-| Styling   | **Tailwind CSS v4** — design tokens in `assets/css/tokens.css` (`@theme inline` over `light-dark()` values in `theme.css`; appearance = `system`/`dark`/`light` via `[data-theme]`; `tokens.css` is the module injected UIs import so shadow roots get the same values)                                     |
-| Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom`; coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands)). Browser tier: **@playwright/test** in `tests/e2e/` — headed Chromium with the unpacked extension, `*.spec.ts`, **local-only, never in CI** (see `tests/e2e/README.md`) |
-| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                                                                                                                                                          |
-| Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                                                                                                                                                        |
-| Build     | Vite (via WXT)                                                                                                                                                                                                                                                                                              |
+| Area      | Tech                                                                                                                                                                                                                                                                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime   | **Node** 24 (`.nvmrc`, major only; floor in `engines`), **pnpm** (pinned in `packageManager`) — lockfile is the source of truth, never `npm`/`yarn`                                                                                                                                                                                       |
+| Framework | **WXT** (extension framework, generates the manifest) + **SolidJS** (fine-grained reactivity)                                                                                                                                                                                                                                             |
+| Language  | **TypeScript**, strict — stay on **5.9.x**: `typescript-eslint` peer-caps TS `<6.1.0` while npm `latest` is already TS 7; revisit when `typescript-eslint` supports it                                                                                                                                                                    |
+| Styling   | **Tailwind CSS v4** — design tokens in `assets/css/tokens.css` (`@theme inline` over `light-dark()` values in `theme.css`; appearance = `system`/`dark`/`light` via `[data-theme]`; `tokens.css` is the module injected UIs import so shadow roots get the same values)                                                                   |
+| Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom`; coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands)). Browser tier: **@playwright/test** in `tests/e2e/` — headless Chromium with the unpacked extension (`E2E_HEADED=1` for headed), `*.spec.ts`, **local-only, never in CI** (see `tests/e2e/README.md`) |
+| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary — see Cross-browser compatibility                                                                                                                                                                                                        |
+| Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                                                                                                                                                                                      |
+| Build     | Vite (via WXT)                                                                                                                                                                                                                                                                                                                            |
 
 ## Repository structure
 
@@ -58,7 +58,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 ├── docker/                    # local WP site: compose stack (WP+MariaDB+wp-cli bootstrap), lifecycle + smoke
 │   │                          #   + conflict-derivation scripts, mu-plugin fixtures, KC conflict list —
 │   │                          #   machine state (`.env`, the `apvm`-built zip, `docker/certs/`) is git-ignored
-├── tests/e2e/                 # the browser-test tier (Playwright, headed Chromium + unpacked extension; `*.spec.ts` suites, fixtures, harness README — local-only, never in CI)
+├── tests/e2e/                 # the browser-test tier (Playwright, headless Chromium + unpacked extension; `*.spec.ts` suites, fixtures, harness README — local-only, never in CI)
 └── wxt.config.ts              # manifest fields, permissions (each with a why), modules
 ```
 
@@ -83,14 +83,14 @@ pnpm format:check    # prettier --check .
 pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions)
 pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
-pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headed Chromium + the unpacked extension, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
+pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chromium + the unpacked extension; E2E_HEADED=1 for headed, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
 docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh / reset.sh; URLs, credentials
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`. `test:e2e` is deliberately **never wired into CI** (headless runners cannot host extensions — the owner's environment contract; see `tests/e2e/README.md`).
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`. `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`).
 
 ## Non-negotiable rules
 
