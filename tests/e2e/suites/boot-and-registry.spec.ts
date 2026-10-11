@@ -62,7 +62,7 @@ test.describe('boot & registry', () => {
     const before = await extension.probeRegisteredMenus();
     expect(before).toEqual(['registered', 'registered', 'registered', 'registered']);
 
-    await extension.reloadViaRelaunch();
+    await extension.relaunch();
 
     // The absence control re-affirms the probe works on the re-registered
     // bundle as well (a fresh probe answer "absent" is evidence, not habit).

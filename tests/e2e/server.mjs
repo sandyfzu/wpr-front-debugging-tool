@@ -89,6 +89,19 @@ async function handle(request, response) {
     response.end('ok');
     return;
   }
+  if (url.pathname === '/__e2e/header-flood') {
+    // A main frame whose response carries more header rows than the
+    // extension's capture validator accepts (256): the capture must reject
+    // the whole set wholesale, leaving the tab with no stored rows (the
+    // suites read the content script's served null).
+    const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' };
+    for (let i = 0; i < 300; i += 1) headers[`x-e2e-filler-${String(i)}`] = 'filler';
+    response.writeHead(200, headers);
+    response.end(
+      '<!doctype html><html><head><title>header flood</title></head><body>header flood</body></html>'
+    );
+    return;
+  }
   if (url.pathname === '/favicon.ico') {
     // Browsers always request this; answering 204 keeps the fixture pages'
     // console baseline clean (a 404 would surface as error-level noise the

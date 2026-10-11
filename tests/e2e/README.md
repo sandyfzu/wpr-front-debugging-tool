@@ -33,6 +33,12 @@ pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the las
   is a genuine network round-trip, and the `__E2E_FRAME_TOKEN__` placeholder in
   any served `.html` is replaced with a fresh per-request random token (a
   fixture page can prove its body is from the latest request).
+- **A second webServer boots the P4.2 dockerized WordPress site**
+  (`docker/scripts/up.sh`, ready on its `/fdt/` page; URL read from
+  `docker/.env` — docker stays the site's single declaring site). The six
+  `site-*` suites run against it. A converged stack adds ~25 s; `up.sh`
+  rebuilds nothing when the volumes are warm and the reuse check skips the
+  boot entirely when the stack is already up.
 
 ## The SW drive plane (beyond page DOM)
 
@@ -60,13 +66,19 @@ worker context**:
 
 ## Suites → parent phase docs
 
-| Suite (`suites/*.spec.ts`) | Phase contract it pins                                                                                                                                                  |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `boot-and-registry`        | P2 background: SW alive; menu ids exactly once after install **and** after extension reload                                                                             |
-| `undefined-references`     | P4 MAIN-world capture (+ P3 receiving guard): validated batch on the panel seam; host safety (hostile `stack` getter, malformed bridge batches); page console unchanged |
-| `cross-origin-sentinel`    | P4 sentinel path (the cross-origin resurrection): the fixed sentinel word reaches the isolated receiver immediately, not debounced                                      |
-| `side-by-side`             | P3 Side-by-Side mechanics: message-driven open, URL rules, per-side refresh, exact overflow/scroll restore, re-open keeps frames                                        |
-| `processed-page-pipeline`  | P3 data hub: mandated timing log format + page-analysis print; P2/P3 badge seam: summary push rendered per state                                                        |
+| Suite (`suites/*.spec.ts`) | Phase contract it pins                                                                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `boot-and-registry`        | P2 background: SW alive; menu ids exactly once after install **and** after extension reload                                                                                  |
+| `undefined-references`     | P4 MAIN-world capture (+ P3 receiving guard): validated batch on the panel seam; host safety (hostile `stack` getter, malformed bridge batches); page console unchanged      |
+| `cross-origin-sentinel`    | P4 sentinel path (the cross-origin resurrection): the fixed sentinel word reaches the isolated receiver immediately, not debounced                                           |
+| `side-by-side`             | P3 Side-by-Side mechanics: message-driven open, URL rules, per-side refresh, exact overflow/scroll restore, re-open keeps frames                                             |
+| `processed-page-pipeline`  | P3 data hub: mandated timing log format + page-analysis print; P2/P3 badge seam: summary push rendered per state                                                             |
+| `site-header-capture`      | P4.3 over the real site: the P2-audit BLOCKER re-run (real responses → served row pairs), tab scoping + navigation supersede, the tabless sender, the over-cap reject        |
+| `site-badge-pipeline`      | P4.3 over the real site: the blue present-but-uncached state, supersede, the post-`chrome://` clear, the live `toolbarBadge` flip                                            |
+| `site-known-conflicts`     | P4.3 over the real plugin tables: containment-counted scan, the corrected empty state, the no-reload storage-watch rescan, the serve path, the offline boot seed (unstamped) |
+| `site-data-hub`            | P4.3 over the real site: the mandated log lines, the console whitelist (no page content), the `rocket-allScriptsLoaded` flip, the real error page's served words             |
+| `site-improvements-admin`  | P4.3 over real wp-admin: the option-on D-bugger entry (built once), the option-off removal, the restore                                                                      |
+| `site-side-by-side`        | P4.3 on genuinely cached pages: the two frames' real cache-state bodies (footprint + delay markers in the cached frame, none in the bypassed), real refresh, scroll restore  |
 
 ## Manual remainder (recorded, never silently dropped)
 
@@ -76,13 +88,34 @@ automatable — each is named in the owning phase's checklist:
 - **Context-menu clicks**: native menus are not Playwright-reachable. The click
   DISPATCH tree is unit-pinned (P2) and the open flow is driven here via the
   same message; only the actual right-click UX remains manual.
-- **Real WordPress-site flows** (P4.3 on the P4.2 site): judged/major-feature
-  rounds, KC-DB refresh against the live endpoint, header capture on real
-  responses, diagnoser JSON payloads from the real plugin.
+- **PSI production pages**: the cross-origin SBS refresh leg (`refreshFrame`'s
+  `src`-reassignment variant) and the auto-open flow — P14.6 reach.
+- **Legacy-vs-new timing benchmark** (the ≥30 %-faster claim, P3's manual row):
+  needs a real legacy build run on the same page — numbers recorded there.
 - **attached-devtools visuals** (P5+): the panel's own rendering pipeline.
 - **Firefox runtime**: the harness cannot load extensions in Playwright's
   Firefox build — Firefox stays a manual `pnpm dev:firefox` smoke tier per
   phase (recorded in each suite's parent phase doc, never skipped silently).
+
+## Real-site facts the site suites rely on (verified against the live stack)
+
+- **One worker serves the whole `pnpm test:e2e` run** (per-file when
+  `E2E_WORKERS` > 1): the browser profile and its state (cookies, storage,
+  the extension's own caches) are shared across the consecutive files, so
+  every suite declares its needed preconditions explicitly (the SBS suites
+  clear the site's login cookies and run as a normal visitor; the admin
+  suites log in themselves).
+- **Fresh-profile first `/fdt/` visit is cache-served** (green badge, the
+  WP Rocket footprint comment + the `cached@` debug marker); WordPress-served
+  pages (every uncached query) carry three `Link` header rows and lack the
+  marker. Revisits revalidate and keep serving the same document, so each
+  state is stable per tab.
+- **Logged-in visitors get no cache and no optimization** (plain WordPress
+  HTML) — the site suites that need cached truth stay anonymous.
+- **The first navigation after a launch can miss the header capture**: the
+  main-frame event races the service worker's first listener registration.
+  The driver warms the capture with one throwaway local page after the worker
+  event, so every suite's real pages capture deterministically.
 
 ## Environment facts (verified against the installed tooling)
 

@@ -154,7 +154,7 @@ export class ExtensionDriver {
   }
 
   /** Start (or restart) the persistent context on {@link profileDir}. */
-  private async openContext(): Promise<void> {
+  private async openContext(extraArgs: readonly string[] = []): Promise<void> {
     try {
       this.context = await chromium.launchPersistentContext(this.profileDir, {
         channel: 'chromium',
@@ -163,7 +163,8 @@ export class ExtensionDriver {
         timeout: LAUNCH_TIMEOUT_MS,
         args: [
           `--disable-extensions-except=${EXTENSION_PATH}`,
-          `--load-extension=${EXTENSION_PATH}`
+          `--load-extension=${EXTENSION_PATH}`,
+          ...extraArgs
         ]
       });
     } catch (cause) {
@@ -201,6 +202,34 @@ export class ExtensionDriver {
         { cause }
       );
     }
+    await ExtensionDriver.warmUpHeaderCapture(this.context);
+  }
+  /**
+   * Warm up the header capture after a launch so a fresh worker's FIRST
+   * navigation cannot miss it.
+   *
+   * Environment fact (verified live, 4/4 against the current Chromium for
+   * Testing): the very first main-frame response can arrive while the
+   * service worker's first evaluation is still registering the
+   * `onResponseStarted` listener — that page's capture is lost (its served
+   * `pageHeaders` stays null), and every later navigation captures
+   * deterministically. One throwaway local page absorbs the window: its
+   * (possibly missed) capture belongs to its own throwaway tab, which is
+   * closed immediately.
+   *
+   * @param context The freshly launched context.
+   */
+  private static async warmUpHeaderCapture(context: BrowserContext): Promise<void> {
+    const page = await context.newPage();
+    try {
+      await page.goto(`${ORIGIN_A}/`, { waitUntil: 'load', timeout: 10_000 });
+    } catch (cause) {
+      // The warm-up page is a settle step, never a suite fact; a failure to
+      // load it is reported and the run continues (the suites' own first
+      // pages then surface any real capture problem).
+      console.error(`[e2e] the capture warm-up page failed to load: ${String(cause)}`);
+    }
+    await page.close();
   }
 
   /**
@@ -245,20 +274,25 @@ export class ExtensionDriver {
   }
 
   /**
-   * The extension "reload" leg, shaped for this environment: the in-place
-   * `chrome.runtime.reload()` is NOT reproducible here — in this Chromium
-   * build (Playwright's Chromium-for-Testing), any extension that declares
-   * content scripts vanishes from Chrome's own extension registry after the
-   * reload, never revives, and chrome://extensions-internals no longer lists
-   * it (verified live; recorded in the phase doc). The harness therefore
-   * closes the browser and relaunches on the SAME profile: the bundle
-   * re-registers over persistent extension-owned browser state, which is the
-   * behavior the phase checklist asserts (the menu ids survive extension
-   * reload exactly once).
+   * The extension "reload"/relaunch leg, shaped for this environment: the
+   * in-place `chrome.runtime.reload()` is NOT reproducible here — in this
+   * Chromium build (Playwright's Chromium-for-Testing), any extension that
+   * declares content scripts vanishes from Chrome's own extension registry
+   * after the reload, never revives, and chrome://extensions-internals no
+   * longer lists it (verified live; recorded in the phase doc). The harness
+   * therefore closes the browser and relaunches on the SAME profile: the
+   * bundle re-registers over persistent extension-owned browser state, which
+   * is the behavior the phase checklist asserts (the menu ids survive
+   * extension reload exactly once).
+   *
+   * @param extraArgs Additional Chromium command-line switches for the
+   *   relaunch (e.g. a dead-proxy pair that deterministically blocks
+   *   network-bound fetches for an offline-boot leg). They last for the
+   *   relaunch's context, i.e. the rest of the owning suite file.
    */
-  async reloadViaRelaunch(): Promise<void> {
+  async relaunch(extraArgs: readonly string[] = []): Promise<void> {
     await this.context.close();
-    await this.openContext();
+    await this.openContext(extraArgs);
   }
 
   /**
