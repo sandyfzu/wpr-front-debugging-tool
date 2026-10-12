@@ -1,3 +1,4 @@
+import solid from 'vite-plugin-solid';
 import { defineConfig } from 'vitest/config';
 import { WxtVitest } from 'wxt/testing/vitest-plugin';
 import { HAPPY_DOM_SETTINGS, filterDisabledLoadNoise } from './vitest.shared';
@@ -5,6 +6,10 @@ import { HAPPY_DOM_SETTINGS, filterDisabledLoadNoise } from './vitest.shared';
 /**
  * Test runner configuration.
  *
+ * - `vitePluginSolid` compiles Solid JSX (`components/**` and future `.tsx`
+ *   surfaces) — WXT's `@wxt-dev/module-solid` adds it to build pipelines but
+ *   `WxtVitest` never merges module vite config, so the test runner needs it
+ *   declared here or component render tests cannot even parse.
  * - `WxtVitest` wires the WXT storage/testing runtime (fake browser, module
  *   aliases, import auto-types) so `lib/` code that touches `wxt/utils/storage`
  *   runs without a real extension context.
@@ -20,7 +25,7 @@ import { HAPPY_DOM_SETTINGS, filterDisabledLoadNoise } from './vitest.shared';
  *   `spike-*.ts` files never count.
  */
 export default defineConfig({
-  plugins: [WxtVitest()],
+  plugins: [solid(), WxtVitest()],
   test: {
     environment: 'happy-dom',
     // The machine-relative speed bench runs only via `pnpm bench:detection`;
