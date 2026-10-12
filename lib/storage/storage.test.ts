@@ -25,7 +25,8 @@ describe('optionsStore', () => {
       features: {
         toolbarBadge: true,
         sbsScrollSync: true,
-        sbsMobileSim: false
+        sbsMobileSim: false,
+        sbsDesktopWidth: true
       }
     });
   });
@@ -34,12 +35,22 @@ describe('optionsStore', () => {
     await optionsStore.setValue({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
+      features: {
+        toolbarBadge: false,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: false
+      }
     });
     expect(await getOptions()).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
+      features: {
+        toolbarBadge: false,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: false
+      }
     });
     // Absence must resolve to defaults, not falsy values.
     await optionsStore.removeValue();
@@ -48,6 +59,7 @@ describe('optionsStore', () => {
     expect(reset.features.toolbarBadge).toBe(true);
     expect(reset.features.sbsScrollSync).toBe(true);
     expect(reset.features.sbsMobileSim).toBe(false);
+    expect(reset.features.sbsDesktopWidth).toBe(true);
     expect(reset.improvements['wp-dashboard-dbugger-entry']).toBe(true);
   });
 
@@ -57,12 +69,34 @@ describe('optionsStore', () => {
     await optionsStore.setValue({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'system',
-      features: { toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: true }
+      features: {
+        toolbarBadge: true,
+        sbsScrollSync: true,
+        sbsMobileSim: true,
+        sbsDesktopWidth: true
+      }
     });
     const readBack = await getOptions();
     expect(readBack.features.sbsMobileSim).toBe(true);
     await optionsStore.removeValue();
     expect((await getOptions()).features.sbsMobileSim).toBe(false);
+  });
+
+  it('persists the desktop-width choice and honors the written value on read-back', async () => {
+    // Same seam as the other overlay flags: default on, written off stays off.
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': true },
+      appearance: 'system',
+      features: {
+        toolbarBadge: true,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: false
+      }
+    });
+    expect((await getOptions()).features.sbsDesktopWidth).toBe(false);
+    await optionsStore.removeValue();
+    expect((await getOptions()).features.sbsDesktopWidth).toBe(true);
   });
 });
 
@@ -104,7 +138,12 @@ describe('parseStoredOptions', () => {
     ).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'light',
-      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
+      features: {
+        toolbarBadge: false,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: true
+      }
     });
     expect(parseStoredOptions(null)).toBeNull();
     expect(parseStoredOptions('black')).toBeNull();
@@ -116,9 +155,19 @@ describe('parseStoredOptions', () => {
       parseStoredOptions({
         improvements: {},
         appearance: 'dark',
-        features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: true }
+        features: {
+          toolbarBadge: false,
+          sbsScrollSync: true,
+          sbsMobileSim: true,
+          sbsDesktopWidth: false
+        }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: true });
+    ).toEqual({
+      toolbarBadge: false,
+      sbsScrollSync: true,
+      sbsMobileSim: true,
+      sbsDesktopWidth: false
+    });
     // Wrong-typed scroll sync → documented default (on); the sibling flag keeps its value.
     expect(
       parseStoredOptions({
@@ -126,7 +175,12 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { toolbarBadge: false, sbsScrollSync: 'off' }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false });
+    ).toEqual({
+      toolbarBadge: false,
+      sbsScrollSync: true,
+      sbsMobileSim: false,
+      sbsDesktopWidth: true
+    });
     // Wrong-typed mobile sim → documented default (off); the sibling flags keep theirs.
     expect(
       parseStoredOptions({
@@ -134,11 +188,39 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: 'on' }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false });
-    // A corrupt features slot self-heals all three known flags (the improvements slot's twin rule).
+    ).toEqual({
+      toolbarBadge: false,
+      sbsScrollSync: true,
+      sbsMobileSim: false,
+      sbsDesktopWidth: true
+    });
+    // Wrong-typed desktop width → documented default (on); the sibling flags keep theirs.
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: {
+          toolbarBadge: false,
+          sbsScrollSync: true,
+          sbsMobileSim: true,
+          sbsDesktopWidth: 'off'
+        }
+      })?.features
+    ).toEqual({
+      toolbarBadge: false,
+      sbsScrollSync: true,
+      sbsMobileSim: true,
+      sbsDesktopWidth: true
+    });
+    // A corrupt features slot self-heals all four known flags (the improvements slot's twin rule).
     expect(
       parseStoredOptions({ improvements: {}, appearance: 'dark', features: 'nope' })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false });
+    ).toEqual({
+      toolbarBadge: true,
+      sbsScrollSync: true,
+      sbsMobileSim: false,
+      sbsDesktopWidth: true
+    });
   });
 
   it('keeps future additive boolean feature ids so read-modify-write never erases them', () => {
@@ -152,6 +234,7 @@ describe('parseStoredOptions', () => {
           toolbarBadge: true,
           sbsScrollSync: false,
           sbsMobileSim: true,
+          sbsDesktopWidth: false,
           'future-feature': true
         }
       })?.features
@@ -159,6 +242,7 @@ describe('parseStoredOptions', () => {
       toolbarBadge: true,
       sbsScrollSync: false,
       sbsMobileSim: true,
+      sbsDesktopWidth: false,
       'future-feature': true
     });
     // Non-boolean future ids are not engine output — dropped, not trusted,
@@ -169,7 +253,12 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { 'future-feature': 'yes' }
       })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false });
+    ).toEqual({
+      toolbarBadge: true,
+      sbsScrollSync: true,
+      sbsMobileSim: false,
+      sbsDesktopWidth: true
+    });
   });
 });
 

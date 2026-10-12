@@ -14,6 +14,8 @@ export interface DeviceProfile {
   userAgent: string;
   /** The frame's exact size in CSS px, portrait — presentation scales it, never reshapes it. */
   viewport: { width: number; height: number };
+  /** The user-facing name of the simulated device (the overlay's engaged-device tag). */
+  displayName: string;
 }
 
 /**
@@ -26,11 +28,14 @@ export interface DeviceProfile {
  * decision on the local debugging site: the string reads phone-only as-is, no
  * correction; a future needed correction is recorded here, never assumed. Viewport is Pixel-class,
  * portrait, in CSS px (the presentation's fit scaling owns the mapping to the
- * window).
+ * window). The display name says "phone" because the UA carries the phone-class
+ * tokens and the viewport is a portrait phone shape — a wording change is a
+ * recorded correction, never drifted.
  */
 export const DEVICE_SIMULATION_PROFILE: DeviceProfile = {
   id: 'phone',
   userAgent:
     'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36',
-  viewport: { width: 412, height: 892 }
+  viewport: { width: 412, height: 892 },
+  displayName: 'Generic Android phone'
 };

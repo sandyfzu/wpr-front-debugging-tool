@@ -17,7 +17,12 @@ describe('getOptions with corrupt storage', () => {
     expect(options).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'system',
-      features: { toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false }
+      features: {
+        toolbarBadge: true,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: true
+      }
     });
   });
 
@@ -26,7 +31,12 @@ describe('getOptions with corrupt storage', () => {
       options: {
         improvements: {},
         appearance: 'dark',
-        features: { toolbarBadge: 'yes', sbsScrollSync: 'on', sbsMobileSim: 'yes' }
+        features: {
+          toolbarBadge: 'yes',
+          sbsScrollSync: 'on',
+          sbsMobileSim: 'yes',
+          sbsDesktopWidth: 'off'
+        }
       }
     });
     const options = await getOptions();
@@ -34,6 +44,7 @@ describe('getOptions with corrupt storage', () => {
     expect(options.features.toolbarBadge).toBe(true);
     expect(options.features.sbsScrollSync).toBe(true);
     expect(options.features.sbsMobileSim).toBe(false);
+    expect(options.features.sbsDesktopWidth).toBe(true);
     // And the empty improvements slot self-heals its documented entry.
     expect(options.improvements['wp-dashboard-dbugger-entry']).toBe(true);
   });
@@ -44,7 +55,12 @@ describe('getOptions with corrupt storage', () => {
     expect(options).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'system',
-      features: { toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false }
+      features: {
+        toolbarBadge: true,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: true
+      }
     });
   });
 

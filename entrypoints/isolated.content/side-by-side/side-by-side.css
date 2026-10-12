@@ -83,7 +83,7 @@
   stroke: currentColor;
 }
 
-/* ---- Switches (shared: scroll sync + mobile comparison) ---------------------- */
+/* ---- Switches (shared: scroll sync + mobile comparison + desktop width) ------- */
 
 /* Labelled switch in the header: the native checkbox carries the state and
  * keyboard behavior; the pill is pure decoration over `appearance: none`. */
@@ -157,8 +157,10 @@
   white-space: nowrap;
 }
 
-/* The active mobile session marks both side labels (the tab's requests carry
- * the device identity, so both compared pages render the mobile copy). */
+/* The active mobile session and the engaged device it simulates: both side
+ * labels mark the session (the tab's requests carry the device identity, so
+ * both compared pages render the mobile copy) and the mobile switch tags the
+ * device by name — the profile's single declaring site owns the string. */
 .sbs-mobile-tag {
   font-size: 11px;
   color: var(--accent);

@@ -20,11 +20,14 @@
  * register through its render) before starting, and on the analysis host no
  * sync exists at all (the two halves are analyses, not correlated pages).
  *
- * The mobile comparison rides the machine in `lib/side-by-side/mobile-sim`:
- * the header switch is the only control, the analysis host never even asks,
- * every state change resolves the set rule before either half reloads, and
- * the halves render as scaled phone frames measured live by the rescale
- * presenter. Its lifecycle bindings are here; the judgment is the machine's.
+ * The presentation rides the machine in `lib/side-by-side/presentation-state`:
+ * the header switches are the only controls (scroll sync, the mobile
+ * comparison and the desktop-width dress), the analysis host never even
+ * asks, every session change resolves the set rule before either half
+ * reloads, and the halves render as scaled frames measured live by the
+ * rescale presenter — the phone's device viewport, or the desktop dress's
+ * 1280px-floor content box. Its lifecycle bindings are here; the judgment
+ * is the machine's.
  */
 
 import { createSignal, createMemo } from 'solid-js';
@@ -32,15 +35,21 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { onMessage, sendMessage } from '../../../lib/messaging/index';
 import { createLogger } from '../../../lib/logger';
-import { getOptions, optionsStore } from '../../../lib/storage/options';
+import {
+  getOptions,
+  optionsStore,
+  FALLBACK,
+  type StoredOptions
+} from '../../../lib/storage/options';
 import { parseDeviceSimState, type DeviceSimState } from '../../../lib/device-simulation/state';
 import { COMPARE_SIDES, type CompareSide } from '../../../lib/side-by-side/scroll-sync';
 import {
-  createMobileSimSession,
-  INITIAL_SIM_SNAPSHOT,
-  type MobileSimIO,
-  type MobileSimSnapshot
-} from '../../../lib/side-by-side/mobile-sim';
+  createPresentationState,
+  INITIAL_PRESENTATION_SNAPSHOT,
+  type FramePresentation,
+  type PresentationSnapshot,
+  type PresentationStateIO
+} from '../../../lib/side-by-side/presentation-state';
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../ui/mount';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
@@ -52,7 +61,7 @@ import {
   createFramePresenter,
   engineRescaleFactory,
   framesMayNavigate,
-  measureColumnScale,
+  measureColumnFit,
   type FrameFitRecord
 } from './presentation';
 import { SideBySideOverlay } from './ui';
@@ -79,8 +88,8 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   const [syncOn, setSyncOn] = createSignal(false);
   /** Sides whose document refused access; each renders its per-side marker while sync is on. */
   const [syncBlocked, setSyncBlocked] = createSignal<Partial<Record<CompareSide, true>>>({});
-  /** The simulation machine's facts, mirrored from its notifications. */
-  const [sim, setSim] = createSignal<MobileSimSnapshot>(INITIAL_SIM_SNAPSHOT);
+  /** The presentation machine's facts, mirrored from its notifications. */
+  const [sim, setSim] = createSignal<PresentationSnapshot>(INITIAL_PRESENTATION_SNAPSHOT);
   /** The halves' live presentation fit, reported by the rescale presenter. */
   const [simFits, setSimFits] = createSignal<FrameFitRecord>({});
   /** The overlay's URL pair, resolved at first open and never re-resolved. */
@@ -123,24 +132,65 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     syncSession.stop();
   };
 
-  /** Persist the mobile switch's intent, read-modify-write like the sync switch's write. */
-  const persistSimSetting = async (next: boolean): Promise<void> => {
-    try {
-      const current = await getOptions();
-      await optionsStore.setValue({
-        ...current,
-        features: { ...current.features, sbsMobileSim: next }
-      });
-    } catch (cause) {
-      log.warn(
-        'Persisting the mobile-comparison setting failed; the choice resets on the next open',
-        cause instanceof Error ? cause.message : cause
-      );
-    }
+  /**
+   * The one serialized write chain for every overlay feature's persisted
+   * choice (scroll sync, mobile comparison, desktop width). Read-modify-write
+   * over the validated shape, so the other option slots keep their values; a
+   * failed write degrades to "not persisted" — the live toggle already
+   * applied, and the next open reads the stored value again. Consecutive
+   * writes serialize in event order: two rapid switches (or one switch and a
+   * toggle of another) write their read-modify-writes one after the other
+   * (concurrent writes could otherwise resolve out of storage order and
+   * persist a stale intent, which the next open would adopt).
+   */
+  let sbsPersistTail: Promise<void> = Promise.resolve();
+  const persistFeatures = (
+    why: string,
+    write: (features: StoredOptions['features']) => StoredOptions['features']
+  ): Promise<void> => {
+    const run = sbsPersistTail.then(async (): Promise<void> => {
+      try {
+        const current = await getOptions();
+        await optionsStore.setValue({
+          ...current,
+          features: write(current.features)
+        });
+      } catch (cause) {
+        log.warn(
+          `Persisting ${why} failed; the choice resets on the next open`,
+          cause instanceof Error ? cause.message : cause
+        );
+      }
+    });
+    // The contract is resolve-only (every storage failure logs inline); the
+    // belt catch keeps a contract violation from escaping unhandled.
+    sbsPersistTail = run.catch(() => undefined);
+    return run;
   };
 
-  /** The simulation machine's browser seams: validated asks, reload, persisted write. */
-  const simIo: MobileSimIO = {
+  /** The scroll-sync switch's persisted intent. */
+  const persistScrollSyncSetting = (next: boolean): Promise<void> =>
+    persistFeatures('the scroll-sync setting', (features) => ({
+      ...features,
+      sbsScrollSync: next
+    }));
+
+  /** The mobile-comparison switch's persisted intent. */
+  const persistSimSetting = (next: boolean): Promise<void> =>
+    persistFeatures('the mobile-comparison setting', (features) => ({
+      ...features,
+      sbsMobileSim: next
+    }));
+
+  /** The desktop-width switch's persisted choice. */
+  const persistDesktopSetting = (next: boolean): Promise<void> =>
+    persistFeatures('the desktop-width setting', (features) => ({
+      ...features,
+      sbsDesktopWidth: next
+    }));
+
+  /** The presentation machine's browser seams: validated asks, reload, persisted writes. */
+  const presentationIo: PresentationStateIO = {
     readState: async (): Promise<DeviceSimState> => {
       let answer: unknown;
       try {
@@ -160,27 +210,49 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       return state;
     },
     // The set ask's rejection IS the machine's unknown-truth degrade branch —
-    // it propagates; the truthful shapes are the machine's decisions.
-    applyState: (enabled: boolean): Promise<DeviceSimState> =>
-      sendMessage('setDeviceSimulation', { enabled }),
+    // it propagates; the truthful shapes are the machine's decisions. The
+    // reply passes the boundary validator like every other payload: a
+    // malformed answer is thrown INTO the machine's failed branch (pinned),
+    // never read as truth.
+    applyState: async (enabled: boolean): Promise<DeviceSimState> => {
+      const answer = parseDeviceSimState(await sendMessage('setDeviceSimulation', { enabled }));
+      if (answer === null) {
+        throw new Error('the set-device-simulation reply is malformed');
+      }
+      return answer;
+    },
     refreshHalves: (): void => {
       for (const side of COMPARE_SIDES) refreshFrame(side);
     },
-    // Never rejects: persistSimSetting logs and degrades internally.
+    // Both never reject: the persist helpers degrade internally, on the
+    // shared chain (two switches' writes never interleave).
     persist: (enabled: boolean): Promise<void> => persistSimSetting(enabled),
+    persistDesktop: (enabled: boolean): Promise<void> => persistDesktopSetting(enabled),
     log
   };
 
-  /** The machine; every snapshot it announces lands in the `sim` signal. */
-  const simMachine = createMobileSimSession(simIo, (snapshot) => {
+  /** The machine; every snapshot it announces lands in the `sim` signal — and a presentation change re-measures the fits. */
+  let measuredFor: FramePresentation | null = null;
+  const simMachine = createPresentationState(presentationIo, (snapshot) => {
+    const presentationChanged = snapshot.presentation !== measuredFor;
+    measuredFor = snapshot.presentation;
     setSim(snapshot);
+    // Only an OPEN overlay re-measures here: the close path already stopped
+    // the presenter, and the machine's settling close-convergence (a
+    // presentation flip on the ask's answer) must not re-arm its observers
+    // against the hidden overlay until the next open (which re-measures
+    // unconditionally after its mount).
+    if (presentationChanged && isOpen()) presenter.syncNow();
   });
 
   /** The presentation controller: fits from the columns, live on resize, torn down on close/invaldiation. */
   const presenter = createFramePresenter({
     presentation: () => sim().presentation,
     columns: () => columns,
-    measure: (column) => measureColumnScale(column),
+    // The measure oracle follows the machine's presentation: each dress
+    // reports its own flavored fit, so a style render never reads a foreign
+    // flavor.
+    measure: (column) => measureColumnFit(column, sim().presentation),
     onFit: (side, fit) => {
       setSimFits((current) => ({ ...current, [side]: fit }));
     },
@@ -189,47 +261,17 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   });
 
   /**
-   * Whether the halves may load their URLs: in the phone presentation the
-   * first navigation waits for both fits (each half loads once, at the
-   * device size, after the rule exists); auto loads immediately.
+   * Whether the halves may load their URLs: in a dressed presentation (phone
+   * or desktop) the first navigation waits for both fits (each half loads
+   * once, at its rendered size, after the open has established the rule or
+   * the dress); the fluid presentation loads immediately.
    */
   const sizeGateOpen = createMemo(() => framesMayNavigate(sim().presentation, simFits()));
 
   /**
-   * Persist the scroll-sync switch choice. Read-modify-write over the
-   * validated shape, so the other option slots keep their values; a failed
-   * write degrades to "not persisted" — the live toggle already applied, and
-   * the next open reads the stored value again. Consecutive writes serialize
-   * on a chain: two rapid toggles write their read-modify-writes in toggle
-   * order (concurrent writes could otherwise resolve out of storage order
-   * and persist the stale intent, which the next open would adopt).
-   */
-  let sbsPersistTail: Promise<void> = Promise.resolve();
-  const persistScrollSyncSetting = async (next: boolean): Promise<void> => {
-    const run = sbsPersistTail.then(async (): Promise<void> => {
-      try {
-        const current = await getOptions();
-        await optionsStore.setValue({
-          ...current,
-          features: { ...current.features, sbsScrollSync: next }
-        });
-      } catch (cause) {
-        log.warn(
-          'Persisting the scroll-sync setting failed; the choice resets on the next open',
-          cause instanceof Error ? cause.message : cause
-        );
-      }
-    });
-    // The contract is resolve-only (every storage failure logs inline); the
-    // belt catch keeps a contract violation from escaping unhandled.
-    sbsPersistTail = run.catch(() => undefined);
-    await run;
-  };
-
-  /**
-   * The scroll-sync switch: apply live, then persist. The engine
-   * starts/stops with the switch — a running overlay follows without a
-   * reload.
+   * The scroll-sync switch: apply live, then persist on the shared chain.
+   * The engine starts/stops with the switch — a running overlay follows
+   * without a reload.
    */
   const onToggleSync = (next: boolean): void => {
     setSyncOn(next);
@@ -246,6 +288,15 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    */
   const onToggleSim = (next: boolean): void => {
     void simMachine.toggle(next);
+  };
+
+  /**
+   * The desktop-width switch: the machine owns the dress (layout only, no
+   * ask, no reload); the wiring only forwards the event — same
+   * never-rejects forwarding as the mobile switch.
+   */
+  const onToggleDesktop = (next: boolean): void => {
+    void simMachine.toggleDesktop(next);
   };
 
   /**
@@ -305,18 +356,25 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
         urls = getOverlayUrls(new URL(window.location.href));
       }
       // The persisted settings are read at every open (mid-life external
-      // changes apply next open); a failed read degrades both switches to
-      // off — the overlay itself must not dead-end on a broken options store.
+      // changes apply next open). A failed read degrades the sync switch and
+      // the mobile target to off — the owner's explicit option (the overlay
+      // itself must not dead-end on a broken options store) — while the
+      // desktop dress falls to its documented default from the storage
+      // module (what the validator's own fallback answer would have been),
+      // never a forced-off dress.
       let simTarget = false;
+      let desktopTarget = FALLBACK.features.sbsDesktopWidth;
       try {
         const options = await getOptions();
         setSyncOn(options.features.sbsScrollSync);
         simTarget = options.features.sbsMobileSim;
+        desktopTarget = options.features.sbsDesktopWidth;
       } catch (cause) {
         setSyncOn(false);
         simTarget = false;
+        desktopTarget = FALLBACK.features.sbsDesktopWidth;
         log.error(
-          'Reading the stored settings failed; the overlay opens with the switches off',
+          'Reading the stored settings failed; the overlay opens with the sync switch off, the mobile target off and the desktop dress at its default',
           cause instanceof Error ? cause.message : cause
         );
       }
@@ -324,7 +382,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       // BEFORE the view can mount: a first open's halves navigate only after
       // the rule exists, exactly the machine's rule-before-refresh ordering.
       const psi = isAutoFlowPage();
-      await simMachine.open(psi, simTarget);
+      await simMachine.open(psi, simTarget, desktopTarget);
       await ensureUi(urls);
       // The engine must not outrun its halves: `registerFrame`'s slots fill
       // during the render that `ensureUi` started but did not await. Starting
@@ -425,6 +483,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
               simFits={simFits}
               sizeGateOpen={sizeGateOpen}
               onToggleSim={onToggleSim}
+              onToggleDesktop={onToggleDesktop}
             />
           ))
             .then((dispose) => {

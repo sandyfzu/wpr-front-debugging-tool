@@ -1,17 +1,18 @@
 /**
  * The compare overlay: full-viewport, one iframe per side, header with the
- * side labels, their per-side refresh, the scroll-sync and mobile-comparison
- * switches plus close. Behavior arrives as props (the owning module owns
- * URLs, window actions and the simulation machine); the component renders
- * state and reports which element carries which side/frame through the ref
- * callbacks.
+ * side labels, their per-side refresh, the scroll-sync, mobile-comparison
+ * and desktop-width switches plus close. Behavior arrives as props (the
+ * owning module owns URLs, window actions and the machine); the component
+ * renders state and reports which element carries which side/frame through
+ * the ref callbacks.
  *
- * Presentation: in the mobile session the halves render as scaled phone
- * frames (412×892 at the fitted scale, letterboxed) — the inline styles come
- * from the pure helper `phoneFrameStyles`; in auto the stylesheet's fluid
- * boxes rule, exactly as before. The halves hold their first navigation
+ * Presentation: the halves render through inline styles from the pure
+ * helper `frameStylesFor` per machine presentation — the phone dress (a
+ * 412×892 frame at the fitted scale, letterboxed), the desktop dress (a
+ * 1280px-floor content box scaled into the column, its media queries live),
+ * or the stylesheet's fluid boxes. The halves hold their first navigation
  * until both fits exist (`framesMayNavigate`) so a first load happens once,
- * at the device size, under the rule the open established.
+ * at the rendered size.
  *
  * Motion is decoration: opening toggles a class and never waits for a
  * transition event, so reduced motion or an interrupted animation cannot
@@ -26,8 +27,9 @@
 import type { JSX } from 'solid-js';
 import { createMemo, Show } from 'solid-js';
 import type { CompareSide } from '../../../lib/side-by-side/scroll-sync';
-import type { MobileSimSnapshot } from '../../../lib/side-by-side/mobile-sim';
-import { phoneFrameStyles, type FrameFitRecord, type PhoneFrameStyles } from './presentation';
+import type { PresentationSnapshot } from '../../../lib/side-by-side/presentation-state';
+import { DEVICE_SIMULATION_PROFILE } from '../../../lib/device-simulation/profiles';
+import { frameStylesFor, type FrameFitRecord, type FrameStyles } from './presentation';
 import { createSizeGateLatch } from './gate-latch';
 import { CLOSE_ICON_PATHS, REFRESH_ICON_PATHS, StrokeIcon } from './icons';
 
@@ -53,14 +55,16 @@ export interface SideBySideOverlayProps {
   syncBlocked: (side: CompareSide) => boolean;
   /** The scroll-sync switch flipped; the module applies live and persists the choice. */
   onToggleSync(next: boolean): void;
-  /** The mobile-simulation machine's facts behind the switch, suffix and presentation. */
-  sim: () => MobileSimSnapshot;
+  /** The presentation machine's facts behind the switches, the tags and the presentation. */
+  sim: () => PresentationSnapshot;
   /** The per-half live fit (the rescale presenter's reports). */
   simFits: () => FrameFitRecord;
-  /** The live size gate: the first phone load waits for both fits; the view latches it (never re-locked). */
+  /** The live size gate: the first dressed load waits for both fits; the view latches it (never re-locked). */
   sizeGateOpen: () => boolean;
   /** The mobile-comparison switch flipped; the machine applies, persists and reconciles. */
   onToggleSim(next: boolean): void;
+  /** The desktop-width switch flipped; the machine adopts the dress and persists, without asks or reloads. */
+  onToggleDesktop(next: boolean): void;
 }
 
 /**
@@ -69,11 +73,11 @@ export interface SideBySideOverlayProps {
  */
 export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
   const phone = (): boolean => props.sim().presentation === 'phone';
-  const cachedStyles = createMemo<PhoneFrameStyles>(() =>
-    phoneFrameStyles(props.sim().presentation, props.simFits()['cached'] ?? null)
+  const cachedStyles = createMemo<FrameStyles>(() =>
+    frameStylesFor(props.sim().presentation, props.simFits()['cached'] ?? null)
   );
-  const bypassedStyles = createMemo<PhoneFrameStyles>(() =>
-    phoneFrameStyles(props.sim().presentation, props.simFits()['bypassed'] ?? null)
+  const bypassedStyles = createMemo<FrameStyles>(() =>
+    frameStylesFor(props.sim().presentation, props.simFits()['bypassed'] ?? null)
   );
   /**
    * The size gate, latched: the live gate weighs the first load, the latch
@@ -149,6 +153,27 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
                 }}
               />
               <span class="sbs-switch-text">Mobile comparison</span>
+              <Show when={phone()}>
+                <span class="sbs-mobile-tag">{DEVICE_SIMULATION_PROFILE.displayName}</span>
+              </Show>
+            </label>
+          </Show>
+          <Show when={!phone()}>
+            <label
+              class="sbs-switch"
+              title="Render both halves at a desktop-width viewport (1280px floor, scaled to fit below it) — pages resolve their desktop media queries; the real requests never change."
+            >
+              <input
+                type="checkbox"
+                role="switch"
+                class="sbs-switch-input"
+                checked={props.sim().desktop}
+                aria-checked={props.sim().desktop}
+                onChange={(event) => {
+                  props.onToggleDesktop(event.currentTarget.checked);
+                }}
+              />
+              <span class="sbs-switch-text">Desktop width</span>
             </label>
           </Show>
           <Show when={simFailure().length > 0}>

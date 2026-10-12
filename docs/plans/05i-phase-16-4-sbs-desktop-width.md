@@ -46,7 +46,7 @@ One new persisted option `features.sbsDesktopWidth` (**default on**) with a bar 
 | Full desktop width  | "Full" lies at the floor regime (the content is scaled down) and grows confusing when the column already exceeds 1280 (where it genuinely is full).                                                                                                                                                         |
 | Desktop comparison  | Wrong shape: nothing new is compared — the same cached/bypassed pair re-presents itself.                                                                                                                                                                                                                    |
 
-Exact user-facing strings: switch text **`Desktop width`**; switch `title` (tooltip): _"Render both halves at a 1280px-wide desktop viewport, scaled to fit — pages resolve their desktop media queries; the real requests never change."_ No side-label tag: unlike `· mobile` (a real request-identity state), the desktop dress is visually self-evident and adds nothing to the wire.
+Exact user-facing strings: switch text **`Desktop width`**; switch `title` (tooltip, wording corrected at the 2026-10-12 audit round to state the floor instead of implying a fixed width): _"Render both halves at a desktop-width viewport (1280px floor, scaled to fit below it) — pages resolve their desktop media queries; the real requests never change."_ No side-label tag: unlike `· mobile` (a real request-identity state), the desktop dress is visually self-evident and adds nothing to the wire.
 
 ### Simulated width — canonical **1280px floor** with fluid-follow above
 
@@ -140,3 +140,63 @@ Touched files per phase — D1: `lib/side-by-side/desktop-fit.ts` (new), `entryp
 ## Stack
 
 No new dependencies: TypeScript/Solid signals in the existing modules, one pure helper, tokens-only CSS, Vitest unit rows, Playwright mechanics rows. Chromium + Firefox both first-class here — the feature is engine-neutral where the mobile comparison is not.
+
+## Shipped (D1–D4, 2026-10-12)
+
+Implemented as planned, with the deviations the verification round earned:
+
+- **The flex-clamp finding (D3's visual/e2e round):** the dressed frame's `width: 1280px` was being **flex-shrunk back to the column width** inside `.sbs-viewport`'s flex layout — the style attribute showed the desktop width while `clientWidth` (what `@media` and `matchMedia` resolve against) reported the clamped half column, so the dress rendered but simulated nothing. The frame's inline record now carries `flex: 0 0 auto` in **both** dressed presentations (the phone dress had the same latent defect below ~500 px windows, where it had gone unnoticed — no row measured the frame's own box there). Both `frameStylesFor` pins now carry the property; the mechanics suite's matchMedia rows are the regression pins.
+- **The re-measure wiring:** a first implementation used a module-scope `createEffect(on(...))` — outside any Solid reactive root it never registers; the presentation-change re-measure lives in the machine's `onChange` callback instead (a `measuredFor` key guards it to actual changes). The open path's own `syncNow()` keeps arming the first measurement after the mount.
+- **Machine rework (D2) as planned:** `mobile-sim.ts` → `presentation-state.ts` (`presentationOf` exported), `SimPresentation` → `FramePresentation` (+ `'desktop'`), the snapshot's `desktop` field, the reload re-keyed on the session flip (the re-open "already on, still re-navigate" and the descope rows pinned both ways), `toggleDesktop` (never asks, never reloads; a phone session yields and the dress re-applies on the return), the unavailable-engine degrade still honoring the persisted dress (the desktop switch works there — Firefox takes this free), and the psi branch untouched. The open path adopted the dress **before** the capability branch (knowledge, not a request) and assigns `session = truth` only where the flip keying needs it (the descope), never between the fresh already-on command's key.
+- **Persist fold (D2) as planned:** one `persistFeatures` chain helper owns all three writers (scroll sync, mobile, desktop) — the latent sim-vs-sync lost-update folded away.
+- **Tests:** `desktop-fit.test.ts` (both regimes + boundary continuity + throws), `presentation.test.ts` rewritten for `frameStylesFor` + the flavored `measureColumnFit` dispatch + the foreign-flavor empties, `presentation-state.test.ts` the full matrix (41 rows — **44 after the audit round**), storage pins extended for `sbsDesktopWidth` (seed/absence/wrong-type/tolerant-carry rows all green — the contract extension the commit message records), `badge.test.ts` exact-write rows updated for the required key. Vitest: **627/627** (55 files) at publication, **630/630** after the audit round.
+- **E2e (D4):** three new mechanics rows (live matchMedia flip without navigation + the transform-only squeeze pin + the off return; the yield-to-mobile and persisted return; the reload-restore dress) ride the standing suite; the full tier at publication: **48/48**.
+- **Budget re-derivation (the KC-seed precedent):** isolated content script **95 → 97 raw** (gzip ceiling untouched at 34). Reason: two same-day feature phases consumed the surface's headroom — 05h ≈ +0.2 KiB and this phase's machine rework + switch + fit dispatch ≈ +2.9 KiB (measured 95.7 at the first gate, 95.5 after the final build and 95.7 after the audit round; forecast by this doc's plan at ≈ +1–2 KiB against pre-05h headroom). The growth is the feature itself — the flex `0 0 auto` properties, the desktop-fit module, and the machine's third presentation state — with no dead code found for a trim (the presentation-state + desktop-fit code paths are all live). Raising is the gate's documented owner-directed-growth path, recorded here as the row's history.
+
+## Shipped follow-ups (the audit round, three independent adversarial auditors + fixes, 2026-10-12)
+
+- **MAJOR — the reload key could be corrupted by the command's own push:** the
+  background notifies the tab's settled state **before** the set ask's reply resolves
+  (`device-simulation.ts` dispatches `deviceSimulationChanged`, then returns); the
+  flip key was read from the machine field after the await, so a push landing
+  mid-await would silence the identity reload — phone-dressed frames showing
+  real-UA documents, in both directions, undetectable by the pinned rows. The key
+  is now captured at the command's entry (`flipFrom`), immune to the push's
+  correction; every pinned row re-derived green against it.
+- **MAJOR — the first-load gate's own pin contradicted its comment:** the comment
+  promised "a foreign flavor does not ungate the dress" while the gate was
+  existence-only and the pin asserted the violation. `framesMayNavigate` is now
+  **kind-aware** (enforcing "loads once, at its rendered size" by construction);
+  the pin asserts the enforced contract.
+- **Real minors, all fixed:** the re-open pure reveal required the fresh truth's
+  agreement (a rule that died without pushing can no longer settle
+  `session:false` under `presentation:'phone'` — it converges through the add
+  command instead); `toggle`'s no-op ignores `failed` (the switch's retry copy
+  can no longer dead-end on a failed settle); the machine's settling close no
+  longer re-arms the rescale presenter after the wiring stopped it
+  (`isOpen()` gates the onChange-driven re-measure; the open path re-measures
+  unconditionally); the `setDeviceSimulation` reply passes the boundary
+  validator (`parseDeviceSimState`, malformed → the machine's failed branch);
+  close's early branch now writes `session = false` locally.
+- **Pins added:** the command's own mid-flight push cannot skip the reload
+  (unit); the reveal-with-dead-truth convergence (unit); the failed settle's
+  switch flip commands rather than no-ops (unit); the disengage's reload is
+  asserted in the browser tier (a fresh `performance.timeOrigin` per half —
+  the reload-keying regression class is no longer invisible to e2e);
+  `expectPhoneSession` pins the two `· mobile` side marks.
+- **Copy/records:** the desktop switch's tooltip states the floor
+  ("1280px floor, scaled to fit below it") instead of implying a fixed width
+  at the ≥1280 regime (where `scale(1)` is inert and the viewport is the
+  column's own width) — the plan's quoted string updated with it; the stale
+  "two switches" headers (ui.tsx, index.tsx, side-by-side.css) and the
+  gate-latch comment now name all three dressed presentations; the storage
+  degrade's desktop default is imported from `options.ts`'s exported
+  `FALLBACK` (the one-declaring-site rule) instead of a re-typed literal;
+  the master plan's shipped row corrected to 3 mechanics e2e rows.
+- **Verified-with-limitations finding, no action owed:** the pre-existing
+  05g geometry nit (`.sbs-viewport--phone` is content-box, so at a column of
+  exactly 412 px the 1 px border bleeds 2 px outside the half) — recorded in
+  the audit as pre-existing, deliberately untouched this round.
+- **Gates at this round's close:** compile/lint/prettier green; vitest
+  **630/630** (55 files); budgets isolated **95.7 < 97** raw / 33.6 < 34 gzip;
+  full e2e tier **48/48** (mechanics 7/7).

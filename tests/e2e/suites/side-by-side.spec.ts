@@ -99,6 +99,27 @@ async function readFrameToken(page: Page, frameTitle: string): Promise<string | 
   }, frameTitle);
 }
 
+/**
+ * A half's in-frame desktop media-query state, read through the open shadow
+ * root (the genuine main-world probe: the frame's content box IS its
+ * viewport, so this is what the page's CSS resolves against).
+ *
+ * @param page The fixture page with the overlay open.
+ * @param frameTitle Which overlay frame to read.
+ */
+async function readFrameMedia(page: Page, frameTitle: string): Promise<boolean> {
+  return await page.evaluate((title: string): boolean => {
+    const frame =
+      document
+        .querySelector('wpr-fdt-side-by-side')
+        ?.shadowRoot?.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`) ?? null;
+    if (frame === null) throw new Error(`the ${title} frame is not in the shadow root`);
+    const win = frame.contentWindow;
+    if (win === null) throw new Error(`the ${title} frame has no window yet`);
+    return win.matchMedia('(min-width: 1280px)').matches;
+  }, frameTitle);
+}
+
 test.describe('side-by-side mechanics', () => {
   test('message-driven open mounts the shadow overlay with the two cache states', async ({
     extension
@@ -308,6 +329,160 @@ test.describe('side-by-side mechanics', () => {
         async (): Promise<boolean> => {
           const half = await readHalfScroll(fixture.page, 'Not cached');
           return half.range > 0 && half.y === half.range;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
+  });
+
+  test('the desktop dress gives each half a real desktop-width viewport, live and without navigation', async ({
+    extension
+  }) => {
+    await extension.evaluateInWorker(
+      (seed: Record<string, unknown>) => {
+        void chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsDesktopWidth: false, sbsScrollSync: false } }
+    );
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1);
+
+    // Fluid dress first: the frame's content box is the half column, well
+    // below the desktop floor.
+    const cachedToken = (): Promise<string | null> => readFrameToken(fixture.page, 'Cached');
+    await expect
+      .poll(async () => {
+        const cached = await readFrameMedia(fixture.page, 'Cached');
+        const bypassed = await readFrameMedia(fixture.page, 'Not cached');
+        return !cached && !bypassed && (await cachedToken()) !== null;
+      })
+      .toBe(true);
+    const tokenBeforeDress = await cachedToken();
+
+    // The toggle dress adopts live: both halves' media queries flip to the
+    // desktop width without navigation (the body token must survive).
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(2).click();
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          const cached = await readFrameMedia(fixture.page, 'Cached');
+          const bypassed = await readFrameMedia(fixture.page, 'Not cached');
+          return cached && bypassed;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
+    expect(await cachedToken(), 'the dress reflowed the frames without reloading them').toBe(
+      tokenBeforeDress
+    );
+
+    // The floor regime is transform-only: a squeezed window rescales without
+    // re-navigation, and the in-frame viewport stays at the desktop width.
+    const viewportBefore = fixture.page.viewportSize();
+    await fixture.page.setViewportSize({ width: 500, height: 320 });
+    await expect
+      .poll(
+        async () =>
+          (await readFrameMedia(fixture.page, 'Cached')) &&
+          (await readFrameMedia(fixture.page, 'Not cached'))
+      )
+      .toBe(true);
+    expect(await cachedToken(), 'a squeeze below the floor never reloads').toBe(tokenBeforeDress);
+    if (viewportBefore) await fixture.page.setViewportSize(viewportBefore);
+
+    // Off restores the fluid dress just as live (matchMedia back to false).
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(2).click();
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          const cached = await readFrameMedia(fixture.page, 'Cached');
+          const bypassed = await readFrameMedia(fixture.page, 'Not cached');
+          return !cached && !bypassed;
+        },
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(true);
+  });
+
+  test('the desktop switch yields to the mobile session and returns per the persisted option', async ({
+    extension
+  }) => {
+    await extension.evaluateInWorker(
+      (seed: Record<string, unknown>) => {
+        void chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsDesktopWidth: true, sbsScrollSync: false } }
+    );
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1);
+
+    // Dressed by the persisted option at the open itself.
+    await expect
+      .poll(async () => await readFrameMedia(fixture.page, 'Cached'), { timeout: RELOAD_TIMEOUT })
+      .toBe(true);
+
+    // Mobile comparison engages: the desktop switch is NOT on the bar at all
+    // (never hidden-but-disabled) — sync and mobile are the only switches.
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(1).click();
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`),
+      'the desktop switch is gone while the phone session holds'
+    ).toHaveCount(2, { timeout: RELOAD_TIMEOUT });
+
+    // Releasing the session re-applies the persisted dress: the preserved
+    // choice re-opens the dress willingly — the switch returns and the
+    // halves resolve their desktop media queries again.
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(1).click();
+    await expect
+      .poll(async () => await readFrameMedia(fixture.page, 'Not cached'), {
+        timeout: RELOAD_TIMEOUT
+      })
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          fixture.page
+            .locator(`${OVERLAY_HOST_NAME} input[role="switch"]`)
+            .evaluateAll((switches: Element[]) => switches.length),
+        { timeout: RELOAD_TIMEOUT }
+      )
+      .toBe(3);
+  });
+
+  test('the persisted desktop dress survives the fixture page reloading itself (the restore path)', async ({
+    extension
+  }) => {
+    await extension.evaluateInWorker(
+      (seed: Record<string, unknown>) => {
+        void chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsDesktopWidth: true, sbsScrollSync: false } }
+    );
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect
+      .poll(async () => await readFrameMedia(fixture.page, 'Cached'), { timeout: RELOAD_TIMEOUT })
+      .toBe(true);
+
+    // The host reloaded itself: the next boot restores the overlay (no switch
+    // interaction) and the open re-reads the persisted dress before the
+    // reveal — the halves are desktop-width again.
+    await fixture.page.reload({ waitUntil: 'load' });
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1, { timeout: RELOAD_TIMEOUT });
+    await expect
+      .poll(
+        async (): Promise<boolean> => {
+          const cached = await readFrameMedia(fixture.page, 'Cached');
+          const bypassed = await readFrameMedia(fixture.page, 'Not cached');
+          return cached && bypassed;
         },
         { timeout: RELOAD_TIMEOUT }
       )

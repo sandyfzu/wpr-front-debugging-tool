@@ -1,26 +1,27 @@
 /**
- * The phone-frame presentation glue the overlay's halves render through:
- * the inline style records derived from the fit math (pure, pinned by test)
- * and a live rescale controller — a per-half `ResizeObserver` feeding the
- * same helper, torn down cleanly on close and invalidation.
+ * The presentation glue the overlay's halves render through: the inline
+ * style records derived from the fit math (pure, pinned by test) and a live
+ * rescale controller — a per-half `ResizeObserver` feeding the same helper,
+ * torn down cleanly on close and invalidation.
  *
  * One layout, two side-by-side halves: the column keeps its half width in
- * both presentations, and the phone fits inside it letterboxed. The stacking
- * tradeoff (a tall portrait window could fit bigger phones stacked) is
- * recorded, not taken — an aspect-triggered flip would oscillate under live
- * resize and break the two-halves model. See `lib/device-simulation/scale-fit`'s
- * notes.
+ * every presentation. The phone dress fits inside it letterboxed (the
+ * stacking tradeoff is recorded, not taken — see `lib/device-simulation/
+ * scale-fit`'s notes); the desktop dress fills the column exactly while the
+ * iframe's own content box holds a desktop-width viewport, so in-frame media
+ * queries resolve at real desktop widths.
  */
 
 import { DEVICE_SIMULATION_PROFILE } from '../../../lib/device-simulation/profiles';
 import { scaleFit, type PhoneFrameFit } from '../../../lib/device-simulation/scale-fit';
+import { desktopFit, type DesktopFrameFit } from '../../../lib/side-by-side/desktop-fit';
 import type { Logger } from '../../../lib/logger';
-import type { SimPresentation } from '../../../lib/side-by-side/mobile-sim';
+import type { FramePresentation } from '../../../lib/side-by-side/presentation-state';
 import { COMPARE_SIDES, type CompareSide } from '../../../lib/side-by-side/scroll-sync';
 
 /**
- * Inline style pixels of the unscaled frame, derived once from the profile
- * the fit math scales from.
+ * Inline style pixels of the unscaled phone frame, derived once from the
+ * profile the fit math scales from.
  */
 const FRAME_STYLE_WIDTH = `${String(DEVICE_SIMULATION_PROFILE.viewport.width)}px`;
 const FRAME_STYLE_HEIGHT = `${String(DEVICE_SIMULATION_PROFILE.viewport.height)}px`;
@@ -31,37 +32,67 @@ export interface FrameStyleRecord {
 }
 
 /** The two boxes one half renders through: the wrapper (layout box) and the inner frame (transform). */
-export interface PhoneFrameStyles {
-  /** The wrapper's styles: exactly `viewport × scale` CSS px so layout matches visuals. */
+export interface FrameStyles {
+  /** The wrapper's styles: the box the transform lands in, so layout matches visuals. */
   viewport: FrameStyleRecord;
-  /** The frame's styles: the profile's CSS px plus the top-left-origin scale transform. */
+  /** The frame's styles: its own (unscaled) box plus the top-left-origin scale transform. */
   frame: FrameStyleRecord;
 }
 
 /**
- * The per-half fit as the rescale last reported it; `null` = not measured
- * (or a spaceless column — a transient that renders nothing).
+ * The per-half fit as the rescale last reported it: which presentation's
+ * math produced it, along with the numbers that math computed. `null` = not
+ * measured (or a spaceless column — a transient that renders nothing).
+ * A presentation whose flavor has not been reported yet renders nothing
+ * inline (the styles' dispatch requires the kind to match) — the wiring
+ * re-measures on every presentation change, so the mismatch lives only until
+ * the next measure lands.
  */
-export type FrameFitRecord = Partial<Record<CompareSide, PhoneFrameFit | null>>;
+export type FrameFit =
+  ({ kind: 'phone' } & PhoneFrameFit) | ({ kind: 'desktop' } & DesktopFrameFit);
+
+/** The per-half fit record the rescale's reports feed, keyed by side. */
+export type FrameFitRecord = Partial<Record<CompareSide, FrameFit | null>>;
 
 /**
  * The inline styles a half's presentation needs. Pure — the component
  * derives its `style` props from this per render.
  *
  * @param presentation The presentation the overlay is in right now.
- * @param fit The half's live fit; null renders like the auto presentation until a measurement lands.
- * @returns The two inline records — empty (no inline styles) for the auto presentation.
+ * @param fit The half's live fit; null or a mismatched flavor renders like the fluid dress until a measurement lands.
+ * @returns The two inline records — empty (no inline styles) for the fluid dress.
  */
-export function phoneFrameStyles(
-  presentation: SimPresentation,
-  fit: PhoneFrameFit | null
-): PhoneFrameStyles {
-  if (presentation !== 'phone' || fit === null) return { viewport: {}, frame: {} };
+export function frameStylesFor(presentation: FramePresentation, fit: FrameFit | null): FrameStyles {
+  if (fit === null || fit.kind !== presentation) return { viewport: {}, frame: {} };
+  if (fit.kind === 'phone') {
+    return {
+      viewport: { width: `${String(fit.boxWidth)}px`, height: `${String(fit.boxHeight)}px` },
+      frame: {
+        width: FRAME_STYLE_WIDTH,
+        height: FRAME_STYLE_HEIGHT,
+        // Zero-shrink basis: the flex container must not clamp the frame's
+        // own box — the media queries inside it resolve against it.
+        flex: '0 0 auto',
+        transform: `scale(${String(fit.scale)})`,
+        'transform-origin': '0 0'
+      }
+    };
+  }
+  // The desktop dress: the wrapper is the column itself, the frame's own
+  // box is a desktop-width viewport scaled into it. Overflow clips the
+  // scaled document at the column edge, the role the phone box's class owns
+  // in its presentation. Zero-shrink basis as above: the flex container
+  // must not clamp the desktop-width box the whole feature exists for.
   return {
-    viewport: { width: `${String(fit.boxWidth)}px`, height: `${String(fit.boxHeight)}px` },
+    viewport: {
+      width: `${String(fit.boxWidth)}px`,
+      height: `${String(fit.boxHeight)}px`,
+      overflow: 'hidden'
+    },
     frame: {
-      width: FRAME_STYLE_WIDTH,
-      height: FRAME_STYLE_HEIGHT,
+      width: `${String(fit.frameWidth)}px`,
+      height: `${String(fit.frameHeight)}px`,
+      flex: '0 0 auto',
       transform: `scale(${String(fit.scale)})`,
       'transform-origin': '0 0'
     }
@@ -69,20 +100,26 @@ export function phoneFrameStyles(
 }
 
 /**
- * Whether the halves may carry their URLs: `'auto'` needs no fit at all
- * (fluid boxes navigate immediately); the phone presentation holds the first
- * navigation until both fits exist, so each half loads once, at the device
- * size, after the open has established the rule. The rest of "later fits
- * never ungate — the urls are set once" is the view's latch (the ui
- * component unlocks the first load and never re-locks); this reporter is
- * the pure live availability.
+ * Whether the halves may carry their URLs: the fluid dress needs no fit at
+ * all (boxes navigate immediately); the phone and desktop dresses hold the
+ * first navigation until both fits exist, computed by that dress's own
+ * math — each half loads once, at its rendered size, after the open has
+ * established the session's rule (or the persisted dress). A foreign
+ * flavor's fit keeps the gate closed: the sizing a wrong flavor describes
+ * is exactly the media-query lie the dresses exist to prevent. The rest of
+ * "later fits never ungate — the urls are set once" is the view's latch
+ * (the ui component unlocks the first load and never re-locks); this
+ * reporter is the pure live availability.
  *
  * @param presentation The current presentation.
  * @param fits The per-half fit record as the rescale last reported it.
  */
-export function framesMayNavigate(presentation: SimPresentation, fits: FrameFitRecord): boolean {
+export function framesMayNavigate(presentation: FramePresentation, fits: FrameFitRecord): boolean {
   if (presentation === 'auto') return true;
-  return COMPARE_SIDES.every((side) => fits[side] !== undefined && fits[side] !== null);
+  return COMPARE_SIDES.every((side) => {
+    const fit = fits[side];
+    return fit !== undefined && fit !== null && fit.kind === presentation;
+  });
 }
 
 /** A live rescaler for one column; the wiring passes the engine's `ResizeObserver` state through. */
@@ -96,17 +133,17 @@ export interface FrameLiveRescaler {
 /** The presentation controller's inputs: what it reads and reports, all injected so tests drive without a DOM. */
 export interface FramePresenterDeps {
   /**
-   * The current presentation. Auto columns are still measured (a phone
+   * The current presentation. Fluid columns are still measured (a dress
    * adoption wants the fits immediately), only the reporting is
    * presentation-independent — the caller decides what a fit means.
    */
-  presentation(): SimPresentation;
+  presentation(): FramePresentation;
   /** The two column elements (the overlay halves), as the component's refs registered them. */
   columns(): Partial<Record<CompareSide, HTMLElement>>;
-  /** The fit oracle for one column — the wiring passes `measureColumnScale`. */
-  measure(column: HTMLElement): PhoneFrameFit | null;
+  /** The fit oracle for one column, flavored for the current presentation — the wiring passes `measureColumnFit` bound to the live presentation. */
+  measure(column: HTMLElement): FrameFit | null;
   /** Per-half fit reporting — the wiring writes it into the styles signal the component reads. */
-  onFit(side: CompareSide, fit: PhoneFrameFit | null): void;
+  onFit(side: CompareSide, fit: FrameFit | null): void;
   /**
    * The live-rescale factory, invoked at most once per column; a null result
    * means fits are taken once per sync (the explicit degrade when the engine
@@ -141,7 +178,7 @@ export function engineRescaleFactory(
 ): NonNullable<FramePresenterDeps['rescaleFactory']> {
   return (onFrameRescale) => {
     if (!('ResizeObserver' in window)) {
-      log.debug('ResizeObserver is unavailable: the phone frames scale once per open, not live');
+      log.debug('ResizeObserver is unavailable: the dressed frames scale once per open, not live');
       return null;
     }
     const observer = new ResizeObserver(() => {
@@ -176,7 +213,7 @@ export function createFramePresenter(deps: FramePresenterDeps): FramePresenter {
   const measureOnce = (side: CompareSide): void => {
     const column = deps.columns()[side];
     if (column === undefined) return;
-    let fit: PhoneFrameFit | null;
+    let fit: FrameFit | null;
     try {
       fit = deps.measure(column);
     } catch (cause) {
@@ -209,13 +246,37 @@ export function createFramePresenter(deps: FramePresenterDeps): FramePresenter {
 }
 
 /**
- * The production measure a real column goes through: its layout box (never a
- * `getBoundingClientRect` — the transform's own feedback would poison the
- * fit) through the device-simulation module's pure fit math.
+ * The production measure a real phone-dressed column goes through: its
+ * layout box (never a `getBoundingClientRect` — the transform's own feedback
+ * would poison the fit) through the device-simulation module's pure fit math.
  *
  * @param column The half's wrapper element as laid out.
  * @throws {@link Error} propagating `scaleFit`'s broken-measurement throw (the presenter contains it per side).
  */
 export function measureColumnScale(column: HTMLElement): PhoneFrameFit | null {
   return scaleFit({ width: column.clientWidth, height: column.clientHeight });
+}
+
+/**
+ * The production measure the wiring binds: the column's layout box through
+ * the math of the presentation it will render at, already flavored — a
+ * desktop dress seeks its desktop-width fit, everything else the phone fit
+ * (the fluid dress consumes no fit; its measurement keeps an adoption
+ * instant).
+ *
+ * @param column The half's wrapper element as laid out.
+ * @param presentation The presentation the measurement is for right now.
+ * @returns The flavored fit, or null when the column holds no space (or the measurement reports no fit).
+ * @throws {@link Error} propagating the underlying math's broken-measurement throw (the presenter contains it per side).
+ */
+export function measureColumnFit(
+  column: HTMLElement,
+  presentation: FramePresentation
+): FrameFit | null {
+  if (presentation === 'desktop') {
+    const fit = desktopFit({ width: column.clientWidth, height: column.clientHeight });
+    return fit === null ? null : { kind: 'desktop', ...fit };
+  }
+  const fit = measureColumnScale(column);
+  return fit === null ? null : { kind: 'phone', ...fit };
 }

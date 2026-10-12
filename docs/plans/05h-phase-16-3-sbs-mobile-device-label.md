@@ -89,6 +89,15 @@ Theme safety is inherited from the tokens (`--accent` background-agnostic, as th
 - **Bar space/wrap (recorded, visible):** the bar gains ~21 characters in its middle; the switch label is nowrap so label+tag wrap as one unit, and side labels (`flex: 1`) absorb the rest — the worst case is one extra wrapped row on a very narrow window, the behavior 05g's round already recorded as acceptable. Deliberately one tag, not per-side (the side `· mobile` marks already carry per-half state).
 - **Wording approval (open question):** `Generic Android phone` is recommended; the owner may pin the exact verbatim `Generic Android device` — a one-constant edit with the same structure either way.
 
+## Shipped (C1–C3, 2026-10-12)
+
+The owner pinned the recommended wording (`Generic Android phone`).
+
+- **C1/C2:** `DeviceProfile.displayName` ('Generic Android phone', TSDoc records why "phone") + `profiles.test.ts` exact pin + a non-empty assertion; the tag renders inside the mobile switch under the settled `phone()` accessor (identical gate to the side `· mobile` marks — the refused-failure branch shows it too, where the requests truly still carry the device identity); `.sbs-mobile-tag`'s class comment now names all three marks; zero new CSS rules.
+- **C3:** the e2e pins live in the standing surface — `expectPhoneSession` asserts the tag's count and exact text next to the engaged switch (the reload-continuity row therefore covers the restore path for free), and the new row **"the engaged device is named next to the mobile switch, unnamed when disengaging"** pins the off branch the helper cannot reach (tag leaves, the switch itself stays rendered and unchecked, the session rule retracts). The row's engagement step was factored into `engageMobileIfNeeded` (the conditional-click helper the squeeze row shared — behavior unchanged there).
+- **Gates at publication (including the same-day audit round's fixes):** compile/lint/prettier green; vitest **630/630** (55 files); budgets: isolated 95.7 < 97 raw / 33.6 < 34 gzip; full e2e tier **48/48**. Visual: both palettes ride the token values the proven side marks already render (no palette-specific rule exists); the narrow-window wrap is 05g's recorded acceptance.
+- Hygiene: the round also disarmed the two pre-existing `solid/reactivity` lint warnings in `gate-latch.test.ts` (the latch owns the tracked scope — the same scoped-disable rationale `ui.tsx` already carries).
+
 ## Stack
 
 No new dependencies (verified: solid-js `Show` already imported in `ui.tsx`; the constant is plain TS). Vitest (unit pin), Playwright over the P4.2 local site (e2e, existing suite), Chrome tokens CSS (shared classes).

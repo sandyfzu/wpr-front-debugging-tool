@@ -35,6 +35,7 @@ function mount(live: Accessor<boolean>): { read: () => boolean; dispose: () => v
 describe('createSizeGateLatch', () => {
   it('passes a gate that reads open at mount straight through — the first commit is the real load', () => {
     const [live] = createSignal(true);
+    // eslint-disable-next-line solid/reactivity -- the latch owns the tracked scope (its mount-time effect)
     const { read, dispose } = mount(live);
     expect(read()).toBe(true);
     dispose();
@@ -42,6 +43,7 @@ describe('createSizeGateLatch', () => {
 
   it('a gate that never opened keeps the halves src-less at mount', () => {
     const [live] = createSignal(false);
+    // eslint-disable-next-line solid/reactivity -- the latch owns the tracked scope (its mount-time effect)
     const { read, dispose } = mount(live);
     expect(read()).toBe(false);
     dispose();

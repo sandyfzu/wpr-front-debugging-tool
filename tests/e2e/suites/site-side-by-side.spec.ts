@@ -298,9 +298,26 @@ siteTest.describe('site side-by-side', () => {
     });
 
     /**
+     * Bring the mobile session up unless it is already engaged: the machine
+     * can converge the persisted target to phone at the open itself (earlier
+     * rows in a shared profile persist their toggles), in which case the
+     * switch already reads checked and a blind click would flip it off.
+     *
+     * @param main The open page holding the overlay.
+     */
+    const engageMobileIfNeeded = async (main: DriverPage): Promise<void> => {
+      const switchEl = main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1);
+      await switchEl.waitFor({ state: 'attached', timeout: 10_000 });
+      if ((await switchEl.getAttribute('aria-checked')) !== 'true') {
+        await switchEl.click();
+      }
+    };
+
+    /**
      * The mobile session's settled outcome: the phone presentation online on
-     * both halves, no failure note, the switch checked, and exactly one
-     * session rule keyed by the owning tab.
+     * both halves, no failure note, the switch checked with the engaged
+     * device named beside it, and exactly one session rule keyed by the
+     * owning tab.
      *
      * @param extension The extension driver for the session-rule store read.
      * @param main The open page + tab id.
@@ -323,6 +340,17 @@ siteTest.describe('site side-by-side', () => {
         main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1),
         'the mobile switch reflects the engaged session'
       ).toBeChecked();
+      const deviceTag = main.page.locator(`${OVERLAY_HOST} .sbs-switch .sbs-mobile-tag`);
+      await expect(deviceTag, 'the engaged device is named next to the mobile switch').toHaveCount(
+        1
+      );
+      await expect(deviceTag).toHaveText('Generic Android phone');
+      // The state's shipped visibility surface: both side labels carry the
+      // · mobile mark while the session holds.
+      await expect(
+        main.page.locator(`${OVERLAY_HOST} .sbs-side-label .sbs-mobile-tag`),
+        'both side labels mark the engaged session'
+      ).toHaveCount(2);
     };
 
     siteTest(
@@ -373,14 +401,8 @@ siteTest.describe('site side-by-side', () => {
         const main = await openSitePage(extension, CACHED_PAGE_URL);
         await openOverlay(extension, main.tabId);
         // Engagement is conditional on purpose: the machine can converge the
-        // persisted target to phone at the open itself (earlier rows in a
-        // shared profile persist their toggles), in which case the switch
-        // already reads checked and a blind click would flip it off.
-        const switchEl = main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1);
-        await switchEl.waitFor({ state: 'attached', timeout: 10_000 });
-        if ((await switchEl.getAttribute('aria-checked')) !== 'true') {
-          await switchEl.click();
-        }
+        // persisted target to phone at the open itself (the helper's doc).
+        await engageMobileIfNeeded(main);
         await expectPhoneSession(extension, main);
 
         /**
@@ -409,6 +431,49 @@ siteTest.describe('site side-by-side', () => {
 
         if (original) await main.page.setViewportSize(original);
         await expectPhoneSession(extension, main);
+        await main.page.close();
+      }
+    );
+
+    siteTest(
+      'the engaged device is named next to the mobile switch, unnamed when disengaging',
+      async ({ extension }) => {
+        const main = await openSitePage(extension, CACHED_PAGE_URL);
+        await openOverlay(extension, main.tabId);
+        await engageMobileIfNeeded(main);
+        // The engaged-side asserts live in expectPhoneSession; this row pins
+        // the off branch it cannot cover: the name tag leaves the bar while
+        // the switch itself stays rendered, the session rule retracts, and
+        // the disengage actually re-navigates the halves (a fresh document —
+        // the reload the session flip demands, not just a class swap: the
+        // reload-keying regression class this row watches).
+        const tokenBefore = await readDocumentOrigin(main.page, 'Cached');
+        expect(tokenBefore, 'a loaded document origin before the disengage').toBeTruthy();
+        const switchEl = main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1);
+        await switchEl.click();
+        const deviceTag = main.page.locator(`${OVERLAY_HOST} .sbs-switch .sbs-mobile-tag`);
+        await expect
+          .poll(async () => await deviceTag.count(), { timeout: 5_000, intervals: [250] })
+          .toBe(0);
+        await expect(switchEl, 'the mobile switch itself stays rendered, unchecked').toBeChecked({
+          checked: false
+        });
+        await expect
+          .poll(async () => (await sessionRuleIds(extension)).includes(main.tabId), {
+            timeout: 5_000,
+            intervals: [250]
+          })
+          .toBe(false);
+        // A fresh document rode the re-navigation: the time origin differs.
+        await expect
+          .poll(
+            async (): Promise<boolean> => {
+              const fresh = await readDocumentOrigin(main.page, 'Cached');
+              return fresh !== null && fresh !== tokenBefore;
+            },
+            { timeout: 10_000, intervals: [250] }
+          )
+          .toBe(true);
         await main.page.close();
       }
     );

@@ -17,6 +17,7 @@ const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
 const TOOLBAR_BADGE = 'toolbarBadge';
 const SBS_SCROLL_SYNC = 'sbsScrollSync';
 const SBS_MOBILE_SIM = 'sbsMobileSim';
+const SBS_DESKTOP_WIDTH = 'sbsDesktopWidth';
 
 /**
  * Registered option storage.
@@ -31,6 +32,9 @@ const SBS_MOBILE_SIM = 'sbsMobileSim';
  *   overlay's own header switch writes it).
  * - `features.sbsMobileSim` — the compare overlay's mobile-comparison
  *   switch (default off; the overlay's own header switch writes it).
+ * - `features.sbsDesktopWidth` — the compare overlay's desktop-width dress
+ *   (default on — the owner's 2026-10-12 directive; the overlay's own header
+ *   switch writes it).
  */
 export interface StoredOptions {
   improvements: {
@@ -43,12 +47,18 @@ export interface StoredOptions {
     [TOOLBAR_BADGE]: boolean;
     [SBS_SCROLL_SYNC]: boolean;
     [SBS_MOBILE_SIM]: boolean;
+    [SBS_DESKTOP_WIDTH]: boolean;
     /** Future feature ids land here as additive boolean keys. */
     [key: string]: boolean | undefined;
   };
 }
 
-const FALLBACK: Readonly<StoredOptions> = Object.freeze({
+/**
+ * The module's documented defaults, declared once here. Storage reads that
+ * come back missing or corrupt reset to them; surfaces that degrade on a
+ * failed storage read import this instead of re-typing the literals.
+ */
+export const FALLBACK: Readonly<StoredOptions> = Object.freeze({
   improvements: Object.freeze({
     [WP_DASHBOARD_DBUGGER_ENTRY]: true
   }),
@@ -56,7 +66,8 @@ const FALLBACK: Readonly<StoredOptions> = Object.freeze({
   features: Object.freeze({
     [TOOLBAR_BADGE]: true,
     [SBS_SCROLL_SYNC]: true,
-    [SBS_MOBILE_SIM]: false
+    [SBS_MOBILE_SIM]: false,
+    [SBS_DESKTOP_WIDTH]: true
   })
 });
 
@@ -76,6 +87,7 @@ export const optionsStore = storage.defineItem<StoredOptions>('sync:options', {
  * - `features.toolbarBadge` must be boolean, else default.
  * - `features.sbsScrollSync` must be boolean, else default (on).
  * - `features.sbsMobileSim` must be boolean, else default (off).
+ * - `features.sbsDesktopWidth` must be boolean, else default (on).
  * - `features` keeps every own boolean-valued key — known ids and future
  *   ones alike (tolerant read, like `improvements`): shapes are written
  *   read-modify-write, so a later writer reading through this validator
@@ -109,7 +121,8 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
   const featuresRows: StoredOptions['features'] = {
     [TOOLBAR_BADGE]: FALLBACK.features[TOOLBAR_BADGE],
     [SBS_SCROLL_SYNC]: FALLBACK.features[SBS_SCROLL_SYNC],
-    [SBS_MOBILE_SIM]: FALLBACK.features[SBS_MOBILE_SIM]
+    [SBS_MOBILE_SIM]: FALLBACK.features[SBS_MOBILE_SIM],
+    [SBS_DESKTOP_WIDTH]: FALLBACK.features[SBS_DESKTOP_WIDTH]
   };
   const features = value['features'];
   if (typeof features === 'object' && features !== null && !Array.isArray(features)) {

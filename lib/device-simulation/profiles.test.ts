@@ -12,8 +12,13 @@ describe('DEVICE_SIMULATION_PROFILE', () => {
       id: 'phone',
       userAgent:
         'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36',
-      viewport: { width: 412, height: 892 }
+      viewport: { width: 412, height: 892 },
+      displayName: 'Generic Android phone'
     });
+  });
+
+  it('carries a non-empty user-facing device name', () => {
+    expect(DEVICE_SIMULATION_PROFILE.displayName.trim().length).toBeGreaterThan(0);
   });
 
   it('keeps the device-class tokens UA decisions listen for', () => {

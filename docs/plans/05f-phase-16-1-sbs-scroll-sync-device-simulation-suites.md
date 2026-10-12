@@ -45,7 +45,13 @@ own again (arrives as `wpr_desktop` under the flag). Everything else stays untou
    default on (open → drive one half to its bottom → the other reaches its mapped
    bottom, no switch interaction). The real-cache truths ride
    `tests/e2e/suites/site-side-by-side.spec.ts` (cached/bypassed frame pair, the
-   served footprint, per-side refresh re-navigation, close restore).
+   served footprint, per-side refresh re-navigation, close restore). **The suite
+   grew three desktop-width rows in the 05i round (2026-10-12, suite still green
+   7/7):** the dress's live `matchMedia('(min-width: 1280px)')` flips without
+   navigation (token-stable) incl. a transform-only squeeze below the floor and
+   the live off-return; the desktop switch's yield to (and return after) the
+   mobile session; and the persisted dress surviving the fixture's own reload
+   (the restore path re-opens dressed with no switch interaction).
 2. **Cross-origin degrade** — **not run permanently; verified live once** through the
    throwaway dual-origin probe (05e's audit record): the affected half flips once to
    its per-side "not synced (different origin)" state, the other half keeps syncing,
@@ -72,6 +78,10 @@ own again (arrives as `wpr_desktop` under the flag). Everything else stays untou
      close-then-reload clear, and the latched size gate under a real squeeze. The echo
      body / mobile-cache served-copy asserts above stay the recorded once-verified
      evidence until their permanent rows land.
+   - **Device-tag rows (2026-10-12, 05h):** the round's `expectPhoneSession` helper
+     now also asserts the engaged device's name beside the switch (restored sessions
+     included) and a dedicated row pins the disengage branch (tag leaves, switch
+     stays rendered and unchecked, the rule retracts).
 4. **State honesty** — **verified live once** (05g's round): a second tab's requests
    and page identity are unaffected throughout; on the PSI host the switch never
    renders and no session rule leaks to the auto-flow. Visibility lives in the overlay
@@ -87,11 +97,11 @@ own again (arrives as `wpr_desktop` under the flag). Everything else stays untou
 
 ## Definition-of-done state (2026-10-12)
 
-- Suite 1 is green in the permanent tier; suites 2–4 carry their once-verified
-  evidence (05e's audit record, 05g's round record) with the newly-shipped permanent
-  subset above landed this day; the standing open browser-tier slot remains the
-  cross-origin degrade's permanent pin (suite 2 — it needs the dual-origin fixture),
-  and suite 5 is the recorded manual smoke (P15's release matrix).
+- Suite 1 is green in the permanent tier (**7/7** since the 05i desktop rows); suites 2–4
+  carry their once-verified evidence (05e's audit record, 05g's round record) with the
+  newly-shipped permanent subset landed this day; the standing open browser-tier slot
+  remains the cross-origin degrade's permanent pin (suite 2 — it needs the dual-origin
+  fixture), and suite 5 is the recorded manual smoke (P15's release matrix).
 - The shipped fixtures' runbook rows landed at B5; the budget rows were derived at the
   same publication — `ua-identity` 6.5 KiB raw < 7, `ua-relay` 10.3 < 11, isolated
   re-measured unchanged under 95/34 (05g's Shipped section). The follow-up round
