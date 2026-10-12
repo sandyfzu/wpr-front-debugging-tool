@@ -1,32 +1,96 @@
-# Phase 16.1 — SBS scroll sync & device simulation browser suites
+# Phase 16.1 — SBS scroll-sync & mobile-comparison browser suites
 
-**Depends on:** P4.1 (harness), P4.2 (site), P16. **Effort:** S. **Parallelizable with:** nothing (it closes P16).
+**Depends on:** P4.1 (harness), P4.2 (site), P16 (05e) + P16.2 (05g). **Effort:** S.
 
-> Fixes P16's browser-observable half: scroll-sync mechanics over real frames and the UA-simulation round trip over the local site. Each item names its assert surface; manual rows are recorded with reasons, never silently skipped.
+> Fixes P16's browser-observable half: scroll-sync mechanics over real frames, and the
+> mobile comparison's round trip over the local site. Each item names its assert
+> surface; manual rows are recorded with reasons, never silently skipped.
+>
+> **Rewritten at P16.2's publication (B6, 2026-10-12):** the device-sim rows below now
+> describe the shipped overlay-scoped design (05g) — the pre-refinement rows described
+> a control surface (menu flip, badge mark, overlay chip, popup row) that never
+> shipped. Every suite's status is recorded on its row.
 
 ## TLDR
 
-Automate what P16's unit suites cannot reach: proportional sync across real same-origin and cross-origin frames, the per-tab DNR UA rewrite end-to-end (the server sees the phone, the page world agrees, everything else stays untouched), and the honesty surfaces (menu flip semantics, badge mark, overlay chip, unavailable path).
+Automate what the unit suites cannot reach: proportional sync across real frames
+(shipped), and the comparison round trip over the local site — while the overlay is
+open, its header switch turns one session DNR rule on (document requests carry the
+verified phone UA), both halves reload into 412×892 phone frames, the page world's
+`navigator.userAgent` matches inside every half, and WP Rocket's separate-mobile-cache
+served copy flips to `wpr_mobile`; switch off or close the overlay and the tab is its
+own again (arrives as `wpr_desktop` under the flag). Everything else stays untouched.
 
-## Site additions it needs (recorded in the P4.2 doc's fixture list)
+## Site fixtures (recorded in the P4.2 doc's fixture list)
 
-- An **UA-echo fixture page** (server-side echo of the request's `User-Agent`) — the assert surface for the rewritten header.
-- A **separate-mobile-cache fixture state** (WP Rocket `do_caching_mobile_files` on via the fixture plugin) — the served-copy difference is the round trip's verdict; turns off cleanly between rounds.
-- A **cross-origin redirect fixture flag** (`?fdt-redirect=cross` — redirects the half to the sibling of P4.1's dual origins) — the mono-cause for the scroll-sync degrade state.
-  Same self-resetting pattern as every other fixture (no admin hand-configuration between runs).
+- **UA-echo endpoint** — shipped (P16.2 B5): `GET /wp-json/fdt/v1/ua-echo`, the
+  uncached `text/plain` echo of the requesting UA (+ marker line); runbook rows in
+  `docs/local-site-runbook.md`, permanently pinned by the site smoke
+  (`docker/scripts/cdp-smoke.mjs`, scenario 3).
+- **Separate-mobile-cache flag** — shipped (B5): `?fdt-mobile-cache=1` forces
+  `do_caching_mobile_files` on per request; the `wpr_mobile`/`wpr_desktop` generator
+  markers are the round trip's verdict.
+- **Cross-origin redirect flag** (`?fdt-redirect=cross`) — **dropped, never built.**
+  The scroll-sync degrade's evidence ran live once over a throwaway dual-origin
+  fixture (05e's audit record, 2026-10-11); no permanent flag was built afterwards.
+  Recorded here, not silently skipped; the standing pin is suite 2 below.
 
 ## Suites
 
-1. **Scroll-sync mechanics** (fixture + real cached page): the toggle is on by default on the first rendered frame (owner 2026-10-11); off → driver→target proportional mapping asserted across differently tall halves (driver at X % ⇒ target lands at X % of its own range; near-equal halves land within a few px); a programmatic application never bounces back (no oscillation over a scroll burst); per-side refresh resets that half's ranges (mapping stays proportionate); overlay close detaches cleanly (host page unaffected, scroll restored) and re-open honors the persisted setting.
-2. **Cross-origin degrade** (dual-origin trick + `?fdt-redirect=cross`): the affected half shows its per-side "not synced (different origin)" state, the other half keeps syncing, no console error storm, the toggle remains functional for the pair.
-3. **Device-sim round** (P4.2 site): menu flip on → (SW-state assert via CDP) a session rule exists carrying the tab's condition and the profile header; reload → the UA-echo fixture returns the profile string and `navigator.userAgent` equals it (pinned: the page-world override lands before the first animation frame); with separate-mobile-cache on, the served copy flips to the mobile variant and back to desktop when off; toggle off → rule, badge mark, and chip all clear; a reload returns the browser's real UA.
-4. **State honesty surfaces** (two tabs): independent per-tab rules (opposite states coexist), the badge mark tracks its own tab only, the overlay chip shows iff the state is on, and on the PSI host the chip may show but the sync toggle never renders.
-5. **Unavailable path** (Firefox — Playwright cannot load extensions there, so a **manual smoke row**): the control logs the typed unavailable result, no rule call is attempted, the popup row (once P8 ships it) renders its explicit unavailable state with the fallback hint — recorded, not skipped.
+1. **Scroll-sync mechanics** — **shipped:** pinned by
+   `tests/e2e/suites/side-by-side.spec.ts` — message-driven open mounts the shadow
+   overlay with both cache states; per-side refresh keeps the other side's body; close
+   restores `html`/`body` overflow and scroll exactly and a re-show keeps the frames;
+   and the open-path case proves sync arms from the open itself with the persisted
+   default on (open → drive one half to its bottom → the other reaches its mapped
+   bottom, no switch interaction). The real-cache truths ride
+   `tests/e2e/suites/site-side-by-side.spec.ts` (cached/bypassed frame pair, the
+   served footprint, per-side refresh re-navigation, close restore).
+2. **Cross-origin degrade** — **not run permanently; verified live once** through the
+   throwaway dual-origin probe (05e's audit record): the affected half flips once to
+   its per-side "not synced (different origin)" state, the other half keeps syncing,
+   no console error storm, the toggle remains functional. The permanent pin stays an
+   open browser-tier row (assert surface as stated; the dropped flag above is the
+   missing fixture).
+3. **Mobile-comparison round (P4.2 site)** — **verified live once** by 05g's green
+   round (6/6, 2026-10-12; permanent execution open):
+   - open with the setting persisted on: both halves reload, the echo body reads the
+     profile UA byte-exactly in every half, the frames present 412×892 (fit-scaled),
+     and the in-half `navigator.userAgent` matches — the shadow pinned to land before
+     the page's first animation frame;
+   - switch off: both halves reload to the browser's real UA and the fluid frames;
+   - under `?fdt-mobile-cache=1` the served copy flips `wpr_mobile` ↔ `wpr_desktop`
+     with the session direction (the served-copy assert surface);
+   - close with the session on: a subsequent navigation's echo reads the real UA (the
+     rule cannot survive the overlay — owner directive 4);
+   - rule-level asserts ride CDP the way the mechanics tier asserts service-worker
+     state (session rules carrying the tab condition + the profile header).
+4. **State honesty** — **verified live once** (05g's round): a second tab's requests
+   and page identity are unaffected throughout; on the PSI host the switch never
+   renders and no session rule leaks to the auto-flow. Visibility lives in the overlay
+   itself (the side labels' `· mobile` suffix while the phone presentation holds) —
+   the superseded design's badge mark, chip, menu row and popup row are dropped by
+   owner refinement.
+5. **Unavailable path (Firefox)** — **manual smoke, recorded not run:** an engine
+   without the DNR namespace must return `available: false` to the boot ask, never
+   render the switch, never attempt a rule call. Reason: Playwright cannot load
+   extensions into Firefox and the temporary add-on is a GUI flow — the tier's
+   documented limitation; the smoke lands with the release's manual smokes (P15's
+   browser matrix).
 
-## Definition of done
+## Definition-of-done state (2026-10-12)
 
-- Suites green under `pnpm test:e2e`; P16's checklist annotated with the run results; both budget rows re-measured post-suite unchanged; the P4.2 runbook gains the three fixture lines (URLs + reset semantics unchanged).
+- Suite 1 is green in the permanent tier; suites 2–4 carry their once-verified
+  evidence (05e's audit record, 05g's round record) with permanent execution as the
+  standing open browser-tier slot; suite 5 is the recorded manual smoke.
+- The shipped fixtures' runbook rows landed at B5; the budget rows were derived at the
+  same publication — `ua-identity` 6.5 KiB raw < 7, `ua-relay` 10.3 < 11, isolated
+  re-measured unchanged under 95/34 (05g's Shipped section).
+- No row here is silently passed or skipped; every non-green row states why.
 
 ## Stays manual
 
-Real-phone-vs-sim subtleties (viewport/touch/DPR are out of scope by design — the honesty rule keeps them visibly different); PSI analysis scroll semantics (no toggle there per P16's recorded reason); the Firefox runtime (item 5).
+Real-phone-vs-simulation subtleties (touch, DPR, keyboard shape are not emulated — the
+honesty rule keeps the visible difference; the viewport _is_ emulated in the halves);
+PSI-analysis scroll semantics (no toggle there, per 05g's recorded reason); the Firefox
+runtime (suite 5).

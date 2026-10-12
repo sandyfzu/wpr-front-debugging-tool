@@ -61,7 +61,7 @@ rule = {
 
 **PSI side-by-side never affected (owner directive 4):** the overlay already knows its analysis-host mode (`psiMode`/`isAutoFlowPage()`); the switch does not render there (same gate shape as the scroll-sync switch) and the open path skips the sim step entirely beyond the sync/`psiMode` check it already makes. Defense in depth is cheap: the service's enable decision also refuses senders resolved on the analysis host (pure `canSimulate(senderAvailability)` — unit-pinned; the UI shape makes this branch unreachable in practice).
 
-**Availability:** the capability is **cross-engine** (BCD, verified 2026-10-11 during the B2 audit): `RuleCondition.tabIds` (Chrome 92, Firefox 113), `RuleAction.modifyHeaders` request headers (Chrome 86, Firefox 113), session rules (Firefox 113+/128 caps). Chromium MV3 grants it via `declarativeNetRequestWithHostAccess` (no install-time warning, acts within host permissions); Firefox's MV2 build requests the same permission and carries its host permissions folded into `permissions`. Feature-detected once (`'declarativeNetRequest' in browser`) — an older engine without the namespace degrades explicitly: the ask returns `available: false`, the switch never renders, never half-working. A real-Firefox runtime spot-check rides B5's round (the local e2e tier is Chromium-only).
+**Availability:** the capability is **cross-engine** (BCD, verified 2026-10-11 during the B2 audit): `RuleCondition.tabIds` (Chrome 92, Firefox 113), `RuleAction.modifyHeaders` request headers (Chrome 86, Firefox 113), session rules (Firefox 113+/128 caps). Chromium MV3 grants it via `declarativeNetRequestWithHostAccess` (no install-time warning, acts within host permissions); Firefox's MV2 build requests the same permission and carries its host permissions folded into `permissions`. Feature-detected once (`'declarativeNetRequest' in browser`) — an older engine without the namespace degrades explicitly: the ask returns `available: false`, the switch never renders, never half-working. A real-Firefox runtime spot-check is the recorded manual smoke row (05f's rewritten suite 5; the local e2e tier is Chromium-only).
 
 ### The one device
 
@@ -167,6 +167,36 @@ and the served copies flipping `wpr_mobile` ↔ `wpr_desktop` with the session d
 against a locally intercepted analysis host (the real host stays out-of-band); its flow
 mechanics are what the stub proves, not the host's own page content. Screenshots of
 the extremes and the wrapped narrow header recorded outside the repo (os tmpdir).
+
+## Shipped (B1–B5, 2026-10-12 — this record is B6's publication)
+
+Every block landed on `develop`; B5's fixtures, round record and UA verdict are above.
+What the phase shipped, in one place:
+
+- **Capability:** the compare overlay's Mobile-comparison switch → one session DNR rule
+  (`declarativeNetRequestWithHostAccess`, why-commented in `wxt.config.ts`) rewrites the
+  tab's document-request UA while the overlay is open and the setting is on; the halves
+  re-render as 412×892 phone frames fitted to their column (cap 2.0, live rescale);
+  `navigator.userAgent` is shadowed per half by the `ua-relay` (isolated world) /
+  `ua-identity` (MAIN world) all-frames pair; every state change reloads both halves;
+  closing the overlay or the tab's main-frame navigation tears the rule down (boot
+  sweep + `tabs.onRemoved` as backstops); the PSI surface never renders the switch. The
+  unit matrix pins the lifecycle state machine, the never-clipping fit (the
+  `412k ≤ w ∧ 892k ≤ h` invariant), the rule/presentation invariants, and the
+  rule derivation/validators.
+- **Verified round:** the single green 6/6 run above (the throwaway spec, deleted after
+  recording). The permanent browser pin for the sim is defined by 05f's rewritten
+  device-sim rows; their suite execution stays the open browser-tier slot — every row's
+  status is recorded there, nothing silently skipped.
+- **Budgets** (derived at this publication; measured from a fresh `pnpm build` via
+  `pnpm check:budgets`): two new raw-only rows in the small-script convention of the
+  main-world row — `ua-identity` content script **6.5 KiB raw < 7**, `ua-relay` content
+  script **10.3 KiB raw < 11**. The isolated script re-measured unchanged at
+  **92.4 raw / 32.5 gzip < 95/34** (the row was raised at B4 for this phase's
+  additions); the background worker holds its B2-derived 32 (**31.5** measured); the
+  whole-build backstop **160.4 < 857**.
+- **Firefox:** the runtime spot-check earlier assigned to B5's round is instead the
+  manual smoke row recorded in 05f (suite 5) — not run yet, recorded, never silently.
 
 ## Phases
 

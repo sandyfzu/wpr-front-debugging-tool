@@ -9,7 +9,7 @@
 1. **Side-by-Side scroll sync.** The compare overlay gains synced scrolling: **on by default** (owner decision 2026-10-11 — planned default was off), a toggle **in the overlay's own header**, and when active, scrolling one half moves the other to the same part of its page — **mapped proportionally**, because the two copies regularly differ in height (a cached copy vs its `?nowprocket=1` twin; device variants diverge more).
 2. **Mobile simulation, per tab.** A debugging state on the current tab: its requests carry a mobile `User-Agent`, and while the state is on, the page world's `navigator.userAgent` matches it. After a reload the server answers the phone question — WP Rocket's separate-mobile-cache branch becomes observable in place, and every surface (badge, overlay chip, popup row) can say why what is being seen looks the way it does. Desktop-vs-mobile comparisons run across two tabs (the pattern the PSI flow already establishes); inside one overlay both halves inherit the same tab rule, and the overlay says so.
 
-**Deliberately not simulated** (scoped honesty): viewport, touch input, device pixel ratio, form factor, user-agent client hints — only the UA identity, server-side (the request header, which is what the plugin's server-side mobile decision reads) and in-page (`navigator.userAgent`). A wrong-viewport mobile bug is a different ticket and stays visible as such.
+**Deliberately not simulated** (scoped honesty): viewport, touch input, device pixel ratio, form factor, user-agent client hints — only the UA identity, server-side (the request header, which is what the plugin's server-side mobile decision reads) and in-page (`navigator.userAgent`). A wrong-viewport mobile bug is a different ticket and stays visible as such. (Scope of the superseded per-tab design — the shipped comparison presents one device's viewport inside the overlay halves; see 05g.)
 
 ## Feature A — Side-by-Side scroll sync
 
@@ -51,7 +51,7 @@ Also verified in a real browser for the first time (throwaway dual-origin redire
 
 ## Feature B — Mobile simulation (per tab)
 
-> **Superseded (owner refinement, 2026-10-11):** the shape below was refined into an **overlay-scoped mobile-comparison mode** — strictly live while the compare overlay is open (close resets the UA), real viewport presentation in the halves (one device: UA + resolution), reload both halves on every state change, PSI side-by-side untouched, no per-tab generic control. The living contract is `docs/plans/05g-phase-16-2-sbs-mobile-comparison.md`; the rows below are the superseded first design, kept for history.
+> **Superseded (owner refinement, 2026-10-11):** the shape below was refined into an **overlay-scoped mobile-comparison mode** — strictly live while the compare overlay is open (close resets the UA), real viewport presentation in the halves (one device: UA + resolution), reload both halves on every state change, PSI side-by-side untouched, no per-tab generic control. The living contract is `docs/plans/05g-phase-16-2-sbs-mobile-comparison.md`; the rows below are the superseded first design, kept for history. **Shipped as the refinement (P16.2 B1–B5, 2026-10-12; record in 05g)** — the control surface below never shipped: no menu row, no badge mark, no overlay chip, no P8 popup row.
 
 ### Design
 
@@ -82,12 +82,12 @@ Also verified in a real browser for the first time (throwaway dual-origin redire
 ## Verification checklist
 
 - [x] Gates green (`pnpm compile && pnpm lint && pnpm format:check && pnpm test`) + `pnpm build && pnpm check:budgets` — after Feature A (2026-10-11); the isolated-content-script row was re-derived deliberately (85/30 → 88/31, the measured delta recorded in the Shipped section). Re-run per half.
-- [ ] P4.2-site round trip (P16.1 drives it): separate-mobile-cache fixture on → sim on → reload → the served copy is the mobile variant (the `wpr_mobile` stamping evidence from the P14.5 research is the expected marker); sim off → desktop copy; the UA-echo fixture returns the profile UA when on and the browser's real UA when off.
+- [x] P4.2-site round trip (P16.1 drives it): separate-mobile-cache fixture on → sim on → reload → the served copy is the mobile variant (the `wpr_mobile` stamping evidence from the P14.5 research is the expected marker); sim off → desktop copy; the UA-echo fixture returns the profile UA when on and the browser's real UA when off. **→ Closed by 05g's B5 round (2026-10-12, green 6/6) under the shipped overlay-scoped design: session rule, served-copy flip and UA echo all witnessed; the row's old control surface is superseded above.**
 - [x] Scroll-sync suite round — **the mechanics verified by the throwaway probe above** (default-off → toggle → proportional sync → no feedback → close hygiene → persisted re-open); the permanent suite is P16.1's (incl. the cross-origin-half fixture's per-side state).
-- [ ] Real-site manual: a live WP Rocket site with a separate mobile cache — menu toggle on, reload, mobile copy served, badge mark + chip visible, a second tab untouched; toggle off restores (rule removed, mark cleared, page-world shadow restored on next load).
-- [ ] Firefox: the unavailable state renders with the fallback hint; no rule call is attempted; smoke recorded.
+- [ ] Real-site manual: a live WP Rocket site with a separate mobile cache — menu toggle on, reload, mobile copy served, badge mark + chip visible, a second tab untouched; toggle off restores (rule removed, mark cleared, page-world shadow restored on next load). **→ Superseded with the feature's re-scope: the badge mark, chip and menu controls never shipped (visibility lives in the overlay — 05g); the local-site leg of the round trip ran green (row above); a live external site stays with the external-site track / P15's manual smokes — open, recorded.**
+- [ ] Firefox: the unavailable state renders with the fallback hint; no rule call is attempted; smoke recorded. **→ Recorded as 05f's rewritten suite 5 manual smoke: Playwright cannot load extensions into Firefox, so the smoke has not run yet — open, recorded, never silent.**
 
 ## Docs to update
 
-- AGENTS.md: the new permission (and nothing else — no new entrypoints or surfaces; the lib additions follow the existing layout, reflected in master §1.5).
+- AGENTS.md: the DNR permission note (landed with the background service) plus the two content-script entrypoint rows the identity pair added (`ua-relay`, `ua-identity`); the lib additions follow the existing layout, reflected in master §1.5.
 - The forward notes in the P2/P3/P4/P8 docs exist (recorded at plan time); each surface's own shipped-state note updates inside its phase section when P16 lands.

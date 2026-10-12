@@ -45,7 +45,11 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
 │   │   │                      #    colocated feature modules; see docs/plans for the list)
-│   └── main-world.content.ts  # content script — MAIN world
+│   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
+│   ├── ua-relay.content.ts    # content script — isolated world, all frames;
+│   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
+│   └── ua-identity.content.ts # content script — MAIN world, all frames;
+│                              #   `navigator.userAgent` shadowed per the sim state (`ua-identity/`)
 ├── components/                # Solid components shared by ≥2 entrypoints
 │   └── ui/                    # design-system primitives
 ├── lib/                       # domain modules — logic + types + data, pure and testable
