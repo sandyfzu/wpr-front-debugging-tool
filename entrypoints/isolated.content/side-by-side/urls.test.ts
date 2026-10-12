@@ -4,14 +4,8 @@
  * context-menu entry URL.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  getOverlayUrls,
-  getPsiUrls,
-  getSiteUrls,
-  importedSiteUrl,
-  isPsiHost,
-  psiEntryUrl
-} from './urls';
+import { getOverlayUrls, getPsiUrls, getSiteUrls, importedSiteUrl, psiEntryUrl } from './urls';
+import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
 
 /** The `url` parameter of a PageSpeed analysis URL, decoded. */
 function getPsiUrlParam(analysisUrl: string): string | null {

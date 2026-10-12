@@ -26,6 +26,7 @@ import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { onMessage } from '../../lib/messaging';
 import type { PageHeaders } from '../../lib/wp-rocket/types';
 import type { BadgeRuntime } from './badge';
+import type { SimMainFrameHook } from './device-simulation';
 
 const log = createLogger('headers');
 
@@ -141,6 +142,11 @@ export interface HeaderCaptureDeps {
   capture: HeaderCaptureStore;
   /** Badge runtime; a main-frame response starts that tab's page lifecycle. */
   badge: Pick<BadgeRuntime, 'navigationStarted' | 'apply'>;
+  /**
+   * Simulated-device sessions; a main-frame response ends the tab's sim-on
+   * session (its rule dies with the page it was scoped to).
+   */
+  sim: SimMainFrameHook;
 }
 
 /**
@@ -173,23 +179,33 @@ export function handleResponseStarted(event: ResponseStartedEvent, deps: HeaderC
   } catch (cause) {
     log.error('Navigation badge clear failed', { cause, tabId });
   }
+  try {
+    // The simulated session belongs to the page that is ending: its rule
+    // removal rides this response signal (the request itself was already
+    // written before the rule could be lifted — recorded in the phase doc).
+    void deps.sim.mainFrameNavigation(tabId);
+  } catch (cause) {
+    log.error('Sim session removal failed', { cause, tabId });
+  }
 }
 
 /**
  * Register the header-capture runtime. Runs once per service worker start:
  * the response listener delegates to `handleResponseStarted` (its effects
  * are guarded there), the badge runtime is notified on every main-frame
- * response so navigation can clear a stale badge before the page even
- * finishes loading, and closed tabs drop both their rows and badge state.
+ * response so navigation can clear a stale badge before the page even finishes
+ * loading, the simulated-device session drops its tab rule on the same
+ * signal, and closed tabs drop both their rows and badge state.
  *
  * @param badge Badge runtime whose per-tab badge a main-frame response clears.
+ * @param sim Simulated-device sessions whose tab rule a main-frame response ends.
  */
-export function initHeaderCapture(badge: BadgeRuntime): void {
+export function initHeaderCapture(badge: BadgeRuntime, sim: SimMainFrameHook): void {
   const capture = new CachedTabHeaders();
 
   browser.webRequest.onResponseStarted.addListener(
     (details) => {
-      handleResponseStarted(details, { capture, badge });
+      handleResponseStarted(details, { capture, badge, sim });
     },
     { urls: [...URL_PATTERNS], types: ['main_frame'] },
     ['responseHeaders']

@@ -9,13 +9,12 @@
  */
 
 import { parseUrl } from '../../../utils/urls';
+import { isPsiHost, PSI_HOST } from '../../../lib/side-by-side/analysis-host';
 
 /** The query parameter that bypasses WP Rocket's cache for one request. */
 export const NOW_PROCKET_PARAM = 'nowprocket';
 /** The query parameter this tool uses to hand a site URL to PageSpeed Insights. */
 export const SIDE_BY_SITE_PARAM = 'wpr-sbs';
-/** Host PageSpeed Insights runs on. */
-export const PSI_HOST = 'pagespeed.web.dev';
 
 /** The two URLs an overlay side loads, cached and cache-bypassed. */
 export interface CompareUrls {
@@ -56,17 +55,6 @@ export function getPsiUrls(siteUrl: URL): CompareUrls {
   const cachedAnalysis = analysis.href;
   analysis.searchParams.set('url', bypassed);
   return { cached: cachedAnalysis, bypassed: analysis.href };
-}
-
-/**
- * Whether a URL is the PageSpeed Insights host (the overlay's compare flow
- * happens there, where the close/refresh controls are hidden — the analyses
- * drive themselves).
- *
- * @param url The page URL.
- */
-export function isPsiHost(url: URL): boolean {
-  return url.host === PSI_HOST;
 }
 
 /**

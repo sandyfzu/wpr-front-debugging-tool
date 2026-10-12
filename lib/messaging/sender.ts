@@ -9,9 +9,13 @@
  * malformed tab reference would serve one context's data to another.
  */
 
-/** A sender timestamp or tab reference as the runtime actually delivers it. */
-interface LooselyTypedMessageSender {
+import { parseUrl } from '../../utils/urls';
+
+/** A sender tab reference and page URL as the runtime actually delivers them. */
+export interface LooseMessageSender {
   tab?: { id?: unknown } | undefined;
+  /** The sending document's URL: present on content-script senders, not on extension ones. */
+  url?: unknown;
 }
 
 /**
@@ -32,6 +36,19 @@ export function numericTabId(value: unknown): number | null {
  *
  * @param sender Runtime sender as delivered on a received message, or undefined.
  */
-export function resolveSenderTabId(sender: LooselyTypedMessageSender | undefined): number | null {
+export function resolveSenderTabId(sender: LooseMessageSender | undefined): number | null {
   return numericTabId(sender?.tab?.id);
+}
+
+/**
+ * The page URL of the context that sent the message, parsed. Content-script
+ * senders always carry the sending frame's URL (it is not gated behind the
+ * `tabs` permission); extension surfaces and malformed senders yield no URL
+ * or a junk one — both reject to `null`, so callers decide the fail direction.
+ *
+ * @param sender Runtime sender as delivered on a received message, or undefined.
+ */
+export function resolveSenderUrl(sender: LooseMessageSender | undefined): URL | null {
+  const raw = sender?.url;
+  return typeof raw === 'string' ? parseUrl(raw) : null;
 }

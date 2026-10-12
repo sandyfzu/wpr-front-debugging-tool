@@ -107,7 +107,7 @@ Do not guess, suppose, or assume. Always verify, validate, confirm, and fact-che
 The project must be stable, reliable, secure, safe, production-ready, well documented, and well tested:
 
 - **No half-finished paths.** Handle edge cases and errors explicitly; fail fast with actionable messages that name the offending input.
-- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case".
+- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case". (`declarativeNetRequestWithHostAccess` is the deliberate variant choice for the simulated-device sessions: same capabilities as the base permission, no install-time warning, and its rules act only within the already-declared host permissions.)
 - **Dependencies: latest stable.** Any dependency added to the project MUST be the latest stable version (`latest` dist-tag) unless it is incompatible with the installed stack — verify `engines` and peer ranges before adding. Never add outdated versions "just in case".
 - **Security.** Never log or persist sensitive data. Validate untrusted input — page DOM, `storage`, message payloads — at the boundary before use.
 - **Content scripts must never break the host page.** They run on sites being debugged: wrap risky work, clean up listeners/observers, and keep main-world vs isolated-world responsibilities explicit.

@@ -28,7 +28,8 @@ import { createLogger } from '../../../lib/logger';
 import { getOptions, optionsStore } from '../../../lib/storage/options';
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../ui/mount';
-import { getOverlayUrls, importedSiteUrl, isPsiHost, psiEntryUrl } from './urls';
+import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
+import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
 import { createScrollSyncSession } from './sync-session';
 import { SideBySideOverlay } from './ui';
 import type { CompareSide } from '../../../lib/side-by-side/scroll-sync';
@@ -281,6 +282,16 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       if (isPsiHost(new URL(window.location.href))) return true;
       const entryUrl = psiEntryUrl(new URL(window.location.href));
       if (entryUrl !== null) window.open(entryUrl, '_blank', 'noopener');
+      return true;
+    })
+  );
+
+  ctx.onInvalidated(
+    onMessage('reportDeviceSimulationLiveness', (): true => {
+      // The simulated-session sweep's reachability probe: answering proves
+      // this tab's isolated world is alive. The dead-world case answers
+      // nothing by construction (an extension reload removed the listener
+      // with its context — exactly the ghost signal the sweep removes on).
       return true;
     })
   );

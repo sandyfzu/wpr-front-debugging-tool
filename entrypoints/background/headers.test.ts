@@ -17,6 +17,7 @@ import {
   type HeaderCaptureStore
 } from './headers';
 import type { BadgeEffect } from './badge';
+import type { SimMainFrameHook } from './device-simulation';
 
 /** A capture-shaped header list: plain, with missing values, with odd rows. */
 const NORMAL_ROWS = [
@@ -34,6 +35,17 @@ function badgeHalf(
     navigationStarted: (tabId) => ({ kind: 'clear', tabId }),
     apply: (effect) => {
       applied.push(effect);
+      return Promise.resolve();
+    }
+  };
+  return Object.assign(half, overrides);
+}
+
+/** Sim half of the deps: records the tabs whose main-frame response arrived. */
+function simHalf(navigated: number[], overrides: Partial<SimMainFrameHook> = {}): SimMainFrameHook {
+  const half: SimMainFrameHook = {
+    mainFrameNavigation: (tabId) => {
+      navigated.push(tabId);
       return Promise.resolve();
     }
   };
@@ -131,7 +143,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     const applied: Array<BadgeEffect | null> = [];
     handleResponseStarted(
       { tabId: 21, responseHeaders: NORMAL_ROWS },
-      { capture: cache, badge: badgeHalf(applied) }
+      { capture: cache, badge: badgeHalf(applied), sim: simHalf([]) }
     );
     // The regression pin for the disconnected-capture bug: a served capture
     // must land in the cache, or the panel's header cards stay dead.
@@ -141,20 +153,53 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
   it('a response with no delivered headers resets the tab (previous page loses its rows)', () => {
     const cache = new CachedTabHeaders();
     cache.store(3, NORMAL_ROWS);
-    handleResponseStarted({ tabId: 3 }, { capture: cache, badge: badgeHalf([]) });
+    handleResponseStarted({ tabId: 3 }, { capture: cache, badge: badgeHalf([]), sim: simHalf([]) });
     expect(cache.take(3)).toBeNull();
   });
 
-  it('ignores tabless and junk tab references: no capture, no badge effect', () => {
+  it('ignores tabless and junk tab references: no capture, no badge, no session removal', () => {
     const cache = new CachedTabHeaders();
     const applied: Array<BadgeEffect | null> = [];
+    const navigated: number[] = [];
     for (const tabId of [-1, 1.5, Number.NaN]) {
       handleResponseStarted(
         { tabId, responseHeaders: NORMAL_ROWS },
-        { capture: cache, badge: badgeHalf(applied) }
+        { capture: cache, badge: badgeHalf(applied), sim: simHalf(navigated) }
       );
     }
     expect(applied).toHaveLength(0);
+    expect(navigated).toHaveLength(0);
+  });
+
+  it('a main-frame response signals the end of the simulated session', async () => {
+    const cache = new CachedTabHeaders();
+    const navigated: number[] = [];
+    handleResponseStarted(
+      { tabId: 55, responseHeaders: NORMAL_ROWS },
+      { capture: cache, badge: badgeHalf([]), sim: simHalf(navigated) }
+    );
+    // Every main-frame response runs the hook — removal decides inside the
+    // sessions (a tab without a session removes an id that is simply absent).
+    await vi.waitFor(() => {
+      expect(navigated).toEqual([55]);
+    });
+    expect(cache.take(55)).toEqual(NORMAL_ROWS);
+  });
+
+  it('a broken sim hook never costs the capture or the badge', () => {
+    const cache = new CachedTabHeaders();
+    const applied: Array<BadgeEffect | null> = [];
+    const broken = simHalf([], {
+      mainFrameNavigation: () => {
+        throw new RangeError('sim hook broke');
+      }
+    });
+    handleResponseStarted(
+      { tabId: 87, responseHeaders: NORMAL_ROWS },
+      { capture: cache, badge: badgeHalf(applied), sim: broken }
+    );
+    expect(cache.take(87)).toEqual(NORMAL_ROWS);
+    expect(applied).toEqual([{ kind: 'clear', tabId: 87 }]);
   });
 
   it('a wholesale-rejected capture still clears the stale badge (one half never blocks the other)', async () => {
@@ -168,7 +213,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     }));
     handleResponseStarted(
       { tabId: 9, responseHeaders: oversized },
-      { capture: cache, badge: badgeHalf(applied) }
+      { capture: cache, badge: badgeHalf(applied), sim: simHalf([]) }
     );
     expect(cache.take(9)).toBeNull();
     await vi.waitFor(() => {
@@ -176,14 +221,18 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     });
   });
 
-  it('a broken capture store keeps the badge clear running', async () => {
+  it('a broken capture store keeps the badge clear and the sim hook running', async () => {
     const applied: Array<BadgeEffect | null> = [];
+    const navigated: number[] = [];
     handleResponseStarted(
       { tabId: 4, responseHeaders: NORMAL_ROWS },
-      { capture: brokenCapture(), badge: badgeHalf(applied) }
+      { capture: brokenCapture(), badge: badgeHalf(applied), sim: simHalf(navigated) }
     );
     await vi.waitFor(() => {
       expect(applied).toEqual([{ kind: 'clear', tabId: 4 }]);
+    });
+    await vi.waitFor(() => {
+      expect(navigated).toEqual([4]);
     });
   });
 
@@ -196,7 +245,7 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     });
     handleResponseStarted(
       { tabId: 74, responseHeaders: NORMAL_ROWS },
-      { capture: cache, badge: breaking }
+      { capture: cache, badge: breaking, sim: simHalf([]) }
     );
     expect(cache.take(74)).toEqual(NORMAL_ROWS);
   });

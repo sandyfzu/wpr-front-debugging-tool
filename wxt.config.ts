@@ -25,7 +25,15 @@ export default defineConfig({
       // Read main-frame response headers for the Server / Known Platform cards.
       'webRequest',
       // Side-by-Side, PSI Side-by-Side, Exclusion Builder, manual KC DB update.
-      'contextMenus'
+      'contextMenus',
+      // Simulated-device sessions (compare overlay): one tab-scoped session rule
+      // rewrites `user-agent` on document requests. The WithHostAccess variant —
+      // no install-time warning, rules act only within the host permissions
+      // below. Both engines implement the mechanism (BCD: tabIds 92/113,
+      // modifyHeaders 86/113); Firefox's MV2 build folds those host permissions
+      // into `permissions` itself, and an older Firefox without the namespace
+      // degrades through the runtime's feature detection.
+      'declarativeNetRequestWithHostAccess'
     ],
     // Required for `webRequest` main-frame header capture (the source omitted these,
     // putting that feature at risk) and lets the popup read the active web tab's URL

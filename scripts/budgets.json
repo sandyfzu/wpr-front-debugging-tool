@@ -2,7 +2,7 @@
   {
     "surface": "background service worker",
     "globs": ["background.js"],
-    "maxKb": { "raw": 27 }
+    "maxKb": { "raw": 32 }
   },
   {
     "surface": "known-conflicts DB seed asset (background-owned)",

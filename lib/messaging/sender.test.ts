@@ -3,7 +3,7 @@
  * a tab reference, and a genuine tab id must come back unchanged.
  */
 import { describe, expect, it } from 'vitest';
-import { numericTabId, resolveSenderTabId } from './sender';
+import { numericTabId, resolveSenderTabId, resolveSenderUrl } from './sender';
 
 describe('resolveSenderTabId', () => {
   it('returns the numeric tab id of a page-originated sender', () => {
@@ -36,5 +36,23 @@ describe('numericTabId', () => {
   it('backs the sender-level lookup with the same rules', () => {
     expect(resolveSenderTabId({ tab: { id: '12' } })).toBeNull();
     expect(resolveSenderTabId({ tab: { id: -1 } })).toBeNull();
+  });
+});
+
+describe('resolveSenderUrl', () => {
+  it('parses the sending frame URL of a content-script sender', () => {
+    const url = resolveSenderUrl({ url: 'https://example.dev/page?x=1' });
+    expect(url?.host).toBe('example.dev');
+    expect(url?.pathname).toBe('/page');
+  });
+
+  it('yields null for senders without a usable URL', () => {
+    // Extension surfaces (no URL), and page senders with a junk or absent one:
+    // callers refuse these, they never guess a host.
+    expect(resolveSenderUrl(undefined)).toBeNull();
+    expect(resolveSenderUrl({})).toBeNull();
+    expect(resolveSenderUrl({ url: undefined })).toBeNull();
+    expect(resolveSenderUrl({ url: 42 })).toBeNull();
+    expect(resolveSenderUrl({ url: 'not-a-url' })).toBeNull();
   });
 });

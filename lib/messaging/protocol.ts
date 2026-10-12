@@ -31,6 +31,7 @@
 
 import type { FdtData, PageHeaders, PanelSearchAction, WprDetections } from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
+import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 
 export interface ProtocolMap {
@@ -60,4 +61,12 @@ export interface ProtocolMap {
   reportDetectionSummary(data: DetectionSummary): true;
   /** Options → background: refresh the conflicts DB now. */
   updateKnownConflictsDb(): DbUpdateResult | null;
+  /** Content script → background (sender-resolved): the tab's simulation state. */
+  getDeviceSimulation(): DeviceSimState;
+  /** Content script → background (sender-resolved): switch a tab's simulation and learn the result. */
+  setDeviceSimulation(data: DeviceSimUpdate): DeviceSimState;
+  /** Background → tab (push): the state the tab's requests carry after a transition. */
+  deviceSimulationChanged(data: DeviceSimState): true;
+  /** Background → tab (probe, sweep): ack coming from a live isolated world. */
+  reportDeviceSimulationLiveness(): true;
 }

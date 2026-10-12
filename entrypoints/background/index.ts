@@ -11,7 +11,9 @@
  * - the context menus (`./context-menus`) — the entries and their one click
  *   router,
  * - the toolbar badge (`./badge`) — the per-tab action badge state machine
- *   and its option gate.
+ *   and its option gate,
+ * - the simulated-device sessions (`./device-simulation`) — the compare
+ *   overlay's tab-scoped UA rules and their lifecycle.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -26,6 +28,11 @@ import { createDisabledBadgeRuntime, initBadge, watchBadgeGate, type BadgeRuntim
 import { initHeaderCapture } from './headers';
 import { registerKnownConflictsService } from './known-conflicts';
 import { registerContextMenus } from './context-menus';
+import {
+  createDisabledDeviceSimSessions,
+  initDeviceSimSessions,
+  type DeviceSimSessions
+} from './device-simulation';
 
 const log = createLogger('background');
 
@@ -93,6 +100,22 @@ function bootDatabaseService(): {
 }
 
 /**
+ * Boot the simulated-device sessions with a degrade path: if their wiring
+ * cannot start, asks resolve unavailable and the hooks remove nothing —
+ * a session without wiring never spoofs a request.
+ *
+ * @returns The session model the header capture and the boot sweep drive.
+ */
+function bootDeviceSimSessions(): DeviceSimSessions {
+  try {
+    return initDeviceSimSessions();
+  } catch (cause) {
+    log.error('Device simulation init failed — simulated sessions disabled', cause);
+    return createDisabledDeviceSimSessions();
+  }
+}
+
+/**
  * Boot all subsystems. Every registration is synchronous (it can never fall
  * behind an incoming event); the remaining bootstrap steps resolve and
  * branch independently, and a subsystem whose boot fails degrades to a
@@ -100,12 +123,20 @@ function bootDatabaseService(): {
  */
 async function main(): Promise<void> {
   const badge = bootBadge();
+  const simSessions = bootDeviceSimSessions();
 
   try {
-    initHeaderCapture(badge);
+    initHeaderCapture(badge, simSessions);
   } catch (cause) {
     log.error('Header capture init failed — no page headers this session', cause);
   }
+
+  // The boot sweep is the sessions' own convergence step at wake-up: rules
+  // without a live simulated session never survive a restart. It is
+  // fire-and-forget on purpose — no boot step depends on it, the per-rule
+  // work contains its own failures, and a slow probe must not hold the badge
+  // gate or the database prime hostage behind it.
+  void simSessions.sweep();
 
   const database = bootDatabaseService();
 
