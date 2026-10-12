@@ -45,6 +45,11 @@
     "maxKb": { "raw": 11 }
   },
   {
+    "surface": "devtools page JS",
+    "globs": ["chunks/devtools-*.js", "devtools.js"],
+    "maxKb": { "raw": 24 }
+  },
+  {
     "surface": "devtools panel JS (all panel chunks)",
     "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js"],
     "maxKb": { "raw": 600 }
