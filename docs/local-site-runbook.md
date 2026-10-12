@@ -53,23 +53,59 @@ both the `.env` and `.env.example`, when you re-pin a newer tag).
 Every scenario is a URL flag; no admin state exists for any of them. Flags combine
 (`?fdt-error=reference&fdt-delay=1` runs both). Unknown values no-op silently.
 
-| URL flag                 | Scripted problem (verified in a real Chromium)                                                                                                                                                                                                                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `?fdt-error=reference`   | `ReferenceError: fdtFixtureReference is not defined` — at load, un-delayed                                                                                                                                                                                                                                                       |
-| `?fdt-error=reading`     | `TypeError: Cannot read properties of undefined (reading 'fdtFixtureProperty')` — at load, un-delayed                                                                                                                                                                                                                            |
-| `?fdt-error=notfunction` | `TypeError: document.body.fdtFixtureNotAFunction is not a function` — at load, un-delayed                                                                                                                                                                                                                                        |
-| `?fdt-delay=1`           | Delay-JS queue: dispatch a user interaction (mousemove etc.) and the delayed script throws `ReferenceError: fdtDelayTypedDependency is not defined` exactly then; the sibling benign delayed script tags its node `data-fdt-delay="executed"`, and WP Rocket marks every executed delayed script `data-rocket-status="executed"` |
-| `?nowprocket=1`          | WP Rocket bypass: flags still fire their own scripts, but nothing is delayed/deferred/minified (serves the plain page)                                                                                                                                                                                                           |
+| URL flag                 | Scripted problem (verified in a real Chromium)                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `?fdt-error=reference`   | `ReferenceError: fdtFixtureReference is not defined` — at load, un-delayed                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `?fdt-error=reading`     | `TypeError: Cannot read properties of undefined (reading 'fdtFixtureProperty')` — at load, un-delayed                                                                                                                                                                                                                                                                                                                                                                                   |
+| `?fdt-error=notfunction` | `TypeError: document.body.fdtFixtureNotAFunction is not a function` — at load, un-delayed                                                                                                                                                                                                                                                                                                                                                                                               |
+| `?fdt-delay=1`           | Delay-JS queue: dispatch a user interaction (mousemove etc.) and the delayed script throws `ReferenceError: fdtDelayTypedDependency is not defined` exactly then; the sibling benign delayed script tags its node `data-fdt-delay="executed"`, and WP Rocket marks every executed delayed script `data-rocket-status="executed"`                                                                                                                                                        |
+| `?fdt-mobile-cache=1`    | WP Rocket's separate-mobile-files option (`do_caching_mobile_files`) forced on per request via the option-read filter — the served copy carries the `wpr_mobile`/`wpr_desktop` rendering marker (verified). Read from the request, stored nowhere: self-resets. Note the boundary: the plugin's compiled per-host buffer config keeps the boot-seeded state, so against this site's always-on baseline the flag is a no-op force that exists for rounds that run after any config shift |
+| `?nowprocket=1`          | WP Rocket bypass: flags still fire their own scripts, but nothing is delayed/deferred/minified (serves the plain page)                                                                                                                                                                                                                                                                                                                                                                  |
 
 The delay scenario is the real delayed-execution reproduction: zero errors before the
 interaction, the error only when WP Rocket's delay queue runs (its trigger list —
 `keydown/keyup/mousedown/mouseup/mousemove/mouseover/mouseout/touchmove/touchstart/
 touchend/touchcancel/wheel/click/dblclick/input` — verified against the built runtime).
 
+## The UA-echo endpoint (per-request network truth)
+
+```text
+GET http://127.0.0.1:8493/wp-json/fdt/v1/ua-echo
+```
+
+A `text/plain` body answering the **request's own `User-Agent` header verbatim**, marker
+first (`fdt-ua-echo`), then the UA line — the assert surface for "what the network
+actually carried", including inside the side-by-side halves (an iframe document body of
+text/plain is the raw bytes, readable as `body.textContent`). Properties, verified live:
+
+- **Live per request** — WP Rocket's compiled `cache_reject_uri` rejects every
+  `wp-json` request (never buffered, never stored), and the response pins
+  `Cache-Control: no-store` + `Expires: 0` itself: the site's expires-by-type fallback
+  would otherwise give this MIME type a 30-day HTTP cache lifetime.
+- **Uncacheable frontier is deliberate** — a served UA echo must never be replayed
+  across a request that flips the UA (a session rule does exactly that).
+
+## Verifying the served copy's rendering (mobile-cache markers)
+
+With separate mobile files on (the boot baseline seeds `cache_mobile` +
+`do_caching_mobile_files` = 1), a request's UA decides which copy is served, and the
+served copy carries its own rendering marker:
+
+```text
+Profile UA (Android + Mobile tokens) → index-mobile.html → data-wpr-features contains wpr_mobile
+Desktop UA                           → index.html           → data-wpr-features contains wpr_desktop
+?nowprocket=1                        → plain render, no WP Rocket stamps at all
+```
+
+Verified live by direct requests (2026-10-12, both copies built and listed below the
+Observability paths).
+
 ## Re-running the browser smoke (no test deps installed)
 
 `docker/scripts/cdp-smoke.mjs` drives system Chrome headless over raw CDP with Node's
-built-in `WebSocket` only (no new dependencies) and asserts all of the above:
+built-in `WebSocket` only (no new dependencies) and asserts all of the above — the
+scenario flags **and** the UA-echo endpoint (marker line, the verbatim browser UA, a
+UA-overridden navigation proving per-request liveness, and no WP Rocket footprint):
 
 ```bash
 node docker/scripts/cdp-smoke.mjs
@@ -127,7 +163,10 @@ Note: `cache` is not a settings key — page caching is unconditional in WP Rock
 - WP Rocket's own debug log: `wp-content/wp-rocket-config/wp-rocket-debug.log.html` (enabled by `WP_ROCKET_DEBUG`; rotates older files under the same directory).
 - Page cache tree: `wp-content/cache/wp-rocket/<host>/<path>/index.html` (+ `_gzip` twin)
   — the port is dropped from the cached host path (observed: `127.0.0.1/...` while the
-  site URL is `127.0.0.1:8493`).
+  site URL is `127.0.0.1:8493`). With separate mobile files on there is a second,
+  UA-gated variant per path: `index-mobile.html` (+ `_gzip` twin), served to requests
+  whose UA the plugin reads as a phone and desktop-invisible to them (verified live:
+  both variants carry their own `wpr_mobile`/`wpr_desktop` marker).
 - Minified assets: `wp-content/cache/min/1/wp-content/...-min.js` (hashed name; the
   fixture Delay/Defer exclusion stems still match, by design).
 - Serve-cached proof: repeat GETs of the same URL are byte-identical and carry the

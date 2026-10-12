@@ -8,6 +8,10 @@
  *     the 3.23.5.1 lazyload-scripts runtime) runs the queue: the delayed script throws
  *     its ReferenceError at execution time, the benign one tags itself
  *     data-fdt-delay="executed", and WP Rocket sets data-rocket-status on both nodes.
+ *  3. /wp-json/fdt/v1/ua-echo    -> the uncached text echo of the request's User-Agent
+ *     (marker first): the body carries the browser UA, changes when the UA is
+ *     overridden — a stored or HTTP-cached copy could not — and carries no WP Rocket
+ *     footprint (the compiled wp-json cache rejection)
  *
  * Exits nonzero on any expectation miss: a missing proof is a failure, never a pass.
  */
@@ -119,7 +123,7 @@ const statusOf = (selector, attrs) =>
     sessionId
   ).then((r) => JSON.parse(r.result.result.value));
 
-const results = { immediate: null, delay: null };
+const results = { immediate: null, delay: null, uaEcho: null };
 
 // ---- Scenario 0: the remaining two immediate classes (reading / notfunction) ----
 const immediateAll = [];
@@ -207,6 +211,37 @@ results.delay = {
   errorsAfter: delayErrs
 };
 
+// ---- Scenario 3: the uncached UA-echo endpoint (the per-request network truth) ----
+// One pass with the browser's own UA, one with an override: a live per-request echo is
+// only proven when the body CHANGES with the requesting UA — a stored or HTTP-cached
+// copy could not. The override happens here (after the other scenarios) so it cannot
+// leak into their assertions.
+const UA_OVERRIDE =
+  'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36';
+await send('Network.enable', {}, sessionId);
+const readEcho = async () => {
+  const r = await send(
+    'Runtime.evaluate',
+    {
+      expression: `JSON.stringify({
+  text: document.body.innerText,
+  footprint: document.documentElement.outerHTML.includes('Performance optimized by WP Rocket'),
+  ua: navigator.userAgent,
+})`,
+      returnByValue: true
+    },
+    sessionId
+  );
+  return JSON.parse(r.result.result.value);
+};
+await navigate(`${SITE}/wp-json/fdt/v1/ua-echo`);
+await sleep(1200);
+results.uaEcho = { marker: 'fdt-ua-echo', browser: await readEcho(), overridden: null };
+await send('Network.setUserAgentOverride', { userAgent: UA_OVERRIDE }, sessionId);
+await navigate(`${SITE}/wp-json/fdt/v1/ua-echo`);
+await sleep(1200);
+results.uaEcho.overridden = await readEcho();
+
 // ---- Report ---------------------------------------------------------------------
 console.log(JSON.stringify(results, null, 2));
 
@@ -238,5 +273,15 @@ if (results.nowprocket.delayed !== 0 || results.nowprocket.footprinted)
   fail('scenario 0b: ?nowprocket did not bypass optimization');
 if (results.nowprocket.plain < 1)
   fail('scenario 0b: the flagged script never enqueued as a plain script under ?nowprocket');
+if (!results.uaEcho.browser.text.startsWith(results.uaEcho.marker))
+  fail('scenario 3: the echo body does not open with the fdt-ua-echo marker');
+if (!results.uaEcho.browser.text.includes(results.uaEcho.browser.ua))
+  fail('scenario 3: the echo does not carry the requesting browser UA');
+if (results.uaEcho.browser.footprint)
+  fail('scenario 3: the echo carried a WP Rocket footprint — wp-json must stay out of the cache');
+if (!results.uaEcho.overridden.text.includes(UA_OVERRIDE))
+  fail('scenario 3: the echo stayed static across a UA override — not per-request truth');
+if (results.uaEcho.overridden.footprint)
+  fail('scenario 3: the overriden echo carried a WP Rocket footprint');
 console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
 process.exit(ok ? 0 : 1); // the exit hook kills Chrome; the WebSocket dies with the process
