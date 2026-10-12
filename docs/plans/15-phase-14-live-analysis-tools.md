@@ -69,9 +69,15 @@ All three of these run live in the inspected tab (content script side), triggere
 
 - [ ] The three strip tool chips call these same protocol executors (config from the tester stores; first-run tooltip when no config exists). Outcomes mirror to the strip banner.
 
+### 6. Field CWV view (owner-committed 2026-10-12)
+
+- [ ] The Performance page also renders the page's **field Core Web Vitals** — LCP/CLS/INP collected via `PerformanceObserver` (buffered) through one pure reducer over entry types — shown next to the LCP breakdown: "what the visitor actually measured" beside "why". Each metric degrades explicitly to a typed unavailable state when its entry type/API is unsupported (the capability rule — never a half-working feature).
+- [ ] Tests: the collector reducer (golden fixture: entries JSON → `{ lcp, cls, inp }` with per-metric unavailable mapping).
+
 ## Explicit enhancements over the inspector source
 
 - Results as first-class panel tables (host console silent) — searching, virtualization, exports where P6 infra already exists.
+- **Field CWV view (owner-committed 2026-10-12)** — the visitor-experienced LCP/CLS/INP beside the probe results, per-metric unavailable states.
 - Latest-dep harness with an adapter seam (upgrades local); subclass discipline; host-page DOM untouched by the main harness path; config validated + non-sticky; explicit bail/timeout/unsupported outcomes; LCP highlight with cleanup + border restore; script runtime as a browsable, filterable, expanded-text view with an exact `Other` group and a `structured-data` kind; base64-inline scripts labeled (parity kept).
 - All four `wp-rocket-scripts` beacon channels (`atf`/`lrc` orthogonal now; `preload_fonts`/`preconnect_external_domain` accepted in the config schema but gated behind a flagged "results verified on a real site" task before their tables ship — no speculative UI).
 

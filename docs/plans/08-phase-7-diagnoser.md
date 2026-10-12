@@ -1,6 +1,8 @@
 # Phase 7 — Diagnoser pages (General Info + Optimizations Info)
 
-**Depends on:** P5, P6 shell, P1 diagnostics parser. **Effort:** M. **Parallelizable with:** P8, P9, P10.
+**Deferred — executes last (owner decision 2026-10-12):** after P14.6, before P15. The WP Rocket **Support Diagnoser plugin** is being rebuilt; these pages must target the rebuilt plugin's JSON shape, so building against the current plugin's shape would be reworked. Until then the panel route stays **reserved** — a disabled nav row with a "returns with the Diagnoser plugin v2" tooltip (P5's registry). The CS-side diagnoser extraction and the `lib/diagnostics` parser (P1–P3) are already built and suite-covered — only the rendering waits; when this un-defers, the parser adapts to the v2 shape first.
+
+**Depends on:** P5, P6 shell, P1 diagnostics parser (all built long before) **+ the rebuilt Diagnoser plugin's JSON shape — the actual gate.** **Effort:** M. **Parallelizable with:** P8, P9, P10 (they no longer wait on this).
 
 ## Goal
 

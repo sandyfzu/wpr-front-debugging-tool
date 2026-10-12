@@ -39,6 +39,7 @@ Port the popup that turns WP Rocket optimizations on/off by rewriting Diagnoser-
 - [ ] Manual: on `chrome://` page → incompatible state; with CS absent → error state with retry (enhancement). 12 rows + toolbar + footer fit and scroll within 576 px; the first rendered frame already shows detected toggles (no all-off flash).
 - [ ] Keyboard-only: tab through all switches, space toggles, Apply triggers.
 - [ ] Firefox: popup works (URL param flow is cross-browser).
+- [ ] **Diagnoser plugin v2 re-verification (owner deferral note, 2026-10-12):** when the rebuilt plugin ships, re-verify the Apply/Reset URL-param semantics against it — the popup's builders target the current plugin's contract; adapt the pure builders (tested, a one-file change) if the contract changed.
 
 ## Docs to update
 
