@@ -11,7 +11,14 @@
 import { describe, expect, it } from 'vitest';
 import { defineWindowMessaging } from '@webext-core/messaging/page';
 import { onMessage, sendMessage } from './index';
-import { WINDOW_BRIDGE_NAMESPACE, windowMessenger, type WindowProtocolMap } from './window-bridge';
+import {
+  UA_IDENTITY_BRIDGE_NAMESPACE,
+  WINDOW_BRIDGE_NAMESPACE,
+  uaIdentityMessenger,
+  windowMessenger,
+  type UaIdentityProtocolMap,
+  type WindowProtocolMap
+} from './window-bridge';
 
 describe('extension messenger', () => {
   it('round-trips a request/response through the fake runtime', async () => {
@@ -80,6 +87,75 @@ describe('window-bridge namespace', () => {
       expect(seen).toEqual(['React']);
     } finally {
       removeListener();
+    }
+  });
+});
+
+describe('identity bridge', () => {
+  it('carries its own namespace, distinct from the error batches one', () => {
+    expect(UA_IDENTITY_BRIDGE_NAMESPACE).toBe('wpr-fdt-ua-identity');
+    expect(UA_IDENTITY_BRIDGE_NAMESPACE).not.toBe(WINDOW_BRIDGE_NAMESPACE);
+  });
+
+  it('round-trips the ask and the acknowledged push across two instances', async () => {
+    const relaySide = defineWindowMessaging<UaIdentityProtocolMap>({
+      namespace: UA_IDENTITY_BRIDGE_NAMESPACE
+    });
+    const identitySide = defineWindowMessaging<UaIdentityProtocolMap>({
+      namespace: UA_IDENTITY_BRIDGE_NAMESPACE
+    });
+    const removeAsk = relaySide.onMessage('uaIdentityRequest', () => ({
+      available: true,
+      enabled: false
+    }));
+    const removes: Array<() => void> = [removeAsk];
+    const seen: unknown[] = [];
+    try {
+      // The ask's answer arrives as the cached state:
+      await expect(identitySide.sendMessage('uaIdentityRequest')).resolves.toEqual({
+        available: true,
+        enabled: false
+      });
+      // The push goes relay → identity and is acknowledged (true) there:
+      removes.push(
+        identitySide.onMessage('uaIdentityUpdate', ({ data }) => {
+          seen.push(data);
+          return true;
+        })
+      );
+      await expect(
+        relaySide.sendMessage('uaIdentityUpdate', { available: true, enabled: true })
+      ).resolves.toBe(true);
+      expect(seen).toEqual([{ available: true, enabled: true }]);
+    } finally {
+      for (const remove of removes.reverse()) remove();
+    }
+  });
+
+  it('the two namespaces stay independent inside one window (no cross-pair answers)', async () => {
+    // One window has two pairs in production (error batches + identity); if
+    // their namespaces collided, each pair's sibling instance would answer
+    // the other's channels — this pins the separation the design leans on.
+    const errorPair = defineWindowMessaging<WindowProtocolMap>({
+      namespace: WINDOW_BRIDGE_NAMESPACE
+    });
+    const identityPair = defineWindowMessaging<UaIdentityProtocolMap>({
+      namespace: UA_IDENTITY_BRIDGE_NAMESPACE
+    });
+    const removeErrorListener = windowMessenger.onMessage('undefinedReferenceBatch', () => true);
+    const removeIdentityListener = uaIdentityMessenger.onMessage('uaIdentityRequest', () => ({
+      available: false,
+      enabled: false
+    }));
+    try {
+      await expect(errorPair.sendMessage('undefinedReferenceBatch', [])).resolves.toBe(true);
+      await expect(identityPair.sendMessage('uaIdentityRequest')).resolves.toEqual({
+        available: false,
+        enabled: false
+      });
+    } finally {
+      removeErrorListener();
+      removeIdentityListener();
     }
   });
 });

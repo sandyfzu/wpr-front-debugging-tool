@@ -8,6 +8,7 @@
  */
 
 import { defineWindowMessaging } from '@webext-core/messaging/page';
+import type { DeviceSimState } from '../device-simulation/state';
 
 /**
  * The bridge namespace, single-sourced: the MAIN world sends under it, the
@@ -49,4 +50,54 @@ export interface WindowProtocolMap {
 
 export const windowMessenger = defineWindowMessaging<WindowProtocolMap>({
   namespace: WINDOW_BRIDGE_NAMESPACE
+});
+
+/* The identity pair's bridge.
+ *
+ * A second namespace, deliberately not shared with the error batches above.
+ * The library's root listener answers every same-namespace request it
+ * receives — even when it holds no handler for the requested type (it
+ * responds `undefined`) — so two same-namespace messenger instances inside
+ * one JS context (sibling content-script bundles here) would race their
+ * acknowledgements and corrupt each other's round trips. Every cross-world
+ * pair on this window therefore gets its own namespace: the page world can
+ * only reach the pair that serves it, and sibling pairs cannot answer for
+ * one another. */
+
+/**
+ * Identity bridge namespace: identifies the simulated-device pair's frames.
+ * Greppable from either bundle like any postMessage namespace — it
+ * identifies, it does not authenticate; both worlds validate payloads.
+ */
+export const UA_IDENTITY_BRIDGE_NAMESPACE = 'wpr-fdt-ua-identity';
+
+/**
+ * Protocol of the simulated-device identity bridge — the relay (isolated
+ * world) answering the page-world identity shadow's questions.
+ *
+ * The MAIN world is the page's world, so every payload is untrusted at both
+ * boundaries; the ask itself carries none (the relay answers from its cached
+ * tab state), and the receiving side of each message validates the state
+ * itself. Exported so tests build their messengers against the same map
+ * instead of re-declaring it.
+ */
+export interface UaIdentityProtocolMap {
+  /**
+   * MAIN → isolated: the frame's identity script asks whether the tab's
+   * document requests currently carry the simulated device identity. No
+   * payload. The answer is the relay's cached state, which the sender
+   * validates again on arrival.
+   */
+  uaIdentityRequest(): DeviceSimState;
+  /**
+   * Isolated → MAIN: the relay re-announces the state behind a change (the
+   * boot answer or a live `deviceSimulationChanged` push). The typed
+   * acknowledgement settles the send — postMessage sends with no listener
+   * never settle (they hang).
+   */
+  uaIdentityUpdate(data: DeviceSimState): true;
+}
+
+export const uaIdentityMessenger = defineWindowMessaging<UaIdentityProtocolMap>({
+  namespace: UA_IDENTITY_BRIDGE_NAMESPACE
 });

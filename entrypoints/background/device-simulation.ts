@@ -139,7 +139,10 @@ function simulationOwner(sender: LooseMessageSender | undefined, dnrAvailable: b
   if (owner === null) return null;
   if (!canSimulate({ dnrAvailable, analysisHost: owner.analysisHost })) {
     if (owner.analysisHost) {
-      log.warn('Simulation refused on the analysis host', { tabId: owner.tabId });
+      // The identity pair asks from every http/https frame, including the
+      // PSI pages it must never touch — an analysis-host refusal is expected
+      // regular traffic, not a warning.
+      log.debug('Simulation refused on the analysis host', { tabId: owner.tabId });
     } else {
       log.debug('Simulation unavailable: the browser has no session DNR', {
         tabId: owner.tabId
