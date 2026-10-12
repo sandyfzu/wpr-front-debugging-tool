@@ -24,7 +24,8 @@ describe('optionsStore', () => {
       appearance: 'system',
       features: {
         toolbarBadge: true,
-        sbsScrollSync: true
+        sbsScrollSync: true,
+        sbsMobileSim: false
       }
     });
   });
@@ -33,12 +34,12 @@ describe('optionsStore', () => {
     await optionsStore.setValue({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false, sbsScrollSync: true }
+      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
     });
     expect(await getOptions()).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': false },
       appearance: 'dark',
-      features: { toolbarBadge: false, sbsScrollSync: true }
+      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
     });
     // Absence must resolve to defaults, not falsy values.
     await optionsStore.removeValue();
@@ -46,7 +47,22 @@ describe('optionsStore', () => {
     expect(reset.appearance).toBe('system');
     expect(reset.features.toolbarBadge).toBe(true);
     expect(reset.features.sbsScrollSync).toBe(true);
+    expect(reset.features.sbsMobileSim).toBe(false);
     expect(reset.improvements['wp-dashboard-dbugger-entry']).toBe(true);
+  });
+
+  it('persists the mobile-simulation choice and honors the written value on read-back', async () => {
+    // The overlay's switch writes the whole shape read-modify-write; the
+    // written choice must round-trip exactly (default off, written on stays on).
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': true },
+      appearance: 'system',
+      features: { toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: true }
+    });
+    const readBack = await getOptions();
+    expect(readBack.features.sbsMobileSim).toBe(true);
+    await optionsStore.removeValue();
+    expect((await getOptions()).features.sbsMobileSim).toBe(false);
   });
 });
 
@@ -66,7 +82,7 @@ describe('parseStoredOptions', () => {
     const healed = parseStoredOptions({
       improvements: { 'wp-dashboard-dbugger-entry': 'yes', 'future-addition': false },
       appearance: 'light',
-      features: { toolbarBadge: false }
+      features: { toolbarBadge: false, sbsMobileSim: true }
     });
     expect(healed?.improvements).toEqual({
       'wp-dashboard-dbugger-entry': true,
@@ -88,7 +104,7 @@ describe('parseStoredOptions', () => {
     ).toEqual({
       improvements: { 'wp-dashboard-dbugger-entry': true },
       appearance: 'light',
-      features: { toolbarBadge: false, sbsScrollSync: true }
+      features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false }
     });
     expect(parseStoredOptions(null)).toBeNull();
     expect(parseStoredOptions('black')).toBeNull();
@@ -100,9 +116,9 @@ describe('parseStoredOptions', () => {
       parseStoredOptions({
         improvements: {},
         appearance: 'dark',
-        features: { toolbarBadge: false, sbsScrollSync: true }
+        features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: true }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: true });
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: true });
     // Wrong-typed scroll sync → documented default (on); the sibling flag keeps its value.
     expect(
       parseStoredOptions({
@@ -110,11 +126,19 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { toolbarBadge: false, sbsScrollSync: 'off' }
       })?.features
-    ).toEqual({ toolbarBadge: false, sbsScrollSync: true });
-    // A corrupt features slot self-heals both known flags (the improvements slot's twin rule).
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false });
+    // Wrong-typed mobile sim → documented default (off); the sibling flags keep theirs.
+    expect(
+      parseStoredOptions({
+        improvements: {},
+        appearance: 'dark',
+        features: { toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: 'on' }
+      })?.features
+    ).toEqual({ toolbarBadge: false, sbsScrollSync: true, sbsMobileSim: false });
+    // A corrupt features slot self-heals all three known flags (the improvements slot's twin rule).
     expect(
       parseStoredOptions({ improvements: {}, appearance: 'dark', features: 'nope' })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: true });
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false });
   });
 
   it('keeps future additive boolean feature ids so read-modify-write never erases them', () => {
@@ -124,9 +148,19 @@ describe('parseStoredOptions', () => {
       parseStoredOptions({
         improvements: {},
         appearance: 'dark',
-        features: { toolbarBadge: true, sbsScrollSync: false, 'future-feature': true }
+        features: {
+          toolbarBadge: true,
+          sbsScrollSync: false,
+          sbsMobileSim: true,
+          'future-feature': true
+        }
       })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: false, 'future-feature': true });
+    ).toEqual({
+      toolbarBadge: true,
+      sbsScrollSync: false,
+      sbsMobileSim: true,
+      'future-feature': true
+    });
     // Non-boolean future ids are not engine output — dropped, not trusted,
     // while the known flags take their values (absent → defaults).
     expect(
@@ -135,7 +169,7 @@ describe('parseStoredOptions', () => {
         appearance: 'dark',
         features: { 'future-feature': 'yes' }
       })?.features
-    ).toEqual({ toolbarBadge: true, sbsScrollSync: true });
+    ).toEqual({ toolbarBadge: true, sbsScrollSync: true, sbsMobileSim: false });
   });
 });
 
