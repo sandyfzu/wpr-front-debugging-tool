@@ -25,7 +25,8 @@ const SBS_DESKTOP_WIDTH = 'sbsDesktopWidth';
  * - `improvements.wp-dashboard-dbugger-entry` — whether the admin-bar entry
  *   is injected into `wp-admin`; id kept verbatim as the canonical key.
  * - `appearance` — one of exactly `system` (follows the OS palette),
- *   `dark`, `light`; rendered UI sets `data-theme` from it before paint.
+ *   `dark`, `light`; rendered UI sets `data-theme` from it before paint and
+ *   follows it live while mounted (the injected UIs' live-theme leg).
  * - `features.toolbarBadge` — the per-tab toolbar action badge.
  * - `features.sbsScrollSync` — the compare overlay's scroll sync (default
  *   on since the owner's 2026-10-11 decision — off at plan time; the
@@ -139,16 +140,29 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
 }
 
 /**
- * Read options through the validator: corrupt storage never reaches surfaces;
- * missing optional slots resolve to defaults.
+ * Validate a raw value through the options contract, degrading to the
+ * documented defaults when the validator rejects it — the exact guarantee
+ * `getOptions` hands to surfaces, applied to pushed values too (a storage
+ * watch delivers writes unchecked; the validation happens here, once).
+ *
+ * @param input Any storage-delivered value (may be corrupt, foreign, a
+ *   partial write, or the item's own fallback for a removed key).
+ * @returns The validated options, or the defaults when nothing usable is there.
  */
-export async function getOptions(): Promise<StoredOptions> {
-  const raw = await optionsStore.getValue();
+export function storedOptionsOrFallback(input: unknown): StoredOptions {
   return (
-    parseStoredOptions(raw) ?? {
+    parseStoredOptions(input) ?? {
       ...FALLBACK,
       improvements: { ...FALLBACK.improvements },
       features: { ...FALLBACK.features }
     }
   );
+}
+
+/**
+ * Read options through the validator: corrupt storage never reaches surfaces;
+ * missing optional slots resolve to defaults.
+ */
+export async function getOptions(): Promise<StoredOptions> {
+  return storedOptionsOrFallback(await optionsStore.getValue());
 }

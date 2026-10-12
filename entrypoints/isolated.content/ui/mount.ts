@@ -1,58 +1,50 @@
 /**
  * Mounting shared by every UI this content script injects into a host page:
- * a Solid root inside a WXT shadow-root UI container, with the palette
- * resolved and applied to the container before the first paint.
+ * a Solid root inside a WXT shadow-root UI container, palette resolved and
+ * applied to the container before the first paint — and kept on the stored
+ * appearance while mounted (the live-theme leg), so an appearance change in
+ * the options page or the panel's palette cycle restyles the mounted UI
+ * live, no reload.
  *
  * Injection isolation the caller gets by mounting through here: everything
  * renders inside the shadow root, and the container carries the appearance —
- * `data-theme="system"|"dark"|"light"`. Declaring all three (system included)
- * is required inside a shadow root: the mount's `:host { all: initial
- * !important }` isolation reset aborts the documented scheme chain, so only
- * the owned container's schema declarations rule — `system` accepts both
- * palettes and the browser follows live OS changes from there.
+ * `data-theme="system"|"dark"|"light"` (the container contract is
+ * `live-theme.ts`'s).
  */
 
 import { render } from 'solid-js/web';
-import { getOptions } from '../../../lib/storage/options';
-import { applyTheme, type Appearance, type Theme } from '../../../utils/theme';
 import type { JSX } from 'solid-js';
-
-/**
- * The theme an injected container carries: the system choice is declared
- * itself (`data-theme="system"`), because inside the shadow root the `:host`
- * scheme chain is aborted by the mount's isolation reset — only an
- * on-container declaration rules. Explicit choices pin dark/light on the
- * spot.
- *
- * @param appearance The stored three-way choice.
- */
-function containerTheme(appearance: Appearance): Theme | 'system' {
-  return appearance === 'system' ? 'system' : appearance;
-}
+import { followStoredAppearance } from './live-theme';
 
 /**
  * Mount a Solid component tree into a shadow-root UI container once the
- * choice is resolved. The palette is applied first, so no frame ever paints
- * in the wrong palette.
- *
- * The option read happens per mount — an injected UI lives for one page, so
- * the value fresh at mount is the strongest guarantee available; the
- * appearance toggle (owned by the settings surface) applies to pages opened
- * after it changes.
+ * stored appearance is on the container. The palette is applied before the
+ * view renders, so no frame ever paints in the wrong palette.
  *
  * @param container The UI container inside the shadow root.
  * @param view Solid component returning the UI's root element.
- * @returns The Solid disposer — the caller removes the tree exactly once,
- *   when the whole shadow host leaves the page.
- * @throws {@link Error} when the options contract fails — options are read
- *   through a validated wrapper, so a rejection is broken wiring, not bad
- *   page input.
+ * @returns The disposer — removes the render tree and stops the appearance
+ *   follow; the caller invokes it exactly once, when the whole shadow host
+ *   leaves the page (WXT's `onRemove` wiring owns that moment).
+ * @throws {@link Error} when the options read fails or the render itself
+ *   fails — the appearance follow is unwound before the error rethrows, so a
+ *   failed mount never leaves a storage subscription behind. Reads go
+ *   through the validated wrapper, so a rejection is broken wiring, not bad
+ *   page input; the callers log it as the mount failure it is.
  */
 export async function mountShadowUi(
   container: HTMLElement,
   view: () => JSX.Element
 ): Promise<() => void> {
-  const options = await getOptions();
-  applyTheme(container, containerTheme(options.appearance));
-  return render(view, container);
+  const stopFollowingTheme = await followStoredAppearance(container);
+  try {
+    const disposeView = render(view, container);
+    return () => {
+      disposeView();
+      stopFollowingTheme();
+    };
+  } catch (cause) {
+    stopFollowingTheme();
+    throw cause;
+  }
 }
