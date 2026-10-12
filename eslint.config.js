@@ -26,6 +26,15 @@ const bannedDependencies = [
   }
 ];
 
+// Design-system internals: Kobalte is only allowed inside components/ui/ —
+// every other surface consumes its headless primitives through the typed
+// wrappers there (see AGENTS.md dependency direction + the P5B plan row).
+const kobalteRestriction = {
+  group: ['@kobalte/core', '@kobalte/core/*'],
+  message:
+    'Kobalte is the design-system layer of components/ui/ — import it only there, through components/ui wrappers.'
+};
+
 export default tseslint.config(
   { ignores: ['.output/**', '.wxt/**'] },
 
@@ -50,6 +59,16 @@ export default tseslint.config(
     rules: {
       // tsconfig enables verbatimModuleSyntax — keep type-only imports explicit.
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
+      'no-restricted-imports': ['error', { patterns: [...bannedDependencies, kobalteRestriction] }]
+    }
+  },
+
+  // …except inside the design system itself, which owns the primitives.
+  // Placed right after the strict block so the per-layer blocks below (this
+  // file's order = last matching config wins) still tighten their scopes.
+  {
+    files: ['components/ui/**/*.{ts,tsx}'],
+    rules: {
       'no-restricted-imports': ['error', { patterns: bannedDependencies }]
     }
   },
@@ -69,7 +88,8 @@ export default tseslint.config(
               group: ['**/entrypoints/**'],
               message:
                 'Cross-entrypoint imports are not allowed — promote shared code to components/ or lib/.'
-            }
+            },
+            kobalteRestriction
           ]
         }
       ]
@@ -77,13 +97,18 @@ export default tseslint.config(
   },
   {
     files: ['components/**/*.{ts,tsx}'],
+    ignores: [
+      // The design-system layer owns Kobalte by itself (the block above).
+      'components/ui/**'
+    ],
     rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
             ...bannedDependencies,
-            { group: ['**/entrypoints/**'], message: 'components/ must not import entrypoints/.' }
+            { group: ['**/entrypoints/**'], message: 'components/ must not import entrypoints/.' },
+            kobalteRestriction
           ]
         }
       ]
@@ -100,7 +125,8 @@ export default tseslint.config(
             {
               group: ['**/entrypoints/**', '**/components/**'],
               message: 'Dependency direction: lib/ must not import entrypoints/ or components/.'
-            }
+            },
+            kobalteRestriction
           ]
         }
       ]
@@ -118,7 +144,8 @@ export default tseslint.config(
               group: ['**/entrypoints/**', '**/components/**', '**/lib/**'],
               message:
                 'Dependency direction: utils/ must not import entrypoints/, components/ or lib/.'
-            }
+            },
+            kobalteRestriction
           ]
         }
       ]
