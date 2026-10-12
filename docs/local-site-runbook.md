@@ -60,7 +60,11 @@ Every scenario is a URL flag; no admin state exists for any of them. Flags combi
 | `?fdt-error=notfunction` | `TypeError: document.body.fdtFixtureNotAFunction is not a function` — at load, un-delayed                                                                                                                                                                                                                                                                                                                                                                                               |
 | `?fdt-delay=1`           | Delay-JS queue: dispatch a user interaction (mousemove etc.) and the delayed script throws `ReferenceError: fdtDelayTypedDependency is not defined` exactly then; the sibling benign delayed script tags its node `data-fdt-delay="executed"`, and WP Rocket marks every executed delayed script `data-rocket-status="executed"`                                                                                                                                                        |
 | `?fdt-mobile-cache=1`    | WP Rocket's separate-mobile-files option (`do_caching_mobile_files`) forced on per request via the option-read filter — the served copy carries the `wpr_mobile`/`wpr_desktop` rendering marker (verified). Read from the request, stored nowhere: self-resets. Note the boundary: the plugin's compiled per-host buffer config keeps the boot-seeded state, so against this site's always-on baseline the flag is a no-op force that exists for rounds that run after any config shift |
-| `?nowprocket=1`          | WP Rocket bypass: flags still fire their own scripts, but nothing is delayed/deferred/minified (serves the plain page)                                                                                                                                                                                                                                                                                                                                                                  |
+| `?fdt-fonts-on=1`        | WP Rocket's opt-in `auto_preload_fonts` option forced on per request via the option-read filter — the served copy's beacon config flips `status.preload_fonts` to `true` and the Preload-fonts payload lists appear (P1.1 round). **Boundary:** the flag is page-side only — the beacon's own `admin-ajax` decisions read the stored option in their request context and cannot see the URL flag, so full-font-family arms force the option itself, not the flag (P1.1's record)        |
+| `?fdt-oci-off=1`         | The `rocket_above_the_fold_optimization` filter answered `false` per request — the plugin's documented filter/helper disable path (P1.1 round). The Optimize-critical-images factory leaves the whole pipeline for that request: its `status.atf` key, its `elements` payload, and all applied markup vanish while sibling features behave normally                                                                                                                                     |
+
+Every page also carries one inert external-origin `<link>` (a `.invalid`-reserved hostname, never resolved) so the Preconnect factory's collecting phase always has at least one external domain to report — head + fixture-name, `rel="novelty"`, defined in the fixture mu-plugin; it asserts nothing itself by design.
+| `?nowprocket=1` | WP Rocket bypass: flags still fire their own scripts, but nothing is delayed/deferred/minified (serves the plain page) |
 
 The delay scenario is the real delayed-execution reproduction: zero errors before the
 interaction, the error only when WP Rocket's delay queue runs (its trigger list —
@@ -105,13 +109,21 @@ Observability paths).
 `docker/scripts/cdp-smoke.mjs` drives system Chrome headless over raw CDP with Node's
 built-in `WebSocket` only (no new dependencies) and asserts all of the above — the
 scenario flags **and** the UA-echo endpoint (marker line, the verbatim browser UA, a
-UA-overridden navigation proving per-request liveness, and no WP Rocket footprint):
+UA-overridden navigation proving per-request liveness, and no WP Rocket footprint) and
+the Priority-Elements beacon knobs (below), reading their arm configs from the raw
+served HTML:
 
 ```bash
 node docker/scripts/cdp-smoke.mjs
 # env overrides: FDT_SITE_URL, FDT_CDP_PORT, CHROME
 # exits nonzero — a missing proof is a failure, never a pass
 ```
+
+Scenario 4 (the Priority-Elements knobs) asserts each arm's served beacon config per
+rule, never per presence: config absence per arm is the legitimate applied-row outcome
+(the beacon injects only while a registered factory lacks its row, and the smoke cannot
+reset site tables). The knobs assert fully on the pending row state —
+`docker/scripts/reset.sh` returns to it.
 
 ## Verifying by wp-cli (bootstrap container shorthand)
 

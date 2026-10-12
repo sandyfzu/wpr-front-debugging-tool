@@ -33,6 +33,17 @@
  *                                 `wpr_mobile`/`wpr_desktop` generator markers are the
  *                                 round's verdict on which rendering the plugin served.
  *
+ * Two Priority-Elements knobs drive the beacon-matrix rounds (the beacon's `status` map
+ * is what they move — same per-request pattern as the mobile-cache flag, nothing stored):
+ *
+ *   ?fdt-fonts-on=1               forces the opt-in `auto_preload_fonts` option on for the
+ *                                 request, so the Preload-fonts factory runs with the site
+ *                                 baseline (fonts off) untouched.
+ *   ?fdt-oci-off=1                returns false from the `rocket_above_the_fold_optimization`
+ *                                 filter for the request — the filter/helper disable path
+ *                                 the plugin documents — so Optimize-critical-images never
+ *                                 runs while its siblings behave normally.
+ *
  * The `fdt-error` scripts stay out of WP Rocket's Delay/Defer handling via this plugin's
  * own exclusion filters below, so those errors fire at load time with no interaction; the
  * `fdt-delay` scripts stay in the delay queue so Delay JS exercises them. Unknown flag
@@ -48,6 +59,15 @@ declare( strict_types = 1 );
 const FIXTURE_FLAG_ERROR = 'fdt-error';
 const FIXTURE_FLAG_DELAY = 'fdt-delay';
 const FIXTURE_FLAG_MOBILE_CACHE = 'fdt-mobile-cache';
+const FIXTURE_FLAG_FONTS_ON = 'fdt-fonts-on';
+const FIXTURE_FLAG_OCI_OFF = 'fdt-oci-off';
+
+// The fixed external-origin hint the beacon-page fixture carries: the Preconnect factory
+// needs at least one non-site hostname on the page (link/script/iframe elements only) for
+// its collecting phase to produce domains, and the host must stay unreachable so the hint
+// is provably inert (never fetched, never breaks the page). `.invalid` is reserved for
+// exactly this and never resolves.
+const FIXTURE_EXTERNAL_ORIGIN = 'http://ExampleInvalidHost.invalid:8493';
 
 // The request-truth endpoint: its namespace/route pair plus the marker string the body
 // opens with (the round pins that marker to prove the served text is this fixture's).
@@ -268,3 +288,64 @@ function fixture_force_separate_mobile_cache() {
 	return 1;
 }
 add_filter( 'pre_get_rocket_option_do_caching_mobile_files', 'fixture_force_separate_mobile_cache' );
+
+/**
+ * Force the opt-in `auto_preload_fonts` option on for one request.
+ *
+ * `?fdt-fonts-on=1` passes 1 through the option-read filter the Preload-fonts context
+ * gates on — the same filter shape the plugin's own integrations hook — so the beacon's
+ * `status.preload_fonts` moves from "omitted" (the site's default, off) to `true` while
+ * the stored option stays exactly what it is. Nothing is written: the flag rides the URL
+ * and the next request reads the stored value again (the self-resetting fixture property).
+ *
+ * @return int|null 1 when the flag asks for it, null (pass-through) otherwise.
+ */
+function fixture_force_auto_preload_fonts() {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_FONTS_ON ] ) || '1' !== $_GET[ FIXTURE_FLAG_FONTS_ON ] ) {
+		return null;
+	}
+
+	return 1;
+}
+add_filter( 'pre_get_rocket_option_auto_preload_fonts', 'fixture_force_auto_preload_fonts' );
+
+/**
+ * Return false from the critical-images (Optimize critical images) gate for one request.
+ *
+ * `?fdt-oci-off=1` answers the `rocket_above_the_fold_optimization` filter — the exact
+ * filter/helper disable path the plugin documents for this feature — so the Optimize-
+ * critical-images factory, its beacon status key, and its applied markup all turn off
+ * while every sibling feature keeps its normal behavior. When the flag is absent the
+ * passed-in decision is returned untouched: an absent flag must be a no-op, not a
+ * typed-coercion hazard.
+ *
+ * @param bool $allow The decision the filter chain would otherwise produce.
+ * @return bool The forced decision (false) or the passed-through one.
+ */
+function fixture_disable_critical_images_optimization( bool $allow ): bool {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_OCI_OFF ] ) || '1' !== $_GET[ FIXTURE_FLAG_OCI_OFF ] ) {
+		return $allow;
+	}
+
+	return false;
+}
+add_filter( 'rocket_above_the_fold_optimization', 'fixture_disable_critical_images_optimization' );
+
+/**
+ * Print the fixed external-origin hint the Preconnect factory collects.
+ *
+ * The host in {@see FIXTURE_EXTERNAL_ORIGIN} is deliberately unresolvable (the reserved
+ * `.invalid` suffix), so the hint never fetches anything — it exists so the collections
+ * phase has at least one external hostname to report on every page, with zero network
+ * behavior attached. `rel="novelty"` is unseen by the plugin's own exclusion vocabulary
+ * (it matches on `rel="preconnect"`/`rel="dns-prefetch"`/`rel="icon"`/`rel="profile"`)
+ * and no browser action attaches to an unknown rel, so the element is fully inert.
+ *
+ * @return void
+ */
+function fixture_print_external_origin_hint(): void {
+	echo '<link rel="novelty" href="' . esc_url( FIXTURE_EXTERNAL_ORIGIN . '/wp-includes/empty.txt' ) . '">';
+}
+add_action( 'wp_head', 'fixture_print_external_origin_hint', 5 );

@@ -12,6 +12,14 @@
  *     (marker first): the body carries the browser UA, changes when the UA is
  *     overridden — a stored or HTTP-cached copy could not — and carries no WP Rocket
  *     footprint (the compiled wp-json cache rejection)
+ *  4. the Priority-Elements beacon knobs (P1.1 fixture flags) -> the beacon page's
+ *     inline config per URL flag: baseline (fonts off: no `preload_fonts` key), fonts
+ *     forced on, OCI filter-disabled (`atf` absent entirely, the atf payloads with it),
+ *     the two flags combined, and the inert `.invalid` novelty link — read from the
+ *     raw served HTML (delay-independent), with the browser's own UA restored first so
+ *     the arms always drive the desktop copies. Per-arm config absence is a legitimate
+ *     row-state outcome (the beacon injects only while a registered factory row is
+ *     missing; the smoke never resets site tables) — rule violations are the failures.
  *
  * Exits nonzero on any expectation miss: a missing proof is a failure, never a pass.
  */
@@ -241,6 +249,64 @@ await send('Network.setUserAgentOverride', { userAgent: UA_OVERRIDE }, sessionId
 await navigate(`${SITE}/wp-json/fdt/v1/ua-echo`);
 await sleep(1200);
 results.uaEcho.overridden = await readEcho();
+// Restore the browser's own UA: the Priority-Elements arms below must drive the
+// desktop copies (the documented baseline), not the mobile ones a lingering override
+// would select (`wp_is_mobile()` reads the header and the plugin keys the cache on it).
+await send('Network.setUserAgentOverride', { userAgent: results.uaEcho.browser.ua }, sessionId);
+
+// ---- Scenario 4: the Priority-Elements beacon knobs (P1.1 fixture flags) ---------
+// The beacon's inline config is the assert surface: it is literal text in the served
+// HTML, so the check is independent of the delay queue (the config script hides from
+// runtime reads until WP Rocket's delay queue runs it). Each flagged URL is its own
+// cached copy; the flags force state per request, so nothing here persists. One
+// baseline arm plus one flags-combine arm proves "flags combine".
+const PROBE_URLS = [
+  'baseline',
+  `${SITE}/fdt-beacon/`,
+  'fonts-on',
+  `${SITE}/fdt-beacon/?fdt-fonts-on=1`,
+  'oci-off',
+  `${SITE}/fdt-beacon/?fdt-oci-off=1`,
+  'combined',
+  `${SITE}/fdt-beacon/?fdt-oci-off=1&fdt-fonts-on=1`
+];
+const readBeaconConfig = async () => {
+  const r = await send(
+    'Runtime.evaluate',
+    {
+      expression: `JSON.stringify({
+  config: (() => {
+    const m = document.documentElement.outerHTML.match(/rocket_beacon_data\\s*=\\s*(\\{.*?\\})<\\/script>/s);
+    return m ? m[1] : null;
+  })(),
+  isMobile: window.rocket_beacon_data?.is_mobile ?? null,
+  noveltyHint: !!document.querySelector('link[rel=novelty][href*="ExampleInvalidHost.invalid"]'),
+})`,
+      returnByValue: true
+    },
+    sessionId
+  );
+  return JSON.parse(r.result.result.value);
+};
+results.priorityElements = {};
+for (let i = 0; i < PROBE_URLS.length; i += 2) {
+  await navigate(PROBE_URLS[i + 1]);
+  await sleep(1200);
+  const served = await readBeaconConfig();
+  let config = null;
+  try {
+    config = served.config ? JSON.parse(served.config) : null;
+  } catch {
+    // A malformed config is still a finding: the arm must fail its assert below.
+    config = null;
+  }
+  results.priorityElements[PROBE_URLS[i]] = {
+    status: config?.status ?? null,
+    isMobile: Boolean(served.isMobile),
+    atlasElementPayloads: 'elements' in (config ?? {}),
+    noveltyHint: served.noveltyHint
+  };
+}
 
 // ---- Report ---------------------------------------------------------------------
 console.log(JSON.stringify(results, null, 2));
@@ -283,5 +349,101 @@ if (!results.uaEcho.overridden.text.includes(UA_OVERRIDE))
   fail('scenario 3: the echo stayed static across a UA override — not per-request truth');
 if (results.uaEcho.overridden.footprint)
   fail('scenario 3: the overriden echo carried a WP Rocket footprint');
+
+// Scenario 4 verdict. The knobs change the beacon's inline config, and the beacon only
+// injects while a row is missing for the URL+device (the fonts factory always joins on
+// its flag). The smoke cannot reset the site's row tables (browser-only contract), so
+// per-arm config ABSENCE is a legitimate row-state outcome and only RULE VIOLATIONS
+// fail. Any config that exists must match its arm's exact rules; absence is reported.
+{
+  const arms = results.priorityElements;
+  const armNames = Object.keys(arms);
+  const arm = (name) => arms[name];
+  if (armNames.some((n) => arms[n].isMobile))
+    fail(
+      'scenario 4: arms served mobile copies — the UA override must be restored before this scenario'
+    );
+  const assertStatusShape = (name, status) => {
+    if (typeof status !== 'object' || status === null)
+      fail(`scenario 4: ${name} status is not an object: ${JSON.stringify(status)}`);
+  };
+  const check = (name, want) => {
+    const { status, atlasElementPayloads, noveltyHint } = arm(name);
+    if (status === null) {
+      console.log(`scenario 4: ${name} served no beacon config (row state applied for this arm)`);
+      return;
+    }
+    assertStatusShape(name, status);
+    for (const p of want) {
+      if (!p.match(status, atlasElementPayloads, noveltyHint ?? false)) {
+        fail(
+          `scenario 4: ${name} — ${p.message ?? p.name} (served ${JSON.stringify({ status, atlasElementPayloads, noveltyHint })})`
+        );
+      }
+    }
+  };
+  if (arm('baseline').noveltyHint !== true)
+    fail('scenario 4: the inert external-origin novelty link is missing from the beacon page');
+  if (armNames.every((n) => arms[n].status === null))
+    console.log(
+      'scenario 4: note — no arm served a beacon config: the row state is fully applied; the knobs assert fully on the pending state (a fresh stack: `docker/scripts/reset.sh` returns to it)'
+    );
+  check('baseline', [
+    {
+      name: 'status',
+      message: 'baseline status',
+      match: (s) =>
+        s.atf === true &&
+        s.lrc === true &&
+        s.preconnect_external_domain === true &&
+        !('preload_fonts' in s)
+    },
+    {
+      name: 'payloads',
+      message: 'baseline carries the atf elements payload',
+      match: (_s, payloads) => payloads === true
+    }
+  ]);
+  check('fonts-on', [
+    {
+      name: 'status',
+      message: 'fonts-on must set preload_fonts true',
+      match: (s) =>
+        s.preload_fonts === true &&
+        s.lrc === true &&
+        s.preconnect_external_domain === true &&
+        s.atf === true
+    },
+    {
+      name: 'payloads',
+      message: 'fonts-on keeps the atf elements payload',
+      match: (_s, payloads) => payloads === true
+    }
+  ]);
+  check('oci-off', [
+    {
+      name: 'status',
+      message: 'oci-off must omit the atf key entirely',
+      match: (s) => !('atf' in s) && s.lrc === true && s.preconnect_external_domain === true
+    },
+    {
+      name: 'payloads',
+      message: 'oci-off drops the atf elements payload with the factory',
+      match: (_s, payloads) => payloads === false
+    }
+  ]);
+  check('combined', [
+    {
+      name: 'status',
+      message: 'combined must answer both flags',
+      match: (s) =>
+        !('atf' in s) &&
+        s.preload_fonts === true &&
+        s.lrc === true &&
+        s.preconnect_external_domain === true
+    }
+  ]);
+}
+
 console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
 process.exit(ok ? 0 : 1); // the exit hook kills Chrome; the WebSocket dies with the process
