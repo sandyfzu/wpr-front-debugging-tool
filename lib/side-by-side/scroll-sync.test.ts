@@ -306,3 +306,46 @@ describe('createScrollSyncDriver', () => {
     driver.dispose();
   });
 });
+
+describe('the proportional map converges, never fights (the resize-clamp property)', () => {
+  /**
+   * The engine's mapping exactly: a source read at `y` within `sourceRange`,
+   * projected onto a `targetRange` half. Ranges ≥ 1 in these sweeps, so the
+   * zero-range null branch is unreachable here.
+   */
+  const project = (y: number, sourceRange: number, targetRange: number): number => {
+    const mapped = computeSyncTarget({ y, range: sourceRange }, { y: 0, range: targetRange });
+    if (mapped === null)
+      throw new Error(`unreachable: ranges ${String(sourceRange)}/${String(targetRange)}`);
+    return mapped;
+  };
+
+  it('one rebalanced round trip is final — a further round trip moves nothing, either direction (swept)', () => {
+    for (let source = 1; source <= 150; source += 7) {
+      for (let target = 1; target <= 150; target += 7) {
+        for (let y = 0; y <= source; y++) {
+          const mapped = project(y, source, target); // the source half drives
+          const echoed = project(mapped, target, source); // the receiver's position, mapped from its side
+          expect(project(echoed, source, target)).toBe(mapped);
+        }
+        for (let y = 0; y <= target; y++) {
+          const mapped = project(y, target, source); // the receiver half drives
+          const echoed = project(mapped, source, target);
+          expect(project(echoed, target, source)).toBe(mapped);
+        }
+      }
+    }
+  });
+
+  it('a round trip is NOT position-preserving at extreme range disparities — tolerance is the target rounding granularity', () => {
+    expect(project(208, 416, 1)).toBe(1); // a 416:1 disparity quantizes the projection
+    expect(project(1, 1, 416)).toBe(416); // the trip back drifts to the extreme…
+    expect(project(416, 416, 1)).toBe(1); // …but the next trip moves nothing: the pair is settled
+  });
+
+  it('mirrors exactly across equal ranges', () => {
+    for (let position = 0; position <= 300; position++) {
+      expect(project(position, 300, 300)).toBe(position);
+    }
+  });
+});
