@@ -222,6 +222,17 @@ What the phase shipped, in one place:
   hardening: the boot sweep's family identity became the rule's own shape through a
   `lib/device-simulation` predicate, and the store seam widened from id-listing to
   rule-listing; measured 32.3 fresh). No other row moved.
+- **Phone pair gathered (owner request, 2026-10-12):** the two devices no longer float
+  centered in their own halves (the letterboxing spread them apart on wide windows);
+  they gather at the overlay's center with a small fixed step between them. Pure CSS
+  on the phone dress only — the cached half packs its device against the shared edge
+  (`justify-content: flex-end`), the bypassed half mirrors it, and the facing 4px
+  transparent borders are the step (8px total): they narrow the columns' content
+  boxes, which is exactly what the fit math measures (`clientWidth`), so the devices
+  never overflow their halves at any window size and no JS changed. The desktop and
+  fluid dresses are untouched (the borders and packing live on `.sbs-half--phone`).
+  Pinned by the fixture tier's gathered-pair row (1600/1000/500-wide sweeps + the
+  centering and no-overflow asserts).
 
 ## Phases
 

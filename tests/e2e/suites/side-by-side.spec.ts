@@ -120,6 +120,74 @@ async function readFrameMedia(page: Page, frameTitle: string): Promise<boolean> 
   }, frameTitle);
 }
 
+/** One phone device's border-box rect, in page coordinates. */
+interface DeviceRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** The phone pair's live geometry, probed through the open shadow root. */
+interface PairGeometry {
+  /** The cached half's device wrapper. */
+  cached: DeviceRect;
+  /** The bypassed half's device wrapper. */
+  bypassed: DeviceRect;
+  /** The frames row both devices letterbox inside. */
+  frames: DeviceRect;
+}
+
+/**
+ * The phone pair's geometry through the open shadow root: the two device
+ * wrappers' border-box rects plus the frames row's rect. The wrappers are
+ * never transformed (the scale transform lives on the frames inside them),
+ * so their rects are the layout truth.
+ *
+ * @param page The fixture page with the overlay open.
+ * @returns The geometry, or null while the phone dress is not on both halves.
+ */
+async function readPairGeometry(page: Page): Promise<PairGeometry | null> {
+  return await page.evaluate((): PairGeometry | null => {
+    const shadow = document.querySelector('wpr-fdt-side-by-side')?.shadowRoot ?? null;
+    const frames = shadow?.querySelector('.sbs-frames') ?? null;
+    const devices = shadow?.querySelectorAll('.sbs-viewport--phone') ?? null;
+    if (frames === null || devices === null || devices.length !== 2) return null;
+    const rect = (el: Element): DeviceRect => {
+      const box = el.getBoundingClientRect();
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+    };
+    const cached = devices[0];
+    const bypassed = devices[1];
+    if (cached === undefined || bypassed === undefined) return null;
+    return { cached: rect(cached), bypassed: rect(bypassed), frames: rect(frames) };
+  });
+}
+
+/**
+ * The phone pair's gathered contract at its current window size: the devices
+ * sit a small fixed step apart (the facing borders' 8px), the pair is
+ * centered over the frames row on both axes, and neither device leaves the
+ * row. The tolerances carry subpixel rounding only.
+ *
+ * @param pair The geometry as probed.
+ */
+function pairIsGathered(pair: PairGeometry): boolean {
+  const gap = pair.bypassed.left - pair.cached.right;
+  const pairCenterX = (pair.cached.left + pair.bypassed.right) / 2;
+  const pairCenterY = (pair.cached.top + pair.cached.bottom) / 2;
+  const framesCenterX = (pair.frames.left + pair.frames.right) / 2;
+  const framesCenterY = (pair.frames.top + pair.frames.bottom) / 2;
+  return (
+    gap >= 7.5 &&
+    gap <= 8.5 &&
+    Math.abs(pairCenterX - framesCenterX) <= 1 &&
+    Math.abs(pairCenterY - framesCenterY) <= 1 &&
+    pair.cached.left >= pair.frames.left - 0.5 &&
+    pair.bypassed.right <= pair.frames.right + 0.5
+  );
+}
+
 test.describe('side-by-side mechanics', () => {
   test('message-driven open mounts the shadow overlay with the two cache states', async ({
     extension
@@ -453,6 +521,97 @@ test.describe('side-by-side mechanics', () => {
         { timeout: RELOAD_TIMEOUT }
       )
       .toBe(3);
+  });
+
+  test('the phone devices gather as a centered pair with a small fixed step, live across resizes', async ({
+    extension
+  }) => {
+    await extension.evaluateInWorker(
+      (seed: Record<string, unknown>) => {
+        void chrome.storage.sync.set({ options: seed });
+      },
+      { improvements: {}, features: { sbsDesktopWidth: false, sbsScrollSync: false } }
+    );
+    const fixture = await openFixturePage(extension, '/side-by-side.html');
+    await extension.sendToTab<boolean>(fixture.tabId, 'openSideBySide');
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-overlay.sbs-overlay--open`)
+    ).toHaveCount(1);
+
+    // Engage the mobile session: the phone dress is the pair's context. The
+    // halves hold their navigation until both fits exist, so a settled dress
+    // is a measured one (the geometry below reads the fitted boxes).
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(1).click();
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-half--phone`),
+      'the phone dress holds both halves'
+    ).toHaveCount(2, { timeout: RELOAD_TIMEOUT });
+
+    /**
+     * Wait out the pair's rescale at the current window size, then assert
+     * the gathered contract on a settled read: a small fixed step between
+     * the devices (the facing borders' 8px), the pair centered over the
+     * frames row on both axes, and neither device leaving it. The poll
+     * rides the rescale: a measurement lands a frame after each class or
+     * window change, and the transient can read one frame wide.
+     */
+    const assertGatheredPair = async (): Promise<void> => {
+      await expect
+        .poll(async () => {
+          const pair = await readPairGeometry(fixture.page);
+          return pair !== null && pairIsGathered(pair);
+        })
+        .toBe(true);
+      const pair = await readPairGeometry(fixture.page);
+      if (pair === null) throw new Error('the phone pair left the DOM between poll and read');
+      const gap = pair.bypassed.left - pair.cached.right;
+      expect(gap, 'the devices sit the small fixed step apart').toBeGreaterThanOrEqual(7.5);
+      expect(gap, 'the step stays small at every window size').toBeLessThanOrEqual(8.5);
+      expect(
+        Math.abs(
+          (pair.cached.left + pair.bypassed.right) / 2 - (pair.frames.left + pair.frames.right) / 2
+        ),
+        'the pair is centered over the frames row'
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(
+          (pair.cached.top + pair.cached.bottom) / 2 - (pair.frames.top + pair.frames.bottom) / 2
+        ),
+        "the devices ride the frames row's vertical center"
+      ).toBeLessThanOrEqual(1);
+      expect(
+        pair.cached.left,
+        'the cached device stays inside the frames row (no overflow at the squeeze)'
+      ).toBeGreaterThanOrEqual(pair.frames.left - 0.5);
+      expect(
+        pair.bypassed.right,
+        'the bypassed device stays inside the frames row (no overflow at the squeeze)'
+      ).toBeLessThanOrEqual(pair.frames.right + 0.5);
+    };
+
+    await assertGatheredPair();
+    const viewportBefore = fixture.page.viewportSize();
+    // Wide (the old letterboxing spread the pair apart here), mid, and the
+    // tier's standing squeeze: the gathered contract holds at all of them.
+    for (const size of [
+      { width: 1600, height: 900 },
+      { width: 1000, height: 700 },
+      { width: 500, height: 320 }
+    ]) {
+      await fixture.page.setViewportSize(size);
+      await assertGatheredPair();
+    }
+    if (viewportBefore) await fixture.page.setViewportSize(viewportBefore);
+
+    // Disengage before the close: the mobile target persists in the worker's
+    // options and the tier shares one profile — a later row's open must not
+    // converge to the phone dress.
+    await fixture.page.locator(`${OVERLAY_HOST_NAME} input[role="switch"]`).nth(1).click();
+    await expect(
+      fixture.page.locator(`${OVERLAY_HOST_NAME} .sbs-half--phone`),
+      'the disengage returns the halves to the sessionless dress'
+    ).toHaveCount(0, { timeout: RELOAD_TIMEOUT });
+    await fixture.page.close();
   });
 
   test('the persisted desktop dress survives the fixture page reloading itself (the restore path)', async ({

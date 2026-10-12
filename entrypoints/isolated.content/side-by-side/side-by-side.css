@@ -197,10 +197,26 @@
 
 /* Phone presentation: the wrapper's inline size is the fitted box; the
  * letterbox is whatever the column adds around it. The frame border makes
- * the device edge readable on both palettes. */
+ * the device edge readable on both palettes. The two devices gather at the
+ * overlay's center instead of each floating centered in its own half (the
+ * letterboxing spread them apart on wide windows): the cached half packs
+ * its device against the shared edge, the bypassed half mirrors it, and
+ * the facing transparent borders are the small fixed step between the
+ * devices (8px total). The borders narrow the columns' content boxes —
+ * exactly what the fit math measures (clientWidth) — so the device boxes
+ * never overflow their halves, at every window size. */
 .sbs-half--phone {
   align-items: center;
-  justify-content: center;
+}
+
+.sbs-half--phone:first-child {
+  justify-content: flex-end;
+  border-inline-end: 4px solid transparent;
+}
+
+.sbs-half--phone:last-child {
+  justify-content: flex-start;
+  border-inline-start: 4px solid transparent;
 }
 
 .sbs-viewport--phone {
