@@ -16,6 +16,7 @@ import { APPEARANCES, type Appearance } from '../../utils/theme';
 const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
 const TOOLBAR_BADGE = 'toolbarBadge';
 const SBS_SCROLL_SYNC = 'sbsScrollSync';
+const SBS_MOBILE_SIM = 'sbsMobileSim';
 
 /**
  * Registered option storage.
@@ -28,6 +29,8 @@ const SBS_SCROLL_SYNC = 'sbsScrollSync';
  * - `features.sbsScrollSync` — the compare overlay's scroll sync (default
  *   on since the owner's 2026-10-11 decision — off at plan time; the
  *   overlay's own header switch writes it).
+ * - `features.sbsMobileSim` — the compare overlay's mobile-comparison
+ *   switch (default off; the overlay's own header switch writes it).
  */
 export interface StoredOptions {
   improvements: {
@@ -39,6 +42,7 @@ export interface StoredOptions {
   features: {
     [TOOLBAR_BADGE]: boolean;
     [SBS_SCROLL_SYNC]: boolean;
+    [SBS_MOBILE_SIM]: boolean;
     /** Future feature ids land here as additive boolean keys. */
     [key: string]: boolean | undefined;
   };
@@ -51,7 +55,8 @@ const FALLBACK: Readonly<StoredOptions> = Object.freeze({
   appearance: 'system',
   features: Object.freeze({
     [TOOLBAR_BADGE]: true,
-    [SBS_SCROLL_SYNC]: true
+    [SBS_SCROLL_SYNC]: true,
+    [SBS_MOBILE_SIM]: false
   })
 });
 
@@ -70,6 +75,7 @@ export const optionsStore = storage.defineItem<StoredOptions>('sync:options', {
  * - `appearance` must be one of the three documented values, else default.
  * - `features.toolbarBadge` must be boolean, else default.
  * - `features.sbsScrollSync` must be boolean, else default (on).
+ * - `features.sbsMobileSim` must be boolean, else default (off).
  * - `features` keeps every own boolean-valued key — known ids and future
  *   ones alike (tolerant read, like `improvements`): shapes are written
  *   read-modify-write, so a later writer reading through this validator
@@ -102,7 +108,8 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
   // carried (a later read-modify-write writer must not erase a future id).
   const featuresRows: StoredOptions['features'] = {
     [TOOLBAR_BADGE]: FALLBACK.features[TOOLBAR_BADGE],
-    [SBS_SCROLL_SYNC]: FALLBACK.features[SBS_SCROLL_SYNC]
+    [SBS_SCROLL_SYNC]: FALLBACK.features[SBS_SCROLL_SYNC],
+    [SBS_MOBILE_SIM]: FALLBACK.features[SBS_MOBILE_SIM]
   };
   const features = value['features'];
   if (typeof features === 'object' && features !== null && !Array.isArray(features)) {
