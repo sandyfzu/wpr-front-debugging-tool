@@ -35,6 +35,16 @@
     "maxKb": { "raw": 8 }
   },
   {
+    "surface": "ua-identity content script (MAIN world)",
+    "globs": ["content-scripts/ua-identity*.js"],
+    "maxKb": { "raw": 7 }
+  },
+  {
+    "surface": "ua-relay content script (isolated world)",
+    "globs": ["content-scripts/ua-relay*.js"],
+    "maxKb": { "raw": 11 }
+  },
+  {
     "surface": "devtools panel JS (all panel chunks)",
     "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js"],
     "maxKb": { "raw": 600 }

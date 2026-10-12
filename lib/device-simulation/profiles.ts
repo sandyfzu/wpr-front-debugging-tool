@@ -22,9 +22,9 @@ export interface DeviceProfile {
  * Chrome 110 real Chrome on Android sends exactly that instead of the real OS
  * version and device model, so it stays current as Android releases age — never
  * bump these numbers. The Chrome major is pinned at implementation time — 155,
- * stable since 2026-10-06 — and must be verified against the plugin's
- * server-side mobile decision on the local site before the feature ships; a
- * needed correction is recorded here, never assumed. Viewport is Pixel-class,
+ * stable since 2026-10-06 — and verified against the plugin's server-side mobile
+ * decision on the local debugging site: the string reads phone-only as-is, no
+ * correction; a future needed correction is recorded here, never assumed. Viewport is Pixel-class,
  * portrait, in CSS px (the presentation's fit scaling owns the mapping to the
  * window).
  */
