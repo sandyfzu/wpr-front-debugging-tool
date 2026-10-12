@@ -7,7 +7,8 @@
  * cached/bypassed URL pair, the cached frame's document is really the
  * cache-served page (the WP Rocket footprint comment + delay markers) while
  * the bypassed frame's document has none of it, per-side refresh
- * re-navigates real frames, and the close restores the page's scroll.
+ * re-navigates real frames, the close restores the page's scroll, and a
+ * host page that reloaded itself on the same URL continues the compare.
  *
  * Assert surfaces (named per assert): the shadow-DOM probe (open overlay,
  * frame srcs, per-frame document truth) and Playwright frame navigation
@@ -20,7 +21,7 @@
 
 import type { Page } from '@playwright/test';
 
-import { expect, type ExtensionDriver } from '../helpers/extension';
+import { expect, type DriverPage, type ExtensionDriver } from '../helpers/extension';
 import { openSitePage, SITE_URL, siteTest } from '../helpers/site';
 
 /** Overlay host element (WXT shadow-root UI name). */
@@ -258,5 +259,158 @@ siteTest.describe('site side-by-side', () => {
       scrollY: scrollYBefore
     });
     await main.page.close();
+  });
+
+  siteTest.describe('compare continuity across the page reloading itself', () => {
+    /**
+     * The session-rule ids read through the store: one id per live session,
+     * each id equal to the tab it was derived from (the encoding the toggle
+     * bug pinned at unit level; this row witnesses it end to end).
+     */
+    const sessionRuleIds = (extension: ExtensionDriver): Promise<number[]> =>
+      extension.evaluateInWorker(
+        async () => (await chrome.declarativeNetRequest.getSessionRules()).map((rule) => rule.id),
+        undefined
+      );
+
+    /**
+     * The persisted mobile target resets to the switch's default for this
+     * describe: rows below persist toggles into the worker profile's
+     * options, and one profile runs the whole tier (the stand's suite-level
+     * cookie cleanse exists for exactly that sharing).
+     *
+     * @param extension The extension driver (the worker's options write).
+     */
+    const clearPersistedMobileTarget = (extension: ExtensionDriver): Promise<void> =>
+      extension.evaluateInWorker(async () => {
+        const stored = await chrome.storage.sync.get('options');
+        const options = stored.options as
+          { features?: { sbsMobileSim?: boolean } | undefined } | undefined;
+        if (options?.features?.sbsMobileSim === true) {
+          await chrome.storage.sync.set({
+            options: { ...options, features: { ...options.features, sbsMobileSim: false } }
+          });
+        }
+      }, undefined);
+
+    siteTest.beforeAll(async ({ extension }) => {
+      await clearPersistedMobileTarget(extension);
+    });
+
+    /**
+     * The mobile session's settled outcome: the phone presentation online on
+     * both halves, no failure note, the switch checked, and exactly one
+     * session rule keyed by the owning tab.
+     *
+     * @param extension The extension driver for the session-rule store read.
+     * @param main The open page + tab id.
+     */
+    const expectPhoneSession = async (
+      extension: ExtensionDriver,
+      main: DriverPage
+    ): Promise<void> => {
+      await expect
+        .poll(
+          async () =>
+            (await main.page.locator(`${OVERLAY_HOST} .sbs-half--phone`).count()) === 2 &&
+            (await main.page.locator(`${OVERLAY_HOST} .sbs-note`).count()) === 0,
+          { timeout: 15_000, intervals: [250] }
+        )
+        .toBe(true);
+      const ids = await sessionRuleIds(extension);
+      expect(ids.filter((id) => id === main.tabId)).toHaveLength(1);
+      await expect(
+        main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1),
+        'the mobile switch reflects the engaged session'
+      ).toBeChecked();
+    };
+
+    siteTest(
+      'a reload with the compare open continues it, phone session re-established',
+      async ({ extension }) => {
+        const main = await openSitePage(extension, CACHED_PAGE_URL);
+        await openOverlay(extension, main.tabId);
+        await main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1).click();
+        await expectPhoneSession(extension, main);
+
+        // The host page re-navigating itself (responsive hosts reload at
+        // breakpoints) must not strand the user: the next boot restores the
+        // overlay and the machine converges the persisted mobile target.
+        await main.page.reload({ waitUntil: 'load' });
+        const openAgain = main.page.locator(`${OVERLAY_HOST} .sbs-overlay--open`);
+        await expect
+          .poll(async () => await openAgain.count(), { timeout: 15_000, intervals: [250] })
+          .toBe(1);
+        await expectPhoneSession(extension, main);
+        await main.page.close();
+      }
+    );
+
+    siteTest('a reload after a close leaves the page clear', async ({ extension }) => {
+      const main = await openSitePage(extension, CACHED_PAGE_URL);
+      await openOverlay(extension, main.tabId);
+      await main.page.getByRole('button', { name: 'Close the side-by-side comparison' }).click();
+      await main.page.reload({ waitUntil: 'load' });
+      // The absence auto-wait is the settle moment the boot needed: the boot
+      // fires before `load` completes, so a fixed sleep was the tier's only
+      // raw wait. After it, the store read is readable.
+      await expect(
+        main.page.locator(`${OVERLAY_HOST} .sbs-overlay--open`),
+        'the closed compare does not restore after its reload'
+      ).toHaveCount(0, { timeout: 5_000 });
+      // Tab-scoped on purpose: this row's contract is its own session's
+      // rule, not the worker profile's global rule store.
+      const remainingIds = await sessionRuleIds(extension);
+      expect(remainingIds, 'the closed compare leaves no session rule behind').not.toContain(
+        main.tabId
+      );
+      await main.page.close();
+    });
+
+    siteTest(
+      'a squeezed window never strips a loaded frame src (the size gate latches)',
+      async ({ extension }) => {
+        const main = await openSitePage(extension, CACHED_PAGE_URL);
+        await openOverlay(extension, main.tabId);
+        // Engagement is conditional on purpose: the machine can converge the
+        // persisted target to phone at the open itself (earlier rows in a
+        // shared profile persist their toggles), in which case the switch
+        // already reads checked and a blind click would flip it off.
+        const switchEl = main.page.locator(`${OVERLAY_HOST} input[role="switch"]`).nth(1);
+        await switchEl.waitFor({ state: 'attached', timeout: 10_000 });
+        if ((await switchEl.getAttribute('aria-checked')) !== 'true') {
+          await switchEl.click();
+        }
+        await expectPhoneSession(extension, main);
+
+        /**
+         * The two frames' `src` attributes as the shadow DOM reports them —
+         * the latch's contract is exactly whether these survive a squeeze.
+         */
+        const frameSrcs = (): Promise<(string | null)[]> =>
+          main.page
+            .locator(`${OVERLAY_HOST} iframe.sbs-frame`)
+            .evaluateAll((frames) =>
+              frames.map((f) => (f as HTMLIFrameElement).getAttribute('src'))
+            );
+        const before = await frameSrcs();
+        expect(before).toHaveLength(2);
+        expect(
+          before.every((src) => typeof src === 'string' && src.length > 0),
+          'both halves sit on a real src before the squeeze'
+        ).toBe(true);
+
+        // Squeeze below any possible fit: an ungated live fit would remove
+        // both `src` attributes here (blanking the frames into an
+        // about:blank bounce and a re-navigation); the latch rides it out.
+        const original = main.page.viewportSize();
+        await main.page.setViewportSize({ width: 500, height: 320 });
+        await expect.poll(frameSrcs, { timeout: 2_000, intervals: [150] }).toEqual(before);
+
+        if (original) await main.page.setViewportSize(original);
+        await expectPhoneSession(extension, main);
+        await main.page.close();
+      }
+    );
   });
 });

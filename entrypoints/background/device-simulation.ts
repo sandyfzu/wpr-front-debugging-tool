@@ -13,13 +13,17 @@
  * - **Sender-resolved ownership**: the tab comes from the runtime sender,
  *   never from a payload, and the analysis host (PageSpeed Insights flow)
  *   always refuses — the viewer flow is not a session to spoof.
- * - **Removals are unconditional**: a remove call for a rule that exists
- *   already (its id encodes the tab) resolves quietly; a closed tab's rule
- *   dies with the same one-line call, no tab pre-check.
- * - **The sweep converges ghosts**: at service-worker start, rules of this
- *   id family whose tab is gone — or whose isolated world answers nothing,
- *   the extension-reload era's leftovers — are removed; a still-alive
- *   simulated session keeps its rule untouched.
+ * - **Removals are unconditional**: a remove call for a rule id that does
+ *   not exist resolves quietly (the browser ignores absent ids); a closed
+ *   tab's rule dies with the same one-line call, no tab pre-check.
+ * - **The sweep converges ghosts**: at service-worker start, rules whose
+ *   tab is gone — or whose isolated world answers nothing, the
+ *   extension-reload era's leftovers — are removed; a still-alive simulated
+ *   session keeps its rule untouched, and a removal whose tab still exists
+ *   pushes the settled off-state so a concurrently restoring overlay
+ *   converges. Family membership is the rule's exact shape (the
+ *   derivation's own signature), never an id assumption — another
+ *   session-rule feature's rules would never match it.
  */
 
 import { createLogger } from '../../lib/logger';
@@ -29,11 +33,11 @@ import {
   resolveSenderUrl,
   type LooseMessageSender
 } from '../../lib/messaging/sender';
-import type { DeviceSimRule } from '../../lib/device-simulation/rule';
+import type { DeviceSimRule, DeviceSimRuleLike } from '../../lib/device-simulation/rule';
 import {
-  DEVICE_SIM_RULE_ID_BASE,
   deviceSimRule,
-  deviceSimRuleId
+  deviceSimRuleId,
+  isDeviceSimRuleShape
 } from '../../lib/device-simulation/rule';
 import { canSimulate } from '../../lib/device-simulation/can-simulate';
 import type { DeviceSimState, DeviceSimUpdate } from '../../lib/device-simulation/state';
@@ -52,8 +56,8 @@ export interface SimRuleStore {
   upsert(rule: DeviceSimRule): Promise<void>;
   /** Remove one session rule by id; an absent id resolves harmlessly. */
   remove(ruleId: number): Promise<void>;
-  /** Ids of every session rule the extension currently has registered. */
-  listRuleIds(): Promise<number[]>;
+  /** The session rules the extension currently has registered, as stored. */
+  listRules(): Promise<DeviceSimRuleLike[]>;
 }
 
 /** The tab seam the boot sweep probes rules' would-be sessions against. */
@@ -113,7 +117,7 @@ function sessionOwner(
     log.warn('Simulation ask from a sender without a tab ignored');
     return null;
   }
-  // The rule id encoding keys positive integers; a nonzero-floor tab id can
+  // The rule id encoding keys positive integers; a tab id below 1 can
   // never own a rule, so refuse it before anything browser-shaped happens.
   if (tabId < 1) {
     log.warn('Simulation ask for a tab id the rule encoding cannot key ignored', { tabId });
@@ -160,8 +164,8 @@ function simulationOwner(sender: LooseMessageSender | undefined, dnrAvailable: b
  *   contain it — the ask rows must answer, never throw.
  */
 async function hasRule(deps: DeviceSimSessionDeps, tabId: number): Promise<boolean> {
-  const ids = await deps.rules.listRuleIds();
-  return ids.includes(deviceSimRuleId(tabId));
+  const rules = await deps.rules.listRules();
+  return rules.some((rule) => rule.id === deviceSimRuleId(tabId));
 }
 
 /**
@@ -264,28 +268,42 @@ export function createDeviceSimSessions(deps: DeviceSimSessionDeps): DeviceSimSe
     },
 
     async sweep(): Promise<void> {
-      let ids: number[];
+      let rules: DeviceSimRuleLike[];
       try {
-        ids = await deps.rules.listRuleIds();
+        rules = await deps.rules.listRules();
       } catch (cause) {
         log.error('Boot sweep could not list session rules', { cause });
         return;
       }
-      // Only this extension's session rules exist here; the family check is
-      // the cheap belt-and-braces for a rule id that is not ours to lose.
-      const family = ids.filter((id) => Number.isInteger(id) && id > DEVICE_SIM_RULE_ID_BASE);
-      for (const id of family) {
-        const tabId = id - DEVICE_SIM_RULE_ID_BASE;
+      for (const rule of rules) {
+        // The family is the shape, not an id band: a stored rule that is not
+        // exactly this module's own derivation for its id (another
+        // session-rule feature's rule) is never probed or removed. The
+        // extension-scoped read only bounds the work; the predicate decides.
+        if (!isDeviceSimRuleShape(rule)) continue;
+        const tabId = rule.id as number;
         try {
           // A rule without a live simulated session is a ghost: a closed tab
           // cannot simulate anymore, and a tab whose isolated world answers
-          // nothing belongs to an extension-reload era that should have been
-          // cleaned by the browser itself. Live sessions keep their rule; the
-          // asks re-read the store, so they need no memory seeding.
-          const live = (await deps.tabs.exists(tabId)) && (await deps.tabs.reachable(tabId));
-          if (!live) {
-            await deps.rules.remove(id);
-            log.info('Boot sweep removed a rule without a live simulated session', { tabId });
+          // nothing belongs to an extension-reload era. Live sessions keep
+          // their rule; the asks re-read the store, so they need no memory
+          // seeding.
+          const exists = await deps.tabs.exists(tabId);
+          if (!exists) {
+            await deps.rules.remove(tabId);
+            log.info('Boot sweep removed a rule whose tab is gone', { tabId });
+            continue;
+          }
+          const reachable = await deps.tabs.reachable(tabId);
+          if (!reachable) {
+            await deps.rules.remove(tabId);
+            log.info('Boot sweep removed a rule whose isolated world went silent', { tabId });
+            // The tab outlived its world: an overlay restoring itself in
+            // exactly this window re-established the rule between this
+            // sweep's listing and removal, so it now believes a session the
+            // store no longer holds. The settled-state push converges it;
+            // when nobody answers, the push's own degrade swallows that.
+            notifyStateChange(deps, tabId, { available: true, enabled: false });
           }
         } catch (cause) {
           log.error('Boot sweep rule processing failed', { cause, tabId });
@@ -347,10 +365,10 @@ export function initDeviceSimSessions(): DeviceSimSessions {
       remove: async (ruleId: number): Promise<void> => {
         await browser.declarativeNetRequest.updateSessionRules({ removeRuleIds: [ruleId] });
       },
-      listRuleIds: async (): Promise<number[]> => {
-        const rules = await browser.declarativeNetRequest.getSessionRules();
-        return rules.map((rule) => rule.id);
-      }
+      listRules: async (): Promise<DeviceSimRuleLike[]> =>
+        // The read-back is browser-shaped; its unknown-field look is
+        // validated by the family predicate at the sweep, never trusted.
+        browser.declarativeNetRequest.getSessionRules()
     },
     tabs: {
       exists: async (tabId: number): Promise<boolean> => {

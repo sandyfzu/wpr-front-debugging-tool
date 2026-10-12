@@ -11,6 +11,8 @@ lerna-debug.log*
 tests/e2e/.build-stamp.json
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+test-results/
+playwright-report/
 tests/e2e/.e2e-fixture-server.log
 
 node_modules

@@ -65,6 +65,13 @@ own again (arrives as `wpr_desktop` under the flag). Everything else stays untou
      rule cannot survive the overlay — owner directive 4);
    - rule-level asserts ride CDP the way the mechanics tier asserts service-worker
      state (session rules carrying the tab condition + the profile header).
+   - **Permanent subset shipped (2026-10-12, the 05g follow-up round):** the
+     compare-continuity rows in `tests/e2e/suites/site-side-by-side.spec.ts` pin the
+     rule-level asserts through the store (`getSessionRules` — the rule id equals the
+     owning tab id, the encoding the toggle bug pinned), the reload re-engagement, the
+     close-then-reload clear, and the latched size gate under a real squeeze. The echo
+     body / mobile-cache served-copy asserts above stay the recorded once-verified
+     evidence until their permanent rows land.
 4. **State honesty** — **verified live once** (05g's round): a second tab's requests
    and page identity are unaffected throughout; on the PSI host the switch never
    renders and no session rule leaks to the auto-flow. Visibility lives in the overlay
@@ -81,11 +88,14 @@ own again (arrives as `wpr_desktop` under the flag). Everything else stays untou
 ## Definition-of-done state (2026-10-12)
 
 - Suite 1 is green in the permanent tier; suites 2–4 carry their once-verified
-  evidence (05e's audit record, 05g's round record) with permanent execution as the
-  standing open browser-tier slot; suite 5 is the recorded manual smoke.
+  evidence (05e's audit record, 05g's round record) with the newly-shipped permanent
+  subset above landed this day; the standing open browser-tier slot remains the
+  cross-origin degrade's permanent pin (suite 2 — it needs the dual-origin fixture),
+  and suite 5 is the recorded manual smoke (P15's release matrix).
 - The shipped fixtures' runbook rows landed at B5; the budget rows were derived at the
   same publication — `ua-identity` 6.5 KiB raw < 7, `ua-relay` 10.3 < 11, isolated
-  re-measured unchanged under 95/34 (05g's Shipped section).
+  re-measured unchanged under 95/34 (05g's Shipped section). The follow-up round
+  re-derived the background worker 32 → 34 KiB (its Shipped section).
 - No row here is silently passed or skipped; every non-green row states why.
 
 ## Stays manual

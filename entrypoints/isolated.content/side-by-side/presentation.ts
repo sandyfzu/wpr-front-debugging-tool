@@ -72,9 +72,10 @@ export function phoneFrameStyles(
  * Whether the halves may carry their URLs: `'auto'` needs no fit at all
  * (fluid boxes navigate immediately); the phone presentation holds the first
  * navigation until both fits exist, so each half loads once, at the device
- * size, after the open has established the rule. Later fits never ungate —
- * the urls are set once and every presentation change after that rides
- * in-place reloads.
+ * size, after the open has established the rule. The rest of "later fits
+ * never ungate — the urls are set once" is the view's latch (the ui
+ * component unlocks the first load and never re-locks); this reporter is
+ * the pure live availability.
  *
  * @param presentation The current presentation.
  * @param fits The per-half fit record as the rescale last reported it.

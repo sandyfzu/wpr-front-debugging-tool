@@ -49,6 +49,8 @@ rule = {
 };
 ```
 
+> **Shipped correction (2026-10-12):** the snippet above was written with the additive base; real-world verification overturned it. Chromium 156 hands out tab ids literally anywhere in the int32 range (observed: 34M – 2.04B across sessions within one browser major), so `base + tabId` crossed the session DNR id ceiling (`updateSessionRules` accepts ids ≤ 2 147 483 647 — verified live: INT32_MAX passes, INT32_MAX + 1 rejects with a binding error) and failed the rule add for the very tab it named — the reported "Mobile comparison could not be applied" toggle failure. The shipped encoding is `id == tabId` (`deviceSimRuleId`, `lib/device-simulation/rule.ts`); the family sweep no longer keys on the base (`getSessionRules` is extension-scoped, the device-sim family is the extension's only session-rule user). An earlier additive offset cannot be reintroduced without re-deriving the tab-id range first.
+
 **`resourceTypes: ['main_frame', 'sub_frame']`** deviates from the first design's blanket tab rule on purpose: document requests are where mobile decisions happen; the open host page's own `fetch`/XHR traffic keeps its real UA while the overlay is up (least disturbance — the debugging engine stays in its real session). Recorded as the reason in the service's why-comment.
 
 **Lifecycle (owner directive 4 — strict):**
@@ -197,6 +199,29 @@ What the phase shipped, in one place:
   whole-build backstop **160.4 < 857**.
 - **Firefox:** the runtime spot-check earlier assigned to B5's round is instead the
   manual smoke row recorded in 05f (suite 5) — not run yet, recorded, never silently.
+
+### Shipped follow-ups (2026-10-12, post-B6 — same hardening round)
+
+- **Rule-id encoding corrected** (recorded in full at the design's Shipped correction
+  callout above): `id == tabId` shipped after the live overflow discovery; the encoding
+  unit pin and the background sweep tests carry the regression rows now.
+- **Reload continuity** followed the verified round's discovery that wp-rocket.me
+  reloads itself at responsive breakpoints (reproduced without the extension — host-owned,
+  not ours): the overlay now records its open state on the document URL
+  (`entrypoints/isolated.content/side-by-side/session-open.ts`, tab `sessionStorage`,
+  consume-once, exact-URL match, total-API degrade) and the boot path restores the
+  overlay, letting the machine re-converge the persisted sim target. Verified live:
+  6/6 restores across the host's self-reloads; permanent e2e rows added to
+  `tests/e2e/suites/site-side-by-side.spec.ts` (reload-continues-the-compare incl. the
+  `id == tabId` witness; a close leaves nothing behind).
+- **Size gate latched** in the overlay view: the live gate held the first navigation
+  only; a later squeezed measurement could strip a loaded frame's `src` (blank frame +
+  a reload born from a layout transient). The view now latches the unlock and never
+  re-locks — `src` removal belongs to nothing but the view's lifetime.
+- **Budget re-derivation:** the background worker rose 32 → 34 KiB raw (audit-mandated
+  hardening: the boot sweep's family identity became the rule's own shape through a
+  `lib/device-simulation` predicate, and the store seam widened from id-listing to
+  rule-listing; measured 32.3 fresh). No other row moved.
 
 ## Phases
 

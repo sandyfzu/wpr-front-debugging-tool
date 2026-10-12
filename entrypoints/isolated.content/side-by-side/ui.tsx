@@ -16,6 +16,11 @@
  * Motion is decoration: opening toggles a class and never waits for a
  * transition event, so reduced motion or an interrupted animation cannot
  * strand the overlay invisible.
+ *
+ * The size gate is a latch: `framesMayNavigate` reports the live fit
+ * availability, the view unlocks the first load with it and stays
+ * unlocked — a later squeezed measurement must never strip a loaded
+ * frame's `src` (a full reload born from a layout transient).
  */
 
 import type { JSX } from 'solid-js';
@@ -23,6 +28,7 @@ import { createMemo, Show } from 'solid-js';
 import type { CompareSide } from '../../../lib/side-by-side/scroll-sync';
 import type { MobileSimSnapshot } from '../../../lib/side-by-side/mobile-sim';
 import { phoneFrameStyles, type FrameFitRecord, type PhoneFrameStyles } from './presentation';
+import { createSizeGateLatch } from './gate-latch';
 import { CLOSE_ICON_PATHS, REFRESH_ICON_PATHS, StrokeIcon } from './icons';
 
 /** The overlay's input: urls plus per-side behavior, both switches and the simulation machine's facts. */
@@ -51,7 +57,7 @@ export interface SideBySideOverlayProps {
   sim: () => MobileSimSnapshot;
   /** The per-half live fit (the rescale presenter's reports). */
   simFits: () => FrameFitRecord;
-  /** Whether the halves may carry their URLs (the first phone load is held until both fits exist). */
+  /** The live size gate: the first phone load waits for both fits; the view latches it (never re-locked). */
   sizeGateOpen: () => boolean;
   /** The mobile-comparison switch flipped; the machine applies, persists and reconciles. */
   onToggleSim(next: boolean): void;
@@ -68,6 +74,15 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
   );
   const bypassedStyles = createMemo<PhoneFrameStyles>(() =>
     phoneFrameStyles(props.sim().presentation, props.simFits()['bypassed'] ?? null)
+  );
+  /**
+   * The size gate, latched: the live gate weighs the first load, the latch
+   * never re-locks afterwards (see {@link createSizeGateLatch} for the
+   * geometry of the protection).
+   */
+  const gateSatisfied = createSizeGateLatch(
+    // eslint-disable-next-line solid/reactivity -- the helper owns the tracked scope (its effect and memo)
+    props.sizeGateOpen
   );
   /** The switch's failure branch text — direction-aware, empty when not failed. */
   const simFailure = createMemo<string>(() => {
@@ -192,7 +207,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
             <iframe
               class="sbs-frame"
               title="Cached"
-              src={props.sizeGateOpen() ? props.urls().cached : undefined}
+              src={gateSatisfied() ? props.urls().cached : undefined}
               style={cachedStyles().frame}
               ref={(frame) => {
                 props.registerFrame('cached', frame);
@@ -215,7 +230,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
             <iframe
               class="sbs-frame"
               title="Not cached"
-              src={props.sizeGateOpen() ? props.urls().bypassed : undefined}
+              src={gateSatisfied() ? props.urls().bypassed : undefined}
               style={bypassedStyles().frame}
               ref={(frame) => {
                 props.registerFrame('bypassed', frame);

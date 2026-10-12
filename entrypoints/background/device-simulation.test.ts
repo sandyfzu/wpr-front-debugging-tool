@@ -3,18 +3,15 @@
  * store read fresh each time), the set flows (exact rule objects, idempotent
  * repeats, transition-only pushes, truthful failure states), the two removal
  * hooks (unconditional, rejection-proof), and the boot sweep (ghosts die,
- * live sessions are kept, foreign ids untouched, every failure contained).
+ * live sessions are kept with a convergence push for their surviving tabs,
+ * foreign-shaped rules untouched, every failure contained).
  *
  * The production registration (`initDeviceSimSessions`) is thin wiring by
  * design: these fakes stand in for exactly the `browser.*` calls it binds.
  */
 import { describe, expect, it } from 'vitest';
-import type { DeviceSimRule } from '../../lib/device-simulation/rule';
-import {
-  DEVICE_SIM_RULE_ID_BASE,
-  deviceSimRule,
-  deviceSimRuleId
-} from '../../lib/device-simulation/rule';
+import type { DeviceSimRule, DeviceSimRuleLike } from '../../lib/device-simulation/rule';
+import { deviceSimRule, deviceSimRuleId } from '../../lib/device-simulation/rule';
 import type { DeviceSimState } from '../../lib/device-simulation/state';
 import {
   createDeviceSimSessions,
@@ -29,7 +26,7 @@ import type { LooseMessageSender } from '../../lib/messaging/sender';
 
 /** A map-backed session-rule store with operation traces. */
 function tracedRuleStore(): SimRuleStore & { upserts: DeviceSimRule[]; removals: number[] } {
-  const stored = new Map<number, DeviceSimRule>();
+  const stored = new Map<number, DeviceSimRule | DeviceSimRuleLike>();
   const upserts: DeviceSimRule[] = [];
   const removals: number[] = [];
   return {
@@ -45,7 +42,7 @@ function tracedRuleStore(): SimRuleStore & { upserts: DeviceSimRule[]; removals:
       stored.delete(ruleId);
       return Promise.resolve();
     },
-    listRuleIds: () => Promise.resolve([...stored.keys()])
+    listRules: () => Promise.resolve([...stored.values()] as DeviceSimRuleLike[])
   };
 }
 
@@ -164,6 +161,21 @@ describe('answerSet — on', () => {
     expect(push.calls).toEqual([{ tabId: 17, state: { available: true, enabled: true } }]);
   });
 
+  it('a very large tab id rides the plain rule flow unchanged', async () => {
+    // Huge int32 tab ids (magnitudes like this observed in live sessions)
+    // must encode directly: an additive offset used to cross the session
+    // id ceiling and fail the rule add for exactly this shape of tab — the
+    // user-visible toggle failure that motivated the identity encoding.
+    const { model, store, push } = fixture();
+    const tabId = 1_998_392_600;
+    await expect(model.answerSet(siteSender(tabId), { enabled: true })).resolves.toEqual({
+      available: true,
+      enabled: true
+    });
+    expect(store.upserts).toEqual([deviceSimRule(tabId)]);
+    expect(push.calls).toEqual([{ tabId, state: { available: true, enabled: true } }]);
+  });
+
   it('a repeated on is a no-op: no second write, no push', async () => {
     const { model, store, push } = fixture();
     await model.answerSet(siteSender(17), { enabled: true });
@@ -277,7 +289,7 @@ describe('removal hooks', () => {
 describe('ask answers under store failures', () => {
   it('get and set resolve a refusal instead of rejecting, with no browser write', async () => {
     const store = tracedRuleStore();
-    store.listRuleIds = () => Promise.reject(new Error('store broke'));
+    store.listRules = () => Promise.reject(new Error('store broke'));
     const { model, push } = fixture({}, store);
     await expect(model.answerGet(siteSender(7))).resolves.toEqual(UNAVAILABLE);
     await expect(model.answerSet(siteSender(7), { enabled: true })).resolves.toEqual(UNAVAILABLE);
@@ -298,11 +310,11 @@ describe('sweep', () => {
     store.upserts.length = 0;
     await model.sweep();
     expect(store.removals).toHaveLength(0);
-    await expect(store.listRuleIds()).resolves.toEqual([deviceSimRuleId(17)]);
+    await expect(store.listRules()).resolves.toHaveLength(1);
   });
 
-  it('removes a closed tab-shaped rule and a mute-world extension-reload ghost', async () => {
-    const { model, store } = fixture({
+  it('removes a closed tab-shaped rule and a mute-world extension-reload ghost, converging the surviving tab', async () => {
+    const { model, store, push } = fixture({
       tabs: fakeTabs([52], []) // 51 exists in the store but is closed; 52 is alive but never answers
     });
     await store.upsert(deviceSimRule(51));
@@ -310,17 +322,48 @@ describe('sweep', () => {
     store.upserts.length = 0;
     await model.sweep();
     expect(store.removals).toEqual([deviceSimRuleId(51), deviceSimRuleId(52)]);
-    await expect(store.listRuleIds()).resolves.toEqual([]);
+    await expect(store.listRules()).resolves.toHaveLength(0);
+    // The closed tab cannot hear anything; the mute world's surviving tab
+    // gets the settled off-state push so a restoring overlay converges.
+    expect(push.calls).toEqual([{ tabId: 52, state: { available: true, enabled: false } }]);
   });
 
-  it('leaves rule ids outside this id family untouched', async () => {
+  it('never touches a foreign-shaped rule (another session-rule feature stays intact)', async () => {
+    // The device-sim family is the rule's shape, not an id band: a foreign
+    // session-rule feature (none in this extension yet) could pass through
+    // the extension-scoped read without ever being probed or removed here.
     const store = tracedRuleStore();
-    const foreign: DeviceSimRule = { ...deviceSimRule(9), id: DEVICE_SIM_RULE_ID_BASE - 1 };
-    await store.upsert(foreign);
+    const foreign: DeviceSimRuleLike = {
+      id: 9,
+      priority: 3,
+      condition: { tabIds: [9], resourceTypes: ['main_frame'] },
+      action: {
+        type: 'modifyHeaders',
+        requestHeaders: [{ header: 'cookie', operation: 'set', value: 'seed=1' }]
+      }
+    };
+    store.listRules = () => Promise.resolve([foreign]);
     const { model } = fixture({ tabs: fakeTabs([9], [9]) }, store);
     await model.sweep();
     expect(store.removals).toHaveLength(0);
-    await expect(store.listRuleIds()).resolves.toContain(DEVICE_SIM_RULE_ID_BASE - 1);
+  });
+
+  it('never touches a rule the encoding could not have produced', async () => {
+    // The shape predicate's first check is the id domain: below 1, above
+    // the session-rule ceiling, or not an integer cannot be this module's
+    // family — belt over the family identity.
+    const store = tracedRuleStore();
+    store.listRules = () =>
+      Promise.resolve([
+        { ...deviceSimRule(7), id: Number.NaN },
+        { ...deviceSimRule(7), id: 0 },
+        { ...deviceSimRule(7), id: -1 },
+        { ...deviceSimRule(7), id: '7' as unknown as number },
+        { ...deviceSimRule(7), id: 2_147_483_648 }
+      ]);
+    const { model } = fixture({ tabs: fakeTabs([7], [7]) }, store);
+    await model.sweep();
+    expect(store.removals).toHaveLength(0);
   });
 
   it('a probe failure keeps the rule pending the next sweep, and never rejects', async () => {
@@ -338,7 +381,7 @@ describe('sweep', () => {
 
   it('an unreadable store ends the sweep quietly', async () => {
     const store = tracedRuleStore();
-    store.listRuleIds = () => Promise.reject(new Error('store broke'));
+    store.listRules = () => Promise.reject(new Error('store broke'));
     const { model } = fixture({}, store);
     await expect(model.sweep()).resolves.toBeUndefined();
     expect(store.removals).toHaveLength(0);

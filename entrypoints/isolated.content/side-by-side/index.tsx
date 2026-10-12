@@ -1,9 +1,10 @@
 /**
  * Side-by-Side comparison: the site's cached page next to its cache-bypassed
- * version, opened from the extension's context menu or auto-opened on a
+ * version, opened from the extension's context menu, auto-opened on a
  * PageSpeed Insights page carrying this tool's site param (two pre-launched
  * analyses; the overlay's controls are hidden there — the analyses drive
- * themselves).
+ * themselves), or restored after a host page reloaded itself on the same
+ * URL (responsive hosts do; the open state survives their reload).
  *
  * The overlay lives inside a shadow root and is created on first open, so a
  * page that never opens the compare flow pays neither the component cost nor
@@ -46,6 +47,7 @@ import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
 import type { CompareUrls } from './urls';
 import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
 import { createScrollSyncSession } from './sync-session';
+import { consumeBootOpenState, markOverlayClosed, markOverlayOpen } from './session-open';
 import {
   createFramePresenter,
   engineRescaleFactory,
@@ -66,7 +68,7 @@ const SIM_UNAVAILABLE: DeviceSimState = { available: false, enabled: false };
 
 /**
  * Wire the compare flow into this content script. Pages that never use it
- * register only two message receivers.
+ * pay only the four message listeners.
  *
  * @param ctx The content script's context; everything registers through it.
  */
@@ -91,8 +93,10 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    * The view's settled mount: the frame slots register through its render,
    * so every engine start must follow this promise — starting earlier arms
    * nothing (see the open path and the sync session's start contract).
+   * Resolves whether the view is actually up: the open path degrades to
+   * "nothing shown" instead of showing a dead overlay behind a locked page.
    */
-  let viewMounted: Promise<void> = Promise.resolve();
+  let viewMounted: Promise<boolean> = Promise.resolve(false);
   /** Captured inline `overflow` styles of html+body, restored on close. */
   const overflow = { html: '', body: '' };
   /** Frames discovered through the component's ref callbacks. */
@@ -262,11 +266,15 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    * cross-origin frames (the analyses) reject the reload probe, and a frame
    * whose browsing context has not been created yet has nothing to probe —
    * both get their `src` re-assigned, which always re-navigates the frame.
-   * The assignment is the deliberate fallback, not an accident.
+   * The assignment is the deliberate fallback. A frame with no `src` at all
+   * (the size gate still closed) skips the fallback: nothing loaded carries
+   * a stale identity, and assigning onto the empty attribute would resolve
+   * it against the host document (the frame would navigate into the page).
    */
   const refreshFrame = (side: CompareSide): void => {
     const frame = frames[side];
     if (frame === undefined) return;
+    if (frame.getAttribute('src') === null) return;
     const renavigate = (): void => {
       frame.src = frame.src;
     };
@@ -282,54 +290,85 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   };
 
   /** The single open path for both the context menu and the auto-open. */
+  let openInFlight = false;
   const openOverlay = async (): Promise<void> => {
-    if (isOpen()) return;
-    // First open: capture the scroll baseline and resolve the URL pair once.
-    if (urls === null) {
-      overflow.html = document.documentElement.style.overflow;
-      overflow.body = document.body.style.overflow;
-      urls = getOverlayUrls(new URL(window.location.href));
-    }
-    // The persisted settings are read at every open (mid-life external
-    // changes apply next open); a failed read degrades both switches to
-    // off — the overlay itself must not dead-end on a broken options store.
-    let simTarget = false;
+    // The two boot triggers (the carried flow and the reload restore) and
+    // the context menu can fire close together: the guard serializes them
+    // to exactly one open.
+    if (isOpen() || openInFlight) return;
+    openInFlight = true;
     try {
-      const options = await getOptions();
-      setSyncOn(options.features.sbsScrollSync);
-      simTarget = options.features.sbsMobileSim;
-    } catch (cause) {
-      setSyncOn(false);
-      simTarget = false;
-      log.error(
-        'Reading the stored settings failed; the overlay opens with the switches off',
-        cause instanceof Error ? cause.message : cause
-      );
+      // First open: capture the scroll baseline and resolve the URL pair once.
+      if (urls === null) {
+        overflow.html = document.documentElement.style.overflow;
+        overflow.body = document.body.style.overflow;
+        urls = getOverlayUrls(new URL(window.location.href));
+      }
+      // The persisted settings are read at every open (mid-life external
+      // changes apply next open); a failed read degrades both switches to
+      // off — the overlay itself must not dead-end on a broken options store.
+      let simTarget = false;
+      try {
+        const options = await getOptions();
+        setSyncOn(options.features.sbsScrollSync);
+        simTarget = options.features.sbsMobileSim;
+      } catch (cause) {
+        setSyncOn(false);
+        simTarget = false;
+        log.error(
+          'Reading the stored settings failed; the overlay opens with the switches off',
+          cause instanceof Error ? cause.message : cause
+        );
+      }
+      // The simulation's ask — and any rule transition it commands — settles
+      // BEFORE the view can mount: a first open's halves navigate only after
+      // the rule exists, exactly the machine's rule-before-refresh ordering.
+      const psi = isAutoFlowPage();
+      await simMachine.open(psi, simTarget);
+      await ensureUi(urls);
+      // The engine must not outrun its halves: `registerFrame`'s slots fill
+      // during the render that `ensureUi` started but did not await. Starting
+      // from an unregistered slot attaches nothing — and the session's start
+      // guard would then keep a "running" engine deaf to the halves until a
+      // switch cycle re-armed it (the reported default-on regression).
+      if (!(await viewMounted)) {
+        // A dead view must not become a dead-end: no show (no scroll lock),
+        // no continuity record, and a simulation session this open already
+        // established is retracted — a rule without its overlay UI would
+        // rewrite the tab's document requests invisibly. The half-mounted
+        // shadow host is torn down so the guard at `ensureUi` releases and
+        // the next open really does retry the whole path (a surviving host
+        // would fail the same way forever).
+        await simMachine.close();
+        ui?.remove();
+        ui = null;
+        log.warn('The overlay view failed to mount — the open degraded, nothing shown');
+        return;
+      }
+      // A world invalidated while its open was in flight must not show: the
+      // controls would be dead. Everything this open established follows the
+      // invalidation teardown (scroll, engines) and the sweep converges the
+      // session rule.
+      if (ctx.isInvalid) return;
+      // Measure the halves now — the phone styles land with the first paint,
+      // the rescale keeps every later window change live, and the size gate
+      // (which held the urls during the fit-less phone presentation) releases.
+      presenter.syncNow();
+      // The analyses drive themselves — no correlated structure to sync there.
+      if (syncOn() && !psi) startSync();
+      show();
+    } finally {
+      openInFlight = false;
     }
-    // The simulation's ask — and any rule transition it commands — settles
-    // BEFORE the view can mount: a first open's halves navigate only after
-    // the rule exists, exactly the machine's rule-before-refresh ordering.
-    const psi = isAutoFlowPage();
-    await simMachine.open(psi, simTarget);
-    await ensureUi(urls);
-    // The engine must not outrun its halves: `registerFrame`'s slots fill
-    // during the render that `ensureUi` started but did not await. Starting
-    // from an unregistered slot attaches nothing — and the session's start
-    // guard would then keep a "running" engine deaf to the halves until a
-    // switch cycle re-armed it (the reported default-on regression).
-    await viewMounted;
-    // Measure the halves now — the phone styles land with the first paint,
-    // the rescale keeps every later window change live, and the size gate
-    // (which held the urls during the fit-less phone presentation) releases.
-    presenter.syncNow();
-    // The analyses drive themselves — no correlated structure to sync there.
-    if (syncOn() && !psi) startSync();
-    show();
   };
 
   const show = (): void => {
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
+    // The open state outlives this document's script only if the document
+    // reloads itself on the same URL (a host-responsive reload, a refresh):
+    // the next boot then restores the overlay instead of dropping it.
+    markOverlayOpen(window, window.location.href);
     setOpen(true);
   };
 
@@ -342,6 +381,8 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     void simMachine.close();
     document.documentElement.style.overflow = overflow.html;
     document.body.style.overflow = overflow.body;
+    // The user closed the compare: its reloads restore nothing.
+    markOverlayClosed(window);
     setOpen(false);
   };
 
@@ -359,8 +400,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
         isolateEvents: true,
         onMount: (container) => {
           // The mount promise is owned, not fire-and-forget: the open path
-          // awaits it before starting the sync engine (the failure branch
-          // logs and continues — the overlay's UI failure is its own error).
+          // awaits it before starting the sync engine, and its value states
+          // whether the view is really up — a false result keeps the open
+          // from showing a dead overlay (the degrade branch there).
           viewMounted = mountShadowUi(container, () => (
             <SideBySideOverlay
               urls={() => pair}
@@ -387,12 +429,14 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
           ))
             .then((dispose) => {
               disposeRoot = dispose;
+              return true;
             })
             .catch((cause: unknown) => {
               log.error(
                 'Mounting the side-by-side overlay view into the shadow root failed',
                 cause instanceof Error ? cause.message : cause
               );
+              return false;
             });
         },
         onRemove: () => {
@@ -456,19 +500,30 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     })
   );
 
-  /** The auto-open runs at the fully-rendered moment like the manual one. */
-  const psiAutoOpen = (): void => {
-    if (ctx.isInvalid || !isAutoFlowPage()) return;
-    // Imperative page-lifecycle call (never re-driven by signals) — the
-    // reactivity lint cannot see that, hence the local silences below.
-    void openOverlay();
+  /**
+   * The boot's open trigger, shared by the two carriers: the PageSpeed
+   * Insights auto-flow page (its own entry design) and the reload restore —
+   * a document that had the overlay open on this exact URL and reloaded on
+   * itself continues the compare instead of dropping the user into a
+   * closed page.
+   */
+  const bootOpen = (): void => {
+    if (ctx.isInvalid) return;
+    if (consumeBootOpenState(window, window.location.href) || isAutoFlowPage()) {
+      // The belt catch keeps the never-fire-and-forget guarantee local even
+      // though every open path resolves (a future rejecting await must not
+      // surface as an unhandled boot rejection).
+      openOverlay().catch((cause: unknown) => {
+        log.error('The boot open failed unexpectedly', cause);
+      });
+    }
   };
   if (document.readyState === 'loading') {
     // eslint-disable-next-line solid/reactivity -- imperative page-lifecycle call
-    ctx.addEventListener(window, 'DOMContentLoaded', psiAutoOpen);
+    ctx.addEventListener(window, 'DOMContentLoaded', bootOpen);
   } else {
     // eslint-disable-next-line solid/reactivity -- imperative page-lifecycle call
-    psiAutoOpen();
+    bootOpen();
   }
 
   // An extension reload while the overlay is up must not leave the page
