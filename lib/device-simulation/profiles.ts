@@ -18,8 +18,10 @@ export interface DeviceProfile {
 
 /**
  * The one device. UA tokens `Android` + `Mobile` are what UA decisions listen
- * for (Chrome's reduction keeps those exact tokens; the `K` replaces the
- * device model). The Chrome major is pinned at implementation time — 155,
+ * for. Under Chrome's UA reduction the `Android 10; K` pair is static: since
+ * Chrome 110 real Chrome on Android sends exactly that instead of the real OS
+ * version and device model, so it stays current as Android releases age — never
+ * bump these numbers. The Chrome major is pinned at implementation time — 155,
  * stable since 2026-10-06 — and must be verified against the plugin's
  * server-side mobile decision on the local site before the feature ships; a
  * needed correction is recorded here, never assumed. Viewport is Pixel-class,
