@@ -6,7 +6,7 @@
 import type { ComponentProps, JSX } from 'solid-js';
 import { splitProps } from 'solid-js';
 import { Show } from 'solid-js';
-import { LoaderCircle } from 'lucide-solid';
+import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import { cn } from '../../utils/cn';
 import { DISABLED, FOCUS_RING } from './classes';
 import { STATUS_SOFT_CLASSES, STATUS_TEXT_CLASSES } from './status-badge';

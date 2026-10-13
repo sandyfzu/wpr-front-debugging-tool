@@ -9,19 +9,37 @@
       media query, an explicit stored choice pins `data-theme` before render.
     -->
     <!--
+      Themed canvas: the token stylesheet is a render-blocking head link (the
+      boot's palette resolution is asynchronous storage, so without the link a
+      dev session's unbundled module graph would delay the tokens behind a
+      default-white canvas). With it, the `:root` custom properties exist
+      before the first paint and the document paints its `--surface-0` canvas
+      — a themed blank while the panel loads, in both palettes, instead of a
+      white flash. The canvas follows the system palette pre-boot; a stored
+      explicit dark/light choice on an OS-disagreeing machine therefore flips
+      the (empty) canvas once when the lock releases — content still never
+      paints in the wrong palette. The rule stays after the boot too: the
+      shell paints over it, and it keeps overscroll themed.
+    -->
+    <!--
       Paint lock: the document stays hidden until <html> declares
       `data-theme-lock="done"` — set once the stored appearance resolved (or
       the read failed and the token default stands, see the panel boot). The
-      arm is this stylesheet-only rule, so the first painted frame is already
-      the resolved palette instead of a pre-boot flash; no inline script is
-      used (extension pages' CSP forbids it). Without it a stored dark/light
-      choice on an OS-disagreeing machine paints a wrong first frame.
+      arm is this stylesheet-only rule; a hidden root's background still
+      paints the canvas, so the lock's window shows the themed canvas, never
+      a default. No inline script is used (extension pages' CSP forbids it).
+      Without the lock a stored dark/light choice on an OS-disagreeing machine
+      paints a wrong first frame.
     -->
     <style>
+      html {
+        background-color: var(--surface-0);
+      }
       html:not([data-theme-lock='done']) {
         visibility: hidden;
       }
     </style>
+    <link rel="stylesheet" href="../../assets/css/theme.css" />
     <title>WPR FDT</title>
   </head>
   <body>

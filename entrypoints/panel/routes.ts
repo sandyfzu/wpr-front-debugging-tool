@@ -9,7 +9,12 @@
  * ships in a later phase.
  */
 import type { LucideIcon } from 'lucide-solid';
-import { FileCode, Images, SearchX, ShieldCheck, Stethoscope, Zap } from 'lucide-solid';
+import FileCode from 'lucide-solid/icons/file-code';
+import Images from 'lucide-solid/icons/images';
+import SearchX from 'lucide-solid/icons/search-x';
+import ShieldCheck from 'lucide-solid/icons/shield-check';
+import Stethoscope from 'lucide-solid/icons/stethoscope';
+import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import type { FdtData } from '../../lib/wp-rocket/types';
 

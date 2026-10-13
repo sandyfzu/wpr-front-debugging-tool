@@ -1,26 +1,13 @@
 /**
- * The panel's adaptive navigation — the nav registry's full consumer: one
- * typed surface rendering every journey group in both docking geometries.
- *
- * Morphology: the same DOM carries both forms; Tailwind container-query
- * variants over the shell's `#root` inline size switch the shapes — no JS
- * resize listeners, no second tree, nothing re-renders on resize (the
- * threshold is `nav/morphology.ts`'s one declaring site, mirrored here as
- * the `@min-[768px]:` class literals its sync guard pins).
- *
- * - ≥ 768px (docked bottom / undocked): a grouped, horizontal top tab bar —
- *   a caption per group, icon+label rows, horizontal scroll on overflow
- *   (rows never wrap, so overflow is scroll, never clipping).
- * - < 768px (docked right): a left icon rail — square icon rows under
- *   hairline group separators; each group's name is announced as the list's
- *   accessible name, and each row's full label + live state rides its
- *   tooltip (the visible naming surface for icon-only rows).
+ * The panel's navigation — the nav registry's full consumer: one typed
+ * surface rendering every journey group as a left icon rail beside the
+ * content region, at every window size.
  *
  * Live state: rows that carry a registry selector resolve it against the
- * loaded page data and surface the resulting status chip beside their label
- * (the chip itself is the shared status vocabulary, so the five tones stay
- * AA-verified pairs by construction), which makes the nav an information
- * surface rather than a label list.
+ * loaded page data and name the resulting state inside the row's tooltip
+ * (the shared status vocabulary's badge, so the tones stay AA-verified
+ * pairs by construction), which makes the nav an information surface
+ * rather than a label list.
  */
 import { For, Show, createMemo, type Accessor, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
@@ -54,8 +41,8 @@ export interface AdaptiveNavProps {
 /**
  * The registry rows grouped for rendering, in the registry's own group
  * order, each cluster carrying its rows in registry order. Consumers skip
- * clusters without rows (a future-phase group renders no caption, no
- * separator — rows appear additively).
+ * clusters without rows (a future-phase group renders no separator — rows
+ * appear additively).
  *
  * @returns One entry per journey group.
  */
@@ -67,36 +54,27 @@ export function groupedRoutes(): Array<{ group: NavGroup; rows: readonly NavRout
 }
 
 /**
- * The nav's anatomy: icon-rail base (narrow docking) morphing to the top
- * tab bar. Both axes scroll — the rail vertically, the bar horizontally
- * (`overflow-y:auto` computes the other axis to `auto` as well), matching
- * the cold fact that rows grow additively with future Tools pages.
+ * The nav's anatomy: the icon rail. Rows grow additively with future pages,
+ * so the rail scrolls its own axis (`overflow-y:auto` computes the other
+ * axis to `auto` as well) instead of ever clipping a row.
  */
-const NAV = `flex min-w-0 flex-1 flex-col overflow-y-auto
-  @min-[768px]:flex-row @min-[768px]:items-center`;
+const NAV = 'flex min-w-0 flex-1 flex-col overflow-y-auto';
 
 /**
- * One journey group: a hairline-topped cluster on the rail (never above the
- * first), a captioned cluster behind a left hairline on the bar.
+ * One journey group: a hairline-topped cluster — never above the first
+ * (the shell's brand mark already anchors the rail's top).
  */
-const GROUP = `flex flex-col border-t border-line-2 pt-1.5 first:border-t-0 first:pt-0
-  @min-[768px]:flex-row @min-[768px]:items-center @min-[768px]:gap-1 @min-[768px]:border-t-0
-  @min-[768px]:border-l @min-[768px]:pl-2 @min-[768px]:first:border-l-0 @min-[768px]:first:pl-0`;
+const GROUP = 'flex flex-col border-t border-line-2 pt-1.5 first:border-t-0 first:pt-0';
 
-/** The group's caption: rail-invisible (the list is named), bar-visible texture. */
-const GROUP_CAPTION = `sr-only @min-[768px]:not-sr-only pb-0.5 text-2xs font-medium uppercase
-  leading-4 tracking-widest text-fg-muted whitespace-nowrap`;
-
-/** The group's row list, reshaped with the morphology. */
-const GROUP_LIST = `flex flex-col items-center gap-1
-  @min-[768px]:flex-row @min-[768px]:gap-1`;
+/** The group's row list. */
+const GROUP_LIST = 'flex flex-col items-center gap-1';
 
 /**
- * One nav row: a 32px square icon on the rail, an icon+label+state row on
- * the bar. Hit areas stay one shared 32px row in both forms.
+ * One nav row: a 32px square icon. The full label rides the sr-only span
+ * (screen readers) and the tooltip (sighted users).
  */
-const ROW = `flex h-8 w-8 items-center justify-center rounded whitespace-nowrap text-2xs font-medium
-  no-underline @min-[768px]:w-auto @min-[768px]:justify-start @min-[768px]:px-2.5`;
+const ROW =
+  'flex h-8 w-8 items-center justify-center rounded whitespace-nowrap text-2xs font-medium no-underline';
 
 /** The active row's treatment. */
 const ROW_ACTIVE = 'bg-surface-3 text-fg-primary';
@@ -104,13 +82,10 @@ const ROW_ACTIVE = 'bg-surface-3 text-fg-primary';
 const ROW_IDLE = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
 
 /**
- * The row's label: content-named on the rail (screen readers read it, the
- * tooltip shows it to sighted users), visible text on the bar.
+ * The row's label: content-named (screen readers read it; the tooltip shows
+ * it to sighted users).
  */
-const ROW_LABEL = 'sr-only @min-[768px]:not-sr-only';
-
-/** The live-state chip: tooltip-resident on the rail, inline beside the label on the bar. */
-const ROW_CHIP = 'hidden @min-[768px]:flex shrink-0';
+const ROW_LABEL = 'sr-only';
 
 /** The disabled reserved row's treatment (inside the registry-driven tooltip). */
 const ROW_RESERVED = 'text-fg-muted';
@@ -154,11 +129,14 @@ export function resolveLiveState(row: NavRoute, data: FdtData | null): NavLiveSt
 }
 
 /**
- * Render one registry row as its shared two-morphology element.
+ * Render one registry row as its anchor (or the reserved disabled button).
  *
  * Non-reserved rows are real anchors (`#/route` hash form); reserved rows
  * are the disabled explained button. Both forms answer their tooltip with
- * the row's full label (or the reserved note) plus the live-state chip.
+ * the row's full label (or the reserved note) plus the live-state chip, and
+ * both float it to the row's *right* — beside the rail column, never over
+ * the sibling rows below (a below-placed tooltip would sit on top of the
+ * next row's hit area and swallow its clicks).
  *
  * @param props The row, the active route and the loaded data.
  */
@@ -186,25 +164,18 @@ function NavRow(props: NavRowProps): JSX.Element {
           href={`#/${props.row.id}`}
           ariaCurrent={active()}
           content={tooltipContent}
-          placement="bottom"
+          placement="right"
           class={rowClasses()}
         >
           <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
           <span class={ROW_LABEL}>{props.row.label}</span>
-          <Show when={live()}>
-            {(state) => (
-              <span data-fdt="nav-live-state" class={ROW_CHIP}>
-                <StatusBadge kind={state().tone}>{state().text}</StatusBadge>
-              </span>
-            )}
-          </Show>
         </Tooltip>
       }
     >
       <Tooltip
         content={tooltipContent}
         disabled
-        placement="bottom"
+        placement="right"
         class={cn(rowClasses(), ROW_RESERVED, DISABLED)}
       >
         <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
@@ -225,16 +196,13 @@ export function AdaptiveNav(props: AdaptiveNavProps): JSX.Element {
   return (
     <nav aria-label={NAV_LABEL} data-fdt="panel-nav" class={NAV}>
       {/* Groups whose rows all land in a later phase stay out of the DOM
-          entirely — a captionless "Tools" bar cluster or a stranded rail
-          separator would be noise, not scent (rows appear additively). */}
+          entirely — a stranded "Tools" separator over nothing would be
+          noise, not scent (rows appear additively). */}
       <For each={groupedRoutes().filter((entry) => entry.rows.length > 0)}>
         {({ group, rows }) => (
           <div data-fdt-nav-group={group} class={GROUP}>
-            {/* Visible group caption on the bar; the list's own name names
-                the group for assistive tech in both morphologies. */}
-            <span aria-hidden="true" class={GROUP_CAPTION}>
-              {group}
-            </span>
+            {/* The list's own accessible name names the group for assistive
+                tech; the rail shows no visible caption (icon-only rows). */}
             <ul aria-label={group} class={GROUP_LIST}>
               <For each={rows}>
                 {(row) => (

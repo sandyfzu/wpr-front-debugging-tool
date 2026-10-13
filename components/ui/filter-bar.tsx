@@ -8,7 +8,7 @@
  */
 import type { JSX } from 'solid-js';
 import { For, Show, splitProps } from 'solid-js';
-import { Search } from 'lucide-solid';
+import Search from 'lucide-solid/icons/search';
 import { cn } from '../../utils/cn';
 import { DISABLED, FOCUS_RING } from './classes';
 import { Input } from './input';

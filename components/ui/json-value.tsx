@@ -30,7 +30,8 @@ import {
   Switch,
   splitProps
 } from 'solid-js';
-import { ChevronDown, ChevronRight } from 'lucide-solid';
+import ChevronDown from 'lucide-solid/icons/chevron-down';
+import ChevronRight from 'lucide-solid/icons/chevron-right';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
 import {

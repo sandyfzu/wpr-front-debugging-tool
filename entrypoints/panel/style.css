@@ -1,24 +1,11 @@
 /*
- * The panel document's stylesheet — `assets/css/theme.css` (the Tailwind
- * layer over the design tokens) plus the shell's own mount-only motion.
- * This file is the only panel-owned CSS: colors, elevations, spacing and
- * the appearance model come from the tokens; page styles use utilities.
+ * The panel document's own stylesheet — the shell's mount-only motion.
+ * The design tokens and the Tailwind utilities arrive through the
+ * `theme.css` link in `index.html` (render-blocking, so the first painted
+ * frame — the boot's themed canvas — already reads the tokens); this file
+ * is the only panel-owned CSS beyond that: colors, elevations, spacing and
+ * the appearance model come from the tokens, page styles use utilities.
  */
-
-@import '../../assets/css/theme.css';
-
-/* ---- Morphology container ---------------------------------------------------
- * The one container-query anchor of the shell: the adaptive nav and the
- * header geometry resolve their two morphologies (icon rail < 768px,
- * grouped top tab bar ≥ 768px) against THIS element's inline size — the
- * browser restyles them, nothing listens for resizes and nothing
- * re-renders. The threshold itself is `nav/morphology.ts`'s single
- * declaring site; the nav's `@min-[768px]:` variant classes implement it
- * and the morphology tests pin the two together. */
-
-#root {
-  container-type: inline-size;
-}
 
 /* ---- Mount-only page entrance ----------------------------------------------
  * One fade/slide per page mount, driven by the P0 motion tokens. Explicitly

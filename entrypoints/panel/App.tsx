@@ -1,8 +1,6 @@
 /**
- * The panel's app shell: the brand mark beside the adaptive nav (an icon
- * rail on narrow docking, a grouped top tab bar on wide — the morphology is
- * the nav's own container-query classes; the shell only picks the geometry
- * with them) over the content region that renders the route bodies and the
+ * The panel's app shell: the brand mark above the icon rail (the nav) and
+ * the content region beside it that renders the route bodies and the
  * data-state surfaces around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
@@ -27,7 +25,7 @@ import {
   type JSX
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { Rocket } from 'lucide-solid';
+import Rocket from 'lucide-solid/icons/rocket';
 import { ErrorState } from '../../components/ui/error-state';
 import { Skeleton } from '../../components/ui/skeleton';
 import { createLogger } from '../../lib/logger';
@@ -68,14 +66,12 @@ interface DataError {
   readonly cause: string;
 }
 
-/** The two-morphology shell header: narrow = the nav's rail column, wide = the top bar. */
-const HEADER = `flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2
-  @min-[768px]:flex-row @min-[768px]:items-center @min-[768px]:gap-3 @min-[768px]:border-r-0
-  @min-[768px]:border-b @min-[768px]:px-3 @min-[768px]:py-2`;
+/** The shell header: the brand mark above the nav's icon rail column. */
+const HEADER = 'flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
 
-/** The brand mark: centered over the rail, plain inline beside the bar. */
-const BRAND = `flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap
-  text-xs font-semibold text-fg-primary @min-[768px]:justify-start`;
+/** The brand mark: centered over the rail; its name rides the sr-only span. */
+const BRAND =
+  'flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap text-xs font-semibold text-fg-primary';
 
 /**
  * Render the panel shell.
@@ -175,17 +171,13 @@ export function PanelApp(props: AppProps): JSX.Element {
   return (
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
-        <div
-          data-fdt="panel-shell"
-          class="flex h-dvh @min-[768px]:flex-col bg-surface-0 text-fg-primary"
-        >
+        <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
           <header data-fdt="panel-header" class={HEADER}>
             {/* The brand is not a heading: each page owns the single h1.
-                Its name rides the sr-only span — the rail shows the mark
-                only, the bar the mark with the tool name. */}
+                Its name rides the sr-only span — the rail shows the mark. */}
             <p class={BRAND}>
               <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-              <span class="sr-only @min-[768px]:not-sr-only">WPR FDT</span>
+              <span class="sr-only">WPR FDT</span>
             </p>
             <AdaptiveNav route={router.route} data={navData} />
           </header>

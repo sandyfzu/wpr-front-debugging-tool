@@ -1,17 +1,18 @@
 /**
- * The adaptive nav's browser suite (P5.1 groundwork): the container-query
- * morphologies switch LIVE at real viewport widths, real hash links carry
- * `aria-current`, and the tooltip wiring holds for anchor rows and the
- * disabled reserved row.
+ * The panel nav's browser suite: the icon rail is the form at every width
+ * (no morphology switch), real hash links carry `aria-current`, the tooltip
+ * wiring holds for anchor rows and the disabled reserved row — and a row's
+ * open tooltip never covers its sibling rows (the placement regression the
+ * below-floating tooltip had).
  *
  * Why a browser pin: happy-dom never applies the stylesheet, so unit tests
- * can only assert the variant class strings — the container-query cascade
- * (threshold resolution, variant-after-base ordering), the pointer/focus
- * tooltip behavior over a real APG trigger, and the focus ring are genuine
- * browser facts. The panel page boots as an extension page (like the
- * popup's suites): with no DevTools window there is no inspected tab, so
- * the store degrades to its recorded error state — itself one of the
- * checked promises — while the nav keeps rendering stateless.
+ * can only assert the class strings — the flex geometry, the real painted
+ * hit-testing (an open tooltip must not intercept the next row's clicks),
+ * the pointer/focus tooltip behavior over a real APG trigger, and the focus
+ * ring are genuine browser facts. The panel page boots as an extension page
+ * (like the popup's suites): with no DevTools window there is no inspected
+ * tab, so the store degrades to its recorded error state — itself one of
+ * the checked promises — while the nav keeps rendering stateless.
  */
 import type { Page } from '@playwright/test';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
@@ -22,18 +23,14 @@ async function panelUrl(extension: ExtensionDriver): Promise<string> {
   return `chrome-extension://${id}/panel.html`;
 }
 
-/** Geometry the container queries resolve differently at rail vs bar widths. */
+/** The rail geometry, read identically at every width. */
 interface NavGeometry {
-  /** The nav element's resolved flex direction (the morphology's axis). */
+  /** The nav element's resolved flex direction (the rail's axis). */
   navFlexDirection: string;
   navOverflowX: string;
   headerBorderRightWidth: string;
   headerBorderBottomWidth: string;
-  /** The group caption's own box width (≤ 1px is the sr-only signature). */
-  captionRectWidth: number;
-  /** Whether the caption's glyphs actually paint (probe via hit-testing). */
-  captionTextVisible: boolean;
-  /** One row's resolved row layout (label present ⇒ the bar form). */
+  /** One row's resolved row layout. */
   firstRowDisplay: string;
   shellFlexDirection: string;
 }
@@ -43,34 +40,20 @@ async function readGeometry(page: Page): Promise<NavGeometry> {
     const nav = document.querySelector<HTMLElement>('[data-fdt="panel-nav"]');
     const header = document.querySelector<HTMLElement>('[data-fdt="panel-header"]');
     const shell = document.querySelector<HTMLElement>('[data-fdt="panel-shell"]');
-    const caption = nav === null ? null : nav.querySelector<HTMLElement>('[aria-hidden="true"]');
     const firstRow = nav === null ? null : nav.querySelector<HTMLElement>('a');
     return {
       navFlexDirection: nav === null ? '' : getComputedStyle(nav).flexDirection,
       navOverflowX: nav === null ? '' : getComputedStyle(nav).overflowX,
       headerBorderRightWidth: header === null ? '' : getComputedStyle(header).borderRightWidth,
       headerBorderBottomWidth: header === null ? '' : getComputedStyle(header).borderBottomWidth,
-      captionRectWidth: caption === null ? 0 : caption.getBoundingClientRect().width,
-      // A real painted-glyph probe: the caption is invisible unless the
-      // compositor renders its own pixels at its box (hit-testing truth).
-      captionTextVisible: ((): boolean => {
-        if (caption === null) return false;
-        const box = caption.getBoundingClientRect();
-        const atPoint = document.elementFromPoint(
-          box.left + box.width / 2,
-          box.top + box.height / 2
-        );
-        if (atPoint === null) return false;
-        return atPoint === caption || caption.contains(atPoint);
-      })(),
       firstRowDisplay: firstRow === null ? '' : getComputedStyle(firstRow).display,
       shellFlexDirection: shell === null ? '' : getComputedStyle(shell).flexDirection
     };
   });
 }
 
-test.describe('panel nav (adaptive morphology + tooltips)', () => {
-  test('switches morphology at the real container width — live, on resize', async ({
+test.describe('panel nav (icon rail + tooltips)', () => {
+  test('keeps the icon rail at every width — no morphology switch, no top bar', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
@@ -78,29 +61,25 @@ test.describe('panel nav (adaptive morphology + tooltips)', () => {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelUrl(extension), { waitUntil: 'load' });
 
-      // Narrow (the docked-right reading): the icon rail.
+      // Narrow: the rail column beside the content.
       const narrow = await readGeometry(page);
       expect(narrow.navFlexDirection).toBe('column');
       expect(narrow.shellFlexDirection).toBe('row');
       expect(narrow.headerBorderRightWidth).not.toBe('0px');
-      // The rail's captions stay sr-only: a ≤1px clipped box, no glyphs.
-      expect(narrow.captionRectWidth).toBeLessThanOrEqual(1.5);
-      expect(narrow.captionTextVisible).toBe(false);
+      expect(narrow.headerBorderBottomWidth).toBe('0px');
 
-      // RESIZE in the SAME page — the browser restyles, nothing re-renders.
+      // RESIZE wide in the SAME page: still the rail — the header keeps its
+      // right edge and grows no bottom edge (the top bar is retired).
       await page.setViewportSize({ width: 1000, height: 700 });
       await page.waitForTimeout(120);
       const wide = await readGeometry(page);
-      expect(wide.navFlexDirection).toBe('row');
-      expect(wide.shellFlexDirection).toBe('column');
-      expect(wide.headerBorderRightWidth).toBe('0px');
-      expect(wide.headerBorderBottomWidth).not.toBe('0px');
-      // The bar's captions and row labels are real painted ink.
-      expect(wide.captionRectWidth).toBeGreaterThan(20);
-      expect(wide.captionTextVisible).toBe(true);
+      expect(wide.navFlexDirection).toBe('column');
+      expect(wide.shellFlexDirection).toBe('row');
+      expect(wide.headerBorderRightWidth).not.toBe('0px');
+      expect(wide.headerBorderBottomWidth).toBe('0px');
       expect(wide.firstRowDisplay).toBe('flex');
 
-      // And back again without a reload — the morph is a restyle.
+      // And back again without a reload.
       await page.setViewportSize({ width: 700, height: 900 });
       await page.waitForTimeout(120);
       expect((await readGeometry(page)).navFlexDirection).toBe('column');
@@ -136,7 +115,7 @@ test.describe('panel nav (adaptive morphology + tooltips)', () => {
     }
   });
 
-  test('tooltips carry the row name (focus) and the reserved note (disabled row)', async ({
+  test('a row’s open tooltip sits to its right and never covers the sibling rows', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
@@ -145,12 +124,69 @@ test.describe('panel nav (adaptive morphology + tooltips)', () => {
       await page.setViewportSize({ width: 700, height: 900 });
       await page.goto(await panelUrl(extension), { waitUntil: 'load' });
 
-      await page.getByRole('link', { name: 'Detections' }).focus();
+      const trigger = page.getByRole('link', { name: 'Detections' });
+      await trigger.focus();
       const tooltip = page.getByRole('tooltip');
       await expect(tooltip).toBeVisible();
       expect(await tooltip.textContent()).toContain('Detections');
-      const trigger = page.getByRole('link', { name: 'Detections' });
       expect(await trigger.getAttribute('aria-describedby')).toBe(await tooltip.getAttribute('id'));
+
+      // Placement: the tooltip floats to the row's right (gutter > 0), over
+      // the content region — never below the row.
+      const placement = await page.evaluate(() => {
+        const triggerBox = document
+          .querySelector<HTMLAnchorElement>('a[href="#/detections"]')
+          ?.getBoundingClientRect();
+        const tooltipBox = document
+          .querySelector<HTMLElement>('[role="tooltip"]')
+          ?.getBoundingClientRect();
+        if (triggerBox === undefined || tooltipBox === undefined) return null;
+        return { triggerRight: triggerBox.right, tooltipLeft: tooltipBox.left };
+      });
+      if (placement === null) throw new Error('tooltip or trigger box missing while open');
+      expect(placement.tooltipLeft).toBeGreaterThanOrEqual(placement.triggerRight);
+
+      // The user-facing fact: with the tooltip open, the next row's center
+      // still hit-tests to the row itself (not to the floating tooltip).
+      const nextRowHit = await page.evaluate(() => {
+        const next = document.querySelector<HTMLAnchorElement>('a[href="#/javascript"]');
+        if (next === null) return null;
+        const box = next.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + box.height / 2
+        );
+        return atPoint === next || (atPoint !== null && next.contains(atPoint));
+      });
+      expect(nextRowHit).toBe(true);
+
+      // And at the narrowest docked-right widths: the tooltip keeps its
+      // right-of-row placement (shift, never a flip onto the rail) and the
+      // sibling rows stay clickable.
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.waitForTimeout(120);
+      const narrowPlacement = await page.evaluate(() => {
+        const trigger = document.querySelector<HTMLAnchorElement>('a[href="#/detections"]');
+        const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
+        const next = document.querySelector<HTMLAnchorElement>('a[href="#/javascript"]');
+        if (trigger === null || tooltip === null || next === null) return null;
+        const triggerBox = trigger.getBoundingClientRect();
+        const tooltipBox = tooltip.getBoundingClientRect();
+        const nextBox = next.getBoundingClientRect();
+        const atNext = document.elementFromPoint(
+          nextBox.left + nextBox.width / 2,
+          nextBox.top + nextBox.height / 2
+        );
+        return {
+          tooltipLeft: tooltipBox.left,
+          triggerRight: triggerBox.right,
+          nextHitIsRow: atNext === next || (atNext !== null && next.contains(atNext))
+        };
+      });
+      if (narrowPlacement === null) throw new Error('tooltip boxes missing at the narrow width');
+      expect(narrowPlacement.tooltipLeft).toBeGreaterThanOrEqual(narrowPlacement.triggerRight);
+      expect(narrowPlacement.nextHitIsRow).toBe(true);
+
       await page.keyboard.press('Escape');
       await expect(page.getByRole('tooltip')).toHaveCount(0);
 

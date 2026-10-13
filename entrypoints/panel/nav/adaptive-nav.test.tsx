@@ -1,11 +1,10 @@
 /**
- * The adaptive nav's render tests: the registry's full row set (one element
- * per row, never two trees), the two morphologies as container-variant
- * classes on that one tree, real anchor links with `aria-current`, the
- * reserved row explained by its tooltip, and live-state chips resolving
- * from the row's own selector — including the tooltip carrying label +
- * state for the icon rail, and the throw-containment that keeps a registry
- * bug from taking the nav down.
+ * The nav's render tests: the registry's full row set (one element per
+ * row), the icon rail's class anatomy (no container variants — the rail is
+ * the form at every width), real anchor links with `aria-current`, the
+ * reserved row explained by its tooltip, and live state resolving from the
+ * row's own selector into that tooltip — including the throw-containment
+ * that keeps a registry bug from taking the nav down.
  *
  * Idiom note: unlike the tooltip's own tests (which import fresh per test
  * to pin exact open delays), these imports stay static — the lucide-heavy
@@ -20,7 +19,7 @@ import type { RouteId } from '../routes';
 import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import { makeFdtData } from '../state/fixtures';
 import { createSignal } from 'solid-js';
-import { Rocket } from 'lucide-solid';
+import Rocket from 'lucide-solid/icons/rocket';
 import { AdaptiveNav, groupedRoutes, resolveLiveState } from './adaptive-nav';
 import type { NavLiveStateSelector, NavRoute } from '../routes';
 
@@ -78,26 +77,25 @@ describe('AdaptiveNav structure', () => {
     expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
   });
 
-  it('carries both morphologies on the one tree (rail base, bar above the threshold)', () => {
+  it('is the icon rail at every width (the classes carry no container variants)', () => {
     renderNav();
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
-    // The rail anatomy (the base classes)…
+    // The rail anatomy, the only form: a column of square rows.
     expect(nav.className).toContain('flex-col');
-    // …and the bar's container variants — the classes are the tested half
-    // of the CSS rule (the width resolution is the browser's; the pure rule
-    // is the morphology module's, and its tests pin the threshold literals).
-    expect(nav.className).toContain('@min-[768px]:flex-row');
-    // Group separation carries both forms' separators on later groups.
+    // The rail is not width-adaptive — no container-query variants survive
+    // in any rendered class (the top-bar form is retired).
+    expect(nav.className).not.toContain('@min-');
+    // Group separation: hairlines under every group except the first.
     const groups = [...nav.querySelectorAll('[data-fdt-nav-group]')];
-    // Empty groups (Tools, today) stay out of the DOM: a captionless bar
-    // cluster or a stranded rail separator would be noise, not scent.
+    // Empty groups (Tools, today) stay out of the DOM: a stranded separator
+    // over nothing would be noise, not scent.
     expect(groups).toHaveLength(3);
     expect(nav.textContent).not.toContain('Tools');
-    expect(groups[1]?.className).toContain('border-t'); // rail separator
-    expect(groups[1]?.className).toContain('@min-[768px]:border-l'); // bar separator
+    expect(groups[0]?.className).toContain('first:border-t-0');
+    expect(groups[1]?.className).toContain('border-t');
     const firstList = screen.getByRole('list', { name: 'Overview' });
     expect(firstList.className).toContain('flex-col');
-    expect(firstList.className).toContain('@min-[768px]:flex-row');
+    expect(firstList.className).not.toContain('@min-');
   });
 
   it('rows stay real hash links with aria-current riding the route', async () => {
@@ -205,7 +203,7 @@ describe('AdaptiveNav live state', () => {
       error.mockRestore();
     }
   });
-  it('shows the loaded page’s counts as status chips beside the labels (bar form)', () => {
+  it('carries the loaded page’s counts as badges inside the rows’ tooltips', () => {
     const wpr = makeFdtData().wprDetections;
     renderNav({
       data: makeFdtData({
@@ -222,23 +220,59 @@ describe('AdaptiveNav live state', () => {
         }
       })
     });
-    const chips = document.querySelectorAll('[data-fdt="nav-live-state"]');
-    expect(chips).toHaveLength(2); // JavaScript + Lazyload; a clean reference page says nothing
-    const texts = [...chips].map((chip) => chip.textContent);
-    expect(texts).toContain('delayed 2/3');
-    expect(texts).toContain('2 images');
-    // The chips speak the shared status vocabulary.
-    for (const chip of chips) {
-      expect(chip.firstElementChild?.classList.contains('bg-status-info-soft')).toBe(true);
-    }
+    // The live state's only surface is the row's tooltip (icon rail):
+    const js = screen.getByRole('link', { name: 'JavaScript' });
+    fireEvent.focus(js);
+    const jsTooltip = screen.getByRole('tooltip');
+    expect(jsTooltip.textContent).toContain('delayed 2/3');
+    // The badge speaks the shared status vocabulary.
+    expect(
+      jsTooltip
+        .querySelector('[data-fdt="status-badge"]')
+        ?.classList.contains('bg-status-info-soft')
+    ).toBe(true);
+
+    // A second row's state, its own render (a closed tooltip lingers for its
+    // close delay — one opened tooltip per render keeps the query singular).
+    cleanup();
+    renderNav({
+      data: makeFdtData({
+        allScriptsLoaded: true,
+        wprDetections: {
+          ...wpr,
+          lazyload: { present: true, images: [IMAGE_RECORD, IMAGE_RECORD] }
+        }
+      })
+    });
+    fireEvent.focus(screen.getByRole('link', { name: 'Lazyload' }));
+    const lazyTooltip = screen.getByRole('tooltip');
+    expect(lazyTooltip.textContent).toContain('2 images');
+
+    // A third render for the silence case: a row whose selector declines —
+    // the preloaded feature present without a collected inventory is the
+    // selector's own "never a number that is not known" branch — answers
+    // silence at the render level too: its tooltip carries the label and no
+    // badge.
+    cleanup();
+    renderNav({
+      data: makeFdtData({
+        allScriptsLoaded: true,
+        preloadedResources: { present: true }
+      })
+    });
+    fireEvent.focus(screen.getByRole('link', { name: 'Preloaded Resources' }));
+    const silentTooltip = screen.getByRole('tooltip');
+    expect(silentTooltip.textContent).toContain('Preloaded Resources');
+    expect(silentTooltip.querySelector('[data-fdt="status-badge"]')).toBeNull();
   });
 
   it('distinguishes monitoring from found on the references row', () => {
     renderNav({ data: makeFdtData({ allScriptsLoaded: false }) });
     // Nothing found while the page still loads = the finder is watching.
-    const monitoring = screen.getByRole('link', { name: 'Undefined References Monitoring' });
+    fireEvent.focus(screen.getByRole('link', { name: 'Undefined References' }));
     expect(
-      monitoring
+      screen
+        .getByRole('tooltip')
         .querySelector('[data-fdt="status-badge"]')
         ?.classList.contains('bg-status-neutral-soft')
     ).toBe(true);
@@ -247,9 +281,12 @@ describe('AdaptiveNav live state', () => {
     renderNav({
       data: makeFdtData({ allScriptsLoaded: true, undefinedReferencesOnPage: ['jQuery'] })
     });
-    const found = screen.getByRole('link', { name: 'Undefined References 1 found' });
+    fireEvent.focus(screen.getByRole('link', { name: 'Undefined References' }));
     expect(
-      found.querySelector('[data-fdt="status-badge"]')?.classList.contains('bg-status-warn-soft')
+      screen
+        .getByRole('tooltip')
+        .querySelector('[data-fdt="status-badge"]')
+        ?.classList.contains('bg-status-warn-soft')
     ).toBe(true);
   });
 

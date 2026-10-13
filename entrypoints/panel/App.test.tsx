@@ -184,28 +184,27 @@ describe('PanelApp shell structure', () => {
     expect(reserved.getAttribute('disabled')).not.toBeNull();
   });
 
-  it('morphs the shell geometry with the nav (rail column ↔ top bar)', async () => {
+  it('keeps the rail geometry (header column with its right edge) at every width', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     shell.settle(pageData());
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
     });
-    // Both geometries are container-variant classes on the same tree (the
-    // width resolution is the browser's; the pure rule is the morphology
-    // module's, and its tests pin the threshold literals).
+    // The shell is the brand-over-rail column beside the content region —
+    // the only geometry, at every window size (the top-bar form is retired;
+    // its redesign is a later phase's work).
     const header = document.querySelector('[data-fdt="panel-header"]') as HTMLElement;
-    expect(header.className).toContain('flex-col'); // the rail column (base)
-    expect(header.className).toContain('@min-[768px]:flex-row'); // the top bar row
-    expect(header.className).toContain('border-r'); // the docked-right rail edge
-    expect(header.className).toContain('@min-[768px]:border-b'); // the docked-bottom bar edge
+    expect(header.className).toContain('flex-col'); // the rail column
+    expect(header.className).toContain('border-r'); // the rail's edge
     const nav = document.querySelector('[data-fdt="panel-nav"]') as HTMLElement;
     expect(nav.className).toContain('flex-col');
-    expect(nav.className).toContain('@min-[768px]:flex-row');
-    // The shell root itself morphs: the header shares the row with content
-    // when narrow, sits above it when wide.
     const shellRoot = document.querySelector('[data-fdt="panel-shell"]') as HTMLElement;
-    expect(shellRoot.className).toContain('@min-[768px]:flex-col');
+    expect(shellRoot.className).toContain('flex'); // header and content share the row
+    // No container-query variants survive in any shell class.
+    for (const element of [header, nav, shellRoot]) {
+      expect(element.className).not.toContain('@min-');
+    }
   });
 
   it('swaps the page body per route (and only ever one h1)', async () => {

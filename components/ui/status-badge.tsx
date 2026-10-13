@@ -12,7 +12,11 @@ import type { LucideIcon } from 'lucide-solid';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { CircleCheck, CircleMinus, CircleX, Info, TriangleAlert } from 'lucide-solid';
+import CircleCheck from 'lucide-solid/icons/circle-check';
+import CircleMinus from 'lucide-solid/icons/circle-minus';
+import CircleX from 'lucide-solid/icons/circle-x';
+import Info from 'lucide-solid/icons/info';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { cn } from '../../utils/cn';
 
 /** The exact vocabulary kinds, in registry order. */

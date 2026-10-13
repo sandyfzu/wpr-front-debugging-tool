@@ -5,7 +5,7 @@
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EmptyState } from './empty-state';
-import { Search } from 'lucide-solid';
+import Search from 'lucide-solid/icons/search';
 
 afterEach(() => {
   cleanup();

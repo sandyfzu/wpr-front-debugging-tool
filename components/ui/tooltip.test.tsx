@@ -17,7 +17,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { RefreshCw } from 'lucide-solid';
+import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {

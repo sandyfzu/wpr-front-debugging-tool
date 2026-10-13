@@ -9,7 +9,7 @@
  */
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import { TriangleAlert } from 'lucide-solid';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { cn } from '../../utils/cn';
 import { Button } from './button';
 import { STATUS_TEXT_CLASSES } from './status-badge';

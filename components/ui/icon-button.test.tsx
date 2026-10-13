@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IconButton } from './icon-button';
-import { RefreshCw } from 'lucide-solid';
+import RefreshCw from 'lucide-solid/icons/refresh-cw';
 
 afterEach(() => {
   cleanup();
