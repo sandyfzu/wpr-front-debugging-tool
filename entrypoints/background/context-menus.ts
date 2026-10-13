@@ -30,12 +30,17 @@ import {
   URL_PATTERNS
 } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
+import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 
 const log = createLogger('context-menus');
 
 /** What a click on one entry must trigger (pure mapping target). */
 export type MenuAction =
-  'side-by-side' | 'psi-side-by-side' | 'exclusion-builder' | 'refresh-database';
+  | 'side-by-side'
+  | 'psi-side-by-side'
+  | 'exclusion-builder'
+  | 'refresh-database'
+  | 'toggle-detection-widget';
 
 /** One registered entry: id, label, and where the browser may show it. */
 interface MenuEntry {
@@ -81,6 +86,16 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
     title: 'Update Known Conflicts Database',
     contexts: ['action']
+  },
+  {
+    // The per-origin opt-in for the on-page detection widget — the same
+    // store item the full phase's popup/Detections/options rows will write,
+    // so enablement exists on the pages themselves before those surfaces do.
+    action: 'toggle-detection-widget',
+    id: CONTEXT_MENU_IDS.toggleDetectionWidget,
+    title: 'Toggle the detection widget on this site',
+    contexts: ['all'],
+    documentUrlPatterns: URL_PATTERNS
   }
 ];
 
@@ -140,6 +155,31 @@ export interface MenuClickDeps {
   openTab(pagePath: typeof EXCLUSION_BUILDER_PAGE): Promise<unknown>;
   /** The database service's manual-refresh hook (the refresh entry routes here). */
   refreshDatabase(): Promise<DbUpdateResult | null>;
+  /**
+   * Flip the on-page detection widget's opt-in for one origin (the one
+   * toggling semantics the storage module owns); the new state is the
+   * persisted truth.
+   */
+  toggleDetectionWidget(origin: string): Promise<boolean>;
+}
+
+/**
+ * The origin a click targets, from the click's own document URL (page-scoped
+ * menus carry it). Unresolvable (absent, malformed) is null — the caller
+ * answers visibly instead of guessing a site.
+ *
+ * @param info The click's menu information.
+ */
+export function menuClickOrigin(info: {
+  menuItemId: string | number;
+  pageUrl?: string;
+}): string | null {
+  if (info.pageUrl === undefined) return null;
+  try {
+    return new URL(info.pageUrl).origin;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -148,12 +188,14 @@ export interface MenuClickDeps {
  * a real, contextual log line — never a swallowed rejection on the floor.
  *
  * @param action The click's resolved action.
+ * @param origin The click's document origin, when page-scoped and usable.
  * @param tabId The click event's own tab (validated by the dispatcher).
  * @param tab The same tab object, for properties beyond the id.
  * @param deps The injected browser effects.
  */
 async function dispatchMenuClick(
   action: MenuAction,
+  origin: string | null,
   tabId: number,
   tab: { incognito?: boolean } | undefined,
   deps: MenuClickDeps
@@ -195,6 +237,21 @@ async function dispatchMenuClick(
       }
       return;
     }
+    case 'toggle-detection-widget': {
+      if (origin === null) {
+        log.warn('Detection-widget toggle could not resolve the page origin', { tabId });
+        return;
+      }
+      try {
+        const enabled = await deps.toggleDetectionWidget(origin);
+        log.debug(`The detection widget is ${String(enabled)} for ${origin}`);
+      } catch (cause) {
+        // A rejected toggle is abnormal (the context is alive): the user's
+        // click produced no effect, so it must not vanish at debug level.
+        log.error('Toggling the detection widget failed', { origin, cause });
+      }
+      return;
+    }
   }
 }
 
@@ -208,7 +265,7 @@ async function dispatchMenuClick(
  * @param deps The injected browser effects.
  */
 export async function dispatchMenuClickEvent(
-  info: { menuItemId: string | number },
+  info: { menuItemId: string | number; pageUrl?: string },
   tab: { id?: number; incognito?: boolean } | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
@@ -220,7 +277,7 @@ export async function dispatchMenuClickEvent(
     log.warn('Menu click ignored: no tab', { action });
     return;
   }
-  await dispatchMenuClick(action, tabId, tab, deps);
+  await dispatchMenuClick(action, menuClickOrigin(info), tabId, tab, deps);
 }
 
 /**
@@ -271,7 +328,11 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     openTab: async (pagePath) => {
       await browser.tabs.create({ url: browser.runtime.getURL(pagePath) });
     },
-    refreshDatabase
+    refreshDatabase,
+    // The on-page widget's opt-in writes through the storage module's one
+    // toggle — the menu row is the page-context writer; the popup and the
+    // options row write the same item later.
+    toggleDetectionWidget: toggleInspectorOrigin
   };
 
   browser.contextMenus.onClicked.addListener((info, tab) => {

@@ -338,7 +338,9 @@ export const CONTEXT_MENU_IDS = {
   wprSideBySide: 'wprSideBySide',
   psiSideBySide: 'psiSideBySide',
   updateKnownConflictsDB: 'updateKnownConflictsDB',
-  exclusionBuilderPage: 'exclusionBuilderPage'
+  exclusionBuilderPage: 'exclusionBuilderPage',
+  /** Toggles the on-page detection widget for the clicked page's origin. */
+  toggleDetectionWidget: 'toggleDetectionWidget'
 } as const;
 
 /**

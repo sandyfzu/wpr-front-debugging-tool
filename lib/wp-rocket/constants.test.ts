@@ -216,7 +216,13 @@ describe('platforms and ids', () => {
   it('keeps the alarm and menu ids stable', () => {
     expect(ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB).toBe('update-known-conflicts-db');
     expect(Object.values(CONTEXT_MENU_IDS).sort()).toEqual(
-      ['exclusionBuilderPage', 'psiSideBySide', 'updateKnownConflictsDB', 'wprSideBySide'].sort()
+      [
+        'exclusionBuilderPage',
+        'psiSideBySide',
+        'toggleDetectionWidget',
+        'updateKnownConflictsDB',
+        'wprSideBySide'
+      ].sort()
     );
   });
 
