@@ -65,6 +65,9 @@
   --color-status-attention: var(--status-attention);
   --color-status-attention-soft: var(--status-attention-soft);
 
+  /* The dialog backdrop's wash (see tokens.css). */
+  --color-scrim: var(--scrim);
+
   /* System UI stack: sans is Tailwind's default, kept; mono and the shadow
    * elevations live as tokens in tokens.css — this block only maps the
    * Tailwind namespace names to those same custom properties, so every

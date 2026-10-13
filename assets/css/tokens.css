@@ -127,6 +127,11 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-entrance: cubic-bezier(0, 0, 0.2, 1);
 
+  /* Overlay scrim behind modal dialog surfaces: the panel dimmed a step more
+   * than `--surface-0` reads, so the floating layer separates on both palettes
+   * without ever switching hue (a near-black wash each way). */
+  --scrim: light-dark(rgb(23 26 32 / 45%), rgb(0 0 0 / 55%));
+
   /* Typography: the mono stack (sans stays Tailwind's default). A token so
    * injected shadow-root stylesheets — which do not import the Tailwind
    * layer — read the very same stack the page surfaces map, inherited from a
