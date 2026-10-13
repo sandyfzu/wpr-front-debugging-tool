@@ -7,6 +7,19 @@
 
 @import '../../assets/css/theme.css';
 
+/* ---- Morphology container ---------------------------------------------------
+ * The one container-query anchor of the shell: the adaptive nav and the
+ * header geometry resolve their two morphologies (icon rail < 768px,
+ * grouped top tab bar ≥ 768px) against THIS element's inline size — the
+ * browser restyles them, nothing listens for resizes and nothing
+ * re-renders. The threshold itself is `nav/morphology.ts`'s single
+ * declaring site; the nav's `@min-[768px]:` variant classes implement it
+ * and the morphology tests pin the two together. */
+
+#root {
+  container-type: inline-size;
+}
+
 /* ---- Mount-only page entrance ----------------------------------------------
  * One fade/slide per page mount, driven by the P0 motion tokens. Explicitly
  * NOT here: staggered per-item entrances, idle/loop animations, state-change

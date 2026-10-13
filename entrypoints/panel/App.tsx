@@ -1,7 +1,9 @@
 /**
- * The panel's app shell: sticky header (brand mark + the registry-driven
- * provisional flat nav) over the content region that renders the route
- * bodies and the data-state surfaces around them.
+ * The panel's app shell: the brand mark beside the adaptive nav (an icon
+ * rail on narrow docking, a grouped top tab bar on wide — the morphology is
+ * the nav's own container-query classes; the shell only picks the geometry
+ * with them) over the content region that renders the route bodies and the
+ * data-state surfaces around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
  * `error` the retry affordance, `ready`/`refreshing` the route body — so a
@@ -15,9 +17,7 @@
  */
 import {
   ErrorBoundary,
-  For,
   Match,
-  Show,
   Switch,
   createEffect,
   createMemo,
@@ -28,14 +28,13 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { Rocket } from 'lucide-solid';
-import { DISABLED, FOCUS_RING } from '../../components/ui/classes';
 import { ErrorState } from '../../components/ui/error-state';
 import { Skeleton } from '../../components/ui/skeleton';
-import { Tooltip } from '../../components/ui/tooltip';
-import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
+import type { FdtData } from '../../lib/wp-rocket/types';
+import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
-import { NAV_ROUTES, navRoute } from './routes';
+import { navRoute } from './routes';
 import { PAGES } from './pages';
 import {
   createFdtDataStore,
@@ -69,12 +68,14 @@ interface DataError {
   readonly cause: string;
 }
 
-/** A nav row's plain anchor treatment (token utilities, both palettes). */
-const NAV_ROW = 'flex h-7 items-center rounded px-2 text-2xs font-medium no-underline';
-/** The active row's treatment. */
-const NAV_ROW_ACTIVE = 'bg-surface-3 text-fg-primary';
-/** The rest rows' treatment (the hover surface every interactive gets). */
-const NAV_ROW_IDLE = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+/** The two-morphology shell header: narrow = the nav's rail column, wide = the top bar. */
+const HEADER = `flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2
+  @min-[768px]:flex-row @min-[768px]:items-center @min-[768px]:gap-3 @min-[768px]:border-r-0
+  @min-[768px]:border-b @min-[768px]:px-3 @min-[768px]:py-2`;
+
+/** The brand mark: centered over the rail, plain inline beside the bar. */
+const BRAND = `flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap
+  text-xs font-semibold text-fg-primary @min-[768px]:justify-start`;
 
 /**
  * Render the panel shell.
@@ -162,51 +163,33 @@ export function PanelApp(props: AppProps): JSX.Element {
     }
   });
 
+  /**
+   * The loaded page data for the nav's live-state selectors — null
+   * everywhere else, so rows stay state-free until data is trustworthy.
+   */
+  const navData = createMemo((): FdtData | null => {
+    const current = data.state();
+    return current.status === 'ready' || current.status === 'refreshing' ? current.data : null;
+  });
+
   return (
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
-        <div class="flex h-dvh flex-col bg-surface-0 text-fg-primary">
-          <header data-fdt="panel-header" class="shrink-0 border-b border-line-2 bg-surface-1">
-            <div class="flex items-center gap-3 px-3">
-              {/* The brand is not a heading: each page owns the single h1. */}
-              <p class="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-fg-primary">
-                <Rocket size={14} class="text-accent" aria-hidden="true" />
-                WPR FDT
-              </p>
-              <nav aria-label="WPR FDT pages" class="flex items-center gap-0.5">
-                <For each={NAV_ROUTES}>
-                  {(row) => (
-                    <Show
-                      when={row.reserved ?? false}
-                      fallback={
-                        <a
-                          data-fdt="nav-row"
-                          href={`#/${row.id}`}
-                          aria-current={router.route() === row.id ? 'page' : undefined}
-                          class={cn(
-                            NAV_ROW,
-                            FOCUS_RING,
-                            router.route() === row.id ? NAV_ROW_ACTIVE : NAV_ROW_IDLE
-                          )}
-                        >
-                          {row.label}
-                        </a>
-                      }
-                    >
-                      <Tooltip
-                        content={row.reservedNote ?? 'Reserved'}
-                        disabled
-                        class={cn(NAV_ROW, DISABLED, 'text-fg-muted')}
-                      >
-                        <span>{row.label}</span>
-                      </Tooltip>
-                    </Show>
-                  )}
-                </For>
-              </nav>
-            </div>
+        <div
+          data-fdt="panel-shell"
+          class="flex h-dvh @min-[768px]:flex-col bg-surface-0 text-fg-primary"
+        >
+          <header data-fdt="panel-header" class={HEADER}>
+            {/* The brand is not a heading: each page owns the single h1.
+                Its name rides the sr-only span — the rail shows the mark
+                only, the bar the mark with the tool name. */}
+            <p class={BRAND}>
+              <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
+              <span class="sr-only @min-[768px]:not-sr-only">WPR FDT</span>
+            </p>
+            <AdaptiveNav route={router.route} data={navData} />
           </header>
-          <main data-fdt="panel-content" class="min-h-0 flex-1 overflow-y-auto">
+          <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <ErrorBoundary
               fallback={(error: unknown) => {
                 // The render-crash retry reloads the whole panel document

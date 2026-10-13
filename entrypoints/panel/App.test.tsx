@@ -151,15 +151,13 @@ describe('PanelApp shell structure', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
     });
-    for (const label of [
-      'Detections',
-      'JavaScript',
-      'Lazyload',
-      'Preloaded Resources',
-      'Undefined References'
-    ]) {
+    // The Undefined References row answers its state before the page data
+    // settles (the fixture never loads scripts, so the row is "Monitoring"
+    // by design) — its name carries the suffix.
+    for (const label of ['Detections', 'JavaScript', 'Lazyload', 'Preloaded Resources']) {
       expect(screen.getByRole('link', { name: label })).toBeTruthy();
     }
+    expect(screen.getByRole('link', { name: /Undefined References/ })).toBeTruthy();
     // Anchors stay real links (hash form); the ready route pins itself.
     expect(screen.getByRole('link', { name: 'Detections' }).getAttribute('href')).toBe(
       '#/detections'
@@ -184,6 +182,30 @@ describe('PanelApp shell structure', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     const reserved = screen.getByRole('button', { name: 'Diagnoser' });
     expect(reserved.getAttribute('disabled')).not.toBeNull();
+  });
+
+  it('morphs the shell geometry with the nav (rail column ↔ top bar)', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
+    });
+    // Both geometries are container-variant classes on the same tree (the
+    // width resolution is the browser's; the pure rule is the morphology
+    // module's, and its tests pin the threshold literals).
+    const header = document.querySelector('[data-fdt="panel-header"]') as HTMLElement;
+    expect(header.className).toContain('flex-col'); // the rail column (base)
+    expect(header.className).toContain('@min-[768px]:flex-row'); // the top bar row
+    expect(header.className).toContain('border-r'); // the docked-right rail edge
+    expect(header.className).toContain('@min-[768px]:border-b'); // the docked-bottom bar edge
+    const nav = document.querySelector('[data-fdt="panel-nav"]') as HTMLElement;
+    expect(nav.className).toContain('flex-col');
+    expect(nav.className).toContain('@min-[768px]:flex-row');
+    // The shell root itself morphs: the header shares the row with content
+    // when narrow, sits above it when wide.
+    const shellRoot = document.querySelector('[data-fdt="panel-shell"]') as HTMLElement;
+    expect(shellRoot.className).toContain('@min-[768px]:flex-col');
   });
 
   it('swaps the page body per route (and only ever one h1)', async () => {

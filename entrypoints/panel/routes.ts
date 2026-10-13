@@ -71,24 +71,92 @@ export interface NavRoute {
 }
 
 /**
+ * An English-counted chip copy: '1 image', '2 images'.
+ *
+ * @param count The load's count.
+ * @param noun The singular noun the count quantifies.
+ */
+function counted(count: number, noun: string): string {
+  const units = count === 1 ? '1' : count.toString();
+  return `${units} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
  * The nav registry, in render order — today's pages. Future rows land
  * additively here with their named owners: Headers & Cookies (P6, Inspect),
  * RUCSS Tester (P13, Tools), Beacon & LCP (P14, Tools), Compare (P17 —
  * decision-gated optional SBS panel home, Tools).
+ *
+ * The Overview row carries no live state on purpose: WPR presence, version
+ * and cache age are the status bar's first-paint answers, owned there — the
+ * nav would only duplicate them.
  */
 export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'detections', label: 'Detections', icon: ShieldCheck, group: 'Overview' },
-  { id: 'javascript', label: 'JavaScript', icon: FileCode, group: 'Inspect' },
-  { id: 'lazyload', label: 'Lazyload', icon: Images, group: 'Inspect' },
+  {
+    // The glanceable count the study's interaction budget names: how many
+    // page scripts the Delay-JS feature holds (delayed / every script the
+    // inventory classified), so the number is visible before the page opens.
+    id: 'javascript',
+    label: 'JavaScript',
+    icon: FileCode,
+    group: 'Inspect',
+    liveState: (data) => {
+      if (data === null || !data.wprDetections.delay_js.present) return null;
+      const { delayedScripts, scripts } = data.wprDetections.delay_js;
+      return {
+        text: `delayed ${delayedScripts.toString()}/${scripts.length.toString()}`,
+        tone: 'info'
+      };
+    }
+  },
+  {
+    id: 'lazyload',
+    label: 'Lazyload',
+    icon: Images,
+    group: 'Inspect',
+    liveState: (data) => {
+      if (data === null || !data.wprDetections.lazyload.present) return null;
+      // The feature is active either way; "no images" is the page's state.
+      const count = data.wprDetections.lazyload.images.length;
+      return count > 0
+        ? { text: counted(count, 'image'), tone: 'info' }
+        : { text: 'No images', tone: 'neutral' };
+    }
+  },
   {
     id: 'preloaded-resources',
     label: 'Preloaded Resources',
     icon: Zap,
-    group: 'Inspect'
+    group: 'Inspect',
+    liveState: (data) => {
+      // The feature may be present without a collected inventory (unknown) —
+      // say nothing rather than a number that is not known.
+      if (data === null || !data.preloadedResources.present) return null;
+      const resources = data.preloadedResources.resources;
+      if (resources === undefined) return null;
+      return {
+        text: resources.length > 0 ? counted(resources.length, 'link') : 'None',
+        tone: resources.length > 0 ? 'info' : 'neutral'
+      };
+    }
   },
   // Copy delta: the single-singular menu name becomes the plural the page
   // actually implements — tracked for the copy sweep.
-  { id: 'undefined-references', label: 'Undefined References', icon: SearchX, group: 'Diagnose' },
+  {
+    id: 'undefined-references',
+    label: 'Undefined References',
+    icon: SearchX,
+    group: 'Diagnose',
+    liveState: (data) => {
+      if (data === null) return null;
+      const found = data.undefinedReferencesOnPage.length;
+      if (found > 0) return { text: `${found.toString()} found`, tone: 'warn' };
+      // Nothing found while the page still loads means the finder is
+      // watching; once loading settled, a clean page is silence.
+      return data.allScriptsLoaded ? null : { text: 'Monitoring', tone: 'neutral' };
+    }
+  },
   {
     id: 'diagnoser',
     label: 'Diagnoser',

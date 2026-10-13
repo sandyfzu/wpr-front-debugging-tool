@@ -8,6 +8,7 @@
  * delays, and Escape dismissal.
  */
 import type { ComponentProps, JSX } from 'solid-js';
+import { Show } from 'solid-js';
 import { Tooltip as KobalteTooltip } from '@kobalte/core';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
@@ -37,6 +38,22 @@ export type TooltipProps = {
    * opening does not apply since a disabled control is not focusable.
    */
   disabled?: boolean;
+  /**
+   * The trigger element's tag — `button` (the default) or `a` for rows whose
+   * primary control is a navigation link (Kobalte's polymorphic trigger
+   * carries the same hover/focus wiring onto the anchor). The built-in
+   * button treatments shrink to the hit-area floor: the anchor caller owns
+   * its layout and must keep its own ≥ 24px hit area.
+   */
+  as?: 'button' | 'a';
+  /** The anchor trigger's href (meaningful only with `as="a"`). */
+  href?: string;
+  /**
+   * Marks the anchor trigger `aria-current="page"` (the active route of a
+   * nav whose rows answer tooltips). Reads get tracked through the trigger,
+   * so the marker follows the caller's state live.
+   */
+  ariaCurrent?: boolean;
   /** Extra classes on the trigger element, merged last so callers win. */
   class?: string;
   /** The trigger's content — an icon, or a short label. */
@@ -46,23 +63,42 @@ export type TooltipProps = {
 /**
  * Render a tooltip around its trigger.
  *
- * The trigger is `<button type="button">` with a min 24×24 hit area built in,
- * so callers can pass any small lucide icon and stay above the WCAG 2.5.8
- * floor. Pointer *and* keyboard focus both open it; Escape and
- * outside-interaction close it; the content links to the trigger via
- * `aria-describedby` and never steals focus. A disabled trigger stays
- * hoverable (its tooltip explains the disabled state) but is not
+ * The default trigger is `<button type="button">` with a min 24×24 hit area
+ * built in, so callers can pass any small lucide icon and stay above the
+ * WCAG 2.5.8 floor; with `as="a"` the same wiring rides a real anchor and
+ * the caller owns the link's layout. Pointer *and* keyboard focus both open
+ * it; Escape and outside-interaction close it; the content links to the
+ * trigger via `aria-describedby` and never steals focus. A disabled trigger
+ * stays hoverable (its tooltip explains the disabled state) but is not
  * focusable.
  *
  * @param props.content The tooltip content.
  * @param props.placement Where to float (default `top`).
  * @param props.openDelay Rest time before opening (default 350ms).
  * @param props.skipDelayDuration Post-close suppression window (see above).
- * @param props.disabled Disable the trigger (tooltip still opens on hover).
+ * @param props.disabled Disable the trigger (tooltip still opens on hover; button form only).
+ * @param props.as The trigger tag — `button` (default) or `a`.
+ * @param props.href The anchor trigger's href (`as="a"` only).
+ * @param props.ariaCurrent Whether the anchor trigger marks the active page.
  * @param props.class Extra classes on the trigger element.
  * @param props.children The trigger's content.
  */
 export function Tooltip(props: TooltipProps): JSX.Element {
+  const anchor = (): boolean => props.as === 'a';
+  /** The classes + content both trigger forms share (the layout differs). */
+  const shared = () => ({
+    'data-fdt': 'tooltip-trigger',
+    class: cn(
+      anchor()
+        ? // Anchor trigger: only the hit-area floor is built in — the caller
+          // owns the link's layout (e.g. nav rail rows).
+          'min-h-6 min-w-6'
+        : 'inline-grid min-h-6 min-w-6 place-items-center rounded',
+      FOCUS_RING,
+      props.class
+    ),
+    children: props.children
+  });
   return (
     <KobalteTooltip.Root
       placement={props.placement ?? 'top'}
@@ -70,17 +106,35 @@ export function Tooltip(props: TooltipProps): JSX.Element {
       skipDelayDuration={props.skipDelayDuration ?? 300}
       gutter={4}
     >
-      <KobalteTooltip.Trigger
-        data-fdt="tooltip-trigger"
-        disabled={props.disabled || undefined}
-        class={cn(
-          'inline-grid min-h-6 min-w-6 place-items-center rounded',
-          FOCUS_RING,
-          props.class
-        )}
+      {/* Two literal-tag triggers (Kobalte's polymorphic typing resolves
+          per-tag attrs only for literal tags): every anchor-specific attr
+          stays fully typed on its own branch. Classes/content are shared;
+          exactly one branch renders. */}
+      <Show
+        when={anchor()}
+        fallback={
+          <KobalteTooltip.Trigger
+            as="button"
+            type="button"
+            disabled={props.disabled || undefined}
+            {...shared()}
+          />
+        }
       >
-        {props.children}
-      </KobalteTooltip.Trigger>
+        {/* Kobalte's built-in trigger is `<button type="button">`; the anchor
+            must not inherit it. A present `null` removes the attribute (the
+            merge order honours `null`, it skips `undefined` and falls
+            through to the built-in), but the anchor's typed `type` is
+            `string | undefined` — so that one value rides an untyped
+            spread. */}
+        <KobalteTooltip.Trigger
+          as="a"
+          href={props.href}
+          aria-current={props.ariaCurrent === true ? 'page' : undefined}
+          {...({ type: null } as Record<string, unknown>)}
+          {...shared()}
+        />
+      </Show>
       <KobalteTooltip.Portal>
         <KobalteTooltip.Content
           data-fdt="tooltip"

@@ -49,3 +49,37 @@ export function makeFdtData(overrides?: Partial<FdtData>): FdtData {
     ...overrides
   };
 }
+
+/**
+ * One minimal, type-genuine delayed-script record (the shape the tables and
+ * the nav's live-state fixtures count over). Tests override the fields they
+ * care about.
+ *
+ * @param overrides The fields to replace.
+ * @returns The record: a whole `DelayedScriptRecord`.
+ */
+export function makeDelayScript(
+  overrides?: Partial<FdtData['wprDetections']['delay_js']['scripts'][number]>
+): FdtData['wprDetections']['delay_js']['scripts'][number] {
+  return {
+    inline: false,
+    src: '/delayed.js',
+    delayed: true,
+    deferred: false,
+    deferredByWPR: false,
+    fdtExcluded: null,
+    ...overrides
+  };
+}
+
+/**
+ * One minimal, type-genuine lazyload-image record.
+ *
+ * @param overrides The fields to replace.
+ * @returns The record: a whole `LazyloadImageRecord`.
+ */
+export function makeLazyImage(
+  overrides?: Partial<FdtData['wprDetections']['lazyload']['images'][number]>
+): FdtData['wprDetections']['lazyload']['images'][number] {
+  return { src: '/a.jpg', lazyloadDetected: true, excludedReasonsFound: [], ...overrides };
+}

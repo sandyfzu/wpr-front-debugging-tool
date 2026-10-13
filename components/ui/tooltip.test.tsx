@@ -16,6 +16,7 @@
  * content removal; in Chromium the content unmounts on close.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { RefreshCw } from 'lucide-solid';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -119,5 +120,39 @@ describe('Tooltip', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders a real anchor trigger (the nav-row form) with the same wiring', async () => {
+    const [active, setActive] = createSignal(true);
+    vi.resetModules();
+    const { Tooltip } = await import('./tooltip');
+    render(() => (
+      <Tooltip
+        as="a"
+        href="#/javascript"
+        ariaCurrent={active()}
+        content="JavaScript — delayed 1/2"
+        skipDelayDuration={0}
+      >
+        <span class="sr-only">JavaScript</span>
+      </Tooltip>
+    ));
+    const trigger = screen.getByRole('link', { name: 'JavaScript' });
+    expect(trigger.getAttribute('href')).toBe('#/javascript');
+    expect(trigger.getAttribute('type')).toBeNull(); // the button's built-in `type` never leaks
+    expect(trigger.getAttribute('aria-current')).toBe('page');
+    // Focus opens immediately, exactly like the button form.
+    fireEvent.focus(trigger);
+    const content = screen.getByRole('tooltip');
+    expect(content.textContent).toContain('JavaScript — delayed 1/2');
+    expect(trigger.getAttribute('aria-describedby')).toBe(content.id);
+    fireEvent.blur(trigger);
+    expect(trigger.getAttribute('aria-describedby')).toBeNull();
+
+    // The marker follows caller state through the polymorphic merge — the
+    // mergeProps chains stay reactive end to end.
+    setActive(false);
+    await Promise.resolve();
+    expect(trigger.getAttribute('aria-current')).toBeNull();
   });
 });
