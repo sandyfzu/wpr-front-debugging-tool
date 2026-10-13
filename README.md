@@ -18,4 +18,9 @@ pnpm build && pnpm check:budgets   # production build + size-budget gate
 
 Design tokens (light/dark/system appearance, status vocabulary, motion) live in `assets/css/tokens.css` (definitions) and `assets/css/theme.css` (Tailwind layer; every page surface imports it, injected shadow UIs import the tokens file); a unit test pins WCAG AA contrast for the committed text/background pairs in both palettes.
 
+## Privacy
+
+- The Known Conflicts DB, per-site options and the on-page detection widget's per-origin opt-in live entirely inside the extension's own storage — the host page never sees them, and the page-visible state of every injected surface is the shadow-isolated UI itself.
+- Page data (detections, header tables, counts) is processed in the browser and either shown in the tool's surfaces or logged under the `[WPR FDT]` prefix in masked shapes (counts and versions, never markup, URLs or scripts). Nothing from a host page leaves the browser except the Known Conflicts DB refresh fetch against the plugin's public endpoint.
+
 See `AGENTS.md` for the full operating guide and `docs/plans/` for the port plan.
