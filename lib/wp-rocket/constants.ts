@@ -319,6 +319,13 @@ export const CONTEXT_MENU_IDS = {
 } as const;
 
 /**
+ * The exclusion builder's packaged page path — the tab both its openers
+ * (the background's context-menu entry and the panel's palette action)
+ * resolve; a second caller re-typing it would be the re-typed-value defect.
+ */
+export const EXCLUSION_BUILDER_PAGE = 'exclusion-builder.html';
+
+/**
  * URL patterns the header capture listeners and content-script declarations
  * run on: every main frame over http(s). Also fed into the manifest's
  * `host_permissions` — single-sourced here so the list can never drift
