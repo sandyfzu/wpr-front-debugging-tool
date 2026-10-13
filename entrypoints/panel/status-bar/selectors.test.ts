@@ -91,6 +91,17 @@ describe('cacheSegment', () => {
     });
   });
 
+  it('degrades a page-crafted stamp outside the platform date range to "Cached", unstamped', () => {
+    // A validator-genuine payload (any finite number passes the boundary) may
+    // carry a hand-crafted `cached@<huge>` stamp; the timestamp leaf renders
+    // it as its absence — this selector never crashes on hostile digits.
+    const view = cacheSegment(
+      withWpr({ present: true, cached: true, timeStamp: 9_999_999_999_999 }),
+      NOW_MS
+    );
+    expect(view).toEqual({ kind: 'cached', age: null, capturedAt: null });
+  });
+
   it('renders not-cached neutrally when the plugin is present but the visit was uncached', () => {
     // A stray stamp on an uncached payload (reachable only through a broken
     // producer — the validator shapes allow it) says nothing about this

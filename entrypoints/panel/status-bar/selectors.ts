@@ -10,9 +10,9 @@
  * its loading placeholder; data that says a thing is absent renders the
  * absent state; a question the current data cannot answer (caching when the
  * plugin is not even present, a platform when no headers were captured)
- * renders honest silence instead of a invented answer.
+ * renders honest silence instead of an invented answer.
  */
-import { formatCacheTimestamp } from '../../../lib/detection/describe';
+import { formatCacheTimestamp, isRepresentableCacheStamp } from '../../../lib/detection/describe';
 import type { FdtData, PageHeader } from '../../../lib/wp-rocket/types';
 import type { DataState } from '../state/fdt-state-machine';
 import { relativeAge } from './relative-age';
@@ -141,10 +141,12 @@ export function wprSegment(data: FdtData | null): WprSegmentView {
 /**
  * Resolve the cached-or-not answer (with the stamp's relative age) from
  * loaded data. The age derives from the cache stamp's epoch seconds; a page
- * cached without the debug suffix renders "Cached" and no invented age.
- * An age is only ever rendered for a cached page — a stamp on a non-cached
- * payload (possible at the type level, produced by nothing real) says
- * nothing about the current visit's cache state.
+ * cached without the debug suffix — or with one whose digits no platform
+ * date can represent (`isRepresentableCacheStamp`, the concept's one home) —
+ * renders "Cached" and no invented age. An age is only ever rendered for a
+ * cached page — a stamp on a non-cached payload (possible at the type level,
+ * produced by nothing real) says nothing about the current visit's cache
+ * state.
  *
  * @param data The loaded page data, or null when nothing has arrived yet.
  * @param nowMs The reading's wall clock (milliseconds).
@@ -154,9 +156,12 @@ export function cacheSegment(data: FdtData | null, nowMs: number): CacheSegmentV
   const { present, cached, timeStamp } = data.wprDetections.wpr;
   if (!present) return { kind: 'not-applicable' };
   if (!cached) return { kind: 'not-cached' };
+  if (!isRepresentableCacheStamp(timeStamp)) {
+    return { kind: 'cached', age: null, capturedAt: null };
+  }
   return {
     kind: 'cached',
-    age: timeStamp === null ? null : relativeAge(nowMs - timeStamp * 1000),
+    age: relativeAge(nowMs - timeStamp * 1000),
     capturedAt: formatCacheTimestamp(timeStamp)
   };
 }

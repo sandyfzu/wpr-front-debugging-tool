@@ -88,12 +88,16 @@ const ROW =
   'flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 py-1 @min-[480px]:flex-nowrap';
 
 /**
- * One segment: dense strip type on the shared hover surface; real links
- * carry the shared keyboard ring and a ≥ 24px hit height (the floor), so
- * the smallest answer is still a full target.
+ * One segment: dense strip type. The class carries no hover surface — it is
+ * shared with non-interactive variants (quiet dashes, unknown, freshness
+ * text); the link variants add their own hover ring classes, so a hover
+ * affordance never decorates text that is not a control.
  */
 const SEGMENT =
-  'flex min-h-6 min-w-0 items-center gap-1.5 rounded-sm text-2xs text-fg-primary no-underline hover:bg-surface-3';
+  'flex min-h-6 min-w-0 items-center gap-1.5 rounded-sm text-2xs text-fg-primary no-underline';
+
+/** The interactive segment's hover surface (links only). */
+const SEGMENT_HOVER = 'hover:bg-surface-3';
 
 /** A segment's secondary text (ages, capture stamps, captured values): first to elide. */
 const SEGMENT_DETAIL = 'min-w-0 truncate text-fg-secondary';
@@ -149,6 +153,35 @@ function freshnessTitle(
 }
 
 /**
+ * The freshness facts a `title` attr cannot carry to keyboard or screen-reader
+ * users (title tooltips are hover-only and not reliably announced): the stamp
+ * always, and the stale remedy when the marker is up. Rendered once as sr-only
+ * text inside the segment — the hover `title` stays for mouse users, and the
+ * non-interactive segment still ships no invented focus stop.
+ *
+ * @param props.kind The freshness answer the segment is showing.
+ * @param props.view The view the stamp is read from.
+ */
+function FreshnessDetail(props: {
+  kind: 'current' | 'stale';
+  view: { readonly capturedAt: string | null };
+}): JSX.Element {
+  return (
+    <span class="sr-only">
+      {props.view.capturedAt === null ? null : (
+        <span>Page data captured at {props.view.capturedAt}. </span>
+      )}
+      <Show when={props.kind === 'stale'} fallback={null}>
+        <span>
+          Data is older than {(DATA_STALE_AFTER_MS / 60_000).toString()} min — re-verify against the
+          page; reload it to refresh.
+        </span>
+      </Show>
+    </span>
+  );
+}
+
+/**
  * A segment's quiet slot: the wait placeholder (a real wait — the same
  * skeleton language as the page above) when `loading`, otherwise the honest
  * silence dash. Non-interactive by definition: a control without a name or
@@ -191,7 +224,7 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
         <QuietSegment loading={false} />
       </Match>
       <Match when={view().kind === 'not-detected'}>
-        <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, FOCUS_RING)}>
+        <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
           <StatusBadge kind="neutral" icon>
             Not detected
           </StatusBadge>
@@ -199,13 +232,16 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
       </Match>
       <Match when={detected()}>
         {(state) => (
-          <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, FOCUS_RING)}>
+          <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
             <StatusBadge kind="ok" icon class="min-w-0">
               {/* Non-keyed Match children rebuild their reads live: reading
                   the answered value through one narrowed accessor call keeps
-                  the text reactive without re-rendering the branch. */}
+                  the text reactive without re-rendering the branch. The
+                  label rides its own eliding span — a validator-legal
+                  64-char version shrinks inside its chip instead of pushing
+                  the row's neighbors out. */}
               <Show when={state().version !== null} fallback="WP Rocket">
-                {`WP Rocket ${state().version ?? ''}`}
+                <span class="min-w-0 truncate">{`WP Rocket ${state().version ?? ''}`}</span>
               </Show>
             </StatusBadge>
           </a>
@@ -243,7 +279,7 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
         <QuietSegment loading={false} />
       </Match>
       <Match when={view().kind === 'not-cached'}>
-        <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, FOCUS_RING)}>
+        <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
           <StatusBadge kind="neutral" icon>
             Not cached
           </StatusBadge>
@@ -261,7 +297,7 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
             <Show
               when={state().age !== null}
               fallback={
-                <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, FOCUS_RING)}>
+                <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
                   <CacheChip />
                 </a>
               }
@@ -270,7 +306,7 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
                 as="a"
                 href={SEGMENT_TARGETS.cache}
                 content={`Cache generated at ${state().capturedAt ?? ''}`}
-                class={SEGMENT}
+                class={cn(SEGMENT, SEGMENT_HOVER)}
               >
                 <CacheChip />
                 <span class={SEGMENT_DETAIL}>{state().age ?? ''}</span>
@@ -314,7 +350,7 @@ function PlatformSegment(props: { segments: () => StatusBarSegments }): JSX.Elem
       </Match>
       <Match when={captured()}>
         {(state) => (
-          <a href={SEGMENT_TARGETS.platform} class={cn(SEGMENT, FOCUS_RING)}>
+          <a href={SEGMENT_TARGETS.platform} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
             <span class="sr-only">Platform</span>
             <span class={SEGMENT_DETAIL}>{state().value}</span>
           </a>
@@ -364,6 +400,7 @@ function FreshnessSegment(props: { segments: () => StatusBarSegments }): JSX.Ele
       <Match when={current()}>
         {(state) => (
           <span title={freshnessTitle('current', state())} class={SEGMENT}>
+            <FreshnessDetail kind="current" view={state()} />
             <span class={SEGMENT_DETAIL}>Updated {state().age}</span>
           </span>
         )}
@@ -371,6 +408,7 @@ function FreshnessSegment(props: { segments: () => StatusBarSegments }): JSX.Ele
       <Match when={stale()}>
         {(state) => (
           <span title={freshnessTitle('stale', state())} class={SEGMENT}>
+            <FreshnessDetail kind="stale" view={state()} />
             <span class={SEGMENT_DETAIL}>Updated {state().age}</span>
             <StatusBadge kind="warn" icon>
               Stale
@@ -422,7 +460,7 @@ export function StatusBar(): JSX.Element {
   const segments = (): StatusBarSegments => statusBarSegments(data.state(), clock.now());
 
   return (
-    <footer aria-label="Page status" data-fdt="panel-status-bar" class={STRIP}>
+    <footer role="contentinfo" aria-label="Page status" data-fdt="panel-status-bar" class={STRIP}>
       <ErrorBoundary
         fallback={(cause: unknown) => {
           log.error('Status bar crashed — the strip renders its downtime line', {

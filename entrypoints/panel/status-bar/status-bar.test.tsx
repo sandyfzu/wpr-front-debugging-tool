@@ -15,7 +15,7 @@
  * the strip carries no test-only DOM hooks for them.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import { DATA_STALE_AFTER_MS } from './selectors';
@@ -197,6 +197,23 @@ describe('StatusBar (strip)', () => {
     ).toBe(true);
   });
 
+  it('elides a validator-legal long version inside its chip (never pushes neighbors out)', async () => {
+    // The validator accepts versions up to 64 chars; the chip's text rides
+    // the eliding span, so the widest page-declared version shrinks inside
+    // its segment instead of pushing the row's other answers out of the
+    // strip (the glance contract's 'long values elide inside their segment').
+    const longVersion = `3.20.0.2${' x'.repeat(28)}`;
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle(withWpr({ present: true, cached: false, version: longVersion }));
+    await flush();
+
+    const chip = screen.getByRole('link', { name: `WP Rocket ${longVersion}` });
+    const label = chip.querySelector('[data-fdt="status-badge"]')?.querySelector('span.truncate');
+    expect(label).toBeTruthy(); // The elision carrier, pinned at the class level.
+    expect(label?.textContent).toBe(`WP Rocket ${longVersion}`);
+  });
+
   it('ages the displayed values on the clock and flags stale past the threshold', async () => {
     const harness = makeHarness();
     renderStrip(harness);
@@ -209,10 +226,15 @@ describe('StatusBar (strip)', () => {
     expect(screen.getByText('5 min ago')).toBeTruthy();
     expect(screen.getByText('Stale')).toBeTruthy();
     expect(screen.getByText('Updated 2 min ago')).toBeTruthy();
-    // The stale segment explains itself on hover (hidden until wanted).
+    // The stale segment explains itself on hover (hidden until wanted), and
+    // the explanation is not hover-only: the same facts ride sr-only text,
+    // so keyboard and screen-reader users get the remedy without a focus
+    // stop on this deliberately non-navigable segment.
     const staleText = screen.getByText('Stale');
     const segment = staleText.parentElement as HTMLElement;
     expect(segment.getAttribute('title')).toContain(`older than 2 min`);
+    expect(segment.textContent).toContain('reload it to refresh');
+    expect(segment.querySelector('.sr-only')).toBeTruthy();
   });
 
   it('renders its own state while a soft refresh is in the air', async () => {
@@ -259,6 +281,23 @@ describe('StatusBar (strip)', () => {
     expect(theBar()).toBeTruthy();
   });
 
+  it('renders a validator-genuine hostile stamp as an unstamped cache, no downtime line', async () => {
+    // The payload the containment can really receive in production: fully
+    // valid page data (the boundary accepted it) whose page-crafted cache
+    // stamp is beyond the platform's date range. The segment's own leaf
+    // degrades the stamp; the strip stays up with every other answer whole.
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle(withWpr({ present: true, cached: true, timeStamp: 9_999_999_999_999 }));
+    await flush();
+
+    expect(screen.queryByText('Status unavailable')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Cached' })).toBeTruthy();
+    expect(screen.queryByText(/^Cache generated at/)).toBeNull(); // No invented stamp either.
+    // The rest of the row answers: platform/header silence stays a dash…
+    expect(theBar().textContent).toContain('Updated');
+  });
+
   it('pauses the cadence while the panel document is hidden and resumes on show', async () => {
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     const harness = makeHarness();
@@ -296,11 +335,30 @@ describe('the glance rule (pure width → layout)', () => {
   it('carries the container rule in one form: the strip anchors it, the variants mirror the constant', () => {
     // The rule's CSS arm: every width token in the container variants is the
     // one constant (container conditions cannot read a JS value), and the
-    // strip element declares itself the query anchor.
+    // strip element declares itself the query anchor. The rehearsal scans
+    // the whole panel — a second copy of the literal anywhere else would
+    // render with this constant's meaning and evade the file-local parse.
     const source = readFileSync(`${import.meta.dirname}/status-bar.tsx`, 'utf8');
     const tokens = [...source.matchAll(/@min-\[(\d+)px\]/g)].map((match) => Number(match[1]));
     expect(tokens.length).toBeGreaterThan(0);
     expect(new Set(tokens)).toEqual(new Set([STATUS_BAR_GLANCEABLE_MIN_WIDTH]));
     expect(source).toMatch(/@container /);
+
+    /** Every non-test source file under the panel, recursively. */
+    function sourcesUnder(dir: string): string[] {
+      return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) return sourcesUnder(path);
+        // '.d.ts'/'.test.' files never render the class; tests legitimately
+        // quote the literal to pin it.
+        const source = entry.name.endsWith('.ts') || entry.name.endsWith('.tsx');
+        if (!source || entry.name.includes('.test.') || entry.name.endsWith('.d.ts')) return [];
+        return entry.name === 'status-bar.tsx' ? [] : [path];
+      });
+    }
+    const strays = sourcesUnder(`${import.meta.dirname}/..`).filter((path) =>
+      readFileSync(path, 'utf8').includes('@min-[480px]')
+    );
+    expect(strays).toEqual([]);
   });
 });
