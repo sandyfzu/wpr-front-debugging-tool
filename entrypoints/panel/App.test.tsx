@@ -254,6 +254,25 @@ describe('PanelApp shell structure', () => {
   });
 });
 
+describe('the status bar in the shell', () => {
+  it('mounts the strip as the shell edge outside the content region, honest at boot', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    // The strip exists inside the shell, outside the scrolling content
+    // region, and claims nothing before data settles.
+    const bar = document.querySelector('[data-fdt="panel-status-bar"]') as HTMLElement;
+    const shellRoot = document.querySelector('[data-fdt="panel-shell"]') as HTMLElement;
+    const content = document.querySelector('[data-fdt="panel-content"]') as HTMLElement;
+    expect(shellRoot.contains(bar)).toBe(true);
+    expect(content.contains(bar)).toBe(false);
+    expect(screen.queryByText('Not detected')).toBeNull();
+    shell.settle(pageData());
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Not detected' })).toBeTruthy();
+    });
+  });
+});
+
 describe('soft refresh preservation (the render-level contract)', () => {
   it('replaces only the data: the page node, scroll, focus and route stay put', async () => {
     const shell = makeShell();

@@ -24,7 +24,9 @@ function placeholderPage(row: NavRoute): PageBody {
   return function PlaceholderPage(): JSX.Element {
     return (
       <section class="fdt-page p-3" data-fdt-page={row.id}>
-        <h1 class="text-sm font-semibold text-fg-primary">{row.label}</h1>
+        <h1 tabindex="-1" class="text-sm font-semibold text-fg-primary">
+          {row.label}
+        </h1>
         <p class="mt-1.5 max-w-96 text-2xs leading-snug text-fg-secondary">
           This page arrives in a later pass of the tool's panel work.
         </p>

@@ -54,6 +54,27 @@ export type TooltipProps = {
    * so the marker follows the caller's state live.
    */
   ariaCurrent?: boolean;
+  /**
+   * The trigger's accessible name — how icon-only controls name themselves
+   * (the tooltip content is a hover/focus affordance, not a name).
+   */
+  ariaLabel?: string;
+  /**
+   * The control the trigger opens, for `aria-haspopup` shells whose trigger
+   * states the relationship (e.g. the palette's dialog its button opens).
+   */
+  ariaHasPopup?: 'dialog';
+  /**
+   * The opened state of the paired surface, riding the trigger as
+   * `aria-expanded` reactively.
+   */
+  ariaExpanded?: boolean;
+  /**
+   * A click handler the trigger forwards (icon-buttons whose tooltip wraps
+   * a real action — the palette's opener). Native click semantics stay the
+   * platform's; the wrapper only adds the attribution surface.
+   */
+  onClick?: (event: MouseEvent) => void;
   /** Extra classes on the trigger element, merged last so callers win. */
   class?: string;
   /** The trigger's content — an icon, or a short label. */
@@ -88,6 +109,10 @@ export function Tooltip(props: TooltipProps): JSX.Element {
   /** The classes + content both trigger forms share (the layout differs). */
   const shared = () => ({
     'data-fdt': 'tooltip-trigger',
+    'aria-label': props.ariaLabel,
+    'aria-haspopup': props.ariaHasPopup,
+    'aria-expanded': props.ariaExpanded,
+    onClick: props.onClick,
     class: cn(
       anchor()
         ? // Anchor trigger: only the hit-area floor is built in — the caller

@@ -14,6 +14,13 @@ import { BEACON_STATUS_KEYS } from '../wp-rocket/constants';
 export type FeatureState = 'applied' | 'collecting' | 'not enabled' | 'not applied';
 
 /**
+ * The largest instant `new Date`/`toISOString` can represent (ECMA-262's
+ * ± 100,000,000 days from the epoch, in ms). A page-derived stamp beyond it
+ * is not a time, only a crash waiting for `toISOString` — callers see null.
+ */
+const MAX_REPRESENTABLE_MS = 8.64e15;
+
+/**
  * The report object: one row per detected surface, keyed by the real feature
  * name (labels verified against WP Rocket 3.23 where the audit verified
  * them), values plain enough to read straight from the console.
@@ -126,14 +133,39 @@ function familyAppliedCounts(
 }
 
 /**
+ * Whether a page-derived epoch-seconds stamp names a real, representable
+ * instant (finite, within the platform date range). The concept's one home:
+ * the timestamp formatter consumes this answer, and callers that matter-
+ * gate on the stamp (a relative age beside it) gate on it too, so a wild
+ * page-crafted digit run renders as an unstamped cache — never as a made-up
+ * countdown beside a missing stamp.
+ *
+ * @param seconds The stamp to judge (null is simply absent).
+ */
+export function isRepresentableCacheStamp(seconds: number | null): seconds is number {
+  return (
+    seconds !== null && Number.isFinite(seconds) && Math.abs(seconds * 1000) <= MAX_REPRESENTABLE_MS
+  );
+}
+
+/**
  * Format the cache timestamp: UTC-stamped and locale-independent, so the same
  * support conversation reads identically on every contributor's console.
  *
+ * The stamp is page-derived text through and through (the debug comment the
+ * engine parses), so a hand-crafted or mangled `cached@<digits>` can carry a
+ * value far past the platform's representable time range — where `new Date`
+ * constructs a garbage date and `toISOString` throws `RangeError`. Any stamp
+ * that does not resolve to a real instant therefore renders as its absence
+ * (null): callers answer "unstamped" instead of losing the whole report —
+ * or the whole strip — to one hostile integer.
+ *
  * @param seconds The debug comment's epoch seconds, or null when absent.
- * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null unchanged.
+ * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null for null, non-finite, or
+ *   outside-the-platform-range stamps.
  */
 export function formatCacheTimestamp(seconds: number | null): string | null {
-  if (seconds === null) return null;
+  if (!isRepresentableCacheStamp(seconds)) return null;
   return `${new Date(seconds * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 }
 

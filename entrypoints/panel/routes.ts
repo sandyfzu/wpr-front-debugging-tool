@@ -66,7 +66,9 @@ export interface NavRoute {
   /**
    * Reserved rows have no producer yet: the nav renders them disabled with
    * {@link NavRoute.reservedNote}, and enabling the page later is one flag
-   * flip. They list a route/page (see `./pages`) only when they ship.
+   * flip. The palette likewise declines their rows. Their hash deep-links
+   * still resolve — the pages table renders the shared honest placeholder
+   * body until the real page ships — so a bookmarked link never dead-ends.
    */
   reserved?: boolean;
   /** What the disabled row's tooltip says (a reserved row must not dead-end). */

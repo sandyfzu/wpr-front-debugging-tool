@@ -1,11 +1,11 @@
 /**
  * Storage contract tests over the fake browser — the fallbacks, the
  * validator, and corrupt-value resilience are the guarantees surfaces rely
- * on; meta book-keeping is verified here too (P2's updater owns writing it).
+ * on; meta book-keeping is verified here too (the meta updater owns writing it).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getOptions, optionsStore, parseStoredOptions } from './options';
+import { cycleAppearanceOption, getOptions, optionsStore, parseStoredOptions } from './options';
 import { getKnownConflicts, knownConflictsStore } from './known-conflicts';
 import { KNOWN_CONFLICTS_SEED_LENGTH, getKnownConflictsSeed } from './known-conflicts-seed';
 import { parseKnownConflicts } from '../messaging/validate';
@@ -97,6 +97,41 @@ describe('optionsStore', () => {
     expect((await getOptions()).features.sbsDesktopWidth).toBe(false);
     await optionsStore.removeValue();
     expect((await getOptions()).features.sbsDesktopWidth).toBe(true);
+  });
+});
+
+describe('cycleAppearanceOption (the keyboard appearance cycle)', () => {
+  it('advances the stored appearance through the registry order, wrapping', async () => {
+    await cycleAppearanceOption();
+    expect((await getOptions()).appearance).toBe('dark');
+    await cycleAppearanceOption();
+    expect((await getOptions()).appearance).toBe('light');
+    await cycleAppearanceOption();
+    expect((await getOptions()).appearance).toBe('system');
+  });
+
+  it('preserves every other option slot through the read-modify-write', async () => {
+    // A surface's pre-existing flags (including unknown future ids) must
+    // survive a later writer that only changes the appearance slot.
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': false, 'future-flag': true },
+      appearance: 'dark',
+      features: {
+        toolbarBadge: false,
+        sbsScrollSync: true,
+        sbsMobileSim: true,
+        sbsDesktopWidth: true
+      }
+    });
+    await cycleAppearanceOption();
+    const options = await getOptions();
+    expect(options.appearance).toBe('light');
+    expect(options.improvements).toEqual({
+      'wp-dashboard-dbugger-entry': false,
+      'future-flag': true
+    });
+    expect(options.features.toolbarBadge).toBe(false);
+    expect(options.features.sbsMobileSim).toBe(true);
   });
 });
 

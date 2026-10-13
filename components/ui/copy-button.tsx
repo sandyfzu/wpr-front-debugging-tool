@@ -189,19 +189,20 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
 
 /**
  * The real clipboard seam, resolved lazily at call time (some surfaces only
- * get the secure-context clipboard after mount).
+ * get the secure-context clipboard after mount). Shared: any surface that
+ * performs its own copy (the export action's fallback) resolves through it.
  *
  * @returns The secure-context clipboard.
  * @throws {@link Error} when `navigator.clipboard` is missing, naming the
  *   surface so a code-path regression fails loudly rather than shipping a dead control.
  */
-function defaultClipboard(): ClipboardLike {
+export function defaultClipboard(): ClipboardLike {
   // The type says the clipboard is always there; at runtime an insecure or
   // blocked context may omit it — narrow through the runtime shape, never the
   // type's promise.
   const writeText = (navigator.clipboard as Partial<ClipboardLike> | undefined)?.writeText;
   if (typeof writeText !== 'function') {
-    throw new Error('CopyButton: navigator.clipboard is unavailable in this context.');
+    throw new Error('The secure-context clipboard is unavailable in this context.');
   }
   return {
     writeText: (text) => writeText.call(navigator.clipboard, text)

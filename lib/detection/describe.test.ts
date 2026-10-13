@@ -174,6 +174,18 @@ describe('formatCacheTimestamp', () => {
     expect(formatCacheTimestamp(0)).toBe('1970-01-01 00:00:00 UTC');
     expect(formatCacheTimestamp(1730000000)).toBe('2024-10-27 03:33:20 UTC');
   });
+
+  it('answers null instead of crashing on a page-derived stamp outside the platform date range', () => {
+    // The stamp is page-controlled text (the debug comment's digits); a value
+    // this large is not a time — `new Date(...*1000).toISOString()` would
+    // throw `RangeError` unguarded, and the caller's whole answer would die.
+    const boundarySeconds = 8.64e12; // 8.64e15 ms — the exact platform maximum.
+    expect(formatCacheTimestamp(boundarySeconds)).not.toBeNull();
+    expect(formatCacheTimestamp(boundarySeconds + 1)).toBeNull();
+    expect(formatCacheTimestamp(9_999_999_999_999)).toBeNull();
+    expect(formatCacheTimestamp(-9_999_999_999_999)).toBeNull();
+    expect(formatCacheTimestamp(Number.NaN)).toBeNull();
+  });
 });
 
 describe('describeDetections over the real engine (fixture corpus)', () => {

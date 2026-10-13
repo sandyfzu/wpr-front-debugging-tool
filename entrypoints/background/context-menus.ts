@@ -24,7 +24,11 @@
 import { createLogger } from '../../lib/logger';
 import { sendMessage } from '../../lib/messaging';
 import { numericTabId } from '../../lib/messaging/sender';
-import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import {
+  CONTEXT_MENU_IDS,
+  EXCLUSION_BUILDER_PAGE,
+  URL_PATTERNS
+} from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 
 const log = createLogger('context-menus');
@@ -133,7 +137,7 @@ export interface MenuClickDeps {
     target: { tabId: number }
   ): Promise<unknown>;
   /** Open one of this extension's standalone pages, by its packaged path. */
-  openTab(pagePath: 'exclusion-builder.html'): Promise<unknown>;
+  openTab(pagePath: typeof EXCLUSION_BUILDER_PAGE): Promise<unknown>;
   /** The database service's manual-refresh hook (the refresh entry routes here). */
   refreshDatabase(): Promise<DbUpdateResult | null>;
 }
@@ -178,7 +182,7 @@ async function dispatchMenuClick(
       try {
         // `tabs.create` requires no permission — opening a tab is a shared
         // browser affordance; failures are runtime defects and get logged.
-        await deps.openTab('exclusion-builder.html');
+        await deps.openTab(EXCLUSION_BUILDER_PAGE);
       } catch (cause) {
         log.error('Opening the exclusion builder failed', { tabId, cause });
       }

@@ -155,4 +155,37 @@ describe('Tooltip', () => {
     await Promise.resolve();
     expect(trigger.getAttribute('aria-current')).toBeNull();
   });
+
+  it('carries the opener-trigger attributes the shell control uses', async () => {
+    // The palette trigger's shape: icon-only button whose tooltip wraps a
+    // real control — aria-label names it, haspopup/expanded state the
+    // opened dialog, and the click forwards. (Pinned here in the wrapper's
+    // own suite, not only end-to-end at the shell.)
+    vi.resetModules();
+    const { Tooltip } = await import('./tooltip');
+    let clicks = 0;
+    const [expanded, setExpanded] = createSignal(false);
+    render(() => (
+      <Tooltip
+        content="Opens the command palette (⌘ K)"
+        ariaLabel="Command palette"
+        ariaHasPopup="dialog"
+        ariaExpanded={expanded()}
+        onClick={() => {
+          clicks += 1;
+        }}
+        skipDelayDuration={0}
+      >
+        <span aria-hidden="true">⌘</span>
+      </Tooltip>
+    ));
+    const trigger = screen.getByRole('button', { name: 'Command palette' });
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    trigger.click(); // the click forwards to the opener
+    expect(clicks).toBe(1);
+    setExpanded(true);
+    await Promise.resolve();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
 });
