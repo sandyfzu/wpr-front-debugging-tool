@@ -48,8 +48,9 @@ describe('ScrollArea', () => {
     ));
     const area = screen.getByText('content').parentElement;
     expect(area?.className).toContain('[scrollbar-width:thin]');
-    // Firefox + webkit thumbs both come from the same line tokens.
+    // Both engines read the same standard-property treatment (no webkit
+    // pseudo styling: Chromium overrides it whenever these are computed).
     expect(area?.className).toContain('[scrollbar-color:var(--line-2)_transparent]');
-    expect(area?.className).toContain('bg-[var(--line-2)]');
+    expect(area?.className).not.toContain('-webkit-scrollbar');
   });
 });

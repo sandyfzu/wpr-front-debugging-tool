@@ -9,6 +9,7 @@ import { Show } from 'solid-js';
 import { LoaderCircle } from 'lucide-solid';
 import { cn } from '../../utils/cn';
 import { DISABLED, FOCUS_RING } from './classes';
+import { STATUS_SOFT_CLASSES, STATUS_TEXT_CLASSES } from './status-badge';
 
 /** The visual weight of a button, in registry order. */
 export const BUTTON_VARIANTS = ['primary', 'secondary', 'ghost', 'danger'] as const;
@@ -31,12 +32,16 @@ export const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
     'border-transparent bg-accent-strong text-on-accent hover:brightness-110 active:brightness-95',
   secondary: 'border-line-2 bg-surface-2 text-fg-primary hover:border-line-3 hover:bg-surface-3',
   ghost: 'border-transparent text-fg-secondary hover:bg-surface-3 hover:text-fg-primary',
-  // Soft error chip that emphasizes on hover only through an inset ring — the
-  // fill/text pair stays the AA-verified `status-error-soft`/`status-error`;
-  // flipping to a solid error fill would put white text on the dark-palette
-  // error token, which fails the 4.5:1 floor.
-  danger:
-    'border-transparent bg-status-error-soft text-status-error hover:ring-1 hover:ring-inset hover:ring-status-error/40'
+  // The vocabulary's soft error chip, consumed from `status-badge.tsx` (UX-D7
+  // single source — never re-typed here): the fill/text pair stays the
+  // AA-verified `status-error-soft`/`status-error`, and hovering emphasizes
+  // only through an inset ring — a solid error fill would put white text on
+  // the dark-palette error token, which fails the 4.5:1 floor.
+  danger: cn(
+    'border-transparent hover:ring-1 hover:ring-inset hover:ring-status-error/40',
+    STATUS_SOFT_CLASSES.error,
+    STATUS_TEXT_CLASSES.error
+  )
 };
 
 /** Class per size — both meet the 24px hit-area floor. */

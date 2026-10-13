@@ -20,14 +20,18 @@ describe('toast store (queue)', () => {
   it('enqueues with the tone, title, description and default duration', () => {
     toast.success('Report copied');
     toast.error('Clipboard unavailable', { description: 'Retry from the toolbar' });
+    toast.info('Heads up');
     const items = toastItems();
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]).toMatchObject({ tone: 'success', title: 'Report copied', duration: 4000 });
     expect(items[1]).toMatchObject({
       tone: 'error',
       title: 'Clipboard unavailable',
       duration: 8000
     });
+    // The quiet tone's default is pinned too: confirmations outlive nothing,
+    // errors dwell longest, context sits in between.
+    expect(items[2]).toMatchObject({ tone: 'info', title: 'Heads up', duration: 4000 });
     expect(items[1]?.description).toBe('Retry from the toolbar');
   });
 
@@ -135,7 +139,9 @@ describe('toast region', () => {
     render(() => <Toasts />);
     toast.info('Notice');
     expect(screen.getByRole('status')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
+    // The accessible name names WHICH toast it dismisses (a stacked queue of
+    // identical "Dismiss notification" names would be indistinguishable).
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss — Notice' }));
     expect(screen.queryByRole('status')).toBeNull();
   });
 });

@@ -131,6 +131,29 @@ describe('Tabs', () => {
     expect(screen.getByRole('tab', { name: /General/ }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it('jumps Home to the first tab and End to the last enabled one, activating both', () => {
+    // APG roving focus: Home/End belong to the keyboard map Kobalte's tabs
+    // implement — pin both ends with the automatic activation consequence.
+    render(() => (
+      <Tabs items={ITEMS}>
+        <BILL />
+      </Tabs>
+    ));
+    fireEvent.click(screen.getByRole('tab', { name: /General/ }));
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'End' });
+    const lastEnabled = screen.getByRole('tab', { name: /Optimizations/ });
+    expect(lastEnabled.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(lastEnabled);
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'Home' });
+    const first = screen.getByRole('tab', { name: /General/ });
+    expect(first.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(first);
+    // The disabled tab is never the Home/End landing spot at either end.
+    expect(screen.getByRole('tab', { name: /Reserved/ }).getAttribute('aria-selected')).toBe(
+      'false'
+    );
+  });
+
   it('never selects the disabled tab from clicks or keyboard', () => {
     render(() => (
       <Tabs items={ITEMS}>
@@ -145,5 +168,24 @@ describe('Tabs', () => {
     const list = screen.getByRole('tablist');
     fireEvent.keyDown(list, { key: 'ArrowLeft' });
     expect(disabledTab.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('fragments the disabled treatment from the hover treatment (reserved-row tooltips)', () => {
+    // The disabled row keeps hover reachable (no pointer-events kill) so a
+    // tooltip can explain it, while the hover tint stays enabled-only —
+    // pinned as class composition: the two fragments never share classes.
+    render(() => (
+      <Tabs items={ITEMS}>
+        <BILL />
+      </Tabs>
+    ));
+    const enabled = screen.getByRole('tab', { name: /General/ });
+    const disabled = screen.getByRole('tab', { name: /Reserved/ });
+    expect(disabled.className).toContain('opacity-60');
+    expect(disabled.className).toContain('text-fg-muted');
+    expect(disabled.className).not.toContain('pointer-events-none');
+    expect(disabled.className).not.toContain('hover:bg-surface-3');
+    expect(enabled.className).toContain('hover:bg-surface-3');
+    expect(enabled.className).not.toContain('opacity-60');
   });
 });

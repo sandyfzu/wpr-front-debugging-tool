@@ -6,7 +6,7 @@
 import type { JSX } from 'solid-js';
 import { splitProps } from 'solid-js';
 import { cn } from '../../utils/cn';
-import { FOCUS_RING } from './classes';
+import { DISABLED, FOCUS_RING } from './classes';
 
 export type InputProps = {
   /** Extra classes, merged last so callers win (`w-full`, density tweaks). */
@@ -32,6 +32,9 @@ export function Input(props: InputProps): JSX.Element {
         'h-7 rounded border border-line-2 bg-surface-2 px-2 text-xs text-fg-primary placeholder:text-fg-muted',
         'hover:border-line-3',
         'aria-invalid:border-status-error aria-invalid:ring-1 aria-invalid:ring-status-error/40',
+        // Same disabled treatment as every other interactive primitive: dimmed
+        // but still hover-explained (no pointer-events kill).
+        DISABLED,
         FOCUS_RING,
         own.class
       )}

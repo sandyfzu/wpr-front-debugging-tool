@@ -13,6 +13,7 @@ import { Dynamic } from 'solid-js/web';
 import { CircleCheck, CircleX, Info, X } from 'lucide-solid';
 import type { LucideIcon } from 'lucide-solid';
 import { cn } from '../../utils/cn';
+import { FOCUS_RING } from './classes';
 import { STATUS_TEXT_CLASSES } from './status-badge';
 import { toast, toastItems, TONE_STATUS_KIND } from './toast-store';
 import type { ToastItem, ToastTone } from './toast-store';
@@ -84,16 +85,23 @@ function ToastCard(props: ToastCardProps): JSX.Element {
   const [paused, setPaused] = createSignal(false);
   createRenderEffect(() => setRemaining(Math.max(props.item.duration, 0)));
 
-  // The tick is created/destroyed per pause state so a paused toast's
-  // remaining time never drifts and unmounts always cancel the interval.
+  // The interval is created/destroyed per pause state AND per remaining
+  // write (both are tracked by this effect): a paused toast's remaining
+  // time never drifts, every tick re-anchors the wall-clock deadline, and
+  // unmounts always cancel the interval.
   createEffect(() => {
     if (paused() || remaining() <= 0) return;
+    // The deadline is wall-clock anchored: each tick measures real elapsed
+    // time, so under a throttled interval (hidden tab, busy devtools host)
+    // the visible lifetime stays true to the enqueued duration instead of
+    // inflating one fixed step per late tick.
+    const deadlineAt = Date.now() + remaining();
     const timer = setInterval(() => {
-      const next = remaining() - TICK_MS;
-      if (next <= 0) {
+      const left = Math.max(deadlineAt - Date.now(), 0);
+      if (left <= 0) {
         toast.dismiss(props.item.id);
       } else {
-        setRemaining(next);
+        setRemaining(left);
       }
     }, TICK_MS);
     onCleanup(() => {
@@ -135,10 +143,10 @@ function ToastCard(props: ToastCardProps): JSX.Element {
       <button
         type="button"
         data-fdt="toast-close"
-        aria-label="Dismiss notification"
+        aria-label={`Dismiss — ${props.item.title}`}
         class={cn(
           '-me-1 -ms-0.5 -mt-1 inline-grid size-6 place-items-center rounded text-fg-muted hover:bg-surface-3 hover:text-fg-primary',
-          'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent'
+          FOCUS_RING
         )}
         onClick={() => {
           toast.dismiss(props.item.id);

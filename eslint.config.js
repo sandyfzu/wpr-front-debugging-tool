@@ -66,10 +66,20 @@ export default tseslint.config(
   // …except inside the design system itself, which owns the primitives.
   // Placed right after the strict block so the per-layer blocks below (this
   // file's order = last matching config wins) still tighten their scopes.
+  // The entrypoint ban survives: only Kobalte is relieved, the layer order
+  // (components → lib → utils, never entrypoints) is not negotiable here.
   {
     files: ['components/ui/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: bannedDependencies }]
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...bannedDependencies,
+            { group: ['**/entrypoints/**'], message: 'components/ui must not import entrypoints/.' }
+          ]
+        }
+      ]
     }
   },
 

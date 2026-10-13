@@ -45,10 +45,19 @@ export interface TabsProps {
 /** Base + state classes of a trigger — underline tabs, 28px hit area. */
 const TAB_TRIGGER_CLASSES = cn(
   'inline-flex h-7 items-center gap-1.5 -mb-px px-2.5 whitespace-nowrap text-xs font-medium border-b-2 border-transparent',
-  'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary',
-  'data-selected:border-accent data-selected:text-fg-primary',
-  'data-disabled:pointer-events-none data-disabled:text-fg-muted data-disabled:opacity-60'
+  'data-selected:border-accent data-selected:text-fg-primary'
 );
+
+/** Hover treatment of an enabled trigger — never applied to a disabled one. */
+const TAB_TRIGGER_ENABLED = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary';
+
+/**
+ * Disabled treatment: muted, but without the pointer-events kill other
+ * surfaces use — disabled tabs stay hover-reachable so a tooltip can explain
+ * why the view is reserved; a hover tint on a disabled control would lie
+ * about its state, so the enabled-only fragment above stays off instead.
+ */
+const TAB_TRIGGER_DISABLED = 'text-fg-muted opacity-60';
 
 /**
  * Render the shared tab bar and mount the panels inside its root.
@@ -70,8 +79,10 @@ export function Tabs(props: TabsProps): JSX.Element {
   return (
     <KobalteTabs.Root
       value={props.value}
-      // Explicit default: Kobalte without one leaves the selection empty until
-      // a click; the first enabled item is the deterministic APG start state.
+      // Explicit default so the selected key is deterministic and independent
+      // of collection-registration timing (the first enabled item per the APG
+      // start state); Kobalte's own self-select only fires once the collection
+      // populates, and our wrapper controls that moment instead.
       defaultValue={
         props.value ?? props.defaultValue ?? props.items.find((tab) => !tab.disabled)?.value
       }
@@ -88,7 +99,11 @@ export function Tabs(props: TabsProps): JSX.Element {
               data-fdt-tab={item.value}
               value={item.value}
               disabled={item.disabled}
-              class={cn(TAB_TRIGGER_CLASSES, FOCUS_RING)}
+              class={cn(
+                TAB_TRIGGER_CLASSES,
+                item.disabled ? TAB_TRIGGER_DISABLED : TAB_TRIGGER_ENABLED,
+                FOCUS_RING
+              )}
             >
               {item.label}
               <Show when={item.badge}>

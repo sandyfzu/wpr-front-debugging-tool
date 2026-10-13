@@ -12,6 +12,7 @@ import { Show } from 'solid-js';
 import { TriangleAlert } from 'lucide-solid';
 import { cn } from '../../utils/cn';
 import { Button } from './button';
+import { STATUS_TEXT_CLASSES } from './status-badge';
 
 export interface ErrorStateProps {
   /** The state name (default a neutral "couldn't render this" headline). */
@@ -56,7 +57,11 @@ export function ErrorState(props: ErrorStateProps): JSX.Element {
       role="alert"
       class={cn('flex flex-col items-center gap-1.5 py-6 text-center', props.class)}
     >
-      <TriangleAlert size={16} class="shrink-0 text-status-error" aria-hidden="true" />
+      <TriangleAlert
+        size={16}
+        class={cn('shrink-0', STATUS_TEXT_CLASSES.error)}
+        aria-hidden="true"
+      />
       <div class="text-xs font-medium text-fg-primary">{props.title ?? DEFAULT_TITLE}</div>
       <Show when={props.message}>
         <p class="max-w-72 text-2xs leading-snug text-fg-secondary">{props.message}</p>

@@ -28,17 +28,14 @@ const AXIS_CLASSES: Record<ScrollAxis, string> = {
 };
 
 /**
- * The thin scrollbar treatment: hairline-width thumb in the line-2 token,
- * Firefox via the standard properties, Chrome via the webkit pseudo-elements;
- * `scrollbar-gutter: stable` prevents layout shift when content grows.
+ * The thin scrollbar treatment: hairline-width thumb in the line-2 token via
+ * the standard `scrollbar-*` properties — which the Chromium primary target
+ * honors itself (Chromium ≥ 121: computed `scrollbar-width`/`scrollbar-color`
+ * override the webkit pseudo-elements entirely, so pseudo styling is dead
+ * weight here and deliberately not written); `scrollbar-gutter: stable`
+ * prevents layout shift when content grows.
  */
-const SCROLLBAR_CLASSES =
-  '[scrollbar-width:thin] [scrollbar-color:var(--line-2)_transparent] ' +
-  '[&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar]:h-2.5 ' +
-  '[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-content [&::-webkit-scrollbar-thumb]:bg-[var(--line-2)] ' +
-  // Hover deepens the thumb; the transparent padding border stays (no size jump).
-  '[&::-webkit-scrollbar-thumb:hover]:bg-[var(--line-3)] ' +
-  '[&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-corner]:bg-transparent';
+const SCROLLBAR_CLASSES = '[scrollbar-width:thin] [scrollbar-color:var(--line-2)_transparent]';
 
 /**
  * Render the scroll container.
