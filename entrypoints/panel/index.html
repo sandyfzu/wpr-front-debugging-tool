@@ -2,6 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The WPR FDT devtools panel page (the `WPR FDT` panel's target, registered
+      by the devtools entrypoint). Palette-before-first-paint is applied by the
+      boot script: `system` resolves through the token stylesheet's `:root`
+      media query, an explicit stored choice pins `data-theme` before render.
+    -->
+    <!--
+      Paint lock: the document stays hidden until <html> declares
+      `data-theme-lock="done"` — set once the stored appearance resolved (or
+      the read failed and the token default stands, see the panel boot). The
+      arm is this stylesheet-only rule, so the first painted frame is already
+      the resolved palette instead of a pre-boot flash; no inline script is
+      used (extension pages' CSP forbids it). Without it a stored dark/light
+      choice on an OS-disagreeing machine paints a wrong first frame.
+    -->
+    <style>
+      html:not([data-theme-lock='done']) {
+        visibility: hidden;
+      }
+    </style>
     <title>WPR FDT</title>
   </head>
   <body>

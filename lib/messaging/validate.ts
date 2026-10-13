@@ -33,6 +33,7 @@ import {
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
 import { isRecord } from '../../utils/is-record';
 import { ERROR_WORD_LIMITS, isPrintable } from './error-words';
+import { numericTabId } from './sender';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
@@ -712,23 +713,30 @@ export function parseFdtData(input: unknown): FdtData | null {
   };
 }
 
-/** DevTools search relay; unknown actions or extra keys are dropped. */
+/**
+ * DevTools search relay; unknown actions, a missing/malformed relay tab id or
+ * extra keys are dropped. The tab id is the panel's scoping basis (the
+ * protocol row's documented exception), so it is validated here like any
+ * other boundary field.
+ */
 export function parsePanelSearchAction(input: unknown): PanelSearchAction | null {
   if (!isRecord(input)) return null;
   const action = input['action'];
   if (typeof action !== 'string') return null;
-  if (action === PANEL_SEARCH_ACTIONS.performSearch && Object.keys(input).length === 2) {
+  const tabId = numericTabId(input['tabId']);
+  if (tabId === null) return null;
+  if (action === PANEL_SEARCH_ACTIONS.performSearch && Object.keys(input).length === 3) {
     const query = input['query'];
     if (typeof query !== 'string' || query.length > LIMITS.searchQuery) return null;
-    return { action, query };
+    return { action, query, tabId };
   }
   if (
     (action === PANEL_SEARCH_ACTIONS.cancelSearch ||
       action === PANEL_SEARCH_ACTIONS.nextSearchResult ||
       action === PANEL_SEARCH_ACTIONS.previousSearchResult) &&
-    Object.keys(input).length === 1
+    Object.keys(input).length === 2
   ) {
-    return { action };
+    return { action, tabId };
   }
   return null;
 }

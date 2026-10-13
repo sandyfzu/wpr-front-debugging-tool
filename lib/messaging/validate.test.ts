@@ -420,25 +420,39 @@ describe('parseFdtData', () => {
 });
 
 describe('parsePanelSearchAction', () => {
-  it('accepts every action with exact keys', () => {
-    expect(parsePanelSearchAction({ action: 'performSearch', query: 'foo' })).toEqual({
+  it('accepts every action with exact keys (including the relay tab id)', () => {
+    expect(parsePanelSearchAction({ action: 'performSearch', query: 'foo', tabId: 42 })).toEqual({
       action: 'performSearch',
-      query: 'foo'
+      query: 'foo',
+      tabId: 42
     });
-    expect(parsePanelSearchAction({ action: 'cancelSearch' })).toEqual({ action: 'cancelSearch' });
-    expect(parsePanelSearchAction({ action: 'nextSearchResult' })).toEqual({
-      action: 'nextSearchResult'
+    expect(parsePanelSearchAction({ action: 'cancelSearch', tabId: 42 })).toEqual({
+      action: 'cancelSearch',
+      tabId: 42
     });
-    expect(parsePanelSearchAction({ action: 'previousSearchResult' })).toEqual({
-      action: 'previousSearchResult'
+    expect(parsePanelSearchAction({ action: 'nextSearchResult', tabId: 42 })).toEqual({
+      action: 'nextSearchResult',
+      tabId: 42
+    });
+    expect(parsePanelSearchAction({ action: 'previousSearchResult', tabId: 42 })).toEqual({
+      action: 'previousSearchResult',
+      tabId: 42
     });
   });
 
-  it('rejects unknown actions, oversizes and extra keys', () => {
+  it('rejects unknown actions, oversizes, missing/malformed tab ids and extra keys', () => {
     expect(parsePanelSearchAction({ action: 'scroll' })).toBeNull();
-    expect(parsePanelSearchAction({ action: 'performSearch', query: 'a'.repeat(201) })).toBeNull();
-    expect(parsePanelSearchAction({ action: 'cancelSearch', query: 'x' })).toBeNull();
-    expect(parsePanelSearchAction({ action: 'performSearch', query: 1 })).toBeNull();
+    expect(
+      parsePanelSearchAction({ action: 'performSearch', query: 'a'.repeat(201), tabId: 42 })
+    ).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch', query: 'x', tabId: 42 })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'performSearch', query: 1, tabId: 42 })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'performSearch', query: 'x' })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch' })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch', tabId: -1 })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch', tabId: 1.5 })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch', tabId: '42' })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'cancelSearch', tabId: Number.NaN })).toBeNull();
     expect(parsePanelSearchAction('performSearch')).toBeNull();
   });
 });

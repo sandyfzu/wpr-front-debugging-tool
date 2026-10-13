@@ -270,11 +270,35 @@ export const PANEL_SEARCH_ACTIONS = {
   previousSearchResult: 'previousSearchResult'
 } as const;
 
-/** DevTools search action relayed to the panel (`panel` message). */
-export type PanelSearchAction =
+/**
+ * The narrowed search event as Chrome carries it (action + query on
+ * `performSearch`): the pure event-mapping's output, before any relay tab
+ * scope exists — the relay attaches `tabId` at send time.
+ */
+export type PanelSearchEventPayload =
   | { action: typeof PANEL_SEARCH_ACTIONS.performSearch; query: string }
   | {
       action: Exclude<keyof typeof PANEL_SEARCH_ACTIONS, typeof PANEL_SEARCH_ACTIONS.performSearch>;
+    };
+
+/**
+ * DevTools search action relayed to the panel (`panelSearch` message). The
+ * payload carries `tabId` — the relaying devtools page's inspected tab —
+ * because an extension send has no runtime sender tab to scope with, so this
+ * field is the panel's only way to drop actions relayed by another DevTools
+ * window (the protocol header's one documented tabId-payload exception).
+ */
+export type PanelSearchAction =
+  | {
+      action: typeof PANEL_SEARCH_ACTIONS.performSearch;
+      query: string;
+      /** The relaying devtools page's inspected tab id (the delivery's scope). */
+      tabId: number;
+    }
+  | {
+      action: Exclude<keyof typeof PANEL_SEARCH_ACTIONS, typeof PANEL_SEARCH_ACTIONS.performSearch>;
+      /** The relaying devtools page's inspected tab id (the delivery's scope). */
+      tabId: number;
     };
 
 /**
