@@ -100,6 +100,10 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   /** The Solid disposer, once the shadow-root render has completed. */
   let disposeRoot: (() => void) | null = null;
   let hsObserver: MutationObserver | null = null;
+  /** The card's root element, registered by the view (focus choreography). */
+  let panelElement: HTMLElement | null = null;
+  /** The marker pill, registered by the view (focus hand-back on close). */
+  let badgeElement: HTMLElement | null = null;
 
   const openFinding = (url: string): void => {
     if (!isHttpUrl(url)) {
@@ -109,15 +113,65 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
     window.open(url, '_blank', 'noopener');
   };
 
+  /**
+   * Move focus between the widget's shapes. A single attempt is
+   * frame-fragile: the callback runs before the frame's style recalc, so the
+   * target's visibility may still resolve as the OLD state at that instant
+   * (under reduced motion, where every transition collapses, the attempt and
+   * the visibility flip land in the same frame — measured: the focus was
+   * rejected and evicted shortly after). An attempt verifies its landing and
+   * re-arms on the following frame when it didn't (two tries total, both
+   * riding the context so invalidation cancels them); never landing is
+   * logged, not silent.
+   *
+   * @param element The widget element to focus (marker pill or card root).
+   * @param kind Which shape it is — the log line's context.
+   */
+  const moveFocus = (element: HTMLElement, kind: 'card' | 'marker'): void => {
+    let attempt = 0;
+    const tryOnce = (): void => {
+      attempt += 1;
+      ctx.requestAnimationFrame(() => {
+        if (ctx.isInvalid) return;
+        element.focus({ preventScroll: true });
+        // The landing check reads the focus owner of the element's own tree
+        // (the shadow root); `in` narrows without asserting the node type.
+        const root = element.getRootNode();
+        if ('activeElement' in root && root.activeElement === element) return;
+        if (attempt < 2) {
+          tryOnce();
+          return;
+        }
+        log.debug(
+          `Did not reach the ${kind === 'card' ? 'report card' : 'marker pill'} with focus`
+        );
+      });
+    };
+    tryOnce();
+  };
+
   const actions = {
+    registerPanel: (element: HTMLElement | null) => {
+      panelElement = element;
+    },
+    registerBadge: (element: HTMLElement | null) => {
+      badgeElement = element;
+    },
     toggleBadge: () => {
       setState('badgeCollapsed', (collapsed) => !collapsed);
     },
     openList: () => {
       setState({ listOpen: true, badgeCollapsed: false });
+      // Focus the card once the class state is on: keyboard users land
+      // inside it without a stray page-scroll. Mouse users keep the page
+      // unscrolled (preventScroll).
+      if (panelElement !== null) moveFocus(panelElement, 'card');
     },
     closeList: () => {
       setState('listOpen', false);
+      // The invoker regains focus (standard popover choreography) — the
+      // marker pill, where the card opened from.
+      if (badgeElement !== null) moveFocus(badgeElement, 'marker');
     },
     openFinding
   };
@@ -170,9 +224,21 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
         onRemove: () => {
           disposeRoot?.();
           disposeRoot = null;
+          panelElement = null;
+          badgeElement = null;
         }
       });
       shadowUi.mount();
+      // Escape closes the card with the focus inside it. Key events never
+      // reach the host page from this shadow root (the injection isolates
+      // them at the root), and the listener rides `ctx` so teardown rides
+      // the same abort signal every other callback here does.
+      ctx.addEventListener(shadowUi.shadow, 'keydown', (event) => {
+        if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
+          event.stopPropagation();
+          actions.closeList();
+        }
+      });
     } catch (error) {
       log.error(
         'Mounting the Known Conflicts badge failed',

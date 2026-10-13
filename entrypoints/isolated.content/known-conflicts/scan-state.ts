@@ -1,9 +1,9 @@
 /**
- * Scan-state decisions for the Known Conflicts badge: accumulate findings
+ * Scan-state decisions for the Known Conflicts widget: accumulate findings
  * across a page's scan passes (HelpScout conversations load messages lazily,
  * and conflict mentions may appear long after the first pass), clear them
  * only when the surface changes (a different ticket is a different scan),
- * and arbitrate what the badge shows — the DB verdict, the loading copy and
+ * and arbitrate what the widget shows — the DB verdict, the loading copy and
  * the empty state — through named rules both the owner module and the view
  * call, so no render path can contradict the state machine.
  */
@@ -110,4 +110,25 @@ export function loadingCopyVisible(dbLoading: boolean, findings: readonly unknow
  */
 export function surfaceChanged(previousPathname: string, pathname: string): boolean {
   return previousPathname !== pathname;
+}
+
+/**
+ * What the floating marker expresses, from the scan state alone:
+ *
+ * - `alert` — findings exist (the module's reason to exist: show their count
+ *   in the status-error vocabulary);
+ * - `clear` — a usable DB answered and the surface scanned empty: the zero
+ *   state is a good result, shown calm;
+ * - `pending` — the DB is still resolving, so no verdict exists (the marker
+ *   pulses; a zero count here would read as a false all-clear).
+ *
+ * @param findings The accumulated rows.
+ * @param dbLoading Whether the DB is still being resolved (the loading state).
+ */
+export function markerMood(
+  findings: readonly unknown[],
+  dbLoading: boolean
+): 'alert' | 'clear' | 'pending' {
+  if (findings.length > 0) return 'alert';
+  return dbLoading ? 'pending' : 'clear';
 }

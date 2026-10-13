@@ -1,178 +1,619 @@
 /*
- * Known Conflicts badge + list, injected into a host page's shadow root.
+ * The Known Conflicts widget: a floating marker pill + the conflict report
+ * card, injected into a host page's shadow root.
  *
  * Only feature-local rules live here; the token definitions come in through
  * the entrypoint stylesheet (`styles.css` imports the token file once, and
- * one stylesheet is one fetched asset per entrypoint).
- * Positioning rides an inner element (`position: fixed`), because the shadow
- * host is reset with `all: initial !important` (verified against a live
- * Chromium: an :host rule cannot win that; an inner element styles normally).
+ * one stylesheet is one fetched asset per entrypoint). Positioning rides an
+ * inner element (`position: fixed`), because the shadow host is reset with
+ * `all: initial !important` (verified against a live Chromium: an `:host`
+ * rule cannot win that; an inner element styles normally).
+ *
+ * State hiding never flips `display`: hidden states are visibility/opacity/
+ * transform — a state class can never lose to a later display declaration
+ * (the shipped widget's own defect: `.kc-hidden` sat before the components'
+ * `display: flex`, so no state ever applied visually). Layers:
+ *
+ * - the chrome is the fixed anchor (bottom-left inset), its children anchor
+ *   to the same point: the marker row and the card overlap in place;
+ * - open/close is class-driven on the chrome (`.kc-open`), the pill's
+ *   collapse on the pill (`.kc-collapsed`), the scan mood on the chrome
+ *   (`.kc-alert` / `.kc-clear` / `.kc-pending`);
+ * - state changes are immediate ("is it there"), motion is decoration
+ *   (opacity/transform/visibility) and declaratively delayed — never a
+ *   `transitionend` listener — so a click can never strand a container, and
+ *   reduced motion collapses everything to a frame.
  */
 
-/* The chrome wrapper is the fixed positioning surface: bottom-left, above
- * every host layer (the same stacking imperative the surface shipped). */
 .kc-chrome {
+  /* Feature motion constants (declared here so the injected chain is
+   * self-contained): the entrance's gentle spring and the two durations
+   * every choreography leg derives from. */
+  --kc-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  --kc-enter: var(--motion-slow);
+  --kc-exit: var(--motion-base);
+  /* How far the two shapes travel between absent and present. */
+  --kc-travel: 14px;
+
+  /* The single anchor: 16px in from the page corner so the widget reads as
+   * floating content, not docked chrome — over every host layer. */
   position: fixed;
-  bottom: 0;
-  left: 0;
+  bottom: 16px;
+  left: 16px;
   z-index: 999999;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
   color: var(--fg-primary);
-  background: var(--surface-1);
+  text-align: left;
 }
 
-/* Both panels swap through this class alone: no transition bookkeeping is
- * involved in the state change. The swap is instant if motion is off. */
-.kc-hidden {
-  display: none;
-}
-
-/* ---- List panel ------------------------------------------------------------ */
-
-.kc-list {
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  width: 250px;
-  height: 100vh;
-  max-height: 100vh;
-  padding: 8px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  background: var(--surface-2);
-  color: var(--fg-primary);
-  border-right: 1px solid var(--line-1);
-  box-shadow: var(--shadow-elev-3);
-}
-
-.kc-list-head {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.kc-eyebrow {
-  font-size: 0.8em;
-  color: var(--fg-muted);
-  user-select: none;
-}
-
-.kc-close {
-  border: none;
-  background: none;
-  color: var(--line-strong);
-  font-size: 1.6em;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-}
-.kc-close:hover {
-  color: var(--status-error);
-}
-
-.kc-title {
-  margin: 8px 0 6px;
-  text-align: center;
-  font-size: 1em;
-  font-weight: 600;
-}
-
-.kc-items {
-  display: flex;
-  flex-direction: column;
-}
-
-/* One finding: name (strong) + summary, clickable to the support article. */
-.kc-item {
-  border-left: 3px solid var(--status-error);
-  padding-inline: 8px;
-  padding-block: 4px;
-  cursor: pointer;
-}
-.kc-item:not(:last-child) {
-  margin-bottom: 12px;
-}
-.kc-item:hover {
-  background: var(--surface-3);
-}
-
-/* Empty / loading lines occupy the same slot as findings. */
-.kc-none {
-  padding: 8px;
-  color: var(--fg-secondary);
-}
-
-/* ---- Badge row -------------------------------------------------------------- */
+/* ---- Marker row --------------------------------------------------------------
+ * The pill + collapse handle, anchored bottom-left. When the card opens the
+ * whole row departs downward (same travel, same beat) and stops receiving
+ * input; when the card closes it hands the anchor back. */
 
 .kc-badges {
-  max-width: max-content;
+  position: absolute;
+  bottom: 0;
+  left: 0;
   display: flex;
-  flex-direction: row;
+  gap: 8px;
+  align-items: flex-end;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  /* First-paint entrance: the marker rises into its anchor once per mount
+   * (mode pages, remounts after a mode switch) — `backwards` covers the
+   * future delay legs, and the finished state never conflicts with the
+   * class transitions below. */
+  animation: kc-tool-in var(--kc-enter) var(--kc-spring) backwards;
+  transition:
+    opacity var(--kc-exit) var(--ease-standard),
+    transform var(--kc-exit) var(--ease-standard),
+    visibility 0s linear 0s;
 }
 
+.kc-open .kc-badges {
+  opacity: 0;
+  transform: translateY(var(--kc-travel)) scale(0.96);
+  visibility: hidden;
+  pointer-events: none;
+  /* Dropping the first-paint entrance here hands its properties (already
+   * matching the resting state) to the transitions below without a waiting
+   * animation frame — a click that lands mid-entrance departs on time. */
+  animation: none;
+  /* The departing leg must keep the row paintable for the whole fade —
+   * visibility hides at the END (an immediate flip would pop the row off
+   * before its transition painted a single frame; measured and fixed). */
+  transition:
+    opacity var(--kc-exit) var(--ease-standard),
+    transform var(--kc-exit) var(--ease-standard),
+    visibility 0s linear var(--kc-exit);
+}
+
+/* The marker pill: a compact lozenge (mood icon + count chip), lifted on
+ * hover, pressed on click — motion decoration only. */
 .kc-badge {
-  width: 234px;
+  position: relative;
   display: flex;
-  box-sizing: border-box;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
-  overflow: hidden;
-  white-space: pre;
-  text-align: left;
+  gap: 7px;
+  height: 36px;
+  padding: 0 7px 0 11px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
   background: var(--surface-2);
-  color: var(--fg-primary);
-  border: 1px solid var(--line-strong);
-  border-right-color: var(--line-1);
-  border-left: none;
-  border-bottom: none;
+  box-shadow: var(--shadow-elev-2);
+  cursor: pointer;
+  transition:
+    transform var(--motion-base) var(--ease-standard),
+    background-color var(--motion-fast) linear,
+    border-color var(--motion-fast) linear,
+    box-shadow var(--motion-base) var(--ease-standard),
+    opacity var(--motion-base) var(--ease-standard);
 }
-
 .kc-badge:hover {
   background: var(--surface-3);
+  box-shadow: var(--shadow-elev-3);
+  transform: translateY(-1px);
+}
+.kc-badge:active {
+  transform: translateY(0) scale(0.97);
+  background: var(--surface-3);
+}
+.kc-badge:focus-visible,
+.kc-furl:focus-visible,
+.kc-close:focus-visible,
+.kc-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* Collapse = the width transition only; the element keeps existing so the
- * next slide-in is a plain class toggle (never a mount/unmount). While
- * collapsed nothing receives clicks (width 0). */
+/* The scan mood (the chrome root carries it) tints every stateful element the
+ * vocabulary reaches: the marker icon, both count chips and the pending
+ * pulse — error while findings exist, calm green on a settled zero verdict,
+ * idle while the database resolves. */
+.kc-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--status-error);
+  transition: color var(--motion-fast) linear;
+}
+.kc-mark svg,
+.kc-furl-chevron svg,
+.kc-item-go svg,
+.kc-close svg,
+.kc-none-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.kc-alert .kc-mark {
+  color: var(--status-error);
+}
+.kc-clear .kc-mark {
+  color: var(--status-ok);
+}
+.kc-pending .kc-mark {
+  color: var(--fg-muted);
+}
+
+/* The count chip: mono digits (tabular, so the number never re-wraps), tinted
+ * per mood; pending pulses until the database answers. */
+.kc-count {
+  flex: none;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--status-error-soft);
+  color: var(--status-error);
+  font: 600 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--motion-fast) linear,
+    color var(--motion-fast) linear;
+}
+.kc-clear .kc-count {
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+}
+.kc-pending .kc-count {
+  background: var(--status-neutral-soft);
+  color: var(--fg-muted);
+  animation: kc-pulse 1.6s ease-in-out infinite;
+}
+
+/* Collapse: the pill compresses into its corner-side edge and fades — read
+ * as tucking in behind the handle, with no geometry that could disagree with
+ * a count's exact width. Transform-only (compositor), element stays (the
+ * next expand is a plain class toggle), and the rule sits after the hover
+ * and press rules so the collapsed override keeps priority. */
 .kc-badge.kc-collapsed {
-  width: 0;
-  padding-inline: 0;
-  margin-inline: 0;
-  border: none;
+  transform: translateX(-8px) scale(0.45);
+  transform-origin: 0% 100%;
+  opacity: 0;
   pointer-events: none;
 }
 
-.kc-badge,
+/* The collapse handle: a slim control beside the pill. Its chevron flips to
+ * the side the pill is about to move; a small error dot marks findings while
+ * the pill is away (the visually hidden count stays readable to AT). */
 .kc-furl {
-  transition: var(--motion-slow) var(--ease-standard);
-  transition-property: width, padding, border-color;
-}
-
-.kc-warning {
-  width: 1em;
-  height: 1em;
-  margin-right: 2px;
-  fill: var(--status-error);
-  stroke: none;
-}
-
-.kc-furl {
-  width: 16px;
-  padding-inline: 4px;
-  border: 1px solid var(--line-strong);
-  border-left: none;
-  border-bottom: none;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
   background: var(--surface-2);
-  color: var(--fg-primary);
+  box-shadow: var(--shadow-elev-1);
+  color: var(--fg-secondary);
   cursor: pointer;
+  transition:
+    background-color var(--motion-fast) linear,
+    color var(--motion-fast) linear,
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 .kc-furl:hover {
   background: var(--surface-3);
+  color: var(--fg-primary);
+  box-shadow: var(--shadow-elev-2);
+}
+.kc-furl:focus-visible:hover {
+  background: var(--surface-3);
+}
+.kc-furl-chevron {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  transition:
+    scale var(--motion-base) var(--ease-standard),
+    translate var(--motion-fast) linear;
+  scale: 1 1;
+}
+/* Collapsed: the chevron mirrors to point at the expanding direction. */
+.kc-furl[aria-pressed='true'] .kc-furl-chevron {
+  scale: -1 1;
+}
+/* Hover nudges towards where the pill will go. */
+.kc-furl:hover .kc-furl-chevron {
+  translate: -1px 0;
+}
+.kc-furl[aria-pressed='true']:hover .kc-furl-chevron {
+  translate: 1px 0;
+}
+
+.kc-furl-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--status-error);
+  box-shadow: 0 0 0 2px var(--surface-2);
+  animation: kc-dot-in 240ms var(--ease-entrance);
+}
+
+/* Textually present, never painted (the pill's accessible copy rides with
+ * the probe-visible text; the chip follows it in text order). */
+.kc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Report card -------------------------------------------------------------
+ * Opens from the pill's anchor: rises, settles with a soft spring, and the
+ * marker row hands the anchor over at the same beat. Closed state keeps the
+ * tree mounted behind `visibility` so open/close never remounts content. */
+
+.kc-list {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(352px, calc(100vw - 32px));
+  max-height: min(480px, calc(100vh - 48px));
+  box-sizing: border-box;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2) 88px);
+  box-shadow:
+    0 0 0 1px var(--line-1),
+    var(--shadow-elev-3);
+  opacity: 0;
+  transform: translateY(var(--kc-travel)) scale(0.96);
+  transform-origin: 0 100%;
+  visibility: hidden;
+  transition:
+    opacity var(--kc-exit) var(--ease-standard),
+    transform var(--kc-exit) var(--ease-standard),
+    visibility 0s linear var(--kc-exit);
+}
+.kc-open .kc-list {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  transition:
+    opacity 180ms var(--ease-standard),
+    transform var(--kc-enter) var(--kc-spring),
+    visibility 0s linear 0s;
+}
+/* Programmatic focus on open must not ring the whole card. */
+.kc-list:focus {
+  outline: none;
+}
+
+/* Header: the tool's eyebrow, the card title (exact string) and the count
+ * chip beside it, and the close control. */
+.kc-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 10px 10px 14px;
+}
+.kc-list-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.kc-eyebrow {
+  font: 600 9.5px/1 var(--font-mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.kc-titlerow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kc-title {
+  margin: 0;
+  font: 600 13.5px/1.2 var(--font-mono);
+  color: var(--fg-primary);
+}
+
+.kc-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) linear,
+    color var(--motion-fast) linear;
+}
+.kc-close:hover {
+  background: var(--surface-4);
+  color: var(--fg-primary);
+}
+.kc-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Body: findings stack with hairline spacing; the scroll is contained (no
+ * host-page chaining) and themed through the standard scrollbar properties. */
+.kc-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 10px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* One finding: soft error roundel + name/summary stack + a hover reveal of
+ * the open-affordance arrow. Real button semantics (Enter/Space activate).
+ * The row entrance rides the chrome's open state — the animation exists only
+ * while the class does, so every open (and every row inserted while open)
+ * replays a rise; rows painted inside a still-hidden card stay at rest. */
+.kc-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) linear;
+}
+.kc-open .kc-item {
+  animation: kc-rise 320ms var(--ease-entrance) backwards;
+}
+.kc-item:hover {
+  background: var(--surface-4);
+}
+.kc-open .kc-item:nth-child(2) {
+  animation-delay: 40ms;
+}
+.kc-open .kc-item:nth-child(3) {
+  animation-delay: 80ms;
+}
+.kc-open .kc-item:nth-child(4) {
+  animation-delay: 120ms;
+}
+.kc-open .kc-item:nth-child(5) {
+  animation-delay: 160ms;
+}
+.kc-open .kc-item:nth-child(6),
+.kc-open .kc-item:nth-child(7),
+.kc-open .kc-item:nth-child(n + 8) {
+  animation-delay: 200ms;
+}
+
+.kc-item-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: var(--status-error-soft);
+  color: var(--status-error);
+}
+.kc-item-mark svg {
+  width: 12px;
+  height: 12px;
+}
+.kc-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kc-item-name {
+  font: 600 12.5px/1.35 var(--font-mono);
+  color: var(--fg-primary);
+}
+.kc-item-summary {
+  font: 400 11.5px/1.45 var(--font-mono);
+  color: var(--fg-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.kc-item-go {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  align-self: center;
+  color: var(--fg-muted);
+  opacity: 0;
+  translate: -3px 0;
+  transition:
+    opacity var(--motion-fast) linear,
+    translate var(--motion-fast) var(--ease-standard);
+}
+.kc-item:hover .kc-item-go,
+.kc-item:focus-visible .kc-item-go {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* ---- Card states (loading / empty) ------------------------------------------ */
+
+.kc-none {
+  display: flex;
+}
+.kc-none-loading {
+  gap: 10px;
+  align-items: center;
+  padding: 16px 8px 14px;
+  font: 500 12px/1 var(--font-mono);
+  color: var(--fg-secondary);
+}
+.kc-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line-2);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: kc-spin 700ms linear infinite;
+}
+
+.kc-none-empty {
+  gap: 11px;
+  align-items: center;
+  padding: 14px 6px 2px;
+}
+.kc-none-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--status-ok-soft);
+  color: var(--status-ok);
+}
+.kc-none-mark svg {
+  width: 15px;
+  height: 15px;
+}
+.kc-none-copy {
+  font: 600 12.5px/1.4 var(--font-mono);
+  color: var(--fg-primary);
+}
+.kc-none-clearhint {
+  padding: 2px 6px 10px 43px;
+}
+.kc-none-hint {
+  font: 400 11px/1.5 var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* ---- Footer ------------------------------------------------------------------ */
+
+.kc-list-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 11px;
+  border-top: 1px solid var(--line-1);
+  font: 400 10.5px/1.4 var(--font-mono);
+  color: var(--fg-muted);
+}
+.kc-kbd {
+  flex: none;
+  padding: 3px 5px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-1);
+  font: 600 9.5px/1 var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* ---- Motion ------------------------------------------------------------------ */
+
+@keyframes kc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes kc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes kc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+@keyframes kc-dot-in {
+  from {
+    scale: 0;
+  }
+}
+@keyframes kc-tool-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--kc-travel)) scale(0.96);
+  }
+}
+
+/* Reduced motion: the token layer collapses every duration/iteration; the
+ * legs it does not reach must collapse with it. The card goes
+ * machinery-free (states byte-instant): the global override otherwise leaves
+ * its visibility leg a real 0.01ms transition, and a running transition
+ * reports its from-value on the first frame — the focus choreography's
+ * attempts inside that window are rejected on a computed-visible card
+ * (measured: focus landed on the pill, was ejected when the row departed and
+ * Escape then died; both attempts logged "did not reach"). Rows ride the
+ * token rule as always; the departing marker row keeps its held-visible leg
+ * to hand focus over (it is already pointer-events: none, so it intercepts
+ * nothing). */
+@media (prefers-reduced-motion: reduce) {
+  .kc-list {
+    transition: none !important;
+  }
+  .kc-open .kc-item {
+    animation-delay: 0s !important;
+  }
 }

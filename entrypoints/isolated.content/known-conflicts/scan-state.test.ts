@@ -1,14 +1,15 @@
 /**
  * Scan-state decisions: accumulation with first-seen determinism, the DB
  * bootstrap verdict, the empty state's settlement gates (including the
- * plugins screen's between-passes race), the loading copy's retention and
- * the surface-change comparison.
+ * plugins screen's between-passes race), the loading copy's retention, the
+ * surface-change comparison and the marker's mood vocabulary.
  */
 import { describe, expect, it } from 'vitest';
 import {
   dbRowsUsable,
   emptyStateVisible,
   loadingCopyVisible,
+  markerMood,
   mergeFindings,
   passSettled,
   surfaceChanged
@@ -112,5 +113,20 @@ describe('surfaceChanged', () => {
   it('treats pathname changes as a new surface, queries as the same one', () => {
     expect(surfaceChanged('/conversation/1/2', '/conversation/3/4')).toBe(true);
     expect(surfaceChanged('/conversation/1/2', '/conversation/1/2')).toBe(false);
+  });
+});
+
+describe('markerMood', () => {
+  it('alerts as soon as findings exist, whatever the DB leg is doing', () => {
+    expect(markerMood([{}], true)).toBe('alert');
+    expect(markerMood([{}], false)).toBe('alert');
+  });
+
+  it('stays pending while the DB resolves over a zero scan', () => {
+    expect(markerMood([], true)).toBe('pending');
+  });
+
+  it('turns calm green only on a served, settled zero verdict', () => {
+    expect(markerMood([], false)).toBe('clear');
   });
 });
