@@ -518,6 +518,58 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
+    'KC and the strip coexist — their anchors never overlap',
+    async ({ extension, adminPage }) => {
+      await setWidgetEnabled(extension, true);
+      try {
+        // The worker's admin page: re-affirm the login first (cross-file
+        // cookie state is not a leg's input), then navigate.
+        await loginAdminPage(adminPage);
+        await adminPage.goto(`${SITE_URL}/wp-admin/plugins.php`, { waitUntil: 'load' });
+        await expect
+          .poll(
+            async () =>
+              await adminPage.evaluate(
+                (): boolean => document.querySelector('wpr-fdt-inspector') !== null
+              ),
+            { timeout: 10_000, intervals: [250, 500] }
+          )
+          .toBe(true);
+        await expect
+          .poll(
+            async () =>
+              await adminPage.evaluate(
+                (): boolean => document.querySelector('wpr-fdt-known-conflicts') !== null
+              ),
+            { timeout: 15_000, intervals: [250, 500] }
+          )
+          .toBe(true);
+        const overlap = await adminPage.evaluate((): boolean => {
+          const host = document.querySelector('wpr-fdt-inspector');
+          const ins = host?.shadowRoot?.querySelector('.ins-chrome');
+          const kc = document
+            .querySelector('wpr-fdt-known-conflicts')
+            ?.shadowRoot?.querySelector('.kc-chrome');
+          if (kc === null || kc === undefined || ins === null || ins === undefined) {
+            throw new Error('one widget missing its floating chrome');
+          }
+          const kcBox = (kc as HTMLElement).getBoundingClientRect();
+          const insBox = (ins as HTMLElement).getBoundingClientRect();
+          return !(
+            kcBox.right < insBox.left ||
+            insBox.right < kcBox.left ||
+            kcBox.bottom < insBox.top ||
+            insBox.bottom < kcBox.top
+          );
+        });
+        expect(overlap, 'the two floating widgets cross no boxes').toBe(false);
+      } finally {
+        await setWidgetEnabled(extension, false);
+      }
+    }
+  );
+
+  siteTest(
     'both palettes + the stored appearance live-follow on the strip',
     async ({ extension }) => {
       await setWidgetEnabled(extension, true);
