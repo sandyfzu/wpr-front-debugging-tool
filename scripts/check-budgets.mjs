@@ -157,6 +157,19 @@ export function parseBudgetRows(raw) {
       if (!positive('raw') && !positive('gzip')) {
         problems.push(`${tag} maxKb needs a positive raw and/or gzip number`);
       }
+      // Symmetric with the timing kind's exclusions: a field the bytes kind
+      // does not use is dead-lettered (it reads like a maximum while
+      // validating nothing), so it is malformed rather than ignored.
+      if (row.maxMs !== undefined) {
+        problems.push(
+          `${tag} is a bytes row — a bundle surface is measured in KB, so it cannot carry maxMs`
+        );
+      }
+      if (row.measuredBy !== undefined) {
+        problems.push(
+          `${tag} is a bytes row — this script is its runner, so it cannot carry measuredBy`
+        );
+      }
     } else if (kind === 'timing') {
       const maxMs = /** @type {{maxMs?: unknown}} */ (row).maxMs;
       if (typeof maxMs !== 'number' || !Number.isFinite(maxMs) || maxMs <= 0) {
@@ -221,27 +234,30 @@ async function main() {
   const files = listFiles(outputRoot());
   console.log(`\nSurface budgets — .output/chrome-mv3 (${files.length} files)\n`);
   let breached = false;
+  // The row-label column: the table's minimum (40) widened to the longest
+  // label, so the timing-gate lines and every data line share one column
+  // set with the header (committed long-known rows exceed 40 today).
+  const labelWidth = Math.max(40, ...budgets.map((budget) => budget.surface.length));
+  const padded = (label) => label.padEnd(labelWidth);
   const timingRows = budgets.filter((budget) => budget.kind === 'timing');
   const byteRows = budgets.filter((budget) => budget.kind !== 'timing');
   for (const { surface, maxMs, measuredBy } of timingRows) {
     // A timing gate has no bundle surface to measure; its ceiling is
     // asserted by the runner named in the row. Printed for visibility.
-    console.log(
-      `  ${surface.padEnd(40)}  ≤ ${maxMs} ms   (runtime gate — measured by ${measuredBy})`
-    );
+    console.log(`  ${padded(surface)}  ≤ ${maxMs} ms   (runtime gate — measured by ${measuredBy})`);
   }
-  console.log('  SURFACE                                   RAW (KB)    BUDGET   GZIP (KB)  BUDGET');
+  console.log(`  ${padded('SURFACE')}  RAW (KB)    BUDGET   GZIP (KB)  BUDGET`);
   for (const { surface, globs, maxKb } of byteRows) {
     const { rawBytes, gzipBytes, files: hit } = measureSurface(files, globs);
     if (hit.length === 0) {
-      console.log(`  ${surface.padEnd(40)}  absent — surface not built yet, or update row globs`);
+      console.log(`  ${padded(surface)}  absent — surface not built yet, or update row globs`);
       continue;
     }
     const rawOver = maxKb.raw !== undefined && rawBytes > maxKb.raw * 1024;
     const gzipOver = maxKb.gzip !== undefined && gzipBytes > maxKb.gzip * 1024;
     breached ||= rawOver || gzipOver;
     console.log(
-      `  ${surface.padEnd(40)}  ${formatKb(rawBytes, maxKb.raw !== undefined)} ${
+      `  ${padded(surface)}  ${formatKb(rawBytes, maxKb.raw !== undefined)} ${
         rawOver ? '>' : '<'
       }   ${String(maxKb.raw ?? '—').padStart(5)}   ${formatKb(
         gzipBytes,

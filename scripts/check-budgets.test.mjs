@@ -152,4 +152,11 @@ describe('parseBudgetRows', () => {
       /timing row.*maxKb/
     );
   });
+
+  it('rejects bytes rows that carry timing fields (dead letters would read like maxima)', () => {
+    expect(() => parseBudgetRows([{ ...bytesRow, maxMs: 500 }])).toThrow(/bytes row.*maxMs/);
+    expect(() => parseBudgetRows([{ ...bytesRow, measuredBy: 'a runner' }])).toThrow(
+      /bytes row.*measuredBy/
+    );
+  });
 });

@@ -5,16 +5,20 @@
  * first data state.
  *
  * Why a browser pin: the marks land only in the real document timeline; the
- * span the budget row asserts covers everything a DevTools-open panel pays
- * for module parse, the storage appearance read and the boot flight, on the
- * same chromium the harness loads the extension in.
+ * budgeted span is the entry's execution → the first data settle. The ESM
+ * import graph (fetch/parse/eval) completes BEFORE the entry body's first
+ * statement — the script-start mark — so that pre-span cost is visible only
+ * in that mark's absolute `startTime`, not in this span; a pre-mark ceiling
+ * is a candidate addition for the P5.1 execution, not planned budget work
+ * today. The storage appearance read and the boot flight sit inside the
+ * span, on the same chromium the harness loads the extension in.
  *
  * Settle leg, pinned with its transport fact: the harness drives the panel
  * as a standalone extension page — `devtools.inspectedWindow.tabId` does not
  * exist there, and the boot fetch's broadcast (`runtime.sendMessage`, the
  * library's no-tab arm) never reaches content scripts, so the chain settles
  * into the recorded error state. That is the deterministic cold start this
- * gate covers: both marks and the full script-start → settle span. The
+ * gate covers: both marks and the full entry-execution → settle span. The
  * ready-leg cold start (the real data round trip) needs the inspected-tab
  * data path the panel-shell suites' fixture plan owns.
  */
@@ -95,24 +99,52 @@ test.describe('panel cold start (the timing row)', () => {
         .toBeGreaterThan(0);
 
       const legAndTimeline = await page.evaluate(() => {
+        // Raw buffer reads, not name-deduplicated: a once-guard regression
+        // fires a mark twice and a dictionary would overwrite one key — the
+        // per-name entry counts and the buffer's own order are the record.
+        const names = [
+          'wpr-fdt:panel:script-start',
+          'wpr-fdt:panel:shell-interactive',
+          'wpr-fdt:panel:first-data-state'
+        ] as const;
         const marks: Record<string, number> = {};
-        for (const entry of performance.getEntriesByType('mark')) {
-          if (entry.name.startsWith('wpr-fdt:panel:')) marks[entry.name] = entry.startTime;
+        const markCounts: Record<string, number> = {};
+        for (const name of names) {
+          // Type-filtered: the shell-interactive name carries BOTH its mark
+          // and its window (the window's name is the mark's, by design), so
+          // an untyped name lookup double-counts it.
+          const entries = performance.getEntriesByName(name, 'mark');
+          markCounts[name] = entries.length;
+          marks[name] = entries[0]?.startTime ?? -1;
         }
+        const ordered = performance
+          .getEntriesByType('mark')
+          .filter((entry) => entry.name.startsWith('wpr-fdt:panel:'))
+          .map((entry) => entry.name);
         const spans: Record<string, number> = {};
         for (const entry of performance.getEntriesByType('measure')) {
           if (entry.name.startsWith('wpr-fdt:panel:')) spans[entry.name] = entry.duration;
         }
         return {
+          ordered,
+          markCounts,
           marks,
           spans,
           errorShown: document.body.textContent.includes("Couldn't load page data")
         };
       });
 
-      // Exactly three marks, in boot order — one entry each (the instrument's
-      // once-guard holds on a real timeline; a repeated mark would append).
-      expect(Object.keys(legAndTimeline.marks)).toHaveLength(3);
+      // Exactly three panel marks, each recorded exactly once, in boot
+      // order — the raw timeline's own record (a repeated mark would append
+      // a second entry and this count would read 4).
+      expect(legAndTimeline.ordered).toEqual([
+        'wpr-fdt:panel:script-start',
+        'wpr-fdt:panel:shell-interactive',
+        'wpr-fdt:panel:first-data-state'
+      ]);
+      for (const count of Object.values(legAndTimeline.markCounts)) {
+        expect(count).toBe(1);
+      }
       const scriptStart = markAt(legAndTimeline.marks, SCRIPT_START);
       const shellInteractive = markAt(legAndTimeline.marks, SHELL_INTERACTIVE);
       const firstDataState = markAt(legAndTimeline.marks, FIRST_DATA_STATE);
