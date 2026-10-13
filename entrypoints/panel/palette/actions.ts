@@ -163,6 +163,9 @@ export function createPanelActions(deps: PanelActionDeps): PanelCommand[] {
       disabled: !deps.exclusionBuilderAvailable(),
       disabledNote: 'Opening a tab is unavailable here — use the toolbar context menu',
       run: () => {
+        // A stale dispatch on a disabled row is the no-op, never a silent
+        // failed attempt to open a tab.
+        if (!deps.exclusionBuilderAvailable()) return;
         return deps.openExclusionBuilder().then(() => undefined);
       }
     },

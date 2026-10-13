@@ -19,10 +19,10 @@ const log = createLogger('panel');
 export type ExclusionBuilderOutcome = 'opened' | 'unavailable' | 'failed';
 
 export interface ExclusionBuilderDeps {
-  /** Open a browser tab at a URL (`browser.tabs.create`). */
-  openTab(url: string): Promise<unknown>;
+  /** Open a browser tab at a URL (`browser.tabs.create`; arrow — no `this`). */
+  openTab: (url: string) => Promise<unknown>;
   /** Resolve the packaged page's absolute URL (`browser.runtime.getURL`). */
-  pageUrl(pagePath: string): string;
+  pageUrl: (pagePath: string) => string;
 }
 
 /** The shape of the runtime this context may or may not expose, probed. */

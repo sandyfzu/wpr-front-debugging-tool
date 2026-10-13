@@ -23,11 +23,11 @@ export type JsonExportResult = 'downloaded' | 'copied' | 'failed';
 
 export interface JsonExportDeps {
   /** The file-download seam (production: Blob + anchor click; tests inject). */
-  download(payload: string, filename: string): void;
+  download: (payload: string, filename: string) => void;
   /** The clipboard seam for the degrade path. */
   clipboard: ClipboardLike;
   /** The wall clock for the filename stamp. */
-  now(): Date;
+  now: () => Date;
 }
 
 /**

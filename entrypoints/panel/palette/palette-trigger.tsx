@@ -48,10 +48,12 @@ export function PaletteTrigger(props: PaletteTriggerProps): JSX.Element {
       }
       placement="right"
       class={cn(TRIGGER_CLASSES, FOCUS_RING)}
-      aria-haspopup="dialog"
-      aria-expanded={props.open()}
-      aria-label="Command palette"
-      data-fdt="palette-trigger"
+      ariaLabel="Command palette"
+      ariaHasPopup="dialog"
+      ariaExpanded={props.open()}
+      onClick={() => {
+        props.toggle();
+      }}
     >
       <Command size={14} aria-hidden="true" />
     </Tooltip>
