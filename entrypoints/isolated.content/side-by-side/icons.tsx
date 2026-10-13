@@ -1,12 +1,9 @@
-import type { JSX } from 'solid-js';
-import { For } from 'solid-js';
-
 /**
- * The two stroke icons the overlay needs, as inline SVG path data — the
- * content script must stay inside a hard bundle budget, and two hand-drawn
- * strokes do not justify an icon-package runtime (a decision recorded in the
- * phase doc: the icon package remains available to the panel surfaces, which
- * have a much larger budget).
+ * The stroke icons the overlay needs, as inline SVG path data — the content
+ * script must stay inside a hard bundle budget, and two hand-drawn strokes do
+ * not justify an icon-package runtime (a decision recorded in the phase doc:
+ * the icon package remains available to the panel surfaces, which have a much
+ * larger budget).
  *
  * Data is the same stroke geometry the shipped overlay used (24 viewBox,
  * 1.5 stroke, round caps/joins); rendering matches the original icons.
@@ -15,11 +12,7 @@ import { For } from 'solid-js';
  * per-side refresh and close controls are plain buttons.
  */
 
-/** A tiny icon: inherits the button's currentColor; callers size via CSS. */
-export interface StrokeIconProps {
-  /** Icon path data, viewBox 0 0 24 24. */
-  paths: readonly string[];
-}
+import { StrokeIcon } from '../ui/icons';
 
 /** Refresh (circular arrows), one path — the classic cycle glyph. */
 export const REFRESH_ICON_PATHS = [
@@ -29,19 +22,4 @@ export const REFRESH_ICON_PATHS = [
 /** Close (crossed lines). */
 export const CLOSE_ICON_PATHS = ['M6 18L18 6M6 6l12 12'] as const;
 
-export function StrokeIcon(props: { paths: readonly string[] }): JSX.Element {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke-width="1.5"
-      stroke="currentColor"
-      aria-hidden="true"
-    >
-      <For each={props.paths}>
-        {(path) => <path d={path} stroke-linecap="round" stroke-linejoin="round" />}
-      </For>
-    </svg>
-  );
-}
+export { StrokeIcon };

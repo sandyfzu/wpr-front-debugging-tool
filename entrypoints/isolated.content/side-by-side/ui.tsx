@@ -117,7 +117,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
                 props.refresh('cached');
               }}
             >
-              <StrokeIcon paths={REFRESH_ICON_PATHS} />
+              <StrokeIcon paths={REFRESH_ICON_PATHS} strokeWidth={1.5} />
             </button>
           </Show>
         </span>
@@ -190,7 +190,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
               props.close();
             }}
           >
-            <StrokeIcon paths={CLOSE_ICON_PATHS} />
+            <StrokeIcon paths={CLOSE_ICON_PATHS} strokeWidth={1.5} />
           </button>
         </Show>
         <span class="sbs-side-label">
@@ -211,7 +211,7 @@ export function SideBySideOverlay(props: SideBySideOverlayProps): JSX.Element {
                 props.refresh('bypassed');
               }}
             >
-              <StrokeIcon paths={REFRESH_ICON_PATHS} />
+              <StrokeIcon paths={REFRESH_ICON_PATHS} strokeWidth={1.5} />
             </button>
           </Show>
         </span>
