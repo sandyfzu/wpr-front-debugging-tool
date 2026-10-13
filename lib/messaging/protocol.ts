@@ -18,11 +18,14 @@
  *   including `undefined` — so the type documents intent and keeps undefined
  *   returns from looking like forgotten responses). Extension sends reject
  *   when no listener exists yet (receiver not mounted / content script not
- *   injected; "No listeners" / "Could not establish connection" in Chromium,
- *   "No response" for tab-targeted sends); push senders `.catch` that
- *   expected case. **Window-bridge sends behave differently: with no receiver
- *   they never settle** — P4's bootstrap owns that (listen before the page
- *   sends; the isolated side acknowledges).
+ *   injected): Chromium's runtime bridge rejects with "Could not establish
+ *   connection. Receiving end does not exist.", the transport folds an
+ *   unanswered tab-targeted send into its own "No response" error, and the
+ *   unit-test double rejects with "No listeners available". Push senders
+ *   `.catch` that expected case (see `./no-receiver`). **Window-bridge sends
+ *   behave differently: with no receiver they never settle** — P4's
+ *   bootstrap owns that (listen before the page sends; the isolated side
+ *   acknowledges).
  * - **Pushes from content scripts must be checked by the receiving tab on
  *   arrival:** the devtools page ignores pushes whose runtime `sender.tabId`
  *   differs from its inspected tab — with two devtools windows open, an

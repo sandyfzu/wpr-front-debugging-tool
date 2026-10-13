@@ -6,37 +6,12 @@
  * browser API).
  */
 import { sendMessage } from '../../lib/messaging/index';
+import { isNoReceiverError } from '../../lib/messaging/no-receiver';
 import { createLogger } from '../../lib/logger';
 import { PANEL_SEARCH_ACTIONS } from '../../lib/wp-rocket/types';
 import type { PanelSearchAction } from '../../lib/wp-rocket/types';
 
 const log = createLogger('devtools');
-
-/**
- * The no-receiver failure strings the transports report when nothing is
- * listening on the far side (Chromium's runtime bridge for extension sends,
- * the 'No response' shape for a tab-targeted message where the content
- * script never answered) — the expected cases while the panel page has not
- * mounted its receiver yet. Anything else reaching the catch is a real
- * failure on the way or on the receiving side.
- */
-const NO_RECEIVER_FAILURE_PATTERNS = [
-  'No listeners',
-  'Could not establish connection',
-  'No response'
-] as const;
-
-/**
- * Whether a send failure is the expected "nothing listening there yet"
- * case rather than a real fault.
- *
- * @param cause The caught send failure.
- * @returns True when the failure says no receiver existed.
- */
-function isNoReceiverFailure(cause: unknown): boolean {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  return NO_RECEIVER_FAILURE_PATTERNS.some((pattern) => message.includes(pattern));
-}
 
 /**
  * Narrow one raw `onSearch` event to the protocol payload. Chrome reports
@@ -101,7 +76,7 @@ export function registerSearchRelay(panel: SearchEventSource): void {
         return;
       }
       sendMessage('panelSearch', payload).catch((cause: unknown) => {
-        if (isNoReceiverFailure(cause)) {
+        if (isNoReceiverError(cause)) {
           // Expected until the panel mounts its receiver (and while it
           // reloads): the search is dropped with a debug line, never unhandled.
           log.debug('Search relay had no receiver — action dropped', {

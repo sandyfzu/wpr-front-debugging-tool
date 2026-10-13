@@ -11,6 +11,7 @@
  */
 
 import { sendMessage } from '../../lib/messaging/index';
+import { isNoReceiverError } from '../../lib/messaging/no-receiver';
 import { createLogger } from '../../lib/logger';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { registerLazyloadSidebar } from './lazyload-sidebar';
@@ -64,11 +65,23 @@ try {
   // (page without host permission, extension reloading, navigation mid-send):
   // the panel's first data request triggers the same processing lazily, so a
   // skipped warm-up costs a slower first answer, never a broken one.
-  sendMessage('processPageData', undefined, browser.devtools.inspectedWindow.tabId).catch(
-    (cause: unknown) => {
-      log.debug('Page data warm-up skipped', cause instanceof Error ? cause.message : cause);
-    }
-  );
+  sendMessage('processPageData', undefined, browser.devtools.inspectedWindow.tabId)
+    .then(() => {
+      log.debug('Page data warm-up handed to the inspected tab');
+    })
+    .catch((cause: unknown) => {
+      if (isNoReceiverError(cause)) {
+        // Expected until the tab's content script is there (navigation,
+        // extension reload, a page outside the host permissions): purely a
+        // slower first answer, so it stays at debug.
+        log.debug('Page data warm-up skipped', cause instanceof Error ? cause.message : cause);
+        return;
+      }
+      // Any other failure is not a miss — say so loudly enough to find.
+      log.warn('Page data warm-up send failed', {
+        cause: cause instanceof Error ? { message: cause.message } : cause
+      });
+    });
 } catch (cause) {
   log.error('Page data warm-up could not start', cause);
 }
