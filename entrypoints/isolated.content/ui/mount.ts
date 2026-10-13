@@ -14,7 +14,10 @@
 
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
+import { createLogger } from '../../../lib/logger';
 import { followStoredAppearance } from './live-theme';
+
+const log = createLogger('isolated-content');
 
 /**
  * Mount a Solid component tree into a shadow-root UI container once the
@@ -41,10 +44,27 @@ export async function mountShadowUi(
     const disposeView = render(view, container);
     return () => {
       disposeView();
-      stopFollowingTheme();
+      // The unwatch is an extension-API call that can throw in a dead context
+      // (extension reloaded while the view was mounted). It must not
+      // short-circuit the rest of the teardown: WXT's remove runs this
+      // disposer BEFORE its own shadow-host cleanup, so a throw here would
+      // leave the detached shadow host stranded in the host page.
+      try {
+        stopFollowingTheme();
+      } catch (cause) {
+        log.warn('Stopping the appearance follow failed during teardown', cause);
+      }
     };
   } catch (cause) {
-    stopFollowingTheme();
+    // Same dead-context caveat as the disposer, folded for the unwind: the
+    // original mount failure has priority — the follow must be stopped
+    // (best-effort, logged loudly when it cannot be) and the real error
+    // rethrown, never replaced by a secondary teardown failure.
+    try {
+      stopFollowingTheme();
+    } catch (unwindFailure) {
+      log.warn('Stopping the appearance follow failed during unwind', unwindFailure);
+    }
     throw cause;
   }
 }

@@ -59,25 +59,77 @@ export function nextContainerTheme(current: string | null, raw: unknown): Theme 
 
 /**
  * Put the container on the stored appearance and arm the follow that keeps
- * it there: the stored choice applies at once (before the caller renders,
- * so no wrong-palette frame paints), then every options write re-applies
+ * it there. Arm-first, then read: a write landing inside the read window is
+ * applied by the watch callback and the read result is skipped in its favor
+ * (read-then-arm would drop exactly that write and leave a stale palette
+ * until the next options write). The stored choice applies before the caller
+ * renders, so no wrong-palette frame paints; every options write re-applies
  * the appearance until the returned handle runs.
  *
  * @param container The UI container inside the shadow root.
  * @param source The options seam (the real storage item by default).
  * @returns The stop handle — unsubscribes the write channel; the mount's
  *   disposer folds it in, so the follow lives exactly as long as the view.
+ * @throws {@link Error} when the options read fails — the watch is
+ *   unsubscribed first, so a failed follow never leaves a subscription
+ *   behind; the callers log it as the mount failure it is.
  */
 export async function followStoredAppearance(
   container: HTMLElement,
   source: AppearanceSource = optionsStore
 ): Promise<() => void> {
-  applyTheme(
-    container,
-    containerTheme(storedOptionsOrFallback(await source.getValue()).appearance)
-  );
-  return source.watch((raw) => {
+  const follow = createFollow(container, source);
+  try {
+    // Track the writes the watch saw during the read: a change between
+    // arming and the read resolving means the callback already applied the
+    // newer value, and re-applying the (older) read result would regress
+    // the palette by one stale write.
+    const writesBeforeRead = follow.writesSeen();
+    const appearance = storedOptionsOrFallback(await source.getValue()).appearance;
+    if (follow.writesSeen() === writesBeforeRead) {
+      applyTheme(container, containerTheme(appearance));
+    }
+  } catch (cause) {
+    // Read failed with the channel armed: unwind the subscription before
+    // the error propagates (the mount treats a read rejection as broken
+    // wiring, not bad page input).
+    follow();
+    throw cause;
+  }
+  return follow;
+}
+
+/**
+ * The armed follow's handle: stops it (idempotent) and exposes how many
+ * writes the channel has seen since arming — the raceometer the
+ * arm-first read compares against.
+ */
+type Follow = (() => void) & { writesSeen(): number };
+
+/**
+ * Arm the write channel for one container and produce its stop handle. The
+ * write counter is per-follow (not module state): two mounts measure their
+ * own windows even if a future source diverges from the shared options item.
+ *
+ * @param container The UI container the writes re-theme.
+ * @param source The options seam following writes.
+ * @returns The follow handle (see {@link Follow}).
+ */
+function createFollow(container: HTMLElement, source: AppearanceSource): Follow {
+  let writes = 0;
+  const unwatch = source.watch((raw: unknown) => {
+    writes += 1;
     const next = nextContainerTheme(container.getAttribute('data-theme'), raw);
     if (next !== null) applyTheme(container, next);
   });
+  let stopped = false;
+  const follow: Follow = Object.assign(
+    (): void => {
+      if (stopped) return;
+      stopped = true;
+      unwatch();
+    },
+    { writesSeen: () => writes }
+  );
+  return follow;
 }

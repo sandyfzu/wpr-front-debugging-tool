@@ -123,4 +123,52 @@ describe('followStoredAppearance', () => {
     stop(); // idempotent — the mount composes it with the view's disposer
     expect(source.armed()).toBe(0);
   });
+
+  it('skips a stale read when a write races it (the arm-first lost-update window)', async () => {
+    // The window: a write committed after the arm but before the read
+    // resolves. The watch callback must own that write; re-applying the
+    // older read result afterwards would paint a palette the user just
+    // left — the exact regression read-then-arm shipped.
+    const container = document.createElement('div');
+    const watchers = new Set<(raw: StoredOptions) => void>();
+    let releaseRead: (value: StoredOptions) => void = () => {};
+    const source: AppearanceSource = {
+      getValue: () =>
+        new Promise<StoredOptions>((resolve) => {
+          releaseRead = resolve;
+        }),
+      watch(onWrite) {
+        watchers.add(onWrite);
+        return () => {
+          watchers.delete(onWrite);
+        };
+      }
+    };
+    const pending = followStoredAppearance(container, source);
+    // Inside the read window: the write applies through the armed watch.
+    for (const watcher of watchers) watcher(optionsWith('light'));
+    expect(container.dataset.theme).toBe('light');
+    // The read resolves with the pre-write snapshot — skipped in its favor.
+    releaseRead(optionsWith('dark'));
+    await pending;
+    expect(container.dataset.theme).toBe('light');
+  });
+
+  it('unwinds the armed watch when the read fails — no subscription left behind', async () => {
+    const container = document.createElement('div');
+    const watchers = new Set<(raw: StoredOptions) => void>();
+    const source: AppearanceSource = {
+      getValue: () => Promise.reject(new Error('Extension context invalidated')),
+      watch(onWrite) {
+        watchers.add(onWrite);
+        return () => {
+          watchers.delete(onWrite);
+        };
+      }
+    };
+    await expect(followStoredAppearance(container, source)).rejects.toThrow(
+      'Extension context invalidated'
+    );
+    expect(watchers.size).toBe(0);
+  });
 });
