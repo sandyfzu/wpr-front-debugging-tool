@@ -265,7 +265,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                       cause: error instanceof Error ? { message: error.message } : error
                     });
                     return (
-                      <div class="p-4">
+                      <div class="p-3">
                         <ErrorState
                           title="The panel came apart"
                           message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
@@ -285,7 +285,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                     {/* The error view with its retry (the phase's dead-end rule). */}
                     <Match when={errorState()} keyed>
                       {(error) => (
-                        <div class="p-4">
+                        <div class="p-3">
                           <ErrorState
                             title="Couldn't load page data"
                             message={error.cause}
