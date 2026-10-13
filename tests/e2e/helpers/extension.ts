@@ -66,12 +66,13 @@ export const EXTENSION_PATH = path.resolve(
 export const ORIGIN_A = 'http://localhost:8891';
 export const ORIGIN_B = 'http://127.0.0.1:8891';
 
-/** The four menu ids the background's registry creates (P2 parity table). */
+/** The five menu ids the background's registry creates (P2 + P12A parity). */
 export const MENU_PARITY_IDS = [
   'wprSideBySide',
   'psiSideBySide',
   'updateKnownConflictsDB',
-  'exclusionBuilderPage'
+  'exclusionBuilderPage',
+  'toggleDetectionWidget'
 ] as const;
 
 /** Probe id outside the registry: proves the probe can answer "absent". */

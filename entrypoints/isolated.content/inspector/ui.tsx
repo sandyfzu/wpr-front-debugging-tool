@@ -33,6 +33,15 @@ export interface InspectorUiActions {
   closeCard(): void;
 }
 
+/** The chrome's mood classes (state never rides a transition — class handles). */
+const MOOD_CLASS: Record<InspectorMood, string> = {
+  green: 'ins-green',
+  amber: 'ins-amber',
+  gray: 'ins-gray',
+  pulse: 'ins-pulse',
+  red: 'ins-red'
+};
+
 /** The widget's reactive inputs (accessors — the components run once). */
 export interface InspectorViewProps {
   /** The card model for the current data. */
@@ -44,15 +53,6 @@ export interface InspectorViewProps {
   /** The wired controls. */
   actions: InspectorUiActions;
 }
-
-/** The mood classes on the chrome root (state-never-rides-a-transitions). */
-const MOOD_CLASS: Record<InspectorMood, string> = {
-  green: 'ins-green',
-  amber: 'ins-amber',
-  gray: 'ins-gray',
-  pulse: 'ins-pulse',
-  red: 'ins-red'
-};
 
 /** Render one glyph through the shared factory (its path/node data verbatim). */
 const GroupGlyph = (props: { glyph: StripIconGlyph }): JSXElement => (
@@ -74,9 +74,6 @@ const GroupHead = (props: { heading: string; icon: StripIconGlyph }): JSXElement
 );
 
 export function InspectorView(props: InspectorViewProps): JSX.Element {
-  /** The chrome's mood class list. */
-  const moodClasses = () => ({ [MOOD_CLASS[props.mood()]]: true });
-
   /** The pill's tooltip: identity + the cache chip's one-line why. */
   const pillTooltip = (): string | undefined => {
     const why = props.model().cacheTooltip;
@@ -84,7 +81,13 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
   };
 
   return (
-    <div class="ins-chrome" classList={{ 'ins-open': props.cardOpen(), ...moodClasses() }}>
+    <div
+      class="ins-chrome"
+      classList={{
+        'ins-open': props.cardOpen(),
+        [MOOD_CLASS[props.mood()]]: true
+      }}
+    >
       {/* The report card. Always mounted: hidden states are
        * visibility/opacity, never a display flip. */}
       <section
@@ -112,7 +115,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                   >
                     <span class="ins-cache-text">{chip().text}</span>
                     <Show when={chip().stamp !== null}>
-                      <span class="ins-cache-stamp">{chip().stamp}</span>
+                      <span class="ins-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
                     </Show>
                   </span>
                 </div>
@@ -183,7 +186,13 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         aria-haspopup="dialog"
         aria-controls={INSPECTOR_CARD_ID}
         aria-expanded={props.cardOpen()}
-        onClick={() => {
+        onClick={(event) => {
+          // The activation gate: only user input opens the card. Script-
+          // dispatched (untrusted) click syntheses — observed replaying after
+          // the keyboard activation in test runs — must not reopen behind an
+          // Escape (a real browser interaction is always trusted here; no
+          // extension surface synthesizes clicks into this widget).
+          if (!event.isTrusted) return;
           props.actions.openCard();
         }}
       >
@@ -197,7 +206,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
             <span class={`ins-cache ins-cache-${chip().state}`}>
               <span class="ins-cache-text">{chip().text}</span>
               <Show when={chip().stamp !== null}>
-                <span class="ins-cache-stamp">{chip().stamp}</span>
+                <span class="ins-cache-stamp">{` · ${chip().stamp ?? ''}`}</span>
               </Show>
             </span>
           )}

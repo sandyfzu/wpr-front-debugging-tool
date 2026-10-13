@@ -181,8 +181,19 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   // The single capture moment: serialize, ask for the page's (already
   // captured) main-frame headers, then tell devtools to reload its panel.
+  /** The capture's one wait point: the pass's source exists from here on. */
+  let captureReady: Promise<void>;
+  let resolveCaptureReady: (() => void) | null = null;
+  if (document.readyState === 'loading') {
+    captureReady = new Promise<void>((resolve) => {
+      resolveCaptureReady = resolve;
+    });
+  } else {
+    captureReady = Promise.resolve();
+  }
   const onParserReady = (): void => {
     capture();
+    resolveCaptureReady?.();
     void ensureHeaders().then(() => {
       notifyPanel();
     });
@@ -306,8 +317,11 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   // The same-context read (the widget consumes the pass result directly, per
   // the hub's rules: one pass, no second parse — the reader joins whichever
-  // state the pass is in and never re-runs it).
+  // state the pass is in and never re-runs it). The wait point first: a
+  // boot-time read must answer after the capture exists, not with "no source
+  // yet" (the pass's honest null is a failure, not a pending page).
   const readPageData = async (): Promise<PageData | null> => {
+    await captureReady;
     await processData();
     return data;
   };

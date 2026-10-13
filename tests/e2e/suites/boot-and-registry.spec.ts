@@ -5,7 +5,7 @@
  * fresh profile) and after an extension reload:
  * - the service worker is alive and answering (a running extension, not a
  *   dead target);
- * - all four context-menu entries exist exactly once.
+ * - all five context-menu entries exist exactly once.
  *
  * Assert surface: service-worker state (`chrome.*` evaluated in the worker
  * target). The menu registry has NO runtime read-back — `contextMenus.getAll`
@@ -41,12 +41,13 @@ test.describe('boot & registry', () => {
     expect(id.length).toBeGreaterThanOrEqual(32);
   });
 
-  test('the four context-menu entries exist exactly once after install', async ({ extension }) => {
+  test('the five context-menu entries exist exactly once after install', async ({ extension }) => {
     // Negative control first: proves the probe can answer "absent" at all
     // (and that its transient probe item is removed again).
     await extension.probeAbsenceControl();
     const results = await extension.probeRegisteredMenus();
-    expect(results, 'all four registry ids must already be registered').toEqual([
+    expect(results, 'all five registry ids must already be registered').toEqual([
+      'registered',
       'registered',
       'registered',
       'registered',
@@ -56,11 +57,11 @@ test.describe('boot & registry', () => {
     // or dropped a menu fails either the probe or the P2 unit table.
   });
 
-  test('the four context-menu entries still exist exactly once after extension reload', async ({
+  test('the five context-menu entries still exist exactly once after extension reload', async ({
     extension
   }) => {
     const before = await extension.probeRegisteredMenus();
-    expect(before).toEqual(['registered', 'registered', 'registered', 'registered']);
+    expect(before).toEqual(['registered', 'registered', 'registered', 'registered', 'registered']);
 
     await extension.relaunch();
 
@@ -69,6 +70,7 @@ test.describe('boot & registry', () => {
     await extension.probeAbsenceControl();
     const after = await extension.probeRegisteredMenus();
     expect(after, 'menu ids must survive the extension reload exactly once').toEqual([
+      'registered',
       'registered',
       'registered',
       'registered',
