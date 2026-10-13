@@ -1,0 +1,30 @@
+/*
+ * The panel document's stylesheet — `assets/css/theme.css` (the Tailwind
+ * layer over the design tokens) plus the shell's own mount-only motion.
+ * This file is the only panel-owned CSS: colors, elevations, spacing and
+ * the appearance model come from the tokens; page styles use utilities.
+ */
+
+@import '../../assets/css/theme.css';
+
+/* ---- Mount-only page entrance ----------------------------------------------
+ * One fade/slide per page mount, driven by the P0 motion tokens. Explicitly
+ * NOT here: staggered per-item entrances, idle/loop animations, state-change
+ * transitions — states swap instantly; this is the only frame animation the
+ * shell itself performs. `prefers-reduced-motion` collapses it globally via
+ * the token stylesheet. */
+
+@keyframes panel-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fdt-page {
+  animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
+}

@@ -40,6 +40,21 @@ async function renderTooltip(): Promise<HTMLElement> {
   return screen.getByRole('button');
 }
 
+/**
+ * Same fresh-module render with an explicit trigger-prop override (the
+ * disabled vector); returns the trigger element.
+ */
+async function renderTooltipWith(props: { disabled?: boolean }): Promise<HTMLElement> {
+  vi.resetModules();
+  const { Tooltip } = await import('./tooltip');
+  render(() => (
+    <Tooltip content="Re-fetched data" openDelay={300} skipDelayDuration={0} {...props}>
+      <RefreshCw size={12} />
+    </Tooltip>
+  ));
+  return screen.getByRole('button');
+}
+
 describe('Tooltip', () => {
   it('renders the trigger with the tooltip wiring (no content until shown)', async () => {
     const trigger = await renderTooltip();
@@ -87,5 +102,22 @@ describe('Tooltip', () => {
     const content = screen.getByRole('tooltip');
     fireEvent.keyDown(content, { key: 'Escape' });
     expect(trigger.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('renders a disabled trigger that still opens on hover (disabled-but-explained)', async () => {
+    vi.useFakeTimers();
+    try {
+      // The reserved-row pattern: a disabled control must keep explaining
+      // itself, so the trigger carries the native attribute without
+      // pointer-events suppression — hover stays the open path.
+      const trigger = await renderTooltipWith({ disabled: true });
+      expect(trigger.getAttribute('disabled')).not.toBeNull();
+      fireEvent.pointerEnter(trigger);
+      vi.advanceTimersByTime(300);
+      expect(screen.getByRole('tooltip').textContent).toContain('Re-fetched data');
+      fireEvent.pointerLeave(trigger);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

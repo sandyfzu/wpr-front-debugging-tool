@@ -30,6 +30,13 @@ export type TooltipProps = {
    * cross-test isolation needs. Careful surfaces set their own feel here.
    */
   skipDelayDuration?: number;
+  /**
+   * Disable the trigger (native `disabled` attribute). The disabled control
+   * keeps its pointer *hover*, so its tooltip still opens — that is the
+   * disabled-but-explained pattern (e.g. reserved nav rows); keyboard-focus
+   * opening does not apply since a disabled control is not focusable.
+   */
+  disabled?: boolean;
   /** Extra classes on the trigger element, merged last so callers win. */
   class?: string;
   /** The trigger's content — an icon, or a short label. */
@@ -43,12 +50,15 @@ export type TooltipProps = {
  * so callers can pass any small lucide icon and stay above the WCAG 2.5.8
  * floor. Pointer *and* keyboard focus both open it; Escape and
  * outside-interaction close it; the content links to the trigger via
- * `aria-describedby` and never steals focus.
+ * `aria-describedby` and never steals focus. A disabled trigger stays
+ * hoverable (its tooltip explains the disabled state) but is not
+ * focusable.
  *
  * @param props.content The tooltip content.
  * @param props.placement Where to float (default `top`).
  * @param props.openDelay Rest time before opening (default 350ms).
  * @param props.skipDelayDuration Post-close suppression window (see above).
+ * @param props.disabled Disable the trigger (tooltip still opens on hover).
  * @param props.class Extra classes on the trigger element.
  * @param props.children The trigger's content.
  */
@@ -62,6 +72,7 @@ export function Tooltip(props: TooltipProps): JSX.Element {
     >
       <KobalteTooltip.Trigger
         data-fdt="tooltip-trigger"
+        disabled={props.disabled || undefined}
         class={cn(
           'inline-grid min-h-6 min-w-6 place-items-center rounded',
           FOCUS_RING,
