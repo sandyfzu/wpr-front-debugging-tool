@@ -247,7 +247,8 @@ describe('StatusBar (strip)', () => {
       state: () => ({ status: 'ready', data: {} as unknown as FdtData, fetchedAt: NOW_MS }),
       start: vi.fn(),
       stop: vi.fn(),
-      retry: vi.fn()
+      retry: vi.fn(),
+      reload: vi.fn()
     };
     render(() => (
       <FdtDataContext.Provider value={hostile}>
