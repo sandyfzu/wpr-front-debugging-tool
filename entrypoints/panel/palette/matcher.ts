@@ -1,12 +1,13 @@
 /**
- * The command palette's fuzzy matcher — pure, deterministic, unit-tested.
+ * The command palette's command matcher — pure, deterministic, unit-tested.
  *
- * Semantics (the palette's committed behavior): the query splits into
- * whitespace tokens; every token must match somewhere in the label or the
- * keywords (AND); a token's score prefers word-boundary hits over mid-word
- * ones, earlier positions over later, and a label hit over a keyword hit.
- * The totals order the matches highest-first, and an empty or blank query
- * hands the registry order back untouched — empty asks never re-order.
+ * The model is substring token scoring, not subsequence fuzzy matching: the
+ * query splits into whitespace tokens; every token must match somewhere in
+ * the label or the keywords (AND); a token's score prefers word-boundary
+ * hits over mid-word ones, earlier positions over later, and a label hit
+ * over a keyword hit. The totals order the matches highest-first, and an
+ * empty or blank query hands the registry order back untouched — empty asks
+ * never re-order.
  *
  * Scoring is integer arithmetic all the way down, and the registry order is
  * the one deliberate tiebreaker, so equal scores land in declaration order
