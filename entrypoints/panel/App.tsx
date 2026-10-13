@@ -4,12 +4,14 @@
  * bodies and the data-state surfaces around them.
  *
  * Boot states are real states, not theater: `fetching` renders the skeleton,
- * `error` renders the retry affordance (the error-state owner, `UX-D9`),
- * `ready`/`refreshing` render the route body — so a soft refresh swaps the
- * data under route, scroll position and focus without rebuilding anything.
- * Machine transitions announce through a visually-hidden live region; the
- * content region re-renders a whole page body per data push, so it must
- * never double as an announcement surface.
+ * `error` the retry affordance, `ready`/`refreshing` the route body — so a
+ * soft refresh swaps the data under route, scroll position and focus without
+ * rebuilding anything. Machine transitions announce through a visually-hidden
+ * live region; the content region re-renders a whole page body per data
+ * push, so it must never double as an announcement surface. The content
+ * region (only) is wrapped in the crash boundary: a body that throws gets
+ * its actionable card with a panel reload as the recovery — data errors keep
+ * their own richer taxonomy.
  */
 import {
   ErrorBoundary,
@@ -31,6 +33,7 @@ import { ErrorState } from '../../components/ui/error-state';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Tooltip } from '../../components/ui/tooltip';
 import { cn } from '../../utils/cn';
+import { createLogger } from '../../lib/logger';
 import { createHashRoute } from './router';
 import { NAV_ROUTES, navRoute } from './routes';
 import { PAGES } from './pages';
@@ -43,6 +46,8 @@ import {
 import { createSearchStore, type SearchStore } from './state/search';
 import { devtoolsInspectedTabId, realMessagingEdges } from './state/edges';
 
+const log = createLogger('panel');
+
 export type AppProps = {
   /**
    * Prebuilt search store — tests inject prepared instances; absent, the
@@ -51,6 +56,11 @@ export type AppProps = {
   readonly search?: SearchStore;
   /** A prebuilt data store — same rule, with the real messaging edges. */
   readonly data?: FdtDataStore;
+  /**
+   * The crash boundary's recovery reload (tests stub it); absent, the panel
+   * document itself reloads — the DevTools window re-attaches it.
+   */
+  readonly reload?: () => void;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -75,6 +85,15 @@ const NAV_ROW_IDLE = 'text-fg-secondary hover:bg-surface-3 hover:text-fg-primary
  *
  * @param props The prebuilt stores (absent in production → real edges).
  */
+/**
+ * The crash boundary's recovery in production: reload the panel document.
+ * The DevTools window re-attaches it fresh (boot states, route hash and
+ * palette all re-resolve in one step).
+ */
+function reloadPanelDocument(): void {
+  window.location.reload();
+}
+
 export function PanelApp(props: AppProps): JSX.Element {
   // Builds run exactly once per panel mount.
   const search = props.search ?? createSearchStore();
@@ -96,13 +115,16 @@ export function PanelApp(props: AppProps): JSX.Element {
   const router = createHashRoute();
 
   // The shell — and only the shell — owns the mount lifecycle: every
-  // message receiver registers inside `start()` and drops at unmount.
+  // message receiver registers inside `start()` and drops at unmount, and
+  // unmount also cancels the search flow (a pending debounce commit must not
+  // land after the shell is gone).
   onMount(() => {
     data.start();
   });
   onCleanup(() => {
     data.stop();
     router.stop();
+    search.cancel();
   });
 
   // A route change resets the search state entirely (matches belong to the
@@ -186,17 +208,24 @@ export function PanelApp(props: AppProps): JSX.Element {
           </header>
           <main data-fdt="panel-content" class="min-h-0 flex-1 overflow-y-auto">
             <ErrorBoundary
-              fallback={(error, reset) => (
-                <div class="p-4">
-                  <ErrorState
-                    title="Page rendering failed"
-                    message={error instanceof Error ? error.message : String(error)}
-                    onRetry={() => {
-                      reset();
-                    }}
-                  />
-                </div>
-              )}
+              fallback={(error: unknown) => {
+                // The render-crash retry reloads the whole panel document
+                // (a Solid reset cannot re-create arbitrary lost state); the
+                // original error is logged here, never rendered — only the
+                // actionable reload affordance reaches the user.
+                log.error('Panel render crashed — the fallback view is up', {
+                  cause: error instanceof Error ? { message: error.message } : error
+                });
+                return (
+                  <div class="p-4">
+                    <ErrorState
+                      title="The panel came apart"
+                      message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
+                      onRetry={props.reload ?? reloadPanelDocument}
+                    />
+                  </div>
+                );
+              }}
             >
               <Switch>
                 {/* The real waits only: skeleton while nothing has arrived. */}

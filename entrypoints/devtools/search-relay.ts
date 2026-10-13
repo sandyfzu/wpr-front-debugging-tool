@@ -7,9 +7,10 @@
  */
 import { sendMessage } from '../../lib/messaging/index';
 import { isNoReceiverError } from '../../lib/messaging/no-receiver';
+import { numericTabId } from '../../lib/messaging/sender';
 import { createLogger } from '../../lib/logger';
 import { PANEL_SEARCH_ACTIONS } from '../../lib/wp-rocket/types';
-import type { PanelSearchAction } from '../../lib/wp-rocket/types';
+import type { PanelSearchEventPayload } from '../../lib/wp-rocket/types';
 
 const log = createLogger('devtools');
 
@@ -18,7 +19,8 @@ const log = createLogger('devtools');
  * the action as a bare string and the query only on `performSearch`
  * (still tolerated absent — the query becomes an empty string, which the
  * boundary validator accepts); anything outside the exact four actions is
- * dropped here so an unexpected API value can never reach the panel.
+ * dropped here so an unexpected API value can never reach the panel. Pure
+ * action mapping — the relay attaches the payload's tab id at send time.
  *
  * @param action The event's action string.
  * @param queryString The event's query string (`performSearch` only).
@@ -27,7 +29,7 @@ const log = createLogger('devtools');
 export function toPanelSearchPayload(
   action: string,
   queryString: string | undefined
-): PanelSearchAction | null {
+): PanelSearchEventPayload | null {
   if (action === PANEL_SEARCH_ACTIONS.performSearch) {
     return { action, query: queryString ?? '' };
   }
@@ -54,20 +56,45 @@ interface SearchEventSource {
 }
 
 /**
+ * The devtools page's inspected tab id, as the relay attaches it to every
+ * `panelSearch` send. An extension send has no runtime sender tab, so this
+ * payload field is the only scope the panel can check — without it two open
+ * DevTools windows would drive each other's search stores. Reads
+ * `browser.devtools` through a structurally narrowed namespace, feature-
+ * detected like the runtime sender ids (the shared `numericTabId` guard), so
+ * a non-DevTools registration yields null and the send is refused below
+ * instead of broadcasting an unscoped action.
+ */
+function detectedRelayTabId(): number | null {
+  const api = browser as unknown as {
+    readonly devtools?: { readonly inspectedWindow?: { readonly tabId?: unknown } };
+  };
+  return numericTabId(api.devtools?.inspectedWindow?.tabId);
+}
+
+/**
  * Relay all four search actions (`performSearch`, `cancelSearch`,
  * `nextSearchResult`, `previousSearchResult`): DevTools only fires the
  * cancel/navigation events to a listener registered here, so registering
  * for all four and relaying each is what keeps the panel's find-in-page
- * protocol complete.
+ * protocol complete. Every send carries the relaying devtools page's
+ * inspected tab id, so the receiving panel can scope deliveries to its own
+ * window (the protocol row's documented tabId-payload exception).
  *
  * The send is failure-aware: until the panel page mounts its receiver (and
  * whenever it is reloading), the no-receiver rejection is the expected case
  * — logged at debug level so every dropped search is visible without ever
- * becoming an unhandled rejection.
+ * becoming an unhandled rejection. With no usable inspected tab the send is
+ * refused entirely: an unscoped search can never be validated on arrival.
  *
  * @param panel The panel Chrome created (its `onSearch` event).
+ * @param inspectedTabId The inspected-tab accessor the sends carry
+ *   (tests inject; production reads the devtools context, feature-detected).
  */
-export function registerSearchRelay(panel: SearchEventSource): void {
+export function registerSearchRelay(
+  panel: SearchEventSource,
+  inspectedTabId: () => number | null = detectedRelayTabId
+): void {
   panel.onSearch.addListener((action, queryString) => {
     try {
       const payload = toPanelSearchPayload(action, queryString);
@@ -75,7 +102,14 @@ export function registerSearchRelay(panel: SearchEventSource): void {
         log.warn('Ignored an unexpected DevTools search action', { action, queryString });
         return;
       }
-      sendMessage('panelSearch', payload).catch((cause: unknown) => {
+      const tabId = inspectedTabId();
+      if (tabId === null) {
+        log.warn('Search relay has no inspected tab — action refused, it cannot be scoped', {
+          action: payload.action
+        });
+        return;
+      }
+      sendMessage('panelSearch', { ...payload, tabId }).catch((cause: unknown) => {
         if (isNoReceiverError(cause)) {
           // Expected until the panel mounts its receiver (and while it
           // reloads): the search is dropped with a debug line, never unhandled.

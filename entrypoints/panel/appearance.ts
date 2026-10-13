@@ -19,7 +19,31 @@
  */
 import { applyTheme, type Appearance, type Theme } from '../../utils/theme';
 import type { StoredOptions } from '../../lib/storage/options';
-import { optionsStore, storedOptionsOrFallback } from '../../lib/storage/options'; /**
+import { optionsStore, storedOptionsOrFallback } from '../../lib/storage/options';
+
+/**
+ * The `<html>` attribute value `index.html`'s paint-lock rule releases on:
+ * the head stylesheet keeps the panel document hidden until this value is
+ * declared, so no frame paints in a palette the boot has not resolved.
+ */
+const THEME_LOCK_DONE = 'done';
+
+/**
+ * Release the panel document's paint lock — set `<html>`'s
+ * `data-theme-lock` to its done value, exactly once (a repeated release
+ * writes nothing). The bootstrap calls this in both arms of the appearance
+ * resolution: the resolved choice (after a successful read) and the token
+ * stylesheet's system default (after a failed read). The arm itself is the
+ * inline head rule — hiding needs no script before this runs, which keeps
+ * the extension page inside its CSP (inline script is not permitted there).
+ *
+ * @param root The document root (`<html>`).
+ */
+export function releaseThemeLock(root: HTMLElement): void {
+  if (root.getAttribute('data-theme-lock') === THEME_LOCK_DONE) return;
+  root.setAttribute('data-theme-lock', THEME_LOCK_DONE);
+}
+/**
  * The options seam this leg follows. The real storage item satisfies it;
  * tests hand fakes. `watch`'s payload is what storage delivered — the item
  * types it but does not validate, so every consumer validates first.

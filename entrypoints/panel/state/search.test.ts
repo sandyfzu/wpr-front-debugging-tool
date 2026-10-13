@@ -113,4 +113,13 @@ describe('moveCursor (pure cursor math)', () => {
     expect(moveCursor(9, 4, 1)).toBe(0);
     expect(moveCursor(9, 4, -1)).toBe(3);
   });
+
+  it('treats a non-finite cursor as the same recovery case (the NaN guard)', () => {
+    // A cursor corrupted to NaN must not poison the wrap arithmetic: the
+    // non-integer arm catches it and recovers, both directions.
+    expect(moveCursor(Number.NaN, 3, 1)).toBe(0);
+    expect(moveCursor(Number.NaN, 3, -1)).toBe(2);
+    expect(moveCursor(Number.POSITIVE_INFINITY, 3, 1)).toBe(0);
+    expect(moveCursor(1.5, 3, 1)).toBe(0);
+  });
 });

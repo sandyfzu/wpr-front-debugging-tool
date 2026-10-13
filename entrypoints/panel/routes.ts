@@ -74,7 +74,7 @@ export interface NavRoute {
  * The nav registry, in render order — today's pages. Future rows land
  * additively here with their named owners: Headers & Cookies (P6, Inspect),
  * RUCSS Tester (P13, Tools), Beacon & LCP (P14, Tools), Compare (P17 —
- * decision-gated optional side-by-side panel home, Tools).
+ * decision-gated optional SBS panel home, Tools).
  */
 export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'detections', label: 'Detections', icon: ShieldCheck, group: 'Overview' },

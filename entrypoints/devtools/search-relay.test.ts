@@ -1,7 +1,9 @@
 /**
  * The panel's search relay: the raw DevTools `onSearch` event narrows to the
  * four typed protocol actions, every relayed action is one `panelSearch`
- * message, and a send with no receiver is a logged expected case — never an
+ * message carrying the relaying devtools page's inspected tab id (the panel's
+ * scoping basis — injected in these tests against a detected production
+ * default), and a send with no receiver is a logged expected case — never an
  * unhandled rejection.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -10,6 +12,9 @@ import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { PANEL_SEARCH_ACTIONS } from '../../lib/wp-rocket/types';
 import type { PanelSearchAction } from '../../lib/wp-rocket/types';
 import { registerSearchRelay, toPanelSearchPayload } from './search-relay';
+
+/** The inspected tab id the tests' injected accessor reports. */
+const TEST_TAB_ID = 7;
 
 /**
  * The messaging library allows one listener per channel per context, so
@@ -83,19 +88,84 @@ describe('toPanelSearchPayload', () => {
 });
 
 describe('registerSearchRelay', () => {
-  it('relays every event it receives as an acknowledged panelSearch message', async () => {
+  it('relays every event as an acknowledged message carrying the injected tab id', async () => {
+    removeRelayListener = onMessage('panelSearch', (message) => {
+      relayedPayloads.push(message.data);
+      return true;
+    });
+    const panel = fakePanel();
+    registerSearchRelay(panel, () => TEST_TAB_ID);
+    panel.emit('performSearch', 'asynccss');
+    panel.emit('cancelSearch');
+    await vi.waitFor(() => {
+      expect(relayedPayloads).toEqual([
+        { action: 'performSearch', query: 'asynccss', tabId: TEST_TAB_ID },
+        { action: 'cancelSearch', tabId: TEST_TAB_ID }
+      ]);
+    });
+  });
+
+  it('reads the accessor per send (a live tab change is carried, not cached)', async () => {
+    removeRelayListener = onMessage('panelSearch', (message) => {
+      relayedPayloads.push(message.data);
+      return true;
+    });
+    let tabId: number | null = TEST_TAB_ID;
+    const panel = fakePanel();
+    registerSearchRelay(panel, () => tabId);
+    panel.emit('performSearch', 'first');
+    tabId = TEST_TAB_ID + 1;
+    panel.emit('performSearch', 'second');
+    await vi.waitFor(() => {
+      expect(relayedPayloads).toHaveLength(2);
+    });
+    expect(relayedPayloads[0]?.tabId).toBe(TEST_TAB_ID);
+    expect(relayedPayloads[1]?.tabId).toBe(TEST_TAB_ID + 1);
+  });
+
+  it('refuses to send without a usable inspected tab (nothing to scope with)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    removeRelayListener = onMessage('panelSearch', (message) => {
+      relayedPayloads.push(message.data);
+      return true;
+    });
+    const panel = fakePanel();
+    registerSearchRelay(panel, () => null);
+    expect(() => {
+      panel.emit('performSearch', 'x');
+    }).not.toThrow();
+    // The action must not be broadcast unscoped: nothing arrives on the
+    // channel, and the refusal is a named warn (never a silent drop) —
+    // without a scope the panel could not tell which window it is for.
+    expect(relayedPayloads).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('[WPR FDT]');
+    expect(debug).not.toHaveBeenCalled();
+  });
+
+  it('detects the inspected tab when no accessor is injected (production default)', async () => {
+    // The default accessor reads the devtools context live. Set the fake's
+    // inspected tab so the detection is visible in the sent payload.
+    const fakeDevtools = (
+      fakeBrowser as unknown as {
+        devtools?: { inspectedWindow?: { tabId?: number } };
+      }
+    ).devtools;
+    if (fakeDevtools?.inspectedWindow === undefined) {
+      throw new Error('fake devtools namespace missing — the detection test cannot run');
+    }
+    fakeDevtools.inspectedWindow.tabId = TEST_TAB_ID;
     removeRelayListener = onMessage('panelSearch', (message) => {
       relayedPayloads.push(message.data);
       return true;
     });
     const panel = fakePanel();
     registerSearchRelay(panel);
-    panel.emit('performSearch', 'asynccss');
-    panel.emit('cancelSearch');
+    panel.emit('performSearch', 'detected');
     await vi.waitFor(() => {
       expect(relayedPayloads).toEqual([
-        { action: 'performSearch', query: 'asynccss' },
-        { action: 'cancelSearch' }
+        { action: 'performSearch', query: 'detected', tabId: TEST_TAB_ID }
       ]);
     });
   });
@@ -108,11 +178,13 @@ describe('registerSearchRelay', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     const panel = fakePanel();
-    registerSearchRelay(panel);
+    registerSearchRelay(panel, () => TEST_TAB_ID);
     panel.emit('findNext', 'x');
     panel.emit('performSearch', 'kept');
     await vi.waitFor(() => {
-      expect(relayedPayloads).toEqual([{ action: 'performSearch', query: 'kept' }]);
+      expect(relayedPayloads).toEqual([
+        { action: 'performSearch', query: 'kept', tabId: TEST_TAB_ID }
+      ]);
     });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain('[WPR FDT]');
@@ -122,13 +194,16 @@ describe('registerSearchRelay', () => {
   it('logs the expected no-receiver failure at debug, never unhandled', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    // Sanity: with no receiver registered, the same send the relay makes
-    // really does reject in this context.
+    // Sanity: with no receiver registered, the same scoped send the relay
+    // makes really does reject in this context.
     await expect(
-      sendMessage('panelSearch', { action: PANEL_SEARCH_ACTIONS.cancelSearch })
+      sendMessage('panelSearch', {
+        action: PANEL_SEARCH_ACTIONS.cancelSearch,
+        tabId: TEST_TAB_ID
+      })
     ).rejects.toThrow();
     const panel = fakePanel();
-    registerSearchRelay(panel);
+    registerSearchRelay(panel, () => TEST_TAB_ID);
     expect(() => {
       panel.emit('cancelSearch');
     }).not.toThrow();
@@ -145,7 +220,7 @@ describe('registerSearchRelay', () => {
       throw new Error('panel exploded');
     });
     const panel = fakePanel();
-    registerSearchRelay(panel);
+    registerSearchRelay(panel, () => TEST_TAB_ID);
     expect(() => {
       panel.emit('performSearch', 'x');
     }).not.toThrow();

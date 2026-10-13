@@ -49,7 +49,7 @@ describe('NAV_ROUTES', () => {
   });
 
   it('names the plural explicitly where the singular menu name was wrong', () => {
-    // Copy delta — the fixed label lives here, the record in the P15 sweep.
+    // The registry carries the corrected label the nav actually renders.
     expect(navRoute('undefined-references')?.label).toBe('Undefined References');
   });
 

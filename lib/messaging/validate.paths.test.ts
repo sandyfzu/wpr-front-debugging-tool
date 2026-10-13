@@ -569,6 +569,10 @@ describe('parseDetectionSummary / parsePanelSearchAction — rejection arms', ()
   });
 
   it('search: missing query key', () => {
-    expect(parsePanelSearchAction({ action: 'performSearch' })).toBeNull();
+    expect(parsePanelSearchAction({ action: 'performSearch', tabId: 42 })).toBeNull();
+  });
+
+  it('search: missing relay tab id', () => {
+    expect(parsePanelSearchAction({ action: 'cancelSearch' })).toBeNull();
   });
 });

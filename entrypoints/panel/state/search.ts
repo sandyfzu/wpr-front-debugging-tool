@@ -2,12 +2,12 @@
  * The panel's search store: the single home of the devtools find-in-panel
  * state (`panelSearch` streams here; pages read, they never touch messaging).
  *
- * UX-D4: typed input streams in and commits on a 250 ms quiet period (an
- * intentional delta from the source's 400 ms — snappier first filter; logged
- * delta per the master plan's enhancement-delta rule), Escape clears
- * immediately (the source's Esc was a no-op), and a route change resets.
- * Matches are navigated via a cursor over a count the consuming page
- * reports; the cursor math is pure so wrap/edge behavior is pinned.
+ * Streams the DevTools search protocol into the store at a 250 ms cadence —
+ * chosen to feel instant while keeping per-keystroke re-render work off the
+ * panel; deliberate, logged delta from the tool's original 400 ms. Escape
+ * clears immediately, and a route change resets. Matches are navigated via a
+ * cursor over a count the consuming page reports; the cursor math is pure so
+ * wrap/edge behavior is pinned.
  */
 import { createSignal, type Accessor } from 'solid-js';
 import { debounce } from '../../../utils/debounce';

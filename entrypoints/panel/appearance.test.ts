@@ -3,11 +3,18 @@
  * (system → no attribute, explicit → pinned), live follow of options writes
  * (only real changes touch the tree; corrupt writes degrade to the
  * documented defaults), the arm-first race (a write during the read window
- * wins), and the read-failure unwind (no subscription left behind).
+ * wins), the read-failure unwind (no subscription left behind), and the
+ * document's paint lock (hidden until the appearance resolves; released
+ * exactly once, in both boot arms).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { FALLBACK, type StoredOptions } from '../../lib/storage/options';
-import { applyStoredAppearance, pageTheme, type AppearanceSource } from './appearance';
+import {
+  applyStoredAppearance,
+  pageTheme,
+  releaseThemeLock,
+  type AppearanceSource
+} from './appearance';
 
 /** Whole-shape options with one choice (the document defaults elsewhere). */
 function optionsWith(appearance: StoredOptions['appearance']): StoredOptions {
@@ -171,5 +178,60 @@ describe('applyStoredAppearance', () => {
       'Extension context invalidated'
     );
     expect(watchers.size).toBe(0);
+  });
+});
+
+describe('the document paint lock (index.html head rule + release)', () => {
+  it('releases exactly once (a repeated release writes nothing)', () => {
+    const root = document.createElement('div');
+    const writes = vi.spyOn(root, 'setAttribute');
+    releaseThemeLock(root);
+    releaseThemeLock(root);
+    // One write total: the second call sees the done value and no-ops.
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(writes.mock.calls[0]?.[0]).toBe('data-theme-lock');
+    expect(writes.mock.calls[0]?.[1]).toBe('done');
+    expect(root.getAttribute('data-theme-lock')).toBe('done');
+  });
+
+  it('releases only after the stored choice resolved (the hidden window covers the await)', async () => {
+    const root = document.createElement('div');
+    let releaseRead!: (value: StoredOptions) => void;
+    const source: AppearanceSource = {
+      getValue: () =>
+        new Promise<StoredOptions>((resolve) => {
+          releaseRead = resolve;
+        }),
+      watch: () => () => undefined
+    };
+    // The boot arm: the read is in flight — nothing may release the lock.
+    const boot = (async () => {
+      await applyStoredAppearance(root, source);
+    })();
+    expect(root.getAttribute('data-theme-lock')).toBeNull();
+    releaseRead(optionsWith('dark'));
+    await boot;
+    expect(root.getAttribute('data-theme')).toBe('dark'); // the resolved choice
+    releaseThemeLock(root);
+    releaseThemeLock(root);
+    expect(root.getAttribute('data-theme-lock')).toBe('done');
+  });
+
+  it('releases on the storage-failure arm too, exactly once (never a hidden panel)', async () => {
+    const root = document.createElement('div');
+    const source: AppearanceSource = {
+      getValue: () => Promise.reject(new Error('Extension context invalidated')),
+      watch: () => () => undefined
+    };
+    const boot = (async () => {
+      try {
+        await applyStoredAppearance(root, source);
+      } catch {
+        // the boot's logged-degrade arm: painting proceeds on the default
+      }
+      releaseThemeLock(root);
+    })();
+    await boot;
+    expect(root.getAttribute('data-theme-lock')).toBe('done');
   });
 });

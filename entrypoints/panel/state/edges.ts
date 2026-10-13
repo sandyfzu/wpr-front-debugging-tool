@@ -94,7 +94,7 @@ export function realMessagingEdges(): MessagingEdges {
           // dropped with a name) before it reaches the shell state.
           const payload = parsePanelSearchAction(data);
           if (payload === null) {
-            warnInvalid('panelSearch', 'unknown action or extra keys');
+            warnInvalid('panelSearch', 'unknown action, malformed relay tab id, or extra keys');
           } else {
             receivers.onPanelSearch(payload);
           }

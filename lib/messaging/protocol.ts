@@ -12,6 +12,11 @@
  *   from its runtime `sender` (`onMessage` exposes it). Senders that must
  *   reach one specific tab (devtools/popup/background → content script) pass
  *   the tab id as `sendMessage`'s third argument, never inside the data.
+ *   (`panelSearch` is the one exception: devtools→panel is an extension-
+ *   internal send with no runtime sender tab, so its payload carries the
+ *   relaying devtools page's inspected tab id — the receiver's only scoping
+ *   basis; without it every open DevTools window would act on every other's
+ *   searches.)
  * - Push channels are typed to return `true`: the typed acknowledgement
  *   forces every push handler to mark itself as handled on purpose (the
  *   library resolves the sender's promise with whatever the handler returns —
@@ -52,7 +57,12 @@ export interface ProtocolMap {
   undefinedReferencesUpdated(data: string[]): true;
   /** Content script → devtools (push, sender-tab checked): page scripts all loaded. */
   allScriptsLoaded(data: boolean): true;
-  /** Devtools → panel: DevTools search action relay. */
+  /**
+   * Devtools → panel: DevTools search action relay. The payload carries the
+   * relaying devtools page's `devtools.inspectedWindow.tabId`: extension
+   * senders have no runtime tab, so this field is how the panel scopes the
+   * stream to its own window (the tabId-payload rule's one exception).
+   */
   panelSearch(data: PanelSearchAction): true;
   /** Background → tab content script: open the side-by-side compare view. */
   openSideBySide(): true;

@@ -11,11 +11,20 @@
  *
  * Tab scoping: the push channels carry the sender's tab id; a delivery from
  * any tab but the inspected one is ignored at debug level, so a second open
- * devtools window cannot act on this panel's state (or reload it).
+ * devtools window cannot act on this panel's state (or reload it). Relay
+ * search actions carry the relaying devtools page's inspected tab instead
+ * (an extension send has no runtime sender tab) and are scoped identically.
+ *
+ * Push buffering: both push channels stream from one-shot page events, so a
+ * delivery may land while no data is loaded (boot fetch in the air, an error
+ * window) — those payloads are held per channel (last one wins; each push
+ * carries the channel's full state) and drain onto the store the first time
+ * a flight settles to a loaded state, in both arms of a refresh too.
  */
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import { parseFdtData } from '../../../lib/messaging/validate';
 import { isNoReceiverError } from '../../../lib/messaging/no-receiver';
+import { numericTabId } from '../../../lib/messaging/sender';
 import { createLogger } from '../../../lib/logger';
 import type { FdtData, PanelSearchAction } from '../../../lib/wp-rocket/types';
 import { PANEL_SEARCH_ACTIONS } from '../../../lib/wp-rocket/types';
@@ -52,8 +61,8 @@ export interface FdtDataStore {
   /** The machine state (fetching / ready / refreshing / error / idle). */
   readonly state: Accessor<DataState>;
   /**
-   * Boot: register every receiver, then run the first fetch — in that
-   * order, and the fetch never gates the receivers (#32). Idempotent.
+   * Boot: register every receiver, then run the first fetch — in that order,
+   * and the fetch never gates the receivers. Idempotent.
    */
   start(): void;
   /** Stop: unregister the receivers (the shell's unload / tests). */
@@ -89,12 +98,16 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
   let stopReceivers: (() => void) | null = null;
 
   /**
-   * Apply one machine event. The transition table owns the shape; the only
-   * side effect beyond `setState` is the hard-reload fallback — the thin
-   * effect honoring the error state's `hardReload` marker.
+   * Apply one machine event. A transition the table declines (same object
+   * back) is a no-op: no state write, no side effect — most importantly the
+   * hard-reload fallback cannot re-fire for a settled event the machine
+   * ignored. Otherwise the only side effect beyond `setState` is the thin
+   * fallback effect honoring the error state's `hardReload` marker.
    */
   const applyEvent = (event: Parameters<typeof transitionDataState>[1]): void => {
-    const next = transitionDataState(state(), event, deps.now());
+    const before = state();
+    const next = transitionDataState(before, event, deps.now());
+    if (next === before) return;
     setState(next);
     if (next.status === 'error' && next.hardReload) {
       log.error('Panel data failed its contract validation — falling back to a full reload.');
@@ -151,19 +164,63 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
   };
 
   /**
-   * Granular push apply: swap exactly one field of the carried data. A push
-   * never refetches; it reaches the loaded states only (`ready`, and the
-   * `refreshing` state whose carried data the in-flight batch will replace).
-   * The word list rides the protocol's own wholesale semantics — every
-   * `undefinedReferencesUpdated` push carries the content script's complete
-   * accumulated list, so a plain replace cannot lose entries.
+   * The latest push each channel delivered while nothing was loaded (idle /
+   * fetching / error): held last-wins and drained onto the store at the next
+   * loaded settle. Both push channels carry the channel's full state, so the
+   * latest delivery is always the correct one to apply.
    */
-  const applyDataPatch = (patch: (data: FdtData) => FdtData): void => {
-    setState((current) =>
-      current.status === 'ready' || current.status === 'refreshing'
-        ? { ...current, data: patch(current.data) }
-        : current
-    );
+  interface BufferedPatches {
+    /** Latest `allScriptsLoaded` push (absent = none arrived since the last drain). */
+    allScriptsLoaded?: boolean;
+    /** Latest `undefinedReferencesUpdated` word list (absent = none arrived). */
+    undefinedReferences?: string[];
+  }
+  let bufferedPatches: BufferedPatches = {};
+
+  /**
+   * One validated push delivery: patch it into a loaded state now, or hold
+   * it in the per-channel buffer. Pushes stream from one-shot page events
+   * (`allScriptsLoaded` from the page's load event, the word list from its
+   * error batches), so delivery order vs. the request flight's reply is not
+   * guaranteed — a push landing before or during the fetch that carries the
+   * same field itself would otherwise be lost for that page load.
+   *
+   * @param loadingPatch The field patch to apply onto a loaded state.
+   * @param buffered The channel's payload as it goes to the buffer.
+   */
+  const absorbPush = (
+    loadingPatch: (data: FdtData) => FdtData,
+    buffered: BufferedPatches
+  ): void => {
+    const current = state();
+    if (current.status === 'ready' || current.status === 'refreshing') {
+      setState({ ...current, data: loadingPatch(current.data) });
+      return;
+    }
+    bufferedPatches = { ...bufferedPatches, ...buffered };
+  };
+
+  /**
+   * Drain the push buffer onto whatever loaded state a settle just landed
+   * (the boot fetch or a refresh's own settle — both arms drain). Route
+   * through the same loaded-state check as live arrivals, so a payload can
+   * only ever land on `ready`/`refreshing` data: a settle that errored keeps
+   * the buffer armed for the next loaded settle. The buffer resets as the
+   * drain applies, so a drained payload is not re-applied at a later settle.
+   */
+  const drainBufferedPatches = (): void => {
+    const current = state();
+    if (current.status !== 'ready' && current.status !== 'refreshing') return;
+    const pending = bufferedPatches;
+    bufferedPatches = {};
+    let data = current.data;
+    if (pending.allScriptsLoaded !== undefined) {
+      data = { ...data, allScriptsLoaded: pending.allScriptsLoaded };
+    }
+    if (pending.undefinedReferences !== undefined) {
+      data = { ...data, undefinedReferencesOnPage: pending.undefinedReferences };
+    }
+    if (data !== current.data) setState({ ...current, data });
   };
 
   /**
@@ -171,7 +228,9 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
    * applies through the machine's table; an event the machine declines (a
    * state where it does not apply — including a second trigger while one
    * flight runs, whose settle will carry the content script's current data
-   * anyway) launches nothing: the driver never outruns its own table.
+   * anyway) launches nothing: the driver never outruns its own table. When a
+   * settle lands on a loaded state, the push buffer drains onto it (both the
+   * first load and every refresh — see the header's buffering note).
    */
   const runFlight = (kind: FlightKind): void => {
     const before = state();
@@ -182,14 +241,44 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
       .request(tabId)
       .then((raw) => {
         applyEvent({ type: 'settled', outcome: outcomeForResponse(raw) });
+        drainBufferedPatches();
       })
       .catch((cause: unknown) => {
         applyEvent({ type: 'settled', outcome: outcomeForFailure(cause) });
+        drainBufferedPatches();
       });
+  };
+
+  /**
+   * Tab-scope a relayed search action: its payload carries the relaying
+   * devtools page's inspected tab (an extension send has no runtime sender
+   * tab to check — the protocol row's documented exception), so a delivery
+   * whose id is not this panel's inspected tab belongs to another devtools
+   * window and is dropped at warn — as is an id that fails the shared tab-id
+   * guard (the boundary re-validated it; a store-delivered payload has not).
+   */
+  const foreignSearch = (actionTabId: number): boolean => {
+    const inspected = deps.inspectedTabId();
+    if (numericTabId(actionTabId) === null) {
+      log.warn('Search action dropped — its relay tab id is malformed', {
+        actionTabId,
+        inspectedTabId: inspected
+      });
+      return true;
+    }
+    if (inspected === null || actionTabId !== inspected) {
+      log.warn('Search action dropped — it came from another devtools window than this panel', {
+        actionTabId,
+        inspectedTabId: inspected
+      });
+      return true;
+    }
+    return false;
   };
 
   const receivers: PanelReceivers = {
     onPanelSearch(payload: PanelSearchAction): void {
+      if (foreignSearch(payload.tabId)) return;
       switch (payload.action) {
         case PANEL_SEARCH_ACTIONS.performSearch:
           deps.search.perform(payload.query);
@@ -207,11 +296,13 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
     },
     onAllScriptsLoaded(loaded: boolean, senderTabId: number | null): void {
       if (foreignPush(senderTabId)) return;
-      applyDataPatch((data) => ({ ...data, allScriptsLoaded: loaded }));
+      absorbPush((data) => ({ ...data, allScriptsLoaded: loaded }), { allScriptsLoaded: loaded });
     },
     onUndefinedReferences(words: string[], senderTabId: number | null): void {
       if (foreignPush(senderTabId)) return;
-      applyDataPatch((data) => ({ ...data, undefinedReferencesOnPage: words }));
+      absorbPush((data) => ({ ...data, undefinedReferencesOnPage: words }), {
+        undefinedReferences: words
+      });
     },
     onPanelReload(senderTabId: number | null): void {
       if (foreignPush(senderTabId)) return;
@@ -233,6 +324,9 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
     stop() {
       stopReceivers?.();
       stopReceivers = null;
+      // A stopped store holds no pending pushes: its next lifecycle buffers
+      // only what its own windows deliver.
+      bufferedPatches = {};
     },
     retry() {
       runFlight('fetch');
