@@ -58,18 +58,18 @@ export interface PaletteCommand {
   disabledNote?: string;
 }
 
-export interface CommandPaletteProps {
+export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> {
   /** Called with the dismissed palette's close request (Escape / outside click). */
   onClose: () => void;
   /** Every command, in registry order (before matching). */
-  commands: readonly PaletteCommand[];
+  commands: readonly T[];
   /**
    * The caller's matcher: raw input value → the rows to display, in ranked
    * order. Injected so the scoring vocabulary stays owned by the caller.
    */
-  filter: (commands: readonly PaletteCommand[], query: string) => readonly PaletteCommand[];
+  filter: (commands: readonly T[], query: string) => readonly T[];
   /** Run the chosen command (Enter on the highlighted row, or its click). */
-  onRun: (command: PaletteCommand) => void;
+  onRun: (command: T) => void;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
 }
@@ -172,7 +172,9 @@ function HighlightGuard(props: { options: readonly PaletteCommand[] }): JSX.Elem
  * @param props.onRun The chosen command's execution callback.
  * @param props.class Extra panel classes.
  */
-export function CommandPalette(props: CommandPaletteProps): JSX.Element {
+export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
+  props: CommandPaletteProps<T>
+): JSX.Element {
   return (
     <ModalDialog
       onClose={props.onClose}
@@ -185,13 +187,13 @@ export function CommandPalette(props: CommandPaletteProps): JSX.Element {
   );
 }
 
-export interface PaletteComboboxProps {
+export interface PaletteComboboxProps<T extends PaletteCommand = PaletteCommand> {
   /** The commands, in registry order (before matching). */
-  commands: readonly PaletteCommand[];
+  commands: readonly T[];
   /** The caller's matcher (raw query → ordered rows). */
-  filter: (commands: readonly PaletteCommand[], query: string) => readonly PaletteCommand[];
+  filter: (commands: readonly T[], query: string) => readonly T[];
   /** The chosen command's execution callback. */
-  onRun: (command: PaletteCommand) => void;
+  onRun: (command: T) => void;
 }
 
 /**
@@ -231,16 +233,19 @@ const PALETTE_TRANSLATIONS: PaletteTranslations = {
  * @param props.filter The caller's matcher.
  * @param props.onRun The execution callback.
  */
-function PaletteCombobox(props: PaletteComboboxProps): JSX.Element {
+function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
+  props: PaletteComboboxProps<T>
+): JSX.Element {
   const [query, setQuery] = createSignal('');
   const ranked = createMemo(() => props.filter(props.commands, query()));
+  const rankedOptions = createMemo(() => [...ranked()]);
 
   return (
     <KobalteCombobox
       id="fdt-command-palette"
       class="grid gap-1"
       defaultOpen
-      options={[...ranked()]}
+      options={rankedOptions()}
       optionValue={(command) => command.id}
       optionTextValue={(command) => command.label}
       optionLabel={(command) => command.label}
@@ -251,7 +256,7 @@ function PaletteCombobox(props: PaletteComboboxProps): JSX.Element {
       shouldFocusWrap
       allowsEmptyCollection
       onInputChange={(next) => setQuery(next)}
-      onChange={(command) => {
+      onChange={(command: T | null) => {
         if (command !== null) props.onRun(command);
       }}
       translations={PALETTE_TRANSLATIONS}
