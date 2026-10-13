@@ -118,6 +118,18 @@ const SEGMENT_TARGETS: Record<Exclude<SegmentId, 'freshness'>, string> = {
 };
 
 /**
+ * The cache answer's chip lead — rebuilt per call (no reactive reads
+ * inside), so both the stamped and the unstamped link can share it.
+ */
+function CacheChip(): JSX.Element {
+  return (
+    <StatusBadge kind="ok" icon class="min-w-0">
+      Cached
+    </StatusBadge>
+  );
+}
+
+/**
  * The freshness segment's hover detail: the data's absolute capture stamp,
  * plus the stale state's remedy.
  *
@@ -166,20 +178,10 @@ function QuietSegment(props: { loading: boolean }): JSX.Element {
  */
 function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
   const view = createMemo(() => props.segments().wpr);
-  const detected = createMemo(
-    () => {
-      const current = view();
-      return current.kind === 'detected' ? current : undefined;
-    },
-    undefined,
-    // Content equality, not identity: the tick re-resolves the same answer
-    // into a fresh object, and a Match branch re-runs on its value's
-    // identity — recreating the segment's element and dropping keyboard
-    // focus mid-typing. Only a changed answer may re-render a branch.
-    {
-      equals: (a, b) => (a === undefined) === (b === undefined) && a?.version === b?.version
-    }
-  );
+  const detected = createMemo(() => {
+    const current = view();
+    return current.kind === 'detected' ? current : undefined;
+  });
   return (
     <Switch>
       <Match when={view().kind === 'loading'}>
@@ -196,16 +198,18 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
         </a>
       </Match>
       <Match when={detected()}>
-        {(state) => {
-          const version = state().version;
-          return (
-            <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, FOCUS_RING)}>
-              <StatusBadge kind="ok" icon class="min-w-0">
-                {version === null ? 'WP Rocket' : `WP Rocket ${version}`}
-              </StatusBadge>
-            </a>
-          );
-        }}
+        {(state) => (
+          <a href={SEGMENT_TARGETS.wpr} class={cn(SEGMENT, FOCUS_RING)}>
+            <StatusBadge kind="ok" icon class="min-w-0">
+              {/* Non-keyed Match children rebuild their reads live: reading
+                  the answered value through one narrowed accessor call keeps
+                  the text reactive without re-rendering the branch. */}
+              <Show when={state().version !== null} fallback="WP Rocket">
+                {`WP Rocket ${state().version ?? ''}`}
+              </Show>
+            </StatusBadge>
+          </a>
+        )}
       </Match>
     </Switch>
   );
@@ -223,21 +227,10 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
  */
 function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
   const view = createMemo(() => props.segments().cache);
-  const cached = createMemo(
-    () => {
-      const current = view();
-      return current.kind === 'cached' ? current : undefined;
-    },
-    undefined,
-    // Same content-equality reasoning as the plugin segment: the tick must
-    // never recreate this segment's element (the age only moves the text).
-    {
-      equals: (a, b) =>
-        (a === undefined) === (b === undefined) &&
-        a?.age === b?.age &&
-        a?.capturedAt === b?.capturedAt
-    }
-  );
+  const cached = createMemo(() => {
+    const current = view();
+    return current.kind === 'cached' ? current : undefined;
+  });
   return (
     <Switch>
       <Match when={view().kind === 'loading'}>
@@ -258,31 +251,31 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
       </Match>
       <Match when={cached()}>
         {(state) => {
-          const current = state();
-          const capturedAt = current.capturedAt;
-          const content = (
-            <>
-              <StatusBadge kind="ok" icon class="min-w-0">
-                Cached
-              </StatusBadge>
-              <Show when={current.age !== null}>
-                <span class={SEGMENT_DETAIL}>{current.age}</span>
-              </Show>
-            </>
-          );
-          return capturedAt === null ? (
-            <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, FOCUS_RING)}>
-              {content}
-            </a>
-          ) : (
-            <Tooltip
-              as="a"
-              href={SEGMENT_TARGETS.cache}
-              content={`Cache generated at ${capturedAt}`}
-              class={SEGMENT}
+          // The stamp's pair — age and its absolute form — arrive together
+          // (one implies the other); the `?? ''` fallbacks are type-shape
+          // only, the guarded branch guarantees they never render. All
+          // reads stay inline: a narrowed snapshot here would freeze the
+          // displayed age (the branch never rebuilds on unchanged
+          // truthiness).
+          return (
+            <Show
+              when={state().age !== null}
+              fallback={
+                <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, FOCUS_RING)}>
+                  <CacheChip />
+                </a>
+              }
             >
-              {content}
-            </Tooltip>
+              <Tooltip
+                as="a"
+                href={SEGMENT_TARGETS.cache}
+                content={`Cache generated at ${state().capturedAt ?? ''}`}
+                class={SEGMENT}
+              >
+                <CacheChip />
+                <span class={SEGMENT_DETAIL}>{state().age ?? ''}</span>
+              </Tooltip>
+            </Show>
           );
         }}
       </Match>
@@ -302,16 +295,10 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
  */
 function PlatformSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
   const view = createMemo(() => props.segments().platform);
-  const captured = createMemo(
-    () => {
-      const current = view();
-      return current.kind === 'captured' ? current : undefined;
-    },
-    undefined,
-    // Content equality, not identity (see the plugin segment): a tick that
-    // re-resolves an unchanged answer must not recreate the segment.
-    { equals: (a, b) => (a === undefined) === (b === undefined) && a?.value === b?.value }
-  );
+  const captured = createMemo(() => {
+    const current = view();
+    return current.kind === 'captured' ? current : undefined;
+  });
   return (
     <Switch>
       <Match when={view().kind === 'loading'}>
@@ -349,23 +336,12 @@ function PlatformSegment(props: { segments: () => StatusBarSegments }): JSX.Elem
  */
 function FreshnessSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
   const view = createMemo(() => props.segments().freshness);
-  /** Narrow the answer to one variant, content-compare-suppressed (see the plugin segment). */
+  /** Narrow the answer to one variant (undefined hides the branch). */
   const narrowed = (kind: 'current' | 'stale') =>
-    createMemo(
-      () => {
-        const current = view();
-        return current.kind === kind ? current : undefined;
-      },
-      undefined,
-      // Content equality, not identity (see the plugin segment): ages move
-      // their text once per minute, never the segment's element.
-      {
-        equals: (a, b) =>
-          (a === undefined) === (b === undefined) &&
-          a?.age === b?.age &&
-          a?.capturedAt === b?.capturedAt
-      }
-    );
+    createMemo(() => {
+      const state = view();
+      return state.kind === kind ? state : undefined;
+    });
   const current = narrowed('current');
   const stale = narrowed('stale');
   return (
