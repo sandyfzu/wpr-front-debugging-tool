@@ -37,6 +37,7 @@ import { parsePage } from '../../lib/detection/parse-page';
 import { applyPresencePropagation, runChecks } from '../../lib/detection/run-detection';
 import { describeDetections } from '../../lib/detection/describe';
 import { detectPreloadedResources } from '../../lib/detection/detect-optimizations';
+import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
 
@@ -45,16 +46,39 @@ const log = createLogger('');
 /** The window event WP Rocket dispatches when all its scripts finished loading. */
 const ALL_SCRIPTS_LOADED_EVENT = 'rocket-allScriptsLoaded';
 
-/** One full page-processing result, immutable after the single pass. */
-interface PageData {
+/**
+ * One full page-processing result, immutable after the single pass. Read by
+ * same-context consumers through {@link pageDataFor}; the messaging
+ * contracts are untouched by this shape.
+ */
+export interface PageData {
   detections: WprDetections;
   preloadedResources: PreloadedResources;
   diagnoserData: DiagnoserDocData | null;
+  /** The WordPress core version the generator meta declared, or null. */
+  wordpressVersion: string | null;
+}
+
+/** The same-context read the hub hands out (null when the pass failed). */
+export type PageDataRead = () => Promise<PageData | null>;
+
+/** Same-context readers, keyed by the context they belong to. */
+const pageDataReaders = new WeakMap<ContentScriptContext, PageDataRead>();
+
+/**
+ * The hub's cached single-pass result for a same-context consumer (the
+ * widget reads what the panel reads). Setup order does not matter here: the
+ * consumer receives null when its context's hub has not wired a reader.
+ *
+ * @param ctx The consumer's own content-script context.
+ */
+export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
+  return pageDataReaders.get(ctx) ?? null;
 }
 
 /**
  * Run the whole page pass over serialized HTML: detection engine, preloaded
- * resources, diagnoser report.
+ * resources, diagnoser report, the WordPress generator version.
  *
  * The page parses once (`parsePage`) and every consumer reads that same tree —
  * the single-`DOMParser` shape of the pass minus the engine's repeated document
@@ -72,8 +96,9 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   const detections = runChecks(page);
   const preloadedResources = detectPreloadedResources(page);
   applyPresencePropagation(detections);
+  const wordpressVersion = detectWordPressVersion(page.document);
   const diagnoserData = await extractDiagnoserData(page.document);
-  return { detections, preloadedResources, diagnoserData };
+  return { detections, preloadedResources, diagnoserData, wordpressVersion };
 }
 
 /**
@@ -278,6 +303,15 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       return data?.detections ?? null;
     })
   );
+
+  // The same-context read (the widget consumes the pass result directly, per
+  // the hub's rules: one pass, no second parse — the reader joins whichever
+  // state the pass is in and never re-runs it).
+  const readPageData = async (): Promise<PageData | null> => {
+    await processData();
+    return data;
+  };
+  pageDataReaders.set(ctx, readPageData);
 
   // Both pushes are sender-tab-checked on the devtools side; from here they
   // are fire-and-forget with logged, expected-failure catches.

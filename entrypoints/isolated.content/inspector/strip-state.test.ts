@@ -1,0 +1,301 @@
+/**
+ * The detection widget's state mind: the mood mapping (pending/failure/
+ * ready/absent), the D-2 chip matrix, the identity, the cache chip's four
+ * shapes, the tooltip honesty bounds, and the card model's grouping — over
+ * real engine output where it matters and crafted snapshots for the edges.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { runDetection } from '../../../lib/detection/run-detection';
+import { type FIXTURES, FIXTURE_DIR } from '../../../lib/detection/fixtures/corpus';
+import type { WprDetections } from '../../../lib/wp-rocket/types';
+import {
+  buildStripCardModel,
+  CACHE_CHIP_CACHED_TEXT,
+  CACHE_CHIP_IDLE_TEXT,
+  CACHE_CHIP_NOT_CACHED_TEXT,
+  CACHE_CHIP_PENDING_TEXT,
+  CARD_ERROR_HINT,
+  CARD_ERROR_TITLE,
+  CARD_LOADING_TITLE,
+  chipStateForFeature,
+  insMood,
+  identityText,
+  footerStamp,
+  type StripDataSnapshot
+} from './strip-state';
+import { STRIP_ITEMS, stripGroupedRows } from './strip-items';
+
+/** The engine's zero page: every feature absent, beacon absent, no config. */
+function zeroDetections(): WprDetections {
+  return {
+    wpr: { present: false, cached: false, version: null, timeStamp: null },
+    remove_unused_css: { present: false },
+    delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
+    defer_all_js: { present: false, scripts: [] },
+    async_css: { present: false },
+    lazyload: { present: false, images: [] },
+    lazyload_iframes: { present: false, replaceImage: false },
+    lazyload_css_bg_img: { present: false },
+    minify_css: { present: false },
+    minify_js: { present: false },
+    preload_links: { present: false },
+    rocket_cdn: { present: false },
+    rocket_above_the_fold_optimization: { present: false, lcpComment: false },
+    automatic_lazy_rendering: {
+      present: false,
+      lazyRenderElements: 0,
+      inlineCssPresent: false,
+      locationHashes: 0
+    },
+    auto_preload_fonts: { present: false, fonts: [] },
+    preconnect_external_domains: { present: false, domains: [], preconnectCount: 0 },
+    priority_elements_beacon: { present: false, status: null, isMobile: null }
+  };
+}
+
+const fixture = (name: (typeof FIXTURES)[number]): string =>
+  readFileSync(join(FIXTURE_DIR, name), 'utf8');
+
+const running = (): StripDataSnapshot => ({ phase: 'running', detections: null });
+const failed = (): StripDataSnapshot => ({ phase: 'failed', detections: null });
+const ready = (detections: StripDataSnapshot['detections']): StripDataSnapshot => ({
+  phase: 'ready',
+  detections
+});
+
+describe('insMood', () => {
+  it('the pass running pulses; the pass failing is red', () => {
+    expect(insMood(running())).toBe('pulse');
+    expect(insMood(failed())).toBe('red');
+  });
+
+  it('present + cached is green, present + uncached amber, absent gray', () => {
+    const cached = zeroDetections();
+    cached.wpr = { present: true, cached: true, version: '3.20.0.2', timeStamp: 1_730_000_000 };
+    expect(insMood(ready(cached))).toBe('green');
+
+    const uncached = zeroDetections();
+    uncached.wpr = { present: true, cached: false, version: null, timeStamp: null };
+    expect(insMood(ready(uncached))).toBe('amber');
+
+    const absent = zeroDetections();
+    expect(insMood(ready(absent))).toBe('gray');
+  });
+});
+
+describe('chipStateForFeature (the D-2 matrix)', () => {
+  it('applied → ok, collecting → attention, both neutrals → neutral', () => {
+    expect(chipStateForFeature('applied')).toBe('ok');
+    expect(chipStateForFeature('collecting')).toBe('attention');
+    expect(chipStateForFeature('not applied')).toBe('neutral');
+    expect(chipStateForFeature('not enabled')).toBe('neutral');
+  });
+});
+
+describe('identityText', () => {
+  it('the version form when present, honest absence otherwise', () => {
+    const withVersion = zeroDetections();
+    withVersion.wpr = {
+      present: true,
+      cached: true,
+      version: '3.23.5.1',
+      timeStamp: null
+    };
+    expect(identityText(ready(withVersion))).toBe('WPR 3.23.5.1');
+    const noVersion = zeroDetections();
+    noVersion.wpr = { present: true, cached: false, version: null, timeStamp: null };
+    expect(identityText(ready(noVersion))).toBe('WPR (unknown version)');
+    expect(identityText(ready(zeroDetections()))).toBe('WPR not found');
+    expect(identityText(running())).toBe('WPR');
+    expect(identityText(failed())).toBe('WPR');
+  });
+});
+
+describe('the cache chip (the four conversion-table shapes)', () => {
+  it('cached → ok chip with the formatted stamp; uncached → warn; absent → dash', () => {
+    const cached = zeroDetections();
+    cached.wpr = {
+      present: true,
+      cached: true,
+      version: '3.20.0.2',
+      // A stamp outside the platform range formats to null (no dishonest stamp).
+      timeStamp: 9_999_999_999_999
+    };
+    const model = buildStripCardModel({
+      snapshot: ready(cached),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(model.cacheChip).toEqual({
+      state: 'ok',
+      text: CACHE_CHIP_CACHED_TEXT,
+      stamp: null
+    });
+
+    const stampCached = zeroDetections();
+    stampCached.wpr = {
+      present: true,
+      cached: true,
+      version: '3.20.0.2',
+      timeStamp: 1_730_000_000
+    };
+    const stamped = buildStripCardModel({
+      snapshot: ready(stampCached),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(stamped.cacheChip?.stamp).toBe('2024-10-27 03:33:20 UTC');
+    expect(stamped.cacheTooltip).toBe('Cache generated 2024-10-27 03:33:20 UTC');
+
+    const uncached = zeroDetections();
+    uncached.wpr = { present: true, cached: false, version: null, timeStamp: null };
+    const uncachedModel = buildStripCardModel({
+      snapshot: ready(uncached),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(uncachedModel.cacheChip).toEqual({
+      state: 'warn',
+      text: CACHE_CHIP_NOT_CACHED_TEXT,
+      stamp: null
+    });
+    expect(uncachedModel.cacheTooltip).toBe('The page is not served from cache.');
+
+    const absentModel = buildStripCardModel({
+      snapshot: ready(zeroDetections()),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(absentModel.cacheChip).toEqual({
+      state: 'neutral',
+      text: CACHE_CHIP_IDLE_TEXT,
+      stamp: null
+    });
+    expect(absentModel.cacheTooltip).toBe('WP Rocket did not handle this page.');
+  });
+
+  it('running → the pending mark; failed → the idle dash', () => {
+    expect(
+      buildStripCardModel({ snapshot: running(), wordpressVersion: null, fdtVersion: 'v' })
+        .cacheChip
+    ).toEqual({
+      state: 'neutral',
+      text: CACHE_CHIP_PENDING_TEXT,
+      stamp: null
+    });
+    expect(
+      buildStripCardModel({ snapshot: failed(), wordpressVersion: null, fdtVersion: 'v' }).cacheChip
+    ).toEqual({
+      state: 'neutral',
+      text: CACHE_CHIP_IDLE_TEXT,
+      stamp: null
+    });
+  });
+});
+
+describe('buildStripCardModel over the real engine (the docker-site shape)', () => {
+  it('the cached home page reads grouped rows, counts and the footer stamp', () => {
+    const { detections } = runDetection(fixture('me-home-cached.html'));
+    const model = buildStripCardModel({
+      snapshot: ready(detections),
+      wordpressVersion: '6.8.1',
+      fdtVersion: '0.0.0'
+    });
+    expect(model.identity).toBe(detections.wpr.version ? `WPR ${detections.wpr.version}` : 'WPR');
+    expect(model.phase).toBe('ready');
+    expect(model.stateCopy).toBeNull();
+    expect(model.footer).toBe(`WPR ${detections.wpr.version ?? '—'} · WP 6.8.1 · FDT 0.0.0`);
+
+    // Groups render in the registry's order, rows within groups in engine order.
+    expect(model.groups.map((group) => group.id)).toEqual([
+      'file-optimization',
+      'media',
+      'preload',
+      'cdn',
+      'features'
+    ]);
+
+    const allRows = model.groups.flatMap((group) => group.rows);
+    expect(allRows).toHaveLength(STRIP_ITEMS.length);
+    // Every row names exactly the label the registry declares, and the chip
+    // state pair is always one of the five.
+    for (const row of allRows) {
+      expect(row.chipState).toEqual(expect.stringMatching(/^(ok|warn|attention|error|neutral)$/));
+      expect(row.tooltip.startsWith(row.label)).toBe(true);
+    }
+  });
+
+  it('counts follow the engine: the delayed and lazy-loaded counts render', () => {
+    const { detections } = runDetection(fixture('me-home-cached.html'));
+    const model = buildStripCardModel({
+      snapshot: ready(detections),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    const delayRow = model.groups
+      .flatMap((group) => group.rows)
+      .find((row) => row.id === 'delay-js');
+    expect(delayRow?.count).toBe(detections.delay_js.delayedScripts);
+    expect(delayRow?.unit).toBe('scripts');
+    expect(delayRow?.chipState).toBe('ok');
+    const lazyRow = model.groups
+      .flatMap((group) => group.rows)
+      .find((row) => row.id === 'lazyload');
+    expect(lazyRow?.count).toBe(detections.lazyload.images.length);
+  });
+
+  it('an all-zero WPR-absent page renders every row neutral with honest tooltips', () => {
+    const model = buildStripCardModel({
+      snapshot: ready(zeroDetections()),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    const rows = model.groups.flatMap((group) => group.rows);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.chipState).toBe('neutral');
+      // The tooltip names what was looked for — never an error claim.
+      expect(row.tooltip.startsWith(row.label)).toBe(true);
+    }
+  });
+
+  it('failed and running phases render the honest body copy and no rows', () => {
+    const failedModel = buildStripCardModel({
+      snapshot: failed(),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(failedModel.stateCopy?.title).toBe(CARD_ERROR_TITLE);
+    expect(failedModel.stateCopy?.hint).toBe(CARD_ERROR_HINT);
+    expect(failedModel.groups).toEqual([]);
+
+    const loadingModel = buildStripCardModel({
+      snapshot: running(),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(loadingModel.stateCopy?.title).toBe(CARD_LOADING_TITLE);
+    expect(loadingModel.groups).toEqual([]);
+  });
+});
+
+describe('footerStamp', () => {
+  it('stamps the three versions, dashing the unknowns', () => {
+    expect(footerStamp('3.23', '6.8.1', '0.0.0')).toBe('WPR 3.23 · WP 6.8.1 · FDT 0.0.0');
+    expect(footerStamp(null, null, '0.0.0')).toBe('WPR — · WP — · FDT 0.0.0');
+  });
+});
+
+describe('the registry grouping', () => {
+  it('only groups owning rows render, rows in registry order', () => {
+    const grouped = stripGroupedRows();
+    expect(grouped.map((group) => group.id)).toEqual(
+      expect.arrayContaining(['file-optimization', 'media', 'preload', 'cdn', 'features'])
+    );
+    expect(grouped.some((group) => group.id === 'cache')).toBe(false);
+    const flat = grouped.flatMap((group) => group.rows.map((row) => row.id));
+    expect(new Set(flat)).toHaveLength(STRIP_ITEMS.length);
+  });
+});

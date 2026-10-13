@@ -263,6 +263,29 @@ export function extractWprVersion(metaContent: string): string | null {
   return metaContent.match(WPR_VERSION_PATTERN)?.[1] ?? null;
 }
 
+/** WordPress core's name in a generator meta content (`WordPress 6.8.1`). */
+export const WORDPRESS_NAME_PATTERN = /wordpress/i;
+
+/**
+ * Version match after the WordPress name. Mirrors the behavioral baseline's
+ * own extraction (digits and dots, greedy, then any word tail) — that tail
+ * keeps numeric suffixes like `6.8.1beta` intact, and `null` on no match is
+ * the honest absence (the meta may not name WordPress at all).
+ */
+export const WORDPRESS_VERSION_PATTERN = new RegExp(
+  `${WORDPRESS_NAME_PATTERN.source}\\s*([\\d.]+\\w*)`,
+  'i'
+);
+
+/**
+ * WordPress version from a generator meta content, or null.
+ *
+ * @param metaContent The generator meta's raw content.
+ */
+export function extractWordPressVersion(metaContent: string): string | null {
+  return metaContent.match(WORDPRESS_VERSION_PATTERN)?.[1] ?? null;
+}
+
 /** Slug of the cache marker comment WP Rocket writes. */
 export const CACHE_COMMENT_MARKER = 'This website is like a Rocket';
 

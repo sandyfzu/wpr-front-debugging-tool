@@ -9,6 +9,25 @@
 
 import type { WprDetections } from '../wp-rocket/types';
 import { BEACON_STATUS_KEYS } from '../wp-rocket/constants';
+import {
+  LABEL_AUTOMATIC_LAZY_RENDERING,
+  LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
+  LABEL_DELAY_JAVASCRIPT_EXECUTION,
+  LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
+  LABEL_IMAGE_LAZYLOAD,
+  LABEL_LOAD_CSS_ASYNCHRONOUSLY,
+  LABEL_LOAD_JAVASCRIPT_DEFERRED,
+  LABEL_MINIFY_CSS,
+  LABEL_MINIFY_JAVASCRIPT,
+  LABEL_OPTIMIZE_CRITICAL_IMAGES,
+  LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
+  LABEL_PRELOAD_FONTS,
+  LABEL_PRELOAD_LINKS,
+  LABEL_PRIORITY_ELEMENTS_BEACON,
+  LABEL_REMOVE_UNUSED_CSS,
+  LABEL_ROCKETCDN,
+  LABEL_WP_ROCKET
+} from './labels';
 
 /** One feature's page state: the evidence-true states the checks defer to views. */
 export type FeatureState = 'applied' | 'collecting' | 'not enabled' | 'not applied';
@@ -23,43 +42,44 @@ const MAX_REPRESENTABLE_MS = 8.64e15;
 /**
  * The report object: one row per detected surface, keyed by the real feature
  * name (labels verified against WP Rocket 3.23 where the audit verified
- * them), values plain enough to read straight from the console.
+ * them — single-sourced in `./labels`), values plain enough to read straight
+ * from the console.
  */
 export interface PageAnalysisReport {
-  'WP Rocket': {
+  [LABEL_WP_ROCKET]: {
     'plugin detected': boolean;
     'page served from cache': boolean;
     version: string | null;
     /** UTC-stamped cache time (the debug comment's seconds → readable form). */
     'cache generated at': string | null;
   };
-  'Remove Unused CSS': { state: FeatureState };
-  'Delay JavaScript execution': {
+  [LABEL_REMOVE_UNUSED_CSS]: { state: FeatureState };
+  [LABEL_DELAY_JAVASCRIPT_EXECUTION]: {
     state: FeatureState;
     'delayed scripts': number;
     'delay library version': string | null;
   };
-  'Load JavaScript deferred': { state: FeatureState; 'deferred scripts': number };
-  'Load CSS asynchronously': { state: FeatureState };
-  'Image LazyLoad': { state: FeatureState; 'lazy-loaded images': number };
-  'Iframes and videos LazyLoad': {
+  [LABEL_LOAD_JAVASCRIPT_DEFERRED]: { state: FeatureState; 'deferred scripts': number };
+  [LABEL_LOAD_CSS_ASYNCHRONOUSLY]: { state: FeatureState };
+  [LABEL_IMAGE_LAZYLOAD]: { state: FeatureState; 'lazy-loaded images': number };
+  [LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]: {
     state: FeatureState;
     'YouTube preview image replacement': boolean;
   };
-  'CSS background images LazyLoad': { state: FeatureState };
-  'Minify CSS': { state: FeatureState };
-  'Minify JavaScript': { state: FeatureState };
-  'Preload links': { state: FeatureState };
-  RocketCDN: { state: FeatureState };
-  'Optimize critical images': { state: FeatureState; 'preloaded images': number };
-  'Automatic lazy rendering': {
+  [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: { state: FeatureState };
+  [LABEL_MINIFY_CSS]: { state: FeatureState };
+  [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
+  [LABEL_PRELOAD_LINKS]: { state: FeatureState };
+  [LABEL_ROCKETCDN]: { state: FeatureState };
+  [LABEL_OPTIMIZE_CRITICAL_IMAGES]: { state: FeatureState; 'preloaded images': number };
+  [LABEL_AUTOMATIC_LAZY_RENDERING]: {
     state: FeatureState;
     'converted elements': number;
     'render hashes on page': number;
   };
-  'Preload fonts': { state: FeatureState; 'preloaded fonts': number };
-  'Preconnect to external domains': { state: FeatureState; 'domains hinted': number };
-  'Priority Elements beacon': {
+  [LABEL_PRELOAD_FONTS]: { state: FeatureState; 'preloaded fonts': number };
+  [LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]: { state: FeatureState; 'domains hinted': number };
+  [LABEL_PRIORITY_ELEMENTS_BEACON]: {
     detected: boolean;
     'configured device': 'mobile' | 'desktop' | 'unknown';
     /** The real names the inline config allowed for this context. */
@@ -69,10 +89,10 @@ export interface PageAnalysisReport {
 
 /** Real names for the four beacon-served features, keyed by the plugin's own config ids. */
 const FAMILY_FEATURE_NAMES: Record<(typeof BEACON_STATUS_KEYS)[number], string> = {
-  atf: 'Optimize critical images',
-  lrc: 'Automatic lazy rendering',
-  preload_fonts: 'Preload fonts',
-  preconnect_external_domain: 'Preconnect to external domains'
+  atf: LABEL_OPTIMIZE_CRITICAL_IMAGES,
+  lrc: LABEL_AUTOMATIC_LAZY_RENDERING,
+  preload_fonts: LABEL_PRELOAD_FONTS,
+  preconnect_external_domain: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS
 };
 
 /** The state of a plain markup-evidence optimization: the evidence is the answer. */
@@ -188,43 +208,43 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
           (key) => FAMILY_FEATURE_NAMES[key]
         );
   return {
-    'WP Rocket': {
+    [LABEL_WP_ROCKET]: {
       'plugin detected': wpr.present,
       'page served from cache': wpr.cached,
       version: wpr.version,
       'cache generated at': formatCacheTimestamp(wpr.timeStamp)
     },
-    'Remove Unused CSS': { state: simpleState(detections.remove_unused_css.present) },
-    'Delay JavaScript execution': {
+    [LABEL_REMOVE_UNUSED_CSS]: { state: simpleState(detections.remove_unused_css.present) },
+    [LABEL_DELAY_JAVASCRIPT_EXECUTION]: {
       state: simpleState(detections.delay_js.present),
       'delayed scripts': detections.delay_js.delayedScripts,
       'delay library version': detections.delay_js.version
     },
-    'Load JavaScript deferred': {
+    [LABEL_LOAD_JAVASCRIPT_DEFERRED]: {
       state: simpleState(detections.defer_all_js.present),
       'deferred scripts': detections.defer_all_js.scripts.length
     },
-    'Load CSS asynchronously': { state: simpleState(detections.async_css.present) },
-    'Image LazyLoad': {
+    [LABEL_LOAD_CSS_ASYNCHRONOUSLY]: { state: simpleState(detections.async_css.present) },
+    [LABEL_IMAGE_LAZYLOAD]: {
       state: simpleState(detections.lazyload.present),
       'lazy-loaded images': detections.lazyload.images.length
     },
-    'Iframes and videos LazyLoad': {
+    [LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]: {
       state: simpleState(detections.lazyload_iframes.present),
       'YouTube preview image replacement': detections.lazyload_iframes.replaceImage
     },
-    'CSS background images LazyLoad': {
+    [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: {
       state: simpleState(detections.lazyload_css_bg_img.present)
     },
-    'Minify CSS': { state: simpleState(detections.minify_css.present) },
-    'Minify JavaScript': { state: simpleState(detections.minify_js.present) },
-    'Preload links': { state: simpleState(detections.preload_links.present) },
-    RocketCDN: { state: simpleState(detections.rocket_cdn.present) },
-    'Optimize critical images': {
+    [LABEL_MINIFY_CSS]: { state: simpleState(detections.minify_css.present) },
+    [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
+    [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
+    [LABEL_ROCKETCDN]: { state: simpleState(detections.rocket_cdn.present) },
+    [LABEL_OPTIMIZE_CRITICAL_IMAGES]: {
       state: familyState('atf', applied.atf, false, beacon),
       'preloaded images': applied.atf
     },
-    'Automatic lazy rendering': {
+    [LABEL_AUTOMATIC_LAZY_RENDERING]: {
       state: familyState(
         'lrc',
         applied.lrc,
@@ -234,11 +254,11 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
       'converted elements': detections.automatic_lazy_rendering.lazyRenderElements,
       'render hashes on page': detections.automatic_lazy_rendering.locationHashes
     },
-    'Preload fonts': {
+    [LABEL_PRELOAD_FONTS]: {
       state: familyState('preload_fonts', applied.preload_fonts, false, beacon),
       'preloaded fonts': applied.preload_fonts
     },
-    'Preconnect to external domains': {
+    [LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]: {
       state: familyState(
         'preconnect_external_domain',
         applied.preconnect_external_domain,
@@ -247,7 +267,7 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
       ),
       'domains hinted': applied.preconnect_external_domain
     },
-    'Priority Elements beacon': {
+    [LABEL_PRIORITY_ELEMENTS_BEACON]: {
       detected: beacon.present,
       'configured device':
         beacon.isMobile === null ? 'unknown' : beacon.isMobile ? 'mobile' : 'desktop',

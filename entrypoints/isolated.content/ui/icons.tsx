@@ -22,18 +22,32 @@ export interface IconCircle {
   r: number;
 }
 
+/** One optional ellipse node (lucide renders some glyphs with one, e.g. `database`). */
+export interface IconEllipse {
+  /** Center X, viewBox 24. */
+  cx: number;
+  /** Center Y, viewBox 24. */
+  cy: number;
+  /** Horizontal radius. */
+  rx: number;
+  /** Vertical radius. */
+  ry: number;
+}
+
 /** Props of the shared stroke-icon component. */
 export interface StrokeIconProps {
   /** Stroke path data, viewBox 24. */
   paths: readonly string[];
   /** Optional surrounding circle (lucide's ringed icons pair one with paths). */
   circle?: IconCircle | null;
+  /** Optional ellipse node (lucide's database-family glyphs pair one). */
+  ellipse?: IconEllipse | null;
   /** Stroke width — lucide's own default is 2; thin-stroke callers pass 1.5. */
   strokeWidth?: number;
 }
 
 /**
- * Render path (and optional circle) stroke geometry as one inline SVG that
+ * Render path (and optional node) stroke geometry as one inline SVG that
  * inherits `currentColor`; callers size via CSS.
  *
  * @param props The icon's geometry.
@@ -54,6 +68,16 @@ export function StrokeIcon(props: StrokeIconProps): JSX.Element {
           cx={props.circle?.cx}
           cy={props.circle?.cy}
           r={props.circle?.r}
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </Show>
+      <Show when={props.ellipse != null}>
+        <ellipse
+          cx={props.ellipse?.cx}
+          cy={props.ellipse?.cy}
+          rx={props.ellipse?.rx}
+          ry={props.ellipse?.ry}
           stroke-linecap="round"
           stroke-linejoin="round"
         />
