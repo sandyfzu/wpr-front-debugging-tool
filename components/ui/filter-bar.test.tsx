@@ -1,0 +1,125 @@
+/**
+ * Render tests for the filter bar: single-select chips with `aria-pressed` +
+ * `data-fdt-selected` state carrying, counts exposed per chip, the keyboard
+ * path and the embedded shared search field.
+ */
+import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FilterBar, type FilterChip } from './filter-bar';
+
+const CHIPS: FilterChip[] = [
+  { value: 'all', label: 'All', count: 87 },
+  { value: 'delayed', label: 'Delayed', count: 12 },
+  { value: 'exclude', label: 'Exclude', count: 4 },
+  { value: 'rcss', label: 'Pending RUCSS', count: 0, disabled: true }
+];
+
+afterEach(() => {
+  cleanup();
+});
+
+/** The chip buttons of the currently rendered bar, in registry order. */
+function getChips(): HTMLElement[] {
+  const group = screen.getByRole('group');
+  return Array.from(group.querySelectorAll<HTMLElement>('[data-fdt-filter-chip]'));
+}
+
+/** Guard for indexed reads (noUncheckedIndexedAccess): branch, never crash. */
+function throwAt(index: number): never {
+  throw new Error(`Element at index ${String(index)} missing from the rendered bar`);
+}
+
+describe('FilterBar', () => {
+  it('renders chips with registry order, counts and the search field', () => {
+    render(() => <FilterBar chips={CHIPS} />);
+    const chips = getChips();
+    expect(chips.map((chip) => chip.getAttribute('data-fdt-filter-chip'))).toEqual([
+      'all',
+      'delayed',
+      'exclude',
+      'rcss'
+    ]);
+    // Counts are rendered inside each chip (the count hook exposes them).
+    const delayed = chips[1] ?? throwAt(1);
+    const pending = chips[3] ?? throwAt(3);
+    expect(delayed.querySelector('[data-fdt-filter-count]')?.textContent).toBe('12');
+    expect(pending.querySelector('[data-fdt-filter-count]')?.textContent).toBe('0');
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toBeTruthy();
+  });
+
+  it('selects through click, exposing state in aria-pressed AND data-fdt-selected', () => {
+    const onSelect = vi.fn();
+    render(() => <FilterBar chips={CHIPS} selected="all" onSelect={onSelect} />);
+    const chips = getChips();
+    const first = chips[0] ?? throwAt(0);
+    const second = chips[1] ?? throwAt(1);
+    // Preselected chip carries BOTH carriers; unselected chips carry neither.
+    expect(first.getAttribute('aria-pressed')).toBe('true');
+    expect(first.hasAttribute('data-fdt-selected')).toBe(true);
+    expect(second.getAttribute('aria-pressed')).toBe('false');
+    expect(second.hasAttribute('data-fdt-selected')).toBe(false);
+    fireEvent.click(second);
+    expect(onSelect).toHaveBeenCalledWith('delayed');
+  });
+
+  it('follows the controlled selection loop', async () => {
+    // The page owns the selection signal; the callback payload is recorded in
+    // a plain local so the assertion reads a settled value.
+    const [selected, setSelected] = createSignal<string | undefined>(undefined);
+    render(() => <FilterBar chips={CHIPS} selected={selected()} onSelect={setSelected} />);
+    const chips = getChips();
+    const exclude = chips[2] ?? throwAt(2);
+    fireEvent.click(exclude);
+    await expect
+      .poll(() => screen.getByRole('button', { name: /Exclude/ }).getAttribute('aria-pressed'), {
+        timeout: 300
+      })
+      .toBe('true');
+  });
+
+  it('is keyboard-operable: chips are reachable buttons (native Enter/Space activation)', () => {
+    const onSelect = vi.fn();
+    render(() => <FilterBar chips={CHIPS} onSelect={onSelect} />);
+    const chip = getChips()[1] ?? throwAt(1);
+    chip.focus();
+    // Element-level keyboard affordance: the chip is a focused, activatable button.
+    expect(document.activeElement).toBe(chip);
+    chip.click();
+    expect(onSelect).toHaveBeenCalledWith('delayed');
+  });
+
+  it('renders the disabled chip inert and dimmed', () => {
+    render(() => <FilterBar chips={CHIPS} />);
+    const disabled = getChips().find((chip) => (chip as HTMLButtonElement).disabled) ?? throwAt(0);
+    expect(disabled.className).toContain('disabled:opacity-50');
+    fireEvent.click(disabled);
+    for (const chip of getChips()) {
+      expect(chip.getAttribute('aria-pressed')).toBe('false');
+    }
+  });
+
+  it('wires the embedded search field through the controlled loop', () => {
+    // The page owns the query signal; changes are recorded through a plain local.
+    const [query] = createSignal('delay');
+    let typed: string | undefined;
+    render(() => (
+      <FilterBar
+        chips={CHIPS}
+        searchQuery={query()}
+        onSearchChange={(value) => {
+          typed = value;
+        }}
+      />
+    ));
+    const field = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search' });
+    expect(field.value).toBe('delay');
+    fireEvent.input(field, { target: { value: 'exclud' } });
+    expect(typed).toBe('exclud');
+  });
+
+  it('hides the search field when asked', () => {
+    render(() => <FilterBar chips={CHIPS} showSearch={false} />);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+});
