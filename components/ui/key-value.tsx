@@ -1,8 +1,8 @@
 /**
  * The dense label/value row — the workhorse of the cards pages will fill
  * (Detections, the Diagnoser, sidebar inventories). One row: a quiet term on
- * the left, the detail taking the rest; mono/tabular-friendly spacing
- * (`UX-D6` density).
+ * the left, the detail taking the rest; mono/tabular-friendly spacing —
+ * compact first, so evidence rows stack densely without losing scanability.
  */
 import type { JSX } from 'solid-js';
 import { For, Show, splitProps } from 'solid-js';

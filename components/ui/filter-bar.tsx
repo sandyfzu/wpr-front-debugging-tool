@@ -1,10 +1,10 @@
 /**
- * The filter bar — THE filter pattern for every list page (`UX-D10`, one
- * mechanism per mechanism): filter chips (single-select, keyboard-operable,
- * counts exposed) + the search field (wave-1 `Input`). It replaces the
- * legacy pattern of per-page filter button rows and ad-hoc search inputs —
- * selection is carried in `aria-pressed` (never by background color alone —
- * the fix for legacy color-only selection).
+ * The filter bar — the one filter pattern for every list page (one
+ * mechanism per mechanism kind): filter chips (single-select,
+ * keyboard-operable, counts exposed in each chip's name) + the search field
+ * (wave-1 `Input`). It replaces per-page filter button rows and ad-hoc
+ * search inputs — selection is carried in `aria-pressed` (never by
+ * background color alone).
  */
 import type { JSX } from 'solid-js';
 import { For, Show, splitProps } from 'solid-js';
@@ -35,6 +35,8 @@ export type FilterBarProps = {
   selected?: string;
   /** Selection change callback. */
   onSelect?: (value: string) => void;
+  /** The accessible name of the chip group (default "Filters"). */
+  filterLabel?: string;
   /** The search input's current value (controlled; the owning page owns the debouncing). */
   searchQuery?: string;
   /** Search-value change callback (input's `onInput` payload). */
@@ -50,19 +52,22 @@ export type FilterBarProps = {
 };
 
 /**
- * Render the filter bar: a chip row and the shared search field.
+ * Render the filter bar: a named chip group and the shared search field.
  *
  * Chip semantics: each is a `button` with `aria-pressed` (single-select
- * toggle-button group) — keyboard natively operable (Tab + Enter/Space) —
- * the selected chip carries `data-fdt-selected` beside the `aria-pressed`
- * attribute, and every chip renders its count so the badge survives in
- * memory. Search semantics: an `Input` (visual `search` type semantics for
- * #ownField clear affordances) wired through the page's control loop; this
- * bar adds zero input logic of its own.
+ * toggle-button group) — natively keyboard-operable (Tab + Enter/Space) —
+ * and the selected chip carries `data-fdt-selected` beside the
+ * `aria-pressed` attribute. Each chip's accessible name includes its count
+ * ("Delayed, 12 matching"), so the pre-open answer "how many" is
+ * announced, not just painted. Search semantics: an `Input` typed `search`
+ * (the browser's built-in clear affordance comes with the type) wired
+ * through the page's controlled value loop; this bar adds zero input
+ * logic of its own.
  *
  * @param props.chips The chips.
  * @param props.selected The selected chip value (undefined: nothing selected).
  * @param props.onSelect Selection change (1 callback to the page).
+ * @param props.filterLabel The chip group's accessible name (default "Filters").
  * @param props.searchQuery The search field's controlled value.
  * @param props.onSearchChange Search-value change.
  * @param props.searchPlaceholder Field placeholder (default "Search…").
@@ -75,6 +80,7 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
     'chips',
     'selected',
     'onSelect',
+    'filterLabel',
     'searchQuery',
     'onSearchChange',
     'searchPlaceholder',
@@ -85,7 +91,11 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
 
   return (
     <div data-fdt="filter-bar" class={cn('flex flex-col gap-y-1.5', own.class)} {...rest}>
-      <div class="flex flex-wrap items-center gap-1" role="group">
+      <div
+        class="flex flex-wrap items-center gap-1"
+        role="group"
+        aria-label={own.filterLabel ?? 'Filters'}
+      >
         <For each={own.chips}>
           {(chip) => (
             <FilterChipButton
@@ -141,8 +151,9 @@ const CHIP_SELECTED = cn(
  *
  * Selection lands on `aria-pressed` + `data-fdt-selected` (+ the accent
  * fill): three redundant carriers so state survives each channel — color
- * alone is never the selected signal (the fix for legacy's white-on-color
- * selection semantics).
+ * alone is never the selected signal. The accessible name folds the count
+ * in ("Delayed, 12 matching") so a chip announces what it selects AND how
+ * much of it there is — the glanceable count doubles as the announced one.
  *
  * @param props.chip The chip data.
  * @param props.selected Whether this chip is the selected one.
@@ -161,6 +172,7 @@ function FilterChipButton(props: {
       data-fdt-selected={props.selected ? '' : undefined}
       aria-pressed={props.selected}
       disabled={props.chip.disabled}
+      aria-label={`${props.chip.label}, ${String(props.chip.count)} matching`}
       onClick={() => props.onSelect?.(props.chip.value)}
       class={cn(CHIP_BASE, props.selected ? CHIP_SELECTED : CHIP_UNSELECTED)}
     >

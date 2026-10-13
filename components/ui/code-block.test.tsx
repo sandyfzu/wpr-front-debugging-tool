@@ -2,13 +2,13 @@
  * Render tests for the code block. The state machine runs with injected
  * seams: a manual intersection gate (no layout — happy-dom) and a loader
  * double, so tests pin the exact contract: raw-text fallback first, highlight
- * after intersection + load, observer disconnected on unmount (master #24),
- * wrap toggle state, safe-HTML mount and language validation.
+ * after intersection + load, observer disconnected on unmount, wrap toggle
+ * state, safe-HTML mount and language validation.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodeBlock, type IntersectionGate } from './code-block';
-import { CODE_BLOCK_LANGS } from './code-block-highlighter';
+import { CODE_BLOCK_LANGS } from './code-block-langs';
 
 afterEach(() => {
   cleanup();
@@ -103,7 +103,7 @@ describe('CodeBlock', () => {
     );
   });
 
-  it('disconnects the observer on unmount — and only there (master #24)', () => {
+  it('disconnects the observer on unmount — and only there', () => {
     const gate = manualGate();
     const { unmount } = render(() => (
       <CodeBlock text="const a = 1;" lang="javascript" createObserver={() => gate} />

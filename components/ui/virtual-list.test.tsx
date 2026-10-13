@@ -154,3 +154,53 @@ describe('VirtualList', () => {
     expect(scroller?.className).toContain('h-40');
   });
 });
+
+describe('VirtualList — accessibility seam', () => {
+  it('applies no list semantics by default (the caller owns them)', () => {
+    const p = probe([row(0, 0, 24)], 24);
+    render(() => (
+      <VirtualList count={2} estimateSize={() => 24} createVirtualizer={p.factory}>
+        {(): JSX.Element => <span data-fdt-row-content="0" />}
+      </VirtualList>
+    ));
+    const scroller = document.querySelector('[data-fdt="virtual-list"]');
+    expect(scroller?.getAttribute('role')).toBeNull();
+    expect(scroller?.getAttribute('aria-label')).toBeNull();
+  });
+
+  it('carries an explicit scrollerRole when the surface is a true list', () => {
+    const p = probe([row(0, 0, 24)], 24);
+    render(() => (
+      <VirtualList
+        count={2}
+        estimateSize={() => 24}
+        scrollerRole="list"
+        aria-label="Delayed scripts"
+        createVirtualizer={p.factory}
+      >
+        {(): JSX.Element => <span data-fdt-row-content="0" role="listitem" />}
+      </VirtualList>
+    ));
+    const scroller = document.querySelector('[data-fdt="virtual-list"]');
+    expect(scroller?.getAttribute('role')).toBe('list');
+    expect(scroller?.getAttribute('aria-label')).toBe('Delayed scripts');
+    // The contract holds together: the caller's rows supply the listitems
+    // (this pin documents the pair — see the scrollerRole prop's note).
+    expect(scroller?.querySelector('[role="listitem"]')).toBeTruthy();
+  });
+
+  it('accepts the feed role for stream-style surfaces', () => {
+    const p = probe([row(0, 0, 24)], 24);
+    render(() => (
+      <VirtualList
+        count={2}
+        estimateSize={() => 24}
+        scrollerRole="feed"
+        createVirtualizer={p.factory}
+      >
+        {(): JSX.Element => <span data-fdt-row-content="0" />}
+      </VirtualList>
+    ));
+    expect(document.querySelector('[data-fdt="virtual-list"]')?.getAttribute('role')).toBe('feed');
+  });
+});

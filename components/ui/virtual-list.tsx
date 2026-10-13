@@ -1,6 +1,6 @@
 /**
- * The virtual list — THE list pattern for every ≥100-row surface (`UX-D10`,
- * one mechanism per list). A thin, typed wrapper around
+ * The virtual list — the one list pattern for every ≥100-row surface
+ * (one mechanism per list). A thin, typed wrapper around
  * `@tanstack/solid-virtual`'s `createVirtualizer`: it owns the scroller
  * geometry (relative spacer + absolute translate-and-measure rows) once, so
  * a page declares rows as data and gets a dense, cheap list — no per-page
@@ -71,6 +71,18 @@ export type VirtualizerFactory = (options: VirtualListOptions) => VirtualizerIns
 const defaultVirtualizerFactory: VirtualizerFactory = (options) => createVirtualizer(options);
 
 export type VirtualListProps = {
+  /**
+   * The scroller's ARIA role, for surfaces that are semantically a list.
+   * Deliberately unset by default: this wrapper's rows are the caller's
+   * content (often cards), which are `listitem`s only when the caller says
+   * so — a `role="list"` over non-listitem children is an invalid ARIA tree,
+   * strictly worse than none. Opt in with `list` only when your row renderer
+   * emits `role="listitem"`; use `feed` for stream-style surfaces whose rows
+   * self-describe.
+   */
+  scrollerRole?: 'list' | 'feed';
+  /** Accessible name of the scroller (e.g. "Delayed scripts") — the list's content in one phrase. */
+  'aria-label'?: string;
   /** The row count. */
   count: number;
   /** The trusted estimate above, per index. */
@@ -109,6 +121,8 @@ export type VirtualListProps = {
  * wrapper owns geometry only, never data shape.
  *
  * @param props.count The row count.
+ * @param props.scrollerRole Optional list/feed role for the scroller (default: none — see the prop's note).
+ * @param props['aria-label'] The scroller's accessible name (default: none).
  * @param props.estimateSize Per-index seed height (px).
  * @param props.overscan Buffer rows beyond the window (default 3).
  * @param props.getItemKey Stable row identity (default index).
@@ -122,6 +136,7 @@ export type VirtualListProps = {
  */
 export function VirtualList(props: VirtualListProps): JSX.Element {
   const [own, rest] = splitProps(props, [
+    'scrollerRole',
     'count',
     'estimateSize',
     'overscan',
@@ -177,6 +192,7 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     <div
       ref={scroller}
       data-fdt="virtual-list"
+      role={own.scrollerRole}
       class={cn('relative overflow-y-auto', own.class)}
       {...rest}
     >

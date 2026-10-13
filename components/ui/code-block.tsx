@@ -9,17 +9,21 @@
  * and no re-render on theme switches.
  *
  * Loading discipline: shiki is reached **only** through the dynamic
- * `import()` inside this file's default loader (`code-block-highlighter` is
- * never in the static import graph), so consuming pages' main chunks stay
- * lean until a block actually needs code. Until the highlighter resolves,
- * the raw text shows in a plain `<pre>` fallback — content is never hidden
- * behind loading.
+ * `import()` inside this file's default loader — this component file carries
+ * no value import of the highlighter module (its types come through a pure
+ * `import type`, erased at build time), and the language vocabulary comes
+ * from the shiki-free `code-block-langs.ts`. Consumers importing `CodeBlock`
+ * therefore keep shiki out of their static chunk — the property proven by
+ * an esbuild consumer spike in the 2026-10-12 audit round (entry/eager
+ * chunk: no shiki; a separate lazy chunk: all of it). Until the highlighter
+ * resolves, the raw text shows in a plain `<pre>` fallback — content is
+ * never hidden behind loading.
  *
- * Lazy rendering (parity of the source's `useLazyLoad`, fixing master #24 +
- * #40): highlight work latches behind an `IntersectionObserver` on this
- * block's always-mounted wrapper element, and the observer is disconnected
- * on unmount — no view keeps an observer, and none ever attaches to a
- * not-yet-existing child.
+ * Lazy rendering: highlight work latches behind an `IntersectionObserver` on
+ * this block's always-mounted wrapper element, and the observer is
+ * disconnected on unmount — no view keeps a live observer, and none ever
+ * attaches to a not-yet-existing child (the latch targets the wrapper that
+ * exists at mount, so an absent element can never be the observed one).
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
@@ -27,11 +31,8 @@ import { Show } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
-import {
-  CODE_BLOCK_LANGS,
-  type CodeLanguage,
-  type HighlightedCode
-} from './code-block-highlighter';
+import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
+import type { HighlightedCode } from './code-block-highlighter';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
@@ -62,7 +63,7 @@ export interface IntersectionGate {
    * @param onVisible The latch callback.
    */
   observe: (onVisible: () => void) => void;
-  /** Disconnect the observer — wired to unmount, always (master #24). */
+  /** Disconnect the observer — wired to unmount, unconditionally. */
   disconnect: () => void;
 }
 
@@ -90,11 +91,11 @@ export type CodeBlockProps = {
  * visibility of the host element.
  *
  * The host handed over is the component's own wrapper (the element is always
- * mounted and the `ref` is assigned before `onMount` runs) — the failure of
- * the source's non-reactive `elementRef` (master #40) is structural here: no
- * child rendered later is ever the observed element, and the observer is
- * exactly as alive as the component either way — its disconnect is owned by
- * the component's cleanup, not by user code.
+ * mounted and the `ref` is assigned before `onMount` runs) — observing a
+ * not-yet-rendered or already-gone child is structurally impossible: the
+ * element exists at wire-up time, and the observer is exactly as alive as
+ * the component either way — its disconnect is owned by the component's
+ * cleanup, never left to render-time bookkeeping.
  *
  * @param host The observed element (the always-mounted wrapper).
  * @returns The one-shot latch with its explicit disconnect.
@@ -204,8 +205,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
           logger.warn('Code highlighting failed to load; raw text stays visible.', error);
         });
     });
-    // Master #24 pin: the observer dies with this component — no stray
-    // connection survives cleanup.
+    // The observer dies with this component: cleanup always disconnects, so
+    // no stray connection survives an unmount.
     onCleanup(gate.disconnect);
   });
 
@@ -291,11 +292,12 @@ function HighlightedPre(props: { html: string }): JSX.Element {
     <pre
       data-fdt-code-highlighted
       // Safe by construction: shiki escapes source text in its hast→HTML
-      // pipeline (empirically pinned in the loader), and no transformer or
+      // pipeline (regression-pinned against the real loader in the
+      // highlighter's node-env suite), and no transformer or
       // decoration config is passed that could inject markup. The warning is
       // for "unsanitized input" in general; the safety contract lives on
       // `CodeHighlighter.highlight`.
-      // eslint-disable-next-line solid/no-innerhtml -- safe by construction: shiki escapes code text (empirically pinned), no transformers/decorations configured
+      // eslint-disable-next-line solid/no-innerhtml -- safe by construction: shiki escapes code text (regression-pinned), no transformers/decorations configured
       innerHTML={props.html}
     />
   );

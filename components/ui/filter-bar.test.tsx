@@ -122,4 +122,21 @@ describe('FilterBar', () => {
     render(() => <FilterBar chips={CHIPS} showSearch={false} />);
     expect(screen.queryByRole('searchbox')).toBeNull();
   });
+
+  it('names the chip group "Filters" (renamable) so the group is announced', () => {
+    render(() => <FilterBar chips={CHIPS} />);
+    expect(screen.getByRole('group', { name: 'Filters' })).toBeTruthy();
+    cleanup();
+    render(() => <FilterBar chips={CHIPS} filterLabel="Resource state" />);
+    expect(screen.getByRole('group', { name: 'Resource state' })).toBeTruthy();
+  });
+
+  it('exposes every chip count inside its accessible name', () => {
+    render(() => <FilterBar chips={CHIPS} />);
+    // The name carries label AND count ("how many this chip selects") — the
+    // count is announced, not only painted in the badge.
+    expect(screen.getByRole('button', { name: 'All, 87 matching' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delayed, 12 matching' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pending RUCSS, 0 matching' })).toBeTruthy();
+  });
 });

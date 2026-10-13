@@ -1,6 +1,6 @@
 /**
  * The copy control — one button for every "copy this" affordance (evidence
- * snippets, exclusion lists, reports). It owns the `UX-D9` feedback contract:
+ * snippets, exclusion lists, reports). Its feedback never degrades to silence:
  * a confirmed write confirms via the toast store; a rejected write renders the
  * error toast with the remedy — copy failures are never silent.
  */
@@ -10,8 +10,12 @@ import { onCleanup } from 'solid-js';
 import type { ComponentProps } from 'solid-js';
 import { Check, Copy } from 'lucide-solid';
 import { cn } from '../../utils/cn';
+import { createLogger } from '../../lib/logger';
 import { Button } from './button';
 import { toast } from './toast-store';
+
+/** The logger for copy degradations — the toast is the user feedback, this is the operational record. */
+const logger = createLogger('copy-button');
 
 /** How long the check confirmation state lingers after a successful copy (ms). */
 const COPIED_FLASH_MS = 1600;
@@ -107,7 +111,7 @@ export interface CopyButtonProps {
  * The flash reintroduced timer edge auto-resets — state must not stick.
  * Disabling is caller-owned: hiding a control that cannot copy (empty
  * content) is the page's call, an always-present control that never copies is
- * a `UX-D9` dead end.
+ * a dead end this marker would point at itself.
  *
  * @param props.text The payload.
  * @param props.label What to name in feedback.
@@ -116,11 +120,9 @@ export interface CopyButtonProps {
  * @param props.showLabel Whether to render the visible label (default `true`).
  * @param props.clipboard Clipboard seam; defaults to `navigator.clipboard`.
  * @param props.class Extra classes.
- * @returns The rendered control.
- * @throws {@link Error} when `navigator.clipboard` is unavailable and no
- *   explicit seam was provided — production builds always run in an extension
- *   page or secure context (the clipboard is provided), and a silently dead
- *   copy control is worse than an early, named failure.
+ * @returns The rendered control (never a dead end: every failure path —
+ *   seam construction included — resolves into the error toast + warn log;
+ *   nothing escapes past the click handler).
  */
 export function CopyButton(props: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = createSignal(false);
@@ -137,14 +139,34 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       clearTimeout(flashReset);
       flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
     },
-    failed: () => {
+    failed: (error: unknown) => {
+      // One degradation, two channels: the actionable toast (the platform
+      // error text is never rendered) + the warn log naming the cause.
+      logger.warn('Copy rejected; the error toast stays the visible feedback.', error);
       toast.error('Copy failed', { description: COPY_FAILED_DESCRIPTION });
     }
   };
 
-  /** The click handler: copies, reports, never throws past the click. */
+  /**
+   * The guarded invocation: the clipboard seam can throw synchronously (no
+   * clipboard in the current context) or the write can reject — any failure
+   * path funnels into the same guarded async body, and nothing escapes past
+   * the click handler. The control never dead-ends: the error toast is
+   * the feedback for every failure shape, not for write rejections only.
+   *
+   * @returns Resolves after the outcome landed in the sink (never rejects).
+   */
+  const guardedCopy = async (): Promise<void> => {
+    try {
+      await performCopy(props.text, props.clipboard ?? defaultClipboard(), sink);
+    } catch (error: unknown) {
+      sink.failed(error);
+    }
+  };
+
+  /** The click handler: non-throwing by construction (see {@link guardedCopy}). */
   const onCopy = (): void => {
-    void performCopy(props.text, props.clipboard ?? defaultClipboard(), sink);
+    void guardedCopy();
   };
 
   return (

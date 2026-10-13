@@ -1,23 +1,20 @@
 /**
- * The shiki highlighter for `code-block.tsx` — loaded **only** through a
- * dynamic `import()` (see `code-block.tsx`), never through the static graph:
- * shiki's engines, grammars and themes stay out of every entrypoint's main
- * chunk until a surface actually renders code.
+ * The shiki highlighter for `code-block.tsx` — imported asynchronously only
+ * inside `code-block.tsx` (via its dynamic `import()`), so shiki's engines,
+ * grammars and themes stay out of every consumer's main chunk until a surface
+ * actually renders code. The language vocabulary itself is declared shiki-free
+ * in `code-block-langs.ts` — pages import it from there, never from this
+ * module (importing this module as a value pulls the shiki chunk in).
  *
  * Fine-grained shiki: the core plus exactly the two languages this tool
- * renders (WA-script sources and JSON payloads), one light/dark theme pair,
- * and the JavaScript regex engine (no WASM; the manifest's Chromium floor
- * covers the ES features the compiled grammars need).
+ * renders (extension-script sources and JSON payloads), one light/dark theme
+ * pair, and the JavaScript regex engine (no WASM; the manifest's Chromium
+ * floor covers the ES features the compiled grammars need).
  */
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import type { HighlighterCore } from 'shiki/core';
-
-/** The languages registered in the highlighter, one per data kind this tool renders. */
-export const CODE_BLOCK_LANGS = ['javascript', 'json'] as const;
-
-/** One code-block language. A call-site constant, never page-sourced. */
-export type CodeLanguage = (typeof CODE_BLOCK_LANGS)[number];
+import type { CodeLanguage } from './code-block-langs';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
 const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
@@ -31,18 +28,20 @@ export interface CodeHighlighter {
    * Highlight code text.
    *
    * **Safe for untrusted text:** shiki runs the code through a fixed
-   * hast→HTML pipeline that HTML-escapes every text node — empirically pinned
-   * (a `</span><img …>` input survives only as escaped text and never becomes
-   * markup), so the output cannot introduce an element from the highlighted
-   * input. Only `transformers` could mutate generated markup, and none are
-   * passed. Mounting the string is therefore a deliberate `innerHTML` use,
-   * with that guarantee stated here.
+   * hast→HTML pipeline that HTML-escapes every text node — regression-pinned
+   * against the real loader in `code-block-highlighter.test.ts` (hostile
+   * inputs like `</span><img …>` and `<script>` survive only as escaped text
+   * and never become markup), so the output cannot introduce an element from
+   * the highlighted input. Only `transformers` could mutate generated markup,
+   * and none are passed. Mounting the string is therefore a deliberate
+   * `innerHTML` use, with that guarantee stated here.
    *
    * @param code The raw code text (may be untrusted page-sourced).
    * @param options The language of the text.
    * @returns The `<pre>` HTML with per-token light/dark colors.
-   * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} —
-   *   a call-site bug must fail at analysis time, not as an unstyled block.
+   * @throws {@link Error} for a language outside the registered code-block
+   *   language table (`CODE_BLOCK_LANGS` in `code-block-langs.ts`) — a
+   *   call-site bug must fail at analysis time, not as an unstyled block.
    */
   highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
   /** Dispose the highlighter's state (tests; longer-lived surfaces keep it). */

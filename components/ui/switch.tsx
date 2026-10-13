@@ -2,8 +2,8 @@
  * The shared on/off toggle — one switch for every surface, keyboard-complete:
  * the 24px control toggles on click, Space/Enter on the focused control
  * toggles, the label toggles with it, and assistive tech reads state from
- * the hidden input's `role="switch"` + `aria-checked`. (The fix owner for
- * the popup's color-only toggle pattern, master #15.)
+ * the hidden input's `role="switch"` + `aria-checked`. Selection is state,
+ * never styling: color alone expresses nothing on any surface.
  */
 import type { JSX } from 'solid-js';
 import { createMemo, splitProps } from 'solid-js';

@@ -1,10 +1,13 @@
 /**
  * Render tests for the recursive JSON renderer: primitives inline, collapse
  * with count badges, the search-query contract (marks + auto-expand) and the
- * structural plumbing (keys, brackets).
+ * structural plumbing (keys, brackets). The defensive view bounds get their
+ * own pure suite (`json-value-bounds.test.ts`); these render tests pin what
+ * a bounded/clamped payload looks like to a user (marker rows, host objects
+ * shown, never a crashed or hung render).
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JsonValue } from './json-value';
 
 afterEach(() => {
@@ -143,5 +146,72 @@ describe('JsonValue — search contract', () => {
     // A second render (after cleanup) for the unknown query → collapsed default.
     expect(toggles()[0]?.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelectorAll('[data-fdt-json-match]').length).toBe(0);
+  });
+});
+
+describe('JsonValue — defensive bounds (visible truncation, never silent / never a crash)', () => {
+  /** Root toggles exist only at containers; the marker row is its own hook. */
+  const markerName = (): string | null =>
+    document.querySelector('[data-fdt-json-truncated]')?.textContent ?? null;
+
+  /**
+   * A plain object chain `n0 → n1 → …` ending in a leaf — built bottom-up so
+   * every level's key/value is unique (assertions target the outermost kept
+   * prefix without ambiguous matches).
+   *
+   * @param levels The number of nested object levels.
+   */
+  function nesting(levels: number): unknown {
+    let value: unknown = 'leaf-bottom';
+    for (let i = levels - 1; i >= 0; i -= 1) value = { [`n${String(i)}`]: value };
+    return value;
+  }
+
+  it('renders a visible truncation row where the depth cap cuts (tiny budget, deep input)', () => {
+    render(() => <JsonValue value={nesting(10)} viewBudget={{ maxDepth: 4, maxNodes: 500 }} />);
+    expect(markerName()).toBe('structure truncated — depth cap');
+    expect(
+      document.querySelector('[data-fdt-json-truncation]')?.getAttribute('data-fdt-json-truncation')
+    ).toBe('depth');
+    // The rest of the (allowed) prefix still renders — the guard trims, it does not blank.
+    const firstKey = document.querySelector('[data-fdt-json-key]');
+    expect(firstKey?.textContent).toContain('n0');
+    expect(document.querySelectorAll('[data-fdt-json-node]').length).toBeGreaterThan(4);
+  });
+
+  it('renders exactly one node-budget truncation row when the budget cuts (tiny budget, wide input)', () => {
+    const wide = Array.from({ length: 12 }, (_, i) => i);
+    render(() => <JsonValue value={wide} viewBudget={{ maxDepth: 20, maxNodes: 5 }} />);
+    const truncated = document.querySelectorAll('[data-fdt-json-truncated]');
+    expect(truncated.length).toBe(1);
+    expect(truncated[0]?.getAttribute('data-fdt-json-truncation')).toBe('nodes');
+    // Kept children render in front of the marker; the cut remainder is gone.
+    expect(document.querySelectorAll('[data-fdt-json-scalar]').length).toBe(4);
+  });
+
+  it('terminates on a cyclic input under the production budget (marker, no hang/crash)', () => {
+    const cyc: Record<string, unknown> = { title: 'cycle root' };
+    cyc.self = cyc;
+    render(() => <JsonValue value={cyc} />);
+    expect(markerName()).toBe('structure truncated — cyclic reference');
+    expect(screen.getByText('title')).toBeTruthy(); // the finite prefix still renders
+  });
+
+  it('renders a Map as its string form at its slot (never silently as {})', () => {
+    render(() => <JsonValue value={{ flags: 'all', weird: new Map([[1, 2]]) }} />);
+    // The honest host-object display: visible string form, no container walk.
+    const scalars = Array.from(document.querySelectorAll('[data-fdt-json-scalar]'));
+    expect(scalars.map((s) => s.textContent).join(' ')).toContain('[object Map]');
+    expect(document.querySelector('[data-fdt-json-container]')?.textContent).toContain('2 keys');
+  });
+
+  it('warns once per truncation event on mount and keeps the render finite', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const cyc: Record<string, unknown> = {};
+    cyc.self = cyc;
+    render(() => <JsonValue value={cyc} />);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('truncated');
+    warn.mockRestore();
   });
 });

@@ -128,4 +128,30 @@ describe('CopyButton', () => {
       'Report'
     );
   });
+
+  it('renders the error toast even when the clipboard seam cannot be constructed (no dead end)', async () => {
+    // The default-seam path throws synchronously inside the click (no
+    // clipboard in the context — shadowed away here). The guard must convert
+    // that into the same feedback as a rejected write: this is the
+    // regression shape that used to escape the click handler with zero UI.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      get: () => undefined
+    });
+    try {
+      render(() => <CopyButton text="x" label="Notice" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Notice' }));
+      await vi.waitFor(() => {
+        expect(toastItems()).toHaveLength(1);
+      });
+      expect(toastItems()[0]).toMatchObject({ tone: 'error', title: 'Copy failed' });
+      expect(toastItems()[0]?.description).toContain('Copy it from selection');
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      // Drop the shadow; happy-dom's own clipboard getter becomes visible again.
+      Reflect.deleteProperty(navigator, 'clipboard');
+      warn.mockRestore();
+    }
+  });
 });

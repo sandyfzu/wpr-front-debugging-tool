@@ -26,6 +26,22 @@ function trackOf(): Element {
   return rootOf().querySelector('[data-fdt-switch-track]') as Element;
 }
 
+/**
+ * The rendered label/track sibling order of the switch root (DOM order) —
+ * the order property the `labelSide` prop promises. The hidden input is
+ * filtered out; only these two kinds are compared.
+ */
+function getSiblingsOrder(): Array<'track' | 'label'> {
+  return Array.from(rootOf().children)
+    .map((node) => {
+      const el = node as HTMLElement;
+      if (el.hasAttribute('data-fdt-switch-track')) return 'track' as const;
+      if (el.hasAttribute('data-fdt-switch-label')) return 'label' as const;
+      return null;
+    })
+    .filter((kind) => kind !== null);
+}
+
 describe('Switch', () => {
   it('renders the hidden role="switch" input with its naming and state hooks', () => {
     render(() => <Switch label="Delay JavaScript" />);
@@ -99,6 +115,17 @@ describe('Switch', () => {
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
     fireEvent.click(trackOf());
     expect(onChange).toHaveBeenCalledWith(false);
+  });
+
+  it('orders the label to the side the caller asked for (DOM order, not only a hook)', () => {
+    // Default `end`/control-lead: the track precedes the label in the DOM.
+    render(() => <Switch label="Control first" />);
+    expect(getSiblingsOrder()).toEqual(['track', 'label']);
+    cleanup();
+    // `start`: the label precedes the control — pinned as real sibling order
+    // (the `data-fdt-switch-side` hook records intent, this pins the render).
+    render(() => <Switch label="Label first" labelSide="start" />);
+    expect(getSiblingsOrder()).toEqual(['label', 'track']);
   });
 
   it('stays inert when disabled (no toggle, dimmed, hover explainable)', () => {
