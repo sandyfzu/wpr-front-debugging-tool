@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, resolveTheme } from './theme';
+import { applyTheme, nextAppearance, resolveTheme, type Appearance } from './theme';
+
+describe('nextAppearance (the keyboard cycle)', () => {
+  it('walks the registry order and wraps system → dark → light → system', () => {
+    expect(nextAppearance('system')).toBe('dark');
+    expect(nextAppearance('dark')).toBe('light');
+    expect(nextAppearance('light')).toBe('system');
+  });
+
+  it('names the offending value for a choice outside the registry', () => {
+    expect(() => nextAppearance('neon' as Appearance)).toThrow(new RegExp("unknown choice 'neon'"));
+  });
+});
 
 describe('resolveTheme', () => {
   it('explicit dark/light win over the system preference', () => {
