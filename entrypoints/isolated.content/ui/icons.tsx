@@ -1,12 +1,15 @@
 /**
- * The stroke-icon factory shared by this entrypoint's injected UIs, as inline
- * SVG path data — the content script must stay inside a hard bundle budget,
- * and stroke icons do not justify an icon-package runtime (the icon package
- * remains available to the panel surfaces, which have a much larger budget).
+ * The stroke-icon factory shared by every injected UI this entrypoint mounts,
+ * plus the glyphs two or more surfaces share (inline SVG path data — the
+ * content script must stay inside a hard bundle budget, and stroke icons do
+ * not justify an icon-package runtime; the icon package remains available to
+ * the panel surfaces, which have a much larger budget).
  *
  * Geometry is the lucide package's own path data (verified against the
  * installed version), 24 viewBox, `currentColor` strokes with round caps and
- * joins so an icon inherits its container's text color.
+ * joins so an icon inherits its container's text color. Feature glyphs live
+ * beside the feature that renders them (e.g. `known-conflicts/icons`,
+ * `inspector/icons`); this file owns the factory and the shared set.
  */
 
 import type { JSX } from 'solid-js';
@@ -33,6 +36,9 @@ export interface IconEllipse {
   /** Vertical radius. */
   ry: number;
 }
+
+/** Shared: close (lucide `x`) — every report widget's card dismissal. */
+export const CLOSE_ICON_PATHS = ['M18 6 6 18', 'm6 6 12 12'] as const;
 
 /** Props of the shared stroke-icon component. */
 export interface StrokeIconProps {

@@ -22,6 +22,7 @@ import { setupDataHub } from './data-hub';
 import { setupImprovements } from './improvements';
 import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
+import { setupInspectorWidget } from './inspector';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import './styles.css';
 
@@ -48,7 +49,8 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
   { name: 'data-hub', setup: setupDataHub },
   { name: 'improvements', setup: setupImprovements },
   { name: 'known-conflicts', setup: setupKnownConflicts },
-  { name: 'side-by-side', setup: setupSideBySide }
+  { name: 'side-by-side', setup: setupSideBySide },
+  { name: 'inspector', setup: setupInspectorWidget }
 ];
 
 /**

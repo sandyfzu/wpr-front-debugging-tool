@@ -20,6 +20,7 @@ import { describeDetections, formatCacheTimestamp } from '../../../lib/detection
 import type { WprDetections } from '../../../lib/wp-rocket/types';
 import { stripGroupedRows } from './strip-items';
 import type { StripGroupId, StripItemId } from './strip-items';
+import type { StripIconGlyph } from './icons';
 
 /** The widget's five chrome moods (`ins-*`; the KC vocabulary generalized). */
 export type InspectorMood = 'green' | 'amber' | 'gray' | 'pulse' | 'red';
@@ -70,6 +71,7 @@ export interface StripCardRow {
 export interface StripCardGroup {
   id: StripGroupId;
   heading: string;
+  icon: StripIconGlyph;
   rows: readonly StripCardRow[];
 }
 
@@ -269,6 +271,7 @@ export function buildStripCardModel(input: {
       : stripGroupedRows().map((group) => ({
           id: group.id,
           heading: group.heading,
+          icon: group.icon,
           rows: group.rows.map((row) => {
             const reading = row.read(report);
             return {

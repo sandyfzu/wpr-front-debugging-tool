@@ -25,11 +25,11 @@ import {
   ALERT_ICON_PATHS,
   CLEAR_ICON_CIRCLE,
   CLEAR_ICON_PATHS,
-  CLOSE_ICON_PATHS,
   COLLAPSE_ICON_PATHS,
   OPEN_ICON_PATHS
 } from './icons';
-import { StrokeIcon } from '../ui/icons';
+import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
+import { TOOL_EYEBROW } from '../ui/copies';
 
 /** What the scanner found and where it is, minus behavior. */
 export interface KnownConflictsUiState {
@@ -75,8 +75,6 @@ const LOADING_COPY = 'Loading conflicts database...';
 const FOOT_HINT = 'Click a row to open its support article.';
 /** Footer affordance hint, close key. */
 const ESC_HINT = 'esc';
-/** Eyebrow: the tool the widget belongs to. */
-const EYEBROW = 'WPR Front Debugging Tool';
 /** Pending marker: no verdict yet (muted, pulsing chip). */
 const PENDING_MARK = '…';
 /** Beyond this many rows the count reads `9+` (unchanged display rule). */
@@ -141,7 +139,7 @@ export function KnownConflictsView(props: {
       >
         <header class="kc-list-head">
           <div class="kc-list-titles">
-            <span class="kc-eyebrow">{EYEBROW}</span>
+            <span class="kc-eyebrow">{TOOL_EYEBROW}</span>
             {/* The count chip sits beside the title — inside it the probe
              * element's textContent would grow the exact title string. */}
             <div class="kc-titlerow">
