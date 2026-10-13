@@ -10,7 +10,7 @@
  */
 
 import { storage } from 'wxt/utils/storage';
-import { APPEARANCES, type Appearance } from '../../utils/theme';
+import { APPEARANCES, nextAppearance, type Appearance } from '../../utils/theme';
 
 /** Canonical storage keys, declared once and reused by every slot below. */
 const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
@@ -165,4 +165,25 @@ export function storedOptionsOrFallback(input: unknown): StoredOptions {
  */
 export async function getOptions(): Promise<StoredOptions> {
   return storedOptionsOrFallback(await optionsStore.getValue());
+}
+
+/**
+ * Advance the stored appearance one step in its registry order and persist
+ * the whole options item (read-modify-write over the validated shape, so
+ * every other option slot — and future unknown flags — survive the write).
+ *
+ * The write rides the same storage item every surface reads, so appearance
+ * followers (the panel's live watcher, injected UIs) pick the change up with
+ * no extra signaling. An unchanged current/next pair (an empty registry
+ * order) would be a no-op write; the cycle has three fixed choices, so the
+ * outcome is always a change.
+ *
+ * @throws Nothing deliberately: the storage item's write failure (e.g. an
+ *   invalidated extension context after a reload) rejects as the platform
+ *   does — callers branch on the rejection (validate-and-log, degrade).
+ */
+export async function cycleAppearanceOption(): Promise<void> {
+  const options = storedOptionsOrFallback(await optionsStore.getValue());
+  const next = nextAppearance(options.appearance);
+  await optionsStore.setValue({ ...options, appearance: next });
 }

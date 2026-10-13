@@ -324,6 +324,67 @@ describe('request flight lifecycle', () => {
   });
 });
 
+describe('the reload control (the user-driven refresh trigger)', () => {
+  it('soft-refreshes loaded data: the current view stays up until the swap lands', async () => {
+    const first = makeFdtData({ allScriptsLoaded: false });
+    const world = fakeWorld({ request: Promise.resolve(first) });
+    const store = makeStore(world);
+    store.start();
+    await drained();
+    expect(store.state()).toEqual({ status: 'ready', data: first, fetchedAt: 1727000000000 });
+
+    const second = makeFdtData({ allScriptsLoaded: true });
+    world.pending = Promise.resolve(second);
+    store.reload();
+    // Same machine path as the in-tab notification: data carried, no rebuild.
+    expect(store.state()).toEqual({
+      status: 'refreshing',
+      data: first,
+      requestedAt: 1727000000000
+    });
+    await drained();
+    expect(store.state()).toEqual({ status: 'ready', data: second, fetchedAt: 1727000000000 });
+  });
+
+  it('recovers an errored panel by asking fresh (auto-recovery, like the notification)', async () => {
+    const world = fakeWorld({ request: Promise.reject(new Error('early')) });
+    const store = makeStore(world);
+    store.start();
+    await drained();
+    expect(store.state()).toMatchObject({ status: 'error' });
+
+    world.pending = Promise.resolve(makeFdtData());
+    store.reload();
+    expect(store.state()).toEqual({ status: 'fetching' });
+    await drained();
+    expect(store.state()).toMatchObject({ status: 'ready' });
+  });
+
+  it('declines while a flight is already running (no second request)', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world);
+    store.start();
+    await drained();
+    expect(world.request).toHaveBeenCalledTimes(1);
+
+    world.pending = new Promise<unknown>(() => undefined); // a flight stuck in the air
+    store.reload();
+    expect(store.state()).toMatchObject({ status: 'refreshing' });
+    store.reload();
+    expect(world.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches when asked before any data exists (idle → fetching)', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world);
+    expect(store.state()).toEqual({ status: 'idle' });
+    store.reload();
+    expect(store.state()).toEqual({ status: 'fetching' });
+    await drained();
+    expect(store.state()).toMatchObject({ status: 'ready' });
+  });
+});
+
 describe('push channels (granular + tab-scoped)', () => {
   it('patches allScriptsLoaded into the ready data without a refetch', async () => {
     const world = fakeWorld({ request: Promise.resolve(makeFdtData({ allScriptsLoaded: false })) });

@@ -69,6 +69,14 @@ export interface FdtDataStore {
   stop(): void;
   /** The error view's retry control: a fresh 'fetch' flight. */
   retry(): void;
+  /**
+   * The user-driven reload control (e.g. the command palette's reload
+   * action): a 'refresh' flight. The machine decides what that means per
+   * state — a soft refresh carrying live data under `ready`, auto-recovery
+   * under `error`, and plain fetching from `idle` — so the control is the
+   * same one the in-tab notification drives, deduped identically.
+   */
+  reload(): void;
 }
 
 /** The user-facing cause the error view renders for a dropped no-receiver ask. */
@@ -330,6 +338,9 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
     },
     retry() {
       runFlight('fetch');
+    },
+    reload() {
+      runFlight('refresh');
     }
   };
 }

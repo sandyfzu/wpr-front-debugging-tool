@@ -28,12 +28,18 @@ import { Dynamic } from 'solid-js/web';
 import Rocket from 'lucide-solid/icons/rocket';
 import { ErrorState } from '../../components/ui/error-state';
 import { Skeleton } from '../../components/ui/skeleton';
+import { Toasts } from '../../components/ui/toast';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute } from './routes';
 import { PAGES } from './pages';
+import { focusRouteHeading } from './palette/focus';
+import { PaletteTrigger } from './palette/palette-trigger';
+import { PanelOverlays } from './palette/panel-overlays';
+import { createOverlayStore, type OverlayStore } from './palette/overlays';
+import { registerPanelShortcuts } from './palette/shortcuts';
 import {
   createFdtDataStore,
   FdtDataContext,
@@ -53,6 +59,11 @@ export type AppProps = {
   readonly search?: SearchStore;
   /** A prebuilt data store — same rule, with the real messaging edges. */
   readonly data?: FdtDataStore;
+  /**
+   * A prebuilt overlay store (the keyboard layer's open/close/focus state) —
+   * tests inject prepared instances; absent, the shell creates the real one.
+   */
+  readonly overlays?: OverlayStore;
   /**
    * The crash boundary's recovery reload (tests stub it); absent, the panel
    * document itself reloads — the DevTools window re-attaches it.
@@ -109,16 +120,25 @@ export function PanelApp(props: AppProps): JSX.Element {
         now: Date.now
       });
     })();
+  // The keyboard layer's one-time store injection — the same deliberate
+  // once-per-mount read the two stores above use; reactivity cannot re-run
+  // a store build, so the warning's concern does not apply here.
+  // eslint-disable-next-line solid/reactivity
+  const overlays = props.overlays ?? createOverlayStore();
   const router = createHashRoute();
 
   // The shell — and only the shell — owns the mount lifecycle: every
-  // message receiver registers inside `start()` and drops at unmount, and
-  // unmount also cancels the search flow (a pending debounce commit must not
-  // land after the shell is gone).
+  // message receiver registers inside `start()`, the global keyboard
+  // shortcuts arm with the same cycle, and unmount drops all of the above
+  // (a pending search debounce commit must not land after the shell is
+  // gone).
+  let stopShortcuts: (() => void) | undefined;
   onMount(() => {
     data.start();
+    stopShortcuts = registerPanelShortcuts(overlays);
   });
   onCleanup(() => {
+    stopShortcuts?.();
     data.stop();
     router.stop();
     search.cancel();
@@ -132,6 +152,21 @@ export function PanelApp(props: AppProps): JSX.Element {
       router.route,
       () => {
         search.cancel();
+      },
+      { defer: true }
+    )
+  );
+
+  // The route-switch focus rule: every route change (nav click, palette
+  // navigation, deep link) moves focus to the page body's own h1, which
+  // announces the destination; bodies without one (skeleton/error) skip the
+  // move. Soft refreshes never re-run this — they do not change the route,
+  // so the preservation contract (scroll/focus survive a refresh) holds.
+  createEffect(
+    on(
+      router.route,
+      () => {
+        focusRouteHeading();
       },
       { defer: true }
     )
@@ -173,12 +208,23 @@ export function PanelApp(props: AppProps): JSX.Element {
       <SearchContext.Provider value={search}>
         <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
           <header data-fdt="panel-header" class={HEADER}>
-            {/* The brand is not a heading: each page owns the single h1.
-                Its name rides the sr-only span — the rail shows the mark. */}
-            <p class={BRAND}>
-              <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-              <span class="sr-only">WPR FDT</span>
-            </p>
+            {/* The brand block: the mark and the palette trigger — the
+                keyboard layer's mouse entry point sits beside the rail's
+                first row (the interim geometry; the band redesign owns the
+                final shape). The brand is not a heading: each page owns the
+                single h1. Its name rides the sr-only span. */}
+            <div data-fdt="panel-brand-row" class="flex shrink-0 items-center gap-1.5">
+              <p class={BRAND}>
+                <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
+                <span class="sr-only">WPR FDT</span>
+              </p>
+              <PaletteTrigger
+                open={() => overlays.paletteOpen()}
+                toggle={() => {
+                  overlays.togglePalette();
+                }}
+              />
+            </div>
             <AdaptiveNav route={router.route} data={navData} />
           </header>
           <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
@@ -234,6 +280,16 @@ export function PanelApp(props: AppProps): JSX.Element {
           <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
             {statusLine()}
           </div>
+          <PanelOverlays
+            overlays={overlays}
+            data={data}
+            currentRoute={() => router.route()}
+            navigate={(route) => {
+              router.navigate(route);
+            }}
+            focusRouteHeading={focusRouteHeading}
+          />
+          <Toasts />
         </div>
       </SearchContext.Provider>
     </FdtDataContext.Provider>

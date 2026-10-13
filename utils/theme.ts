@@ -8,6 +8,27 @@ export type Appearance = (typeof APPEARANCES)[number];
 export type Theme = 'dark' | 'light';
 
 /**
+ * The next choice in the registry order, wrapping at the end — the cycle the
+ * keyboard surfaces step through (system → dark → light → system).
+ *
+ * @param current The appearance currently in effect (or stored).
+ * @returns The choice one step after `current`.
+ */
+export function nextAppearance(current: Appearance): Appearance {
+  const at = APPEARANCES.indexOf(current);
+  if (at === -1) throw new Error(`nextAppearance: unknown choice '${current}'.`);
+  const next = APPEARANCES[(at + 1) % APPEARANCES.length];
+  // The modulo is provably in range for a non-empty registry; the guard keeps
+  // the indexed read honest and names the drift if the order ever empties.
+  if (next === undefined) {
+    throw new Error(
+      `nextAppearance: the appearance registry is empty — cannot step past '${current}'.`
+    );
+  }
+  return next;
+}
+
+/**
  * Collapse the three-way appearance choice into a concrete palette.
  *
  * `system` defers to the OS scheme (`systemPrefersDark`); explicit choices win.
