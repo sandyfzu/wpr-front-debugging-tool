@@ -55,6 +55,12 @@
     "maxKb": { "raw": 600 }
   },
   {
+    "surface": "panel cold-start (harness fixture)",
+    "kind": "timing",
+    "maxMs": 500,
+    "measuredBy": "the P5.1 harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
+  },
+  {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "content-scripts/*.js"],
     "maxKb": { "raw": 857 }

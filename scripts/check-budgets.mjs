@@ -13,6 +13,15 @@
  * measuring it from then on, which is why the owning phase's checklist runs this
  * script. Malformed rows fail the run outright; a silent gate is useless.
  *
+ * Note: rows here are bundle-size surfaces, and it's worth spelling out both
+ * kinds explicitly:
+ * - `kind: "bytes"` (the default — every row may omit the field): a bundle
+ *   surface with `globs` + `maxKb`, measured from the build output below;
+ * - `kind: "timing"`: a runtime gate this script cannot measure (no globs,
+ *   no `maxKb` — carrying either is malformed). Its `maxMs` is asserted by
+ *   the runner named in `measuredBy` (a committed spec); this script only
+ *   prints the row for visibility.
+ *
  * Runs from any working directory (Node, pnpm script, hooks); test environments
  * that hand out non-filesystem module URLs fall back to the process cwd.
  *
@@ -103,46 +112,89 @@ function defaultReadFile(relativePath) {
  * Reads and validates the committed budget rows; a malformed table is a broken
  * gate, so it fails fast naming the offending row instead of measuring garbage.
  *
- * @returns {Array<{surface: string, globs: string[], maxKb: {raw?: number, gzip?: number}}>}
- *   Validated rows in file order.
+ * @param {unknown} raw The parsed JSON of `scripts/budgets.json` (an array of
+ *   rows, per the kind taxonomy in the header).
+ * @returns {Array<{kind: 'bytes', surface: string, globs: string[], maxKb: {raw?: number, gzip?: number}} | {kind: 'timing', surface: string, maxMs: number, measuredBy: string}>}
+ *   Validated rows in file order, normalized to their kind.
  */
-function readBudgets() {
-  const raw = JSON.parse(readFileSync(budgetsPath(), 'utf8'));
+export function parseBudgetRows(raw) {
   if (!Array.isArray(raw)) {
     throw new Error(`scripts/budgets.json must contain an array of rows, got ${typeof raw}`);
   }
   const problems = [];
-  for (const [index, row] of raw.entries()) {
-    const label =
-      row === null || typeof row !== 'object'
-        ? `#${index}`
-        : `#${index} (${row.surface ?? 'unnamed'})`;
+  /** @type {Array<{kind: string, surface?: unknown}>} */
+  const rows = raw;
+  /** One row's stable complaint label (its surface when informative, else `#index`). */
+  const label = (/** @type {{surface?: unknown}} */ row, index) =>
+    row === null || typeof row !== 'object'
+      ? `#${index}`
+      : `#${index} (${typeof row.surface === 'string' && row.surface.trim() !== '' ? row.surface : 'unnamed'})`;
+  for (const [index, row] of rows.entries()) {
+    const tag = label(row, index);
     if (typeof row !== 'object' || row === null) {
-      problems.push(`${label} is not an object`);
+      problems.push(`${tag} is not an object`);
       continue;
     }
     if (typeof row.surface !== 'string' || row.surface.trim() === '') {
-      problems.push(`${label} surface must be a non-empty string`);
+      problems.push(`${tag} surface must be a non-empty string`);
     }
-    const globs = row.globs;
-    if (
-      !Array.isArray(globs) ||
-      globs.length === 0 ||
-      globs.some((globPart) => typeof globPart !== 'string' || globPart.trim() === '')
-    ) {
-      problems.push(`${label} globs must be a non-empty array of non-empty strings`);
-    }
-    const maxKb = row.maxKb;
-    const positive = (key) =>
-      maxKb !== null && typeof maxKb === 'object' && Number.isFinite(maxKb[key]) && maxKb[key] > 0;
-    if (!positive('raw') && !positive('gzip')) {
-      problems.push(`${label} maxKb needs a positive raw and/or gzip number`);
+    const kind = row.kind === undefined ? 'bytes' : row.kind;
+    if (kind === 'bytes') {
+      const globs = row.globs;
+      if (
+        !Array.isArray(globs) ||
+        globs.length === 0 ||
+        globs.some((globPart) => typeof globPart !== 'string' || globPart.trim() === '')
+      ) {
+        problems.push(`${tag} globs must be a non-empty array of non-empty strings`);
+      }
+      const maxKb = row.maxKb;
+      const positive = (key) =>
+        maxKb !== null &&
+        typeof maxKb === 'object' &&
+        Number.isFinite(maxKb[key]) &&
+        maxKb[key] > 0;
+      if (!positive('raw') && !positive('gzip')) {
+        problems.push(`${tag} maxKb needs a positive raw and/or gzip number`);
+      }
+    } else if (kind === 'timing') {
+      const maxMs = /** @type {{maxMs?: unknown}} */ (row).maxMs;
+      if (typeof maxMs !== 'number' || !Number.isFinite(maxMs) || maxMs <= 0) {
+        problems.push(`${tag} maxMs must be a positive finite number of milliseconds`);
+      }
+      const measuredBy = /** @type {{measuredBy?: unknown}} */ (row).measuredBy;
+      if (typeof measuredBy !== 'string' || measuredBy.trim() === '') {
+        problems.push(`${tag} measuredBy must be a non-empty string naming its runner`);
+      }
+      if (row.globs !== undefined) {
+        problems.push(
+          `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry globs`
+        );
+      }
+      if (row.maxKb !== undefined) {
+        problems.push(
+          `${tag} is a timing row — a timing gate is measured outside the bundle, so it cannot carry maxKb`
+        );
+      }
+    } else {
+      problems.push(`${tag} kind must be "bytes" or "timing", got ${String(kind)}`);
     }
   }
   if (problems.length > 0) {
     throw new Error(`scripts/budgets.json is invalid:\n${problems.join('\n')}`);
   }
-  return raw;
+  return rows.map((row, index) => {
+    const normalized = { ...raw[index] };
+    if (typeof normalized === 'object' && normalized !== null && normalized.kind === undefined) {
+      normalized.kind = 'bytes';
+    }
+    return normalized;
+  });
+}
+
+/** Reads, parses and validates the committed budget table. */
+function readBudgets() {
+  return parseBudgetRows(JSON.parse(readFileSync(budgetsPath(), 'utf8')));
 }
 
 /** Format KB with one decimal, or `—` when unset. */
@@ -169,8 +221,17 @@ async function main() {
   const files = listFiles(outputRoot());
   console.log(`\nSurface budgets — .output/chrome-mv3 (${files.length} files)\n`);
   let breached = false;
+  const timingRows = budgets.filter((budget) => budget.kind === 'timing');
+  const byteRows = budgets.filter((budget) => budget.kind !== 'timing');
+  for (const { surface, maxMs, measuredBy } of timingRows) {
+    // A timing gate has no bundle surface to measure; its ceiling is
+    // asserted by the runner named in the row. Printed for visibility.
+    console.log(
+      `  ${surface.padEnd(40)}  ≤ ${maxMs} ms   (runtime gate — measured by ${measuredBy})`
+    );
+  }
   console.log('  SURFACE                                   RAW (KB)    BUDGET   GZIP (KB)  BUDGET');
-  for (const { surface, globs, maxKb } of budgets) {
+  for (const { surface, globs, maxKb } of byteRows) {
     const { rawBytes, gzipBytes, files: hit } = measureSurface(files, globs);
     if (hit.length === 0) {
       console.log(`  ${surface.padEnd(40)}  absent — surface not built yet, or update row globs`);
