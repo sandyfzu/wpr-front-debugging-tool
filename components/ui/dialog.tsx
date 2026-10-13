@@ -42,12 +42,16 @@ export interface ModalDialogProps {
   children: JSX.Element;
 }
 
-/** The dialog panel: floating, token-surfaced, above its scrim. */
-const PANEL_CLASSES =
+/**
+ * The dialog panel: floating, token-surfaced, above its scrim. Exported so
+ * wrapper surfaces that compose their own content into the same chrome (the
+ * command palette) mean one floating-shell shape across the design system.
+ */
+export const DIALOG_PANEL_CLASSES =
   'fixed left-1/2 top-16 z-50 w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-line-2 bg-surface-2 shadow-elev-3';
 
 /** The scrim: above the shell (z-40) and under both the panel and the toasts. */
-const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-scrim';
+const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
 
 /**
  * Render the modal dialog (mount-driven — render inside a `<Show>` while open).
@@ -79,7 +83,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
         <KobalteDialog.Overlay data-fdt="dialog-overlay" class={OVERLAY_CLASSES} />
         <KobalteDialog.Content
           data-fdt="dialog"
-          class={cn(PANEL_CLASSES, props.class)}
+          class={cn(DIALOG_PANEL_CLASSES, props.class)}
           onCloseAutoFocus={(event) => {
             // No `<Dialog.Trigger>` exists (the caller opens the dialog itself
             // through its own control), so the built-in restore-to-trigger
