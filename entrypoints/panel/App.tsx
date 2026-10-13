@@ -114,9 +114,15 @@ const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
 const STACK_ROW = 'flex min-h-0 flex-1';
 
 export function PanelApp(props: AppProps): JSX.Element {
-  // Builds run exactly once per panel mount.
+  // All three store injections below are deliberate once-per-mount builds
+  // (the component body runs once; a store is never reactively rebuilt), so
+  // the `solid/reactivity` warning's concern does not apply to any of them —
+  // silenced uniformly rather than by exception.
+  //
+  // eslint-disable-next-line solid/reactivity
   const search = props.search ?? createSearchStore();
   const data =
+    // eslint-disable-next-line solid/reactivity
     props.data ??
     ((): FdtDataStore => {
       const edges = realMessagingEdges();
@@ -131,9 +137,6 @@ export function PanelApp(props: AppProps): JSX.Element {
         now: Date.now
       });
     })();
-  // The keyboard layer's one-time store injection — the same deliberate
-  // once-per-mount read the two stores above use; reactivity cannot re-run
-  // a store build, so the warning's concern does not apply here.
   // eslint-disable-next-line solid/reactivity
   const overlays = props.overlays ?? createOverlayStore();
   const router = createHashRoute();

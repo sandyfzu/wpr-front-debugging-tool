@@ -125,37 +125,79 @@ function CommandRow(props: { item: CollectionNode<PaletteCommand> }): JSX.Elemen
 
 /**
  * Keep the combobox highlight on the top-ranked row whenever it is unset —
- * at open, and after every query change (the library clears the focus key
- * while the input value changes). This is what makes Enter run something
- * without a preceding arrow key, and what walks the highlight down as the
- * user filters.
+ * at open, after every query change (the library clears the focus key while
+ * the input value changes), and after caret moves (its input keydown clears
+ * it for left/right, too). This is what makes Enter run something without a
+ * preceding arrow key, and what walks the highlight down as the user filters.
  *
  * @param props.options The current ranked list (each change re-arms the guard).
+ * @param props.registerArm Receives the arm action so the input's keydown
+ *   can arm the highlight after the library's own key handling (caret moves
+ *   clear it without changing the ranked list).
  */
-function HighlightGuard(props: { options: readonly PaletteCommand[] }): JSX.Element {
+function HighlightGuard(props: {
+  options: readonly PaletteCommand[];
+  registerArm?: (armTopEnabled: () => void) => void;
+}): JSX.Element {
   const context = useComboboxContext();
-  // The library clears the highlight key on every input-value write (its
-  // combobox semantics), and the field's own listener chain runs after the
-  // reactive flush — so the guard re-arms the top row one tick after each
-  // ranked-list change, once the field's writes have settled. At mount the
-  // same tick lands the initial highlight (Enter-ready without arrows).
+  let disposed = false;
+  /** The one coalesced re-arm tick (declared first: cleanup references it). */
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => {
+    disposed = true;
+    if (pendingTimer !== null) clearTimeout(pendingTimer);
+  });
+
+  /**
+   * Arm the highlight onto the first enabled row (never merely the first row:
+   * a future registry order putting a disabled row on top must not arm a
+   * dead key), only when the highlight is unset — an armed guard never
+   * clobbers a user-moved position.
+   */
+  const armTopEnabled = (): void => {
+    if (disposed) return;
+    const listState = context.listState();
+    if (listState.selectionManager().focusedKey() != null) return;
+    for (const key of listState.collection().getKeys()) {
+      const item = listState.collection().getItem(key);
+      if (item !== undefined && !item.disabled) {
+        listState.selectionManager().setFocusedKey(key);
+        break;
+      }
+    }
+  };
+  // The registration is a once-per-mount wiring read (the component body
+  // runs once; the callback is fixed at build time), so the rule's concern
+  // does not apply.
+  // eslint-disable-next-line solid/reactivity
+  props.registerArm?.(armTopEnabled);
+
+  // One coalesced tick: every arm trigger schedules the same re-arm, so the
+  // field's writes have settled first and no burst double-arms.
+  const schedule = (): void => {
+    if (disposed) return;
+    if (pendingTimer !== null) clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      armTopEnabled();
+    }, 0);
+  };
+  // Ranked-list changes (every query write clears the key)…
   createEffect(
     on(
       () => props.options,
       () => {
-        const timer = setTimeout(() => {
-          const manager = context.listState().selectionManager();
-          const first = context.listState().collection().getFirstKey();
-          if (manager.focusedKey() == null && first != null) {
-            manager.setFocusedKey(first);
-          }
-        }, 0);
-        onCleanup(() => {
-          clearTimeout(timer);
-        });
+        schedule();
       }
     )
   );
+  // …and the collection's own availability: the library builds its option
+  // nodes asynchronously, so the mount's first tick can land before the
+  // rows exist — the collection's first real build is the arm's authority.
+  createEffect(() => {
+    void context.listState().collection();
+    schedule();
+  });
   return <></>;
 }
 
@@ -181,8 +223,25 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
       title="Command palette"
       description="Filter the pages and actions, run the highlighted one"
       class={cn('pt-1.5', props.class)}
+      onKeyDownCapture={(event) => {
+        // Tab = dismiss: the combobox's own Tab completion (close + reset
+        // input) cannot finish inside this modal — its focus trap returns to
+        // this field, so the library's close leaves a wiped query and a
+        // rendered list under a closed `aria-expanded`. Dismissing the whole
+        // palette is the same decision in one step (and the cursor's focus
+        // returns to the trigger).
+        if (event.key !== 'Tab') return;
+        event.preventDefault();
+        event.stopPropagation();
+        props.onClose();
+      }}
     >
-      <PaletteCombobox commands={props.commands} filter={props.filter} onRun={props.onRun} />
+      <PaletteCombobox
+        commands={props.commands}
+        filter={props.filter}
+        onRun={props.onRun}
+        onDismiss={props.onClose}
+      />
     </ModalDialog>
   );
 }
@@ -194,6 +253,14 @@ export interface PaletteComboboxProps<T extends PaletteCommand = PaletteCommand>
   filter: (commands: readonly T[], query: string) => readonly T[];
   /** The chosen command's execution callback. */
   onRun: (command: T) => void;
+  /**
+   * The dismissal callback — the input's Tab intercepts here: the library's
+   * own Tab semantics (close + reset input) cannot complete inside a modal
+   * whose field is the only focus stop (its close leaves the dialog open and
+   * wipes the query), so Tab dismisses the palette, exactly how the key
+   * would end a single-focusable combobox activation.
+   */
+  onDismiss: () => void;
 }
 
 /**
@@ -240,10 +307,27 @@ function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
   const ranked = createMemo(() => props.filter(props.commands, query()));
   const rankedOptions = createMemo(() => [...ranked()]);
 
+  /** The guard's arm action, registered by the child on mount. */
+  let arm: (() => void) | null = null;
+  /** The coalesced post-library tick (caret moves clear the highlight key
+      without changing the ranked list, so the guard's own effect never
+      fires for them; this tick arms once the key handling has settled). */
+  let pendingArm: ReturnType<typeof setTimeout> | null = null;
+  onCleanup(() => {
+    if (pendingArm !== null) clearTimeout(pendingArm);
+  });
+  const scheduleArm = (): void => {
+    if (pendingArm !== null) clearTimeout(pendingArm);
+    pendingArm = setTimeout(() => {
+      pendingArm = null;
+      arm?.();
+    }, 0);
+  };
+
   return (
     <KobalteCombobox
       id="fdt-command-palette"
-      class="grid gap-1"
+      class="flex min-h-0 flex-1 flex-col gap-1"
       defaultOpen
       options={rankedOptions()}
       optionValue={(command) => command.id}
@@ -266,6 +350,9 @@ function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
         class={cn(FIELD_CLASSES, FOCUS_RING)}
         placeholder="Type a command…"
         aria-label="Search commands"
+        onKeyDown={() => {
+          scheduleArm();
+        }}
       />
       <Show
         when={ranked().length > 0}
@@ -275,9 +362,17 @@ function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
           </p>
         }
       >
-        <KobalteCombobox.Listbox data-fdt="palette-list" class={cn(LIST_CLASSES)} />
+        <KobalteCombobox.Listbox
+          data-fdt="palette-list"
+          class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
+        />
       </Show>
-      <HighlightGuard options={ranked()} />
+      <HighlightGuard
+        options={ranked()}
+        registerArm={(registered) => {
+          arm = registered;
+        }}
+      />
     </KobalteCombobox>
   );
 }

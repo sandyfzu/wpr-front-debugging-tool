@@ -22,10 +22,17 @@ const log = createLogger('panel');
 export type JsonExportResult = 'downloaded' | 'copied' | 'failed';
 
 export interface JsonExportDeps {
-  /** The file-download seam (production: Blob + anchor click; tests inject). */
+  /**
+   * The file-download seam (production: Blob + anchor click; tests inject).
+   */
   download: (payload: string, filename: string) => void;
-  /** The clipboard seam for the degrade path. */
-  clipboard: ClipboardLike;
+  /**
+   * The clipboard seam for the degrade path — constructed lazily: the
+   * accessor resolves only inside the fallback's own handling, so a context
+   * without the clipboard (a throw at construction) is an _outcome_ of the
+   * fallback arm, not an escape before it.
+   */
+  clipboard: () => ClipboardLike;
   /** The wall clock for the filename stamp. */
   now: () => Date;
 }
@@ -87,7 +94,17 @@ export async function exportPageDataJson(
         });
       }
     };
-    const outcome = await performCopy(payload, deps.clipboard, sink);
-    return outcome === 'copied' ? 'copied' : 'failed';
+    try {
+      const outcome = await performCopy(payload, deps.clipboard(), sink);
+      return outcome === 'copied' ? 'copied' : 'failed';
+    } catch (cause) {
+      // The clipboard seam's construction (or its provider) blew up before a
+      // copy could even be attempted — the third honest outcome, same toast.
+      log.error('The clipboard export failed before it could run', {
+        cause: cause instanceof Error ? { message: cause.message } : cause
+      });
+      sink.failed(cause);
+      return 'failed';
+    }
   }
 }

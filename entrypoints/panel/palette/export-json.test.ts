@@ -30,6 +30,7 @@ function latestToast(): ToastItem | undefined {
 function makeDeps(options?: {
   download?: (payload: string, filename: string) => void;
   clipboard?: ClipboardLike;
+  clipboardAt?: () => ClipboardLike;
 }): JsonExportDeps {
   return {
     download:
@@ -40,7 +41,16 @@ function makeDeps(options?: {
           throw new Error('an empty or misnamed export is not exportable');
         }
       }),
-    clipboard: options?.clipboard ?? { writeText: vi.fn(() => Promise.resolve(undefined)) },
+    // The lazy seam contract: the accessor resolves inside the fallback arm.
+    // (Integration amendment: the clipboard dep grew from a value to an
+    // accessor so a clipboard-less context degrades as an outcome — the
+    // helper follows the grown contract, no assertion semantics changed.)
+    clipboard:
+      options?.clipboardAt ??
+      (() =>
+        options?.clipboard ?? {
+          writeText: vi.fn(() => Promise.resolve(undefined))
+        }),
     now: () => STAMP
   };
 }
@@ -95,6 +105,28 @@ describe('exportPageDataJson', () => {
           throw new Error('no downloads api');
         },
         clipboard: { writeText } as unknown as ClipboardLike
+      })
+    );
+    expect(result).toBe('failed');
+    const item = latestToast();
+    expect(item?.tone).toBe('error');
+    expect(item?.description).toContain('Neither');
+  });
+
+  it('lands a clipboard construction failure in the final outcome, not the caller', async () => {
+    // A clipboard-less context: the lazy seam's build throws before a copy
+    // could run — an outcome of the fallback arm (never an escape out of
+    // the export; the run-command guard is the last line, not this path's
+    // plan).
+    const result = await exportPageDataJson(
+      makeFdtData(),
+      makeDeps({
+        download: () => {
+          throw new Error('no downloads api');
+        },
+        clipboardAt: () => {
+          throw new Error('The secure-context clipboard is unavailable in this context.');
+        }
       })
     );
     expect(result).toBe('failed');

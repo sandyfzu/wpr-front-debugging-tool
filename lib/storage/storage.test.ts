@@ -1,7 +1,7 @@
 /**
  * Storage contract tests over the fake browser — the fallbacks, the
  * validator, and corrupt-value resilience are the guarantees surfaces rely
- * on; meta book-keeping is verified here too (P2's updater owns writing it).
+ * on; meta book-keeping is verified here too (the meta updater owns writing it).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';

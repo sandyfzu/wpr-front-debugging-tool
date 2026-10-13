@@ -130,4 +130,28 @@ describe('overlay store — command runs', () => {
       error.mockRestore();
     }
   });
+
+  it('contains a synchronously throwing run the same way (closed, restored, logged, no escape)', () => {
+    // A run throwing BEFORE any promise exists cannot ride the rejection
+    // path — the guard owns this shape explicitly.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const { store, capture } = makeStore();
+      const opener = fakeTarget();
+      capture(opener);
+      store.openPalette();
+      expect(() => {
+        store.runCommand(() => {
+          throw new Error('a sync wiring bug');
+        });
+      }).not.toThrow();
+      expect(store.paletteOpen()).toBe(false); // the close ran first
+      expect(opener.focusCalls).toBe(1); // and the restore with it
+      expect(
+        error.mock.calls.some((call) => call.join(' ').includes('threw past its own guarding'))
+      ).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
+  });
 });

@@ -19,7 +19,7 @@
  * navigates elsewhere wants to land focus there instead).
  */
 import type { JSX } from 'solid-js';
-import { Show } from 'solid-js';
+import { onCleanup, Show } from 'solid-js';
 import { Dialog as KobalteDialog } from '@kobalte/core';
 import X from 'lucide-solid/icons/x';
 import { cn } from '../../utils/cn';
@@ -28,6 +28,14 @@ import { FOCUS_RING } from './classes';
 export interface ModalDialogProps {
   /** Called once when the dialog is dismissed by Escape or an outside pointer. */
   onClose: () => void;
+  /**
+   * A keydown handler on the panel's capture phase — it runs before the
+   * content's own listeners (including composed components the wrapper
+   * cannot intercept), so a surface can intercept keys the innards would
+   * swallow (the palette's Tab = dismiss). Must call its own preventDefault
+   * / stopPropagation decisions per key.
+   */
+  onKeyDownCapture?: (event: KeyboardEvent) => void;
   /** The `aria-labelledby` heading (rendered visually-hidden in the panel). */
   title: string;
   /** The optional `aria-describedby` line under the title. */
@@ -46,11 +54,16 @@ export interface ModalDialogProps {
  * The dialog panel: floating, token-surfaced, above its scrim. Exported so
  * wrapper surfaces that compose their own content into the same chrome (the
  * command palette) mean one floating-shell shape across the design system.
+ *
+ * The height clamp (5rem = the top offset plus breathing room): the plate
+ * never grows past the viewport, so a short docked-bottom DevTools panel
+ * cannot clip the plate's bottom rows — the clamped plate shrinks its
+ * scroll-owning content (each surface decides what scrolls inside).
  */
 export const DIALOG_PANEL_CLASSES =
-  'fixed left-1/2 top-16 z-50 w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-line-2 bg-surface-2 shadow-elev-3';
+  'fixed left-1/2 top-16 z-50 flex max-h-[calc(100dvh-5rem)] w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded-lg border border-line-2 bg-surface-2 shadow-elev-3';
 
-/** The scrim: above the shell (z-40) and under both the panel and the toasts. */
+/** The scrim: above the shell (z-40); the plate (z-50), tooltips (z-50) and the toasts' region (z-[60]) rank above it. */
 const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
 
 /**
@@ -84,6 +97,18 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
         <KobalteDialog.Content
           data-fdt="dialog"
           class={cn(DIALOG_PANEL_CLASSES, props.class)}
+          ref={(element) => {
+            // The capture-phase keydown hook: an addEventListener-capture
+            // binding (a delegated Solid handler could never order itself
+            // ahead of the content's own target-phase listeners), released
+            // with the surface.
+            const capture = props.onKeyDownCapture;
+            if (capture === undefined) return;
+            element.addEventListener('keydown', capture, true);
+            onCleanup(() => {
+              element.removeEventListener('keydown', capture, true);
+            });
+          }}
           onCloseAutoFocus={(event) => {
             // No `<Dialog.Trigger>` exists (the caller opens the dialog itself
             // through its own control), so the built-in restore-to-trigger

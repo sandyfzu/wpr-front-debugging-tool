@@ -11,7 +11,7 @@
  * per palette open (the store signal is the assembly's reactive key), so the
  * action gates hold the store's state at the moment of use.
  */
-import { Show, createMemo, type JSX } from 'solid-js';
+import { Show, createMemo, untrack, type JSX } from 'solid-js';
 import { CommandPalette, type PaletteCommand } from '../../../components/ui/command-palette';
 import { defaultClipboard } from '../../../components/ui/copy-button';
 import { cycleAppearanceOption } from '../../../lib/storage/options';
@@ -58,10 +58,15 @@ function anchorDownload(payload: string, filename: string): void {
   anchor.download = filename;
   document.body.append(anchor);
   // The anchor exists only for the browser to confirm the transfer; its
-  // object URL dies with this turn (a leaked blob URL would pin memory).
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  // object URL dies with this turn (a leaked blob URL would pin memory) —
+  // and the disposal runs even when the click refuses, so a failed
+  // download leaves neither node nor URL pinned.
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 }
 
 /**
@@ -98,7 +103,7 @@ export function productionActionDeps(
     exportData: (pageData: FdtData): Promise<JsonExportResult> =>
       exportPageDataJson(pageData, {
         download: anchorDownload,
-        clipboard: defaultClipboard(),
+        clipboard: () => defaultClipboard(),
         now: () => new Date()
       })
   };
@@ -141,15 +146,17 @@ export function assembleCommands(
  * @param props The stores and the navigation seams.
  */
 export function PanelOverlays(props: PanelOverlaysProps): JSX.Element {
-  // The rows re-assemble per palette open: the export row's disabled gate
-  // and the rows generally must hold the store state at the moment of use.
-  // The store state itself is a per-open snapshot read, deliberately
-  // untracked so data pushes while the palette is up never churn the
-  // combobox collection mid-flight; the next open re-assembles fresh.
+  // The rows assemble per palette open: the gate keeps the palette signal
+  // tracked (each open re-computes), and the assembled rows are a snapshot —
+  // the store reads inside the assembly are deliberately untracked, so a
+  // push or refresh landing while the palette is up never churns the
+  // combobox collection (and never yanks the user's arrow position); the
+  // current open keeps the state it opened with and the next open
+  // re-assembles fresh.
   const tabs = realExclusionBuilderDeps();
   const commands = createMemo(() => {
     if (!props.overlays.paletteOpen()) return [];
-    return assembleCommands(props, tabs);
+    return untrack(() => assembleCommands(props, tabs));
   });
 
   return (

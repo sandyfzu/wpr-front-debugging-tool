@@ -145,13 +145,25 @@ export function createOverlayStore(
     closeShortcuts: closeShortcutsNow,
     runCommand(run) {
       closePaletteNow();
-      void Promise.resolve(run()).catch((cause: unknown) => {
-        // The action rows own their failures; a rejection escaping here is a
-        // wiring bug — logged with the shared prefix, never a silent swallow.
-        log.error('A palette command rejected past its own guarding', {
+      // Both run shapes (sync throw and promise rejection) are guarded: an
+      // action's own guards own the failures they can produce; anything that
+      // still escapes is wiring, logged and never past this call frame —
+      // a sync throw would otherwise reach the event's dispatch uncaught
+      // (the palette is already closed; no toast could fire for it there).
+      try {
+        const outcome = run();
+        if (outcome instanceof Promise) {
+          void outcome.catch((cause: unknown) => {
+            log.error('A palette command rejected past its own guarding', {
+              cause: cause instanceof Error ? { message: cause.message } : cause
+            });
+          });
+        }
+      } catch (cause: unknown) {
+        log.error('A palette command threw past its own guarding', {
           cause: cause instanceof Error ? { message: cause.message } : cause
         });
-      });
+      }
     }
   };
 }

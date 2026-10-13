@@ -5,8 +5,10 @@
  * export row honestly gated), a page row closing AND swapping the route, the
  * reload action driving a second request flight through the data store, the
  * shortcuts overlay listing the table and closing through Escape, `?` typed
- * in the palette field staying a query, and every route change landing
- * focus on the body's own h1 (skeleton bodies skip the move by rule).
+ * in the palette field staying a query, caret moves re-arming the Enter
+ * highlight, Tab dismissing instead of wiping the query, the open-time
+ * snapshot holding against a mid-open data settle, and the shortcuts-row
+ * swap landing one dialog with focus restored to the real trigger.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -153,9 +155,154 @@ describe('the keyboard overlays in the shell', () => {
     expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
     expect(document.activeElement?.getAttribute('role')).toBe('combobox');
   });
+
+  it('a caret move does not strand the Enter arm (ArrowLeft re-arms the top row)', async () => {
+    bootShellWithData();
+    fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
+    const field = await paletteField();
+    fireEvent.input(field, { target: { value: 'lazyload' } });
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Lazyload/ })).toBeTruthy();
+    });
+    // The library's input keydown clears the highlight key on caret moves
+    // without changing the ranked list — the guard's post-key arm restores it.
+    fireEvent.keyDown(field, { key: 'ArrowLeft', bubbles: true, cancelable: true });
+    await waitFor(() => {
+      expect(field.getAttribute('aria-activedescendant')).not.toBeNull();
+    });
+    // …and Enter after the caret move runs the armed row (the arm's purpose).
+    fireEvent.keyDown(field, { key: 'Enter', bubbles: true, cancelable: true });
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Lazyload' })).toBeTruthy();
+    });
+  });
+
+  it('Tab inside the field dismisses the palette (the trap cannot complete it otherwise)', async () => {
+    bootShellWithData();
+    const trigger = screen.getByRole('button', { name: 'Command palette' });
+    trigger.focus(); // A real click focuses the button (happy-dom does not).
+    fireEvent.click(trigger);
+    const field = await paletteField();
+    fireEvent.input(field, { target: { value: 'det' } });
+    await paletteField();
+    // The pre-existing library behavior wiped the query and left the list
+    // rendered under a closed `aria-expanded`; the intercept dismisses instead.
+    fireEvent.keyDown(field, { key: 'Tab', bubbles: true, cancelable: true });
+    await waitFor(() => {
+      expect(document.querySelector('[data-fdt="palette-input"]')).toBeNull();
+    });
+    // Focus followed the overlay's restore contract — back to the trigger.
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('holds the open-time snapshot: a mid-open data settle never churns the rows', async () => {
+    let settle!: (payload: unknown) => void;
+    // The route is pinned explicitly: leftover hashes from earlier tests
+    // would steer the settled body somewhere else than this test's probe.
+    window.location.hash = '#/detections';
+    window.dispatchEvent(new Event('hashchange'));
+    const data = createFdtDataStore({
+      inspectedTabId: () => 42,
+      request: () =>
+        new Promise<unknown>((resolve) => {
+          settle = resolve;
+        }),
+      receive: () => () => undefined,
+      search: createSearchStore(),
+      reload: vi.fn(),
+      now: () => 1727000000000
+    });
+    render(() => <PanelApp data={data} />); // boot flight in the air
+    fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
+    const field = await paletteField();
+    // The export row reads its open-time store state: unset at this open.
+    const exportRow = screen.getByRole('option', { name: /Export JSON/ });
+    expect(exportRow.getAttribute('aria-disabled')).toBe('true');
+
+    // The mid-open settle does NOT reassemble: the snapshot holds — the row
+    // stays at its open-time gate (and the combobox collection never churns
+    // the highlight away). (The shell's page body is aria-hidden under the
+    // open modal by design, so the settle is asserted through the store and
+    // the row — the queryable surfaces — not through the page's heading.)
+    settle(makeFdtData());
+    await waitFor(() => {
+      expect(data.state().status).toBe('ready');
+    });
+    expect(exportRow.getAttribute('aria-disabled')).toBe('true');
+
+    // No churn: the same row nodes, same count — the collection did not
+    // rebuild over the settle (the snapshot's purpose). The arm survives by
+    // the guard's re-arm (pinned by the caret-move test; its exact tick
+    // timing under a same-tick rebuild is not a render-assertable contract).
+    expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(11);
+    expect(document.body.contains(exportRow)).toBe(true);
+
+    // The same open keeps its snapshot; the next open re-assembles fresh —
+    // and with data loaded, the export row is enabled there.
+    fireEvent.keyDown(field, { key: 'Tab', bubbles: true, cancelable: true }); // close
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Detections' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
+    await paletteField();
+    expect(screen.getByRole('option', { name: /Export JSON/ }).getAttribute('aria-disabled')).toBe(
+      'false'
+    );
+  });
+
+  it('the palette run-flip lands one dialog, focus restored to the trigger (the shortcuts row)', async () => {
+    // The "Show keyboard shortcuts" row: the palette closes (capturing the
+    // settled trigger as the restore point), the shortcuts dialog takes over
+    // — exactly one dialog exists, and Esc restores to the real trigger.
+    bootShellWithData();
+    const trigger = screen.getByRole('button', { name: 'Command palette' });
+    trigger.focus(); // A real click focuses the button (happy-dom does not).
+    fireEvent.click(trigger);
+    const field = await paletteField();
+    fireEvent.input(field, { target: { value: 'shortcuts' } });
+    await waitFor(() => {
+      expect(field.getAttribute('aria-activedescendant')).not.toBeNull();
+      expect(screen.getByRole('option', { name: /Show keyboard shortcuts/ })).toBeTruthy();
+    });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
+    });
+    expect(document.querySelectorAll('[role="dialog"]').length).toBe(1);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+    });
+    expect(document.activeElement).toBe(trigger);
+  });
 });
 
 describe('focus on route switch', () => {
+  it('a palette open from a focused strip anchor restores to it on close', async () => {
+    // The overlay store restores whatever held focus at open — the strip's
+    // link (a real focusable in the shell, not a test fake) is a legitimate
+    // opener: focus it, open through the global key, close, land back.
+    bootShellWithData();
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Not detected' })).toBeTruthy();
+    });
+    const anchor = screen.getByRole('link', { name: 'Not detected' });
+    anchor.focus();
+    expect(document.activeElement).toBe(anchor);
+    fireEvent.keyDown(document.body, {
+      key: 'k',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    await paletteField();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(document.querySelector('[data-fdt="palette-input"]')).toBeNull();
+    });
+    expect(document.activeElement).toBe(anchor);
+  });
+
   it("lands on the route body's h1 after a nav click (announced by the heading)", async () => {
     bootShellWithData();
     await waitFor(() => {

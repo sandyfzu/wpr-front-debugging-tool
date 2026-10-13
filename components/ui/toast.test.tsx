@@ -86,6 +86,13 @@ describe('toast region', () => {
     expect(within(alert).getByText('Retry the copy')).toBeTruthy();
   });
 
+  it('ranks the region above the dialog plate (the notifications layer intent)', () => {
+    // The layer rank is structural (scrim 40 < plate/tooltips 50 < toasts 60):
+    // pinned at the class literal so a rank change is a deliberate edit.
+    render(() => <Toasts />);
+    expect(screen.getByRole('region', { name: 'Notifications' }).className).toContain('z-[60]');
+  });
+
   it('auto-dismisses after the tone duration (fake timers)', () => {
     vi.useFakeTimers();
     try {

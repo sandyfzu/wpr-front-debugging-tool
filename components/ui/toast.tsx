@@ -58,7 +58,11 @@ export function Toasts(props: ToastsProps): JSX.Element {
       data-fdt="toasts"
       role="region"
       aria-label="Notifications"
-      class={cn('pointer-events-none fixed bottom-2 end-2 z-50', props.class)}
+      // The notifications' layer rank: above the dialog plate and tooltips
+      // (both z-50; a toast must stay visible over an open overlay surface —
+      // this region mounts inside the shell root, before any later portal,
+      // so the explicit rank decides where DOM order would not).
+      class={cn('pointer-events-none fixed bottom-2 end-2 z-[60]', props.class)}
     >
       <ul class="flex w-72 max-w-[calc(100vw-1rem)] flex-col gap-1.5">
         <For each={toastItems()}>{(item) => <ToastCard item={item} />}</For>

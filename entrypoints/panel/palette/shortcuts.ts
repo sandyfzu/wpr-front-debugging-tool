@@ -13,7 +13,10 @@
  * data layer's single rule (the protocol's `cancelSearch`). This listener
  * ignores Escape entirely.
  */
+import { createLogger } from '../../../lib/logger';
 import type { OverlayStore } from './overlays';
+
+const log = createLogger('panel');
 
 /** One row of the shortcuts overlay. */
 export interface ShortcutRow {
@@ -35,6 +38,7 @@ export const PANEL_SHORTCUTS: readonly ShortcutRow[] = [
   { keys: '↑ ↓', action: 'Highlight the previous / next command', context: 'Command palette' },
   { keys: 'Home / End', action: 'First / last command', context: 'Command palette' },
   { keys: 'Enter', action: 'Run the highlighted command', context: 'Command palette' },
+  { keys: 'Tab', action: 'Dismiss the palette', context: 'Command palette' },
   { keys: '?', action: 'Open or close this list' },
   { keys: 'Esc', action: 'Close the palette or this list', context: 'Overlays' },
   {
@@ -76,19 +80,29 @@ export function registerPanelShortcuts(
   handlers: Pick<OverlayStore, 'togglePalette' | 'toggleShortcuts'>
 ): () => void {
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (
-      !event.altKey &&
-      !event.shiftKey &&
-      (event.ctrlKey || event.metaKey) &&
-      (event.key === 'k' || event.key === 'K')
-    ) {
-      event.preventDefault();
-      handlers.togglePalette();
-      return;
-    }
-    if (event.key === '?' && !isEditableTarget(event.target)) {
-      event.preventDefault();
-      handlers.toggleShortcuts();
+    // One listener body carries both chords; a wiring bug in one branch must
+    // not skip or break the other (a store toggle cannot throw by contract,
+    // so this guard is containment for the impossible, not error handling).
+    try {
+      if (
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === 'k' || event.key === 'K')
+      ) {
+        event.preventDefault();
+        handlers.togglePalette();
+        return;
+      }
+      if (event.key === '?' && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        handlers.toggleShortcuts();
+      }
+    } catch (cause: unknown) {
+      log.error('The panel shortcut dispatch failed', {
+        key: event.key,
+        cause: cause instanceof Error ? { message: cause.message } : cause
+      });
     }
   };
   document.addEventListener('keydown', onKeyDown);

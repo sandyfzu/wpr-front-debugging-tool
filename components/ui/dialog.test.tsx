@@ -62,6 +62,16 @@ describe('ModalDialog structure', () => {
     renderDialog({ closeButton: true });
     expect(screen.getByRole('button', { name: 'Close dialog' })).toBeTruthy();
   });
+
+  it('clamps the plate inside the viewport height (a short docked panel cannot clip it)', () => {
+    // The plate is a height-clamped flex column: the shell's scroll-owning
+    // content shrinks under the clamp, so the plate's bottom rows stay in
+    // the viewport at every docking geometry (the scroll lives inside).
+    renderDialog();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('max-h-[calc(100dvh-5rem)]');
+    expect(dialog.className).toContain('flex-col');
+  });
 });
 
 describe('ModalDialog dismissals', () => {

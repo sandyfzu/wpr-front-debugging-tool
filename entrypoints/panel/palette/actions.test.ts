@@ -32,9 +32,7 @@ interface ActionCalls {
   export: ReturnType<typeof vi.fn>;
 }
 
-/** The action seams, per test. */
-let seenExport: FdtData | null = null;
-
+/** The action seams, per call — no cross-test shared state. */
 function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }): {
   deps: PanelActionDeps;
   calls: ActionCalls;
@@ -42,6 +40,8 @@ function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }):
   seenExportData: () => FdtData | null;
 } {
   const tabsAvailable = options?.tabsAvailable ?? true;
+  /** The export dispatch's data, scoped to this deps round (never shared). */
+  let seenExport: FdtData | null = null;
   const calls = {
     reload: vi.fn(),
     cycle: vi.fn((): Promise<void> => Promise.resolve(undefined)),

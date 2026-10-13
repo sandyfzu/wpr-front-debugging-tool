@@ -50,10 +50,10 @@ function tokenScore(token: string, text: string): number | null {
  * @returns The winning score, or null when the token matches nowhere.
  */
 function tokenBest(token: string, row: MatchableCommand): number | null {
-  const labelScore = tokenScore(token, row.label.toLocaleLowerCase());
+  const labelScore = tokenScore(token, row.label.toLowerCase());
   let best: number | null = labelScore === null ? null : labelScore + LABEL_BONUS;
   row.keywords?.forEach((keyword) => {
-    const score = tokenScore(token, keyword.toLocaleLowerCase());
+    const score = tokenScore(token, keyword.toLowerCase());
     if (score !== null) best = best === null ? score : Math.max(best, score);
   });
   return best;
