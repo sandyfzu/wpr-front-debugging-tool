@@ -117,6 +117,16 @@ automatable — each is named in the owning phase's checklist:
   The driver warms the capture with one throwaway local page after the worker
   event, so every suite's real pages capture deterministically.
 
+## Known flake class + the retry policy (recorded 2026-10-13, the P5I audit round)
+
+The site suites assert against the **live** dockerized site's real cache, and a
+shared run can race it: one observed shape is a frame's
+`performance.timeOrigin` advancing under `site-side-by-side`'s per-side refresh
+(the shared site re-issued the document mid-assertion). **Policy:** on a
+failure of that shape, wait ~90 s and re-run the failing suite **once** — a
+deliberate manual retry. Playwright's own `retries` stay `0`, so nothing ever
+auto-passes; a clean full `pnpm test:e2e` run is the gate's evidence.
+
 ## Environment facts (verified against the installed tooling)
 
 - Chromium for Testing 156.0.8078.4 via Playwright (above the manifest floor of
