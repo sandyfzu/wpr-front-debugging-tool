@@ -33,6 +33,7 @@ import type { FdtData } from '../../lib/wp-rocket/types';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute } from './routes';
+import { StatusBar } from './status-bar/status-bar';
 import { PAGES } from './pages';
 import {
   createFdtDataStore,
@@ -90,6 +91,16 @@ const BRAND =
 function reloadPanelDocument(): void {
   window.location.reload();
 }
+
+/**
+ * The persistent status strip: the shell's bottom edge, outside the
+ * content region's scrolling — an answer never scrolls out and data never
+ * pushes the panel's chrome, at every docking geometry.
+ */
+const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
+
+/** The rail-and-content row above the strip (the shell's pre-strip geometry, unchanged). */
+const STACK_ROW = 'flex min-h-0 flex-1';
 
 export function PanelApp(props: AppProps): JSX.Element {
   // Builds run exactly once per panel mount.
@@ -172,65 +183,72 @@ export function PanelApp(props: AppProps): JSX.Element {
     <FdtDataContext.Provider value={data}>
       <SearchContext.Provider value={search}>
         <div data-fdt="panel-shell" class="flex h-dvh bg-surface-0 text-fg-primary">
-          <header data-fdt="panel-header" class={HEADER}>
-            {/* The brand is not a heading: each page owns the single h1.
-                Its name rides the sr-only span — the rail shows the mark. */}
-            <p class={BRAND}>
-              <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
-              <span class="sr-only">WPR FDT</span>
-            </p>
-            <AdaptiveNav route={router.route} data={navData} />
-          </header>
-          <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <ErrorBoundary
-              fallback={(error: unknown) => {
-                // The render-crash retry reloads the whole panel document
-                // (a Solid reset cannot re-create arbitrary lost state); the
-                // original error is logged here, never rendered — only the
-                // actionable reload affordance reaches the user.
-                log.error('Panel render crashed — the fallback view is up', {
-                  cause: error instanceof Error ? { message: error.message } : error
-                });
-                return (
-                  <div class="p-4">
-                    <ErrorState
-                      title="The panel came apart"
-                      message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
-                      onRetry={props.reload ?? reloadPanelDocument}
-                    />
-                  </div>
-                );
-              }}
-            >
-              <Switch>
-                {/* The real waits only: skeleton while nothing has arrived. */}
-                <Match when={data.state().status === 'fetching' || data.state().status === 'idle'}>
-                  <SkeletonPage />
-                </Match>
-                {/* The error view with its retry (the phase's dead-end rule). */}
-                <Match when={errorState()} keyed>
-                  {(error) => (
-                    <div class="p-4">
-                      <ErrorState
-                        title="Couldn't load page data"
-                        message={error.cause}
-                        onRetry={() => {
-                          data.retry();
-                        }}
-                      />
-                    </div>
-                  )}
-                </Match>
-                {/* `ready` and `refreshing` render the same body — the data
-                    swap is the only change a soft refresh makes. */}
-                <Match
-                  when={data.state().status === 'ready' || data.state().status === 'refreshing'}
+          <div data-fdt="panel-stack" class={BOTTOM_EDGE}>
+            <div class={STACK_ROW}>
+              <header data-fdt="panel-header" class={HEADER}>
+                {/* The brand is not a heading: each page owns the single h1.
+                    Its name rides the sr-only span — the rail shows the mark. */}
+                <p class={BRAND}>
+                  <Rocket size={14} class="shrink-0 text-accent" aria-hidden="true" />
+                  <span class="sr-only">WPR FDT</span>
+                </p>
+                <AdaptiveNav route={router.route} data={navData} />
+              </header>
+              <main data-fdt="panel-content" class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                <ErrorBoundary
+                  fallback={(error: unknown) => {
+                    // The render-crash retry reloads the whole panel document
+                    // (a Solid reset cannot re-create arbitrary lost state); the
+                    // original error is logged here, never rendered — only the
+                    // actionable reload affordance reaches the user.
+                    log.error('Panel render crashed — the fallback view is up', {
+                      cause: error instanceof Error ? { message: error.message } : error
+                    });
+                    return (
+                      <div class="p-4">
+                        <ErrorState
+                          title="The panel came apart"
+                          message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
+                          onRetry={props.reload ?? reloadPanelDocument}
+                        />
+                      </div>
+                    );
+                  }}
                 >
-                  <Dynamic component={PAGES[router.route()]} />
-                </Match>
-              </Switch>
-            </ErrorBoundary>
-          </main>
+                  <Switch>
+                    {/* The real waits only: skeleton while nothing has arrived. */}
+                    <Match
+                      when={data.state().status === 'fetching' || data.state().status === 'idle'}
+                    >
+                      <SkeletonPage />
+                    </Match>
+                    {/* The error view with its retry (the phase's dead-end rule). */}
+                    <Match when={errorState()} keyed>
+                      {(error) => (
+                        <div class="p-4">
+                          <ErrorState
+                            title="Couldn't load page data"
+                            message={error.cause}
+                            onRetry={() => {
+                              data.retry();
+                            }}
+                          />
+                        </div>
+                      )}
+                    </Match>
+                    {/* `ready` and `refreshing` render the same body — the data
+                        swap is the only change a soft refresh makes. */}
+                    <Match
+                      when={data.state().status === 'ready' || data.state().status === 'refreshing'}
+                    >
+                      <Dynamic component={PAGES[router.route()]} />
+                    </Match>
+                  </Switch>
+                </ErrorBoundary>
+              </main>
+            </div>
+            <StatusBar />
+          </div>
           <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
             {statusLine()}
           </div>
