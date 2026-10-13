@@ -31,6 +31,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
+import { panelColdStart } from './cold-start';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute } from './routes';
@@ -205,6 +206,16 @@ export function PanelApp(props: AppProps): JSX.Element {
         return 'Page data could not load';
       case 'ready':
         return `${navRoute(router.route())?.label ?? 'Page'} loaded`;
+    }
+  });
+
+  // The cold-start chain's last entry: the boot flight's first settle, in
+  // whichever arm it lands (ready or error — both are genuine answers). The
+  // instrument's once-guard makes the effect free to re-run per transition.
+  createEffect(() => {
+    const current = data.state();
+    if (current.status === 'ready' || current.status === 'error') {
+      panelColdStart.markFirstDataState();
     }
   });
 

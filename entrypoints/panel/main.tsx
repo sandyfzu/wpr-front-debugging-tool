@@ -9,16 +9,21 @@
  *    first painted frame is the resolved palette (a failed read paints the
  *    token default instead, never a wrong or stuck-hidden panel);
  * 3. the Solid app mounts and the shell takes over (stores, router, data
- *    flight registration all happen inside `App`, once per panel run).
+ *    flight registration all happen inside `App`, once per panel run);
+ * 4. the cold-start instrument marks script start (this module's first
+ *    statement) and shell interactive (the mount lands).
  */
 import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
 import { applyStoredAppearance, releaseThemeLock } from './appearance';
+import { panelColdStart } from './cold-start';
 import './style.css';
 import App from './App';
 
 const log = createLogger('panel');
+
+panelColdStart.markScriptStart();
 
 window.addEventListener('error', onUncaughtError({ log }));
 window.addEventListener('unhandledrejection', onUnhandledRejection({ log }));
@@ -55,6 +60,9 @@ async function boot(mountPoint: HTMLElement): Promise<void> {
   }
 
   render(() => <App />, mountPoint);
+  // The shell is mounted: the third cold-start entry. A failed render above
+  // never reaches this — the interactive point marks only a real shell.
+  panelColdStart.markShellInteractive();
 }
 
 void boot(root).catch((cause: unknown) => {
