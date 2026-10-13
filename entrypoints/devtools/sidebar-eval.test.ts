@@ -156,6 +156,34 @@ describe('buildLazyloadSidebarExpression', () => {
     }
   });
 
+  it('treats whole documents and fragments as non-elements too', () => {
+    // DevTools reports these without a nodeType of 1; all fall through the
+    // same branch as text nodes.
+    const selections: { name: string; node: unknown }[] = [
+      { name: 'xml document', node: document.implementation.createDocument(null, '', null) },
+      { name: 'html document', node: document.implementation.createHTMLDocument('') },
+      { name: 'fragment', node: document.createDocumentFragment() }
+    ];
+    for (const { name, node } of selections) {
+      expect(
+        runExpression(buildLazyloadSidebarExpression([]), node),
+        `selection kind: ${name}`
+      ).toEqual({ please: 'Select an element' });
+    }
+  });
+
+  it('reports imageLoaded false for any non-loaded lazyload status stamp', () => {
+    const img = document.createElement('img');
+    img.setAttribute('src', 'https://site.test/hero.jpg');
+    img.setAttribute('data-lazy-src', 'https://site.test/hero-lazy.jpg');
+    img.setAttribute('data-ll-status', 'loading');
+    expect(runExpression(buildLazyloadSidebarExpression([]), img)).toEqual({
+      lazyloadDetected: true,
+      imageLoaded: false,
+      src: 'https://site.test/hero.jpg'
+    });
+  });
+
   it('embeds the real exclusion list in the shipped expression', () => {
     // Behavioral pin: an IMG excluded by a list entry the detection engine
     // ships, matched against the very constant the pane carries.

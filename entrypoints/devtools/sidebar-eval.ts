@@ -6,11 +6,11 @@
  * is the user's selection) and hands one JSON-able object back. That
  * boundary forces the page-side logic to exist twice: the builders here are
  * the authored source, and the string they produce is the runtime copy
- * devtools executes. The string embeds only our own constants (`JSON.stringify`
- * of the exclusion list, attribute-name literals) — page data never flows
- * into it, so nothing untrusted can change what the eval runs. What the eval
- * returns is still inspected-page data: it is only ever passed to
- * `setObject`, never interpreted by our code beyond the shape check below.
+ * devtools executes. The string embeds only our own constants — `JSON.stringify`
+ * of the exclusion list and of every attribute-name literal — page data
+ * never flows into it, so nothing untrusted can change what the eval runs.
+ * What the eval returns is still inspected-page data: it is only ever passed
+ * to `setObject`, never interpreted by our code beyond the shape check below.
  */
 
 import type { Browser } from 'wxt/browser';
@@ -49,6 +49,10 @@ const LAZYLOAD_STATUS_ATTRIBUTE = 'data-ll-status';
  * @returns The self-contained IIFE string; it reads `$0` and nothing else.
  */
 export function buildLazyloadSidebarExpression(exclusions: readonly string[]): string {
+  // Every interpolated constant is embedded through `JSON.stringify` — the
+  // same quoting discipline as the array above: a standalone, correctly
+  // escaped double-quoted literal for any future rename (all names are
+  // quote-free today and pinned by the constants tests).
   return `
 (() => {
   const EXCLUSIONS = ${JSON.stringify(exclusions)};
@@ -57,9 +61,11 @@ export function buildLazyloadSidebarExpression(exclusions: readonly string[]): s
   if (isElement && el.tagName === 'IMG') {
     const objectToShow = {};
     objectToShow.lazyloadDetected =
-      el.hasAttribute('${DATA_LAZY_SRC}') || el.hasAttribute('${DATA_LAZY_SRCSET}');
+      el.hasAttribute(${JSON.stringify(DATA_LAZY_SRC)}) ||
+      el.hasAttribute(${JSON.stringify(DATA_LAZY_SRCSET)});
     if (objectToShow.lazyloadDetected) {
-      objectToShow.imageLoaded = el.getAttribute('${LAZYLOAD_STATUS_ATTRIBUTE}') === 'loaded';
+      objectToShow.imageLoaded =
+        el.getAttribute(${JSON.stringify(LAZYLOAD_STATUS_ATTRIBUTE)}) === 'loaded';
     } else {
       objectToShow.excludedReasonsFound = EXCLUSIONS.filter((exclusion) =>
         el.outerHTML.includes(exclusion)
@@ -70,16 +76,20 @@ export function buildLazyloadSidebarExpression(exclusions: readonly string[]): s
   }
   if (isElement) {
     const rocketAttributes = [];
-    if (el.hasAttribute('${DELAY_JS_SRC}')) rocketAttributes.push('${DELAY_JS_SRC}');
-    if (el.hasAttribute('${WPR_DEFER_ATTRIBUTE}')) rocketAttributes.push('${WPR_DEFER_ATTRIBUTE}');
+    if (el.hasAttribute(${JSON.stringify(DELAY_JS_SRC)})) rocketAttributes.push(${JSON.stringify(DELAY_JS_SRC)});
+    if (el.hasAttribute(${JSON.stringify(WPR_DEFER_ATTRIBUTE)}))
+      rocketAttributes.push(${JSON.stringify(WPR_DEFER_ATTRIBUTE)});
     const typeValue = el.getAttribute('type');
-    if (typeValue !== null && typeValue.includes('${DELAY_JS_TYPE_OLD}')) {
+    if (typeValue !== null && typeValue.includes(${JSON.stringify(DELAY_JS_TYPE_OLD)})) {
       rocketAttributes.push('type=' + typeValue);
     }
-    if (el.hasAttribute('${LAZY_RENDER_ATTRIBUTE}')) rocketAttributes.push('${LAZY_RENDER_ATTRIBUTE}');
-    if (el.hasAttribute('${FDT_EXCLUDED_RESOURCE}')) rocketAttributes.push('${FDT_EXCLUDED_RESOURCE}');
-    if (el.hasAttribute('${DATA_LAZY_SRC}')) rocketAttributes.push('${DATA_LAZY_SRC}');
-    if (el.hasAttribute('${DATA_LAZY_SRCSET}')) rocketAttributes.push('${DATA_LAZY_SRCSET}');
+    if (el.hasAttribute(${JSON.stringify(LAZY_RENDER_ATTRIBUTE)}))
+      rocketAttributes.push(${JSON.stringify(LAZY_RENDER_ATTRIBUTE)});
+    if (el.hasAttribute(${JSON.stringify(FDT_EXCLUDED_RESOURCE)}))
+      rocketAttributes.push(${JSON.stringify(FDT_EXCLUDED_RESOURCE)});
+    if (el.hasAttribute(${JSON.stringify(DATA_LAZY_SRC)})) rocketAttributes.push(${JSON.stringify(DATA_LAZY_SRC)});
+    if (el.hasAttribute(${JSON.stringify(DATA_LAZY_SRCSET)}))
+      rocketAttributes.push(${JSON.stringify(DATA_LAZY_SRCSET)});
     if (rocketAttributes.length > 0) return { rocketAttributes };
   }
   return { please: 'Select an element' };
