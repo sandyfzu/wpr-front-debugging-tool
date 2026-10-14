@@ -32,6 +32,17 @@ import { relativeAge } from './relative-age';
  */
 export const DATA_STALE_AFTER_MS = 600_000;
 
+/**
+ * {@link DATA_STALE_AFTER_MS} as a whole number of minutes — the figure the
+ * stale marker's remedy spells out ("older than 10 min") at both its render
+ * sites (the hover title and the sr-only fact line). Derived beside its only
+ * input so the prose and the threshold read from one declaration; the
+ * whole-minute invariant that keeps this a clean mass instead of float
+ * garbage in the prose is pinned in the selectors' threshold test — a
+ * recalibration off a whole minute fails the suite rather than rendering it.
+ */
+export const STALE_WINDOW_MINUTES = DATA_STALE_AFTER_MS / 60_000;
+
 /** One status-bar segment's identity — the strip's four fixed answers. */
 export type SegmentId = 'wpr' | 'cache' | 'platform' | 'freshness';
 

@@ -41,7 +41,7 @@ import { createLogger } from '../../../lib/logger';
 import { useFdtData } from '../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from './aging-clock';
 import type { SegmentId, StatusBarSegments } from './selectors';
-import { DATA_STALE_AFTER_MS, statusBarSegments } from './selectors';
+import { STALE_WINDOW_MINUTES, statusBarSegments } from './selectors';
 
 const log = createLogger('panel');
 
@@ -149,7 +149,7 @@ function freshnessTitle(
   const stamp = `Page data captured at ${view.capturedAt}`;
   return kind === 'current'
     ? `${stamp}.`
-    : `${stamp} — older than ${(DATA_STALE_AFTER_MS / 60_000).toString()} min. Re-verify against the page; reload it to refresh.`;
+    : `${stamp} — older than ${STALE_WINDOW_MINUTES.toString()} min. Re-verify against the page; reload it to refresh.`;
 }
 
 /**
@@ -173,8 +173,8 @@ function FreshnessDetail(props: {
       )}
       <Show when={props.kind === 'stale'} fallback={null}>
         <span>
-          Data is older than {(DATA_STALE_AFTER_MS / 60_000).toString()} min — re-verify against the
-          page; reload it to refresh.
+          Data is older than {STALE_WINDOW_MINUTES} min — re-verify against the page; reload it to
+          refresh.
         </span>
       </Show>
     </span>
