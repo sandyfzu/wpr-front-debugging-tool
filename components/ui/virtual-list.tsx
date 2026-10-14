@@ -85,7 +85,10 @@ export type VirtualListProps = {
   'aria-label'?: string;
   /** The row count. */
   count: number;
-  /** The trusted estimate above, per index. */
+  /**
+   * Seed row height in px, per index — scroll math only until the row's
+   * content is measured; never a rendered height (rows size to content).
+   */
   estimateSize: (index: number) => number;
   /** Rows beyond the visible window (default {@link DEFAULT_OVERSCAN}). */
   overscan?: number;
@@ -101,7 +104,10 @@ export type VirtualListProps = {
   createVirtualizer?: VirtualizerFactory;
   /** Classes on the scroller (height caps belong here, e.g. `h-full`). */
   class?: string;
-  /** The row renderer; called per virtual row with its measured geometry. */
+  /**
+   * The row renderer; called per virtual row with its measured geometry. The
+   * rendered content sets the row's height (expanding it re-flows the list).
+   */
   children: (row: VirtualItem) => JSX.Element;
 };
 
@@ -111,10 +117,16 @@ export type VirtualListProps = {
  * Layout contract (verified against the installed virtual-core): a relative
  * inner divider sized `getTotalSize()` scrolls inside the wrapper's own
  * `overflow-y-auto` container; each row is absolutely positioned at its
- * `start` offset via `translateY`, sized to its (measured-refined) `size`,
- * and carries `data-index` so the TanStack measurement ref attached to it
- * keeps heights live. `estimateSize` seeds the first paint; measurement
- * corrects any estimator error afterward. The virtualizer lifecycle is
+ * `start` offset via `translateY` and carries `data-index`. Rows get **no
+ * height**: they size to their content, and the measurement ref observes
+ * each row's border box, so variable-height rows (wrapped text, an expanded
+ * code block) re-measure on any resize and push later rows down — a pinned
+ * height would make the observer read the estimate back and let content
+ * overflow into the next row. `estimateSize` seeds only the scroll math
+ * before a row's first measurement (corrected before paint); a size change
+ * of a row entirely above the viewport is compensated in `scrollTop` by the
+ * virtualizer, so the visible rows stay put. Fixed-height lists need nothing
+ * extra: their row content sets the height. The virtualizer lifecycle is
  * Solid-wired by its own adapter (its `_didMount` cleanup runs on unmount).
  *
  * Rows render exactly what the caller's `children` maps per row — this
@@ -188,6 +200,21 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     }
   });
 
+  /**
+   * Hand a row element to measurement. Solid runs `ref` before it applies a
+   * row's attributes, while the core resolves a measured element's index from
+   * `data-index` (no index → never observed), so the index is stamped first.
+   * Stamping once is exact: the adapter reconciles items keyed by index, so
+   * `For` keeps one element per index for its whole life.
+   *
+   * @param el The freshly created row element.
+   * @param index The row's virtual index.
+   */
+  const bindRow = (el: HTMLDivElement, index: number): void => {
+    el.setAttribute('data-index', String(index));
+    virtualizer.measureElement(el);
+  };
+
   return (
     <div
       ref={scroller}
@@ -207,15 +234,18 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
         <For each={virtualizer.getVirtualItems()}>
           {(row) => (
             <div
-              data-index={row.index}
-              ref={virtualizer.measureElement}
+              ref={(el) => {
+                bindRow(el, row.index);
+              }}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${String(row.start)}px)`,
-                height: `${String(row.size)}px`
+                // No height: the row sizes to its content so the measurement
+                // ref (border-box ResizeObserver) reads the real height and
+                // re-flows siblings when it changes (wrap, expand/collapse).
+                transform: `translateY(${String(row.start)}px)`
               }}
             >
               {own.children(row)}

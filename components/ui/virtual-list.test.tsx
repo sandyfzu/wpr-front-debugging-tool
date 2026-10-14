@@ -7,6 +7,8 @@
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
+import { createSignal } from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   VirtualList,
@@ -41,6 +43,8 @@ interface FactoryProbe {
   options: VirtualListOptions | undefined;
   /** The elements bound through measureElement (the ref wiring), in order. */
   measured: Array<HTMLElement | null>;
+  /** Each bound element's `data-index` as it was at measure time. */
+  indexAtMeasure: Array<string | null>;
 }
 
 /**
@@ -56,7 +60,8 @@ function probe(items: VirtualItem[], totalSize: number): FactoryProbe {
       throw new Error('probe factory not wired');
     },
     options: undefined,
-    measured: []
+    measured: [],
+    indexAtMeasure: []
   };
   state.factory = (options: VirtualListOptions): VirtualizerInstanceProbe => {
     state.options = options;
@@ -65,6 +70,7 @@ function probe(items: VirtualItem[], totalSize: number): FactoryProbe {
       getTotalSize: () => totalSize,
       measureElement: (node: HTMLElement | null) => {
         state.measured.push(node);
+        state.indexAtMeasure.push(node?.getAttribute('data-index') ?? null);
       }
     };
   };
@@ -85,8 +91,58 @@ describe('VirtualList', () => {
     const rows = Array.from(document.querySelectorAll('[data-index]'));
     expect(rows.length).toBe(3);
     expect((rows[1] as HTMLElement).style.transform).toBe('translateY(40px)');
-    expect((rows[1] as HTMLElement).style.height).toBe('60px');
     expect((rows[1] as HTMLElement).style.position).toBe('absolute');
+  });
+
+  it('never pins a row height, so measurement reads the content size', () => {
+    const p = probe([row(0, 0, 40), row(1, 40, 60)], 100);
+    render(() => (
+      <VirtualList count={2} estimateSize={() => 40} createVirtualizer={p.factory}>
+        {(item) => <span data-fdt-row={String(item.index)}>row {String(item.index)}</span>}
+      </VirtualList>
+    ));
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-index]'));
+    expect(rows.length).toBe(2);
+    for (const el of rows) {
+      // A pinned height would make the border-box observer read the estimate
+      // back and let taller content overflow into the next row.
+      expect(el.style.height).toBe('');
+      expect(el.style.minHeight).toBe('');
+      expect(el.style.maxHeight).toBe('');
+    }
+    // Every rendered row is handed to measurement already carrying its index
+    // (the core resolves the row from `data-index` at call time — read later,
+    // after Solid applies attributes, it would be too late).
+    expect(p.indexAtMeasure).toEqual(['0', '1']);
+  });
+
+  it('re-flows rows in place when the virtualizer reports a measured size change', () => {
+    // A store-backed double mirrors the adapter: it reconciles new items by
+    // index into the same store, as a ResizeObserver re-measure does.
+    const [items, setItems] = createStore<VirtualItem[]>([row(0, 0, 40), row(1, 40, 40)]);
+    const [total, setTotal] = createSignal(80);
+    const factory: VirtualizerFactory = () => ({
+      getVirtualItems: () => items,
+      getTotalSize: total,
+      measureElement: () => undefined
+    });
+    render(() => (
+      <VirtualList count={2} estimateSize={() => 40} createVirtualizer={factory}>
+        {(item) => <span data-fdt-row={String(item.index)}>row {String(item.index)}</span>}
+      </VirtualList>
+    ));
+    const before = document.querySelector<HTMLElement>('[data-index="1"]');
+    expect(before?.style.transform).toBe('translateY(40px)');
+    // Row 0 grows to 98px (e.g. wrapped text or an expanded block).
+    setItems(reconcile([row(0, 0, 98), row(1, 98, 40)], { key: 'index' }));
+    setTotal(138);
+    const after = document.querySelector<HTMLElement>('[data-index="1"]');
+    expect(after?.style.transform).toBe('translateY(98px)');
+    // Same element: a re-measure moves the row, it never remounts it.
+    expect(after).toBe(before);
+    expect((document.querySelector('[data-fdt-virtual-spacer]') as HTMLElement).style.height).toBe(
+      '138px'
+    );
   });
 
   it('calls the row renderer per virtual row; rows carry the data-index contract', () => {
