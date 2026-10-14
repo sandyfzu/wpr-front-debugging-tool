@@ -4,6 +4,17 @@
  * boundaries (`lib/messaging/validate`); never shrink an established shape.
  */
 
+/**
+ * The mark a producer sets on a row it bounded to the boundary's size caps
+ * (`lib/messaging/payload-bounds`): the row's lists keep their first entries
+ * and its strings are clipped. Additive and optional — absent means complete,
+ * and readers that ignore it still read a valid (partial) row.
+ */
+export interface TruncationMark {
+  /** Present (always `true`) only when the producer cut this row to its caps. */
+  truncated?: true;
+}
+
 /** One response header as captured by the background (`webRequest` shape). */
 export interface PageHeader {
   name: string;
@@ -49,7 +60,7 @@ export interface LazyloadImageRecord {
  * Optimize critical images (Priority Elements family; the plugin's filter
  * identifier as the registry key — KB: "Optimize critical images").
  */
-export interface OptimizeCriticalImagesDetection {
+export interface OptimizeCriticalImagesDetection extends TruncationMark {
   present: boolean;
   /**
    * The `<!-- wpr_oci -->` feature comment survived on the page. Corroboration
@@ -99,7 +110,7 @@ export interface AutomaticLazyRenderingDetection {
  * automatic feature from pre-3.19 manual font preloads and third-party font
  * preloads — same markup, no attribute.
  */
-export interface AutoPreloadFontsDetection {
+export interface AutoPreloadFontsDetection extends TruncationMark {
   present: boolean;
   /** Resolved hrefs of attributed font preloads, document order. Present ⇔ non-empty. */
   fonts: string[];
@@ -109,7 +120,7 @@ export interface AutoPreloadFontsDetection {
  * Preconnect to external domains (Priority Elements family; registry key = the
  * plugin's feature-comment id, KB: "Preconnect to external domains").
  */
-export interface PreconnectExternalDomainsDetection {
+export interface PreconnectExternalDomainsDetection extends TruncationMark {
   present: boolean;
   /**
    * Attributed hint hrefs (both variants), first-occurrence order — a bare
@@ -180,7 +191,7 @@ export interface PriorityElementsBeaconDetection {
  * additively (new optimizations ship with their own key + validators + tests).
  */
 export interface WprDetections {
-  wpr: {
+  wpr: TruncationMark & {
     present: boolean;
     cached: boolean;
     version: string | null;
@@ -190,13 +201,13 @@ export interface WprDetections {
   remove_unused_css: {
     present: boolean;
   };
-  delay_js: {
+  delay_js: TruncationMark & {
     present: boolean;
     scripts: DelayedScriptRecord[];
     version: string | null;
     delayedScripts: number;
   };
-  defer_all_js: {
+  defer_all_js: TruncationMark & {
     present: boolean;
     /** `data-rocket-src` or `src` of every WP Rocket-deferred script, doc order. */
     scripts: string[];
@@ -204,7 +215,7 @@ export interface WprDetections {
   async_css: {
     present: boolean;
   };
-  lazyload: {
+  lazyload: TruncationMark & {
     present: boolean;
     /** One record per <img> element, document order. */
     images: LazyloadImageRecord[];
@@ -237,7 +248,7 @@ export interface WprDetections {
 }
 
 /** WP Rocket-preloaded resources collected for the panel page. */
-export interface PreloadedResources {
+export interface PreloadedResources extends TruncationMark {
   present: boolean;
   resources?: Array<{
     /** Resolved href (property). */

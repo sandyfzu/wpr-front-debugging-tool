@@ -10,8 +10,11 @@
  *
  * Size policy: every repeated structure carries a generous count cap (real
  * pages stay far below; see `LIMITS`) and every string carries a length cap.
- * A violation rejects the whole row/guard — never a silent partial cut — so
- * callers branch on the rejection instead of rendering truncated data.
+ * A violation rejects the whole row/guard — never a silent partial cut here.
+ * Page-derived rows are bounded by their producers to the same caps
+ * (`./payload-bounds`), which mark a cut row `truncated: true`; the guards
+ * accept that mark (absent or exactly `true`) and carry it through, so a
+ * bounded payload always passes and a partial list is always labeled.
  */
 
 import type {
@@ -40,34 +43,22 @@ import { numericTabId } from './sender';
 // the same declared constant the cache-stamp defense uses — one declaring
 // site, no second limit.
 import { MAX_REPRESENTABLE_MS } from '../detection/describe';
+import { PAYLOAD_LIMITS } from './payload-bounds';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
  * of magnitude below), uniform in behavior: violation ⇒ the guard returns
- * `null` for the whole row. The word row is the error-words contract, shared
- * with the MAIN-world capture side (see `./error-words`).
+ * `null` for the whole row. Each shared row is owned by its contract: the
+ * word row by `./error-words` (shared with the MAIN-world capture side), the
+ * cookie row by `../wp-rocket/cookies`, the page-derived rows by
+ * `./payload-bounds` (shared with the producers that bound to them).
  */
 const LIMITS = {
-  // The word row's acceptance caps live in the shared contract (`./error-words`),
-  // sourced once by both sides of the window bridge.
   words: ERROR_WORD_LIMITS,
-  /** Cookie-name caps live in the shared contract (`../wp-rocket/cookies`). */
   cookies: COOKIE_NAME_LIMITS,
   /** Captured response headers: rows, and per-row name/value lengths. */
   headers: { count: 256, name: 512, value: 4096 },
-  /** Delay JS: script rows, src URL, inline content. */
-  delayScripts: { count: 5_000, src: 4096, content: 512 * 1024 },
-  /** Defer JS sources. */
-  deferScripts: { count: 5_000, chars: 4096 },
-  /** Lazyload per-image records and their exclusion-reason lists. */
-  images: { count: 5_000, src: 4096 },
-  /** Preloaded subresource rows. */
-  preloaded: { count: 5_000, href: 4096, type: 64 },
-  /** Preloaded critical-image URL lists. */
-  preloadedImages: { count: 1_000, chars: 4096 },
-  /** Priority-Elements: font-preload list and preconnect domain list. */
-  fonts: { count: 1_000, chars: 4096 },
-  domains: { count: 500, chars: 2048 },
+  ...PAYLOAD_LIMITS,
   knownConflicts: {
     count: 500,
     id: 64,
@@ -78,13 +69,30 @@ const LIMITS = {
     issue_description: 8_192,
     url: 2_048
   },
-  searchQuery: 200,
-  versions: 64
+  searchQuery: 200
 } as const;
 
 /** All members are strings. */
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+/**
+ * Read a row's optional truncation mark (see `TruncationMark`): absent, or
+ * exactly `true` — anything else is not producer output.
+ *
+ * @param row The row's own-key copy.
+ * @returns The number of keys the mark adds (0 or 1), or null when the key
+ *   holds anything but `true`.
+ */
+function truncationKeys(row: Record<string, unknown>): 0 | 1 | null {
+  if (!Object.hasOwn(row, 'truncated')) return 0;
+  return row['truncated'] === true ? 1 : null;
+}
+
+/** The mark to spread into a rebuilt row (empty when the row is complete). */
+function truncationOf(keys: 0 | 1): { truncated?: true } {
+  return keys === 1 ? { truncated: true } : {};
 }
 
 // The printability rule and the word caps' canonical home is the shared
@@ -304,7 +312,11 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
   if (typeof present !== 'boolean') return null;
   const keys = new Set(Object.keys(input));
   if (!present) return keys.size === 1 ? { present: false } : null;
-  if (!keys.has('resources') || keys.size !== 2 || !Array.isArray(input['resources'])) return null;
+  const mark = truncationKeys(input);
+  if (mark === null) return null;
+  if (!keys.has('resources') || keys.size !== 2 + mark || !Array.isArray(input['resources'])) {
+    return null;
+  }
   if (input['resources'].length > LIMITS.preloaded.count) return null;
   const out: PreloadedResources['resources'] = [];
   for (const item of input['resources']) {
@@ -316,7 +328,7 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
     if (!isBoundedString(item['type'], LIMITS.preloaded.type)) return null;
     out.push({ href: item['href'], type: item['type'] });
   }
-  return { present: true, resources: out };
+  return { present: true, resources: out, ...truncationOf(mark) };
 }
 
 /**
@@ -330,13 +342,15 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   const wprRaw = input['wpr'];
   if (!isRecord(wprRaw)) return null;
   const wpr = { ...wprRaw };
+  const wprMark = truncationKeys(wpr);
   if (
+    wprMark === null ||
     typeof wpr['present'] !== 'boolean' ||
     typeof wpr['cached'] !== 'boolean' ||
     !isBoundedNullableString(wpr['version'], LIMITS.versions) ||
     (wpr['timeStamp'] !== null &&
       (typeof wpr['timeStamp'] !== 'number' || !Number.isFinite(wpr['timeStamp']))) ||
-    Object.keys(wpr).length !== 4
+    Object.keys(wpr).length !== 4 + wprMark
   ) {
     return null;
   }
@@ -382,7 +396,8 @@ export function parseWprDetections(input: unknown): WprDetections | null {
       present: wpr['present'],
       cached: wpr['cached'],
       version: wpr['version'],
-      timeStamp: wpr['timeStamp']
+      timeStamp: wpr['timeStamp'],
+      ...truncationOf(wprMark)
     },
     remove_unused_css: removeUnusedCss,
     async_css: asyncCss,
@@ -415,13 +430,15 @@ function parsePresenceRow(input: unknown): { present: boolean } | null {
 function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
+  const mark = truncationKeys(row);
   if (
+    mark === null ||
     typeof row['present'] !== 'boolean' ||
     !isBoundedNullableString(row['version'], LIMITS.versions) ||
     typeof row['delayedScripts'] !== 'number' ||
     !Number.isFinite(row['delayedScripts']) ||
     row['delayedScripts'] < 0 ||
-    Object.keys(row).length !== 4 ||
+    Object.keys(row).length !== 4 + mark ||
     !Array.isArray(row['scripts'])
   ) {
     return null;
@@ -469,7 +486,8 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     present: row['present'],
     scripts,
     version: row['version'],
-    delayedScripts: row['delayedScripts']
+    delayedScripts: row['delayedScripts'],
+    ...truncationOf(mark)
   };
 }
 
@@ -477,12 +495,13 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
 function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (typeof row['present'] !== 'boolean') return null;
-  if (Object.keys(row).length !== 2 || !Array.isArray(row['scripts'])) return null;
+  const mark = truncationKeys(row);
+  if (mark === null || typeof row['present'] !== 'boolean') return null;
+  if (Object.keys(row).length !== 2 + mark || !Array.isArray(row['scripts'])) return null;
   if (!isStringArray(row['scripts'])) return null;
   if (row['scripts'].length > LIMITS.deferScripts.count) return null;
   if (row['scripts'].some((src) => src.length > LIMITS.deferScripts.chars)) return null;
-  return { present: row['present'], scripts: [...row['scripts']] };
+  return { present: row['present'], scripts: [...row['scripts']], ...truncationOf(mark) };
 }
 
 /** The reason domain is the exclusion list itself; more entries is malformed. */
@@ -492,8 +511,9 @@ const LAZYLOAD_REASON_LIMIT = LAZYLOAD_EXCLUSIONS_LIST.length;
 function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (typeof row['present'] !== 'boolean') return null;
-  if (Object.keys(row).length !== 2 || !Array.isArray(row['images'])) return null;
+  const mark = truncationKeys(row);
+  if (mark === null || typeof row['present'] !== 'boolean') return null;
+  if (Object.keys(row).length !== 2 + mark || !Array.isArray(row['images'])) return null;
   if (row['images'].length > LIMITS.images.count) return null;
   const images: WprDetections['lazyload']['images'] = [];
   for (const rawItem of row['images']) {
@@ -511,7 +531,7 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
       excludedReasonsFound: [...reasons]
     });
   }
-  return { present: row['present'], images };
+  return { present: row['present'], images, ...truncationOf(mark) };
 }
 
 /** Iframes row: presence plus the youtube-replacement script marker. */
@@ -544,7 +564,14 @@ function parseOptimizeCriticalImagesRow(
     if (keys.size !== 2) return null;
     return { present: false, lcpComment };
   }
-  if (!keys.has('preloadedImages') || keys.size !== 3 || !isStringArray(row['preloadedImages'])) {
+  // Only a non-empty list can have been cut, so the mark rides this arm only.
+  const mark = truncationKeys(row);
+  if (mark === null) return null;
+  if (
+    !keys.has('preloadedImages') ||
+    keys.size !== 3 + mark ||
+    !isStringArray(row['preloadedImages'])
+  ) {
     return null;
   }
   if (row['preloadedImages'].length < 1) return null;
@@ -553,7 +580,8 @@ function parseOptimizeCriticalImagesRow(
   return {
     present,
     lcpComment,
-    preloadedImages: [...row['preloadedImages']]
+    preloadedImages: [...row['preloadedImages']],
+    ...truncationOf(mark)
   };
 }
 
@@ -585,15 +613,18 @@ function parseElementCount(value: unknown): number | null {
 function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (Object.keys(row).length !== 2) return null;
+  const mark = truncationKeys(row);
+  if (mark === null || Object.keys(row).length !== 2 + mark) return null;
   const present = row['present'];
   if (typeof present !== 'boolean') return null;
   if (present) {
     const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
     if (fonts === null || fonts.length < 1) return null;
-    return { present: true, fonts };
+    return { present: true, fonts, ...truncationOf(mark) };
   }
-  // Absent feature: the engines emit an empty list, never a populated one.
+  // Absent feature: the engines emit an empty list, never a populated one
+  // (and an empty list was never cut).
+  if (mark === 1) return null;
   if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return null;
   return { present: false, fonts: [] };
 }
@@ -602,7 +633,8 @@ function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts
 function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_domains'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (Object.keys(row).length !== 3) return null;
+  const mark = truncationKeys(row);
+  if (mark === null || Object.keys(row).length !== 3 + mark) return null;
   const present = row['present'];
   if (typeof present !== 'boolean') return null;
   const preconnectCount = parseElementCount(row['preconnectCount']);
@@ -610,8 +642,9 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
   if (present) {
     const domains = parseCappedStringList(row['domains'], LIMITS.domains);
     if (domains === null || domains.length < 1) return null;
-    return { present: true, domains, preconnectCount };
+    return { present: true, domains, preconnectCount, ...truncationOf(mark) };
   }
+  if (mark === 1) return null;
   if (!isStringArray(row['domains']) || row['domains'].length !== 0) return null;
   return { present: false, domains: [], preconnectCount };
 }

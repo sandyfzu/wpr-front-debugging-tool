@@ -9,11 +9,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type FIXTURES, FIXTURE_DIR } from '../../lib/detection/fixtures/corpus';
+import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
+import { parseFdtData } from '../../lib/messaging/validate';
 import {
+  composeFdtData,
   createCaptureWaitPoint,
   mergeErrorWords,
   processSerializedPage,
-  type CaptureWaitPointDeps
+  type CaptureWaitPointDeps,
+  type LivePageFacts
 } from './data-hub';
 
 const fixture = (name: (typeof FIXTURES)[number]): string =>
@@ -143,5 +147,67 @@ describe('createCaptureWaitPoint', () => {
     ).toBe('pending');
     point.resolve();
     await expect(point.settled).resolves.toBeUndefined();
+  });
+});
+
+/** A page carrying `count` attributed LCP-image preloads (the critical-images list). */
+function pageWithPreloadedImages(count: number, cacheStamp = '1727000000'): string {
+  const links = Array.from(
+    { length: count },
+    (_, i) =>
+      `<link rel="preload" as="image" data-rocket-preload href="https://example.test/lcp-${String(i)}.jpg">`
+  ).join('');
+  return `<!doctype html><html><head>${links}</head><body></body></html><!-- This website is like a Rocket. Debug: cached@${cacheStamp} -->`;
+}
+
+const LIVE: LivePageFacts = {
+  allScriptsLoaded: false,
+  pageHeaders: null,
+  undefinedReferences: [],
+  cookies: null
+};
+
+describe('composeFdtData — oversize pages still yield a payload the panel accepts', () => {
+  const cap = PAYLOAD_LIMITS.preloadedImages.count;
+
+  for (const count of [cap - 1, cap, cap + 1, 1226]) {
+    it(`${String(count)} preloaded images`, async () => {
+      const data = await processSerializedPage(pageWithPreloadedImages(count));
+      // The pass result stays whole for same-context readers.
+      expect(data.detections.rocket_above_the_fold_optimization.preloadedImages).toHaveLength(
+        count
+      );
+      const parsed = parseFdtData(composeFdtData(data, LIVE));
+      expect(parsed).not.toBeNull();
+      const row = parsed?.wprDetections.rocket_above_the_fold_optimization;
+      expect(row?.preloadedImages).toHaveLength(Math.min(count, cap));
+      expect(row?.truncated === true).toBe(count > cap);
+      // The resources report carries the same links, under its own (higher) cap.
+      expect(parsed?.preloadedResources.resources).toHaveLength(count);
+    });
+  }
+
+  it('normalizes a cache stamp too long for a number to null (finite-only contract)', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1, '9'.repeat(400)));
+    expect(data.detections.wpr).toMatchObject({ present: true, cached: true, timeStamp: null });
+    expect(parseFdtData(composeFdtData(data, LIVE))).not.toBeNull();
+  });
+
+  it('carries the live facts and omits cookies only when none were captured', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1));
+    const cookies = { names: ['wprocket'], capturedAt: 1 };
+    const payload = composeFdtData(data, {
+      allScriptsLoaded: true,
+      pageHeaders: [{ name: 'x-cache', value: 'HIT' }],
+      undefinedReferences: ['jQuery'],
+      cookies
+    });
+    expect(payload).toMatchObject({
+      allScriptsLoaded: true,
+      pageHeaders: [{ name: 'x-cache', value: 'HIT' }],
+      undefinedReferencesOnPage: ['jQuery'],
+      cookies
+    });
+    expect('cookies' in composeFdtData(data, LIVE)).toBe(false);
   });
 });

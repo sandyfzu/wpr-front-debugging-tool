@@ -26,6 +26,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
 import { ERROR_WORD_LIMIT, parseErrorWords } from '../../lib/messaging/validate';
+import { boundPreloadedResources, boundWprDetections } from '../../lib/messaging/payload-bounds';
 import type {
   DiagnoserDocData,
   FdtData,
@@ -167,6 +168,42 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   const wordpressVersion = detectWordPressVersion(page.document);
   const diagnoserData = await extractDiagnoserData(page.document);
   return { detections, preloadedResources, diagnoserData, wordpressVersion };
+}
+
+/** The live page facts the hub tracks beside the single-pass result. */
+export interface LivePageFacts {
+  allScriptsLoaded: boolean;
+  pageHeaders: PageHeaders | null;
+  undefinedReferences: string[];
+  /** Null only if the capture invariant failed (the field is then omitted). */
+  cookies: PageCookies | null;
+}
+
+/**
+ * Compose the panel payload from the pass result and the live facts. The
+ * page-derived rows are bounded to the boundary's caps here (cut rows carry
+ * `truncated: true`), so a page with more data than the contract admits
+ * still yields a payload the panel's guard accepts — never one it rejects
+ * on every request.
+ *
+ * @param data The pass result (unbounded; same-context readers keep it whole).
+ * @param live The live facts.
+ * @returns The payload `getFdtData` serves.
+ */
+export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
+  const payload = {
+    allScriptsLoaded: live.allScriptsLoaded,
+    pageHeaders: live.pageHeaders,
+    undefinedReferencesOnPage: live.undefinedReferences,
+    wprDetections: boundWprDetections(data.detections),
+    preloadedResources: boundPreloadedResources(data.preloadedResources),
+    diagnoserData: data.diagnoserData
+  };
+  // The capture (which redacts the values at the read) always runs before
+  // processing can produce data, so the list is expected here; should that
+  // invariant ever fail, the additive field's absence — never a forged
+  // empty stamp — is the tolerated degradation consumers omit gracefully.
+  return live.cookies === null ? payload : { ...payload, cookies: live.cookies };
 }
 
 /**
@@ -372,19 +409,12 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   /** The panel payload; null when processing failed or nothing was captured. */
   const fdtData = (): FdtData | null => {
     if (data === null) return null;
-    const payload = {
+    return composeFdtData(data, {
       allScriptsLoaded,
       pageHeaders,
-      undefinedReferencesOnPage: undefinedReferences,
-      wprDetections: data.detections,
-      preloadedResources: data.preloadedResources,
-      diagnoserData: data.diagnoserData
-    };
-    // The capture (which redacts the values at the read) always runs before
-    // processing can produce data, so the list is expected here; should that
-    // invariant ever fail, the additive field's absence — never a forged
-    // empty stamp — is the tolerated degradation consumers omit gracefully.
-    return pageCookies === null ? payload : { ...payload, cookies: pageCookies };
+      undefinedReferences,
+      cookies: pageCookies
+    });
   };
 
   ctx.onInvalidated(
@@ -403,7 +433,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   ctx.onInvalidated(
     onMessage('getWprDetections', async () => {
       await processData();
-      return data?.detections ?? null;
+      // Bounded like the panel payload: this row crosses the same boundary.
+      return data === null ? null : boundWprDetections(data.detections);
     })
   );
 

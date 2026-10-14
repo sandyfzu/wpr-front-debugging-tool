@@ -603,3 +603,79 @@ describe('parsePanelSearchAction', () => {
     expect(parsePanelSearchAction('performSearch')).toBeNull();
   });
 });
+
+describe('the optional truncation mark (additive, tolerant contract)', () => {
+  /** Each markable detections row: where it lives and a populated form of it. */
+  const markableRows: readonly (readonly [string, Record<string, unknown>])[] = [
+    ['wpr', { present: true, cached: false, version: '3.20', timeStamp: null }],
+    ['delay_js', { present: false, scripts: [], version: null, delayedScripts: 0 }],
+    ['defer_all_js', { present: true, scripts: ['/a.js'] }],
+    ['lazyload', { present: false, images: [] }],
+    [
+      'rocket_above_the_fold_optimization',
+      { present: true, lcpComment: false, preloadedImages: ['/hero.webp'] }
+    ],
+    ['auto_preload_fonts', { present: true, fonts: ['/f.woff2'] }],
+    [
+      'preconnect_external_domains',
+      { present: true, domains: ['https://cdn.example'], preconnectCount: 0 }
+    ]
+  ];
+
+  const withRow = (key: string, row: Record<string, unknown>): Record<string, unknown> => ({
+    ...minimalDetections(),
+    [key]: row
+  });
+
+  /** One parsed row by key (null-safe, no index-signature cast). */
+  const rowOf = (parsed: object | null, key: string): unknown =>
+    parsed === null ? undefined : new Map(Object.entries(parsed)).get(key);
+
+  for (const [key, row] of markableRows) {
+    it(`${key}: reads the row with and without the mark, carrying it through`, () => {
+      expect(rowOf(parseWprDetections(withRow(key, row)), key)).toEqual(row);
+      const marked = parseWprDetections(withRow(key, { ...row, truncated: true }));
+      expect(rowOf(marked, key)).toEqual({
+        ...row,
+        truncated: true
+      });
+    });
+
+    it(`${key}: rejects a mark that is not exactly true`, () => {
+      for (const value of [false, 'true', 1, null, undefined]) {
+        expect(parseWprDetections(withRow(key, { ...row, truncated: value }))).toBeNull();
+      }
+    });
+  }
+
+  it('rejects the mark on rows that cannot have been cut (empty/absent arms)', () => {
+    const cases: readonly (readonly [string, Record<string, unknown>])[] = [
+      ['rocket_above_the_fold_optimization', { present: false, lcpComment: false }],
+      ['auto_preload_fonts', { present: false, fonts: [] }],
+      ['preconnect_external_domains', { present: false, domains: [], preconnectCount: 0 }]
+    ];
+    for (const [key, row] of cases) {
+      expect(parseWprDetections(withRow(key, { ...row, truncated: true }))).toBeNull();
+    }
+    expect(parsePreloadedResources({ present: false, truncated: true })).toBeNull();
+  });
+
+  it('reads a marked preloaded-resources report, and nothing but a true mark', () => {
+    const report = { present: true, resources: [{ href: '/a', type: 'image' }], truncated: true };
+    expect(parsePreloadedResources(report)).toEqual(report);
+    expect(parsePreloadedResources({ ...report, truncated: false })).toBeNull();
+    // The mark is the only key added: a foreign key beside it still rejects.
+    expect(parsePreloadedResources({ ...report, extra: 1 })).toBeNull();
+  });
+
+  it('a whole payload with marked rows survives parseFdtData', () => {
+    const payload = validFdt();
+    payload['wprDetections'] = withRow('rocket_above_the_fold_optimization', {
+      present: true,
+      lcpComment: false,
+      preloadedImages: ['/hero.webp'],
+      truncated: true
+    });
+    expect(parseFdtData(payload)).not.toBeNull();
+  });
+});

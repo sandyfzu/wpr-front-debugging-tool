@@ -45,11 +45,13 @@ export function detectWpr(document: Document): WprDetections['wpr'] {
         // `cached@` suffix keeps the timestamp null. The explicit radix is
         // the one delta vs the reference `parseInt`: `0x`-prefixed suffixes
         // parse as 0 instead of hexadecimal. Non-numeric suffixes normalize
-        // to null rather than NaN.
+        // to null rather than NaN, and digit runs too long for a number
+        // (parsing to Infinity) to null too: the payload contract admits
+        // finite stamps only.
         const timestamp = data.match(CACHE_TIMESTAMP_PATTERN)?.[1];
         if (timestamp) {
           const parsed = parseInt(timestamp, 10);
-          wpr.timeStamp = Number.isNaN(parsed) ? null : parsed;
+          wpr.timeStamp = Number.isFinite(parsed) ? parsed : null;
         }
       }
       break;
