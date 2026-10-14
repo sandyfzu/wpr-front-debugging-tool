@@ -15,18 +15,47 @@
  * Positioning is Kobalte's popper with its own collision handling
  * (flip + slide + viewport padding), which is what keeps a rail-bottom
  * trigger's menu — anchored where there is barely any room to grow —
- * inside the window.
+ * inside the window; the same middleware clamps the plate's height at
+ * window sizes too small for all its rows.
+ *
+ * One APG nuance, recorded so it is never mistaken for a bug: a disabled
+ * menu item (the reserved row) is *skipped* by the items' arrow navigation
+ * — Kobalte's collection skips disabled keys while strict APG would keep
+ * disabled items focusable. This matches the rail's own native-disabled
+ * reserved row (never a tab stop, never selectable, explained by its note
+ * and tooltip instead), which is why the divergence is accepted here.
  *
  * The chrome is declared here (the one surface all menus of the design
  * system share); the row anatomy and data binding live with the consumer —
  * the same split the dialog primitive takes.
  */
-import type { JSX } from 'solid-js';
+import type { ComponentProps, JSX } from 'solid-js';
 import { DropdownMenu as KobalteMenu } from '@kobalte/core';
+import { cn } from '../../utils/cn';
+import { SCROLLBAR_THIN_CLASSES } from './scroll-area';
 
-/** Where a menu content's chrome lives (the dialog plate's language, tooltip-scaled). */
-export const MENU_CONTENT_CLASSES =
-  'z-50 max-h-[var(--kb-popper-content-available-height)] w-max min-w-40 max-w-72 rounded-md border border-line-2 bg-surface-2 p-1 shadow-elev-2 outline-none';
+/**
+ * Where a menu content's chrome lives (the dialog plate's language,
+ * tooltip-scaled).
+ *
+ * The plate is a *scrolling* surface, designed: the popper middleware
+ * clamps its height to what the window offers (`max-h` over Kobalte's
+ * available-height variable), and `overflow-y: auto` makes that clamp an
+ * internal scroll instead of items painting past the plate — the menu's
+ * own overflow, not the shell's (the rail itself never scrolls or gains a
+ * scrollbar; its scroll-free invariant is separate and pinned). The
+ * scrollbar treatment is the scroll surface's shared token-thin one, so a
+ * degenerate-case bar is a designed hairline, never the native one; it
+ * exists only while the clamp actually bites (`scrollbar-gutter` stays at
+ * its `auto` default — deliberately *not* `stable`, which would reserve a
+ * phantom right gutter on every plate at every height, shifting the
+ * labels/chips even when nothing scrolls), and `overscroll-contain` keeps
+ * a fast wheel from bouncing the DevTools host through the flyout.
+ */
+export const MENU_CONTENT_CLASSES = cn(
+  'z-50 max-h-[var(--kb-popper-content-available-height)] w-max min-w-40 max-w-72 overflow-y-auto overscroll-contain rounded-md border border-line-2 bg-surface-2 p-1 shadow-elev-2 outline-none',
+  SCROLLBAR_THIN_CLASSES
+);
 
 /**
  * One menu item: the 32px row pitch the rail's rows use (well above the
@@ -65,10 +94,12 @@ export const MENU_SEPARATOR_CLASSES = 'mx-1 my-1 border-t border-line-2';
  * polymorphic `as`-a-component path, so `MenuTrigger forwarded` is what
  * the shared tooltip mounts as its `as` value.
  */
-export function MenuTooltipTrigger(props: Record<string, unknown>): JSX.Element {
-  // Props flow through Solid's Dynamic as a plain spread; Kobalte's merge
-  // keeps its own attrs ahead of the spread, so the tooltip's values win
-  // where both sides carry one (aria-haspopup/aria-expanded).
+export function MenuTooltipTrigger(props: ComponentProps<typeof KobalteMenu.Trigger>): JSX.Element {
+  // Props flow through Solid's Dynamic as one plain spread (the tooltip's
+  // shared attribution attrs + its trigger handlers + the ref chain are
+  // all this shape's members); Kobalte's merge keeps its own attrs ahead
+  // of the spread, so the tooltip's values win where both sides carry one
+  // (aria-haspopup/aria-expanded).
   return <KobalteMenu.Trigger {...props} />;
 }
 
