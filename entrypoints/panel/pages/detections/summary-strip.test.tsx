@@ -53,6 +53,11 @@ describe('SummaryStrip', () => {
     const meter = document.querySelector<HTMLElement>('[data-fdt-summary-meter]');
     expect(meter?.getAttribute('aria-hidden')).toBe('true');
     expect((meter?.firstElementChild as HTMLElement | null)?.style.width).toBe('25.00%');
+    // Right after the headline, at most 12 rem, an accent (not status) fill.
+    expect(meter?.previousElementSibling?.hasAttribute('data-fdt-summary-headline')).toBe(true);
+    expect(meter?.className).toContain('w-48');
+    expect(meter?.firstElementChild?.className).toContain('bg-accent');
+    expect(meter?.firstElementChild?.className).not.toContain('status');
   });
 
   it('states the absolute cache time as a machine-readable <time>', () => {
@@ -67,6 +72,7 @@ describe('SummaryStrip', () => {
     expect(fact('cache')?.querySelector('time')?.getAttribute('datetime')).toBe(
       '2023-11-14T22:13:20.000Z'
     );
+    expect(fact('cache')?.querySelector('time')?.className).toContain('whitespace-nowrap');
   });
 
   it('omits the cache fact when cached without a representable stamp', () => {

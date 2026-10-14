@@ -264,6 +264,33 @@ describe('buildSupportReport — provenance', () => {
 });
 
 describe('buildSupportReport — secrets never reach the report', () => {
+  it('rebuilds the page URL: no credentials, no fragment, sensitive params redacted', () => {
+    const report = buildSupportReport(makeReportData(), {
+      ...CONTEXT,
+      pageUrl: 'https://user:pw@host.test/?preview_nonce=X&key=Y&nowprocket#access_token=Z'
+    });
+    expect(report).toContain(
+      '- **Page:** `https://host.test/?preview_nonce=[redacted]&key=[redacted]&nowprocket`'
+    );
+    for (const secret of ['user', 'pw@', '=X', '=Y', 'access_token', '=Z']) {
+      expect(report).not.toContain(secret);
+    }
+  });
+
+  it('omits a page URL that is not http(s), and flattens injected lines', () => {
+    expect(
+      buildSupportReport(makeReportData(), { ...CONTEXT, pageUrl: 'javascript:alert(1)' })
+    ).not.toContain('**Page:**');
+    const report = buildSupportReport(makeReportData(), {
+      ...CONTEXT,
+      pageUrl: 'https://x.test/a\n## injected'
+    });
+    expect(report).toContain('- **Page:** `https://x.test/a`');
+    expect(report.split('\n').filter((line) => line.startsWith('## '))).toEqual([
+      SUPPORT_REPORT_TITLE
+    ]);
+  });
+
   /** The report for one header row. */
   const reportFor = (name: string, value: string): string =>
     buildSupportReport(makeReportData({ pageHeaders: [{ name, value }] }), CONTEXT);

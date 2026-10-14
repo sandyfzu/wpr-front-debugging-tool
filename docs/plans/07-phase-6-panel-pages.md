@@ -227,6 +227,28 @@ The phase's overview surface — the status cards the audience reads first, then
 - **§D re-run.** D-1 at 320/480/768/1280 (+1400 screenshots): `scrollWidth === clientWidth` on cached and absent pages. D-2: reduced motion leaves only the finished page entrance and 0 running after open. D-3: Tab order is Copy report → Cached tooltip → link cards → headers toggle → status bar, with the ring visible at each stop. D-4: axe 0 violations / 0 incomplete for collapsed + expanded × light + dark × cached + absent. Audited at a 2400 px-tall viewport: at 900 px, content clipped by the panel's own scroller reports `color-contrast` _incomplete_ ("partially obscured"), an artifact of off-viewport rows, shown by scrolling the flagged row into view, which moves the incomplete to whatever is then clipped. D-6 grep: empty.
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1561/1561 in 141 files (coverage 95.62 / 94.92 / 98.70 / 96.95) · `build` ✓ · `check:budgets` ✓ — panel 256.6 → **259.6 raw / 79.9 gzip** (the shell report binding + URL read + sensitive-header rule), whole 474.5.
 
+**Receipts — verification round (2026-10-14):** the original findings were confirmed fixed; these follow-ups are fixed too.
+
+- **N1 — secret leak through the page URL — fixed.** `redactUrl` rebuilds the "Page:" line from a parsed `URL`, never the raw string:
+  - it drops the username, password and fragment;
+  - it keeps the query (e.g. `?nowprocket`) in its original order and encoding, but replaces the value of every sensitive-named parameter with `[redacted]`;
+  - it returns the normalised `href` (the URL parser strips tabs/newlines and percent-encodes other controls and bidi characters);
+  - anything that is not http(s) yields no Page line.
+  - The redaction rule moved to `lib/panel/redaction.ts` (renamed from `sensitive-headers.ts`). One name rule, `isSensitiveName`, now serves both headers and query parameters. It adds the exact query names `key`, `_wpnonce`, `nonce`, `preview_nonce`, `token`, `code`, `state` and `sig`, and treats inner whitespace as a separator, so a form-decoded `api+key` is caught.
+  - Tests cover the coordinator's example URL, every listed name, encoded and `+`-spaced names, malformed escapes, empty and valueless pairs, newline/tab, control and bidi inputs, a newline-injected heading (the parser reads it as a fragment and it is dropped), and non-http(s) inputs. The report also has an end-to-end test that no secret text survives.
+- **(1) Rule extended** with `jwt`, `hmac`, `bearer`, `private`, `pwd`, `pass` as a whole word, `sig` as a whole word and a trailing `key` word. Separators are `-`/`_`, so query names like `user_pass` and `license_key` match too. Every fragment is tested, plus negatives (`keyword`, `passage`, `signal`, `compass`, `nowprocket`, `X-Request-Id`). `X-Cache-Key` over-matches, which is accepted.
+- **(2)** The copy-controls clause of `L-3` in `docs/ui-ux-bar.md` now matches what shipped: icon-only only where it truly saves title-row space, and a page's primary action keeps its label. Dated change-log line added.
+- **(3)** The strip meter sits right after the headline (wrapping under it when the line is full). It is at most 12 rem (`w-48 max-w-full`) with a `bg-accent` fill, no status green. The UTC `<time>` is `whitespace-nowrap`. Tests cover all four points.
+- **(4) Firefox URL read.** Every copy first calls `eval('location.href')` with no callback.
+  - If that returns a promise (Firefox, Chrome 151+), the promise is used directly: no callback, no wait, same validation. Firefox's `[result, exceptionInfo]` pair and a bare result are both accepted; a rejection or an exception gives null.
+  - Otherwise (Chrome below 151) the callback form runs once more, with `lastError` read inside it.
+  - Cost on old Chrome: `location.href` is read twice, which has no side effects.
+  - Tests: both forms, no timer left armed on the promise path, the deadline, `realInspectedEvalApi` forwarding exactly the given arguments.
+  - Not exercised in a real Firefox (no Firefox harness); recorded as a by-hand remainder alongside the Chrome DevTools one.
+- **Nit — instant expand/collapse.** The headers body appears instantly when opened (`MOTION_REVEAL` dropped); only the chevron turns. Test: no transition class on the body.
+- **§D re-run:** no horizontal scroll at 320/480/768/1280 on the cached and plugin-absent pages; axe found 0 violations and 0 incomplete for collapsed/expanded × light/dark × both pages (run at a 2400 px-tall viewport); with reduced motion, 0 animations running after open; D-6 grep empty. Screenshots re-taken at 320/600/1000/1400 × light/dark (ready, headers open, plugin absent).
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1614/1614 in 141 files (coverage 95.68 / 94.96 / 98.72 / 96.99) · `build` ✓ · `check:budgets` ✓. Panel bundle **260.4 KB raw / 80.2 KB gzip** (up from 259.6); whole build 475.2.
+
 ---
 
 ## P6C — JavaScript page

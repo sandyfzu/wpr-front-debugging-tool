@@ -1,7 +1,10 @@
 /**
- * The inspected-page URL read: a valid http(s) answer passes; every failure
- * shape (no API, DevTools-side error, page exception, junk/oversized/non-web
- * answer, sync throw, timeout) resolves null; `lastError` is always read.
+ * The inspected-page URL read, in both API shapes: the promise form answers
+ * through the call's return (Firefox's `[result, exceptionInfo]` pair or a
+ * bare result) with no callback and no wait; the callback form is asked
+ * once more with a callback; every failure shape (no API, DevTools-side
+ * error, page exception, rejection, junk/oversized/non-web answer, sync
+ * throw, timeout) resolves null; `lastError` is read in the callback.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -15,28 +18,51 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** An eval seam answering synchronously with the given callback arguments. */
-function answering(result: unknown, exceptionInfo?: unknown): InspectedEvalApi {
+/** A callback-form seam (returns nothing from a callback-less call). */
+function callbackForm(result: unknown, exceptionInfo?: unknown): InspectedEvalApi {
   return {
     eval: (_expression, callback) => {
-      callback(result, exceptionInfo);
+      callback?.(result, exceptionInfo);
+      return undefined;
     }
+  };
+}
+
+/** A promise-form seam resolving (or rejecting) with the given value. */
+function promiseForm(settle: () => Promise<unknown>): {
+  api: InspectedEvalApi;
+  calls: Array<{ expression: string; withCallback: boolean }>;
+} {
+  const calls: Array<{ expression: string; withCallback: boolean }> = [];
+  return {
+    api: {
+      eval: (expression, callback) => {
+        calls.push({ expression, withCallback: callback !== undefined });
+        return settle();
+      }
+    },
+    calls
   };
 }
 
 const noError = (): undefined => undefined;
 
-describe('readInspectedPageUrl', () => {
+describe('readInspectedPageUrl — callback form', () => {
   it('returns a valid http(s) URL and evaluates location.href', async () => {
-    const seen: string[] = [];
+    const seen: Array<{ expression: string; withCallback: boolean }> = [];
     const api: InspectedEvalApi = {
       eval: (expression, callback) => {
-        seen.push(expression);
-        callback('https://example.com/a?b=1');
+        seen.push({ expression, withCallback: callback !== undefined });
+        callback?.('https://example.com/a?b=1');
+        return undefined;
       }
     };
     expect(await readInspectedPageUrl(api, noError)).toBe('https://example.com/a?b=1');
-    expect(seen).toEqual(['location.href']);
+    // One callback-less probe, then the callback call.
+    expect(seen).toEqual([
+      { expression: 'location.href', withCallback: false },
+      { expression: 'location.href', withCallback: true }
+    ]);
   });
 
   it('answers null without a DevTools API', async () => {
@@ -44,18 +70,18 @@ describe('readInspectedPageUrl', () => {
   });
 
   it.each([
-    ['a page exception', answering(undefined, { isException: true, value: 'x' })],
-    ['a non-string answer', answering({ href: 'https://a.test/' })],
-    ['a non-web scheme', answering('chrome://settings/')],
-    ['a javascript: answer', answering('javascript:alert(1)')],
-    ['an oversized answer', answering(`https://a.test/${'x'.repeat(PAGE_URL_MAX_LENGTH)}`)]
+    ['a page exception', callbackForm(undefined, { isException: true, value: 'x' })],
+    ['a non-string answer', callbackForm({ href: 'https://a.test/' })],
+    ['a non-web scheme', callbackForm('chrome://settings/')],
+    ['a javascript: answer', callbackForm('javascript:alert(1)')],
+    ['an oversized answer', callbackForm(`https://a.test/${'x'.repeat(PAGE_URL_MAX_LENGTH)}`)]
   ])('answers null on %s', async (_label, api) => {
     expect(await readInspectedPageUrl(api, noError)).toBeNull();
   });
 
   it('reads lastError inside the callback and answers null when it is set', async () => {
     const lastError = vi.fn(() => ({ message: 'No tab with id' }));
-    expect(await readInspectedPageUrl(answering(undefined), lastError)).toBeNull();
+    expect(await readInspectedPageUrl(callbackForm(undefined), lastError)).toBeNull();
     expect(lastError).toHaveBeenCalledTimes(1);
   });
 
@@ -74,6 +100,7 @@ describe('readInspectedPageUrl', () => {
     const api: InspectedEvalApi = {
       eval: (_expression, callback) => {
         late = callback;
+        return undefined;
       }
     };
     const pending = readInspectedPageUrl(api, noError, 50);
@@ -81,6 +108,33 @@ describe('readInspectedPageUrl', () => {
     expect(await pending).toBeNull();
     late?.('https://example.com/');
     expect(await pending).toBeNull();
+  });
+});
+
+describe('readInspectedPageUrl — promise form', () => {
+  it("takes Firefox's [result, exceptionInfo] pair, without a callback or a wait", async () => {
+    vi.useFakeTimers();
+    const form = promiseForm(() => Promise.resolve(['https://example.com/ff', undefined]));
+    const url = await readInspectedPageUrl(form.api, noError);
+    expect(url).toBe('https://example.com/ff');
+    expect(form.calls).toEqual([{ expression: 'location.href', withCallback: false }]);
+    // Settled without advancing any timer, and none left armed.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('accepts a bare resolved result', async () => {
+    const form = promiseForm(() => Promise.resolve('https://example.com/bare'));
+    expect(await readInspectedPageUrl(form.api, noError)).toBe('https://example.com/bare');
+  });
+
+  it.each([
+    ['an exception in the pair', () => Promise.resolve([undefined, { isException: true }])],
+    ['a rejection', () => Promise.reject(new Error('No tab'))],
+    ['an undefined-reason rejection', () => Promise.reject(undefined as unknown as Error)],
+    ['a junk result', () => Promise.resolve(['ftp://a.test/', undefined])],
+    ['a null exception slot with junk', () => Promise.resolve([42, null])]
+  ])('answers null on %s', async (_label, settle) => {
+    expect(await readInspectedPageUrl(promiseForm(settle).api, noError)).toBeNull();
   });
 });
 
@@ -113,12 +167,16 @@ describe('realInspectedEvalApi', () => {
     });
   });
 
-  it('binds the namespace eval when present', () => {
-    const evaluate = vi.fn();
+  it('forwards exactly the arguments given (no callback → none passed) and the return value', () => {
+    const evaluate = vi.fn((...args: unknown[]) => (args.length > 0 ? 'returned' : 'unreachable'));
     withDevtools({ inspectedWindow: { eval: evaluate } }, () => {
+      const api = realInspectedEvalApi();
+      expect(api?.eval('location.href')).toBe('returned');
+      expect(evaluate).toHaveBeenLastCalledWith('location.href');
+      expect(evaluate.mock.lastCall).toHaveLength(1);
       const callback = vi.fn();
-      realInspectedEvalApi()?.eval('location.href', callback);
-      expect(evaluate).toHaveBeenCalledWith('location.href', callback);
+      api?.eval('location.href', callback);
+      expect(evaluate).toHaveBeenLastCalledWith('location.href', callback);
     });
   });
 });

@@ -1,7 +1,7 @@
 /**
  * The Detections summary strip — the one answer the status bar does not
  * give: how much of WP Rocket is working on this page ("N of M
- * optimizations active", with a quiet meter), plus only the facts the bar
+ * optimizations active", with a small accent meter right after it), plus only the facts the bar
  * lacks: the cache's absolute generation time (the bar shows its age) and
  * the header that identified the platform. Plugin presence, version, age
  * and server stay the status bar's — never cloned here.
@@ -70,7 +70,9 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
   return (
     <Card level={1}>
       <div data-fdt="detections-summary" class="flex flex-col gap-2">
-        <div class="flex flex-col gap-1.5 @regular:flex-row @regular:items-center @regular:gap-4">
+        {/* The meter sits right after the headline (under it when the line
+            is full), sized to read as part of the sentence, not as a bar. */}
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <p data-fdt-summary-headline class="text-sm text-fg-primary">
             <span class="font-semibold tabular-nums">{counts().active}</span>
             <span class="text-fg-secondary">
@@ -82,10 +84,10 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
           <div
             aria-hidden="true"
             data-fdt-summary-meter
-            class="h-1.5 w-full shrink-0 overflow-hidden rounded-full bg-surface-3 @regular:ms-auto @regular:w-40"
+            class="h-1.5 w-48 max-w-full shrink overflow-hidden rounded-full bg-surface-3"
           >
             <div
-              class="h-full rounded-full bg-status-ok"
+              class="h-full rounded-full bg-accent"
               style={{ width: meterWidth(counts().active, counts().total) }}
             />
           </div>
@@ -106,7 +108,7 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
                   <li class={FACT} data-fdt-summary-fact="cache">
                     Cache generated{' '}
                     <time
-                      class="tabular-nums text-fg-primary"
+                      class="whitespace-nowrap tabular-nums text-fg-primary"
                       datetime={isoInstant(cache().seconds)}
                     >
                       {cache().formatted}

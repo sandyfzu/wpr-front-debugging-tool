@@ -6,8 +6,9 @@
  *
  * Disclosure contract: collapsed by default; the trigger is a
  * `button[aria-expanded]` inside the section's `h2`; the body mounts on the
- * first open (fading in once) and then stays mounted, so closing and
- * re-opening keeps its scroll position and a data refresh keeps it open.
+ * first open, appears instantly (only the chevron turns) and then stays
+ * mounted, so closing and re-opening keeps its scroll position and a data
+ * refresh keeps it open.
  *
  * States: `pageHeaders === null` → the page omits the section entirely
  * (nothing was captured, so there is nothing to preview); an empty capture →
@@ -25,7 +26,7 @@ import type { JSX } from 'solid-js';
 import { createMemo, createSignal, createUniqueId, For, Show } from 'solid-js';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
 import { Badge } from '../../../../components/ui/badge';
-import { FOCUS_RING, MOTION_REVEAL, MOTION_TURN } from '../../../../components/ui/classes';
+import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
 import { KeyValue } from '../../../../components/ui/key-value';
 import {
   buildHeadersViewModel,
@@ -216,14 +217,14 @@ export function HeadersPreview(props: HeadersPreviewProps): JSX.Element {
             <span class="sr-only"> captured)</span>
           </button>
         </h2>
-        {/* The body fades in on every open: `hidden` toggles `display`, and
-            `@starting-style` applies on each none → shown change. */}
+        {/* Expand/collapse is instant (no fade, no height animation): only
+            the chevron turns. */}
         <Show when={mounted()}>
           <div
             id={bodyId}
             data-fdt="headers-preview-body"
             hidden={!open()}
-            class={cn('flex flex-col gap-1.5', MOTION_REVEAL)}
+            class="flex flex-col gap-1.5"
           >
             <div class="rounded-md border border-line-1 bg-surface-1 px-2.5">
               <For each={groupKeys()}>

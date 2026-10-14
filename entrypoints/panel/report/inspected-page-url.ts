@@ -3,6 +3,13 @@
  * DevTools API every panel already holds — no new permission: one
  * `devtools.inspectedWindow.eval('location.href')` in the page's main frame.
  *
+ * Two API shapes, feature-detected per call: the promise form (Firefox,
+ * Chrome 151+) answers through the call's own return value — used directly,
+ * no callback, no wait; the callback form (Chrome below 151 returns nothing
+ * from a callback-less call) is then asked once more with a callback. A
+ * callback-less call on the callback form only reads `location.href`, so the
+ * one extra evaluation there is side-effect free.
+ *
  * Best-effort by design: the report is useful without the URL, so every
  * failure (no DevTools namespace — e.g. a panel opened outside DevTools —,
  * a DevTools-side error, a thrown page exception, a non-http(s) or
@@ -24,15 +31,60 @@ export const PAGE_URL_MAX_LENGTH = 2048;
 /** The expression evaluated in the inspected page (a string is valid JSON). */
 const EXPRESSION = 'location.href';
 
-/** The eval seam: the callback form (the promise form needs Chrome 151+). */
+/** The eval seam, either shape. */
 export interface InspectedEvalApi {
   /**
    * Evaluate one expression in the inspected page's main frame.
    *
    * @param expression The expression.
-   * @param callback Receives the result, or an exception description.
+   * @param callback Receives the result, or an exception description
+   *   (callback form; omitted to probe for the promise form).
+   * @returns A promise in the promise form (Firefox resolves
+   *   `[result, exceptionInfo]`; a bare result is accepted too), anything
+   *   else in the callback form.
    */
-  eval(expression: string, callback: (result: unknown, exceptionInfo?: unknown) => void): void;
+  eval(expression: string, callback?: (result: unknown, exceptionInfo?: unknown) => void): unknown;
+}
+
+/**
+ * Whether a value is promise-like (the promise form's return).
+ *
+ * @param value The call's return value.
+ * @returns True for a thenable.
+ */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
+/**
+ * Validate one answer as the report's page URL.
+ *
+ * @param result The eval's result.
+ * @returns The URL, or null when it is not a bounded absolute http(s) string.
+ */
+function acceptUrl(result: unknown): string | null {
+  return typeof result === 'string' && result.length <= PAGE_URL_MAX_LENGTH && isHttpUrl(result)
+    ? result
+    : null;
+}
+
+/**
+ * Unpack the promise form's settled value: Firefox resolves a
+ * `[result, exceptionInfo]` pair; a non-array value is the result itself.
+ *
+ * @param value The resolved value.
+ * @returns The result and the exception description (undefined when none).
+ */
+function unpackPromiseAnswer(value: unknown): { result: unknown; exceptionInfo: unknown } {
+  if (Array.isArray(value)) {
+    const pair = value as readonly unknown[];
+    return { result: pair[0], exceptionInfo: pair[1] ?? undefined };
+  }
+  return { result: value, exceptionInfo: undefined };
 }
 
 /** The runtime's `lastError` reader (read inside the callback, as the API requires). */
@@ -66,22 +118,41 @@ export function readInspectedPageUrl(
       });
       settle(null);
     }, timeoutMs);
+    /**
+     * Settle from one answer, in either shape.
+     *
+     * @param result The eval's result.
+     * @param failure A DevTools-side error or page exception, if any.
+     */
+    const answer = (result: unknown, failure: unknown): void => {
+      if (failure !== undefined && failure !== null) {
+        log.warn('Reading the inspected page URL failed; the report omits it', {
+          cause: failure
+        });
+        settle(null);
+        return;
+      }
+      settle(acceptUrl(result));
+    };
     try {
+      const probe = api.eval(EXPRESSION);
+      if (isThenable(probe)) {
+        probe.then(
+          (value) => {
+            const { result, exceptionInfo } = unpackPromiseAnswer(value);
+            answer(result, exceptionInfo);
+          },
+          (cause: unknown) => {
+            // A rejection is a failure whatever its reason (even an empty one).
+            answer(undefined, cause ?? 'rejected');
+          }
+        );
+        return;
+      }
       api.eval(EXPRESSION, (result, exceptionInfo) => {
         // Read (and so clear) lastError first: unread, it logs as unchecked.
         const runtimeError = lastError();
-        if (runtimeError !== undefined || exceptionInfo !== undefined) {
-          log.warn('Reading the inspected page URL failed; the report omits it', {
-            cause: runtimeError?.message ?? exceptionInfo
-          });
-          settle(null);
-          return;
-        }
-        settle(
-          typeof result === 'string' && result.length <= PAGE_URL_MAX_LENGTH && isHttpUrl(result)
-            ? result
-            : null
-        );
+        answer(result, runtimeError?.message ?? exceptionInfo);
       });
     } catch (cause) {
       log.warn('The inspected page URL eval could not start; the report omits it', {
@@ -107,8 +178,11 @@ export function realInspectedEvalApi(): InspectedEvalApi | null {
   const evaluate = inspected?.eval;
   if (inspected === undefined || typeof evaluate !== 'function') return null;
   return {
-    eval: (expression, callback) => {
-      evaluate.call(inspected, expression, callback);
-    }
+    // Forward exactly the arguments given: the promise form must be called
+    // without a callback to answer through its return value.
+    eval: (expression, callback) =>
+      callback === undefined
+        ? evaluate.call(inspected, expression)
+        : evaluate.call(inspected, expression, callback)
   };
 }

@@ -15,7 +15,8 @@
  * own backtick runs, with control characters flattened and table pipes
  * escaped, so a hostile value can neither break the layout nor inject
  * markdown into the ticket. Secret-bearing header values are redacted by the
- * shared sensitive-header rule (`sensitive-headers.ts`) — a session token
+ * shared redaction rule (`redaction.ts`), and the page URL is rebuilt
+ * without credentials, fragment or sensitive query values — a session token
  * must never travel into a ticket.
  */
 
@@ -25,7 +26,7 @@ import type { FdtData } from '../wp-rocket/types';
 import { buildHeadersViewModel, type HeaderRowVM } from './headers-view-model';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
-import { REDACTED, redactHeaderValue } from './sensitive-headers';
+import { REDACTED, redactHeaderValue, redactUrl } from './redaction';
 
 /** The report's provenance, read by the caller (keeps the builder pure). */
 export interface SupportReportContext {
@@ -33,7 +34,7 @@ export interface SupportReportContext {
   readonly generatedAt: number;
   /** The extension's own version, or null when the runtime could not say. */
   readonly extensionVersion: string | null;
-  /** The inspected page's URL, or null when it could not be read. */
+  /** The inspected page's raw URL, or null when it could not be read (redacted here). */
   readonly pageUrl: string | null;
 }
 
@@ -129,12 +130,13 @@ function detailsCell(item: StatusItem): string {
  * The provenance lines: page, generation time, extension version.
  *
  * @param context The report's provenance.
- * @returns The list lines (the page line only when the URL is known).
+ * @returns The list lines (the page line only for a known http(s) URL, redacted).
  */
 function contextLines(context: SupportReportContext): string[] {
   const lines: string[] = [];
-  if (context.pageUrl !== null && context.pageUrl.trim() !== '') {
-    lines.push(`- **Page:** ${codeSpan(context.pageUrl)}`);
+  const page = context.pageUrl === null ? null : redactUrl(context.pageUrl);
+  if (page !== null) {
+    lines.push(`- **Page:** ${codeSpan(page)}`);
   }
   const generated = formatCacheTimestamp(Math.floor(context.generatedAt / 1000));
   lines.push(`- **Generated:** ${generated ?? 'Time not available'}`);

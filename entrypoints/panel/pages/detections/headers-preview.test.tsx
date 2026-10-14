@@ -111,6 +111,8 @@ describe('HeadersPreview', () => {
     expect(body).not.toBeNull();
     expect(toggle().getAttribute('aria-controls')).toBe(body?.id);
     expect(body?.hidden).toBe(false);
+    // Expand/collapse is instant: no transition on the body.
+    expect(body?.className).not.toMatch(/transition|starting:/);
     // In the page flow: no capped, separately scrolling region.
     expect(body?.querySelector('[class*="overflow-y-auto"], [class*="max-h-"]')).toBeNull();
 
