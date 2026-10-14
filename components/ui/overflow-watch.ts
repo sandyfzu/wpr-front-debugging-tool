@@ -12,13 +12,21 @@
 export type StopWatching = () => void;
 
 /**
- * A watcher seam: observe `scroller` (the overflow-clipping box) and
- * `content` (its sized child), call `onChange` with the overflow state.
+ * What a watch measures on every size change of its two elements: `box`
+ * (the outer element) against `content` (its child sized to its content).
+ */
+export type OverflowMeasure = (box: HTMLElement, content: HTMLElement) => boolean;
+
+/**
+ * A watcher seam: observe `box` (a scroller or a clamp) and `content` (its
+ * sized child), call `onChange` with the measured state — by default
+ * {@link isOverflowing} on `box`.
  */
 export type OverflowWatcher = (
-  scroller: HTMLElement,
+  box: HTMLElement,
   content: HTMLElement,
-  onChange: (overflowing: boolean) => void
+  onChange: (state: boolean) => void,
+  measure?: OverflowMeasure
 ) => StopWatching;
 
 /** Overflow values that let a user scroll the axis (`hidden`/`clip` only clip). */
@@ -41,6 +49,20 @@ export function isOverflowing(scroller: HTMLElement): boolean {
   );
 }
 
+/**
+ * Whether a clamp hides part of its content vertically: the content box is
+ * taller than the clamp's own box. Unlike {@link isOverflowing} this ignores
+ * the overflow style — it answers "is anything cut off?", e.g. to show a
+ * fade only when there is more below.
+ *
+ * @param box The clamping element.
+ * @param content Its child, sized to its content.
+ * @returns `true` while content extends below the clamp.
+ */
+export function isClippedVertically(box: HTMLElement, content: HTMLElement): boolean {
+  return content.offsetHeight > box.clientHeight;
+}
+
 /** The minimal `ResizeObserver` surface the watcher uses (a test seam). */
 export interface ResizeObserverLike {
   /** Start observing an element's size. */
@@ -57,11 +79,14 @@ export type ResizeObserverFactory = (
 /**
  * Create an overflow watcher backed by one shared, lazily created observer.
  *
- * Both elements are observed: the scroller's box changes with the layout
+ * Both elements are observed: the outer box changes with the layout
  * (panel resize, docking), the content's box changes with the content (text,
  * highlighting, the wrap toggle — the content must size to its content, e.g.
  * `w-fit min-w-full`). Each notification re-measures the owning region and
- * reports only actual state changes. The observer delivers an initial
+ * reports only actual state changes. One element may belong to several
+ * watches (a code block's content box is measured against its scroller and
+ * its clamp); it stays observed until the last of them stops. The observer
+ * delivers an initial
  * notification for every newly observed element, so no measuring is needed
  * at watch time.
  *
@@ -71,37 +96,43 @@ export type ResizeObserverFactory = (
 export function createOverflowWatcher(
   createObserver: ResizeObserverFactory = (callback) => new ResizeObserver(callback)
 ): OverflowWatcher {
-  /** The measure callback of each observed element (two elements per region). */
-  const regions = new Map<Element, () => void>();
+  /** The watches' re-measure callbacks per observed element. */
+  const regions = new Map<Element, Set<() => void>>();
   let observer: ResizeObserverLike | undefined;
 
-  return (scroller, content, onChange) => {
+  return (box, content, onChange, measure = (scroller) => isOverflowing(scroller)) => {
     observer ??= createObserver((entries) => {
-      // Two entries of one region measure it once; a measure per entry would be idempotent but wasteful.
-      const measures = new Set<() => void>();
+      // Two entries of one watch re-measure it once (a Set dedupes).
+      const due = new Set<() => void>();
       for (const entry of entries) {
-        const measure = regions.get(entry.target);
-        if (measure !== undefined) measures.add(measure);
+        for (const remeasure of regions.get(entry.target) ?? []) due.add(remeasure);
       }
-      for (const measure of measures) measure();
+      for (const remeasure of due) remeasure();
     });
     const shared = observer;
     let last: boolean | undefined;
-    const measure = (): void => {
-      const next = isOverflowing(scroller);
+    const remeasure = (): void => {
+      const next = measure(box, content);
       if (next === last) return;
       last = next;
       onChange(next);
     };
-    regions.set(scroller, measure);
-    regions.set(content, measure);
-    shared.observe(scroller);
-    shared.observe(content);
+    for (const element of [box, content]) {
+      const watches = regions.get(element) ?? new Set<() => void>();
+      if (watches.size === 0) shared.observe(element);
+      watches.add(remeasure);
+      regions.set(element, watches);
+    }
     return () => {
-      shared.unobserve(scroller);
-      shared.unobserve(content);
-      regions.delete(scroller);
-      regions.delete(content);
+      for (const element of [box, content]) {
+        const watches = regions.get(element);
+        if (watches === undefined) continue;
+        watches.delete(remeasure);
+        if (watches.size === 0) {
+          regions.delete(element);
+          shared.unobserve(element);
+        }
+      }
     };
   };
 }
@@ -112,12 +143,13 @@ let sharedWatcher: OverflowWatcher | undefined;
 /**
  * Watch a region with the process-wide shared observer.
  *
- * @param scroller The overflow-clipping element.
+ * @param box The scroller (or clamp) element.
  * @param content Its child, sized to its content.
- * @param onChange Called with the overflow state on every change (and once initially).
+ * @param onChange Called with the measured state on every change (and once initially).
+ * @param measure What to measure (default: {@link isOverflowing} on `box`).
  * @returns The stop function — call it on unmount.
  */
-export const watchOverflow: OverflowWatcher = (scroller, content, onChange) => {
+export const watchOverflow: OverflowWatcher = (box, content, onChange, measure) => {
   sharedWatcher ??= createOverflowWatcher();
-  return sharedWatcher(scroller, content, onChange);
+  return sharedWatcher(box, content, onChange, measure);
 };

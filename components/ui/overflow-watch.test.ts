@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createOverflowWatcher,
+  isClippedVertically,
   isOverflowing,
   watchOverflow,
   type ResizeObserverFactory
@@ -97,6 +98,20 @@ describe('isOverflowing', () => {
   });
 });
 
+describe('isClippedVertically', () => {
+  it('is true only when the content box is taller than the clamp', () => {
+    const content = (height: number): HTMLElement => {
+      const element = document.createElement('div');
+      Object.defineProperty(element, 'offsetHeight', { get: () => height });
+      return element;
+    };
+    // Overflow style does not matter: the question is "is anything cut off".
+    const clamp = sized({ clientHeight: 70 }, 'clip');
+    expect(isClippedVertically(clamp, content(70))).toBe(false);
+    expect(isClippedVertically(clamp, content(71))).toBe(true);
+  });
+});
+
 describe('createOverflowWatcher', () => {
   it('shares one observer across regions, created lazily on first watch', () => {
     const observers = manualObservers();
@@ -162,5 +177,54 @@ describe('watchOverflow (process-wide)', () => {
     const stop = watchOverflow(sized({}), sized({}), () => undefined);
     expect(typeof stop).toBe('function');
     stop();
+  });
+});
+
+describe('createOverflowWatcher — shared elements and custom measures', () => {
+  it('runs a custom measure against (box, content)', () => {
+    const observers = manualObservers();
+    const watch = createOverflowWatcher(observers.factory);
+    const box = sized({});
+    const content = sized({});
+    const seen: Array<[Element, Element]> = [];
+    const reports: boolean[] = [];
+    watch(
+      box,
+      content,
+      (value) => reports.push(value),
+      (measuredBox, measuredContent) => {
+        seen.push([measuredBox, measuredContent]);
+        return true;
+      }
+    );
+    observers.deliver(content);
+    expect(seen).toEqual([[box, content]]);
+    expect(reports).toEqual([true]);
+  });
+
+  it('keeps an element shared by two watches observed until both stop', () => {
+    const observers = manualObservers();
+    const watch = createOverflowWatcher(observers.factory);
+    const scroller = sized({ scrollWidth: 200 });
+    const clamp = sized({});
+    const content = sized({});
+    const scrolls: boolean[] = [];
+    const clips: boolean[] = [];
+    const stopScroll = watch(scroller, content, (value) => scrolls.push(value));
+    const stopClip = watch(
+      clamp,
+      content,
+      (value) => clips.push(value),
+      () => true
+    );
+    expect(observers.observed()).toHaveLength(3);
+    observers.deliver(content); // one element, both watches re-measure
+    expect(scrolls).toEqual([true]);
+    expect(clips).toEqual([true]);
+    stopScroll();
+    expect(observers.observed()).toContain(content); // the clamp watch still needs it
+    expect(observers.observed()).not.toContain(scroller);
+    stopClip();
+    expect(observers.observed()).toEqual([]);
   });
 });
