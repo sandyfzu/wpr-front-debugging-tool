@@ -79,18 +79,18 @@ function staticWatch(): RailWatchFn {
 
 /**
  * The synthetic rail's layout: the shipped anatomy (32px rows, 4px list
- * gaps, 7px group leads; Overview 0 / Inspect + 7 / Diagnose + 7) measured
- * over every registry row — the same numbers the pure tests pin, so both
- * tiers describe one geometry.
+ * gaps, 13px group leads; Overview 0 / Inspect + 13 / Diagnose + 13,
+ * browser-measured) over every registry row — the same numbers the pure
+ * tests pin, so both tiers describe one geometry.
  */
 function layoutRows(): readonly RailRowBox[] {
   return [
     { route: 'detections', top: 0, height: 32 },
-    { route: 'javascript', top: 39, height: 32 },
-    { route: 'lazyload', top: 75, height: 32 },
-    { route: 'preloaded-resources', top: 111, height: 32 },
-    { route: 'undefined-references', top: 150, height: 32 },
-    { route: 'diagnoser', top: 186, height: 32 }
+    { route: 'javascript', top: 45, height: 32 },
+    { route: 'lazyload', top: 81, height: 32 },
+    { route: 'preloaded-resources', top: 117, height: 32 },
+    { route: 'undefined-references', top: 162, height: 32 },
+    { route: 'diagnoser', top: 198, height: 32 }
   ] as const;
 }
 
@@ -185,14 +185,18 @@ describe('AdaptiveNav structure', () => {
     // The rail is not width-adaptive — no container-query variants survive
     // in any rendered class (the top-bar form is retired).
     expect(nav.className).not.toContain('@min-');
-    // Group separation: hairlines under every group except the first.
+    // Group separation: hairlines under every group except the first, each
+    // with symmetric breathing space (mt-1.5 above = pt-1.5 below; never
+    // flush under the previous row's hover box — the owner-report decision).
     const groups = [...nav.querySelectorAll('[data-fdt-nav-group]')];
     // Empty groups (Tools, today) stay out of the DOM: a stranded separator
     // over nothing would be noise, not scent.
     expect(groups).toHaveLength(3);
     expect(nav.textContent).not.toContain('Tools');
     expect(groups[0]?.className).toContain('first:border-t-0');
+    expect(groups[0]?.className).toContain('first:mt-0');
     expect(groups[1]?.className).toContain('border-t');
+    expect(groups[1]?.className).toContain('mt-1.5');
     const firstList = screen.getByRole('list', { name: 'Overview' });
     expect(firstList.className).toContain('flex-col');
     expect(firstList.className).not.toContain('@min-');
@@ -437,7 +441,7 @@ describe('AdaptiveNav overflow — the geometry stub', () => {
   });
 
   it('the rail stays scroll-free (overflow-hidden; the stub rides clipped)', () => {
-    renderNav({ measure: syntheticRail(218).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(230).measure, watch: staticWatch() });
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     // The rail never becomes a scroll container: overflow hidden on both axes.
     expect(nav.className).toContain('overflow-hidden');
@@ -458,8 +462,8 @@ describe('AdaptiveNav overflow — the slice', () => {
   });
 
   it('slices at the fit line: the rail keeps the prefix, the trigger appears for the suffix', () => {
-    // 90px available: Detections (0..32) and JavaScript (39..71) fit; Lazyload
-    // (75..107) is the first row past the line.
+    // 90px available: Detections (0..32) and JavaScript (45..77) fit; Lazyload
+    // (81..113) is the first row past the line.
     renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
     const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
     expect(nav.querySelector('a[href="#/detections"]')).not.toBeNull();
@@ -496,8 +500,8 @@ describe('AdaptiveNav overflow — the slice', () => {
 
   it('cutting past a group’s lead leaves no stranded separator (the group drops out)', () => {
     // 38px ends between Overview's row and the Inspect lead: no later row
-    // fits, so the Inspect and Diagnose groups render nothing — leads and
-    // separators included.
+    // fits, so the Inspect and Diagnose groups render nothing — the leads
+    // and separators included (lead spans 32..45).
     renderNav({
       measure: () => ({ rows: layoutRows(), availableHeight: 38 }),
       watch: staticWatch()
@@ -530,7 +534,7 @@ describe('AdaptiveNav overflow — the slice', () => {
   });
 
   it('fits exactly at the boundary: every row stays (the trigger never appears)', () => {
-    renderNav({ measure: syntheticRail(218).measure, watch: staticWatch() });
+    renderNav({ measure: syntheticRail(230).measure, watch: staticWatch() });
     expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
     expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
   });

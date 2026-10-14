@@ -15,10 +15,10 @@ import { visibleRowsInRail } from './visible-rows';
 
 /**
  * Build a rail-like measured layout: 32px rows with 4px gaps inside each
- * group and a 7px group lead (1px hairline + 6px padding) — the shipped
- * rail's anatomy, so the fixtures exercise the numbers the DOM really
- * produces. Overviews' first-group lead is 0 (no separator above the
- * first).
+ * group and a 13px group lead (6px margin + 1px hairline + 6px padding) —
+ * the shipped rail's anatomy (browser-measured, 2026-10-13), so the
+ * fixtures exercise the numbers the DOM really produces. Overviews'
+ * first-group lead is 0 (no separator above the first).
  *
  * @param routeIds The registry-order routes to lay out.
  */
@@ -32,7 +32,7 @@ function railLayout(routeIds: readonly RailRowBox['route'][]): RailRowBox[] {
   const boxes: RailRowBox[] = [];
   let groupIndex = 0;
   for (const rows of groups.values()) {
-    if (groupIndex > 0) top += 7; // the group separator's lead
+    if (groupIndex > 0) top += 13; // the group separator's lead
     for (const [index, route] of rows.entries()) {
       boxes.push({ route, top, height: 32 });
       top += 32 + (index < rows.length - 1 ? 4 : 0);
@@ -70,15 +70,15 @@ const ALL = railLayout([
 
 describe('visibleRowsInRail', () => {
   it('keeps every row when the height covers the full rail (no overflow, no trigger)', () => {
-    // Overview 32 + Inspect 111 (7 + 3 × 32 + 2 × 4) + Diagnose 75 (7 + 2 × 32 + 4) = 218.
-    const result = visibleRowsInRail(ALL, 218);
+    // Overview 32 + Inspect 117 (13 + 3 × 32 + 2 × 4) + Diagnose 81 (13 + 2 × 32 + 4) = 230.
+    const result = visibleRowsInRail(ALL, 230);
     expect(result.visible.map((row) => row.route)).toEqual(ALL.map((row) => row.route));
     expect(result.hidden).toEqual([]);
   });
 
   it('cuts the registry-order suffix: the visible rows are exactly the prefix that fits', () => {
-    // The Diagnoser row ends at 218; one whisker less hides exactly that row.
-    const result = visibleRowsInRail(ALL, 217);
+    // The Diagnoser row ends at 230; one whisker less hides exactly that row.
+    const result = visibleRowsInRail(ALL, 229);
     expect(result.visible.map((row) => row.route)).toEqual([
       'detections',
       'javascript',
@@ -90,8 +90,8 @@ describe('visibleRowsInRail', () => {
   });
 
   it('pinned exact boundary: a row whose bottom edge equals the available height fits', () => {
-    // The Diagnoser row spans 186..218 — 218 exactly reaches its bottom.
-    const result = visibleRowsInRail(ALL, 218);
+    // The Diagnoser row spans 198..230 — 230 exactly reaches its bottom.
+    const result = visibleRowsInRail(ALL, 230);
     expect(result.hidden).toEqual([]);
   });
 
@@ -119,9 +119,9 @@ describe('visibleRowsInRail', () => {
 
   it('a group separator that does not fit hides its whole group (no orphaned lead)', () => {
     // The rail behaves as if Overview's single row were absent: the Inspect
-    // group starts after a 7px lead, so an available height that ends inside
+    // group starts after a 13px lead, so an available height that ends inside
     // that lead hides the lead and its group with it.
-    const inspectAt = 32 + 7; // the first Inspect row's top (its lead's bottom)
+    const inspectAt = 32 + 13; // the first Inspect row's top (its lead's bottom)
     const result = visibleRowsInRail(ALL, inspectAt);
     expect(result.visible.map((row) => row.route)).toEqual(['detections']);
     expect(result.hidden.map((row) => row.route)).toEqual([
@@ -133,10 +133,12 @@ describe('visibleRowsInRail', () => {
     ]);
   });
 
-  it('a mid-group cut keeps the group lead and its first rows in the rail', () => {
-    // Inspect's second row (JavaScript at 39..71) does not fit; the group's
-    // separator and its first row stay (the separator is part of the first
-    // row's measured top).
+  it('an available height ending inside the lead hides its whole group (no orphaned lead)', () => {
+    // The 230-anatomy: Overview's row ends at 32 and the Inspect lead spans
+    // 32..45 (6px margin + 1px hairline + 6px padding) — a height inside
+    // that lead (38) fits no Inspect row, so the lead and its group turn to
+    // the menu together (the separator is part of the first row's measured
+    // top; it never strands).
     const result = visibleRowsInRail(ALL, 38);
     expect(result.visible.map((row) => row.route)).toEqual(['detections']);
     expect(result.hidden.map((row) => row.route)).toEqual([
@@ -148,11 +150,26 @@ describe('visibleRowsInRail', () => {
     ]);
   });
 
+  it('the genuine mid-group cut keeps the lead and the first row (the second leaves)', () => {
+    // A cut between JavaScript's box (45..77) and Lazyload's top (81): at 78
+    // the group's lead and its first row stay (the fit line is per-row over
+    // the measured boxes), Lazyload and everything after it leaves — the
+    // render-tier pin carries the same case in the browser.
+    const result = visibleRowsInRail(ALL, 78);
+    expect(result.visible.map((row) => row.route)).toEqual(['detections', 'javascript']);
+    expect(result.hidden.map((row) => row.route)).toEqual([
+      'lazyload',
+      'preloaded-resources',
+      'undefined-references',
+      'diagnoser'
+    ]);
+  });
+
   it('the reserved disabled row is just one more measured row (registry drives order)', () => {
-    // Available height ends inside the Diagnoser row (186..218): it hides like any other.
-    const result = visibleRowsInRail(ALL, 187);
+    // Available height ends inside the Diagnoser row (198..230): it hides like any other.
+    const result = visibleRowsInRail(ALL, 199);
     expect(result.hidden.map((row) => row.route)).toEqual(['diagnoser']);
-    const oneMore = visibleRowsInRail(ALL, 218);
+    const oneMore = visibleRowsInRail(ALL, 230);
     expect(oneMore.hidden).toEqual([]);
   });
 

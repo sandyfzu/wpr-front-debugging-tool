@@ -22,6 +22,7 @@ import { createLogger } from '../../../lib/logger';
 import { toast } from '../../../components/ui/toast-store';
 import type { ExclusionBuilderOutcome } from './exclusion-builder';
 import type { JsonExportResult } from './export-json';
+import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
 import { NAV_ROUTES, type RouteId } from '../routes';
 
 const log = createLogger('panel');
@@ -173,7 +174,11 @@ export function createPanelActions(deps: PanelActionDeps): PanelCommand[] {
       id: 'action-show-shortcuts',
       label: 'Show keyboard shortcuts',
       icon: Keyboard,
-      keywords: ['keys', 'help', '?'],
+      // The row's hint advertises the overlay's real activation read from
+      // the same declared binding the listener accepts (what actually
+      // works, not the host-claimed chord).
+      hint: SHORTCUTS_OVERLAY_BINDING.hint,
+      keywords: ['keys', 'help', '?', 'slash', '/'],
       run: () => {
         deps.openShortcuts();
       }

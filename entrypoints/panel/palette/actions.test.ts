@@ -11,6 +11,7 @@ import { toastItems, type ToastItem } from '../../../components/ui/toast-store';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { NAV_ROUTES, type RouteId } from '../routes';
 import { makeFdtData } from '../state/fixtures';
+import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
 import {
   createPageCommands,
   createPanelActions,
@@ -126,6 +127,11 @@ describe('createPanelActions (the actions half)', () => {
       'Open Exclusion Builder',
       'Show keyboard shortcuts'
     ]);
+    // The shortcuts row's hint is the overlay binding's advertised key — the
+    // palette hint says what actually works (and pins the exact typed key).
+    const shortcutsRow = createPanelActions(deps).find((row) => row.id === 'action-show-shortcuts');
+    expect(shortcutsRow?.hint).toBe(SHORTCUTS_OVERLAY_BINDING.hint);
+    expect(shortcutsRow?.hint).toBe('/');
   });
 
   it('disables export honestly while nothing is loaded, and runs the export when it is', async () => {

@@ -337,6 +337,53 @@ test.describe('panel nav (icon rail + tooltips)', () => {
     }
   });
 
+  test('a hairline separator keeps breathing space against the sibling rows’ boxes', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+
+      // The group separators' lead (2026-10-13 owner report: the hover
+      // rectangle of the last group row sat flush under the next group's
+      // hairline). The shipped decision: 6px margin above the hairline,
+      // symmetric with its 6px padding below — the rectangle and the
+      // hairline never touch, in either direction.
+      const SEPARATOR_BREATH_PX = 6;
+      const boundaries = await page.evaluate((): number[] => {
+        const nav = document.querySelector<HTMLElement>('[data-fdt="panel-nav"]');
+        if (nav === null) throw new Error('the rail is not mounted');
+        const groups = [...nav.querySelectorAll<HTMLElement>('[data-fdt-nav-group]')];
+        return groups.slice(1).map((group, index) => {
+          const previous = groups[index];
+          if (previous === undefined) throw new Error('boundary without its previous group');
+          const prevRows = [...previous.querySelectorAll<HTMLElement>('a[href^="#/"], button')];
+          const prevRow = prevRows[prevRows.length - 1];
+          const firstRow = group.querySelector<HTMLElement>('a[href^="#/"], button');
+          if (prevRow === undefined || firstRow === null) {
+            throw new Error('group boundary without both row edges');
+          }
+          const prevBox = prevRow.getBoundingClientRect();
+          const groupBox = group.getBoundingClientRect();
+          const firstBox = firstRow.getBoundingClientRect();
+          const gapAbove = groupBox.top - prevBox.bottom;
+          // Below-side lead: border + padding between the hairline and the
+          // group's first row box (the hairline's own breathing).
+          const leadBelow = firstBox.top - groupBox.top;
+          return gapAbove + leadBelow;
+        });
+      });
+      expect(boundaries.length).toBeGreaterThan(0);
+      // 6 above + 1 border + 6 below = 13, per group boundary.
+      for (const boundary of boundaries) {
+        expect(boundary).toBe(SEPARATOR_BREATH_PX * 2 + 1);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   test('keyboard-only reach: rows focus with a visible ring', async ({ extension }) => {
     const page = await extension.browserContext.newPage();
     try {

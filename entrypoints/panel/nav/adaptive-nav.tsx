@@ -130,9 +130,17 @@ const NAV = 'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden';
 
 /**
  * One journey group: a hairline-topped cluster — never above the first
- * (the shell's brand mark already anchors the rail's top).
+ * (the shell's brand mark already anchors the rail's top). The hairline
+ * keeps symmetric breathing space: `mt-1.5` above (the boundary's own
+ * margin) equals the `pt-1.5` below it, so the hairline never sits flush
+ * against the previous group's last row box — its hover rectangle needs
+ * real air (6px each side; the boundary lead is 13px against the rows'
+ * 4px in-group gap), and the same lead applies in the overflow trigger's
+ * top block. First in the rail loses all three (the anchor edge is the
+ * brand block's spacing).
  */
-const GROUP = 'flex flex-col border-t border-line-2 pt-1.5 first:border-t-0 first:pt-0';
+const GROUP =
+  'mt-1.5 flex flex-col border-t border-line-2 pt-1.5 first:mt-0 first:border-t-0 first:pt-0';
 
 /** The group's row list. */
 const GROUP_LIST = 'flex flex-col items-center gap-1';
