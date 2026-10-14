@@ -1149,7 +1149,7 @@ siteTest.describe('site detection widget', () => {
         if (card === null) throw new Error('the open card lost its shape');
         // The card is a bigger box anchored at the pill's corner: its top
         // demand (corner − card height) sits far past the top edge, so the
-        // re-settle pinS the card's top at the margin — measured exactly.
+        // re-settle pins the card's top at the margin — measured exactly.
         expect(
           Math.abs(card.top - DRAG_CONTAINMENT_MARGIN),
           'the card re-settled with its top pinned at the containment margin'
