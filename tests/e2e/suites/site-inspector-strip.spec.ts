@@ -311,6 +311,13 @@ function clampedTopLeft(
  * the window mid-gesture) or the page released it; the drag legs use the
  * page-release path to drive that same trusted event deterministically.
  *
+ * The id scan covers every id this engine hands captured gestures to —
+ * pointer ids are assigned past the mouse's and grow across a page's
+ * contacts (verified live in this Chromium: a touch id increments +1 per
+ * contact, so a long-lived page's ids run past 16) — and stays bounded at
+ * 255; the failure names the scanned range, so a miss cannot be
+ * misdiagnosed against the grab.
+ *
  * @param page The page whose widget holds the capture.
  * @param shape The grabbed shape's selector inside the widget's shadow root.
  */
@@ -325,13 +332,17 @@ async function releaseCapturedPointer(page: Page, shape: string): Promise<void> 
           `the grabbed shape ${payload.grabbed} is missing (the widget's shape changed)`
         );
       }
-      for (let id = 0; id <= 16; id += 1) {
+      // 255 keeps every reachable engine-assigned id inside one bounded scan.
+      const scanMax = 255;
+      for (let id = 0; id <= scanMax; id += 1) {
         if (element.hasPointerCapture(id)) {
           element.releasePointerCapture(id);
           return;
         }
       }
-      throw new Error('no pointer capture was held mid-drag (the grab failed)');
+      throw new Error(
+        `no pointer capture was held on any pointer id 0–${String(scanMax)} mid-drag (the grab failed)`
+      );
     },
     { host: STRIP_HOST, grabbed: shape }
   );
@@ -1089,9 +1100,34 @@ siteTest.describe('site detection widget', () => {
         await releaseCapturedPointer(page, '.ins-pill');
         await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
         // The straggler release (the engine may deliver one late after a
-        // capture loss) must find no drag and reposition nothing.
+        // capture loss) must find no drag and reposition nothing. It is
+        // delivered from a pointer re-entry that rests over the committed
+        // pill — after the loss the pointer returns to the window and may
+        // rest anywhere, here over the chrome itself — so the gesture's
+        // trailing compat click hits the pill's own listener. Delivered from
+        // the loss point instead, the click retargets to the host page's
+        // element and can never reach the pill, no matter the suppression
+        // state.
+        const committedBox = (await stripGeometry(page)).shape;
+        if (committedBox === null) throw new Error('the committed pill lost its shape');
+        await page.mouse.move(
+          committedBox.left + committedBox.width / 2,
+          committedBox.top + committedBox.height / 2
+        );
         await page.mouse.up();
         await waitForChoreographySettle(page);
+        // The click the pill itself received was the moved drag's trailing
+        // compat click: the suppression the settle armed must consume it —
+        // an unsuppressed pointer click would open the card here. The card's
+        // answer cannot separate settle from cancel (a canceling arm
+        // suppresses its moved-drag click by the same contract); that
+        // verdict is the position assertions' below. It is asserted FIRST:
+        // an unsuppressed click renders the shape the card, which would
+        // otherwise misreport as a position failure.
+        expect(
+          (await readStrip(page)).cardOpen,
+          'the pill\u2019s trailing compat click stayed suppressed'
+        ).toBe(false);
         const settled = await stripGeometry(page);
         const shape = settled.shape;
         if (shape === null) throw new Error('the capture loss left the pill shapeless');
@@ -1107,9 +1143,6 @@ siteTest.describe('site detection widget', () => {
           Math.abs(shape.left - startShape.left) + Math.abs(shape.top - startShape.top),
           'the chrome did not snap back to the resting anchor'
         ).toBeGreaterThan(100);
-        // The lost gesture's trailing compat click is suppressed, not a card
-        // open (the settled moved drag's suppression answers it).
-        expect((await readStrip(page)).cardOpen, 'no phantom card open').toBe(false);
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
