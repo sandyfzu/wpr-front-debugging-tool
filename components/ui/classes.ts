@@ -25,3 +25,38 @@ export const FOCUS_RING =
  * explaining why the control is disabled (e.g. reserved nav rows).
  */
 export const DISABLED = 'disabled:opacity-50 disabled:cursor-not-allowed';
+
+/*
+ * Motion — the three sanctioned Tailwind-surface moments beyond the page
+ * entrance (the panel's `.fdt-page` keyframe). Token-driven only, so the
+ * global `prefers-reduced-motion` collapse in `tokens.css` reaches them with
+ * no per-surface code. Everything else (hover/press colors, data swaps,
+ * counts, height changes) is instant by design.
+ */
+
+/**
+ * Fade-in for content that appears after the view is up: a disclosure body,
+ * an async result's first paint. Plays once on insertion via
+ * `@starting-style`, so it needs no mount-time JS or state.
+ *
+ * Apply to the revealed **container**, never per row: virtual rows remount on
+ * scroll and would replay it on every scroll.
+ */
+export const MOTION_REVEAL =
+  'transition-opacity duration-[var(--motion-base)] ease-[var(--ease-entrance)] starting:opacity-0';
+
+/**
+ * The disclosure chevron's turn. Pair with `rotate-90`/`rotate-180` while
+ * open; the open state itself lives in `aria-expanded`, never in the
+ * transition. Not for whole rows or bodies (heights change instantly).
+ */
+export const MOTION_TURN =
+  'transition-transform duration-[var(--motion-fast)] ease-[var(--ease-standard)]';
+
+/**
+ * Hover lift for a whole-card **link** (an element that navigates): shadow
+ * and border only, no translate. Never on a non-interactive card — a lift
+ * promises a click; never on virtual list rows.
+ */
+export const MOTION_LIFT =
+  'transition-[box-shadow,border-color] duration-[var(--motion-fast)] ease-[var(--ease-standard)] hover:shadow-elev-2 hover:border-line-3';

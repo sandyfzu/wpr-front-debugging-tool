@@ -15,7 +15,7 @@
  * the strip carries no test-only DOM hooks for them.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import { DATA_STALE_AFTER_MS } from './selectors';
@@ -362,19 +362,25 @@ describe('the glance rule (pure width → layout)', () => {
     // The rule's CSS arm: every width token in the container variants is the
     // one constant (container conditions cannot read a JS value), and the
     // strip element declares itself the query anchor. The rehearsal scans
-    // the whole panel — a second copy of the literal anywhere else would
+    // the panel shell — a second copy of the literal anywhere else would
     // render with this constant's meaning and evade the file-local parse.
+    // The `pages/` subtree is out of scope: page bodies carry the UI/UX bar's
+    // own layout tiers on their own `PageFrame` container — a different
+    // concept that merely shares the number.
     const source = readFileSync(`${import.meta.dirname}/status-bar.tsx`, 'utf8');
     const tokens = [...source.matchAll(/@min-\[(\d+)px\]/g)].map((match) => Number(match[1]));
     expect(tokens.length).toBeGreaterThan(0);
     expect(new Set(tokens)).toEqual(new Set([STATUS_BAR_GLANCEABLE_MIN_WIDTH]));
     expect(source).toMatch(/@container /);
 
-    /** Every non-test source file under the panel, recursively. */
+    const pagesDir = `${import.meta.dirname}/../pages`;
+    // The exclusion must name a real folder, or it silently excludes nothing.
+    expect(existsSync(pagesDir)).toBe(true);
+    /** Every non-test source file under the panel shell, recursively (`pages/` excluded). */
     function sourcesUnder(dir: string): string[] {
       return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const path = `${dir}/${entry.name}`;
-        if (entry.isDirectory()) return sourcesUnder(path);
+        if (entry.isDirectory()) return path === pagesDir ? [] : sourcesUnder(path);
         // '.d.ts'/'.test.' files never render the class; tests legitimately
         // quote the literal to pin it.
         const source = entry.name.endsWith('.ts') || entry.name.endsWith('.tsx');

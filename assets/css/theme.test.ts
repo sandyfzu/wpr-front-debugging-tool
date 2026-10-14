@@ -235,3 +235,13 @@ describe('injected stylesheet token integrity', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('layout tiers (UI/UX bar L-1)', () => {
+  it('declares the page tiers once, as literal named container sizes', () => {
+    // Literal px, never var(): container conditions compile at build time, and
+    // these generate the `@regular:` / `@wide:` variants pages write.
+    expect(css).toMatch(/--container-regular:\s*480px;/);
+    expect(css).toMatch(/--container-wide:\s*768px;/);
+    expect(css.match(/--container-(regular|wide):/g)).toHaveLength(2);
+  });
+});

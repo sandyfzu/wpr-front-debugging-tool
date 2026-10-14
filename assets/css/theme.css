@@ -85,4 +85,11 @@
   --shadow-elev-1: var(--shadow-elev-1);
   --shadow-elev-2: var(--shadow-elev-2);
   --shadow-elev-3: var(--shadow-elev-3);
+
+  /* Page layout tiers (UI/UX bar L-1), the one declaring site: named
+   * container sizes generate the `@regular:` / `@wide:` variants pages use on
+   * their own `@container` (compact = neither). Container conditions must be
+   * literal at build time, so these are values, never `var()` references. */
+  --container-regular: 480px;
+  --container-wide: 768px;
 }
