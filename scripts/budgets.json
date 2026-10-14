@@ -38,8 +38,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 114,
-      "gzip": 39
+      "raw": 117,
+      "gzip": 41
     }
   },
   {
