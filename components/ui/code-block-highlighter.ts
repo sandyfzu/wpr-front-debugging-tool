@@ -17,7 +17,28 @@ import type { HighlighterCore } from 'shiki/core';
 import type { CodeLanguage } from './code-block-langs';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
-const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
+export const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
+
+/**
+ * Token colors swapped per theme so every token clears WCAG AA (4.5:1) on the
+ * code block's surface (`--surface-1` in each palette). The four theme
+ * colors below fall short (on `#fafbfc` / `#111418`: keyword 4.42, tag 4.47,
+ * `variable` 3.37; dark comment 3.84); each is replaced by the same role's
+ * color from GitHub's current "default" theme family, keeping the look while
+ * clearing AA (5.17 / 7.14 / 7.13 / 6.00). Keys are lowercase, as shiki
+ * matches them. The colocated test proves every color of both themes,
+ * after these swaps, against the surface tokens.
+ */
+export const COLOR_REPLACEMENTS = {
+  [THEME_PAIR.light]: {
+    '#d73a49': '#cf222e', // keyword, storage
+    '#22863a': '#116329', // tag names, regexp escapes
+    '#e36209': '#953800' // `variable` (bare scope)
+  },
+  [THEME_PAIR.dark]: {
+    '#6a737d': '#8b949e' // comments
+  }
+} as const satisfies Record<string, Record<string, string>>;
 
 /** A highlighted result: the full `<pre>` HTML, ready for a scoped `innerHTML`. */
 export type HighlightedCode = string;
@@ -76,6 +97,8 @@ export function getHighlighter(): Promise<CodeHighlighter> {
         // re-render here (verified output: `color:light-dark(<light>, <dark>)`).
         themes: THEME_PAIR,
         defaultColor: 'light-dark()',
+        // Theme-scoped swaps (keyed by theme name) lifting every token to AA.
+        colorReplacements: COLOR_REPLACEMENTS,
         // The root `pre` gets no inline palette from shiki: the component's
         // token-styled container owns background/border/padding chrome.
         rootStyle: false,
