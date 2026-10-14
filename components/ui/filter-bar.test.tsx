@@ -6,7 +6,7 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FilterBar, type FilterChip } from './filter-bar';
+import { FilterBar, indexChips, type FilterChip } from './filter-bar';
 
 const CHIPS: FilterChip[] = [
   { value: 'all', label: 'All', count: 87 },
@@ -155,5 +155,50 @@ describe('FilterBar', () => {
       .map((node) => node.textContent)
       .join(' ');
     expect(visible).toBe('Delayed 12');
+  });
+
+  it('keys chips by value: rebuilt chip objects keep the buttons and keyboard focus', () => {
+    const [chips, setChips] = createSignal<FilterChip[]>(CHIPS.map((chip) => ({ ...chip })));
+    render(() => <FilterBar chips={chips()} />);
+    const before = getChips();
+    const delayed = before[1] ?? throwAt(1);
+    delayed.focus();
+    // A refresh: every chip object is new, counts move.
+    setChips(CHIPS.map((chip) => ({ ...chip, count: chip.count + 1 })));
+    const after = getChips();
+    expect(after).toEqual(before); // the very same DOM nodes, in order
+    expect(document.activeElement).toBe(delayed);
+    expect(delayed.querySelector('[data-fdt-filter-count]')?.textContent).toBe('13');
+    expect(screen.getByRole('button', { name: 'Delayed 13 matching' })).toBe(delayed);
+  });
+
+  it('adds, removes and reorders chips by value without disturbing the survivors', () => {
+    const [chips, setChips] = createSignal<FilterChip[]>(CHIPS.slice(0, 3));
+    render(() => <FilterBar chips={chips()} />);
+    const exclude = getChips()[2] ?? throwAt(2);
+    setChips([
+      { value: 'exclude', label: 'Exclude', count: 5 },
+      { value: 'new', label: 'New', count: 1 }
+    ]);
+    const now = getChips();
+    expect(now.map((chip) => chip.getAttribute('data-fdt-filter-chip'))).toEqual([
+      'exclude',
+      'new'
+    ]);
+    expect(now[0]).toBe(exclude);
+  });
+
+  it('throws on a duplicate chip value (two chips cannot share one identity)', () => {
+    const duplicate: FilterChip[] = [
+      { value: 'all', label: 'All', count: 1 },
+      { value: 'all', label: 'Everything', count: 2 }
+    ];
+    expect(() => indexChips(duplicate)).toThrow('FilterBar: duplicate chip value "all".');
+    expect(() => render(() => <FilterBar chips={duplicate} />)).toThrow(/duplicate chip value/);
+  });
+
+  it('indexes chips in registry order', () => {
+    expect(Array.from(indexChips(CHIPS).keys())).toEqual(['all', 'delayed', 'exclude', 'rcss']);
+    expect(indexChips([]).size).toBe(0);
   });
 });

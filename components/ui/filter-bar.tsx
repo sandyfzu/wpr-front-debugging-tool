@@ -7,7 +7,7 @@
  * background color alone).
  */
 import type { JSX } from 'solid-js';
-import { For, Show, splitProps } from 'solid-js';
+import { createMemo, For, Show, splitProps } from 'solid-js';
 import Search from 'lucide-solid/icons/search';
 import { cn } from '../../utils/cn';
 import { DISABLED, FOCUS_RING } from './classes';
@@ -15,7 +15,11 @@ import { Input } from './input';
 
 /** One filter chip in the registry — declared by its owning page. */
 export interface FilterChip {
-  /** Stable chip value carried to `onSelect` and the test hooks. */
+  /**
+   * Stable chip value carried to `onSelect` and the test hooks — also the
+   * chip's identity: unique within one bar, so a refresh that rebuilds the
+   * chip objects (new counts) keeps each chip's button, and its focus, in place.
+   */
   value: string;
   /** The visible label ("All", "Delayed", …). */
   label: string;
@@ -29,7 +33,11 @@ export interface FilterChip {
 }
 
 export type FilterBarProps = {
-  /** The chips in registry order (pages own their set — this bar is set-agnostic). */
+  /**
+   * The chips in registry order (pages own their set — this bar is
+   * set-agnostic). Freshly built objects per refresh are fine: chips are
+   * keyed by `value`, never by object identity.
+   */
   chips: FilterChip[];
   /** The selected chip value; `undefined` = none selected (severity: see `onSelect`). */
   selected?: string;
@@ -59,7 +67,10 @@ export type FilterBarProps = {
  * and the selected chip carries `data-fdt-selected` beside the
  * `aria-pressed` attribute. Each chip's accessible name includes its count
  * ("Delayed 12 matching"), so the pre-open answer "how many" is
- * announced, not just painted. Search semantics: an `Input` typed `search`
+ * announced, not just painted. Chips render keyed by `value`: count
+ * refreshes update a chip in place (DOM node and keyboard focus survive),
+ * and a duplicate `value` throws (it would make two chips one identity).
+ * Search semantics: an `Input` typed `search`
  * (the browser's built-in clear affordance comes with the type) wired
  * through the page's controlled value loop; this bar adds zero input
  * logic of its own.
@@ -74,6 +85,7 @@ export type FilterBarProps = {
  * @param props.searchLabel Field aria-label (default "Search").
  * @param props.showSearch Whether the search field renders (default `true`).
  * @param props.class Extra classes on the bar.
+ * @throws {@link Error} when two chips share a `value` — a call-site bug.
  */
 export function FilterBar(props: FilterBarProps): JSX.Element {
   const [own, rest] = splitProps(props, [
@@ -89,6 +101,12 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
     'class'
   ]);
 
+  // Chip identity is its `value`, so `<For>` maps the id strings (compared by
+  // value) rather than the chip objects (compared by reference — rebuilt
+  // objects would remount every button and drop focus on each refresh).
+  const chipsById = createMemo(() => indexChips(own.chips));
+  const chipIds = createMemo(() => Array.from(chipsById().keys()));
+
   return (
     <div data-fdt="filter-bar" class={cn('flex flex-col gap-y-1.5', own.class)} {...rest}>
       <div
@@ -96,13 +114,19 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
         role="group"
         aria-label={own.filterLabel ?? 'Filters'}
       >
-        <For each={own.chips}>
-          {(chip) => (
-            <FilterChipButton
-              chip={chip}
-              selected={own.selected === chip.value}
-              onSelect={own.onSelect}
-            />
+        <For each={chipIds()}>
+          {(id) => (
+            // Non-keyed `Show`: the button stays mounted while the id exists;
+            // a rebuilt chip object only refreshes its bindings.
+            <Show when={chipsById().get(id)}>
+              {(chip) => (
+                <FilterChipButton
+                  chip={chip()}
+                  selected={own.selected === id}
+                  onSelect={own.onSelect}
+                />
+              )}
+            </Show>
           )}
         </For>
       </div>
@@ -125,6 +149,24 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
       </Show>
     </div>
   );
+}
+
+/**
+ * Index chips by their `value`, preserving registry order.
+ *
+ * @param chips The chips in registry order.
+ * @returns The chips keyed by `value` (a `Map` iterates in insertion order).
+ * @throws {@link Error} naming the duplicated `value`.
+ */
+export function indexChips(chips: readonly FilterChip[]): Map<string, FilterChip> {
+  const byId = new Map<string, FilterChip>();
+  for (const chip of chips) {
+    if (byId.has(chip.value)) {
+      throw new Error(`FilterBar: duplicate chip value "${chip.value}".`);
+    }
+    byId.set(chip.value, chip);
+  }
+  return byId;
 }
 
 /** Chip button class: the soft fill selected, quiet outline otherwise. */
