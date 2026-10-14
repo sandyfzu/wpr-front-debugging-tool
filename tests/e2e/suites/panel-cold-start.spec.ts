@@ -19,13 +19,15 @@
  * library's no-tab arm) never reaches content scripts, so the chain settles
  * into the recorded error state. That is the deterministic cold start this
  * gate covers: both marks and the full entry-execution → settle span. The
- * ready-leg cold start (the real data round trip) needs the inspected-tab
- * data path the panel-shell suites' fixture plan owns.
+ * ready-leg cold start is the data-path suite's second test below (the
+ * harness seam `helpers/panel-data.ts` stamps the devtools accessor's tab
+ * id so the same chain runs over the real `getFdtData` round trip).
  */
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, panelPageUrl, test } from '../helpers/extension';
+import { openPanelForFixture } from '../helpers/panel-data';
 
 /** The committed budget table — the timing row's single declaring site. */
 const budgets = JSON.parse(
@@ -168,6 +170,117 @@ test.describe('panel cold start (the timing row)', () => {
       expect(legAndTimeline.errorShown).toBe(true);
     } finally {
       await page.close();
+    }
+  });
+
+  test('the ready boot’s chain runs the same gates over the real data round trip', async ({
+    extension
+  }) => {
+    // The ready leg (the ready-arm timing obligation): the harness seam
+    // stamps exactly
+    // the one value Chrome provides inside a real DevTools window, so this
+    // boot's flight is the tab-targeted `getFdtData` round trip over a real
+    // content script — the settle a first-open DevTools panel sees. The
+    // budget row's own wording ("on the harness fixture") names this shape.
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await panel.setViewportSize({ width: 700, height: 900 });
+
+      // The settle: the last chain entry only exists after the boot flight
+      // completed — here in the READY arm (the fixture's processed page data).
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): { settled: boolean; ready: boolean; errorShown: boolean } | null => {
+                const marks = performance.getEntriesByName(
+                  'wpr-fdt:panel:first-data-state',
+                  'mark'
+                );
+                return {
+                  settled: marks.length > 0,
+                  ready: document.querySelector('[data-fdt-page] h1') !== null,
+                  errorShown: document.body.textContent.includes("Couldn't load page data")
+                };
+              }
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toEqual({ settled: true, ready: true, errorShown: false });
+
+      const legAndTimeline = await panel.evaluate(() => {
+        const names = [
+          'wpr-fdt:panel:script-start',
+          'wpr-fdt:panel:shell-interactive',
+          'wpr-fdt:panel:first-data-state'
+        ] as const;
+        const marks: Record<string, number> = {};
+        const markCounts: Record<string, number> = {};
+        for (const name of names) {
+          // Type-filtered (the shell-interactive name carries both its mark
+          // and its window — the window is the mark's name by design).
+          const entries = performance.getEntriesByName(name, 'mark');
+          markCounts[name] = entries.length;
+          marks[name] = entries[0]?.startTime ?? -1;
+        }
+        const ordered = performance
+          .getEntriesByType('mark')
+          .filter((entry) => entry.name.startsWith('wpr-fdt:panel:'))
+          .map((entry) => entry.name);
+        const spans: Record<string, number> = {};
+        for (const entry of performance.getEntriesByType('measure')) {
+          if (entry.name.startsWith('wpr-fdt:panel:')) spans[entry.name] = entry.duration;
+        }
+        return {
+          ordered,
+          markCounts,
+          marks,
+          spans,
+          errorShown: document.body.textContent.includes("Couldn't load page data"),
+          // The pre-span cost the budgeted span does not cover: the ESM graph
+          // evaluation (fetch/parse/eval) completes BEFORE the script-start
+          // mark; its absolute startTime discloses it (the P5I audit's
+          // candidate disclosure for the ready leg, recorded, never ceiling-ed).
+          scriptStartAbsolute:
+            (
+              performance.getEntriesByName('wpr-fdt:panel:script-start', 'mark')[0] as
+                PerformanceMark | undefined
+            )?.startTime ?? null
+        };
+      });
+
+      // Same chain discipline as the error leg: three marks, once, in order.
+      expect(legAndTimeline.ordered).toEqual([
+        'wpr-fdt:panel:script-start',
+        'wpr-fdt:panel:shell-interactive',
+        'wpr-fdt:panel:first-data-state'
+      ]);
+      for (const count of Object.values(legAndTimeline.markCounts)) {
+        expect(count).toBe(1);
+      }
+      const scriptStart = markAt(legAndTimeline.marks, SCRIPT_START);
+      const shellInteractive = markAt(legAndTimeline.marks, SHELL_INTERACTIVE);
+      const firstDataState = markAt(legAndTimeline.marks, FIRST_DATA_STATE);
+      expect(scriptStart).toBeGreaterThan(0);
+      expect(shellInteractive).toBeGreaterThanOrEqual(scriptStart);
+      expect(firstDataState).toBeGreaterThanOrEqual(shellInteractive);
+
+      // The budgeted span gates the ready boot: script start → first settle,
+      // now carrying the real `getFdtData` round trip (processing included —
+      // the content script runs its lazy single pass inside the request).
+      expect(spanOf(legAndTimeline.spans, SHELL_INTERACTIVE)).toBeGreaterThan(0);
+      expect(spanOf(legAndTimeline.spans, SHELL_INTERACTIVE)).toBeLessThanOrEqual(
+        COLD_START_MAX_MS
+      );
+      const coldStart = spanOf(legAndTimeline.spans, COLD_START_SPAN);
+      expect(coldStart).toBeGreaterThan(0);
+      expect(coldStart).toBeLessThanOrEqual(COLD_START_MAX_MS);
+
+      // The readback's own correctness: the ready state is the settle answer.
+      expect(legAndTimeline.errorShown).toBe(false);
+    } finally {
+      await panel.close();
+      await fixture.page.close();
     }
   });
 });
