@@ -32,8 +32,13 @@ interface VirtualizerInstanceProbe {
 }
 
 /** A fixed virtual row (the core's own shape — verified in the installed types). */
-function row(index: number, start: number, size: number): VirtualItem {
-  return { key: `key-${String(index)}`, index, start, end: start + size, size, lane: 0 };
+function row(
+  index: number,
+  start: number,
+  size: number,
+  key: VirtualItem['key'] = `key-${String(index)}`
+): VirtualItem {
+  return { key, index, start, end: start + size, size, lane: 0 };
 }
 
 interface FactoryProbe {
@@ -114,35 +119,6 @@ describe('VirtualList', () => {
     // (the core resolves the row from `data-index` at call time — read later,
     // after Solid applies attributes, it would be too late).
     expect(p.indexAtMeasure).toEqual(['0', '1']);
-  });
-
-  it('re-flows rows in place when the virtualizer reports a measured size change', () => {
-    // A store-backed double mirrors the adapter: it reconciles new items by
-    // index into the same store, as a ResizeObserver re-measure does.
-    const [items, setItems] = createStore<VirtualItem[]>([row(0, 0, 40), row(1, 40, 40)]);
-    const [total, setTotal] = createSignal(80);
-    const factory: VirtualizerFactory = () => ({
-      getVirtualItems: () => items,
-      getTotalSize: total,
-      measureElement: () => undefined
-    });
-    render(() => (
-      <VirtualList count={2} estimateSize={() => 40} createVirtualizer={factory}>
-        {(item) => <span data-fdt-row={String(item.index)}>row {String(item.index)}</span>}
-      </VirtualList>
-    ));
-    const before = document.querySelector<HTMLElement>('[data-index="1"]');
-    expect(before?.style.transform).toBe('translateY(40px)');
-    // Row 0 grows to 98px (e.g. wrapped text or an expanded block).
-    setItems(reconcile([row(0, 0, 98), row(1, 98, 40)], { key: 'index' }));
-    setTotal(138);
-    const after = document.querySelector<HTMLElement>('[data-index="1"]');
-    expect(after?.style.transform).toBe('translateY(98px)');
-    // Same element: a re-measure moves the row, it never remounts it.
-    expect(after).toBe(before);
-    expect((document.querySelector('[data-fdt-virtual-spacer]') as HTMLElement).style.height).toBe(
-      '138px'
-    );
   });
 
   it('calls the row renderer per virtual row; rows carry the data-index contract', () => {
@@ -258,5 +234,119 @@ describe('VirtualList — accessibility seam', () => {
       </VirtualList>
     ));
     expect(document.querySelector('[data-fdt="virtual-list"]')?.getAttribute('role')).toBe('feed');
+  });
+});
+
+/** A store-backed double: mirrors the adapter, which reconciles items by index into one store. */
+interface StoreProbe {
+  /** The factory to pass as the `createVirtualizer` seam. */
+  factory: VirtualizerFactory;
+  /** Publish a new window (reconciled by index, like the adapter). */
+  publish: (items: VirtualItem[]) => void;
+  /** Elements handed to measureElement, with their `data-index` at call time. */
+  measured: Array<{ el: HTMLElement; index: string | null }>;
+}
+
+/**
+ * Build a store-backed virtualizer double.
+ *
+ * @param initial The first window.
+ */
+function storeProbe(initial: VirtualItem[]): StoreProbe {
+  const [items, setItems] = createStore<VirtualItem[]>(initial);
+  const [total, setTotal] = createSignal(initial.at(-1)?.end ?? 0);
+  const measured: StoreProbe['measured'] = [];
+  return {
+    factory: () => ({
+      getVirtualItems: () => items,
+      getTotalSize: total,
+      measureElement: (node: HTMLElement | null) => {
+        if (node) measured.push({ el: node, index: node.getAttribute('data-index') });
+      }
+    }),
+    publish: (next) => {
+      setItems(reconcile(next, { key: 'index' }));
+      setTotal(next.at(-1)?.end ?? 0);
+    },
+    measured
+  };
+}
+
+/**
+ * Render a list over a store probe; each row hosts a focusable button.
+ *
+ * @param p The store probe.
+ */
+function renderKeyed(p: StoreProbe): void {
+  render(() => (
+    <VirtualList count={10} estimateSize={() => 40} createVirtualizer={p.factory}>
+      {(item) => <button type="button">{String(item.key)}</button>}
+    </VirtualList>
+  ));
+}
+
+/** The row element currently holding `key` (via its rendered label). */
+function rowOf(key: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-index]')).find(
+    (el) => el.textContent === key
+  );
+}
+
+describe('VirtualList — row identity follows the key', () => {
+  it('keeps every element (and focus) across a refresh with the same keys', () => {
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b')]);
+    renderKeyed(p);
+    const a = rowOf('a');
+    const b = rowOf('b');
+    b?.querySelector('button')?.focus();
+    const measuredBefore = p.measured.length;
+    // A soft refresh re-measures row a taller: geometry moves, identity holds.
+    p.publish([row(0, 0, 98, 'a'), row(1, 98, 40, 'b')]);
+    expect(rowOf('a')).toBe(a);
+    expect(rowOf('b')).toBe(b);
+    expect(rowOf('b')?.style.transform).toBe('translateY(98px)');
+    expect(document.activeElement).toBe(b?.querySelector('button'));
+    expect(p.measured.length).toBe(measuredBefore);
+    expect((document.querySelector('[data-fdt-virtual-spacer]') as HTMLElement).style.height).toBe(
+      '138px'
+    );
+  });
+
+  it('re-creates and measures the row when an index gets a new key', () => {
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b')]);
+    renderKeyed(p);
+    const a = rowOf('a');
+    // A filter: index 0 now holds key c (a is gone), index 1 keeps b.
+    p.publish([row(0, 0, 40, 'c'), row(1, 40, 40, 'b')]);
+    expect(rowOf('a')).toBeUndefined();
+    expect(a?.isConnected).toBe(false);
+    const c = rowOf('c');
+    expect(c).toBeInstanceOf(HTMLElement);
+    expect(c).not.toBe(a);
+    // The fresh element was handed to measurement already carrying its index.
+    expect(p.measured.at(-1)).toEqual({ el: c, index: '0' });
+  });
+
+  it('keeps the element of a key that moves index, updating only its index and offset', () => {
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b'), row(2, 80, 40, 'c')]);
+    renderKeyed(p);
+    const c = rowOf('c');
+    c?.querySelector('button')?.focus();
+    const measuredBefore = p.measured.length;
+    // A filter drops a and b: c moves from index 2 to index 0.
+    p.publish([row(0, 0, 40, 'c'), row(1, 40, 40, 'd')]);
+    expect(rowOf('c')).toBe(c);
+    expect(c?.getAttribute('data-index')).toBe('0');
+    expect(c?.style.transform).toBe('translateY(0px)');
+    expect(document.activeElement).toBe(c?.querySelector('button'));
+    // Only the new key d was measured; c keeps its key-cached size.
+    expect(p.measured.slice(measuredBefore).map((m) => m.el.textContent)).toEqual(['d']);
+  });
+
+  it('renders falsy keys (the default index key 0)', () => {
+    const p = storeProbe([row(0, 0, 40, 0), row(1, 40, 40, 1)]);
+    renderKeyed(p);
+    expect(rowOf('0')?.getAttribute('data-index')).toBe('0');
+    expect(document.querySelectorAll('[data-index]').length).toBe(2);
   });
 });
