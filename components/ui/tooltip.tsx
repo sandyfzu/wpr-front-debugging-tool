@@ -8,10 +8,11 @@
  * delays, and Escape dismissal.
  */
 import type { ComponentProps, JSX } from 'solid-js';
-import { Show } from 'solid-js';
+import { Match, Switch } from 'solid-js';
 import { Tooltip as KobalteTooltip } from '@kobalte/core';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
+import { MenuTooltipTrigger } from './menu';
 
 /** Where the tooltip floats — derived from Kobalte's own placement vocabulary. */
 export type TooltipPlacement = NonNullable<ComponentProps<typeof KobalteTooltip.Root>['placement']>;
@@ -39,13 +40,23 @@ export type TooltipProps = {
    */
   disabled?: boolean;
   /**
-   * The trigger element's tag — `button` (the default) or `a` for rows whose
-   * primary control is a navigation link (Kobalte's polymorphic trigger
-   * carries the same hover/focus wiring onto the anchor). The built-in
-   * button treatments shrink to the hit-area floor: the anchor caller owns
-   * its layout and must keep its own ≥ 24px hit area.
+   * The trigger element's tag/form:
+   * - `button` (default) — the plain icon-button trigger;
+   * - `a` — for rows whose primary control is a navigation link (Kobalte's
+   *   polymorphic trigger carries the same hover/focus wiring onto the
+   *   anchor). The built-in button treatments shrink to the hit-area
+   *   floor: the anchor caller owns its layout and must keep its own ≥ 24px
+   *   hit area;
+   * - `menu-trigger` — the trigger of an APG menu: the *same* element
+   *   carries the tooltip (attribution) and Kobalte's menu trigger
+   *   (keyboard open, collision-aware anchor, `aria-haspopup="menu"`,
+   *   `aria-expanded`, `aria-controls`) through the menu primitive's
+   *   tooltip facade (`components/ui/menu.tsx`). Click handling stays the
+   *   menu trigger's own — the click passthrough is not forwarded (the
+   *   menu toggles itself); the palette's button-form trigger remains
+   *   `button`.
    */
-  as?: 'button' | 'a';
+  as?: 'button' | 'a' | 'menu-trigger';
   /** The anchor trigger's href (meaningful only with `as="a"`). */
   href?: string;
   /**
@@ -61,9 +72,9 @@ export type TooltipProps = {
   ariaLabel?: string;
   /**
    * The control the trigger opens, for `aria-haspopup` shells whose trigger
-   * states the relationship (e.g. the palette's dialog its button opens).
+   * states the relationship (e.g. the palette's dialog, the rail's menu).
    */
-  ariaHasPopup?: 'dialog';
+  ariaHasPopup?: 'dialog' | 'menu';
   /**
    * The opened state of the paired surface, riding the trigger as
    * `aria-expanded` reactively.
@@ -106,14 +117,11 @@ export type TooltipProps = {
  */
 export function Tooltip(props: TooltipProps): JSX.Element {
   const anchor = (): boolean => props.as === 'a';
-  /** The classes + content both trigger forms share (the layout differs). */
-  const shared = () => ({
-    'data-fdt': 'tooltip-trigger',
-    'aria-label': props.ariaLabel,
-    'aria-haspopup': props.ariaHasPopup,
-    'aria-expanded': props.ariaExpanded,
-    onClick: props.onClick,
-    class: cn(
+  /** The menu-trigger form: no click passthrough is forwarded — the menu trigger owns its clicks. */
+  const menuTrigger = (): boolean => props.as === 'menu-trigger';
+  /** The classes both trigger forms share (the layout differs per form). */
+  const triggerClasses = () =>
+    cn(
       anchor()
         ? // Anchor trigger: only the hit-area floor is built in — the caller
           // owns the link's layout (e.g. nav rail rows).
@@ -121,7 +129,13 @@ export function Tooltip(props: TooltipProps): JSX.Element {
         : 'inline-grid min-h-6 min-w-6 place-items-center rounded',
       FOCUS_RING,
       props.class
-    ),
+    );
+  /** The trigger's shared attribution/state attrs (each branch spreads its own extras). */
+  const shared = () => ({
+    'data-fdt': 'tooltip-trigger',
+    'aria-label': props.ariaLabel,
+    'aria-haspopup': props.ariaHasPopup,
+    'aria-expanded': props.ariaExpanded,
     children: props.children
   });
   return (
@@ -131,35 +145,46 @@ export function Tooltip(props: TooltipProps): JSX.Element {
       skipDelayDuration={props.skipDelayDuration ?? 300}
       gutter={4}
     >
-      {/* Two literal-tag triggers (Kobalte's polymorphic typing resolves
-          per-tag attrs only for literal tags): every anchor-specific attr
-          stays fully typed on its own branch. Classes/content are shared;
-          exactly one branch renders. */}
-      <Show
-        when={anchor()}
-        fallback={
+      {/* Literal-tag or composed triggers (Kobalte's polymorphic typing
+          resolves per-tag attrs only for literal tags): every branch keeps
+          its attrs fully typed on its own form; classes/content are shared
+          and exactly one branch renders. */}
+      <Switch>
+        <Match when={anchor()}>
+          {/* Kobalte's built-in trigger is `<button type="button">`; the
+              anchor must not inherit it. A present `null` removes the
+              attribute (the merge order honours `null`, it skips
+              `undefined` and falls through to the built-in), but the
+              anchor's typed `type` is `string | undefined` — so that one
+              value rides an untyped spread. */}
+          <KobalteTooltip.Trigger
+            as="a"
+            href={props.href}
+            aria-current={props.ariaCurrent === true ? 'page' : undefined}
+            {...({ type: null } as Record<string, unknown>)}
+            {...shared()}
+            onClick={props.onClick}
+            class={triggerClasses()}
+          />
+        </Match>
+        <Match when={menuTrigger()}>
+          {/* The menu-trigger form mounts the tooltip's trigger contract
+              onto the menu trigger itself (one element, two contracts) —
+              and keeps the menu's own click semantics, so only the
+              attribution attrs ride across. */}
+          <KobalteTooltip.Trigger as={MenuTooltipTrigger} {...shared()} class={triggerClasses()} />
+        </Match>
+        <Match when={true}>
           <KobalteTooltip.Trigger
             as="button"
             type="button"
             disabled={props.disabled || undefined}
             {...shared()}
+            onClick={props.onClick}
+            class={triggerClasses()}
           />
-        }
-      >
-        {/* Kobalte's built-in trigger is `<button type="button">`; the anchor
-            must not inherit it. A present `null` removes the attribute (the
-            merge order honours `null`, it skips `undefined` and falls
-            through to the built-in), but the anchor's typed `type` is
-            `string | undefined` — so that one value rides an untyped
-            spread. */}
-        <KobalteTooltip.Trigger
-          as="a"
-          href={props.href}
-          aria-current={props.ariaCurrent === true ? 'page' : undefined}
-          {...({ type: null } as Record<string, unknown>)}
-          {...shared()}
-        />
-      </Show>
+        </Match>
+      </Switch>
       <KobalteTooltip.Portal>
         <KobalteTooltip.Content
           data-fdt="tooltip"

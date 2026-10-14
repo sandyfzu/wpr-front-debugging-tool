@@ -15,7 +15,7 @@
  * `""`), so tests assert the open state via `aria-describedby` rather than
  * content removal; in Chromium the content unmounts on close.
  */
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -187,5 +187,81 @@ describe('Tooltip', () => {
     setExpanded(true);
     await Promise.resolve();
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  describe('menu-trigger form (the rail overflow trigger)', () => {
+    /**
+     * One physical trigger carrying both contracts: the shared tooltip's
+     * attribution axis and Kobalte's menu trigger. Renders a minimal menu
+     * around it so the open side is exercisable in the same tree.
+     */
+    async function renderMenuTrigger(options?: { expanded: boolean }): Promise<HTMLElement> {
+      vi.resetModules();
+      const { Tooltip } = await import('./tooltip');
+      const { Menu, MENU_CONTENT_CLASSES, MENU_ITEM_CLASSES } = await import('./menu');
+      const [open, setOpen] = createSignal(options?.expanded ?? false);
+      render(() => (
+        <Menu.Root open={open()} onOpenChange={setOpen} modal={false} placement="right-start">
+          <Tooltip
+            as="menu-trigger"
+            content="More pages"
+            ariaLabel="More pages"
+            ariaHasPopup="menu"
+            ariaExpanded={open()}
+            skipDelayDuration={0}
+          >
+            <span aria-hidden="true">⌄</span>
+          </Tooltip>
+          <Menu.Portal>
+            <Menu.Content class={MENU_CONTENT_CLASSES}>
+              <Menu.Item as="a" href="#/lazyload" class={MENU_ITEM_CLASSES} closeOnSelect>
+                Lazyload
+              </Menu.Item>
+            </Menu.Content>
+          </Menu.Portal>
+        </Menu.Root>
+      ));
+      return screen.getByRole('button', { name: 'More pages' });
+    }
+
+    it('carries the menu trigger contract on the same element the tooltip wraps', async () => {
+      const trigger = await renderMenuTrigger();
+      expect(trigger.getAttribute('aria-haspopup')).toBe('menu'); // the caller's value wins
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByRole('menu')).toBeNull();
+      // Kobalte's trigger toggles on pointer down (the touch-pointer click
+      // path is the only click-toggle), so the synthetic drive is the real
+      // pointer sequence.
+      fireEvent.pointerDown(trigger);
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeTruthy();
+      });
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('keeps the tooltip wiring whole over the composed trigger — and hides when the trigger is clicked', async () => {
+      const trigger = await renderMenuTrigger();
+      // The attribution axis: focus opens the shared tooltip (described-by).
+      fireEvent.focus(trigger);
+      const content = screen.getByRole('tooltip');
+      expect(content.textContent).toContain('More pages');
+      expect(trigger.getAttribute('aria-describedby')).toBe(content.id);
+      // The menu side: a pointer-down toggle opens the menu and (on the
+      // click the pointer press continues into) the tooltip leaves — the
+      // attribution never stacks over the opening surface.
+      fireEvent.pointerDown(trigger);
+      fireEvent.click(trigger);
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeTruthy();
+      });
+      expect(trigger.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('the menu item keeps its anchor form inside the composed tree', async () => {
+      await renderMenuTrigger({ expanded: true });
+      const menu = await screen.findByRole('menu');
+      const item = within(menu).getByRole('menuitem', { name: 'Lazyload' });
+      expect(item.getAttribute('href')).toBe('#/lazyload');
+    });
   });
 });
