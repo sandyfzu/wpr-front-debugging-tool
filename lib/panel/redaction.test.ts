@@ -59,7 +59,16 @@ describe('isSensitiveName', () => {
     ['sig word', 'X-Sig'],
     ['trailing key', 'X-Access-Key'],
     ['trailing key (over-match)', 'X-Cache-Key'],
-    ['trailing key (query)', 'license_key']
+    ['trailing key (query)', 'license_key'],
+    ['sid word', 'x-sid'],
+    ['ticket word', 'x-ticket'],
+    ['otp word', 'x-otp'],
+    ['hash word', 'hash'],
+    ['email word', 'email'],
+    ['login word', 'user_login'],
+    ['login word (alone)', 'login'],
+    ['+ as separator', 'api+key'],
+    ['space as separator', 'api key']
   ])('redacts names carrying the %s fragment (%s)', (_fragment, name) => {
     expect(isSensitiveName(name)).toBe(true);
   });
@@ -78,7 +87,19 @@ describe('isSensitiveName', () => {
     'keyword',
     'passage',
     'signal',
-    'compass'
+    'compass',
+    'author',
+    'Author',
+    'passive',
+    'passport',
+    'monkey',
+    'turnkey',
+    'statement',
+    'postcode',
+    'sidebar',
+    'hashtag',
+    'emails_sent',
+    'loginless'
   ])('passes the ordinary name %s', (name) => {
     expect(isSensitiveName(name)).toBe(false);
   });
@@ -146,7 +167,46 @@ describe('redactUrl', () => {
       'https://a.test/?%zztoken=1&q=%zz',
       'https://a.test/?%zztoken=[redacted]&q=%zz'
     ],
-    ['keeps an empty-name pair', 'https://a.test/?=x', 'https://a.test/?=x'],
+    [
+      'redacts a value under an empty name',
+      'https://a.test/?=S&ok=1',
+      'https://a.test/?=[redacted]&ok=1'
+    ],
+    [
+      'splits on ; as well as &, keeping each separator',
+      'https://ex.com/?x=1;token=S&key=K;page=2',
+      'https://ex.com/?x=1;token=[redacted]&key=[redacted];page=2'
+    ],
+    [
+      'redacts a long bare value whole, keeps short flags',
+      'https://a.test/?nowprocket&abcdefghijklmnopqrstuvwx&ok',
+      'https://a.test/?nowprocket&[redacted]&ok'
+    ],
+    [
+      'redacts a JWT-shaped bare value whole',
+      'https://a.test/?eyJh.eyJz.c2ln',
+      'https://a.test/?[redacted]'
+    ],
+    [
+      'keeps a 23-character bare value (below the token length)',
+      'https://a.test/?abcdefghijklmnopqrstuvw',
+      'https://a.test/?abcdefghijklmnopqrstuvw'
+    ],
+    [
+      'decodes names fully (encoded +, double-encoded _)',
+      'https://a.test/?api%2Bkey=1&access%255Ftoken=2',
+      'https://a.test/?api%2Bkey=[redacted]&access%255Ftoken=[redacted]'
+    ],
+    [
+      'keeps WordPress ?author=1 but redacts author_token',
+      'https://a.test/?author=1&author_token=T',
+      'https://a.test/?author=1&author_token=[redacted]'
+    ],
+    [
+      'redacts ;jsessionid= path parameters, keeps other path segments',
+      'https://a.test/shop;jsessionid=ABC/item;color=red/x',
+      'https://a.test/shop;jsessionid=[redacted]/item;color=red/x'
+    ],
     ['normalises a bare host', 'https://A.TEST', 'https://a.test/'],
     ['drops an empty fragment', 'https://a.test/#', 'https://a.test/'],
     [

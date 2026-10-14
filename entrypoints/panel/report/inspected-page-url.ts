@@ -3,12 +3,14 @@
  * DevTools API every panel already holds — no new permission: one
  * `devtools.inspectedWindow.eval('location.href')` in the page's main frame.
  *
- * Two API shapes, feature-detected per call: the promise form (Firefox,
- * Chrome 151+) answers through the call's own return value — used directly,
- * no callback, no wait; the callback form (Chrome below 151 returns nothing
- * from a callback-less call) is then asked once more with a callback. A
- * callback-less call on the callback form only reads `location.href`, so the
- * one extra evaluation there is side-effect free.
+ * Two API shapes, feature-detected per call, one evaluation in each: the
+ * call always carries a callback that reads `runtime.lastError` first (so
+ * the callback form — Chrome — never leaves an unchecked error). An
+ * implementation that answers through its return value instead (a
+ * promise: the promise-only form) is read from that promise, no wait; one
+ * that rejects the callback argument outright (a synchronous throw — a
+ * strict promise-only schema) is asked once more without it and read from
+ * the returned promise.
  *
  * Best-effort by design: the report is useful without the URL, so every
  * failure (no DevTools namespace — e.g. a panel opened outside DevTools —,
@@ -38,7 +40,7 @@ export interface InspectedEvalApi {
    *
    * @param expression The expression.
    * @param callback Receives the result, or an exception description
-   *   (callback form; omitted to probe for the promise form).
+   *   (callback form; omitted only to retry a promise-only form).
    * @returns A promise in the promise form (Firefox resolves
    *   `[result, exceptionInfo]`; a bare result is accepted too), anything
    *   else in the callback form.
@@ -134,32 +136,51 @@ export function readInspectedPageUrl(
       }
       settle(acceptUrl(result));
     };
+    /**
+     * Read the promise form's answer, when the call returned one.
+     *
+     * @param returned The call's return value.
+     * @returns True when it was a promise (now being read).
+     */
+    const readPromise = (returned: unknown): boolean => {
+      if (!isThenable(returned)) return false;
+      returned.then(
+        (value) => {
+          const { result, exceptionInfo } = unpackPromiseAnswer(value);
+          answer(result, exceptionInfo);
+        },
+        (cause: unknown) => {
+          // A rejection is a failure whatever its reason (even an empty one).
+          answer(undefined, cause ?? 'rejected');
+        }
+      );
+      return true;
+    };
+    let returned: unknown;
     try {
-      const probe = api.eval(EXPRESSION);
-      if (isThenable(probe)) {
-        probe.then(
-          (value) => {
-            const { result, exceptionInfo } = unpackPromiseAnswer(value);
-            answer(result, exceptionInfo);
-          },
-          (cause: unknown) => {
-            // A rejection is a failure whatever its reason (even an empty one).
-            answer(undefined, cause ?? 'rejected');
-          }
-        );
-        return;
-      }
-      api.eval(EXPRESSION, (result, exceptionInfo) => {
+      returned = api.eval(EXPRESSION, (result, exceptionInfo) => {
         // Read (and so clear) lastError first: unread, it logs as unchecked.
         const runtimeError = lastError();
         answer(result, runtimeError?.message ?? exceptionInfo);
       });
-    } catch (cause) {
-      log.warn('The inspected page URL eval could not start; the report omits it', {
-        cause: cause instanceof Error ? { message: cause.message } : cause
-      });
-      settle(null);
+    } catch {
+      // The callback argument itself was refused: ask the promise-only form.
+      try {
+        if (!readPromise(api.eval(EXPRESSION))) {
+          log.warn('The inspected page URL eval answered in no known form; the report omits it');
+          settle(null);
+        }
+      } catch (cause) {
+        log.warn('The inspected page URL eval could not start; the report omits it', {
+          cause: cause instanceof Error ? { message: cause.message } : cause
+        });
+        settle(null);
+      }
+      return;
     }
+    // Callback accepted; a promise returned alongside is the answer too
+    // (whichever settles first wins — later answers are ignored).
+    readPromise(returned);
   });
 }
 

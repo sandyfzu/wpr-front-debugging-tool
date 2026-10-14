@@ -1,8 +1,9 @@
 /**
- * The inspected-page URL read, in both API shapes: the promise form answers
- * through the call's return (Firefox's `[result, exceptionInfo]` pair or a
- * bare result) with no callback and no wait; the callback form is asked
- * once more with a callback; every failure shape (no API, DevTools-side
+ * The inspected-page URL read, in every API shape with one evaluation: the
+ * callback form answers the (always-passed, lastError-reading) callback; an
+ * implementation returning a promise is read from it (Firefox's
+ * `[result, exceptionInfo]` pair or a bare result) with no wait; one that
+ * refuses the callback argument is retried once without it; every failure shape (no API, DevTools-side
  * error, page exception, rejection, junk/oversized/non-web answer, sync
  * throw, timeout) resolves null; `lastError` is read in the callback.
  */
@@ -58,11 +59,8 @@ describe('readInspectedPageUrl — callback form', () => {
       }
     };
     expect(await readInspectedPageUrl(api, noError)).toBe('https://example.com/a?b=1');
-    // One callback-less probe, then the callback call.
-    expect(seen).toEqual([
-      { expression: 'location.href', withCallback: false },
-      { expression: 'location.href', withCallback: true }
-    ]);
+    // One evaluation, always with the lastError-reading callback.
+    expect(seen).toEqual([{ expression: 'location.href', withCallback: true }]);
   });
 
   it('answers null without a DevTools API', async () => {
@@ -112,12 +110,13 @@ describe('readInspectedPageUrl — callback form', () => {
 });
 
 describe('readInspectedPageUrl — promise form', () => {
-  it("takes Firefox's [result, exceptionInfo] pair, without a callback or a wait", async () => {
+  it("takes Firefox's [result, exceptionInfo] pair from the returned promise, with no wait", async () => {
     vi.useFakeTimers();
     const form = promiseForm(() => Promise.resolve(['https://example.com/ff', undefined]));
     const url = await readInspectedPageUrl(form.api, noError);
     expect(url).toBe('https://example.com/ff');
-    expect(form.calls).toEqual([{ expression: 'location.href', withCallback: false }]);
+    // One evaluation: the callback was accepted (ignored), the promise answered.
+    expect(form.calls).toEqual([{ expression: 'location.href', withCallback: true }]);
     // Settled without advancing any timer, and none left armed.
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -135,6 +134,46 @@ describe('readInspectedPageUrl — promise form', () => {
     ['a null exception slot with junk', () => Promise.resolve([42, null])]
   ])('answers null on %s', async (_label, settle) => {
     expect(await readInspectedPageUrl(promiseForm(settle).api, noError)).toBeNull();
+  });
+});
+
+describe('readInspectedPageUrl — a form that refuses the callback argument', () => {
+  /** A strict promise-only seam: a callback argument throws synchronously. */
+  function strict(answer: () => unknown): {
+    api: InspectedEvalApi;
+    calls: boolean[];
+  } {
+    const calls: boolean[] = [];
+    return {
+      api: {
+        eval: (_expression, callback) => {
+          calls.push(callback !== undefined);
+          if (callback !== undefined) throw new TypeError('Incorrect argument types');
+          return answer();
+        }
+      },
+      calls
+    };
+  }
+
+  it('retries once without the callback and reads the promise', async () => {
+    const form = strict(() => Promise.resolve(['https://example.com/strict', undefined]));
+    expect(await readInspectedPageUrl(form.api, noError)).toBe('https://example.com/strict');
+    expect(form.calls).toEqual([true, false]);
+  });
+
+  it('answers null at once when the retry returns no promise', async () => {
+    vi.useFakeTimers();
+    const form = strict(() => undefined);
+    expect(await readInspectedPageUrl(form.api, noError)).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('answers null when the retry throws too', async () => {
+    const form = strict(() => {
+      throw new Error('detached');
+    });
+    expect(await readInspectedPageUrl(form.api, noError)).toBeNull();
   });
 });
 

@@ -18,9 +18,23 @@
  * - **name fragments** — any name containing `token`, `secret`, `session`,
  *   `auth`, `nonce`, `signature`, `api-key`/`api_key`/`apikey`, `csrf`,
  *   `xsrf`, `password`/`passwd`, `credential`, `jwt`, `hmac`, `bearer`,
- *   `private` or `pwd`, plus `pass` and `sig` as whole `-`/`_`-separated
- *   words and a trailing `key` word (`X-Access-Key`; `X-Cache-Key`
- *   over-matches, which is acceptable).
+ *   `private` or `pwd`;
+ * - **whole words** (`-`/`_`/space-separated, so `signal`, `turnkey` or
+ *   `postcode` pass) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`, the
+ *   personal-data names `email` and `login` (`user_login`), and a trailing
+ *   `key` (`X-Access-Key`; `X-Cache-Key` over-matches, which is acceptable).
+ *
+ * One exemption: the exact name `author` (WordPress's `?author=1` archive
+ * id is useful support context, not a credential) — the `auth` fragment
+ * would otherwise catch it; `author_token` and the like stay redacted.
+ *
+ * URLs ({@link redactUrl}): credentials and fragment are dropped; query
+ * pairs (split on `&` and `;`) keep their names but lose sensitive values,
+ * a value under an empty name is redacted, and a valueless pair that looks
+ * like a token (≥ 24 characters, or a JWT-shaped `x.y.z`) is redacted
+ * whole. Path segments are out of scope (they are routing, and redacting
+ * them would break the URL's support value), except `;name=value` path
+ * parameters (`;jsessionid=…`), which get the same name rule.
  *
  * `Set-Cookie` alone keeps the cookie's NAME (which cookie the server set is
  * useful evidence for caching issues); its value and attributes never pass.
@@ -45,9 +59,22 @@ const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
   'sig'
 ]);
 
-/** Name fragments that mark a name as secret-bearing (case-insensitive). */
+/**
+ * Name fragments (anywhere in the name) and whole words (between `-`/`_`
+ * separators or the name's edges) that mark a name as secret-bearing.
+ * Matched against the normalised name (lowercase, whitespace and `+` as `-`).
+ */
 const SENSITIVE_NAME_FRAGMENT =
-  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])pass(?:[-_]|$)|(?:^|[-_])sig(?:[-_]|$)|(?:^|[-_])key$/i;
+  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login)(?:[-_]|$)|(?:^|[-_])key$/;
+
+/** Exact names exempt from the fragments (useful context, never a credential). */
+const EXEMPT_NAMES: ReadonlySet<string> = new Set(['author']);
+
+/** A valueless query pair this long reads as a bare token. */
+const BARE_TOKEN_MIN_LENGTH = 24;
+
+/** A JWT-shaped bare value: three base64url runs joined by dots. */
+const JWT_SHAPE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 /** What a redacted header value reads as. */
 export const REDACTED = '(value redacted)';
@@ -58,13 +85,17 @@ export const REDACTED_PARAM = '[redacted]';
 /**
  * Whether a header or query-parameter name marks its value as secret.
  *
- * @param name The name, any casing; inner whitespace counts as `-`.
- * @returns True for the exact names and any name carrying a fragment.
+ * @param name The (decoded) name, any casing; inner whitespace and `+`
+ *   count as `-`.
+ * @returns True for the exact names and any name carrying a fragment or
+ *   word, except the exempt names.
  */
 export function isSensitiveName(name: string): boolean {
-  // Inner whitespace reads as a word separator (a form-decoded `api+key`).
-  const lower = name.trim().toLowerCase().replace(/\s+/g, '-');
-  return SENSITIVE_EXACT_NAMES.has(lower) || SENSITIVE_NAME_FRAGMENT.test(lower);
+  const lower = name.trim().toLowerCase();
+  if (SENSITIVE_EXACT_NAMES.has(lower)) return true;
+  if (EXEMPT_NAMES.has(lower)) return false;
+  // Whitespace and `+` read as word separators (`api key`, `api+key`).
+  return SENSITIVE_NAME_FRAGMENT.test(lower.replace(/[\s+]+/g, '-'));
 }
 
 /**
@@ -92,29 +123,65 @@ export function redactHeaderValue(
   return { redacted: true, cookieName: cookieName === '' ? null : cookieName };
 }
 
+/** How many decoding passes undo nested escapes (`%252B` → `%2B` → `+`). */
+const MAX_DECODE_PASSES = 3;
+
 /**
- * Decode a query-parameter name the way form decoding reads it (`+` is a
- * space), tolerating malformed escapes (the raw name is then compared).
+ * Decode a query/path-parameter name fully, the way form decoding reads it
+ * (`+` is a space at the first pass), undoing nested escapes so an
+ * encoded separator (`api%2Bkey`) still reads as one; a malformed escape
+ * (`%zz`) stops the decoding and the name is compared as decoded so far.
  *
- * @param raw The name as written in the query.
+ * @param raw The name as written in the URL.
  * @returns The decoded name.
  */
 function decodeParamName(raw: string): string {
-  const spaced = raw.replace(/\+/g, ' ');
-  try {
-    return decodeURIComponent(spaced);
-  } catch {
-    // A malformed escape (`%zz`) cannot be decoded; compare it as written.
-    return spaced;
+  let current = raw.replace(/\+/g, ' ');
+  for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      // Malformed escape: compare what decoded cleanly so far.
+      return current;
+    }
+    if (next === current) return current;
+    current = next;
   }
+  return current;
+}
+
+/**
+ * Whether a valueless query pair reads as a bare secret.
+ *
+ * @param pair The pair as written (no `=`).
+ * @returns True for a long run or a JWT-shaped value.
+ */
+function isBareToken(pair: string): boolean {
+  return pair.length >= BARE_TOKEN_MIN_LENGTH || JWT_SHAPE.test(pair);
+}
+
+/**
+ * Redact one query pair.
+ *
+ * @param pair The pair as written (between separators).
+ * @returns The pair, its value redacted when its name is sensitive or empty,
+ *   or the whole pair redacted when it is a bare token.
+ */
+function redactQueryPair(pair: string): string {
+  const equals = pair.indexOf('=');
+  if (equals === -1) return isBareToken(pair) ? REDACTED_PARAM : pair;
+  const name = pair.slice(0, equals);
+  const decoded = decodeParamName(name);
+  return decoded.trim() === '' || isSensitiveName(decoded) ? `${name}=${REDACTED_PARAM}` : pair;
 }
 
 /**
  * The exportable form of a page URL: rebuilt from the parsed URL (never the
  * raw string), credentials (`user:pw@`) and fragment dropped, the query
- * kept for support context (e.g. `?nowprocket`) with the VALUE of every
- * sensitive-named parameter replaced by {@link REDACTED_PARAM}. Parameters
- * keep their order and their original encoding; valueless ones stay as-is.
+ * kept for support context (e.g. `?nowprocket`) with every pair run through
+ * the rule (see the module doc), separators (`&`, `;`) and original
+ * encoding kept; `;name=value` path parameters get the same name rule.
  *
  * @param raw The untrusted URL text.
  * @returns The normalised `href` (the URL parser strips tabs/newlines and
@@ -133,17 +200,17 @@ export function redactUrl(raw: string): string | null {
   url.username = '';
   url.password = '';
   url.hash = '';
+  url.pathname = url.pathname.replace(/;([^/;=]*)=([^/;]*)/g, (whole, name: string) =>
+    isSensitiveName(decodeParamName(name)) ? `;${name}=${REDACTED_PARAM}` : whole
+  );
   if (url.search !== '') {
+    // Split keeping the separators (odd indexes), so `;`-joined queries
+    // round-trip with their own separators.
     url.search = url.search
       .slice(1)
-      .split('&')
-      .map((pair) => {
-        const equals = pair.indexOf('=');
-        if (equals === -1) return pair;
-        const name = pair.slice(0, equals);
-        return isSensitiveName(decodeParamName(name)) ? `${name}=${REDACTED_PARAM}` : pair;
-      })
-      .join('&');
+      .split(/([&;])/)
+      .map((part, index) => (index % 2 === 1 ? part : redactQueryPair(part)))
+      .join('');
   }
   return url.href;
 }

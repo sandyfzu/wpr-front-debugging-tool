@@ -249,6 +249,25 @@ The phase's overview surface — the status cards the audience reads first, then
 - **§D re-run:** no horizontal scroll at 320/480/768/1280 on the cached and plugin-absent pages; axe found 0 violations and 0 incomplete for collapsed/expanded × light/dark × both pages (run at a 2400 px-tall viewport); with reduced motion, 0 animations running after open; D-6 grep empty. Screenshots re-taken at 320/600/1000/1400 × light/dark (ready, headers open, plugin absent).
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1614/1614 in 141 files (coverage 95.68 / 94.96 / 98.72 / 96.99) · `build` ✓ · `check:budgets` ✓. Panel bundle **260.4 KB raw / 80.2 KB gzip** (up from 259.6); whole build 475.2.
 
+**Receipts — residual redaction round (2026-10-14, after the rebase onto develop `c831531`):**
+
+- **Rebase:** clean, no conflicts.
+- **The `panel-a11y` overlay allowance (`fbd554c`, second one-off e2e exception).** The old regex never matched the variant it documented: its optional group required a backslash before `.items-center`. So the spec failed 3/3 on this branch and passed on develop. The cause is axe: it builds the shortest selector that is unique in the document, so the extra `gap-2.5` elements on the Detections page changed the selector it produced. The allowance now anchors on `[data-fdt="shortcut-row"]:nth-child(2) > kbd` and ignores any leading utility classes. What it tolerates is unchanged: the same rule, still only as an incomplete result, on the same element.
+- **The URL redaction gaps in `lib/panel/redaction.ts`:**
+  - Query pairs are split on both `&` and `;`, and each separator is kept as written. `?x=1;token=S&key=K` no longer leaks.
+  - New whole words in the name rule: `sid`, `ticket`, `otp`, `hash`, and the personal-data names `email` and `login` (which covers `user_login`). Whole-word means `sidebar`, `hashtag`, `emails_sent` and `loginless` still pass.
+  - A value under an empty name (`?=S`) is redacted.
+  - A valueless pair that looks like a token is redacted whole: 24 characters or more, or the JWT shape `x.y.z`. A 23-character flag passes.
+  - Path segments are out of scope (stated in the module doc). The exception is `;name=value` path parameters such as `;jsessionid=…`, which get the same name rule.
+  - The exact name `author` is exempt from the `auth` fragment, so WordPress's `?author=1` stays in the report. `author_token` is still redacted.
+  - Names are decoded fully before matching: up to 3 passes, and `+` counts as a separator. So `api%2Bkey` and `access%255Ftoken` are both caught.
+- **The page-URL read now makes one evaluation in every shape:**
+  - Every call passes a callback that reads `lastError` first, so the callback form (Chrome) never leaves an unchecked error, and old Chrome no longer evaluates twice.
+  - If an implementation answers through a returned promise instead, that promise is read, with no wait.
+  - If an implementation rejects the callback argument outright (a strict promise-only form), it is retried once without it.
+  - Every case has a test, including "the retry returns no promise → null with no timer left armed".
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1653/1653 in 141 files (coverage 95.67 / 95.01 / 98.73 / 96.95) · `build` ✓ · `check:budgets` ✓. Panel bundle 260.9 KB raw / 80.5 KB gzip; whole build 475.7.
+
 ---
 
 ## P6C — JavaScript page
