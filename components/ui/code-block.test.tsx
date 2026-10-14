@@ -8,7 +8,12 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CodeBlock, type IntersectionGate } from './code-block';
+import {
+  CodeBlock,
+  HIGHLIGHT_MAX_CHARS,
+  SYNC_HIGHLIGHT_MAX_CHARS,
+  type IntersectionGate
+} from './code-block';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
 import type { OverflowWatcher } from './overflow-watch';
 
@@ -399,5 +404,166 @@ describe('CodeBlock', () => {
         <CodeBlock text="x" lang="json" maxLines={lines} createObserver={() => manualGate()} />
       ))
     ).toThrow(/maxLines must be a positive integer/);
+  });
+});
+
+/** A sliced-capable loader double: records each call, resolves on demand. */
+function slicedLoader(): {
+  load: () => Promise<{
+    highlight: (code: string) => string;
+    highlightSliced: (code: string, options: { signal?: AbortSignal }) => Promise<string>;
+  }>;
+  syncCalls: string[];
+  sliced: Array<{ code: string; signal?: AbortSignal; resolve: () => void }>;
+} {
+  const syncCalls: string[] = [];
+  const sliced: Array<{ code: string; signal?: AbortSignal; resolve: () => void }> = [];
+  const wrap = (code: string): string =>
+    `<pre class="probe"><code>${String(code.length)}</code></pre>`;
+  return {
+    syncCalls,
+    sliced,
+    load: () =>
+      Promise.resolve({
+        highlight: (code: string) => {
+          syncCalls.push(code);
+          return wrap(code);
+        },
+        highlightSliced: (code: string, options: { signal?: AbortSignal }) =>
+          new Promise<string>((resolve, reject) => {
+            options.signal?.addEventListener('abort', () => {
+              reject(new Error('aborted'));
+            });
+            sliced.push({
+              code,
+              signal: options.signal,
+              resolve: () => {
+                resolve(wrap(code));
+              }
+            });
+          })
+      })
+  };
+}
+
+describe('CodeBlock — highlighting cost bounds', () => {
+  it('highlights short code synchronously (no plain-text flash)', async () => {
+    const gate = manualGate();
+    const loader = slicedLoader();
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    expect(loader.syncCalls).toEqual(['const a = 1;']);
+    expect(loader.sliced).toHaveLength(0);
+  });
+
+  it('highlights longer code in slices, raw text showing until they finish', async () => {
+    const gate = manualGate();
+    const loader = slicedLoader();
+    const text = 'x'.repeat(SYNC_HIGHLIGHT_MAX_CHARS + 1);
+    render(() => (
+      <CodeBlock
+        text={text}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.sliced).toHaveLength(1);
+    });
+    expect(loader.syncCalls).toHaveLength(0);
+    expect(controls().fallback?.textContent).toBe(text);
+    loader.sliced[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted?.textContent).toBe(String(text.length));
+    });
+  });
+
+  it('drops stale colors and aborts the slices in flight when the text changes', async () => {
+    const gate = manualGate();
+    const loader = slicedLoader();
+    const long = 'y'.repeat(SYNC_HIGHLIGHT_MAX_CHARS + 5);
+    const [text, setText] = createSignal(long);
+    render(() => (
+      <CodeBlock
+        text={text()}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.sliced).toHaveLength(1);
+    });
+    setText('short();');
+    expect(loader.sliced[0]?.signal?.aborted).toBe(true);
+    expect(controls().highlighted?.textContent).toBe(String('short();'.length));
+    setText(long);
+    // The short text's colors never linger over the long text.
+    expect(controls().highlighted).toBeNull();
+    expect(controls().fallback?.textContent).toBe(long);
+  });
+
+  it('never highlights code above the size limit and says so', async () => {
+    const gate = manualGate();
+    const loader = slicedLoader();
+    const text = 'z'.repeat(HIGHLIGHT_MAX_CHARS + 1);
+    render(() => (
+      <CodeBlock
+        text={text}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loader.syncCalls).toHaveLength(0);
+    expect(loader.sliced).toHaveLength(0);
+    expect(controls().fallback?.textContent).toBe(text);
+    expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+      'Not highlighted (too large)'
+    );
+  });
+
+  it('shows no size note for code within the limit', () => {
+    render(() => <CodeBlock text="a" lang="javascript" loadHighlighter={stubLoader()} />);
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+  });
+});
+
+describe('CodeBlock — clip reporting', () => {
+  it('reports whether the clamp cuts lines off, false while unclamped', () => {
+    const overflow = manualOverflow();
+    const reports: boolean[] = [];
+    const [lines, setLines] = createSignal<number | undefined>(3);
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc\nd'}
+        lang="javascript"
+        maxLines={lines()}
+        watchOverflow={overflow.watcher}
+        onClipChange={(clipped) => reports.push(clipped)}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    expect(reports).toEqual([false]);
+    overflow.setClipped(true);
+    expect(reports).toEqual([false, true]);
+    setLines(undefined);
+    expect(reports).toEqual([false, true, false]);
   });
 });

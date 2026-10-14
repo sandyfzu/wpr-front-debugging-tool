@@ -23,8 +23,10 @@ import githubLight from 'shiki/themes/github-light.mjs';
 import { contrastRatio } from '../../utils/contrast';
 import {
   COLOR_REPLACEMENTS,
+  MAX_TOKENIZED_LINE,
   THEME_PAIR,
   getHighlighter,
+  lineSpans,
   pendingHighlighter,
   resetHighlighter,
   type CodeHighlighter
@@ -264,5 +266,87 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
     expect(output).toContain('--shiki-light:#6a737d');
     expect(output).not.toContain('#d73a49');
     expect(output).not.toContain('--shiki-dark:#6a737d');
+  });
+});
+
+/** A JS sample whose comments/templates/strings span many lines (grammar state matters). */
+function stateful(lines: number): string {
+  const out: string[] = [];
+  for (let i = 0; i < lines; i += 1) {
+    if (i % 23 === 0) out.push('/* a block comment');
+    else if (i % 23 === 3) out.push('   that ends here */ const c = 1;');
+    else if (i % 31 === 0) out.push('const t = `template ${i} opens');
+    else if (i % 31 === 4) out.push('and closes ${`nested`}`;');
+    else out.push(`  if (a${String(i)}) { foo.bar(${String(i)}, "s"); } // c`);
+  }
+  return out.join('\n');
+}
+
+describe('real highlighter — line cap', () => {
+  it('emits a line at the cap untokenized and keeps tokenizing shorter lines', () => {
+    const long = `var x = "${'a'.repeat(MAX_TOKENIZED_LINE)}";`;
+    const output = highlighter.highlight(`${long}\nconst y = 1;`, { lang: 'javascript' });
+    const [first, second] = output.split('\n');
+    // The long line is one uncolored span; the next line is colored tokens.
+    expect(first?.match(/<span style=/g) ?? []).toHaveLength(0);
+    expect(second).toMatch(/light-dark\(/);
+  });
+
+  it('leaves a quadratic-prone 30 KB string line untokenized (no timing assertion)', () => {
+    const uri = `var u = "data:image/png;base64,${'iVBORw0KGgo'.repeat(2_800)}";`;
+    const output = highlighter.highlight(uri, { lang: 'javascript' });
+    // One plain span: the grammar never ran over the line.
+    expect(output.match(/<span style=/g) ?? []).toHaveLength(0);
+    expect(output).toContain('iVBORw0KGgo');
+  });
+});
+
+describe('lineSpans', () => {
+  it('splits on LF and CRLF, excluding the break', () => {
+    expect(lineSpans('')).toEqual([[0, 0]]);
+    expect(lineSpans('ab')).toEqual([[0, 2]]);
+    expect(lineSpans('a\nbc\r\nd\n')).toEqual([
+      [0, 1],
+      [2, 4],
+      [6, 7],
+      [8, 8]
+    ]);
+    expect(lineSpans('\r\n')).toEqual([
+      [0, 0],
+      [2, 2]
+    ]);
+  });
+});
+
+describe('real highlighter — sliced highlighting', () => {
+  it.each([
+    ['empty', ''],
+    ['one line', 'const a = 1;'],
+    ['CRLF breaks', 'const a = 1;\r\n/* x\r\n y */\r\nconst b = `t\r\n${a}`;'],
+    ['grammar state across many slices', stateful(600)]
+  ])('equals the one-shot output (%s)', async (_name, code) => {
+    let yields = 0;
+    const sliced = await highlighter.highlightSliced(code, {
+      lang: 'javascript',
+      yieldToMain: () => {
+        yields += 1;
+        return Promise.resolve();
+      }
+    });
+    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
+    if (code.split('\n').length > 16) expect(yields).toBeGreaterThan(0);
+  });
+
+  it('stops at the next slice once aborted', async () => {
+    const controller = new AbortController();
+    const pending = highlighter.highlightSliced(stateful(600), {
+      lang: 'javascript',
+      signal: controller.signal,
+      yieldToMain: () => {
+        controller.abort(new Error('superseded'));
+        return Promise.resolve();
+      }
+    });
+    await expect(pending).rejects.toThrow('superseded');
   });
 });

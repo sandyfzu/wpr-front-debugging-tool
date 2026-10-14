@@ -40,7 +40,15 @@
  * edge fades only while lines are actually cut off (`data-fdt-clipped`).
  */
 import type { ComponentProps, JSX } from 'solid-js';
-import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  splitProps,
+  untrack
+} from 'solid-js';
 import { Show } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
@@ -52,6 +60,24 @@ import { isClippedVertically, watchOverflow, type OverflowWatcher } from './over
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
+
+/**
+ * Code longer than this (chars) is never highlighted: it renders as plain
+ * monospace text with a quiet "not highlighted" note. Tokenizing is sliced
+ * (never a long task), but the highlighted markup is mounted in one go and
+ * weighs ≈ 33 HTML chars per code char; measured in Chromium (2026-10-14),
+ * mounting stays under 50 ms up to ≈ 47 K chars and becomes one 85–107 ms
+ * task from ≈ 66 K. 32 K keeps a margin for slower machines; scripts past it
+ * are bundles, where colors stop paying for the work.
+ */
+export const HIGHLIGHT_MAX_CHARS = 32_000;
+
+/**
+ * Code up to this size (chars) highlights in one synchronous call — measured
+ * well under a frame — so a block swaps in without a plain-text flash; longer
+ * code highlights in time slices (`highlightSliced`), never as a long task.
+ */
+export const SYNC_HIGHLIGHT_MAX_CHARS = 2_000;
 
 /** How far ahead of the viewport a block pre-highlights (px of root margin). */
 const INTERSECTION_MARGIN = '150px';
@@ -66,6 +92,14 @@ interface HighlighterLike {
    * `innerHTML` even for untrusted source text).
    */
   highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
+  /**
+   * The time-sliced variant for longer code (same output); doubles may omit
+   * it, then every size goes through {@link HighlighterLike.highlight}.
+   */
+  highlightSliced?: (
+    code: string,
+    options: { lang: CodeLanguage; signal?: AbortSignal }
+  ) => Promise<HighlightedCode>;
 }
 
 /**
@@ -114,6 +148,13 @@ export type CodeBlockProps = {
    * Reactive: toggling it expands/collapses in place, instantly.
    */
   maxLines?: number;
+  /**
+   * Told whether the clamp currently cuts lines off (`false` while
+   * unclamped) — on mount and on every change, e.g. when wrapping folds a
+   * long line past the clamp. Lets the consumer offer its reveal control
+   * only when there is something to reveal.
+   */
+  onClipChange?: (clipped: boolean) => void;
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -179,6 +220,7 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * @param props.label The scroll region's name (default "`<lang>` code";
  *   pass a distinct one per block when a page shows several).
  * @param props.maxLines Clamp to N visible lines (collapsed preview).
+ * @param props.onClipChange Told whether the clamp cuts lines off.
  * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
@@ -203,6 +245,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'createObserver',
     'label',
     'maxLines',
+    'onClipChange',
     'watchOverflow',
     'class'
   ]);
@@ -287,22 +330,48 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     onCleanup(watch(content, lines, setClipped, isClippedVertically));
   });
 
-  /**
-   * The highlighted output — computed only when the highlighter arrived;
-   * sync per highlight-center (verified: `codeToHtml` is synchronous on a
-   * constructed core highlighter).
-   */
-  const highlighted = createMemo<HighlightedCode | undefined>(() => {
+  // The clamp's cut-off state, reported to the consumer (unclamped: false).
+  createEffect(() => {
+    const cut = maxLines() !== undefined && clipped();
+    untrack(() => own.onClipChange)?.(cut);
+  });
+
+  /** Too large to highlight: plain text, with the note in the toolbar. */
+  const tooLarge = (): boolean => own.text.length > HIGHLIGHT_MAX_CHARS;
+
+  // The highlighted output for the current text — set once the highlighter
+  // arrived. Short code highlights synchronously; longer code in slices, the
+  // raw text showing meanwhile (a text change drops the stale colors at once,
+  // so the shown text always matches `text`). A newer text or unmount aborts
+  // the slices in flight.
+  const [highlighted, setHighlighted] = createSignal<HighlightedCode | undefined>();
+  createEffect(() => {
     const loader = highlighter();
-    if (loader === undefined) return undefined;
-    try {
-      return loader.highlight(own.text, { lang: own.lang });
-    } catch (error: unknown) {
-      // Structural failure (never reached with the two registered languages) —
-      // degrade to the fallback rather than unmounting content.
-      logger.warn('Highlighting threw; falling back to raw text.', error);
-      return undefined;
+    const text = own.text;
+    const language = own.lang;
+    setHighlighted(undefined);
+    if (loader === undefined || tooLarge()) return;
+    if (loader.highlightSliced === undefined || text.length <= SYNC_HIGHLIGHT_MAX_CHARS) {
+      try {
+        setHighlighted(loader.highlight(text, { lang: language }));
+      } catch (error: unknown) {
+        // Structural failure (never reached with the two registered
+        // languages) — degrade to the fallback rather than unmounting content.
+        logger.warn('Highlighting threw; falling back to raw text.', error);
+      }
+      return;
     }
+    const controller = new AbortController();
+    onCleanup(() => {
+      controller.abort();
+    });
+    loader
+      .highlightSliced(text, { lang: language, signal: controller.signal })
+      .then(setHighlighted)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return; // superseded: nothing to report
+        logger.warn('Highlighting threw; falling back to raw text.', error);
+      });
   });
 
   return (
@@ -314,8 +383,15 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
       {...rest}
     >
       <div class="flex items-center justify-between gap-2 border-b border-line-1 bg-surface-2 px-2 py-0.5">
-        <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
-          {own.lang}
+        <span class="flex min-w-0 items-center gap-2">
+          <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
+            {own.lang}
+          </span>
+          <Show when={tooLarge()}>
+            <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
+              Not highlighted (too large)
+            </span>
+          </Show>
         </span>
         <Button
           type="button"
