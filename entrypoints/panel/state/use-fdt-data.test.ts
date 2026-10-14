@@ -18,7 +18,7 @@ import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from './search';
 import { createFdtDataStore, type FdtDataStore } from './use-fdt-data';
-import { makeFdtData, makeHardReloadBudget, makeMemoryStorage } from './fixtures';
+import { makeFdtData, makeHardReloadBudget, makeLazyImage, makeMemoryStorage } from './fixtures';
 import { createHardReloadBudget, type HardReloadBudget } from './hard-reload-budget';
 
 beforeEach(() => {
@@ -228,6 +228,37 @@ describe('registration + boot flight', () => {
 });
 
 describe('request flight lifecycle', () => {
+  it('logs where a rejected payload broke its contract (path only, never the value)', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const secret = 'SECRET-VALUE-NOT-FOR-LOGS';
+      const payload = makeFdtData();
+      const images = [0, 1, 2, 3].map((i) => makeLazyImage({ src: `/${String(i)}.jpg` }));
+      const broken = {
+        ...payload,
+        wprDetections: {
+          ...payload.wprDetections,
+          lazyload: {
+            present: true,
+            images: images.map((image, i) =>
+              i === 3 ? { ...image, src: 42, extra: secret } : image
+            )
+          }
+        }
+      };
+      const world = fakeWorld({ request: Promise.resolve(broken) });
+      makeStore(world).start();
+      await drained();
+      expect(errors).toHaveBeenCalledWith(
+        '[WPR FDT] [panel] Panel data failed its contract validation — falling back to a full reload.',
+        { path: 'wprDetections.lazyload.images[3].keys' }
+      );
+      expect(JSON.stringify(errors.mock.calls)).not.toContain(secret);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('retries from the error state successfully', async () => {
     const world = fakeWorld({ request: Promise.reject(new Error('did not happen')) });
     const store = makeStore(world);
