@@ -162,7 +162,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                       <div class="ins-row" title={row.tooltip}>
                         <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
                         <Show when={row.count !== null && row.unit !== null}>
-                          <span class="ins-count">
+                          <span class="ins-value">
                             {String(row.count)} {row.unit}
                           </span>
                         </Show>

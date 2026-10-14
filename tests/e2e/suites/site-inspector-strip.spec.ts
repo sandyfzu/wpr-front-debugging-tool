@@ -517,6 +517,66 @@ siteTest.describe('site detection widget', () => {
           );
           expect(actual, `chip matches for ${row.label}`).toBe(expected);
         }
+
+        // Width contract (owner feedback round, 2026-10-13): every feature
+        // name renders whole at the shipped card width — no chip is allowed
+        // to elide over ANY registry row — and the value sits as its own
+        // info-pair chip at the fixed 4 px row gap (the SB-D5 informational
+        // pair reading: a distinct second surface, no state claim). The card
+        // is min(352px, 100vw − 32px): asserted at the leg's viewport through
+        // its literal.
+        const geometry = await page.evaluate((host: string) => {
+          const root = document.querySelector(host)?.shadowRoot ?? null;
+          const card = root?.querySelector<HTMLElement>('.ins-card');
+          const rows = [...(root?.querySelectorAll<HTMLElement>('.ins-row') ?? [])];
+          return {
+            cardWidth: card?.getBoundingClientRect().width ?? 0,
+            viewportWidth: document.documentElement.clientWidth,
+            rows: rows.map((row) => {
+              const chip = row.querySelector<HTMLElement>('.ins-chip');
+              const value = row.querySelector<HTMLElement>('.ins-value');
+              const chipBox = chip?.getBoundingClientRect();
+              const valueBox = value?.getBoundingClientRect();
+              return {
+                chip,
+                value,
+                gap:
+                  chipBox !== undefined && valueBox !== undefined
+                    ? valueBox.left - chipBox.right
+                    : null,
+                valueStyle: value === null ? null : getComputedStyle(value).backgroundColor
+              };
+            })
+          };
+        }, STRIP_HOST);
+        expect(
+          Math.abs(geometry.cardWidth - Math.min(352, geometry.viewportWidth - 32)),
+          'the card rides the shipped viewport-bounded width'
+        ).toBeLessThan(2);
+        for (const row of geometry.rows) {
+          const chip = row.chip;
+          if (chip === null) throw new Error('a row lost its label chip');
+          expect(
+            chip.scrollWidth > chip.clientWidth,
+            `the label of "${chip.textContent}" renders whole (no elide) at the shipped width`
+          ).toBe(false);
+          if (row.value !== null) {
+            expect(
+              row.value.scrollWidth > row.value.clientWidth,
+              `the value of "${chip.textContent}" renders whole`
+            ).toBe(false);
+            expect(
+              row.gap,
+              `the value chip of "${chip.textContent}" sits at the row's 4 px gap`
+            ).toBe(4);
+            expect(
+              row.valueStyle,
+              `the value chip of "${chip.textContent}" carries a soft surface`
+            ).not.toBe('rgba(0, 0, 0, 0)');
+          }
+        }
+        const countedRows = geometry.rows.filter((row) => row.value !== null);
+        expect(countedRows.length, 'the counted rows carry their value chips').toBeGreaterThan(0);
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);

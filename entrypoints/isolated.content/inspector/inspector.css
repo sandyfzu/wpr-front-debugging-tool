@@ -222,9 +222,16 @@
 /* ---- Report card -------------------------------------------------------------
  * Opens from the pill's anchor: rises, settles with the soft spring, and the
  * pill departs on the same beat. Closed state keeps the tree mounted behind
- * `visibility` so open/close never remounts content. Card geometry is the
- * strip brief's (SB-D1): 224 px, capped by 40vw, one internal scroll region
- * inside min(70vh, 520px). */
+ * `visibility` so open/close never remounts content. Card geometry (SB-D1's
+ * width leg, owner-instructed widening, 2026-10-13 feedback round): the card
+ * is wide enough for the longest registry feature name at its chip's own
+ * 12 px mono type (measured: 216.7 px text + 16 px chip padding = 232.7 px)
+ * next to its value chip, over the body's padding and a classic scrollbar
+ * band — ≈349 px needed, shipped as 352 px, the same figure the Known
+ * Conflicts report card ships — bounded by the viewport with the anchor's two
+ * 16 px margins (`min(<needed>, calc(100vw - 32px))`); a viewport narrower
+ * than the need wins the bound, honestly narrower, never unbounded. One
+ * internal scroll region inside min(70vh, 520px). */
 
 .ins-card {
   position: absolute;
@@ -232,8 +239,7 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  width: 224px;
-  max-width: min(224px, 40vw);
+  width: min(352px, calc(100vw - 32px));
   max-height: min(70vh, 520px);
   box-sizing: border-box;
   border-radius: 8px;
@@ -387,15 +393,17 @@
   gap: 4px;
 }
 
-/* One row: the state chip + its evidence count. Static chips have no hover
- * or press response at all (motion-budget discipline) — the tooltip is the
- * row's whole interactivity. */
+/* One row: the state chip + its evidence value, one row to a line (every
+ * feature name renders whole — the widening derives from these chips), the
+ * value dropping to its own line past a viewport-bound card rather than
+ * squeezing a name. Static chips have no hover or press response at all
+ * (motion-budget discipline) — the tooltip is the row's whole interactivity. */
 .ins-row {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
-  min-width: 0;
-  max-width: 100%;
+  gap: 4px;
 }
 .ins-chip {
   overflow: hidden;
@@ -432,11 +440,22 @@
   background: var(--status-neutral-soft);
   color: var(--status-neutral);
 }
-.ins-count {
+/* The evidence value: its own soft chip (SB-D5's informational pair), a real
+ * second element at the fixed 4 px row gap beside the label — the value reads
+ * separate on every row state, applied or not (the owner feedback that replace
+ * the bare muted count-text abutting the chip). Informational like the brief's
+ * value slot read: no state claim, just the evidence number. */
+.ins-value {
   flex: none;
-  font: 400 10px/1 var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--status-info-soft);
+  color: var(--status-info);
+  font: 500 10px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--fg-muted);
 }
 
 /* The pending/failed body copies (the KC state-lines pattern). */
