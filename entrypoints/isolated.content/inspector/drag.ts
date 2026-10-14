@@ -24,6 +24,12 @@
  * re-derives against the LIVE box, which keeps the follow exact when the
  * card grows mid-drag (rows arriving) and keeps the clamp honest.
  *
+ * Two shape reads separate two truths: the live box (the animated
+ * presentation — the drag's source, since 1:1 pointer follow is the drag's
+ * own contract) and the resting box (the transform-invariant layout — the
+ * `reclamp` source, since a clamp must target the choreography's end
+ * geometry, not the pose a mid-entrance sample happens to present).
+ *
  * Scroll stance (`SB-D16`): positions are viewport numbers re-clamped
  * against the live viewport on every move — a wheel/scroll during a drag
  * needs no handling at all (clamp-and-follow; the fixed chrome holds its
@@ -66,7 +72,19 @@ export const DRAG_TUNING = Object.freeze({
    * figure gone, the drag-time clamp and the brief's drop clamp are one
    * geometry.
    */
-  containmentMarginPx: 4
+  containmentMarginPx: 4,
+  /**
+   * The re-clamp's measurement quantum (px): a computed {@link DragController.reclamp}
+   * delta under this figure is the resting read's integer quantization
+   * (CSSOM-View serves `offset*` as longs, ±½ px per value), never intent —
+   * masked, so an already-settled pose stays idempotent across repeated
+   * triggers instead of micro-jittering < 1 px on every one. One px is the
+   * plus of a position/size quantization pair (≤ ½ px each); a masked move
+   * only shortens the styled 4 px air (any margin was polish — the masked
+   * pose stays fully inside the viewport, ≥ 3 px off every edge), so the
+   * owner's no-part-offscreen binding never yields to the mask.
+   */
+  reclampQuantumPx: 1
 });
 
 /**
@@ -102,13 +120,24 @@ export interface DragMachineDeps {
   /** The live viewport, read per call (each move re-clamps against it). */
   readViewport(): ViewportSize;
   /**
-   * The VISIBLE chrome shape's live box — the pill while the card is closed,
-   * the open card itself (getBoundingClientRect's shape); null once its
-   * element is gone (dead chrome). The resting box is what `reclamp` holds
-   * inside the viewport; during a drag the grabbed shape is the visible
-   * one, so its reads agree.
+   * The VISIBLE chrome shape's live box (getBoundingClientRect's shape) —
+   * the pill while the card is closed, the open card itself; null once its
+   * element is gone (dead chrome). The drag path's truth: each follow move
+   * re-derives against it, so the dragged shape tracks the pointer 1:1 in
+   * whatever pose it currently presents.
    */
   readBox(): DragBox | null;
+  /**
+   * The VISIBLE chrome shape's RESTING box: the post-choreography layout
+   * geometry in viewport coordinates, transform-invariant — the read
+   * `reclamp` clamps. The live {@link readBox} presents however a running
+   * entrance/exit poses it (scale, translate), which a settle-time clamp
+   * must not treat as truth; the resting box is the layout the choreography
+   * ends at. Null once either the shape or the chrome is missing — no
+   * fallback to the live read: an unavailable resting box simply disables
+   * the re-clamp (the same degradation the machine takes on a dead chrome).
+   */
+  readRestingBox(): DragBox | null;
   /**
    * Apply the chrome's drag translate (px). `null` means "no translate":
    * the untouched stylesheet anchor — exactly what a first-drag cancel
@@ -291,8 +320,12 @@ export function createDragController(deps: DragMachineDeps): DragController {
 
     reclamp() {
       if (drag !== null) return false; // A live drag owns the position; its moves re-clamp.
-      const box = deps.readBox();
-      if (box === null) return false; // A dead chrome has nothing to hold.
+      // The resting layout box is the authority here: the re-clamp targets
+      // the choreography's END geometry, never the mid-flight pose the live
+      // rect happens to present at the sample (an entrance's scale/translate
+      // would distort both the clamp and its effect by whole px).
+      const box = deps.readRestingBox();
+      if (box === null) return false; // No honest layout read: no clamp (never a live fallback).
       const clamped = clampDragPosition(
         { left: box.left, top: box.top },
         box,
@@ -305,19 +338,38 @@ export function createDragController(deps: DragMachineDeps): DragController {
         x: clamped.left - (box.left - (applied?.x ?? 0)),
         y: clamped.top - (box.top - (applied?.y ?? 0))
       };
-      // Identity answers are not writes. The untouched anchor answers as the
-      // zero translate: the stylesheet bottom-right anchor IS position
-      // {0, 0} (custom properties unset), and a settled-at-rest position is
-      // already tracked in `applied`. Zero results on a translated chrome
-      // restore the anchor as unset — the stylesheet anchor stays the one
-      // resting truth.
+      // Identity answers are not writes — the exact fast path. The untouched
+      // anchor answers as the zero translate: the stylesheet bottom-right
+      // anchor IS position {0, 0} (custom properties unset), and a
+      // settled-at-rest position is already tracked in `applied`. Zero
+      // results on a translated chrome restore the anchor as unset — the
+      // stylesheet anchor stays the one resting truth.
       const isAnchor = next.x === 0 && next.y === 0;
       if (applied === null) {
         if (isAnchor) return false;
       } else if (applied.x === next.x && applied.y === next.y) {
         return false;
       }
-      applied = isAnchor ? null : next;
+      // Under the exact answer, a sub-quantum target is measurement residue,
+      // not intent: the resting read serves whole px (offset* are CSSOM
+      // longs) while the machine's translate is float, so a box already
+      // settled at a bound re-reads up to ~1 px past it and would otherwise
+      // micro-jitter a fresh position write on every trigger. Mask each
+      // axis against the current pose (the untouched anchor is numerically
+      // translate {0, 0}) — the masked pose never leaves the viewport by
+      // construction: DRAG_TUNING.containmentMarginPx keeps ≥ 3 px of real
+      // air under a fully masked (quantum ≤ 1 px) bound.
+      const epsilon = DRAG_TUNING.reclampQuantumPx;
+      const base = applied ?? { x: 0, y: 0 };
+      const maskedX = Math.abs(next.x - base.x) < epsilon ? base.x : next.x;
+      const maskedY = Math.abs(next.y - base.y) < epsilon ? base.y : next.y;
+      const maskedIsAnchor = maskedX === 0 && maskedY === 0;
+      if (applied === null) {
+        if (maskedIsAnchor) return false; // the masked residue kept the anchor
+      } else if (applied.x === maskedX && applied.y === maskedY) {
+        return false; // every axis was residue: nothing to write
+      }
+      applied = maskedIsAnchor ? null : { x: maskedX, y: maskedY };
       deps.applyPosition(applied);
       return true;
     },

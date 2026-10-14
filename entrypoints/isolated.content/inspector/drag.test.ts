@@ -1,8 +1,9 @@
 /**
  * The drag machine: the slop→drag boundary, the bounded follow (clamped
  * edges, exact 1:1 offsets, live re-basing on shape growth and viewport
- * shrink), the settle/cancel/restore paths, the click suppression, and the
- * wrong-pointer/wrong-button immunity — over recording seams, no DOM.
+ * shrink), the settle/cancel/restore paths, the click suppression, the
+ * wrong-pointer/wrong-button immunity, and the at-rest `reclamp` over the
+ * resting layout box — over recording seams, no DOM.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -28,6 +29,15 @@ const MARGIN = DRAG_TUNING.containmentMarginPx;
  * moves when the shape grows, like the real anchored card), the applied
  * translate moves the live box (getBoundingClientRect includes transforms),
  * and the viewport is settable per test.
+ *
+ * Two shape reads model the machine's two geometric truths independently:
+ * `readBox` is the LIVE rect (the animated presentation — a test may bend it
+ * away from the layout with `setLiveDistortion`, a mid-choreography pose),
+ * and `readRestingBox` is the offset-derived layout truth — sizes rounded
+ * to whole px like the CSSOM fixed `offset*` longs, position carrying the
+ * fixed per-pose quantization residual `setRestingOffset` models. Killing
+ * the resting read alone (`setRestingUnavailable`) models a vanished chrome
+ * while the live rect still answers.
  */
 function recordingSeams(initialSize: { width: number; height: number }): {
   deps: DragMachineDeps;
@@ -37,17 +47,28 @@ function recordingSeams(initialSize: { width: number; height: number }): {
   affordances: boolean[];
   /** The DOM-honest live box (the shape + its translate). */
   liveBox(): DragBox;
+  /** The DOM-honest resting box (the settled pose; nulls included). */
+  restingBox(): DragBox | null;
   /** Set the shape's extent (the card grows when its rows arrive mid-drag). */
   growShape(width: number, height: number): void;
   /** Set the live viewport (a resize mid-drag re-clamps). */
   setViewport(viewport: ViewportSize): void;
   /** Detach the shape (a disable mid-drag: reads answer null). */
   setShapeDetached(detached: boolean): void;
+  /** Bend the live rect away from the layout (a mid-choreography pose). */
+  setLiveDistortion(distortion: { x: number; y: number }): void;
+  /** The resting read's constant offset-quantization residual per pose. */
+  setRestingOffset(offset: { left: number; top: number }): void;
+  /** Make only the resting read answer null (the chrome's reads are gone). */
+  setRestingUnavailable(unavailable: boolean): void;
 } {
   let shape = { ...initialSize };
   let viewport = REST_VIEWPORT;
   let translate: { x: number; y: number } | null = null;
   let detached = false;
+  let restingUnavailable = false;
+  let distortion = { x: 0, y: 0 };
+  let restingOffset = { left: 0, top: 0 };
   const applied: Array<{ x: number; y: number } | null> = [];
   const affordances: boolean[] = [];
   return {
@@ -60,7 +81,25 @@ function recordingSeams(initialSize: { width: number; height: number }): {
           left: viewport.width - ANCHOR_PX - shape.width,
           top: viewport.height - ANCHOR_PX - shape.height
         };
-        return { left: untrans.left + offset.x, top: untrans.top + offset.y, ...shape };
+        return {
+          left: untrans.left + offset.x + distortion.x,
+          top: untrans.top + offset.y + distortion.y,
+          ...shape
+        };
+      },
+      readRestingBox: () => {
+        if (detached || restingUnavailable) return null;
+        const offset = translate ?? { x: 0, y: 0 };
+        const untrans = {
+          left: viewport.width - ANCHOR_PX - shape.width,
+          top: viewport.height - ANCHOR_PX - shape.height
+        };
+        return {
+          left: untrans.left + offset.x + restingOffset.left,
+          top: untrans.top + offset.y + restingOffset.top,
+          width: Math.round(shape.width),
+          height: Math.round(shape.height)
+        };
       },
       applyPosition: (position) => {
         applied.push(position);
@@ -76,9 +115,20 @@ function recordingSeams(initialSize: { width: number; height: number }): {
       // Mirrors readBox exactly — the tests read the DOM-honest truth only.
       const offset = translate ?? { x: 0, y: 0 };
       return {
-        left: viewport.width - ANCHOR_PX - shape.width + offset.x,
-        top: viewport.height - ANCHOR_PX - shape.height + offset.y,
+        left: viewport.width - ANCHOR_PX - shape.width + offset.x + distortion.x,
+        top: viewport.height - ANCHOR_PX - shape.height + offset.y + distortion.y,
         ...shape
+      };
+    },
+    restingBox: () => {
+      // Mirrors readRestingBox exactly (nulls included).
+      if (detached || restingUnavailable) return null;
+      const offset = translate ?? { x: 0, y: 0 };
+      return {
+        left: viewport.width - ANCHOR_PX - shape.width + offset.x + restingOffset.left,
+        top: viewport.height - ANCHOR_PX - shape.height + offset.y + restingOffset.top,
+        width: Math.round(shape.width),
+        height: Math.round(shape.height)
       };
     },
     growShape: (width, height) => {
@@ -89,6 +139,15 @@ function recordingSeams(initialSize: { width: number; height: number }): {
     },
     setShapeDetached: (value) => {
       detached = value;
+    },
+    setLiveDistortion: (next) => {
+      distortion = next;
+    },
+    setRestingOffset: (next) => {
+      restingOffset = next;
+    },
+    setRestingUnavailable: (value) => {
+      restingUnavailable = value;
     }
   };
 }
@@ -505,6 +564,137 @@ describe('createDragController', () => {
       // this viewport, the box parks at the left/top margins.
       expect(box.left).toBe(MARGIN);
       expect(box.top).toBe(MARGIN);
+    });
+
+    it('a mid-choreography live breach moves nothing when the resting pose is inside', () => {
+      // The resting seam's whole point: clamping targets the choreography's
+      // END geometry. A live rect read mid-entrance (distorted far past the
+      // edges) is not the chrome's settled truth — the settled box sits
+      // inside, so the re-clamp answers false and writes nothing.
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      seams.setLiveDistortion({ x: -1500, y: -900 });
+      expect(seams.liveBox().left, 'the live rect reads breached').toBeLessThan(0);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toEqual([]);
+    });
+
+    it('reclamp clamps the settled geometry: applyPosition gets the resting-derived translate', () => {
+      // The owner scenario: the card opens beyond the top edge while its
+      // entrance still poses the LIVE rect inside. The re-clamp must target
+      // the resting box's containment — its translate, computed from the
+      // settled geometry only.
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      // A real drag parked the pill at the top margin, released.
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 300, y: start.y - 5000 }, pointerId: 1 });
+      drag.settle(1);
+      // Parked: the box's top sits at the margin, the anchor's right corner intact.
+      expect(seams.liveBox().top).toBe(MARGIN);
+      // The card opens (rows landed): the resting box (bottom-anchored)
+      // now breaches the top edge — and the mid-entrance pose shows the
+      // LIVE rect safely inside.
+      seams.growShape(224, 420);
+      seams.setLiveDistortion({ x: 0, y: 430 });
+      expect(seams.liveBox().top, 'the animated pose reads inside').toBeGreaterThan(0);
+      // The parked pose IS the resting one here (resting = live minus distortion).
+      expect(drag.reclamp()).toBe(true);
+      // The resting-derived translate: the settled card's top (breaching at
+      // the parked pose's 376-px offset) parks exactly at the margin — its
+      // y = 4 − ((364 − 740) − (−740)) = −360. Nothing LIVE entered the
+      // math: the animated pose read inside, so a live-derived clamp would
+      // not have written at all.
+      expect(seams.applied.at(-1)).toEqual({ x: -300, y: -360 });
+      // The SETTLED card is held at the margin now; idempotent at rest with
+      // exact reads: the second call writes nothing.
+      expect(seams.restingBox()?.top).toBe(MARGIN);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(2);
+    });
+
+    it('a live drag keeps the live-box follow even while the resting box deviates', () => {
+      // The drag's own truth is 1:1 pointer follow — every move clamps the
+      // LIVE box (the animated presentation is what the user manipulates);
+      // the resting seam serves the at-rest re-clamp only.
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 300, y: start.y - 5000 }, pointerId: 1 });
+      drag.settle(1);
+      seams.growShape(224, 420);
+      seams.setLiveDistortion({ x: -80, y: 430 });
+      drag.beginGrab({ point: centerOf(seams.liveBox()), pointerId: 2 });
+      drag.trackMove({ point: { x: -5000, y: -5000 }, pointerId: 2 });
+      // The landed translate pins the distorted LIVE box at the margins
+      // (its y −790 = 4 − (54 + 740); a resting-derived write would land
+      // −360, its x −1036 against the live −956 — straight from the live
+      // box math).
+      expect(seams.applied.at(-1)).toEqual({ x: -956, y: -790 });
+      expect(seams.liveBox().left).toBe(MARGIN);
+      expect(seams.liveBox().top).toBe(MARGIN);
+    });
+
+    it('a null resting read is no clamp; the live drag path stays fully alive', () => {
+      // Deliberate fallback: the resting read is the re-clamp's sole
+      // authority — null (no honest layout read) means no clamp, never a
+      // fallback to the live rect; the draggable paths read the live box
+      // either way.
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      seams.setRestingUnavailable(true);
+      seams.setLiveDistortion({ x: -1500, y: -900 });
+      expect(seams.liveBox().left, 'the live rect would clamp').toBeLessThan(0);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toEqual([]);
+      // The drag itself runs on the live box as always: grab, far move —
+      // one clamp write derived from the live rect; then at rest the
+      // re-clamp is the honest no-op it is (the resting read is gone).
+      seams.setLiveDistortion({ x: 0, y: 0 });
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: -5000, y: -5000 }, pointerId: 1 });
+      expect(seams.applied).toHaveLength(1);
+      expect(seams.liveBox().left).toBe(MARGIN);
+      drag.settle(1);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(1);
+    });
+
+    it('a sub-quantum reclamp delta is offset residue, not movement (idempotence under quantization)', () => {
+      const epsilon = DRAG_TUNING.reclampQuantumPx;
+      // A parked pose flush against the containment margin, then the
+      // resting read gains its constant offset-quantization residual: the
+      // rounded offset* values put the box a hair past the margin bound, so
+      // every naive re-clamp "moves" sub-quantum — a spurious position
+      // write on every trigger. The mask answers residue, not movement.
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 300, y: start.y - 5000 }, pointerId: 1 });
+      drag.settle(1);
+      // The card grew: its resting box breaches the top edge — a real
+      // re-clamp (one write), whose pose the quantized trigger then reads.
+      seams.growShape(224, 420);
+      seams.setLiveDistortion({ x: 0, y: 430 });
+      expect(drag.reclamp()).toBe(true);
+      const appliedCount = seams.applied.length;
+      // Just UNDER the quantum: masked, twice — no writes at all.
+      seams.setRestingOffset({ left: 0, top: -(epsilon - 0.1) });
+      expect(drag.reclamp()).toBe(false);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(appliedCount);
+      // Just OVER it: a real movement, written exactly once — and the
+      // follow-up read converges (the quantized value then sits inside the
+      // bound), so the second call writes nothing more.
+      seams.setRestingOffset({ left: 0, top: -(epsilon + 0.1) });
+      expect(drag.reclamp()).toBe(true);
+      expect(seams.applied).toHaveLength(appliedCount + 1);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(appliedCount + 1);
     });
   });
 
