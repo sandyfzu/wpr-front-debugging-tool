@@ -34,14 +34,17 @@ import {
   type HeaderRowVM,
   type HeadersViewModel
 } from '../../../../lib/panel/headers-view-model';
+import { shownHeader, type ShownHeader } from '../../../../lib/panel/redaction';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
+import { WithheldValue } from '../withheld-value';
 
 /** One preview row: its stable key and the header it renders. */
 export interface PreviewRow {
   /** `<group>:<lowercase name>#<occurrence>` — stable across refreshes. */
   readonly key: string;
-  readonly header: HeaderRowVM;
+  /** The header through the panel's redaction rule (secrets withheld). */
+  readonly header: ShownHeader;
 }
 
 /** One rendered group: its label (null when a lone group needs none) and rows. */
@@ -109,7 +112,7 @@ export function previewModel(model: HeadersViewModel, limit = PREVIEW_ROW_LIMIT)
       const name = header.name.toLowerCase();
       const occurrence = seen.get(name) ?? 0;
       seen.set(name, occurrence + 1);
-      rows.push({ key: `${key}:${name}#${occurrence.toString()}`, header });
+      rows.push({ key: `${key}:${name}#${occurrence.toString()}`, header: shownHeader(header) });
     }
     return { key, label: labelled ? GROUP_LABELS[key] : null, rows };
   };
@@ -131,12 +134,14 @@ export interface HeadersPreviewProps {
 /**
  * One header row: name above value (two columns from the regular tier),
  * the hint under the value. Names and values break anywhere (they are
- * tokens, not prose); the hint wraps as prose.
+ * tokens, not prose); the hint wraps as prose. A withheld secret renders
+ * through the shared `WithheldValue`, exactly as on the Headers & Cookies
+ * page.
  *
- * @param props.header The typed header row.
+ * @param props.header The header row, through the redaction rule.
  * @returns The list item.
  */
-function HeaderRow(props: { header: HeaderRowVM }): JSX.Element {
+function HeaderRow(props: { header: ShownHeader }): JSX.Element {
   return (
     <li class="border-b border-line-1 last:border-b-0">
       <KeyValue
@@ -144,7 +149,12 @@ function HeaderRow(props: { header: HeaderRowVM }): JSX.Element {
         stacked
         class="py-1.5 font-mono break-all @regular:grid @regular:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] @regular:gap-x-3"
       >
-        <span class="block text-fg-primary">{props.header.value ?? '—'}</span>
+        <Show
+          when={props.header.redacted && props.header.value}
+          fallback={<span class="block text-fg-primary">{props.header.value ?? '—'}</span>}
+        >
+          {(value) => <WithheldValue value={value()} />}
+        </Show>
         <Show when={props.header.hint}>
           {(hint) => (
             <span class="mt-0.5 block font-sans text-2xs text-fg-secondary break-normal wrap-break-word">
@@ -239,7 +249,7 @@ export function HeadersPreview(props: HeadersPreviewProps): JSX.Element {
                     undefined,
                     { equals: sameKeys }
                   );
-                  const rowOf = (rowKey: string): HeaderRowVM | undefined =>
+                  const rowOf = (rowKey: string): ShownHeader | undefined =>
                     group()?.rows.find((row) => row.key === rowKey)?.header;
                   return (
                     <div data-fdt-headers-group={key}>
