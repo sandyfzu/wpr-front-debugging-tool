@@ -192,15 +192,30 @@ function decodeSegment(segment: string): string {
 /** Longest text a hover `title` carries (a 4,096-char URL tooltip covers the screen). */
 export const TITLE_MAX = 300;
 
+/** Longest resource name echoed inside a control's accessible name. */
+export const LABEL_NAME_MAX = 60;
+
 /**
- * Cap a hover-title text, eliding the rest with `…` (cut by code point).
+ * Cap a text at `max` code points, eliding the rest with `…` (never splitting
+ * a surrogate pair).
  *
  * @param text The full text.
- * @returns The text, or its first {@link TITLE_MAX} code points plus `…`.
+ * @param max The longest kept length, in code points.
+ * @returns The text, or its first `max` code points plus `…`.
+ */
+export function capText(text: string, max: number): string {
+  const points = Array.from(text);
+  return points.length > max ? `${points.slice(0, max).join('')}…` : text;
+}
+
+/**
+ * Cap a hover-title text (see {@link TITLE_MAX}).
+ *
+ * @param text The full text.
+ * @returns The capped text.
  */
 export function capTitle(text: string): string {
-  const points = Array.from(text);
-  return points.length > TITLE_MAX ? `${points.slice(0, TITLE_MAX).join('')}…` : text;
+  return capText(text, TITLE_MAX);
 }
 
 /**

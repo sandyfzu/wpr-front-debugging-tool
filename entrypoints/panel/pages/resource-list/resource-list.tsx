@@ -64,10 +64,10 @@ export interface ResourceRow {
 const LIST_REGION = 'rounded-md border border-line-1 bg-surface-1';
 
 /**
- * The list's width cap at the wide tier: past ~72 rem a row's name and its
+ * The list's width cap at the wide tier: past ~64 rem a row's name and its
  * badge drift too far apart to read as one line.
  */
-const LIST_WIDTH = '@wide:max-w-6xl';
+export const LIST_WIDTH = '@wide:max-w-5xl';
 
 /** Props of {@link ResourceListPage}. */
 export interface ResourceListPageProps<Row extends ResourceRow, Id extends string> {

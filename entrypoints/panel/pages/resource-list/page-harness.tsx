@@ -6,7 +6,7 @@
  * module imports this file.
  */
 import { render } from '@solidjs/testing-library';
-import { createSignal, type Component, type JSX } from 'solid-js';
+import { createSignal, untrack, type Component, type JSX } from 'solid-js';
 import { vi } from 'vitest';
 import type { VirtualItem, VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
@@ -52,11 +52,13 @@ export interface PageHarness {
  *
  * @param Page The page component (receives the virtualizer double).
  * @param data The payload to serve.
+ * @param virtualizer The virtualizer double (default: every row, in step).
  * @returns The harness handles.
  */
 export function renderPage(
   Page: Component<{ createVirtualizer?: VirtualizerFactory }>,
-  data: FdtData
+  data: FdtData,
+  virtualizer: VirtualizerFactory = renderAllRows
 ): PageHarness {
   const [state, setState] = createSignal<DataState>({ status: 'ready', data, fetchedAt: 0 });
   const store: FdtDataStore = {
@@ -70,7 +72,7 @@ export function renderPage(
   const view = render((): JSX.Element => (
     <FdtDataContext.Provider value={store}>
       <SearchContext.Provider value={search}>
-        <Page createVirtualizer={renderAllRows} />
+        <Page createVirtualizer={virtualizer} />
       </SearchContext.Provider>
     </FdtDataContext.Provider>
   ));
@@ -82,6 +84,52 @@ export function renderPage(
     refresh(next) {
       setState({ status: 'refreshing', data: next, requestedAt: 1 });
       setState({ status: 'ready', data: next, fetchedAt: 2 });
+    }
+  };
+}
+
+/** A virtualizer double whose window only moves when the test says so. */
+export interface LaggedVirtualizer {
+  /** Pass as the page's `createVirtualizer`. */
+  readonly factory: VirtualizerFactory;
+  /** Catch the window up with the list's current count and keys. */
+  flush(): void;
+}
+
+/**
+ * A double that lags like the real virtualizer: after a filter change the
+ * page's data moves at once while the window still lists the previous
+ * indices/keys until {@link LaggedVirtualizer.flush} — the moment an
+ * index-based row lookup would name the wrong row and remount it.
+ *
+ * @returns The factory and its flush handle.
+ */
+export function laggedVirtualizer(): LaggedVirtualizer {
+  const handle = { flush: (): void => undefined };
+  const factory: VirtualizerFactory = (options) => {
+    const snapshot = (): VirtualItem[] =>
+      Array.from({ length: options.count }, (_, index) => ({
+        key: options.getItemKey?.(index) ?? index,
+        index,
+        start: index * DOUBLE_ROW_PX,
+        end: (index + 1) * DOUBLE_ROW_PX,
+        size: DOUBLE_ROW_PX,
+        lane: 0
+      }));
+    const [items, setItems] = createSignal(untrack(snapshot));
+    handle.flush = () => {
+      setItems(untrack(snapshot));
+    };
+    return {
+      getVirtualItems: items,
+      getTotalSize: () => items().length * DOUBLE_ROW_PX,
+      measureElement: () => undefined
+    };
+  };
+  return {
+    factory,
+    flush: () => {
+      handle.flush();
     }
   };
 }

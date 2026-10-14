@@ -8,7 +8,8 @@ import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { makeFdtData, makeLazyImage } from '../../state/fixtures';
-import { renderPage, type PageHarness } from '../resource-list/page-harness';
+import { laggedVirtualizer, renderPage, type PageHarness } from '../resource-list/page-harness';
+import { LIST_WIDTH } from '../resource-list/resource-list';
 import { LazyloadPage } from './page';
 
 /** A payload with the given images and lazyload presence. */
@@ -303,6 +304,31 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(items).toEqual([hero, gallery]);
     expect(items.map((item) => item.getAttribute('aria-setsize'))).toEqual(['2', '2']);
     expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['1', '2']);
+  });
+
+  it('keeps surviving rows mounted while the virtualizer lags a chip change (rows by key)', () => {
+    const lagged = laggedVirtualizer();
+    const page = renderPage(
+      LazyloadPage,
+      withImages([
+        makeLazyImage({ src: 'https://a/0.jpg', lazyloadDetected: false }),
+        makeLazyImage({ src: 'https://a/1.jpg', lazyloadDetected: true }),
+        makeLazyImage({ src: 'https://a/2.jpg', lazyloadDetected: true })
+      ]),
+      lagged.factory
+    );
+    const rowNamed = (name: string): Element | undefined =>
+      screen.getAllByRole('listitem').find((item) => item.textContent.includes(name));
+    const before = rowNamed('2.jpg');
+    fireEvent.click(chip(page.root, 'lazyloaded'));
+    lagged.flush();
+    expect(rowNamed('2.jpg')).toBe(before);
+    expect(rowNames(page.root)).toEqual(['1.jpg', '2.jpg']);
+  });
+
+  it('caps the list width at the wide tier', () => {
+    renderPage(LazyloadPage, fixture());
+    expect(screen.getByRole('list', { name: 'Images' }).className).toContain(LIST_WIDTH);
   });
 
   it('notes a capped list only when the list sits at its cap', () => {

@@ -22,7 +22,7 @@ import { Badge } from '../../../../components/ui/badge';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { cn } from '../../../../utils/cn';
 import { ExternalLink } from '../page-frame';
-import { capTitle, resourceName } from './resource-list-view';
+import { capText, capTitle, LABEL_NAME_MAX, resourceName } from './resource-list-view';
 
 /** Props of {@link ResourceLink}. */
 export interface ResourceLinkProps {
@@ -51,12 +51,15 @@ export interface ResourceLinkProps {
  * both, since what lands on the clipboard is not the page's full URL.
  *
  * @param noun What the URL is ("Image URL").
- * @param name The resource's display name.
+ * @param name The resource's display name (capped at {@link LABEL_NAME_MAX} code points).
  * @param clipped Whether the URL was cut at its cap.
  * @returns The copy label.
  */
 export function copyLabel(noun: string, name: string, clipped: boolean): string {
-  return clipped ? `${noun} (${name}, clipped)` : `${noun} (${name})`;
+  // A clipped URL's name can run to thousands of characters: a control name
+  // that long is unusable in a screen reader's controls list and a toast.
+  const shown = capText(name, LABEL_NAME_MAX);
+  return clipped ? `${noun} (${shown}, clipped)` : `${noun} (${shown})`;
 }
 
 /** The URL line's muted look: accent only on hover/focus, so names lead the row. */

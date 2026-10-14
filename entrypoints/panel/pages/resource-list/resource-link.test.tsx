@@ -147,4 +147,10 @@ describe('copyLabel', () => {
     expect(copyLabel('Image URL', 'hero.webp', false)).toBe('Image URL (hero.webp)');
     expect(copyLabel('Image URL', 'hero.webp', true)).toBe('Image URL (hero.webp, clipped)');
   });
+
+  it('caps the name inside the label (a clipped 4 KB URL stays a short name)', () => {
+    const label = copyLabel('Image URL', 'a'.repeat(4096), true);
+    expect(label).toBe(`Image URL (${'a'.repeat(60)}…, clipped)`);
+    expect(copyLabel('URL', 'b'.repeat(60), false)).toBe(`URL (${'b'.repeat(60)})`);
+  });
 });
