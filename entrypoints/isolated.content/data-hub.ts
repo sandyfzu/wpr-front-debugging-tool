@@ -49,19 +49,24 @@ const ALL_SCRIPTS_LOADED_EVENT = 'rocket-allScriptsLoaded';
 /**
  * The page-data pass's capture wait point: the one moment the serialized page
  * becomes the pass's source, held as a promise so the same-context reader can
- * join it later. Pure over injected seams, so its one failure mode is pinned
- * by unit test: an invalidation before the parser-ready moment must resolve
- * the wait anyway — the context-owned DOMContentLoaded listener is removed
- * with its context, and an unresolved waiter would hang every same-context
- * reader of a context that died on boot.
+ * join it later. Pure over injected seams, so its two rules are pinned by
+ * unit test:
+ *
+ * - an already-past parser-ready moment settles immediately (a boot-time
+ *   reader answers from a captured page);
+ * - an invalidation before the caller completed the capture releases the
+ *   waiter — the resolution belongs to the caller's own capture sequence
+ *   (`resolve()` after its serialization step), never to an independent
+ *   listener racing it: a waiter released before the source exists reads
+ *   "no data" and locks a presentation state behind a failed boot. (The
+ *   audit round's no-hang pin stays: an invalidated-before-capture context
+ *   resolves through the teardown trigger.)
  */
 
 /** The wait point's context seams (the real `ctx` satisfies them). */
 export interface CaptureWaitPointDeps {
   /** Whether the parser-ready moment already happened at setup time. */
   pastParserReady(): boolean;
-  /** Register the parser-ready trigger (the context-owned DCL listener). */
-  registerParserReady(callback: () => void): void;
   /** Register the teardown trigger (fires whenever the context dies). */
   registerInvalidated(callback: () => void): void;
 }
@@ -76,13 +81,17 @@ export interface CaptureWaitPoint {
 
 /**
  * Build the capture wait point. Arm-first: the invalidation trigger is
- * registered before anything else, so a context whose world ends between
- * setup and the parser-ready moment still releases its waiter — the exact
- * no-hang pin the audit round demanded.
+ * registered immediately, so a context whose world ends between setup and the
+ * capture still releases its waiter — the exact no-hang pin the audit round
+ * demanded. The open waiter's only other release is the caller's `resolve()`,
+ * which must be called after the capture step completed (ordering by
+ * construction: no second listener can outrun it).
  *
  * @param deps The context seams.
  */
-export function createCaptureWaitPoint(deps: CaptureWaitPointDeps): CaptureWaitPoint {
+export function createCaptureWaitPoint(
+  deps: Pick<CaptureWaitPointDeps, 'pastParserReady' | 'registerInvalidated'>
+): CaptureWaitPoint {
   let settleCapture!: () => void;
   const settled = new Promise<void>((resolve) => {
     settleCapture = resolve;
@@ -94,16 +103,7 @@ export function createCaptureWaitPoint(deps: CaptureWaitPointDeps): CaptureWaitP
   });
   if (deps.pastParserReady()) {
     settleCapture();
-    return {
-      settled,
-      resolve: () => {
-        settleCapture();
-      }
-    };
   }
-  deps.registerParserReady(() => {
-    settleCapture();
-  });
   return {
     settled,
     resolve: () => {
@@ -255,18 +255,15 @@ export function setupDataHub(ctx: ContentScriptContext): void {
    */
   const captureWatchPoint = createCaptureWaitPoint({
     pastParserReady: () => document.readyState !== 'loading',
-    registerParserReady: (callback) => {
-      ctx.addEventListener(document, 'DOMContentLoaded', callback);
-    },
     registerInvalidated: (callback) => {
       ctx.onInvalidated(callback);
     }
   });
   const onParserReady = (): void => {
     capture();
-    // Release the wait point before the follow-on work: a same-context
-    // reader joins the pass's source the moment it exists (and the machine's
-    // release is idempotent).
+    // Release the wait point after the capture (and its resolution belongs to
+    // this sequence — no second listener may outrun the source's existence):
+    // a same-context reader joins the pass's source from here on (idempotent).
     captureWatchPoint.resolve();
     void ensureHeaders().then(() => {
       notifyPanel();

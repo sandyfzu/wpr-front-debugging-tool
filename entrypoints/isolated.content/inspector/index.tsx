@@ -158,11 +158,41 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     });
   };
 
+  /**
+   * The context's liveness as a fresh read per call: it is a getter over
+   * mutable state that flips during the awaited windows below, so a static
+   * read would lie about the race this code exists for.
+   */
+  const invalidNow = (): boolean => ctx.isInvalid;
+
+  /**
+   * `document.body` as the platform can actually serve it during this boot:
+   * lib.dom@5.9 types `Document.body` non-nullable, but a `document_start`
+   * content script observes `null` until the document builds.
+   */
+  const bodyOrNull = (): HTMLElement | null => document.body;
+
   /** Mount the widget once; later enable beats only move reactive state. */
   const mountIntoShadow = async (): Promise<void> => {
     if (shadowUi !== null || mountPending) return;
     mountPending = true;
     try {
+      // The page's anchor must exist first: the CS boots at document_start,
+      // where the body is still null and WXT's inline shadow UI has no
+      // anchor to attach to (the audited unmountable-boot — intermittent with
+      // boot speed). Wait for it behind the context's own lifecycle.
+      if (bodyOrNull() === null) {
+        await new Promise<void>((resolve) => {
+          ctx.addEventListener(document, 'DOMContentLoaded', () => {
+            if (!ctx.isInvalid) resolve();
+          });
+        });
+      }
+      if (invalidNow()) {
+        // A page whose world ended before its body settled: nothing mounts.
+        mountPending = false;
+        return;
+      }
       const created = await createShadowRootUi(ctx, {
         name: INSPECTOR_UI_NAME,
         position: 'inline',
@@ -193,7 +223,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
           pillElement = null;
         }
       });
-      if (ctx.isInvalid) {
+      if (invalidNow()) {
         // The mount resolved after invalidation: the short-lived host must
         // not outlive it (a dead context never keeps page DOM).
         created.remove();

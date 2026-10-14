@@ -526,15 +526,31 @@ siteTest.describe('site detection widget', () => {
         // cookie state is not a leg's input), then navigate.
         await loginAdminPage(adminPage);
         await adminPage.goto(`${SITE_URL}/wp-admin/plugins.php`, { waitUntil: 'load' });
-        await expect
-          .poll(
-            async () =>
-              await adminPage.evaluate(
-                (): boolean => document.querySelector('wpr-fdt-inspector') !== null
-              ),
-            { timeout: 10_000, intervals: [250, 500] }
-          )
-          .toBe(true);
+        try {
+          await expect
+            .poll(
+              async () =>
+                await adminPage.evaluate(
+                  (): boolean => document.querySelector('wpr-fdt-inspector') !== null
+                ),
+              { timeout: 10_000, intervals: [250, 500] }
+            )
+            .toBe(true);
+        } catch (mountFailure: unknown) {
+          // The mount ladder's known root (a doc_start boot racing the body
+          // anchor) is fixed in the widget's boot sequence, so a failure here
+          // is unexpected: report the one truth readable without touching the
+          // host page — the stored gate state — with the timeout as the cause.
+          throw new Error(
+            `strip mount failed; gate state ${JSON.stringify(
+              await extension.evaluateInWorker(async (key: string) => {
+                const stored = (await chrome.storage.sync.get([key]))[key];
+                return stored ?? null;
+              }, 'inspector-origins')
+            )}`,
+            { cause: mountFailure }
+          );
+        }
         await expect
           .poll(
             async () =>

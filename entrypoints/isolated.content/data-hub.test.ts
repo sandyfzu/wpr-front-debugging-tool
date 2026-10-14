@@ -92,26 +92,18 @@ describe('mergeErrorWords', () => {
 });
 
 describe('createCaptureWaitPoint', () => {
-  /** Recording seams: the two triggers fire on demand. */
+  /** Recording seams: the teardown trigger fires on demand. */
   function recordingDeps(options: { past: boolean }): {
-    deps: CaptureWaitPointDeps;
-    fireParserReady(): void;
+    deps: Pick<CaptureWaitPointDeps, 'pastParserReady' | 'registerInvalidated'>;
     fireInvalidated(): void;
   } {
-    const parserReady: Array<() => void> = [];
     const invalidated: Array<() => void> = [];
     return {
       deps: {
         pastParserReady: () => options.past,
-        registerParserReady: (callback) => {
-          parserReady.push(callback);
-        },
         registerInvalidated: (callback) => {
           invalidated.push(callback);
         }
-      },
-      fireParserReady: () => {
-        for (const callback of parserReady.splice(0, parserReady.length)) callback();
       },
       fireInvalidated: () => {
         for (const callback of invalidated.splice(0, invalidated.length)) callback();
@@ -124,7 +116,7 @@ describe('createCaptureWaitPoint', () => {
     await expect(point.settled).resolves.toBeUndefined();
   });
 
-  it('a pending wait releases on the resolve() call, idempotently', async () => {
+  it('a pending wait releases on the caller’s resolve() call, idempotently', async () => {
     const seams = recordingDeps({ past: false });
     const point = createCaptureWaitPoint(seams.deps);
     const settled = point.settled;
@@ -136,17 +128,20 @@ describe('createCaptureWaitPoint', () => {
     await expect(settled).resolves.toBeUndefined();
   });
 
-  it('the no-hang pin: invalidation before the parser-ready moment releases the waiter', async () => {
+  it('the no-hang pin: invalidation before the caller’s capture releases the waiter', async () => {
     const seams = recordingDeps({ past: false });
     const point = createCaptureWaitPoint(seams.deps);
     seams.fireInvalidated();
     await expect(point.settled).resolves.toBeUndefined();
   });
 
-  it('the parser-ready trigger releases the wait too, before any invalidation', async () => {
+  it('the wait stays pending while neither the caller’s resolve nor invalidation ran', async () => {
     const seams = recordingDeps({ past: false });
     const point = createCaptureWaitPoint(seams.deps);
-    seams.fireParserReady();
+    expect(
+      await Promise.race([point.settled.then(() => 'released'), Promise.resolve('pending')])
+    ).toBe('pending');
+    point.resolve();
     await expect(point.settled).resolves.toBeUndefined();
   });
 });
