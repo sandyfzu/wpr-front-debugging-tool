@@ -157,12 +157,17 @@ describe('the keyboard overlays in the shell', () => {
     });
   });
 
-  it('a question mark typed in the palette field stays a query', async () => {
+  it('a field keystroke (?, and the / primary shares the guard) stays a query', async () => {
     bootShellWithData();
     fireEvent.click(screen.getByRole('button', { name: 'Command palette' }));
     const field = await paletteField();
     fireEvent.keyDown(field, { key: '?', bubbles: true, cancelable: true });
     // No second dialog opened; the field keeps focus (the `?` is a query).
+    expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+    expect(document.activeElement?.getAttribute('role')).toBe('combobox');
+    // The primary rides the same guard at this render tier (the browser
+    // tier drives it through real input): `/` in the field is a query too.
+    fireEvent.keyDown(field, { key: '/', bubbles: true, cancelable: true });
     expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
     expect(document.activeElement?.getAttribute('role')).toBe('combobox');
   });

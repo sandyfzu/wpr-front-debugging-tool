@@ -7,19 +7,24 @@
  * Settings chord; owner-observed: `Shift+?` hides this panel behind the
  * Settings dialog).
  *
- * The chord's two residual facts the harness CAN decide live — recorded
- * here as evidence, with the real-DevTools interception leg staying manual
- * (the extension-page harness is a tab, not an embedded panel):
- * - raw `Shift+/` reaches the page as `Shift` + `/` keydowns (`event.key`
- *   values, no composed `?` at this input layer) and the overlay opens
- *   through the character match — the chord is `event.key`, never a layout
- *   assumption;
- * - the unshifted `'` — the reported layout's glyph on `/`'s key — matches
- *   nothing.
+ * The chord's residual facts the harness CAN decide live — recorded here
+ * as evidence, with the real-DevTools interception leg staying manual (the
+ * extension-page harness is a tab, not an embedded panel):
+ * - the `?` alias is synthesizable through real CDP input, both shapes:
+ *   a bare glyph press arrives as one `keydown {key:'?'}` (no Shift leg),
+ *   and holding Shift first composes the real two-keydown sequence
+ *   `Shift` + `?` — both open the overlay (pinned below);
+ * - raw `Shift+/` instead lands as `Shift` + `/` keydowns (the shifted
+ *   character never appears as a separate key value at that input layer)
+ *   and the overlay opens through the character match — the chord is
+ *   `event.key`, never a layout assumption;
+ * - the unshifted `'` — the reported layout's glyph on `/`'s key —
+ *   matches nothing.
  *
- * The `?`-alias keydown path (`event.key === '?'`, what a real US-layout
- * composition produces) is pinned at the event-dispatch tier in the unit
- * tests; nothing here can synthesize it through real CDP input.
+ * The 2026-10-13 audit round corrected this header's own earlier claim
+ * that the `?`-alias keydown "cannot be synthesized": the probes above are
+ * this suite's own legs now — a negative capability claim gets probed
+ * before it ships, not asserted.
  */
 import type { Page } from '@playwright/test';
 import { expect, panelPageUrl, test } from '../helpers/extension';
@@ -143,6 +148,63 @@ test.describe('panel shortcuts (the re-owned overlay chord)', () => {
       await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('the ? alias lives: bare glyph and the real Shift-held composition open the overlay', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
+
+      // synthesized-alias leg 1: bare glyph press — one keydown, no Shift.
+      await page.keyboard.press('?');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+
+      // synthesized-alias leg 2: Shift held first — the real two-keydown
+      // composition (the same shape a physical keyboard produces).
+      await page.keyboard.down('Shift');
+      await page.keyboard.press('?');
+      await page.keyboard.up('Shift');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('typing / inside the palette field stays a query (the guard, real input)', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await page.keyboard.press('ControlOrMeta+k');
+      const field = page.getByRole('combobox');
+      await expect(field).toBeVisible();
+      // The dialog autofocus must have landed before the keystroke: a press
+      // aimed at nothing would hit the body (the guard's whole question).
+      await page.waitForFunction(
+        (): boolean => document.activeElement?.getAttribute('role') === 'combobox'
+      );
+
+      await page.keyboard.press('/');
+      // No overlay mounts; the glyph belongs to the query — the field keeps
+      // it (not swallowed by a preventDefault).
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+      await expect(field).toBeVisible();
+      expect(await field.inputValue()).toContain('/');
+      await page.keyboard.press('Escape');
+      await expect(field).toHaveCount(0);
     } finally {
       await page.close();
     }
