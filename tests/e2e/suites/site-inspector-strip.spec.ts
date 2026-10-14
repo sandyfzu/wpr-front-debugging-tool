@@ -269,6 +269,85 @@ interface DragScriptBox {
   height: number;
 }
 
+/** The viewport extent the clamp is honest against. */
+interface DragScriptViewport {
+  width: number;
+  height: number;
+}
+
+/**
+ * The clamp's answer for one drag leg's target: a center press travels the
+ * pointer's exact delta (the grab offset = pointer → shape top-left), so the
+ * pointer-derived desired top-left clamps to the parked band the legs assert
+ * — the same derivation the drag machine runs, restated for the assertion.
+ *
+ * @param target The leg's pointer target (the quick far release's point).
+ * @param press The press point (the grabbed shape's center or handle point).
+ * @param box The grabbed shape's box BEFORE the grab.
+ * @param viewport The live viewport at the grab.
+ * @param margin The full-visibility air margin the clamp keeps.
+ */
+function clampedTopLeft(
+  target: { x: number; y: number },
+  press: { x: number; y: number },
+  box: DragScriptBox,
+  viewport: DragScriptViewport,
+  margin: number
+): { left: number; top: number } {
+  const desired = {
+    left: target.x - (press.x - box.left),
+    top: target.y - (press.y - box.top)
+  };
+  return {
+    left: Math.max(margin, Math.min(desired.left, viewport.width - margin - box.width)),
+    top: Math.max(margin, Math.min(desired.top, viewport.height - margin - box.height))
+  };
+}
+
+/**
+ * Release the grabbed shape's held pointer capture — the trusted mid-drag
+ * capture-loss trigger. The engine dispatches `lostpointercapture` for the
+ * losing pointer whether it dropped the capture itself (a pointer leaving
+ * the window mid-gesture) or the page released it; the drag legs use the
+ * page-release path to drive that same trusted event deterministically.
+ *
+ * The id scan covers every id this engine hands captured gestures to —
+ * pointer ids are assigned past the mouse's and grow across a page's
+ * contacts (verified live in this Chromium: a touch id increments +1 per
+ * contact, so a long-lived page's ids run past 16) — and stays bounded at
+ * 255; the failure names the scanned range, so a miss cannot be
+ * misdiagnosed against the grab.
+ *
+ * @param page The page whose widget holds the capture.
+ * @param shape The grabbed shape's selector inside the widget's shadow root.
+ */
+async function releaseCapturedPointer(page: Page, shape: string): Promise<void> {
+  await page.evaluate(
+    (payload: { host: string; grabbed: string }): void => {
+      const element = document
+        .querySelector<HTMLElement>(payload.host)
+        ?.shadowRoot?.querySelector<HTMLElement>(payload.grabbed);
+      if (element === null || element === undefined) {
+        throw new Error(
+          `the grabbed shape ${payload.grabbed} is missing (the widget's shape changed)`
+        );
+      }
+      // 255 keeps every reachable engine-assigned id inside one bounded scan.
+      const scanMax = 255;
+      for (let id = 0; id <= scanMax; id += 1) {
+        if (element.hasPointerCapture(id)) {
+          element.releasePointerCapture(id);
+          return;
+        }
+      }
+      throw new Error(
+        `no pointer capture was held on any pointer id 0–${String(scanMax)} mid-drag (the grab failed)`
+      );
+    },
+    { host: STRIP_HOST, grabbed: shape }
+  );
+}
+
 /** The strip's live geometry (the DOM-honest drag-leg probe). */
 interface StripGeometry {
   /** The visible shape's box: the card when open, else the pill. */
@@ -964,6 +1043,280 @@ siteTest.describe('site detection widget', () => {
         expect(parked.scroll.y).toBe(before.scroll.y);
         expect(parked.scroll.extentWidth).toBe(before.scroll.extentWidth);
         expect(parked.scroll.extentHeight).toBe(before.scroll.extentHeight);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a mid-drag capture loss commits the pill\u2019s clamped follow (never snaps back to the resting anchor)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        const grabBox: DragScriptBox = {
+          left: pillBox.x,
+          top: pillBox.y,
+          right: pillBox.x + pillBox.width,
+          bottom: pillBox.y + pillBox.height,
+          width: pillBox.width,
+          height: pillBox.height
+        };
+        const origin = await stripGeometry(page);
+        if (origin.shape === null) throw new Error('the pill lost its shape');
+        const startShape = origin.shape;
+
+        // The press rides the pill's center; the far target is beyond the
+        // left edge, so the follow's clamp (not the pointer) defines the
+        // committed top-left — the quick, out-of-viewport release's shape.
+        const press = { x: pillBox.x + pillBox.width / 2, y: pillBox.y + pillBox.height / 2 };
+        const target = { x: -100, y: 60 };
+        const committed = clampedTopLeft(
+          target,
+          press,
+          grabBox,
+          origin.viewport,
+          DRAG_CONTAINMENT_MARGIN
+        );
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(target.x, target.y, { steps: 1 });
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(true);
+
+        // A trusted mid-drag capture loss, with no release event after it:
+        // the engine-side shape of the pointer leaving the window during a
+        // quick release (the machine must end by settle — the parked
+        // position was already fully inside by every move's clamp).
+        await releaseCapturedPointer(page, '.ins-pill');
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
+        // The straggler release (the engine may deliver one late after a
+        // capture loss) must find no drag and reposition nothing. It is
+        // delivered from a pointer re-entry that rests over the committed
+        // pill — after the loss the pointer returns to the window and may
+        // rest anywhere, here over the chrome itself — so the gesture's
+        // trailing compat click hits the pill's own listener. Delivered from
+        // the loss point instead, the click retargets to the host page's
+        // element and can never reach the pill, no matter the suppression
+        // state.
+        const committedBox = (await stripGeometry(page)).shape;
+        if (committedBox === null) throw new Error('the committed pill lost its shape');
+        await page.mouse.move(
+          committedBox.left + committedBox.width / 2,
+          committedBox.top + committedBox.height / 2
+        );
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        // The click the pill itself received was the moved drag's trailing
+        // compat click: the suppression the settle armed must consume it —
+        // an unsuppressed pointer click would open the card here. The card's
+        // answer cannot separate settle from cancel (a canceling arm
+        // suppresses its moved-drag click by the same contract); that
+        // verdict is the position assertions' below. It is asserted FIRST:
+        // an unsuppressed click renders the shape the card, which would
+        // otherwise misreport as a position failure.
+        expect(
+          (await readStrip(page)).cardOpen,
+          'the pill\u2019s trailing compat click stayed suppressed'
+        ).toBe(false);
+        const settled = await stripGeometry(page);
+        const shape = settled.shape;
+        if (shape === null) throw new Error('the capture loss left the pill shapeless');
+        expect(
+          Math.abs(shape.left - committed.left),
+          'the pill\u2019s left is the clamp\u2019s answer, not the origin\u2019s'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.top - committed.top),
+          'the pill\u2019s top is the clamp\u2019s answer, not the origin\u2019s'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.left - startShape.left) + Math.abs(shape.top - startShape.top),
+          'the chrome did not snap back to the resting anchor'
+        ).toBeGreaterThan(100);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a mid-drag capture loss commits the card\u2019s clamped follow and keeps it open',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+
+        // Drag by the title side (the close control never grabs): the far
+        // target is beyond the left edge, so the clamp defines the commit.
+        const press = { x: card.left + 24, y: card.top + 12 };
+        const target = { x: card.left - 1400, y: card.top + 12 };
+        const committed = clampedTopLeft(
+          target,
+          press,
+          card,
+          opened.viewport,
+          DRAG_CONTAINMENT_MARGIN
+        );
+        await page.mouse.move(press.x, press.y);
+        await page.mouse.down();
+        await page.mouse.move(target.x, target.y, { steps: 1 });
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(true);
+        await releaseCapturedPointer(page, '.ins-card');
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const settled = await stripGeometry(page);
+        const shape = settled.shape;
+        if (shape === null) throw new Error('the capture loss left the card shapeless');
+        expect(
+          Math.abs(shape.left - committed.left),
+          'the card\u2019s left is the clamp\u2019s answer, not the origin\u2019s'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.top - committed.top),
+          'the card\u2019s unclamped axis traveled with the pointer'
+        ).toBeLessThan(3);
+        // A stopped card drag is a settled card: never a close.
+        expect((await readStrip(page)).cardOpen, 'the card stays open').toBe(true);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a quick far release out of the viewport commits the pill at its clamped near-edge position',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        const grabBox: DragScriptBox = {
+          left: pillBox.x,
+          top: pillBox.y,
+          right: pillBox.x + pillBox.width,
+          bottom: pillBox.y + pillBox.height,
+          width: pillBox.width,
+          height: pillBox.height
+        };
+        const origin = await stripGeometry(page);
+        if (origin.shape === null) throw new Error('the pill lost its shape');
+        const startShape = origin.shape;
+        const press = { x: pillBox.x + pillBox.width / 2, y: pillBox.y + pillBox.height / 2 };
+        const target = { x: -100, y: 60 };
+        const committed = clampedTopLeft(
+          target,
+          press,
+          grabBox,
+          origin.viewport,
+          DRAG_CONTAINMENT_MARGIN
+        );
+        // The owner's shape verbatim: press, ONE far pointer beat whose target
+        // sits outside the viewport, release immediately after.
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(target.x, target.y, { steps: 1 });
+        await page.mouse.up();
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
+        await waitForChoreographySettle(page);
+        const parked = await stripGeometry(page);
+        const shape = parked.shape;
+        if (shape === null) throw new Error('the parked pill lost its shape');
+        expect(
+          Math.abs(shape.left - committed.left),
+          'the release committed the clamped left, not the origin\u2019s'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.top - committed.top),
+          'the release committed the clamped top, not the origin\u2019s'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.left - startShape.left) + Math.abs(shape.top - startShape.top),
+          'the release never snapped back to the resting anchor'
+        ).toBeGreaterThan(100);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a quick far release out of the viewport commits the open card at its clamped near-edge position',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        const press = { x: card.left + 24, y: card.top + 12 };
+        const target = { x: card.left - 1400, y: card.top - 300 };
+        const committed = clampedTopLeft(
+          target,
+          press,
+          card,
+          opened.viewport,
+          DRAG_CONTAINMENT_MARGIN
+        );
+        await page.mouse.move(press.x, press.y);
+        await page.mouse.down();
+        await page.mouse.move(target.x, target.y, { steps: 1 });
+        await page.mouse.up();
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
+        await waitForChoreographySettle(page);
+        const parked = await stripGeometry(page);
+        const shape = parked.shape;
+        if (shape === null) throw new Error('the parked card lost its shape');
+        expect(
+          Math.abs(shape.left - committed.left),
+          'the card settled at the clamp\u2019s left answer'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(shape.top - committed.top),
+          'the card settled at the clamp\u2019s top answer'
+        ).toBeLessThan(3);
+        expect((await readStrip(page)).cardOpen, 'the quick release never closed the card').toBe(
+          true
+        );
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);

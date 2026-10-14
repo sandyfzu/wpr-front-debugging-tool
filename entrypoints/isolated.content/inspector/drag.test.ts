@@ -353,6 +353,38 @@ describe('createDragController', () => {
     expect(seams.applied.at(-1)).toEqual({ x: -200, y: -100 });
   });
 
+  it('settle by the drag\u2019s own pointer is the capture-loss ender: the clamped commit stays', () => {
+    // The wiring's trusted lostpointercapture arm routes here (the event
+    // carries the losing pointer's id): an engine may drop the capture
+    // mid-gesture with neither pointercancel nor a release event (the
+    // pointer leaving the window during a quick release does this). Ending
+    // by settle keeps the follow's clamped commit — restoring the grab-time
+    // state there would snap a mid-flight chrome back to its start and eat
+    // the moves' writes; the genuinely canceling paths keep their own arms.
+    const seams = recordingSeams({ width: 200, height: 40 });
+    const drag = createDragController(seams.deps);
+    const start = centerOf(seams.liveBox());
+    drag.beginGrab({ point: start, pointerId: 1 });
+    // One far out-of-bounds follow: the clamp parked the box at the margins.
+    drag.trackMove({ point: { x: -5000, y: -5000 }, pointerId: 1 });
+    const parked = seams.applied.at(-1);
+    expect(parked, 'the out-of-bounds follow clamped to the containment bound').toEqual({
+      x: MARGIN - (REST_VIEWPORT.width - ANCHOR_PX - 200),
+      y: MARGIN - (REST_VIEWPORT.height - ANCHOR_PX - 40)
+    });
+    // The capture is lost before any release: settle by the losing pointer.
+    drag.settle(1);
+    expect(drag.isDragging()).toBe(false);
+    expect(seams.applied.at(-1)).toEqual(parked); // the clamped commit stayed
+    expect(seams.affordances).toEqual([true, false]);
+    // A straggler release afterwards finds no drag: no position change.
+    drag.settle(1);
+    expect(seams.applied.at(-1)).toEqual(parked);
+    // The lost gesture's trailing compat click is suppressed once.
+    expect(drag.consumeClickSuppression()).toBe(true);
+    expect(drag.consumeClickSuppression()).toBe(false);
+  });
+
   it('cancel restores the first-drag resting anchor (null) exactly once', () => {
     const seams = recordingSeams({ width: 200, height: 40 });
     const drag = createDragController(seams.deps);
