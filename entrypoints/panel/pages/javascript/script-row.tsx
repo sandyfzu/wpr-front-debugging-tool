@@ -7,7 +7,7 @@
  * from the page.
  */
 import type { JSX } from 'solid-js';
-import { For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -17,7 +17,7 @@ import { CopyButton } from '../../../../components/ui/copy-button';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { cn } from '../../../../utils/cn';
 import { ExternalLink } from '../page-frame';
-import type { InlineCode, ScriptRowView } from './script-view';
+import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
 import { COLLAPSED_CODE_LINES, codeToggleLabel, lineCount } from './script-view';
 
 /** The code block's test seams, forwarded untouched (production omits them). */
@@ -34,6 +34,8 @@ export interface ScriptRowProps {
   index: number;
   /** The rendered list's length (`aria-setsize`). */
   setSize: number;
+  /** The row's 1-based position among the page's inline scripts (names its code). */
+  inlineOrdinal: number;
   /** Whether the inline code is expanded (page-owned state). */
   expanded: boolean;
   /**
@@ -77,7 +79,9 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
       >
         {(code) => (
           <InlineScript
-            id={props.view.row.id}
+            domId={props.view.domId}
+            ordinal={props.inlineOrdinal}
+            capture={props.view.capture}
             source={props.view.row.content}
             code={code()}
             chips={<RowChips view={props.view} />}
@@ -147,9 +151,13 @@ function ExternalScript(props: { url: string; chips: JSX.Element }): JSX.Element
 
 /** Props of {@link InlineScript}. */
 interface InlineScriptProps {
-  /** The row id (names the code block for `aria-controls`). */
-  id: number;
-  /** The full inline source. */
+  /** The code block's DOM id (the toggle's `aria-controls` target). */
+  domId: string;
+  /** The 1-based position among inline scripts (the code's accessible name). */
+  ordinal: number;
+  /** How much of the text the capture delivered. */
+  capture: ContentCapture;
+  /** The inline source as captured. */
   source: string;
   /** The derived code shape. */
   code: InlineCode;
@@ -166,48 +174,68 @@ interface InlineScriptProps {
 /**
  * An inline script: chips with the line count and copy control, then the
  * code — clamped to three lines while collapsed (the block fades the edge
- * only when text is clipped) — and the toggle.
- * Collapsed, the block renders (and highlights) only the preview; the full
- * source arrives on expand.
+ * only when lines are cut off) — and the toggle. Collapsed, the block
+ * renders (and highlights) only the preview; the full source arrives on
+ * expand. The toggle is offered only when it reveals something: more lines,
+ * a cut preview line, or a clamp that clips (a wrapped long line).
+ *
+ * Capture states: a clipped text is marked "Content clipped" and copies as a
+ * "Clipped inline script"; text the size budget left out reads "Content not
+ * captured (size budget)" — never "Empty inline script", which is reserved
+ * for a script that really has no text.
  *
  * @param props See {@link InlineScriptProps}.
  */
 function InlineScript(props: InlineScriptProps): JSX.Element {
-  const codeId = (): string => `fdt-js-code-${String(props.id)}`;
-  const collapsed = (): boolean => props.code.expandable && !props.expanded;
+  const [clamped, setClamped] = createSignal(false);
+  const collapsed = (): boolean => !props.expanded;
+  // A not-captured text is always empty (the budget left it out), so blankness
+  // alone gates the code; the note below tells the two empty causes apart.
+  const hasCode = (): boolean => !props.code.blank;
+  const toggleable = (): boolean => props.expanded || props.code.expandable || clamped();
   return (
     <>
       <div class="flex flex-wrap items-center gap-1">
         {props.chips}
-        <Show when={!props.code.blank}>
+        <Show when={props.capture === 'clipped'}>
+          <Badge kind="warn" class="whitespace-nowrap">
+            Content clipped
+          </Badge>
+        </Show>
+        <Show when={hasCode()}>
           <span class="ms-auto flex items-center gap-1 ps-1">
             <span class="text-2xs text-fg-muted tabular-nums">{lineCount(props.code.lines)}</span>
-            <CopyButton text={props.source} label="Inline script" showLabel={false} />
+            <CopyButton
+              text={props.source}
+              label={props.capture === 'clipped' ? 'Clipped inline script' : 'Inline script'}
+              showLabel={false}
+            />
           </span>
         </Show>
       </div>
       <Show
-        when={!props.code.blank}
-        fallback={<p class="text-2xs text-fg-muted">Empty inline script</p>}
+        when={hasCode()}
+        fallback={<p class="text-2xs text-fg-muted">{emptyNote(props.capture)}</p>}
       >
         <CodeBlock
-          id={codeId()}
+          id={props.domId}
           text={collapsed() ? props.code.preview : props.source}
           lang="javascript"
-          label={`Inline script ${String(props.id + 1)} code`}
+          label={`Inline script ${String(props.ordinal)}`}
           maxLines={collapsed() ? COLLAPSED_CODE_LINES : undefined}
+          onClipChange={setClamped}
           class="min-w-0"
           loadHighlighter={props.codeBlock?.loadHighlighter}
           createObserver={props.codeBlock?.createObserver}
           watchOverflow={props.codeBlock?.watchOverflow}
         />
-        <Show when={props.code.expandable}>
+        <Show when={toggleable()}>
           <Button
             variant="ghost"
             size="sm"
             data-fdt="script-code-toggle"
             aria-expanded={props.expanded}
-            aria-controls={codeId()}
+            aria-controls={props.domId}
             onClick={(event) => {
               props.onToggle(event.currentTarget);
             }}
@@ -224,4 +252,13 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
       </Show>
     </>
   );
+}
+
+/**
+ * The note standing in for code an inline row cannot show.
+ *
+ * @param capture The row's capture state.
+ */
+export function emptyNote(capture: ContentCapture): string {
+  return capture === 'not-captured' ? 'Content not captured (size budget)' : 'Empty inline script';
 }

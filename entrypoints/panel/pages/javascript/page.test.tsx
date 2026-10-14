@@ -17,11 +17,15 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
-import { JavaScriptPage, JavaScriptView } from './page';
+import { JavaScriptPage, JavaScriptView, listCutNote } from './page';
+import type { CodeBlockSeams } from './script-row';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  clampClips = false;
+  areaScrolls = false;
 });
 
 /** A virtualizer double rendering rows `[from, to)` of the current count. */
@@ -29,14 +33,16 @@ function windowedVirtualizer(): {
   factory: VirtualizerFactory;
   setWindow: Setter<[number, number]>;
 } {
-  const [range, setWindow] = createSignal<[number, number]>([0, 1_000]);
+  // A bounded window, as a real list renders: a 5,000-row page mounts 40 rows.
+  const [range, setWindow] = createSignal<[number, number]>([0, 40]);
   const factory: VirtualizerFactory = (options) => ({
     getVirtualItems: (): VirtualItem[] => {
       const [from, to] = range();
       const items: VirtualItem[] = [];
       for (let index = from; index < Math.min(to, options.count); index += 1) {
+        // Honours the page's keys, as the real virtualizer does.
         items.push({
-          key: index,
+          key: options.getItemKey?.(index) ?? index,
           index,
           start: index * 40,
           end: index * 40 + 40,
@@ -52,13 +58,27 @@ function windowedVirtualizer(): {
   return { factory, setWindow };
 }
 
+/**
+ * The clamp-clip state every block's clip watch reports at mount (tests flip
+ * it to model a wrapped long line folding past the clamp).
+ */
+let clampClips = false;
+
+/** The scroll state every block's area watch reports (focusable + named when true). */
+let areaScrolls = false;
+
 /** Code-block seams: no highlighter load, no observer (raw text stays). */
-const CODE_SEAMS = {
+const CODE_SEAMS: CodeBlockSeams = {
   createObserver: (): IntersectionGate => ({
     observe: () => undefined,
     disconnect: () => undefined
   }),
-  loadHighlighter: () => new Promise<never>(() => undefined)
+  loadHighlighter: () => new Promise<never>(() => undefined),
+  watchOverflow: (_box, _content, onChange, measure) => {
+    // The clip watch is the one with a custom measure.
+    onChange(measure === undefined ? areaScrolls : clampClips);
+    return () => undefined;
+  }
 };
 
 /** The page's fixture scripts: every row shape the page renders. */
@@ -278,7 +298,31 @@ describe('JavaScriptView — rows', () => {
     const badge = within(row).getByText('Not delayed (Excluded by FDT)');
     expect(badge.className).toContain('text-status-warn');
     expect(within(row).queryByRole('button', { expanded: false })).toBeNull();
-    expect(row.querySelector('[data-fdt-code-area]')?.hasAttribute('data-fdt-clamped')).toBe(false);
+  });
+
+  it('offers Expand on short code only when the clamp clips it', () => {
+    clampClips = true;
+    renderView();
+    const row = rows()[4] as HTMLElement;
+    expect(within(row).getByRole('button', { name: 'Expand' })).toBeTruthy();
+  });
+
+  it('names each inline block by its inline ordinal', () => {
+    areaScrolls = true;
+    renderView();
+    const labels = [...document.querySelectorAll('[data-fdt-code-area]')].map((area) =>
+      area.getAttribute('aria-label')
+    );
+    expect(labels).toEqual(['Inline script 1', 'Inline script 2']);
+    const ids = rows().map((row) => row.querySelector('[data-fdt="code-block"]')?.id);
+    expect(ids.filter((id) => id !== undefined)).toHaveLength(2);
+  });
+
+  it('draws the hairline under every row but the last', () => {
+    renderView();
+    const all = rows();
+    expect(all.slice(0, -1).every((row) => row.className.includes('border-b'))).toBe(true);
+    expect(all.at(-1)?.className).not.toContain('border-b');
   });
 
   it('renders a blank inline script as a note, without code or copy', () => {
@@ -324,7 +368,7 @@ describe('JavaScriptView — expand state', () => {
     fireEvent.click(toggle());
     virtualizer.setWindow([0, 2]);
     expect(document.querySelector('[data-fdt="script-code-toggle"]')).toBeNull();
-    virtualizer.setWindow([0, 1_000]);
+    virtualizer.setWindow([0, 40]);
     expect(toggle().getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -449,5 +493,153 @@ describe('JavaScriptPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'JavaScript' })).toBeTruthy();
     setState({ status: 'refreshing', data: dataWith([]), requestedAt: 2 });
     expect(document.querySelector('[data-fdt-page="javascript"]')).not.toBeNull();
+  });
+});
+
+describe('JavaScriptView — copy', () => {
+  it('copies the full inline source, not the collapsed preview', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView();
+    const row = rows()[3] as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Inline script — copy' }));
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('line1();\nline2();\nline3();\nline4();\nline5();');
+    });
+  });
+});
+
+describe('JavaScriptView — capture bounds', () => {
+  const CAPS = PAYLOAD_LIMITS.delayScripts;
+
+  /** Data whose Delay JS row the producer marked truncated. */
+  function truncatedData(list: DelayedScriptRecord[]): FdtData {
+    const data = dataWith(list);
+    return {
+      ...data,
+      wprDetections: {
+        ...data.wprDetections,
+        delay_js: { ...data.wprDetections.delay_js, truncated: true }
+      }
+    };
+  }
+
+  it('notes a list cut at its cap and floors the total', () => {
+    const full = Array.from({ length: CAPS.count }, (_, i) =>
+      makeDelayScript({ src: `https://example.test/${String(i)}.js` })
+    );
+    renderView(truncatedData(full));
+    expect(document.querySelector('[data-fdt="script-list-cut"]')?.textContent).toBe(
+      listCutNote(CAPS.count)
+    );
+    expect(listCutNote(CAPS.count)).toBe('Showing the first 5,000 scripts — the page has more.');
+    expect(document.querySelector('[data-fdt="script-total"]')?.textContent).toBe('5,000+ scripts');
+  });
+
+  it('shows no cut note for a marked list below its cap', () => {
+    renderView(truncatedData(scripts()));
+    expect(document.querySelector('[data-fdt="script-list-cut"]')).toBeNull();
+    expect(document.querySelector('[data-fdt="script-total"]')?.textContent).toBe('6 scripts');
+  });
+
+  it('marks clipped text, warns on copy, and names text the budget left out', () => {
+    const big = 'x'.repeat(CAPS.content);
+    const spent = Array.from({ length: CAPS.contentTotal / CAPS.content }, () => ({
+      inline: true,
+      content: big,
+      delayed: false,
+      deferred: false,
+      deferredByWPR: false,
+      fdtExcluded: null
+    }));
+    const left = { ...(spent[0] as DelayedScriptRecord), content: '' };
+    renderView(truncatedData([...spent, left]));
+    const first = rows()[0] as HTMLElement;
+    expect(within(first).getByText('Content clipped')).toBeTruthy();
+    expect(
+      within(first).getByRole('button', { name: 'Clipped inline script — copy' })
+    ).toBeTruthy();
+    const last = rows().at(-1) as HTMLElement;
+    expect(last.textContent).toContain('Content not captured (size budget)');
+    expect(last.textContent).not.toContain('Empty inline script');
+    expect(within(last).queryByRole('button', { name: /copy/ })).toBeNull();
+  });
+});
+
+describe('JavaScriptView — identity across refreshes', () => {
+  it('keeps the expanded script expanded and other rows mounted when a script lands on top', () => {
+    const { setData } = renderView();
+    const toggle = document.querySelector<HTMLButtonElement>('[data-fdt="script-code-toggle"]');
+    if (!toggle) throw new Error('no toggle');
+    fireEvent.click(toggle);
+    const before = rows();
+    const added = makeDelayScript({ src: 'https://example.test/new.js' });
+    setData(dataWith([added, ...scripts()]));
+    const after = rows();
+    expect(after).toHaveLength(7);
+    // Every pre-existing row is the same element, one position lower.
+    expect(after.slice(1)).toEqual(before);
+    expect(toggle.isConnected).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(after[4]?.getAttribute('aria-posinset')).toBe('5');
+  });
+
+  it('collapses a script whose text changed under the same key', () => {
+    const { setData } = renderView();
+    const toggle = document.querySelector<HTMLButtonElement>('[data-fdt="script-code-toggle"]');
+    if (!toggle) throw new Error('no toggle');
+    fireEvent.click(toggle);
+    const list = scripts();
+    const edited = list.map((script, index) =>
+      index === 3 ? { ...script, delayed: false } : script
+    );
+    setData(dataWith(edited));
+    const next = document.querySelector<HTMLButtonElement>('[data-fdt="script-code-toggle"]');
+    expect(next?.getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+describe('JavaScriptView — keyboard and announcements', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('leaves Escape alone when the field is empty, takes it when not', () => {
+    renderView();
+    const idle = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    field().dispatchEvent(idle);
+    expect(idle.defaultPrevented).toBe(false);
+    fireEvent.input(field(), { target: { value: 'cart' } });
+    const busy = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    field().dispatchEvent(busy);
+    expect(busy.defaultPrevented).toBe(true);
+    expect(field().value).toBe('');
+    const other = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true });
+    fireEvent.input(field(), { target: { value: 'cart' } });
+    field().dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(false);
+  });
+
+  it('announces a committed query alone, and stays silent on a data refresh', () => {
+    const { setData } = renderView();
+    const status = (): string | null | undefined =>
+      document.querySelector('[data-fdt="script-results-status"]')?.textContent;
+    expect(status()).toBe('');
+    fireEvent.input(field(), { target: { value: 'example.test' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(status()).toBe('2 of 6 scripts shown');
+    setData(dataWith(scripts().slice(0, 1)));
+    expect(status()).toBe('2 of 6 scripts shown');
+  });
+
+  it('lands focus on the "all" chip after Show all', () => {
+    renderView();
+    fireEvent.click(chip('external'));
+    fireEvent.input(field(), { target: { value: 'nothing-matches' } });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    const showAll = screen.getByRole('button', { name: 'Show all' });
+    showAll.focus();
+    fireEvent.click(showAll);
+    expect(document.activeElement).toBe(chip('all'));
   });
 });

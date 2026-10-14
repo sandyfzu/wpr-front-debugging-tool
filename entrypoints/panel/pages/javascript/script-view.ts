@@ -26,24 +26,26 @@ export interface ScriptBadge {
 export const COLLAPSED_CODE_LINES = 3;
 
 /**
- * A line longer than this may fold into several visual lines once wrapping is
- * on, so it makes a script expandable even within {@link COLLAPSED_CODE_LINES}.
+ * Per-line cap of the collapsed preview (a cut line ends in `…`). The
+ * collapsed block shows three visual lines at most: at the widest panel a
+ * wrapped mono line holds ≈ 200 chars, so three of them ≈ 600 — the cap
+ * never shortens what is visible, while a minified one-line bundle stays out
+ * of the highlighter until expanded.
  */
-export const WRAP_RISK_LINE_CHARS = 80;
+export const PREVIEW_LINE_CHARS = 750;
 
-/**
- * Per-line cap of the collapsed preview. The collapsed block shows three
- * visual lines at most; at the widest panels a wrapped line holds a few
- * hundred mono characters, so this cap never shortens what is visible while
- * keeping a minified 500 KB one-liner out of the highlighter until expanded.
- */
-export const PREVIEW_LINE_CHARS = 2_000;
+/** The mark a preview line cut at {@link PREVIEW_LINE_CHARS} ends with. */
+export const PREVIEW_CUT_MARK = '…';
 
 /** The shape of an inline script's code, derived once per row. */
 export interface InlineCode {
   /** Visual line count (a single trailing line break adds no line). */
   readonly lines: number;
-  /** Whether the collapse toggle is offered (see {@link isExpandable}). */
+  /**
+   * Whether the text alone makes the toggle useful: more lines than the
+   * collapsed block shows, or a preview line cut at its cap. (The row also
+   * offers it when the block reports its clamp clipping — a wrapped line.)
+   */
   readonly expandable: boolean;
   /** The text the collapsed block renders and highlights. */
   readonly preview: string;
@@ -51,9 +53,27 @@ export interface InlineCode {
   readonly blank: boolean;
 }
 
+/**
+ * How much of an inline script's text the capture delivered (the payload's
+ * size caps clip one long script, and a list-wide budget leaves later
+ * scripts empty once spent).
+ */
+export type ContentCapture = 'complete' | 'clipped' | 'not-captured';
+
 /** One rendered row: the classified script plus everything derived from it. */
 export interface ScriptRowView {
+  /**
+   * The row's identity across refreshes: the script itself (type, URL or a
+   * text signature) plus its occurrence among identical scripts — never its
+   * document position, so a script added above shifts nothing.
+   */
+  readonly key: string;
+  /** A DOM-id-safe form of {@link ScriptRowView.key}. */
+  readonly domId: string;
+  /** The classified script (its `id` is the position at build time only). */
   readonly row: JsScriptResource;
+  /** How much inline text was captured (`complete` for external rows). */
+  readonly capture: ContentCapture;
   readonly badges: readonly ScriptBadge[];
   /** Inline scripts only; `null` for external ones. */
   readonly code: InlineCode | null;
@@ -106,69 +126,53 @@ function deferBadge(row: JsScriptResource): ScriptBadge {
 }
 
 /**
- * Line count and longest line of a source text in one pass (no split array —
- * inline scripts reach 512 KB). Lines break on `\n` (a `\r\n` pair counts
- * once, its `\r` as one char of the line); a single trailing break adds no
- * visual line, matching how a `<pre>` renders it.
+ * Visual line count of a source text in one pass (no split array — inline
+ * scripts reach 512 KB). Lines break on `\n` (a `\r\n` pair counts once); a
+ * single trailing break adds no visual line, matching how a `<pre>` renders.
  *
  * @param text The source text.
- * @returns The visual line count (`0` for `''`) and the longest line length.
+ * @returns The line count (`0` for `''`).
  */
-export function measureCode(text: string): { lines: number; longestLine: number } {
-  if (text === '') return { lines: 0, longestLine: 0 };
-  let lines = 0;
-  let longestLine = 0;
-  let start = 0;
-  while (start <= text.length) {
-    const end = text.indexOf('\n', start);
-    const stop = end === -1 ? text.length : end;
-    // The empty remainder after a final break is not a rendered line.
-    if (end === -1 && start === text.length && lines > 0) break;
+export function countLines(text: string): number {
+  if (text === '') return 0;
+  let lines = 1;
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) {
+    if (at === text.length - 1) break;
     lines += 1;
-    longestLine = Math.max(longestLine, stop - start);
-    if (end === -1) break;
-    start = end + 1;
   }
-  return { lines, longestLine };
-}
-
-/**
- * Whether an inline script gets the collapse toggle — a pure function of the
- * text, never a post-render measurement: more lines than the collapsed area
- * shows, or a line long enough that turning wrapping on may fold it past the
- * clamp. A toggle that turns out to change nothing is harmless; a missing one
- * hides code.
- *
- * @param lines The visual line count.
- * @param longestLine The longest line's length in chars.
- */
-export function isExpandable(lines: number, longestLine: number): boolean {
-  return lines > COLLAPSED_CODE_LINES || longestLine > WRAP_RISK_LINE_CHARS;
+  return lines;
 }
 
 /**
  * The text the collapsed block renders: the first {@link COLLAPSED_CODE_LINES}
- * lines, each cut at {@link PREVIEW_LINE_CHARS}. Highlighting tokenizes left
- * to right, so the visible lines color exactly as in the full text, while the
- * highlighter never sees the hidden bulk of a large script.
+ * lines, each cut at {@link PREVIEW_LINE_CHARS} and marked with
+ * {@link PREVIEW_CUT_MARK}. Highlighting tokenizes left to right, so the
+ * visible lines color as in the full text, while the highlighter never sees
+ * the hidden bulk of a large script.
  *
  * @param text The full source text.
- * @returns The preview (the text itself when nothing is cut).
+ * @returns The preview and whether a line was cut at the cap (the text
+ *   itself when nothing is cut).
  */
-export function collapsedPreview(text: string): string {
+export function collapsedPreview(text: string): { preview: string; lineCut: boolean } {
   const kept: string[] = [];
   let start = 0;
-  let cut = false;
+  let lineCut = false;
+  let moreLines = false;
   while (kept.length < COLLAPSED_CODE_LINES) {
     const end = text.indexOf('\n', start);
     const line = end === -1 ? text.slice(start) : text.slice(start, end);
-    if (line.length > PREVIEW_LINE_CHARS) cut = true;
-    kept.push(line.slice(0, PREVIEW_LINE_CHARS));
+    if (line.length > PREVIEW_LINE_CHARS) {
+      lineCut = true;
+      kept.push(`${line.slice(0, PREVIEW_LINE_CHARS)}${PREVIEW_CUT_MARK}`);
+    } else {
+      kept.push(line);
+    }
     if (end === -1) break;
     start = end + 1;
-    if (kept.length === COLLAPSED_CODE_LINES && start < text.length) cut = true;
+    if (kept.length === COLLAPSED_CODE_LINES && start < text.length) moreLines = true;
   }
-  return cut ? kept.join('\n') : text;
+  return { preview: lineCut || moreLines ? kept.join('\n') : text, lineCut };
 }
 
 /**
@@ -178,19 +182,20 @@ export function collapsedPreview(text: string): string {
  * @returns Its line count, expandability, collapsed preview and blankness.
  */
 export function inlineCode(text: string): InlineCode {
-  const { lines, longestLine } = measureCode(text);
+  const lines = countLines(text);
+  const { preview, lineCut } = collapsedPreview(text);
   const blank = text.trim() === '';
   return {
     lines,
-    expandable: !blank && isExpandable(lines, longestLine),
-    preview: collapsedPreview(text),
+    expandable: !blank && (lines > COLLAPSED_CODE_LINES || lineCut),
+    preview,
     blank
   };
 }
 
 /**
  * The collapse toggle's words: how much a click reveals ("Show all 40
- * lines"), or "Expand" when the clamp hides only the tail of long lines.
+ * lines"), or "Expand" when the collapsed block hides the rest of its lines.
  *
  * @param code The script's code shape.
  * @param expanded Whether the code is expanded.
@@ -200,23 +205,9 @@ export function codeToggleLabel(code: InlineCode, expanded: boolean): string {
   return code.lines > COLLAPSED_CODE_LINES ? `Show all ${lineCount(code.lines)}` : 'Expand';
 }
 
-/**
- * Build one row view.
- *
- * @param row The classified script.
- */
-export function buildRowView(row: JsScriptResource): ScriptRowView {
-  return {
-    row,
-    badges: scriptStateBadges(row),
-    code: row.type === 'inline' ? inlineCode(row.content) : null
-  };
-}
-
-/** Whether two classified scripts carry the same data (every field). */
+/** Whether two classified scripts carry the same data (position ignored). */
 export function sameScript(a: JsScriptResource, b: JsScriptResource): boolean {
   return (
-    a.id === b.id &&
     a.type === b.type &&
     a.content === b.content &&
     a.delayed === b.delayed &&
@@ -224,34 +215,6 @@ export function sameScript(a: JsScriptResource, b: JsScriptResource): boolean {
     a.deferredByWPR === b.deferredByWPR &&
     a.fdtExcluded === b.fdtExcluded
   );
-}
-
-/**
- * Build the row views for a fresh row list, reusing every previous view whose
- * script is unchanged. A soft refresh of an unchanged page therefore hands
- * the list the very same objects: rendered rows keep their DOM (no re-mount,
- * no re-highlight, no flash) and only changed rows are re-derived.
- *
- * @param previous The views of the previous pass (`[]` on the first).
- * @param rows The fresh classified rows.
- * @returns The new views (`previous` itself when every row is unchanged).
- */
-export function reconcileRowViews(
-  previous: readonly ScriptRowView[],
-  rows: readonly JsScriptResource[]
-): readonly ScriptRowView[] {
-  const byId = new Map(previous.map((view) => [view.row.id, view]));
-  let changed = previous.length !== rows.length;
-  const next = rows.map((row, index) => {
-    const prior = byId.get(row.id);
-    if (prior !== undefined && sameScript(prior.row, row)) {
-      if (previous[index] !== prior) changed = true;
-      return prior;
-    }
-    changed = true;
-    return buildRowView(row);
-  });
-  return changed ? next : previous;
 }
 
 /**
@@ -322,56 +285,66 @@ export function estimateRowSize(view: ScriptRowView): number {
 }
 
 /**
- * Drop expanded-row ids that no longer name a row (a refresh removed them).
+ * Keep only the expanded keys whose script is still there **unchanged**: a
+ * refresh that removed a script, or changed it under the same key, forgets
+ * its expanded flag (a different script must not open expanded).
  *
- * @param expanded The expanded ids.
- * @param present The ids of the current rows.
- * @returns `expanded` itself when nothing was dropped, else the pruned set.
+ * @param expanded The expanded keys.
+ * @param previous The row views the flags were set on.
+ * @param next The refreshed row views.
+ * @returns `expanded` itself when nothing was dropped, else the kept keys.
  */
 export function pruneExpanded(
-  expanded: ReadonlySet<number>,
-  present: ReadonlySet<number>
-): ReadonlySet<number> {
-  let stale = false;
-  for (const id of expanded) {
-    if (!present.has(id)) {
-      stale = true;
-      break;
-    }
-  }
-  if (!stale) return expanded;
-  return new Set([...expanded].filter((id) => present.has(id)));
+  expanded: ReadonlySet<string>,
+  previous: readonly ScriptRowView[],
+  next: readonly ScriptRowView[]
+): ReadonlySet<string> {
+  if (expanded.size === 0) return expanded;
+  const before = new Map(previous.map((view) => [view.key, view]));
+  const after = new Map(next.map((view) => [view.key, view]));
+  const kept = [...expanded].filter((key) => {
+    const view = after.get(key);
+    return view !== undefined && view === before.get(key);
+  });
+  return kept.length === expanded.size ? expanded : new Set(kept);
 }
 
 /**
- * Flip one id's membership.
+ * Flip one key's membership.
  *
- * @param expanded The expanded ids.
- * @param id The row to flip.
+ * @param expanded The expanded keys.
+ * @param key The row to flip.
  * @returns A new set (sets in signals must change identity to notify).
  */
-export function toggleExpanded(expanded: ReadonlySet<number>, id: number): ReadonlySet<number> {
+export function toggleExpanded(expanded: ReadonlySet<string>, key: string): ReadonlySet<string> {
   const next = new Set(expanded);
-  if (!next.delete(id)) next.add(id);
+  if (!next.delete(key)) next.add(key);
   return next;
 }
 
-/**
- * Count phrase for scripts ("1 script", "12 scripts").
- *
- * @param count The number of scripts.
- */
-export function scriptCount(count: number): string {
-  return `${String(count)} ${count === 1 ? 'script' : 'scripts'}`;
+/** Thousands-grouped count ("5,000"), the panel's number format. */
+export function formatCount(count: number): string {
+  return count.toLocaleString('en-US');
 }
 
 /**
- * Count phrase for code lines ("1 line", "40 lines").
+ * Count phrase for scripts ("1 script", "1,204 scripts", or "5,000+
+ * scripts" for a list the capture cut — the count is then a floor).
+ *
+ * @param count The number of scripts.
+ * @param partial The list was cut at its cap.
+ */
+export function scriptCount(count: number, partial = false): string {
+  return `${formatCount(count)}${partial ? '+' : ''} ${count === 1 && !partial ? 'script' : 'scripts'}`;
+}
+
+/**
+ * Count phrase for code lines ("1 line", "1,040 lines").
  *
  * @param count The number of lines.
  */
 export function lineCount(count: number): string {
-  return `${String(count)} ${count === 1 ? 'line' : 'lines'}`;
+  return `${formatCount(count)} ${count === 1 ? 'line' : 'lines'}`;
 }
 
 /**
@@ -385,5 +358,5 @@ export function lineCount(count: number): string {
  */
 export function resultAnnouncement(shown: number, total: number, narrowed: boolean): string {
   if (!narrowed) return '';
-  return `${String(shown)} of ${scriptCount(total)} shown`;
+  return `${formatCount(shown)} of ${scriptCount(total)} shown`;
 }

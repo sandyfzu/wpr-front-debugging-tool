@@ -47,13 +47,15 @@ import {
   buildChips,
   estimateRowSize,
   pruneExpanded,
-  reconcileRowViews,
   resultAnnouncement,
+  formatCount,
   scriptCount,
   toggleExpanded,
   type ScriptRowView
 } from './script-view';
 import { bindSearchField } from './search-field';
+import { contentCaptures, scriptListCut } from './capture-bounds';
+import { reconcileRowViews } from './script-identity';
 
 /**
  * Rows rendered beyond the viewport. Every row holds tab stops, so a keyboard
@@ -67,6 +69,18 @@ const LIST_OVERSCAN = 8;
  * from the regular tier (the bar leaves the field at its intrinsic width).
  */
 const SEARCH_FIELD_WIDTH = '[&_input[type=search]]:w-full @regular:[&_input[type=search]]:max-w-80';
+
+/** The page's content width: the full region, capped on wide panels for line length. */
+const CONTENT_WIDTH = '@wide:max-w-6xl';
+
+/**
+ * The muted note under the summary when the capture cut the list at its cap.
+ *
+ * @param shown The scripts received (the cap).
+ */
+export function listCutNote(shown: number): string {
+  return `Showing the first ${formatCount(shown)} scripts — the page has more.`;
+}
 
 /** Props of {@link JavaScriptView}. */
 export interface JavaScriptViewProps {
@@ -104,9 +118,21 @@ export function JavaScriptPage(): JSX.Element {
 export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const delayJs = createMemo(() => props.data().wprDetections.delay_js);
   const views = createMemo<readonly ScriptRowView[]>(
-    (previous) => reconcileRowViews(previous, buildScriptRows(delayJs())),
+    (previous) =>
+      reconcileRowViews(previous, buildScriptRows(delayJs()), contentCaptures(delayJs())),
     []
   );
+  const listCut = createMemo(() => scriptListCut(delayJs()));
+  // Inline scripts are named by their ordinal among inline scripts; kept out
+  // of the (reused) views, so a script added above renumbers without a
+  // re-mount.
+  const inlineOrdinals = createMemo(() => {
+    const ordinals = new Map<string, number>();
+    for (const view of views()) {
+      if (view.code !== null) ordinals.set(view.key, ordinals.size + 1);
+    }
+    return ordinals;
+  });
   const counts = createMemo(() => filterCounts(views(), JS_VIEW_RESOURCES));
 
   const [selected, setSelected] = createSignal<JsFilterId>('all');
@@ -115,20 +141,27 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
   const chips = createMemo(() => buildChips(JS_VIEW_RESOURCES.filters, counts(), selected()));
+  // Announced when the user narrows or widens the list (chip, committed
+  // query) — never on a data refresh, which changes counts by itself.
+  const announcement = createMemo(
+    on([selected, query], ([chip, text]) =>
+      resultAnnouncement(filtered().length, views().length, chip !== 'all' || text !== '')
+    )
+  );
   const selectedLabel = (): string | undefined =>
     selected() === 'all'
       ? undefined
       : JS_VIEW_RESOURCES.filters.find((filter) => filter.id === selected())?.label;
 
-  // Expanded rows live here, not in the (virtual, remounting) rows. A refresh
-  // that removes a row forgets its flag for good — pruning is a state
-  // transition (a row id coming back later names a different script), so it
-  // is written, synchronously before render, rather than derived.
-  const [expanded, setExpanded] = createSignal<ReadonlySet<number>>(new Set());
+  // Expanded rows live here, keyed by script identity, not in the (virtual,
+  // remounting) rows. A refresh that removes a script — or changes it under
+  // the same key — forgets its flag for good: pruning is a state transition,
+  // written synchronously before render rather than derived.
+  const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set());
   createComputed(
-    on(views, (current) => {
-      const present = new Set(current.map((view) => view.row.id));
-      setExpanded((ids) => pruneExpanded(ids, present));
+    on(views, (current, previous) => {
+      if (previous === undefined) return;
+      setExpanded((keys) => pruneExpanded(keys, previous, current));
     })
   );
 
@@ -140,9 +173,9 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
    * Flip a row's code; a collapse that pulls the toggle out of view brings it
    * back (nearest edge, no smooth scroll), so focus never sits off screen.
    */
-  const toggleRow = (id: number, toggle: HTMLButtonElement): void => {
-    const collapsing = expanded().has(id);
-    setExpanded(toggleExpanded(expanded(), id));
+  const toggleRow = (key: string, toggle: HTMLButtonElement): void => {
+    const collapsing = expanded().has(key);
+    setExpanded(toggleExpanded(expanded(), key));
     if (collapsing) toggle.scrollIntoView({ block: 'nearest' });
   };
 
@@ -161,92 +194,97 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       subtitle="How WP Rocket delays and defers each script on the page."
       fill
     >
-      <ScriptSummary
-        present={delayJs().present}
-        version={delayJs().version}
-        total={views().length}
-      />
-      <Show
-        when={views().length > 0}
-        fallback={
-          <EmptyState
-            icon={<FileCode size={20} aria-hidden="true" />}
-            title="No scripts on this page"
-            description="The inspected page has no script elements, so there is nothing to classify."
-          />
-        }
-      >
-        <div ref={filterArea} onKeyDown={onFilterKeyDown} class={SEARCH_FIELD_WIDTH}>
-          <FilterBar
-            chips={chips()}
-            selected={selected()}
-            onSelect={(value) => setSelected(value as JsFilterId)}
-            filterLabel="Filter scripts"
-            searchQuery={field.value()}
-            onSearchChange={(raw) => {
-              field.input(raw);
-            }}
-            searchPlaceholder="Search URLs and code…"
-            searchLabel="Search scripts"
-          />
-        </div>
-        <div role="status" class="sr-only" data-fdt="script-results-status">
-          {resultAnnouncement(
-            filtered().length,
-            views().length,
-            selected() !== 'all' || query() !== ''
-          )}
-        </div>
+      <div class={cn('flex w-full flex-1 flex-col gap-3', CONTENT_WIDTH)}>
+        <ScriptSummary
+          present={delayJs().present}
+          version={delayJs().version}
+          total={views().length}
+          partial={listCut()}
+        />
+        <Show when={listCut()}>
+          <p data-fdt="script-list-cut" class="-mt-1.5 text-2xs text-fg-muted">
+            {listCutNote(views().length)}
+          </p>
+        </Show>
         <Show
-          when={filtered().length > 0}
+          when={views().length > 0}
           fallback={
-            <NoMatches
-              chipLabel={selectedLabel()}
-              query={query()}
-              onClearSearch={() => {
-                field.clear();
-              }}
-              onShowAll={() => setSelected('all')}
-              focusAfter={(action) =>
-                action === 'clear-search'
-                  ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
-                  : filterArea?.querySelector<HTMLElement>('[data-fdt-filter-chip="all"]')
-              }
+            <EmptyState
+              icon={<FileCode size={20} aria-hidden="true" />}
+              title="No scripts on this page"
+              description="The inspected page has no script elements, so there is nothing to classify."
             />
           }
         >
-          <VirtualList
-            scrollerRole="list"
-            aria-label="Scripts"
-            count={filtered().length}
-            estimateSize={(index) => {
-              const view = filtered()[index];
-              return view === undefined ? 0 : estimateRowSize(view);
-            }}
-            getItemKey={(index) => filtered()[index]?.row.id ?? index}
-            overscan={LIST_OVERSCAN}
-            createVirtualizer={props.createVirtualizer}
-            class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
+          <div ref={filterArea} onKeyDown={onFilterKeyDown} class={SEARCH_FIELD_WIDTH}>
+            <FilterBar
+              chips={chips()}
+              selected={selected()}
+              onSelect={(value) => setSelected(value as JsFilterId)}
+              filterLabel="Filter scripts"
+              searchQuery={field.value()}
+              onSearchChange={(raw) => {
+                field.input(raw);
+              }}
+              searchPlaceholder="Search URLs and code…"
+              searchLabel="Search scripts"
+            />
+          </div>
+          <div role="status" class="sr-only" data-fdt="script-results-status">
+            {announcement()}
+          </div>
+          <Show
+            when={filtered().length > 0}
+            fallback={
+              <NoMatches
+                chipLabel={selectedLabel()}
+                query={query()}
+                onClearSearch={() => {
+                  field.clear();
+                }}
+                onShowAll={() => setSelected('all')}
+                focusAfter={(action) =>
+                  action === 'clear-search'
+                    ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
+                    : filterArea?.querySelector<HTMLElement>('[data-fdt-filter-chip="all"]')
+                }
+              />
+            }
           >
-            {(item) => (
-              <Show when={filtered()[item.index]} keyed>
-                {(view) => (
-                  <ScriptRow
-                    view={view}
-                    index={item.index}
-                    setSize={filtered().length}
-                    expanded={expanded().has(view.row.id)}
-                    onToggle={(toggle) => {
-                      toggleRow(view.row.id, toggle);
-                    }}
-                    codeBlock={props.codeBlock}
-                  />
-                )}
-              </Show>
-            )}
-          </VirtualList>
+            <VirtualList
+              scrollerRole="list"
+              aria-label="Scripts"
+              count={filtered().length}
+              estimateSize={(index) => {
+                const view = filtered()[index];
+                return view === undefined ? 0 : estimateRowSize(view);
+              }}
+              getItemKey={(index) => filtered()[index]?.key ?? String(index)}
+              overscan={LIST_OVERSCAN}
+              createVirtualizer={props.createVirtualizer}
+              class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
+            >
+              {(item) => (
+                <Show when={filtered()[item.index]} keyed>
+                  {(view) => (
+                    <ScriptRow
+                      view={view}
+                      index={item.index}
+                      setSize={filtered().length}
+                      inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
+                      expanded={expanded().has(view.key)}
+                      onToggle={(toggle) => {
+                        toggleRow(view.key, toggle);
+                      }}
+                      codeBlock={props.codeBlock}
+                    />
+                  )}
+                </Show>
+              )}
+            </VirtualList>
+          </Show>
         </Show>
-      </Show>
+      </div>
     </PageFrame>
   );
 }
@@ -257,8 +295,10 @@ interface ScriptSummaryProps {
   present: boolean;
   /** The Delay JS script's version, when it announces one. */
   version: string | null;
-  /** Scripts on the page. */
+  /** Scripts received. */
   total: number;
+  /** The list was cut at its cap (the total is a floor). */
+  partial: boolean;
 }
 
 /**
@@ -289,7 +329,7 @@ function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
         )}
       </Show>
       <span data-fdt="script-total" class="ms-auto ps-2 text-fg-secondary tabular-nums">
-        {scriptCount(props.total)}
+        {scriptCount(props.total, props.partial)}
       </span>
     </div>
   );
