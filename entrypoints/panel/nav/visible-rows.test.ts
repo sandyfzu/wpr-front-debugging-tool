@@ -133,14 +133,31 @@ describe('visibleRowsInRail', () => {
     ]);
   });
 
-  it('a mid-group cut keeps the group lead and its first rows in the rail', () => {
-    // Inspect's second row (JavaScript at 45..77) does not fit; the group's
-    // separator and its first row stay (the separator is part of the first
-    // row's measured top).
+  it('an available height ending inside the lead hides its whole group (no orphaned lead)', () => {
+    // The 230-anatomy: Overview's row ends at 32 and the Inspect lead spans
+    // 32..45 (6px margin + 1px hairline + 6px padding) — a height inside
+    // that lead (38) fits no Inspect row, so the lead and its group turn to
+    // the menu together (the separator is part of the first row's measured
+    // top; it never strands).
     const result = visibleRowsInRail(ALL, 38);
     expect(result.visible.map((row) => row.route)).toEqual(['detections']);
     expect(result.hidden.map((row) => row.route)).toEqual([
       'javascript',
+      'lazyload',
+      'preloaded-resources',
+      'undefined-references',
+      'diagnoser'
+    ]);
+  });
+
+  it('the genuine mid-group cut keeps the lead and the first row (the second leaves)', () => {
+    // A cut between JavaScript's box (45..77) and Lazyload's top (81): at 78
+    // the group's lead and its first row stay (the fit line is per-row over
+    // the measured boxes), Lazyload and everything after it leaves — the
+    // render-tier pin carries the same case in the browser.
+    const result = visibleRowsInRail(ALL, 78);
+    expect(result.visible.map((row) => row.route)).toEqual(['detections', 'javascript']);
+    expect(result.hidden.map((row) => row.route)).toEqual([
       'lazyload',
       'preloaded-resources',
       'undefined-references',
