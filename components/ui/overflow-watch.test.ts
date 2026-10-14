@@ -227,4 +227,49 @@ describe('createOverflowWatcher — shared elements and custom measures', () => 
     stopClip();
     expect(observers.observed()).toEqual([]);
   });
+
+  it('reports the initial state of a watch whose elements are all already observed', () => {
+    const observers = manualObservers();
+    const watch = createOverflowWatcher(observers.factory);
+    const box = sized({ scrollWidth: 200 });
+    const content = sized({});
+    const first: boolean[] = [];
+    watch(box, content, (value) => first.push(value));
+    observers.deliver(box, content); // the fresh observes' initial notification
+    expect(first).toEqual([true]);
+    // Same pair again: nothing newly observed, so no notification will come;
+    // the watch must report at watch time — once.
+    const second: boolean[] = [];
+    watch(box, content, (value) => second.push(value));
+    expect(second).toEqual([true]);
+    expect(first).toEqual([true]); // the first watch is not re-reported
+    // Reversed pair + custom measure: also fully pre-observed.
+    const third: boolean[] = [];
+    const seen: Array<[Element, Element]> = [];
+    watch(
+      content,
+      box,
+      (value) => third.push(value),
+      (measuredBox, measuredContent) => {
+        seen.push([measuredBox, measuredContent]);
+        return false;
+      }
+    );
+    expect(third).toEqual([false]);
+    expect(seen).toEqual([[content, box]]);
+    expect(observers.created()).toBe(1);
+  });
+
+  it('leaves the initial report to the observer when an element is newly observed', () => {
+    const observers = manualObservers();
+    const watch = createOverflowWatcher(observers.factory);
+    const shared = sized({});
+    watch(sized({}), shared, () => undefined);
+    const reports: boolean[] = [];
+    const box = sized({ scrollWidth: 200 });
+    watch(box, shared, (value) => reports.push(value)); // `box` is new
+    expect(reports).toEqual([]); // no synchronous measure
+    observers.deliver(box);
+    expect(reports).toEqual([true]);
+  });
 });

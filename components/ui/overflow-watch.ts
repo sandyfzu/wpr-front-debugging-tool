@@ -85,10 +85,10 @@ export type ResizeObserverFactory = (
  * `w-fit min-w-full`). Each notification re-measures the owning region and
  * reports only actual state changes. One element may belong to several
  * watches (a code block's content box is measured against its scroller and
- * its clamp); it stays observed until the last of them stops. The observer
- * delivers an initial
- * notification for every newly observed element, so no measuring is needed
- * at watch time.
+ * its clamp); it stays observed until the last of them stops. Every watch
+ * reports its initial state: the observer delivers an initial notification
+ * only for a newly observed element, so a watch whose elements are all
+ * already observed (by other watches) measures itself once at watch time.
  *
  * @param createObserver The observer factory (tests inject a manual double).
  * @returns The watcher.
@@ -117,12 +117,18 @@ export function createOverflowWatcher(
       last = next;
       onChange(next);
     };
+    let observedNew = false;
     for (const element of [box, content]) {
       const watches = regions.get(element) ?? new Set<() => void>();
-      if (watches.size === 0) shared.observe(element);
+      if (watches.size === 0) {
+        shared.observe(element);
+        observedNew = true;
+      }
       watches.add(remeasure);
       regions.set(element, watches);
     }
+    // No fresh `observe`, no initial notification: report the initial state here.
+    if (!observedNew) remeasure();
     return () => {
       for (const element of [box, content]) {
         const watches = regions.get(element);
