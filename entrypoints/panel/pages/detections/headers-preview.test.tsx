@@ -1,19 +1,24 @@
 /**
- * The response-headers preview: grouping (caching first, labels only when
- * both groups exist), the disclosure contract (collapsed by default,
- * `aria-expanded`/`aria-controls`, mount on first open then stay mounted),
- * every captured header rendered with its hint, and the empty-capture line.
+ * The response-headers preview: the preview model (caching first, labels
+ * only when both groups exist, stable keys incl. repeated names, the row
+ * cap), the disclosure contract (collapsed by default, `aria-expanded`/
+ * `aria-controls`, mount on first open then stay mounted), every header in
+ * the page flow (no nested scroller), the capped line, the empty-capture
+ * line, and DOM-node survival across a refresh.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import {
+  cappedLine,
   GROUP_LABELS,
   HEADERS_FOOTNOTE,
   HeadersPreview,
   NO_HEADERS_LINE,
-  previewGroups
+  PREVIEW_ROW_LIMIT,
+  previewModel
 } from './headers-preview';
 
 afterEach(() => {
@@ -32,20 +37,59 @@ function toggle(): HTMLButtonElement {
   return screen.getByRole('button', { name: /Response headers/ });
 }
 
-describe('previewGroups', () => {
+/** `count` filler headers named `x-fill-<i>`. */
+function filler(count: number): PageHeaders {
+  return Array.from({ length: count }, (_, index) => ({
+    name: `x-fill-${index.toString()}`,
+    value: 'v'
+  }));
+}
+
+describe('previewModel', () => {
   it('orders caching first and labels both groups when both exist', () => {
-    const groups = previewGroups(buildHeadersViewModel(HEADERS));
-    expect(groups.map((group) => [group.key, group.label, group.rows.length])).toEqual([
+    const preview = previewModel(buildHeadersViewModel(HEADERS));
+    expect(preview.groups.map((group) => [group.key, group.label, group.rows.length])).toEqual([
       ['caching', GROUP_LABELS.caching, 2],
       ['other', GROUP_LABELS.other, 2]
     ]);
+    expect(preview).toMatchObject({ shown: 4, total: 4 });
   });
 
   it('drops empty groups and leaves a lone group unlabelled', () => {
-    expect(previewGroups(buildHeadersViewModel([{ name: 'Server', value: 'x' }]))).toEqual([
-      { key: 'other', label: null, rows: [{ name: 'Server', value: 'x', hint: null }] }
+    expect(previewModel(buildHeadersViewModel([{ name: 'Server', value: 'x' }])).groups).toEqual([
+      {
+        key: 'other',
+        label: null,
+        rows: [{ key: 'other:server#0', header: { name: 'Server', value: 'x', hint: null } }]
+      }
     ]);
-    expect(previewGroups(buildHeadersViewModel([]))).toEqual([]);
+    expect(previewModel(buildHeadersViewModel([]))).toEqual({ groups: [], shown: 0, total: 0 });
+  });
+
+  it('keys repeated names by occurrence, case-insensitively', () => {
+    const preview = previewModel(
+      buildHeadersViewModel([
+        { name: 'Vary', value: 'a' },
+        { name: 'vary', value: 'b' }
+      ])
+    );
+    expect(preview.groups[0]?.rows.map((row) => row.key)).toEqual(['other:vary#0', 'other:vary#1']);
+  });
+
+  it('caps the rows, caching rows first, and counts the rest', () => {
+    const preview = previewModel(
+      buildHeadersViewModel([...filler(5), { name: 'Cache-Control', value: 'no-cache' }]),
+      3
+    );
+    expect(preview.shown).toBe(3);
+    expect(preview.total).toBe(6);
+    expect(preview.groups[0]?.key).toBe('caching');
+    expect(preview.groups.flatMap((group) => group.rows.map((row) => row.header.name))).toEqual([
+      'Cache-Control',
+      'x-fill-0',
+      'x-fill-1'
+    ]);
+    expect(previewModel(buildHeadersViewModel(filler(2)), -1).shown).toBe(0);
   });
 });
 
@@ -55,12 +99,11 @@ describe('HeadersPreview', () => {
     expect(screen.getByRole('heading', { level: 2 }).contains(toggle())).toBe(true);
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
     expect(toggle().hasAttribute('aria-controls')).toBe(false);
-    expect(toggle().textContent).toContain('4');
-    expect(toggle().textContent).toContain('captured');
+    expect(toggle().textContent).toBe('Response headers (4 captured)');
     expect(document.querySelector('[data-fdt="headers-preview-body"]')).toBeNull();
   });
 
-  it('mounts the body on first open, renders every header, then keeps it mounted', () => {
+  it('mounts the body on first open, renders every header in flow, then keeps it mounted', () => {
     render(() => <HeadersPreview headers={HEADERS} />);
     fireEvent.click(toggle());
     expect(toggle().getAttribute('aria-expanded')).toBe('true');
@@ -68,6 +111,8 @@ describe('HeadersPreview', () => {
     expect(body).not.toBeNull();
     expect(toggle().getAttribute('aria-controls')).toBe(body?.id);
     expect(body?.hidden).toBe(false);
+    // In the page flow: no capped, separately scrolling region.
+    expect(body?.querySelector('[class*="overflow-y-auto"], [class*="max-h-"]')).toBeNull();
 
     const terms = [...document.querySelectorAll('[data-fdt-key-value-term]')].map(
       (term) => term.textContent
@@ -77,7 +122,7 @@ describe('HeadersPreview', () => {
     expect(body?.textContent).toContain('Instructs receivers not to cache anything');
     expect(body?.textContent).toContain('42 seconds ago');
     expect(body?.textContent).toContain(HEADERS_FOOTNOTE);
-    expect(screen.getByRole('region', { name: 'Captured response headers' }).tabIndex).toBe(0);
+    expect(document.querySelector('[data-fdt="headers-preview-capped"]')).toBeNull();
 
     fireEvent.click(toggle());
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
@@ -86,11 +131,40 @@ describe('HeadersPreview', () => {
     expect(kept?.hidden).toBe(true);
   });
 
-  it('labels each group list for assistive tech', () => {
+  it('labels each group list for assistive tech (a lone group as "Headers")', () => {
     render(() => <HeadersPreview headers={HEADERS} />);
     fireEvent.click(toggle());
     expect(screen.getByRole('list', { name: GROUP_LABELS.caching })).toBeTruthy();
     expect(screen.getByRole('list', { name: GROUP_LABELS.other })).toBeTruthy();
+    cleanup();
+    render(() => <HeadersPreview headers={[{ name: 'Server', value: 'x' }]} />);
+    fireEvent.click(toggle());
+    expect(screen.getByRole('list', { name: 'Headers' })).toBeTruthy();
+  });
+
+  it('caps a large capture and says where the rest is', () => {
+    const many = filler(PREVIEW_ROW_LIMIT + 20);
+    render(() => <HeadersPreview headers={many} />);
+    fireEvent.click(toggle());
+    expect(document.querySelectorAll('[data-fdt-key-value-term]')).toHaveLength(PREVIEW_ROW_LIMIT);
+    expect(document.querySelector('[data-fdt="headers-preview-capped"]')?.textContent).toBe(
+      cappedLine(PREVIEW_ROW_LIMIT, PREVIEW_ROW_LIMIT + 20)
+    );
+    expect(cappedLine(100, 120)).toBe(
+      'Showing the first 100 of 120 headers — Copy report includes all of them.'
+    );
+  });
+
+  it('keeps row DOM nodes across a refresh with the same headers', () => {
+    const [headers, setHeaders] = createSignal<PageHeaders>(HEADERS);
+    render(() => <HeadersPreview headers={headers()} />);
+    fireEvent.click(toggle());
+    const before = document.querySelector('[data-fdt-key-value-term]')?.closest('li');
+    setHeaders(HEADERS.map((row) => ({ ...row })));
+    expect(document.querySelector('[data-fdt-key-value-term]')?.closest('li')).toBe(before);
+    setHeaders([...HEADERS.map((row) => ({ ...row })), { name: 'Via', value: 'proxy' }]);
+    expect(document.querySelector('[data-fdt-key-value-term]')?.closest('li')).toBe(before);
+    expect(document.querySelectorAll('[data-fdt-key-value-term]')).toHaveLength(5);
   });
 
   it('renders the one-line empty state for an empty capture (no disclosure)', () => {

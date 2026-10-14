@@ -17,7 +17,9 @@ import { makeFdtData } from '../../state/fixtures';
 import type { DataState } from '../../state/fdt-state-machine';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { CARD_PAGE_LINKS } from './card-presentation';
-import { DETECTIONS_SUBTITLE, DetectionsPage, DetectionsView } from './page';
+import { isOptimizationCard } from '../../../../lib/panel/detections-summary';
+import { DETECTIONS_GRID, DETECTIONS_SUBTITLE, DetectionsPage, DetectionsView } from './page';
+import { CARD_SURFACE_PAIR, STATUS_CARD_SURFACE } from './status-card';
 
 afterEach(() => {
   cleanup();
@@ -95,8 +97,10 @@ describe('DetectionsView', () => {
       } else {
         expect(el.tagName).toBe('A');
         expect(el.getAttribute('href')).toBe(`#/${route}`);
-        expect(el.className).toContain('hover:shadow-elev-2');
         expect(el.className).toContain('focus-visible:outline-2');
+        // Only a link to an active feature is presented as primary (lifts).
+        const active = el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active';
+        expect(el.className.includes('hover:shadow-elev-2')).toBe(active);
         // Never a control nested inside the link.
         expect(el.querySelector('button, a')).toBeNull();
       }
@@ -108,6 +112,11 @@ describe('DetectionsView', () => {
       'Delay JavaScript execution, Active, Version 2.0, Open JavaScript'
     );
     expect(card('lazyload').textContent).toBe('Lazyload for images, Active, Open Lazyload');
+    // The off feature's link is quiet: no lift, secondary "Open" line.
+    expect(card('defer_all_js').className).not.toContain('hover:shadow-elev-2');
+    expect(card('defer_all_js').textContent).toBe(
+      'Load JavaScript deferred, Not active, Open JavaScript'
+    );
   });
 
   it('maps verdicts to the vocabulary: active → ok "Active", off → neutral "Not active"', () => {
@@ -143,42 +152,44 @@ describe('DetectionsView', () => {
     expect(trigger()?.textContent).toBe('Generated 1 d ago');
   });
 
-  it('agrees with the cards in the summary strip', () => {
-    render(() => <DetectionsView data={richData()} now={NOW} />);
-    const strip = screen.getByRole('list', { name: 'Page summary' });
-    expect(strip.textContent).toContain('WP Rocket 3.20.1');
-    expect(strip.textContent).toContain('Cached3 h ago(2023-11-14 22:13:20 UTC)');
-    expect(strip.textContent).toContain('Kinstavia X-Kinsta-Cache');
-    expect(strip.textContent).toContain('Servernginx');
-    expect(strip.textContent).toContain('2 of 14optimizations active');
+  it('heads the page with the strip, agreeing with the cards', () => {
+    const data = richData();
+    render(() => <DetectionsView data={data} now={NOW} />);
+    const headline = document.querySelector('[data-fdt-summary-headline]');
+    const activeOptimizations = cards().filter(
+      (el) =>
+        isOptimizationCard(el.dataset.fdtCardId as never) &&
+        el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active'
+    ).length;
+    expect(headline?.textContent).toBe(
+      `${activeOptimizations.toString()} of 14 optimizations active`
+    );
+    expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
+      'Cache generated 2023-11-14 22:13:20 UTC'
+    );
+    // Nothing cloned from the status bar: no plugin badge, no server, no age.
+    const strip = document.querySelector('[data-fdt="detections-summary"]');
+    expect(strip?.querySelector('[data-fdt="status-badge"]')).toBeNull();
+    expect(strip?.textContent).not.toContain('nginx');
+    expect(strip?.textContent).not.toContain('ago');
   });
 
-  it('says "WP Rocket not detected" when absent, and still renders every card', () => {
+  it('still renders every card when the plugin is absent', () => {
     const data = makeFdtData();
     render(() => <DetectionsView data={data} now={NOW} />);
-    const strip = screen.getByRole('list', { name: 'Page summary' });
-    expect(strip.textContent).toContain('WP Rocket not detected');
-    expect(strip.querySelector('[data-fdt-summary-fact="cache"]')).toBeNull();
-    expect(strip.textContent).toContain('0 of 14');
+    expect(document.querySelector('[data-fdt-summary-fact="wpr"]')).not.toBeNull();
     expect(cards()).toHaveLength(buildStatusItems(data).length);
   });
 
-  it('states "Not cached" for a present, uncached plugin', () => {
-    const base = makeFdtData();
-    render(() => (
-      <DetectionsView
-        data={makeFdtData({
-          wprDetections: {
-            ...base.wprDetections,
-            wpr: { present: true, cached: false, version: null, timeStamp: null }
-          }
-        })}
-        now={NOW}
-      />
-    ));
-    expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
-      'Not cached'
-    );
+  it('lays the cards out as divided rows at compact, a 15 rem card grid from regular', () => {
+    render(() => <DetectionsView data={richData()} now={NOW} />);
+    const grid = screen.getByRole('list', { name: 'Detection results' });
+    expect(grid.className).toBe(DETECTIONS_GRID);
+    expect(DETECTIONS_GRID).toContain('divide-y');
+    expect(DETECTIONS_GRID).toContain('@regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]');
+    // The regular-tier card mirrors the Card primitive's level-1 pair.
+    expect(STATUS_CARD_SURFACE).toContain(`@regular:${CARD_SURFACE_PAIR.surface}`);
+    expect(STATUS_CARD_SURFACE).toContain(`@regular:${CARD_SURFACE_PAIR.line}`);
   });
 
   it('omits the headers section (and the header cards) when nothing was captured', () => {

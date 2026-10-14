@@ -30,12 +30,36 @@ import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
 import { cacheAgeText, STATUS_TONES } from './card-presentation';
 
-/** The card surface both forms share (the `Card` primitive's level-1 pair + padding). */
-const CARD_SURFACE = cn(
-  'flex h-full w-full flex-col gap-1 rounded-md border p-2.5 text-xs text-fg-primary',
-  CARD_LEVEL_CLASSES[1].surface,
-  CARD_LEVEL_CLASSES[1].line
+/**
+ * The surface both forms share. Compact tier: a divided row inside the
+ * grid's one grouped surface (17 bordered cards stacked in a 270 px column
+ * read as noise); regular tier up: a standalone card — the `Card`
+ * primitive's level-1 surface/line pair (written as literal variant classes
+ * so the stylesheet scanner sees them; {@link CARD_LEVEL_CLASSES} is the
+ * pair's declaring site, re-exported as {@link CARD_SURFACE_PAIR} and pinned
+ * equal by the page test).
+ */
+export const STATUS_CARD_SURFACE =
+  'flex h-full w-full flex-col gap-1 px-2.5 py-2 text-xs text-fg-primary @regular:rounded-md @regular:border @regular:border-line-1 @regular:bg-surface-1 @regular:p-2.5';
+
+/** The level-1 pair the regular-tier card mirrors (exported for the pin). */
+export const CARD_SURFACE_PAIR = CARD_LEVEL_CLASSES[1];
+
+/**
+ * A link card's interaction treatment: the lift where it is a card (regular
+ * tier), a row highlight where it is a row (compact tier), and an inset ring
+ * at compact so the grouped surface's clip never cuts it.
+ */
+const LINK_ACTIVE = cn(
+  MOTION_LIFT,
+  '@max-regular:hover:bg-surface-2 @max-regular:hover:shadow-none @max-regular:focus-visible:-outline-offset-2'
 );
+
+/**
+ * A link card for a feature that is off: still navigable (the page explains
+ * why nothing is applied), but presented quietly — no lift.
+ */
+const LINK_QUIET = '@max-regular:focus-visible:-outline-offset-2 hover:bg-surface-2';
 
 /** Indents the lines under the head row to the name's start (14 px icon + `gap-1.5`). */
 const UNDER_NAME = 'ps-5';
@@ -62,6 +86,7 @@ export interface StatusCardProps {
  * The head row: vocabulary icon, name (wraps), verdict badge.
  *
  * @param props.item The card.
+ * @returns The head row.
  */
 function CardHead(props: { item: StatusItem }): JSX.Element {
   const tone = () => STATUS_TONES[props.item.status];
@@ -99,6 +124,7 @@ function CardHead(props: { item: StatusItem }): JSX.Element {
  *
  * @param props.item The card (its typed detail decides the form).
  * @param props.text The view model's subtitle copy (the fallback form).
+ * @returns The subtitle content.
  */
 function SubtitleText(props: { item: StatusItem; text: string }): JSX.Element {
   /** The known version string, when this card carries one. */
@@ -128,6 +154,7 @@ function SubtitleText(props: { item: StatusItem; text: string }): JSX.Element {
  *
  * @param props.item The card.
  * @param props.now The page clock reading.
+ * @returns The subtitle line, or nothing when the card has none.
  */
 function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
   const detail = () => props.item.detail;
@@ -184,6 +211,7 @@ function StaticSubtitle(props: { item: StatusItem; now: number }): JSX.Element {
  * Render one card in its static or link form.
  *
  * @param props See {@link StatusCardProps}.
+ * @returns The card (an anchor for the link form, a div otherwise).
  */
 export function StatusCard(props: StatusCardProps): JSX.Element {
   /** The destination's nav row (the link form needs its label). */
@@ -192,7 +220,7 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
     <Show
       when={destination()}
       fallback={
-        <div data-fdt="status-card" data-fdt-card-id={props.item.id} class={CARD_SURFACE}>
+        <div data-fdt="status-card" data-fdt-card-id={props.item.id} class={STATUS_CARD_SURFACE}>
           <CardHead item={props.item} />
           <StaticSubtitle item={props.item} now={props.now} />
         </div>
@@ -203,7 +231,12 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
           data-fdt="status-card"
           data-fdt-card-id={props.item.id}
           href={`#/${route().id}`}
-          class={cn(CARD_SURFACE, 'group no-underline', MOTION_LIFT, FOCUS_RING)}
+          class={cn(
+            STATUS_CARD_SURFACE,
+            'group no-underline',
+            FOCUS_RING,
+            props.item.status === 'active' ? LINK_ACTIVE : LINK_QUIET
+          )}
         >
           <CardHead item={props.item} />
           <Show when={props.item.subtitle}>
@@ -217,7 +250,8 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
           <span
             class={cn(
               UNDER_NAME,
-              'mt-auto inline-flex items-center gap-0.5 pt-0.5 text-2xs text-accent group-hover:underline'
+              'mt-auto inline-flex items-center gap-0.5 pt-0.5 text-2xs group-hover:underline',
+              props.item.status === 'active' ? 'text-accent' : 'text-fg-secondary'
             )}
           >
             <span class="sr-only">, </span>

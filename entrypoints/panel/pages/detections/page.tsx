@@ -34,6 +34,15 @@ import { SummaryStrip } from './summary-strip';
 /** The page's one-line intro under its title. */
 export const DETECTIONS_SUBTITLE = 'What WP Rocket applied to this page, and how it was served.';
 
+/**
+ * The card list's layout per tier. Compact: one grouped surface of divided
+ * rows (a stack of bordered cards wastes the narrow column on chrome).
+ * Regular up: an auto-fill card grid with 15 rem tracks — 1 → 2 → 3 → 4+
+ * columns as width allows, wide enough that feature names stay on ≤ 2 lines.
+ */
+export const DETECTIONS_GRID =
+  'flex flex-col divide-y divide-line-1 overflow-hidden rounded-md border border-line-1 bg-surface-1 @regular:grid @regular:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] @regular:gap-2 @regular:divide-y-0 @regular:overflow-visible @regular:rounded-none @regular:border-0 @regular:bg-transparent';
+
 /** Props of {@link DetectionsView}. */
 export interface DetectionsViewProps {
   /** The loaded page data. */
@@ -47,6 +56,7 @@ export interface DetectionsViewProps {
  * {@link DetectionsPage} wires it to the shell's store and a live clock.
  *
  * @param props See {@link DetectionsViewProps}.
+ * @returns The page frame with its sections.
  */
 export function DetectionsView(props: DetectionsViewProps): JSX.Element {
   const items = createMemo(() => buildStatusItems(props.data));
@@ -63,12 +73,8 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
       subtitle={DETECTIONS_SUBTITLE}
       actions={<CopyReportButton data={props.data} />}
     >
-      <SummaryStrip summary={summary()} now={props.now} />
-      <ul
-        data-fdt="detections-grid"
-        aria-label="Detection results"
-        class="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2"
-      >
+      <SummaryStrip summary={summary()} />
+      <ul data-fdt="detections-grid" aria-label="Detection results" class={DETECTIONS_GRID}>
         <For each={ids()}>
           {(id) => (
             <Show when={byId().get(id)}>
@@ -92,6 +98,8 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
  * The Detections route body: the loaded data from the shell's store and one
  * aging clock for the page's relative times (ticking only while the panel is
  * visible; stopped when the page unmounts).
+ *
+ * @returns The page body (nothing while the store holds no loaded data).
  */
 export function DetectionsPage(): JSX.Element {
   const store = useFdtData();

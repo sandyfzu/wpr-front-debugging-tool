@@ -1,122 +1,130 @@
 /**
- * The Detections summary strip: the long form of the status bar's short
- * answers — plugin + version, cache state with its relative AND absolute
- * time, the platform plus the header that identified it, the server value —
- * and "N of M optimizations active". One wrapping line of `·`-separated
- * facts read off the same card list the grid renders (so the two cannot
- * disagree).
+ * The Detections summary strip — the one answer the status bar does not
+ * give: how much of WP Rocket is working on this page ("N of M
+ * optimizations active", with a quiet meter), plus only the facts the bar
+ * lacks: the cache's absolute generation time (the bar shows its age) and
+ * the header that identified the platform. Plugin presence, version, age
+ * and server stay the status bar's — never cloned here.
  *
- * The separators are clipped at line starts: every fact carries its leading
- * dot in the negative inline-start margin the list hides behind its
- * `overflow-hidden` frame, so a wrapped line never opens with a stray `·`;
- * the dot's empty CSS alt text keeps it out of the accessibility tree.
+ * Every fact is read off the same card list the grid renders, so the two
+ * cannot disagree. Secondary facts sit on one wrapping line of
+ * `·`-separated items whose separators are clipped at line starts (each dot
+ * lives in the item's hidden inline-start gutter, with empty CSS alt text
+ * so it never reaches the accessibility tree).
  */
 import type { JSX } from 'solid-js';
-import { Match, Show, Switch } from 'solid-js';
+import { Show } from 'solid-js';
 import { Card } from '../../../../components/ui/card';
-import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
-import { relativeAge } from '../../status-bar/relative-age';
+
+/** One secondary fact, its separator dot in the clipped gutter. */
+const FACT =
+  "relative ms-3 min-w-0 max-w-full before:absolute before:-start-2 before:text-fg-muted before:content-['·'_/_'']";
 
 /**
- * One fact: an inline group with its leading separator in the hidden gutter
- * (`ms-3` pushes it in, the `before:` dot sits in that margin).
+ * The meter's fill share, as a CSS width.
+ *
+ * @param active Active optimizations.
+ * @param total All optimization rows.
+ * @returns A percentage in [0, 100] (0 for an empty set).
  */
-const FACT =
-  "relative ms-3 inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 before:absolute before:-start-2 before:text-fg-muted before:content-['·'_/_'']";
+export function meterWidth(active: number, total: number): string {
+  if (total <= 0 || active <= 0) return '0%';
+  return `${Math.min(100, (active / total) * 100).toFixed(2)}%`;
+}
+
+/**
+ * The machine-readable form of a cache stamp for `<time datetime>`.
+ *
+ * @param seconds Epoch seconds (representable by the view model's contract).
+ * @returns The ISO-8601 instant.
+ */
+function isoInstant(seconds: number): string {
+  return new Date(seconds * 1000).toISOString();
+}
 
 /** Props of {@link SummaryStrip}. */
 export interface SummaryStripProps {
   /** The page facts. */
   summary: DetectionsSummary;
-  /** The page clock reading (epoch ms) relative ages read. */
-  now: number;
 }
 
 /**
  * Render the summary strip.
  *
  * @param props See {@link SummaryStripProps}.
+ * @returns The strip card.
  */
 export function SummaryStrip(props: SummaryStripProps): JSX.Element {
-  const cached = () => (props.summary.cache.kind === 'cached' ? props.summary.cache : undefined);
+  const counts = () => props.summary.optimizations;
+  /** The cache stamp when the page is cached with a representable one. */
+  const stamp = () => {
+    const cache = props.summary.cache;
+    return cache.kind === 'cached' && cache.seconds !== null && cache.formatted !== null
+      ? { seconds: cache.seconds, formatted: cache.formatted }
+      : undefined;
+  };
+  const hasFacts = () =>
+    !props.summary.wpr.present || stamp() !== undefined || props.summary.platform !== null;
+
   return (
     <Card level={1}>
-      {/* The clip frame sits on the content box, so line-start dots vanish. */}
-      <div class="overflow-hidden">
-        <ul
-          data-fdt="detections-summary"
-          aria-label="Page summary"
-          class="-ms-3 flex flex-wrap items-center gap-y-1.5 text-xs"
-        >
-          <li class={FACT}>
-            <Show
-              when={props.summary.wpr.present ? props.summary.wpr : undefined}
-              fallback={
-                <StatusBadge kind="neutral" icon>
-                  WP Rocket not detected
-                </StatusBadge>
-              }
-            >
-              {(wpr) => (
-                <StatusBadge kind="ok" icon class="min-w-0">
-                  <span class="min-w-0 truncate">
-                    WP Rocket
-                    <Show when={wpr().version}>
-                      {(version) => <span class="font-mono"> {version()}</span>}
-                    </Show>
-                  </span>
-                </StatusBadge>
-              )}
-            </Show>
-          </li>
-          <Switch>
-            <Match when={cached()}>
-              {(cache) => (
-                <li class={FACT} data-fdt-summary-fact="cache">
-                  <span class="font-medium">Cached</span>
-                  <Show when={cache().seconds !== null && cache().formatted !== null}>
-                    <span class="tabular-nums">
-                      {relativeAge(props.now - (cache().seconds ?? 0) * 1000)}
-                    </span>
-                    <span class="text-2xs text-fg-secondary tabular-nums">
-                      ({cache().formatted})
-                    </span>
-                  </Show>
-                </li>
-              )}
-            </Match>
-            <Match when={props.summary.cache.kind === 'not-cached'}>
-              <li class={FACT} data-fdt-summary-fact="cache">
-                <span class="text-fg-secondary">Not cached</span>
-              </li>
-            </Match>
-          </Switch>
-          <Show when={props.summary.platform}>
-            {(platform) => (
-              <li class={FACT} data-fdt-summary-fact="platform">
-                <span class="font-medium">{platform().name}</span>
-                <span class="text-2xs text-fg-secondary">
-                  via <span class="font-mono break-all">{platform().header}</span>
-                </span>
-              </li>
-            )}
-          </Show>
-          <Show when={props.summary.server}>
-            {(server) => (
-              <li class={FACT} data-fdt-summary-fact="server">
-                <span class="text-fg-muted">Server</span>
-                <span class="font-mono break-all">{server()}</span>
-              </li>
-            )}
-          </Show>
-          <li class={FACT} data-fdt-summary-fact="optimizations">
-            <span class="font-medium tabular-nums">
-              {props.summary.optimizations.active} of {props.summary.optimizations.total}
+      <div data-fdt="detections-summary" class="flex flex-col gap-2">
+        <div class="flex flex-col gap-1.5 @regular:flex-row @regular:items-center @regular:gap-4">
+          <p data-fdt-summary-headline class="text-sm text-fg-primary">
+            <span class="font-semibold tabular-nums">{counts().active}</span>
+            <span class="text-fg-secondary">
+              {' '}
+              of <span class="tabular-nums">{counts().total}</span> optimizations active
             </span>
-            <span class="text-fg-secondary">optimizations active</span>
-          </li>
-        </ul>
+          </p>
+          {/* Decorative: the sentence beside it states the same numbers. */}
+          <div
+            aria-hidden="true"
+            data-fdt-summary-meter
+            class="h-1.5 w-full shrink-0 overflow-hidden rounded-full bg-surface-3 @regular:ms-auto @regular:w-40"
+          >
+            <div
+              class="h-full rounded-full bg-status-ok"
+              style={{ width: meterWidth(counts().active, counts().total) }}
+            />
+          </div>
+        </div>
+        <Show when={hasFacts()}>
+          <div class="overflow-hidden">
+            <ul
+              aria-label="Page facts"
+              class="-ms-3 flex flex-wrap gap-y-1 text-2xs text-fg-secondary"
+            >
+              <Show when={!props.summary.wpr.present}>
+                <li class={FACT} data-fdt-summary-fact="wpr">
+                  WP Rocket was not detected on this page.
+                </li>
+              </Show>
+              <Show when={stamp()}>
+                {(cache) => (
+                  <li class={FACT} data-fdt-summary-fact="cache">
+                    Cache generated{' '}
+                    <time
+                      class="tabular-nums text-fg-primary"
+                      datetime={isoInstant(cache().seconds)}
+                    >
+                      {cache().formatted}
+                    </time>
+                  </li>
+                )}
+              </Show>
+              <Show when={props.summary.platform}>
+                {(platform) => (
+                  <li class={FACT} data-fdt-summary-fact="platform">
+                    <span class="text-fg-primary">{platform().name}</span> via{' '}
+                    <span class="font-mono break-all text-fg-primary">{platform().header}</span>
+                  </li>
+                )}
+              </Show>
+            </ul>
+          </div>
+        </Show>
       </div>
     </Card>
   );
