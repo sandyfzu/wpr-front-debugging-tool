@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  definitionMatcher,
   findDefinitions,
   loadScriptAssets,
   refreshDefinitions,
@@ -343,5 +344,34 @@ describe('refreshDefinitions — the incremental re-analysis', () => {
     expect(refresh.memoHits).toEqual(['known']);
     expect(refresh.recomputed).toEqual([]);
     expect(refresh.definitions[0]).toEqual({ word: 'known', definitions: [] });
+  });
+});
+
+describe('definitionMatcher', () => {
+  it('is null for the cross-origin sentinel (no name to search)', () => {
+    expect(definitionMatcher(UNDEFINED_REFERENCE_EXTERNAL_ERROR)).toBeNull();
+  });
+
+  it('is stateless across calls — a matched source does not shadow the next test', () => {
+    const matches = definitionMatcher('alpha');
+    if (matches === null) throw new Error('expected a matcher');
+    // A global regex would carry lastIndex from the first hit into the second call.
+    expect(matches('var alpha = 1;')).toBe(true);
+    expect(matches('var alpha = 1;')).toBe(true);
+    expect(matches('x;\nvar alpha;')).toBe(true);
+    expect(matches('alphabet = 1;')).toBe(false);
+  });
+
+  it('answers the same for a source and its line-split halves (matches never span lines)', () => {
+    const source = 'foo();\n  alpha: 1,\nvar beta\nobj.gamma =2';
+    for (const word of ['alpha', 'beta', 'gamma', 'foo', 'obj']) {
+      const matches = definitionMatcher(word);
+      if (matches === null) throw new Error('expected a matcher');
+      const lines = source.split(/(?<=\n)/);
+      expect(
+        lines.some((line) => matches(line)),
+        word
+      ).toBe(matches(source));
+    }
   });
 });
