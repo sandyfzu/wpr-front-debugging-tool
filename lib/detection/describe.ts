@@ -36,8 +36,13 @@ export type FeatureState = 'applied' | 'collecting' | 'not enabled' | 'not appli
  * The largest instant `new Date`/`toISOString` can represent (ECMA-262's
  * ± 100,000,000 days from the epoch, in ms). A page-derived stamp beyond it
  * is not a time, only a crash waiting for `toISOString` — callers see null.
+ *
+ * This is the platform ceiling's one declaring site, shared by both
+ * page-derived-stamp defenses that need it: the cache-stamp predicate below
+ * (epoch seconds × 1000) and the messaging boundary's capture stamps
+ * (`parsePageCookies`' `capturedAt`, used as ms directly).
  */
-const MAX_REPRESENTABLE_MS = 8.64e15;
+export const MAX_REPRESENTABLE_MS = 8.64e15;
 
 /**
  * The report object: one row per detected surface, keyed by the real feature

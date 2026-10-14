@@ -247,6 +247,23 @@ export interface PreloadedResources {
   }>;
 }
 
+/**
+ * WP Rocket-managed cookie names captured off the page, values redacted at
+ * the read: what debugging needs is which cookies exist (`wprocket`,
+ * `fallback`), never what they carry — values may hold auth tokens and are
+ * not even materialized by the capture (see `lib/wp-rocket/cookies`).
+ */
+export interface PageCookies {
+  /** Unique cookie names, first-occurrence order (over-cap names by their clip). */
+  names: string[];
+  /**
+   * Wall-clock ms when the capture read `document.cookie` — capped at the
+   * boundary to the platform's representable-instant range
+   * (`MAX_REPRESENTABLE_MS`), never a garbage `Date` downstream.
+   */
+  capturedAt: number;
+}
+
 /** Anything the panel needs about the current page, served by the content script. */
 export interface FdtData {
   allScriptsLoaded: boolean;
@@ -257,6 +274,12 @@ export interface FdtData {
   preloadedResources: PreloadedResources;
   /** Set once the diagnoser report was parsed; null components mean unparsable/absent. */
   diagnoserData: DiagnoserDocData | null;
+  /**
+   * The page's cookie names (values redacted at capture). Additive: payloads
+   * captured before this field existed omit it, and consumers treat its
+   * absence as graceful omission — never as a broken payload.
+   */
+  cookies?: PageCookies;
 }
 
 /**

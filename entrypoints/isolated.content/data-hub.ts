@@ -29,10 +29,12 @@ import { ERROR_WORD_LIMIT, parseErrorWords } from '../../lib/messaging/validate'
 import type {
   DiagnoserDocData,
   FdtData,
+  PageCookies,
   PageHeaders,
   PreloadedResources,
   WprDetections
 } from '../../lib/wp-rocket/types';
+import { sampleCookieNames } from '../../lib/wp-rocket/cookies';
 import { parsePage } from '../../lib/detection/parse-page';
 import { applyPresencePropagation, runChecks } from '../../lib/detection/run-detection';
 import { describeDetections } from '../../lib/detection/describe';
@@ -195,6 +197,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   let undefinedReferences: string[] = [];
   let allScriptsLoaded = false;
   let pageHTML: string | null = null;
+  /** The page's cookie names (values redacted), captured with the snapshot. */
+  let pageCookies: PageCookies | null = null;
   let data: PageData | null = null;
   /** The single-flight processing promise; null while idle or already done. */
   let processing: Promise<void> | null = null;
@@ -205,6 +209,15 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   const capture = (): void => {
     if (pageHTML !== null) return;
     pageHTML = new XMLSerializer().serializeToString(document);
+    // The cookie names ride the same snapshot moment: `document.cookie` is
+    // the live document's view (not the serialization's), so reading here is
+    // the capture's "as of" instant, and the capture parser redacts the
+    // values before they are ever in a variable of ours.
+    // Hard-ordered by design, no `try`: the two preceding effects (the page
+    // serialized, `document.cookie` read) have no throwing path — the getter
+    // is specified to answer, never throw (WHATWG DOM) — so this step cannot
+    // strand the pass with a never-resolving wait point below.
+    pageCookies = { names: sampleCookieNames(document.cookie), capturedAt: Date.now() };
   };
 
   const fetchHeaders = async (): Promise<void> => {
@@ -359,7 +372,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   /** The panel payload; null when processing failed or nothing was captured. */
   const fdtData = (): FdtData | null => {
     if (data === null) return null;
-    return {
+    const payload = {
       allScriptsLoaded,
       pageHeaders,
       undefinedReferencesOnPage: undefinedReferences,
@@ -367,6 +380,11 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       preloadedResources: data.preloadedResources,
       diagnoserData: data.diagnoserData
     };
+    // The capture (which redacts the values at the read) always runs before
+    // processing can produce data, so the list is expected here; should that
+    // invariant ever fail, the additive field's absence — never a forged
+    // empty stamp — is the tolerated degradation consumers omit gracefully.
+    return pageCookies === null ? payload : { ...payload, cookies: pageCookies };
   };
 
   ctx.onInvalidated(
