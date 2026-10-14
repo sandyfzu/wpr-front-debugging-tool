@@ -1,20 +1,26 @@
 /**
- * The word card's render branches: inline chips vs script links, the
- * verdict as visible text, the sentinel and not-found bodies, the unsearched
- * header-only card, untrusted words and URLs rendered inertly, and the copy
- * action wiring.
+ * The word card's render branches: inline chips vs script links (file
+ * name, muted query, location, the page's own host dropped), accessible
+ * names that tell rows apart, the copy action with its in-place
+ * confirmation, the five-row cap with its disclosure, the verdict as visible
+ * text, the sentinel / not-found / header-only cards, and untrusted words and
+ * URLs rendered inertly. User-facing copy is pinned literally.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
-import { COPY_LABEL, CROSS_ORIGIN_EXPLANATION, NOT_FOUND_EXPLANATION, WordCard } from './word-card';
+import { COPIED_FLASH_MS, WordCard, copyExclusionName } from './word-card';
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
+const PAGE = 'https://example.com';
 const URL_A = 'https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1';
+const URL_CDN = 'https://cdn.example.net/wp-includes/js/jquery/jquery.min.js?ver=3.7.1';
 
 /** The rendered verdict span. */
 function verdict(): HTMLElement {
@@ -23,91 +29,218 @@ function verdict(): HTMLElement {
   return node;
 }
 
-describe('WordCard', () => {
-  it('renders a URL definition as a new-tab link named by its file, plus its copy action', () => {
-    const onCopy = vi.fn();
+/** A copy handler that resolves copied and records what it got. */
+function recorder() {
+  return vi.fn<(pattern: string) => Promise<'copied' | 'failed'>>(() => Promise.resolve('copied'));
+}
+
+describe('WordCard — script rows', () => {
+  it('names the link by file + location, drops the page host, copies the path', async () => {
+    const onCopy = recorder();
     render(() => (
-      <WordCard word="jQuery" definitions={[{ kind: 'url', url: URL_A }]} onCopy={onCopy} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        onCopy={onCopy}
+      />
     ));
     expect(screen.getByText('Undefined')).toBeTruthy();
-    expect(screen.getByText('jQuery')).toBeTruthy();
-    expect(verdict().dataset.fdtVerdict).toBe('found');
     expect(verdict().textContent).toBe('In 1 script');
-
-    const link = screen.getByRole('link', {
-      name: 'jquery.min.js?ver=3.7.1 (opens in a new tab)'
-    });
+    // happy-dom's name computation pads inline spans with spaces, so the
+    // exact name is pinned through the text (Chromium's name, verified in the
+    // browser, has no padding).
+    const link = screen.getByRole('link', { name: /jquery\.min\.js/ });
+    expect(link.textContent).toBe(
+      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ (opens in a new tab)'
+    );
     expect(link.getAttribute('href')).toBe(URL_A);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(link.querySelector('[title]')?.getAttribute('title')).toBe(URL_A);
-    expect(screen.getByText('example.com/wp-includes/js/jquery/')).toBeTruthy();
-
-    const list = screen.getByRole('list', { name: 'Possible definitions of jQuery' });
-    expect(list.querySelectorAll('li')).toHaveLength(1);
-
-    const copy = screen.getByRole('button', { name: COPY_LABEL });
-    // Icon-only below the regular tier: the label stays as the accessible name.
-    expect(copy.querySelector('span')?.className).toContain('@max-regular:sr-only');
-    fireEvent.click(copy);
-    expect(onCopy).toHaveBeenCalledWith(URL_A);
-  });
-
-  it('renders an inline definition as a chip — never a link (no pseudo-URL anchor)', () => {
-    render(() => <WordCard word="gamma" definitions={[{ kind: 'inline' }]} />);
-    expect(screen.getByText('Inline Script')).toBeTruthy();
-    expect(screen.queryByRole('link')).toBeNull();
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(document.querySelector('[data-fdt-definition="inline"]')).not.toBeNull();
-  });
-
-  it('lists mixed definitions in order and pluralizes the verdict', () => {
-    const definitions: ScriptOrigin[] = [
-      { kind: 'url', url: URL_A },
-      { kind: 'inline' },
-      { kind: 'url', url: 'https://example.com/b.js' }
-    ];
-    render(() => <WordCard word="x" definitions={definitions} onCopy={vi.fn()} />);
-    expect(verdict().textContent).toBe('In 3 scripts');
-    const kinds = [...document.querySelectorAll<HTMLElement>('[data-fdt-definition]')].map(
-      (row) => row.dataset.fdtDefinition
+    expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe(
+      '/wp-includes/js/jquery/'
     );
-    expect(kinds).toEqual(['url', 'inline', 'url']);
-    expect(screen.getAllByRole('button', { name: COPY_LABEL })).toHaveLength(2);
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(onCopy).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
+    });
   });
 
-  it('renders a non-http(s) URL as plain text (page-derived; never an href)', () => {
+  it('keeps the host for another origin, so the same file from two hosts reads apart', () => {
     render(() => (
       <WordCard
-        word="x"
-        definitions={[{ kind: 'url', url: 'javascript:alert(1)' }]}
-        onCopy={vi.fn()}
+        word="jQuery"
+        answer={[
+          { kind: 'url', url: URL_A },
+          { kind: 'url', url: URL_CDN }
+        ]}
+        pageOrigin={PAGE}
+        onCopy={recorder()}
       />
     ));
+    const names = screen.getAllByRole('link').map((link) => link.textContent);
+    expect(names).toEqual([
+      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ (opens in a new tab)',
+      'jquery.min.js?ver=3.7.1, cdn.example.net/wp-includes/js/jquery/ (opens in a new tab)'
+    ]);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it('flashes "Copied" in place after a confirmed copy, then reverts', async () => {
+    vi.useFakeTimers();
+    render(() => (
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        onCopy={recorder()}
+      />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
+    expect(copy.textContent).toBe('Copy as exclusion');
+    fireEvent.click(copy);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(copy.hasAttribute('data-fdt-copied')).toBe(true);
+    expect(copy.textContent).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(COPIED_FLASH_MS);
+    expect(copy.hasAttribute('data-fdt-copied')).toBe(false);
+    expect(copy.textContent).toBe('Copy as exclusion');
+  });
+
+  it('does not flash on a failed copy, and survives a throwing handler', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const failing = vi.fn(() => Promise.resolve<'copied' | 'failed'>('failed'));
+    const { unmount } = render(() => (
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        onCopy={failing}
+      />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(failing).toHaveBeenCalledOnce();
+    });
+    expect(copy.hasAttribute('data-fdt-copied')).toBe(false);
+    unmount();
+    render(() => (
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        onCopy={() => Promise.reject(new Error('boom'))}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' }));
+    await vi.waitFor(() => {
+      expect(console.warn).toHaveBeenCalled();
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('copies through the real action when no override is given', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    render(() => (
+      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' }));
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
+    });
+  });
+
+  it('renders a non-http(s) URL as plain text with no copy action', () => {
+    render(() => (
+      <WordCard word="x" answer={[{ kind: 'url', url: 'javascript:alert(1)' }]} pageOrigin={PAGE} />
+    ));
     expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByText('javascript:alert(1)')).toBeTruthy();
     expect(document.querySelector('[href]')).toBeNull();
   });
 
-  it('says "No definition found" in text with the explanation below', () => {
-    render(() => <WordCard word="nope" definitions={[]} />);
-    expect(verdict().textContent).toBe('No definition found');
-    expect(screen.getByText(NOT_FOUND_EXPLANATION)).toBeTruthy();
-    expect(screen.queryByRole('list')).toBeNull();
+  it('names the copy control with the visible label first (label in name)', () => {
+    expect(copyExclusionName('a.js')).toBe('Copy as exclusion: a.js');
+  });
+});
+
+describe('WordCard — definition list', () => {
+  it('renders an inline definition as a chip — never a link', () => {
+    render(() => <WordCard word="gamma" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />);
+    expect(screen.getByText('Inline Script')).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('renders the cross-origin sentinel as "Script error." with its explanation', () => {
-    render(() => <WordCard word={UNDEFINED_REFERENCE_EXTERNAL_ERROR} definitions={[]} />);
+  it('caps the rows at five behind a "Show all N" disclosure that keeps focus', () => {
+    const definitions: ScriptOrigin[] = Array.from({ length: 7 }, (_, i) => ({
+      kind: 'url',
+      url: `https://example.com/js/file-${String(i)}.js`
+    }));
+    render(() => <WordCard word="$" answer={definitions} pageOrigin={PAGE} onCopy={recorder()} />);
+    expect(verdict().textContent).toBe('In 7 scripts');
+    const list = screen.getByRole('list', { name: 'Possible definitions of $' });
+    expect(list.querySelectorAll('li')).toHaveLength(5);
+    const toggle = screen.getByRole('button', { name: 'Show all 7' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-controls')).toBe(list.id);
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(list.querySelectorAll('li')).toHaveLength(7);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent).toBe('Show fewer');
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.click(toggle);
+    expect(list.querySelectorAll('li')).toHaveLength(5);
+  });
+
+  it('shows no toggle at five rows or fewer', () => {
+    const definitions: ScriptOrigin[] = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'url',
+      url: `https://example.com/js/f${String(i)}.js`
+    }));
+    render(() => <WordCard word="x" answer={definitions} pageOrigin={PAGE} onCopy={recorder()} />);
+    expect(document.querySelector('[data-fdt="definitions-toggle"]')).toBeNull();
+  });
+});
+
+describe('WordCard — verdicts and bodies', () => {
+  it('says "No definition found" in text with the explanation below', () => {
+    render(() => <WordCard word="nope" answer={[]} pageOrigin={PAGE} />);
+    expect(verdict().textContent).toBe('No definition found');
+    expect(
+      screen.getByText("No declaration or assignment of this name was found in the page's scripts.")
+    ).toBeTruthy();
+  });
+
+  it('renders the cross-origin sentinel with a neutral badge and its explanation', () => {
+    render(() => (
+      <WordCard word={UNDEFINED_REFERENCE_EXTERNAL_ERROR} answer={[]} pageOrigin={PAGE} />
+    ));
     expect(screen.getByText('Script error.')).toBeTruthy();
     expect(screen.queryByText(UNDEFINED_REFERENCE_EXTERNAL_ERROR)).toBeNull();
+    expect(screen.queryByText('Undefined')).toBeNull();
+    const badge = screen.getByText('Cross-origin');
+    expect(badge.className).toContain('text-status-neutral');
     expect(verdict().textContent).toBe('Details hidden');
-    expect(screen.getByText(CROSS_ORIGIN_EXPLANATION)).toBeTruthy();
-    expect(CROSS_ORIGIN_EXPLANATION).toContain('occurred');
-    expect(CROSS_ORIGIN_EXPLANATION).not.toContain('ocurred');
+    expect(
+      screen.getByText(
+        'Since the error occurred in a file loaded from an external server, the browser limited the information that can be read from it. Make sure to disable CDNs if there are any.'
+      )
+    ).toBeTruthy();
   });
 
-  it('renders an unsearched word as its header row alone', () => {
-    render(() => <WordCard word="alpha" definitions={null} />);
+  it('renders searching and unsearched words as their heading row alone', () => {
+    const { unmount } = render(() => <WordCard word="alpha" answer="pending" pageOrigin={PAGE} />);
+    expect(verdict().textContent).toBe('Searching…');
+    expect(document.querySelector('[data-fdt="card-header"]')).toBeNull();
+    unmount();
+    render(() => <WordCard word="alpha" answer={null} pageOrigin={PAGE} />);
     expect(verdict().textContent).toBe('Not searched');
     expect(document.querySelector('[data-fdt="card-header"]')).toBeNull();
     expect(document.querySelectorAll('[data-fdt="card"]')).toHaveLength(1);
@@ -115,22 +248,8 @@ describe('WordCard', () => {
 
   it('renders a page-controlled word as inert text', () => {
     const hostile = '<img src=x onerror="window.__pwned=1">';
-    render(() => <WordCard word={hostile} definitions={[]} />);
+    render(() => <WordCard word={hostile} answer={[]} pageOrigin={PAGE} />);
     expect(screen.getByText(hostile)).toBeTruthy();
     expect(document.querySelector('img')).toBeNull();
-  });
-
-  it('copies through the real action when no override is given', async () => {
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
-    try {
-      render(() => <WordCard word="jQuery" definitions={[{ kind: 'url', url: URL_A }]} />);
-      fireEvent.click(screen.getByRole('button', { name: COPY_LABEL }));
-      await vi.waitFor(() => {
-        expect(writeText).toHaveBeenCalledWith(URL_A);
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });

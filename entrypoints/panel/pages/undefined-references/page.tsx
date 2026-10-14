@@ -1,32 +1,45 @@
 /**
  * The Undefined References page: the names the page's errors reported as
- * undefined, each with where it may be defined, plus the bridge to the
- * Exclusion Builder for the usual Delay JS fix.
+ * undefined, each with where it may be defined, plus a copyable Delay JS
+ * exclusion for the script that defines it.
  *
  * State matrix (one body at a time, chosen by `resolvePageView`):
  * - waiting for interaction — Delay JS still holds the scripts;
  * - processing — words exist and the first script read is in flight
  *   (skeletons shaped like the cards; the real wait only, never a timer);
- * - failed — the script read failed, Retry reads again;
  * - empty — no words (monitoring while the capture may still report some);
- * - results — the word cards; when this browser cannot list the page's
- *   scripts (feature absent) the cards say so instead of searching.
+ * - results — the word cards; answers stream in as the search reaches them;
+ *   when this browser cannot list the page's scripts (feature absent) the
+ *   words list unsearched under a notice;
+ * - failed — the words list unsearched under the error, with Retry (or, after
+ *   an extension reload, the reopen-DevTools remedy).
  *
- * The page owns its store (created per mount, disposed with it). Pushes of
- * new words append cards in arrival order without touching existing ones
- * (keyed by word), and the status line announces them once, politely.
+ * Results and failed share one mounted list, so moving between them (a
+ * refetch whose read fails, a rescan) never rebuilds the cards or drops
+ * focus. The page owns its store (created per mount, disposed with it).
  */
 import type { JSX } from 'solid-js';
-import { For, Match, Show, Switch, createMemo } from 'solid-js';
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup
+} from 'solid-js';
+import Check from 'lucide-solid/icons/check';
 import CircleCheck from 'lucide-solid/icons/circle-check';
 import Info from 'lucide-solid/icons/info';
 import MousePointerClick from 'lucide-solid/icons/mouse-pointer-click';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import ScanSearch from 'lucide-solid/icons/scan-search';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { EmptyState } from '../../../../components/ui/empty-state';
-import { ErrorState } from '../../../../components/ui/error-state';
 import { MOTION_REVEAL } from '../../../../components/ui/classes';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
@@ -36,14 +49,20 @@ import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
 import { PageFrame } from '../page-frame';
-import { realScriptLoader, type ScriptLoader } from './inspected-scripts';
-import { scanFailureMessage, summarizeResults, type ScanFailure } from './model';
+import { realInspectedScripts, type InspectedScripts } from './inspected-scripts';
+import {
+  isRetryable,
+  scanFailureMessage,
+  summarizeResults,
+  type ResultsSummary,
+  type ScanFailure
+} from './model';
 import {
   createUndefinedReferencesStore,
   type UndefinedReferencesDeps,
   type UndefinedReferencesStore
 } from './store';
-import { WordCard } from './word-card';
+import { COPIED_FLASH_MS, WordCard, type CopyExclusion } from './word-card';
 
 /** The page title (the route's nav label). */
 const TITLE = 'Undefined References';
@@ -65,12 +84,22 @@ export const SETTLED_DESCRIPTION = "The page's scripts ran without an undefined 
 export const UNSEARCHED_NOTICE =
   "This browser can't list the inspected page's scripts, so no definition search runs. The names come straight from the page's errors.";
 
+/** The failure notice's title. */
+export const FAILED_TITLE = "Couldn't read the page's scripts";
+
+/** The failure notice's second sentence: what the list below still is. */
+export const FAILED_WORDS_NOTE =
+  "The names below come straight from the page's errors, unsearched.";
+
+/** The stale-read hint beside the summary. */
+export const STALE_NOTE = 'New scripts loaded since the last read.';
+
 /** Props of {@link UndefinedReferencesPage} — test seams only; production passes none. */
 export interface UndefinedReferencesPageProps {
-  /** Override the store's effects (script loader, timers, search). */
+  /** Override the store's effects (inspected-window reader, timers, search pacing). */
   deps?: Partial<UndefinedReferencesDeps>;
   /** Override the copy action of every definition row. */
-  onCopy?: (url: string) => void;
+  onCopy?: CopyExclusion;
 }
 
 /** A stable empty list, so absent data never re-triggers the word memo. */
@@ -91,9 +120,9 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
   });
 
   /**
-   * Which page the data describes: the stamp of the latest settled fetch. A
+   * Which fetch the data comes from: the stamp of the latest settled fetch. A
    * refresh in flight keeps the previous key (its data is still the old
-   * page's); pushes keep it too (same page, patched fields).
+   * fetch's); pushes keep it too (same fetch, patched fields).
    */
   const pageKey = createMemo((previous: number): number => {
     const state = data.state();
@@ -103,8 +132,8 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
   // Deps are settled once per mount — a test seam, never reactive.
   // eslint-disable-next-line solid/reactivity
   const overrides = props.deps;
-  const loader: ScriptLoader | null =
-    overrides?.loadScripts !== undefined ? overrides.loadScripts : realScriptLoader();
+  const inspected: InspectedScripts | null =
+    overrides?.inspected !== undefined ? overrides.inspected : realInspectedScripts();
 
   const store = createUndefinedReferencesStore(
     {
@@ -121,9 +150,14 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
         });
       },
       ...overrides,
-      loadScripts: loader
+      inspected
     }
   );
+
+  const listed = (): boolean => {
+    const kind = store.view().kind;
+    return kind === 'results' || kind === 'failed';
+  };
 
   return (
     <PageFrame id="undefined-references" title={TITLE} subtitle={SUBTITLE} fill>
@@ -149,24 +183,6 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
         <Match
           when={(() => {
             const view = store.view();
-            return view.kind === 'failed' ? view : null;
-          })()}
-        >
-          {(view) => (
-            <CenteredState>
-              <ErrorState
-                title="Couldn't read the page's scripts"
-                message={scanFailureMessage(view().failure)}
-                onRetry={() => {
-                  store.retry();
-                }}
-              />
-            </CenteredState>
-          )}
-        </Match>
-        <Match
-          when={(() => {
-            const view = store.view();
             return view.kind === 'empty' ? view : null;
           })()}
         >
@@ -186,15 +202,8 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
             </CenteredState>
           )}
         </Match>
-        <Match
-          when={(() => {
-            const view = store.view();
-            return view.kind === 'results' ? view : null;
-          })()}
-        >
-          {(view) => (
-            <ResultsState store={store} searched={view().searched} onCopy={props.onCopy} />
-          )}
+        <Match when={listed()}>
+          <WordsState store={store} onCopy={props.onCopy} />
         </Match>
       </Switch>
     </PageFrame>
@@ -211,11 +220,18 @@ function CenteredState(props: { children: JSX.Element }): JSX.Element {
   return <div class="flex flex-1 flex-col justify-center pb-8">{props.children}</div>;
 }
 
+/** The width cap of the page's content on the wide tier (actions stay near their links). */
+const CONTENT_WIDTH = 'w-full @wide:max-w-4xl';
+
 /** The processing body: two skeleton cards in the word card's shape. */
 function ProcessingState(): JSX.Element {
   return (
-    <div data-fdt="undefined-refs-processing" aria-busy="true" class="flex flex-col gap-2">
-      <p class="text-2xs text-fg-secondary">Searching the page's scripts for definitions…</p>
+    <div
+      data-fdt="undefined-refs-processing"
+      aria-busy="true"
+      class={cn('flex flex-col gap-2', CONTENT_WIDTH)}
+    >
+      <p class="text-2xs text-fg-secondary">Reading the page's scripts…</p>
       <For each={[0, 1]}>{() => <SkeletonCard />}</For>
     </div>
   );
@@ -234,7 +250,6 @@ function SkeletonCard(): JSX.Element {
       }
     >
       <div class="flex flex-col gap-2">
-        <Skeleton class="h-3 w-20" />
         <Skeleton class="h-3.5 w-full" />
         <Skeleton class="h-3.5 w-3/4" />
       </div>
@@ -242,31 +257,48 @@ function SkeletonCard(): JSX.Element {
   );
 }
 
-/** Props of {@link ResultsState}. */
-interface ResultsStateProps {
+/** Props of {@link WordsState}. */
+interface WordsStateProps {
   /** The page store. */
   store: UndefinedReferencesStore;
-  /** Whether a definition search ran (false: feature absent in this browser). */
-  searched: boolean;
   /** Copy override for the rows (tests). */
-  onCopy?: (url: string) => void;
+  onCopy?: CopyExclusion;
 }
 
 /**
- * The results body: summary + rescan, then one card per word. A plain keyed
- * list, not a virtual one — the capture caps a page at 50 words, so every
- * card renders at once and keeps its DOM (and focus) across pushes. Its first
- * paint fades in once (the container's insert), never per card.
+ * The listed words — the results, or the failure's unsearched list under its
+ * notice. A plain keyed list, not a virtual one: the capture caps a page at
+ * 50 words, so every card renders at once and keeps its DOM (and focus)
+ * across pushes, answers and refetches. Its first paint fades in once (the
+ * container's insert), never per card.
  *
- * @param props See {@link ResultsStateProps}.
+ * @param props See {@link WordsStateProps}.
  */
-function ResultsState(props: ResultsStateProps): JSX.Element {
+function WordsState(props: WordsStateProps): JSX.Element {
+  const failure = (): ScanFailure | null => {
+    const view = props.store.view();
+    return view.kind === 'failed' ? view.failure : null;
+  };
+  const searched = (): boolean => {
+    const view = props.store.view();
+    return view.kind === 'results' && view.searched;
+  };
+  const unsupported = (): boolean => {
+    const view = props.store.view();
+    return view.kind === 'results' && !view.searched;
+  };
   const summary = createMemo(() =>
-    summarizeResults(props.store.words(), (word) => props.store.definitionsOf(word))
+    summarizeResults(props.store.words(), (word) => props.store.answerOf(word))
   );
   return (
-    <div data-fdt="undefined-refs-results" class={cn('flex flex-col gap-2', MOTION_REVEAL)}>
-      <Show when={!props.searched}>
+    <div
+      data-fdt="undefined-refs-results"
+      class={cn('flex flex-col gap-2', CONTENT_WIDTH, MOTION_REVEAL)}
+    >
+      <Show when={failure()}>
+        {(kind) => <FailureNotice failure={kind()} store={props.store} />}
+      </Show>
+      <Show when={unsupported()}>
         <Card>
           <p class="flex items-start gap-1.5 text-2xs leading-snug text-fg-secondary">
             <Info
@@ -283,34 +315,16 @@ function ResultsState(props: ResultsStateProps): JSX.Element {
           data-fdt="undefined-refs-summary"
           class="min-w-0 flex-1 text-2xs text-fg-secondary tabular-nums"
         >
-          <span class="font-medium text-fg-primary">{summary().total}</span>{' '}
-          {summary().total === 1 ? 'undefined reference' : 'undefined references'}
-          <Show when={props.searched}>
-            {' · '}
-            <span class="font-medium text-fg-primary">{summary().withDefinition}</span> with a
-            possible definition
+          <SummaryText summary={summary()} searched={searched()} />
+          <Show when={searched() && props.store.staleScripts()}>
+            {' '}
+            <span data-fdt="undefined-refs-stale" class="text-fg-primary">
+              {STALE_NOTE}
+            </span>
           </Show>
         </p>
-        <Show when={props.searched}>
-          {/* Busy shows as text, not `loading`: that disables the button,
-              which would drop keyboard focus mid-rescan. A click while busy
-              is a no-op (the store dedupes). */}
-          <Button
-            variant="ghost"
-            size="sm"
-            class="shrink-0"
-            aria-busy={props.store.rescanning() || undefined}
-            title="Read the page's scripts again (for scripts added since the last read)"
-            data-fdt="undefined-refs-rescan"
-            onClick={() => {
-              props.store.rescan();
-            }}
-          >
-            <RefreshCw size={14} class="shrink-0" aria-hidden="true" />
-            <span class="@max-regular:sr-only">
-              {props.store.rescanning() ? 'Rescanning…' : 'Rescan'}
-            </span>
-          </Button>
+        <Show when={searched()}>
+          <RescanButton store={props.store} />
         </Show>
       </div>
       <ul aria-label="Undefined references" class="flex flex-col gap-2">
@@ -319,7 +333,8 @@ function ResultsState(props: ResultsStateProps): JSX.Element {
             <li>
               <WordCard
                 word={word}
-                definitions={props.store.definitionsOf(word)}
+                answer={props.store.answerOf(word)}
+                pageOrigin={props.store.pageOrigin()}
                 onCopy={props.onCopy}
               />
             </li>
@@ -327,5 +342,146 @@ function ResultsState(props: ResultsStateProps): JSX.Element {
         </For>
       </ul>
     </div>
+  );
+}
+
+/**
+ * The summary line: undefined names, how many have a possible definition
+ * (only when a search runs), and the cross-origin error apart — it is not an
+ * undefined name.
+ *
+ * @param props.summary The counts.
+ * @param props.searched Whether a search runs.
+ */
+function SummaryText(props: { summary: ResultsSummary; searched: boolean }): JSX.Element {
+  const names = (): number => props.summary.undefinedNames;
+  return (
+    <>
+      <Show when={names() > 0}>
+        <span class="font-medium text-fg-primary">{names()}</span>{' '}
+        {names() === 1 ? 'undefined reference' : 'undefined references'}
+        <Show when={props.searched}>
+          {' · '}
+          <span class="font-medium text-fg-primary">{props.summary.withDefinition}</span> with a
+          possible definition
+        </Show>
+      </Show>
+      <Show when={props.summary.crossOriginError}>
+        {names() > 0 ? ' · ' : ''}
+        <span class="font-medium text-fg-primary">1</span> cross-origin error
+      </Show>
+    </>
+  );
+}
+
+/**
+ * The read-failure notice above the unsearched words: the cause, and Retry
+ * when this panel can recover (after an extension reload only reopening
+ * DevTools can, so the message says that instead). Retry swaps the list for
+ * the processing body, so the focused Retry hands focus to the page's `h1`
+ * as it unmounts — never to `<body>`.
+ *
+ * @param props.failure The failure.
+ * @param props.store The page store.
+ */
+function FailureNotice(props: {
+  failure: ScanFailure;
+  store: UndefinedReferencesStore;
+}): JSX.Element {
+  let retryButton: HTMLButtonElement | undefined;
+  onCleanup(() => {
+    if (!retryButton || document.activeElement !== retryButton) return;
+    retryButton.closest('[data-fdt-page]')?.querySelector<HTMLElement>('h1')?.focus();
+  });
+  return (
+    <Card>
+      {/* Wraps: Retry sits beside the message when it has ~14rem, else below
+          it, aligned with the text — the title never squeezes against it. */}
+      <div
+        data-fdt="undefined-refs-failure"
+        role="alert"
+        class="flex flex-wrap items-start gap-x-2 gap-y-2"
+      >
+        <div class="flex min-w-0 flex-1 basis-56 items-start gap-2">
+          <TriangleAlert
+            size={14}
+            class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES.error)}
+            aria-hidden="true"
+          />
+          <div class="flex min-w-0 flex-col gap-0.5">
+            <p class="text-xs font-medium text-fg-primary">{FAILED_TITLE}</p>
+            <p class="text-2xs leading-snug text-fg-secondary">
+              {scanFailureMessage(props.failure)} {FAILED_WORDS_NOTE}
+            </p>
+          </div>
+        </div>
+        <Show when={isRetryable(props.failure)}>
+          <Button
+            ref={retryButton}
+            variant="secondary"
+            size="sm"
+            class="ms-5.5 shrink-0"
+            onClick={() => {
+              props.store.retry();
+            }}
+          >
+            Retry
+          </Button>
+        </Show>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The rescan control: icon-only below the regular tier at rest, but its
+ * label shows at every width while it works ("Rescanning…") and briefly once
+ * it is done ("Rescanned"), so the busy/done feedback is never hidden. It
+ * never disables (a disabled button drops keyboard focus); a click while
+ * busy is a no-op. It turns secondary when scripts loaded after the read.
+ *
+ * @param props.store The page store.
+ */
+function RescanButton(props: { store: UndefinedReferencesStore }): JSX.Element {
+  const [done, setDone] = createSignal(false);
+  let resetDone: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => {
+    clearTimeout(resetDone);
+  });
+  createEffect(
+    on(
+      () => props.store.rescansDone(),
+      () => {
+        setDone(true);
+        clearTimeout(resetDone);
+        resetDone = setTimeout(() => setDone(false), COPIED_FLASH_MS);
+      },
+      { defer: true }
+    )
+  );
+  const label = (): string =>
+    props.store.rescanning() ? 'Rescanning…' : done() ? 'Rescanned' : 'Rescan';
+  const showLabel = (): boolean => props.store.rescanning() || done();
+  return (
+    <Button
+      variant={props.store.staleScripts() ? 'secondary' : 'ghost'}
+      size="sm"
+      class="shrink-0"
+      aria-busy={props.store.rescanning() || undefined}
+      title="Read the page's scripts again (for scripts added since the last read)"
+      data-fdt="undefined-refs-rescan"
+      onClick={() => {
+        setDone(false);
+        props.store.rescan();
+      }}
+    >
+      <Show
+        when={done() && !props.store.rescanning()}
+        fallback={<RefreshCw size={14} class="shrink-0" aria-hidden="true" />}
+      >
+        <Check size={14} class={cn('shrink-0', STATUS_TEXT_CLASSES.ok)} aria-hidden="true" />
+      </Show>
+      <span class={cn(!showLabel() && '@max-regular:sr-only')}>{label()}</span>
+    </Button>
   );
 }

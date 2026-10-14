@@ -1,13 +1,18 @@
 /**
- * The devtools resource adapter: untrusted platform answers shape-checked,
- * `lastError` read in every callback, base64 decoded, the feature probe.
+ * The devtools adapter: untrusted platform answers shape-checked,
+ * `lastError` read in every callback, base64 decoded, a hanging resource
+ * skipped after its timeout, the page-origin read, the added-script watch,
+ * and the feature probe.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ScriptListError,
   createScriptLoader,
   decodeResourceContent,
-  realScriptLoader,
+  createInspectedScripts,
+  parsePageOrigin,
+  realInspectedScripts,
+  type InspectedWindowDeps,
   type ScriptLoaderDeps
 } from './inspected-scripts';
 
@@ -145,7 +150,173 @@ describe('createScriptLoader', () => {
   });
 });
 
-describe('realScriptLoader', () => {
+describe('per-resource content timeout', () => {
+  it('skips a resource whose content never arrives, and ignores its late answer', async () => {
+    const timers: (() => void)[] = [];
+    let late: ((content: unknown, encoding: unknown) => void) | undefined;
+    const hanging = {
+      url: 'https://x.test/hangs.js',
+      type: 'script',
+      getContent(callback: (content: unknown, encoding: unknown) => void) {
+        late = callback;
+      }
+    };
+    const load = createScriptLoader({
+      ...deps([hanging, resource('https://x.test/ok.js', 'var ok;')]),
+      schedule: (run) => {
+        timers.push(run);
+        return () => undefined;
+      },
+      contentTimeoutMs: 5
+    });
+    const read = load([]);
+    await Promise.resolve();
+    // The ok resource answered; the hanging one holds the read until its timer.
+    for (const run of timers) run();
+    await expect(read).resolves.toEqual([
+      { origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }
+    ]);
+    expect(() => late?.('var late;', '')).not.toThrow();
+  });
+
+  it('cancels the timer once the content arrives', async () => {
+    const cancel = vi.fn();
+    const load = createScriptLoader({
+      ...deps([resource('https://x.test/a.js', 'var a;')]),
+      schedule: () => cancel
+    });
+    await load([]);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe('parsePageOrigin', () => {
+  it('accepts exactly an http(s) origin', () => {
+    expect(parsePageOrigin('https://example.com')).toBe('https://example.com');
+    expect(parsePageOrigin('http://localhost:8891')).toBe('http://localhost:8891');
+  });
+
+  it('rejects anything else', () => {
+    for (const value of [
+      'https://example.com/',
+      'https://example.com/path',
+      'null',
+      'file://',
+      'chrome-extension://abc',
+      42,
+      undefined
+    ]) {
+      expect(parsePageOrigin(value)).toBeNull();
+    }
+  });
+});
+
+/** Inspected-window deps over a scripted eval answer and an event registry. */
+function windowDeps(
+  evalAnswer: (onResult: (result: unknown, exception: unknown) => void) => void,
+  lastErrors: (string | null)[] = []
+) {
+  const listeners = new Set<(resource: unknown) => void>();
+  const value: InspectedWindowDeps = {
+    ...deps([]),
+    readLastError: () => lastErrors.shift() ?? null,
+    evaluate: (expression, onResult) => {
+      expect(expression).toBe('location.origin');
+      evalAnswer(onResult);
+    },
+    onResourceAdded: {
+      add: (listener) => listeners.add(listener),
+      remove: (listener) => listeners.delete(listener)
+    }
+  };
+  return { value, listeners };
+}
+
+describe('createInspectedScripts — page origin', () => {
+  it('reads and validates the evaluated origin', async () => {
+    const { value } = windowDeps((done) => {
+      done('https://example.com', undefined);
+    });
+    await expect(createInspectedScripts(value).readPageOrigin()).resolves.toBe(
+      'https://example.com'
+    );
+  });
+
+  it('answers null on an exception, a lastError, a junk value or a throw', async () => {
+    const cases = [
+      windowDeps((done) => {
+        done(undefined, { isException: true, value: 'boom' });
+      }),
+      windowDeps((done) => {
+        done(undefined, { isError: true, code: 'E_FAILED' });
+      }),
+      windowDeps(
+        (done) => {
+          done('https://example.com', undefined);
+        },
+        ['Inspected target navigated or closed']
+      ),
+      windowDeps((done) => {
+        done('javascript:alert(1)', undefined);
+      }),
+      windowDeps(() => {
+        throw new Error('Extension context invalidated.');
+      })
+    ];
+    for (const { value } of cases) {
+      await expect(createInspectedScripts(value).readPageOrigin()).resolves.toBeNull();
+    }
+  });
+});
+
+describe('createInspectedScripts — added scripts', () => {
+  it('reports http(s) scripts only, and unsubscribes', () => {
+    const { value, listeners } = windowDeps(() => undefined);
+    const added: string[] = [];
+    const stop = createInspectedScripts(value).watchAddedScripts((url) => added.push(url));
+    expect(listeners.size).toBe(1);
+    const [listener] = [...listeners];
+    listener?.({ url: 'https://x.test/late.js', type: 'script' });
+    listener?.({ url: 'https://x.test/style.css', type: 'stylesheet' });
+    listener?.({ url: 'chrome-extension://id/x.js', type: 'script' });
+    listener?.(null);
+    listener?.({ url: 42, type: 'script' });
+    expect(added).toEqual(['https://x.test/late.js']);
+    stop();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('isolates a throwing consumer and survives missing or failing event APIs', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { value, listeners } = windowDeps(() => undefined);
+    createInspectedScripts(value).watchAddedScripts(() => {
+      throw new Error('consumer broke');
+    });
+    expect(() => [...listeners][0]?.({ url: 'https://x.test/a.js', type: 'script' })).not.toThrow();
+
+    const withoutEvent: InspectedWindowDeps = { ...value, onResourceAdded: undefined };
+    expect(createInspectedScripts(withoutEvent).watchAddedScripts(() => undefined)).toBeTypeOf(
+      'function'
+    );
+    const failing = createInspectedScripts({
+      ...value,
+      onResourceAdded: {
+        add: () => {
+          throw new Error('nope');
+        },
+        remove: () => {
+          throw new Error('nope');
+        }
+      }
+    });
+    expect(() => {
+      failing.watchAddedScripts(() => undefined)();
+    }).not.toThrow();
+    vi.restoreAllMocks();
+  });
+});
+
+describe('realInspectedScripts', () => {
   const api = browser as unknown as Record<string, unknown>;
   const savedDevtools = api['devtools'];
 
@@ -155,26 +326,59 @@ describe('realScriptLoader', () => {
 
   it('is null where the browser cannot list the inspected page resources', () => {
     api['devtools'] = undefined;
-    expect(realScriptLoader()).toBeNull();
+    expect(realInspectedScripts()).toBeNull();
     api['devtools'] = { inspectedWindow: { tabId: 1 } };
-    expect(realScriptLoader()).toBeNull();
+    expect(realInspectedScripts()).toBeNull();
   });
 
-  it('wraps the real API, calling it on its own object', async () => {
+  it('wraps the real APIs, calling each on its own object', async () => {
+    const onResourceAdded = {
+      addListener: vi.fn(function (this: unknown) {
+        expect(this).toBe(onResourceAdded);
+      }),
+      removeListener: vi.fn(function (this: unknown) {
+        expect(this).toBe(onResourceAdded);
+      })
+    };
     const inspectedWindow = {
       tabId: 1,
       getResources: vi.fn(function (this: unknown, callback: (resources: unknown) => void) {
         expect(this).toBe(inspectedWindow);
         callback([resource('https://x.test/a.js', 'var a;')]);
-      })
+      }),
+      eval: vi.fn(function (
+        this: unknown,
+        _expression: string,
+        callback: (result: unknown, exception: unknown) => void
+      ) {
+        expect(this).toBe(inspectedWindow);
+        callback('https://x.test', undefined);
+      }),
+      onResourceAdded
     };
     api['devtools'] = { inspectedWindow };
-    const load = realScriptLoader();
-    expect(load).not.toBeNull();
-    await expect(load?.([])).resolves.toEqual([
+    const reader = realInspectedScripts();
+    expect(reader).not.toBeNull();
+    await expect(reader?.load([])).resolves.toEqual([
       { origin: { kind: 'url', url: 'https://x.test/a.js' }, content: 'var a;' }
     ]);
-    expect(inspectedWindow.getResources).toHaveBeenCalledOnce();
+    await expect(reader?.readPageOrigin()).resolves.toBe('https://x.test');
+    reader?.watchAddedScripts(() => undefined)();
+    expect(onResourceAdded.addListener).toHaveBeenCalledOnce();
+    expect(onResourceAdded.removeListener).toHaveBeenCalledOnce();
+  });
+
+  it('answers a null origin without eval, and no-ops the watch without the event', async () => {
+    api['devtools'] = {
+      inspectedWindow: {
+        getResources(callback: (resources: unknown) => void) {
+          callback([]);
+        }
+      }
+    };
+    const reader = realInspectedScripts();
+    await expect(reader?.readPageOrigin()).resolves.toBeNull();
+    expect(() => reader?.watchAddedScripts(() => undefined)()).not.toThrow();
   });
 
   it('reads runtime.lastError inside the listing callback', async () => {
@@ -192,7 +396,7 @@ describe('realScriptLoader', () => {
           }
         }
       };
-      await expect(realScriptLoader()?.([])).rejects.toThrow(
+      await expect(realInspectedScripts()?.load([])).rejects.toThrow(
         'Inspected target navigated or closed'
       );
       // A lastError without a message still fails, with a generic reason.
@@ -204,7 +408,7 @@ describe('realScriptLoader', () => {
           }
         }
       };
-      await expect(realScriptLoader()?.([])).rejects.toThrow('Unknown error');
+      await expect(realInspectedScripts()?.load([])).rejects.toThrow('Unknown error');
     } finally {
       if (savedLastError) Object.defineProperty(runtime, 'lastError', savedLastError);
       else Reflect.deleteProperty(runtime, 'lastError');

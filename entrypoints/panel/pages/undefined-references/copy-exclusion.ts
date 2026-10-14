@@ -1,9 +1,9 @@
 /**
- * The "Copy as exclusion" action: copy a definition's script URL and point at
+ * The "Copy as exclusion" action: copy a script's exclusion pattern and say
  * where it goes. A script that defines a name other code reads too early is
  * the usual Delay JS casualty, and excluding that script from Delay JS is the
- * usual fix — so the confirmation names the Exclusion Builder field to paste
- * into, not just "copied".
+ * usual fix — so the confirmation names the WP Rocket setting to paste into,
+ * not just "copied".
  */
 import {
   performCopy,
@@ -17,35 +17,46 @@ import { createLogger } from '../../../../lib/logger';
 const log = createLogger('panel');
 
 /** The success toast's title. */
-export const COPIED_TITLE = 'Script URL copied';
+export const COPIED_TITLE = 'Exclusion copied';
 
-/** Where the copied URL goes (the success toast's description). */
-export const COPIED_DESCRIPTION = `Paste it into the Exclusion Builder's ${LABEL_DELAY_JAVASCRIPT_EXECUTION} exclusions — open the builder from the command palette.`;
+/**
+ * Where the pattern goes (the success toast's description): WP Rocket's
+ * own setting — the feature label from the verified label table, then the
+ * field under it.
+ */
+export const COPIED_DESCRIPTION = `Paste it into WP Rocket's ${LABEL_DELAY_JAVASCRIPT_EXECUTION} → Excluded JavaScript Files.`;
 
 /** The failure toast's title (the shared copy-failure shape). */
 export const COPY_FAILED_TITLE = 'Copy failed';
 
-/** The failure remedy: the URL is on screen as selectable text. */
-export const COPY_FAILED_REMEDY = 'Select the script URL and copy it instead.';
+/**
+ * The failure remedy, naming the pattern so it can be typed in by hand.
+ *
+ * @param pattern The exclusion that could not be copied.
+ * @returns The toast description.
+ */
+export function copyFailedRemedy(pattern: string): string {
+  return `Add it by hand: ${pattern}`;
+}
 
 /**
- * Copy one script URL and toast the outcome. Never throws: a missing
+ * Copy one exclusion pattern and toast the outcome. Never throws: a missing
  * clipboard (insecure or blocked context) and a rejected write both end in
  * the error toast plus a warn log.
  *
- * @param url The script URL to copy.
+ * @param pattern The exclusion pattern to copy.
  * @param resolveClipboard The clipboard seam resolver (default: the platform clipboard).
  * @returns `'copied'` when the write was confirmed, else `'failed'`.
  */
 export async function copyAsExclusion(
-  url: string,
+  pattern: string,
   resolveClipboard: () => ClipboardLike = defaultClipboard
 ): Promise<'copied' | 'failed'> {
   const failed = (cause: unknown): void => {
-    log.warn('Copying a script URL as an exclusion failed', {
+    log.warn('Copying a script exclusion failed', {
       cause: cause instanceof Error ? { message: cause.message } : cause
     });
-    toast.error(COPY_FAILED_TITLE, { description: COPY_FAILED_REMEDY });
+    toast.error(COPY_FAILED_TITLE, { description: copyFailedRemedy(pattern) });
   };
   let clipboard: ClipboardLike;
   try {
@@ -54,7 +65,7 @@ export async function copyAsExclusion(
     failed(cause);
     return 'failed';
   }
-  return performCopy(url, clipboard, {
+  return performCopy(pattern, clipboard, {
     copied: () => {
       toast.success(COPIED_TITLE, { description: COPIED_DESCRIPTION });
     },

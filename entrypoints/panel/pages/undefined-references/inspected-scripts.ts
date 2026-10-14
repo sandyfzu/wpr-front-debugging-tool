@@ -1,14 +1,16 @@
 /**
- * The page's script reader: the devtools `inspectedWindow.getResources` API
- * adapted into the asset loader the definition search runs over.
+ * The page's script reader: the devtools `inspectedWindow` API adapted into
+ * what the page needs — the asset loader the definition search runs over,
+ * the inspected page's origin, and a watch for scripts added after a read.
  *
  * Everything the platform hands back is treated as untrusted: the resource
  * list and each resource's fields are shape-checked before use, every
  * callback reads `runtime.lastError` (left unread it becomes a console
- * error), and base64-encoded content is decoded instead of searched as
- * gibberish. Browsers without the API (Firefox's devtools expose no resource
- * listing) get `null` from {@link realScriptLoader}, and the page says the
- * search cannot run there.
+ * error), base64-encoded content is decoded instead of searched as
+ * gibberish, and a resource whose content never arrives is skipped after a
+ * timeout instead of stalling the whole read. Browsers without a resource
+ * listing (Firefox's devtools expose none) get `null` from
+ * {@link realInspectedScripts}, and the page says the search cannot run there.
  */
 import { createLogger } from '../../../../lib/logger';
 import {
@@ -17,11 +19,34 @@ import {
   type InspectedScriptResource,
   type ScriptAsset
 } from '../../../../lib/panel/undefined-refs';
+import { isHttpUrl } from '../../../../utils/urls';
 
 const log = createLogger('panel');
 
+/**
+ * How long one resource's content may take (ms). DevTools answers in
+ * milliseconds; a resource that never answers is skipped so the others
+ * still get searched.
+ */
+export const CONTENT_TIMEOUT_MS = 5_000;
+
 /** Read the page's scripts (external files + the inline stack) into searchable assets. */
 export type ScriptLoader = (inlineScripts: readonly InlineScriptSource[]) => Promise<ScriptAsset[]>;
+
+/** Everything the page reads from the inspected window. */
+export interface InspectedScripts {
+  /** Read the scripts. */
+  readonly load: ScriptLoader;
+  /** The inspected page's origin (`https://example.com`), or `null` when unreadable. */
+  readonly readPageOrigin: () => Promise<string | null>;
+  /**
+   * Watch for http(s) scripts the page loads after a read.
+   *
+   * @param onAdded Called with each added script's URL.
+   * @returns The unsubscribe (a no-op where the browser has no such event).
+   */
+  readonly watchAddedScripts: (onAdded: (url: string) => void) => () => void;
+}
 
 /** The platform calls the loader needs — injected so the adapter is unit-testable. */
 export interface ScriptLoaderDeps {
@@ -29,6 +54,10 @@ export interface ScriptLoaderDeps {
   getResources: (onResources: (resources: unknown) => void) => void;
   /** Read (and so clear) `runtime.lastError`; its message, or `null` when unset. */
   readLastError: () => string | null;
+  /** Arm a one-shot timer; returns its cancel. Default `setTimeout`. */
+  schedule?: (run: () => void, ms: number) => () => void;
+  /** The per-resource content timeout (default {@link CONTENT_TIMEOUT_MS}). */
+  contentTimeoutMs?: number;
 }
 
 /** The resource list could not be read; the message names the platform's reason. */
@@ -38,6 +67,14 @@ export class ScriptListError extends Error {
     super(message);
     this.name = 'ScriptListError';
   }
+}
+
+/** The default timer seam. */
+function defaultSchedule(run: () => void, ms: number): () => void {
+  const handle = setTimeout(run, ms);
+  return () => {
+    clearTimeout(handle);
+  };
 }
 
 /**
@@ -71,19 +108,24 @@ interface RawResource {
   readonly getContent?: unknown;
 }
 
+/** The context an adapted resource reads its content with. */
+interface ContentContext {
+  readonly readLastError: () => string | null;
+  readonly schedule: (run: () => void, ms: number) => () => void;
+  readonly timeoutMs: number;
+}
+
 /**
  * Adapt one platform resource, or drop it when its shape is wrong (no string
- * URL, no `getContent` function). The adapted `getContent` reads
- * `lastError` and decodes; a failed read hands `null` on.
+ * URL, no `getContent` function). The adapted `getContent` answers exactly
+ * once: the decoded content, or `null` on a `lastError` or after the
+ * timeout (a late answer is then ignored).
  *
  * @param raw One entry of the platform's list.
- * @param readLastError The `lastError` reader.
+ * @param context The `lastError` reader and the timeout.
  * @returns The adapted resource, or `null`.
  */
-function adaptResource(
-  raw: unknown,
-  readLastError: () => string | null
-): InspectedScriptResource | null {
+function adaptResource(raw: unknown, context: ContentContext): InspectedScriptResource | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const resource = raw as RawResource;
   const { url, type, getContent } = resource;
@@ -92,17 +134,29 @@ function adaptResource(
     url,
     type: typeof type === 'string' ? type : undefined,
     getContent(onContent) {
+      let answered = false;
+      let cancelTimeout = (): void => undefined;
+      const answer = (content: string | null): void => {
+        if (answered) return;
+        answered = true;
+        cancelTimeout();
+        onContent(content);
+      };
+      cancelTimeout = context.schedule(() => {
+        log.debug('A script resource did not answer in time; it is skipped', { url });
+        answer(null);
+      }, context.timeoutMs);
       // Called as a method of the platform object it came from.
       (getContent as (callback: (content: unknown, encoding: unknown) => void) => void).call(
         resource,
         (content, encoding) => {
-          const failure = readLastError();
+          const failure = context.readLastError();
           if (failure !== null) {
             log.debug('A script resource could not be read; it is skipped', { url, failure });
-            onContent(null);
+            answer(null);
             return;
           }
-          onContent(decodeResourceContent(content, encoding));
+          answer(decodeResourceContent(content, encoding));
         }
       );
     }
@@ -121,6 +175,11 @@ function adaptResource(
  * @returns The loader.
  */
 export function createScriptLoader(deps: ScriptLoaderDeps): ScriptLoader {
+  const context: ContentContext = {
+    readLastError: deps.readLastError,
+    schedule: deps.schedule ?? defaultSchedule,
+    timeoutMs: deps.contentTimeoutMs ?? CONTENT_TIMEOUT_MS
+  };
   return (inlineScripts) =>
     new Promise<ScriptAsset[]>((resolve, reject) => {
       loadScriptAssets(
@@ -138,7 +197,7 @@ export function createScriptLoader(deps: ScriptLoaderDeps): ScriptLoader {
               }
               const adapted: InspectedScriptResource[] = [];
               for (const raw of resources) {
-                const resource = adaptResource(raw, deps.readLastError);
+                const resource = adaptResource(raw, context);
                 if (resource !== null) adapted.push(resource);
               }
               onComplete(adapted);
@@ -150,26 +209,130 @@ export function createScriptLoader(deps: ScriptLoaderDeps): ScriptLoader {
     });
 }
 
+/**
+ * Validate an origin string read from the page: it must be exactly the
+ * origin of an http(s) URL (the page's world answers this; never trusted).
+ *
+ * @param value The evaluated value.
+ * @returns The origin, or `null`.
+ */
+export function parsePageOrigin(value: unknown): string | null {
+  if (typeof value !== 'string' || !isHttpUrl(value)) return null;
+  try {
+    return new URL(value).origin === value ? value : null;
+  } catch {
+    // isHttpUrl parsed it already; an exotic value that fails here is not an origin.
+    return null;
+  }
+}
+
+/** The eval callback's exception shape as this adapter reads it. */
+interface EvalExceptionShape {
+  readonly isError?: unknown;
+  readonly isException?: unknown;
+}
+
+/** The platform calls behind {@link createInspectedScripts}. */
+export interface InspectedWindowDeps extends ScriptLoaderDeps {
+  /** `inspectedWindow.eval` in callback form. */
+  evaluate: (expression: string, onResult: (result: unknown, exception: unknown) => void) => void;
+  /** `inspectedWindow.onResourceAdded.addListener`/`removeListener`, when the browser has them. */
+  onResourceAdded?: {
+    add: (listener: (resource: unknown) => void) => void;
+    remove: (listener: (resource: unknown) => void) => void;
+  };
+}
+
+/**
+ * Build the page's inspected-window reader over injected platform calls.
+ *
+ * @param deps The platform calls.
+ * @returns The reader.
+ */
+export function createInspectedScripts(deps: InspectedWindowDeps): InspectedScripts {
+  return {
+    load: createScriptLoader(deps),
+    readPageOrigin: () =>
+      new Promise<string | null>((resolve) => {
+        try {
+          deps.evaluate('location.origin', (result, exception) => {
+            const failure = deps.readLastError();
+            const thrown = exception as EvalExceptionShape | null | undefined;
+            if (failure !== null || thrown?.isError === true || thrown?.isException === true) {
+              log.debug('The inspected page origin could not be read', { failure });
+              resolve(null);
+              return;
+            }
+            resolve(parsePageOrigin(result));
+          });
+        } catch (cause) {
+          log.debug('The inspected page origin could not be read', cause);
+          resolve(null);
+        }
+      }),
+    watchAddedScripts: (onAdded) => {
+      const events = deps.onResourceAdded;
+      if (events === undefined) return () => undefined;
+      const listener = (resource: unknown): void => {
+        // One failing delivery must not break sibling listeners.
+        try {
+          if (typeof resource !== 'object' || resource === null) return;
+          const { url, type } = resource as RawResource;
+          if (type === 'script' && typeof url === 'string' && isHttpUrl(url)) onAdded(url);
+        } catch (cause) {
+          log.warn('Handling an added script failed', cause);
+        }
+      };
+      try {
+        events.add(listener);
+      } catch (cause) {
+        log.debug('Watching added scripts is unavailable', cause);
+        return () => undefined;
+      }
+      return () => {
+        try {
+          events.remove(listener);
+        } catch (cause) {
+          log.debug('Removing the added-scripts watch failed', cause);
+        }
+      };
+    }
+  };
+}
+
+/** A devtools event as this context may expose it. */
+interface EventShape {
+  readonly addListener?: unknown;
+  readonly removeListener?: unknown;
+}
+
 /** The devtools namespace as this context may or may not have it (probed, never assumed). */
-interface DevtoolsResourcesShape {
+interface DevtoolsShape {
   readonly devtools?: {
-    readonly inspectedWindow?: { readonly getResources?: unknown };
+    readonly inspectedWindow?: {
+      readonly getResources?: unknown;
+      readonly eval?: unknown;
+      readonly onResourceAdded?: EventShape;
+    };
   };
   readonly runtime?: { readonly lastError?: { readonly message?: string } | null };
 }
 
 /**
- * The real loader, when this browser can list the inspected page's
- * resources.
+ * The real reader, when this browser can list the inspected page's resources.
  *
- * @returns The loader, or `null` without `devtools.inspectedWindow.getResources`.
+ * @returns The reader, or `null` without `devtools.inspectedWindow.getResources`.
  */
-export function realScriptLoader(): ScriptLoader | null {
-  const api = browser as unknown as DevtoolsResourcesShape;
+export function realInspectedScripts(): InspectedScripts | null {
+  const api = browser as unknown as DevtoolsShape;
   const inspectedWindow = api.devtools?.inspectedWindow;
   const getResources = inspectedWindow?.getResources;
-  if (typeof getResources !== 'function') return null;
-  return createScriptLoader({
+  if (inspectedWindow === undefined || typeof getResources !== 'function') return null;
+  const evaluate = inspectedWindow.eval;
+  const added = inspectedWindow.onResourceAdded;
+  const addListener = added?.addListener;
+  const removeListener = added?.removeListener;
+  return createInspectedScripts({
     getResources: (onResources) => {
       (getResources as (callback: (resources: unknown) => void) => void).call(
         inspectedWindow,
@@ -180,6 +343,28 @@ export function realScriptLoader(): ScriptLoader | null {
       const lastError = api.runtime?.lastError;
       if (lastError === undefined || lastError === null) return null;
       return lastError.message ?? 'Unknown error';
-    }
+    },
+    evaluate: (expression, onResult) => {
+      if (typeof evaluate !== 'function') {
+        onResult(undefined, { isError: true });
+        return;
+      }
+      (evaluate as (code: string, callback: (r: unknown, e: unknown) => void) => void).call(
+        inspectedWindow,
+        expression,
+        onResult
+      );
+    },
+    onResourceAdded:
+      typeof addListener === 'function' && typeof removeListener === 'function'
+        ? {
+            add: (listener) => {
+              (addListener as (l: (r: unknown) => void) => void).call(added, listener);
+            },
+            remove: (listener) => {
+              (removeListener as (l: (r: unknown) => void) => void).call(added, listener);
+            }
+          }
+        : undefined
   });
 }

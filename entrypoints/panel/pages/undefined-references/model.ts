@@ -1,8 +1,9 @@
 /**
  * The Undefined References page's pure model: the script-scan state machine,
- * the page-view resolver (which of the five state bodies renders), the
- * per-word verdict, and the page's copy builders. No Solid, no DOM, no
- * browser API — the store wires these to signals, the components render them.
+ * the page-view resolver (which state body renders), the per-word verdict,
+ * the copy builders, the script URL display split and the exclusion pattern.
+ * No Solid, no DOM, no browser API — the store wires these to signals, the
+ * components render them.
  */
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
@@ -11,35 +12,44 @@ import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
 
 /**
- * The script scan's lifecycle (reading the inspected page's scripts once, so
- * every word can be searched against them).
+ * The script scan's lifecycle (reading the inspected page's scripts, so every
+ * word can be searched against them).
  *
- * - `idle` — not started (Delay JS still holds the scripts, or a new page
- *   just landed).
- * - `scanning` — a read is in flight. `previous` keeps the last good asset
- *   list during a user rescan, so results stay on screen (refresh is
- *   invisible); it is `null` on a first scan or a retry.
+ * - `idle` — not started (no words yet, Delay JS still holds the scripts, or
+ *   a new page landed with nothing to search).
+ * - `scanning` — a read is in flight. `previous` keeps the last asset list so
+ *   the cards stay on screen while it runs (a user rescan, or a refresh of
+ *   the page's data); `null` on a first read or a retry. `keepOnFailure`
+ *   says what a failed read leaves: the kept assets (a user rescan of the
+ *   same page — they still describe it) or the failure (a data refresh — the
+ *   page may have changed, so its old assets are no longer trusted).
  * - `scanned` — the asset list every definition search runs over.
- * - `failed` — the read failed; Retry starts a fresh scan.
+ * - `failed` — the read failed; Retry starts a fresh read.
  * - `unsupported` — this browser cannot list the inspected page's scripts;
  *   terminal (the page still lists the words, unsearched).
  */
 export type ScanState =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'scanning'; readonly previous: readonly ScriptAsset[] | null }
+  | {
+      readonly kind: 'scanning';
+      readonly previous: readonly ScriptAsset[] | null;
+      readonly keepOnFailure: boolean;
+    }
   | { readonly kind: 'scanned'; readonly assets: readonly ScriptAsset[] }
   | { readonly kind: 'failed'; readonly failure: ScanFailure }
   | { readonly kind: 'unsupported' };
 
 /** What can happen to a scan. */
 export type ScanEvent =
-  /** Start (first scan, retry, or rescan — the state decides which). */
+  /** User start: first read, retry, or rescan — the state decides which. */
   | { readonly type: 'start' }
+  /** The page's data was refetched: read again, keeping the cards up meanwhile. */
+  | { readonly type: 'refresh' }
   /** The in-flight read answered. */
   | { readonly type: 'settled'; readonly assets: readonly ScriptAsset[] }
   /** The in-flight read failed. */
   | { readonly type: 'failed'; readonly failure: ScanFailure }
-  /** A new page's data landed: the old asset list no longer describes it. */
+  /** Nothing to search on the new data: drop the read and its assets. */
   | { readonly type: 'reset' };
 
 /** The shared idle state (states are immutable, so one instance serves all). */
@@ -51,13 +61,17 @@ export const SCAN_UNSUPPORTED: ScanState = { kind: 'unsupported' };
 /**
  * The scan transition table — total and pure: every (state, event) pair has
  * a result, and a trigger that cannot apply returns the same state object
- * (callers detect "nothing happened" by identity).
+ * (callers detect "nothing happened" by identity; a returned `scanning`
+ * object that is new means "start a read").
  *
- * - `start` from `idle`/`failed` scans with nothing to show meanwhile; from
- *   `scanned` it is a rescan that keeps the current assets visible; while
- *   already scanning (dedupe) or `unsupported` it does nothing.
- * - `failed` during a rescan falls back to the kept assets — a failed
- *   refresh never throws away good results (the store reports it apart).
+ * - `start` from `idle`/`failed` reads with nothing to show meanwhile; from
+ *   `scanned` it is a rescan keeping the assets (and keeping them if it
+ *   fails); while scanning (dedupe) or `unsupported` it does nothing.
+ * - `refresh` always restarts a read (a fresh object) from a state that has
+ *   or awaits assets, keeping whatever assets exist on screen; a failure of
+ *   that read is reported, not papered over. From `idle`/`failed` it is a
+ *   plain first read.
+ * - `failed` falls back to the kept assets only when `keepOnFailure`.
  * - `reset` returns to `idle` from anywhere but `unsupported`.
  *
  * @param state The current scan state.
@@ -68,17 +82,26 @@ export function transitionScan(state: ScanState, event: ScanEvent): ScanState {
   switch (event.type) {
     case 'start':
       if (state.kind === 'idle' || state.kind === 'failed') {
-        return { kind: 'scanning', previous: null };
+        return { kind: 'scanning', previous: null, keepOnFailure: false };
       }
-      if (state.kind === 'scanned') return { kind: 'scanning', previous: state.assets };
+      if (state.kind === 'scanned') {
+        return { kind: 'scanning', previous: state.assets, keepOnFailure: true };
+      }
       return state;
+    case 'refresh':
+      if (state.kind === 'unsupported') return state;
+      return {
+        kind: 'scanning',
+        previous: searchableAssets(state),
+        keepOnFailure: false
+      };
     case 'settled':
       return state.kind === 'scanning' ? { kind: 'scanned', assets: event.assets } : state;
     case 'failed':
       if (state.kind !== 'scanning') return state;
-      return state.previous === null
-        ? { kind: 'failed', failure: event.failure }
-        : { kind: 'scanned', assets: state.previous };
+      return state.keepOnFailure && state.previous !== null
+        ? { kind: 'scanned', assets: state.previous }
+        : { kind: 'failed', failure: event.failure };
     case 'reset':
       return state.kind === 'unsupported' || state.kind === 'idle' ? state : SCAN_IDLE;
   }
@@ -86,7 +109,7 @@ export function transitionScan(state: ScanState, event: ScanEvent): ScanState {
 
 /**
  * The asset list definitions are answered from: the scanned list, or the
- * kept one during a rescan; `null` while there is nothing to search with.
+ * kept one during a read; `null` while there is nothing to search with.
  *
  * @param state The scan state.
  * @returns The current asset list, or `null`.
@@ -115,7 +138,7 @@ export type PageView =
   | { readonly kind: 'waiting-interaction' }
   /** Words exist and the first script read is in flight (a real wait). */
   | { readonly kind: 'processing' }
-  /** Words exist and the script read failed. */
+  /** Words exist and the read failed: the words list unsearched under the error. */
   | { readonly kind: 'failed'; readonly failure: ScanFailure }
   /** No words; `monitoring` while scripts may still produce some. */
   | { readonly kind: 'empty'; readonly monitoring: boolean }
@@ -127,10 +150,10 @@ export type PageView =
  *
  * 1. Delay JS present and its scripts not loaded → wait for interaction
  *    (no script has run, so nothing can be undefined yet).
- * 2. No words → the empty state; no scan is needed to know that, so it never
- *    waits on one. While Delay JS has not reported its scripts loaded the
- *    capture is still watching, which the empty state says.
- * 3. Words, scan failed → the error body with Retry.
+ * 2. No words → the empty state; no read is needed (or made) to know that.
+ *    While Delay JS has not reported its scripts loaded the capture is still
+ *    watching, which the empty state says.
+ * 3. Words, read failed → the words unsearched under the error.
  * 4. Words, no asset list yet → processing (the real read only).
  * 5. Otherwise the results (unsearched when the browser cannot list scripts).
  *
@@ -147,15 +170,24 @@ export function resolvePageView(input: PageViewInput): PageView {
   return { kind: 'results', searched: true };
 }
 
+/**
+ * One word's search answer as the store hands it to the card: its origins,
+ * `'pending'` while the cooperative search has not reached it, `null` when
+ * no search runs (no asset list: feature absent or the read failed).
+ */
+export type DefinitionAnswer = readonly ScriptOrigin[] | 'pending' | null;
+
 /** One word's answer, as the card states it. */
 export type WordVerdict =
   /** Possible definitions exist (`count` origins). */
   | { readonly kind: 'found'; readonly count: number }
   /** The search ran and found nothing. */
   | { readonly kind: 'not-found' }
+  /** The search has not reached this word yet. */
+  | { readonly kind: 'searching' }
   /** The browser redacted a cross-origin error: there is no name to search. */
   | { readonly kind: 'hidden' }
-  /** This browser cannot search (no asset list). */
+  /** No search runs (feature absent, or the read failed). */
   | { readonly kind: 'not-searched' };
 
 /**
@@ -184,18 +216,14 @@ export function displayWord(word: string): string {
  * A word's verdict from its search answer.
  *
  * @param word The word (the sentinel is always `hidden`).
- * @param definitions The search answer, or `null` when no search ran.
+ * @param answer The search answer.
  * @returns The verdict.
  */
-export function wordVerdict(
-  word: string,
-  definitions: readonly ScriptOrigin[] | null
-): WordVerdict {
+export function wordVerdict(word: string, answer: DefinitionAnswer): WordVerdict {
   if (isCrossOriginSentinel(word)) return { kind: 'hidden' };
-  if (definitions === null) return { kind: 'not-searched' };
-  return definitions.length > 0
-    ? { kind: 'found', count: definitions.length }
-    : { kind: 'not-found' };
+  if (answer === null) return { kind: 'not-searched' };
+  if (answer === 'pending') return { kind: 'searching' };
+  return answer.length > 0 ? { kind: 'found', count: answer.length } : { kind: 'not-found' };
 }
 
 /**
@@ -210,6 +238,8 @@ export function verdictText(verdict: WordVerdict): string {
       return `In ${String(verdict.count)} ${verdict.count === 1 ? 'script' : 'scripts'}`;
     case 'not-found':
       return 'No definition found';
+    case 'searching':
+      return 'Searching…';
     case 'hidden':
       return 'Details hidden';
     case 'not-searched':
@@ -253,35 +283,44 @@ export function uniqueWords(words: readonly string[]): readonly string[] {
 
 /** Counts for the results summary line. */
 export interface ResultsSummary {
-  /** Words listed. */
-  readonly total: number;
-  /** Words with at least one possible definition. */
+  /** Undefined names listed (the cross-origin sentinel is not one). */
+  readonly undefinedNames: number;
+  /** Names with at least one possible definition. */
   readonly withDefinition: number;
+  /** Whether a cross-origin "Script error." card is listed too. */
+  readonly crossOriginError: boolean;
 }
 
 /**
  * Count the results summary in one pass.
  *
  * @param words The listed words.
- * @param definitionsOf The search answer per word (`null` = not searched).
+ * @param answerOf The search answer per word.
  * @returns The counts.
  */
 export function summarizeResults(
   words: readonly string[],
-  definitionsOf: (word: string) => readonly ScriptOrigin[] | null
+  answerOf: (word: string) => DefinitionAnswer
 ): ResultsSummary {
+  let undefinedNames = 0;
   let withDefinition = 0;
+  let crossOriginError = false;
   for (const word of words) {
-    if (wordVerdict(word, definitionsOf(word)).kind === 'found') withDefinition += 1;
+    if (isCrossOriginSentinel(word)) {
+      crossOriginError = true;
+      continue;
+    }
+    undefinedNames += 1;
+    if (wordVerdict(word, answerOf(word)).kind === 'found') withDefinition += 1;
   }
-  return { total: words.length, withDefinition };
+  return { undefinedNames, withDefinition, crossOriginError };
 }
 
 /**
  * The user-facing sentence naming a scan failure and its remedy.
  *
  * @param failure The failure.
- * @returns One sentence for the error body or the rescan toast.
+ * @returns One sentence for the error notice or the rescan toast.
  */
 export function scanFailureMessage(failure: ScanFailure): string {
   switch (failure) {
@@ -292,6 +331,18 @@ export function scanFailureMessage(failure: ScanFailure): string {
     case 'context-invalidated':
       return 'The extension was reloaded, so this panel lost its connection. Close and reopen DevTools to reconnect.';
   }
+}
+
+/**
+ * Whether a failure can be retried from this panel. An extension reload
+ * invalidates every API call this panel makes until DevTools reopens it, so
+ * a Retry there could never succeed.
+ *
+ * @param failure The failure.
+ * @returns True when Retry is offered.
+ */
+export function isRetryable(failure: ScanFailure): boolean {
+  return failure !== 'context-invalidated';
 }
 
 /**
@@ -307,35 +358,123 @@ export function classifyScanError(cause: unknown): ScanFailure {
   return /extension context invalidated/i.test(message) ? 'context-invalidated' : 'list-failed';
 }
 
-/** A script URL split for display: the file (what identifies it) and where it lives. */
-export interface ScriptUrlParts {
-  /** The last path segment plus the query (e.g. `jquery.min.js?ver=3.7.1`). */
-  readonly name: string;
-  /** Host and directory path (e.g. `example.com/wp-includes/js/jquery/`); empty when unknown. */
-  readonly location: string;
-}
-
-/**
- * Split a script URL into its file name and location, the way a network
- * panel lists requests: a truncated full URL would hide the file name behind
- * the ellipsis on narrow panels. A URL without a file segment, a non-http(s)
- * URL, or one that does not parse keeps its whole text as the name.
- *
- * @param url The script URL (page-derived; parsed, never fetched).
- * @returns The display parts.
- */
-export function splitScriptUrl(url: string): ScriptUrlParts {
+/** Parse an absolute `http(s):` URL, or `null` for anything else. */
+function parseHttpUrl(url: string): URL | null {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return { name: url, location: '' };
+    return null;
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
-    return { name: url, location: '' };
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed : null;
+}
+
+/** A script URL split for display, the way a network panel lists requests. */
+export interface ScriptUrlParts {
+  /** The file (last path segment, no query) — e.g. `jquery.min.js`. */
+  readonly file: string;
+  /** The query, shown muted after the file — e.g. `?ver=3.7.1`; empty when none. */
+  readonly query: string;
+  /**
+   * Where the file lives: the directory path, prefixed by the host when the
+   * script is not from the inspected page's origin (or that origin is
+   * unknown) — e.g. `/wp-includes/js/jquery/`, `cdn.example.com/js/`.
+   */
+  readonly location: string;
+}
+
+/**
+ * Split a script URL for display. A truncated full URL hides the file name
+ * behind the ellipsis on narrow panels, and the inspected page's own host is
+ * noise on every row, so it is dropped (the plugin slug in the path then
+ * survives narrow widths). A non-http(s) or file-less URL keeps its whole
+ * text as the `file`.
+ *
+ * @param url The script URL (page-derived; parsed, never fetched).
+ * @param pageOrigin The inspected page's origin, or `null` when unknown.
+ * @returns The display parts.
+ */
+export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUrlParts {
+  const parsed = parseHttpUrl(url);
+  if (parsed === null) return { file: url, query: '', location: '' };
   const path = parsed.pathname;
   const cut = path.lastIndexOf('/');
   const file = path.slice(cut + 1);
-  if (file === '') return { name: url, location: '' };
-  return { name: `${file}${parsed.search}`, location: `${parsed.host}${path.slice(0, cut + 1)}` };
+  if (file === '') return { file: url, query: '', location: '' };
+  const directory = path.slice(0, cut + 1);
+  return {
+    file,
+    query: parsed.search,
+    location: parsed.origin === pageOrigin ? directory : `${parsed.host}${directory}`
+  };
+}
+
+/**
+ * Characters that are syntax in a regular expression. In an exclusion they
+ * are replaced by `.` (any character, so it still matches the literal) —
+ * escaping is not portable: WP Rocket itself escapes `+`, `?ver` and `#`
+ * before matching, so a pre-escaped `\+` would turn into a broken `\\+`.
+ */
+const EXCLUSION_UNSAFE = /[\\^$*+?()[\]{}|#]/g;
+
+/**
+ * The Delay JS exclusion for a script: the part of its URL that identifies
+ * it and survives updates — its path (no scheme, no query: a baked-in
+ * `?ver=` stops matching after the next plugin update, and the `?` is regex
+ * syntax), with the host in front when the script comes from another origin.
+ * A path without a file keeps its query so the pattern is not a bare `/`.
+ *
+ * Exclusions are regular expressions matched against the whole script tag —
+ * by WP Rocket (after escaping `+`, `?ver`, `#`, as `#…#i`, where `&` in the
+ * tag reads `&#038;`) and by a plain `new RegExp(…)`. The returned text
+ * matches its own tag under both: it holds no regex syntax except `.`,
+ * which matches itself.
+ *
+ * @param url The script URL.
+ * @param pageOrigin The inspected page's origin, or `null` when unknown
+ *   (then the host is always kept — it matches absolute `src` values).
+ * @returns The exclusion text, or `null` for a non-http(s) URL.
+ */
+export function exclusionPattern(url: string, pageOrigin: string | null): string | null {
+  const parsed = parseHttpUrl(url);
+  if (parsed === null) return null;
+  const path = parsed.pathname;
+  const fileless = path.endsWith('/');
+  const tail = fileless ? `${path}${parsed.search}` : path;
+  const pattern = parsed.origin === pageOrigin && !fileless ? tail : `${parsed.host}${tail}`;
+  return pattern.replace(EXCLUSION_UNSAFE, '.');
+}
+
+/** Two origins name the same script (or both the inline stack). */
+function sameOrigin(left: ScriptOrigin, right: ScriptOrigin): boolean {
+  if (left.kind === 'url' && right.kind === 'url') return left.url === right.url;
+  return left.kind === right.kind;
+}
+
+/**
+ * Carry a word's previous answer objects into its new answer: an unchanged
+ * answer comes back as the very same array, and every origin that was
+ * already listed keeps its object. Keyed rows then stay mounted across a
+ * re-read (focus on a row's control survives a refresh); only rows that
+ * really appeared or went away change.
+ *
+ * @param previous The answer shown before, if any.
+ * @param next The freshly searched answer.
+ * @returns `previous` when equal, else `next` with known origins reused.
+ */
+export function reconcileOrigins(
+  previous: readonly ScriptOrigin[] | undefined,
+  next: readonly ScriptOrigin[]
+): readonly ScriptOrigin[] {
+  if (previous === undefined) return next;
+  if (
+    previous.length === next.length &&
+    previous.every((origin, index) => {
+      const other = next[index];
+      return other !== undefined && sameOrigin(origin, other);
+    })
+  ) {
+    return previous;
+  }
+  return next.map((origin) => previous.find((known) => sameOrigin(known, origin)) ?? origin);
 }
