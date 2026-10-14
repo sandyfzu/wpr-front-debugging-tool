@@ -71,8 +71,13 @@ const FEATURE_ROW_LABELS: ReadonlyMap<DetectionRow, string> = new Map([
 
 /**
  * Card name for a detection row: the option map's label, else the verified
- * feature label, else the raw row id (the map's own honest fallback for a
- * row the vocabulary doesn't know yet).
+ * feature label, else the raw row id. The raw-id fallback is the record-typed
+ * keying's futures-tolerance design, not a defect path: a future detection
+ * row is carded automatically (named by its own id until the vocabulary learns
+ * it). Row VALUES that are not `{ present }`-shaped are a boundary concern —
+ * the payload validator rebuilds the exact record, so the fallback only ever
+ * reads rows that are, with one extra keyed row being shape-tolerant by
+ * design (pinned by the view model's "futures tolerance" test).
  */
 function cardName(row: DetectionRow): string {
   const mapped = getRealOptionName(row);

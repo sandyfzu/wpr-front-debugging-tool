@@ -69,6 +69,29 @@ describe('findDefinitions — the query over the reference sample set', () => {
     expect(result[0]?.definitions).toHaveLength(1);
   });
 
+  it('a word repeated across one asset\u2019s sentences answers once (per-word dedupe)', () => {
+    // The receipts' per-word dedupe pin: one word declared once and
+    // re-mentioned across several sentences of the same asset (three real
+    // matches here) still answers a single entry — matches dedupe per word
+    // per asset, they never stack.
+    const asset = url('var overlay = 1;\noverlay = renewed();\noverlay: done;\noverlay.clear();');
+    const result = findDefinitions([asset], ['overlay']);
+    expect(result[0]?.definitions).toEqual([{ kind: 'url', url: asset.content }]);
+  });
+
+  it('a `#` beside the word does not break the identifier (the boundary-set quirk)', () => {
+    // The identifier-boundary complement deliberately keeps `#` on the
+    // identifier side of the set, so a `#` glued to a word never reads as the
+    // boundary an assignment match needs: `my#overlay` is one wider
+    // identifier and `overlay` is not defined there.
+    expect(findDefinitions([url('my#overlay = 1;')], ['overlay'])[0]?.definitions).toEqual([]);
+    // The declaration side behaves symmetrically: `var overlay#part` is one
+    // glued identifier, not a definition of `overlay`.
+    expect(findDefinitions([url('var overlay#part = 1;')], ['overlay'])[0]?.definitions).toEqual(
+      []
+    );
+  });
+
   it('inline assets discriminate as inline (the typed chip, never a string match)', () => {
     const result = findDefinitions([inline('const setData = 1;')], ['setData']);
     expect(result[0]).toEqual({
@@ -239,12 +262,37 @@ describe('loadScriptAssets — the inspected-window loader', () => {
     ]);
   });
 
-  it('the real inspectedWindow API satisfies the loader seam (type-level)', () => {
-    // Compile-time check only: an unrelated shape does not typecheck as the
-    // seam, and the auto-imported WXT `browser`'s inspectedWindow does.
-    const asRealApi = undefined as unknown as (typeof browser)['devtools']['inspectedWindow'];
-    const seam: InspectedWindowResources = asRealApi;
-    expect(seam).toBeUndefined();
+  it('the real inspectedWindow API satisfies the loader seam (compile-time only)', () => {
+    // Compile-time honesty, stated flatly: seam compatibility is a TYPE fact,
+    // so the pin is the assignment below — the WXT `browser`'s
+    // inspectedWindow must flow into the loader's seam unchanged (an
+    // unrelated shape fails `pnpm compile`). Nothing at runtime can add a
+    // signal for the seam itself; the `expect` here is only the test's
+    // liveness witness. The seam's optional `type` field has a real runtime
+    // probe in the loader test above.
+    const loaderSeamFromRealApi: (
+      api: (typeof browser)['devtools']['inspectedWindow']
+    ) => InspectedWindowResources = (api) => api;
+    expect(loaderSeamFromRealApi).toBeTypeOf('function');
+  });
+
+  it('a resource without the runtime `type` field is skipped (the optional field probes for real)', async () => {
+    // The runtime leg the compile-only seam test cannot carry: the loader's
+    // type filter must treat an absent `type` exactly like a non-script
+    // resource — only an explicit `'script'` value is a source.
+    const assets = await loadScriptAssets(
+      fakeApi([
+        { url: 'https://cdn.example/untyped.js', content: 'var untyped = 1;' },
+        { url: 'https://cdn.example/script.js', type: 'script', content: 'var scripted = 1;' }
+      ]),
+      []
+    );
+    expect(assets).toEqual([
+      {
+        origin: { kind: 'url', url: 'https://cdn.example/script.js' },
+        content: 'var scripted = 1;'
+      }
+    ]);
   });
 });
 

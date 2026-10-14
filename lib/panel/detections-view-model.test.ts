@@ -481,4 +481,23 @@ describe('buildStatusItems — keying and coverage', () => {
     expect(byId.get('preconnect_external_domains')?.name).toBe('Preconnect to external domains');
     expect(byId.get('priority_elements_beacon')?.name).toBe('Priority Elements beacon');
   });
+
+  it('an out-of-contract extra row is carded via the raw-id fallback (futures tolerance)', () => {
+    // A payload the boundary validator would reject (it rebuilds the exact
+    // 17-row record) is still admitted by the view model's own contract: the
+    // card set enumerates the record's OWN keys, so a row the name vocabulary
+    // does not know yet joins the set — named by its raw id, at its declaring
+    // position — instead of being dropped. Pinned here so the fallback reads
+    // as the deliberate futures-tolerance design it is, never as a bug.
+    const withUnknown = {
+      ...fullDetections(),
+      future_feature: { present: true }
+    } as unknown as WprDetections;
+    const items = buildStatusItems(makeData({ wprDetections: withUnknown }));
+    expect(items.at(-1)).toEqual({
+      id: 'future_feature',
+      name: 'future_feature',
+      status: 'active'
+    });
+  });
 });
