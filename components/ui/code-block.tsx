@@ -24,6 +24,20 @@
  * disconnected on unmount — no view keeps a live observer, and none ever
  * attaches to a not-yet-existing child (the latch targets the wrapper that
  * exists at mount, so an absent element can never be the observed one).
+ *
+ * Keyboard scrolling: the code area is the horizontal scroller; while its
+ * content overflows on an axis the user can scroll — and while it holds
+ * focus, so focus never drops out from under the keyboard — it is a named,
+ * focusable group (`tabindex="0"`, `role="group"`, the focus ring). A block
+ * that fits, or only clips, costs no Tab stop. Overflow is tracked by the
+ * shared resize watcher in `overflow-watch.ts`.
+ *
+ * Clamping: `maxLines` caps the visible code at N lines — the
+ * collapsed-preview mode; consumers own the control that reveals the rest
+ * and never style the block's internals. The clamp lives on an inner box
+ * (`overflow-y: clip`, so nothing can scroll it vertically), never on the
+ * focusable scroller, whose focus ring a mask would cut off; the bottom
+ * edge fades only while lines are actually cut off (`data-fdt-clipped`).
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
@@ -31,8 +45,10 @@ import { Show } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
+import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
 import type { HighlightedCode } from './code-block-highlighter';
+import { isClippedVertically, watchOverflow, type OverflowWatcher } from './overflow-watch';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
@@ -82,6 +98,24 @@ export type CodeBlockProps = {
   loadHighlighter?: () => Promise<HighlighterLike>;
   /** The intersection seam; defaults to a real `IntersectionObserver` on the wrapper. */
   createObserver?: (host: HTMLElement) => IntersectionGate;
+  /**
+   * The scroll region's accessible name, announced when it takes focus
+   * because it overflows. The default, "`<lang>` code" (e.g. "javascript
+   * code"), repeats across blocks — a page showing several blocks passes a
+   * distinct label per block (e.g. the script's URL or role) so each Tab
+   * stop says which code it is.
+   */
+  label?: string;
+  /**
+   * Clamp the visible code to this many lines (a positive integer): the
+   * area clips below them with a faded bottom edge — a collapsed preview.
+   * The consumer offers the control that reveals the rest (e.g. an expand
+   * button with `aria-controls`); `undefined` (default) shows every line.
+   * Reactive: toggling it expands/collapses in place, instantly.
+   */
+  maxLines?: number;
+  /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
+  watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
   class?: string;
 } & Omit<ComponentProps<'div'>, 'class' | 'children'>;
@@ -142,11 +176,15 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
  * @param props.loadHighlighter Loader seam (tests inject resolved doubles).
  * @param props.createObserver Intersection seam (tests inject manual gates).
+ * @param props.label The scroll region's name (default "`<lang>` code";
+ *   pass a distinct one per block when a page shows several).
+ * @param props.maxLines Clamp to N visible lines (collapsed preview).
+ * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
  * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} — a
  *   call-site bug fails at analysis/injection time rather than shipping a
- *   mislabelled block.
+ *   mislabelled block — and for a `maxLines` that is not a positive integer.
  */
 export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Lang is a call-site constant — the guard must run synchronously with a
@@ -163,13 +201,37 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'defaultWrap',
     'loadHighlighter',
     'createObserver',
+    'label',
+    'maxLines',
+    'watchOverflow',
     'class'
   ]);
 
   const [wrap, setWrap] = createSignal(own.defaultWrap ?? false);
   const [highlighter, setHighlighter] = createSignal<HighlighterLike | undefined>();
 
+  // Whether the code area overflows a scrollable axis, and whether it holds
+  // focus: together they drive its focusability and name (a focused area
+  // stays focusable when its overflow ends, so focus is never yanked away).
+  const [scrollable, setScrollable] = createSignal(false);
+  const [focused, setFocused] = createSignal(false);
+  const focusable = (): boolean => scrollable() || focused();
+
+  /** The validated line clamp (`undefined`: unclamped). */
+  const maxLines = createMemo<number | undefined>(() => {
+    const lines = own.maxLines;
+    if (lines !== undefined && !(Number.isInteger(lines) && lines > 0)) {
+      throw new Error(`CodeBlock: maxLines must be a positive integer, got ${String(lines)}.`);
+    }
+    return lines;
+  });
+
   let container: HTMLDivElement | undefined;
+  let area: HTMLDivElement | undefined;
+  let content: HTMLDivElement | undefined;
+  let lines: HTMLDivElement | undefined;
+  // Whether the clamp currently cuts lines off (drives the fade).
+  const [clipped, setClipped] = createSignal(false);
 
   /**
    * The default loader: the dynamic `import()` of the shiki module graph —
@@ -208,6 +270,21 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     // The observer dies with this component: cleanup always disconnects, so
     // no stray connection survives an unmount.
     onCleanup(gate.disconnect);
+  });
+
+  onMount(() => {
+    if (area === undefined || content === undefined || lines === undefined) {
+      // Defensive, like the gate: without the elements there is nothing to
+      // measure; the area simply stays a plain (non-focusable) box.
+      logger.warn('Overflow watch skipped: code area refs missing at mount.');
+      return;
+    }
+    // One-shot bootstrap read: the watcher is fixed per instance.
+    const watch = own.watchOverflow ?? watchOverflow;
+    // Scrollability: the area against the content-sized box inside it.
+    onCleanup(watch(area, content, setScrollable));
+    // Clipping: the clamp box (the content-sized box) against its lines.
+    onCleanup(watch(content, lines, setClipped, isClippedVertically));
   });
 
   /**
@@ -253,17 +330,64 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         </Button>
       </div>
       <div
+        ref={area}
         data-fdt-code-area
+        data-fdt-scrollable={scrollable() ? '' : undefined}
+        data-fdt-clamped={maxLines() !== undefined ? '' : undefined}
+        data-fdt-clipped={maxLines() !== undefined && clipped() ? '' : undefined}
+        // Focusable and named only while there is something to scroll (or
+        // while focus is already here).
+        tabindex={focusable() ? 0 : undefined}
+        role={focusable() ? 'group' : undefined}
+        aria-label={focusable() ? (own.label ?? `${own.lang} code`) : undefined}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         class={cn(
-          // Shared `pre` typography for both fallback and highlighted surface
-          // (Token-driven via the mono token; the pre's own chrome stays flat).
-          '[&>pre]:overflow-x-auto [&>pre]:p-2 [&>pre]:font-mono [&>pre]:text-2xs [&>pre]:leading-relaxed',
-          wrap() ? '[&>pre]:whitespace-pre-wrap' : '[&>pre]:whitespace-pre'
+          // Never masked: a mask would clip this element's focus ring.
+          'overflow-x-auto rounded-b',
+          FOCUS_RING,
+          // Shared `pre` typography for the one `pre` either surface renders
+          // (the fallback's own, or shiki's inside the highlighted wrapper);
+          // token-driven via the mono token, the pre's own chrome stays flat.
+          '[&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-2xs [&_pre]:leading-relaxed',
+          // Wrap mode may break inside an over-long token (a URL, a minified
+          // line): `anywhere` also shrinks the min-content width, so the
+          // content box can narrow to the area and nothing scrolls sideways.
+          wrap() ? '[&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere' : '[&_pre]:whitespace-pre'
         )}
       >
-        <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
-          {(html) => <HighlightedPre html={html()} />}
-        </Show>
+        {/* Sized to its content (never narrower than the area), so its box
+            changes whenever the content's width does — the scroll watch
+            observes it next to the area. It is also the clamp: sized to the
+            content horizontally, its mask covers every scrolled-to column. */}
+        <div
+          ref={content}
+          data-fdt-code-content
+          style={{
+            '--fdt-code-max-lines': maxLines() === undefined ? undefined : String(maxLines())
+          }}
+          class={cn(
+            'w-fit min-w-full',
+            // The code's own size and leading, so `1lh` is one code line.
+            'text-2xs leading-relaxed',
+            // Clamp: N lines + the pre's vertical padding (`p-2`, 1rem in
+            // total). `clip`, not `hidden`: no scroll container, so nothing
+            // (find-in-page, `scrollIntoView`) can scroll the preview.
+            maxLines() !== undefined &&
+              'max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)] overflow-y-clip',
+            // Fade only the bottom padding strip — the half-shown next line —
+            // and only while lines are really cut off; the last whole line
+            // stays fully legible.
+            maxLines() !== undefined && clipped() && 'mask-b-from-[calc(100%-0.5rem)]'
+          )}
+        >
+          {/* The natural-height lines, measured against the clamp. */}
+          <div ref={lines} data-fdt-code-lines>
+            <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
+              {(html) => <HighlightedSurface html={html()} />}
+            </Show>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -284,12 +408,15 @@ function RawPre(props: { text: string }): JSX.Element {
  * The highlighted surface — shiki's `<pre>` mounted through `innerHTML`,
  * deliberate and safe (untrusted code text is HTML-escaped by shiki's
  * pipeline; no transformers/decorations are configured to inject markup).
+ * The wrapper is a `div`: shiki's markup brings its own `<pre>`, and a `pre`
+ * inside a `pre` is invalid and would keep the inner one's UA
+ * `white-space: pre` out of the wrap toggle's reach.
  *
  * @param props.html The highlighter's `<pre>` HTML string.
  */
-function HighlightedPre(props: { html: string }): JSX.Element {
+function HighlightedSurface(props: { html: string }): JSX.Element {
   return (
-    <pre
+    <div
       data-fdt-code-highlighted
       // Safe by construction: shiki escapes source text in its hast→HTML
       // pipeline (regression-pinned against the real loader in the

@@ -9,15 +9,43 @@
  * Fine-grained shiki: the core plus exactly the two languages this tool
  * renders (extension-script sources and JSON payloads), one light/dark theme
  * pair, and the JavaScript regex engine (no WASM; the manifest's Chromium
- * floor covers the ES features the compiled grammars need).
+ * floor covers the ES features the compiled grammars need). Grammars and
+ * themes are static imports: the highlighter always loads all four at once,
+ * so they ride this module's own lazy chunk — one fetch instead of a second
+ * round of per-grammar chunks, and one stable chunk name to budget.
  */
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import type { HighlighterCore } from 'shiki/core';
+import javascript from 'shiki/langs/javascript.mjs';
+import json from 'shiki/langs/json.mjs';
+import githubDark from 'shiki/themes/github-dark.mjs';
+import githubLight from 'shiki/themes/github-light.mjs';
 import type { CodeLanguage } from './code-block-langs';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
-const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
+export const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
+
+/**
+ * Token colors swapped per theme so every token clears WCAG AA (4.5:1) on the
+ * code block's surface (`--surface-1` in each palette). The four theme
+ * colors below fall short (on `#fafbfc` / `#111418`: keyword 4.42, tag 4.47,
+ * `variable` 3.37; dark comment 3.84); each is replaced by the same role's
+ * color from GitHub's current "default" theme family, keeping the look while
+ * clearing AA (5.17 / 7.14 / 7.13 / 6.00). Keys are lowercase, as shiki
+ * matches them. The colocated test proves every color of both themes,
+ * after these swaps, against the surface tokens.
+ */
+export const COLOR_REPLACEMENTS = {
+  [THEME_PAIR.light]: {
+    '#d73a49': '#cf222e', // keyword, storage
+    '#22863a': '#116329', // tag names, regexp escapes
+    '#e36209': '#953800' // `variable` (bare scope)
+  },
+  [THEME_PAIR.dark]: {
+    '#6a737d': '#8b949e' // comments
+  }
+} as const satisfies Record<string, Record<string, string>>;
 
 /** A highlighted result: the full `<pre>` HTML, ready for a scoped `innerHTML`. */
 export type HighlightedCode = string;
@@ -61,10 +89,10 @@ let instance: Promise<CodeHighlighter> | undefined;
  */
 export function getHighlighter(): Promise<CodeHighlighter> {
   instance ??= createHighlighterCore({
-    langs: [import('shiki/langs/javascript.mjs'), import('shiki/langs/json.mjs')],
-    // Fine-grained mode has no bundled registry: themes and langs load as
-    // modules and are then addressed by their registration names (`THEME_PAIR`).
-    themes: [import('shiki/themes/github-light.mjs'), import('shiki/themes/github-dark.mjs')],
+    langs: [javascript, json],
+    // Fine-grained mode has no bundled registry: themes and langs are passed
+    // as registrations, then addressed by their registration names (`THEME_PAIR`).
+    themes: [githubLight, githubDark],
     engine: createJavaScriptRegexEngine({ forgiving: true })
   }).then((highlighter: HighlighterCore) => ({
     highlight: (code, options) =>
@@ -76,11 +104,13 @@ export function getHighlighter(): Promise<CodeHighlighter> {
         // re-render here (verified output: `color:light-dark(<light>, <dark>)`).
         themes: THEME_PAIR,
         defaultColor: 'light-dark()',
+        // Theme-scoped swaps (keyed by theme name) lifting every token to AA.
+        colorReplacements: COLOR_REPLACEMENTS,
         // The root `pre` gets no inline palette from shiki: the component's
         // token-styled container owns background/border/padding chrome.
         rootStyle: false,
-        // The code surface stays out of the tab order (hovering lives on the
-        // owning surface's scroll logic; the wrap toggle owns horizontal flow).
+        // No tab stop on shiki's `pre`: the component's code area owns
+        // focusability, granting it only while the code overflows.
         tabindex: false
       }),
     dispose: () => {

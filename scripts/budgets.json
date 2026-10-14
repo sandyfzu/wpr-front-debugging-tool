@@ -84,10 +84,18 @@
     "measuredBy": "the P5.1 harness spec (tests/e2e/suites/panel-cold-start.spec.ts)"
   },
   {
+    "surface": "code highlighter (lazy shiki chunk, panel)",
+    "globs": ["chunks/code-block-highlighter-*.js"],
+    "maxKb": {
+      "raw": 368,
+      "gzip": 75
+    }
+  },
+  {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 857
+      "raw": 1225
     }
   }
 ]

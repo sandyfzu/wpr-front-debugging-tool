@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { contrastRatio } from '../../utils/contrast';
 
 /**
  * WCAG 2.1 AA gate for the design tokens.
@@ -57,26 +58,6 @@ function readInjectedChain(file: string): string {
   return sources.join('\n');
 }
 
-/**
- * Relative luminance per WCAG 2.1 (definition 2.2), on an opaque sRGB hex color.
- */
-function luminance(hex: string): number {
-  const digits = hex.replace('#', '');
-  const encode = (channel: number): number =>
-    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  const channel = (offset: number): number =>
-    Number.parseInt(digits.slice(offset, offset + 2), 16) / 255;
-  return 0.2126 * encode(channel(0)) + 0.7152 * encode(channel(2)) + 0.0722 * encode(channel(4));
-}
-
-/** WCAG 2.1 contrast ratio between two opaque colors. */
-function contrastRatio(foreground: string, background: string): number {
-  const first = luminance(foreground);
-  const second = luminance(background);
-  const [lighter, darker] = first >= second ? [first, second] : [second, first];
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
 interface PaletteValues {
   dark: string;
   light: string;
@@ -130,7 +111,10 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   ...SURFACES.map((background) => ({ foreground: 'accent', background, min: 3 })),
   // Text laid over accent fills (buttons, badges); deliberately NOT paired with
   // the decorative gradient endpoints — text on a gradient uses a solid fill.
-  { foreground: 'on-accent', background: 'accent-strong', min: 4.5 }
+  { foreground: 'on-accent', background: 'accent-strong', min: 4.5 },
+  // The inverted pair: an `on-accent` pill inside an accent fill (the
+  // selected filter chip's count) — same ratio by symmetry, pinned by name.
+  { foreground: 'accent-strong', background: 'on-accent', min: 4.5 }
 ];
 
 describe('contrast math', () => {
