@@ -1,6 +1,6 @@
 /**
- * The action registry's shape and dispatch: the five rows in order with
- * honest disabled states (export requires loaded data, the builder tab
+ * The action registry's shape and dispatch: the six rows in order with
+ * honest disabled states (export and copy-report require loaded data, the builder tab
  * requires the browser surface), the runs delegating to the seams exactly
  * once, the appearance cycle's rejection toasting its own stable remedy, and
  * the page rows mirroring the nav registry walk by navigate (same-route runs
@@ -31,6 +31,7 @@ interface ActionCalls {
   builder: ReturnType<typeof vi.fn>;
   shortcuts: ReturnType<typeof vi.fn>;
   export: ReturnType<typeof vi.fn>;
+  copyReport: ReturnType<typeof vi.fn>;
 }
 
 /** The action seams, per call — no cross-test shared state. */
@@ -51,7 +52,8 @@ function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }):
     export: vi.fn((data: FdtData): 'downloaded' => {
       seenExport = data;
       return 'downloaded';
-    })
+    }),
+    copyReport: vi.fn((): Promise<'copied'> => Promise.resolve('copied'))
   };
   const deps: PanelActionDeps = {
     reload: calls.reload,
@@ -61,7 +63,8 @@ function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }):
     exclusionBuilderAvailable: () => tabsAvailable,
     openShortcuts: calls.shortcuts,
     exportData: (data: FdtData) =>
-      Promise.resolve(calls.export(data)).then(() => 'downloaded' as const)
+      Promise.resolve(calls.export(data)).then(() => 'downloaded' as const),
+    copyReport: calls.copyReport
   };
   return { deps, calls, seenExportData: () => seenExport };
 }
@@ -109,12 +112,13 @@ describe('createPageCommands (the pages half)', () => {
 });
 
 describe('createPanelActions (the actions half)', () => {
-  it('ships the five committed rows, in order, with their vocabulary', () => {
+  it('ships the six committed rows, in order, with their vocabulary', () => {
     const { deps } = actionDeps();
     const ids = createPanelActions(deps).map((row) => row.id);
     expect(ids).toEqual([
       'action-reload-data',
       'action-export-json',
+      'action-copy-report',
       'action-toggle-appearance',
       'action-open-exclusion-builder',
       'action-show-shortcuts'
@@ -123,6 +127,7 @@ describe('createPanelActions (the actions half)', () => {
     expect(labels).toEqual([
       'Reload data',
       'Export JSON',
+      'Copy report',
       'Toggle appearance',
       'Open Exclusion Builder',
       'Show keyboard shortcuts'
@@ -175,6 +180,48 @@ describe('createPanelActions (the actions half)', () => {
     expect(calls.cycle).toHaveBeenCalledTimes(1);
     expect(calls.builder).toHaveBeenCalledTimes(1);
     expect(calls.shortcuts).toHaveBeenCalledTimes(1);
+    expect(calls.copyReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('gates the Copy report row on loaded data and hands it the loaded payload', async () => {
+    const unloaded = actionDeps({ data: null, tabsAvailable: true });
+    const disabledRow = createPanelActions(unloaded.deps).find(
+      (row) => row.id === 'action-copy-report'
+    );
+    expect(disabledRow?.disabled).toBe(true);
+    expect(disabledRow?.disabledNote).toBe('No page data loaded');
+    await disabledRow?.run();
+    expect(unloaded.calls.copyReport).not.toHaveBeenCalled();
+
+    const data = makeFdtData({ undefinedReferencesOnPage: ['jQuery'] });
+    const loaded = actionDeps({ data, tabsAvailable: true });
+    const row = createPanelActions(loaded.deps).find((row) => row.id === 'action-copy-report');
+    expect(row?.disabled).toBe(false);
+    expect(row?.hint).toBe('Detections');
+    expect(row?.keywords).toContain('support');
+    await row?.run();
+    expect(loaded.calls.copyReport).toHaveBeenCalledExactlyOnceWith(data);
+  });
+
+  it('runs the Detections page mechanism when no copy seam is injected', async () => {
+    let written = '';
+    const writeText = vi.fn((text: string): Promise<void> => {
+      written = text;
+      return Promise.resolve();
+    });
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    try {
+      const { deps } = actionDeps({ data: makeFdtData(), tabsAvailable: true });
+      const row = createPanelActions({ ...deps, copyReport: undefined }).find(
+        (row) => row.id === 'action-copy-report'
+      );
+      await row?.run();
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(written).toContain('## WP Rocket page report');
+      expect(latestToast()?.title).toBe('Report copied');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('answers a rejected appearance write with the stable remedy toast', async () => {

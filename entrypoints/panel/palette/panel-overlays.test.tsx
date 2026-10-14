@@ -250,7 +250,7 @@ describe('the keyboard overlays in the shell', () => {
     // rebuild over the settle (the snapshot's purpose). The arm survives by
     // the guard's re-arm (pinned by the caret-move test; its exact tick
     // timing under a same-tick rebuild is not a render-assertable contract).
-    expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(11);
+    expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(12);
     expect(document.body.contains(exportRow)).toBe(true);
 
     // The same open keeps its snapshot; the next open re-assembles fresh —
