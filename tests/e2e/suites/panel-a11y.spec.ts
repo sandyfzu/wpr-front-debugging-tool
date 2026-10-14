@@ -228,7 +228,12 @@ test.describe('panel keyboard + a11y', () => {
       // A nav click: the focus rule (shared owner) moves focus to the body's
       // own h1 — program-focusable, so the destination announces to AT. The
       // poll takes the swap in (Solid's body keyed-when reads after the hash).
-      await panel.getByRole('link', { name: 'JavaScript' }).click();
+      // Scoped to the nav: page bodies may carry links naming the same page
+      // (e.g. the Detections cards' "Open JavaScript").
+      await panel
+        .getByRole('navigation', { name: 'WPR FDT pages' })
+        .getByRole('link', { name: 'JavaScript' })
+        .click();
       await panel.waitForURL(/#\/javascript$/);
       await expect
         .poll(

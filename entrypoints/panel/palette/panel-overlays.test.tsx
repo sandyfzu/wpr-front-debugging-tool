@@ -17,6 +17,10 @@ import { makeFdtData } from '../state/fixtures';
 import { createFdtDataStore } from '../state/use-fdt-data';
 import { createSearchStore } from '../state/search';
 import { PanelApp } from '../App';
+import { NAV_ROUTES } from '../routes';
+import { createPanelActions } from './actions';
+import { createOverlayStore } from './overlays';
+import { productionActionDeps } from './panel-overlays';
 
 afterEach(() => {
   cleanup();
@@ -250,7 +254,12 @@ describe('the keyboard overlays in the shell', () => {
     // rebuild over the settle (the snapshot's purpose). The arm survives by
     // the guard's re-arm (pinned by the caret-move test; its exact tick
     // timing under a same-tick rebuild is not a render-assertable contract).
-    expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(12);
+    // The expected count derives from the two row sources (never a literal),
+    // so adding a page or an action row keeps this pin true in any merge order.
+    const expectedRows =
+      NAV_ROUTES.length +
+      createPanelActions(productionActionDeps(() => data, createOverlayStore, null)).length;
+    expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(expectedRows);
     expect(document.body.contains(exportRow)).toBe(true);
 
     // The same open keeps its snapshot; the next open re-assembles fresh —
