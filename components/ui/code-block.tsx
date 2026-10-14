@@ -24,6 +24,12 @@
  * disconnected on unmount — no view keeps a live observer, and none ever
  * attaches to a not-yet-existing child (the latch targets the wrapper that
  * exists at mount, so an absent element can never be the observed one).
+ *
+ * Keyboard scrolling: the code area is the horizontal scroller; while (and
+ * only while) its content overflows it becomes a named, focusable group
+ * (`tabindex="0"`, `role="group"`, the focus ring) so keyboard users can
+ * scroll it — a block that fits costs no Tab stop. Overflow is tracked by
+ * the shared resize watcher in `overflow-watch.ts`.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
@@ -31,8 +37,10 @@ import { Show } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
+import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
 import type { HighlightedCode } from './code-block-highlighter';
+import { watchOverflow, type OverflowWatcher } from './overflow-watch';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
@@ -82,6 +90,14 @@ export type CodeBlockProps = {
   loadHighlighter?: () => Promise<HighlighterLike>;
   /** The intersection seam; defaults to a real `IntersectionObserver` on the wrapper. */
   createObserver?: (host: HTMLElement) => IntersectionGate;
+  /**
+   * The scroll region's accessible name, announced when it takes focus
+   * because it overflows (default: "`<lang>` code", e.g. "javascript code").
+   * Name it after what the code is when a page shows several blocks.
+   */
+  label?: string;
+  /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
+  watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
   class?: string;
 } & Omit<ComponentProps<'div'>, 'class' | 'children'>;
@@ -142,6 +158,8 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
  * @param props.loadHighlighter Loader seam (tests inject resolved doubles).
  * @param props.createObserver Intersection seam (tests inject manual gates).
+ * @param props.label The scroll region's name (default "`<lang>` code").
+ * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
  * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} — a
@@ -163,13 +181,20 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'defaultWrap',
     'loadHighlighter',
     'createObserver',
+    'label',
+    'watchOverflow',
     'class'
   ]);
 
   const [wrap, setWrap] = createSignal(own.defaultWrap ?? false);
   const [highlighter, setHighlighter] = createSignal<HighlighterLike | undefined>();
 
+  // Whether the code area overflows — drives its focusability and name.
+  const [scrollable, setScrollable] = createSignal(false);
+
   let container: HTMLDivElement | undefined;
+  let area: HTMLDivElement | undefined;
+  let content: HTMLDivElement | undefined;
 
   /**
    * The default loader: the dynamic `import()` of the shiki module graph —
@@ -208,6 +233,18 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     // The observer dies with this component: cleanup always disconnects, so
     // no stray connection survives an unmount.
     onCleanup(gate.disconnect);
+  });
+
+  onMount(() => {
+    if (area === undefined || content === undefined) {
+      // Defensive, like the gate: without the elements there is nothing to
+      // measure; the area simply stays a plain (non-focusable) box.
+      logger.warn('Overflow watch skipped: code area refs missing at mount.');
+      return;
+    }
+    // One-shot bootstrap read: the watcher is fixed per instance.
+    const watch = own.watchOverflow ?? watchOverflow;
+    onCleanup(watch(area, content, setScrollable));
   });
 
   /**
@@ -253,17 +290,34 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         </Button>
       </div>
       <div
+        ref={area}
         data-fdt-code-area
+        data-fdt-scrollable={scrollable() ? '' : undefined}
+        // Focusable and named only while there is something to scroll.
+        tabindex={scrollable() ? 0 : undefined}
+        role={scrollable() ? 'group' : undefined}
+        aria-label={scrollable() ? (own.label ?? `${own.lang} code`) : undefined}
         class={cn(
-          // Shared `pre` typography for both fallback and highlighted surface
-          // (Token-driven via the mono token; the pre's own chrome stays flat).
-          '[&>pre]:overflow-x-auto [&>pre]:p-2 [&>pre]:font-mono [&>pre]:text-2xs [&>pre]:leading-relaxed',
-          wrap() ? '[&>pre]:whitespace-pre-wrap' : '[&>pre]:whitespace-pre'
+          'overflow-x-auto rounded-b',
+          FOCUS_RING,
+          // Shared `pre` typography for the one `pre` either surface renders
+          // (the fallback's own, or shiki's inside the highlighted wrapper);
+          // token-driven via the mono token, the pre's own chrome stays flat.
+          '[&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-2xs [&_pre]:leading-relaxed',
+          // Wrap mode may break inside an over-long token (a URL, a minified
+          // line): `anywhere` also shrinks the min-content width, so the
+          // content box can narrow to the area and nothing scrolls sideways.
+          wrap() ? '[&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere' : '[&_pre]:whitespace-pre'
         )}
       >
-        <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
-          {(html) => <HighlightedPre html={html()} />}
-        </Show>
+        {/* Sized to its content (never narrower than the area), so its box
+            changes whenever the content's width does — the overflow watch
+            observes it next to the area. */}
+        <div ref={content} data-fdt-code-content class="w-fit min-w-full">
+          <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
+            {(html) => <HighlightedCode html={html()} />}
+          </Show>
+        </div>
       </div>
     </div>
   );
@@ -284,12 +338,15 @@ function RawPre(props: { text: string }): JSX.Element {
  * The highlighted surface — shiki's `<pre>` mounted through `innerHTML`,
  * deliberate and safe (untrusted code text is HTML-escaped by shiki's
  * pipeline; no transformers/decorations are configured to inject markup).
+ * The wrapper is a `div`: shiki's markup brings its own `<pre>`, and a `pre`
+ * inside a `pre` is invalid and would keep the inner one's UA
+ * `white-space: pre` out of the wrap toggle's reach.
  *
  * @param props.html The highlighter's `<pre>` HTML string.
  */
-function HighlightedPre(props: { html: string }): JSX.Element {
+function HighlightedCode(props: { html: string }): JSX.Element {
   return (
-    <pre
+    <div
       data-fdt-code-highlighted
       // Safe by construction: shiki escapes source text in its hast→HTML
       // pipeline (regression-pinned against the real loader in the

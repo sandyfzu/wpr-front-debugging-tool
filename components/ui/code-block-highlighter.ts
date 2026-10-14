@@ -79,8 +79,8 @@ export function getHighlighter(): Promise<CodeHighlighter> {
         // The root `pre` gets no inline palette from shiki: the component's
         // token-styled container owns background/border/padding chrome.
         rootStyle: false,
-        // The code surface stays out of the tab order (hovering lives on the
-        // owning surface's scroll logic; the wrap toggle owns horizontal flow).
+        // No tab stop on shiki's `pre`: the component's code area owns
+        // focusability, granting it only while the code overflows.
         tabindex: false
       }),
     dispose: () => {

@@ -9,6 +9,7 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodeBlock, type IntersectionGate } from './code-block';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
+import type { OverflowWatcher } from './overflow-watch';
 
 afterEach(() => {
   cleanup();
@@ -33,6 +34,35 @@ function manualGate(): IntersectionGate & { fires: () => void; disconnects: () =
       onVisible();
     },
     disconnects: () => disconnects
+  };
+}
+
+/**
+ * An overflow-watcher double: records what it watches and lets the test
+ * flip the overflow state (happy-dom has no layout to overflow).
+ */
+function manualOverflow(): {
+  watcher: OverflowWatcher;
+  set: (overflowing: boolean) => void;
+  watched: () => HTMLElement[];
+  stops: () => number;
+} {
+  let report: (overflowing: boolean) => void = () => undefined;
+  let watched: HTMLElement[] = [];
+  let stops = 0;
+  return {
+    watcher: (scroller, content, onChange) => {
+      watched = [scroller, content];
+      report = onChange;
+      return () => {
+        stops += 1;
+      };
+    },
+    set: (overflowing) => {
+      report(overflowing);
+    },
+    watched: () => watched,
+    stops: () => stops
   };
 }
 
@@ -145,6 +175,8 @@ describe('CodeBlock', () => {
     fireEvent.click(wrap as Element);
     expect(wrap?.getAttribute('aria-pressed')).toBe('true');
     expect(area?.className).toContain('whitespace-pre-wrap');
+    // Long unbroken tokens wrap too, so wrap mode never scrolls sideways.
+    expect(area?.className).toContain('[&_pre]:wrap-anywhere');
     // Area chrome (lang tag, buttons) survives the toggling round trip.
     expect(fallback?.textContent).toBe('const a = 1;');
     expect(screen.getByText('javascript')).toBeTruthy();
@@ -156,5 +188,90 @@ describe('CodeBlock', () => {
     expect(() => render(() => <CodeBlock text="x" lang={'perl' as never} />)).toThrow(
       /unsupported language/
     );
+  });
+
+  it('renders on the surface-1 token (the background its theme contrast is gated on)', () => {
+    render(() => <CodeBlock text="x" lang="json" createObserver={() => manualGate()} />);
+    expect(controls().root?.className).toContain('bg-surface-1');
+  });
+
+  it('mounts the highlighted markup in a div — never a pre inside a pre', async () => {
+    const gate = manualGate();
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    const { highlighted, area } = controls();
+    expect(highlighted?.tagName).toBe('DIV');
+    // Exactly one pre (the highlighter's), so the area's wrap/typography
+    // selectors reach the element that actually lays out the text.
+    expect(area?.querySelectorAll('pre')).toHaveLength(1);
+    expect(area?.className).toContain('[&_pre]:whitespace-pre');
+  });
+
+  it('makes the code area a named, focusable group only while it overflows', () => {
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    // It watches the area and its content box.
+    expect(overflow.watched()[0]).toBe(area);
+    expect(overflow.watched()[1]?.hasAttribute('data-fdt-code-content')).toBe(true);
+    // Fits: no tab stop, no role, no name.
+    expect(area.hasAttribute('tabindex')).toBe(false);
+    expect(area.hasAttribute('role')).toBe(false);
+    expect(area.hasAttribute('aria-label')).toBe(false);
+    overflow.set(true);
+    expect(area.getAttribute('tabindex')).toBe('0');
+    expect(screen.getByRole('group', { name: 'javascript code' })).toBe(area);
+    expect(area.hasAttribute('data-fdt-scrollable')).toBe(true);
+    expect(area.className).toContain('focus-visible:outline-2');
+    overflow.set(false);
+    expect(area.hasAttribute('tabindex')).toBe(false);
+    expect(screen.queryByRole('group', { name: 'javascript code' })).toBeNull();
+  });
+
+  it('names the scroll region from the label prop when given', () => {
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text="{}"
+        lang="json"
+        label="Response body"
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    overflow.set(true);
+    expect(screen.getByRole('group', { name: 'Response body' })).toBe(controls().area);
+  });
+
+  it('stops the overflow watch on unmount', () => {
+    const overflow = manualOverflow();
+    const { unmount } = render(() => (
+      <CodeBlock
+        text="x"
+        lang="json"
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    expect(overflow.stops()).toBe(0);
+    unmount();
+    expect(overflow.stops()).toBe(1);
   });
 });
