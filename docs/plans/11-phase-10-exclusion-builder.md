@@ -2,6 +2,8 @@
 
 **Depends on:** P1 (constants/types), P5 (design system). **Effort:** L. **Parallelizable with:** P6–P9 (UI part needs P5 only).
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 > **OWNER DECISION (2026-10-08) — PARKED FOR A RE-PLAN.** The owner **ditched the current way**
 > of building and planning the Exclusion Builder (this document's legacy-parity shape, including
 > its incognito parity skip) and asked to **re-think and re-plan it** before anything here is

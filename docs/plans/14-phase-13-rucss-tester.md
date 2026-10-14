@@ -2,6 +2,8 @@
 
 **Depends on:** P11, P12 (tool chips + feedback banner), P3 (content-script infra), P5 (design system), P6 (Detections TEST MODE badge). **Effort:** M–L. **Parallelizable:** with P14.
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Goal
 
 Port the inspector source's RUCSS tester: strips every stylesheet from the live page, asks WP Media's RUCSS endpoint for the page's "shaken" used-CSS (URL + safelist), then injects the result so a support engineer can see what the page would look like if Remove Unused CSS produced exactly that CSS. In this extension the test is configured and triggered from a new panel page (and the on-page strip's chip), executes in the content script, and reports into the panel — with the tool's known fragilities fixed and its client-side transforms made correct.

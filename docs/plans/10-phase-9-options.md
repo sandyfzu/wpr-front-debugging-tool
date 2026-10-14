@@ -2,6 +2,8 @@
 
 **Depends on:** P1 (storage), P5 (design system). **Effort:** S. **Parallelizable with:** P8, P10.
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Goal
 
 Port the options page (Improvements section) with honest saving, error surfacing, and room to grow, on the design system.

@@ -2,6 +2,8 @@
 
 **Depends on:** P11 (statuses + registry HUD facet), P3 (content-script infra + data hub), P5 (design tokens), and for the toggle rows: P8 (popup) + P9 (options). **Effort:** M. **Parallelizable:** with P13/P14 once its own deps are done (their quick-actions ride on it but degrade gracefully without it).
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Goal
 
 Port the inspector source's floating on-page strip: a drag-aware, collapsible mini-panel showing every WP Rocket feature as a status chip grouped like the Detections page, plus quick-action entries for the live tools (RUCSS test, beacon test, LCP analysis — their execution follows in P13/P14). It is the piece the first baseline never had: glanceable WP Rocket status on any page **without opening devtools**.

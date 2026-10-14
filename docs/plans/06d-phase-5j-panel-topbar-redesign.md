@@ -2,6 +2,8 @@
 
 **Depends on:** P5C–P5D (shipped), P5I's shell close-out; executes in the terminal implementation slot — **after P7 (and P14.6), immediately before P15**. **Effort:** M. **Parallelizable with:** nothing in its slot (it finalizes the shell's header geometry every other surface then reads).
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Decision record (owner, 2026-10-13)
 
 Daily use of the shipped P5D nav found three frictions with the wide-docking form (the grouped top tab bar):

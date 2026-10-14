@@ -34,7 +34,7 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 WXT conventions govern the layout — follow them, don't invent a new one. The manifest is generated from `entrypoints/` into `.output/**` — never hand-edit it there.
 
 ```
-├── docs/                      # the port plan: master plan + phase docs (linked from this file)
+├── docs/                      # the port plan (master + phase docs) + `ui-ux-bar.md` (linked from this file)
 ├── public/                    # copied to the build output as-is (icons, …)
 ├── assets/                    # bundled assets: images, fonts, `assets/css/theme.css` design tokens
 ├── entrypoints/               # one folder/file per extension surface
@@ -154,6 +154,10 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 - **Every user-facing surface supports both palettes** — panel, popup, options, exclusion-builder, and every injected UI (strips, badges, overlays): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
 - **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
 - **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs and the popup only read it.
+
+### UI/UX bar
+
+Every user-facing surface — panel, popup, options, exclusion builder, every injected UI, and any future one — meets **[`docs/ui-ux-bar.md`](docs/ui-ux-bar.md)**, the single declaring site of the bar: refined, fast, responsive, accessible, with restrained motion. In short: container-query layouts with no horizontal scroll down to 320 px; tokens and `components/ui/` primitives only (AA by construction); motion only through the motion tokens and the bar's closed list of moments (`opacity`/`transform`, reduced motion honored, no per-row or infinite animation outside real waits); every async state designed (no dead ends, no fake waits); keyboard-complete with visible focus; virtualized lists with no long task > 50 ms. Phase docs cite its rule ids instead of re-declaring values; every UI change receipts its §D checks.
 
 ### Required workflow after every edit
 

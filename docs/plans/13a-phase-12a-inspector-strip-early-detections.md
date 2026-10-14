@@ -2,6 +2,8 @@
 
 **Depends on:** P1/P1.1 (detection engine + its verified labels), P3 (data hub; the injected-UI mount/theme stack), P0 (tokens) — and the Known Conflicts redesign (commit `bf97ab7`), whose shell pattern and audited motion/focus choreography are adopted verbatim. **No** P11/P5-panel dependency. **Effort:** S–M (four sub-phases, ~3 days). **Parallelizable:** with every phase that does not touch `entrypoints/isolated.content/**`, `lib/detection/describe` strings, or the context-menu registry; P6/P8/P9/P10 surfaces are untouched by design.
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Owner mandate (2026-10-13)
 
 The on-page inspector widget presents itself with the **Known Conflicts widget's UI**, adapted to what the strip needs — and the early start ships **detections only**. Everything else in the planned P12 scope (drag + persisted position, `Alt+H`, the tool chips and their outcome banners, the popup/Detections/options opt-in row itself, the hostile-CSS formal pass) keeps its planned slot in P12/P13/P14.

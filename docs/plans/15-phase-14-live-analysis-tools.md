@@ -2,6 +2,8 @@
 
 **Depends on:** P11, P12 (strip chips), P3, P5, P6 (JS page extension), P13 (executor + protocol patterns to reuse). **Effort:** M. **Parallelizable:** none within the set (builds on the executor patterns P13 established).
 
+> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+
 ## Goal
 
 Port the inspector source's three runtime-analysis behaviors on top of this extension's architecture:
