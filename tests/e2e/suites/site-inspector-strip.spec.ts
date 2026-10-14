@@ -659,10 +659,6 @@ siteTest.describe('site detection widget', () => {
           Math.abs(draggedShape.top - (pill.top - 140)),
           'the pill\u2019s top-left followed the pointer\u2019s top delta'
         ).toBeLessThan(2);
-        expect(
-          Math.abs(draggedShape.top - (pill.top - 140)),
-          'the pill followed the pointer\u2019s top delta'
-        ).toBeLessThan(2);
         // The same press must never open the card (its click belonged to the drag).
         expect((await readStrip(page)).cardOpen).toBe(false);
 
@@ -786,6 +782,52 @@ siteTest.describe('site detection widget', () => {
           Math.abs(reopenedCard.bottom - moved.bottom),
           'the reopened card never snapped back vertically'
         ).toBeLessThan(2);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'after a card-handle drag, Escape hands focus back and Enter still opens the card (suppression is pointer-only)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        // Open, then drag the card by its header: the release's captured click
+        // lands on the card root (consumer-less) and leaves the suppression
+        // armed — the auditor's one-lost-Enter setup.
+        await pill.click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        await page.mouse.move(card.left + 24, card.top + 12);
+        await page.mouse.down();
+        await page.mouse.move(card.left - 16, card.top - 42, { steps: 8 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+
+        // Escape closes (focus rides back to the pill), then Enter re-opens:
+        // the keyboard activation click (detail 0) must never read the
+        // pointer path's suppression flag — the first Enter opens, not the
+        // second (SB-D9's no-dead-ends through the keyboard).
+        await page.keyboard.press('Escape');
+        await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeFocused();
+        await waitForChoreographySettle(page);
+        await page.keyboard.press('Enter');
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        const reopened = await readStrip(page);
+        expect(reopened.cardOpen, 'the first Enter opens the card').toBe(true);
+        expect(reopened.pillExpanded, 'aria-expanded rode the keyboard open').toBe('true');
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
