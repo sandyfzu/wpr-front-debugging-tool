@@ -9,11 +9,18 @@
  * Fine-grained shiki: the core plus exactly the two languages this tool
  * renders (extension-script sources and JSON payloads), one light/dark theme
  * pair, and the JavaScript regex engine (no WASM; the manifest's Chromium
- * floor covers the ES features the compiled grammars need).
+ * floor covers the ES features the compiled grammars need). Grammars and
+ * themes are static imports: the highlighter always loads all four at once,
+ * so they ride this module's own lazy chunk — one fetch instead of a second
+ * round of per-grammar chunks, and one stable chunk name to budget.
  */
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import type { HighlighterCore } from 'shiki/core';
+import javascript from 'shiki/langs/javascript.mjs';
+import json from 'shiki/langs/json.mjs';
+import githubDark from 'shiki/themes/github-dark.mjs';
+import githubLight from 'shiki/themes/github-light.mjs';
 import type { CodeLanguage } from './code-block-langs';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
@@ -82,10 +89,10 @@ let instance: Promise<CodeHighlighter> | undefined;
  */
 export function getHighlighter(): Promise<CodeHighlighter> {
   instance ??= createHighlighterCore({
-    langs: [import('shiki/langs/javascript.mjs'), import('shiki/langs/json.mjs')],
-    // Fine-grained mode has no bundled registry: themes and langs load as
-    // modules and are then addressed by their registration names (`THEME_PAIR`).
-    themes: [import('shiki/themes/github-light.mjs'), import('shiki/themes/github-dark.mjs')],
+    langs: [javascript, json],
+    // Fine-grained mode has no bundled registry: themes and langs are passed
+    // as registrations, then addressed by their registration names (`THEME_PAIR`).
+    themes: [githubLight, githubDark],
     engine: createJavaScriptRegexEngine({ forgiving: true })
   }).then((highlighter: HighlighterCore) => ({
     highlight: (code, options) =>
