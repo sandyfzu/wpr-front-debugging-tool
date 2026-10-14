@@ -78,14 +78,22 @@ export interface NavRoute {
 }
 
 /**
- * An English-counted chip copy: '1 image', '2 images'.
+ * An English-counted chip copy: '1 image', '2 images' — or '5,000+ images'
+ * for a list the producer cut to its cap (the page has more).
  *
  * @param count The load's count.
  * @param noun The singular noun the count quantifies.
+ * @param partial The list was cut (`truncated`): the count is a floor.
  */
-function counted(count: number, noun: string): string {
+function counted(count: number, noun: string, partial = false): string {
+  if (partial) return `${shownTotal(count, true)} ${noun}s`;
   const units = count === 1 ? '1' : count.toString();
   return `${units} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** A shown list total: plain, or `5,000+` when the list was cut. */
+function shownTotal(count: number, partial: boolean): string {
+  return partial ? `${count.toLocaleString('en-US')}+` : count.toString();
 }
 
 /**
@@ -110,9 +118,12 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     group: 'Inspect',
     liveState: (data) => {
       if (data === null || !data.wprDetections.delay_js.present) return null;
-      const { delayedScripts, scripts } = data.wprDetections.delay_js;
+      const { delayedScripts, scripts, truncated } = data.wprDetections.delay_js;
+      // The delayed count is the whole page's: never print it over a shorter
+      // shown list without the "more exists" marker.
+      const partial = truncated === true || delayedScripts > scripts.length;
       return {
-        text: `delayed ${delayedScripts.toString()}/${scripts.length.toString()}`,
+        text: `delayed ${delayedScripts.toString()}/${shownTotal(scripts.length, partial)}`,
         tone: 'info'
       };
     }
@@ -127,7 +138,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       // The feature is active either way; "no images" is the page's state.
       const count = data.wprDetections.lazyload.images.length;
       return count > 0
-        ? { text: counted(count, 'image'), tone: 'info' }
+        ? { text: counted(count, 'image', data.wprDetections.lazyload.truncated), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
     }
   },
@@ -143,7 +154,10 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const resources = data.preloadedResources.resources;
       if (resources === undefined) return null;
       return {
-        text: resources.length > 0 ? counted(resources.length, 'link') : 'None',
+        text:
+          resources.length > 0
+            ? counted(resources.length, 'link', data.preloadedResources.truncated)
+            : 'None',
         tone: resources.length > 0 ? 'info' : 'neutral'
       };
     }
