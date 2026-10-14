@@ -396,11 +396,22 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       startContainmentCycle();
     });
     ctx.addEventListener(chrome, 'lostpointercapture', (event) => {
-      // A capture lost outside the release path (element detached, pointer
-      // gone) is pointercancel-shaped: restore the pre-drag position.
-      if (!isTrustedUserEvent(event)) return;
-      dragController?.cancel();
-      startContainmentCycle();
+      // Capture loss ENDS the gesture, it does not cancel it: an engine may
+      // drop the capture mid-gesture with neither release nor OS cancel (the
+      // pointer leaving the window during a quick release does this on
+      // macOS trackpads/Magic Mice — verified live in this Chromium with
+      // trusted events), and the release event that follows (if any) must
+      // not find the drag torn down. Ending by SETTLE keeps the follow's
+      // clamped commit — the parked position was fully inside by every
+      // move's clamp — while the genuinely canceling paths (Escape,
+      // right-press, OS pointercancel, a second pointer's press) restore
+      // through their own arms below. The event carries the losing
+      // pointer's id, so only the drag's own capture ends the drag (a
+      // foreign pointer's loss is a stray release — the machine ignores
+      // it). The pointer-id discipline needs the PointerEvent shape.
+      if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
+      dragController?.settle(event.pointerId);
+      startContainmentCycle(); // the dropped position is re-clamped like any release
     });
     ctx.addEventListener(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button

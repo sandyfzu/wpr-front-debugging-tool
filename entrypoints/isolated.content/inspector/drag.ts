@@ -164,11 +164,23 @@ export interface DragController {
   /** A pointermove; the drag's own pointer follows 1:1 (clamped), others are ignored. */
   trackMove(input: { point: DragPoint; pointerId: number }): void;
   /**
-   * The drag's own pointer released: settle. The applied translate stays —
-   * the dragged position is the session's (nothing persists anywhere else).
+   * The drag's own pointer ended: settle. The applied translate stays — the
+   * dragged position is the session's (nothing persists anywhere else).
+   * Two wired enders route here: the pointerup release, and a MID-DRAG
+   * capture loss (some engines drop the capture — the pointer leaving the
+   * window during a quick release on macOS trackpads/Magic Mice is the
+   * verified live shape — with neither release nor OS cancel; the loss
+   * carries the drag's pointer id, and settling keeps the follow's clamped
+   * commit instead of restoring, so a late straggler release finds the drag
+   * already ended and stays a no-op). A pointer id that is not the drag's
+   * own is a stray release and settles nothing.
    */
   settle(pointerId: number): void;
-  /** Restore the pre-drag position (Escape, pointercancel, lost pointer capture). */
+  /**
+   * Restore the pre-drag position — the GENUINELY canceling ends only (all
+   * restore-shaped, never the capture path): Escape, the right-press
+   * nicety (contextmenu), a second pointer's press, and the OS
+   * pointercancel (touch arbitration). */
   cancel(): void;
   /** Whether a drag is live (the wiring's Escape/capture decisions read it). */
   isDragging(): boolean;
@@ -309,6 +321,11 @@ export function createDragController(deps: DragMachineDeps): DragController {
     },
 
     cancel() {
+      // The restore-shaped end: only the wiring's genuinely canceling arms
+      // arrive here (Escape, right-press, OS pointercancel, a second
+      // pointer's press). Capture loss does NOT — it settles (the release
+      // path), because a mid-gesture capture loss with no cancel reason
+      // would otherwise turn an in-flight commit into a snap-back.
       if (drag === null) return;
       const previous = drag;
       drag = null;
