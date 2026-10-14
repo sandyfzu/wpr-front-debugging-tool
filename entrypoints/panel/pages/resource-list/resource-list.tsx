@@ -26,9 +26,8 @@
  * selection resets with the route (the body remounts).
  */
 import type { JSX } from 'solid-js';
-import { createComputed, createEffect, createMemo, createSignal, on, Show } from 'solid-js';
-import { createStore, reconcile } from 'solid-js/store';
-import { FilterBar, type FilterChip } from '../../../../components/ui/filter-bar';
+import { createEffect, createMemo, createSignal, on, Show } from 'solid-js';
+import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
 import {
@@ -50,7 +49,7 @@ import {
   type CountNoun
 } from './resource-list-view';
 
-/** The row contract: a stable id (document order) the list keys on. */
+/** The row contract: a unique, stable id (source position) the list keys on. */
 export interface ResourceRow {
   /** Stable row identity (the virtual list's item key). */
   readonly id: number;
@@ -126,14 +125,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   const visible = createMemo(() =>
     filterAndSearch(props.rows, props.definition, selected(), query())
   );
-  // The bar renders chips with a keyed-by-reference `For`: fresh chip objects
-  // would re-create every chip button on each selection or refresh and drop
-  // the focus sitting on one. Reconciling by chip value keeps one stable
-  // object per chip whose fields update in place.
-  const [chips, setChips] = createStore<FilterChip[]>([]);
-  createComputed(() => {
-    setChips(reconcile(buildFilterChips(props.definition, counts(), selected()), { key: 'value' }));
-  });
+  const chips = createMemo(() => buildFilterChips(props.definition, counts(), selected()));
 
   // K-4: one polite line per committed filter/query change — never per
   // keystroke (the store commits after its debounce) and never on mount or a
@@ -189,7 +181,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
       >
         <div ref={controls} onKeyDown={onControlsKeyDown}>
           <FilterBar
-            chips={chips}
+            chips={chips()}
             selected={selected()}
             onSelect={(value) => {
               // Chip values are the definition's own ids (the bar echoes them back).
@@ -229,6 +221,8 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
               const row = visible()[index];
               return row === undefined ? 36 : props.estimateSize(row);
             }}
+            // Row ids are source positions — unique even when two rows share a
+            // URL (the same image twice), stable across chip/search changes.
             getItemKey={(index) => visible()[index]?.id ?? `index-${index.toString()}`}
             createVirtualizer={props.createVirtualizer}
             class={cn(PAGE_FILL_SCROLLER, LIST_REGION)}

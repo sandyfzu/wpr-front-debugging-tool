@@ -67,9 +67,9 @@ describe('PreloadedResourcesPage', () => {
 
   it('counts images and fonts case-insensitively on the chips', () => {
     const { root } = renderPage(PreloadedResourcesPage, fixture());
-    expect(chip(root, 'all').getAttribute('aria-label')).toBe('Show All, 6 matching');
-    expect(chip(root, 'images').getAttribute('aria-label')).toBe('Images, 3 matching');
-    expect(chip(root, 'fonts').getAttribute('aria-label')).toBe('Fonts, 1 matching');
+    expect(screen.getByRole('button', { name: 'Show All 6 matching' })).toBe(chip(root, 'all'));
+    expect(screen.getByRole('button', { name: 'Images 3 matching' })).toBe(chip(root, 'images'));
+    expect(screen.getByRole('button', { name: 'Fonts 1 matching' })).toBe(chip(root, 'fonts'));
   });
 
   it('leads each row with its lower-cased `as` chip, "—" (read as "No type") when absent', () => {

@@ -96,10 +96,12 @@ describe('LazyloadPage — frame and summary', () => {
 
   it('puts per-filter counts on the chips', () => {
     const { root } = renderPage(LazyloadPage, fixture());
-    expect(chip(root, 'all').getAttribute('aria-label')).toBe('Show All, 5 matching');
-    expect(chip(root, 'lazyloaded').getAttribute('aria-label')).toBe('Lazyloaded, 2 matching');
-    expect(chip(root, 'non-lazyloaded').getAttribute('aria-label')).toBe(
-      'Non-lazyloaded, 3 matching'
+    expect(screen.getByRole('button', { name: 'Show All 5 matching' })).toBe(chip(root, 'all'));
+    expect(screen.getByRole('button', { name: 'Lazyloaded 2 matching' })).toBe(
+      chip(root, 'lazyloaded')
+    );
+    expect(screen.getByRole('button', { name: 'Non-lazyloaded 3 matching' })).toBe(
+      chip(root, 'non-lazyloaded')
     );
   });
 });
@@ -310,6 +312,15 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(5);
     page.refresh(withImages([]));
     expect(screen.getByText('No images on this page')).toBeTruthy();
+  });
+
+  it('keeps both rows when the same image appears twice (keys are positions, not URLs)', () => {
+    const src = 'https://cdn.example/up/twice.jpg';
+    const { root } = renderPage(
+      LazyloadPage,
+      withImages([makeLazyImage({ src }), makeLazyImage({ src })])
+    );
+    expect(rowNames(root)).toEqual(['twice.jpg', 'twice.jpg']);
   });
 
   it('says "No URL captured" for an image without a source', () => {
