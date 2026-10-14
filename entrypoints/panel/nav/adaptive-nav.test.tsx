@@ -6,6 +6,12 @@
  * row's own selector into that tooltip — including the throw-containment
  * that keeps a registry bug from taking the nav down.
  *
+ * The overflow affordance tests drive the measure seam with synthetic rail
+ * geometries (real-rect geometry is the browser tier's `panel-nav` suite):
+ * the slice must hide exactly the rows past the fit line, hold them in the
+ * "More pages" menu as full citizens, keep the rail DOM scroll-free, and
+ * contain an untruthful measurement instead of re-deciding from it.
+ *
  * Idiom note: unlike the tooltip's own tests (which import fresh per test
  * to pin exact open delays), these imports stay static — the lucide-heavy
  * module graph hangs under `vi.resetModules()` re-imports, and the asserted
@@ -13,14 +19,21 @@
  * hover test advances 350ms, which holds for both a normal open and the
  * earlier one a warm-up skip window produces.
  */
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, within } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RouteId } from '../routes';
 import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
 import { makeFdtData } from '../state/fixtures';
 import { createSignal } from 'solid-js';
 import Rocket from 'lucide-solid/icons/rocket';
-import { AdaptiveNav, groupedRoutes, resolveLiveState } from './adaptive-nav';
+import {
+  AdaptiveNav,
+  groupedRoutes,
+  resolveLiveState,
+  OVERFLOW_TRIGGER_LABEL
+} from './adaptive-nav';
+import { NAV_MIRROR_ROW_ATTR, type RailMeasureFn, type RailWatchFn } from './rail-metrics';
+import type { RailRowBox } from './visible-rows';
 import type { NavLiveStateSelector, NavRoute } from '../routes';
 
 afterEach(() => {
@@ -45,11 +58,98 @@ const IMAGE_RECORD: WprDetections['lazyload']['images'][number] = {
 };
 
 /** Render the nav over signal accessors, returning the data side for updates. */
-function renderNav(options?: { route?: RouteId; data?: FdtData | null }) {
+function renderNav(options?: {
+  route?: RouteId;
+  data?: FdtData | null;
+  measure?: RailMeasureFn;
+  watch?: RailWatchFn;
+}) {
   const [route, setRoute] = createSignal<RouteId>(options?.route ?? 'detections');
   const [data, setData] = createSignal<FdtData | null>(options?.data ?? null);
-  render(() => <AdaptiveNav route={route} data={data} />);
+  render(() => (
+    <AdaptiveNav route={route} data={data} measure={options?.measure} watch={options?.watch} />
+  ));
   return { setRoute, setData };
+}
+
+/** The never-resizing watch: the tests drive resizes through their own seam when needed. */
+function staticWatch(): RailWatchFn {
+  return () => () => undefined;
+}
+
+/**
+ * The synthetic rail's layout: the shipped anatomy (32px rows, 4px list
+ * gaps, 7px group leads; Overview 0 / Inspect + 7 / Diagnose + 7) measured
+ * over every registry row — the same numbers the pure tests pin, so both
+ * tiers describe one geometry.
+ */
+function layoutRows(): readonly RailRowBox[] {
+  return [
+    { route: 'detections', top: 0, height: 32 },
+    { route: 'javascript', top: 39, height: 32 },
+    { route: 'lazyload', top: 75, height: 32 },
+    { route: 'preloaded-resources', top: 111, height: 32 },
+    { route: 'undefined-references', top: 150, height: 32 },
+    { route: 'diagnoser', top: 186, height: 32 }
+  ] as const;
+}
+
+interface SyntheticRail {
+  /**
+   * The measure seam measuring the real registry layout with the current
+   * height.
+   */
+  measure: RailMeasureFn;
+  /** The never-firing watch (tests resize through {@link resize} instead). */
+  watch: RailWatchFn;
+  /**
+   * The nav's own re-decide callback, recorded by the watch at mount —
+   * mutable-height "resizes" land through it, exactly the production order.
+   */
+  refire: { current: (() => void) | null };
+  /** The current available height (the test mutates this per "resize"). */
+  height: { value: number };
+  /** Mutate the height then re-fire the nav's measurement, in DOM order. */
+  resize: (next: number) => void;
+  /** A failed measurement: whenever set, the answer is untruthful. */
+  broken: { value: boolean };
+}
+
+/**
+ * Build the synthetic measure/watch pair over the shipped layout. The
+ * height starts wherever the test puts it and mutates through
+ * {@link SyntheticRail.resize}; a `broken.value` answer mimics the seam's
+ * "not measurable" report.
+ *
+ * @param initialHeight The height the first boot measurement reports.
+ */
+function syntheticRail(initialHeight: number): SyntheticRail {
+  const layout = layoutRows();
+  const state = {
+    height: { value: initialHeight },
+    broken: { value: false },
+    refire: { current: null as (() => void) | null }
+  };
+  const rail: SyntheticRail = {
+    measure: () => {
+      if (state.broken.value) return null;
+      return { rows: layout, availableHeight: state.height.value };
+    },
+    watch: (_rail, decide) => {
+      state.refire.current = decide;
+      return () => undefined;
+    },
+    refire: state.refire,
+    height: state.height,
+    broken: state.broken,
+    resize: (next: number) => {
+      state.height.value = next;
+      // The resize path: the watcher's callback runs the nav's re-decide —
+      // exactly the production order.
+      state.refire.current?.();
+    }
+  };
+  return rail;
 }
 
 describe('AdaptiveNav structure', () => {
@@ -312,5 +412,208 @@ describe('AdaptiveNav live state', () => {
     expect(content.textContent).toContain('JavaScript');
     expect(content.textContent).toContain('delayed 1/1');
     expect(trigger.getAttribute('aria-describedby')).toBe(content.id);
+  });
+});
+
+describe('AdaptiveNav overflow — the geometry stub', () => {
+  it('renders the full-layout stub exactly once per registry row, aria-hidden and inert', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    const stubRows = [...nav.querySelectorAll(`[${NAV_MIRROR_ROW_ATTR}]`)] as HTMLElement[];
+    expect(stubRows).toHaveLength(6); // every registry row, in order
+    expect(stubRows.map((row) => row.getAttribute(NAV_MIRROR_ROW_ATTR))).toEqual([
+      'detections',
+      'javascript',
+      'lazyload',
+      'preloaded-resources',
+      'undefined-references',
+      'diagnoser'
+    ]);
+    const mirror = nav.querySelector('[data-fdt="panel-nav-mirror"]');
+    expect(mirror?.getAttribute('aria-hidden')).toBe('true');
+    // No semantic element inside the stub: pointers and focus never land on
+    // invented geometry (plain divs only).
+    expect(mirror?.querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
+  });
+
+  it('the rail stays scroll-free (overflow-hidden; the stub rides clipped)', () => {
+    renderNav({ measure: syntheticRail(218).measure, watch: staticWatch() });
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    // The rail never becomes a scroll container: overflow hidden on both axes.
+    expect(nav.className).toContain('overflow-hidden');
+    expect(nav.className).not.toContain('overflow-y-auto');
+    expect(nav.className).toContain('relative'); // the stub's positioning anchor
+  });
+});
+
+describe('AdaptiveNav overflow — the slice', () => {
+  it('boots full-visibility: an unmeasured rail never hides its rows', () => {
+    // Layout-less (untruthful) geometry: the rail keeps its unmeasured
+    // full-visibility state — no rows vanish, no trigger appears.
+    renderNav({ measure: () => null, watch: staticWatch() });
+    expect(screen.getByRole('link', { name: 'Detections' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Preloaded Resources' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
+  });
+
+  it('slices at the fit line: the rail keeps the prefix, the trigger appears for the suffix', () => {
+    // 90px available: Detections (0..32) and JavaScript (39..71) fit; Lazyload
+    // (75..107) is the first row past the line.
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    expect(nav.querySelector('a[href="#/detections"]')).not.toBeNull();
+    expect(nav.querySelector('a[href="#/javascript"]')).not.toBeNull();
+    // The suffix is not in the rail’s DOM at all (the rail never renders
+    // invisible rows — its content is exactly its visible content).
+    expect(nav.querySelector('a[href="#/lazyload"]')).toBeNull();
+    expect(nav.querySelector('a[href="#/diagnoser"]')).toBeNull();
+    // The trigger: the “More pages” affordance.
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+  });
+
+  it('re-slices monotonically as the height steps: rows return and the trigger retires', () => {
+    const rail = syntheticRail(40);
+    renderNav({ measure: rail.measure, watch: rail.watch });
+    /** The real rail's row controls (the menu is closed, so the suffix is away). */
+    const railControls = (): number =>
+      screen
+        .getByRole('navigation', { name: 'WPR FDT pages' })
+        .querySelectorAll(
+          'a[href="#/detections"], a[href="#/javascript"], a[href="#/lazyload"], a[href="#/preloaded-resources"], a[href="#/undefined-references"], button[disabled]'
+        ).length;
+    expect(railControls()).toBe(1); // Detections only
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+
+    rail.resize(90);
+    expect(railControls()).toBe(2); // + JavaScript
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+
+    rail.resize(9999);
+    expect(railControls()).toBe(6); // the full rail back, reserved row included
+    expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
+  });
+
+  it('cutting past a group’s lead leaves no stranded separator (the group drops out)', () => {
+    // 38px ends between Overview's row and the Inspect lead: no later row
+    // fits, so the Inspect and Diagnose groups render nothing — leads and
+    // separators included.
+    renderNav({
+      measure: () => ({ rows: layoutRows(), availableHeight: 38 }),
+      watch: staticWatch()
+    });
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    expect(nav.querySelectorAll('[data-fdt-nav-group]')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+  });
+
+  it('a mid-group cut keeps the group (with its lead) for the rows that still fit', () => {
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    const nav = screen.getByRole('navigation', { name: 'WPR FDT pages' });
+    const inspect = [...nav.querySelectorAll('[data-fdt-nav-group]')][1];
+    expect(inspect?.querySelector('a[href="#/javascript"]')).not.toBeNull();
+    expect(inspect?.querySelector('a[href="#/lazyload"]')).toBeNull();
+  });
+
+  it('an untruthful re-measurement after a slice keeps the previous slice (contained)', () => {
+    const rail = syntheticRail(90);
+    renderNav({ measure: rail.measure, watch: rail.watch });
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+
+    rail.broken.value = true; // the seam reports “not measurable”
+    rail.resize(5000); // the watch refires into the failure
+    // The rail keeps its slice (two visible rows + the trigger); nothing
+    // crashes, nothing silently jumps back to full visibility.
+    expect(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'JavaScript' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Lazyload' })).toBeNull();
+  });
+
+  it('fits exactly at the boundary: every row stays (the trigger never appears)', () => {
+    renderNav({ measure: syntheticRail(218).measure, watch: staticWatch() });
+    expect(screen.queryByRole('button', { name: OVERFLOW_TRIGGER_LABEL })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Diagnoser' })).toBeTruthy();
+  });
+});
+
+describe('AdaptiveNav overflow — the “More pages” menu', () => {
+  /** Click the trigger open (Kobalte's trigger path: pointer down toggles). */
+  function openMenu(): void {
+    fireEvent.pointerDown(screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL }));
+  }
+
+  it('lists the hidden rows as full anchor menu items with hrefs', async () => {
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    openMenu();
+    const menu = await screen.findByRole('menu');
+    for (const [label, href] of [
+      ['Lazyload', '#/lazyload'],
+      ['Preloaded Resources', '#/preloaded-resources'],
+      ['Undefined References', '#/undefined-references']
+    ] as const) {
+      const item = within(menu).getByRole('menuitem', { name: label });
+      expect(item.getAttribute('href')).toBe(href);
+    }
+    // The reserved row: disabled menuitem with its note, no href.
+    const reserved = within(menu).getByRole('menuitem', { name: 'Diagnoser' });
+    expect(reserved.getAttribute('aria-disabled')).toBe('true');
+    expect(reserved.getAttribute('href')).toBeNull();
+    expect(menu.textContent.includes('Returns with the Diagnoser plugin v2')).toBe(true);
+  });
+
+  it('puts a separator exactly where the hidden rows change group', async () => {
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    openMenu();
+    const menu = await screen.findByRole('menu');
+    // Hidden rows span Inspect (3) + Diagnose (2): one separator, and no
+    // group captions (the rail shows no visible captions either).
+    expect(within(menu).getAllByRole('separator')).toHaveLength(1);
+  });
+
+  it('carries the hidden active row’s `aria-current` on its menu item', async () => {
+    renderNav({ route: 'lazyload', measure: syntheticRail(90).measure, watch: staticWatch() });
+    openMenu();
+    const menu = await screen.findByRole('menu');
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Lazyload' }).getAttribute('aria-current')
+    ).toBe('page');
+    // The non-active hidden rows carry none.
+    expect(
+      within(menu)
+        .getByRole('menuitem', { name: 'Preloaded Resources' })
+        .getAttribute('aria-current')
+    ).toBeNull();
+  });
+
+  it('carries the hidden rows’ live-state chips inline (the same data the rail resolves)', async () => {
+    renderNav({
+      data: makeFdtData({ allScriptsLoaded: true, undefinedReferencesOnPage: ['jQuery'] }),
+      measure: syntheticRail(38).measure,
+      watch: staticWatch()
+    });
+    openMenu();
+    const menu = await screen.findByRole('menu');
+    const item = within(menu).getByRole('menuitem', { name: /Undefined References/ });
+    expect(
+      item.querySelector('[data-fdt="status-badge"]')?.classList.contains('bg-status-warn-soft')
+    ).toBe(true);
+  });
+
+  it('the trigger carries the APG menu trigger state (haspopup + live-expanded)', async () => {
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    const trigger = screen.getByRole('button', { name: OVERFLOW_TRIGGER_LABEL });
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    openMenu();
+    await screen.findByRole('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('the closed affordance renders no tooltip surface of its own', () => {
+    renderNav({ measure: syntheticRail(90).measure, watch: staticWatch() });
+    // The rail’s tooltips are the only hover surface while the menu is
+    // closed; the menu rows carry their own labeling inline.
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });

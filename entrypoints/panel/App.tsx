@@ -79,8 +79,18 @@ interface DataError {
   readonly cause: string;
 }
 
-/** The shell header: the brand mark above the nav's icon rail column. */
-const HEADER = 'flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
+/**
+ * The shell header: the brand mark above the nav's icon rail column.
+ *
+ * `z-10` is the rail column's paint priority over the status bar's band:
+ * below the panel's usable minimum nothing can absorb the loss of height,
+ * so the rail column's overflow (its brand row and overflow trigger) would
+ * otherwise paint under the footer and become pointer-blocked. At any
+ * normal height nothing overflows the row and the rule is inert; the
+ * fixed overlays (dialog z-40+, tooltips/menu portals z-50) rank above it
+ * unchanged.
+ */
+const HEADER = 'relative z-10 flex shrink-0 flex-col gap-2 border-r border-line-2 bg-surface-1 p-2';
 
 /** The brand mark: centered over the rail; its name rides the sr-only span. */
 const BRAND =
