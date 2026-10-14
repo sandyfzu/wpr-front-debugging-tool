@@ -4,7 +4,7 @@
  * reporting, per-region dispatch and full teardown. A manual observer double
  * stands in for `ResizeObserver` (happy-dom has no layout).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   createOverflowWatcher,
   isOverflowing,
@@ -12,14 +12,25 @@ import {
   type ResizeObserverFactory
 } from './overflow-watch';
 
-/** An element whose scroll/client sizes are pinned (happy-dom lays nothing out). */
-function sized(size: {
-  scrollWidth?: number;
-  clientWidth?: number;
-  scrollHeight?: number;
-  clientHeight?: number;
-}): HTMLElement {
+/**
+ * An element whose scroll/client sizes are pinned (happy-dom lays nothing
+ * out), scrollable on both axes unless `overflow` says otherwise.
+ */
+function sized(
+  size: {
+    scrollWidth?: number;
+    clientWidth?: number;
+    scrollHeight?: number;
+    clientHeight?: number;
+  },
+  overflow = 'auto'
+): HTMLElement {
   const element = document.createElement('div');
+  // Longhands: the watcher reads them, and happy-dom does not expand the shorthand.
+  element.style.overflowX = overflow;
+  element.style.overflowY = overflow;
+  // Attached, so the computed style resolves.
+  document.body.append(element);
   for (const [key, value] of Object.entries({
     scrollWidth: 100,
     clientWidth: 100,
@@ -31,6 +42,10 @@ function sized(size: {
   }
   return element;
 }
+
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 /** A manual `ResizeObserver` double: counts instances, tracks targets, delivers on demand. */
 function manualObservers(): {
@@ -66,6 +81,19 @@ describe('isOverflowing', () => {
     expect(isOverflowing(sized({}))).toBe(false);
     expect(isOverflowing(sized({ scrollWidth: 101 }))).toBe(true);
     expect(isOverflowing(sized({ scrollHeight: 21 }))).toBe(true);
+  });
+
+  it('ignores clipping axes: hidden or clipped content cannot be scrolled to', () => {
+    expect(isOverflowing(sized({ scrollWidth: 300, scrollHeight: 300 }, 'hidden'))).toBe(false);
+    expect(isOverflowing(sized({ scrollWidth: 300 }, 'clip'))).toBe(false);
+    expect(isOverflowing(sized({ scrollWidth: 300 }, 'visible'))).toBe(false);
+    expect(isOverflowing(sized({ scrollWidth: 300 }, 'scroll'))).toBe(true);
+    // Per axis: a clamped preview (y hidden) still scrolls sideways.
+    const clamped = sized({ scrollWidth: 300, scrollHeight: 300 });
+    clamped.style.overflowY = 'hidden';
+    expect(isOverflowing(clamped)).toBe(true);
+    clamped.style.overflowX = 'hidden';
+    expect(isOverflowing(clamped)).toBe(false);
   });
 });
 

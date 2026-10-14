@@ -21,15 +21,23 @@ export type OverflowWatcher = (
   onChange: (overflowing: boolean) => void
 ) => StopWatching;
 
+/** Overflow values that let a user scroll the axis (`hidden`/`clip` only clip). */
+const SCROLLING_OVERFLOW = new Set(['auto', 'scroll']);
+
 /**
- * Whether a scroll container's content exceeds its box on either axis.
+ * Whether a scroll container has content to scroll to on an axis it lets
+ * the user scroll. An axis that clips (`overflow: hidden`/`clip`, e.g. a
+ * clamped preview) never counts: making such a box focusable would add a
+ * Tab stop that cannot scroll.
  *
  * @param scroller The overflow-clipping element.
- * @returns `true` while there is anything to scroll to.
+ * @returns `true` while a user-scrollable axis has hidden content.
  */
 export function isOverflowing(scroller: HTMLElement): boolean {
+  const style = getComputedStyle(scroller);
   return (
-    scroller.scrollWidth > scroller.clientWidth || scroller.scrollHeight > scroller.clientHeight
+    (SCROLLING_OVERFLOW.has(style.overflowX) && scroller.scrollWidth > scroller.clientWidth) ||
+    (SCROLLING_OVERFLOW.has(style.overflowY) && scroller.scrollHeight > scroller.clientHeight)
   );
 }
 
