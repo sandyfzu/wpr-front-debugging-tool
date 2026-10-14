@@ -335,6 +335,9 @@ describe('splitScriptUrl + scriptLocation', () => {
     expect(parts.file).toBe('préf.js');
     // Undecodable text stays as it is.
     expect(splitScriptUrl('https://example.com/js/a%FF.js', PAGE).file).toBe('a%FF.js');
+    // An encoded `/` stays encoded — no fake path separator in a name.
+    expect(splitScriptUrl('https://example.com/js/a%2Fb%20c.js', PAGE).file).toBe('a%2Fb c.js');
+    expect(splitScriptUrl('https://example.com/js/x%2fy/z.js', PAGE).directory).toBe('js/x%2fy/');
   });
 
   it('puts another origin’s host after the directory (the slug survives truncation)', () => {
@@ -438,6 +441,51 @@ describe('exclusionPattern', () => {
     );
   });
 
+  it('never writes `?` as a quantifier — WP Rocket would escape a `)?` before `ver`', () => {
+    const cases: { url: string; tags: string[] }[] = [
+      {
+        url: 'https://shop.example.com/wp-content/plugins/p/js/p&ver.js',
+        tags: [
+          '<script src="https://shop.example.com/wp-content/plugins/p/js/p&#038;ver.js?ver=1"></script>',
+          '<script src="https://shop.example.com/wp-content/plugins/p/js/p&ver.js?ver=1"></script>'
+        ]
+      },
+      {
+        url: 'https://shop.example.com/wp-content/plugins/p/js/50%25ver.js',
+        tags: [
+          '<script src="https://shop.example.com/wp-content/plugins/p/js/50%25ver.js?ver=1"></script>',
+          '<script src="https://shop.example.com/wp-content/plugins/p/js/50%ver.js?ver=1"></script>'
+        ]
+      },
+      {
+        url: "https://shop.example.com/wp-content/plugins/p/js/o'ver.js",
+        tags: [
+          '<script src="https://shop.example.com/wp-content/plugins/p/js/o&#039;ver.js?ver=1"></script>'
+        ]
+      }
+    ];
+    for (const { url, tags } of cases) {
+      const pattern = exclusionPattern(url, PAGE) ?? '';
+      for (const tag of tags) {
+        expect(wpRocketMatches(pattern, tag), `${pattern} ~ ${tag}`).toBe(true);
+        expect(regexpMatches(pattern, tag), `${pattern} ~ ${tag}`).toBe(true);
+      }
+    }
+    // Across every shape this suite generates: a `?` only ever opens a
+    // non-capturing group `(?:` or sits in the literal class `[?]`.
+    const urls = [
+      ...cases.map((entry) => entry.url),
+      'https://shop.example.com/js/a%2Fb%25c%27d%26e%22f%2Ag%3Ch.js',
+      "https://shop.example.com/wp-content/plugins/o'neil&co/js/x.js",
+      'https://shop.example.com/js/?script=1&ver=2',
+      'https://shop.example.com/js/a?b.js?ver=1'
+    ];
+    for (const url of urls) {
+      const pattern = exclusionPattern(url, PAGE) ?? '';
+      expect(pattern.replaceAll('(?:', '').replaceAll('[?]', ''), pattern).not.toContain('?');
+    }
+  });
+
   it('`a+b` matches `a+b` only — not `aab` — under both readers', () => {
     const pattern = exclusionPattern('https://shop.example.com/js/a+b/x.js', PAGE) ?? '';
     const own = '<script src="https://shop.example.com/js/a+b/x.js?ver=1"></script>';
@@ -452,7 +500,9 @@ describe('exclusionPattern', () => {
   it("matches a path with `'` and `&` in WordPress' entity spellings", () => {
     const pattern =
       exclusionPattern("https://shop.example.com/wp-content/plugins/o'neil&co/js/x.js", PAGE) ?? '';
-    expect(pattern).toBe("/wp-content/plugins/o(?:'|&#0?39;)neil&(?:#0?38;|amp;)?co/js/x.js");
+    expect(pattern).toBe(
+      "/wp-content/plugins/o(?:'|&#0{0,1}39;)neil&(?:#0{0,1}38;|amp;){0,1}co/js/x.js"
+    );
     for (const src of [
       'https://shop.example.com/wp-content/plugins/o&#039;neil&#038;co/js/x.js',
       "https://shop.example.com/wp-content/plugins/o'neil&co/js/x.js",
@@ -503,7 +553,7 @@ describe('exclusionPattern', () => {
     expect(
       exclusionPattern('https://shop.example.com/js/a%2Fb%25c%27d%26e%22f%2Ag%3Ch.js', PAGE)
     ).toBe(
-      "/js/a[%]2Fb[%](?:25)?c(?:'|&#0?39;|[%]27)d(?:&(?:#0?38;|amp;)?|[%]26)e(?:&quot;|&#0?34;|[%]22)f(?:[^/%]|[%]2A)g(?:[^/%]|[%]3C)h.js"
+      "/js/a[%]2Fb[%](?:25){0,1}c(?:'|&#0{0,1}39;|[%]27)d(?:&(?:#0{0,1}38;|amp;){0,1}|[%]26)e(?:&quot;|&#0{0,1}34;|[%]22)f(?:[^/%]|[%]2A)g(?:[^/%]|[%]3C)h.js"
     );
     for (const url of [
       'https://shop.example.com/js/my plugin/a.js',

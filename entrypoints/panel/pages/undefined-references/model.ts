@@ -452,11 +452,18 @@ const DIRECTORY_PREFIX = /^\/(?:wp-content\/)?/;
  * @returns The readable form.
  */
 function decodeForDisplay(text: string): string {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
+  // An encoded `/` stays encoded: decoded, it would fake a path separator.
+  return text
+    .split(/(%2F)/i)
+    .map((piece, index) => {
+      if (index % 2 === 1) return piece;
+      try {
+        return decodeURIComponent(piece);
+      } catch {
+        return piece;
+      }
+    })
+    .join('');
 }
 
 /**
@@ -509,7 +516,10 @@ export function scriptLocation(parts: ScriptUrlParts): string {
  * - `*`, `\`, `^`, brackets and braces become `.` — no class can hold them
  *   without a backslash (which WordPress may strip) or a `*`;
  * - `'` and `&`, which WordPress prints as entities inside the `src`
- *   attribute, accept the raw and the entity spellings.
+ *   attribute, accept the raw and the entity spellings;
+ * - optional parts are written `{0,1}`, never `?`: WP Rocket's
+ *   `str_replace('?ver', '\?ver')` would turn a `)?` before `ver` into a
+ *   literal `)\?`.
  */
 const RAW_CHAR_PATTERNS: Readonly<Record<string, string>> = {
   '+': '[+]',
@@ -526,15 +536,15 @@ const RAW_CHAR_PATTERNS: Readonly<Record<string, string>> = {
   ']': '.',
   '{': '.',
   '}': '.',
-  "'": "(?:'|&#0?39;)",
-  '&': '&(?:#0?38;|amp;)?'
+  "'": "(?:'|&#0{0,1}39;)",
+  '&': '&(?:#0{0,1}38;|amp;){0,1}'
 };
 
 /** The raw spelling of a decoded (formerly `%XX`) ASCII character in the tag, when it is not a one-char class. */
 const DECODED_RAW_PATTERNS: Readonly<Record<string, string>> = {
-  "'": "'|&#0?39;",
-  '&': '&(?:#0?38;|amp;)?',
-  '"': '&quot;|&#0?34;'
+  "'": "'|&#0{0,1}39;",
+  '&': '&(?:#0{0,1}38;|amp;){0,1}',
+  '"': '&quot;|&#0{0,1}34;'
 };
 
 /**
@@ -559,7 +569,7 @@ function decodedAsciiUnit(char: string): string {
   const hex = (char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, '0');
   const encoded = `[%]${hex}`;
   if (char === '/') return encoded;
-  if (char === '%') return '[%](?:25)?';
+  if (char === '%') return '[%](?:25){0,1}';
   const raw =
     DECODED_RAW_PATTERNS[char] ?? (DECODED_UNSAFE_IN_CLASS.test(char) ? '[^/%]' : `[${char}]`);
   return `(?:${raw}|${encoded})`;
