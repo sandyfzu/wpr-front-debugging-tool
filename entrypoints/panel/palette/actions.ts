@@ -21,7 +21,7 @@ import type { PaletteCommand } from '../../../components/ui/command-palette';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { createLogger } from '../../../lib/logger';
 import { toast } from '../../../components/ui/toast-store';
-import { copySupportReport, type CopyReportOutcome } from '../pages/detections/copy-report';
+import { copySupportReport, type CopyReportOutcome } from '../report/copy-report';
 import type { ExclusionBuilderOutcome } from './exclusion-builder';
 import type { JsonExportResult } from './export-json';
 import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
@@ -67,8 +67,8 @@ export interface PanelActionDeps {
   exportData(data: FdtData): Promise<JsonExportResult>;
   /**
    * Copy the support report (the mechanism owns its toast feedback).
-   * Optional: absent, the row runs the Detections page's own mechanism —
-   * the same one its `Copy report` button runs.
+   * Optional: absent, the row runs the shell's report binding — the same
+   * one the Detections page's `Copy report` button runs.
    */
   copyReport?: (data: FdtData) => Promise<CopyReportOutcome>;
 }

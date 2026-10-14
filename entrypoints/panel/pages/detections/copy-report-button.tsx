@@ -1,18 +1,21 @@
 /**
- * The Detections page's one primary action: copy the support report.
- * Icon-only on the compact tier (its name stays "Copy report" — the label is
- * visually hidden, never removed), labelled from the regular tier up. The
- * icon flashes a check after a confirmed copy; the toast is the feedback
- * either way (see `copy-report.ts`).
+ * The Detections page's one primary action: copy the support report
+ * through the shell's report binding. The icon flashes a check after a
+ * confirmed copy; the toast is the feedback either way. Clicks landing while
+ * a copy is still in flight are ignored (one report per intent, no stacked
+ * toasts), and nothing outlives the button: a copy settling after unmount
+ * arms no timer.
  */
 import type { JSX } from 'solid-js';
 import { createSignal, onCleanup } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import ClipboardCopy from 'lucide-solid/icons/clipboard-copy';
 import { Button } from '../../../../components/ui/button';
-import type { ClipboardLike } from '../../../../components/ui/copy-button';
+import { createLogger } from '../../../../lib/logger';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
-import { copySupportReport } from './copy-report';
+import { copySupportReport, type CopyReportOutcome } from '../../report/copy-report';
+
+const log = createLogger('panel');
 
 /** How long the check confirmation lingers after a copy (ms). */
 export const COPIED_FLASH_MS = 1600;
@@ -21,28 +24,45 @@ export const COPIED_FLASH_MS = 1600;
 export interface CopyReportButtonProps {
   /** The loaded page data the report is built from (read at click time). */
   data: FdtData;
-  /** The clipboard seam (tests inject; default: the secure-context clipboard). */
-  clipboard?: () => ClipboardLike;
+  /** The copy seam (tests inject; default: the shell's report binding). */
+  copy?: (data: FdtData) => Promise<CopyReportOutcome>;
 }
 
 /**
  * Render the `Copy report` button.
  *
  * @param props See {@link CopyReportButtonProps}.
+ * @returns The button.
  */
 export function CopyReportButton(props: CopyReportButtonProps): JSX.Element {
   const [copied, setCopied] = createSignal(false);
   let flashReset: ReturnType<typeof setTimeout> | undefined;
+  let inFlight = false;
+  let disposed = false;
   onCleanup(() => {
+    disposed = true;
     clearTimeout(flashReset);
   });
 
   const onCopy = async (): Promise<void> => {
-    const outcome = await copySupportReport(props.data, props.clipboard);
-    if (outcome !== 'copied') return;
-    setCopied(true);
-    clearTimeout(flashReset);
-    flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const copy = props.copy ?? ((data: FdtData) => copySupportReport(data));
+      const outcome = await copy(props.data);
+      if (outcome !== 'copied' || disposed) return;
+      setCopied(true);
+      clearTimeout(flashReset);
+      flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
+    } catch (cause) {
+      // The shell binding never rejects; an injected seam that does must not
+      // become an unhandled rejection from a click.
+      log.error('The report copy rejected past its own handling', {
+        cause: cause instanceof Error ? { message: cause.message } : cause
+      });
+    } finally {
+      inFlight = false;
+    }
   };
 
   return (
@@ -60,7 +80,7 @@ export function CopyReportButton(props: CopyReportButtonProps): JSX.Element {
       ) : (
         <ClipboardCopy size={14} class="shrink-0" aria-hidden="true" />
       )}
-      <span class="@max-regular:sr-only">Copy report</span>
+      Copy report
     </Button>
   );
 }

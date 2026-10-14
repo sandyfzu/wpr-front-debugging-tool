@@ -4,23 +4,38 @@
  * card with its state, the captured response headers and the undefined
  * references the page reported.
  *
- * Pure and clock-free: timestamps are absolute UTC only (a relative age
- * pasted into a ticket is wrong by the time someone reads it), so the same
- * data always yields the same bytes — the golden test pins the format.
+ * Pure: the generation time, the extension version and the inspected page's
+ * URL arrive as a {@link SupportReportContext} argument (the caller reads the
+ * clock and the runtime), so the same inputs always yield the same bytes —
+ * the golden test pins the format. Timestamps are absolute UTC only (a
+ * relative age pasted into a ticket is wrong by the time someone reads it).
  *
  * Every page-derived string (versions, header names/values, server values,
  * reference words) is untrusted: it lands inside a code span sized past its
  * own backtick runs, with control characters flattened and table pipes
  * escaped, so a hostile value can neither break the layout nor inject
- * markdown into the ticket. `Set-Cookie` values are redacted to the cookie's
- * name — a session token must never travel into a ticket.
+ * markdown into the ticket. Secret-bearing header values are redacted by the
+ * shared sensitive-header rule (`sensitive-headers.ts`) — a session token
+ * must never travel into a ticket.
  */
 
+import { formatCacheTimestamp } from '../detection/describe';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
 import { buildHeadersViewModel, type HeaderRowVM } from './headers-view-model';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
+import { REDACTED, redactHeaderValue } from './sensitive-headers';
+
+/** The report's provenance, read by the caller (keeps the builder pure). */
+export interface SupportReportContext {
+  /** When the report was generated (epoch ms). */
+  readonly generatedAt: number;
+  /** The extension's own version, or null when the runtime could not say. */
+  readonly extensionVersion: string | null;
+  /** The inspected page's URL, or null when it could not be read. */
+  readonly pageUrl: string | null;
+}
 
 /** What an empty table cell or a missing value reads as. */
 const NONE = '—';
@@ -28,11 +43,21 @@ const NONE = '—';
 /** The report's title line. */
 export const SUPPORT_REPORT_TITLE = '## WP Rocket page report';
 
-/** Headers whose values are secrets by nature: only the cookie name survives. */
-const REDACTED_HEADERS: ReadonlySet<string> = new Set(['set-cookie']);
+/**
+ * Characters that are never meaningful in a report line and can break or
+ * disguise it: C0 controls + DEL + C1 controls, the Unicode line/paragraph
+ * separators (U+2028/2029 — line breaks to some renderers), and the bidi
+ * controls (LRM/RLM/ALM, embeddings/overrides U+202A–202E, isolates
+ * U+2066–2069) that can visually reorder a value into a different-looking one.
+ */
+const CONTROL_CLASS =
+  '[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+';
 
-/** C0 controls + DEL: never meaningful in a report line, possibly layout-breaking. */
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]+/g;
+/** Control runs at either edge (dropped — they carry no content). */
+const EDGE_CONTROLS = new RegExp(`^${CONTROL_CLASS}|${CONTROL_CLASS}$`, 'g');
+
+/** Control runs inside a value (flattened to one space each). */
+const INNER_CONTROLS = new RegExp(CONTROL_CLASS, 'g');
 
 /**
  * Wrap an untrusted string as an inline code span that renders it literally.
@@ -40,7 +65,8 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]+/g;
  * The fence is one backtick longer than the value's longest backtick run
  * (CommonMark), padded with spaces when the value starts or ends with a
  * backtick or wrapped in spaces on both sides (CommonMark would strip
- * one of each); control characters collapse to one space. Inside a GFM table
+ * one of each); control characters are dropped at the edges and collapse
+ * to one space inside. Inside a GFM table
  * a `|` must be escaped even within code, so `inTable` escapes it there
  * (outside a table the backslash would render literally, so it is not).
  *
@@ -49,7 +75,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]+/g;
  * @returns The code span, or {@link NONE} for an empty/blank value.
  */
 export function codeSpan(value: string, inTable = false): string {
-  const flat = value.replace(CONTROL_CHARS, ' ');
+  const flat = value.replace(EDGE_CONTROLS, '').replace(INNER_CONTROLS, ' ');
   if (flat.trim() === '') return NONE;
   const longestRun = Math.max(0, ...Array.from(flat.matchAll(/`+/g), (match) => match[0].length));
   const fence = '`'.repeat(longestRun + 1);
@@ -67,6 +93,7 @@ export function codeSpan(value: string, inTable = false): string {
  * backslashes, so a future label carrying either cannot split the row.
  *
  * @param value Plain text from the tool's own vocabulary.
+ * @returns The escaped cell text.
  */
 function cellText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
@@ -77,6 +104,7 @@ function cellText(value: string): string {
  * one (its page-derived parts as code), otherwise its own subtitle copy.
  *
  * @param item The card.
+ * @returns The cell's markdown.
  */
 function detailsCell(item: StatusItem): string {
   const detail = item.detail;
@@ -98,9 +126,31 @@ function detailsCell(item: StatusItem): string {
 }
 
 /**
+ * The provenance lines: page, generation time, extension version.
+ *
+ * @param context The report's provenance.
+ * @returns The list lines (the page line only when the URL is known).
+ */
+function contextLines(context: SupportReportContext): string[] {
+  const lines: string[] = [];
+  if (context.pageUrl !== null && context.pageUrl.trim() !== '') {
+    lines.push(`- **Page:** ${codeSpan(context.pageUrl)}`);
+  }
+  const generated = formatCacheTimestamp(Math.floor(context.generatedAt / 1000));
+  lines.push(`- **Generated:** ${generated ?? 'Time not available'}`);
+  lines.push(
+    `- **Extension version:** ${
+      context.extensionVersion === null ? 'Not available' : codeSpan(context.extensionVersion)
+    }`
+  );
+  return lines;
+}
+
+/**
  * The summary list lines.
  *
  * @param summary The page facts.
+ * @returns The list lines.
  */
 function summaryLines(summary: DetectionsSummary): string[] {
   const wpr = summary.wpr.present
@@ -141,6 +191,7 @@ function summaryLines(summary: DetectionsSummary): string[] {
  * The detections table: every card, in the page's order.
  *
  * @param items The status cards.
+ * @returns The section's lines.
  */
 function detectionLines(items: readonly StatusItem[]): string[] {
   return [
@@ -155,18 +206,19 @@ function detectionLines(items: readonly StatusItem[]): string[] {
 }
 
 /**
- * One header row's value cell, with secret-bearing headers redacted to the
- * cookie name (everything before the first `=`).
+ * One header row's value cell, secret-bearing values redacted by the shared
+ * sensitive-header rule (a `Set-Cookie` keeps only a well-formed cookie name).
  *
  * @param row The typed header row.
+ * @returns The cell's markdown.
  */
 function headerValueCell(row: HeaderRowVM): string {
   if (row.value === null) return NONE;
-  if (REDACTED_HEADERS.has(row.name.toLowerCase())) {
-    const name = row.value.split('=', 1)[0]?.trim() ?? '';
-    return name === '' ? '(value redacted)' : `${codeSpan(name, true)} (value redacted)`;
-  }
-  return codeSpan(row.value, true);
+  const exported = redactHeaderValue(row.name, row.value);
+  if (!exported.redacted) return codeSpan(exported.value, true);
+  return exported.cookieName === null
+    ? REDACTED
+    : `${codeSpan(exported.cookieName, true)} ${REDACTED}`;
 }
 
 /**
@@ -174,6 +226,7 @@ function headerValueCell(row: HeaderRowVM): string {
  * headers model's order), names and values only.
  *
  * @param headers The capture, or null when none was taken.
+ * @returns The section's lines.
  */
 function headerLines(headers: FdtData['pageHeaders']): string[] {
   if (headers === null) {
@@ -199,6 +252,7 @@ function headerLines(headers: FdtData['pageHeaders']): string[] {
  * hidden by the browser).
  *
  * @param words The captured words.
+ * @returns The section's lines.
  */
 function referenceLines(words: readonly string[]): string[] {
   if (words.length === 0) {
@@ -219,12 +273,18 @@ function referenceLines(words: readonly string[]): string[] {
  * Build the support report for one loaded data state.
  *
  * @param data The loaded page data.
+ * @param context The report's provenance (time, extension version, page URL).
  * @returns The markdown report, `\n`-separated, ending with a newline.
  */
-export function buildSupportReport(data: FdtData): string {
+export function buildSupportReport(data: FdtData, context: SupportReportContext): string {
   const items = buildStatusItems(data);
   const sections = [
-    [SUPPORT_REPORT_TITLE, '', ...summaryLines(summarizeDetections(items))],
+    [
+      SUPPORT_REPORT_TITLE,
+      '',
+      ...contextLines(context),
+      ...summaryLines(summarizeDetections(items))
+    ],
     detectionLines(items),
     headerLines(data.pageHeaders),
     referenceLines(data.undefinedReferencesOnPage)

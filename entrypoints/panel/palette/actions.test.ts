@@ -203,7 +203,7 @@ describe('createPanelActions (the actions half)', () => {
     expect(loaded.calls.copyReport).toHaveBeenCalledExactlyOnceWith(data);
   });
 
-  it('runs the Detections page mechanism when no copy seam is injected', async () => {
+  it('runs the shell report binding when no copy seam is injected', async () => {
     let written = '';
     const writeText = vi.fn((text: string): Promise<void> => {
       written = text;

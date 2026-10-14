@@ -9,8 +9,27 @@
 import { describe, expect, it } from 'vitest';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
-import { buildSupportReport, codeSpan, SUPPORT_REPORT_TITLE } from './support-report';
+import {
+  buildSupportReport,
+  codeSpan,
+  SUPPORT_REPORT_TITLE,
+  type SupportReportContext
+} from './support-report';
 import { emptyDetections, makeReportData } from './support-report.fixtures';
+
+/** A fixed provenance: 2026-10-14 12:00:00 UTC, version 1.4.0, a known page. */
+const CONTEXT: SupportReportContext = {
+  generatedAt: Date.UTC(2026, 9, 14, 12, 0, 0),
+  extensionVersion: '1.4.0',
+  pageUrl: 'https://example.com/shop/'
+};
+
+/** The provenance with neither the page URL nor the version known. */
+const BARE_CONTEXT: SupportReportContext = {
+  generatedAt: Date.UTC(2026, 9, 14, 12, 0, 0),
+  extensionVersion: null,
+  pageUrl: null
+};
 
 /** A fully populated page: plugin cached, platform matched, mixed optimizations. */
 function fullData(): FdtData {
@@ -44,6 +63,9 @@ function fullData(): FdtData {
 const FULL_GOLDEN = [
   '## WP Rocket page report',
   '',
+  '- **Page:** `https://example.com/shop/`',
+  '- **Generated:** 2026-10-14 12:00:00 UTC',
+  '- **Extension version:** `1.4.0`',
   '- **WP Rocket:** Detected, version `3.20.1`',
   '- **Page cache:** Cached, generated 2026-10-07 03:04:13 UTC',
   '- **Platform:** WP Engine (matched by `X-Powered-By`)',
@@ -96,6 +118,8 @@ const FULL_GOLDEN = [
 const ABSENT_GOLDEN = [
   '## WP Rocket page report',
   '',
+  '- **Generated:** 2026-10-14 12:00:00 UTC',
+  '- **Extension version:** Not available',
   '- **WP Rocket:** Not detected',
   '- **Optimizations:** 0 of 14 active',
   '',
@@ -132,21 +156,21 @@ const ABSENT_GOLDEN = [
 
 describe('buildSupportReport — golden', () => {
   it('renders the full matrix exactly (present, cached, headers, references)', () => {
-    expect(buildSupportReport(fullData())).toBe(FULL_GOLDEN);
+    expect(buildSupportReport(fullData(), CONTEXT)).toBe(FULL_GOLDEN);
   });
 
   it('renders the all-absent page exactly (headers null, no references)', () => {
-    expect(buildSupportReport(makeReportData())).toBe(ABSENT_GOLDEN);
+    expect(buildSupportReport(makeReportData(), BARE_CONTEXT)).toBe(ABSENT_GOLDEN);
   });
 
-  it('is deterministic: same data, same bytes (clock-free)', () => {
-    expect(buildSupportReport(fullData())).toBe(buildSupportReport(fullData()));
+  it('is deterministic: same inputs, same bytes (the clock is an argument)', () => {
+    expect(buildSupportReport(fullData(), CONTEXT)).toBe(buildSupportReport(fullData(), CONTEXT));
   });
 });
 
 describe('buildSupportReport — branches', () => {
   /** The report's lines for one payload. */
-  const lines = (data: FdtData): string[] => buildSupportReport(data).split('\n');
+  const lines = (data: FdtData): string[] => buildSupportReport(data, CONTEXT).split('\n');
 
   it('states an empty header capture distinctly from a missing one', () => {
     const report = lines(makeReportData({ pageHeaders: [] }));
@@ -203,7 +227,8 @@ describe('buildSupportReport — branches', () => {
           { name: 'SET-COOKIE', value: 'sid=TOPSECRET; HttpOnly' },
           { name: 'set-cookie', value: 'other=ALSOSECRET' }
         ]
-      })
+      }),
+      CONTEXT
     );
     expect(report).not.toContain('TOPSECRET');
     expect(report).not.toContain('ALSOSECRET');
@@ -225,6 +250,57 @@ describe('buildSupportReport — branches', () => {
   });
 });
 
+describe('buildSupportReport — provenance', () => {
+  it('omits a blank page URL and states an unrepresentable time honestly', () => {
+    const report = buildSupportReport(makeReportData(), {
+      generatedAt: Number.NaN,
+      extensionVersion: '2',
+      pageUrl: '   '
+    });
+    expect(report).not.toContain('**Page:**');
+    expect(report).toContain('- **Generated:** Time not available');
+    expect(report).toContain('- **Extension version:** `2`');
+  });
+});
+
+describe('buildSupportReport — secrets never reach the report', () => {
+  /** The report for one header row. */
+  const reportFor = (name: string, value: string): string =>
+    buildSupportReport(makeReportData({ pageHeaders: [{ name, value }] }), CONTEXT);
+
+  it('keeps nothing of a nameless Set-Cookie', () => {
+    const report = reportFor('Set-Cookie', 'NAMELESSSECRETTOKEN');
+    expect(report).not.toContain('NAMELESSSECRETTOKEN');
+    expect(report).toContain('| `Set-Cookie` | (value redacted) |');
+  });
+
+  it('cuts a Set-Cookie at its first segment: attributes never pass as a name', () => {
+    const report = reportFor('Set-Cookie', 'tok; Path=/; Secure');
+    expect(report).not.toContain('tok');
+    expect(report).not.toContain('Path');
+    expect(report).toContain('| `Set-Cookie` | (value redacted) |');
+    expect(reportFor('set-cookie', ' sid = abc; Path=/')).toContain('`sid` (value redacted)');
+  });
+
+  it.each([
+    'Cookie',
+    'Authorization',
+    'Proxy-Authorization',
+    'X-Debug-Token',
+    'X-Debug-Token-Link',
+    'X-Session-Id'
+  ])('redacts the whole value of %s', (name) => {
+    const report = reportFor(name, 'HUNTER2-SECRET');
+    expect(report).not.toContain('HUNTER2-SECRET');
+    expect(report).toContain(`| \`${name}\` | (value redacted) |`);
+  });
+
+  it('flattens C1, line-separator and bidi controls in page strings', () => {
+    const report = reportFor('X-Note', 'a\u0085b\u2028c\u202ed\u2067e');
+    expect(report).toContain('| `X-Note` | `a b c d e` |');
+  });
+});
+
 describe('codeSpan', () => {
   it.each([
     ['plain', false, '`plain`'],
@@ -237,7 +313,12 @@ describe('codeSpan', () => {
     ['line\nbreak\ttab', false, '`line break tab`'],
     ['', false, '—'],
     ['   ', true, '—'],
-    ['\u0000\u0007', false, '—']
+    ['\u0000\u0007', false, '—'],
+    ['a\u009fb', false, '`a b`'],
+    ['x\u2029y', false, '`x y`'],
+    ['\u202egnp.exe', false, '`gnp.exe`'],
+    ['l\u200er\u200fm\u061c', false, '`l r m`'],
+    ['\u2066i\u2069', false, '`i`']
   ])('codeSpan(%j, inTable=%s) → %s', (value, inTable, expected) => {
     expect(codeSpan(value, inTable)).toBe(expected);
   });
