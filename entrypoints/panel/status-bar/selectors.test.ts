@@ -227,7 +227,7 @@ describe('freshnessSegment', () => {
 
 describe('isDataStale', () => {
   it('takes the threshold exactly and flips past it', () => {
-    expect(DATA_STALE_AFTER_MS).toBe(120_000);
+    expect(DATA_STALE_AFTER_MS).toBe(600_000);
     expect(isDataStale(NOW_MS, NOW_MS)).toBe(false);
     expect(isDataStale(NOW_MS - DATA_STALE_AFTER_MS, NOW_MS)).toBe(true);
     expect(isDataStale(NOW_MS - (DATA_STALE_AFTER_MS - 1), NOW_MS)).toBe(false);

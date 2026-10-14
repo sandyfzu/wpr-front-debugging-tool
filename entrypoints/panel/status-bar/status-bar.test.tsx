@@ -223,16 +223,16 @@ describe('StatusBar (strip)', () => {
     // One threshold-length advance drives the cadence and the wall clock:
     // the cache age moves its bucket, the data crosses the staleness line.
     await vi.advanceTimersByTimeAsync(DATA_STALE_AFTER_MS);
-    expect(screen.getByText('5 min ago')).toBeTruthy();
+    expect(screen.getByText('13 min ago')).toBeTruthy();
     expect(screen.getByText('Stale')).toBeTruthy();
-    expect(screen.getByText('Updated 2 min ago')).toBeTruthy();
+    expect(screen.getByText('Updated 10 min ago')).toBeTruthy();
     // The stale segment explains itself on hover (hidden until wanted), and
     // the explanation is not hover-only: the same facts ride sr-only text,
     // so keyboard and screen-reader users get the remedy without a focus
     // stop on this deliberately non-navigable segment.
     const staleText = screen.getByText('Stale');
     const segment = staleText.parentElement as HTMLElement;
-    expect(segment.getAttribute('title')).toContain(`older than 2 min`);
+    expect(segment.getAttribute('title')).toContain(`older than 10 min`);
     expect(segment.textContent).toContain('reload it to refresh');
     expect(segment.querySelector('.sr-only')).toBeTruthy();
   });
