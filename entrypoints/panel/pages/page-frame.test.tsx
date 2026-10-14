@@ -4,6 +4,7 @@
  * view (sentence per input, gated buttons, the focus hand-off), and the
  * external link (new-tab safety, accessible name, unsafe-scheme fallback).
  */
+import { readFileSync, readdirSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
 import { createSignal, Show } from 'solid-js';
@@ -361,5 +362,26 @@ describe('ExternalLink', () => {
     expect(plain?.querySelector('.truncate')?.getAttribute('title')).toBe(href);
     expect(plain?.textContent).toBe(href);
     expect(plain?.querySelector('svg')).toBeNull();
+  });
+});
+
+describe('page layout tiers', () => {
+  /** Every non-test page source under `pages/`, recursively. */
+  function pageSources(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return pageSources(path);
+      const source = /\.tsx?$/.test(entry.name) && !entry.name.includes('.test.');
+      return source ? [path] : [];
+    });
+  }
+
+  it('page sources write the tier variants, never the tier pixel literals', () => {
+    const sources = pageSources(import.meta.dirname);
+    expect(sources.length).toBeGreaterThan(0);
+    const strays = sources.filter((path) =>
+      /@(min|max)-\[(480|768)px\]/.test(readFileSync(path, 'utf8'))
+    );
+    expect(strays).toEqual([]);
   });
 });

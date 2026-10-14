@@ -52,7 +52,7 @@ export interface PageFrameProps {
  * The root carries the shell's mount-only `.fdt-page` entrance (pages never
  * animate their own mount) and `data-fdt-page`, which makes its `h1` the
  * route-switch focus target. The root is also the **unpadded** `@container`:
- * a page's `@min-*` container variants read the full content-region width
+ * a page's tier variants (`@regular:`/`@wide:`, UI/UX bar L-1) read the full content-region width
  * (panel width − the ≈ 49 px icon rail), not the width left after the frame's
  * own `p-3`. The entrance leaves a transform on the root, so nothing inside a
  * page may be `position: fixed` — floating UI goes through the portaled
