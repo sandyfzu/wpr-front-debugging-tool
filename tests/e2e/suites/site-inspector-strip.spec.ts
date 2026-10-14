@@ -256,6 +256,71 @@ async function readStrip(page: Page): Promise<StripRead> {
   }, STRIP_HOST);
 }
 
+/** A draggable shape's viewport box (the fields the drag assertions read). */
+interface DragScriptBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/** The strip's live geometry (the DOM-honest drag-leg probe). */
+interface StripGeometry {
+  /** The visible shape's box: the card when open, else the pill. */
+  shape: DragScriptBox | null;
+  /** The live viewport (layout-client space — the fixed anchor's basis). */
+  viewport: { width: number; height: number };
+  /** The page's scroll offsets + scrollable extents (the SB-D16 pin). */
+  scroll: { x: number; y: number; extentWidth: number; extentHeight: number };
+  /** Whether the chrome carries the dragging state right now. */
+  dragging: boolean;
+  /** The chrome's computed cursor (the grab/grabbing affordance). */
+  cursor: string;
+}
+
+/**
+ * Probe the strip's live geometry in-page: the open card is the shape while
+ * it covers the pill, otherwise the pill is; the fixed anchor rests per the
+ * layout viewport (`documentElement.clientWidth` — scrollbars excluded),
+ * which is the honest basis for the 16/16 and clamp assertions.
+ *
+ * @param page The page whose (possibly absent) widget is probed.
+ */
+async function stripGeometry(page: Page): Promise<StripGeometry> {
+  return await page.evaluate((host: string): StripGeometry => {
+    const root = document.querySelector(host)?.shadowRoot ?? null;
+    const chrome = root?.querySelector('.ins-chrome') ?? null;
+    const cardOpen = chrome?.classList.contains('ins-open') === true;
+    const shape = root?.querySelector<HTMLElement>(cardOpen ? '.ins-card' : '.ins-pill') ?? null;
+    const documentElement = document.documentElement;
+    const asBox = (element: HTMLElement): DragScriptBox => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      };
+    };
+    return {
+      shape: shape === null ? null : asBox(shape),
+      viewport: { width: documentElement.clientWidth, height: documentElement.clientHeight },
+      scroll: {
+        x: window.scrollX,
+        y: window.scrollY,
+        extentWidth: documentElement.scrollWidth,
+        extentHeight: documentElement.scrollHeight
+      },
+      dragging: chrome?.classList.contains('ins-dragging') === true,
+      cursor: chrome === null ? '' : getComputedStyle(chrome).cursor
+    };
+  }, STRIP_HOST);
+}
+
 /** Enable or disable the widget for the site's origin (the dispatch seam). */
 async function setWidgetEnabled(driver: ExtensionDriver, enabled: boolean): Promise<void> {
   await driver.evaluateInWorker(
@@ -268,6 +333,32 @@ async function setWidgetEnabled(driver: ExtensionDriver, enabled: boolean): Prom
     },
     { key: ORIGINS_KEY, origin: SITE_ORIGIN, enabled }
   );
+}
+
+/**
+ * Wait until the drag-asserted shapes are animation-free: the mount's
+ * one-shot entrance and the open/close/hand-back choreography settle their
+ * transforms, so position reads afterwards are settled geometry. The
+ * pending phase's pulse chip animates on and is deliberately out here (the
+ * pill/card boxes carry the drag's truth, not the chip's color beat).
+ *
+ * @param page The page whose widget's choreography settles.
+ */
+async function waitForChoreographySettle(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate((host: string): string => {
+          const root = document.querySelector(host)?.shadowRoot ?? null;
+          if (root === null) return 'missing';
+          const animated = [
+            ...root.querySelectorAll<HTMLElement>('.ins-chrome, .ins-pill, .ins-card')
+          ].some((node) => node.getAnimations().length > 0);
+          return animated ? 'moving' : 'settled';
+        }, STRIP_HOST),
+      { timeout: 10_000, intervals: [100, 250] }
+    )
+    .toBe('settled');
 }
 
 /** Remove the opt-in map entirely (the later suites must see an inert store). */
@@ -518,6 +609,323 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
+    'the pill drags beneath the pointer and reload returns it to the resting anchor (position is never stored)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        // The scan's verdict first: a pending→ready flip mid-drag would wander
+        // under the held pointer (the pill's identity/chip re-composes).
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const resting = await stripGeometry(page);
+        const pill = resting.shape;
+        if (pill === null) throw new Error('the pill is missing its shape');
+        // The resting anchor (bottom-right 16/16) — the baseline the drag departs from.
+        expect(
+          Math.abs(pill.right - (resting.viewport.width - 16)),
+          'the resting pill rests 16 px off the right edge'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(pill.bottom - (resting.viewport.height - 16)),
+          'the resting pill rests 16 px off the bottom edge'
+        ).toBeLessThan(2);
+
+        const pillLocator = page.locator(`${STRIP_HOST} .ins-pill`);
+        // The press rides the pill's center (the grab offset = pointer→top-left),
+        // so the top-left must follow the pointer's exact travel from there.
+        const press = { x: pill.left + pill.width / 2, y: pill.top + pill.height / 2 };
+        await pillLocator.hover();
+        await page.mouse.down();
+        await page.mouse.move(press.x - 240, press.y - 140, { steps: 12 });
+        // Mid-drag the grabbing affordance is on (SB-D12's cursor legs).
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(true);
+        await page.mouse.up();
+        await expect.poll(async () => (await stripGeometry(page)).dragging).toBe(false);
+        await waitForChoreographySettle(page);
+
+        const dragged = await stripGeometry(page);
+        const draggedShape = dragged.shape;
+        if (draggedShape === null) throw new Error('the dragged pill lost its shape');
+        // The pointer delta arrived 1:1 (the grabbed point stays under the pointer).
+        expect(
+          Math.abs(draggedShape.left - (pill.left - 240)),
+          'the pill\u2019s top-left followed the pointer\u2019s left delta'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(draggedShape.top - (pill.top - 140)),
+          'the pill\u2019s top-left followed the pointer\u2019s top delta'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(draggedShape.top - (pill.top - 140)),
+          'the pill followed the pointer\u2019s top delta'
+        ).toBeLessThan(2);
+        // The same press must never open the card (its click belonged to the drag).
+        expect((await readStrip(page)).cardOpen).toBe(false);
+
+        // Session-local by decision: a reload never reads a position back.
+        await page.reload({ waitUntil: 'load' });
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const after = await stripGeometry(page);
+        const againShape = after.shape;
+        if (againShape === null) throw new Error('the repainted pill lost its shape');
+        expect(
+          Math.abs(againShape.right - (after.viewport.width - 16)),
+          'the reload rested the pill back at the right anchor'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(againShape.bottom - (after.viewport.height - 16)),
+          'the reload rested the pill back at the bottom anchor'
+        ).toBeLessThan(2);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'the card follows the dragged anchor and open/close keeps it (one draggable chrome)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        // First: drag the pill somewhere (the press rides the pill's center,
+        // so the top-left's displacement equals the pointer's).
+        const press = {
+          x: pillBox.x + pillBox.width / 2,
+          y: pillBox.y + pillBox.height / 2
+        };
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(press.x - 260, press.y - 160, { steps: 10 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const draggedCorner = await stripGeometry(page);
+        const corner = draggedCorner.shape;
+        if (corner === null) throw new Error('the dragged pill lost its shape');
+
+        // The card opens FROM the dragged anchor: same bottom-right corner
+        // (both shapes hand it over inside the chrome).
+        await pill.click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        expect(
+          Math.abs(card.right - corner.right),
+          'the open card took the pill\u2019s dragged right corner'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(card.bottom - corner.bottom),
+          'the open card took the pill\u2019s dragged bottom corner'
+        ).toBeLessThan(2);
+
+        // Then: drag the card by its header's non-interactive regions (the
+        // close control on the right never grabs — aim at the title side).
+        await page.mouse.move(card.left + 24, card.top + 12);
+        await page.mouse.down();
+        await page.mouse.move(card.left + 124, card.top - 70, { steps: 10 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const cardDragged = await stripGeometry(page);
+        const moved = cardDragged.shape;
+        if (moved === null) throw new Error('the card drag lost its shape');
+        expect(
+          Math.abs(moved.left - (card.left + 100)),
+          'the card followed its header pointer delta'
+        ).toBeLessThan(3);
+        expect(
+          Math.abs(moved.top - (card.top - 82)),
+          'the card followed its header pointer delta vertically'
+        ).toBeLessThan(3);
+
+        // Escape closes: the pill returns AT the dragged corner, not the resting one.
+        await page.keyboard.press('Escape');
+        await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toBeFocused();
+        await waitForChoreographySettle(page);
+        const returned = await stripGeometry(page);
+        const pillAgain = returned.shape;
+        if (pillAgain === null) throw new Error('the returned pill lost its shape');
+        expect(
+          Math.abs(pillAgain.right - moved.right),
+          'the returned pill kept the dragged right corner'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(pillAgain.bottom - moved.bottom),
+          'the returned pill kept the dragged bottom corner'
+        ).toBeLessThan(2);
+        // And it opens where the pill stands: no snap-back to the resting anchor.
+        await pill.click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const reopened = await stripGeometry(page);
+        const reopenedCard = reopened.shape;
+        if (reopenedCard === null) throw new Error('the reopened card lost its shape');
+        expect(
+          Math.abs(reopenedCard.right - moved.right),
+          'the reopened card never snapped back'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(reopenedCard.bottom - moved.bottom),
+          'the reopened card never snapped back vertically'
+        ).toBeLessThan(2);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'edge drags park the chrome inside the viewport and scroll nothing (SB-D16 pin)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        const before = await stripGeometry(page);
+
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(2, 2, { steps: 14 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const parked = await stripGeometry(page);
+        const shape = parked.shape;
+        if (shape === null) throw new Error('the parked pill lost its shape');
+        // The DRAG_MIN_VISIBLE strip survives both edges: nothing dragged off.
+        expect(
+          shape.right,
+          'the left-parked strip keeps its visible right edge'
+        ).toBeGreaterThanOrEqual(32 - 2);
+        expect(shape.left, 'the park went past the left edge').toBeLessThan(0);
+        expect(
+          shape.bottom,
+          'the top-parked strip keeps its visible bottom edge'
+        ).toBeGreaterThanOrEqual(32 - 2);
+        expect(shape.top, 'the park went past the top edge').toBeLessThan(0);
+        // Host coexistence (SB-D16): the page scrolled nowhere new, and the
+        // drag introduced no scrollable overflow.
+        expect(parked.scroll.x).toBe(before.scroll.x);
+        expect(parked.scroll.y).toBe(before.scroll.y);
+        expect(parked.scroll.extentWidth).toBe(before.scroll.extentWidth);
+        expect(parked.scroll.extentHeight).toBe(before.scroll.extentHeight);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'Escape mid-drag cancels it and restores the pre-drag position',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        // Commit one drag first so the cancel has a real session position to
+        // restore (not the untouched resting anchor).
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(pillBox.x - 200, pillBox.y - 120, { steps: 10 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const settled = await stripGeometry(page);
+        const atRest = settled.shape;
+        if (atRest === null) throw new Error('the settled pill lost its shape');
+
+        // Second drag: Escape mid-press cancels (P12A.5's recorded semantics),
+        // the release stays a click and is suppressed — the card never opens.
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(atRest.left - 140, atRest.top - 90, { steps: 10 });
+        // The keydown path rides the widget's shadow root: focus goes to the
+        // pill explicitly (a macOS Chromium mousedown leaves the body focused,
+        // and the page must not be the Escape's audience).
+        await page.evaluate(
+          (payload: { host: string; part: string }): void => {
+            const pill = document
+              .querySelector<HTMLElement>(payload.host)
+              ?.shadowRoot?.querySelector<HTMLElement>(payload.part);
+            if (pill === null || pill === undefined) {
+              throw new Error(`the strip part ${payload.part} is missing (shape changed)`);
+            }
+            pill.focus();
+          },
+          { host: STRIP_HOST, part: '.ins-pill' }
+        );
+        await page.keyboard.press('Escape');
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const restored = await stripGeometry(page);
+        const backShape = restored.shape;
+        if (backShape === null) throw new Error('the restored pill lost its shape');
+        expect(
+          Math.abs(backShape.left - atRest.left),
+          'the cancel restored the pre-drag left position'
+        ).toBeLessThan(2);
+        expect(
+          Math.abs(backShape.top - atRest.top),
+          'the cancel restored the pre-drag top position'
+        ).toBeLessThan(2);
+        expect((await readStrip(page)).cardOpen).toBe(false);
+
+        // Third drag: a RIGHT press mid-drag cancels the same way (the brief's
+        // source-parity nicety; cancel beats the primary-button guard).
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(backShape.left - 120, backShape.top - 70, { steps: 8 });
+        await page.mouse.down({ button: 'right' });
+        await page.mouse.up(); // the left release after the cancel is a no-op
+        await page.mouse.up({ button: 'right' });
+        await waitForChoreographySettle(page);
+        const restored2 = await stripGeometry(page);
+        const rightShape = restored2.shape;
+        if (rightShape === null) throw new Error('the right-cancelled pill lost its shape');
+        expect(
+          Math.abs(rightShape.left - backShape.left),
+          'the right-press cancel restored the pre-drag left position'
+        ).toBeLessThan(2);
+        expect(Math.abs(rightShape.top - backShape.top)).toBeLessThan(2);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+  siteTest(
     'KC and the strip coexist — their anchors never overlap',
     async ({ extension, adminPage }) => {
       await setWidgetEnabled(extension, true);
@@ -631,4 +1039,12 @@ siteTest.describe('site detection widget', () => {
       }
     }
   );
+
+  /**
+   * The drag legs (P12A.5): session-local repositioning, SB-D12's semantics
+   * minus persistence. Every drag goes through Playwright's real input
+   * (trusted events — the synthetic-click gate must not block them), and
+   * every leg cleans up its own opt-in write so the later suites see the
+   * inert store.
+   */
 });
