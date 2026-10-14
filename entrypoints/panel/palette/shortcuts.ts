@@ -96,9 +96,15 @@ export function isEditableTarget(target: EventTarget | null): boolean {
  *
  * `Ctrl/⌘ K` toggles the palette from anywhere in the panel — including out
  * of the palette's own field. The shortcuts overlay answers its declared
- * binding (`/`, `?` alias) but only when the keystroke is not headed for an
- * editable target (typing `/` into the palette field queries it). Both
- * chords preventDefault so the browser's own handler does not race.
+ * binding (`/`, `?` alias) on an **unmodified** key: `Ctrl/⌘/Alt + /` are
+ * not our chord — the palette branch already requires that exactness, the
+ * overlay branch mirrors it. `Shift` is deliberately ungated: the binding is
+ * a character (`event.key`), and the glyphs it accepts arrive with Shift
+ * legitimately held — the `?` composition, or whatever a layout needs to
+ * produce `/` — so the shift flag carries no meaning for this contract. The
+ * toggle only fires when the keystroke is not headed for an editable target
+ * (typing `/` into the palette field queries it). Both chords
+ * preventDefault so the browser's own handler does not race.
  *
  * @param handlers The overlay store (only its toggles are consumed).
  * @returns The stop handle (the shell's cleanup).
@@ -122,6 +128,9 @@ export function registerPanelShortcuts(
         return;
       }
       if (
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
         SHORTCUTS_OVERLAY_BINDING.accepts.includes(event.key) &&
         !isEditableTarget(event.target)
       ) {

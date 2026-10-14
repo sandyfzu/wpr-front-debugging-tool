@@ -155,6 +155,24 @@ describe('registerPanelShortcuts', () => {
     stop();
   });
 
+  it('the overlay branch requires an unmodified key (the palette branch’s exactness, mirrored)', () => {
+    // The audit round's hardening: a chord ending in the binding's glyph is
+    // not our chord — Ctrl/⌘/Alt stay for the host or nothing; Shift is
+    // deliberately ungated (the accepted glyphs arrive with Shift held: the
+    // `?` composition, or a layout's own way to produce `/`).
+    const { toggles, stop } = wire();
+    for (const key of SHORTCUTS_OVERLAY_BINDING.accepts) {
+      expect(pressKey(key, { ctrlKey: true })).toBe(false);
+      expect(pressKey(key, { metaKey: true })).toBe(false);
+      expect(pressKey(key, { altKey: true })).toBe(false);
+      // The flag the contract keeps: shift-held arrival still toggles...
+      expect(pressKey(key, { shiftKey: true })).toBe(true);
+      expect(toggles.shortcuts).toBe(1);
+      toggles.shortcuts = 0;
+    }
+    stop();
+  });
+
   it('Escape is not wired here at all (the dialogs own it; search-Esc stays the data rule)', () => {
     const { toggles, stop } = wire();
     expect(pressKey('Escape')).toBe(false);
