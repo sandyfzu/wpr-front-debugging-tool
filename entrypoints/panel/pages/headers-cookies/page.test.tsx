@@ -152,22 +152,42 @@ describe('HeadersCookiesView — populated', () => {
       'cache-control: no-store',
       'age: 30',
       'Server: nginx',
-      `set-cookie: sid=${REDACTED_VALUE}; Path=/; HttpOnly`,
+      `set-cookie: sid=${REDACTED_VALUE}`,
       'x-empty:'
     ]);
   });
 
-  it('never puts a cookie value in the DOM or on the clipboard', async () => {
+  it('never puts a secret in the DOM or on the clipboard', async () => {
+    const secrets: PageHeaders = [
+      ...HEADERS,
+      { name: 'Set-Cookie', value: 'NAMELESSSECRETTOKEN' },
+      { name: 'Set-Cookie', value: 'TOKSECRET; Path=/' },
+      { name: 'Authorization', value: 'Bearer AUTHSECRET' },
+      { name: 'x-wp-nonce', value: 'NONCESECRET' }
+    ];
     renderView(
-      makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['sid'], capturedAt: NOW - 5_000 } })
+      makeFdtData({ pageHeaders: secrets, cookies: { names: ['sid'], capturedAt: NOW - 5_000 } })
     );
-    expect(document.body.innerHTML).not.toContain(SECRET);
-    fireEvent.click(screen.getByRole('button', { name: 'set-cookie header — copy' }));
+    const leaks = [SECRET, 'NAMELESSSECRETTOKEN', 'TOKSECRET', 'AUTHSECRET', 'NONCESECRET'];
+    for (const leak of leaks) expect(document.body.innerHTML).not.toContain(leak);
+    // The withheld values say so, visibly distinct from real values.
+    const redacted = [...document.querySelectorAll('[data-fdt-redacted]')].map(
+      (n) => n.textContent
+    );
+    expect(redacted).toEqual([
+      `sid=${REDACTED_VALUE}`,
+      REDACTED_VALUE,
+      REDACTED_VALUE,
+      REDACTED_VALUE,
+      REDACTED_VALUE
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Authorization header — copy' }));
     fireEvent.click(screen.getByRole('button', { name: /All headers/ }));
     await waitFor(() => {
       expect(writes).toHaveLength(2);
     });
-    expect(writes.join('\n')).not.toContain(SECRET);
+    expect(writes[0]).toBe(`Authorization: ${REDACTED_VALUE}`);
+    for (const leak of leaks) expect(writes.join('\n')).not.toContain(leak);
   });
 
   it('lists cookie names under their limits, stamped "Captured …"', () => {

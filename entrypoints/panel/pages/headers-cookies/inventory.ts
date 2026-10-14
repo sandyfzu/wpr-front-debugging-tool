@@ -6,8 +6,9 @@
  * them.
  *
  * Also owns the page's two pieces of copy logic that must never drift from
- * the rows: the clipboard payload of a header row and the `Set-Cookie`
- * redaction (cookie values never reach the panel's DOM or clipboard).
+ * the rows: the clipboard payload of a header row and the secret-header
+ * redaction (cookie values, credentials and tokens never reach the panel's
+ * DOM or clipboard).
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
@@ -35,8 +36,14 @@ export const NO_COOKIES_NOTE = 'No cookies are readable by page scripts.';
 export const COOKIES_LEAD =
   'Names only — values are never captured. HttpOnly cookies are invisible to page scripts, so they never appear here.';
 
-/** What replaces a cookie value inside a `Set-Cookie` header value. */
-export const REDACTED_VALUE = '[value redacted]';
+/** What a secret-bearing header value shows (and copies) instead of itself. */
+export const REDACTED_VALUE = '(value redacted)';
+
+/** A header row as the page shows and copies it. */
+export interface ShownHeader extends HeaderRowVM {
+  /** True when the captured value was withheld (see {@link shownHeader}). */
+  readonly redacted: boolean;
+}
 
 /** One row of the flattened inventory. */
 export type InventoryRow =
@@ -51,8 +58,8 @@ export type InventoryRow =
       readonly kind: 'header';
       readonly id: string;
       readonly section: 'caching' | 'other';
-      /** The header row, its value already redacted where it could carry a secret. */
-      readonly header: HeaderRowVM;
+      /** The header row, its value already withheld where it could carry a secret. */
+      readonly header: ShownHeader;
     }
   | { readonly kind: 'cookie'; readonly id: string; readonly name: string }
   | { readonly kind: 'note'; readonly id: string; readonly text: string };
@@ -67,58 +74,79 @@ export interface Inventory {
   readonly rows: readonly InventoryRow[];
 }
 
-/**
- * Header names whose values carry cookie values. A response's `Set-Cookie`
- * is the same secret as `document.cookie`'s value half, so it gets the same
- * names-only treatment. (Chromium withholds it from the capture unless asked
- * for; other engines may not — the redaction holds either way.)
- */
-const COOKIE_CARRYING_HEADERS: ReadonlySet<string> = new Set(['set-cookie', 'set-cookie2']);
+/** Header names whose values are always secret (compared trimmed, lowercase). */
+const SECRET_HEADER_NAMES: ReadonlySet<string> = new Set([
+  'cookie',
+  'set-cookie',
+  'set-cookie2',
+  'authorization',
+  'proxy-authorization',
+  'x-debug-token',
+  'x-debug-token-link'
+]);
 
 /**
- * Redact the cookie values out of one `Set-Cookie` value, keeping each
- * cookie's name and attributes (`Path`, `HttpOnly`, `SameSite`… are debugging
- * evidence and secret-free). Several cookies folded into one value
- * (newline-joined, as some engines report them) are redacted line by line.
- * A line without `=` has no name to keep, so its first segment goes entirely.
- *
- * @param value The raw header value.
- * @returns The same shape with every cookie value replaced by {@link REDACTED_VALUE}.
+ * Name fragments that mark a header as secret-bearing. Deliberately
+ * over-inclusive: withholding a harmless value costs one question, showing a
+ * session token costs an account.
  */
-export function redactSetCookie(value: string): string {
-  return value
-    .split('\n')
-    .map((line) => {
-      const attributesAt = line.indexOf(';');
-      const pair = attributesAt === -1 ? line : line.slice(0, attributesAt);
-      const attributes = attributesAt === -1 ? '' : line.slice(attributesAt);
-      const equalsAt = pair.indexOf('=');
-      const name = equalsAt === -1 ? '' : pair.slice(0, equalsAt).trim();
-      return name === ''
-        ? `${REDACTED_VALUE}${attributes}`
-        : `${name}=${REDACTED_VALUE}${attributes}`;
-    })
-    .join('\n');
+const SECRET_NAME_FRAGMENT =
+  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])pass(?:[-_]|$)|(?:^|[-_])sig(?:[-_]|$)|(?:^|[-_])key$/i;
+
+/**
+ * Whether a header's value may carry a secret (credentials, cookies,
+ * tokens, nonces, signatures).
+ *
+ * @param name The header name, any casing.
+ */
+export function isSecretHeaderName(name: string): boolean {
+  const lower = name.trim().toLowerCase();
+  return SECRET_HEADER_NAMES.has(lower) || SECRET_NAME_FRAGMENT.test(lower);
 }
 
 /**
- * The header row as the page may show and copy it: cookie-carrying headers
- * redacted, everything else untouched.
+ * The cookie name a `Set-Cookie` value sets — the text before `=` within
+ * its first `;`-segment — or null when there is no well-formed name
+ * (`Set-Cookie: SECRET`, `tok; Path=/`): then nothing of the value is kept.
+ * Only the first cookie of a folded value is named.
+ *
+ * @param value The raw `Set-Cookie` value.
+ */
+export function setCookieName(value: string): string | null {
+  const first = value.split(/[;\n]/, 1)[0] ?? '';
+  const equalsAt = first.indexOf('=');
+  const name = equalsAt === -1 ? '' : first.slice(0, equalsAt).trim();
+  return name === '' ? null : name;
+}
+
+/**
+ * The header row as the page may show and copy it. A secret-bearing header
+ * keeps its name and loses its whole value — attributes and hint included
+ * (a hint can echo the value); a `Set-Cookie` keeps only the cookie's name,
+ * which is caching evidence. Everything else passes untouched.
  *
  * @param header A row of the shared headers model.
  */
-export function displayedHeader(header: HeaderRowVM): HeaderRowVM {
-  if (header.value === null || !COOKIE_CARRYING_HEADERS.has(header.name.toLowerCase())) {
-    return header;
+export function shownHeader(header: HeaderRowVM): ShownHeader {
+  if (header.value === null || !isSecretHeaderName(header.name)) {
+    return { ...header, redacted: false };
   }
-  return { ...header, value: redactSetCookie(header.value) };
+  const lower = header.name.trim().toLowerCase();
+  const cookieName =
+    lower === 'set-cookie' || lower === 'set-cookie2' ? setCookieName(header.value) : null;
+  return {
+    name: header.name,
+    value: cookieName === null ? REDACTED_VALUE : `${cookieName}=${REDACTED_VALUE}`,
+    hint: null,
+    redacted: true
+  };
 }
 
 /**
  * The clipboard payload of one header row: the wire form `name: value`
  * (a valueless row copies as `name:`, which is what it was on the wire).
  *
- * @param header The (already displayed/redacted) header row.
+ * @param header The (already shown/redacted) header row.
  */
 export function headerCopyText(header: HeaderRowVM): string {
   return header.value === null ? `${header.name}:` : `${header.name}: ${header.value}`;
@@ -140,6 +168,10 @@ export function allHeadersCopyText(rows: readonly InventoryRow[]): string {
  * Flatten one header group into its section rows. An empty group yields no
  * rows, except the caching group beside a non-empty capture: there the
  * absence is itself the evidence, so it says so.
+ *
+ * Row keys follow the header, not its position: `<section>:<lowercase
+ * name>#<occurrence>` — a refresh that reorders headers keeps each row's
+ * element, and repeated names (several `link` or `vary` rows) stay unique.
  */
 function headerSection(
   section: 'caching' | 'other',
@@ -153,16 +185,20 @@ function headerSection(
       { kind: 'note', id: `note:${section}`, text: NO_CACHING_HEADERS_NOTE }
     ];
   }
+  const occurrences = new Map<string, number>();
   return [
     { kind: 'section', id: `section:${section}`, section, count: headers.length },
-    ...headers.map((header, index): InventoryRow => ({
-      kind: 'header',
-      // Header names repeat legitimately (several `link` or `vary` rows):
-      // the position inside the group is the stable identity.
-      id: `${section}:${index.toString()}`,
-      section,
-      header: displayedHeader(header)
-    }))
+    ...headers.map((header): InventoryRow => {
+      const name = header.name.toLowerCase();
+      const occurrence = occurrences.get(name) ?? 0;
+      occurrences.set(name, occurrence + 1);
+      return {
+        kind: 'header',
+        id: `${section}:${name}#${occurrence.toString()}`,
+        section,
+        header: shownHeader(header)
+      };
+    })
   ];
 }
 

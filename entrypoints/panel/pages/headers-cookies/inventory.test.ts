@@ -13,7 +13,6 @@ import {
   absoluteStamp,
   allHeadersCopyText,
   buildInventory,
-  displayedHeader,
   estimateRowHeight,
   headerCopyText,
   heldFetchStamp,
@@ -21,7 +20,9 @@ import {
   NO_CACHING_HEADERS_NOTE,
   NO_COOKIES_NOTE,
   REDACTED_VALUE,
-  redactSetCookie,
+  setCookieName,
+  shownHeader,
+  isSecretHeaderName,
   shownStamp,
   type InventoryRow
 } from './inventory';
@@ -54,14 +55,14 @@ describe('buildInventory', () => {
     expect(inventory.hasCookies).toBe(true);
     expect(shape(inventory.rows)).toEqual([
       'section:section:caching',
-      'header:caching:0',
-      'header:caching:1',
-      'header:caching:2',
+      'header:caching:cache-control#0',
+      'header:caching:age#0',
+      'header:caching:x-rocket-cache#0',
       'section:section:other',
-      'header:other:0',
-      'header:other:1',
-      'header:other:2',
-      'header:other:3',
+      'header:other:date#0',
+      'header:other:server#0',
+      'header:other:set-cookie#0',
+      'header:other:x-empty#0',
       'section:section:cookies',
       'cookie:cookie:wpr_a',
       'cookie:cookie:b'
@@ -126,7 +127,7 @@ describe('buildInventory', () => {
       'section:section:caching',
       'note:note:caching',
       'section:section:other',
-      'header:other:0'
+      'header:other:server#0'
     ]);
     expect(inventory.rows[1]).toEqual({
       kind: 'note',
@@ -137,71 +138,140 @@ describe('buildInventory', () => {
 
   it('drops the other section when every header is caching evidence', () => {
     const inventory = inventoryOf([{ name: 'age', value: '3' }]);
-    expect(shape(inventory.rows)).toEqual(['section:section:caching', 'header:caching:0']);
+    expect(shape(inventory.rows)).toEqual(['section:section:caching', 'header:caching:age#0']);
   });
 
-  it('keys repeated header names by position, so every row id is unique and stable', () => {
+  it('keys header rows by name + occurrence: unique, stable, and order-independent', () => {
     const repeated: PageHeaders = [
-      { name: 'link', value: '</a.css>; rel=preload' },
+      { name: 'Link', value: '</a.css>; rel=preload' },
+      { name: 'Server', value: 'nginx' },
       { name: 'link', value: '</b.css>; rel=preload' }
     ];
     const first = inventoryOf(repeated).rows.map((row) => row.id);
-    const second = inventoryOf(repeated).rows.map((row) => row.id);
+    expect(first).toEqual([
+      'section:caching',
+      'note:caching',
+      'section:other',
+      'other:link#0',
+      'other:server#0',
+      'other:link#1'
+    ]);
     expect(new Set(first).size).toBe(first.length);
-    expect(second).toEqual(first);
+    expect(inventoryOf(repeated).rows.map((row) => row.id)).toEqual(first);
+    // A reorder keeps each header's key (its element follows it).
+    const reordered = inventoryOf([repeated[1], repeated[0], repeated[2]] as PageHeaders).rows;
+    expect(new Set(reordered.map((row) => row.id))).toEqual(new Set(first));
   });
 
-  it('redacts cookie values in the rows it hands the page', () => {
+  it('withholds secret values in the rows it hands the page', () => {
     const rows = inventoryOf(CAPTURE).rows;
     const setCookie = rows.find((row) => row.kind === 'header' && row.header.name === 'Set-Cookie');
-    expect(setCookie?.kind === 'header' && setCookie.header.value).toBe(
-      `session=${REDACTED_VALUE}; Path=/; HttpOnly`
-    );
+    expect(setCookie?.kind === 'header' && setCookie.header).toEqual({
+      name: 'Set-Cookie',
+      value: `session=${REDACTED_VALUE}`,
+      hint: null,
+      redacted: true
+    });
     expect(JSON.stringify(rows)).not.toContain('s3cr3t-token');
+    expect(JSON.stringify(rows)).not.toContain('HttpOnly');
   });
 });
 
-describe('redactSetCookie', () => {
-  it('keeps the name and attributes, never the value', () => {
-    expect(redactSetCookie('wp=abc; path=/; secure; HttpOnly')).toBe(
-      `wp=${REDACTED_VALUE}; path=/; secure; HttpOnly`
-    );
+describe('isSecretHeaderName', () => {
+  it.each([
+    'Set-Cookie',
+    'set-cookie2',
+    'Cookie',
+    'Authorization',
+    'proxy-authorization',
+    'X-Debug-Token',
+    'x-auth-token',
+    'X-CSRF-Token',
+    'x-xsrf-token',
+    'x-wp-nonce',
+    'x-api-key',
+    'X-Api_Key',
+    'x-session-id',
+    'x-amz-security-token',
+    'x-jwt-assertion',
+    'x-signature',
+    'x-hmac',
+    'x-access-key',
+    'x-pass',
+    'x-sig',
+    '  Authorization  '
+  ])('treats %s as secret-bearing', (name) => {
+    expect(isSecretHeaderName(name)).toBe(true);
   });
 
-  it('redacts a bare pair and a value that itself carries "="', () => {
-    expect(redactSetCookie('a=b')).toBe(`a=${REDACTED_VALUE}`);
-    expect(redactSetCookie('token=x=y==; Path=/')).toBe(`token=${REDACTED_VALUE}; Path=/`);
-  });
-
-  it('redacts every cookie of a newline-folded value', () => {
-    expect(redactSetCookie('a=1; Path=/\nb=2')).toBe(
-      `a=${REDACTED_VALUE}; Path=/\nb=${REDACTED_VALUE}`
-    );
-  });
-
-  it('drops the whole pair when it has no name to keep', () => {
-    expect(redactSetCookie('justavalue; Path=/')).toBe(`${REDACTED_VALUE}; Path=/`);
-    expect(redactSetCookie('=orphan')).toBe(REDACTED_VALUE);
-    expect(redactSetCookie('')).toBe(REDACTED_VALUE);
-  });
-
-  it('trims the kept name', () => {
-    expect(redactSetCookie('  sid =v')).toBe(`sid=${REDACTED_VALUE}`);
+  it.each([
+    'cache-control',
+    'age',
+    'x-cache',
+    'x-rocket-cache',
+    'cf-cache-status',
+    'server',
+    'content-type',
+    'location',
+    'x-passenger-version',
+    'x-signal',
+    'keep-alive'
+  ])('shows %s', (name) => {
+    expect(isSecretHeaderName(name)).toBe(false);
   });
 });
 
-describe('displayedHeader', () => {
-  it.each(['set-cookie', 'Set-Cookie', 'SET-COOKIE2'])('redacts %s', (name) => {
-    const shown = displayedHeader({ name, value: 'k=v', hint: null });
-    expect(shown.value).toBe(`k=${REDACTED_VALUE}`);
-    expect(shown.name).toBe(name);
+describe('setCookieName', () => {
+  it('names the cookie of a well-formed first segment', () => {
+    expect(setCookieName('wp=abc; path=/; secure; HttpOnly')).toBe('wp');
+    expect(setCookieName('  sid =v')).toBe('sid');
+    expect(setCookieName('token=x=y==; Path=/')).toBe('token');
+    expect(setCookieName('a=1; Path=/\nb=2')).toBe('a');
   });
 
-  it('passes every other header (and valueless rows) through untouched', () => {
+  it.each(['NAMELESSSECRETTOKEN', 'tok; Path=/', 'tok; a=b', '=orphan', '', ' =x', 'v\nn=1'])(
+    'keeps nothing of %j (no well-formed name)',
+    (value) => {
+      expect(setCookieName(value)).toBeNull();
+    }
+  );
+});
+
+describe('shownHeader', () => {
+  it.each(['set-cookie', 'Set-Cookie', 'SET-COOKIE2'])(
+    'keeps only the cookie name of %s',
+    (name) => {
+      const shown = shownHeader({ name, value: 'k=v; Path=/; HttpOnly', hint: null });
+      expect(shown).toEqual({ name, value: `k=${REDACTED_VALUE}`, hint: null, redacted: true });
+    }
+  );
+
+  it.each(['NAMELESSSECRETTOKEN', 'tok; Path=/'])(
+    'withholds a nameless Set-Cookie (%s) entirely',
+    (value) => {
+      const shown = shownHeader({ name: 'Set-Cookie', value, hint: null });
+      expect(shown.value).toBe(REDACTED_VALUE);
+      expect(JSON.stringify(shown)).not.toContain(value.split(';')[0]);
+    }
+  );
+
+  it('withholds credential and token values, hint included', () => {
+    expect(shownHeader({ name: 'Authorization', value: 'Bearer abc.def', hint: 'x' })).toEqual({
+      name: 'Authorization',
+      value: REDACTED_VALUE,
+      hint: null,
+      redacted: true
+    });
+    expect(shownHeader({ name: 'x-wp-nonce', value: '1a2b3c', hint: null }).value).toBe(
+      REDACTED_VALUE
+    );
+  });
+
+  it('passes every other header (and valueless rows) through', () => {
     const row = { name: 'cache-control', value: 'max-age=0', hint: 'hint' };
-    expect(displayedHeader(row)).toBe(row);
+    expect(shownHeader(row)).toEqual({ ...row, redacted: false });
     const valueless = { name: 'set-cookie', value: null, hint: null };
-    expect(displayedHeader(valueless)).toBe(valueless);
+    expect(shownHeader(valueless)).toEqual({ ...valueless, redacted: false });
   });
 });
 
@@ -220,7 +290,7 @@ describe('copy payloads', () => {
         'x-rocket-cache: hit',
         'Date: Wed, 14 Oct 2026 20:47:07 GMT',
         'Server: Apache',
-        `Set-Cookie: session=${REDACTED_VALUE}; Path=/; HttpOnly`,
+        `Set-Cookie: session=${REDACTED_VALUE}`,
         'x-empty:'
       ].join('\n')
     );
@@ -233,12 +303,17 @@ describe('estimateRowHeight', () => {
     const rows: InventoryRow[] = [
       { kind: 'section', id: 's1', section: 'caching', count: 1 },
       { kind: 'section', id: 's2', section: 'cookies', count: 1 },
-      { kind: 'header', id: 'h1', section: 'other', header: { name: 'a', value: 'b', hint: null } },
+      {
+        kind: 'header',
+        id: 'h1',
+        section: 'other',
+        header: { name: 'a', value: 'b', hint: null, redacted: false }
+      },
       {
         kind: 'header',
         id: 'h2',
         section: 'caching',
-        header: { name: 'age', value: '1', hint: 'hint' }
+        header: { name: 'age', value: '1', hint: 'hint', redacted: false }
       },
       { kind: 'cookie', id: 'c', name: 'n' },
       { kind: 'note', id: 'n', text: 't' }

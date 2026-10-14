@@ -2,8 +2,9 @@
  * The Headers & Cookies page — the caching-evidence trail: every captured
  * main-frame response header (caching-relevant ones first, each with its
  * plain-copy verdict hint) and the names of the cookies page scripts can
- * read. Cookie values never reach this page: the capture keeps names only,
- * and `Set-Cookie` header values are redacted before they render or copy.
+ * read. Secrets never reach this page: the cookie capture keeps names only,
+ * and secret-bearing header values (`Set-Cookie`, credentials, tokens) are
+ * withheld before they render or copy.
  *
  * State matrix (the shell owns loading, fetch errors and render crashes —
  * this body renders only on `ready`/`refreshing`):
@@ -30,14 +31,13 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { KeyValue } from '../../../../components/ui/key-value';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
-import { buildHeadersViewModel, type HeaderRowVM } from '../../../../lib/panel/headers-view-model';
+import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { relativeAge } from '../../status-bar/relative-age';
 import { PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
-import { contentMeasuredVirtualizer } from './content-measured-virtualizer';
 import {
   absoluteStamp,
   allHeadersCopyText,
@@ -50,7 +50,8 @@ import {
   SECTION_TITLES,
   shownStamp,
   type InventoryRow,
-  type InventorySectionId
+  type InventorySectionId,
+  type ShownHeader
 } from './inventory';
 
 /** The page's one-line "what am I looking at". */
@@ -78,7 +79,7 @@ export interface HeadersCookiesViewProps {
   fetchedAt: number | null;
   /** The aging clock's reading (ms) the relative times age against. */
   now: number;
-  /** The virtualizer seam (default: content-measured rows; tests inject a double). */
+  /** The virtualizer seam, forwarded to the list (tests inject a double). */
   createVirtualizer?: VirtualizerFactory;
 }
 
@@ -128,10 +129,6 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
   );
   const rows = (): readonly InventoryRow[] => inventory().rows;
   const allHeaders = createMemo(() => allHeadersCopyText(rows()));
-  // Rows wrap to any height (long values, hints), so they are measured by
-  // their content — see the factory's TSDoc.
-  // eslint-disable-next-line solid/reactivity -- the seam is settled once, like the list's own
-  const virtualizer = props.createVirtualizer ?? contentMeasuredVirtualizer();
   return (
     <PageFrame
       id="headers-cookies"
@@ -180,7 +177,7 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
           }}
           getItemKey={(index) => rows()[index]?.id ?? index}
           overscan={LIST_OVERSCAN}
-          createVirtualizer={virtualizer}
+          createVirtualizer={props.createVirtualizer}
           class={cn(PAGE_FILL_SCROLLER, '-mx-1 px-1')}
         >
           {(item) => (
@@ -335,10 +332,11 @@ function SectionHeading(props: SectionHeadingProps): JSX.Element {
  * Render one header row: the name over its value (side by side from the
  * regular tier), the verdict hint under the value when the shared model has
  * one, and an always-visible copy control for the wire form `name: value`.
+ * A withheld secret reads muted and italic, so it never passes for the value.
  *
  * @param props.header The (redacted where needed) header row.
  */
-function HeaderItem(props: { header: HeaderRowVM }): JSX.Element {
+function HeaderItem(props: { header: ShownHeader }): JSX.Element {
   return (
     <div class="flex items-start gap-1 py-1.5 ps-1">
       <KeyValue
@@ -355,7 +353,17 @@ function HeaderItem(props: { header: HeaderRowVM }): JSX.Element {
           when={props.header.value}
           fallback={<span class="block text-fg-muted italic">(no value)</span>}
         >
-          {(value) => <span class="block font-mono break-all text-fg-primary">{value()}</span>}
+          {(value) => (
+            <span
+              data-fdt-redacted={props.header.redacted ? '' : undefined}
+              class={cn(
+                'block font-mono break-all',
+                props.header.redacted ? 'text-fg-muted italic' : 'text-fg-primary'
+              )}
+            >
+              {value()}
+            </span>
+          )}
         </Show>
         <Show when={props.header.hint}>
           {(hint) => (
