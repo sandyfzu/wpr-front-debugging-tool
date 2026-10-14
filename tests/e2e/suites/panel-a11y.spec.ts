@@ -1,0 +1,279 @@
+/**
+ * The shell's accessibility suite (the keyboard + audit floor's outstanding
+ * legs): the route-switch focus rule landed on a real page body (needs the
+ * ready boot — data
+ * absent blobs have no heading to land on), keyboard-only reach for the
+ * shell's header control on the same boot, and the structured a11y audit
+ * (the axe run the study committed as the floor gate).
+ *
+ * Two axe scopes, both strict:
+ * - the ready shell over real fixture data (nav + page + strip + live region);
+ * - the palette open (the shell's heaviest ARIA surface: a modal dialog
+ *   wrapping an APG combobox/listbox).
+ *
+ * Assertions read the app's real rendered semantics only; no test-only
+ * surface is installed. The rail's own keyboard reach, focus rings and the
+ * overflow affordance's keyboard walk are `panel-nav`'s standing pins and
+ * are not repeated here.
+ */
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+import type { Page } from '@playwright/test';
+import { expect, test } from '../helpers/extension';
+import { openPanelForFixture } from '../helpers/panel-data';
+
+/** The node resolver for the a11y engine's script (the tier's only consumer). */
+const require = createRequire(import.meta.url);
+
+/**
+ * The a11y engine's source, installed through the debugger's evaluate (an
+ * extension page's CSP is `script-src 'self'`, so no inline script tag can
+ * carry it; `Runtime.evaluate` is outside the page's policy surface).
+ */
+const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+
+/**
+ * Wait for a settled paint state: the page's mount keyframe completes (the
+ * tokens' own animation ends), the fonts finish and a compositor frame is
+ * up. Probed 2026-10-14 (3/3 runs): contrast audits racing the entrance
+ * animation report a false `color-contrast` on the same computed colors
+ * that pass once the settle completes.
+ *
+ * @param page The panel page to settle before an audit.
+ */
+async function settlePaint(page: Page): Promise<void> {
+  await panelSettle(page);
+  await page.waitForTimeout(200);
+  // A second windmill pass guards the post-keyframe layout across resizes.
+  await panelSettle(page);
+}
+
+/** Double-RAF plus the document's fonts promise (a real paint's row inputs). */
+async function panelSettle(page: Page): Promise<void> {
+  await page.evaluate(
+    (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        const raf = (): Promise<void> =>
+          new Promise<void>((done) =>
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                done();
+              });
+            })
+          );
+        void Promise.all([document.fonts.ready, raf()]).then(() => {
+          resolve();
+        });
+      })
+  );
+}
+
+/** The axe run's per-violation slice the assertion reads. */
+interface AxeViolation {
+  readonly id: string;
+  readonly impact: string | null;
+  readonly nodes: readonly { readonly target: readonly string[] }[];
+}
+
+/** The axe.run result slice the suite consumes (impact + ids + targets). */
+interface AxeResults {
+  readonly violations: readonly AxeViolation[];
+}
+
+/**
+ * Inject the a11y engine and run it over the document, returning the
+ * violations (the caller asserts them empty).
+ *
+ * @param page The panel page running the render under audit.
+ */
+/**
+ * Inject the a11y engine and run it over the document (or one include
+ * selector), returning the violations (the caller asserts them empty).
+ *
+ * The open-palette scope audits the DIALOG's own surface deliberately: the
+ * page under the modal scrim is dimmed by design, and WCAG's contrast rules
+ * (1.4.3) apply to text the user is meant to read — not to a page an active
+ * modal has covered. The scrimmed-below text is still audited clean when no
+ * modal is up (the ready-shell run over the same document).
+ *
+ * @param page The panel page running the render under audit.
+ * @param include An optional include selector narrowing the audit's context.
+ */
+async function runAxe(page: Page, include?: string): Promise<AxeResults> {
+  await settlePaint(page);
+  await page.evaluate(AXE_SOURCE);
+  return await page.evaluate((includeSelector: string | null): Promise<AxeResults> => {
+    const axe = (window as { axe?: { run(options?: object): Promise<AxeResults> } }).axe;
+    if (axe === undefined) throw new Error('the axe engine did not install into the page');
+    return axe.run(
+      includeSelector === null ? undefined : { context: { include: [includeSelector] } }
+    );
+  }, include ?? null);
+}
+
+test.describe('panel keyboard + a11y', () => {
+  test('route switches land keyboard focus on the page’s own h1', async ({ extension }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): string | null => document.querySelector('[data-fdt-page] h1')?.textContent ?? null
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe('Detections');
+
+      // A nav click: the focus rule (shared owner) moves focus to the body's
+      // own h1 — program-focusable, so the destination announces to AT. The
+      // poll takes the swap in (Solid's body keyed-when reads after the hash).
+      await panel.getByRole('link', { name: 'JavaScript' }).click();
+      await panel.waitForURL(/#\/javascript$/);
+      await expect
+        .poll(
+          async (): Promise<{ text: string | null; tabindex: string | null; ownsFocus: boolean }> =>
+            await panel.evaluate(
+              (): { text: string | null; tabindex: string | null; ownsFocus: boolean } => {
+                const heading = document.querySelector<HTMLElement>('[data-fdt-page] h1');
+                return {
+                  text: heading?.textContent ?? null,
+                  tabindex: heading?.getAttribute('tabindex') ?? null,
+                  ownsFocus: document.activeElement === heading
+                };
+              }
+            ),
+          { timeout: 10_000, intervals: [50, 100, 250] }
+        )
+        .toEqual({ text: 'JavaScript', tabindex: '-1', ownsFocus: true });
+
+      // The deep-link arm of the same rule: writing the hash (a real hash
+      // change, as a bookmark or the devtools window would produce) lands
+      // focus the same way.
+      await panel.evaluate(() => {
+        location.hash = '#/undefined-references';
+      });
+      await expect
+        .poll(
+          async (): Promise<{ text: string | null; ownsFocus: boolean }> =>
+            await panel.evaluate((): { text: string | null; ownsFocus: boolean } => ({
+              text: document.querySelector('[data-fdt-page] h1')?.textContent ?? null,
+              ownsFocus:
+                document.activeElement === document.querySelector<HTMLElement>('[data-fdt-page] h1')
+            })),
+          { timeout: 10_000, intervals: [50, 100, 250] }
+        )
+        .toEqual({ text: 'Undefined References', ownsFocus: true });
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the palette trigger is keyboard-reachable with its visible ring on the ready boot', async ({
+    extension
+  }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): string | null => document.querySelector('[data-fdt-page] h1')?.textContent ?? null
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe('Detections');
+
+      // Keyboard-only walk: the shell's brand-row control is the trigger; a
+      // focused-by-keyboard control shows the real ring (computed outline).
+      let reached = false;
+      for (let step = 0; step < 4; step += 1) {
+        await panel.keyboard.press('Tab');
+        const state = await panel.evaluate((): { name: string; outline: string } => {
+          const active = document.activeElement;
+          return {
+            name: active?.getAttribute('aria-label') ?? '(none)',
+            outline: active instanceof HTMLElement ? getComputedStyle(active).outlineStyle : ''
+          };
+        });
+        if (state.name === 'Command palette') {
+          expect(state.outline).toBe('solid');
+          reached = true;
+          break;
+        }
+      }
+      expect(reached, 'the palette trigger was not reachable within four tab stops').toBe(true);
+
+      // And it opens the palette from the keyboard (Enter on the trigger).
+      await panel.keyboard.press('Enter');
+      await expect(panel.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+      await panel.keyboard.press('Escape');
+      await expect(panel.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0);
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the ready shell audits clean (axe, strict)', async ({ extension }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): string | null => document.querySelector('[data-fdt-page] h1')?.textContent ?? null
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe('Detections');
+      await panel.setViewportSize({ width: 700, height: 900 });
+
+      const results = await runAxe(panel);
+      for (const violation of results.violations) {
+        expect(
+          false,
+          `axe found '${violation.impact ?? 'unknown'}' ${violation.id}: ${violation.nodes
+            .map((node) => node.target.join(' '))
+            .join('; ')}`
+        ).toBe(true);
+      }
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the open palette audits clean (axe, strict)', async ({ extension }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): string | null => document.querySelector('[data-fdt-page] h1')?.textContent ?? null
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe('Detections');
+      await panel.setViewportSize({ width: 700, height: 900 });
+
+      await panel.keyboard.press('ControlOrMeta+k');
+      await expect(panel.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+      const results = await runAxe(panel, '[data-fdt="dialog"]');
+      for (const violation of results.violations) {
+        expect(
+          false,
+          `axe found '${violation.impact ?? 'unknown'}' ${violation.id}: ${violation.nodes
+            .map((node) => node.target.join(' '))
+            .join('; ')}`
+        ).toBe(true);
+      }
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+});
