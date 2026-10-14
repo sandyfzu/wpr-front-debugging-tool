@@ -9,6 +9,7 @@ import {
   isSensitiveName,
   REDACTED,
   REDACTED_PARAM,
+  redactHeaderUrls,
   redactHeaderValue,
   redactUrl
 } from './redaction';
@@ -58,7 +59,7 @@ describe('isSensitiveName', () => {
     ['pass word (query)', 'user_pass'],
     ['sig word', 'X-Sig'],
     ['trailing key', 'X-Access-Key'],
-    ['trailing key (over-match)', 'X-Cache-Key'],
+    ['trailing key (the exemptions are exact names)', 'x-edge-cache-key'],
     ['trailing key (query)', 'license_key'],
     ['sid word', 'x-sid'],
     ['ticket word', 'x-ticket'],
@@ -73,6 +74,41 @@ describe('isSensitiveName', () => {
     expect(isSensitiveName(name)).toBe(true);
   });
 
+  // One name per fragment that carries ONLY that fragment, so dropping any
+  // single alternative from the rule fails its own row.
+  it.each([
+    ['token', 'x-token-id'],
+    ['secret', 'x-client-secret'],
+    ['session', 'x-session'],
+    ['auth', 'x-auth'],
+    ['nonce', 'x-nonce-value'],
+    ['signature', 'x-signature'],
+    ['api-key', 'x-api-key-id'],
+    ['apikey', 'x-apikey'],
+    ['csrf', 'x-csrf'],
+    ['xsrf', 'x-xsrf'],
+    ['password', 'x-password'],
+    ['passwd', 'x-passwd'],
+    ['credential', 'x-credential'],
+    ['jwt', 'x-jwt-id'],
+    ['hmac', 'x-hmac-id'],
+    ['bearer', 'x-bearer'],
+    ['private', 'x-private'],
+    ['pwd', 'x-pwd'],
+    ['pass word', 'x-pass-id'],
+    ['sig word', 'x-sig-id'],
+    ['sid word', 'x-sid-id'],
+    ['ticket word', 'x-ticket-id'],
+    ['otp word', 'x-otp-id'],
+    ['hash word', 'x-hash-id'],
+    ['email word', 'x-email-id'],
+    ['login word', 'x-login-id'],
+    ['trailing key word', 'x-access-key'],
+    ['exact cookie, trimmed', ' Cookie ']
+  ])('redacts the isolated %s case (%j)', (_fragment, name) => {
+    expect(isSensitiveName(name)).toBe(true);
+  });
+
   it.each([
     'Server',
     'Cache-Control',
@@ -82,6 +118,13 @@ describe('isSensitiveName', () => {
     'X-Rocket-Cache',
     'Link',
     'X-Request-Id',
+    'x-keyword',
+    'surrogate-key',
+    'Surrogate-Key',
+    'cache-key',
+    'X-Cache-Key',
+    ' x-cache-key ',
+    'WWW-Authenticate',
     'nowprocket',
     'page',
     'keyword',
@@ -132,6 +175,41 @@ describe('redactHeaderValue', () => {
     ['', 'an empty value']
   ])('keeps nothing of %j — %s', (value) => {
     expect(redactHeaderValue('Set-Cookie', value)).toEqual({ redacted: true, cookieName: null });
+  });
+
+  it.each([
+    ['SECRET\nname=v', 'a folded value whose first cookie is nameless'],
+    ['  ; a=b', 'a blank first segment']
+  ])('keeps nothing of %j — %s', (value) => {
+    expect(redactHeaderValue('Set-Cookie', value)).toEqual({ redacted: true, cookieName: null });
+  });
+
+  it('names the first cookie of a folded or attribute-laden value only', () => {
+    expect(redactHeaderValue('Set-Cookie', 'a=1; Path=/\nb=2')).toEqual({
+      redacted: true,
+      cookieName: 'a'
+    });
+    expect(redactHeaderValue('Set-Cookie', 'token=x=y==; Path=/')).toEqual({
+      redacted: true,
+      cookieName: 'token'
+    });
+  });
+
+  it.each(['set-cookie2', 'Set-Cookie2', ' SET-COOKIE '])(
+    'treats %j as a Set-Cookie (cookie name kept)',
+    (name) => {
+      expect(redactHeaderValue(name, 'wp=abc; HttpOnly')).toEqual({
+        redacted: true,
+        cookieName: 'wp'
+      });
+    }
+  );
+
+  it('reduces URL-valued headers instead of passing them raw', () => {
+    expect(redactHeaderValue('Location', 'https://a.example/next?token=abc&p=1')).toEqual({
+      redacted: false,
+      value: `https://a.example/next?token=${REDACTED_PARAM}&p=1`
+    });
   });
 
   it('names the redaction markers once', () => {
@@ -234,4 +312,47 @@ describe('redactUrl', () => {
       expect(redactUrl(raw)).toBeNull();
     }
   );
+});
+
+describe('redactHeaderUrls', () => {
+  it.each([
+    [
+      'location',
+      'https://a.example/n?token=t&p=1',
+      `https://a.example/n?token=${REDACTED_PARAM}&p=1`
+    ],
+    ['Location', 'https://u:pw@a.example/', 'https://a.example/'],
+    [' location ', 'https://a.example/?token=t', `https://a.example/?token=${REDACTED_PARAM}`],
+    ['content-location', '/n?_wpnonce=x', `/n?_wpnonce=${REDACTED_PARAM}`],
+    ['location', '//cdn.example/a.js?sig=1', `//cdn.example/a.js?sig=${REDACTED_PARAM}`],
+    ['location', '/cb#access_token=abc', '/cb'],
+    ['location', 'javascript:alert(1)', REDACTED_PARAM],
+    ['location', 'http://[bad', REDACTED_PARAM],
+    ['refresh', '5; url=/n?token=t', `5; url=/n?token=${REDACTED_PARAM}`],
+    [
+      'Refresh',
+      "0;URL='https://a.example/?key=k'",
+      `0;URL='https://a.example/?key=${REDACTED_PARAM}'`
+    ],
+    ['refresh', '3, /n?session=s', `3, /n?session=${REDACTED_PARAM}`],
+    [
+      'link',
+      '</a.css?token=x>; rel=preload, <https://a.example/b.js>; rel=preload',
+      `</a.css?token=${REDACTED_PARAM}>; rel=preload, <https://a.example/b.js>; rel=preload`
+    ]
+  ])('reduces %s: %j', (name, value, expected) => {
+    expect(redactHeaderUrls(name, value)).toBe(expected);
+  });
+
+  it.each([
+    ['location', 'https://a.example'],
+    ['location', '/plain/path?page=2'],
+    ['location', ''],
+    ['refresh', '5'],
+    ['link', '<https://a.example/x.css>; rel=preload'],
+    ['x-redirect-by', 'WordPress'],
+    ['x-other', 'https://a.example/?token=kept-not-a-url-header']
+  ])('keeps %s %j exactly as sent', (name, value) => {
+    expect(redactHeaderUrls(name, value)).toBe(value);
+  });
 });

@@ -24,9 +24,14 @@
  *   personal-data names `email` and `login` (`user_login`), and a trailing
  *   `key` (`X-Access-Key`; `X-Cache-Key` over-matches, which is acceptable).
  *
- * One exemption: the exact name `author` (WordPress's `?author=1` archive
- * id is useful support context, not a credential) — the `auth` fragment
- * would otherwise catch it; `author_token` and the like stay redacted.
+ * Exemptions (exact names only, so `author_token` and the like stay
+ * redacted): `author` (WordPress's `?author=1` archive id), the cache-key
+ * headers (`surrogate-key`, `cache-key`, `x-cache-key` — caching evidence)
+ * and `www-authenticate` (a public server challenge).
+ *
+ * Header values that are URLs ({@link redactHeaderValue}: `location`,
+ * `content-location`, `refresh`'s `url=`, every `link` `<…>` target) run
+ * through the URL rule below, so a redirect cannot carry a token past it.
  *
  * URLs ({@link redactUrl}): credentials and fragment are dropped; query
  * pairs (split on `&` and `;`) keep their names but lose sensitive values,
@@ -36,8 +41,9 @@
  * them would break the URL's support value), except `;name=value` path
  * parameters (`;jsessionid=…`), which get the same name rule.
  *
- * `Set-Cookie` alone keeps the cookie's NAME (which cookie the server set is
- * useful evidence for caching issues); its value and attributes never pass.
+ * `Set-Cookie` (and the obsolete `Set-Cookie2`) alone keeps the cookie's
+ * NAME (which cookie the server set is useful evidence for caching issues);
+ * its value and attributes never pass.
  */
 
 /** Names whose values are always secret (compared trimmed, lowercase). */
@@ -67,8 +73,20 @@ const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
 const SENSITIVE_NAME_FRAGMENT =
   /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login)(?:[-_]|$)|(?:^|[-_])key$/;
 
-/** Exact names exempt from the fragments (useful context, never a credential). */
-const EXEMPT_NAMES: ReadonlySet<string> = new Set(['author']);
+/**
+ * Exact names exempt from the fragments and words — useful context, never a
+ * credential: WordPress's `?author=` archive id, the cache-key headers CDNs
+ * and caches emit as caching evidence (`surrogate-key`, `cache-key`,
+ * `x-cache-key`), and `www-authenticate`, a public challenge the server
+ * sends (it names a scheme and realm; it carries no client secret).
+ */
+const EXEMPT_NAMES: ReadonlySet<string> = new Set([
+  'author',
+  'surrogate-key',
+  'cache-key',
+  'x-cache-key',
+  'www-authenticate'
+]);
 
 /** A valueless query pair this long reads as a bare token. */
 const BARE_TOKEN_MIN_LENGTH = 24;
@@ -98,16 +116,36 @@ export function isSensitiveName(name: string): boolean {
   return SENSITIVE_NAME_FRAGMENT.test(lower.replace(/[\s+]+/g, '-'));
 }
 
+/** The `Set-Cookie` header names (lowercase) whose cookie name may be kept. */
+const SET_COOKIE_NAMES: ReadonlySet<string> = new Set(['set-cookie', 'set-cookie2']);
+
+/**
+ * The cookie name a `Set-Cookie` value sets: the text before `=` in its
+ * first segment. Segments end at `;` and at a line break — engines that
+ * fold several cookies into one value join them with `\n`, so
+ * `SECRET\nname=v` must not read `SECRET\nname` as a name.
+ *
+ * @param value The raw `Set-Cookie` value.
+ * @returns The trimmed, non-empty name, or null when there is none.
+ */
+function setCookieName(value: string): string | null {
+  const first = value.split(/[;\n]/, 1)[0] ?? '';
+  const equals = first.indexOf('=');
+  const name = equals === -1 ? '' : first.slice(0, equals).trim();
+  return name === '' ? null : name;
+}
+
 /**
  * The exportable form of one header value.
  *
  * @param name The header name, any casing.
  * @param value The captured value.
- * @returns `{ redacted: false, value }` for an ordinary header;
- *   `{ redacted: true, cookieName }` for a sensitive one, where `cookieName`
- *   is the `Set-Cookie` cookie's name when one is well-formed (the text
- *   before `=` within the first `;`-segment, trimmed, non-empty), else null —
- *   a nameless `Set-Cookie: SECRET` keeps nothing.
+ * @returns `{ redacted: false, value }` for an ordinary header — its URL
+ *   targets reduced by {@link redactHeaderUrls}; `{ redacted: true,
+ *   cookieName }` for a sensitive one, where `cookieName` is the
+ *   `Set-Cookie`/`Set-Cookie2` cookie's name when one is well-formed (the
+ *   text before `=` within the first `;`/line-break segment, trimmed,
+ *   non-empty), else null — a nameless `Set-Cookie: SECRET` keeps nothing.
  */
 export function redactHeaderValue(
   name: string,
@@ -115,12 +153,77 @@ export function redactHeaderValue(
 ):
   | { readonly redacted: false; readonly value: string }
   | { readonly redacted: true; readonly cookieName: string | null } {
-  if (!isSensitiveName(name)) return { redacted: false, value };
-  if (name.trim().toLowerCase() !== 'set-cookie') return { redacted: true, cookieName: null };
-  const firstSegment = value.split(';', 1)[0] ?? '';
-  const equals = firstSegment.indexOf('=');
-  const cookieName = equals === -1 ? '' : firstSegment.slice(0, equals).trim();
-  return { redacted: true, cookieName: cookieName === '' ? null : cookieName };
+  if (!isSensitiveName(name)) return { redacted: false, value: redactHeaderUrls(name, value) };
+  if (!SET_COOKIE_NAMES.has(name.trim().toLowerCase())) return { redacted: true, cookieName: null };
+  return { redacted: true, cookieName: setCookieName(value) };
+}
+
+/** Headers whose whole value is one URL reference. */
+const URL_VALUED_HEADERS: ReadonlySet<string> = new Set(['location', 'content-location']);
+
+/** An absolute reference's scheme prefix. */
+const SCHEME = /^[a-z][a-z\d+.-]*:/i;
+
+/** The throwaway base relative references resolve against (never shown). */
+const RELATIVE_BASE = 'https://relative.invalid';
+
+/**
+ * Reduce one URL reference by the URL rule, keeping its original text when
+ * nothing needed reducing (so ordinary redirects read exactly as sent).
+ * Relative and protocol-relative references are resolved against a
+ * throwaway base and given back in their own form; a non-web absolute
+ * reference (no query pairs the rule can judge — {@link redactUrl} answers
+ * null for it) and an unparseable one are withheld whole.
+ *
+ * @param ref The reference as written.
+ * @returns The reference, reduced where the rule bites.
+ */
+function redactUrlReference(ref: string): string {
+  const trimmed = ref.trim();
+  let resolved: URL;
+  try {
+    resolved = SCHEME.test(trimmed) ? new URL(trimmed) : new URL(trimmed, RELATIVE_BASE);
+  } catch {
+    // Unparseable: nothing the rule can vouch for.
+    return REDACTED_PARAM;
+  }
+  const reduced = redactUrl(resolved.href);
+  if (reduced === null) return REDACTED_PARAM;
+  if (reduced === resolved.href) return ref;
+  if (SCHEME.test(trimmed)) return reduced;
+  // Give a relative reference back relative: drop what the base added.
+  return trimmed.startsWith('//')
+    ? reduced.slice(resolved.protocol.length)
+    : reduced.slice(RELATIVE_BASE.length);
+}
+
+/**
+ * Run a header value's URL targets through the URL rule: the whole value of
+ * `location`/`content-location`, the `url=` target of `refresh`
+ * (`5; url=/next?token=…`), and every `<…>` target of `link`. Other
+ * headers pass untouched.
+ *
+ * @param name The header name, any casing.
+ * @param value The captured value.
+ * @returns The value with its URL targets reduced.
+ */
+export function redactHeaderUrls(name: string, value: string): string {
+  const lower = name.trim().toLowerCase();
+  if (URL_VALUED_HEADERS.has(lower)) return redactUrlReference(value);
+  if (lower === 'link') {
+    return value.replace(
+      /<([^>]*)>/g,
+      (_whole, target: string) => `<${redactUrlReference(target)}>`
+    );
+  }
+  if (lower === 'refresh') {
+    return value.replace(
+      /^(\s*[\d.]+\s*[;,]\s*(?:url\s*=\s*)?)(['"]?)(.*?)\2(\s*)$/i,
+      (_whole, lead: string, quote: string, target: string, tail: string) =>
+        `${lead}${quote}${redactUrlReference(target)}${quote}${tail}`
+    );
+  }
+  return value;
 }
 
 /** How many decoding passes undo nested escapes (`%252B` → `%2B` → `+`). */
