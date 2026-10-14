@@ -12,6 +12,7 @@
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
+import { REDACTED, redactHeaderValue } from '../../../../lib/panel/redaction';
 import type { DataState } from '../../state/fdt-state-machine';
 import type { PageCookies } from '../../../../lib/wp-rocket/types';
 
@@ -36,9 +37,6 @@ export const NO_COOKIES_NOTE = 'No cookies are readable by page scripts.';
 export const COOKIES_LEAD =
   'Names only — values are never captured. HttpOnly cookies are invisible to page scripts, so they never appear here.';
 
-/** What a secret-bearing header value shows (and copies) instead of itself. */
-export const REDACTED_VALUE = '(value redacted)';
-
 /** A header row as the page shows and copies it. */
 export interface ShownHeader extends HeaderRowVM {
   /** True when the captured value was withheld (see {@link shownHeader}). */
@@ -60,6 +58,10 @@ export type InventoryRow =
       readonly section: 'caching' | 'other';
       /** The header row, its value already withheld where it could carry a secret. */
       readonly header: ShownHeader;
+      /** 1-based position among the section's rows sharing this name (any casing). */
+      readonly occurrence: number;
+      /** How many of the section's rows share this name (1 for a unique name). */
+      readonly occurrences: number;
     }
   | { readonly kind: 'cookie'; readonly id: string; readonly name: string }
   | { readonly kind: 'note'; readonly id: string; readonly text: string };
@@ -74,69 +76,25 @@ export interface Inventory {
   readonly rows: readonly InventoryRow[];
 }
 
-/** Header names whose values are always secret (compared trimmed, lowercase). */
-const SECRET_HEADER_NAMES: ReadonlySet<string> = new Set([
-  'cookie',
-  'set-cookie',
-  'set-cookie2',
-  'authorization',
-  'proxy-authorization',
-  'x-debug-token',
-  'x-debug-token-link'
-]);
-
 /**
- * Name fragments that mark a header as secret-bearing. Deliberately
- * over-inclusive: withholding a harmless value costs one question, showing a
- * session token costs an account.
- */
-const SECRET_NAME_FRAGMENT =
-  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])pass(?:[-_]|$)|(?:^|[-_])sig(?:[-_]|$)|(?:^|[-_])key$/i;
-
-/**
- * Whether a header's value may carry a secret (credentials, cookies,
- * tokens, nonces, signatures).
- *
- * @param name The header name, any casing.
- */
-export function isSecretHeaderName(name: string): boolean {
-  const lower = name.trim().toLowerCase();
-  return SECRET_HEADER_NAMES.has(lower) || SECRET_NAME_FRAGMENT.test(lower);
-}
-
-/**
- * The cookie name a `Set-Cookie` value sets — the text before `=` within
- * its first `;`-segment — or null when there is no well-formed name
- * (`Set-Cookie: SECRET`, `tok; Path=/`): then nothing of the value is kept.
- * Only the first cookie of a folded value is named.
- *
- * @param value The raw `Set-Cookie` value.
- */
-export function setCookieName(value: string): string | null {
-  const first = value.split(/[;\n]/, 1)[0] ?? '';
-  const equalsAt = first.indexOf('=');
-  const name = equalsAt === -1 ? '' : first.slice(0, equalsAt).trim();
-  return name === '' ? null : name;
-}
-
-/**
- * The header row as the page may show and copy it. A secret-bearing header
- * keeps its name and loses its whole value — attributes and hint included
- * (a hint can echo the value); a `Set-Cookie` keeps only the cookie's name,
- * which is caching evidence. Everything else passes untouched.
+ * The header row as the page may show and copy it, through the panel's one
+ * redaction rule (`lib/panel/redaction`). A secret-bearing header keeps its
+ * name and loses its whole value — attributes and hint included (a hint can
+ * echo the value); a `Set-Cookie` keeps only a well-formed cookie name,
+ * which is caching evidence. URL-valued headers (`location`, `link`, …)
+ * keep their value with any secret query values reduced. Valueless rows
+ * pass untouched.
  *
  * @param header A row of the shared headers model.
+ * @returns The row to render and copy, flagged when its value was withheld.
  */
 export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.value === null || !isSecretHeaderName(header.name)) {
-    return { ...header, redacted: false };
-  }
-  const lower = header.name.trim().toLowerCase();
-  const cookieName =
-    lower === 'set-cookie' || lower === 'set-cookie2' ? setCookieName(header.value) : null;
+  if (header.value === null) return { ...header, redacted: false };
+  const exported = redactHeaderValue(header.name, header.value);
+  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
   return {
     name: header.name,
-    value: cookieName === null ? REDACTED_VALUE : `${cookieName}=${REDACTED_VALUE}`,
+    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
     hint: null,
     redacted: true
   };
@@ -185,21 +143,43 @@ function headerSection(
       { kind: 'note', id: `note:${section}`, text: NO_CACHING_HEADERS_NOTE }
     ];
   }
-  const occurrences = new Map<string, number>();
+  const totals = new Map<string, number>();
+  for (const header of headers) {
+    const name = header.name.toLowerCase();
+    totals.set(name, (totals.get(name) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
   return [
     { kind: 'section', id: `section:${section}`, section, count: headers.length },
     ...headers.map((header): InventoryRow => {
       const name = header.name.toLowerCase();
-      const occurrence = occurrences.get(name) ?? 0;
-      occurrences.set(name, occurrence + 1);
+      const occurrence = (seen.get(name) ?? 0) + 1;
+      seen.set(name, occurrence);
       return {
         kind: 'header',
-        id: `${section}:${name}#${occurrence.toString()}`,
+        id: `${section}:${name}#${(occurrence - 1).toString()}`,
         section,
-        header: shownHeader(header)
+        header: shownHeader(header),
+        occurrence,
+        occurrences: totals.get(name) ?? 1
       };
     })
   ];
+}
+
+/**
+ * The name of a header row's copy control (also its toast subject): the
+ * header's name, disambiguated when the section repeats it — "link header
+ * (2 of 3)" — so a screen-reader list of copy controls never repeats a name.
+ *
+ * @param row The header row.
+ * @returns The control's label.
+ */
+export function headerCopyLabel(row: Extract<InventoryRow, { kind: 'header' }>): string {
+  const base = `${row.header.name} header`;
+  return row.occurrences > 1
+    ? `${base} (${row.occurrence.toString()} of ${row.occurrences.toString()})`
+    : base;
 }
 
 /**
@@ -248,7 +228,8 @@ export function estimateRowHeight(row: InventoryRow): number {
     case 'section':
       return row.section === 'cookies' ? 64 : 40;
     case 'header':
-      return row.header.hint === null ? 44 : 62;
+      // A hint or the withheld-value explanation adds a second line.
+      return row.header.hint === null && !row.header.redacted ? 44 : 62;
     case 'cookie':
     case 'note':
       return 32;

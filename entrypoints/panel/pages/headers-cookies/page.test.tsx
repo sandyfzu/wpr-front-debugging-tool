@@ -21,8 +21,14 @@ import type { FdtData, PageHeaders } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
-import { REDACTED_VALUE } from './inventory';
-import { HeadersCookiesPage, HeadersCookiesView, SPA_NOTE } from './page';
+import { REDACTED } from '../../../../lib/panel/redaction';
+import {
+  HeadersCookiesPage,
+  HeadersCookiesView,
+  inspectedReloadAction,
+  SPA_NOTE,
+  WITHHELD_NOTE
+} from './page';
 
 /** A cookie value that must never reach the DOM or the clipboard. */
 const SECRET = 'S3CRET-SESSION-VALUE';
@@ -152,7 +158,7 @@ describe('HeadersCookiesView — populated', () => {
       'cache-control: no-store',
       'age: 30',
       'Server: nginx',
-      `set-cookie: sid=${REDACTED_VALUE}`,
+      `set-cookie: sid=${REDACTED}`,
       'x-empty:'
     ]);
   });
@@ -174,19 +180,13 @@ describe('HeadersCookiesView — populated', () => {
     const redacted = [...document.querySelectorAll('[data-fdt-redacted]')].map(
       (n) => n.textContent
     );
-    expect(redacted).toEqual([
-      `sid=${REDACTED_VALUE}`,
-      REDACTED_VALUE,
-      REDACTED_VALUE,
-      REDACTED_VALUE,
-      REDACTED_VALUE
-    ]);
+    expect(redacted).toEqual([`sid=${REDACTED}`, REDACTED, REDACTED, REDACTED, REDACTED]);
     fireEvent.click(screen.getByRole('button', { name: 'Authorization header — copy' }));
     fireEvent.click(screen.getByRole('button', { name: /All headers/ }));
     await waitFor(() => {
       expect(writes).toHaveLength(2);
     });
-    expect(writes[0]).toBe(`Authorization: ${REDACTED_VALUE}`);
+    expect(writes[0]).toBe(`Authorization: ${REDACTED}`);
     for (const leak of leaks) expect(writes.join('\n')).not.toContain(leak);
   });
 
@@ -240,7 +240,98 @@ describe('HeadersCookiesView — populated', () => {
   });
 });
 
+describe('HeadersCookiesView — rows', () => {
+  it('explains a withheld value under it, with a lock, in the row', () => {
+    renderView(makeFdtData({ pageHeaders: [{ name: 'Authorization', value: 'Bearer x' }] }));
+    const row = screen
+      .getByRole('button', { name: 'Authorization header — copy' })
+      .closest('[role="listitem"]');
+    expect(row?.textContent).toContain(REDACTED);
+    expect(row?.textContent).toContain(WITHHELD_NOTE);
+    expect(row?.querySelector('svg.lucide-lock, svg')).not.toBeNull();
+  });
+
+  it('names same-name copy controls apart and titles every icon-only control', () => {
+    renderView(
+      makeFdtData({
+        pageHeaders: [
+          { name: 'link', value: '<a>' },
+          { name: 'Link', value: '<b>' }
+        ]
+      })
+    );
+    const first = screen.getByRole('button', { name: 'link header (1 of 2) — copy' });
+    expect(screen.getByRole('button', { name: 'Link header (2 of 2) — copy' })).toBeTruthy();
+    expect(first.parentElement?.getAttribute('title')).toBe('Copy link header (1 of 2)');
+  });
+
+  it('stamps the cookie heading in the plain form (title + sr text, no floating UI)', () => {
+    renderView(
+      makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW - 42_000 } })
+    );
+    const time = document.querySelector('[role="list"] time');
+    expect(time?.getAttribute('title')).toBe('Captured at 2026-10-14 11:59:18 UTC');
+    expect(time?.textContent).toBe('Captured 42 s ago (2026-10-14 11:59:18 UTC)');
+    expect(time?.closest('button')).toBeNull();
+  });
+
+  it('shows a stamp of the epoch (0) — a real instant, not "no stamp"', () => {
+    render(() => (
+      <HeadersCookiesView
+        data={makeFdtData({ pageHeaders: HEADERS })}
+        fetchedAt={0}
+        now={NOW}
+        createVirtualizer={everyRow}
+      />
+    ));
+    expect(document.querySelector('[data-fdt="headers-fetched"]')?.textContent).toMatch(
+      /^Fetched \d+ d ago/
+    );
+  });
+
+  it('draws the scroll-edge hairline only once the list has scrolled', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    const list = screen.getByRole('list');
+    expect(list.className).toContain('border-transparent');
+    list.scrollTop = 40;
+    fireEvent.scroll(list);
+    expect(list.className).toContain('border-line-2');
+    list.scrollTop = 0;
+    fireEvent.scroll(list);
+    expect(list.className).toContain('border-transparent');
+  });
+});
+
 describe('HeadersCookiesView — degraded payloads', () => {
+  it('offers the inspected-page reload from the empty state, when the context can', () => {
+    const reload = vi.fn();
+    render(() => (
+      <HeadersCookiesView
+        data={makeFdtData({ pageHeaders: null })}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={everyRow}
+        reloadInspectedPage={reload}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Reload inspected page' }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the reload where the context cannot reload, and centres a lone empty state', () => {
+    renderView(makeFdtData({ pageHeaders: null }));
+    expect(screen.queryByRole('button', { name: 'Reload inspected page' })).toBeNull();
+    const state = document.querySelector('[data-fdt="empty-state"]');
+    expect(state?.className).toContain('items-center');
+  });
+
+  it('aligns the empty state as a lead block beside the cookie list', () => {
+    renderView(makeFdtData({ pageHeaders: null, cookies: { names: ['a'], capturedAt: NOW } }));
+    const state = document.querySelector('[data-fdt="empty-state"]');
+    expect(state?.className).toContain('items-start');
+    expect(state?.className).not.toContain('items-center');
+  });
+
   it.each([
     ['null', null],
     ['empty', []]
@@ -341,5 +432,33 @@ describe('HeadersCookiesPage — store wiring', () => {
       </FdtDataContext.Provider>
     ));
     expect(document.querySelector('[data-fdt-page]')).toBeNull();
+  });
+});
+
+describe('inspectedReloadAction', () => {
+  it('is absent outside a DevTools window', () => {
+    expect(inspectedReloadAction({})).toBeUndefined();
+    expect(inspectedReloadAction({ devtools: { inspectedWindow: {} } })).toBeUndefined();
+  });
+
+  it('reloads and confirms, or tells the user the remedy on a failure', async () => {
+    const { toastItems: toasts } = await import('../../../../components/ui/toast-store');
+    const reload = vi.fn();
+    inspectedReloadAction({ devtools: { inspectedWindow: { reload } } })?.();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(toasts().at(-1)?.title).toBe('Reloading the inspected page');
+    inspectedReloadAction({
+      devtools: {
+        inspectedWindow: {
+          reload: () => {
+            throw new Error('Extension context invalidated.');
+          }
+        }
+      }
+    })?.();
+    expect(toasts().at(-1)).toMatchObject({
+      title: 'Reload failed',
+      description: 'Reload the inspected page from its own tab.'
+    });
   });
 });
