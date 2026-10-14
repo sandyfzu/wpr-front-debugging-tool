@@ -18,15 +18,19 @@ import type { DataState } from '../state/fdt-state-machine';
 import { relativeAge } from './relative-age';
 
 /**
- * Data older than this is flagged stale (ms).
+ * Data older than this is flagged stale (ms) — ten minutes, the
+ * owner-calibrated drift window.
  *
  * A debugging tool's data describes a live page: every inspected-page
  * navigation refetches the data, so it only ages while the user dwells
  * without navigating — exactly when the page may be changing underneath
- * (route changes inside single-page apps notify nothing). Past two minutes
- * the marker asks for re-verification instead of silent trust.
+ * (route changes inside single-page apps notify nothing). The captured
+ * answers (plugin presence, cache state, headers) keep their diagnostic
+ * value through such a dwell, so this is a generous drift warning, not a
+ * freshness stopwatch: past it the marker asks for re-verification
+ * instead of silent trust.
  */
-export const DATA_STALE_AFTER_MS = 120_000;
+export const DATA_STALE_AFTER_MS = 600_000;
 
 /** One status-bar segment's identity — the strip's four fixed answers. */
 export type SegmentId = 'wpr' | 'cache' | 'platform' | 'freshness';
