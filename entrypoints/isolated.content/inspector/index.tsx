@@ -31,6 +31,8 @@ import {
 } from '../../../lib/storage/inspector-origins';
 import { mountShadowUi } from '../ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
+import type { DragBox, DragController, DragMachineDeps } from './drag';
+import { createDragController } from './drag';
 import type { StripDataSnapshot } from './strip-state';
 import { buildStripCardModel, INSPECTOR_UI_NAME, insMood } from './strip-state';
 import { InspectorView, type InspectorUiActions } from './ui';
@@ -95,6 +97,24 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   let cardElement: HTMLElement | null = null;
   /** The pill, registered by the view (the focus hand-back on close). */
   let pillElement: HTMLElement | null = null;
+  /**
+   * The chrome, registered by the view (the drag's listener site and the
+   * translate writer); nulled with every removal like its siblings.
+   */
+  let chromeElement: HTMLElement | null = null;
+  /**
+   * The current mount's drag controller. One controller exists per mount —
+   * a fresh mount (gate enable or a reload) starts at the stylesheet anchor,
+   * so the drag position resets by construction: session-local, P12A.5's
+   * recorded no-persistence shape. Null while nothing is mounted.
+   */
+  let dragController: DragController | null = null;
+  /**
+   * Which visible shape the active press grabbed (the drag box's element):
+   * the pill path sets the pill, a card handle sets the card. A handler-local
+   * read between the grab and the live re-reads — never read at rest.
+   */
+  let grabbedShape: HTMLElement | null = null;
 
   /** The focus choreography rides this context's frames (ui/focus's contract). */
   const focusDeps: FocusChoreographyDeps = {
@@ -112,7 +132,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     registerPill: (element: HTMLElement | null) => {
       pillElement = element;
     },
+    registerChrome: (element: HTMLElement | null) => {
+      chromeElement = element;
+      if (element !== null) bindChromeDrag(element);
+    },
     openCard: () => {
+      // A moved drag's trailing click never opens the card: the press belonged
+      // to the drag (read-and-clear, so a follow-up tap works normally).
+      if (dragController?.consumeClickSuppression() === true) return;
       setState('cardOpen', true);
       // Focus the card once the class state is on (prevents page scroll on
       // the move — mouse users keep the viewport, keyboard users land in).
@@ -124,6 +151,115 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       if (pillElement !== null) moveFocus(pillElement, 'marker', focusDeps);
     }
   };
+
+  /**
+   * The drag machine's seams: the viewport and the grabbed shape's box are
+   * read per call (each move re-clamps against the live truth), and the
+   * position writes land as the chrome's drag-translate custom properties —
+   * unset values are the stylesheet's bottom-right anchor, so "no translate"
+   * is the resting anchor by construction.
+   */
+  const dragDeps: DragMachineDeps = {
+    readViewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    readBox: (): DragBox | null => {
+      const shape = grabbedShape;
+      if (shape === null || !shape.isConnected) return null;
+      const rect = shape.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    },
+    applyPosition: (position) => {
+      const chrome = chromeElement;
+      if (chrome === null) return;
+      if (position === null) {
+        chrome.style.removeProperty('--ins-drag-x');
+        chrome.style.removeProperty('--ins-drag-y');
+        return;
+      }
+      chrome.style.setProperty('--ins-drag-x', `${String(position.x)}px`);
+      chrome.style.setProperty('--ins-drag-y', `${String(position.y)}px`);
+    },
+    applyDragging: (dragging) => {
+      chromeElement?.classList.toggle('ins-dragging', dragging);
+    }
+  };
+
+  /**
+   * Bind the drag's pointer listeners to the chrome (their element dies with
+   * the shadow host; teardown also rides the context): trusted primary
+   * presses decide a handle and the capture routes the whole gesture back
+   * here by bubbling, so no page-scoped listener ever exists.
+   *
+   * @param chrome The view's chrome root.
+   */
+  function bindChromeDrag(chrome: HTMLElement): void {
+    ctx.addEventListener(chrome, 'pointerdown', (event) => {
+      // WXT's ctx overload stays at the `Event` level for element targets —
+      // `instanceof` is the boundary narrowing (the shipped keydown idiom).
+      if (!(event instanceof PointerEvent) || !event.isTrusted) return;
+      // Any press while a drag is live cancels it first: a right-press (the
+      // brief's cancel nicety) and a second pointer's press must not be
+      // subject to the primary-button guard below — cancel beats grab.
+      if (dragController?.isDragging() === true) {
+        dragController.cancel();
+        return;
+      }
+      if (event.button !== 0) return; // A wrong button never grabs the chrome.
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const fromPill = target.closest('.ins-pill');
+      const fromHandle = target.closest('.ins-card-head') ?? target.closest('.ins-card-foot');
+      if (fromPill === null && fromHandle === null) return;
+      // The close control (any button inside a handle region) never grabs.
+      if (fromPill === null && target.closest('button') !== null) return;
+      // The grabbed shape is both the capture site and the live box: capturing
+      // IT (not the chrome) keeps the release's click on the pill (the spec
+      // retargets captured clicks), where the moved-drag suppression decides;
+      // its moves bubble on through the chrome's listeners below either way.
+      grabbedShape = fromPill instanceof HTMLElement ? fromPill : cardElement;
+      const shape = grabbedShape;
+      if (shape === null) return;
+      try {
+        // Capture first: if the pointer died between events, nothing grabs.
+        shape.setPointerCapture(event.pointerId);
+      } catch (cause) {
+        log.debug(
+          'Pointer capture refused — the grab aborted',
+          cause instanceof Error ? cause.message : cause
+        );
+        return;
+      }
+      dragController?.beginGrab({
+        point: { x: event.clientX, y: event.clientY },
+        pointerId: event.pointerId
+      });
+    });
+    ctx.addEventListener(chrome, 'pointermove', (event) => {
+      if (!(event instanceof PointerEvent)) return;
+      dragController?.trackMove({
+        point: { x: event.clientX, y: event.clientY },
+        pointerId: event.pointerId
+      });
+    });
+    ctx.addEventListener(chrome, 'pointerup', (event) => {
+      if (!(event instanceof PointerEvent)) return;
+      dragController?.settle(event.pointerId);
+    });
+    ctx.addEventListener(chrome, 'pointercancel', () => {
+      dragController?.cancel();
+    });
+    ctx.addEventListener(chrome, 'lostpointercapture', () => {
+      // A capture lost outside the release path (element detached, pointer
+      // gone) is pointercancel-shaped: restore the pre-drag position.
+      dragController?.cancel();
+    });
+    ctx.addEventListener(chrome, 'contextmenu', () => {
+      // The right-press route (verbatim from this machine): a second button
+      // pressed while the left pointer is captured delivers NO pointerdown —
+      // the chrome gets `contextmenu` alone. The brief's right-click cancel
+      // rides it (no preventDefault: the host keeps its native menu).
+      dragController?.cancel();
+    });
+  }
 
   /**
    * One hub read: join the running pass (or the cached result) and store the
@@ -176,6 +312,11 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   const mountIntoShadow = async (): Promise<void> => {
     if (shadowUi !== null || mountPending) return;
     mountPending = true;
+    // One controller per mount: a fresh mount starts at the stylesheet
+    // anchor, so navigation/reload resets the session-local drag position
+    // (P12A.5's no-persistence shape — nothing is stored anywhere).
+    dragController = createDragController(dragDeps);
+    grabbedShape = null;
     try {
       // The page's anchor must exist first: the CS boots at document_start,
       // where the body is still null and WXT's inline shadow UI has no
@@ -190,6 +331,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       }
       if (invalidNow()) {
         // A page whose world ended before its body settled: nothing mounts.
+        dragController = null;
         mountPending = false;
         return;
       }
@@ -221,6 +363,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
           disposeRoot = null;
           cardElement = null;
           pillElement = null;
+          chromeElement = null;
+          grabbedShape = null;
+          dragController = null;
         }
       });
       if (invalidNow()) {
@@ -236,13 +381,18 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       }
       shadowUi = created;
       created.mount();
-      // Escape closes the card with the focus inside it. Key events never
-      // reach the host page from this shadow root (the injection isolates
-      // them at the root), and the listener rides `ctx` so teardown rides
-      // the same abort signal every other callback here does.
+      // Escape closes the card with the focus inside it, or cancels a live
+      // drag first (restore the pre-drag position). Key events never reach
+      // the host page from this shadow root (the injection isolates them at
+      // the root), and the listener rides `ctx` so teardown rides the same
+      // abort signal every other callback here does.
       ctx.addEventListener(created.shadow, 'keydown', (event) => {
         if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
           event.stopPropagation();
+          if (dragController?.isDragging() === true) {
+            dragController.cancel();
+            return;
+          }
           actions.closeCard();
         }
       });
@@ -252,6 +402,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
         error instanceof Error ? error.message : error
       );
       shadowUi = null;
+      dragController = null;
     } finally {
       mountPending = false;
     }

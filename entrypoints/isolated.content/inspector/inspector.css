@@ -34,15 +34,23 @@
   --ins-exit: var(--motion-base);
   /* How far the two shapes travel between absent and present. */
   --ins-travel: 14px;
+  /* The drag translate (P12A.5): declared at 0 so the injected chain defines
+   * every property it consumes; the wiring's inline writes override these. */
+  --ins-drag-x: 0px;
+  --ins-drag-y: 0px;
 
   /* The single anchor: bottom-right 16/16 (KC's left mirror is owned by
    * construction; the two fixed widgets cannot collide), over every host
    * layer. Drag must never select host text and the widget's own copy must
    * never behave differently per child — the SB-D3 user-select pin rides the
-   * whole chrome (SB-D12/13's discipline), eyebrow and group heads included. */
+   * whole chrome (SB-D12/13's discipline), eyebrow and group heads included.
+   * The drag translate (P12A.5) rides the custom properties — unset is the
+   * stylesheet anchor, and no position transition exists on the chrome: the
+   * drag is 1:1 (SB-D12). */
   position: fixed;
   bottom: 16px;
   right: 16px;
+  transform: translate(var(--ins-drag-x), var(--ins-drag-y));
   /* RTL hosts must not mirror the tool (the brief's chrome rule). */
   direction: ltr;
   text-align: left;
@@ -55,7 +63,10 @@
 /* ---- Marker pill -------------------------------------------------------------
  * Anchored bottom-right; when the card opens the pill departs downward on
  * the same beat, then stops receiving input; closing hands the anchor back.
- * Locked at 40vw max (narrow hosts drop the stamp text, never the identity). */
+ * Locked at 40vw max (narrow hosts drop the stamp text, never the identity).
+ * The pill is a drag handle too (P12A.5): its cursor stays the button's
+ * pointer (the card toggle is its primary affordance), and touch-action none
+ * keeps a touch drag from becoming a page pan (SB-D16). */
 
 .ins-pill {
   position: absolute;
@@ -74,6 +85,7 @@
   box-shadow: var(--shadow-elev-2);
   font: 600 12px/1 var(--font-mono);
   cursor: pointer;
+  touch-action: none;
   animation: ins-tool-in var(--ins-enter) var(--ins-spring) backwards;
   transition:
     opacity var(--ins-exit) var(--ease-standard),
@@ -452,6 +464,27 @@
   white-space: nowrap;
   font: 400 10px/1.4 var(--font-mono);
   color: var(--fg-muted);
+}
+
+/* ---- Drag affordance (P12A.5) ------------------------------------------------
+ * The grab sides: the open card's header/footer regions (the card's body
+ * scroll region is deliberately not a handle — its gestures are the scroll's)
+ * and the pill; while a drag is live the whole chrome grabs. Press/hover
+ * theatrics stand down mid-hold (SB-D12: 1:1 follow, no scale). */
+
+.ins-card-head,
+.ins-card-foot {
+  touch-action: none;
+  cursor: grab;
+}
+
+.ins-dragging .ins-pill {
+  /* A held press would otherwise keep the :active shrink through the drag. */
+  transform: none;
+}
+.ins-chrome.ins-dragging,
+.ins-chrome.ins-dragging * {
+  cursor: grabbing;
 }
 
 /* ---- Motion ------------------------------------------------------------------ */

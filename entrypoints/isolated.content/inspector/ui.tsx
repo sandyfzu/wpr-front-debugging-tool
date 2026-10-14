@@ -8,7 +8,9 @@
  * opacity/transform/visibility), a click can never strand a container
  * mid-transition. Rows are static evidence chips — no pointer cursor, no
  * hover/press response, full feature name + one-line why in tooltips. The
- * pill and the close control are the only interactive elements.
+ * pill and the close control are the only interactive elements; the drag
+ * rides the chrome (its non-interactive regions grabbed, `P12A.5`), whose
+ * listeners live in the owner module, not here.
  */
 
 import type { JSX, JSXElement } from 'solid-js';
@@ -27,6 +29,8 @@ export interface InspectorUiActions {
   registerCard(element: HTMLElement | null): void;
   /** Register the pill once (the focus hand-back on close). */
   registerPill(element: HTMLElement | null): void;
+  /** Register the chrome once (the drag's listener site + translate target). */
+  registerChrome(element: HTMLElement | null): void;
   /** Open the report card from the pill. */
   openCard(): void;
   /** Close the report card (the pill returns). */
@@ -86,6 +90,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
       classList={{
         'ins-open': props.cardOpen(),
         [MOOD_CLASS[props.mood()]]: true
+      }}
+      ref={(el) => {
+        props.actions.registerChrome(el);
       }}
     >
       {/* The report card. Always mounted: hidden states are
