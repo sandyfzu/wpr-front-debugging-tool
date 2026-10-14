@@ -37,13 +37,16 @@
 
   /* The single anchor: bottom-right 16/16 (KC's left mirror is owned by
    * construction; the two fixed widgets cannot collide), over every host
-   * layer. */
+   * layer. Drag must never select host text and the widget's own copy must
+   * never behave differently per child — the SB-D3 user-select pin rides the
+   * whole chrome (SB-D12/13's discipline), eyebrow and group heads included. */
   position: fixed;
   bottom: 16px;
   right: 16px;
   /* RTL hosts must not mirror the tool (the brief's chrome rule). */
   direction: ltr;
   text-align: left;
+  user-select: none;
   z-index: 2147483647;
   font-family: var(--font-mono);
   color: var(--fg-primary);

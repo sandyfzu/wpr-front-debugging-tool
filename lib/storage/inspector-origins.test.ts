@@ -1,13 +1,15 @@
 /**
- * The inspector-origin store: validator matrix, cap eviction, the
- * corrupt-storage degradations, and the toggle's read-modify-write
- * (the one toggling semantics the context-menu row and the later
- * popup/Detections/options rows all share).
+ * The inspector-origin store: validator matrix, the serialized-byte bound
+ * (the sync platform's real quota — the audit round's replacement for the
+ * untestable count cap), the corrupt-storage degradations, and the toggle's
+ * read-modify-write (the one toggling semantics every writer shares).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  INSPECTOR_ORIGINS_CAP,
+  INSPECTOR_ORIGINS_BYTE_BUDGET,
+  INSPECTOR_ORIGINS_KEY,
+  INSPECTOR_ORIGINS_QUOTA_LIMIT,
   getInspectorOrigins,
   inspectorOriginsStore,
   isInspectorOriginEnabled,
@@ -18,8 +20,57 @@ import {
 
 const VALID = { 'https://example.com': { enabled: true } };
 
+/** The serialized item's real length: the key + the map's JSON. */
+const serialized = (origins: unknown): number =>
+  INSPECTOR_ORIGINS_KEY.length + 2 + 1 + JSON.stringify(origins).length;
+
+/**
+ * The audit pin's worst-possible corpus: the longest origins a real page can
+ * produce — an IDNA-safe 253-character host (the platform's own limit).
+ * `new URL().origin` can never hand out longer keys. The index is carried by
+ * the host's leading digits so every key stays 253-hosted and distinct.
+ */
+function longOrigin(index: number): string {
+  const host = `${String(1_000_000 + index)}${'a'.repeat(246)}`; // 253 hosts, distinct
+  return `https://${host}`;
+}
+
 beforeEach(() => {
   fakeBrowser.reset();
+});
+
+describe('the byte bound vs the sync quota (audit pin)', () => {
+  it("the budget keeps the serialized item inside the platform's 8192 per-item quota", () => {
+    expect(INSPECTOR_ORIGINS_QUOTA_LIMIT).toBe(8192);
+    // Even a FULL budget's JSON + the key overhead stays inside the quota.
+    const full = `x`.repeat(INSPECTOR_ORIGINS_BYTE_BUDGET);
+    expect(serialized(full)).toBeLessThanOrEqual(8192);
+  });
+
+  it('a worst-case corpus of the longest realistic origins truncates to the bound', () => {
+    // 200 × 253-char origins serialize to ~28 KB — the old count cap's
+    // proved failure (a rejected write no test could see under fake storage).
+    const corpus: Record<string, { enabled: boolean }> = {};
+    for (let i = 0; i < 200; i += 1) {
+      corpus[longOrigin(i)] = { enabled: true };
+    }
+    expect(JSON.stringify(corpus).length).toBeGreaterThan(INSPECTOR_ORIGINS_QUOTA_LIMIT);
+    const parsed = parseInspectorOrigins(corpus);
+    expect(parsed && serialized(parsed)).toBeLessThanOrEqual(INSPECTOR_ORIGINS_QUOTA_LIMIT);
+    // The survivors are the most-recent (oldest evicted first).
+    expect(parsed?.[longOrigin(0)]).toBeUndefined();
+    const keptLast = parsed ? Object.keys(parsed).some((k) => k === longOrigin(199)) : false;
+    expect(keptLast, 'the newest row survives the trim of the worst-case corpus').toBe(true);
+  });
+
+  it('a comfortable middle corpus does not get trimmed at all', () => {
+    const corpus: Record<string, { enabled: boolean }> = {};
+    for (let i = 0; i < 20; i += 1) {
+      corpus[`https://example-${String(i)}.test`] = { enabled: true };
+    }
+    expect(JSON.stringify(corpus).length).toBeLessThan(INSPECTOR_ORIGINS_QUOTA_LIMIT);
+    expect(parseInspectorOrigins(corpus)).toEqual(corpus);
+  });
 });
 
 describe('parseInspectorOrigins', () => {
@@ -51,23 +102,6 @@ describe('parseInspectorOrigins', () => {
         'https://d.com': null
       })
     ).toEqual({ 'https://a.com': { enabled: true } });
-  });
-
-  it('caps the map, evicting the oldest-inserted rows', () => {
-    const map: Record<string, { enabled: boolean }> = {};
-    for (let i = 0; i < INSPECTOR_ORIGINS_CAP + 10; i += 1) {
-      map[`https://${String(i)}.test`] = { enabled: true };
-    }
-    const capped = parseInspectorOrigins(map);
-    expect(capped && Object.keys(capped)).toHaveLength(INSPECTOR_ORIGINS_CAP);
-    // The evicted rows are the INSERTION-ORDER oldest (a stable snapshot,
-    // not the re-indexed live list — the mutation-during-delete lesson).
-    expect(capped?.['https://0.test']).toBeUndefined();
-    expect(capped?.['https://9.test']).toBeUndefined();
-    expect(capped?.['https://10.test']).toEqual({ enabled: true });
-    expect(capped?.[`https://${String(INSPECTOR_ORIGINS_CAP + 9)}.test`]).toEqual({
-      enabled: true
-    });
   });
 });
 
@@ -129,43 +163,42 @@ describe('toggleInspectorOrigin (the shared toggle semantics)', () => {
     expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: true } });
   });
 
-  it('preserves every sibling origin while the map stays under the cap', async () => {
+  it('preserves every sibling origin while the map stays under the bound', async () => {
+    // The one-slot-below-the-bound shape: the toggle's new entry completes it,
+    // evicting nothing.
     const seeded: Record<string, { enabled: boolean }> = {
       'https://a.com': { enabled: true },
       'https://b.com': { enabled: false }
     };
-    // One slot below the cap: the toggle's new entry completes it, evicting
-    // nothing.
-    for (let i = 0; i < INSPECTOR_ORIGINS_CAP - 3; i += 1) {
-      seeded[`https://filler-${String(i)}.test`] = { enabled: i === 0 };
+    for (let i = 0; i < 100; i += 1) {
+      seeded[`https://filler-${String(i)}.example.com`] = { enabled: i === 0 };
     }
     await inspectorOriginsStore.setValue(seeded);
-    expect(await toggleInspectorOrigin('https://new.com')).toBe(true);
+    expect(await toggleInspectorOrigin('https://new.example.com')).toBe(true);
     const stored = await getInspectorOrigins();
-    expect(Object.keys(stored)).toHaveLength(INSPECTOR_ORIGINS_CAP);
-    expect(stored['https://new.com']?.enabled).toBe(true);
+    expect(stored['https://new.example.com']?.enabled).toBe(true);
     expect(stored['https://a.com']).toEqual({ enabled: true });
     expect(stored['https://b.com']).toEqual({ enabled: false });
-    expect(stored['https://filler-0.test']).toEqual({ enabled: true });
+    expect(stored['https://filler-0.example.com']).toEqual({ enabled: true });
+    // And the bound was never crossed by the toggle's own write.
+    expect(serialized(stored) <= INSPECTOR_ORIGINS_QUOTA_LIMIT).toBe(true);
   });
 
-  it('re-applies the cap on write: the inserted-order oldest rows evict', async () => {
-    const seeded: Record<string, { enabled: boolean }> = {
-      'https://a.com': { enabled: true },
-      'https://b.com': { enabled: false }
-    };
-    // Two slots over the cap: the toggle's write must evict the two oldest.
-    for (let i = 0; i < INSPECTOR_ORIGINS_CAP - 1; i += 1) {
-      seeded[`https://filler-${String(i)}.test`] = { enabled: true };
+  it('a print-cap toggle keeps the map under the platform quota (end-to-end bound)', async () => {
+    // Right-click many long-origin sites in a row: every write evicts the
+    // oldest so the toggle never lands a map the platform would reject —
+    // the audited dead-right-click case, now closed at the source.
+    for (let i = 0; i < 120; i += 1) {
+      const state = await toggleInspectorOrigin(longOrigin(i));
+      expect(state, `toggle ${String(i)} persists truthfully`).toBe(true);
     }
-    await inspectorOriginsStore.setValue(seeded);
-    expect(await toggleInspectorOrigin('https://new.com')).toBe(true);
     const stored = await getInspectorOrigins();
-    expect(Object.keys(stored)).toHaveLength(INSPECTOR_ORIGINS_CAP);
-    // The two oldest rows (a, b) evicted; the cap stays closed.
-    expect(stored['https://a.com']).toBeUndefined();
-    expect(stored['https://b.com']).toBeUndefined();
-    expect(stored['https://new.com']?.enabled).toBe(true);
+    expect(serialized(stored)).toBeLessThanOrEqual(INSPECTOR_ORIGINS_QUOTA_LIMIT);
+    expect(stored[longOrigin(119)]?.enabled).toBe(true);
+    // Budget sanity for an audit-time reference: the persisted map carries
+    // nowhere near the count cap the old logic pretended to enforce.
+    expect(Object.keys(stored).length).toBeGreaterThan(10);
+    expect(Object.keys(stored).length).toBeLessThan(200);
   });
 
   it('toggling over corrupt storage writes the fresh valid map (self-healing)', async () => {

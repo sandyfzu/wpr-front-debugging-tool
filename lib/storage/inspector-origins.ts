@@ -26,11 +26,25 @@ export interface InspectorOriginEntry {
 export type InspectorOrigins = Record<string, InspectorOriginEntry>;
 
 /**
- * The origin cap. Unbounded maps grow with every site a user right-clicks;
- * entries beyond the cap evict oldest-inserted (Map/object iteration order),
- * so the map stays bounded and the most recently configured origins survive.
+ * The origin map's honest bound: the serialized byte budget the stored JSON
+ * must keep. The sync area rejects any single item over 8,192 bytes
+ * (including the `inspector-origins` key and JSON quoting — the proved
+ * failure of a per-entry-count cap: even the shortest realistic origins
+ * exceed it at 200 rows), so the write trims by those bytes, evicting
+ * insertion-order-oldest entries until the map fits well under the platform
+ * ceiling; a count cap cannot see the quota, and the platform's rejection
+ * surfaced only as a logged, dead right-click.
  */
-export const INSPECTOR_ORIGINS_CAP = 200;
+export const INSPECTOR_ORIGINS_BYTE_BUDGET = 7168;
+
+/**
+ * The per-item storage quota of the sync area the map lives in (Chrome's
+ * `QUOTA_BYTES_PER_ITEM`), headroom included: keys are origins — ASCII by
+ * construction (an http(s) host is IDNA-encoded), so JSON length equals the
+ * platform's UTF-8 byte count. The budget pin asserts the whole item stays
+ * inside this ceiling.
+ */
+export const INSPECTOR_ORIGINS_QUOTA_LIMIT = 8192;
 
 /** The raw storage item (reads/writes go through the helpers below). */
 export const inspectorOriginsStore = storage.defineItem<InspectorOrigins>(INSPECTOR_ORIGINS_KEY, {
@@ -38,22 +52,37 @@ export const inspectorOriginsStore = storage.defineItem<InspectorOrigins>(INSPEC
 });
 
 /**
- * Apply the origin cap: entries beyond it evicted oldest-inserted first.
- * The one cap rule, shared by the validator and the toggle's write; the
- * result is a fresh object whose insertion order keeps the survivors.
+ * Apply the byte budget: entries beyond it evicted insertion-order oldest
+ * first, until the serialized item (the key + the JSON — what the sync area
+ * counts) fits inside the platform quota with headroom. The one bound rule,
+ * shared by the validator and the toggle's write; the result is a fresh
+ * object whose insertion order keeps the survivors.
+ *
+ * A single entry that alone exceeds the budget (not a real origin — real
+ * origins stay short, see the quota note) is kept as-is: silently dropping
+ * the user's own entry would lie, and the platform's rejection propagates
+ * through the write's promise, which callers report.
  *
  * @param origins A validated own-copy map.
  */
-function withCap(origins: InspectorOrigins): InspectorOrigins {
-  const oldestFirst = Object.keys(origins);
-  const excess = Math.max(0, oldestFirst.length - INSPECTOR_ORIGINS_CAP);
-  const kept: InspectorOrigins = {};
-  for (const origin of oldestFirst.slice(excess)) {
-    // The key came from this map's own key list — narrow the indexed read.
-    const entry = origins[origin];
-    if (entry !== undefined) kept[origin] = entry;
+function withinByteBudget(origins: InspectorOrigins): InspectorOrigins {
+  // `<"inspector-origins":` + `>` — the item's key overhead is +3 over the
+  // bare JSON (2 quotes + the colon).
+  const serializedLength = (): number =>
+    INSPECTOR_ORIGINS_KEY.length + 2 + 1 + JSON.stringify(origins).length;
+  if (serializedLength() <= INSPECTOR_ORIGINS_QUOTA_LIMIT) return origins;
+  let survivors = Object.keys(origins);
+  while (serializedLength() > INSPECTOR_ORIGINS_QUOTA_LIMIT && survivors.length > 0) {
+    survivors = survivors.slice(1);
+    const kept: InspectorOrigins = {};
+    for (const origin of survivors) {
+      // The key came from the map's own key list — narrow the indexed read.
+      const entry = origins[origin];
+      if (entry !== undefined) kept[origin] = entry;
+    }
+    origins = kept;
   }
-  return kept;
+  return origins;
 }
 
 /**
@@ -63,8 +92,8 @@ function withCap(origins: InspectorOrigins): InspectorOrigins {
  *   documented degradation);
  * - an origin key must be a non-empty string; its entry must be an object
  *   carrying a boolean `enabled` — anything else is dropped, not trusted;
- * - rows beyond {@link INSPECTOR_ORIGINS_CAP} are dropped oldest-inserted
- *   first.
+ * - the map keeps its serialized bytes inside the platform quota
+ *   (see {@link withinByteBudget}) — oldest-inserted rows evicted first.
  *
  * @param input Any storage-delivered value.
  * @returns The validated map, or null when the value is not a map at all.
@@ -79,7 +108,7 @@ export function parseInspectorOrigins(input: unknown): InspectorOrigins | null {
     if (typeof enabled !== 'boolean') continue;
     parsed[origin] = { enabled };
   }
-  return withCap(parsed);
+  return withinByteBudget(parsed);
 }
 
 /**
@@ -119,7 +148,7 @@ export async function isInspectorOriginEnabled(origin: string): Promise<boolean>
 export async function toggleInspectorOrigin(origin: string): Promise<boolean> {
   const stored = parseInspectorOrigins(await inspectorOriginsStore.getValue());
   const current: InspectorOrigins = stored ?? {};
-  const next: InspectorOrigins = withCap({
+  const next: InspectorOrigins = withinByteBudget({
     ...current,
     [origin]: { enabled: !originEnabled(current, origin) }
   });
