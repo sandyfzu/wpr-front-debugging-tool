@@ -46,6 +46,8 @@
  * its value and attributes never pass.
  */
 
+import type { HeaderRowVM } from './headers-view-model';
+
 /** Names whose values are always secret (compared trimmed, lowercase). */
 const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
   'cookie',
@@ -140,8 +142,8 @@ function setCookieName(value: string): string | null {
  *
  * @param name The header name, any casing.
  * @param value The captured value.
- * @returns `{ redacted: false, value }` for an ordinary header — its URL
- *   targets reduced by {@link redactHeaderUrls}; `{ redacted: true,
+ * @returns `{ redacted: false, value }` for an ordinary header — reduced
+ *   by {@link reduceHeaderValue} (URL targets, auth challenges); `{ redacted: true,
  *   cookieName }` for a sensitive one, where `cookieName` is the
  *   `Set-Cookie`/`Set-Cookie2` cookie's name when one is well-formed (the
  *   text before `=` within the first `;`/line-break segment, trimmed,
@@ -153,13 +155,48 @@ export function redactHeaderValue(
 ):
   | { readonly redacted: false; readonly value: string }
   | { readonly redacted: true; readonly cookieName: string | null } {
-  if (!isSensitiveName(name)) return { redacted: false, value: redactHeaderUrls(name, value) };
+  if (!isSensitiveName(name)) return { redacted: false, value: reduceHeaderValue(name, value) };
   if (!SET_COOKIE_NAMES.has(name.trim().toLowerCase())) return { redacted: true, cookieName: null };
   return { redacted: true, cookieName: setCookieName(value) };
 }
 
+/** A header row as a panel surface shows and copies it. */
+export interface ShownHeader extends HeaderRowVM {
+  /** True when the captured value was withheld (see {@link shownHeader}). */
+  readonly redacted: boolean;
+}
+
+/**
+ * A header row of the shared headers model as every panel surface (the
+ * Headers & Cookies page, the Detections preview) may show and copy it. A
+ * secret-bearing header keeps its name and loses its whole value —
+ * attributes and hint included (a hint can echo the value); a `Set-Cookie`
+ * keeps only a well-formed cookie name, which is caching evidence. Other
+ * headers keep their value as {@link reduceHeaderValue} leaves it. Valueless
+ * rows pass untouched.
+ *
+ * @param header A row of the shared headers model.
+ * @returns The row to render and copy, flagged when its value was withheld.
+ */
+export function shownHeader(header: HeaderRowVM): ShownHeader {
+  if (header.value === null) return { ...header, redacted: false };
+  const exported = redactHeaderValue(header.name, header.value);
+  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
+  return {
+    name: header.name,
+    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
+    hint: null,
+    redacted: true
+  };
+}
+
 /** Headers whose whole value is one URL reference. */
-const URL_VALUED_HEADERS: ReadonlySet<string> = new Set(['location', 'content-location']);
+const URL_VALUED_HEADERS: ReadonlySet<string> = new Set([
+  'location',
+  'content-location',
+  'x-redirect-to',
+  'x-pingback'
+]);
 
 /** An absolute reference's scheme prefix. */
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
@@ -170,16 +207,21 @@ const RELATIVE_BASE = 'https://relative.invalid';
 /**
  * Reduce one URL reference by the URL rule, keeping its original text when
  * nothing needed reducing (so ordinary redirects read exactly as sent).
- * Relative and protocol-relative references are resolved against a
- * throwaway base and given back in their own form; a non-web absolute
- * reference (no query pairs the rule can judge — {@link redactUrl} answers
- * null for it) and an unparseable one are withheld whole.
+ * Relative references keep their own form: a root-relative or
+ * protocol-relative one drops what the throwaway base added; a
+ * path-relative one (`next?token=…`, `?a=1`) keeps its original path text
+ * and only its query is rebuilt (its fragment dropped, as the rule does);
+ * a bare fragment (`#top`) stays as written. A non-web absolute reference
+ * ({@link redactUrl} answers null for it) and an unparseable one are
+ * withheld whole.
  *
  * @param ref The reference as written.
+ * @param depth How many URL-in-a-parameter levels may still be followed.
  * @returns The reference, reduced where the rule bites.
  */
-function redactUrlReference(ref: string): string {
+function redactUrlReference(ref: string, depth = 1): string {
   const trimmed = ref.trim();
+  if (trimmed.startsWith('#')) return ref;
   let resolved: URL;
   try {
     resolved = SCHEME.test(trimmed) ? new URL(trimmed) : new URL(trimmed, RELATIVE_BASE);
@@ -187,38 +229,106 @@ function redactUrlReference(ref: string): string {
     // Unparseable: nothing the rule can vouch for.
     return REDACTED_PARAM;
   }
-  const reduced = redactUrl(resolved.href);
+  const reduced = redactUrlAt(resolved.href, depth);
   if (reduced === null) return REDACTED_PARAM;
   if (reduced === resolved.href) return ref;
   if (SCHEME.test(trimmed)) return reduced;
-  // Give a relative reference back relative: drop what the base added.
-  return trimmed.startsWith('//')
-    ? reduced.slice(resolved.protocol.length)
-    : reduced.slice(RELATIVE_BASE.length);
+  if (trimmed.startsWith('//')) return reduced.slice(resolved.protocol.length);
+  if (trimmed.startsWith('/')) return reduced.slice(RELATIVE_BASE.length);
+  // Path-relative: the original path text, the rebuilt query.
+  const pathText = trimmed.split(/[?#]/, 1)[0] ?? '';
+  return `${pathText}${new URL(reduced).search}`;
 }
 
 /**
- * Run a header value's URL targets through the URL rule: the whole value of
- * `location`/`content-location`, the `url=` target of `refresh`
- * (`5; url=/next?token=…`), and every `<…>` target of `link`. Other
- * headers pass untouched.
+ * Reduce a `link` value: every well-formed `<…>` target and every `anchor`
+ * parameter through the URL rule, absolute URLs inside any other parameter
+ * likewise, and an unterminated `<…` (no closing `>`) withheld whole.
+ *
+ * @param value The raw `link` value.
+ * @returns The reduced value.
+ */
+function reduceLinkValue(value: string): string {
+  const targets = value.replace(
+    /<([^<>]*)>/g,
+    (_whole, target: string) => `<${redactUrlReference(target)}>`
+  );
+  const terminated = targets.replace(/<[^>]*$/, `<${REDACTED_PARAM}`);
+  return terminated.replace(
+    /(;\s*)([\w*-]+)(\s*=\s*)("[^"]*"|[^;,\s]*)/g,
+    (whole, lead: string, param: string, equals: string, raw: string) => {
+      const quoted = raw.startsWith('"');
+      const inner = quoted ? raw.slice(1, -1) : raw;
+      const reduced =
+        param.toLowerCase() === 'anchor'
+          ? redactUrlReference(inner)
+          : inner.replace(/https?:\/\/[^\s,"<>]+/gi, (url) => redactUrlReference(url));
+      if (reduced === inner) return whole;
+      return `${lead}${param}${equals}${quoted ? `"${reduced}"` : reduced}`;
+    }
+  );
+}
+
+/** Challenge schemes whose data is a session-bound blob, never shown. */
+const OPAQUE_AUTH_SCHEMES: ReadonlySet<string> = new Set(['negotiate', 'ntlm']);
+
+/**
+ * Reduce a `www-authenticate` value to what identifies the challenge: each
+ * challenge's scheme and its `realm`; every other parameter (nonces,
+ * opaque values) and every token68 blob is dropped, and the session-bound
+ * schemes (`Negotiate`, `NTLM`) keep only their name plus the redaction
+ * marker when they carried data.
+ *
+ * @param value The raw `www-authenticate` value.
+ * @returns The reduced value.
+ */
+function reduceAuthChallenge(value: string): string {
+  // Split on commas outside quotes: challenges and their parameters.
+  const parts = value.match(/(?:[^,"]|"(?:[^"\\]|\\.)*")+/g) ?? [];
+  const challenges: { scheme: string; realm: string | null; data: boolean }[] = [];
+  for (const rawPart of parts) {
+    // A blank part (`a, , b`) matches nothing below and adds nothing.
+    const part = rawPart.trim();
+    const opening = /^([A-Za-z][\w!#$%&'*+.^`|~-]*)(?:\s+(.*))?$/s.exec(part);
+    const startsChallenge = opening !== null && !/^[\w!#$%&'*+.^`|~-]+\s*=/.test(part);
+    if (startsChallenge) challenges.push({ scheme: opening[1] ?? '', realm: null, data: false });
+    const current = challenges.at(-1);
+    if (current === undefined) continue;
+    const param = startsChallenge ? (opening[2] ?? '') : part;
+    if (param === '') continue;
+    current.data = true;
+    const realm = /^realm\s*=\s*("(?:[^"\\]|\\.)*"|[^\s]+)$/i.exec(param.trim());
+    if (realm !== null) current.realm = realm[1] ?? null;
+  }
+  return challenges
+    .map(({ scheme, realm, data }) => {
+      if (OPAQUE_AUTH_SCHEMES.has(scheme.toLowerCase())) {
+        return data ? `${scheme} ${REDACTED}` : scheme;
+      }
+      return realm === null ? scheme : `${scheme} realm=${realm}`;
+    })
+    .join(', ');
+}
+
+/**
+ * Reduce an ordinary (non-secret-named) header value by what it can carry:
+ * the URL targets of `location`/`content-location`/`x-redirect-to`/
+ * `x-pingback`, `refresh`'s target (with or without a delay), `link`'s
+ * targets and URL-valued parameters, and `www-authenticate`'s challenges
+ * (scheme + realm only). Other headers pass untouched.
  *
  * @param name The header name, any casing.
  * @param value The captured value.
- * @returns The value with its URL targets reduced.
+ * @returns The reduced value.
  */
-export function redactHeaderUrls(name: string, value: string): string {
+export function reduceHeaderValue(name: string, value: string): string {
   const lower = name.trim().toLowerCase();
   if (URL_VALUED_HEADERS.has(lower)) return redactUrlReference(value);
-  if (lower === 'link') {
-    return value.replace(
-      /<([^>]*)>/g,
-      (_whole, target: string) => `<${redactUrlReference(target)}>`
-    );
-  }
+  if (lower === 'link') return reduceLinkValue(value);
+  if (lower === 'www-authenticate') return reduceAuthChallenge(value);
   if (lower === 'refresh') {
     return value.replace(
-      /^(\s*[\d.]+\s*[;,]\s*(?:url\s*=\s*)?)(['"]?)(.*?)\2(\s*)$/i,
+      /^(\s*(?:[\d.]+\s*(?:[;,]\s*)?)?(?:url\s*=\s*)?)(['"]?)(.*?)\2(\s*)$/i,
       (_whole, lead: string, quote: string, target: string, tail: string) =>
         `${lead}${quote}${redactUrlReference(target)}${quote}${tail}`
     );
@@ -265,18 +375,27 @@ function isBareToken(pair: string): boolean {
 }
 
 /**
- * Redact one query pair.
+ * Redact one query pair. A value under an ordinary name that decodes to an
+ * absolute http(s) URL (`redirect_to=https%3A%2F%2F…%3Ftoken%3D…`) is
+ * itself reduced by the URL rule — once: `depth` bounds the recursion.
  *
  * @param pair The pair as written (between separators).
+ * @param depth How many URL-in-a-parameter levels may still be followed.
  * @returns The pair, its value redacted when its name is sensitive or empty,
- *   or the whole pair redacted when it is a bare token.
+ *   its embedded URL reduced, or the whole pair redacted when it is a bare
+ *   token.
  */
-function redactQueryPair(pair: string): string {
+function redactQueryPair(pair: string, depth: number): string {
   const equals = pair.indexOf('=');
   if (equals === -1) return isBareToken(pair) ? REDACTED_PARAM : pair;
   const name = pair.slice(0, equals);
   const decoded = decodeParamName(name);
-  return decoded.trim() === '' || isSensitiveName(decoded) ? `${name}=${REDACTED_PARAM}` : pair;
+  if (decoded.trim() === '' || isSensitiveName(decoded)) return `${name}=${REDACTED_PARAM}`;
+  if (depth <= 0) return pair;
+  const value = decodeParamName(pair.slice(equals + 1));
+  const reduced = redactUrlAt(value, depth - 1);
+  if (reduced === null || reduced === new URL(value).href) return pair;
+  return `${name}=${encodeURIComponent(reduced)}`;
 }
 
 /**
@@ -292,6 +411,18 @@ function redactQueryPair(pair: string): string {
  *   an absolute http(s) URL.
  */
 export function redactUrl(raw: string): string | null {
+  return redactUrlAt(raw, 1);
+}
+
+/**
+ * {@link redactUrl} with an explicit bound on following URLs nested in
+ * query values.
+ *
+ * @param raw The untrusted URL text.
+ * @param depth How many URL-in-a-parameter levels may still be followed.
+ * @returns As {@link redactUrl}.
+ */
+function redactUrlAt(raw: string, depth: number): string | null {
   let url: URL;
   try {
     url = new URL(raw);
@@ -312,7 +443,7 @@ export function redactUrl(raw: string): string | null {
     url.search = url.search
       .slice(1)
       .split(/([&;])/)
-      .map((part, index) => (index % 2 === 1 ? part : redactQueryPair(part)))
+      .map((part, index) => (index % 2 === 1 ? part : redactQueryPair(part, depth)))
       .join('');
   }
   return url.href;

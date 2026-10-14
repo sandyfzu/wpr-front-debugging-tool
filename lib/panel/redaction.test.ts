@@ -9,7 +9,8 @@ import {
   isSensitiveName,
   REDACTED,
   REDACTED_PARAM,
-  redactHeaderUrls,
+  shownHeader,
+  reduceHeaderValue,
   redactHeaderValue,
   redactUrl
 } from './redaction';
@@ -218,6 +219,38 @@ describe('redactHeaderValue', () => {
   });
 });
 
+describe('embedded URLs', () => {
+  it('follows exactly one level of URL-in-a-parameter (the bound that keeps it finite)', () => {
+    const inner = `https://b.example/?token=${encodeURIComponent('DEEP')}`;
+    const middle = `https://a.example/?next=${encodeURIComponent(inner)}&token=MID`;
+    const outer = `https://o.example/?go=${encodeURIComponent(middle)}`;
+    const reduced = redactUrl(outer) ?? '';
+    const level1 = decodeURIComponent(new URL(reduced).searchParams.get('go') ?? '');
+    // The first embedded level is reduced…
+    expect(level1).toContain(`token=${REDACTED_PARAM}`);
+    expect(level1).not.toContain('MID');
+    // …and its own embedded URL is left as written (no second descent).
+    expect(new URL(level1).searchParams.get('next')).toBe(inner);
+  });
+
+  it('leaves a parameter that only looks like a URL untouched', () => {
+    expect(redactUrl('https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt')).toBe(
+      'https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt'
+    );
+  });
+});
+
+describe('decoding depth', () => {
+  it('reads a doubly encoded separator in a parameter name (two decoding passes)', () => {
+    expect(redactUrl('https://a.example/?api%252Bkey=SECRET')).toBe(
+      `https://a.example/?api%252Bkey=${REDACTED_PARAM}`
+    );
+    expect(redactUrl('https://a.example/?api%25252Bkey=SECRET')).toBe(
+      `https://a.example/?api%25252Bkey=${REDACTED_PARAM}`
+    );
+  });
+});
+
 describe('redactUrl', () => {
   it.each([
     [
@@ -314,7 +347,7 @@ describe('redactUrl', () => {
   );
 });
 
-describe('redactHeaderUrls', () => {
+describe('reduceHeaderValue', () => {
   it.each([
     [
       'location',
@@ -335,13 +368,69 @@ describe('redactHeaderUrls', () => {
       `0;URL='https://a.example/?key=${REDACTED_PARAM}'`
     ],
     ['refresh', '3, /n?session=s', `3, /n?session=${REDACTED_PARAM}`],
+    ['refresh', 'url=/n?token=t', `url=/n?token=${REDACTED_PARAM}`],
+    ['refresh', ' URL = "/n?token=t"', ` URL = "/n?token=${REDACTED_PARAM}"`],
+    ['location', 'next?token=x', `next?token=${REDACTED_PARAM}`],
+    ['location', 'a/b/../c?token=x&p=1#frag', `a/b/../c?token=${REDACTED_PARAM}&p=1`],
+    ['location', '?token=x', `?token=${REDACTED_PARAM}`],
+    ['x-redirect-to', '/next?nonce=n', `/next?nonce=${REDACTED_PARAM}`],
+    [
+      'X-Pingback',
+      'https://a.example/xmlrpc.php?key=k',
+      `https://a.example/xmlrpc.php?key=${REDACTED_PARAM}`
+    ],
+    [
+      'location',
+      '/login?redirect_to=https%3A%2F%2Fa.example%2Fadmin%3Ftoken%3DSECRET&x=1',
+      `/login?redirect_to=${encodeURIComponent(`https://a.example/admin?token=${REDACTED_PARAM}`)}&x=1`
+    ],
+    ['link', '</a.css?token=x', `<${REDACTED_PARAM}`],
+    [
+      'link',
+      '<https://a.example/x.css>; rel=preload, </b?token=SECRET',
+      `<https://a.example/x.css>; rel=preload, <${REDACTED_PARAM}`
+    ],
+    [
+      'link',
+      '</a.css>; rel=preload; anchor="/page?token=x"',
+      `</a.css>; rel=preload; anchor="/page?token=${REDACTED_PARAM}"`
+    ],
+    [
+      'link',
+      '</a.jpg>; rel=preload; imagesrcset="https://a.example/a.jpg?sig=s 1x, https://a.example/b.jpg 2x"',
+      `</a.jpg>; rel=preload; imagesrcset="https://a.example/a.jpg?sig=${REDACTED_PARAM} 1x, https://a.example/b.jpg 2x"`
+    ],
+    ['link', '</a.css>; anchor=/p?token=x', `</a.css>; anchor=/p?token=${REDACTED_PARAM}`],
+    ['www-authenticate', 'Basic realm="WordPress", charset="UTF-8"', 'Basic realm="WordPress"'],
+    [
+      'WWW-Authenticate',
+      'Digest realm="api", nonce="SECRETNONCE", opaque="OPAQUE", qop="auth"',
+      'Digest realm="api"'
+    ],
+    ['www-authenticate', 'Negotiate YIIBhwYGKwYBBQUCoIIBezCCAXegAw', `Negotiate ${REDACTED}`],
+    ['www-authenticate', 'NTLM TlRMTVNTUAACAAAADAAMADgAAAAFgo', `NTLM ${REDACTED}`],
+    [
+      'www-authenticate',
+      'Bearer realm="x", error="invalid_token", Negotiate',
+      'Bearer realm="x", Negotiate'
+    ],
+    [
+      'www-authenticate',
+      'Newauth realm="apps", type=1, title="Login, please", Basic realm="simple"',
+      'Newauth realm="apps", Basic realm="simple"'
+    ],
+    ['www-authenticate', 'Custom SECRETTOKEN68==', 'Custom'],
+    ['www-authenticate', 'realm="orphan", Basic', 'Basic'],
+    ['www-authenticate', 'Digest realm="a", qop = "auth"', 'Digest realm="a"'],
+    ['www-authenticate', 'Basic , , Digest realm=r, nonce=n', 'Basic, Digest realm=r'],
+    ['www-authenticate', ' ', ''],
     [
       'link',
       '</a.css?token=x>; rel=preload, <https://a.example/b.js>; rel=preload',
       `</a.css?token=${REDACTED_PARAM}>; rel=preload, <https://a.example/b.js>; rel=preload`
     ]
   ])('reduces %s: %j', (name, value, expected) => {
-    expect(redactHeaderUrls(name, value)).toBe(expected);
+    expect(reduceHeaderValue(name, value)).toBe(expected);
   });
 
   it.each([
@@ -349,10 +438,70 @@ describe('redactHeaderUrls', () => {
     ['location', '/plain/path?page=2'],
     ['location', ''],
     ['refresh', '5'],
+    ['www-authenticate', 'Basic'],
+    ['www-authenticate', 'Negotiate'],
+    ['location', '#top'],
+    ['location', '#access_token=kept-bare-fragment'],
+    ['location', 'next?page=2'],
+    ['location', '/login?redirect_to=https%3A%2F%2Fa.example%2Fadmin'],
+    ['location', '/login?redirect_to=http%3A%2F%2F%5Bbad'],
     ['link', '<https://a.example/x.css>; rel=preload'],
     ['x-redirect-by', 'WordPress'],
     ['x-other', 'https://a.example/?token=kept-not-a-url-header']
   ])('keeps %s %j exactly as sent', (name, value) => {
-    expect(redactHeaderUrls(name, value)).toBe(value);
+    expect(reduceHeaderValue(name, value)).toBe(value);
+  });
+});
+
+describe('shownHeader', () => {
+  it.each(['set-cookie', 'Set-Cookie', 'SET-COOKIE2'])(
+    'keeps only the cookie name of %s',
+    (name) => {
+      const shown = shownHeader({ name, value: 'k=v; Path=/; HttpOnly', hint: null });
+      expect(shown).toEqual({ name, value: `k=${REDACTED}`, hint: null, redacted: true });
+    }
+  );
+
+  it.each(['NAMELESSSECRETTOKEN', 'tok; Path=/'])(
+    'withholds a nameless Set-Cookie (%s) entirely',
+    (value) => {
+      const shown = shownHeader({ name: 'Set-Cookie', value, hint: null });
+      expect(shown.value).toBe(REDACTED);
+      expect(JSON.stringify(shown)).not.toContain(value.split(';')[0]);
+    }
+  );
+
+  it('withholds credential and token values, hint included', () => {
+    expect(shownHeader({ name: 'Authorization', value: 'Bearer abc.def', hint: 'x' })).toEqual({
+      name: 'Authorization',
+      value: REDACTED,
+      hint: null,
+      redacted: true
+    });
+    expect(shownHeader({ name: 'x-wp-nonce', value: '1a2b3c', hint: null }).value).toBe(REDACTED);
+  });
+
+  it('withholds a folded Set-Cookie whose first cookie is nameless', () => {
+    const shown = shownHeader({ name: 'set-cookie', value: 'SECRET\nname=v', hint: null });
+    expect(shown.value).toBe(REDACTED);
+    expect(JSON.stringify(shown)).not.toContain('SECRET');
+  });
+
+  it('keeps a URL-valued header visible with its secret query values reduced', () => {
+    expect(
+      shownHeader({ name: 'location', value: 'https://a.example/n?token=abc', hint: null })
+    ).toEqual({
+      name: 'location',
+      value: 'https://a.example/n?token=[redacted]',
+      hint: null,
+      redacted: false
+    });
+  });
+
+  it('passes every other header (and valueless rows) through', () => {
+    const row = { name: 'cache-control', value: 'max-age=0', hint: 'hint' };
+    expect(shownHeader(row)).toEqual({ ...row, redacted: false });
+    const valueless = { name: 'set-cookie', value: null, hint: null };
+    expect(shownHeader(valueless)).toEqual({ ...valueless, redacted: false });
   });
 });
