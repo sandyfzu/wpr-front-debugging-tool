@@ -206,8 +206,14 @@ const OVERLAY_ALLOWANCE: readonly UnresolvedAllowance[] = [
   { id: 'aria-hidden-focus', targets: ['#root'] },
   {
     id: 'color-contrast',
-    // The arrows kbd chip (the engine minimizes its class set across documents).
-    targets: [/^\.gap-2\\\.5(\\\.items-center)?\[data-fdt="shortcut-row"\]:nth-child\(2\) > kbd$/]
+    // The arrows kbd chip. axe emits the shortest selector unique in the
+    // CURRENT document, so the utility classes it prefixes to the row (e.g.
+    // `.gap-2\.5`, `.items-center`) vary with whatever the page under the
+    // overlay renders. Match on the stable hook only — the second shortcut
+    // row's direct `kbd` child — with any leading class segments ignored.
+    targets: [
+      /^(?:\.[^\s>[.\\]+(?:\\.[^\s>[.\\]+)*)*\[data-fdt="shortcut-row"\]:nth-child\(2\) > kbd$/
+    ]
   }
 ];
 
