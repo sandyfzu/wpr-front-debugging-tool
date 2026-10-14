@@ -10,10 +10,14 @@ import type { JSX } from 'solid-js';
 import { createMemo, For, splitProps } from 'solid-js';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
+import { createLogger } from '../../lib/logger';
 import { cn } from '../../utils/cn';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
+
+/** Dev diagnostics for caller contract violations (duplicate keys). */
+const log = createLogger('virtual-list');
 
 /** Extra rows rendered beyond the visible window (the default `overscan`). */
 const DEFAULT_OVERSCAN = 3;
@@ -70,6 +74,21 @@ export type VirtualizerFactory = (options: VirtualListOptions) => VirtualizerIns
 /** The default factory: the library's own `createVirtualizer`. */
 const defaultVirtualizerFactory: VirtualizerFactory = (options) => createVirtualizer(options);
 
+/**
+ * Name the duplicate keys of a window (dev only): the map keeps one item
+ * per key, so every duplicate silently drops a row.
+ *
+ * @param items The window's items.
+ */
+function warnDuplicateKeys(items: readonly VirtualItem[]): void {
+  const seen = new Set<VirtualItem['key']>();
+  const duplicates = new Set<VirtualItem['key']>();
+  for (const item of items) (seen.has(item.key) ? duplicates : seen).add(item.key);
+  log.warn(
+    `duplicate row keys ${[...duplicates].map(String).join(', ')} — rows are dropped; getItemKey must be unique`
+  );
+}
+
 export type VirtualListProps = {
   /**
    * The scroller's ARIA role, for surfaces that are semantically a list.
@@ -95,7 +114,10 @@ export type VirtualListProps = {
   /**
    * Stable, unique row identity (default: index). Pass it for any list that
    * filters, sorts or prepends: a rendered row element and its measured size
-   * follow the key, so surviving rows keep their DOM, focus and size.
+   * follow the key, so surviving rows keep their element and size — and
+   * focus, unless a reorder moves their DOM node (DOM order stays the visual
+   * order, i.e. the tab and reading order). Duplicate keys drop rows (dev
+   * builds warn).
    */
   getItemKey?: (index: number) => string | number;
   /** Row gap in px (the layout adds it between rows). */
@@ -141,8 +163,10 @@ export type VirtualListProps = {
  * after a filter (never re-measured) and could make the core drop a live
  * element's observer. Keying elements by key keeps both in step: a refresh
  * with the same keys remounts nothing (DOM and focus survive), a key that
- * moves index keeps its element (only `data-index` and the offset update),
- * and a new key gets a fresh, measured element. The virtualizer lifecycle
+ * moves index keeps its element and size (only `data-index` and the offset
+ * update; focus survives unless a reorder moves the DOM node — DOM order is
+ * kept equal to visual order, the tab and reading order), and a new key gets
+ * a fresh, measured element. The virtualizer lifecycle
  * is Solid-wired by its own adapter (its `_didMount` cleanup runs on
  * unmount).
  *
@@ -236,9 +260,12 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
    * geometry reads stay fine-grained; the map itself changes only when the
    * window's keys change (scroll, filter).
    */
-  const rowByKey = createMemo(
-    () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const))
-  );
+  const rowByKey = createMemo(() => {
+    const items = virtualizer.getVirtualItems();
+    const byKey = new Map(items.map((item) => [item.key, item] as const));
+    if (import.meta.env.DEV && byKey.size < items.length) warnDuplicateKeys(items);
+    return byKey;
+  });
   /** The window's keys in order — primitives, so `For` maps one element per key. */
   const windowKeys = createMemo(() => [...rowByKey().keys()]);
 
@@ -258,6 +285,9 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       throw new Error(`[WPR FDT] virtual-list: key ${String(key)} is not in the window`);
     }
     // Owned by the row's `For` scope, so it is disposed with the element.
+    // `?? prev` is a guard: `For` disposes a departing key's row before this
+    // memo re-runs (observed), but if it ever re-ran first, the row keeps its
+    // last geometry instead of reading `undefined`.
     const current = createMemo<VirtualItem>((prev) => rowByKey().get(key) ?? prev, initialItem);
     return {
       key,

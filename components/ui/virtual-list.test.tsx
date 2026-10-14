@@ -9,7 +9,7 @@ import { cleanup, render } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
 import { createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   VirtualList,
   type VirtualItem,
@@ -19,6 +19,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 /** The probe's instance double shape (the declared surface for test doubles). */
@@ -348,5 +349,34 @@ describe('VirtualList — row identity follows the key', () => {
     renderKeyed(p);
     expect(rowOf('0')?.getAttribute('data-index')).toBe('0');
     expect(document.querySelectorAll('[data-index]').length).toBe(2);
+  });
+
+  it('drops a key that leaves the window without throwing, keeping the rest', () => {
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b'), row(2, 80, 40, 'c')]);
+    renderKeyed(p);
+    const c = rowOf('c');
+    // The window shrinks and b leaves: its element goes, c moves up.
+    expect(() => {
+      p.publish([row(0, 0, 40, 'a'), row(1, 40, 40, 'c')]);
+    }).not.toThrow();
+    expect(rowOf('b')).toBeUndefined();
+    expect(rowOf('c')).toBe(c);
+    expect(c?.style.transform).toBe('translateY(40px)');
+  });
+
+  it('warns (dev) naming duplicate keys, which drop rows', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'a'), row(2, 80, 40, 'b')]);
+    renderKeyed(p);
+    expect(document.querySelectorAll('[data-index]').length).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [message] = warn.mock.calls[0] as [string];
+    expect(message).toMatch(/^\[WPR FDT\] \[virtual-list\] duplicate row keys a /);
+  });
+
+  it('stays silent when keys are unique', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    renderKeyed(storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b')]));
+    expect(warn).not.toHaveBeenCalled();
   });
 });
