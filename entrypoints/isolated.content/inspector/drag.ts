@@ -76,13 +76,17 @@ export const DRAG_TUNING = Object.freeze({
   /**
    * The re-clamp's measurement quantum (px): a computed {@link DragController.reclamp}
    * delta under this figure is the resting read's integer quantization
-   * (CSSOM-View serves `offset*` as longs, ±½ px per value), never intent —
+   * (CSSOM-View serves `offset*` as longs, ≤ ½ px per value), never intent —
    * masked, so an already-settled pose stays idempotent across repeated
    * triggers instead of micro-jittering < 1 px on every one. One px is the
-   * plus of a position/size quantization pair (≤ ½ px each); a masked move
-   * only shortens the styled 4 px air (any margin was polish — the masked
-   * pose stays fully inside the viewport, ≥ 3 px off every edge), so the
-   * owner's no-part-offscreen binding never yields to the mask.
+   * plus of a position/size quantization pair (≤ ½ px each). The mask keeps
+   * the pose it read, so it can hold a pose whose REAL position sits up to
+   * the edge read's whole quantization budget past the margin it seems to
+   * satisfy (each edge air combines independently rounded reads: position
+   * `offset*` + size `offset*` + the viewport's own integer rounding — ≤
+   * ~1–1.5 px per edge): a fully masked pose's reachable worst-case air is
+   * ≈ 2 px (vertical) / ~2.5 px (horizontal), always ≥ 0 — so the owner's
+   * no-part-offscreen binding never yields to the mask.
    */
   reclampQuantumPx: 1
 });
@@ -356,9 +360,10 @@ export function createDragController(deps: DragMachineDeps): DragController {
       // settled at a bound re-reads up to ~1 px past it and would otherwise
       // micro-jitter a fresh position write on every trigger. Mask each
       // axis against the current pose (the untouched anchor is numerically
-      // translate {0, 0}) — the masked pose never leaves the viewport by
-      // construction: DRAG_TUNING.containmentMarginPx keeps ≥ 3 px of real
-      // air under a fully masked (quantum ≤ 1 px) bound.
+      // translate {0, 0}) — the mask only holds poses whose READS place
+      // them at the margin; its reach ends at the edge read's quantization
+      // budget, so a fully masked pose's worst-case air is ≈ 2 px (never
+      // 0 — the owner's no-part-offscreen binding never yields to it).
       const epsilon = DRAG_TUNING.reclampQuantumPx;
       const base = applied ?? { x: 0, y: 0 };
       const maskedX = Math.abs(next.x - base.x) < epsilon ? base.x : next.x;
