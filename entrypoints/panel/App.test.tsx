@@ -17,7 +17,7 @@ import { PanelApp } from './App';
 import { createSearchStore, type SearchStore } from './state/search';
 import { createFdtDataStore, type FdtDataStore } from './state/use-fdt-data';
 import type { PanelReceivers } from './state/edges';
-import { makeFdtData } from './state/fixtures';
+import { makeFdtData, makeHardReloadBudget } from './state/fixtures';
 import { PAGES } from './pages';
 
 /** One page load's worth of valid data. */
@@ -68,6 +68,7 @@ function makeShell(): ShellParts {
     },
     search,
     reload: vi.fn(),
+    hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
   return {

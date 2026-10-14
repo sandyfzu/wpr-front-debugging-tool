@@ -4,6 +4,11 @@
  * data-layer tests build their expectations on.
  */
 import type { FdtData, WprDetections } from '../../../lib/wp-rocket/types';
+import {
+  createHardReloadBudget,
+  type BudgetStorage,
+  type HardReloadBudget
+} from './hard-reload-budget';
 
 /** The detection payload exactly as the engine's "nothing found" rowset. */
 const EMPTY_DETECTIONS: WprDetections = {
@@ -82,4 +87,36 @@ export function makeLazyImage(
   overrides?: Partial<FdtData['wprDetections']['lazyload']['images'][number]>
 ): FdtData['wprDetections']['lazyload']['images'][number] {
   return { src: '/a.jpg', lazyloadDetected: true, excludedReasonsFound: [], ...overrides };
+}
+
+/**
+ * An in-memory `BudgetStorage`: one map, the Web Storage semantics the
+ * budget relies on (`getItem` answers null for a missing key). Share one
+ * instance between stores to model a panel document reloading in place.
+ */
+export function makeMemoryStorage(): BudgetStorage {
+  const items = new Map<string, string>();
+  return {
+    getItem: (key) => items.get(key) ?? null,
+    setItem: (key, value) => {
+      items.set(key, value);
+    },
+    removeItem: (key) => {
+      items.delete(key);
+    }
+  };
+}
+
+/**
+ * The production budget over in-memory storage (fresh unless shared).
+ *
+ * @param storage The backing storage (default: a fresh one).
+ */
+export function makeHardReloadBudget(
+  storage: BudgetStorage = makeMemoryStorage()
+): HardReloadBudget {
+  return createHardReloadBudget(
+    () => storage,
+    () => undefined
+  );
 }

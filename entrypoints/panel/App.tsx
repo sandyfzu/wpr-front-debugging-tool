@@ -50,6 +50,7 @@ import {
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
 import { devtoolsInspectedTabId, realMessagingEdges } from './state/edges';
+import { createHardReloadBudget } from './state/hard-reload-budget';
 
 const log = createLogger('panel');
 
@@ -145,6 +146,15 @@ export function PanelApp(props: AppProps): JSX.Element {
         reload: () => {
           window.location.reload();
         },
+        hardReloadBudget: createHardReloadBudget(
+          () => window.sessionStorage,
+          (operation, cause) => {
+            log.warn('Contract-reload budget storage unavailable — no fallback reload', {
+              operation,
+              cause: cause instanceof Error ? { message: cause.message } : cause
+            });
+          }
+        ),
         now: Date.now
       });
     })();

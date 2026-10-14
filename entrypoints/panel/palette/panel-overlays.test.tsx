@@ -13,7 +13,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeFdtData } from '../state/fixtures';
+import { makeFdtData, makeHardReloadBudget } from '../state/fixtures';
 import { createFdtDataStore } from '../state/use-fdt-data';
 import { createSearchStore } from '../state/search';
 import { PanelApp } from '../App';
@@ -35,6 +35,7 @@ function bootShellWithData(): { data: ReturnType<typeof createFdtDataStore> } {
     receive: () => () => undefined,
     search: createSearchStore(),
     reload: vi.fn(),
+    hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
   render(() => <PanelApp data={data} />);
@@ -107,6 +108,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
     render(() => <PanelApp data={data} />);
@@ -230,6 +232,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
     render(() => <PanelApp data={data} />); // boot flight in the air
@@ -352,6 +355,7 @@ describe('focus on route switch', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
     render(() => <PanelApp data={data} />);
