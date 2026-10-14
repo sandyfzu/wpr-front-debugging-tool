@@ -213,6 +213,10 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     // the live document's view (not the serialization's), so reading here is
     // the capture's "as of" instant, and the capture parser redacts the
     // values before they are ever in a variable of ours.
+    // Hard-ordered by design, no `try`: the two preceding effects (the page
+    // serialized, `document.cookie` read) have no throwing path — the getter
+    // is specified to answer, never throw (WHATWG DOM) — so this step cannot
+    // strand the pass with a never-resolving wait point below.
     pageCookies = { names: sampleCookieNames(document.cookie), capturedAt: Date.now() };
   };
 

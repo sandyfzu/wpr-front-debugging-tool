@@ -20,6 +20,29 @@ import {
   parseWprDetections
 } from './validate';
 import { minimalDetections, validFdt } from './validate.fixtures';
+import { COOKIE_NAME_LIMITS, sampleCookieNames } from '../wp-rocket/cookies';
+import { MAX_REPRESENTABLE_MS } from '../detection/describe';
+
+/**
+ * The hostile corpus for the cookie contract's two ends: the capture side
+ * answers these with a unique, capped, name-only list — and the boundary
+ * validator must accept exactly that, so a capture side and a receive side
+ * can never drift apart.
+ */
+const countLine = (count: number): string =>
+  Array.from({ length: count }, (_, i) => `c${String(i)}=1`).join('; ');
+
+const captureCorpus: string[] = [
+  '',
+  'novalue; =a; ==x; b=1',
+  'a="carol;margin=x"; c=2',
+  'wprocket=1; wprocket=2; wprocket=3',
+  `${'n'.repeat(COOKIE_NAME_LIMITS.name)}A=1; ${'n'.repeat(COOKIE_NAME_LIMITS.name)}B=2`,
+  '  a  = 1 ; a=2 ;\ta\t=\t3',
+  countLine(COOKIE_NAME_LIMITS.count + 20),
+  'na\x01me=1; \x7f=2; ok=3',
+  '🍪=1; cookie=a-b-c'
+];
 
 describe('parseErrorWords', () => {
   it('accepts a clean batch and copies it to a fresh array', () => {
@@ -458,6 +481,61 @@ describe('parsePageCookies', () => {
     expect(parsePageCookies({ names: ['wprocket'], capturedAt: 'now' })).toBeNull();
     expect(parsePageCookies({ names: ['wprocket'], capturedAt: -1 })).toBeNull();
     expect(parsePageCookies({ names: ['wprocket'], capturedAt: Number.NaN })).toBeNull();
+  });
+
+  it('caps the capture stamp at the platform representable-instant ceiling', () => {
+    // The audit's P2-2 repro shapes: a stamp past what `new Date` can
+    // represent must not cross the boundary (downstream date math).
+    expect(parsePageCookies({ names: ['wprocket'], capturedAt: 9e15 })).toBeNull();
+    expect(parsePageCookies({ names: ['wprocket'], capturedAt: 1e21 })).toBeNull();
+    // Acceptance band: day zero, a real wall-clock stamp and exactly the
+    // platform ceiling are representable; one tick past the ceiling is not,
+    // and a fractional stamp is not a wall-clock ms at all. The cap is the
+    // cache-stamp defense's own ceiling (`MAX_REPRESENTABLE_MS`) — one
+    // declaring site, no second limit in the codebase.
+    const at = (capturedAt: number): { names: string[]; capturedAt: number } => ({
+      names: ['wprocket'],
+      capturedAt
+    });
+    expect(parsePageCookies(at(0))).toEqual(at(0));
+    expect(parsePageCookies(at(1_800_000_000_000))).toEqual(at(1_800_000_000_000));
+    expect(parsePageCookies(at(MAX_REPRESENTABLE_MS))).toEqual(at(MAX_REPRESENTABLE_MS));
+    expect(parsePageCookies(at(MAX_REPRESENTABLE_MS + 1))).toBeNull();
+    expect(parsePageCookies(at(1.5))).toBeNull();
+  });
+
+  it('rejects a payload with duplicate names (the unique-names contract)', () => {
+    // The capture side dedupes (its dedupe key is the emitted, clipped name),
+    // so a duplicated list means a forged or drifted payload: rejected as a
+    // unit — no silent partial cut — and `PageCookies`' "unique names" doc
+    // claim stays true for every payload the validator lets through.
+    expect(parsePageCookies({ names: ['wprocket', 'wprocket'], capturedAt: 1 })).toBeNull();
+    expect(parsePageCookies({ names: ['a', 'b', 'a'], capturedAt: 1 })).toBeNull();
+  });
+
+  it('control characters ride a name through (sibling-consistent, pinned deliberate)', () => {
+    // Unreachable from a real browser (`document.cookie`'s grammar excludes
+    // controls); the page-headers guard is printability-free too. Redaction
+    // — the security property — is about values, never names.
+    const names = sampleCookieNames('na\x01me=1');
+    expect(names).toEqual(['na\x01me']);
+    expect(parsePageCookies({ names, capturedAt: 1 })).toEqual({
+      names: ['na\x01me'],
+      capturedAt: 1
+    });
+  });
+});
+
+describe('parsePageCookies — capture-side ↔ validator consistency', () => {
+  it('every list the capture side emits over the hostile corpus validates whole', () => {
+    captureCorpus.forEach((documentCookie, index) => {
+      const names = sampleCookieNames(documentCookie);
+      const payload = { names, capturedAt: 1 };
+      expect(
+        parsePageCookies(payload),
+        `corpus[${String(index)}] rejected the capture output`
+      ).toEqual(payload);
+    });
   });
 });
 

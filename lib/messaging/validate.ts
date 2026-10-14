@@ -36,6 +36,10 @@ import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
 import { isRecord } from '../../utils/is-record';
 import { ERROR_WORD_LIMITS, isPrintable } from './error-words';
 import { numericTabId } from './sender';
+// The representable-stamp ceiling the boundary carries (capture stamps) is
+// the same declared constant the cache-stamp defense uses — one declaring
+// site, no second limit.
+import { MAX_REPRESENTABLE_MS } from '../detection/describe';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
@@ -170,18 +174,40 @@ export function parseDetectionSummary(input: unknown): DetectionSummary | null {
  * The shape is exact (own keys only, the shared caps in `COOKIE_NAME_LIMITS`)
  * so a forged or drifting sender can neither smuggle a value-shaped field in
  * nor sneak oversized rows through.
+ *
+ * Two more contract rules are re-checked here so the type's doc stays true
+ * for every payload that passes:
+ *
+ * - **Unique names** — the capture side dedupes (its dedupe key is the
+ *   clipped name), so a duplicated list means a forged or drifted payload:
+ *   rejected as a unit, never silently cut (the validator's standing
+ *   size policy).
+ * - **Representable stamp** — `capturedAt` is capped at the platform's
+ *   representable-instant ceiling (`MAX_REPRESENTABLE_MS`, the same declared
+ *   constant the cache-stamp defense uses — one declaring site, no second
+ *   limit), so downstream date math on the stamp can never construct a
+ *   garbage `Date` or throw.
  */
 export function parsePageCookies(input: unknown): PageCookies | null {
   if (!isRecord(input) || Object.keys(input).length !== 2) return null;
   const rawCapturedAt = input['capturedAt'];
-  if (typeof rawCapturedAt !== 'number' || !Number.isInteger(rawCapturedAt) || rawCapturedAt < 0) {
+  if (
+    typeof rawCapturedAt !== 'number' ||
+    !Number.isInteger(rawCapturedAt) ||
+    rawCapturedAt < 0 ||
+    rawCapturedAt > MAX_REPRESENTABLE_MS
+  ) {
     return null;
   }
   const rawNames = input['names'];
   if (!isStringArray(rawNames) || rawNames.length > LIMITS.cookies.count) return null;
   const names: string[] = [];
+  const seen = new Set<string>();
   for (const name of rawNames) {
     if (!isUsableString(name, LIMITS.cookies.name)) return null;
+    // Unique-names contract (see above): a repeat name rejects the payload.
+    if (seen.has(name)) return null;
+    seen.add(name);
     names.push(name);
   }
   return { names, capturedAt: rawCapturedAt };

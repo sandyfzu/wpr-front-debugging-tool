@@ -254,9 +254,13 @@ export interface PreloadedResources {
  * not even materialized by the capture (see `lib/wp-rocket/cookies`).
  */
 export interface PageCookies {
-  /** Unique cookie names, first-occurrence order. */
+  /** Unique cookie names, first-occurrence order (over-cap names by their clip). */
   names: string[];
-  /** Wall-clock ms when the capture read `document.cookie`. */
+  /**
+   * Wall-clock ms when the capture read `document.cookie` — capped at the
+   * boundary to the platform's representable-instant range
+   * (`MAX_REPRESENTABLE_MS`), never a garbage `Date` downstream.
+   */
   capturedAt: number;
 }
 
