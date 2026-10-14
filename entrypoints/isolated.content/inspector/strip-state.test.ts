@@ -246,6 +246,30 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     expect(lazyRow?.count).toBe(detections.lazyload.images.length);
   });
 
+  it('a versionless present page renders the unknown-version identity in every slot', () => {
+    // A versionless present page: no generator version, footprints + the
+    // cache comment proving presence (the engine seam's own crafted shape).
+    // Real-world materialization: a served copy whose generator meta carries
+    // no version stamp (the docker site's `?fdt-wpr-versionless=1` arm).
+    const { detections } = runDetection(
+      '<html><head><title>t</title></head><body>fixture page</body></html>' +
+        '<!-- This website is like a Rocket, is performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1699999999 -->'
+    );
+    expect(detections.wpr.present).toBe(true);
+    expect(detections.wpr.cached).toBe(true);
+    expect(detections.wpr.version).toBeNull();
+    const model = buildStripCardModel({
+      snapshot: ready(detections),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    // Identity and title agree on the honest form; the footer dashes the
+    // version slot. Nothing in the model fabricates a version string.
+    expect(model.identity).toBe('WPR (unknown version)');
+    expect(model.footer).toBe('WPR — · WP — · FDT 0.0.0');
+    expect(model.phase).toBe('ready');
+  });
+
   it('an all-zero WPR-absent page renders every row neutral with honest tooltips', () => {
     const model = buildStripCardModel({
       snapshot: ready(zeroDetections()),

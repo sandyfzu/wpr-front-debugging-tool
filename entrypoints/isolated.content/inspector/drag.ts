@@ -9,6 +9,15 @@
  * navigation/reload resets it by construction. `SB-D12`'s persisted-position
  * half stays full P12.
  *
+ * Owner binding (P12A feedback round, 2026-10-14): the chrome is FULLY
+ * contained in the viewport, in both states, at rest and during a drag — no
+ * strip of anything may sit offscreen. Hiding is the context-menu toggle's
+ * (and the coming shortcut's) job; nothing needs to be parked past the edge.
+ * The clamp therefore holds the whole box `containmentMarginPx` px inside
+ * every edge, and the machine re-clamps at rest (`reclamp`) — the wiring
+ * calls it when the viewport or the box changes and renders the move
+ * smoothly, never during active manipulation.
+ *
  * Position model: the chrome carries the drag as a translate. The machine
  * tracks the translate it applied itself (`applied`); the live box read is
  * translated, so its untranslated origin is `rect − applied` — every move
@@ -48,31 +57,40 @@ export interface ViewportSize {
 export const DRAG_TUNING = Object.freeze({
   /** Pointer travel that turns a press into a drag (a shorter release stays a click). */
   moveSlopPx: 5,
-  /** Smallest on-screen strip (px) kept visible on each axis, both directions. */
-  minVisiblePx: 32
+  /**
+   * Full-visibility air margin (px): the whole box stays this far inside
+   * every viewport edge, always. Full visibility is the owner binding ("not
+   * outside at all"); the small air keeps the chrome's elevation shadow and
+   * its grab affordances off the viewport's own hem, and it is exactly the
+   * brief's "clamped 4 px inside the viewport" (SB-D12) — with the strip
+   * figure gone, the drag-time clamp and the brief's drop clamp are one
+   * geometry.
+   */
+  containmentMarginPx: 4
 });
 
 /**
- * Clamp a desired position so the box keeps `minVisible` px visible on each
- * axis in both directions (an edge-parked shape stays grabbable; nothing is
- * dragged fully off). When the clamp range inverts (a viewport smaller than
- * the shape plus the two margins), the range's left/top value wins — a
- * deterministic, never-NaN answer.
+ * Clamp a desired position so the WHOLE box stays inside the viewport with
+ * `margin` px of air on each side (full containment — the owner binding:
+ * never any part offscreen). When a viewport cannot contain the shape at
+ * all (smaller than shape + 2·margin), the range inverts; the lower (left/
+ * top) bound then wins one-sided — a deterministic, never-NaN answer that
+ * parks the box at the left/top margin rather than fabricating a fit.
  *
  * @param desired The shape's desired viewport top-left.
  * @param size The shape's extent (translate-invariant).
  * @param viewport The live viewport.
- * @param minVisible The per-axis minimum visible strip.
+ * @param margin The per-axis full-visibility air margin.
  * @returns The clamped viewport top-left.
  */
 export function clampDragPosition(
   desired: { readonly left: number; readonly top: number },
   size: { readonly width: number; readonly height: number },
   viewport: ViewportSize,
-  minVisible: number
+  margin: number
 ): { left: number; top: number } {
-  const leftRange: [number, number] = [minVisible - size.width, viewport.width - minVisible];
-  const topRange: [number, number] = [minVisible - size.height, viewport.height - minVisible];
+  const leftRange: [number, number] = [margin, viewport.width - margin - size.width];
+  const topRange: [number, number] = [margin, viewport.height - margin - size.height];
   return {
     left: Math.max(leftRange[0], Math.min(desired.left, leftRange[1])),
     top: Math.max(topRange[0], Math.min(desired.top, topRange[1]))
@@ -83,7 +101,13 @@ export function clampDragPosition(
 export interface DragMachineDeps {
   /** The live viewport, read per call (each move re-clamps against it). */
   readViewport(): ViewportSize;
-  /** The dragged shape's live box; null once its element is gone (dead chrome). */
+  /**
+   * The VISIBLE chrome shape's live box — the pill while the card is closed,
+   * the open card itself (getBoundingClientRect's shape); null once its
+   * element is gone (dead chrome). The resting box is what `reclamp` holds
+   * inside the viewport; during a drag the grabbed shape is the visible
+   * one, so its reads agree.
+   */
   readBox(): DragBox | null;
   /**
    * Apply the chrome's drag translate (px). `null` means "no translate":
@@ -115,6 +139,20 @@ export interface DragController {
   cancel(): void;
   /** Whether a drag is live (the wiring's Escape/capture decisions read it). */
   isDragging(): boolean;
+  /**
+   * Re-clamp the RESTING chrome against the live viewport (full containment
+   * at rest — the wiring calls it when the viewport changed or the visible
+   * box grew/shrank outside a drag). No-op while a drag is live (the moves
+   * re-clamp themselves — reconciliation here would fight the pointer) and
+   * on a dead chrome; idempotent when the box already sits inside. The
+   * untouched stylesheet anchor answers as the identity translate and is
+   * never rewritten into one.
+   *
+   * @returns Whether a position write landed — the wiring's signal to run
+   *   the smooth re-settle leg (the movement is the chrome's own, so the
+   *   class can ride it).
+   */
+  reclamp(): boolean;
   /** Read-and-clear the trailing-click suppression: true exactly once after a
    * drag actually moved (the press belonged to the drag, not to the pill).
    * A live moved drag suppresses too: the press's compat click can run
@@ -217,7 +255,7 @@ export function createDragController(deps: DragMachineDeps): DragController {
         { left: point.x - drag.offset.x, top: point.y - drag.offset.y },
         { width: box.width, height: box.height },
         deps.readViewport(),
-        DRAG_TUNING.minVisiblePx
+        DRAG_TUNING.containmentMarginPx
       );
       const next = {
         x: clamped.left - (box.left - (applied?.x ?? 0)),
@@ -249,6 +287,39 @@ export function createDragController(deps: DragMachineDeps): DragController {
 
     isDragging() {
       return drag !== null;
+    },
+
+    reclamp() {
+      if (drag !== null) return false; // A live drag owns the position; its moves re-clamp.
+      const box = deps.readBox();
+      if (box === null) return false; // A dead chrome has nothing to hold.
+      const clamped = clampDragPosition(
+        { left: box.left, top: box.top },
+        box,
+        deps.readViewport(),
+        DRAG_TUNING.containmentMarginPx
+      );
+      // Same derivation as the follow: translate the clamped top-left back
+      // into the chrome's drag translate over the box's untranslated origin.
+      const next = {
+        x: clamped.left - (box.left - (applied?.x ?? 0)),
+        y: clamped.top - (box.top - (applied?.y ?? 0))
+      };
+      // Identity answers are not writes. The untouched anchor answers as the
+      // zero translate: the stylesheet bottom-right anchor IS position
+      // {0, 0} (custom properties unset), and a settled-at-rest position is
+      // already tracked in `applied`. Zero results on a translated chrome
+      // restore the anchor as unset — the stylesheet anchor stays the one
+      // resting truth.
+      const isAnchor = next.x === 0 && next.y === 0;
+      if (applied === null) {
+        if (isAnchor) return false;
+      } else if (applied.x === next.x && applied.y === next.y) {
+        return false;
+      }
+      applied = isAnchor ? null : next;
+      deps.applyPosition(applied);
+      return true;
     },
 
     consumeClickSuppression() {
