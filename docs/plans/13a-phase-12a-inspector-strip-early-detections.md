@@ -181,6 +181,13 @@ The owner tested the shipped widget on the real site and reported four items; ev
 
 **Budgets re-derivation (this round):** measured on the finished build, Chromium — isolated content script **117.8 raw / 40.3 gzip** (116.2 / 39.7 before ⇒ **the round weighs +1.6 raw / +0.6 gzip**: the containment watcher module + its wiring arms, the value-chip presentation, and the containment clamp's stricter range; no strip-less build was re-derived this round — the delta attribution follows the edited files' own scope). New ceiling **119 raw / 42 gzip**: the standing shape (measured + ~1.2 KB raw / ~1.7 gzip headroom), one round of hardening at this surface's observed granularity. The whole-build backstop read **413.0 raw / 139.0 gzip** against its untouched 857/— ceiling.
 
+**Manual rows (this round, left to the auditor / the full P12, with reasons):**
+
+- The containment re-settle's smoothness with real pointer hardware in a headed browser at 60 Hz — the tier pins the transition legs programmatically (the live CSSTransition across the move; the reduced-motion collapse); a human perceptual walk (does the spring feel anchored to the park, never fight the pointer) rides the already-recorded motion-settings manual row above.
+- The versionless identity inside a REAL panel Detections page — none exists yet (the page is a placeholder; P12 owns the surface), so the round verifies honest absence on it (no version display anywhere, nothing to fabricate from) and the strip's truth end to end.
+- The context-menu toggle path itself stays Playwright-unreachable (the standing manual row above; the round's e2e drives the same storage seam).
+- A browser canceling a replaced transition without ever firing `transitionend` (the class-stranding edge the arm removal traded a guard for) — acceptance-tested scenario the safety net covers by construction: the next pointer press clears the class regardless; recording it keeps the class lifecycle's failure modes explicit.
+
 **Adversarial audit (feedback-round scope): pending** — a separate auditor runs after this round; its receipts append here.
 
 ### Sub-phase build-out

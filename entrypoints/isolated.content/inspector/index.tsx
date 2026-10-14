@@ -370,20 +370,11 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     ctx.addEventListener(chrome, 'transitionend', (event) => {
       // The smooth re-settle's end: exactly the CHROME's own position leg
       // (child transitions bubble here and must not clear it). Synthetic
-      // events are ignored with the shared trust gate.
-      if (
-        !isTrustedUserEvent(event) ||
-        !(event instanceof TransitionEvent) ||
-        event.target !== chrome ||
-        event.propertyName !== 'transform'
-      ) {
-        return;
-      }
-      chrome.classList.remove('ins-resettle');
-    });
-    ctx.addEventListener(chrome, 'transitioncancel', (event) => {
-      // A transition that never completes must not strand the class (it is
-      // the position-interruption guard; same narrowing as above).
+      // events are ignored with the shared trust gate. No transitioncancel
+      // arm: the two self-inflicted cancellation orderings (this class's own
+      // re-arm, and the pointerdown clear) remove the class themselves, and
+      // the cancel event of a replaced transition must not clip the fresh
+      // one.
       if (
         !isTrustedUserEvent(event) ||
         !(event instanceof TransitionEvent) ||
