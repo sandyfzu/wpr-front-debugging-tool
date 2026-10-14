@@ -27,7 +27,6 @@
 import { createMemo, createSignal, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
 import Cookie from 'lucide-solid/icons/cookie';
 import Info from 'lucide-solid/icons/info';
-import Lock from 'lucide-solid/icons/lock';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
 import ScrollText from 'lucide-solid/icons/scroll-text';
 import { Badge } from '../../../../components/ui/badge';
@@ -38,6 +37,7 @@ import { KeyValue } from '../../../../components/ui/key-value';
 import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import type { ShownHeader } from '../../../../lib/panel/redaction';
 import {
   buildHeadersViewModel,
   headersTruncationNote
@@ -48,6 +48,7 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { relativeAge } from '../../status-bar/relative-age';
 import { PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { WithheldValue } from '../withheld-value';
 import {
   canReloadInspected,
   reloadInspected,
@@ -66,8 +67,7 @@ import {
   SECTION_TITLES,
   shownStamp,
   type InventoryRow,
-  type InventorySectionId,
-  type ShownHeader
+  type InventorySectionId
 } from './inventory';
 
 /** The page's one-line "what am I looking at". */
@@ -76,9 +76,6 @@ export const PAGE_SUBTITLE = 'Main-frame response headers and readable cookie na
 /** The SPA limitation, stated where the fetched time is. */
 export const SPA_NOTE =
   "Headers come from the last main-frame response — in-page (SPA) navigations don't refresh them.";
-
-/** What a withheld header value says about itself (visible under the value). */
-export const WITHHELD_NOTE = 'Withheld — this header can carry credentials';
 
 /** The scroller's accessible name. */
 const LIST_LABEL = 'Response headers and cookies';
@@ -118,7 +115,7 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
   if (!canReloadInspected(api)) return undefined;
   return () => {
     if (reloadInspected(api) === 'reloaded') {
-      toast.success('Reloading the inspected page');
+      toast.success('Reloading the page — the panel refreshes when it reports back');
     } else {
       toast.error('Reload failed', {
         description: 'Reload the inspected page from its own tab.'
@@ -134,6 +131,8 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
  * soft refresh, and owns one aging clock for the relative times (armed for
  * the page's lifetime — a page body only exists while data is loaded —
  * and stopped on unmount).
+ *
+ * @returns The page body, or nothing outside the loaded states.
  */
 export function HeadersCookiesPage(): JSX.Element {
   const store = useFdtData();
@@ -173,6 +172,7 @@ export function HeadersCookiesPage(): JSX.Element {
  * everything, never nested ones.
  *
  * @param props See {@link HeadersCookiesViewProps}.
+ * @returns The page frame with its sections.
  */
 export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element {
   const inventory = createMemo(() =>
@@ -287,7 +287,9 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
             createVirtualizer={props.createVirtualizer}
             class={cn(
               PAGE_FILL_SCROLLER,
-              '-mx-1 border-t px-1',
+              // Capped at the wide tier: rows (and their hairlines) end with
+              // their content instead of running across an empty band.
+              '-mx-1 border-t px-1 @wide:max-w-5xl',
               scrolled() ? 'border-line-2' : 'border-transparent'
             )}
           >
@@ -331,6 +333,7 @@ interface InventoryItemProps {
  * has nothing below it to separate, so it draws none.
  *
  * @param props See {@link InventoryItemProps}.
+ * @returns The `listitem`.
  */
 function InventoryItem(props: InventoryItemProps): JSX.Element {
   const last = (): boolean => props.position === props.total;
@@ -406,6 +409,7 @@ interface SectionHeadingProps {
  * — for cookies — the capture stamp and the lead line naming both limits.
  *
  * @param props See {@link SectionHeadingProps}.
+ * @returns The heading band.
  */
 function SectionHeading(props: SectionHeadingProps): JSX.Element {
   const noun = (): string => {
@@ -452,14 +456,16 @@ interface HeaderItemProps {
 
 /**
  * Render one header row: the name over its value (side by side from the
- * regular tier, the value column capped at the wide tier so the copy control
- * stays next to it), the verdict hint under the value when the shared model
+ * regular tier; the list itself is capped at the wide tier, so the copy
+ * control stays near the value), the verdict hint under the value when the shared model
  * has one, and an always-visible copy control for the wire form
- * `name: value`. A withheld value reads muted and italic with a lock and
- * the reason, so it never passes for the value. The row tints on hover and
+ * `name: value`. A withheld value renders through the shared
+ * `WithheldValue` (lock + marker; the reason on hover and for screen
+ * readers). The row tints on hover and
  * while its control has focus (instant — no transition).
  *
  * @param props See {@link HeaderItemProps}.
+ * @returns The header row.
  */
 function HeaderItem(props: HeaderItemProps): JSX.Element {
   return (
@@ -468,7 +474,7 @@ function HeaderItem(props: HeaderItemProps): JSX.Element {
         stacked
         term={props.header.name}
         class={cn(
-          'min-w-0 flex-1 gap-y-0.5 @regular:flex-row @regular:gap-x-3 @wide:max-w-4xl',
+          'min-w-0 flex-1 gap-y-0.5 @regular:flex-row @regular:gap-x-3',
           '[&>[data-fdt-key-value-term]]:font-mono [&>[data-fdt-key-value-term]]:break-all',
           '@regular:[&>[data-fdt-key-value-term]]:w-40 @wide:[&>[data-fdt-key-value-term]]:w-56',
           '@regular:[&>[data-fdt-key-value-value]]:flex-1'
@@ -479,22 +485,10 @@ function HeaderItem(props: HeaderItemProps): JSX.Element {
           fallback={<span class="block text-fg-muted italic">(no value)</span>}
         >
           {(value) => (
-            <span
-              data-fdt-redacted={props.header.redacted ? '' : undefined}
-              class={cn(
-                'block font-mono break-all',
-                props.header.redacted ? 'text-fg-muted italic' : 'text-fg-primary'
-              )}
-            >
-              {value()}
-            </span>
+            <Show when={!props.header.redacted} fallback={<WithheldValue value={value()} />}>
+              <span class="block font-mono break-all text-fg-primary">{value()}</span>
+            </Show>
           )}
-        </Show>
-        <Show when={props.header.redacted}>
-          <span class="mt-0.5 flex items-start gap-1 text-2xs text-fg-secondary">
-            <Lock size={12} class="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>{WITHHELD_NOTE}</span>
-          </span>
         </Show>
         <Show when={props.header.hint}>
           {(hint) => (
@@ -539,6 +533,7 @@ interface StampProps {
  * tooltip's 24 px block floor.
  *
  * @param props See {@link StampProps}.
+ * @returns The stamp text (with its tooltip or title).
  */
 function Stamp(props: StampProps): JSX.Element {
   const relative = (): string => `${props.verb} ${relativeAge(props.now - props.at)}`;

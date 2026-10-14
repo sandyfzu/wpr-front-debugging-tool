@@ -22,13 +22,8 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { REDACTED } from '../../../../lib/panel/redaction';
-import {
-  HeadersCookiesPage,
-  HeadersCookiesView,
-  inspectedReloadAction,
-  SPA_NOTE,
-  WITHHELD_NOTE
-} from './page';
+import { HeadersCookiesPage, HeadersCookiesView, inspectedReloadAction, SPA_NOTE } from './page';
+import { WITHHELD_NOTE } from '../withheld-value';
 
 /** A cookie value that must never reach the DOM or the clipboard. */
 const SECRET = 'S3CRET-SESSION-VALUE';
@@ -177,8 +172,9 @@ describe('HeadersCookiesView — populated', () => {
     const leaks = [SECRET, 'NAMELESSSECRETTOKEN', 'TOKSECRET', 'AUTHSECRET', 'NONCESECRET'];
     for (const leak of leaks) expect(document.body.innerHTML).not.toContain(leak);
     // The withheld values say so, visibly distinct from real values.
-    const redacted = [...document.querySelectorAll('[data-fdt-redacted]')].map(
-      (n) => n.textContent
+    // The visible marker (the reason rides the sr-only tail and the title).
+    const redacted = [...document.querySelectorAll('[data-fdt-redacted]')].map((n) =>
+      n.textContent.replace(` — ${WITHHELD_NOTE}`, '')
     );
     expect(redacted).toEqual([`sid=${REDACTED}`, REDACTED, REDACTED, REDACTED, REDACTED]);
     fireEvent.click(screen.getByRole('button', { name: 'Authorization header — copy' }));
@@ -241,14 +237,16 @@ describe('HeadersCookiesView — populated', () => {
 });
 
 describe('HeadersCookiesView — rows', () => {
-  it('explains a withheld value under it, with a lock, in the row', () => {
+  it('marks a withheld value with a lock, its reason on hover and for screen readers', () => {
     renderView(makeFdtData({ pageHeaders: [{ name: 'Authorization', value: 'Bearer x' }] }));
     const row = screen
       .getByRole('button', { name: 'Authorization header — copy' })
       .closest('[role="listitem"]');
-    expect(row?.textContent).toContain(REDACTED);
-    expect(row?.textContent).toContain(WITHHELD_NOTE);
-    expect(row?.querySelector('svg.lucide-lock, svg')).not.toBeNull();
+    const marker = row?.querySelector('[data-fdt-redacted]');
+    expect(marker?.textContent).toBe(`${REDACTED} — ${WITHHELD_NOTE}`);
+    expect(marker?.getAttribute('title')).toBe(WITHHELD_NOTE);
+    expect(marker?.querySelector('svg')).not.toBeNull();
+    expect(row?.textContent).not.toContain('Bearer x');
   });
 
   it('names same-name copy controls apart and titles every icon-only control', () => {
@@ -456,7 +454,9 @@ describe('inspectedReloadAction', () => {
     const reload = vi.fn();
     inspectedReloadAction({ devtools: { inspectedWindow: { reload } } })?.();
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(toasts().at(-1)?.title).toBe('Reloading the inspected page');
+    expect(toasts().at(-1)?.title).toBe(
+      'Reloading the page — the panel refreshes when it reports back'
+    );
     inspectedReloadAction({
       devtools: {
         inspectedWindow: {

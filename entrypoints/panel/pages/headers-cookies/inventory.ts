@@ -12,7 +12,7 @@
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
-import { REDACTED, redactHeaderValue } from '../../../../lib/panel/redaction';
+import { shownHeader, type ShownHeader } from '../../../../lib/panel/redaction';
 import type { DataState } from '../../state/fdt-state-machine';
 import type { PageCookies } from '../../../../lib/wp-rocket/types';
 
@@ -36,12 +36,6 @@ export const NO_COOKIES_NOTE = 'No cookies are readable by page scripts.';
 /** The cookie section's lead: both limits of what the section can show. */
 export const COOKIES_LEAD =
   'Names only — values are never captured. HttpOnly cookies are invisible to page scripts, so they never appear here.';
-
-/** A header row as the page shows and copies it. */
-export interface ShownHeader extends HeaderRowVM {
-  /** True when the captured value was withheld (see {@link shownHeader}). */
-  readonly redacted: boolean;
-}
 
 /** One row of the flattened inventory. */
 export type InventoryRow =
@@ -77,34 +71,11 @@ export interface Inventory {
 }
 
 /**
- * The header row as the page may show and copy it, through the panel's one
- * redaction rule (`lib/panel/redaction`). A secret-bearing header keeps its
- * name and loses its whole value — attributes and hint included (a hint can
- * echo the value); a `Set-Cookie` keeps only a well-formed cookie name,
- * which is caching evidence. URL-valued headers (`location`, `link`, …)
- * keep their value with any secret query values reduced. Valueless rows
- * pass untouched.
- *
- * @param header A row of the shared headers model.
- * @returns The row to render and copy, flagged when its value was withheld.
- */
-export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.value === null) return { ...header, redacted: false };
-  const exported = redactHeaderValue(header.name, header.value);
-  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
-  return {
-    name: header.name,
-    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
-    hint: null,
-    redacted: true
-  };
-}
-
-/**
  * The clipboard payload of one header row: the wire form `name: value`
  * (a valueless row copies as `name:`, which is what it was on the wire).
  *
  * @param header The (already shown/redacted) header row.
+ * @returns The `name: value` (or `name:`) text.
  */
 export function headerCopyText(header: HeaderRowVM): string {
   return header.value === null ? `${header.name}:` : `${header.name}: ${header.value}`;
@@ -115,6 +86,7 @@ export function headerCopyText(header: HeaderRowVM): string {
  * order the page lists them, one per line.
  *
  * @param rows The inventory's rows.
+ * @returns One line per header row; empty when there is none.
  */
 export function allHeadersCopyText(rows: readonly InventoryRow[]): string {
   return rows
@@ -130,6 +102,11 @@ export function allHeadersCopyText(rows: readonly InventoryRow[]): string {
  * Row keys follow the header, not its position: `<section>:<lowercase
  * name>#<occurrence>` — a refresh that reorders headers keeps each row's
  * element, and repeated names (several `link` or `vary` rows) stay unique.
+ *
+ * @param section Which header group the rows belong to.
+ * @param headers The group's rows from the shared model.
+ * @param captureHasRows Whether the capture as a whole holds any row.
+ * @returns The section's rows (heading first), possibly none.
  */
 function headerSection(
   section: 'caching' | 'other',
@@ -190,6 +167,7 @@ export function headerCopyLabel(row: Extract<InventoryRow, { kind: 'header' }>):
  *
  * @param headers The shared headers model of the payload.
  * @param cookies The payload's cookie capture, or undefined when it lacks one.
+ * @returns The inventory: presence flags plus the flattened rows.
  */
 export function buildInventory(
   headers: HeadersViewModel,
@@ -222,6 +200,7 @@ export function buildInventory(
  * the rendered heights so the first paint barely shifts.
  *
  * @param row The row to estimate.
+ * @returns The seed height in px.
  */
 export function estimateRowHeight(row: InventoryRow): number {
   switch (row.kind) {
@@ -243,6 +222,7 @@ export function estimateRowHeight(row: InventoryRow): number {
  *
  * @param state The data machine's current state.
  * @param previous The stamp held so far (null before the first `ready`).
+ * @returns The stamp to show, or null.
  */
 export function heldFetchStamp(state: DataState, previous: number | null): number | null {
   if (state.status === 'ready') return state.fetchedAt;
@@ -255,6 +235,7 @@ export function heldFetchStamp(state: DataState, previous: number | null): numbe
  * hostile or broken stamp must degrade to "no absolute form", never throw).
  *
  * @param ms The stamp.
+ * @returns True for a finite stamp within the platform's date range.
  */
 function isRepresentableMs(ms: number): boolean {
   return Number.isFinite(ms) && Math.abs(ms) <= MAX_REPRESENTABLE_MS;
