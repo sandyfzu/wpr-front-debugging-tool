@@ -342,7 +342,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 
 **DoD:** gates green + the budget re-measure + the bar's §D receipts; from the Verification checklist the Undefined References side-by-side leg closes here (identical definitions on an undefined-reference test page) plus the page's keyboard + axe pass. Fixes masters **#29** and **#7** (page-side — Solid page-owned stores, interval leaks impossible); masters **#22**/**#6** become browser-observable here (their base fixes shipped in P6A).
 
-**Receipts (2026-10-14, branch `feat/p6e-undefined-references-page`, commit `5040a51` + this docs commit):**
+**Receipts (2026-10-14, branch `feat/p6e-undefined-references-page`, commit `a49daa8` + this docs commit):**
 
 - **Shipped:** `pages/undefined-references/` — `page.tsx` (frame + the five state bodies), `store.ts` (page-owned store: scan machine, 15 s read timeout, stale-settle tickets, reset per new page, the P6A incremental memo, new-word announcements), `model.ts` (pure: scan transition table, `resolvePageView`, verdicts, copy builders, `splitScriptUrl`), `word-card.tsx`, `copy-exclusion.ts`, `inspected-scripts.ts` (the devtools adapter). Masters **#29** (no delay: results on settle, pinned), **#7** (no module state: re-mount isolation + disposal-drops-late-settle pinned), **#22** (inline chip, browser-observed), **#6** (zero-resource read resolves, browser-observed).
 - **Deviations (cause):**
@@ -360,7 +360,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **Side-by-side vs the reference build** (same fixture page + same resource stub, both built extensions): identical word → definitions for every shared word; inline entries differ only by #22's fix (reference: the dead `In an Inline Script.` anchor; here: the chip). The reference listed no "Script error." card on that fixture (its capture missed the cross-origin error — a P4 capture difference, not this page).
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1491/1491 in 136 files (+79: model 22, adapter 14, store 18, copy 4, card 9, page 12; coverage 95.35 / 94.77 / 98.61 / 96.75, unmoved — page code sits outside the `lib/utils` gate) · `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓ — panel **229.3 → 249.5 raw / 70.6 → 76.9 gzip** (+20.2 / +6.3: this page plus the first real import of the shared seam — `PageFrame`/`PageHeader`, `Card`, `Badge`, `Skeleton` — and seven icons; shared pieces will not recount for the other letters), whole 443.8 → 464.1, under 600.
 
-**Receipts — audit round (2026-10-14, commit `6593367` + this docs commit).** Each finding reproduced in the auditor's harness first, then proven fixed with the same harness (a copy with the selectors this round renamed, plus an `inspectedWindow.eval` stub) and pinned by tests.
+**Receipts — audit round (2026-10-14, commit `186f264` + this docs commit).** Each finding reproduced in the auditor's harness first, then proven fixed with the same harness (a copy with the selectors this round renamed, plus an `inspectedWindow.eval` stub) and pinned by tests.
 
 - **M1 — Copy as exclusion copied an unusable URL — fixed.** The copied value is now a pattern (`exclusionPattern`): the path for a same-origin script, host + path otherwise, no scheme, no query. Regex syntax becomes `.` rather than a backslash escape, because WP Rocket escapes `+`, `?ver` and `#` itself (verified in its `DelayJS/HTML.php`: `str_replace` then `preg_match("#{$pattern}#i", $tag)`), so a pre-escaped `\+` would turn into a broken `\\+`. The inspected origin is read once per fetch through `inspectedWindow.eval('location.origin')`, which is lastError- and exception-aware and validated as an exact http(s) origin. If it can't be read, the host is kept, so absolute `src` values still match.
   - Pinned: every pattern matches its own tag under a plain `RegExp` and under WP Rocket's escaping + `#…#i`, including `?ver=…&#038;…` tags, a relative `src`, a `data-rocket-src` tag, and `+`/`()` paths. Also pinned: the full URL with its query does _not_ match (why the query goes), and a sibling script on the same page does not match.
@@ -404,7 +404,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
   - Screenshots re-taken and inspected; the failure notice was re-laid out after the 320 px shot showed its title crushed against Retry.
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1542/1542 in 137 files (+51: model 36, search 9 new, adapter 23, store 25, card 14, page 16, lib +3; coverage 95.48 / 94.94 / 98.62 / 96.82) · `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓ — panel **249.5 → 257.6 raw / 76.9 → 79.4 gzip**, whole 464.1 → 472.2.
 
-**Receipts — closing round (2026-10-14, verification follow-ups; commit `fc20065` + this docs commit).**
+**Receipts — closing round (2026-10-14, verification follow-ups; commit `0070a7b` + this docs commit).**
 
 - **Skipped scripts are visible.** The reader counts every script file it had to skip (no answer in 5 s, a `lastError`, an empty or undecodable body) per read (`ScriptRead.unreadable`, tallied per call — a second read starts at zero). The summary adds "N scripts could not be read" (searched views only). A not-found verdict then reads "No definition found in the readable scripts", and its body says N scripts could not be read, so a definition may still be in one of them. Found verdicts are unchanged.
 - **Copy names tell hosts apart:** "Copy as exclusion: jquery.min.js (cdn.example.com)" for another origin's script; the page's own scripts keep "Copy as exclusion: <file>".
@@ -414,7 +414,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **Receipt corrections (above, in place):** the `lib/panel/undefined-refs.ts` edit is recorded as the coordinator-approved one-off exception; the "Excluded JavaScript Files" label is recorded as verified (`Admin/Settings/Page.php:840`, WP Rocket 3.23.5.1).
 - **Gates (before the rebase onto develop):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1561/1561 in 137 files (+11: model +5, adapter +2, store +1, card +2, page +1; coverage unmoved, 95.48 / 94.94 / 98.62 / 96.82) · `build` ✓ · `check:budgets` ✓ — panel 257.6 → **258.5 raw / 79.7 gzip**, whole 473.1. After the rebase onto develop `ed66a59` (P6B merged, no conflict): `test` ✓ 1794/1794 in 148 files, coverage 95.78 / 95.17 / 98.74 / 97.02; panel 287.6 raw / 88.5 gzip (P6B included), whole 502.4 — all six gates green.
 
-**Receipts — over-match round (2026-10-14, commit `5aca697` + this docs commit; supersedes the closing round's `.*` and empty-body items).**
+**Receipts — over-match round (2026-10-14, commit `87e57f5` + this docs commit; supersedes the closing round's `.*` and empty-body items).**
 
 - **MAJOR — `%XX` → `.*` over-matched; replaced.** WP Rocket tests each exclusion against the whole `<script>` element, attributes and inline body (`DelayJS/HTML.php:193`). It also saves the line through `sanitize_text_field`, which drops `%XX`, and `rocket_clean_wildcards`, which rewrites `*` forms (`formatting.php:189`). So `ñandú.js` → `…/js/.*and.*.js` also excluded `sandbox.js`, `handler.js` and an inline config script. A wrongly excluded script runs undelayed with no visible sign.
   - **New rule:** each encoded run is decoded. Non-ASCII characters are emitted raw (WordPress prints them raw; the sanitizer keeps valid UTF-8). Decoded ASCII characters become `[^/]{1,3}`, covering the raw or `%XX` spelling within one segment. A run that is not UTF-8 becomes `[^/]{1,3n}`. Generated patterns never contain `*` or `%`, and WP Rocket's save pipeline leaves them unchanged (pinned).
@@ -426,7 +426,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **One location form:** no leading `/`, `wp-content/` dropped everywhere (`wp-includes/js/jquery/`, `plugins/p/js/`, `themes/t/js/`, `uploads/x/`). A root file of the page's origin has no location line; another origin's root file shows just its host.
 - **Gates (after the rebase onto `ed66a59`):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1797/1797 in 148 files (coverage 95.78 / 95.17 / 98.74 / 97.02) · `build` ✓ · `check:budgets` ✓ — panel 287.9 raw / 88.6 gzip, whole 502.7.
 
-**Receipts — ReDoS round (2026-10-14, commit `96d1fe1` + this docs commit; supersedes the over-match round's `[^/]{1,3}` classes and its look-alike residual).**
+**Receipts — ReDoS round (2026-10-14, commit `f09219d` + this docs commit; supersedes the over-match round's `[^/]{1,3}` classes and its look-alike residual).**
 
 - **MAJOR — catastrophic backtracking, fixed by construction.** One `[^/]{1,3}` per decoded ASCII character let adjacent classes, and classes interleaved with literals, split a non-matching tag exponentially (auditor: 20 encoded spaces 8.9 s, 24 never finish). The merged-stretch `[^/]{k,3k}` you suggested fixes adjacent runs only. A bench here showed `a[^/]{1,3}a[^/]{1,3}…` against `abab…` still exploding (18 classes: 1.1 s, 22: 11 s), so units were made exact instead.
   - Each decoded ASCII character is now `(?:[c]|[%]XX)`: its raw spelling, or its encoded one written `[%]XX`, since a bare `%XX` is stripped by `sanitize_text_field`. The two alternatives start with different characters, so matching is deterministic and linear.
@@ -442,6 +442,15 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **Display:** the directory and file name are decoded for display only (`plugins/mi plugin/js/`, `préf.js`; undecodable text stays as is).
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1843/1843 in 150 files (coverage 95.83 / 95.21 / 98.76 / 97.06) · `build` ✓ · `check:budgets` ✓ — panel 288.4 raw / 88.9 gzip, whole 503.2.
 - **Browser:** the copy action's clipboard value matches its tag under both readers.
+
+**Receipts — final round (2026-10-14, commits `c11857f` + `7332897` + this docs commit; rebased onto develop `9ae4e76`, the data-path fix).**
+
+- **No `?` quantifier — fixed.** WP Rocket's `str_replace('?ver', '\?ver')` turned a quantifier `)?` followed by `ver` into a literal `)\?`. That broke `p&ver.js` and `50%25ver.js` under its reader.
+  - Optional parts are now `{0,1}`: `[%](?:25){0,1}`, `&(?:#0{0,1}38;|amp;){0,1}`, `&#0{0,1}39;`, `&#0{0,1}34;`.
+  - Pinned: `p&ver.js` (raw and `&#038;`), `50%25ver.js` (encoded and raw `%`) and `o'ver.js` match their own tags under both readers. Across the suite's URL shapes, a generated pattern holds a `?` only inside `(?:` or the literal class `[?]`.
+- **Display:** `%2F` stays encoded when a file name or directory is decoded for display, so there is no fake path separator. Pinned for both upper- and lower-case hex.
+- **Rebase check — data-path fix:** the undefined-reference words, the `undefinedReferencesUpdated` / `allScriptsLoaded` pushes and the Delay JS record shape are unchanged. One addition: a Delay JS row can now arrive marked `truncated: true`, meaning its inline content was clipped to the producer's caps or later scripts were dropped. The inline-script stack the search runs over is then incomplete, so the page says "inline scripts only partly captured" in the summary and softens a not-found verdict ("No definition found in the readable scripts"), with the reason in the card body. Pinned in model, card and page tests.
+- **Gates (this tree):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1974/1974 in 152 files (coverage 96.44 / 95.9 / 98.87 / 97.32) · `build` ✓ · `check:budgets` ✓ — panel 294.0 raw / 90.4 gzip (develop's data-path fix included), whole 511.6.
 
 ---
 
