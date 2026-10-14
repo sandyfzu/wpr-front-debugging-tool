@@ -1,16 +1,19 @@
 /**
- * Render tests for the page seam: the frame contract (entrance class,
+ * Render tests for the page seam: the frame contract (entrance class, unpadded
  * container root, focus target, single `h1`, fill mode), the filtered-empty
- * view (sentence per input, one button per handler), and the external link
- * (new-tab safety, accessible name, unsafe-scheme fallback).
+ * view (sentence per input, gated buttons, the focus hand-off), and the
+ * external link (new-tab safety, accessible name, unsafe-scheme fallback).
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import type { JSX } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROUTE_HEADING_SELECTOR } from '../palette/focus';
 import {
   ExternalLink,
   NO_MATCHES_QUERY_MAX,
   NoMatches,
+  type NoMatchesFocusTarget,
   PAGE_FILL_SCROLLER,
   PageFrame,
   noMatchesSentence
@@ -27,17 +30,29 @@ function frameRoot(): HTMLElement {
   return root;
 }
 
+/** The frame's padded body column. */
+function frameBody(): HTMLElement {
+  const body = frameRoot().querySelector<HTMLElement>(':scope > [data-fdt="page-body"]');
+  if (!body) throw new Error('no page-body column rendered');
+  return body;
+}
+
 describe('PageFrame', () => {
-  it('renders the entrance + container root tagged with the route id', () => {
+  it('renders the entrance + unpadded container root tagged with the route id', () => {
     render(() => <PageFrame id="javascript" title="JavaScript" />);
     const root = frameRoot();
     expect(root.tagName).toBe('SECTION');
     expect(root.dataset.fdtPage).toBe('javascript');
-    for (const token of ['fdt-page', '@container', 'flex', 'flex-col', 'gap-3', 'p-3']) {
-      expect(root.classList).toContain(token);
+    expect(root.classList).toContain('fdt-page');
+    expect(root.classList).toContain('@container');
+    // Padding lives inside, so container queries read the full region width.
+    expect([...root.classList].some((c) => /^p[xytrbl]?-/.test(c))).toBe(false);
+    for (const token of ['flex', 'flex-col', 'gap-3', 'p-3']) {
+      expect(frameBody().classList).toContain(token);
     }
     // Natural height unless fill is asked for.
-    expect(root.classList).not.toContain('h-full');
+    expect(root.classList).not.toContain('min-h-full');
+    expect(frameBody().classList).not.toContain('flex-1');
   });
 
   it('renders exactly one h1 — the shell’s route-switch focus target', () => {
@@ -61,19 +76,24 @@ describe('PageFrame', () => {
       </PageFrame>
     ));
     expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
-    const kids = [...frameRoot().children];
+    const kids = [...frameBody().children];
     expect(kids[0]?.getAttribute('data-fdt')).toBe('page-header');
     expect(kids.slice(1).map((el) => el.textContent)).toEqual(['first', 'second']);
   });
 
-  it('fill mode makes the frame a full-height column for one flex scroller', () => {
+  it('fill mode makes the frame an at-least-full-height column for one flex scroller', () => {
     render(() => (
       <PageFrame id="javascript" title="JavaScript" fill>
         <div class={PAGE_FILL_SCROLLER} />
       </PageFrame>
     ));
-    expect(frameRoot().classList).toContain('h-full');
-    expect(PAGE_FILL_SCROLLER).toBe('min-h-48 flex-1');
+    // min-h (not h): at short heights the frame grows and keeps its bottom padding.
+    for (const token of ['flex', 'flex-col', 'min-h-full']) {
+      expect(frameRoot().classList).toContain(token);
+    }
+    expect(frameRoot().classList).not.toContain('h-full');
+    expect(frameBody().classList).toContain('flex-1');
+    expect(PAGE_FILL_SCROLLER).toBe('min-h-48 flex-1 contain-size');
   });
 });
 
@@ -98,6 +118,16 @@ describe('noMatchesSentence', () => {
     expect(noMatchesSentence(undefined, atCap)).toBe(`Nothing matches "${atCap}".`);
     expect(noMatchesSentence(undefined, `${atCap}b`)).toBe(`Nothing matches "${atCap}…".`);
   });
+
+  it('counts and cuts by code point, never splitting a surrogate pair', () => {
+    const emoji = '😀'; // two UTF-16 units, one code point
+    const atCap = emoji.repeat(NO_MATCHES_QUERY_MAX);
+    expect(noMatchesSentence(undefined, atCap)).toBe(`Nothing matches "${atCap}".`);
+    const head = 'a'.repeat(NO_MATCHES_QUERY_MAX - 1);
+    const cut = noMatchesSentence(undefined, `${head}${emoji}x`);
+    expect(cut).toBe(`Nothing matches "${head}${emoji}…".`);
+    expect(cut.isWellFormed()).toBe(true);
+  });
 });
 
 describe('NoMatches', () => {
@@ -108,11 +138,13 @@ describe('NoMatches', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
     // No empty action slot is left behind.
     expect(document.querySelector('[data-fdt="empty-state"] .mt-2')).toBeNull();
-    // Decorative icon stays out of the accessibility tree.
-    expect(document.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    // Decorative icon stays out of the accessibility tree, rendered once.
+    const icons = document.querySelectorAll('[data-fdt="empty-state"] svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0]?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('renders one button per handler and wires each to its own handler', () => {
+  it('renders one button per applicable handler and wires each to its own handler', () => {
     const clear = vi.fn();
     const showAll = vi.fn();
     render(() => (
@@ -126,9 +158,23 @@ describe('NoMatches', () => {
     expect(clear).toHaveBeenCalledTimes(1);
   });
 
-  it('renders only the button whose handler is given', () => {
-    render(() => <NoMatches query="x" onClearSearch={() => undefined} />);
+  it('offers Clear search only with a non-blank query', () => {
+    const [query, setQuery] = createSignal<string | undefined>('  ');
+    render(() => <NoMatches chipLabel="Inline" query={query()} onClearSearch={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+    setQuery('jquery');
     expect(screen.getByRole('button', { name: 'Clear search' })).toBeTruthy();
+    setQuery(undefined);
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
+  it('offers Show all only with a non-blank chip label', () => {
+    const [chip, setChip] = createSignal<string | undefined>(' ');
+    render(() => <NoMatches chipLabel={chip()} query="x" onShowAll={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
+    setChip('Delayed');
+    expect(screen.getByRole('button', { name: 'Show all' })).toBeTruthy();
+    setChip(undefined);
     expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
   });
 
@@ -137,6 +183,133 @@ describe('NoMatches', () => {
     expect(document.querySelector('[data-fdt="empty-state"]')?.classList).toContain(
       'wrap-anywhere'
     );
+  });
+});
+
+/** Props of the {@link FilteredPage} harness. */
+interface FilteredPageProps {
+  /** Forwarded to `NoMatches`. */
+  focusAfter?: NoMatchesFocusTarget;
+  /** Extra work after the clear-search state change (e.g. moving focus itself). */
+  onClear?: () => void;
+}
+
+/**
+ * A minimal list page: a search field, an "All" chip, and `NoMatches` while the
+ * chip + query filter everything out — the shape every list page has.
+ *
+ * @param props See {@link FilteredPageProps}.
+ */
+function FilteredPage(props: FilteredPageProps): JSX.Element {
+  const [query, setQuery] = createSignal('nothing-matches');
+  const [chip, setChip] = createSignal('Inline');
+  return (
+    <PageFrame id="javascript" title="JavaScript">
+      <input aria-label="Search scripts" value={query()} />
+      <button type="button">All</button>
+      <Show when={query() !== '' && chip() !== ''}>
+        <NoMatches
+          chipLabel={chip()}
+          query={query()}
+          onClearSearch={() => {
+            setQuery('');
+            props.onClear?.();
+          }}
+          onShowAll={() => {
+            setChip('');
+          }}
+          focusAfter={props.focusAfter}
+        />
+      </Show>
+    </PageFrame>
+  );
+}
+
+/** Click a `NoMatches` button the keyboard way: focused first, then activated. */
+function activate(name: string): void {
+  const button = screen.getByRole('button', { name });
+  button.focus();
+  fireEvent.click(button);
+}
+
+describe('NoMatches focus hand-off', () => {
+  it('moves focus to the declared target when the action unmounts the view', () => {
+    render(() => (
+      <FilteredPage
+        focusAfter={(action) =>
+          action === 'clear-search'
+            ? screen.getByRole('textbox', { name: 'Search scripts' })
+            : screen.getByRole('button', { name: 'All' })
+        }
+      />
+    ));
+    activate('Clear search');
+    expect(screen.queryByText('No matches')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Search scripts' }));
+  });
+
+  it('targets per action (Show all → the All chip)', () => {
+    render(() => (
+      <FilteredPage
+        focusAfter={(action) =>
+          action === 'show-all' ? screen.getByRole('button', { name: 'All' }) : null
+        }
+      />
+    ));
+    activate('Show all');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'All' }));
+  });
+
+  it('defaults to the page h1 without a target (never <body>)', () => {
+    render(() => <FilteredPage />);
+    activate('Clear search');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  it('falls back to the h1 when the declared target is detached', () => {
+    const detached = document.createElement('input');
+    render(() => <FilteredPage focusAfter={() => detached} />);
+    activate('Show all');
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  it('respects a handler that moved focus itself', () => {
+    render(() => (
+      <FilteredPage
+        onClear={() => {
+          screen.getByRole('button', { name: 'All' }).focus();
+        }}
+        focusAfter={() => screen.getByRole('textbox', { name: 'Search scripts' })}
+      />
+    ));
+    activate('Clear search');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'All' }));
+  });
+
+  it('hands focus off when only the clicked button disappears (the view stays)', () => {
+    const [query, setQuery] = createSignal('x');
+    render(() => (
+      <PageFrame id="javascript" title="JavaScript">
+        <NoMatches
+          chipLabel="Inline"
+          query={query()}
+          onClearSearch={() => {
+            setQuery('');
+          }}
+          onShowAll={vi.fn()}
+        />
+      </PageFrame>
+    ));
+    activate('Clear search');
+    expect(screen.getByText('No matches')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }));
+  });
+
+  it('leaves focus alone when the button was not focused (pointer click)', () => {
+    const target = vi.fn(() => null);
+    render(() => <FilteredPage focusAfter={target} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(target).not.toHaveBeenCalled();
   });
 });
 
@@ -151,10 +324,12 @@ describe('ExternalLink', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('names the new tab in the accessible name and keeps the full URL in title', () => {
+  it('names the new tab in the accessible name; the full URL rides the text span’s title', () => {
     render(() => <ExternalLink href={url} />);
     const link = screen.getByRole('link', { name: `${url} (opens in a new tab)` });
-    expect(link.getAttribute('title')).toBe(url);
+    // Not on the anchor: a title there would be read again as the description.
+    expect(link.hasAttribute('title')).toBe(false);
+    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
     expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -183,7 +358,7 @@ describe('ExternalLink', () => {
     expect(screen.queryByRole('link')).toBeNull();
     const plain = document.querySelector('[data-fdt="external-link"]');
     expect(plain?.tagName).toBe('SPAN');
-    expect(plain?.getAttribute('title')).toBe(href);
+    expect(plain?.querySelector('.truncate')?.getAttribute('title')).toBe(href);
     expect(plain?.textContent).toBe(href);
     expect(plain?.querySelector('svg')).toBeNull();
   });

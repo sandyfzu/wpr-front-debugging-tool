@@ -1,7 +1,8 @@
 /**
  * Wiring tests for the route-body table and the shared placeholder: the five
- * page folders are mapped to their routes, every other route falls back to
- * the placeholder, and every body still renders the honest placeholder page.
+ * page folders are mapped to their routes and every other route falls back to
+ * the placeholder. Page bodies are tested in their own folders (the placeholder
+ * in `pages/placeholder.test.tsx`), never here.
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,10 +10,9 @@ import { PAGE_BODIES, PAGES } from './pages';
 import { DetectionsPage } from './pages/detections/page';
 import { JavaScriptPage } from './pages/javascript/page';
 import { LazyloadPage } from './pages/lazyload/page';
-import { placeholderPage } from './pages/placeholder';
 import { PreloadedResourcesPage } from './pages/preloaded-resources/page';
 import { UndefinedReferencesPage } from './pages/undefined-references/page';
-import { NAV_ROUTES, type RouteId } from './routes';
+import { NAV_ROUTES } from './routes';
 
 afterEach(() => {
   cleanup();
@@ -32,31 +32,16 @@ describe('PAGES wiring', () => {
     expect(typeof PAGES.diagnoser).toBe('function');
   });
 
-  it.each(NAV_ROUTES.map((row) => [row.id, row.label] as const))(
-    '%s still renders the placeholder body (no visible change yet)',
-    (id, label) => {
-      const Body = PAGES[id];
+  it('renders the placeholder for every route without a page folder', () => {
+    // Routes WITH a folder are their page's own tests (in that folder) — this
+    // file pins only the wiring, so page work never edits it.
+    const unshipped = NAV_ROUTES.filter((row) => PAGE_BODIES[row.id] === undefined);
+    for (const row of unshipped) {
+      const Body = PAGES[row.id];
       render(() => <Body />);
-      const root = document.querySelector(`[data-fdt-page="${id}"]`);
-      expect(root?.classList).toContain('fdt-page');
-      expect(document.querySelectorAll('h1')).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: label })).toBeTruthy();
-      expect(screen.getByText(/arrives in a later pass/)).toBeTruthy();
+      expect(document.querySelector(`[data-fdt-page="${row.id}"]`)).not.toBeNull();
+      expect(screen.getByRole('heading', { level: 1, name: row.label })).toBeTruthy();
+      cleanup();
     }
-  );
-});
-
-describe('placeholderPage', () => {
-  it('renders a focusable h1 for the route label', () => {
-    const Body = placeholderPage('diagnoser');
-    render(() => <Body />);
-    const heading = screen.getByRole('heading', { level: 1, name: 'Diagnoser' });
-    expect(heading.getAttribute('tabindex')).toBe('-1');
-  });
-
-  it('fails fast, naming the id, when the registry has no row for it', () => {
-    expect(() => placeholderPage('nope' as RouteId)).toThrow(
-      'placeholderPage: no nav registry row for route "nope"'
-    );
   });
 });

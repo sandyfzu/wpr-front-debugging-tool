@@ -1,7 +1,7 @@
 /**
- * The Undefined References route's page body. Stands in as the shared placeholder until the
- * page itself ships; `pages.tsx` already maps the route here, so the real
- * page replaces this file's body and nothing else.
+ * The Undefined References route's page body — the shared placeholder until the page ships.
+ * `pages.tsx` already maps the route to this export: the page's work replaces
+ * this body (same export name) and adds its tests beside it in this folder.
  */
 import { placeholderPage } from '../placeholder';
 
