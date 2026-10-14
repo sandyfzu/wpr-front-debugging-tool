@@ -11,6 +11,7 @@
 import type { LucideIcon } from 'lucide-solid';
 import FileCode from 'lucide-solid/icons/file-code';
 import Images from 'lucide-solid/icons/images';
+import ScrollText from 'lucide-solid/icons/scroll-text';
 import SearchX from 'lucide-solid/icons/search-x';
 import ShieldCheck from 'lucide-solid/icons/shield-check';
 import Stethoscope from 'lucide-solid/icons/stethoscope';
@@ -31,6 +32,7 @@ export const ROUTE_IDS = [
   'javascript',
   'lazyload',
   'preloaded-resources',
+  'headers-cookies',
   'undefined-references',
   'diagnoser'
 ] as const;
@@ -109,13 +111,14 @@ function listCut(truncated: true | undefined, length: number, cap: number): bool
 
 /**
  * The nav registry, in render order — today's pages. Future rows land
- * additively here with their named owners: Headers & Cookies (P6, Inspect),
- * RUCSS Tester (P13, Tools), Beacon & LCP (P14, Tools), Compare (P17 —
- * decision-gated optional SBS panel home, Tools).
+ * additively here with their named owners: RUCSS Tester (P13, Tools),
+ * Beacon & LCP (P14, Tools), Compare (P17 — decision-gated optional SBS
+ * panel home, Tools).
  *
  * The Overview row carries no live state on purpose: WPR presence, version
  * and cache age are the status bar's first-paint answers, owned there — the
- * nav would only duplicate them.
+ * nav would only duplicate them. Headers & Cookies stays state-free for the
+ * same reason: its cache evidence condenses to the status bar's answer.
  */
 export const NAV_ROUTES: readonly NavRoute[] = [
   { id: 'detections', label: 'Detections', icon: ShieldCheck, group: 'Overview' },
@@ -185,6 +188,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       };
     }
   },
+  { id: 'headers-cookies', label: 'Headers & Cookies', icon: ScrollText, group: 'Inspect' },
   // Copy delta: the single-singular menu name becomes the plural the page
   // actually implements — tracked for the copy sweep.
   {
