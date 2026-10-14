@@ -422,7 +422,7 @@ function parseHttpUrl(url: string): URL | null {
 
 /** A script URL split for display, the way a network panel lists requests. */
 export interface ScriptUrlParts {
-  /** The file (last path segment, no query) — e.g. `jquery.min.js`. */
+  /** The file (last path segment, no query, decoded for display) — e.g. `jquery.min.js`. */
   readonly file: string;
   /** The query, shown muted after the file — e.g. `?ver=3.7.1`; empty when none. */
   readonly query: string;
@@ -444,6 +444,22 @@ export interface ScriptUrlParts {
 const DIRECTORY_PREFIX = /^\/(?:wp-content\/)?/;
 
 /**
+ * Decode percent-escapes for display only (`mi%20plugin` → `mi plugin`,
+ * `pr%C3%A9f.js` → `préf.js`); text that does not decode stays as is.
+ * The result is rendered as text, never used as a URL or a pattern.
+ *
+ * @param text A URL path piece.
+ * @returns The readable form.
+ */
+function decodeForDisplay(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
  * Split a script URL for display. A truncated full URL hides the file name
  * behind the ellipsis on narrow panels, and the inspected page's own host is
  * noise on every row, so it is dropped. A non-http(s) or file-less URL keeps
@@ -461,9 +477,9 @@ export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUr
   const file = path.slice(cut + 1);
   if (file === '') return { file: url, query: '', directory: '', host: null };
   return {
-    file,
+    file: decodeForDisplay(file),
     query: parsed.search,
-    directory: path.slice(0, cut + 1).replace(DIRECTORY_PREFIX, ''),
+    directory: decodeForDisplay(path.slice(0, cut + 1).replace(DIRECTORY_PREFIX, '')),
     host: parsed.origin === pageOrigin ? null : parsed.host
   };
 }
@@ -482,35 +498,88 @@ export function scriptLocation(parts: ScriptUrlParts): string {
 }
 
 /**
- * Characters that are syntax in a regular expression. In an exclusion they
- * are replaced by `.` (any character, so it still matches the literal) —
- * escaping is not portable: WP Rocket itself escapes `+`, `?ver` and `#`
- * before matching, so a pre-escaped `\+` would turn into a broken `\\+`.
+ * How a raw (unencoded) URL character is written into an exclusion, when it
+ * is not a plain literal. Exclusions are read by `new RegExp(…)` and by WP
+ * Rocket, which saves them through `sanitize_text_field` (drops `%XX`,
+ * strips anything after a `<`) and `rocket_clean_wildcards` (turns any `*`
+ * into `(.*)`), then escapes `+`, `?ver` and `#`. So:
+ * - regex syntax becomes a one-character class (`[+]`, `[(]`…) that
+ *   matches only itself under both readers (`[+]` escaped to `[\+]` still
+ *   means `+`);
+ * - `*`, `\`, `^`, brackets and braces become `.` — no class can hold them
+ *   without a backslash (which WordPress may strip) or a `*`;
+ * - `'` and `&`, which WordPress prints as entities inside the `src`
+ *   attribute, accept the raw and the entity spellings.
  */
-const EXCLUSION_UNSAFE = /[\\^$*+?()[\]{}|#]/g;
+const RAW_CHAR_PATTERNS: Readonly<Record<string, string>> = {
+  '+': '[+]',
+  '(': '[(]',
+  ')': '[)]',
+  $: '[$]',
+  '|': '[|]',
+  '?': '[?]',
+  '#': '[#]',
+  '*': '.',
+  '\\': '.',
+  '^': '.',
+  '[': '.',
+  ']': '.',
+  '{': '.',
+  '}': '.',
+  "'": "(?:'|&#0?39;)",
+  '&': '&(?:#0?38;|amp;)?'
+};
+
+/** The raw spelling of a decoded (formerly `%XX`) ASCII character in the tag, when it is not a one-char class. */
+const DECODED_RAW_PATTERNS: Readonly<Record<string, string>> = {
+  "'": "'|&#0?39;",
+  '&': '&(?:#0?38;|amp;)?',
+  '"': '&quot;|&#0?34;'
+};
+
+/**
+ * Decoded characters a one-character class cannot hold safely (`]`, `\`,
+ * `^` need a backslash; `*` would be rewritten; `<`/`>` trip the sanitizer;
+ * `-` and `%` read as syntax or are ambiguous with the encoded spelling):
+ * their raw spelling is "any one character but `/` or `%`".
+ */
+const DECODED_UNSAFE_IN_CLASS = /[\]\\^*<>%/-]/;
+
+/**
+ * One decoded ASCII character as an exclusion unit: its raw spelling or its
+ * `%XX` spelling, written `[%]XX` (a bare `%XX` would be stripped by the
+ * sanitizer). The two alternatives start with different characters, so a
+ * run of units matches deterministically — no backtracking blow-up however
+ * many encoded characters a path holds.
+ *
+ * @param char The decoded character (code point ≤ 0x7f).
+ * @returns The unit.
+ */
+function decodedAsciiUnit(char: string): string {
+  const hex = (char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, '0');
+  const encoded = `[%]${hex}`;
+  if (char === '/') return encoded;
+  if (char === '%') return '[%](?:25)?';
+  const raw =
+    DECODED_RAW_PATTERNS[char] ?? (DECODED_UNSAFE_IN_CLASS.test(char) ? '[^/%]' : `[${char}]`);
+  return `(?:${raw}|${encoded})`;
+}
 
 /** A run of percent-encoded bytes (one or more `%XX`); the split keeps runs at odd indexes. */
 const PERCENT_RUN_SPLIT = /((?:%[0-9A-Fa-f]{2})+)/;
-
-/**
- * One encoded ASCII character (a space, a backtick, `{`, `^`…): in the tag
- * it is either raw (1 char) or still encoded (`%XX`, 3 chars), never a `/`.
- */
-const ENCODED_ASCII = '[^/]{1,3}';
 
 /** Closes a kept query parameter's value: the next `&` (any spelling) or the attribute quote. */
 const QUERY_VALUE_END = `[&"']`;
 
 /**
  * Rewrite one percent-encoded run for an exclusion. Decoded non-ASCII
- * characters are emitted raw — WordPress prints them raw in the tag, and WP
- * Rocket's `sanitize_text_field` keeps valid UTF-8. Decoded ASCII
- * characters (regex or HTML-sensitive, and stripped as `%XX` by that same
- * sanitizer) become a bounded {@link ENCODED_ASCII} class that matches
- * either spelling within one path segment. A run that is not valid UTF-8
- * becomes a class bounded by its encoded length. Never an unbounded `.*`:
- * WP Rocket tests the whole `<script>` element, so a wildcard reaches other
- * scripts' file names and inline bodies.
+ * characters are emitted raw — WordPress prints them raw in the tag, and the
+ * sanitizer keeps valid UTF-8. Decoded ASCII characters become
+ * {@link decodedAsciiUnit}s. Bytes that are not valid UTF-8 stay encoded,
+ * `[%]XX` each. Every unit has a fixed spelling set: never a wildcard (WP
+ * Rocket tests the whole `<script>` element, so a wildcard reaches other
+ * scripts) and never a repeated class (adjacent repeats backtrack
+ * exponentially on a non-matching tag).
  *
  * @param run The encoded run (e.g. `%C3%B1`).
  * @returns Its pattern text.
@@ -520,37 +589,46 @@ function encodedRunPattern(run: string): string {
   try {
     decoded = decodeURIComponent(run);
   } catch {
-    // Not UTF-8: n bytes are at most 3n characters in the tag.
-    return `[^/]{1,${String(run.length)}}`;
+    return run.replace(/%/g, '[%]');
   }
   return Array.from(decoded, (char) =>
-    (char.codePointAt(0) ?? 0) > 0x7f ? char : ENCODED_ASCII
+    (char.codePointAt(0) ?? 0) > 0x7f ? char : decodedAsciiUnit(char)
   ).join('');
+}
+
+/**
+ * Write an unencoded stretch of the URL: literals stay, `.` stays (it
+ * matches itself), the rest follows {@link RAW_CHAR_PATTERNS}.
+ *
+ * @param text The stretch.
+ * @returns Its pattern text.
+ */
+function rawStretchPattern(text: string): string {
+  return Array.from(text, (char) => RAW_CHAR_PATTERNS[char] ?? char).join('');
 }
 
 /**
  * The Delay JS exclusion for a script: the part of its URL that identifies
  * it and survives updates — its path (no scheme, no query: a baked-in
- * `?ver=` stops matching after the next plugin update, and the `?` is regex
- * syntax). The host leads when the script comes from another origin, when
- * the page origin is unknown (it matches absolute `src` values), and when
- * the path alone is too generic: a single segment (`/main.js`) or no file
- * (then the query's first parameter is kept, closed by the next `&` or the
- * attribute quote so `?s=1` never matches `?s=10`).
+ * `?ver=` stops matching after the next plugin update). The host leads when
+ * the script comes from another origin, when the page origin is unknown (it
+ * matches absolute `src` values), and when the path alone is too generic: a
+ * single segment (`/main.js`) or no file (then the query's first parameter
+ * is kept, closed by the next `&` or the attribute quote so `?s=1` never
+ * matches `?s=10`).
  *
- * WP Rocket saves an exclusion through `sanitize_text_field` (drops `%XX`
- * octets) and `rocket_clean_wildcards` (rewrites `*` forms), then escapes
- * `+`, `?ver` and `#` and tests `#…#i` against the whole `<script>` element
- * (attributes and inline body; `&` in a `src` reads `&#038;`). A plain
- * `new RegExp(…)` is the other reader. The returned text survives that
- * pipeline unchanged and matches its own tag under both: regex syntax
- * becomes `.` (matches itself), percent-encoded runs follow
- * {@link encodedRunPattern}, and no `*` or `%` is ever emitted.
+ * WP Rocket tests each exclusion against the whole `<script>` element
+ * (attributes and inline body; WordPress prints `&` as `&#038;` and `'` as
+ * `&#039;` there) after its save pipeline and escaping — see
+ * {@link RAW_CHAR_PATTERNS}; `new RegExp(…)` is the other reader. The text
+ * returned survives that pipeline unchanged (no `*`, no bare `%XX`, no `<`),
+ * matches its own tag under both readers, and matches deterministically
+ * (every unit's alternatives start differently), so a long non-matching tag
+ * costs linear time.
  *
- * Fail-safe residual: a tag that spells non-ASCII characters
- * percent-encoded (rather than raw, as WordPress prints them) does not
- * match — the exclusion visibly fails to apply; it never silently over-
- * matches other scripts.
+ * Fail-safe residual: a tag that spells non-ASCII characters percent-encoded
+ * (rather than raw, as WordPress prints them) does not match — the exclusion
+ * visibly fails to apply; it never silently over-matches other scripts.
  *
  * @param url The script URL.
  * @param pageOrigin The inspected page's origin, or `null` when unknown.
@@ -567,9 +645,7 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
   const raw = `${keepHost ? parsed.host : ''}${path}${query}`;
   const pattern = raw
     .split(PERCENT_RUN_SPLIT)
-    .map((piece, index) =>
-      index % 2 === 1 ? encodedRunPattern(piece) : piece.replace(EXCLUSION_UNSAFE, '.')
-    )
+    .map((piece, index) => (index % 2 === 1 ? encodedRunPattern(piece) : rawStretchPattern(piece)))
     .join('');
   return query.length > 1 ? `${pattern}${QUERY_VALUE_END}` : pattern;
 }

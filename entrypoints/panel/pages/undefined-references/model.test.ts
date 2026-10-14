@@ -326,6 +326,17 @@ describe('splitScriptUrl + scriptLocation', () => {
     expect(scriptLocation(root)).toBe('');
   });
 
+  it('decodes the directory and file for display only', () => {
+    const parts = splitScriptUrl(
+      'https://example.com/wp-content/plugins/mi%20plugin/js/pr%C3%A9f.js?ver=1',
+      PAGE
+    );
+    expect(parts.directory).toBe('plugins/mi plugin/js/');
+    expect(parts.file).toBe('préf.js');
+    // Undecodable text stays as it is.
+    expect(splitScriptUrl('https://example.com/js/a%FF.js', PAGE).file).toBe('a%FF.js');
+  });
+
   it('puts another origin’s host after the directory (the slug survives truncation)', () => {
     const parts = splitScriptUrl('https://cdn.example.com/wp-content/plugins/p/a.js', PAGE);
     expect(parts.host).toBe('cdn.example.com');
@@ -417,22 +428,48 @@ describe('exclusionPattern', () => {
     expect(exclusionPattern('http://localhost:8891/a.js?ver=1', null)).toBe('localhost:8891/a.js');
   });
 
-  it('replaces regex syntax by `.` — never a backslash WP Rocket would double', () => {
+  it('writes regex syntax as one-char classes, `*` and brackets as `.` — never a backslash', () => {
     expect(exclusionPattern('https://shop.example.com/js/a+b(c)[d]$f|h*i.js', PAGE)).toBe(
-      '/js/a.b.c..d..f.h.i.js'
+      '/js/a[+]b[(]c[)].d.[$]f[|]h.i.js'
     );
-    // An encoded `+` is an encoded ASCII character: a bounded class.
+    // An encoded `+` accepts its raw or encoded spelling.
     expect(exclusionPattern('https://shop.example.com/js/a%2Bb.js', PAGE)).toBe(
-      '/js/a[^/]{1,3}b.js'
+      '/js/a(?:[+]|[%]2B)b.js'
     );
+  });
+
+  it('`a+b` matches `a+b` only — not `aab` — under both readers', () => {
+    const pattern = exclusionPattern('https://shop.example.com/js/a+b/x.js', PAGE) ?? '';
+    const own = '<script src="https://shop.example.com/js/a+b/x.js?ver=1"></script>';
+    const sibling = '<script src="https://shop.example.com/js/aab/x.js?ver=1"></script>';
+    // WP Rocket escapes `+`: `[+]` becomes `[\+]`, still a literal `+`.
+    expect(wpRocketMatches(pattern, own)).toBe(true);
+    expect(regexpMatches(pattern, own)).toBe(true);
+    expect(wpRocketMatches(pattern, sibling)).toBe(false);
+    expect(regexpMatches(pattern, sibling)).toBe(false);
+  });
+
+  it("matches a path with `'` and `&` in WordPress' entity spellings", () => {
+    const pattern =
+      exclusionPattern("https://shop.example.com/wp-content/plugins/o'neil&co/js/x.js", PAGE) ?? '';
+    expect(pattern).toBe("/wp-content/plugins/o(?:'|&#0?39;)neil&(?:#0?38;|amp;)?co/js/x.js");
+    for (const src of [
+      'https://shop.example.com/wp-content/plugins/o&#039;neil&#038;co/js/x.js',
+      "https://shop.example.com/wp-content/plugins/o'neil&co/js/x.js",
+      'https://shop.example.com/wp-content/plugins/o&#39;neil&amp;co/js/x.js'
+    ]) {
+      const tag = `<script src="${src}?ver=1" id="oneil-js"></script>`;
+      expect(wpRocketMatches(pattern, tag), tag).toBe(true);
+      expect(regexpMatches(pattern, tag), tag).toBe(true);
+    }
   });
 
   it('keeps the first query parameter of a file-less URL, with the host', () => {
     expect(exclusionPattern('https://shop.example.com/?script=1', PAGE)).toBe(
-      `shop.example.com/.script=1[&"']`
+      `shop.example.com/[?]script=1[&"']`
     );
     expect(exclusionPattern('https://shop.example.com/js/?script=1&ver=2&x=3', PAGE)).toBe(
-      `shop.example.com/js/.script=1[&"']`
+      `shop.example.com/js/[?]script=1[&"']`
     );
     expect(exclusionPattern('https://shop.example.com/js/?', PAGE)).toBe('shop.example.com/js/');
     // The value is closed: `?script=1` never matches `?script=10`.
@@ -449,26 +486,34 @@ describe('exclusionPattern', () => {
     expect(exclusionPattern('https://shop.example.com/js/main.js', PAGE)).toBe('/js/main.js');
   });
 
-  it('decodes encoded runs: non-ASCII raw, ASCII specials as a bounded class, no `.*`', () => {
+  it('decodes encoded runs: non-ASCII raw, ASCII as raw-or-encoded units, no wildcard', () => {
     // The URL parser encodes spaces, backticks, braces, `^` and non-ASCII.
     expect(exclusionPattern('https://shop.example.com/js/my plugin/a`b{c}^d.js', PAGE)).toBe(
-      '/js/my[^/]{1,3}plugin/a[^/]{1,3}b[^/]{1,3}c[^/]{1,3}[^/]{1,3}d.js'
+      '/js/my(?:[ ]|[%]20)plugin/a(?:[`]|[%]60)b(?:[{]|[%]7B)c(?:[}]|[%]7D)(?:[^/%]|[%]5E)d.js'
     );
     expect(
       exclusionPattern('https://shop.example.com/wp-content/themes/t/js/préférences.js', PAGE)
     ).toBe('/wp-content/themes/t/js/préférences.js');
     expect(exclusionPattern('https://shop.example.com/js/скрипт.js', PAGE)).toBe('/js/скрипт.js');
-    // Not UTF-8: a class bounded by the run's encoded length.
+    // Not UTF-8: the bytes stay encoded, `[%]XX` each (a bare `%XX` is sanitized away).
     expect(exclusionPattern('https://shop.example.com/js/a%FFb%FE%FDc.js', PAGE)).toBe(
-      '/js/a[^/]{1,3}b[^/]{1,6}c.js'
+      '/js/a[%]FFb[%]FE[%]FDc.js'
+    );
+    // `/`, `%`, `'`, `&`, `"`, `*` and `<` decoded from an encoded run.
+    expect(
+      exclusionPattern('https://shop.example.com/js/a%2Fb%25c%27d%26e%22f%2Ag%3Ch.js', PAGE)
+    ).toBe(
+      "/js/a[%]2Fb[%](?:25)?c(?:'|&#0?39;|[%]27)d(?:&(?:#0?38;|amp;)?|[%]26)e(?:&quot;|&#0?34;|[%]22)f(?:[^/%]|[%]2A)g(?:[^/%]|[%]3C)h.js"
     );
     for (const url of [
       'https://shop.example.com/js/my plugin/a.js',
       'https://shop.example.com/js/ñandú.js',
-      'https://shop.example.com/js/a%FF.js'
+      'https://shop.example.com/js/a%FF.js',
+      'https://shop.example.com/js/a%2A%3Cb%3E.js'
     ]) {
       const value = exclusionPattern(url, PAGE) ?? '';
       expect(value).not.toContain('*');
+      expect(value).not.toContain('<');
       expect(value).not.toMatch(/%[0-9a-f]{2}/i);
       // WP Rocket's save pipeline leaves it unchanged.
       expect(wpRocketSave(value)).toBe(value);
@@ -659,13 +704,92 @@ describe('exclusionPattern — sibling corpus (only its own tag)', () => {
     }
   });
 
-  it('known residual: a sibling differing only at an encoded ASCII position also matches', () => {
-    // The bounded class must accept the raw (1 char) and `%XX` (3 chars)
-    // spellings, so 1–3 other non-slash characters there match too. Such a
-    // name collision is the narrow, accepted cost of matching both spellings.
+  it('a sibling differing at an encoded position does not match (exact units)', () => {
     const pattern = exclusionPattern(`${ORIGIN}/wp-content/plugins/a%60b/js/main.js`, ORIGIN) ?? '';
     expect(wpRocketMatches(pattern, tag('/wp-content/plugins/a-b/js/main.js', 'lookalike'))).toBe(
-      true
+      false
     );
+    expect(wpRocketMatches(pattern, tag('/wp-content/plugins/a`b/js/main.js', 'own'))).toBe(true);
+    expect(wpRocketMatches(pattern, tag('/wp-content/plugins/a%60b/js/main.js', 'own'))).toBe(true);
+  });
+});
+
+/** A seeded PRNG (mulberry32), so the fuzz is reproducible. */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Milliseconds one RegExp test takes. */
+function timed(pattern: RegExp, text: string): number {
+  const start = performance.now();
+  pattern.test(text);
+  return performance.now() - start;
+}
+
+describe('exclusionPattern — ReDoS guards', () => {
+  const ORIGIN = 'https://shop.example';
+
+  it('30 encoded spaces evaluate fast against a non-matching 4 KB tag', () => {
+    const pattern =
+      exclusionPattern(`${ORIGIN}/wp-content/plugins/x/js/${'%20'.repeat(30)}Z.js`, ORIGIN) ?? '';
+    const tag = `<script src="${ORIGIN}/wp-content/plugins/x/js/${' '.repeat(4000)}"></script>`;
+    const encodedTag = `<script src="${ORIGIN}/wp-content/plugins/x/js/${'%20'.repeat(1300)}"></script>`;
+    for (const text of [tag, encodedTag]) {
+      expect(timed(new RegExp(pattern), text)).toBeLessThan(50);
+      expect(timed(new RegExp(pattern, 'i'), text)).toBeLessThan(50);
+    }
+  });
+
+  it('seeded fuzz: every generated pattern stays fast on long, look-alike, non-matching tags', () => {
+    const random = seeded(0x5eed);
+    const alphabet = [
+      'a',
+      'b',
+      'n',
+      '-',
+      '.',
+      ' ',
+      '`',
+      '{',
+      '}',
+      '^',
+      '+',
+      '(',
+      ')',
+      '$',
+      '|',
+      "'",
+      '&',
+      'ñ',
+      'é',
+      '%FF',
+      '%2B',
+      '%20'
+    ];
+    const pick = (): string => alphabet[Math.floor(random() * alphabet.length)] ?? 'a';
+    for (let round = 0; round < 60; round += 1) {
+      const name = Array.from({ length: 8 + Math.floor(random() * 32) }, pick).join('');
+      const pattern = exclusionPattern(`${ORIGIN}/wp-content/plugins/p/js/${name}Z.js`, ORIGIN);
+      expect(pattern).not.toBeNull();
+      const filler = Array.from({ length: 4000 }, pick).join('');
+      // Plausible text, printed raw and printed encoded, never ending in `Z.js`.
+      for (const text of [
+        `<script src="${ORIGIN}/wp-content/plugins/p/js/${filler}.js"></script>`,
+        `<script src="${ORIGIN}/wp-content/plugins/p/js/${encodeURI(filler)}.js"></script>`
+      ]) {
+        const elapsed = Math.max(
+          timed(new RegExp(pattern ?? ''), text),
+          timed(new RegExp(pattern ?? '', 'i'), text)
+        );
+        expect(elapsed, `${String(pattern)} took ${elapsed.toFixed(1)} ms`).toBeLessThan(50);
+      }
+    }
   });
 });
