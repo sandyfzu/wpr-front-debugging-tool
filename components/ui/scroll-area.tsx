@@ -34,8 +34,13 @@ const AXIS_CLASSES: Record<ScrollAxis, string> = {
  * override the webkit pseudo-elements entirely, so pseudo styling is dead
  * weight here and deliberately not written); `scrollbar-gutter: stable`
  * prevents layout shift when content grows.
+ *
+ * Exported as the design system's one declaring site: the menu plate's own
+ * degenerate-case scroll consumes the same treatment, so no second surface
+ * re-types the tokens.
  */
-const SCROLLBAR_CLASSES = '[scrollbar-width:thin] [scrollbar-color:var(--line-2)_transparent]';
+export const SCROLLBAR_THIN_CLASSES =
+  '[scrollbar-width:thin] [scrollbar-color:var(--line-2)_transparent]';
 
 /**
  * Render the scroll container.
@@ -55,7 +60,7 @@ export function ScrollArea(props: ScrollAreaProps): JSX.Element {
       class={cn(
         'overscroll-contain [scrollbar-gutter:stable]',
         AXIS_CLASSES[own.axis ?? 'y'],
-        SCROLLBAR_CLASSES,
+        SCROLLBAR_THIN_CLASSES,
         own.class
       )}
       {...rest}
