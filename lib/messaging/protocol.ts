@@ -37,14 +37,24 @@
  *   un-scoped push could otherwise act on the wrong panel.
  */
 
-import type { FdtData, PageHeaders, PanelSearchAction, WprDetections } from '../wp-rocket/types';
+import type {
+  FdtData,
+  PageHeaderCapture,
+  PanelSearchAction,
+  WprDetections
+} from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 
 export interface ProtocolMap {
-  /** Content script → background: response headers of the sender's main frame. */
-  getPageHeaders(): PageHeaders | null;
+  /**
+   * Content script → background: the sender's main-frame header capture
+   * (bounded rows + truncation mark). Both ends ship in one build and nothing
+   * persists the reply, so its shape moved from the bare row list to the
+   * capture object to carry the list-level mark.
+   */
+  getPageHeaders(): PageHeaderCapture | null;
   /** Devtools → tab content script: warm up processing (idempotent). */
   processPageData(): boolean;
   /** Devtools → tab content script: everything the panel renders. */

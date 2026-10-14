@@ -80,27 +80,40 @@ describe('CachedTabHeaders', () => {
     expect(cache.take(7)).toEqual([{ name: 'x-cache', value: 'HIT' }, { name: 'x-odd' }]);
   });
 
-  it('drops a capture that fails the shared validator, and empties the tab first', async () => {
-    const { parsePageHeaders } = await import('../../lib/messaging/validate');
+  it('drops a malformed capture, and empties the tab first', () => {
     const cache = new CachedTabHeaders();
     cache.store(13, NORMAL_ROWS);
     expect(cache.take(13)).toEqual(NORMAL_ROWS);
-    // An oversize count (parser cap) rejects the whole capture...
-    const oversized = Array.from({ length: 300 }, (_, index): { name: string; value: string } => ({
+    // A row with an empty name is no header at all: a shape fault that
+    // bounding never repairs — the whole capture rejects.
+    expect(cache.store(13, [...NORMAL_ROWS, { name: '', value: 'x' }])).toBe(false);
+    // The prior page's rows must not survive for the new capture's tab.
+    expect(cache.take(13)).toBeNull();
+  });
+
+  it('bounds an oversize capture instead of dropping it, and marks it truncated', () => {
+    const cache = new CachedTabHeaders();
+    // More rows than the cap: the first 256 survive, in capture order.
+    const flood = Array.from({ length: 300 }, (_, index): { name: string; value: string } => ({
       name: `x-h-${String(index)}`,
       value: 'v'
     }));
-    // ...so the row set fails wholesale, exactly like the parser's contract.
-    expect(parsePageHeaders(oversized)).toBeNull();
-    expect(cache.store(13, oversized)).toBe(false);
-    // The prior page's rows must not survive for the new capture's tab.
-    expect(cache.take(13)).toBeNull();
+    expect(cache.store(13, flood)).toBe(true);
+    const bounded = cache.takeCapture(13);
+    expect(bounded?.truncated).toBe(true);
+    expect(bounded?.headers).toEqual(flood.slice(0, 256));
 
-    // One over-long value (a huge header) rejects its whole capture likewise:
-    // a cut-off or bloated capture is not a partial upgrade, it's nothing.
-    const bloated = [...NORMAL_ROWS, { name: 'x-huge', value: 'x'.repeat(5_000) }];
-    expect(cache.store(14, bloated)).toBe(false);
-    expect(cache.take(14)).toBeNull();
+    // One over-long value (a large CSP) is clipped; every other row stays.
+    const bloated = [...NORMAL_ROWS, { name: 'content-security-policy', value: 'x'.repeat(5_000) }];
+    expect(cache.store(14, bloated)).toBe(true);
+    expect(cache.takeCapture(14)).toEqual({
+      headers: [...NORMAL_ROWS, { name: 'content-security-policy', value: 'x'.repeat(4096) }],
+      truncated: true
+    });
+
+    // Within the caps: no mark at all.
+    cache.store(15, NORMAL_ROWS);
+    expect(cache.takeCapture(15)).toEqual({ headers: NORMAL_ROWS });
   });
 
   it('evicts the least recently used tab beyond the cap; reads refresh recency', () => {
@@ -206,13 +219,10 @@ describe('handleResponseStarted (the webRequest listener body)', () => {
     const cache = new CachedTabHeaders();
     cache.store(9, NORMAL_ROWS);
     const applied: Array<BadgeEffect | null> = [];
-    // Over the parser's count cap: the capture is rejected as a whole.
-    const oversized = Array.from({ length: 300 }, (_, index): { name: string; value: string } => ({
-      name: `x-h-${String(index)}`,
-      value: 'v'
-    }));
+    // A malformed row (empty name): the capture is rejected as a whole.
+    const malformed = [...NORMAL_ROWS, { name: '', value: 'x' }];
     handleResponseStarted(
-      { tabId: 9, responseHeaders: oversized },
+      { tabId: 9, responseHeaders: malformed },
       { capture: cache, badge: badgeHalf(applied), sim: simHalf([]) }
     );
     expect(cache.take(9)).toBeNull();

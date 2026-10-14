@@ -7,8 +7,9 @@
  * unloaded-window buffer that carries them to the next loaded settle; the
  * search relay's own tab scoping (same window in, foreign/malformed out);
  * the payload contract branches (null response, foreign payload → the
- * reload fallback fires exactly once, and never for a declined event); and
- * the idempotent start/stop.
+ * reload fallback fires exactly once per failure streak — never for a
+ * declined event, never again across the reloaded document, re-armed only by
+ * a validated payload); and the idempotent start/stop.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelReceivers } from './edges';
@@ -17,7 +18,8 @@ import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from './search';
 import { createFdtDataStore, type FdtDataStore } from './use-fdt-data';
-import { makeFdtData } from './fixtures';
+import { makeFdtData, makeHardReloadBudget, makeLazyImage, makeMemoryStorage } from './fixtures';
+import { createHardReloadBudget, type HardReloadBudget } from './hard-reload-budget';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -113,7 +115,8 @@ function loadedData(state: DataState): FdtData {
 /** Build the store over the fake world, with the test's own search store. */
 function makeStore(
   world: ReturnType<typeof fakeWorld>,
-  search: SearchStore = createSearchStore()
+  search: SearchStore = createSearchStore(),
+  hardReloadBudget: HardReloadBudget = makeHardReloadBudget()
 ): FdtDataStore {
   return createFdtDataStore({
     inspectedTabId: () => world.inspectedTabId,
@@ -121,6 +124,7 @@ function makeStore(
     receive: world.receive,
     search,
     reload: world.reload,
+    hardReloadBudget,
     now: () => 1727000000000
   });
 }
@@ -224,6 +228,37 @@ describe('registration + boot flight', () => {
 });
 
 describe('request flight lifecycle', () => {
+  it('logs where a rejected payload broke its contract (path only, never the value)', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const secret = 'SECRET-VALUE-NOT-FOR-LOGS';
+      const payload = makeFdtData();
+      const images = [0, 1, 2, 3].map((i) => makeLazyImage({ src: `/${String(i)}.jpg` }));
+      const broken = {
+        ...payload,
+        wprDetections: {
+          ...payload.wprDetections,
+          lazyload: {
+            present: true,
+            images: images.map((image, i) =>
+              i === 3 ? { ...image, src: 42, extra: secret } : image
+            )
+          }
+        }
+      };
+      const world = fakeWorld({ request: Promise.resolve(broken) });
+      makeStore(world).start();
+      await drained();
+      expect(errors).toHaveBeenCalledWith(
+        '[WPR FDT] [panel] Panel data failed its contract validation — falling back to a full reload.',
+        { path: 'wprDetections.lazyload.images[3].keys' }
+      );
+      expect(JSON.stringify(errors.mock.calls)).not.toContain(secret);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('retries from the error state successfully', async () => {
     const world = fakeWorld({ request: Promise.reject(new Error('did not happen')) });
     const store = makeStore(world);
@@ -289,12 +324,84 @@ describe('request flight lifecycle', () => {
     expect(world.request).toHaveBeenCalledTimes(2);
     expect(world.reload).toHaveBeenCalledTimes(1);
 
-    // That in-air flight failing its contract again is a new real decline:
-    // exactly one additional reload.
+    // That in-air flight failing its contract again lands the error state,
+    // but the streak's one reload is spent: no second reload (a reloaded
+    // panel would receive the same payload — reloading again is the loop).
     recovery.release({ still: 'not engine output' });
     await drained();
     expect(store.state()).toMatchObject({ status: 'error', hardReload: true });
+    expect(world.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('never loops: a payload that keeps failing reloads the panel document at most once', async () => {
+    // Each "document" is a fresh store over the SAME session storage — what
+    // `location.reload()` produces — and every reload boots the next one.
+    const storage = makeMemoryStorage();
+    const world = fakeWorld({ request: Promise.resolve({ not: 'engine output' }) });
+    let documents = 0;
+    let current: FdtDataStore | null = null;
+    const bootDocument = (): void => {
+      documents += 1;
+      current?.stop();
+      current = makeStore(world, createSearchStore(), makeHardReloadBudget(storage));
+      current.start();
+    };
+    world.reload.mockImplementation(() => {
+      // Bounded for the test itself: a regression must fail, not hang.
+      if (documents < 50) bootDocument();
+    });
+    bootDocument();
+    for (let tick = 0; tick < 60; tick += 1) await drained();
+
+    expect(world.reload).toHaveBeenCalledTimes(1);
+    expect(documents).toBe(2);
+    const last = (current as FdtDataStore | null)?.state();
+    expect(last).toMatchObject({ status: 'error', hardReload: true });
+    expect(last?.status === 'error' ? last.cause : '').toContain('Reload the inspected page');
+
+    // The retry control stays bounded by the user: one click, one flight,
+    // no reload.
+    (current as FdtDataStore | null)?.retry();
+    await drained();
+    expect(world.request).toHaveBeenCalledTimes(3);
+    expect(world.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-arms the reload budget once a payload validates', async () => {
+    const storage = makeMemoryStorage();
+    const world = fakeWorld({ request: Promise.resolve({ not: 'engine output' }) });
+    const first = makeStore(world, createSearchStore(), makeHardReloadBudget(storage));
+    first.start();
+    await drained();
+    expect(world.reload).toHaveBeenCalledTimes(1);
+
+    // The reloaded document receives valid data: the streak ends.
+    world.pending = Promise.resolve(makeFdtData());
+    const second = makeStore(world, createSearchStore(), makeHardReloadBudget(storage));
+    second.start();
+    await drained();
+    expect(second.state()).toMatchObject({ status: 'ready' });
+
+    // A later, new contract failure may fall back once again.
+    world.pending = Promise.resolve({ not: 'engine output' });
+    world.deliverPanelReload(42);
+    await drained();
+    expect(second.state()).toMatchObject({ status: 'error', hardReload: true });
     expect(world.reload).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays on the error state without reloading when the budget cannot be remembered', async () => {
+    const world = fakeWorld({ request: Promise.resolve({ not: 'engine output' }) });
+    const onStorageError = vi.fn();
+    const blocked = createHardReloadBudget(() => {
+      throw new Error('SecurityError: storage is disabled');
+    }, onStorageError);
+    const store = makeStore(world, createSearchStore(), blocked);
+    store.start();
+    await drained();
+    expect(store.state()).toMatchObject({ status: 'error', hardReload: true });
+    expect(world.reload).not.toHaveBeenCalled();
+    expect(onStorageError).toHaveBeenCalledWith('claim', expect.any(Error));
   });
 
   it('soft-refreshes on the in-tab notification and swaps the data wholesale', async () => {

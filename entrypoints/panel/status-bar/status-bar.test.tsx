@@ -23,7 +23,7 @@ import { StatusBar, STATUS_BAR_GLANCEABLE_MIN_WIDTH, statusBarLayout } from './s
 import { createSearchStore } from '../state/search';
 import { createFdtDataStore, FdtDataContext, type FdtDataStore } from '../state/use-fdt-data';
 import type { PanelReceivers } from '../state/edges';
-import { makeFdtData } from '../state/fixtures';
+import { makeFdtData, makeHardReloadBudget } from '../state/fixtures';
 
 /** The pinned system time (ms) — the store's settled stamps and the clock read it. */
 const NOW_MS = 1_727_000_000_000;
@@ -63,6 +63,7 @@ function makeHarness(): Harness {
     },
     search: createSearchStore(),
     reload: vi.fn(),
+    hardReloadBudget: makeHardReloadBudget(),
     now: () => Date.now()
   });
   return {

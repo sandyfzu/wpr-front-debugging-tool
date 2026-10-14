@@ -21,6 +21,7 @@
  */
 
 import type { PageHeaders } from '../wp-rocket/types';
+import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 
 /** One typed header row: the captured pair plus its verdict hint (may be none). */
 export interface HeaderRowVM {
@@ -218,4 +219,37 @@ export function buildHeadersViewModel(headers: PageHeaders | null): HeadersViewM
 /** The renderable-empty shape (absent capture / nothing to render). */
 function emptyViewModel(): HeadersViewModel {
   return { caching: [], other: [] };
+}
+
+/**
+ * The one-line note for a capture the producer bounded (`pageHeadersTruncated`),
+ * shared by the headers preview and the support report. The mark itself does
+ * not say what was cut, so the cause is read off the rows: a list at the row
+ * cap was capped; a name or value exactly at its length cap was clipped. A
+ * mark neither explains falls back to a generic line.
+ *
+ * @param headers The served (bounded) rows.
+ * @param truncated The capture's list-level mark.
+ * @returns The note, or null when the capture is complete.
+ */
+export function headersTruncationNote(
+  headers: PageHeaders,
+  truncated: boolean | undefined
+): string | null {
+  if (truncated !== true) return null;
+  const caps = PAYLOAD_LIMITS.headers;
+  const capped = headers.length >= caps.count;
+  const valuesClipped = headers.some((row) => row.value?.length === caps.value);
+  const namesClipped = headers.some((row) => row.name.length === caps.name);
+  const parts: string[] = [];
+  if (valuesClipped)
+    parts.push(
+      `some header values were clipped to ${caps.value.toLocaleString('en-US')} characters`
+    );
+  if (namesClipped)
+    parts.push(`some header names were clipped to ${caps.name.toLocaleString('en-US')} characters`);
+  if (capped) parts.push(`the list was capped at ${caps.count.toString()} headers`);
+  if (parts.length === 0) return 'Some headers were clipped.';
+  const sentence = parts.join('; ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }

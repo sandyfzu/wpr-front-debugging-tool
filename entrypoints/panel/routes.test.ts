@@ -98,6 +98,81 @@ describe('nav live-state selectors', () => {
     ).toBeNull();
   });
 
+  it('marks cut lists as a floor ("5,000+") and never shows delayed > shown unmarked', () => {
+    const base = makeFdtData().wprDetections;
+    const many = (n: number) => Array.from({ length: n }, () => makeDelayScript());
+    const delay = (scripts: number, delayedScripts: number, truncated?: true) =>
+      makeFdtData({
+        wprDetections: {
+          ...base,
+          delay_js: {
+            present: true,
+            scripts: many(scripts),
+            version: null,
+            delayedScripts,
+            ...(truncated ? { truncated } : {})
+          }
+        }
+      });
+    expect(liveStateOf('javascript', delay(5000, 6000, true))?.text).toBe('delayed 6000/5,000+');
+    // No mark but a count over the shown list: still marked, never "6/5".
+    expect(liveStateOf('javascript', delay(5, 6))?.text).toBe('delayed 6/5+');
+    expect(liveStateOf('javascript', delay(5, 5))?.text).toBe('delayed 5/5');
+
+    const lazy = makeFdtData({
+      wprDetections: {
+        ...base,
+        lazyload: {
+          present: true,
+          images: Array.from({ length: 5000 }, () => makeLazyImage()),
+          truncated: true
+        }
+      }
+    });
+    expect(liveStateOf('lazyload', lazy)?.text).toBe('5,000+ images');
+
+    const links = makeFdtData({
+      preloadedResources: {
+        present: true,
+        resources: Array.from({ length: 5000 }, () => ({ href: '/x', type: 'script' })),
+        truncated: true
+      }
+    });
+    expect(liveStateOf('preloaded-resources', links)?.text).toBe('5,000+ links');
+  });
+
+  it('keeps plain counts when the mark only means clipped strings (list under its cap)', () => {
+    const base = makeFdtData().wprDetections;
+    const clippedImages = makeFdtData({
+      wprDetections: {
+        ...base,
+        lazyload: { present: true, images: [makeLazyImage(), makeLazyImage()], truncated: true }
+      }
+    });
+    expect(liveStateOf('lazyload', clippedImages)?.text).toBe('2 images');
+    const oneLink = makeFdtData({
+      preloadedResources: {
+        present: true,
+        resources: [{ href: '/x', type: 'image' }],
+        truncated: true
+      }
+    });
+    expect(liveStateOf('preloaded-resources', oneLink)?.text).toBe('1 link');
+    const clippedDelay = makeFdtData({
+      wprDetections: {
+        ...base,
+        delay_js: {
+          present: true,
+          scripts: [makeDelayScript()],
+          version: null,
+          delayedScripts: 1,
+          truncated: true
+        }
+      }
+    });
+    expect(liveStateOf('javascript', clippedDelay)?.text).toBe('delayed 1/1');
+  });
+
   it('distinguishes monitoring from found on the references row', () => {
     // Nothing found while the page still loads = the finder is watching.
     expect(liveStateOf('undefined-references', makeFdtData({ allScriptsLoaded: false }))).toEqual({

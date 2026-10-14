@@ -22,13 +22,14 @@
  * a flight settles to a loaded state, in both arms of a refresh too.
  */
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
-import { parseFdtData } from '../../../lib/messaging/validate';
+import { parseFdtDataExplained } from '../../../lib/messaging/validate';
 import { isNoReceiverError } from '../../../lib/messaging/no-receiver';
 import { numericTabId } from '../../../lib/messaging/sender';
 import { createLogger } from '../../../lib/logger';
 import type { FdtData, PanelSearchAction } from '../../../lib/wp-rocket/types';
 import { PANEL_SEARCH_ACTIONS } from '../../../lib/wp-rocket/types';
 import type { PanelReceivers } from './edges';
+import type { HardReloadBudget } from './hard-reload-budget';
 import { transitionDataState, type DataState, type FetchOutcome } from './fdt-state-machine';
 import type { SearchStore } from './search';
 
@@ -52,6 +53,12 @@ export interface FdtDataDeps {
   search: SearchStore;
   /** The full-reload fallback (production: `window.location.reload()`). */
   reload: () => void;
+  /**
+   * Gates the full-reload fallback to once per contract-failure streak,
+   * across the reload itself (production: session-storage backed). Without
+   * it, a payload that keeps failing reloads the panel forever.
+   */
+  hardReloadBudget: HardReloadBudget;
   /** The wall clock for the freshness stamps. */
   now: () => number;
 }
@@ -91,7 +98,7 @@ const EMPTY_RESPONSE_CAUSE = 'The page produced no data — its content script c
 
 /** The cause of a contract-violating payload (hard-reload fallback). */
 const CONTRACT_FAILURE_CAUSE =
-  'The page data did not pass its integrity checks, so it cannot be trusted.';
+  'The page data did not pass its integrity checks, so it cannot be trusted. Reload the inspected page, then retry; if it keeps failing, report the page URL.';
 
 /**
  * Create the store (once per panel run; the shell wires the real edges).
@@ -106,27 +113,51 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
   let stopReceivers: (() => void) | null = null;
 
   /**
+   * Where the latest rejected payload broke its contract (field path, never
+   * a value) — the context the fallback's logs carry.
+   */
+  let rejectedAt = '';
+
+  /**
    * Apply one machine event. A transition the table declines (same object
    * back) is a no-op: no state write, no side effect — most importantly the
    * hard-reload fallback cannot re-fire for a settled event the machine
-   * ignored. Otherwise the only side effect beyond `setState` is the thin
-   * fallback effect honoring the error state's `hardReload` marker.
+   * ignored. Otherwise the only side effects beyond `setState` are the thin
+   * fallback effect honoring the error state's `hardReload` marker — at most
+   * once per failure streak, gated by the budget that outlives the reload
+   * (the reloaded panel would receive the same payload) — and re-arming that
+   * budget once a payload validates.
    */
   const applyEvent = (event: Parameters<typeof transitionDataState>[1]): void => {
     const before = state();
     const next = transitionDataState(before, event, deps.now());
     if (next === before) return;
     setState(next);
+    if (next.status === 'ready') {
+      deps.hardReloadBudget.reset();
+      return;
+    }
     if (next.status === 'error' && next.hardReload) {
-      log.error('Panel data failed its contract validation — falling back to a full reload.');
-      deps.reload();
+      if (deps.hardReloadBudget.claim()) {
+        log.error('Panel data failed its contract validation — falling back to a full reload.', {
+          path: rejectedAt
+        });
+        deps.reload();
+        return;
+      }
+      // The streak's reload is spent (or unrememberable): the error view with
+      // its retry is the terminal state — reloading again would loop.
+      log.error(
+        'Panel data failed its contract validation again — showing the error state instead of reloading.',
+        { path: rejectedAt }
+      );
     }
   };
 
   /** Event-shaped settled outcome for a received response, classified. */
   const outcomeForResponse = (raw: unknown): FetchOutcome => {
-    const parsed = parseFdtData(raw);
-    if (parsed !== null) return { ok: true, data: parsed };
+    const parsed = parseFdtDataExplained(raw);
+    if (parsed.ok) return { ok: true, data: parsed.data };
     if (raw === null) {
       // The content script's documented "nothing was captured/produced" —
       // its processing failed. A retry can recover a later page state, so
@@ -136,6 +167,7 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
     // A non-null response that broke the validator: the payload is not the
     // content script's shape — flag the hard-reload fallback instead of
     // trusting it into a corrupt `ready`.
+    rejectedAt = parsed.path;
     return { ok: false, cause: CONTRACT_FAILURE_CAUSE, hardReload: true };
   };
 

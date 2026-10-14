@@ -26,11 +26,12 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
 import { ERROR_WORD_LIMIT, parseErrorWords } from '../../lib/messaging/validate';
+import { boundPreloadedResources, boundWprDetections } from '../../lib/messaging/payload-bounds';
 import type {
   DiagnoserDocData,
   FdtData,
   PageCookies,
-  PageHeaders,
+  PageHeaderCapture,
   PreloadedResources,
   WprDetections
 } from '../../lib/wp-rocket/types';
@@ -170,6 +171,54 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
 }
 
 /**
+ * The detections as served across the boundary (`getFdtData` and
+ * `getWprDetections` alike): bounded to the payload caps.
+ *
+ * @param data The pass result.
+ */
+export function servedDetections(data: PageData): WprDetections {
+  return boundWprDetections(data.detections);
+}
+
+/** The live page facts the hub tracks beside the single-pass result. */
+export interface LivePageFacts {
+  allScriptsLoaded: boolean;
+  /** The background's (already bounded) header capture, or null. */
+  headerCapture: PageHeaderCapture | null;
+  undefinedReferences: string[];
+  /** Null only if the capture invariant failed (the field is then omitted). */
+  cookies: PageCookies | null;
+}
+
+/**
+ * Compose the panel payload from the pass result and the live facts. The
+ * page-derived rows are bounded to the boundary's caps here (cut rows carry
+ * `truncated: true`), so a page with more data than the contract admits
+ * still yields a payload the panel's guard accepts — never one it rejects
+ * on every request.
+ *
+ * @param data The pass result (unbounded; same-context readers keep it whole).
+ * @param live The live facts.
+ * @returns The payload `getFdtData` serves.
+ */
+export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
+  const payload = {
+    allScriptsLoaded: live.allScriptsLoaded,
+    pageHeaders: live.headerCapture?.headers ?? null,
+    undefinedReferencesOnPage: live.undefinedReferences,
+    wprDetections: servedDetections(data),
+    preloadedResources: boundPreloadedResources(data.preloadedResources),
+    diagnoserData: data.diagnoserData,
+    ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {})
+  };
+  // The capture (which redacts the values at the read) always runs before
+  // processing can produce data, so the list is expected here; should that
+  // invariant ever fail, the additive field's absence — never a forged
+  // empty stamp — is the tolerated degradation consumers omit gracefully.
+  return live.cookies === null ? payload : { ...payload, cookies: live.cookies };
+}
+
+/**
  * Merge a validated word batch into the accumulated list: first-occurrence
  * order preserved, duplicates dropped, total capped so a long-lived SPA can
  * never grow the list without bound.
@@ -193,7 +242,7 @@ export function mergeErrorWords(existing: string[], incoming: string[]): string[
  *   through it.
  */
 export function setupDataHub(ctx: ContentScriptContext): void {
-  let pageHeaders: PageHeaders | null = null;
+  let headerCapture: PageHeaderCapture | null = null;
   let undefinedReferences: string[] = [];
   let allScriptsLoaded = false;
   let pageHTML: string | null = null;
@@ -222,9 +271,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   const fetchHeaders = async (): Promise<void> => {
     try {
-      const headers = await sendMessage('getPageHeaders');
+      const capture = await sendMessage('getPageHeaders');
       if (ctx.isInvalid) return;
-      pageHeaders = headers;
+      headerCapture = capture;
     } catch (error) {
       // Background missing or failing is not a page problem; the panel
       // renders "no headers" for null, so this degrades explicitly.
@@ -372,19 +421,12 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   /** The panel payload; null when processing failed or nothing was captured. */
   const fdtData = (): FdtData | null => {
     if (data === null) return null;
-    const payload = {
+    return composeFdtData(data, {
       allScriptsLoaded,
-      pageHeaders,
-      undefinedReferencesOnPage: undefinedReferences,
-      wprDetections: data.detections,
-      preloadedResources: data.preloadedResources,
-      diagnoserData: data.diagnoserData
-    };
-    // The capture (which redacts the values at the read) always runs before
-    // processing can produce data, so the list is expected here; should that
-    // invariant ever fail, the additive field's absence — never a forged
-    // empty stamp — is the tolerated degradation consumers omit gracefully.
-    return pageCookies === null ? payload : { ...payload, cookies: pageCookies };
+      headerCapture,
+      undefinedReferences,
+      cookies: pageCookies
+    });
   };
 
   ctx.onInvalidated(
@@ -403,7 +445,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   ctx.onInvalidated(
     onMessage('getWprDetections', async () => {
       await processData();
-      return data?.detections ?? null;
+      // Bounded like the panel payload: this row crosses the same boundary.
+      return data === null ? null : servedDetections(data);
     })
   );
 
