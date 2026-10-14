@@ -6,10 +6,13 @@
  * shell's header control on the same boot, and the structured a11y audit
  * (the axe run the study committed as the floor gate).
  *
- * Two axe scopes, both strict:
+ * Three axe scopes, all strict — a rule is clean only when axe reports it
+ * neither `violating` nor unresolved (`incomplete` asserted empty too):
  * - the ready shell over real fixture data (nav + page + strip + live region);
  * - the palette open (the shell's heaviest ARIA surface: a modal dialog
- *   wrapping an APG combobox/listbox).
+ *   wrapping an APG combobox/listbox);
+ * - the shortcuts overlay open (the shell's second modal — its portaled
+ *   dialog is audited in its own mount state).
  *
  * Assertions read the app's real rendered semantics only; no test-only
  * surface is installed. The rail's own keyboard reach, focus rings and the
@@ -69,16 +72,22 @@ async function panelSettle(page: Page): Promise<void> {
   );
 }
 
-/** The axe run's per-violation slice the assertion reads. */
+/** The axe run's per-rule fail slice the assertion reads. */
 interface AxeViolation {
   readonly id: string;
   readonly impact: string | null;
   readonly nodes: readonly { readonly target: readonly string[] }[];
 }
 
-/** The axe.run result slice the suite consumes (impact + ids + targets). */
+/** The axe.run result slice the suite consumes (violations + incompletes + targets). */
 interface AxeResults {
   readonly violations: readonly AxeViolation[];
+  /**
+   * Rules axe could not resolve (unresolvable contrast pairs land here) —
+   * asserted empty like `violations`: "strict" claims the resolved cases are
+   * facts, never an unset list's assumption.
+   */
+  readonly incomplete: readonly AxeViolation[];
 }
 
 /**
@@ -110,6 +119,29 @@ async function runAxe(page: Page, include?: string): Promise<AxeResults> {
       includeSelector === null ? undefined : { context: { include: [includeSelector] } }
     );
   }, include ?? null);
+}
+
+/**
+ * The strict audit's gate, shared by every scope: a rule that arrives in
+ * `violations` OR in `incomplete` fails, named (kind, impact, id, targets) —
+ * an axe case it cannot resolve is not a pass by omission.
+ *
+ * @param results The axe output the caller's scope produced.
+ */
+function assertAxeClean(results: AxeResults): void {
+  for (const [kind, found] of [
+    ['violation', results.violations],
+    ['unresolved', results.incomplete]
+  ] as const) {
+    for (const rule of found) {
+      expect(
+        false,
+        `axe found ${kind} '${rule.impact ?? 'unknown'}' ${rule.id}: ${rule.nodes
+          .map((node) => node.target.join(' '))
+          .join('; ')}`
+      ).toBe(true);
+    }
+  }
 }
 
 test.describe('panel keyboard + a11y', () => {
@@ -232,14 +264,7 @@ test.describe('panel keyboard + a11y', () => {
       await panel.setViewportSize({ width: 700, height: 900 });
 
       const results = await runAxe(panel);
-      for (const violation of results.violations) {
-        expect(
-          false,
-          `axe found '${violation.impact ?? 'unknown'}' ${violation.id}: ${violation.nodes
-            .map((node) => node.target.join(' '))
-            .join('; ')}`
-        ).toBe(true);
-      }
+      assertAxeClean(results);
     } finally {
       await panel.close();
       await fixture.page.close();
@@ -263,14 +288,36 @@ test.describe('panel keyboard + a11y', () => {
       await panel.keyboard.press('ControlOrMeta+k');
       await expect(panel.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
       const results = await runAxe(panel, '[data-fdt="dialog"]');
-      for (const violation of results.violations) {
-        expect(
-          false,
-          `axe found '${violation.impact ?? 'unknown'}' ${violation.id}: ${violation.nodes
-            .map((node) => node.target.join(' '))
-            .join('; ')}`
-        ).toBe(true);
-      }
+      assertAxeClean(results);
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the open shortcuts overlay audits clean (axe, strict)', async ({ extension }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await expect
+        .poll(
+          async () =>
+            await panel.evaluate(
+              (): string | null => document.querySelector('[data-fdt-page] h1')?.textContent ?? null
+            ),
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe('Detections');
+      await panel.setViewportSize({ width: 700, height: 900 });
+
+      // The shell's second modal, opened from its advertised binding (the
+      // unshifted `/` — `panel-shortcuts`' anti-trap pin): the audit rides
+      // its own mount state (the palette was never opened here), scoped to
+      // the portaled dialog's surface like the palette's run above.
+      await panel.keyboard.press('/');
+      await expect(panel.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+
+      const results = await runAxe(panel, '[data-fdt="dialog"]');
+      assertAxeClean(results);
     } finally {
       await panel.close();
       await fixture.page.close();

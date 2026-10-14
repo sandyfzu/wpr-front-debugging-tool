@@ -158,22 +158,43 @@ test.describe('command palette over the data path', () => {
         .toBe('Detections');
       expect(await stripText(panel)).toContain('Cached');
       const before = await captureStamp(panel);
-      expect(before).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      if (before === null || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(before)) {
+        throw new Error(`the freshness stamp caption is not stamped text: ${String(before)}`);
+      }
 
-      // Guarantee the wall second advanced before the flight: the new settle
-      // must then stamp a different second, whatever the flight's latency.
+      // The strip renders the settle's second-ROUNDED stamp
+      // (`absoluteStampFromMs` forms `formatCacheTimestamp(Math.round(ms / 1000))`),
+      // so one rendered string covers a one-second wall window. Waiting (raw
+      // wall ms) past its +0.5 s edge makes the flight's re-stamp determinate:
+      // any later settle rounds to a later second, whatever the flight's
+      // latency — no raw-second-against-rendered-second guess.
+      const boundaryMs = Date.parse(`${before.replace(' ', 'T')}Z`) + 500;
       await expect
-        .poll(async () => await panel.evaluate((): number => new Date().getUTCSeconds()))
-        .not.toBe(Number(before?.slice(-2)));
+        .poll(async () => await panel.evaluate((): number => Date.now()), {
+          timeout: 5_000,
+          intervals: [25, 50, 100]
+        })
+        .toBeGreaterThanOrEqual(boundaryMs);
 
       await runTopRow(panel, 'reload', 'Reload data');
 
-      // The action's flight re-settled into a fresh ready: the freshness
-      // detail's stamp advanced past the boot's (the flight happened), and
-      // the data itself is still the fixture's real answer.
+      // The flight must RE-STAMP on the rendered text: its settle (past the
+      // boundary) rounds to a later second, so the rendered claim moves past
+      // before's — `captureStamp`'s null (the flight-owned span unseen) and
+      // the stale string both keep polling. Without the action's refetch
+      // nothing replaces `fetchedAt`, the aging tick re-renders the same
+      // rounded string, and this poll times out: the change is the flight's
+      // proof, never a clock race.
       await expect
-        .poll(async () => await captureStamp(panel), { timeout: 15_000, intervals: [50, 100, 250] })
-        .not.toBe(before);
+        .poll(
+          async (): Promise<boolean> => {
+            const stamp = await captureStamp(panel);
+            const epochMs = stamp === null ? Number.NaN : Date.parse(`${stamp.replace(' ', 'T')}Z`);
+            return Number.isFinite(epochMs) && epochMs >= boundaryMs + 500;
+          },
+          { timeout: 15_000, intervals: [50, 100, 250] }
+        )
+        .toBe(true);
       expect(await stripText(panel)).toContain('Cached');
       expect(await stripText(panel)).toContain('WP Rocket 3.20.1');
     } finally {
