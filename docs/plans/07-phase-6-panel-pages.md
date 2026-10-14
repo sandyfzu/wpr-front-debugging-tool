@@ -342,7 +342,7 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 
 **DoD:** gates green + the budget re-measure + the bar's §D receipts; from the Verification checklist the Undefined References side-by-side leg closes here (identical definitions on an undefined-reference test page) plus the page's keyboard + axe pass. Fixes masters **#29** and **#7** (page-side — Solid page-owned stores, interval leaks impossible); masters **#22**/**#6** become browser-observable here (their base fixes shipped in P6A).
 
-**Receipts (2026-10-14, branch `feat/p6e-undefined-references-page`, commit `f965c81` + this docs commit):**
+**Receipts (2026-10-14, branch `feat/p6e-undefined-references-page`, commit `82f197e` + this docs commit):**
 
 - **Shipped:** `pages/undefined-references/` — `page.tsx` (frame + the five state bodies), `store.ts` (page-owned store: scan machine, 15 s read timeout, stale-settle tickets, reset per new page, the P6A incremental memo, new-word announcements), `model.ts` (pure: scan transition table, `resolvePageView`, verdicts, copy builders, `splitScriptUrl`), `word-card.tsx`, `copy-exclusion.ts`, `inspected-scripts.ts` (the devtools adapter). Masters **#29** (no delay: results on settle, pinned), **#7** (no module state: re-mount isolation + disposal-drops-late-settle pinned), **#22** (inline chip, browser-observed), **#6** (zero-resource read resolves, browser-observed).
 - **Deviations (cause):**
@@ -359,6 +359,50 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **Bar §D (by hand, scratch Playwright over the built extension, headless Chromium; harness + screenshots under the session scratchpad `p6e/`):** D-1 `scrollWidth − clientWidth = 0` at 320/480/768/1280 for results, failed, waiting; D-2 light + dark per state (26 screenshots at 320/600/1000), reduced motion → 0 running animations (results + processing), normal motion → exactly the page entrance + the results container's one `MOTION_REVEAL` fade; D-3 Tab walk: Rescan → each link → its copy button, ring visible on every stop; failed: Retry; D-4 axe (violations **and** incomplete) clean on all six states, light and dark; D-5 pushes keep card DOM + focus (unit-pinned); D-6 grep over the folder: empty; D-7 n/a (≤ 50 rows by contract, see above).
 - **Side-by-side vs the reference build** (same fixture page + same resource stub, both built extensions): identical word → definitions for every shared word; inline entries differ only by #22's fix (reference: the dead `In an Inline Script.` anchor; here: the chip). The reference listed no "Script error." card on that fixture (its capture missed the cross-origin error — a P4 capture difference, not this page).
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1491/1491 in 136 files (+79: model 22, adapter 14, store 18, copy 4, card 9, page 12; coverage 95.35 / 94.77 / 98.61 / 96.75, unmoved — page code sits outside the `lib/utils` gate) · `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓ — panel **229.3 → 249.5 raw / 70.6 → 76.9 gzip** (+20.2 / +6.3: this page plus the first real import of the shared seam — `PageFrame`/`PageHeader`, `Card`, `Badge`, `Skeleton` — and seven icons; shared pieces will not recount for the other letters), whole 443.8 → 464.1, under 600.
+
+**Receipts — audit round (2026-10-14, commit `2881ed0` + this docs commit).** Each finding reproduced in the auditor's harness first, then proven fixed with the same harness (a copy with the selectors this round renamed, plus an `inspectedWindow.eval` stub) and pinned by tests.
+
+- **M1 — Copy as exclusion copied an unusable URL — fixed.** The copied value is now a pattern (`exclusionPattern`): the path for a same-origin script, host + path otherwise, no scheme, no query. Regex syntax becomes `.` rather than a backslash escape, because WP Rocket escapes `+`, `?ver` and `#` itself (verified in its `DelayJS/HTML.php`: `str_replace` then `preg_match("#{$pattern}#i", $tag)`), so a pre-escaped `\+` would turn into a broken `\\+`. The inspected origin is read once per fetch through `inspectedWindow.eval('location.origin')`, which is lastError- and exception-aware and validated as an exact http(s) origin. If it can't be read, the host is kept, so absolute `src` values still match.
+  - Pinned: every pattern matches its own tag under a plain `RegExp` and under WP Rocket's escaping + `#…#i`, including `?ver=…&#038;…` tags, a relative `src`, a `data-rocket-src` tag, and `+`/`()` paths. Also pinned: the full URL with its query does _not_ match (why the query goes), and a sibling script on the same page does not match.
+  - Browser: the clipboard held `/wp-includes/js/jquery/jquery.min.js`, matching its tag under both semantics.
+  - Known limit: the URL parser percent-encodes `{`, `}` and `^` in paths, so a tag carrying them raw would not match.
+- **M2 — A same-page refresh rebuilt the page — fixed.** A new fetch stamp now re-reads the scripts in place (the new `refresh` event: `scanning{previous, keepOnFailure: false}`). Cards stay, and old answers stay on screen until each word's new answer lands. `reconcileOrigins` hands back the very same answer objects when an answer is unchanged, so rows and focus survive.
+  - A refresh read that fails is reported (the words go unsearched under the failure notice) rather than answered from the old page's scripts. A user Rescan keeps its fall-back to the previous results.
+  - Browser (palette "Reload data"): no skeleton at any point, 2 reads, focus still on the copy button after the settle (it was `BODY` before).
+  - The old soft-refresh page test passed while the cards unmounted. It now asserts that the card, row and focus survive with no skeleton (cause in the commit message).
+- **M3 — A failed read hid the words — fixed.** Results and failed share one mounted list. The failure renders as an inline notice (`role="alert"`, cause + "The names below come straight from the page's errors, unsearched.") above the unsearched cards.
+  - Retry is offered unless the failure is an extension reload; that case shows the reopen-DevTools remedy only.
+  - Retry hands focus to the `h1` as the list gives way to the skeleton. Browser: focus = `H1` after Retry (it was `BODY`).
+- **Minor 1 — cooperative search (`search.ts`).** Each word is tested source by source over line-aligned 64 K slices. Every match lies within one line, pinned in lib by a split-equivalence test. A pacer yields once 8 ms are spent: `scheduler.yield()` where present (Chromium 129+, under the 145 floor), else a `MessageChannel` macrotask, else `setTimeout`.
+  - Cancelled on unmount or a new asset list. Answers stream into the store, showing "Searching…" until a word is reached.
+  - `lib/panel/undefined-refs.ts` (the one-off exception) now tests with a non-`g` regex and exports `definitionMatcher`. Node bench over 40 × 250 KB: ~25 → ~0.1 ms for an early-defined word, equal when absent. `searchWord` is pinned answer-for-answer against `findDefinitions` at three slice sizes.
+  - Browser, auditor's `big` mode, 10 MB: `longtasks: []` for 40 × 250 KB with and without matches, and for 4 × 2.5 MB single-line sources (was a 430 ms task).
+- **Minor 2–9 + nits:**
+  - At most 5 rows, then a "Show all N" / "Show fewer" toggle (`aria-expanded`, `aria-controls`, `MOTION_TURN` chevron). It stays mounted, so focus stays on it.
+  - Toast: "Exclusion copied" + "Paste it into WP Rocket's Delay JavaScript execution → Excluded JavaScript Files." That is the plan's wording; the field label could not be verified from the available plugin source, and the setting's tab name is deliberately omitted.
+  - A failed copy toasts "Add it by hand: <pattern>".
+  - Copy buttons are named `Copy as exclusion: <file>`. This deviates from the suggested `Copy <file> as exclusion` because WCAG 2.5.3 wants the visible label inside the name.
+  - Links carry their location in the name, so the same file from two hosts is distinct (browser-verified).
+  - Location lines drop the inspected origin's host, and the file's query is muted.
+  - The cross-origin card gets a neutral "Cross-origin" badge and is counted apart in the summary (`5 undefined references · 3 with a possible definition · 1 cross-origin error`).
+  - No read is made with zero words.
+  - In-place "Copied" check for 1.6 s.
+  - Results are capped at `@wide:max-w-4xl`.
+  - Rescan's "Rescanning…" and "Rescanned" text is visible at every width. Rescan turns secondary, with "New scripts loaded since the last read.", when `onResourceAdded` reports an unseen script; it never auto-runs.
+  - A `getContent` that never answers is skipped after 5 s.
+  - Words that arrive behind the waiting view are not announced.
+  - The tautological word-card test was replaced, and user-facing copy is pinned literally across the tests.
+- **Not done, with cause — cache across route re-mounts.** A cache that outlives the page needs module state, or state in the shell's store, which is off-limits to this letter. The spec's master-#7 line forbids module-level mutable state. A re-mount therefore re-reads; with the cooperative search, that read never blocks the main thread. A shell-owned cache keyed by fetch stamp is a P6G promotion candidate.
+- **Promotion candidates (added):** a busy-but-focusable `Button` state; the per-row copy flash is a third copy-feedback variant beside `CopyButton`'s; a shell-owned per-fetch result cache (above).
+- **Checks (this round, by hand):**
+  - axe clean (violations + incomplete) on all six states in both themes, plus the auditor's `axe` mode at 320 and 1000.
+  - No horizontal overflow at 320/480/768/1280, nor at the auditor's 320/420/530/820/1400.
+  - Reduced motion: 0 running animations. Normal motion: only the page entrance and the one results fade.
+  - The Tab walk reaches link → copy for every row, then "Show all 8"; every stop has a ring.
+  - Side by side vs the reference build: identical definitions for all five shared words.
+  - The D-6 grep's only hits are the HTML entity `&#038;` in test tags and one TSDoc line (not colours).
+  - Screenshots re-taken and inspected; the failure notice was re-laid out after the 320 px shot showed its title crushed against Retry.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1542/1542 in 137 files (+51: model 36, search 9 new, adapter 23, store 25, card 14, page 16, lib +3; coverage 95.48 / 94.94 / 98.62 / 96.82) · `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓ — panel **249.5 → 257.6 raw / 76.9 → 79.4 gzip**, whole 464.1 → 472.2.
 
 ---
 
