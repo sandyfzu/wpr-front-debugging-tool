@@ -1,5 +1,5 @@
 /**
- * Wiring tests for the route-body table and the shared placeholder: the five
+ * Wiring tests for the route-body table and the shared placeholder: the six
  * page folders are mapped to their routes and every other route falls back to
  * the placeholder. Page bodies are tested in their own folders (the placeholder
  * in `pages/placeholder.test.tsx`), never here.
@@ -8,6 +8,7 @@ import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PAGE_BODIES, PAGES } from './pages';
 import { DetectionsPage } from './pages/detections/page';
+import { HeadersCookiesPage } from './pages/headers-cookies/page';
 import { JavaScriptPage } from './pages/javascript/page';
 import { LazyloadPage } from './pages/lazyload/page';
 import { PreloadedResourcesPage } from './pages/preloaded-resources/page';
@@ -19,12 +20,13 @@ afterEach(() => {
 });
 
 describe('PAGES wiring', () => {
-  it('maps the five page folders to their routes', () => {
+  it('maps the six page folders to their routes', () => {
     expect(PAGES.detections).toBe(DetectionsPage);
     expect(PAGES.javascript).toBe(JavaScriptPage);
     expect(PAGES.lazyload).toBe(LazyloadPage);
     expect(PAGES['preloaded-resources']).toBe(PreloadedResourcesPage);
     expect(PAGES['undefined-references']).toBe(UndefinedReferencesPage);
+    expect(PAGES['headers-cookies']).toBe(HeadersCookiesPage);
   });
 
   it('falls back to a placeholder for routes without a page folder', () => {

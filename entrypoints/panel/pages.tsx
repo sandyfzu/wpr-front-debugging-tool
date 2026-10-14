@@ -10,6 +10,7 @@
  */
 import type { Component } from 'solid-js';
 import { DetectionsPage } from './pages/detections/page';
+import { HeadersCookiesPage } from './pages/headers-cookies/page';
 import { JavaScriptPage } from './pages/javascript/page';
 import { LazyloadPage } from './pages/lazyload/page';
 import { placeholderPage } from './pages/placeholder';
@@ -26,6 +27,7 @@ export const PAGE_BODIES: Partial<Record<RouteId, PageBody>> = {
   javascript: JavaScriptPage,
   lazyload: LazyloadPage,
   'preloaded-resources': PreloadedResourcesPage,
+  'headers-cookies': HeadersCookiesPage,
   'undefined-references': UndefinedReferencesPage
 };
 
