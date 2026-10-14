@@ -426,6 +426,23 @@ The diagnostics page: word → definitions, states that tell the truth about cap
 - **One location form:** no leading `/`, `wp-content/` dropped everywhere (`wp-includes/js/jquery/`, `plugins/p/js/`, `themes/t/js/`, `uploads/x/`). A root file of the page's origin has no location line; another origin's root file shows just its host.
 - **Gates (after the rebase onto `ed66a59`):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1797/1797 in 148 files (coverage 95.78 / 95.17 / 98.74 / 97.02) · `build` ✓ · `check:budgets` ✓ — panel 287.9 raw / 88.6 gzip, whole 502.7.
 
+**Receipts — ReDoS round (2026-10-14, commit `96d1fe1` + this docs commit; supersedes the over-match round's `[^/]{1,3}` classes and its look-alike residual).**
+
+- **MAJOR — catastrophic backtracking, fixed by construction.** One `[^/]{1,3}` per decoded ASCII character let adjacent classes, and classes interleaved with literals, split a non-matching tag exponentially (auditor: 20 encoded spaces 8.9 s, 24 never finish). The merged-stretch `[^/]{k,3k}` you suggested fixes adjacent runs only. A bench here showed `a[^/]{1,3}a[^/]{1,3}…` against `abab…` still exploding (18 classes: 1.1 s, 22: 11 s), so units were made exact instead.
+  - Each decoded ASCII character is now `(?:[c]|[%]XX)`: its raw spelling, or its encoded one written `[%]XX`, since a bare `%XX` is stripped by `sanitize_text_field`. The two alternatives start with different characters, so matching is deterministic and linear.
+  - Characters a class can't hold without a backslash, or that the pipeline alters (`]`, `\`, `^`, `*`, `<`, `>`, `-`), use `[^/%]` as the raw alternative. `/` is `[%]2F` only; `%` is `[%](?:25)?`.
+  - Undecodable bytes stay `[%]XX`; non-ASCII characters stay raw.
+  - Side effect: exactness. The `a%60b` vs `a-b` look-alike no longer matches; the former residual test now asserts that.
+- **Pins:**
+  - 30 encoded spaces evaluate in < 50 ms against a non-matching 4 KB tag, raw and encoded, both readers.
+  - A seeded fuzz (mulberry32; 60 random names over spaces, backtick, braces, `^`, `+()$|`, `'&`, `ñé`, `%FF`, `%2B`, `%20`) holds < 50 ms per pattern against 4 KB look-alike tags printed raw and `encodeURI`'d.
+  - The sibling corpus still matches each pattern to its own element only.
+- **`'` and `&`** (printed `&#039;` / `&#038;` by WordPress) become `(?:'|&#0?39;)` and `&(?:#0?38;|amp;)?`. `o'neil&co` matches in raw, numeric and named entity spellings.
+- **Raw `+ ( ) $ | ? #`** become one-char classes; WP Rocket's escaping turns `[+]` into `[\+]`, still a literal. `a+b` no longer matches `aab`, under both readers. `*`, brackets, braces, `^` and `\` stay `.`.
+- **Display:** the directory and file name are decoded for display only (`plugins/mi plugin/js/`, `préf.js`; undecodable text stays as is).
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1843/1843 in 150 files (coverage 95.83 / 95.21 / 98.76 / 97.06) · `build` ✓ · `check:budgets` ✓ — panel 288.4 raw / 88.9 gzip, whole 503.2.
+- **Browser:** the copy action's clipboard value matches its tag under both readers.
+
 ---
 
 ## P6F — Headers & Cookies page
