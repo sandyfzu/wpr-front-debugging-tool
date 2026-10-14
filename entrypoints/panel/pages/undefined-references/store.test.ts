@@ -8,7 +8,7 @@
 import { batch, createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { InlineScriptSource, ScriptAsset } from '../../../../lib/panel/undefined-refs';
-import type { InspectedScripts } from './inspected-scripts';
+import type { InspectedScripts, ScriptRead } from './inspected-scripts';
 import type { ScanFailure } from './model';
 import {
   SCAN_TIMEOUT_MS,
@@ -19,7 +19,8 @@ import {
 /** One controllable read. */
 interface PendingRead {
   readonly inline: readonly InlineScriptSource[];
-  resolve(assets: ScriptAsset[]): void;
+  /** Settle with these assets (and optionally a count of skipped scripts). */
+  resolve(assets: ScriptAsset[], unreadable?: number): void;
   reject(cause: unknown): void;
 }
 
@@ -56,8 +57,14 @@ function harness(options: HarnessOptions = {}) {
     load:
       options.load ??
       ((inline) =>
-        new Promise<ScriptAsset[]>((resolve, reject) => {
-          reads.push({ inline, resolve, reject });
+        new Promise<ScriptRead>((resolve, reject) => {
+          reads.push({
+            inline,
+            resolve: (assets, unreadable = 0) => {
+              resolve({ assets, unreadable });
+            },
+            reject
+          });
         })),
     readPageOrigin: () =>
       Promise.resolve(options.origin === undefined ? 'https://x.test' : options.origin),
@@ -180,7 +187,12 @@ describe('the read gate (state trigger conditions)', () => {
         },
         {
           inspected: {
-            load: () => new Promise((resolve) => reads.push(resolve)),
+            load: () =>
+              new Promise((resolve) =>
+                reads.push((assets) => {
+                  resolve({ assets, unreadable: 0 });
+                })
+              ),
             readPageOrigin: () => Promise.resolve(null),
             watchAddedScripts: () => () => undefined
           },
@@ -455,6 +467,23 @@ describe('page origin and stale scripts', () => {
     expect(h.store.staleScripts()).toBe(false);
     h.dispose();
     expect(h.unwatch).toHaveBeenCalledOnce();
+  });
+});
+
+describe('unreadable scripts', () => {
+  it('reports how many scripts the last read skipped', async () => {
+    const h = harness({ words: ['alpha'] });
+    expect(h.store.unreadableScripts()).toBe(0);
+    h.reads[0]?.resolve(ASSETS, 2);
+    await flush();
+    expect(h.store.unreadableScripts()).toBe(2);
+    h.store.rescan();
+    // Kept while the rescan runs, replaced by its own count.
+    expect(h.store.unreadableScripts()).toBe(2);
+    h.reads[1]?.resolve(ASSETS, 0);
+    await flush();
+    expect(h.store.unreadableScripts()).toBe(0);
+    h.dispose();
   });
 });
 

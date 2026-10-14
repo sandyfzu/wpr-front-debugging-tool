@@ -71,10 +71,13 @@ describe('createScriptLoader', () => {
         resource('chrome-extension://id/x.js', 'var z;')
       ])
     );
-    await expect(load([{ content: 'var i;' }, {}])).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/a.js' }, content: 'var a;' },
-      { origin: { kind: 'inline' }, content: 'var i;' }
-    ]);
+    await expect(load([{ content: 'var i;' }, {}])).resolves.toEqual({
+      assets: [
+        { origin: { kind: 'url', url: 'https://x.test/a.js' }, content: 'var a;' },
+        { origin: { kind: 'inline' }, content: 'var i;' }
+      ],
+      unreadable: 0
+    });
   });
 
   it('drops malformed platform entries instead of crashing on them', async () => {
@@ -89,9 +92,10 @@ describe('createScriptLoader', () => {
       ])
     );
     // A non-string type reads as absent, so that entry is not a script.
-    await expect(load([])).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/good.js' }, content: 'var good;' }
-    ]);
+    await expect(load([])).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/good.js' }, content: 'var good;' }],
+      unreadable: 0
+    });
   });
 
   it('decodes base64 bodies and skips unreadable ones', async () => {
@@ -101,9 +105,10 @@ describe('createScriptLoader', () => {
         resource('https://x.test/null.js', null)
       ])
     );
-    await expect(load([])).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/enc.js' }, content: 'var enc;' }
-    ]);
+    await expect(load([])).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/enc.js' }, content: 'var enc;' }],
+      unreadable: 1
+    });
   });
 
   it('reads lastError in each content callback and skips that resource', async () => {
@@ -114,9 +119,10 @@ describe('createScriptLoader', () => {
         [null, 'No resource with given URL found', null]
       )
     );
-    await expect(load([])).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/b.js' }, content: 'var b;' }
-    ]);
+    await expect(load([])).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/b.js' }, content: 'var b;' }],
+      unreadable: 1
+    });
   });
 
   it('rejects with the platform reason when the listing sets lastError', async () => {
@@ -143,10 +149,40 @@ describe('createScriptLoader', () => {
   });
 
   it('resolves the inline stack alone when the page has no script resources', async () => {
-    await expect(createScriptLoader(deps([]))([{ content: 'var i;' }])).resolves.toEqual([
-      { origin: { kind: 'inline' }, content: 'var i;' }
-    ]);
-    await expect(createScriptLoader(deps([]))([])).resolves.toEqual([]);
+    await expect(createScriptLoader(deps([]))([{ content: 'var i;' }])).resolves.toEqual({
+      assets: [{ origin: { kind: 'inline' }, content: 'var i;' }],
+      unreadable: 0
+    });
+    await expect(createScriptLoader(deps([]))([])).resolves.toEqual({
+      assets: [],
+      unreadable: 0
+    });
+  });
+});
+
+describe('unreadable count', () => {
+  it('counts empty bodies, lastErrors and undecodable content as skipped', async () => {
+    const load = createScriptLoader(
+      deps(
+        [
+          resource('https://x.test/empty.js', ''),
+          resource('https://x.test/error.js', 'var e;'),
+          resource('https://x.test/bad.js', '%%%', { encoding: 'base64' }),
+          resource('https://x.test/ok.js', 'var ok;')
+        ],
+        [null, null, 'No resource with given URL found', null, null]
+      )
+    );
+    await expect(load([])).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }],
+      unreadable: 3
+    });
+  });
+
+  it('counts per read — a second read starts from zero', async () => {
+    const load = createScriptLoader(deps([resource('https://x.test/empty.js', '')]));
+    await expect(load([])).resolves.toMatchObject({ unreadable: 1 });
+    await expect(load([])).resolves.toMatchObject({ unreadable: 1 });
   });
 });
 
@@ -173,9 +209,10 @@ describe('per-resource content timeout', () => {
     await Promise.resolve();
     // The ok resource answered; the hanging one holds the read until its timer.
     for (const run of timers) run();
-    await expect(read).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }
-    ]);
+    await expect(read).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }],
+      unreadable: 1
+    });
     expect(() => late?.('var late;', '')).not.toThrow();
   });
 
@@ -359,9 +396,10 @@ describe('realInspectedScripts', () => {
     api['devtools'] = { inspectedWindow };
     const reader = realInspectedScripts();
     expect(reader).not.toBeNull();
-    await expect(reader?.load([])).resolves.toEqual([
-      { origin: { kind: 'url', url: 'https://x.test/a.js' }, content: 'var a;' }
-    ]);
+    await expect(reader?.load([])).resolves.toEqual({
+      assets: [{ origin: { kind: 'url', url: 'https://x.test/a.js' }, content: 'var a;' }],
+      unreadable: 0
+    });
     await expect(reader?.readPageOrigin()).resolves.toBe('https://x.test');
     reader?.watchAddedScripts(() => undefined)();
     expect(onResourceAdded.addListener).toHaveBeenCalledOnce();

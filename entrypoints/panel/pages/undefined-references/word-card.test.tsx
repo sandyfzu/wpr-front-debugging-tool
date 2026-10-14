@@ -83,9 +83,21 @@ describe('WordCard — script rows', () => {
     const names = screen.getAllByRole('link').map((link) => link.textContent);
     expect(names).toEqual([
       'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ (opens in a new tab)',
-      'jquery.min.js?ver=3.7.1, cdn.example.net/wp-includes/js/jquery/ (opens in a new tab)'
+      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ · cdn.example.net (opens in a new tab)'
     ]);
     expect(new Set(names).size).toBe(2);
+    // The copy controls read apart too: a foreign host is named.
+    expect(
+      screen
+        .getAllByRole('button', { name: /^Copy as exclusion/ })
+        .map((button) => button.getAttribute('aria-label'))
+    ).toEqual([
+      'Copy as exclusion: jquery.min.js',
+      'Copy as exclusion: jquery.min.js (cdn.example.net)'
+    ]);
+    expect(
+      [...document.querySelectorAll('[data-fdt="script-location"]')].map((node) => node.textContent)
+    ).toEqual(['/wp-includes/js/jquery/', '/wp-includes/js/jquery/ · cdn.example.net']);
   });
 
   it('flashes "Copied" in place after a confirmed copy, then reverts', async () => {
@@ -165,7 +177,10 @@ describe('WordCard — script rows', () => {
   });
 
   it('names the copy control with the visible label first (label in name)', () => {
-    expect(copyExclusionName('a.js')).toBe('Copy as exclusion: a.js');
+    expect(copyExclusionName('a.js', null)).toBe('Copy as exclusion: a.js');
+    expect(copyExclusionName('a.js', 'cdn.example.com')).toBe(
+      'Copy as exclusion: a.js (cdn.example.com)'
+    );
   });
 });
 
@@ -216,6 +231,28 @@ describe('WordCard — verdicts and bodies', () => {
     expect(
       screen.getByText("No declaration or assignment of this name was found in the page's scripts.")
     ).toBeTruthy();
+  });
+
+  it('softens not-found when some scripts could not be read', () => {
+    const { unmount } = render(() => (
+      <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={2} />
+    ));
+    expect(verdict().textContent).toBe('No definition found in the readable scripts');
+    expect(
+      screen.getByText(
+        "No declaration or assignment of this name was found in the page's readable scripts. 2 scripts could not be read, so a definition may still be in one of them."
+      )
+    ).toBeTruthy();
+    unmount();
+    render(() => <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={1} />);
+    expect(screen.getByText(/1 script could not be read/)).toBeTruthy();
+  });
+
+  it('keeps a found verdict unchanged when scripts were skipped', () => {
+    render(() => (
+      <WordCard word="x" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} unreadable={3} />
+    ));
+    expect(verdict().textContent).toBe('In 1 script');
   });
 
   it('renders the cross-origin sentinel with a neutral badge and its explanation', () => {

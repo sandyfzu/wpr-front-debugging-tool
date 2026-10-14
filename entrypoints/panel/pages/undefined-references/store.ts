@@ -20,7 +20,7 @@ import type {
   ScriptAsset,
   ScriptOrigin
 } from '../../../../lib/panel/undefined-refs';
-import type { InspectedScripts } from './inspected-scripts';
+import type { InspectedScripts, ScriptRead } from './inspected-scripts';
 import {
   arrivedWords,
   classifyScanError,
@@ -110,6 +110,8 @@ export interface UndefinedReferencesStore {
   readonly answerOf: (word: string) => DefinitionAnswer;
   /** The inspected page's origin, once a read learned it. */
   readonly pageOrigin: Accessor<string | null>;
+  /** Script files the last read had to skip (the search cannot see them). */
+  readonly unreadableScripts: Accessor<number>;
   /** A user rescan is in flight (current results stay visible). */
   readonly rescanning: Accessor<boolean>;
   /** Counts completed user rescans (the control flashes "done" on change). */
@@ -157,6 +159,7 @@ export function createUndefinedReferencesStore(
   const [pageOrigin, setPageOrigin] = createSignal<string | null>(null);
   const [rescansDone, setRescansDone] = createSignal(0);
   const [staleScripts, setStaleScripts] = createSignal(false);
+  const [unreadableScripts, setUnreadableScripts] = createSignal(0);
   /** Bumped by every new read, failure, reset and disposal: an old read's settle is stale. */
   let readTicket = 0;
   /** Bumped by every data refetch: an origin read from an older page is dropped. */
@@ -203,18 +206,19 @@ export function createUndefinedReferencesStore(
     cancelTimeout = schedule(() => {
       fail(ticket, 'timed-out');
     }, timeoutMs);
-    let read: Promise<ScriptAsset[]>;
+    let read: Promise<ScriptRead>;
     try {
       read = reader.load(untrack(input.inlineScripts));
     } catch (cause) {
       read = Promise.reject(cause instanceof Error ? cause : new Error(String(cause)));
     }
     read.then(
-      (assets) => {
+      ({ assets, unreadable }) => {
         if (ticket !== readTicket || disposed) return;
         readTicket += 1;
         disarm();
         setStaleScripts(false);
+        setUnreadableScripts(unreadable);
         const { before } = apply({ type: 'settled', assets });
         if (before.kind === 'scanning' && before.keepOnFailure) setRescansDone((n) => n + 1);
       },
@@ -397,6 +401,7 @@ export function createUndefinedReferencesStore(
     words,
     answerOf: (word) => (assets() === null ? null : (answers().get(word) ?? 'pending')),
     pageOrigin,
+    unreadableScripts,
     rescanning: () => {
       const current = scan();
       return current.kind === 'scanning' && current.keepOnFailure;

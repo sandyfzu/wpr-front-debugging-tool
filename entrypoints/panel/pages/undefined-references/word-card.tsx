@@ -40,6 +40,7 @@ import {
   displayWord,
   exclusionPattern,
   isCrossOriginSentinel,
+  scriptLocation,
   splitScriptUrl,
   verdictText,
   wordVerdict,
@@ -74,9 +75,20 @@ export const COPIED_FLASH_MS = 1600;
 export const CROSS_ORIGIN_EXPLANATION =
   'Since the error occurred in a file loaded from an external server, the browser limited the information that can be read from it. Make sure to disable CDNs if there are any.';
 
-/** The not-found body sentence. */
-export const NOT_FOUND_EXPLANATION =
-  "No declaration or assignment of this name was found in the page's scripts.";
+/**
+ * The not-found body sentence; when some scripts could not be read it says
+ * the search only covered the readable ones.
+ *
+ * @param unreadable How many scripts the read skipped.
+ * @returns The sentence.
+ */
+export function notFoundExplanation(unreadable: number): string {
+  if (unreadable === 0) {
+    return "No declaration or assignment of this name was found in the page's scripts.";
+  }
+  const skipped = unreadable === 1 ? '1 script' : `${String(unreadable)} scripts`;
+  return `No declaration or assignment of this name was found in the page's readable scripts. ${skipped} could not be read, so a definition may still be in one of them.`;
+}
 
 /** The copy control's hover hint (its purpose, in full). */
 const COPY_TITLE = `Copy an exclusion for this script, to exclude it from ${LABEL_DELAY_JAVASCRIPT_EXECUTION}`;
@@ -95,6 +107,8 @@ export interface WordCardProps {
   answer: DefinitionAnswer;
   /** The inspected page's origin, or `null` when unknown (shapes rows and patterns). */
   pageOrigin: string | null;
+  /** Scripts the read had to skip (softens a not-found verdict; default 0). */
+  unreadable?: number;
   /** Copy an exclusion (default: {@link copyAsExclusion}); injected by tests. */
   onCopy?: CopyExclusion;
 }
@@ -112,7 +126,7 @@ export interface WordCardProps {
  * @param props See {@link WordCardProps}.
  */
 export function WordCard(props: WordCardProps): JSX.Element {
-  const verdict = createMemo(() => wordVerdict(props.word, props.answer));
+  const verdict = createMemo(() => wordVerdict(props.word, props.answer, props.unreadable ?? 0));
   const kind = (): StatusKind => VERDICT_KIND[verdict().kind];
   const definitions = (): readonly ScriptOrigin[] => {
     const answer = props.answer;
@@ -173,7 +187,7 @@ export function WordCard(props: WordCardProps): JSX.Element {
             <p class={BODY_NOTE}>{CROSS_ORIGIN_EXPLANATION}</p>
           </Match>
           <Match when={verdict().kind === 'not-found'}>
-            <p class={BODY_NOTE}>{NOT_FOUND_EXPLANATION}</p>
+            <p class={BODY_NOTE}>{notFoundExplanation(props.unreadable ?? 0)}</p>
           </Match>
         </Switch>
       </Card>
@@ -304,6 +318,7 @@ interface ScriptRowProps {
 function ScriptRow(props: ScriptRowProps): JSX.Element {
   const parts = createMemo(() => splitScriptUrl(props.url, props.pageOrigin));
   const pattern = createMemo(() => exclusionPattern(props.url, props.pageOrigin));
+  const location = (): string => scriptLocation(parts());
   const name = (): JSX.Element => (
     <span class="truncate" title={props.url}>
       {parts().file}
@@ -333,26 +348,30 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
           >
             {name()}
             <ExternalLinkIcon size={12} class="shrink-0" aria-hidden="true" />
-            <Show when={parts().location}>
-              <span class="sr-only">, {parts().location}</span>
+            <Show when={location()}>
+              <span class="sr-only">, {location()}</span>
             </Show>
             <span class="sr-only"> (opens in a new tab)</span>
           </a>
         </Show>
-        <Show when={parts().location}>
+        <Show when={location()}>
           <span
             data-fdt="script-location"
             aria-hidden="true"
             class="truncate font-mono text-2xs text-fg-muted"
             title={props.url}
           >
-            {parts().location}
+            {location()}
           </span>
         </Show>
       </div>
       <Show when={pattern()}>
         {(value) => (
-          <CopyExclusionButton pattern={value()} file={parts().file} onCopy={props.onCopy} />
+          <CopyExclusionButton
+            pattern={value()}
+            name={copyExclusionName(parts().file, parts().host)}
+            onCopy={props.onCopy}
+          />
         )}
       </Show>
     </>
@@ -361,29 +380,31 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
 
 /**
  * The copy control's accessible name: the visible label first (WCAG 2.5.3,
- * label in name — voice users say what they see), then the file, so every
- * row's control is distinguishable.
+ * label in name — voice users say what they see), then the file, and the
+ * host for another origin's script, so the same file from two hosts names
+ * two controls apart.
  *
  * @param file The script's file name.
+ * @param host The script's host when it is not the page's own, else `null`.
  * @returns The accessible name.
  */
-export function copyExclusionName(file: string): string {
-  return `Copy as exclusion: ${file}`;
+export function copyExclusionName(file: string, host: string | null): string {
+  return host === null ? `Copy as exclusion: ${file}` : `Copy as exclusion: ${file} (${host})`;
 }
 
 /** Props of {@link CopyExclusionButton}. */
 interface CopyExclusionButtonProps {
   /** The exclusion pattern to copy. */
   pattern: string;
-  /** The script's file name (the control's accessible name). */
-  file: string;
+  /** The control's accessible name (see {@link copyExclusionName}). */
+  name: string;
   /** The copy handler override (tests). */
   onCopy?: CopyExclusion;
 }
 
 /**
  * The row's copy control: labeled at regular widths, icon-only below them;
- * its accessible name adds the file (see {@link copyExclusionName}). A confirmed copy
+ * its accessible name adds the file and any foreign host. A confirmed copy
  * flashes a check and "Copied" in place — feedback at the pointer, beside
  * the toast that says where to paste.
  *
@@ -416,7 +437,7 @@ function CopyExclusionButton(props: CopyExclusionButtonProps): JSX.Element {
       size="sm"
       class="shrink-0"
       title={COPY_TITLE}
-      aria-label={copyExclusionName(props.file)}
+      aria-label={props.name}
       data-fdt-copy-exclusion
       data-fdt-copied={copied() ? '' : undefined}
       onClick={() => {

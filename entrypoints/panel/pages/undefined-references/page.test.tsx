@@ -88,14 +88,20 @@ function mount(options: MountOptions) {
   };
   const reads: {
     inline: readonly InlineScriptSource[];
-    resolve: (a: ScriptAsset[]) => void;
+    resolve: (a: ScriptAsset[], unreadable?: number) => void;
     reject: (c: unknown) => void;
   }[] = [];
   const added: ((url: string) => void)[] = [];
   const inspected: InspectedScripts = {
     load: (inline) =>
       new Promise((resolve, reject) => {
-        reads.push({ inline, resolve, reject });
+        reads.push({
+          inline,
+          resolve: (assets, unreadable = 0) => {
+            resolve({ assets, unreadable });
+          },
+          reject
+        });
       }),
     readPageOrigin: () => Promise.resolve(PAGE),
     watchAddedScripts: (onAdded) => {
@@ -278,9 +284,7 @@ describe('UndefinedReferencesPage — results', () => {
     await vi.waitFor(() => {
       expect(onCopy).toHaveBeenCalledWith('/wp-content/plugins/p/a.js');
     });
-    expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe(
-      '/wp-content/plugins/p/'
-    );
+    expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe('plugins/p/');
   });
 
   it('appends pushed words in place: existing cards keep their DOM and focus, one announcement', async () => {
@@ -369,6 +373,20 @@ describe('UndefinedReferencesPage — results', () => {
         "DevTools could not list the inspected page's scripts. The previous results stay listed."
     });
     expect(screen.getByText('In 1 script')).toBeTruthy();
+  });
+
+  it('counts skipped scripts in the summary and softens not-found verdicts', async () => {
+    const { reads } = mount({ data: pageData({ words: ['alpha', 'nope'] }) });
+    reads[0]?.resolve(ASSETS, 2);
+    await flush();
+    expect(summary()).toBe(
+      '2 undefined references · 1 with a possible definition · 2 scripts could not be read'
+    );
+    expect(screen.getByText('No definition found in the readable scripts')).toBeTruthy();
+    // Each fact is unbreakable; lines break only between facts.
+    const facts = document.querySelectorAll('[data-fdt="undefined-refs-summary"] > span');
+    expect(facts).toHaveLength(3);
+    for (const fact of facts) expect(fact.className).toContain('whitespace-nowrap');
   });
 
   it('hints at a rescan when the page loaded scripts after the read', async () => {

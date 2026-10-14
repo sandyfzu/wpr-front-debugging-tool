@@ -181,8 +181,11 @@ export type DefinitionAnswer = readonly ScriptOrigin[] | 'pending' | null;
 export type WordVerdict =
   /** Possible definitions exist (`count` origins). */
   | { readonly kind: 'found'; readonly count: number }
-  /** The search ran and found nothing. */
-  | { readonly kind: 'not-found' }
+  /**
+   * The search ran and found nothing. `partial` when some of the page's
+   * scripts could not be read — the definition may live in one of them.
+   */
+  | { readonly kind: 'not-found'; readonly partial: boolean }
   /** The search has not reached this word yet. */
   | { readonly kind: 'searching' }
   /** The browser redacted a cross-origin error: there is no name to search. */
@@ -217,13 +220,17 @@ export function displayWord(word: string): string {
  *
  * @param word The word (the sentinel is always `hidden`).
  * @param answer The search answer.
+ * @param unreadable How many of the page's scripts could not be read (a
+ *   not-found answer is then only about the readable ones).
  * @returns The verdict.
  */
-export function wordVerdict(word: string, answer: DefinitionAnswer): WordVerdict {
+export function wordVerdict(word: string, answer: DefinitionAnswer, unreadable = 0): WordVerdict {
   if (isCrossOriginSentinel(word)) return { kind: 'hidden' };
   if (answer === null) return { kind: 'not-searched' };
   if (answer === 'pending') return { kind: 'searching' };
-  return answer.length > 0 ? { kind: 'found', count: answer.length } : { kind: 'not-found' };
+  return answer.length > 0
+    ? { kind: 'found', count: answer.length }
+    : { kind: 'not-found', partial: unreadable > 0 };
 }
 
 /**
@@ -237,7 +244,9 @@ export function verdictText(verdict: WordVerdict): string {
     case 'found':
       return `In ${String(verdict.count)} ${verdict.count === 1 ? 'script' : 'scripts'}`;
     case 'not-found':
-      return 'No definition found';
+      return verdict.partial
+        ? 'No definition found in the readable scripts'
+        : 'No definition found';
     case 'searching':
       return 'Searching…';
     case 'hidden':
@@ -316,6 +325,48 @@ export function summarizeResults(
   return { undefinedNames, withDefinition, crossOriginError };
 }
 
+/** One fact of the summary line: a count (rendered emphasized) and its words. */
+export interface SummaryFact {
+  readonly count: number;
+  readonly label: string;
+}
+
+/**
+ * The summary line's facts, in order: undefined names, how many have a
+ * possible definition and how many scripts the read skipped (both only when
+ * a search runs), and the cross-origin error apart — it is not an undefined
+ * name.
+ *
+ * @param summary The counts.
+ * @param searched Whether a search runs.
+ * @param unreadable Scripts the read had to skip.
+ * @returns The facts (empty facts are left out).
+ */
+export function summaryFacts(
+  summary: ResultsSummary,
+  searched: boolean,
+  unreadable: number
+): SummaryFact[] {
+  const facts: SummaryFact[] = [];
+  const names = summary.undefinedNames;
+  if (names > 0) {
+    facts.push({
+      count: names,
+      label: names === 1 ? 'undefined reference' : 'undefined references'
+    });
+    if (searched)
+      facts.push({ count: summary.withDefinition, label: 'with a possible definition' });
+  }
+  if (summary.crossOriginError) facts.push({ count: 1, label: 'cross-origin error' });
+  if (searched && unreadable > 0) {
+    facts.push({
+      count: unreadable,
+      label: unreadable === 1 ? 'script could not be read' : 'scripts could not be read'
+    });
+  }
+  return facts;
+}
+
 /**
  * The user-facing sentence naming a scan failure and its remedy.
  *
@@ -376,19 +427,27 @@ export interface ScriptUrlParts {
   /** The query, shown muted after the file — e.g. `?ver=3.7.1`; empty when none. */
   readonly query: string;
   /**
-   * Where the file lives: the directory path, prefixed by the host when the
-   * script is not from the inspected page's origin (or that origin is
-   * unknown) — e.g. `/wp-includes/js/jquery/`, `cdn.example.com/js/`.
+   * The directory, short form: WordPress's `/wp-content/plugins/` and
+   * `/wp-content/themes/` prefixes shorten to `plugins/` and `themes/`, so
+   * the plugin or theme slug leads the line and survives a narrow panel —
+   * e.g. `plugins/some-plugin/assets/js/`, `/wp-includes/js/jquery/`.
    */
-  readonly location: string;
+  readonly directory: string;
+  /**
+   * The host when the script is not from the inspected page's origin (or
+   * that origin is unknown); `null` for the page's own scripts.
+   */
+  readonly host: string | null;
 }
+
+/** The WordPress content prefixes the display shortens (`$1` = `plugins` / `themes`). */
+const WP_CONTENT_PREFIX = /^\/wp-content\/(plugins|themes)\//;
 
 /**
  * Split a script URL for display. A truncated full URL hides the file name
  * behind the ellipsis on narrow panels, and the inspected page's own host is
- * noise on every row, so it is dropped (the plugin slug in the path then
- * survives narrow widths). A non-http(s) or file-less URL keeps its whole
- * text as the `file`.
+ * noise on every row, so it is dropped. A non-http(s) or file-less URL keeps
+ * its whole text as the `file`.
  *
  * @param url The script URL (page-derived; parsed, never fetched).
  * @param pageOrigin The inspected page's origin, or `null` when unknown.
@@ -396,17 +455,28 @@ export interface ScriptUrlParts {
  */
 export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUrlParts {
   const parsed = parseHttpUrl(url);
-  if (parsed === null) return { file: url, query: '', location: '' };
+  if (parsed === null) return { file: url, query: '', directory: '', host: null };
   const path = parsed.pathname;
   const cut = path.lastIndexOf('/');
   const file = path.slice(cut + 1);
-  if (file === '') return { file: url, query: '', location: '' };
-  const directory = path.slice(0, cut + 1);
+  if (file === '') return { file: url, query: '', directory: '', host: null };
   return {
     file,
     query: parsed.search,
-    location: parsed.origin === pageOrigin ? directory : `${parsed.host}${directory}`
+    directory: path.slice(0, cut + 1).replace(WP_CONTENT_PREFIX, '$1/'),
+    host: parsed.origin === pageOrigin ? null : parsed.host
   };
+}
+
+/**
+ * The muted location line: the short directory first (its slug must survive
+ * the end truncation), then the host for another origin.
+ *
+ * @param parts The display parts.
+ * @returns The line, e.g. `plugins/p/js/ · cdn.example.com`.
+ */
+export function scriptLocation(parts: ScriptUrlParts): string {
+  return parts.host === null ? parts.directory : `${parts.directory} · ${parts.host}`;
 }
 
 /**
@@ -417,22 +487,32 @@ export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUr
  */
 const EXCLUSION_UNSAFE = /[\\^$*+?()[\]{}|#]/g;
 
+/** A run of percent-encoded bytes (one or more `%XX`). */
+const PERCENT_RUN = /(?:%[0-9A-Fa-f]{2})+/g;
+
+/** Placeholder for an encoded run while the rest is neutralized (a char no URL holds). */
+const RUN_MARK = '\u0000';
+
 /**
  * The Delay JS exclusion for a script: the part of its URL that identifies
  * it and survives updates — its path (no scheme, no query: a baked-in
  * `?ver=` stops matching after the next plugin update, and the `?` is regex
- * syntax), with the host in front when the script comes from another origin.
- * A path without a file keeps its query so the pattern is not a bare `/`.
+ * syntax). The host leads when the script comes from another origin, when
+ * the page origin is unknown (it matches absolute `src` values), and when
+ * the path alone is too generic: a single segment (`/main.js`) or no file
+ * (then the query's first parameter is kept, so the pattern is never a bare
+ * `/`).
  *
  * Exclusions are regular expressions matched against the whole script tag —
  * by WP Rocket (after escaping `+`, `?ver`, `#`, as `#…#i`, where `&` in the
  * tag reads `&#038;`) and by a plain `new RegExp(…)`. The returned text
- * matches its own tag under both: it holds no regex syntax except `.`,
- * which matches itself.
+ * matches its own tag under both: regex syntax becomes `.` (matches itself),
+ * and each percent-encoded run (spaces, backticks, non-ASCII file names —
+ * the URL parser encodes them, while the tag may hold them raw or encoded)
+ * becomes `.*`, which matches either spelling.
  *
  * @param url The script URL.
- * @param pageOrigin The inspected page's origin, or `null` when unknown
- *   (then the host is always kept — it matches absolute `src` values).
+ * @param pageOrigin The inspected page's origin, or `null` when unknown.
  * @returns The exclusion text, or `null` for a non-http(s) URL.
  */
 export function exclusionPattern(url: string, pageOrigin: string | null): string | null {
@@ -440,9 +520,14 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
   if (parsed === null) return null;
   const path = parsed.pathname;
   const fileless = path.endsWith('/');
-  const tail = fileless ? `${path}${parsed.search}` : path;
-  const pattern = parsed.origin === pageOrigin && !fileless ? tail : `${parsed.host}${tail}`;
-  return pattern.replace(EXCLUSION_UNSAFE, '.');
+  const segments = path.split('/').filter((segment) => segment !== '').length;
+  const query = fileless ? (parsed.search.split('&')[0] ?? '') : '';
+  const keepHost = parsed.origin !== pageOrigin || fileless || segments <= 1;
+  const raw = `${keepHost ? parsed.host : ''}${path}${query}`;
+  return raw
+    .replace(PERCENT_RUN, RUN_MARK)
+    .replace(EXCLUSION_UNSAFE, '.')
+    .replaceAll(RUN_MARK, '.*');
 }
 
 /** Two origins name the same script (or both the inline stack). */

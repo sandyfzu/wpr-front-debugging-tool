@@ -54,7 +54,8 @@ import {
   isRetryable,
   scanFailureMessage,
   summarizeResults,
-  type ResultsSummary,
+  summaryFacts,
+  type SummaryFact,
   type ScanFailure
 } from './model';
 import {
@@ -315,7 +316,9 @@ function WordsState(props: WordsStateProps): JSX.Element {
           data-fdt="undefined-refs-summary"
           class="min-w-0 flex-1 text-2xs text-fg-secondary tabular-nums"
         >
-          <SummaryText summary={summary()} searched={searched()} />
+          <SummaryText
+            facts={summaryFacts(summary(), searched(), props.store.unreadableScripts())}
+          />
           <Show when={searched() && props.store.staleScripts()}>
             {' '}
             <span data-fdt="undefined-refs-stale" class="text-fg-primary">
@@ -335,6 +338,7 @@ function WordsState(props: WordsStateProps): JSX.Element {
                 word={word}
                 answer={props.store.answerOf(word)}
                 pageOrigin={props.store.pageOrigin()}
+                unreadable={props.store.unreadableScripts()}
                 onCopy={props.onCopy}
               />
             </li>
@@ -346,31 +350,24 @@ function WordsState(props: WordsStateProps): JSX.Element {
 }
 
 /**
- * The summary line: undefined names, how many have a possible definition
- * (only when a search runs), and the cross-origin error apart — it is not an
- * undefined name.
+ * The summary line: one non-breaking fact per {@link summaryFacts} entry,
+ * joined by `·` — on a narrow panel the line breaks between facts, never
+ * inside one (no lone trailing word).
  *
- * @param props.summary The counts.
- * @param props.searched Whether a search runs.
+ * @param props.facts The facts.
  */
-function SummaryText(props: { summary: ResultsSummary; searched: boolean }): JSX.Element {
-  const names = (): number => props.summary.undefinedNames;
+function SummaryText(props: { facts: readonly SummaryFact[] }): JSX.Element {
   return (
-    <>
-      <Show when={names() > 0}>
-        <span class="font-medium text-fg-primary">{names()}</span>{' '}
-        {names() === 1 ? 'undefined reference' : 'undefined references'}
-        <Show when={props.searched}>
-          {' · '}
-          <span class="font-medium text-fg-primary">{props.summary.withDefinition}</span> with a
-          possible definition
-        </Show>
-      </Show>
-      <Show when={props.summary.crossOriginError}>
-        {names() > 0 ? ' · ' : ''}
-        <span class="font-medium text-fg-primary">1</span> cross-origin error
-      </Show>
-    </>
+    <For each={props.facts}>
+      {(fact, index) => (
+        <>
+          {index() > 0 ? ' · ' : ''}
+          <span class="whitespace-nowrap">
+            <span class="font-medium text-fg-primary">{fact.count}</span> {fact.label}
+          </span>
+        </>
+      )}
+    </For>
   );
 }
 

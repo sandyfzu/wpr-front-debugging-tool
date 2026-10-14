@@ -21,8 +21,10 @@ import {
   resolvePageView,
   scanFailureMessage,
   searchableAssets,
+  scriptLocation,
   splitScriptUrl,
   summarizeResults,
+  summaryFacts,
   transitionScan,
   uniqueWords,
   verdictText,
@@ -200,14 +202,19 @@ describe('words and verdicts', () => {
     expect(wordVerdict(UNDEFINED_REFERENCE_EXTERNAL_ERROR, 'pending')).toEqual({ kind: 'hidden' });
     expect(wordVerdict('a', null)).toEqual({ kind: 'not-searched' });
     expect(wordVerdict('a', 'pending')).toEqual({ kind: 'searching' });
-    expect(wordVerdict('a', [])).toEqual({ kind: 'not-found' });
+    expect(wordVerdict('a', [])).toEqual({ kind: 'not-found', partial: false });
+    expect(wordVerdict('a', [], 2)).toEqual({ kind: 'not-found', partial: true });
+    expect(wordVerdict('a', [url], 2)).toEqual({ kind: 'found', count: 1 });
     expect(wordVerdict('a', [url, { kind: 'inline' }])).toEqual({ kind: 'found', count: 2 });
   });
 
   it('words every verdict as visible text, singular and plural', () => {
     expect(verdictText({ kind: 'found', count: 1 })).toBe('In 1 script');
     expect(verdictText({ kind: 'found', count: 3 })).toBe('In 3 scripts');
-    expect(verdictText({ kind: 'not-found' })).toBe('No definition found');
+    expect(verdictText({ kind: 'not-found', partial: false })).toBe('No definition found');
+    expect(verdictText({ kind: 'not-found', partial: true })).toBe(
+      'No definition found in the readable scripts'
+    );
     expect(verdictText({ kind: 'searching' })).toBe('Searching…');
     expect(verdictText({ kind: 'hidden' })).toBe('Details hidden');
     expect(verdictText({ kind: 'not-searched' })).toBe('Not searched');
@@ -280,28 +287,50 @@ describe('scan failures', () => {
   });
 });
 
-describe('splitScriptUrl', () => {
+describe('splitScriptUrl + scriptLocation', () => {
   const PAGE = 'https://example.com';
 
-  it('splits file, query and location, dropping the page’s own host', () => {
-    expect(
-      splitScriptUrl('https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1', PAGE)
-    ).toEqual({ file: 'jquery.min.js', query: '?ver=3.7.1', location: '/wp-includes/js/jquery/' });
+  it('splits file, query and directory, dropping the page’s own host', () => {
+    const parts = splitScriptUrl(
+      'https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1',
+      PAGE
+    );
+    expect(parts).toEqual({
+      file: 'jquery.min.js',
+      query: '?ver=3.7.1',
+      directory: '/wp-includes/js/jquery/',
+      host: null
+    });
+    expect(scriptLocation(parts)).toBe('/wp-includes/js/jquery/');
   });
 
-  it('keeps the host for another origin, or when the page origin is unknown', () => {
-    expect(splitScriptUrl('https://cdn.example.com/js/a.js', PAGE)).toEqual({
-      file: 'a.js',
-      query: '',
-      location: 'cdn.example.com/js/'
-    });
+  it('shortens wp-content plugin/theme prefixes so the slug leads the line', () => {
+    const plugin = splitScriptUrl(
+      'https://example.com/wp-content/plugins/some-plugin/assets/js/a.js',
+      PAGE
+    );
+    expect(plugin.directory).toBe('plugins/some-plugin/assets/js/');
+    expect(splitScriptUrl('https://example.com/wp-content/themes/t/js/b.js', PAGE).directory).toBe(
+      'themes/t/js/'
+    );
+    // Only the leading WordPress prefix shortens.
+    expect(
+      splitScriptUrl('https://example.com/blog/wp-content/plugins/p/c.js', PAGE).directory
+    ).toBe('/blog/wp-content/plugins/p/');
+  });
+
+  it('puts another origin’s host after the directory (the slug survives truncation)', () => {
+    const parts = splitScriptUrl('https://cdn.example.com/wp-content/plugins/p/a.js', PAGE);
+    expect(parts.host).toBe('cdn.example.com');
+    expect(scriptLocation(parts)).toBe('plugins/p/ · cdn.example.com');
     expect(splitScriptUrl('http://localhost:8891/a.js', null)).toEqual({
       file: 'a.js',
       query: '',
-      location: 'localhost:8891/'
+      directory: '/',
+      host: 'localhost:8891'
     });
     // Same host, other scheme: another origin.
-    expect(splitScriptUrl('http://example.com/a.js', PAGE).location).toBe('example.com/');
+    expect(splitScriptUrl('http://example.com/a.js', PAGE).host).toBe('example.com');
   });
 
   it('keeps the whole URL as the file without a file segment, a parse, or http(s)', () => {
@@ -312,7 +341,12 @@ describe('splitScriptUrl', () => {
       'javascript:alert(1)',
       'file:///srv/a.js'
     ]) {
-      expect(splitScriptUrl(url, PAGE)).toEqual({ file: url, query: '', location: '' });
+      expect(splitScriptUrl(url, PAGE)).toEqual({
+        file: url,
+        query: '',
+        directory: '',
+        host: null
+      });
     }
   });
 });
@@ -356,18 +390,38 @@ describe('exclusionPattern', () => {
   });
 
   it('replaces regex syntax by `.` — never a backslash WP Rocket would double', () => {
-    expect(exclusionPattern('https://shop.example.com/js/a+b(c)[d]{e}$f^g|h*i.js', PAGE)).toBe(
-      // The URL parser percent-encodes `{`, `}` and `^` in paths (a tag holding
-      // those raw would not match — rare in script URLs); the rest becomes `.`.
-      '/js/a.b.c..d.%7Be%7D.f%5Eg.h.i.js'
+    expect(exclusionPattern('https://shop.example.com/js/a+b(c)[d]$f|h*i.js', PAGE)).toBe(
+      '/js/a.b.c..d..f.h.i.js'
     );
-    expect(exclusionPattern('https://shop.example.com/js/a%2Bb.js', PAGE)).toBe('/js/a%2Bb.js');
+    // An encoded `+` is an encoded run like any other: either spelling matches.
+    expect(exclusionPattern('https://shop.example.com/js/a%2Bb.js', PAGE)).toBe('/js/a.*b.js');
   });
 
-  it('keeps the query of a file-less URL (neutralized) so the pattern is never a bare `/`', () => {
+  it('keeps the first query parameter of a file-less URL, with the host', () => {
     expect(exclusionPattern('https://shop.example.com/?script=1', PAGE)).toBe(
       'shop.example.com/.script=1'
     );
+    expect(exclusionPattern('https://shop.example.com/js/?script=1&ver=2&x=3', PAGE)).toBe(
+      'shop.example.com/js/.script=1'
+    );
+  });
+
+  it('keeps the host when the path is a single segment (too generic alone)', () => {
+    expect(exclusionPattern('https://shop.example.com/main.js?ver=1', PAGE)).toBe(
+      'shop.example.com/main.js'
+    );
+    expect(exclusionPattern('https://shop.example.com/js/main.js', PAGE)).toBe('/js/main.js');
+  });
+
+  it('turns each percent-encoded run into `.*` (raw or encoded spelling in the tag)', () => {
+    // The URL parser encodes spaces, backticks, braces, `^` and non-ASCII.
+    expect(exclusionPattern('https://shop.example.com/js/my plugin/a`b{c}^d.js', PAGE)).toBe(
+      '/js/my.*plugin/a.*b.*c.*d.js'
+    );
+    expect(
+      exclusionPattern('https://shop.example.com/wp-content/themes/t/js/préférences.js', PAGE)
+    ).toBe('/wp-content/themes/t/js/pr.*f.*rences.js');
+    expect(exclusionPattern('https://shop.example.com/js/скрипт.js', PAGE)).toBe('/js/.*.js');
   });
 
   it('answers null for non-http(s) URLs', () => {
@@ -396,6 +450,28 @@ describe('exclusionPattern', () => {
         tags: [
           '<script src="https://cdn.example.net/wp-content/plugins/x/app(1).js?ver=2"></script>'
         ]
+      },
+      {
+        url: 'https://shop.example.com/wp-content/themes/t/js/préférences.js?ver=1',
+        tags: [
+          '<script src="https://shop.example.com/wp-content/themes/t/js/préférences.js?ver=1"></script>',
+          '<script src="https://shop.example.com/wp-content/themes/t/js/pr%C3%A9f%C3%A9rences.js?ver=1&#038;a=b"></script>'
+        ]
+      },
+      {
+        url: 'https://shop.example.com/wp-content/plugins/my plugin/js/app.js',
+        tags: [
+          '<script src="https://shop.example.com/wp-content/plugins/my%20plugin/js/app.js"></script>',
+          '<script src="/wp-content/plugins/my plugin/js/app.js"></script>'
+        ]
+      },
+      {
+        url: 'https://shop.example.com/main.js?ver=3',
+        tags: ['<script src="https://shop.example.com/main.js?ver=4"></script>']
+      },
+      {
+        url: 'https://shop.example.com/js/?script=1&ver=2',
+        tags: ['<script src="https://shop.example.com/js/?script=1&#038;ver=3"></script>']
       }
     ];
     for (const { url, tags } of cases) {
@@ -448,5 +524,34 @@ describe('reconcileOrigins', () => {
     expect(result).toEqual([b, fresh]);
     expect(result[0]).toBe(b);
     expect(result[1]).toBe(fresh);
+  });
+});
+
+describe('summaryFacts', () => {
+  const summary = { undefinedNames: 3, withDefinition: 2, crossOriginError: true };
+
+  it('lists names, found, the cross-origin error and skipped scripts, in order', () => {
+    expect(summaryFacts(summary, true, 2)).toEqual([
+      { count: 3, label: 'undefined references' },
+      { count: 2, label: 'with a possible definition' },
+      { count: 1, label: 'cross-origin error' },
+      { count: 2, label: 'scripts could not be read' }
+    ]);
+    expect(summaryFacts({ ...summary, undefinedNames: 1 }, true, 1)).toEqual([
+      { count: 1, label: 'undefined reference' },
+      { count: 2, label: 'with a possible definition' },
+      { count: 1, label: 'cross-origin error' },
+      { count: 1, label: 'script could not be read' }
+    ]);
+  });
+
+  it('leaves out search facts when no search runs, and empty facts', () => {
+    expect(summaryFacts(summary, false, 4)).toEqual([
+      { count: 3, label: 'undefined references' },
+      { count: 1, label: 'cross-origin error' }
+    ]);
+    expect(
+      summaryFacts({ undefinedNames: 0, withDefinition: 0, crossOriginError: true }, true, 0)
+    ).toEqual([{ count: 1, label: 'cross-origin error' }]);
   });
 });

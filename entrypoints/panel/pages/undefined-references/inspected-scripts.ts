@@ -30,8 +30,20 @@ const log = createLogger('panel');
  */
 export const CONTENT_TIMEOUT_MS = 5_000;
 
-/** Read the page's scripts (external files + the inline stack) into searchable assets. */
-export type ScriptLoader = (inlineScripts: readonly InlineScriptSource[]) => Promise<ScriptAsset[]>;
+/** One read of the page's scripts. */
+export interface ScriptRead {
+  /** The searchable sources (external files + the inline stack). */
+  readonly assets: ScriptAsset[];
+  /**
+   * Script files the read had to skip — content unreadable (`lastError`),
+   * empty, undecodable, or not answered in time. The search cannot see
+   * them, so the page says so instead of a confident "not found".
+   */
+  readonly unreadable: number;
+}
+
+/** Read the page's scripts into searchable assets. */
+export type ScriptLoader = (inlineScripts: readonly InlineScriptSource[]) => Promise<ScriptRead>;
 
 /** Everything the page reads from the inspected window. */
 export interface InspectedScripts {
@@ -113,13 +125,16 @@ interface ContentContext {
   readonly readLastError: () => string | null;
   readonly schedule: (run: () => void, ms: number) => () => void;
   readonly timeoutMs: number;
+  /** Count one skipped resource (this read's tally). */
+  readonly skipped: () => void;
 }
 
 /**
  * Adapt one platform resource, or drop it when its shape is wrong (no string
  * URL, no `getContent` function). The adapted `getContent` answers exactly
- * once: the decoded content, or `null` on a `lastError` or after the
- * timeout (a late answer is then ignored).
+ * once: the decoded content, or `null` — counted as skipped — on a
+ * `lastError`, an empty or undecodable body, or after the timeout (a late
+ * answer is then ignored).
  *
  * @param raw One entry of the platform's list.
  * @param context The `lastError` reader and the timeout.
@@ -140,6 +155,11 @@ function adaptResource(raw: unknown, context: ContentContext): InspectedScriptRe
         if (answered) return;
         answered = true;
         cancelTimeout();
+        if (content === null || content === '') {
+          context.skipped();
+          onContent(null);
+          return;
+        }
         onContent(content);
       };
       cancelTimeout = context.schedule(() => {
@@ -169,19 +189,25 @@ function adaptResource(raw: unknown, context: ContentContext): InspectedScriptRe
  * The listing callback is the one point that can fail as a whole: a
  * `lastError` or a non-list answer rejects with {@link ScriptListError}. A
  * synchronous throw from the platform call rejects too (the shared loader
- * runs it inside its promise). Per-resource failures only drop that resource.
+ * runs it inside its promise). Per-resource failures only drop that resource
+ * and are counted in the result's `unreadable`.
  *
  * @param deps The platform calls.
  * @returns The loader.
  */
 export function createScriptLoader(deps: ScriptLoaderDeps): ScriptLoader {
-  const context: ContentContext = {
-    readLastError: deps.readLastError,
-    schedule: deps.schedule ?? defaultSchedule,
-    timeoutMs: deps.contentTimeoutMs ?? CONTENT_TIMEOUT_MS
-  };
   return (inlineScripts) =>
-    new Promise<ScriptAsset[]>((resolve, reject) => {
+    new Promise<ScriptRead>((resolve, reject) => {
+      // One tally per read: the resources this read had to skip.
+      let unreadable = 0;
+      const context: ContentContext = {
+        readLastError: deps.readLastError,
+        schedule: deps.schedule ?? defaultSchedule,
+        timeoutMs: deps.contentTimeoutMs ?? CONTENT_TIMEOUT_MS,
+        skipped: () => {
+          unreadable += 1;
+        }
+      };
       loadScriptAssets(
         {
           getResources(onComplete) {
@@ -205,7 +231,9 @@ export function createScriptLoader(deps: ScriptLoaderDeps): ScriptLoader {
           }
         },
         inlineScripts
-      ).then(resolve, reject);
+      ).then((assets) => {
+        resolve({ assets, unreadable });
+      }, reject);
     });
 }
 
