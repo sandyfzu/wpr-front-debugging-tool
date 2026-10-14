@@ -1,11 +1,15 @@
 /**
- * Pure presentation rules for the Lazyload page's rows: the state badge, the
+ * Pure presentation rules for the Lazyload page: the state badge, the
  * exclusion-reason split (the tool's own exclusion marker shown apart from the
- * page's reasons) and the row's seed height.
+ * page's reasons), row identity across refreshes, the summary notes and the
+ * row's seed height.
  */
 import type { StatusKind } from '../../../../components/ui/status-badge';
 import type { LazyloadImageResource } from '../../../../lib/panel/resources-view-model';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
+import type { WprDetections } from '../../../../lib/wp-rocket/types';
+import { formatCount, listCapped } from '../resource-list/resource-list-view';
 
 /** The state badge of one image row. */
 export interface LazyloadStateBadge {
@@ -67,4 +71,46 @@ export const LAZYLOAD_ROW_WITH_REASONS_ESTIMATE = 79;
  */
 export function lazyloadRowEstimate(row: LazyloadImageResource): number {
   return row.lazyloaded ? LAZYLOAD_ROW_ESTIMATE : LAZYLOAD_ROW_WITH_REASONS_ESTIMATE;
+}
+
+/**
+ * Whether two image rows with the same id show the same thing (the refresh
+ * reuse test): URL, state and reasons in order.
+ *
+ * @param a The previous row.
+ * @param b The fresh row.
+ * @returns `true` when nothing visible differs.
+ */
+export function sameImageRow(a: LazyloadImageResource, b: LazyloadImageResource): boolean {
+  return (
+    a.src === b.src &&
+    a.lazyloaded === b.lazyloaded &&
+    a.excludedReasons.length === b.excludedReasons.length &&
+    a.excludedReasons.every((reason, index) => reason === b.excludedReasons[index])
+  );
+}
+
+/**
+ * The summary strip's caveats:
+ * - the capture capped the image list (counts then cover the kept rows only);
+ * - images carry the lazyload attribute while the feature's script was not
+ *   found — the badge's "not detected" would otherwise read as a contradiction.
+ *
+ * @param lazyload The payload's lazyload detection.
+ * @returns The notes, in display order (often none).
+ */
+export function lazyloadNotes(lazyload: WprDetections['lazyload']): string[] {
+  const notes: string[] = [];
+  const cap = PAYLOAD_LIMITS.images.count;
+  if (listCapped(lazyload.truncated, lazyload.images.length, cap)) {
+    notes.push(
+      `The list was capped at the first ${formatCount(cap)} images; counts cover these rows.`
+    );
+  }
+  if (!lazyload.present && lazyload.images.some((image) => image.lazyloadDetected)) {
+    notes.push(
+      "Some images carry WP Rocket's lazyload attribute, but its lazyload script was not found on this page."
+    );
+  }
+  return notes;
 }

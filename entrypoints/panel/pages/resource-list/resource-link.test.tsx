@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
-import { gridTemplate, ResourceLink } from './resource-link';
+import { copyLabel, gridTemplate, ResourceLink } from './resource-link';
 
 afterEach(() => {
   cleanup();
@@ -28,7 +28,7 @@ describe('gridTemplate', () => {
 describe('ResourceLink', () => {
   it('leads with the name, links the full URL in a new tab, and offers the copy', () => {
     const url = 'https://cdn.example/wp-content/uploads/hero.webp';
-    const { container } = render(() => <ResourceLink href={url} copyLabel="Image URL" />);
+    const { container } = render(() => <ResourceLink href={url} copyNoun="Image URL" />);
     const name = container.querySelector('[data-fdt="resource-name"]');
     expect(name?.textContent).toBe('hero.webp');
     expect(name?.getAttribute('title')).toBe('hero.webp');
@@ -36,24 +36,26 @@ describe('ResourceLink', () => {
     expect(link.getAttribute('href')).toBe(url);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(screen.getByRole('button', { name: 'Image URL — copy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Image URL (hero.webp) — copy' })).toBeTruthy();
+    expect(link.className).toContain('text-fg-secondary');
+    expect(link.className).toContain('hover:text-accent');
   });
 
   it('shows a relative URL as plain text (nothing to resolve it against), still copyable', () => {
-    render(() => <ResourceLink href="/uploads/a.jpg" copyLabel="URL" />);
+    render(() => <ResourceLink href="/uploads/a.jpg" copyNoun="URL" />);
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.getByText('/uploads/a.jpg')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'URL — copy' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'URL (a.jpg) — copy' })).toBeTruthy();
   });
 
   it('never links a scripted URL', () => {
-    render(() => <ResourceLink href={scriptedUrl()} copyLabel="URL" />);
+    render(() => <ResourceLink href={scriptedUrl()} copyNoun="URL" />);
     expect(screen.queryByRole('link')).toBeNull();
   });
 
   it('says "No URL captured" with no copy and no link when the URL is empty or blank', () => {
     for (const href of ['', '   ']) {
-      const { unmount } = render(() => <ResourceLink href={href} copyLabel="URL" />);
+      const { unmount } = render(() => <ResourceLink href={href} copyNoun="URL" />);
       expect(screen.getByText('No URL captured')).toBeTruthy();
       expect(screen.queryByRole('button')).toBeNull();
       expect(screen.queryByRole('link')).toBeNull();
@@ -65,7 +67,7 @@ describe('ResourceLink', () => {
     const { container } = render(() => (
       <ResourceLink
         href="https://cdn.example/a.png"
-        copyLabel="URL"
+        copyNoun="URL"
         chip={<span data-testid="chip">image</span>}
         state={<span data-testid="state">Lazyloaded</span>}
       >
@@ -83,7 +85,7 @@ describe('ResourceLink', () => {
     const { container } = render(() => (
       <ResourceLink
         href="https://cdn.example/a.png"
-        copyLabel="URL"
+        copyNoun="URL"
         state={<span data-testid="state">Not lazyloaded</span>}
       >
         <span data-testid="meta">data-src</span>
@@ -106,8 +108,43 @@ describe('ResourceLink', () => {
 
   it('leaves the meta line empty (hidden) without state or meta content', () => {
     const { container } = render(() => (
-      <ResourceLink href="https://cdn.example/a.png" copyLabel="URL" />
+      <ResourceLink href="https://cdn.example/a.png" copyNoun="URL" />
     ));
     expect(container.querySelector('[data-fdt="resource-meta"]')?.children).toHaveLength(0);
+  });
+
+  it('shows a clipped URL as flagged plain text, copied under a warning name', () => {
+    const url = `https://cdn.example/${'a'.repeat(5000)}`;
+    const { container } = render(() => <ResourceLink href={url} copyNoun="Image URL" clipped />);
+    expect(screen.queryByRole('link')).toBeNull();
+    const line = container.querySelector('[data-fdt="resource-url-clipped"]');
+    expect(line?.textContent).toContain('Clipped');
+    const text = line?.querySelector('[title]');
+    expect(text?.getAttribute('title')?.endsWith('…')).toBe(true);
+    expect(screen.getByRole('button', { name: /^Image URL \(.*, clipped\) — copy$/ })).toBeTruthy();
+  });
+
+  it('caps the name title', () => {
+    const name = 'n'.repeat(400);
+    const { container } = render(() => (
+      <ResourceLink href={`https://cdn.example/${name}`} copyNoun="URL" />
+    ));
+    const title = container.querySelector('[data-fdt="resource-name"]')?.getAttribute('title');
+    expect(title?.length).toBe(301);
+  });
+
+  it("uses the caller's missing-URL wording and keeps the copy column", () => {
+    const { container } = render(() => (
+      <ResourceLink href="" copyNoun="URL" missingLabel="No URL (srcset only)" />
+    ));
+    expect(screen.getByText('No URL (srcset only)')).toBeTruthy();
+    expect(container.querySelector('[data-fdt="resource-copy-placeholder"]')).not.toBeNull();
+  });
+});
+
+describe('copyLabel', () => {
+  it('names the row and warns for a clipped URL', () => {
+    expect(copyLabel('Image URL', 'hero.webp', false)).toBe('Image URL (hero.webp)');
+    expect(copyLabel('Image URL', 'hero.webp', true)).toBe('Image URL (hero.webp, clipped)');
   });
 });

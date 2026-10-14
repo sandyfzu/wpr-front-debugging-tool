@@ -272,6 +272,80 @@ describe('LazyloadPage — filters, search and states', () => {
 });
 
 describe('LazyloadPage — refresh and edge states', () => {
+  it('keeps a focused row control (and its row) across a soft refresh', () => {
+    const page = renderPage(LazyloadPage, fixture());
+    const copy = screen.getByRole('button', { name: 'Image URL (logo.png) — copy' });
+    copy.focus();
+    page.refresh(fixture());
+    expect(document.activeElement).toBe(copy);
+    expect(copy.isConnected).toBe(true);
+  });
+
+  it('remounts only the row whose content changed on refresh', () => {
+    const page = renderPage(LazyloadPage, fixture());
+    const before = screen.getAllByRole('listitem');
+    const next = fixture();
+    const images = next.wprDetections.lazyload.images.map((image, index) =>
+      index === 3 ? { ...image, excludedReasonsFound: ['data-src'] } : image
+    );
+    page.refresh(withImages(images));
+    const after = screen.getAllByRole('listitem');
+    expect(after.filter((item, index) => item === before[index])).toHaveLength(4);
+    expect(after[3]).not.toBe(before[3]);
+  });
+
+  it('keeps every surviving row element through a chip change, with updated set positions', () => {
+    const page = renderPage(LazyloadPage, fixture());
+    const hero = screen.getAllByRole('listitem')[0];
+    const gallery = screen.getAllByRole('listitem')[4];
+    fireEvent.click(chip(page.root, 'lazyloaded'));
+    const items = screen.getAllByRole('listitem');
+    expect(items).toEqual([hero, gallery]);
+    expect(items.map((item) => item.getAttribute('aria-setsize'))).toEqual(['2', '2']);
+    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['1', '2']);
+  });
+
+  it('notes a capped list only when the list sits at its cap', () => {
+    const atCap = Array.from({ length: 5000 }, (_, index) =>
+      makeLazyImage({ src: `https://cdn.example/${index.toString()}.jpg` })
+    );
+    const capped = withImages(atCap);
+    capped.wprDetections.lazyload.truncated = true;
+    const page = renderPage(LazyloadPage, capped);
+    expect(page.root.querySelector('[data-fdt="resource-note"]')?.textContent).toBe(
+      'The list was capped at the first 5,000 images; counts cover these rows.'
+    );
+    expect(page.root.querySelector('[data-fdt="resource-total"]')?.textContent).toBe(
+      '5,000 images'
+    );
+    cleanup();
+    const short = withImages([makeLazyImage()]);
+    short.wprDetections.lazyload.truncated = true;
+    const other = renderPage(LazyloadPage, short);
+    expect(other.root.querySelector('[data-fdt="resource-note"]')).toBeNull();
+  });
+
+  it('explains lazyloaded rows when the feature reads not detected', () => {
+    const { root } = renderPage(
+      LazyloadPage,
+      withImages([makeLazyImage({ lazyloadDetected: true })], false)
+    );
+    expect(root.querySelector('[data-fdt="resource-note"]')?.textContent).toContain(
+      'lazyload script was not found'
+    );
+  });
+
+  it('flags a clipped URL on a marked payload and links nothing', () => {
+    const data = withImages([
+      makeLazyImage({ src: `https://cdn.example/${'a'.repeat(4096 - 20)}` })
+    ]);
+    data.wprDetections.lazyload.truncated = true;
+    renderPage(LazyloadPage, data);
+    expect(screen.getByText('Clipped')).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByRole('button', { name: /, clipped\) — copy$/ })).toBeTruthy();
+  });
+
   it('keeps the chip, the query and the field text across a refresh', () => {
     const page = renderPage(LazyloadPage, fixture());
     fireEvent.click(chip(page.root, 'non-lazyloaded'));
@@ -284,8 +358,8 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(chip(page.root, 'non-lazyloaded').getAttribute('aria-pressed')).toBe('true');
     expect(field().value).toBe('jpg');
     expect(rowNames(page.root)).toEqual(['new.jpg']);
-    // A refresh is not a committed filter change: nothing new is announced.
-    expect(announced(page.root)).toBe('Showing 2 of 5 images');
+    // A refresh clears the line: its count would be stale.
+    expect(announced(page.root)).toBe('');
   });
 
   it('disables an empty chip, but keeps a selected chip that a refresh emptied', () => {
@@ -303,7 +377,7 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(screen.getByText('No images on this page')).toBeTruthy();
     expect(root.querySelector('[data-fdt="filter-bar"]')).toBeNull();
     expect(screen.queryByRole('list')).toBeNull();
-    expect(root.querySelector('[data-fdt="resource-total"]')?.textContent).toBe('0 images');
+    expect(root.querySelector('[data-fdt="resource-total"]')).toBeNull();
   });
 
   it('switches between empty and populated on refresh', () => {

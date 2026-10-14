@@ -1,8 +1,9 @@
 /**
  * Pure presentation rules shared by the resource-list pages (Lazyload,
  * Preloaded Resources): chip states, the filtered-empty chip name, query
- * normalization, counted nouns and the polite result announcement. No Solid,
- * no DOM — the page component composes these inside its memo chain.
+ * normalization, counted nouns, the polite result announcement, row reuse
+ * across refreshes and resource naming. No Solid, no DOM — the page component
+ * composes these inside its memo chain.
  */
 import type { FilterChip } from '../../../../components/ui/filter-bar';
 import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
@@ -15,15 +16,29 @@ export interface CountNoun {
   readonly other: string;
 }
 
+/** Count formatting: digits with thousands separators (`5,000`), one locale everywhere. */
+const COUNT_FORMAT = new Intl.NumberFormat('en-US');
+
 /**
- * Phrase a count with its noun: `1 image`, `0 images`, `24 images`.
+ * Format a count as digits with thousands separators (`5,000`).
+ *
+ * @param count A non-negative count.
+ * @returns The formatted digits.
+ */
+export function formatCount(count: number): string {
+  return COUNT_FORMAT.format(count);
+}
+
+/**
+ * Phrase a count with its noun: `1 image`, `0 images`, `5,000 images` —
+ * digits rather than words, so counts scan and compare at a glance.
  *
  * @param count A non-negative row count.
  * @param noun The noun's count forms.
- * @returns The counted phrase (digits, never words — UI/UX bar W-1).
+ * @returns The counted phrase.
  */
 export function countLabel(count: number, noun: CountNoun): string {
-  return `${count.toString()} ${count === 1 ? noun.one : noun.other}`;
+  return `${formatCount(count)} ${count === 1 ? noun.one : noun.other}`;
 }
 
 /**
@@ -104,8 +119,9 @@ export function normalizeQuery(raw: string): string {
 }
 
 /**
- * The polite announcement after a committed filter or query change
- * (UI/UX bar K-4): how many rows the list now shows out of how many exist.
+ * The polite announcement after a committed filter or query change: how many
+ * rows the list now shows out of how many exist (one line per commit, so a
+ * screen reader hears the result without a per-keystroke stream).
  *
  * @param shown Rows the list renders after chip + query.
  * @param total Rows on the page.
@@ -115,8 +131,11 @@ export function normalizeQuery(raw: string): string {
 export function resultsAnnouncement(shown: number, total: number, noun: CountNoun): string {
   if (shown === 0) return `No ${noun.other} match`;
   if (shown === total) return `Showing all ${countLabel(total, noun)}`;
-  return `Showing ${shown.toString()} of ${countLabel(total, noun)}`;
+  return `Showing ${formatCount(shown)} of ${countLabel(total, noun)}`;
 }
+
+/** Schemes whose path names a resource (relative URLs resolve to `https:`). */
+const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'blob:']);
 
 /** Base for resolving relative URLs when naming them (never fetched or shown). */
 const NAMING_BASE = 'https://resource.invalid/';
@@ -144,6 +163,9 @@ export function resourceName(url: string): string {
   } catch {
     return raw;
   }
+  // A scheme with no path hierarchy (`javascript:`, `mailto:`…) is named by
+  // its scheme: its "last segment" would read as a file name it is not.
+  if (!WEB_SCHEMES.has(parsed.protocol)) return `${parsed.protocol} URL`;
   const last = parsed.pathname
     .split('/')
     .filter((segment) => segment !== '')
@@ -165,4 +187,78 @@ function decodeSegment(segment: string): string {
   } catch {
     return segment;
   }
+}
+
+/** Longest text a hover `title` carries (a 4,096-char URL tooltip covers the screen). */
+export const TITLE_MAX = 300;
+
+/**
+ * Cap a hover-title text, eliding the rest with `…` (cut by code point).
+ *
+ * @param text The full text.
+ * @returns The text, or its first {@link TITLE_MAX} code points plus `…`.
+ */
+export function capTitle(text: string): string {
+  const points = Array.from(text);
+  return points.length > TITLE_MAX ? `${points.slice(0, TITLE_MAX).join('')}…` : text;
+}
+
+/**
+ * Reuse the previous refresh's row objects where a row is unchanged, so the
+ * list's keyed rows keep their DOM (and the focus inside it) across a soft
+ * refresh; changed and new rows take the fresh object.
+ *
+ * @param previous The rows the list rendered last (`[]` on the first pass).
+ * @param next The freshly built rows.
+ * @param same Whether two rows with the same id carry the same content.
+ * @returns `previous` itself when nothing changed, else `next` with every
+ *   unchanged row swapped for its previous object.
+ */
+export function reconcileRows<Row extends { readonly id: number }>(
+  previous: readonly Row[],
+  next: readonly Row[],
+  same: (a: Row, b: Row) => boolean
+): readonly Row[] {
+  const byId = new Map(previous.map((row) => [row.id, row]));
+  let changed = previous.length !== next.length;
+  const merged = next.map((row, index) => {
+    const prior = byId.get(row.id);
+    if (prior !== undefined && same(prior, row)) {
+      if (previous[index] !== prior) changed = true;
+      return prior;
+    }
+    changed = true;
+    return row;
+  });
+  return changed ? merged : previous;
+}
+
+/**
+ * Whether the capture cut a list at its cap: the payload's `truncated` mark
+ * alone does not say so (a clipped string sets it too), so the list must also
+ * sit at its cap.
+ *
+ * @param truncated The row's truncation mark.
+ * @param length The list's length as received.
+ * @param cap The list's count cap.
+ * @returns `true` when entries past the cap were dropped.
+ */
+export function listCapped(truncated: true | undefined, length: number, cap: number): boolean {
+  return truncated === true && length >= cap;
+}
+
+/**
+ * Whether the capture clipped one URL at its length cap. The clip may stop one
+ * unit short (it never splits a surrogate pair), so a marked payload's URL at
+ * `cap − 1` or longer counts as clipped — a natural URL of exactly that length
+ * on a marked payload is flagged too, the safe side (the warning only asks to
+ * check the copy).
+ *
+ * @param truncated The row's truncation mark.
+ * @param url The received URL.
+ * @param cap The URL length cap.
+ * @returns `true` when the URL may be cut.
+ */
+export function urlClipped(truncated: true | undefined, url: string, cap: number): boolean {
+  return truncated === true && url.length >= cap - 1;
 }

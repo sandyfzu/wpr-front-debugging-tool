@@ -54,12 +54,12 @@ afterEach(() => {
 });
 
 describe('PreloadedResourcesPage', () => {
-  it('renders the frame and the feature badge as "Preload" (never "Lazyload")', () => {
+  it('renders the frame and the feature badge as "Preload hints" (never "Lazyload")', () => {
     const { root } = renderPage(PreloadedResourcesPage, fixture());
     expect(root.getAttribute('data-fdt-page')).toBe('preloaded-resources');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Preloaded Resources');
     const summary = root.querySelector('[data-fdt="resource-summary"]');
-    expect(summary?.textContent).toContain('Preload');
+    expect(summary?.textContent).toContain('Preload hints');
     expect(summary?.textContent).toContain('detected');
     expect(summary?.textContent).not.toContain('Lazyload');
     expect(root.querySelector('[data-fdt="resource-total"]')?.textContent).toBe('6 resources');
@@ -85,9 +85,10 @@ describe('PreloadedResourcesPage', () => {
   it('links absolute URLs, offers a "URL" copy, and is honest about a missing href', () => {
     renderPage(PreloadedResourcesPage, fixture());
     expect(screen.getAllByRole('link')).toHaveLength(5);
-    expect(screen.getAllByRole('button', { name: 'URL — copy' })).toHaveLength(5);
+    expect(screen.getByRole('button', { name: 'URL (hero.webp) — copy' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /^URL \(.+\) — copy$/ })).toHaveLength(5);
     expect(
-      within(screen.getAllByRole('listitem')[5] as HTMLElement).getByText('No URL captured')
+      within(screen.getAllByRole('listitem')[5] as HTMLElement).getByText('No URL (srcset only)')
     ).toBeTruthy();
   });
 
@@ -110,6 +111,8 @@ describe('PreloadedResourcesPage', () => {
     expect(root.querySelector('[data-fdt="resource-summary"]')?.textContent).toContain(
       'not detected'
     );
+    // No "0 resources" beside an empty state that already says so.
+    expect(root.querySelector('[data-fdt="resource-total"]')).toBeNull();
   });
 
   it('says the same for a collected but empty list', () => {

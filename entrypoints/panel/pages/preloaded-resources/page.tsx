@@ -1,8 +1,8 @@
 /**
  * The Preloaded Resources page: every link WP Rocket marked for preloading,
  * with its `as` type. Chips: all / images / fonts (other types appear under
- * all); the search narrows by URL (`href`). The feature badge reads the
- * plugin's "Preload" label. Layout, search wiring and states:
+ * all); the search narrows by URL (`href`). The feature badge reads
+ * "Preload hints" (several features write the marker — see the label's doc). Layout, search wiring and states:
  * `ResourceListPage`; the two empty states (nothing preloaded vs a present
  * feature whose list was not collected) come from `preloadedInventory`.
  */
@@ -12,7 +12,7 @@ import Zap from 'lucide-solid/icons/zap';
 import { Badge } from '../../../../components/ui/badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
-import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import {
   buildPreloadedRows,
   PRELOADED_PAGE_RESOURCES,
@@ -22,7 +22,16 @@ import type { PreloadedResources } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
 import { ResourceLink } from '../resource-list/resource-link';
-import { asTypeLabel, PRELOADED_ROW_ESTIMATE, preloadedInventory } from './preloaded-view';
+import { urlClipped } from '../resource-list/resource-list-view';
+import {
+  asTypeLabel,
+  PRELOAD_HINTS_LABEL,
+  PRELOADED_ROW_ESTIMATE,
+  preloadedInventory,
+  preloadedNotes,
+  samePreloadedRow,
+  SRCSET_ONLY_LABEL
+} from './preloaded-view';
 
 /** Props of {@link PreloadedResourcesPage} — test seams only; the shell passes none. */
 export interface PreloadedResourcesPageProps {
@@ -56,14 +65,21 @@ export function PreloadedResourcesPage(props: PreloadedResourcesPageProps): JSX.
       subtitle="Resources WP Rocket tells the browser to preload on this page."
       definition={PRELOADED_PAGE_RESOURCES}
       rows={rows()}
-      featureLabel={getRealOptionName('manual_preload')}
+      sameRow={samePreloadedRow}
+      notes={preloadedNotes(report())}
+      featureLabel={PRELOAD_HINTS_LABEL}
       featurePresent={report().present}
       noun={{ one: 'resource', other: 'resources' }}
       listLabel="Preloaded resources"
       searchLabel="Search resource URLs"
       searchPlaceholder="Search resource URLs…"
       estimateSize={() => PRELOADED_ROW_ESTIMATE}
-      renderRow={(row) => <PreloadedRow row={row} />}
+      renderRow={(row) => (
+        <PreloadedRow
+          row={row}
+          clipped={urlClipped(report().truncated, row.href, PAYLOAD_LIMITS.preloaded.href)}
+        />
+      )}
       createVirtualizer={props.createVirtualizer}
       empty={
         <Show
@@ -93,12 +109,15 @@ export function PreloadedResourcesPage(props: PreloadedResourcesPageProps): JSX.
  * One preloaded resource: the `as` type chip, name and copy, the full URL beneath.
  *
  * @param props.row The resource row.
+ * @param props.clipped Whether the capture clipped its URL.
  */
-function PreloadedRow(props: { row: PreloadedResource }): JSX.Element {
+function PreloadedRow(props: { row: PreloadedResource; clipped: boolean }): JSX.Element {
   return (
     <ResourceLink
       href={props.row.href}
-      copyLabel="URL"
+      copyNoun="URL"
+      clipped={props.clipped}
+      missingLabel={SRCSET_ONLY_LABEL}
       chip={
         <Badge variant="outline" class="shrink-0 font-mono">
           <Show

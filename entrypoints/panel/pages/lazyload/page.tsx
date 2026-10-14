@@ -22,7 +22,10 @@
  * inspected page's own Network panel, and would fetch the very images the
  * page deliberately defers — server and CDN side effects (on-the-fly image
  * conversion, cache warming, logs) on the site under investigation. Not
- * trivially safe on arbitrary hosts, so rows show the URL only.
+ * trivially safe on arbitrary hosts, so rows show the URL only. Adding
+ * `crossorigin="anonymous"` does not help: the same probe's request still
+ * carried every cookie (with an `Origin: chrome-extension://…` header added),
+ * so that variant is no way out either.
  */
 import type { JSX } from 'solid-js';
 import { For, Show, createMemo } from 'solid-js';
@@ -31,16 +34,35 @@ import { Badge } from '../../../../components/ui/badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   buildLazyloadRows,
   LAZYLOAD_PAGE_RESOURCES,
   type LazyloadImageResource
 } from '../../../../lib/panel/resources-view-model';
+import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
 import { ResourceLink } from '../resource-list/resource-link';
-import { exclusionReasons, lazyloadRowEstimate, lazyloadStateBadge } from './lazyload-rows';
+import { urlClipped } from '../resource-list/resource-list-view';
+import {
+  exclusionReasons,
+  lazyloadNotes,
+  lazyloadRowEstimate,
+  lazyloadStateBadge,
+  sameImageRow
+} from './lazyload-rows';
+
+/**
+ * The summary notes for a detection, or none while no data is mounted.
+ *
+ * @param lazyload The detection, if loaded.
+ * @returns The notes.
+ */
+function notesFor(lazyload: WprDetections['lazyload'] | null): string[] {
+  return lazyload === null ? [] : lazyloadNotes(lazyload);
+}
 
 /** Props of {@link LazyloadPage} — test seams only; the shell passes none. */
 export interface LazyloadPageProps {
@@ -73,6 +95,8 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       subtitle="Every image on the page and whether WP Rocket lazyloads it."
       definition={LAZYLOAD_PAGE_RESOURCES}
       rows={rows()}
+      sameRow={sameImageRow}
+      notes={notesFor(lazyload())}
       featureLabel={getRealOptionName('lazyload')}
       featurePresent={lazyload()?.present ?? false}
       noun={{ one: 'image', other: 'images' }}
@@ -80,7 +104,12 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       searchLabel="Search image URLs"
       searchPlaceholder="Search image URLs…"
       estimateSize={lazyloadRowEstimate}
-      renderRow={(row) => <LazyloadRow row={row} />}
+      renderRow={(row) => (
+        <LazyloadRow
+          row={row}
+          clipped={urlClipped(lazyload()?.truncated, row.src, PAYLOAD_LIMITS.images.src)}
+        />
+      )}
       createVirtualizer={props.createVirtualizer}
       empty={
         <EmptyState
@@ -99,13 +128,15 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
  * image adds its reasons on the meta line.
  *
  * @param props.row The image row.
+ * @param props.clipped Whether the capture clipped its URL.
  */
-function LazyloadRow(props: { row: LazyloadImageResource }): JSX.Element {
+function LazyloadRow(props: { row: LazyloadImageResource; clipped: boolean }): JSX.Element {
   const state = (): ReturnType<typeof lazyloadStateBadge> => lazyloadStateBadge(props.row);
   return (
     <ResourceLink
       href={props.row.src}
-      copyLabel="Image URL"
+      copyNoun="Image URL"
+      clipped={props.clipped}
       state={
         <StatusBadge kind={state().kind} class="shrink-0">
           {state().label}

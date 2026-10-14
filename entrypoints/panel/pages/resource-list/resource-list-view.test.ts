@@ -6,6 +6,12 @@ import {
 } from '../../../../lib/panel/resources-view-model';
 import {
   buildFilterChips,
+  capTitle,
+  formatCount,
+  listCapped,
+  reconcileRows,
+  TITLE_MAX,
+  urlClipped,
   countLabel,
   defaultChipId,
   narrowingChipLabel,
@@ -21,7 +27,8 @@ describe('countLabel', () => {
     [0, '0 images'],
     [1, '1 image'],
     [2, '2 images'],
-    [5000, '5000 images']
+    [5000, '5,000 images'],
+    [1234567, '1,234,567 images']
   ])('%i → %s', (count, expected) => {
     expect(countLabel(count, IMAGES)).toBe(expected);
   });
@@ -121,7 +128,105 @@ describe('resourceName', () => {
     expect(resourceName('http://[bad')).toBe('http://[bad');
   });
 
-  it('names a scripted URL as plain text (never executed or linked)', () => {
-    expect(resourceName('javascript:alert(1)')).toBe('alert(1)');
+  it('names a non-web scheme by its scheme (no fake file name)', () => {
+    expect(resourceName('javascript:alert(1)')).toBe('javascript: URL');
+    expect(resourceName('mailto:a@b.example')).toBe('mailto: URL');
+  });
+
+  it('names a blob URL by its last segment', () => {
+    expect(resourceName('blob:https://cdn.example/3f2a')).toBe('3f2a');
+  });
+});
+
+describe('formatCount', () => {
+  it('groups thousands', () => {
+    expect(formatCount(0)).toBe('0');
+    expect(formatCount(999)).toBe('999');
+    expect(formatCount(5000)).toBe('5,000');
+  });
+});
+
+describe('capTitle', () => {
+  it('keeps short text and elides long text by code point', () => {
+    expect(capTitle('a.jpg')).toBe('a.jpg');
+    const long = '😀'.repeat(TITLE_MAX + 5);
+    const capped = capTitle(long);
+    expect(Array.from(capped)).toHaveLength(TITLE_MAX + 1);
+    expect(capped.endsWith('…')).toBe(true);
+    expect(capTitle('x'.repeat(TITLE_MAX))).toBe('x'.repeat(TITLE_MAX));
+  });
+});
+
+describe('reconcileRows', () => {
+  interface Row {
+    readonly id: number;
+    readonly v: string;
+  }
+  const same = (a: Row, b: Row): boolean => a.v === b.v;
+
+  it('returns the previous array when nothing changed', () => {
+    const previous: Row[] = [
+      { id: 0, v: 'a' },
+      { id: 1, v: 'b' }
+    ];
+    expect(
+      reconcileRows(
+        previous,
+        [
+          { id: 0, v: 'a' },
+          { id: 1, v: 'b' }
+        ],
+        same
+      )
+    ).toBe(previous);
+  });
+
+  it('keeps unchanged row objects and takes fresh ones for changed or new rows', () => {
+    const a = { id: 0, v: 'a' };
+    const b = { id: 1, v: 'b' };
+    const changed = { id: 1, v: 'B' };
+    const added = { id: 2, v: 'c' };
+    const next = reconcileRows([a, b], [{ id: 0, v: 'a' }, changed, added], same);
+    expect(next[0]).toBe(a);
+    expect(next[1]).toBe(changed);
+    expect(next[2]).toBe(added);
+  });
+
+  it('reports a reorder or a removal as a change', () => {
+    const a = { id: 0, v: 'a' };
+    const b = { id: 1, v: 'b' };
+    const reordered = reconcileRows(
+      [a, b],
+      [
+        { id: 1, v: 'b' },
+        { id: 0, v: 'a' }
+      ],
+      same
+    );
+    expect(reordered).toEqual([b, a]);
+    expect(reordered[0]).toBe(b);
+    expect(reconcileRows([a, b], [{ id: 0, v: 'a' }], same)).toEqual([a]);
+  });
+
+  it('starts from an empty previous list', () => {
+    const next = [{ id: 0, v: 'a' }];
+    expect(reconcileRows([], next, same)[0]).toBe(next[0]);
+  });
+});
+
+describe('listCapped', () => {
+  it('needs the mark AND a list at its cap (a clipped string alone sets the mark)', () => {
+    expect(listCapped(true, 5000, 5000)).toBe(true);
+    expect(listCapped(true, 4999, 5000)).toBe(false);
+    expect(listCapped(undefined, 5000, 5000)).toBe(false);
+  });
+});
+
+describe('urlClipped', () => {
+  it('flags a marked URL at the cap or one unit short (surrogate-safe clip)', () => {
+    expect(urlClipped(true, 'x'.repeat(4096), 4096)).toBe(true);
+    expect(urlClipped(true, 'x'.repeat(4095), 4096)).toBe(true);
+    expect(urlClipped(true, 'x'.repeat(4094), 4096)).toBe(false);
+    expect(urlClipped(undefined, 'x'.repeat(4096), 4096)).toBe(false);
   });
 });

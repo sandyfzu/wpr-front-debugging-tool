@@ -26,10 +26,14 @@
  * selection resets with the route (the body remounts).
  */
 import type { JSX } from 'solid-js';
-import { createEffect, createMemo, createSignal, on, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
-import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import {
+  VirtualList,
+  type VirtualItem,
+  type VirtualizerFactory
+} from '../../../../components/ui/virtual-list';
 import {
   filterAndSearch,
   filterCounts,
@@ -45,6 +49,7 @@ import {
   defaultChipId,
   narrowingChipLabel,
   normalizeQuery,
+  reconcileRows,
   resultsAnnouncement,
   type CountNoun
 } from './resource-list-view';
@@ -58,6 +63,12 @@ export interface ResourceRow {
 /** The list region's frame — the same box for rows, empty and filtered-empty views. */
 const LIST_REGION = 'rounded-md border border-line-1 bg-surface-1';
 
+/**
+ * The list's width cap at the wide tier: past ~72 rem a row's name and its
+ * badge drift too far apart to read as one line.
+ */
+const LIST_WIDTH = '@wide:max-w-6xl';
+
 /** Props of {@link ResourceListPage}. */
 export interface ResourceListPageProps<Row extends ResourceRow, Id extends string> {
   /** The route this body renders. */
@@ -70,6 +81,13 @@ export interface ResourceListPageProps<Row extends ResourceRow, Id extends strin
   definition: ResourcePageDefinition<Row, Id>;
   /** Every row on the page (reactive: a refresh swaps it). */
   rows: readonly Row[];
+  /**
+   * Whether two rows with the same id carry the same content: unchanged rows
+   * keep their object (and so their rendered row and focus) across a refresh.
+   */
+  sameRow: (a: Row, b: Row) => boolean;
+  /** Muted lines under the summary strip (capped list, feature caveats). */
+  notes?: readonly string[];
   /** The WP Rocket feature the page inspects, as the option map names it. */
   featureLabel: string;
   /** Whether that feature's footprint was detected on the page. */
@@ -121,21 +139,39 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   );
 
   const query = createMemo(() => normalizeQuery(search.query()));
-  const counts = createMemo(() => filterCounts(props.rows, props.definition));
-  const visible = createMemo(() =>
-    filterAndSearch(props.rows, props.definition, selected(), query())
+  // A refresh rebuilds every row object; reconciling by id keeps unchanged
+  // rows' objects, so their keyed list rows (and focus inside) survive it.
+  const rows = createMemo(
+    (previous: readonly Row[]) => reconcileRows(previous, props.rows, props.sameRow),
+    []
+  );
+  const counts = createMemo(() => filterCounts(rows(), props.definition));
+  const visible = createMemo(() => filterAndSearch(rows(), props.definition, selected(), query()));
+  // Rows are looked up by the list's key, never by window index: an index
+  // read during a chip change can name another row for a moment and remount it.
+  const rowById = createMemo(
+    () => new Map<VirtualItem['key'], Row>(visible().map((row) => [row.id, row]))
   );
   const chips = createMemo(() => buildFilterChips(props.definition, counts(), selected()));
 
-  // K-4: one polite line per committed filter/query change — never per
-  // keystroke (the store commits after its debounce) and never on mount or a
-  // data refresh (the shell's status line owns those).
+  // One polite line per committed filter/query change — never per keystroke
+  // (the store commits after its debounce) and never on mount; a data refresh
+  // clears it (its count would be stale, and the shell announces refreshes).
   const [announcement, setAnnouncement] = createSignal('');
   createEffect(
     on(
       [selected, query],
       () => {
-        setAnnouncement(resultsAnnouncement(visible().length, props.rows.length, props.noun));
+        setAnnouncement(resultsAnnouncement(visible().length, rows().length, props.noun));
+      },
+      { defer: true }
+    )
+  );
+  createEffect(
+    on(
+      rows,
+      () => {
+        setAnnouncement('');
       },
       { defer: true }
     )
@@ -173,11 +209,14 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
       <ResourceSummary
         featureLabel={props.featureLabel}
         featurePresent={props.featurePresent}
-        total={countLabel(props.rows.length, props.noun)}
+        total={rows().length > 0 ? countLabel(rows().length, props.noun) : undefined}
+        notes={props.notes}
       />
       <Show
-        when={props.rows.length > 0}
-        fallback={<div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid')}>{props.empty}</div>}
+        when={rows().length > 0}
+        fallback={
+          <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH, 'grid')}>{props.empty}</div>
+        }
       >
         <div ref={controls} onKeyDown={onControlsKeyDown}>
           <FilterBar
@@ -200,7 +239,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
         <Show
           when={visible().length > 0}
           fallback={
-            <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid place-items-center')}>
+            <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH, 'grid place-items-center')}>
               <NoMatches
                 chipLabel={narrowingChipLabel(props.definition, selected())}
                 query={query()}
@@ -225,10 +264,10 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
             // URL (the same image twice), stable across chip/search changes.
             getItemKey={(index) => visible()[index]?.id ?? `index-${index.toString()}`}
             createVirtualizer={props.createVirtualizer}
-            class={cn(PAGE_FILL_SCROLLER, LIST_REGION)}
+            class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH)}
           >
             {(item) => (
-              <Show when={visible()[item.index]} keyed>
+              <Show when={rowById().get(item.key)} keyed>
                 {(row) => (
                   <div
                     role="listitem"
@@ -258,13 +297,16 @@ interface ResourceSummaryProps {
   featureLabel: string;
   /** Whether its footprint was detected. */
   featurePresent: boolean;
-  /** The counted row total ("24 images"). */
-  total: string;
+  /** The counted row total ("24 images"); omitted when the page has none. */
+  total?: string;
+  /** Muted caveat lines. */
+  notes?: readonly string[];
 }
 
 /**
  * The summary strip: the feature's presence as a status badge whose state is
- * spelled out (never color alone) and the page's row total.
+ * spelled out (never color alone), the page's row total, and any caveat notes
+ * on their own lines.
  *
  * @param props See {@link ResourceSummaryProps}.
  */
@@ -275,9 +317,18 @@ function ResourceSummary(props: ResourceSummaryProps): JSX.Element {
         {props.featureLabel}
         <span class="font-normal">{props.featurePresent ? 'detected' : 'not detected'}</span>
       </StatusBadge>
-      <span data-fdt="resource-total" class="text-2xs text-fg-secondary tabular-nums">
-        {props.total}
-      </span>
+      <Show when={props.total}>
+        <span data-fdt="resource-total" class="text-2xs text-fg-secondary tabular-nums">
+          {props.total}
+        </span>
+      </Show>
+      <For each={props.notes}>
+        {(note) => (
+          <p data-fdt="resource-note" class="basis-full text-2xs text-fg-muted">
+            {note}
+          </p>
+        )}
+      </For>
     </div>
   );
 }

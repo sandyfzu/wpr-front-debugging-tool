@@ -19,12 +19,14 @@ const DOUBLE_ROW_PX = 40;
 
 /**
  * A virtualizer double that renders all `count` rows (reactively — it reads
- * the list's live `count` getter on every pass).
+ * the list's live `count` and `getItemKey` on every pass).
  */
 export const renderAllRows: VirtualizerFactory = (options) => ({
   getVirtualItems: (): VirtualItem[] =>
     Array.from({ length: options.count }, (_, index) => ({
-      key: index,
+      // Honors the list's keys, as the real virtualizer does: pages look rows
+      // up by key, so an index-keyed double would hide key bugs.
+      key: options.getItemKey?.(index) ?? index,
       index,
       start: index * DOUBLE_ROW_PX,
       end: (index + 1) * DOUBLE_ROW_PX,
