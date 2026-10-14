@@ -130,7 +130,10 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   ...SURFACES.map((background) => ({ foreground: 'accent', background, min: 3 })),
   // Text laid over accent fills (buttons, badges); deliberately NOT paired with
   // the decorative gradient endpoints — text on a gradient uses a solid fill.
-  { foreground: 'on-accent', background: 'accent-strong', min: 4.5 }
+  { foreground: 'on-accent', background: 'accent-strong', min: 4.5 },
+  // The inverted pair: an `on-accent` pill inside an accent fill (the
+  // selected filter chip's count) — same ratio by symmetry, pinned by name.
+  { foreground: 'accent-strong', background: 'on-accent', min: 4.5 }
 ];
 
 describe('contrast math', () => {

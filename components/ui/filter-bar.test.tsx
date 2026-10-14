@@ -188,6 +188,19 @@ describe('FilterBar', () => {
     expect(now[0]).toBe(exclude);
   });
 
+  it('paints the selected count with the inverted accent token pair (no alpha fill)', () => {
+    render(() => <FilterBar chips={CHIPS} selected="all" />);
+    const [selected, unselected] = getChips();
+    const selectedCount = selected?.querySelector('[data-fdt-filter-count]') ?? throwAt(0);
+    const unselectedCount = unselected?.querySelector('[data-fdt-filter-count]') ?? throwAt(1);
+    // `on-accent` on `accent-strong` is a contrast-gated pair; inverting it
+    // keeps the same ratio. An alpha wash over the fill is not gated.
+    expect(selectedCount.className).toContain('bg-on-accent');
+    expect(selectedCount.className).toContain('text-accent-strong');
+    expect(selectedCount.className).not.toMatch(/\/\d+/);
+    expect(unselectedCount.className).toContain('bg-surface-3');
+  });
+
   it('throws on a duplicate chip value (two chips cannot share one identity)', () => {
     const duplicate: FilterChip[] = [
       { value: 'all', label: 'All', count: 1 },

@@ -189,6 +189,16 @@ const CHIP_SELECTED = cn(
 );
 
 /**
+ * The count pill on a selected chip: the chip's own fill/text pair inverted
+ * (`on-accent` fill, `accent-strong` text) — the token pair the contrast gate
+ * pins, so the count clears AA in both palettes by construction.
+ */
+const COUNT_SELECTED = 'bg-on-accent text-accent-strong';
+
+/** The count pill on an unselected chip: a raised step under the chip's text. */
+const COUNT_UNSELECTED = 'bg-surface-3';
+
+/**
  * Render one chip.
  *
  * Selection lands on `aria-pressed` + `data-fdt-selected` (+ the accent
@@ -227,7 +237,7 @@ function FilterChipButton(props: {
         data-fdt-filter-count
         class={cn(
           'rounded-full px-1 text-2xs tabular-nums',
-          props.selected ? 'bg-on-accent/20' : 'bg-surface-3'
+          props.selected ? COUNT_SELECTED : COUNT_UNSELECTED
         )}
       >
         {props.chip.count}
