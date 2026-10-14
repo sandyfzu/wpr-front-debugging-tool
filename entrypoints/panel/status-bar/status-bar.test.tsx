@@ -237,6 +237,32 @@ describe('StatusBar (strip)', () => {
     expect(segment.querySelector('.sr-only')).toBeTruthy();
   });
 
+  it('flips the staleness copy at exactly the threshold, spelling the prose at both render sites', async () => {
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle(cachedData());
+    await flush();
+
+    // One tick-landing before the crossing the answer still reads current:
+    // the age bucket rounds 599_999 ms down to "9 min ago", no Stale badge,
+    // and the hover title carries the stamp without the remedy.
+    await vi.advanceTimersByTimeAsync(DATA_STALE_AFTER_MS - 1);
+    expect(screen.getByText('Updated 9 min ago')).toBeTruthy();
+    expect(screen.queryByText('Stale')).toBeNull();
+
+    // The exact threshold flips both render sites to the same prose form —
+    // the hover title's stale remedy and the sr-only fact line — each read
+    // from the selectors' one derived figure (STALE_WINDOW_MINUTES).
+    await vi.advanceTimersByTimeAsync(1);
+    expect(screen.getByText('Stale')).toBeTruthy();
+    expect(screen.getByText('Updated 10 min ago')).toBeTruthy();
+    const segment = screen.getByText('Updated 10 min ago').parentElement as HTMLElement;
+    expect(segment.getAttribute('title')).toContain('older than 10 min');
+    // `textContent` reads nodes only (never attribute values), so this hits
+    // the sr-only fact line — the second render site the title cannot cover.
+    expect(segment.textContent).toContain('Data is older than 10 min');
+  });
+
   it('renders its own state while a soft refresh is in the air', async () => {
     const harness = makeHarness();
     renderStrip(harness);

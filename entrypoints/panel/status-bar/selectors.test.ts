@@ -11,6 +11,7 @@ import type { DataState } from '../state/fdt-state-machine';
 import { formatCacheTimestamp } from '../../../lib/detection/describe';
 import {
   DATA_STALE_AFTER_MS,
+  STALE_WINDOW_MINUTES,
   cacheSegment,
   freshnessSegment,
   isDataStale,
@@ -231,6 +232,17 @@ describe('isDataStale', () => {
     expect(isDataStale(NOW_MS, NOW_MS)).toBe(false);
     expect(isDataStale(NOW_MS - DATA_STALE_AFTER_MS, NOW_MS)).toBe(true);
     expect(isDataStale(NOW_MS - (DATA_STALE_AFTER_MS - 1), NOW_MS)).toBe(false);
+  });
+
+  it("calibrates to whole minutes, so the marker's prose form stays a clean figure", () => {
+    // The stale marker's remedy prose ("older than 10 min") reads
+    // STALE_WINDOW_MINUTES — the threshold divided once beside itself — at
+    // both its render sites. A recalibration that is not a whole-minute
+    // multiple would print float garbage in that prose (e.g.
+    // 654_321 ms → "1.0905333333333334"): this invariant fails the
+    // recalibration loudly instead, forcing the figure to re-derive.
+    expect(DATA_STALE_AFTER_MS % 60_000).toBe(0);
+    expect(STALE_WINDOW_MINUTES).toBe(10);
   });
 });
 
