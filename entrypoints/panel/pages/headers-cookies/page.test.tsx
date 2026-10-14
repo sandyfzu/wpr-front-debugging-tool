@@ -289,6 +289,16 @@ describe('HeadersCookiesView — rows', () => {
     );
   });
 
+  it('notes a capture the producer bounded, and nothing for a complete one', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS, pageHeadersTruncated: true }));
+    expect(document.querySelector('[data-fdt="headers-truncated"]')?.textContent).toBe(
+      'Some headers were clipped.'
+    );
+    cleanup();
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    expect(document.querySelector('[data-fdt="headers-truncated"]')).toBeNull();
+  });
+
   it('draws the scroll-edge hairline only once the list has scrolled', () => {
     renderView(makeFdtData({ pageHeaders: HEADERS }));
     const list = screen.getByRole('list');

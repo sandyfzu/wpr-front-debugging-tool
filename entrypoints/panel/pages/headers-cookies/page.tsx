@@ -38,7 +38,10 @@ import { KeyValue } from '../../../../components/ui/key-value';
 import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
-import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
+import {
+  buildHeadersViewModel,
+  headersTruncationNote
+} from '../../../../lib/panel/headers-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { useFdtData } from '../../state/use-fdt-data';
@@ -254,6 +257,18 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
             {SPA_NOTE}
           </span>
         </p>
+        <Show
+          when={headersTruncationNote(
+            props.data.pageHeaders ?? [],
+            props.data.pageHeadersTruncated
+          )}
+        >
+          {(note) => (
+            <p data-fdt="headers-truncated" class="-mt-2 ps-[1.125rem] text-2xs text-fg-muted">
+              {note()}
+            </p>
+          )}
+        </Show>
       </Show>
       <Show when={rows().length > 0}>
         {/* A layout-free wrapper: scroll does not bubble, so the list's own
