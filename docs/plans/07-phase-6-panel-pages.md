@@ -1,6 +1,6 @@
 # Phase 6 — Panel pages: Detections, JavaScript, Lazyload, Preloaded Resources, Undefined References, Headers & Cookies
 
-**Depends on:** P5 (+P3 for live data). **Effort:** L. **Parallelizable with:** P8, P9, P10 after P5.
+**Depends on:** P5 (+P3 for live data). **Effort:** L — executed as the seven sub-phases below (§Sub-phase structure). **Parallelizable with:** P8, P9, P10 after P5.
 
 ## Goal
 
@@ -15,29 +15,144 @@ Port the five non-Diagnoser panel pages plus the owner-committed **Headers & Coo
 - **Undefined References** (`pages/UndefinedReferencesFinderPage.tsx`): states — waiting for scripts (`FetchingComponent`), "Delay JS has not been executed yet" (when delay present + scripts not loaded), "No undefined references detected (monitoring)", results list; results from `chrome.devtools.inspectedWindow.getResources` (type `script`, http URLs) + inline scripts concatenated from detections; per-word definition search regex `(((var|let|const|function) +)W(([^a-zA-Z0-9_$#])|$))|((^|([^a-zA-Z0-9_$#]))W( *(=|:)))` gm across every script content; external-error sentinel card explains CDN caveat; re-runs when references update (all script assets cached in module state — master #7). Results are gated behind an artificial 1000 ms `setTimeout` before `setReady` — a fake "working" state over already-computed definitions (master #29).
 - Shared: `NothingToShow`, `FetchingComponent`, `ResourcesSummary`, `ResourceItem` (expand/collapse for code, lazy shiki), `FilterButtonsBar`.
 
-## Tasks
+## Sub-phase structure
 
-### Shared view-models (pure, tested) in `entrypoints/panel/pages/<page>/view-models.ts` or `lib/panel/`
+**TL;DR:** the phase ships as seven independently implementable, reviewable, and committable sub-phases — each the smallest unit that ends with its gates green (`compile`/`lint`/`format:check`/`test`, plus `build` + `check:budgets` where bundle weight moves) and its checklist. Execution: **P6A → {P6B ∥ P6C ∥ P6D ∥ P6E ∥ P6F} → P6G → P6.1** ([07b](./07b-phase-6-1-panel-pages-suites.md)) — P6A gates every letter; the five page letters are mutually independent given P6A (except P6G's stated deps on the letters that land the search rows), so they merge conflict-free; **P6.1 closes the phase**, its suite rows re-annotated with their enabling letters as they land (the 06b annotation pattern), inheriting the browser-observable rows. Two deltas against the sketched split, with cause: (1) the shared `headers-view-model.ts` is created in **P6A** — it is pure and consumed by both P6B's headers preview and P6F's page, and creating it inside either page letter would break that mutual independence or duplicate the one declaring site; (2) the Search-integration row splits — its read/filter halves ride the page letters that have matching rows (P6C filters `content`, P6D filters `src`/`href`; on the reference surface only the three resource-list pages ever consumed the protocol) and its highlight-cursor half is **P6G**. Master #39's fix ships where 07's own row assigns it — P6A's keyed-items row — and turns browser-observable with P6B's cards.
+
+| Sub-phase                                                    | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Depends on                     | Parallelizable with |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------- |
+| **P6A** — Shared foundations: view-models & capture contract | the pure seam: `detections-view-model.ts` (status items incl. the three-branch `async_css` merge, keyed by detection id), `resources-view-model.ts` (`filterAndSearch` + per-page filter definitions, memoized counts), `undefined-refs.ts` (regex parity + escape hardening, zero-resources resolution, typed inline discriminator, incremental word memo), the shared `headers-view-model.ts` (caching-relevant grouping + hint copy), and the additive `cookies` capture payload — no UI, no page | P5 (shipped), P3 (implemented) | —                   |
+| **P6B** — Detections page                                    | responsive card grid + redesigned registry-driven status cards; summary strip; `Copy report` support report (committed golden markdown); response-headers preview section                                                                                                                                                                                                                                                                                                                            | P6A                            | P6C, P6D, P6E, P6F  |
+| **P6C** — JavaScript page                                    | filter chips with counts, summary strip, inline/external rows, code-block collapse + row virtualization, its search-filter slice; #10/#33 + the "FDT legacy" → "FDT" delta; data-driven for the P14 forward note                                                                                                                                                                                                                                                                                     | P6A                            | P6B, P6D, P6E, P6F  |
+| **P6D** — Lazyload ∥ Preloaded Resources pages               | the two filter/summary resource pages over the shared row machinery (excluded-reason badges; link rows + the "Preload" badge fix, #9); the Lazyload thumbnails decision; both search-filter slices — the two halves parallelize with each other                                                                                                                                                                                                                                                      | P6A                            | P6B, P6C, P6E, P6F  |
+| **P6E** — Undefined References page                          | the three waiting/empty states, the definitions list (inline "Inline Script" chips, #22), page-owned Solid stores (no module state, #7), no artificial 1000 ms gate (#29), incremental refresh wiring, the Copy-as-exclusion bridge                                                                                                                                                                                                                                                                  | P6A                            | P6B, P6C, P6D, P6F  |
+| **P6F** — Headers & Cookies page                             | the full header inventory + caching-relevant grouping + hint copy, cookies names-only (redacted at capture), captured-at + SPA note, graceful omission on payloads without the fields                                                                                                                                                                                                                                                                                                                | P6A                            | P6B, P6C, P6D, P6E  |
+| **P6G** — Search navigation & per-page polish                | next/previous highlight cursor across matching rows + scroll-into-view (master #8's dead half; completes the #18 store work); cancelled/route-change cursor semantics — after the pages it touches                                                                                                                                                                                                                                                                                                   | P6A, P6C, P6D                  | —                   |
+
+Decomposition rationale: the blocks split at independently verifiable seams — **P6A** is the pure-logic + contract layer every page letter mounts (its suites run with zero UI); **P6B–P6F** each own one page surface with no shared page internals (P6D's two pages are one filter/row pattern, its halves staying independently shippable); **P6G** is the cross-page cursor layer that must see finished rows. Everything the letters would otherwise collide on — view-models, the shared headers model, the payload type — is decided once in P6A.
+
+**Carried by every page letter (P6B–P6F):** Solid components; all lists virtualized via `virtual-list.tsx`; every page animates its own entrance with CSS on mount only — replacing legacy's per-page `runAnimations` module-flag hack, master #17.
+
+---
+
+## P6A — Shared foundations: pure view-models & the capture-contract delta
+
+**Depends on:** P5 (shipped), P3 (implemented). **Parallelizable with:** — (every page letter consumes it).
+
+The phase's pure seam, landed first so the five page letters mount real logic, not scaffolding. **No UI, no page** — P5C's placeholder pages stay untouched; everything lands as pure, tested modules under `entrypoints/panel/pages/<page>/view-models.ts` or `lib/panel/`.
 
 - [ ] `detections-view-model.ts` — `buildStatusItems(fdtData): StatusItem[]` — port `getStatusItems` + `getNeededHeaders` verbatim in behavior (pure functions over P1 types; async_css merge branch included); enhancement: expose richer subtitle data for the redesigned card (e.g. cached timestamp formatted, platform name + header); no magic ids — items keyed by detection id (fixes master #39).
 - [ ] `resources-view-model.ts` — shared `filterAndSearch(items, filterId, query)` + per-page filter definitions (JS/Lazyload/Preloaded); legacy's per-page `filteredCache` maps become `createMemo` graphs (Solid fine-grained = no manual cache maps); counts derived from the same memo (no double iteration).
-- [ ] `undefined-refs.ts` — pure `findDefinitions(scriptAssets, words): Definition[]` (regex parity, escaped word — **hardening:** legacy interpolates the word raw into `new RegExp`; escape regex metacharacters — words come from page errors, could be `(` etc.; verify parity on non-special words, document the fix) + `loadScriptAssets(devtoolsApi, inlineScripts)` rewritten with `Promise.all` + zero-resources resolution (fixes master #6) and null-content guards. Inline-script assets get a **typed discriminator** (`{ kind: 'inline' } | { kind: 'url', url }`) instead of legacy's magic string (`'In an Inline Script.'` compared against `'Inline Script'` → broken anchor, master bug #22). **Incremental re-analysis:** when `undefinedReferencesUpdated` pushes arrive, only the new words go through `findDefinitions` — a memo keyed by word caches prior results (enhancement; owned by the test below).
+- [ ] `undefined-refs.ts` — pure `findDefinitions(scriptAssets, words): Definition[]` (regex parity, escaped word — **hardening:** legacy interpolates the word raw into `new RegExp`; escape regex metacharacters — words come from page errors, could be `(` etc.; verify parity on non-special words, document the fix) + `loadScriptAssets(devtoolsApi, inlineScripts)` rewritten with `Promise.all` + zero-resources resolution (fixes master #6) and null-content guards. Inline-script assets get a **typed discriminator** (`{ kind: 'inline' } | { kind: 'url', url }`) instead of legacy's magic string (`'In an Inline Script.'` compared against `'Inline Script'` → broken anchor, master bug #22). **Incremental re-analysis:** when `undefinedReferencesUpdated` pushes arrive, only the new words go through `findDefinitions` — a memo keyed by word caches prior results (enhancement; owned by the store test below).
+- [ ] `headers-view-model.ts` — **the shared headers model** (one declaring site, created here so P6B and P6F merge conflict-free): every captured main-frame header as a typed row — caching-relevant-first grouping (`cache-control`, `age`, `x-cache`, `x-rocket-*`, CDN/server hints) with verdict hints as plain copy (hittable / likely cache-miss reason); missing/empty `pageHeaders` resolves to the renderable-empty shape both consumers share.
+- [ ] **Capture-payload contract delta (additive):** the capture payload gains `cookies` (name list + captured-at); the P3 CS captures it at `processPageData` time — additive per the contract-evolution rule; a payload without the field omits the section gracefully (consumed by P6F; the old-payload degradation is verified in its browser checks).
 
-### Pages (Solid components; all lists virtualized via `virtual-list.tsx`; every page animates its own entrance with CSS on mount only — replacing legacy's per-page `runAnimations` module-flag hack, master #17)
+**Rides:** the regex-escape hardening's escort — contract validation tests (regex parity over the legacy-form sample set + metacharacter words, the fix documented in the module's TSDoc); the additive payload's boundary-validation escort (old payloads type-guard clean).
+
+**Tests:** the `buildStatusItems` table tests (async_css merge matrix, cached card, subtitles); `filterAndSearch` + the per-page filter definitions; `findDefinitions` regex parity (legacy-form samples + metacharacter words) — the pure logic lives outside components so all of this is unit-testable; the `undefined-refs` store suite: **zero-script-resources resolves to `[]` (master #6 regression test)** and **incremental re-analysis — a push with 1 new word runs `findDefinitions` for that word only (memo hit count asserted), not the full set**; the `headers-view-model` grouping fixture; the cookie capture parser (`document.cookie` → name list; **redaction asserted — no value ever reaches the payload**, the security regression test; a missing field handled tolerantly at the parser).
+
+**DoD:** gates green (`compile`/`lint`/`format:check`/`test`) plus `build` + `check:budgets` — the new modules land unimported, so the panel main chunk is expected unmoved (verify, don't assume); no UI shipped. Fixes masters **#6**, **#22** (the typed-discriminator half) and **#39** (items keyed by detection id), plus the unnumbered regex-escape hardening and the capture side of the cookie contract. The additive contract is pinned by tests.
+
+---
+
+## P6B — Detections page (cards, summary strip, support report, headers preview)
+
+**Depends on:** P6A. **Parallelizable with:** P6C, P6D, P6E, P6F.
+
+The phase's overview surface — the status cards the audience reads first, then one click deeper: a one-line summary, a copyable support report, and the compact face of the Headers & Cookies tab.
 
 - [ ] **Detections page** — responsive card grid (2/3/4 cols parity+); redesigned card: status icon + name + subtitle, hover elevation, `status-badge`; "Cached" card shows formatted timestamp (relative + absolute tooltip — enhancement); cards keyboard-focusable with tooltips carrying the full subtitle; when `pageHeaders` is null (unknown tab / capture miss), the Server and Known Platform cards are omitted silently (legacy parity — `getStatusItems` pushes them only if `fdtData.pageHeaders` exists). Keep card rendering **registry-driven** — the second baseline's detection coverage (P11) extends the results and card set later, and those cards must land as registry rows rather than new page branches.
   - [ ] **Detections page — summary strip + copyable support report (extensions, master §8):** a one-line summary header (WP Rocket version, cached + relative timestamp, platform, server — built from the same view-model as the cards) and a `Copy report` button (`copy-button.tsx` + toast) producing a markdown support report via pure `buildSupportReport(fdtData): string` — detected optimizations and their states, versions, headers, cached timestamp, undefined-references list. The tool's audience pastes these into support tickets; legacy had nothing.
-  - [ ] **Detections page — response headers viewer (extension, master §8):** a collapsible "Response headers" section rendering every captured main-frame header as dense `key-value.tsx` rows (`x-cache`, `age`, `cache-control`…) — data already in `fdtData.pageHeaders`, captured but never shown in legacy. Now a **compact preview of the dedicated Headers & Cookies tab below** — one shared `headers-view-model.ts`, one declaring site. Documented limitation kept: headers are the last main-frame response; SPA soft navigations do not refresh them (parity).
+  - [ ] **Detections page — response headers viewer (extension, master §8):** a collapsible "Response headers" section rendering every captured main-frame header as dense `key-value.tsx` rows (`x-cache`, `age`, `cache-control`…) — data already in `fdtData.pageHeaders`, captured but never shown in legacy. Now a **compact preview of the dedicated Headers & Cookies tab below** — one shared `headers-view-model.ts`, one declaring site (created in P6A, consumed here and by P6F). Documented limitation kept: headers are the last main-frame response; SPA soft navigations do not refresh them (parity).
+
+**Rides:** the committed `buildSupportReport` golden markdown doubles as the report format spec; the registry-driven card contract keeps P11's detection coverage additive.
+
+**Tests:** the `buildSupportReport` golden test — full matrix (optimizations present/absent, headers present/null, cached + timestamp, undefined-references list) asserting a stable, diffable markdown string; strip↔card consistency; the headers preview's render branches (every captured header; omitted when `pageHeaders` is null). The view-model halves the page consumes are P6A's.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist these close here — the Detections side-by-side leg (identical card sets/subtitles), the summary-strip/report/headers-render item, and the page's keyboard + axe pass. Master **#39's** cleanup becomes browser-observable with the redesigned cards (the fix itself ships in P6A's keyed items).
+
+---
+
+## P6C — JavaScript page
+
+**Depends on:** P6A. **Parallelizable with:** P6B, P6D, P6E, P6F.
+
+The densest list page: every delay/defer/inline/external script, counted and filterable, with code blocks that expand without layout thrash.
+
 - [ ] **JavaScript page** — filter chips with counts inline; summary strip (feature badge + counts + total — `ResourcesSummary` successor); rows: type chip (Inline/External), label chips (Delayed / Deferred (By WP Rocket) / Not delayed (Excluded by FDT) — rename "FDT legacy" → "FDT", documented string delta), external rows open in new tab (`noopener`); inline rows use `code-block.tsx` (collapsed 65 px parity, expand persists while row mounted, expandability computed without the post-render `clientHeight === scrollHeight` re-measure — fixes master #10 incl. the "Trucated" typo); virtualized when > 100 rows. The dead `min-h-[65px]:` class typo (trailing colon — master #33) dies with the rebuild. **Forward note (second baseline, P14):** this page later gains a "Runtime states" section (live `data-rocket-status` + source grouping) — keep the page data-driven (rows + filters as data) so the section lands additively.
+- [ ] This page's share of the **Search integration** row: reads the P5 search store — `performSearch` sets the query filtering `content` (external: URL, inline: code, per the Legacy reference); `cancelSearch` clears; route change resets (parity). The highlight-cursor half lands in P6G.
+
+**Tests:** render-level — chip counts, summary totals, the inline/external row branches, empty filter results → the shared empty state; the pure filter/search halves are P6A's.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist the JavaScript side-by-side leg closes here (identical counts/filters) plus the page's keyboard + axe pass and its query-half search behavior by hand with the DevTools search box. Fixes masters **#10** (incl. the "Trucated" typo and the post-render re-measure) and **#33** (the dead class); ships the documented "FDT legacy" → "FDT" string delta (P15's copy sweep tracks it).
+
+---
+
+## P6D — Lazyload ∥ Preloaded Resources pages
+
+**Depends on:** P6A. **Parallelizable with:** P6B, P6C, P6E, P6F — the letter's two page halves parallelize with each other.
+
+The two smaller resource-filter pages over P6A's shared machinery — one letter because they are one filter/row pattern with different columns; each half stays independently shippable.
+
 - [ ] **Lazyload page** — parity filters/summary; rows: image URL + lazyloaded chip; non-lazyloaded shows excluded reasons as small badges (better than legacy's quoted string dump); FDT-excluded reason highlighted distinctly; thumbnails preview (enhancement, lazy-loaded `<img>` with `loading="lazy"`, referrer-policy safe) behind a P6 flag — ship only if trivially safe on arbitrary hosts (skip on CSP concerns; decision recorded).
 - [ ] **Preloaded Resources page** — parity filters (Images/Fonts) + summary; fix badge label to "Preload" (master #9); rows as links with `as` type chip.
+- [ ] The pages' share of the **Search integration** row: Lazyload filters `src`, Preloaded Resources filters `href` (per the Legacy reference); `cancelSearch` clears; route change resets (parity). The highlight-cursor half lands in P6G.
+
+**Rides:** the phase's only Docs-to-update note — the thumbnail decision (shipped/skipped + why) recorded in the Lazyload page TSDoc.
+
+**Tests:** render-level per page — chip counts + totals, the excluded-reason badges (distinct FDT-excluded styling), link rows with `as` chips, empty filter results → the shared empty state; the pure halves are P6A's.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist the Lazyload and Preloaded Resources side-by-side legs close here (identical counts/filters) plus keyboard + axe on both states and the query-half search behavior by hand. Fixes master **#9** (the "Lazyload" badge on the Preloaded page → "Preload").
+
+---
+
+## P6E — Undefined References page
+
+**Depends on:** P6A. **Parallelizable with:** P6B, P6C, P6D, P6F.
+
+The diagnostics page: word → definitions, states that tell the truth about capture, and the bridge to the Exclusion Builder.
+
+- [ ] **Undefined References page** — port the three waiting/empty states (same trigger conditions: `delayJSPresent && areScriptsLoaded && !ready` → processing; `delayJSPresent && !areScriptsLoaded` → "interact with the page" hint; zero results → monitoring note); results: card per word — "Undefined" badge + word (sentinel → "Script error."), definitions list (**inline entries rendered as "Inline Script" chips — fixes legacy's broken anchor, master #22** — URL entries as links), found/not-found icon with tooltip; sentinel explanation text (fix legacy typo "ocurred", keep guidance); state kept in Solid stores owned by the page (no module-level mutable state — master #7); refresh definitions when `undefinedReferencesUpdated` pushes arrive (incremental: re-run `findDefinitions` on new words only — enhancement). Results render the moment they are computed — legacy gated them behind an artificial 1000 ms delay (fixes master #29). Each URL definition row gets a **Copy as exclusion** affordance (copies the script URL; toast points at the Exclusion Builder's Delay JS field — extension, master §8: the natural fix for a Delay-JS-caused undefined reference, connecting two tools legacy kept apart).
+
+**Tests:** page-store tests — the three states' trigger conditions, the refresh wiring driving P6A's incremental memo, no module-level mutable state (re-mounts leak nothing); the definitions' render branches (chip vs link, tooltips). The pure `findDefinitions`/asset-loading suites are P6A's.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist the Undefined References side-by-side leg closes here (identical definitions on an undefined-reference test page) plus the page's keyboard + axe pass. Fixes masters **#29** and **#7** (page-side — Solid page-owned stores, interval leaks impossible); masters **#22**/**#6** become browser-observable here (their base fixes shipped in P6A).
+
+---
+
+## P6F — Headers & Cookies page
+
+**Depends on:** P6A (the additive capture contract + the shared headers model). **Parallelizable with:** P6B, P6C, P6D, P6E.
+
+The caching-evidence trail (owner-committed 2026-10-12, effort S, Inspect group): the full header inventory legacy captured but never showed, and the cookie picture names-only.
+
 - [ ] **Headers & Cookies page (owner-committed 2026-10-12, effort S — the caching-evidence trail, Inspect group):**
   - Full main-frame header inventory: every captured header as dense `key-value.tsx` rows with per-row copy; the caching-relevant ones (`cache-control`, `age`, `x-cache`, `x-rocket-*`, CDN/server hints) grouped first, verdict hints as plain copy (hittable / likely cache-miss reason) — no magic beyond copy, the honesty stays in the data.
   - Cookies section: names + presence only, **values redacted at capture** (cookie values can carry auth tokens; what debugging needs is which WP Rocket cookies exist — `wprocket`, `fallback`). Documented limitation stated in the page: `document.cookie` exposes only non-HttpOnly cookies — HttpOnly ones are invisible by design, never worked around.
-  - Contract delta (additive): the capture payload gains `cookies` (name list + captured-at); the P3 CS captures it at `processPageData` time — additive per the contract-evolution rule; a payload without the field omits the section gracefully.
+  - Contract delta (additive) — implemented in P6A: the capture payload's `cookies` field; this page renders the section from it and omits it gracefully when a payload lacks the field.
   - Captured-at timestamp + the SPA soft-navigation note (headers are the last main-frame response — parity).
-- [ ] **Undefined References page** — port the three waiting/empty states (same trigger conditions: `delayJSPresent && areScriptsLoaded && !ready` → processing; `delayJSPresent && !areScriptsLoaded` → "interact with the page" hint; zero results → monitoring note); results: card per word — "Undefined" badge + word (sentinel → "Script error."), definitions list (**inline entries rendered as "Inline Script" chips — fixes legacy's broken anchor, master #22** — URL entries as links), found/not-found icon with tooltip; sentinel explanation text (fix legacy typo "ocurred", keep guidance); state kept in Solid stores owned by the page (no module-level mutable state — master #7); refresh definitions when `undefinedReferencesUpdated` pushes arrive (incremental: re-run `findDefinitions` on new words only — enhancement). Results render the moment they are computed — legacy gated them behind an artificial 1000 ms delay (fixes master #29). Each URL definition row gets a **Copy as exclusion** affordance (copies the script URL; toast points at the Exclusion Builder's Delay JS field — extension, master §8: the natural fix for a Delay-JS-caused undefined reference, connecting two tools legacy kept apart).
-- [ ] **Search integration** — every list page reads the P5 search store: `performSearch` sets query; **`nextSearchResult`/`previousSearchResult` move a highlight cursor across matching rows and scroll-into-view** (new capability implied by legacy's protocol — fixes the dead half of the protocol, master #8, and completes the store work referenced in master #18); `cancelSearch` clears; route change resets (parity).
+
+**Tests:** grouping-order + hint-copy fixtures through the shared model; empty headers → the page's empty state; an old payload (no `cookies`) renders with the section omitted. The parser/redaction suites are P6A's.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist this item closes here whole: on the local site a cached page shows the `x-rocket-*`/`age` evidence rows; cookie rows list names only — spot-check that no cookie value appears anywhere in the DOM (grep the page); an older payload without `cookies` omits the section gracefully; plus the page's keyboard + axe pass.
+
+---
+
+## P6G — Search navigation & per-page polish
+
+**Depends on:** P6A, P6C, P6D (the letters that land the search-row pages). **Parallelizable with:** — (after the rows it navigates).
+
+Completes the search protocol: P5C's cursor signals finally consumed — a highlight cursor moving across the matching rows the pages filtered, with scroll-into-view.
+
+- [ ] **Search integration** — every list page reads the P5 search store: `performSearch` sets query; **`nextSearchResult`/`previousSearchResult` move a highlight cursor across matching rows and scroll-into-view** (new capability implied by legacy's protocol — fixes the dead half of the protocol, master #8, and completes the store work referenced in master #18); `cancelSearch` clears; route change resets (parity). (The read/filter halves landed with the page letters — P6C filters `content`, P6D filters `src`/`href`; Detections and Undefined References have no search rows on the reference surface. This block adds the cursor half and its per-page polish.)
+
+**Rides:** the wrap-around + cancellation/route-change cursor semantics pinned here (the tail of Tests row 1); the touched pages' final polish pass (highlight styling via tokens, exact scroll targeting).
+
+**Tests:** cursor wrap-around; `cancelSearch`/route change clearing query + cursor + highlight; scroll targeting landing on the matched row; the touched pages' polished states keyboard/axe-clean.
+
+**DoD:** gates green + the budget re-measure; from the Verification checklist the search E2E closes here by hand (perform/next/prev/cancel with the DevTools search box — automated in P6.1, suite 3), and the cursor-touched page states re-run their keyboard + axe checks. Fixes master **#8** (the dead protocol half) and completes the store work referenced by **#18**.
+
+---
 
 ## Explicit enhancements over legacy
 
@@ -45,24 +160,26 @@ Port the five non-Diagnoser panel pages plus the owner-committed **Headers & Coo
 - Extensions: copyable support report, detections summary strip, response-headers viewer, copy-as-exclusion bridge; no artificial result delay (#29); magic-id cleanup (#39); copy normalization ("Non-delayed"/"Non-Deferred" consistent, "Resouces", double periods, "ocurred").
 - **Headers & Cookies tab** — the full caching-evidence trail (legacy captured all headers and showed two), cookies names-only with values redacted at capture.
 
+**Enhancement discipline is phase-wide:** every extension above ships within the letter owning its surface (P6A–P6G) — never deferred past the phase; P15 audits them all.
+
 ## Tests
 
-- View-models: `buildStatusItems` table tests (async_css merge matrix, cached card, subtitles); filter/search per page (incl. empty results → empty state, next/prev cursor wrap-around); `findDefinitions` regex parity tests (legacy-form samples + metacharacter words) — the pure logic lives outside components so all of this is unit-testable.
-- `undefined-refs` store: **zero-script-resources page resolves to `[]` (master #6 regression test)**; **incremental re-analysis — a push with 1 new word runs `findDefinitions` for that word only (memo hit count asserted), not the full set.**
-- `buildSupportReport` golden test: full matrix (optimizations present/absent, headers present/null, cached + timestamp, undefined-references list) asserts a stable, diffable markdown string — the committed expected output doubles as the report format spec.
-- `headers-view-model` grouping: caching-relevant headers first + hint copy over a fixture; empty headers → empty state.
-- Cookie capture parser: `document.cookie` → name list; **redaction asserted — no value ever reaches the payload** (security regression test); missing field → graceful omission.
+- View-models: `buildStatusItems` table tests (async_css merge matrix, cached card, subtitles); filter/search per page (incl. empty results → empty state, next/prev cursor wrap-around); `findDefinitions` regex parity tests (legacy-form samples + metacharacter words) — the pure logic lives outside components so all of this is unit-testable. **(→ P6A; the empty-state render legs close with their pages — P6C/P6D — and the wrap-around leg with P6G)**
+- `undefined-refs` store: **zero-script-resources page resolves to `[]` (master #6 regression test)**; **incremental re-analysis — a push with 1 new word runs `findDefinitions` for that word only (memo hit count asserted), not the full set.** **(→ P6A)**
+- `buildSupportReport` golden test: full matrix (optimizations present/absent, headers present/null, cached + timestamp, undefined-references list) asserts a stable, diffable markdown string — the committed expected output doubles as the report format spec. **(→ P6B)**
+- `headers-view-model` grouping: caching-relevant headers first + hint copy over a fixture; empty headers → empty state. **(→ P6A — model tests; the render legs land with P6B's preview and P6F's page)**
+- Cookie capture parser: `document.cookie` → name list; **redaction asserted — no value ever reaches the payload** (security regression test); missing field → graceful omission. **(→ P6A — parser + redaction; the render-side omission leg is P6F's)**
 
 ## Verification checklist
 
-- [ ] Gates green; `pnpm check:budgets` — panel main chunk ≤ 600 KB hard **and the ≤ 350 KB stretch target reported met/not-met with reason** in the committed table (stretch is accounted for, not ignored).
-- [ ] Headers & Cookies: on the local site a cached page shows the `x-rocket-*`/`age` evidence rows; cookie rows list names only — spot-check that no cookie value appears anywhere in the DOM (grep the page); an older payload without `cookies` omits the section gracefully.
-- [ ] Side-by-side vs legacy on fixture pages: identical card sets/subtitles on Detections; identical counts/filters on JS/Lazyload/Preloaded; identical definitions on an undefined-reference test page.
-- [ ] Detections: summary strip matches the card set; `Copy report` output matches the committed golden markdown; response-headers section renders every captured header and is omitted when `pageHeaders` is null.
-- [ ] **Perf gate (automated, not eyeballed):** `entrypoints/panel/dev/fixtures/generate-images.ts` produces a committed 5,000-row fixture JSON loaded via the dev-only data override; a script (Playwright or chrome-trace) loads the JavaScript page with the fixture, triggers tab switch + filter change + search, collects `PerformanceObserver('longtask')` entries, and **asserts none > 50 ms and total blocking time < 200 ms**; re-run in P15.
-- [ ] Search: perform/next/prev/cancel E2E by hand with DevTools search box.
-- [ ] Keyboard pass on every page; axe run clean on each page state.
+- [ ] Gates green; `pnpm check:budgets` — panel main chunk ≤ 600 KB hard **and the ≤ 350 KB stretch target reported met/not-met with reason** in the committed table (stretch is accounted for, not ignored). **(every letter ends gates green + a budget re-measure; the ≤ 350 KB stretch line is committed at phase close — P6.1)**
+- [ ] Headers & Cookies: on the local site a cached page shows the `x-rocket-*`/`age` evidence rows; cookie rows list names only — spot-check that no cookie value appears anywhere in the DOM (grep the page); an older payload without `cookies` omits the section gracefully. **(→ P6F)**
+- [ ] Side-by-side vs legacy on fixture pages: identical card sets/subtitles on Detections; identical counts/filters on JS/Lazyload/Preloaded; identical definitions on an undefined-reference test page. **(closes per letter: Detections → P6B; JS → P6C; Lazyload/Preloaded → P6D; Undefined References → P6E)**
+- [ ] Detections: summary strip matches the card set; `Copy report` output matches the committed golden markdown; response-headers section renders every captured header and is omitted when `pageHeaders` is null. **(→ P6B)**
+- [ ] **Perf gate (automated, not eyeballed):** `entrypoints/panel/dev/fixtures/generate-images.ts` produces a committed 5,000-row fixture JSON loaded via the dev-only data override; a script (Playwright or chrome-trace) loads the JavaScript page with the fixture, triggers tab switch + filter change + search, collects `PerformanceObserver('longtask')` entries, and **asserts none > 50 ms and total blocking time < 200 ms**; re-run in P15. **(the automated gate is P6.1 suite 4; the committed fixture + generator land with P6C, whose page the script measures)**
+- [ ] Search: perform/next/prev/cancel E2E by hand with DevTools search box. **(→ P6G by hand; automated in P6.1, suite 3)**
+- [ ] Keyboard pass on every page; axe run clean on each page state. **(closes per page letter — each page's states with the letter that owns it; P6G re-checks the cursor-touched states)**
 
 ## Docs to update
 
-None mandatory; note the thumbnail decision (shipped/skipped + why) in the Lazyload page TSDoc.
+None mandatory; note the thumbnail decision (shipped/skipped + why) in the Lazyload page TSDoc. **(the note rides P6D)**
