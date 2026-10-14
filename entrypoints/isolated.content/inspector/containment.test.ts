@@ -6,7 +6,10 @@
  * pair releases even past `RESETTLE_MAX_MS`), a never-settling box concedes
  * just past the time bound without applying, the outcome follows elapsed
  * time — not frame count — dead shapes/contexts stop the cycle, and `stop`
- * aborts running cycles and rejects new ones.
+ * aborts running cycles and rejects new ones. A trigger coalesced into a
+ * cycle that CONCEDES is carried by one immediate bounded re-cycle (its own
+ * baseline and cap); deaths and settled conclusions spend that carry-over
+ * without restarting anything.
  */
 import { describe, expect, it } from 'vitest';
 import type { DragBox } from './drag';
@@ -287,5 +290,236 @@ describe('createContainmentWatch', () => {
     watch.request();
     frames.pump();
     expect(deps.reformed()).toBe(0);
+  });
+
+  it('a trigger coalesced into a conceding cycle survives via one immediate re-cycle', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request(); // cycle 1 arms at t=0; its synchronous sample is the baseline
+    // The open→close→open thrash: the box never presents the same rect twice
+    // while cycle 1 samples. At ≈498 ms a second trigger lands mid-cycle and
+    // coalesces into it.
+    for (let frame = 1; frame <= 60; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // the coalesced trigger
+    expect(deps.reformed(), 'no conclusion while the box moves').toBe(0);
+    // The thrash outlasts the whole first cap: the cycle concedes just past
+    // RESETTLE_MAX_MS (8.3 × 121 = 1004.3 ms) instead of settling.
+    for (let frame = 61; frame <= 121; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    expect(deps.debugLines().length, 'cycle 1 conceded exactly once').toBe(1);
+    expect(deps.reformed(), 'the concede applied nothing').toBe(0);
+    // The coalesced demand must not die with the cycle: ONE fresh cycle
+    // (its own cap) took over. The thrash subsides at ≈1104 ms elapsed —
+    // past cycle 1's original cap, inside the re-cycle's fresh one — and
+    // the stable pair releases exactly there.
+    for (let frame = 122; frame <= 131; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    deps.setBox({ left: 141.5, top: 10, width: 200, height: 40 });
+    frames.pump(); // the settling pose (clock ≈ 1095.6 ms)
+    deps.setBox({ left: 141.5, top: 10, width: 200, height: 40 });
+    frames.pump(); // the equal pair → the release just past the original cap
+    expect(deps.reformed(), 'the coalesced trigger produced its conclusion').toBe(1);
+    expect(deps.reformed(), 'exactly one conclusion in total').toBe(1);
+    expect(deps.debugLines().length, 'the re-cycle itself conceded nothing').toBe(1);
+    expect(deps.clockMs(), 'the release landed just past the original cap').toBeGreaterThan(1100);
+    expect(frames.pump(), 'the watcher rests after the release').toBe(false);
+  });
+
+  it('a never-settling host yields exactly one bounded re-cycle, then the watcher rests', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request();
+    // The swallow's shape, but the box NEVER presents a stable pair: a
+    // coalesced trigger at ≈498 ms, then both caps overrun in a row.
+    for (let frame = 1; frame <= 60; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // coalesces into cycle 1
+    for (let frame = 61; frame <= 242; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    // Pump 121 conceded cycle 1 and spent its fuel on the re-cycle; pump 242
+    // conceded the re-cycle at its own cap (≈2008.6 ms into the episode) —
+    // with no new trigger during it, nothing re-arms a third time.
+    expect(deps.reformed(), 'two conceding cycles, zero applications').toBe(0);
+    expect(deps.debugLines().length, 'the original cycle and its one re-cycle').toBe(2);
+    expect(frames.pump(), 'the watcher rests past its second concede').toBe(false);
+    // The re-arm rule is untouched: a later trigger over a now-still chrome
+    // runs a fresh cycle that releases.
+    deps.setBox({ left: 300, top: 10, width: 200, height: 40 });
+    watch.request();
+    deps.setBox({ left: 300, top: 10, width: 200, height: 40 });
+    frames.pump();
+    expect(deps.reformed(), 'a later trigger re-arms normally').toBe(1);
+    expect(deps.debugLines().length, 'the resting period added no concede').toBe(2);
+  });
+
+  it('the re-cycle runs its own cap from its own start (no inherited timer)', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request();
+    for (let frame = 1; frame <= 60; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // coalesces into cycle 1
+    for (let frame = 61; frame <= 121; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    // The re-cycle lives past the restart instant: its first pump keeps
+    // sampling (a timer inherited from cycle 1's start would have conceded
+    // this very pump and rested).
+    deps.setBox({ left: 132, top: 10, width: 200, height: 40 });
+    expect(frames.pump(), 'the re-cycle is still sampling').toBe(true);
+    expect(deps.debugLines().length, 'only cycle 1 has conceded so far').toBe(1);
+    // The thrash keeps going: the re-cycle's own cap overruns ≈1004 ms after
+    // the restart instant (≈ 2008.6 ms into the episode) — its cap ran from
+    // ITS start, never from an inherited remainder, and nothing further
+    // restarts beyond it.
+    for (let frame = 123; frame <= 242; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines().length, 'two cycles, then rest').toBe(2);
+    expect(
+      deps.clockMs(),
+      'the second concede landed a full own-cap after the restart (≈ 2008.6 ms)'
+    ).toBeGreaterThan(2000);
+    expect(deps.clockMs(), '…and did not wait for any longer span').toBeLessThan(2050);
+    expect(frames.pump(), 'the second concede restarted nothing').toBe(false);
+  });
+
+  it('stop mid-cycle ends it: no concede, no re-cycle, all future requests inert', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request();
+    for (let frame = 1; frame <= 30; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // coalesces into the running cycle
+    watch.stop(); // teardown wins over the pending demand
+    deps.setBox({ left: 200, top: 10, width: 200, height: 40 });
+    expect(frames.pump(), 'the stopped cycle scheduled nothing').toBe(false);
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines(), 'teardown is not a concession').toEqual([]);
+    watch.request(); // rejected: a stopped watcher arms nothing
+    expect(frames.pump()).toBe(false);
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines()).toEqual([]);
+  });
+
+  it('a dead shape or context spends the carry-over: no re-cycle, and no ghost fuel', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request(); // baseline: the initial box
+    for (let frame = 1; frame <= 30; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // coalesces into the running cycle
+    deps.setBox(null); // the disable beat removed the chrome mid-cycle
+    frames.pump();
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines(), 'a dead shape is teardown, not a concession').toEqual([]);
+    expect(frames.pump(), 'nothing was scheduled past the death').toBe(false);
+    // The spent fuel must not leak: a later trigger whose own cycle never
+    // settles concedes EXACTLY once — the death restarts nothing.
+    deps.setBox({ left: 500, top: 10, width: 200, height: 40 }); // the re-mount's first read
+    watch.request();
+    for (let frame = 1; frame <= 121; frame += 1) {
+      deps.setBox({ left: 500 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines().length, 'one concede: this own cycle, not a ghost').toBe(1);
+    expect(frames.pump(), 'the lease cycle restarted nothing').toBe(false);
+
+    // The context death behaves identically (fresh watcher, same seams).
+    const other = createContainmentWatch(deps);
+    other.request(); // baseline: whatever the box holds now
+    for (let frame = 1; frame <= 30; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    other.request(); // coalesces
+    deps.setInvalid(true); // the context ended before any other read
+    frames.pump();
+    expect(deps.debugLines().length, 'still exactly one concede on the books').toBe(1);
+    expect(frames.pump()).toBe(false);
+    // Test-only seam reset (a real context never returns): proves the death
+    // left nothing armed.
+    deps.setInvalid(false);
+    deps.setBox({ left: 900, top: 10, width: 200, height: 40 });
+    other.request();
+    for (let frame = 1; frame <= 121; frame += 1) {
+      deps.setBox({ left: 900 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    expect(deps.reformed()).toBe(0);
+    expect(deps.debugLines().length, 'no ghost re-cycle after the context death').toBe(2);
+    expect(frames.pump()).toBe(false);
+  });
+
+  it('a settled conclusion spends the carry-over too: no ghost re-cycle later', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request(); // baseline: the initial box
+    for (let frame = 1; frame <= 30; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    watch.request(); // coalesces into the running cycle
+    deps.setBox({ left: 45, top: 10, width: 200, height: 40 });
+    frames.pump(); // moving
+    deps.setBox({ left: 45, top: 10, width: 200, height: 40 });
+    frames.pump(); // the equal pair → the cycle's own release
+    expect(deps.reformed(), 'the settled cycle released once').toBe(1);
+    expect(deps.debugLines(), 'the release was clean, no concede').toEqual([]);
+    // A later trigger whose own cycle never settles concedes exactly once —
+    // the earlier settle consumed whatever carry-over it had.
+    watch.request(); // baseline: the pose the settle parked at (45)
+    for (let frame = 0; frame < 121; frame += 1) {
+      deps.setBox({ left: 10 + frame, top: 10, width: 200, height: 40 });
+      frames.pump();
+    }
+    expect(deps.reformed(), 'no second release: this cycle conceded').toBe(1);
+    expect(deps.debugLines().length, 'one concede, and no restart behind it').toBe(1);
+    expect(frames.pump(), 'the settle spend left nothing armed').toBe(false);
+  });
+
+  it('several triggers during a well-settling cycle still release exactly once', () => {
+    const frames = fakeFrames(8.3);
+    const deps = fakeDeps(frames);
+    const watch = createContainmentWatch(deps);
+    watch.request();
+    deps.setBox({ left: 60, top: 10, width: 200, height: 40 });
+    frames.pump();
+    watch.request(); // mid-cycle, three more triggers coalesce
+    watch.request();
+    watch.request();
+    deps.setBox({ left: 62, top: 10, width: 200, height: 40 });
+    frames.pump();
+    deps.setBox({ left: 62, top: 10, width: 200, height: 40 });
+    frames.pump(); // the equal pair → the single release
+    expect(deps.reformed(), 'one release for the whole motion').toBe(1);
+    expect(deps.debugLines(), 'no concede: the first cycle settled').toEqual([]);
   });
 });
