@@ -18,6 +18,7 @@ import type {
   BeaconFeatureStatus,
   DiagnoserDocData,
   FdtData,
+  PageCookies,
   PageHeaders,
   PanelSearchAction,
   PreloadedResources,
@@ -30,6 +31,7 @@ import {
   BEACON_STATUS_KEYS,
   LAZYLOAD_EXCLUSIONS_LIST
 } from '../wp-rocket/constants';
+import { COOKIE_NAME_LIMITS } from '../wp-rocket/cookies';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
 import { isRecord } from '../../utils/is-record';
 import { ERROR_WORD_LIMITS, isPrintable } from './error-words';
@@ -45,6 +47,8 @@ const LIMITS = {
   // The word row's acceptance caps live in the shared contract (`./error-words`),
   // sourced once by both sides of the window bridge.
   words: ERROR_WORD_LIMITS,
+  /** Cookie-name caps live in the shared contract (`../wp-rocket/cookies`). */
+  cookies: COOKIE_NAME_LIMITS,
   /** Captured response headers: rows, and per-row name/value lengths. */
   headers: { count: 256, name: 512, value: 4096 },
   /** Delay JS: script rows, src URL, inline content. */
@@ -158,6 +162,29 @@ export function parseDetectionSummary(input: unknown): DetectionSummary | null {
   const cached = input['cached'];
   if (typeof wprPresent !== 'boolean' || typeof cached !== 'boolean') return null;
   return { wprPresent, cached };
+}
+
+/**
+ * Validate the captured-cookie payload: names already redacted to name-only
+ * strings by the capture side (`sampleCookieNames`), a finite capture stamp.
+ * The shape is exact (own keys only, the shared caps in `COOKIE_NAME_LIMITS`)
+ * so a forged or drifting sender can neither smuggle a value-shaped field in
+ * nor sneak oversized rows through.
+ */
+export function parsePageCookies(input: unknown): PageCookies | null {
+  if (!isRecord(input) || Object.keys(input).length !== 2) return null;
+  const rawCapturedAt = input['capturedAt'];
+  if (typeof rawCapturedAt !== 'number' || !Number.isInteger(rawCapturedAt) || rawCapturedAt < 0) {
+    return null;
+  }
+  const rawNames = input['names'];
+  if (!isStringArray(rawNames) || rawNames.length > LIMITS.cookies.count) return null;
+  const names: string[] = [];
+  for (const name of rawNames) {
+    if (!isUsableString(name, LIMITS.cookies.name)) return null;
+    names.push(name);
+  }
+  return { names, capturedAt: rawCapturedAt };
 }
 
 /** KC-DB refresh outcome relayed from the background to the options surface. */
@@ -703,7 +730,7 @@ export function parseFdtData(input: unknown): FdtData | null {
   const diagnoserData = diagnoserRaw === null ? null : parseDiagnoserData(diagnoserRaw);
   if (diagnoserRaw !== null && diagnoserData === null) return null;
   if (typeof input['allScriptsLoaded'] !== 'boolean') return null;
-  return {
+  const payload = {
     allScriptsLoaded: input['allScriptsLoaded'],
     pageHeaders,
     undefinedReferencesOnPage,
@@ -711,6 +738,14 @@ export function parseFdtData(input: unknown): FdtData | null {
     preloadedResources,
     diagnoserData
   };
+  // Additive field, absent from payloads captured before it existed — absence
+  // reads through as absence (a consumer omits the section) instead of
+  // rejecting the whole payload; a present field must still be whole.
+  const cookiesRaw = input['cookies'];
+  if (cookiesRaw === undefined) return payload;
+  const cookies = parsePageCookies(cookiesRaw);
+  if (cookies === null) return null;
+  return { ...payload, cookies };
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   parseErrorWords,
   parseFdtData,
   parseKnownConflicts,
+  parsePageCookies,
   parsePageHeaders,
   parsePanelSearchAction,
   parsePreloadedResources,
@@ -416,6 +417,74 @@ describe('parseFdtData', () => {
     expect(parseFdtData({ ...full, diagnoserData: undefined })).toBeNull();
     expect(parseFdtData({ ...full, preloadedResources: undefined })).toBeNull();
     expect(parseFdtData({ ...full, undefinedReferencesOnPage: undefined })).toBeNull();
+  });
+});
+
+describe('parsePageCookies', () => {
+  it('accepts a valid redacted cookie list and rebuilds it fresh', () => {
+    const input = { names: ['wprocket', 'fallback'], capturedAt: 1_800_000_000_000 };
+    expect(parsePageCookies(input)).toEqual(input);
+    // Mutation of the source must not leak through.
+    const mutating = { names: ['a'], capturedAt: 1 };
+    const parsed = parsePageCookies(mutating);
+    mutating.names.push('b');
+    expect(parsed?.names).toEqual(['a']);
+  });
+
+  it('accepts a name list with no capture-worthy cookie (empty honest list)', () => {
+    expect(parsePageCookies({ names: [], capturedAt: 1_800_000_000_000 })).toEqual({
+      names: [],
+      capturedAt: 1_800_000_000_000
+    });
+  });
+
+  it('rejects wrong shapes and hostile oversizes', () => {
+    expect(parsePageCookies(null)).toBeNull();
+    expect(parsePageCookies('wprocket')).toBeNull();
+    expect(parsePageCookies({ names: 'wprocket', capturedAt: 1 })).toBeNull();
+    expect(parsePageCookies({ names: ['wprocket'] })).toBeNull();
+    expect(parsePageCookies({ names: [''], capturedAt: 1 })).toBeNull();
+    // A captured value would be a contract break — the field must not exist.
+    expect(parsePageCookies({ names: ['wprocket'], values: ['1'], capturedAt: 1 })).toBeNull();
+    expect(
+      parsePageCookies({ names: ['a'.repeat(513)], capturedAt: 1_800_000_000_000 })
+    ).toBeNull();
+    expect(
+      parsePageCookies({
+        names: Array.from({ length: 257 }, (_, i) => `c${String(i)}`),
+        capturedAt: 1
+      })
+    ).toBeNull();
+    expect(parsePageCookies({ names: ['wprocket'], capturedAt: 'now' })).toBeNull();
+    expect(parsePageCookies({ names: ['wprocket'], capturedAt: -1 })).toBeNull();
+    expect(parsePageCookies({ names: ['wprocket'], capturedAt: Number.NaN })).toBeNull();
+  });
+});
+
+describe('parseFdtData — the additive cookies field (tolerant payload contract)', () => {
+  it('passes a payload carrying cookies through with the section intact', () => {
+    const full = {
+      ...validFdt(),
+      cookies: { names: ['wprocket', 'fallback'], capturedAt: 1_800_000_000_000 }
+    };
+    expect(parseFdtData(full)).toEqual(full);
+  });
+
+  it('reads a payload without the field cleanly (the tolerance pin)', () => {
+    const full = { ...validFdt(), wprDetections: minimalDetections() };
+    const parsed = parseFdtData(full);
+    expect(parsed).toEqual(full);
+    expect(Object.hasOwn(parsed ?? {}, 'cookies')).toBe(false);
+  });
+
+  it('rejects a payload whose cookies slot does not validate as a unit', () => {
+    const full = { ...validFdt(), wprDetections: minimalDetections() };
+    expect(parseFdtData({ ...full, cookies: null })).toBeNull();
+    expect(parseFdtData({ ...full, cookies: { names: 'wprocket', capturedAt: 1 } })).toBeNull();
+    // The boundary rejects a value-shaped payload: values never cross.
+    expect(
+      parseFdtData({ ...full, cookies: { names: ['wprocket'], values: ['1'], capturedAt: 1 } })
+    ).toBeNull();
   });
 });
 
