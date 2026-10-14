@@ -395,9 +395,11 @@
 }
 
 /* One row: the state chip + its evidence value, one row to a line (every
- * feature name renders whole — the widening derives from these chips), the
- * value dropping to its own line past a viewport-bound card rather than
- * squeezing a name. Static chips have no hover or press response at all
+ * feature name renders whole at the shipped width — the widening derives
+ * from these chips), the value dropping to its own line first when a
+ * narrower viewport floors the card below the need; past that ramp's end
+ * the chip's own ellipsis is the safety valve (a name itself may elide).
+ * Static chips have no hover or press response at all
  * (motion-budget discipline) — the tooltip is the row's whole interactivity. */
 .ins-row {
   display: flex;

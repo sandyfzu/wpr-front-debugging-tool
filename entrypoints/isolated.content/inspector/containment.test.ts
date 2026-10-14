@@ -97,11 +97,13 @@ describe('createContainmentWatch', () => {
       expect(deps.reformed()).toBe(0);
       frames.pump();
     }
-    // The spring ended: the third consecutive equal read is release work.
+    // The spring ends: the settled write repeats the 30th read's values, so
+    // the FIRST pumped frame after it sees two equal reads in a row and the
+    // release fires right there.
+    deps.setBox({ left: -20, top: -20, width: 200, height: 40 }); // the settled pose again
+    frames.pump(); // the equal consecutive pair → the release fires on this frame
     deps.setBox({ left: -20, top: -20, width: 200, height: 40 });
-    frames.pump(); // reads the settled box (differs from the 30th read) → keeps waiting
-    deps.setBox({ left: -20, top: -20, width: 200, height: 40 });
-    frames.pump();
+    frames.pump(); // the cycle is over: nothing is scheduled, this pump runs nothing
     expect(deps.reformed(), 'the release fires exactly after box stability').toBe(1);
     expect(deps.debugLines()).toEqual([]);
   });
