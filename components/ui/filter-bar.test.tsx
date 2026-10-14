@@ -135,8 +135,25 @@ describe('FilterBar', () => {
     render(() => <FilterBar chips={CHIPS} />);
     // The name carries label AND count ("how many this chip selects") — the
     // count is announced, not only painted in the badge.
-    expect(screen.getByRole('button', { name: 'All, 87 matching' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Delayed, 12 matching' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pending RUCSS, 0 matching' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'All 87 matching' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delayed 12 matching' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pending RUCSS 0 matching' })).toBeTruthy();
+  });
+
+  it('names each chip from its own content: the name starts with and contains the visible text', () => {
+    render(() => <FilterBar chips={CHIPS} selected="delayed" />);
+    for (const chip of getChips()) {
+      // No aria-label: an override would replace the content and could drift
+      // from it (WCAG 2.5.3 label-in-name).
+      expect(chip.hasAttribute('aria-label')).toBe(false);
+    }
+    const delayed = screen.getByRole('button', { name: 'Delayed 12 matching' });
+    // The visible parts (everything outside the sr-only spans) appear in the
+    // name in reading order: the label first, then the count.
+    const visible = Array.from(delayed.childNodes)
+      .filter((node) => !(node instanceof HTMLElement && node.classList.contains('sr-only')))
+      .map((node) => node.textContent)
+      .join(' ');
+    expect(visible).toBe('Delayed 12');
   });
 });

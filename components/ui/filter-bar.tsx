@@ -58,7 +58,7 @@ export type FilterBarProps = {
  * toggle-button group) — natively keyboard-operable (Tab + Enter/Space) —
  * and the selected chip carries `data-fdt-selected` beside the
  * `aria-pressed` attribute. Each chip's accessible name includes its count
- * ("Delayed, 12 matching"), so the pre-open answer "how many" is
+ * ("Delayed 12 matching"), so the pre-open answer "how many" is
  * announced, not just painted. Search semantics: an `Input` typed `search`
  * (the browser's built-in clear affordance comes with the type) wired
  * through the page's controlled value loop; this bar adds zero input
@@ -151,9 +151,14 @@ const CHIP_SELECTED = cn(
  *
  * Selection lands on `aria-pressed` + `data-fdt-selected` (+ the accent
  * fill): three redundant carriers so state survives each channel — color
- * alone is never the selected signal. The accessible name folds the count
- * in ("Delayed, 12 matching") so a chip announces what it selects AND how
- * much of it there is — the glanceable count doubles as the announced one.
+ * alone is never the selected signal. The accessible name is computed from
+ * the chip's own content — the visible label, the visible count, a visually
+ * hidden " matching" — so it reads "Delayed 12 matching" while starting
+ * with, and containing, exactly the visible text (WCAG 2.5.3 label-in-name;
+ * an `aria-label` would replace the content and drift from it). No comma
+ * after the label: the count is a flex item, and name computation (Chromium
+ * and the test runner alike) puts a space around it, so a hidden comma
+ * could never sit flush against the label.
  *
  * @param props.chip The chip data.
  * @param props.selected Whether this chip is the selected one.
@@ -172,7 +177,6 @@ function FilterChipButton(props: {
       data-fdt-selected={props.selected ? '' : undefined}
       aria-pressed={props.selected}
       disabled={props.chip.disabled}
-      aria-label={`${props.chip.label}, ${String(props.chip.count)} matching`}
       onClick={() => props.onSelect?.(props.chip.value)}
       class={cn(CHIP_BASE, props.selected ? CHIP_SELECTED : CHIP_UNSELECTED)}
     >
@@ -180,12 +184,13 @@ function FilterChipButton(props: {
       <span
         data-fdt-filter-count
         class={cn(
-          'rounded-full px-1 text-2xs',
+          'rounded-full px-1 text-2xs tabular-nums',
           props.selected ? 'bg-on-accent/20' : 'bg-surface-3'
         )}
       >
         {props.chip.count}
       </span>
+      <span class="sr-only"> matching</span>
     </button>
   );
 }
