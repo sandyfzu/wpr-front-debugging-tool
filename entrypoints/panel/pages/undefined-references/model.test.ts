@@ -204,6 +204,7 @@ describe('words and verdicts', () => {
     expect(wordVerdict('a', 'pending')).toEqual({ kind: 'searching' });
     expect(wordVerdict('a', [])).toEqual({ kind: 'not-found', partial: false });
     expect(wordVerdict('a', [], 2)).toEqual({ kind: 'not-found', partial: true });
+    expect(wordVerdict('a', [], 0, true)).toEqual({ kind: 'not-found', partial: true });
     expect(wordVerdict('a', [url], 2)).toEqual({ kind: 'found', count: 1 });
     expect(wordVerdict('a', [url, { kind: 'inline' }])).toEqual({ kind: 'found', count: 2 });
   });
@@ -699,6 +700,15 @@ describe('summaryFacts', () => {
       { count: 1, label: 'cross-origin error' },
       { count: 1, label: 'script could not be read' }
     ]);
+  });
+
+  it('adds the cut inline stack as a count-less fact, only when a search runs', () => {
+    expect(summaryFacts(summary, true, 0, true).at(-1)).toEqual({
+      label: 'inline scripts only partly captured'
+    });
+    expect(summaryFacts(summary, false, 0, true)).not.toContainEqual({
+      label: 'inline scripts only partly captured'
+    });
   });
 
   it('leaves out search facts when no search runs, and empty facts', () => {

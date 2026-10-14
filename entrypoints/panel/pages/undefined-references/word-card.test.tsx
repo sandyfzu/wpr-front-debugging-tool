@@ -248,6 +248,27 @@ describe('WordCard — verdicts and bodies', () => {
     expect(screen.getByText(/1 script could not be read/)).toBeTruthy();
   });
 
+  it('says when the inline scripts were only partly captured', () => {
+    const { unmount } = render(() => (
+      <WordCard word="nope" answer={[]} pageOrigin={PAGE} inlineCut={true} />
+    ));
+    expect(verdict().textContent).toBe('No definition found in the readable scripts');
+    expect(
+      screen.getByText(
+        "No declaration or assignment of this name was found in the page's readable scripts. The inline scripts were only partly captured, so a definition may still be in the part that was cut."
+      )
+    ).toBeTruthy();
+    unmount();
+    render(() => (
+      <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={1} inlineCut={true} />
+    ));
+    expect(
+      screen.getByText(
+        "No declaration or assignment of this name was found in the page's readable scripts. 1 script could not be read and the inline scripts were only partly captured, so a definition may still be in what was not searched."
+      )
+    ).toBeTruthy();
+  });
+
   it('keeps a found verdict unchanged when scripts were skipped', () => {
     render(() => (
       <WordCard word="x" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} unreadable={3} />

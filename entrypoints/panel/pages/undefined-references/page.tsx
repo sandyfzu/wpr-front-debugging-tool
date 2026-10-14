@@ -204,7 +204,11 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
           )}
         </Match>
         <Match when={listed()}>
-          <WordsState store={store} onCopy={props.onCopy} />
+          <WordsState
+            store={store}
+            inlineCut={() => loaded()?.wprDetections.delay_js.truncated === true}
+            onCopy={props.onCopy}
+          />
         </Match>
       </Switch>
     </PageFrame>
@@ -262,6 +266,11 @@ function SkeletonCard(): JSX.Element {
 interface WordsStateProps {
   /** The page store. */
   store: UndefinedReferencesStore;
+  /**
+   * The capture cut the page's inline scripts to its size caps (the Delay JS
+   * row arrived marked truncated): the inline search saw only part of them.
+   */
+  inlineCut: () => boolean;
   /** Copy override for the rows (tests). */
   onCopy?: CopyExclusion;
 }
@@ -317,7 +326,12 @@ function WordsState(props: WordsStateProps): JSX.Element {
           class="min-w-0 flex-1 text-2xs text-fg-secondary tabular-nums"
         >
           <SummaryText
-            facts={summaryFacts(summary(), searched(), props.store.unreadableScripts())}
+            facts={summaryFacts(
+              summary(),
+              searched(),
+              props.store.unreadableScripts(),
+              props.inlineCut()
+            )}
           />
           <Show when={searched() && props.store.staleScripts()}>
             {' '}
@@ -339,6 +353,7 @@ function WordsState(props: WordsStateProps): JSX.Element {
                 answer={props.store.answerOf(word)}
                 pageOrigin={props.store.pageOrigin()}
                 unreadable={props.store.unreadableScripts()}
+                inlineCut={props.inlineCut()}
                 onCopy={props.onCopy}
               />
             </li>
@@ -363,7 +378,10 @@ function SummaryText(props: { facts: readonly SummaryFact[] }): JSX.Element {
         <>
           {index() > 0 ? ' · ' : ''}
           <span class="whitespace-nowrap">
-            <span class="font-medium text-fg-primary">{fact.count}</span> {fact.label}
+            <Show when={fact.count !== undefined}>
+              <span class="font-medium text-fg-primary">{fact.count}</span>{' '}
+            </Show>
+            {fact.label}
           </span>
         </>
       )}

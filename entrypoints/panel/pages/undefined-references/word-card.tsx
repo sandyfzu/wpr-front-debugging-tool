@@ -80,14 +80,23 @@ export const CROSS_ORIGIN_EXPLANATION =
  * the search only covered the readable ones.
  *
  * @param unreadable How many scripts the read skipped.
+ * @param inlineCut The inline scripts reached the panel cut to size.
  * @returns The sentence.
  */
-export function notFoundExplanation(unreadable: number): string {
-  if (unreadable === 0) {
+export function notFoundExplanation(unreadable: number, inlineCut = false): string {
+  if (unreadable === 0 && !inlineCut) {
     return "No declaration or assignment of this name was found in the page's scripts.";
   }
+  const head =
+    "No declaration or assignment of this name was found in the page's readable scripts.";
   const skipped = unreadable === 1 ? '1 script' : `${String(unreadable)} scripts`;
-  return `No declaration or assignment of this name was found in the page's readable scripts. ${skipped} could not be read, so a definition may still be in one of them.`;
+  if (!inlineCut) {
+    return `${head} ${skipped} could not be read, so a definition may still be in one of them.`;
+  }
+  if (unreadable === 0) {
+    return `${head} The inline scripts were only partly captured, so a definition may still be in the part that was cut.`;
+  }
+  return `${head} ${skipped} could not be read and the inline scripts were only partly captured, so a definition may still be in what was not searched.`;
 }
 
 /** The copy control's hover hint (its purpose, in full). */
@@ -109,6 +118,8 @@ export interface WordCardProps {
   pageOrigin: string | null;
   /** Scripts the read had to skip (softens a not-found verdict; default 0). */
   unreadable?: number;
+  /** The inline scripts reached the panel cut to size (softens a not-found verdict too). */
+  inlineCut?: boolean;
   /** Copy an exclusion (default: {@link copyAsExclusion}); injected by tests. */
   onCopy?: CopyExclusion;
 }
@@ -126,7 +137,9 @@ export interface WordCardProps {
  * @param props See {@link WordCardProps}.
  */
 export function WordCard(props: WordCardProps): JSX.Element {
-  const verdict = createMemo(() => wordVerdict(props.word, props.answer, props.unreadable ?? 0));
+  const verdict = createMemo(() =>
+    wordVerdict(props.word, props.answer, props.unreadable ?? 0, props.inlineCut ?? false)
+  );
   const kind = (): StatusKind => VERDICT_KIND[verdict().kind];
   const definitions = (): readonly ScriptOrigin[] => {
     const answer = props.answer;
@@ -187,7 +200,9 @@ export function WordCard(props: WordCardProps): JSX.Element {
             <p class={BODY_NOTE}>{CROSS_ORIGIN_EXPLANATION}</p>
           </Match>
           <Match when={verdict().kind === 'not-found'}>
-            <p class={BODY_NOTE}>{notFoundExplanation(props.unreadable ?? 0)}</p>
+            <p class={BODY_NOTE}>
+              {notFoundExplanation(props.unreadable ?? 0, props.inlineCut ?? false)}
+            </p>
           </Match>
         </Switch>
       </Card>

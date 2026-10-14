@@ -389,6 +389,24 @@ describe('UndefinedReferencesPage — results', () => {
     for (const fact of facts) expect(fact.className).toContain('whitespace-nowrap');
   });
 
+  it('says so when the capture cut the inline scripts (Delay JS row marked truncated)', async () => {
+    const data = pageData({ words: ['nope'] });
+    const cut = makeFdtData({
+      ...data,
+      wprDetections: {
+        ...data.wprDetections,
+        delay_js: { ...data.wprDetections.delay_js, truncated: true }
+      }
+    });
+    const { reads } = mount({ data: cut });
+    reads[0]?.resolve(ASSETS);
+    await flush();
+    expect(summary()).toBe(
+      '1 undefined reference · 0 with a possible definition · inline scripts only partly captured'
+    );
+    expect(screen.getByText('No definition found in the readable scripts')).toBeTruthy();
+  });
+
   it('hints at a rescan when the page loaded scripts after the read', async () => {
     const { added } = await withResults(['alpha']);
     expect(document.querySelector('[data-fdt="undefined-refs-stale"]')).toBeNull();

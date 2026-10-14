@@ -222,15 +222,22 @@ export function displayWord(word: string): string {
  * @param answer The search answer.
  * @param unreadable How many of the page's scripts could not be read (a
  *   not-found answer is then only about the readable ones).
+ * @param inlineCut The inline scripts reached the panel cut to size (same
+ *   effect: part of the source was not searched).
  * @returns The verdict.
  */
-export function wordVerdict(word: string, answer: DefinitionAnswer, unreadable = 0): WordVerdict {
+export function wordVerdict(
+  word: string,
+  answer: DefinitionAnswer,
+  unreadable = 0,
+  inlineCut = false
+): WordVerdict {
   if (isCrossOriginSentinel(word)) return { kind: 'hidden' };
   if (answer === null) return { kind: 'not-searched' };
   if (answer === 'pending') return { kind: 'searching' };
   return answer.length > 0
     ? { kind: 'found', count: answer.length }
-    : { kind: 'not-found', partial: unreadable > 0 };
+    : { kind: 'not-found', partial: unreadable > 0 || inlineCut };
 }
 
 /**
@@ -325,11 +332,14 @@ export function summarizeResults(
   return { undefinedNames, withDefinition, crossOriginError };
 }
 
-/** One fact of the summary line: a count (rendered emphasized) and its words. */
+/** One fact of the summary line: an optional count (rendered emphasized) and its words. */
 export interface SummaryFact {
-  readonly count: number;
+  readonly count?: number;
   readonly label: string;
 }
+
+/** The summary fact for an inline-script stack the capture cut to its size caps. */
+export const INLINE_CUT_FACT = 'inline scripts only partly captured';
 
 /**
  * The summary line's facts, in order: undefined names, how many have a
@@ -340,12 +350,14 @@ export interface SummaryFact {
  * @param summary The counts.
  * @param searched Whether a search runs.
  * @param unreadable Scripts the read had to skip.
+ * @param inlineCut The page's inline scripts reached the panel cut to size.
  * @returns The facts (empty facts are left out).
  */
 export function summaryFacts(
   summary: ResultsSummary,
   searched: boolean,
-  unreadable: number
+  unreadable: number,
+  inlineCut = false
 ): SummaryFact[] {
   const facts: SummaryFact[] = [];
   const names = summary.undefinedNames;
@@ -364,6 +376,7 @@ export function summaryFacts(
       label: unreadable === 1 ? 'script could not be read' : 'scripts could not be read'
     });
   }
+  if (searched && inlineCut) facts.push({ label: INLINE_CUT_FACT });
   return facts;
 }
 
