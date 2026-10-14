@@ -113,7 +113,9 @@ export const realRailWatch = (rail: HTMLElement, onResize: () => void): (() => v
   } catch (cause: unknown) {
     // An element that cannot be observed (detached mid-call) must not break
     // the nav's mount: log and keep the static measurement.
-    console.error('[WPR FDT] rail size watch could not attach', cause);
+    log.error('Rail size watch could not attach — keeping the static measurement', {
+      cause: cause instanceof Error ? { message: cause.message } : cause
+    });
     return () => undefined;
   }
   /** The stop handle: disconnecting twice must stay harmless. */

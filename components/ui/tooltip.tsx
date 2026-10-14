@@ -109,7 +109,8 @@ export type TooltipProps = {
  * @param props.openDelay Rest time before opening (default 350ms).
  * @param props.skipDelayDuration Post-close suppression window (see above).
  * @param props.disabled Disable the trigger (tooltip still opens on hover; button form only).
- * @param props.as The trigger tag — `button` (default) or `a`.
+ * @param props.as The trigger form — `button` (default), `a` (the anchor rows),
+ *   or `menu-trigger` (the composed menu trigger; no click passthrough crosses).
  * @param props.href The anchor trigger's href (`as="a"` only).
  * @param props.ariaCurrent Whether the anchor trigger marks the active page.
  * @param props.class Extra classes on the trigger element.

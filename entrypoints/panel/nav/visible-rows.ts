@@ -48,6 +48,15 @@ export interface RailOverflow {
  * does not fit hides its whole group (its first row cannot fit under the
  * rail's top edge either), and one that fits never double-counts.
  *
+ * Ordering contract, stated honestly: the "visible prefix / hidden suffix"
+ * shape is guaranteed for *ordered* input — the production seam reports the
+ * geometry stub's registry order — and the partitions preserve whatever
+ * order the caller handed over. An out-of-order input produces a correct
+ * per-row partition (each row judged against its own box) without a
+ * guaranteed registry-order shape; no re-validation is layered here, since
+ * a shape-breaking caller already crosses the module's contract-throw
+ * boundary for value violations.
+ *
  * @param rows Every registry row measured in the rail's full layout,
  *   registry-ordered (the measure seam's contract; unsorted input is
  *   tolerated — the partitions preserve the input order and the fit rule

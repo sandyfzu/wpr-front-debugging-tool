@@ -568,7 +568,7 @@ export function AdaptiveNav(props: AdaptiveNavProps): JSX.Element {
             `[data-fdt-nav-group]` stays the real rail's marker; the stub
             rows' own route attribute is what the measure seam reads. */}
         <div data-fdt="panel-nav-mirror" aria-hidden="true" class={NAV_MIRROR}>
-          <For each={groupedRoutes().filter((entry) => entry.rows.length > 0)}>
+          <For each={groups}>
             {({ rows: groupRows }) => (
               <div class={GROUP}>
                 <ul class={GROUP_LIST}>
