@@ -7,13 +7,17 @@
  * virtualization math anywhere in the port.
  */
 import type { JSX } from 'solid-js';
-import { For, splitProps } from 'solid-js';
+import { createMemo, For, splitProps } from 'solid-js';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
+import { createLogger } from '../../lib/logger';
 import { cn } from '../../utils/cn';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
+
+/** Dev diagnostics for caller contract violations (duplicate keys). */
+const log = createLogger('virtual-list');
 
 /** Extra rows rendered beyond the visible window (the default `overscan`). */
 const DEFAULT_OVERSCAN = 3;
@@ -35,7 +39,7 @@ export interface VirtualListOptions {
   getScrollElement: () => HTMLDivElement | null;
   /** Rows rendered beyond the visible window. */
   overscan: number;
-  /** Stable per-row key (row identity for measurement reuse). */
+  /** Stable, unique per-row key (row identity for measurement reuse). */
   getItemKey?: (index: number) => string | number;
   /** Row gap inside the layout stack (px). */
   gap?: number;
@@ -70,6 +74,21 @@ export type VirtualizerFactory = (options: VirtualListOptions) => VirtualizerIns
 /** The default factory: the library's own `createVirtualizer`. */
 const defaultVirtualizerFactory: VirtualizerFactory = (options) => createVirtualizer(options);
 
+/**
+ * Name the duplicate keys of a window (dev only): the map keeps one item
+ * per key, so every duplicate silently drops a row.
+ *
+ * @param items The window's items.
+ */
+function warnDuplicateKeys(items: readonly VirtualItem[]): void {
+  const seen = new Set<VirtualItem['key']>();
+  const duplicates = new Set<VirtualItem['key']>();
+  for (const item of items) (seen.has(item.key) ? duplicates : seen).add(item.key);
+  log.warn(
+    `duplicate row keys ${[...duplicates].map(String).join(', ')} — rows are dropped; getItemKey must be unique`
+  );
+}
+
 export type VirtualListProps = {
   /**
    * The scroller's ARIA role, for surfaces that are semantically a list.
@@ -85,11 +104,21 @@ export type VirtualListProps = {
   'aria-label'?: string;
   /** The row count. */
   count: number;
-  /** The trusted estimate above, per index. */
+  /**
+   * Seed row height in px, per index — scroll math only until the row's
+   * content is measured; never a rendered height (rows size to content).
+   */
   estimateSize: (index: number) => number;
   /** Rows beyond the visible window (default {@link DEFAULT_OVERSCAN}). */
   overscan?: number;
-  /** Stable row identity (default: index). */
+  /**
+   * Stable, unique row identity (default: index). Pass it for any list that
+   * filters, sorts or prepends: a rendered row element and its measured size
+   * follow the key, so surviving rows keep their element and size — and
+   * focus, unless a reorder moves their DOM node (DOM order stays the visual
+   * order, i.e. the tab and reading order). Duplicate keys drop rows (dev
+   * builds warn).
+   */
   getItemKey?: (index: number) => string | number;
   /** Row gap in px (the layout adds it between rows). */
   gap?: number;
@@ -101,7 +130,10 @@ export type VirtualListProps = {
   createVirtualizer?: VirtualizerFactory;
   /** Classes on the scroller (height caps belong here, e.g. `h-full`). */
   class?: string;
-  /** The row renderer; called per virtual row with its measured geometry. */
+  /**
+   * The row renderer; called per virtual row with its measured geometry. The
+   * rendered content sets the row's height (expanding it re-flows the list).
+   */
   children: (row: VirtualItem) => JSX.Element;
 };
 
@@ -111,11 +143,32 @@ export type VirtualListProps = {
  * Layout contract (verified against the installed virtual-core): a relative
  * inner divider sized `getTotalSize()` scrolls inside the wrapper's own
  * `overflow-y-auto` container; each row is absolutely positioned at its
- * `start` offset via `translateY`, sized to its (measured-refined) `size`,
- * and carries `data-index` so the TanStack measurement ref attached to it
- * keeps heights live. `estimateSize` seeds the first paint; measurement
- * corrects any estimator error afterward. The virtualizer lifecycle is
- * Solid-wired by its own adapter (its `_didMount` cleanup runs on unmount).
+ * `start` offset via `translateY` and carries `data-index`. Rows get **no
+ * height**: they size to their content, and the measurement ref observes
+ * each row's border box, so variable-height rows (wrapped text, an expanded
+ * code block) re-measure on any resize and push later rows down — a pinned
+ * height would make the observer read the estimate back and let content
+ * overflow into the next row. Sizes are cached rounded to whole px, so a
+ * fractional-height row may overlap the next by ≤ 0.5 px (invisible).
+ * `estimateSize` seeds only the scroll math before a row's first measurement
+ * (corrected before paint). When a row entirely above the viewport changes
+ * size, the virtualizer compensates `scrollTop` so the visible rows stay put
+ * — except while the user scrolls backward (the library skips it then, to
+ * avoid a jump cascade). Fixed-height lists need nothing extra: their row
+ * content sets the height.
+ *
+ * Row identity: one element per **key** for its whole life. The core caches
+ * sizes and observed elements by key, while the adapter's item store is
+ * keyed by index — an element bound to an index would carry a stale key
+ * after a filter (never re-measured) and could make the core drop a live
+ * element's observer. Keying elements by key keeps both in step: a refresh
+ * with the same keys remounts nothing (DOM and focus survive), a key that
+ * moves index keeps its element and size (only `data-index` and the offset
+ * update; focus survives unless a reorder moves the DOM node — DOM order is
+ * kept equal to visual order, the tab and reading order), and a new key gets
+ * a fresh, measured element. The virtualizer lifecycle
+ * is Solid-wired by its own adapter (its `_didMount` cleanup runs on
+ * unmount).
  *
  * Rows render exactly what the caller's `children` maps per row — this
  * wrapper owns geometry only, never data shape.
@@ -188,6 +241,74 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     }
   });
 
+  /**
+   * Hand a new row element to measurement. Solid runs `ref` before it
+   * applies a row's attributes, while the core resolves a measured element's
+   * index from `data-index` (no index → never observed), so the index is
+   * stamped first; the reactive `data-index` binding keeps it current after.
+   *
+   * @param el The freshly created row element.
+   * @param index The row's virtual index.
+   */
+  const bindRow = (el: HTMLDivElement, index: number): void => {
+    el.setAttribute('data-index', String(index));
+    virtualizer.measureElement(el);
+  };
+
+  /**
+   * The rendered window by key. Its values are the adapter's store items, so
+   * geometry reads stay fine-grained; the map itself changes only when the
+   * window's keys change (scroll, filter).
+   */
+  const rowByKey = createMemo(() => {
+    const items = virtualizer.getVirtualItems();
+    const byKey = new Map(items.map((item) => [item.key, item] as const));
+    if (import.meta.env.DEV && byKey.size < items.length) warnDuplicateKeys(items);
+    return byKey;
+  });
+  /** The window's keys in order — primitives, so `For` maps one element per key. */
+  const windowKeys = createMemo(() => [...rowByKey().keys()]);
+
+  /**
+   * A live row view for one key: reads the item currently holding that key,
+   * keeping the last one while the key leaves the window (its element is
+   * being disposed in the same update).
+   *
+   * @param key The row key the element is bound to.
+   * @returns A {@link VirtualItem} whose fields track that key's item.
+   * @throws {@link Error} When the key is not in the window at creation (a
+   *   broken invariant: keys come from the same map).
+   */
+  const rowView = (key: VirtualItem['key']): VirtualItem => {
+    const initialItem = rowByKey().get(key);
+    if (!initialItem) {
+      throw new Error(`[WPR FDT] virtual-list: key ${String(key)} is not in the window`);
+    }
+    // Owned by the row's `For` scope, so it is disposed with the element.
+    // `?? prev` is a guard: `For` disposes a departing key's row before this
+    // memo re-runs (observed), but if it ever re-ran first, the row keeps its
+    // last geometry instead of reading `undefined`.
+    const current = createMemo<VirtualItem>((prev) => rowByKey().get(key) ?? prev, initialItem);
+    return {
+      key,
+      get index() {
+        return current().index;
+      },
+      get start() {
+        return current().start;
+      },
+      get end() {
+        return current().end;
+      },
+      get size() {
+        return current().size;
+      },
+      get lane() {
+        return current().lane;
+      }
+    };
+  };
+
   return (
     <div
       ref={scroller}
@@ -204,23 +325,31 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
           width: '100%'
         }}
       >
-        <For each={virtualizer.getVirtualItems()}>
-          {(row) => (
-            <div
-              data-index={row.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${String(row.start)}px)`,
-                height: `${String(row.size)}px`
-              }}
-            >
-              {own.children(row)}
-            </div>
-          )}
+        <For each={windowKeys()}>
+          {(key) => {
+            // eslint-disable-next-line solid/reactivity -- the view is a stable object of reactive getters (created once per keyed element); its fields are read live
+            const row = rowView(key);
+            return (
+              <div
+                data-index={row.index}
+                ref={(el) => {
+                  bindRow(el, row.index);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  // No height: the row sizes to its content so the measurement
+                  // ref (border-box ResizeObserver) reads the real height and
+                  // re-flows siblings when it changes (wrap, expand/collapse).
+                  transform: `translateY(${String(row.start)}px)`
+                }}
+              >
+                {own.children(row)}
+              </div>
+            );
+          }}
         </For>
       </div>
     </div>
