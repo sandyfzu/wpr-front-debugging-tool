@@ -8,7 +8,7 @@
 
 ## L — Layout & responsiveness
 
-- **L-1 Container queries, not viewport queries.** Each surface's root (or region root) is the `@container`; viewport `sm:`/`md:`/`lg:`/`xl:` variants are banned in panel/injected code (devtools docking and host pages make the viewport meaningless). Breakpoints are literal and shared with the status bar's `@min-[480px]:`: **compact `< 480px` · regular `@min-[480px]:` · wide `@min-[768px]:`**.
+- **L-1 Container queries, not viewport queries.** Each surface's root (or region root) is the `@container`; viewport `sm:`/`md:`/`lg:`/`xl:` variants are banned in panel/injected code (devtools docking and host pages make the viewport meaningless). Breakpoints are literal and shared with the status bar's `@min-[480px]:`: **compact `< 480px` · regular `@min-[480px]:` · wide `@min-[768px]:`**. A query reads its **own container's content box**, never the panel width: the container sits outside any padding (panel pages: `PageFrame`'s unpadded root, so a page's breakpoints measure the content region = panel − the ≈ 49 px rail, i.e. regular from a ≈ 529 px panel, wide from ≈ 817 px; the status bar's `px-2` strip flips at a ≈ 496 px panel). `D-1`'s widths are panel widths — checkpoints, not breakpoints.
 - **L-2 Geometry floors.** Panel: from a 320 px panel (≈ 270 px content beside the ≈ 49 px icon rail) up, at every docking (`UX-D8`). Other surfaces declare their supported range in their phase doc (popup's fixed width, options/exclusion-builder tab widths ≥ 320 px, injected UI at the host's narrowest viewport) and meet the same rules inside it.
 - **L-3 Behavior by width.** Compact: one column; actions wrap under the title; chip groups wrap (never a horizontal chip scroller); row meta stacks under the row's main line; copy controls go icon-only with the accessible name kept. Card grids: `grid gap-2 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]` (1→2→3→4+ columns, no breakpoint drift).
 - **L-4 No horizontal scroll** on any surface's content region at any supported width; the only sanctioned horizontal scroller is a code block with wrap off. Long URLs `truncate` (full text in `title` + the accessible name); payload values (e.g. header values) `break-all`.
@@ -85,3 +85,4 @@
 ## Change log
 
 - 2026-10-14 — created (owner mandate); values derived from the shipped tokens and primitives; first consumers P6B–P6F.
+- 2026-10-14 — `L-1` states what a breakpoint measures (the container's content box; panel pages: the content region, not the panel) — P6A.1 audit round; no value moved.
