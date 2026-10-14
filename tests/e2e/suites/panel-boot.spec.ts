@@ -113,7 +113,12 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
         })
         .toBe('Detections');
 
-      await panel.getByRole('link', { name: 'Lazyload' }).click();
+      // Scoped to the nav: page bodies may carry links naming the same page
+      // (e.g. the Detections cards' "Open Lazyload").
+      await panel
+        .getByRole('navigation', { name: 'WPR FDT pages' })
+        .getByRole('link', { name: 'Lazyload' })
+        .click();
       await panel.waitForURL(/#\/lazyload$/);
       await expect.poll(async () => await h1(panel)).toBe('Lazyload');
 

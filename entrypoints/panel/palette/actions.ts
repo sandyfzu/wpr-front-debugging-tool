@@ -9,8 +9,9 @@
  * their mechanism modules (which own their own toast feedback).
  *
  * Pages and actions share one row contract, so a later phase's rows (tool
- * pages, `Copy report`) land as one more row here.
+ * pages) land as one more row here.
  */
+import ClipboardCopy from 'lucide-solid/icons/clipboard-copy';
 import Download from 'lucide-solid/icons/download';
 import ExternalLink from 'lucide-solid/icons/external-link';
 import Keyboard from 'lucide-solid/icons/keyboard';
@@ -20,6 +21,7 @@ import type { PaletteCommand } from '../../../components/ui/command-palette';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { createLogger } from '../../../lib/logger';
 import { toast } from '../../../components/ui/toast-store';
+import { copySupportReport, type CopyReportOutcome } from '../report/copy-report';
 import type { ExclusionBuilderOutcome } from './exclusion-builder';
 import type { JsonExportResult } from './export-json';
 import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
@@ -63,6 +65,12 @@ export interface PanelActionDeps {
   openShortcuts(): void;
   /** Run the whole JSON export (the mechanism module owns its toast feedback). */
   exportData(data: FdtData): Promise<JsonExportResult>;
+  /**
+   * Copy the support report (the mechanism owns its toast feedback).
+   * Optional: absent, the row runs the shell's report binding — the same
+   * one the Detections page's `Copy report` button runs.
+   */
+  copyReport?: (data: FdtData) => Promise<CopyReportOutcome>;
 }
 
 /**
@@ -99,7 +107,7 @@ const APPEARANCE_CYCLE_NOTE = 'system → dark → light';
 const APPEARANCE_SAVE_NOTE = 'The choice did not save; the panel keeps its current palette.';
 
 /**
- * The five shell actions, in row order. Each run routes through its
+ * The six shell actions, in row order. Each run routes through its
  * mechanism and reports there — a mechanism that rejects despite its own
  * guarding is a wiring bug, so the runs hand their promises to the overlay's
  * guard (which logs an escape) instead of re-catching here; only the
@@ -132,6 +140,22 @@ export function createPanelActions(deps: PanelActionDeps): PanelCommand[] {
         // honest behavior is the no-op, never a fabricated export.
         if (data === null) return;
         return deps.exportData(data).then(() => undefined);
+      }
+    },
+    {
+      id: 'action-copy-report',
+      label: 'Copy report',
+      icon: ClipboardCopy,
+      hint: 'Detections',
+      keywords: ['support', 'ticket', 'markdown', 'clipboard', 'share'],
+      disabled: deps.loadedData() === null,
+      disabledNote: 'No page data loaded',
+      run: () => {
+        const data = deps.loadedData();
+        // Same stale-dispatch rule as the export: no data, no report.
+        if (data === null) return;
+        const copy = deps.copyReport ?? ((loaded: FdtData) => copySupportReport(loaded));
+        return copy(data).then(() => undefined);
       }
     },
     {

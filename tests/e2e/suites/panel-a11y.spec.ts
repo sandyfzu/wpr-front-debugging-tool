@@ -206,8 +206,14 @@ const OVERLAY_ALLOWANCE: readonly UnresolvedAllowance[] = [
   { id: 'aria-hidden-focus', targets: ['#root'] },
   {
     id: 'color-contrast',
-    // The arrows kbd chip (the engine minimizes its class set across documents).
-    targets: [/^\.gap-2\\\.5(\\\.items-center)?\[data-fdt="shortcut-row"\]:nth-child\(2\) > kbd$/]
+    // The arrows kbd chip. axe emits the shortest selector unique in the
+    // CURRENT document, so the utility classes it prefixes to the row (e.g.
+    // `.gap-2\.5`, `.items-center`) vary with whatever the page under the
+    // overlay renders. Match on the stable hook only — the second shortcut
+    // row's direct `kbd` child — with any leading class segments ignored.
+    targets: [
+      /^(?:\.[^\s>[.\\]+(?:\\.[^\s>[.\\]+)*)*\[data-fdt="shortcut-row"\]:nth-child\(2\) > kbd$/
+    ]
   }
 ];
 
@@ -228,7 +234,12 @@ test.describe('panel keyboard + a11y', () => {
       // A nav click: the focus rule (shared owner) moves focus to the body's
       // own h1 — program-focusable, so the destination announces to AT. The
       // poll takes the swap in (Solid's body keyed-when reads after the hash).
-      await panel.getByRole('link', { name: 'JavaScript' }).click();
+      // Scoped to the nav: page bodies may carry links naming the same page
+      // (e.g. the Detections cards' "Open JavaScript").
+      await panel
+        .getByRole('navigation', { name: 'WPR FDT pages' })
+        .getByRole('link', { name: 'JavaScript' })
+        .click();
       await panel.waitForURL(/#\/javascript$/);
       await expect
         .poll(
