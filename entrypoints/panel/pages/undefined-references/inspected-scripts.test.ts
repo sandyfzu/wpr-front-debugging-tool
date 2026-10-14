@@ -161,26 +161,49 @@ describe('createScriptLoader', () => {
 });
 
 describe('unreadable count', () => {
-  it('counts empty bodies, lastErrors and undecodable content as skipped', async () => {
-    const load = createScriptLoader(
-      deps(
+  /** A resource whose content read throws synchronously. */
+  const throwing = (url: string) => ({
+    url,
+    type: 'script',
+    getContent() {
+      throw new Error('Extension context invalidated.');
+    }
+  });
+
+  it('counts lastErrors, undecodable content and throwing reads — not empty bodies', async () => {
+    const cancels: (() => void)[] = [];
+    const load = createScriptLoader({
+      ...deps(
         [
           resource('https://x.test/empty.js', ''),
           resource('https://x.test/error.js', 'var e;'),
           resource('https://x.test/bad.js', '%%%', { encoding: 'base64' }),
+          throwing('https://x.test/throws.js'),
           resource('https://x.test/ok.js', 'var ok;')
         ],
         [null, null, 'No resource with given URL found', null, null]
-      )
-    );
+      ),
+      schedule: () => {
+        const cancel = vi.fn();
+        cancels.push(cancel);
+        return cancel;
+      }
+    });
     await expect(load([])).resolves.toEqual({
-      assets: [{ origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }],
+      assets: [
+        // An empty body is a readable (empty) script.
+        { origin: { kind: 'url', url: 'https://x.test/empty.js' }, content: '' },
+        { origin: { kind: 'url', url: 'https://x.test/ok.js' }, content: 'var ok;' }
+      ],
       unreadable: 3
     });
+    // Every resource's timer was cancelled — the throwing one included.
+    expect(cancels).toHaveLength(5);
+    for (const cancel of cancels) expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('counts per read — a second read starts from zero', async () => {
-    const load = createScriptLoader(deps([resource('https://x.test/empty.js', '')]));
+    const load = createScriptLoader(deps([throwing('https://x.test/throws.js')]));
     await expect(load([])).resolves.toMatchObject({ unreadable: 1 });
     await expect(load([])).resolves.toMatchObject({ unreadable: 1 });
   });

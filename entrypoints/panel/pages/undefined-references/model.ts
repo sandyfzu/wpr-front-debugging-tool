@@ -427,10 +427,10 @@ export interface ScriptUrlParts {
   /** The query, shown muted after the file — e.g. `?ver=3.7.1`; empty when none. */
   readonly query: string;
   /**
-   * The directory, short form: WordPress's `/wp-content/plugins/` and
-   * `/wp-content/themes/` prefixes shorten to `plugins/` and `themes/`, so
-   * the plugin or theme slug leads the line and survives a narrow panel —
-   * e.g. `plugins/some-plugin/assets/js/`, `/wp-includes/js/jquery/`.
+   * The directory in one short form: no leading `/`, and WordPress's
+   * `wp-content/` dropped, so the plugin or theme slug leads the line and
+   * survives a narrow panel — e.g. `plugins/some-plugin/assets/js/`,
+   * `themes/t/js/`, `wp-includes/js/jquery/`; empty for a root file.
    */
   readonly directory: string;
   /**
@@ -440,8 +440,8 @@ export interface ScriptUrlParts {
   readonly host: string | null;
 }
 
-/** The WordPress content prefixes the display shortens (`$1` = `plugins` / `themes`). */
-const WP_CONTENT_PREFIX = /^\/wp-content\/(plugins|themes)\//;
+/** The leading `/` and WordPress's `wp-content/` folder, dropped from every displayed directory. */
+const DIRECTORY_PREFIX = /^\/(?:wp-content\/)?/;
 
 /**
  * Split a script URL for display. A truncated full URL hides the file name
@@ -463,7 +463,7 @@ export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUr
   return {
     file,
     query: parsed.search,
-    directory: path.slice(0, cut + 1).replace(WP_CONTENT_PREFIX, '$1/'),
+    directory: path.slice(0, cut + 1).replace(DIRECTORY_PREFIX, ''),
     host: parsed.origin === pageOrigin ? null : parsed.host
   };
 }
@@ -473,10 +473,12 @@ export function splitScriptUrl(url: string, pageOrigin: string | null): ScriptUr
  * the end truncation), then the host for another origin.
  *
  * @param parts The display parts.
- * @returns The line, e.g. `plugins/p/js/ · cdn.example.com`.
+ * @returns The line, e.g. `plugins/p/js/ · cdn.example.com` (empty for the
+ *   page's own root files).
  */
 export function scriptLocation(parts: ScriptUrlParts): string {
-  return parts.host === null ? parts.directory : `${parts.directory} · ${parts.host}`;
+  if (parts.host === null) return parts.directory;
+  return parts.directory === '' ? parts.host : `${parts.directory} · ${parts.host}`;
 }
 
 /**
@@ -487,11 +489,44 @@ export function scriptLocation(parts: ScriptUrlParts): string {
  */
 const EXCLUSION_UNSAFE = /[\\^$*+?()[\]{}|#]/g;
 
-/** A run of percent-encoded bytes (one or more `%XX`). */
-const PERCENT_RUN = /(?:%[0-9A-Fa-f]{2})+/g;
+/** A run of percent-encoded bytes (one or more `%XX`); the split keeps runs at odd indexes. */
+const PERCENT_RUN_SPLIT = /((?:%[0-9A-Fa-f]{2})+)/;
 
-/** Placeholder for an encoded run while the rest is neutralized (a char no URL holds). */
-const RUN_MARK = '\u0000';
+/**
+ * One encoded ASCII character (a space, a backtick, `{`, `^`…): in the tag
+ * it is either raw (1 char) or still encoded (`%XX`, 3 chars), never a `/`.
+ */
+const ENCODED_ASCII = '[^/]{1,3}';
+
+/** Closes a kept query parameter's value: the next `&` (any spelling) or the attribute quote. */
+const QUERY_VALUE_END = `[&"']`;
+
+/**
+ * Rewrite one percent-encoded run for an exclusion. Decoded non-ASCII
+ * characters are emitted raw — WordPress prints them raw in the tag, and WP
+ * Rocket's `sanitize_text_field` keeps valid UTF-8. Decoded ASCII
+ * characters (regex or HTML-sensitive, and stripped as `%XX` by that same
+ * sanitizer) become a bounded {@link ENCODED_ASCII} class that matches
+ * either spelling within one path segment. A run that is not valid UTF-8
+ * becomes a class bounded by its encoded length. Never an unbounded `.*`:
+ * WP Rocket tests the whole `<script>` element, so a wildcard reaches other
+ * scripts' file names and inline bodies.
+ *
+ * @param run The encoded run (e.g. `%C3%B1`).
+ * @returns Its pattern text.
+ */
+function encodedRunPattern(run: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(run);
+  } catch {
+    // Not UTF-8: n bytes are at most 3n characters in the tag.
+    return `[^/]{1,${String(run.length)}}`;
+  }
+  return Array.from(decoded, (char) =>
+    (char.codePointAt(0) ?? 0) > 0x7f ? char : ENCODED_ASCII
+  ).join('');
+}
 
 /**
  * The Delay JS exclusion for a script: the part of its URL that identifies
@@ -500,16 +535,22 @@ const RUN_MARK = '\u0000';
  * syntax). The host leads when the script comes from another origin, when
  * the page origin is unknown (it matches absolute `src` values), and when
  * the path alone is too generic: a single segment (`/main.js`) or no file
- * (then the query's first parameter is kept, so the pattern is never a bare
- * `/`).
+ * (then the query's first parameter is kept, closed by the next `&` or the
+ * attribute quote so `?s=1` never matches `?s=10`).
  *
- * Exclusions are regular expressions matched against the whole script tag —
- * by WP Rocket (after escaping `+`, `?ver`, `#`, as `#…#i`, where `&` in the
- * tag reads `&#038;`) and by a plain `new RegExp(…)`. The returned text
- * matches its own tag under both: regex syntax becomes `.` (matches itself),
- * and each percent-encoded run (spaces, backticks, non-ASCII file names —
- * the URL parser encodes them, while the tag may hold them raw or encoded)
- * becomes `.*`, which matches either spelling.
+ * WP Rocket saves an exclusion through `sanitize_text_field` (drops `%XX`
+ * octets) and `rocket_clean_wildcards` (rewrites `*` forms), then escapes
+ * `+`, `?ver` and `#` and tests `#…#i` against the whole `<script>` element
+ * (attributes and inline body; `&` in a `src` reads `&#038;`). A plain
+ * `new RegExp(…)` is the other reader. The returned text survives that
+ * pipeline unchanged and matches its own tag under both: regex syntax
+ * becomes `.` (matches itself), percent-encoded runs follow
+ * {@link encodedRunPattern}, and no `*` or `%` is ever emitted.
+ *
+ * Fail-safe residual: a tag that spells non-ASCII characters
+ * percent-encoded (rather than raw, as WordPress prints them) does not
+ * match — the exclusion visibly fails to apply; it never silently over-
+ * matches other scripts.
  *
  * @param url The script URL.
  * @param pageOrigin The inspected page's origin, or `null` when unknown.
@@ -524,10 +565,13 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
   const query = fileless ? (parsed.search.split('&')[0] ?? '') : '';
   const keepHost = parsed.origin !== pageOrigin || fileless || segments <= 1;
   const raw = `${keepHost ? parsed.host : ''}${path}${query}`;
-  return raw
-    .replace(PERCENT_RUN, RUN_MARK)
-    .replace(EXCLUSION_UNSAFE, '.')
-    .replaceAll(RUN_MARK, '.*');
+  const pattern = raw
+    .split(PERCENT_RUN_SPLIT)
+    .map((piece, index) =>
+      index % 2 === 1 ? encodedRunPattern(piece) : piece.replace(EXCLUSION_UNSAFE, '.')
+    )
+    .join('');
+  return query.length > 1 ? `${pattern}${QUERY_VALUE_END}` : pattern;
 }
 
 /** Two origins name the same script (or both the inline stack). */

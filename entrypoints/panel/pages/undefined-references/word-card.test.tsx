@@ -52,14 +52,14 @@ describe('WordCard — script rows', () => {
     // browser, has no padding).
     const link = screen.getByRole('link', { name: /jquery\.min\.js/ });
     expect(link.textContent).toBe(
-      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ (opens in a new tab)'
+      'jquery.min.js?ver=3.7.1, wp-includes/js/jquery/ (opens in a new tab)'
     );
     expect(link.getAttribute('href')).toBe(URL_A);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(link.querySelector('[title]')?.getAttribute('title')).toBe(URL_A);
     expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe(
-      '/wp-includes/js/jquery/'
+      'wp-includes/js/jquery/'
     );
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     fireEvent.click(copy);
@@ -82,8 +82,8 @@ describe('WordCard — script rows', () => {
     ));
     const names = screen.getAllByRole('link').map((link) => link.textContent);
     expect(names).toEqual([
-      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ (opens in a new tab)',
-      'jquery.min.js?ver=3.7.1, /wp-includes/js/jquery/ · cdn.example.net (opens in a new tab)'
+      'jquery.min.js?ver=3.7.1, wp-includes/js/jquery/ (opens in a new tab)',
+      'jquery.min.js?ver=3.7.1, wp-includes/js/jquery/ · cdn.example.net (opens in a new tab)'
     ]);
     expect(new Set(names).size).toBe(2);
     // The copy controls read apart too: a foreign host is named.
@@ -97,7 +97,7 @@ describe('WordCard — script rows', () => {
     ]);
     expect(
       [...document.querySelectorAll('[data-fdt="script-location"]')].map((node) => node.textContent)
-    ).toEqual(['/wp-includes/js/jquery/', '/wp-includes/js/jquery/ · cdn.example.net']);
+    ).toEqual(['wp-includes/js/jquery/', 'wp-includes/js/jquery/ · cdn.example.net']);
   });
 
   it('flashes "Copied" in place after a confirmed copy, then reverts', async () => {

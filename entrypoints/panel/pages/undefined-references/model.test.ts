@@ -298,13 +298,13 @@ describe('splitScriptUrl + scriptLocation', () => {
     expect(parts).toEqual({
       file: 'jquery.min.js',
       query: '?ver=3.7.1',
-      directory: '/wp-includes/js/jquery/',
+      directory: 'wp-includes/js/jquery/',
       host: null
     });
-    expect(scriptLocation(parts)).toBe('/wp-includes/js/jquery/');
+    expect(scriptLocation(parts)).toBe('wp-includes/js/jquery/');
   });
 
-  it('shortens wp-content plugin/theme prefixes so the slug leads the line', () => {
+  it('shows every directory in one short form: no leading slash, no wp-content/', () => {
     const plugin = splitScriptUrl(
       'https://example.com/wp-content/plugins/some-plugin/assets/js/a.js',
       PAGE
@@ -316,7 +316,14 @@ describe('splitScriptUrl + scriptLocation', () => {
     // Only the leading WordPress prefix shortens.
     expect(
       splitScriptUrl('https://example.com/blog/wp-content/plugins/p/c.js', PAGE).directory
-    ).toBe('/blog/wp-content/plugins/p/');
+    ).toBe('blog/wp-content/plugins/p/');
+    expect(splitScriptUrl('https://example.com/wp-content/uploads/x/d.js', PAGE).directory).toBe(
+      'uploads/x/'
+    );
+    // A root file of the page's own origin has no location line.
+    const root = splitScriptUrl('https://example.com/main.js', PAGE);
+    expect(root.directory).toBe('');
+    expect(scriptLocation(root)).toBe('');
   });
 
   it('puts another origin’s host after the directory (the slug survives truncation)', () => {
@@ -326,9 +333,12 @@ describe('splitScriptUrl + scriptLocation', () => {
     expect(splitScriptUrl('http://localhost:8891/a.js', null)).toEqual({
       file: 'a.js',
       query: '',
-      directory: '/',
+      directory: '',
       host: 'localhost:8891'
     });
+    expect(scriptLocation(splitScriptUrl('http://localhost:8891/a.js', null))).toBe(
+      'localhost:8891'
+    );
     // Same host, other scheme: another origin.
     expect(splitScriptUrl('http://example.com/a.js', PAGE).host).toBe('example.com');
   });
@@ -352,13 +362,31 @@ describe('splitScriptUrl + scriptLocation', () => {
 });
 
 /**
- * WP Rocket's matching of one exclusion against a script tag: it escapes
- * `+`, `?ver` and `#`, then runs `preg_match("#{$pattern}#i", $tag)`. The
- * JS equivalent of that PCRE pattern (no PCRE-only syntax is involved; the
- * escaped `\#` is a literal in both) is a case-insensitive RegExp.
+ * WP Rocket's save pipeline for a `delay_js_exclusions` line:
+ * `sanitize_text_field` (drops `%XX` octets, collapses whitespace, trims)
+ * then `rocket_clean_wildcards` (per `/` component, `.*`, `*`, `(*)` and
+ * `(.*)` become `(.*)`). A pattern must come out of it unchanged.
+ */
+function wpRocketSave(pattern: string): string {
+  const sanitized = pattern
+    .replace(/%[a-f0-9]{2}/gi, '')
+    .replace(/[\r\n\t ]+/g, ' ')
+    .trim();
+  return sanitized
+    .split('/')
+    .map((part) => part.replace(/\(\.\*\)|\(\*\)|\.\*|\*/g, '(.*)'))
+    .join('/');
+}
+
+/**
+ * WP Rocket's matching of one saved exclusion against a script element: it
+ * escapes `+`, `?ver` and `#`, then runs `preg_match("#{$pattern}#i", $tag)`
+ * over the whole element (attributes and inline body). The JS equivalent of
+ * that PCRE pattern (no PCRE-only syntax is involved; the escaped `\#` is a
+ * literal in both) is a case-insensitive RegExp.
  */
 function wpRocketMatches(pattern: string, tag: string): boolean {
-  const escaped = pattern
+  const escaped = wpRocketSave(pattern)
     .replaceAll('+', '\\+')
     .replaceAll('?ver', '\\?ver')
     .replaceAll('#', '\\#');
@@ -393,17 +421,25 @@ describe('exclusionPattern', () => {
     expect(exclusionPattern('https://shop.example.com/js/a+b(c)[d]$f|h*i.js', PAGE)).toBe(
       '/js/a.b.c..d..f.h.i.js'
     );
-    // An encoded `+` is an encoded run like any other: either spelling matches.
-    expect(exclusionPattern('https://shop.example.com/js/a%2Bb.js', PAGE)).toBe('/js/a.*b.js');
+    // An encoded `+` is an encoded ASCII character: a bounded class.
+    expect(exclusionPattern('https://shop.example.com/js/a%2Bb.js', PAGE)).toBe(
+      '/js/a[^/]{1,3}b.js'
+    );
   });
 
   it('keeps the first query parameter of a file-less URL, with the host', () => {
     expect(exclusionPattern('https://shop.example.com/?script=1', PAGE)).toBe(
-      'shop.example.com/.script=1'
+      `shop.example.com/.script=1[&"']`
     );
     expect(exclusionPattern('https://shop.example.com/js/?script=1&ver=2&x=3', PAGE)).toBe(
-      'shop.example.com/js/.script=1'
+      `shop.example.com/js/.script=1[&"']`
     );
+    expect(exclusionPattern('https://shop.example.com/js/?', PAGE)).toBe('shop.example.com/js/');
+    // The value is closed: `?script=1` never matches `?script=10`.
+    const pattern = exclusionPattern('https://shop.example.com/js/?script=1', PAGE) ?? '';
+    expect(
+      wpRocketMatches(pattern, '<script src="https://shop.example.com/js/?script=10"></script>')
+    ).toBe(false);
   });
 
   it('keeps the host when the path is a single segment (too generic alone)', () => {
@@ -413,15 +449,30 @@ describe('exclusionPattern', () => {
     expect(exclusionPattern('https://shop.example.com/js/main.js', PAGE)).toBe('/js/main.js');
   });
 
-  it('turns each percent-encoded run into `.*` (raw or encoded spelling in the tag)', () => {
+  it('decodes encoded runs: non-ASCII raw, ASCII specials as a bounded class, no `.*`', () => {
     // The URL parser encodes spaces, backticks, braces, `^` and non-ASCII.
     expect(exclusionPattern('https://shop.example.com/js/my plugin/a`b{c}^d.js', PAGE)).toBe(
-      '/js/my.*plugin/a.*b.*c.*d.js'
+      '/js/my[^/]{1,3}plugin/a[^/]{1,3}b[^/]{1,3}c[^/]{1,3}[^/]{1,3}d.js'
     );
     expect(
       exclusionPattern('https://shop.example.com/wp-content/themes/t/js/préférences.js', PAGE)
-    ).toBe('/wp-content/themes/t/js/pr.*f.*rences.js');
-    expect(exclusionPattern('https://shop.example.com/js/скрипт.js', PAGE)).toBe('/js/.*.js');
+    ).toBe('/wp-content/themes/t/js/préférences.js');
+    expect(exclusionPattern('https://shop.example.com/js/скрипт.js', PAGE)).toBe('/js/скрипт.js');
+    // Not UTF-8: a class bounded by the run's encoded length.
+    expect(exclusionPattern('https://shop.example.com/js/a%FFb%FE%FDc.js', PAGE)).toBe(
+      '/js/a[^/]{1,3}b[^/]{1,6}c.js'
+    );
+    for (const url of [
+      'https://shop.example.com/js/my plugin/a.js',
+      'https://shop.example.com/js/ñandú.js',
+      'https://shop.example.com/js/a%FF.js'
+    ]) {
+      const value = exclusionPattern(url, PAGE) ?? '';
+      expect(value).not.toContain('*');
+      expect(value).not.toMatch(/%[0-9a-f]{2}/i);
+      // WP Rocket's save pipeline leaves it unchanged.
+      expect(wpRocketSave(value)).toBe(value);
+    }
   });
 
   it('answers null for non-http(s) URLs', () => {
@@ -454,8 +505,7 @@ describe('exclusionPattern', () => {
       {
         url: 'https://shop.example.com/wp-content/themes/t/js/préférences.js?ver=1',
         tags: [
-          '<script src="https://shop.example.com/wp-content/themes/t/js/préférences.js?ver=1"></script>',
-          '<script src="https://shop.example.com/wp-content/themes/t/js/pr%C3%A9f%C3%A9rences.js?ver=1&#038;a=b"></script>'
+          '<script src="https://shop.example.com/wp-content/themes/t/js/préférences.js?ver=1&#038;a=b"></script>'
         ]
       },
       {
@@ -471,7 +521,10 @@ describe('exclusionPattern', () => {
       },
       {
         url: 'https://shop.example.com/js/?script=1&ver=2',
-        tags: ['<script src="https://shop.example.com/js/?script=1&#038;ver=3"></script>']
+        tags: [
+          '<script src="https://shop.example.com/js/?script=1&#038;ver=3"></script>',
+          '<script src="https://shop.example.com/js/?script=1"></script>'
+        ]
       }
     ];
     for (const { url, tags } of cases) {
@@ -489,6 +542,14 @@ describe('exclusionPattern', () => {
     const tag = '<script src="https://shop.example.com/a.js?ver=3.7.1&#038;x=1"></script>';
     expect(regexpMatches(url, tag)).toBe(false);
     expect(regexpMatches(exclusionPattern(url, PAGE) ?? '', tag)).toBe(true);
+  });
+
+  it('fail-safe residual: a tag spelling non-ASCII percent-encoded does not match', () => {
+    const pattern = exclusionPattern('https://shop.example.com/js/préférences.js', PAGE) ?? '';
+    const encodedTag =
+      '<script src="https://shop.example.com/js/pr%C3%A9f%C3%A9rences.js?ver=1"></script>';
+    expect(wpRocketMatches(pattern, encodedTag)).toBe(false);
+    expect(regexpMatches(pattern, encodedTag)).toBe(false);
   });
 
   it('does not match another script of the same page', () => {
@@ -553,5 +614,58 @@ describe('summaryFacts', () => {
     expect(
       summaryFacts({ undefinedNames: 0, withDefinition: 0, crossOriginError: true }, true, 0)
     ).toEqual([{ count: 1, label: 'cross-origin error' }]);
+  });
+});
+
+describe('exclusionPattern — sibling corpus (only its own tag)', () => {
+  const ORIGIN = 'https://shop.example';
+  /** A WordPress-printed script tag: raw UTF-8 path, `&#038;` in the query. */
+  const tag = (path: string, id: string): string =>
+    `<script src="${ORIGIN}${path}?ver=1.0&#038;x=2" id="${id}-js"></script>`;
+  const scripts: { path: string; id: string }[] = [
+    { path: '/wp-content/plugins/wpml/res/js/ñandú.js', id: 'nandu' },
+    { path: '/wp-content/plugins/wpml/res/js/sandbox.js', id: 'sandbox' },
+    { path: '/wp-content/plugins/wpml/res/js/handler.js', id: 'handler' },
+    { path: '/wp-content/plugins/wpml/res/js/app.js', id: 'app' },
+    { path: '/wp-content/plugins/wpml/res/js/app.min.js', id: 'app-min' },
+    { path: '/wp-content/plugins/mi plugin/js/main.js', id: 'mi-main' },
+    { path: '/wp-content/plugins/mi-other-plugin/js/main.js', id: 'mi-other' },
+    { path: '/wp-content/plugins/mi plugin-pro/js/main.js', id: 'mi-pro' },
+    { path: '/wp-content/plugins/wpml-pro/res/js/app.js', id: 'wpml-pro' },
+    { path: '/wp-content/themes/tema/js/menú.js', id: 'menu-accent' },
+    { path: '/wp-content/themes/tema/js/menu.js', id: 'menu' },
+    { path: '/wp-content/themes/tema/js/menu.min.js', id: 'menu-min' },
+    { path: '/wp-content/plugins/a`b/js/x{1}.js', id: 'backtick' },
+    { path: '/wp-content/plugins/ab/js/x1.js', id: 'backtick-sibling' }
+  ];
+  const inlineConfig = `<script id="cfg">var cfg={"base":"${ORIGIN}/wp-content/plugins/wpml/res/js/","themes":"/wp-content/themes/tema/js/","plugin":"/wp-content/plugins/mi","files":["x.js","main.js","menu.js"]};</script>`;
+  const corpus = [...scripts.map((script) => tag(script.path, script.id)), inlineConfig];
+
+  it('matches only its own element, raw or `%20` spelled, after WP Rocket’s save pipeline', () => {
+    for (const script of scripts) {
+      const url = new URL(`${ORIGIN}${script.path}?ver=1.0`).href;
+      const pattern = exclusionPattern(url, ORIGIN);
+      expect(pattern, script.path).not.toBeNull();
+      const own = tag(script.path, script.id);
+      const matched = corpus.filter((element) => wpRocketMatches(pattern ?? '', element));
+      expect(matched, `${String(pattern)} over-matches`).toEqual([own]);
+      expect(regexpMatches(pattern ?? '', own)).toBe(true);
+      // The same script printed with its space still encoded matches too.
+      if (script.path.includes(' ')) {
+        const encoded = tag(script.path.replaceAll(' ', '%20'), script.id);
+        expect(wpRocketMatches(pattern ?? '', encoded), encoded).toBe(true);
+        expect(regexpMatches(pattern ?? '', encoded), encoded).toBe(true);
+      }
+    }
+  });
+
+  it('known residual: a sibling differing only at an encoded ASCII position also matches', () => {
+    // The bounded class must accept the raw (1 char) and `%XX` (3 chars)
+    // spellings, so 1–3 other non-slash characters there match too. Such a
+    // name collision is the narrow, accepted cost of matching both spellings.
+    const pattern = exclusionPattern(`${ORIGIN}/wp-content/plugins/a%60b/js/main.js`, ORIGIN) ?? '';
+    expect(wpRocketMatches(pattern, tag('/wp-content/plugins/a-b/js/main.js', 'lookalike'))).toBe(
+      true
+    );
   });
 });

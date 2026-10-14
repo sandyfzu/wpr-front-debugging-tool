@@ -35,8 +35,9 @@ export interface ScriptRead {
   /** The searchable sources (external files + the inline stack). */
   readonly assets: ScriptAsset[];
   /**
-   * Script files the read had to skip — content unreadable (`lastError`),
-   * empty, undecodable, or not answered in time. The search cannot see
+   * Script files the read had to skip — content unreadable (`lastError`,
+   * a throwing read), undecodable, or not answered in time. An empty body
+   * is a readable (empty) script, not a skipped one. The search cannot see
    * them, so the page says so instead of a confident "not found".
    */
   readonly unreadable: number;
@@ -132,9 +133,9 @@ interface ContentContext {
 /**
  * Adapt one platform resource, or drop it when its shape is wrong (no string
  * URL, no `getContent` function). The adapted `getContent` answers exactly
- * once: the decoded content, or `null` — counted as skipped — on a
- * `lastError`, an empty or undecodable body, or after the timeout (a late
- * answer is then ignored).
+ * once: the decoded content (an empty body is a readable, empty script), or
+ * `null` — counted as skipped — on a `lastError`, a throwing read, an
+ * undecodable body, or after the timeout (a late answer is then ignored).
  *
  * @param raw One entry of the platform's list.
  * @param context The `lastError` reader and the timeout.
@@ -155,7 +156,7 @@ function adaptResource(raw: unknown, context: ContentContext): InspectedScriptRe
         if (answered) return;
         answered = true;
         cancelTimeout();
-        if (content === null || content === '') {
+        if (content === null) {
           context.skipped();
           onContent(null);
           return;
@@ -166,19 +167,25 @@ function adaptResource(raw: unknown, context: ContentContext): InspectedScriptRe
         log.debug('A script resource did not answer in time; it is skipped', { url });
         answer(null);
       }, context.timeoutMs);
-      // Called as a method of the platform object it came from.
-      (getContent as (callback: (content: unknown, encoding: unknown) => void) => void).call(
-        resource,
-        (content, encoding) => {
-          const failure = context.readLastError();
-          if (failure !== null) {
-            log.debug('A script resource could not be read; it is skipped', { url, failure });
-            answer(null);
-            return;
+      try {
+        // Called as a method of the platform object it came from.
+        (getContent as (callback: (content: unknown, encoding: unknown) => void) => void).call(
+          resource,
+          (content, encoding) => {
+            const failure = context.readLastError();
+            if (failure !== null) {
+              log.debug('A script resource could not be read; it is skipped', { url, failure });
+              answer(null);
+              return;
+            }
+            answer(decodeResourceContent(content, encoding));
           }
-          answer(decodeResourceContent(content, encoding));
-        }
-      );
+        );
+      } catch (cause) {
+        // A throwing read is a skipped resource like any other: counted, timer cancelled.
+        log.debug('A script resource could not be read; it is skipped', { url, cause });
+        answer(null);
+      }
     }
   };
 }
