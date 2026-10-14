@@ -11,11 +11,13 @@
  * keep rejecting any violation wholesale — a bounded payload always passes,
  * and only a forged or drifted sender can fail them.
  *
- * Why the totals matter, not just the per-item caps: Chrome refuses any
- * extension message over 64 MiB
+ * Message size: Chrome caps an extension message at 64 MiB
  * (https://developer.chrome.com/docs/extensions/develop/concepts/messaging,
- * "Message size limits"), so the one unbounded-in-practice field — inline
- * script text — also carries a per-payload character budget.
+ * "Message size limits"). Only one field gets a list-wide budget sized to
+ * that ceiling — inline script text, the field real pages can make huge.
+ * The payload as a whole is NOT bounded to 64 MiB: the per-row caps
+ * multiply out past it in theory (e.g. 5,000 × 4,096-char URLs per list);
+ * they bound hostile input, not the serialized total.
  */
 
 import type {
@@ -36,8 +38,9 @@ export const PAYLOAD_LIMITS = {
   headers: { count: 256, name: 512, value: 4096 },
   /**
    * Delay JS: script rows, src URL, inline content per script, and inline
-   * content summed over the whole list (8 Mi chars stays far inside the
-   * message ceiling even when every char serializes as a 6-byte escape).
+   * content summed over the whole list (8 Mi chars: ≤ 48 MiB even when every
+   * char serializes as a 6-byte escape, so this field alone fits the 64 MiB
+   * message ceiling — the rest of the payload is not counted against it).
    */
   delayScripts: { count: 5_000, src: 4096, content: 512 * 1024, contentTotal: 8 * 1024 * 1024 },
   /** Defer JS sources. */

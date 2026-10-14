@@ -141,6 +141,38 @@ describe('nav live-state selectors', () => {
     expect(liveStateOf('preloaded-resources', links)?.text).toBe('5,000+ links');
   });
 
+  it('keeps plain counts when the mark only means clipped strings (list under its cap)', () => {
+    const base = makeFdtData().wprDetections;
+    const clippedImages = makeFdtData({
+      wprDetections: {
+        ...base,
+        lazyload: { present: true, images: [makeLazyImage(), makeLazyImage()], truncated: true }
+      }
+    });
+    expect(liveStateOf('lazyload', clippedImages)?.text).toBe('2 images');
+    const oneLink = makeFdtData({
+      preloadedResources: {
+        present: true,
+        resources: [{ href: '/x', type: 'image' }],
+        truncated: true
+      }
+    });
+    expect(liveStateOf('preloaded-resources', oneLink)?.text).toBe('1 link');
+    const clippedDelay = makeFdtData({
+      wprDetections: {
+        ...base,
+        delay_js: {
+          present: true,
+          scripts: [makeDelayScript()],
+          version: null,
+          delayedScripts: 1,
+          truncated: true
+        }
+      }
+    });
+    expect(liveStateOf('javascript', clippedDelay)?.text).toBe('delayed 1/1');
+  });
+
   it('distinguishes monitoring from found on the references row', () => {
     // Nothing found while the page still loads = the finder is watching.
     expect(liveStateOf('undefined-references', makeFdtData({ allScriptsLoaded: false }))).toEqual({

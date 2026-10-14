@@ -17,6 +17,7 @@ import Stethoscope from 'lucide-solid/icons/stethoscope';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import type { FdtData } from '../../lib/wp-rocket/types';
+import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 
 /** Journey groups, in the order the nav renders them. */
 export const NAV_GROUPS = ['Overview', 'Inspect', 'Diagnose', 'Tools'] as const;
@@ -83,17 +84,27 @@ export interface NavRoute {
  *
  * @param count The load's count.
  * @param noun The singular noun the count quantifies.
- * @param partial The list was cut (`truncated`): the count is a floor.
+ * @param partial The list was cut: the count is a floor.
  */
 function counted(count: number, noun: string, partial = false): string {
-  if (partial) return `${shownTotal(count, true)} ${noun}s`;
-  const units = count === 1 ? '1' : count.toString();
-  return `${units} ${noun}${count === 1 ? '' : 's'}`;
+  return `${shownTotal(count, partial)} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** A shown list total: plain, or `5,000+` when the list was cut. */
 function shownTotal(count: number, partial: boolean): string {
   return partial ? `${count.toLocaleString('en-US')}+` : count.toString();
+}
+
+/**
+ * Whether a row's list itself was cut: the mark alone also covers clipped
+ * strings, so only a marked list sitting at its count cap lost entries.
+ *
+ * @param truncated The row's truncation mark.
+ * @param length The shown list's length.
+ * @param cap The list's count cap.
+ */
+function listCut(truncated: true | undefined, length: number, cap: number): boolean {
+  return truncated === true && length >= cap;
 }
 
 /**
@@ -121,7 +132,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const { delayedScripts, scripts, truncated } = data.wprDetections.delay_js;
       // The delayed count is the whole page's: never print it over a shorter
       // shown list without the "more exists" marker.
-      const partial = truncated === true || delayedScripts > scripts.length;
+      const partial =
+        listCut(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count) ||
+        delayedScripts > scripts.length;
       return {
         text: `delayed ${delayedScripts.toString()}/${shownTotal(scripts.length, partial)}`,
         tone: 'info'
@@ -136,9 +149,11 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     liveState: (data) => {
       if (data === null || !data.wprDetections.lazyload.present) return null;
       // The feature is active either way; "no images" is the page's state.
-      const count = data.wprDetections.lazyload.images.length;
+      const { images, truncated } = data.wprDetections.lazyload;
+      const count = images.length;
+      const partial = listCut(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
-        ? { text: counted(count, 'image', data.wprDetections.lazyload.truncated), tone: 'info' }
+        ? { text: counted(count, 'image', partial), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
     }
   },
@@ -156,7 +171,15 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       return {
         text:
           resources.length > 0
-            ? counted(resources.length, 'link', data.preloadedResources.truncated)
+            ? counted(
+                resources.length,
+                'link',
+                listCut(
+                  data.preloadedResources.truncated,
+                  resources.length,
+                  PAYLOAD_LIMITS.preloaded.count
+                )
+              )
             : 'None',
         tone: resources.length > 0 ? 'info' : 'neutral'
       };
