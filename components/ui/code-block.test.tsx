@@ -6,6 +6,7 @@
  * state, safe-HTML mount and language validation.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodeBlock, type IntersectionGate } from './code-block';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
@@ -273,5 +274,62 @@ describe('CodeBlock', () => {
     expect(overflow.stops()).toBe(0);
     unmount();
     expect(overflow.stops()).toBe(1);
+  });
+
+  it('keeps a focused area focusable after its overflow ends, then drops it on blur', () => {
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    overflow.set(true);
+    area.focus();
+    expect(document.activeElement).toBe(area);
+    // E.g. the panel widened: nothing to scroll any more, but focus is here.
+    overflow.set(false);
+    expect(area.getAttribute('tabindex')).toBe('0');
+    expect(screen.getByRole('group', { name: 'javascript code' })).toBe(area);
+    expect(document.activeElement).toBe(area);
+    area.blur();
+    expect(area.hasAttribute('tabindex')).toBe(false);
+    expect(area.hasAttribute('role')).toBe(false);
+  });
+
+  it('clamps to maxLines (clip + fade), reactively, and unclamps in place', () => {
+    const [lines, setLines] = createSignal<number | undefined>(3);
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc\nd\ne'}
+        lang="javascript"
+        maxLines={lines()}
+        createObserver={() => manualGate()}
+        watchOverflow={manualOverflow().watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    expect(area.hasAttribute('data-fdt-clamped')).toBe(true);
+    expect(area.style.getPropertyValue('--fdt-code-max-lines')).toBe('3');
+    expect(area.className).toContain('max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)]');
+    // The clipped axis is `hidden`: the overflow watch never counts it.
+    expect(area.className).toContain('overflow-y-hidden');
+    expect(area.className).toContain('mask-b-from-30%');
+    setLines(undefined);
+    expect(controls().area).toBe(area); // same element, no remount
+    expect(area.hasAttribute('data-fdt-clamped')).toBe(false);
+    expect(area.style.getPropertyValue('--fdt-code-max-lines')).toBe('');
+    expect(area.className).not.toContain('overflow-y-hidden');
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])('rejects maxLines=%s (fail fast)', (lines) => {
+    expect(() =>
+      render(() => (
+        <CodeBlock text="x" lang="json" maxLines={lines} createObserver={() => manualGate()} />
+      ))
+    ).toThrow(/maxLines must be a positive integer/);
   });
 });

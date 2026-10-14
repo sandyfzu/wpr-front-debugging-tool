@@ -25,11 +25,16 @@
  * attaches to a not-yet-existing child (the latch targets the wrapper that
  * exists at mount, so an absent element can never be the observed one).
  *
- * Keyboard scrolling: the code area is the horizontal scroller; while (and
- * only while) its content overflows it becomes a named, focusable group
- * (`tabindex="0"`, `role="group"`, the focus ring) so keyboard users can
- * scroll it — a block that fits costs no Tab stop. Overflow is tracked by
- * the shared resize watcher in `overflow-watch.ts`.
+ * Keyboard scrolling: the code area is the horizontal scroller; while its
+ * content overflows on an axis the user can scroll — and while it holds
+ * focus, so focus never drops out from under the keyboard — it is a named,
+ * focusable group (`tabindex="0"`, `role="group"`, the focus ring). A block
+ * that fits, or only clips, costs no Tab stop. Overflow is tracked by the
+ * shared resize watcher in `overflow-watch.ts`.
+ *
+ * Clamping: `maxLines` caps the visible code at N lines (clipped, bottom
+ * edge faded) — the collapsed-preview mode; consumers own the control that
+ * reveals the rest and never style the block's internals.
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
@@ -92,10 +97,20 @@ export type CodeBlockProps = {
   createObserver?: (host: HTMLElement) => IntersectionGate;
   /**
    * The scroll region's accessible name, announced when it takes focus
-   * because it overflows (default: "`<lang>` code", e.g. "javascript code").
-   * Name it after what the code is when a page shows several blocks.
+   * because it overflows. The default, "`<lang>` code" (e.g. "javascript
+   * code"), repeats across blocks — a page showing several blocks passes a
+   * distinct label per block (e.g. the script's URL or role) so each Tab
+   * stop says which code it is.
    */
   label?: string;
+  /**
+   * Clamp the visible code to this many lines (a positive integer): the
+   * area clips below them with a faded bottom edge — a collapsed preview.
+   * The consumer offers the control that reveals the rest (e.g. an expand
+   * button with `aria-controls`); `undefined` (default) shows every line.
+   * Reactive: toggling it expands/collapses in place, instantly.
+   */
+  maxLines?: number;
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -158,13 +173,15 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
  * @param props.loadHighlighter Loader seam (tests inject resolved doubles).
  * @param props.createObserver Intersection seam (tests inject manual gates).
- * @param props.label The scroll region's name (default "`<lang>` code").
+ * @param props.label The scroll region's name (default "`<lang>` code";
+ *   pass a distinct one per block when a page shows several).
+ * @param props.maxLines Clamp to N visible lines (collapsed preview).
  * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
  * @throws {@link Error} for a language outside {@link CODE_BLOCK_LANGS} — a
  *   call-site bug fails at analysis/injection time rather than shipping a
- *   mislabelled block.
+ *   mislabelled block — and for a `maxLines` that is not a positive integer.
  */
 export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Lang is a call-site constant — the guard must run synchronously with a
@@ -182,6 +199,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'loadHighlighter',
     'createObserver',
     'label',
+    'maxLines',
     'watchOverflow',
     'class'
   ]);
@@ -189,8 +207,21 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   const [wrap, setWrap] = createSignal(own.defaultWrap ?? false);
   const [highlighter, setHighlighter] = createSignal<HighlighterLike | undefined>();
 
-  // Whether the code area overflows — drives its focusability and name.
+  // Whether the code area overflows a scrollable axis, and whether it holds
+  // focus: together they drive its focusability and name (a focused area
+  // stays focusable when its overflow ends, so focus is never yanked away).
   const [scrollable, setScrollable] = createSignal(false);
+  const [focused, setFocused] = createSignal(false);
+  const focusable = (): boolean => scrollable() || focused();
+
+  /** The validated line clamp (`undefined`: unclamped). */
+  const maxLines = createMemo<number | undefined>(() => {
+    const lines = own.maxLines;
+    if (lines !== undefined && !(Number.isInteger(lines) && lines > 0)) {
+      throw new Error(`CodeBlock: maxLines must be a positive integer, got ${String(lines)}.`);
+    }
+    return lines;
+  });
 
   let container: HTMLDivElement | undefined;
   let area: HTMLDivElement | undefined;
@@ -293,13 +324,26 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         ref={area}
         data-fdt-code-area
         data-fdt-scrollable={scrollable() ? '' : undefined}
-        // Focusable and named only while there is something to scroll.
-        tabindex={scrollable() ? 0 : undefined}
-        role={scrollable() ? 'group' : undefined}
-        aria-label={scrollable() ? (own.label ?? `${own.lang} code`) : undefined}
+        data-fdt-clamped={maxLines() !== undefined ? '' : undefined}
+        // Focusable and named only while there is something to scroll (or
+        // while focus is already here).
+        tabindex={focusable() ? 0 : undefined}
+        role={focusable() ? 'group' : undefined}
+        aria-label={focusable() ? (own.label ?? `${own.lang} code`) : undefined}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          '--fdt-code-max-lines': maxLines() === undefined ? undefined : String(maxLines())
+        }}
         class={cn(
-          'overflow-x-auto rounded-b',
+          // The area carries the code's font size and leading too, so its
+          // `lh` unit equals one code line for the clamp below.
+          'overflow-x-auto rounded-b text-2xs leading-relaxed',
           FOCUS_RING,
+          // Clamp: N lines + the pre's vertical padding (`p-2` = 1rem total);
+          // the clipped axis is `hidden`, so it never counts as scrollable.
+          maxLines() !== undefined &&
+            'max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)] overflow-y-hidden mask-b-from-30%',
           // Shared `pre` typography for the one `pre` either surface renders
           // (the fallback's own, or shiki's inside the highlighted wrapper);
           // token-driven via the mono token, the pre's own chrome stays flat.
@@ -315,7 +359,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
             observes it next to the area. */}
         <div ref={content} data-fdt-code-content class="w-fit min-w-full">
           <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
-            {(html) => <HighlightedCode html={html()} />}
+            {(html) => <HighlightedSurface html={html()} />}
           </Show>
         </div>
       </div>
@@ -344,7 +388,7 @@ function RawPre(props: { text: string }): JSX.Element {
  *
  * @param props.html The highlighter's `<pre>` HTML string.
  */
-function HighlightedCode(props: { html: string }): JSX.Element {
+function HighlightedSurface(props: { html: string }): JSX.Element {
   return (
     <div
       data-fdt-code-highlighted
