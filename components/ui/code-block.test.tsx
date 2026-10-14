@@ -39,31 +39,47 @@ function manualGate(): IntersectionGate & { fires: () => void; disconnects: () =
 }
 
 /**
- * An overflow-watcher double: records what it watches and lets the test
- * flip the overflow state (happy-dom has no layout to overflow).
+ * An overflow-watcher double: records both watches a block opens — the
+ * scroll watch (default measure) and the clamp's clip watch (a custom
+ * measure) — and lets the test flip each state (happy-dom has no layout).
  */
 function manualOverflow(): {
   watcher: OverflowWatcher;
   set: (overflowing: boolean) => void;
+  setClipped: (clipped: boolean) => void;
   watched: () => HTMLElement[];
+  clipWatched: () => HTMLElement[];
   stops: () => number;
+  clipStops: () => number;
 } {
-  let report: (overflowing: boolean) => void = () => undefined;
-  let watched: HTMLElement[] = [];
-  let stops = 0;
+  /** One recorded watch: its reporter, watched elements and stop count. */
+  interface Watch {
+    report: (state: boolean) => void;
+    watched: HTMLElement[];
+    stops: number;
+  }
+  const idle = (): Watch => ({ report: () => undefined, watched: [], stops: 0 });
+  const scroll = idle();
+  const clip = idle();
   return {
-    watcher: (scroller, content, onChange) => {
-      watched = [scroller, content];
-      report = onChange;
+    watcher: (box, content, onChange, measure) => {
+      const watch = measure === undefined ? scroll : clip;
+      watch.watched = [box, content];
+      watch.report = onChange;
       return () => {
-        stops += 1;
+        watch.stops += 1;
       };
     },
     set: (overflowing) => {
-      report(overflowing);
+      scroll.report(overflowing);
     },
-    watched: () => watched,
-    stops: () => stops
+    setClipped: (clipped) => {
+      clip.report(clipped);
+    },
+    watched: () => scroll.watched,
+    clipWatched: () => clip.watched,
+    stops: () => scroll.stops,
+    clipStops: () => clip.stops
   };
 }
 
@@ -274,6 +290,7 @@ describe('CodeBlock', () => {
     expect(overflow.stops()).toBe(0);
     unmount();
     expect(overflow.stops()).toBe(1);
+    expect(overflow.clipStops()).toBe(1);
   });
 
   it('keeps a focused area focusable after its overflow ends, then drops it on blur', () => {
@@ -300,29 +317,80 @@ describe('CodeBlock', () => {
     expect(area.hasAttribute('role')).toBe(false);
   });
 
-  it('clamps to maxLines (clip + fade), reactively, and unclamps in place', () => {
+  it('clamps to maxLines on the inner box, reactively, and unclamps in place', () => {
     const [lines, setLines] = createSignal<number | undefined>(3);
+    const overflow = manualOverflow();
     render(() => (
       <CodeBlock
         text={'a\nb\nc\nd\ne'}
         lang="javascript"
         maxLines={lines()}
         createObserver={() => manualGate()}
-        watchOverflow={manualOverflow().watcher}
+        watchOverflow={overflow.watcher}
       />
     ));
     const area = controls().area as HTMLElement;
+    const clamp = area.querySelector<HTMLElement>('[data-fdt-code-content]') as HTMLElement;
+    // The clip watch measures the clamp box against its natural-height lines.
+    expect(overflow.clipWatched()[0]).toBe(clamp);
+    expect(overflow.clipWatched()[1]?.hasAttribute('data-fdt-code-lines')).toBe(true);
     expect(area.hasAttribute('data-fdt-clamped')).toBe(true);
-    expect(area.style.getPropertyValue('--fdt-code-max-lines')).toBe('3');
-    expect(area.className).toContain('max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)]');
-    // The clipped axis is `hidden`: the overflow watch never counts it.
-    expect(area.className).toContain('overflow-y-hidden');
-    expect(area.className).toContain('mask-b-from-30%');
+    expect(clamp.style.getPropertyValue('--fdt-code-max-lines')).toBe('3');
+    expect(clamp.className).toContain('max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)]');
+    // `clip`: not a scroll container, so nothing can scroll the preview.
+    expect(clamp.className).toContain('overflow-y-clip');
     setLines(undefined);
-    expect(controls().area).toBe(area); // same element, no remount
+    expect(controls().area).toBe(area); // same elements, no remount
+    expect(area.querySelector('[data-fdt-code-content]')).toBe(clamp);
     expect(area.hasAttribute('data-fdt-clamped')).toBe(false);
-    expect(area.style.getPropertyValue('--fdt-code-max-lines')).toBe('');
-    expect(area.className).not.toContain('overflow-y-hidden');
+    expect(clamp.style.getPropertyValue('--fdt-code-max-lines')).toBe('');
+    expect(clamp.className).not.toContain('overflow-y-clip');
+  });
+
+  it('fades the clamp only while lines are really cut off', () => {
+    const [lines, setLines] = createSignal<number | undefined>(3);
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc'}
+        lang="javascript"
+        maxLines={lines()}
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    const clamp = area.querySelector<HTMLElement>('[data-fdt-code-content]') as HTMLElement;
+    overflow.setClipped(false); // 3 lines in a 3-line clamp: nothing hidden
+    expect(area.hasAttribute('data-fdt-clipped')).toBe(false);
+    expect(clamp.className).not.toMatch(/mask-/);
+    overflow.setClipped(true);
+    expect(area.hasAttribute('data-fdt-clipped')).toBe(true);
+    // A short fade over the half-shown next line only.
+    expect(clamp.className).toContain('mask-b-from-[calc(100%-0.5rem)]');
+    // Unclamped, a stale "clipped" reading never fades or flags anything.
+    setLines(undefined);
+    expect(area.hasAttribute('data-fdt-clipped')).toBe(false);
+    expect(clamp.className).not.toMatch(/mask-/);
+  });
+
+  it('never masks the focusable scroller (a mask would clip its focus ring)', () => {
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc\nd'}
+        lang="javascript"
+        maxLines={2}
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    overflow.set(true);
+    overflow.setClipped(true);
+    const area = controls().area as HTMLElement;
+    expect(area.getAttribute('tabindex')).toBe('0');
+    expect(area.className).not.toMatch(/(^|\s)mask-/);
+    expect(area.className).toContain('focus-visible:outline-2');
   });
 
   it.each([0, -1, 1.5, Number.NaN])('rejects maxLines=%s (fail fast)', (lines) => {

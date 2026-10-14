@@ -32,9 +32,12 @@
  * that fits, or only clips, costs no Tab stop. Overflow is tracked by the
  * shared resize watcher in `overflow-watch.ts`.
  *
- * Clamping: `maxLines` caps the visible code at N lines (clipped, bottom
- * edge faded) — the collapsed-preview mode; consumers own the control that
- * reveals the rest and never style the block's internals.
+ * Clamping: `maxLines` caps the visible code at N lines — the
+ * collapsed-preview mode; consumers own the control that reveals the rest
+ * and never style the block's internals. The clamp lives on an inner box
+ * (`overflow-y: clip`, so nothing can scroll it vertically), never on the
+ * focusable scroller, whose focus ring a mask would cut off; the bottom
+ * edge fades only while lines are actually cut off (`data-fdt-clipped`).
  */
 import type { ComponentProps, JSX } from 'solid-js';
 import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
@@ -45,7 +48,7 @@ import { Button } from './button';
 import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
 import type { HighlightedCode } from './code-block-highlighter';
-import { watchOverflow, type OverflowWatcher } from './overflow-watch';
+import { isClippedVertically, watchOverflow, type OverflowWatcher } from './overflow-watch';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
@@ -226,6 +229,9 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   let container: HTMLDivElement | undefined;
   let area: HTMLDivElement | undefined;
   let content: HTMLDivElement | undefined;
+  let lines: HTMLDivElement | undefined;
+  // Whether the clamp currently cuts lines off (drives the fade).
+  const [clipped, setClipped] = createSignal(false);
 
   /**
    * The default loader: the dynamic `import()` of the shiki module graph —
@@ -267,7 +273,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   });
 
   onMount(() => {
-    if (area === undefined || content === undefined) {
+    if (area === undefined || content === undefined || lines === undefined) {
       // Defensive, like the gate: without the elements there is nothing to
       // measure; the area simply stays a plain (non-focusable) box.
       logger.warn('Overflow watch skipped: code area refs missing at mount.');
@@ -275,7 +281,10 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     }
     // One-shot bootstrap read: the watcher is fixed per instance.
     const watch = own.watchOverflow ?? watchOverflow;
+    // Scrollability: the area against the content-sized box inside it.
     onCleanup(watch(area, content, setScrollable));
+    // Clipping: the clamp box (the content-sized box) against its lines.
+    onCleanup(watch(content, lines, setClipped, isClippedVertically));
   });
 
   /**
@@ -325,6 +334,7 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         data-fdt-code-area
         data-fdt-scrollable={scrollable() ? '' : undefined}
         data-fdt-clamped={maxLines() !== undefined ? '' : undefined}
+        data-fdt-clipped={maxLines() !== undefined && clipped() ? '' : undefined}
         // Focusable and named only while there is something to scroll (or
         // while focus is already here).
         tabindex={focusable() ? 0 : undefined}
@@ -332,18 +342,10 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         aria-label={focusable() ? (own.label ?? `${own.lang} code`) : undefined}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        style={{
-          '--fdt-code-max-lines': maxLines() === undefined ? undefined : String(maxLines())
-        }}
         class={cn(
-          // The area carries the code's font size and leading too, so its
-          // `lh` unit equals one code line for the clamp below.
-          'overflow-x-auto rounded-b text-2xs leading-relaxed',
+          // Never masked: a mask would clip this element's focus ring.
+          'overflow-x-auto rounded-b',
           FOCUS_RING,
-          // Clamp: N lines + the pre's vertical padding (`p-2` = 1rem total);
-          // the clipped axis is `hidden`, so it never counts as scrollable.
-          maxLines() !== undefined &&
-            'max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)] overflow-y-hidden mask-b-from-30%',
           // Shared `pre` typography for the one `pre` either surface renders
           // (the fallback's own, or shiki's inside the highlighted wrapper);
           // token-driven via the mono token, the pre's own chrome stays flat.
@@ -355,12 +357,36 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
         )}
       >
         {/* Sized to its content (never narrower than the area), so its box
-            changes whenever the content's width does — the overflow watch
-            observes it next to the area. */}
-        <div ref={content} data-fdt-code-content class="w-fit min-w-full">
-          <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
-            {(html) => <HighlightedSurface html={html()} />}
-          </Show>
+            changes whenever the content's width does — the scroll watch
+            observes it next to the area. It is also the clamp: sized to the
+            content horizontally, its mask covers every scrolled-to column. */}
+        <div
+          ref={content}
+          data-fdt-code-content
+          style={{
+            '--fdt-code-max-lines': maxLines() === undefined ? undefined : String(maxLines())
+          }}
+          class={cn(
+            'w-fit min-w-full',
+            // The code's own size and leading, so `1lh` is one code line.
+            'text-2xs leading-relaxed',
+            // Clamp: N lines + the pre's vertical padding (`p-2`, 1rem in
+            // total). `clip`, not `hidden`: no scroll container, so nothing
+            // (find-in-page, `scrollIntoView`) can scroll the preview.
+            maxLines() !== undefined &&
+              'max-h-[calc(var(--fdt-code-max-lines)*1lh+1rem)] overflow-y-clip',
+            // Fade only the bottom padding strip — the half-shown next line —
+            // and only while lines are really cut off; the last whole line
+            // stays fully legible.
+            maxLines() !== undefined && clipped() && 'mask-b-from-[calc(100%-0.5rem)]'
+          )}
+        >
+          {/* The natural-height lines, measured against the clamp. */}
+          <div ref={lines} data-fdt-code-lines>
+            <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
+              {(html) => <HighlightedSurface html={html()} />}
+            </Show>
+          </div>
         </div>
       </div>
     </div>
