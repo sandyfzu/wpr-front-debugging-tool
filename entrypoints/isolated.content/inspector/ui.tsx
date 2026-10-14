@@ -31,8 +31,8 @@ export interface InspectorUiActions {
   registerPill(element: HTMLElement | null): void;
   /** Register the chrome once (the drag's listener site + translate target). */
   registerChrome(element: HTMLElement | null): void;
-  /** Open the report card from the pill. */
-  openCard(): void;
+  /** Open the report card from the pill (the activation click's descriptor). */
+  openCard(trigger: { readonly detail: number }): void;
   /** Close the report card (the pill returns). */
   closeCard(): void;
 }
@@ -200,7 +200,10 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           // Escape (a real browser interaction is always trusted here; no
           // extension surface synthesizes clicks into this widget).
           if (!event.isTrusted) return;
-          props.actions.openCard();
+          // The press count rides to the owner: it is the pointer-vs-keyboard
+          // discriminator the drag suppression consults (keyboard activations
+          // carry `detail === 0` and never read the pointer path's flag).
+          props.actions.openCard({ detail: event.detail });
         }}
       >
         <span class="ins-sr">{PILL_LABEL_STEM}</span>

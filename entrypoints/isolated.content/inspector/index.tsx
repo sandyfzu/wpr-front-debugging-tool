@@ -32,7 +32,7 @@ import {
 import { mountShadowUi } from '../ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
-import { createDragController } from './drag';
+import { createDragController, isPointerInitiatedClick } from './drag';
 import type { StripDataSnapshot } from './strip-state';
 import { buildStripCardModel, INSPECTOR_UI_NAME, insMood } from './strip-state';
 import { InspectorView, type InspectorUiActions } from './ui';
@@ -136,10 +136,20 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       chromeElement = element;
       if (element !== null) bindChromeDrag(element);
     },
-    openCard: () => {
-      // A moved drag's trailing click never opens the card: the press belonged
-      // to the drag (read-and-clear, so a follow-up tap works normally).
-      if (dragController?.consumeClickSuppression() === true) return;
+    openCard: (trigger) => {
+      // The suppression answers pointer presses only: a pointer click (press
+      // count above zero) that belonged to a moved drag is consumed here; a
+      // keyboard activation never reads the pointer path's flag, so a drag
+      // whose release click landed consumer-less cannot dead-end the
+      // keyboard's Enter (SB-D9's no-dead-ends). One truth lives in the
+      // machine: pointer state, pointer consumers — `isPointerInitiatedClick`
+      // is the verified `detail === 0` keyboard discriminator.
+      if (
+        isPointerInitiatedClick(trigger.detail) &&
+        dragController?.consumeClickSuppression() === true
+      ) {
+        return;
+      }
       setState('cardOpen', true);
       // Focus the card once the class state is on (prevents page scroll on
       // the move — mouse users keep the viewport, keyboard users land in).
@@ -160,7 +170,15 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * is the resting anchor by construction.
    */
   const dragDeps: DragMachineDeps = {
-    readViewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    // The fixed element's containing block IS the layout viewport: its extent
+    // is `documentElement.clientWidth/Height` (classic-scrollbar bands
+    // excluded — `window.innerWidth` includes them, and reading them would
+    // let the clamp accept positions the scrollbar hem keeps mostly
+    // invisible). Overlay-scrollbar hosts read the same numbers either way.
+    readViewport: () => ({
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight
+    }),
     readBox: (): DragBox | null => {
       const shape = grabbedShape;
       if (shape === null || !shape.isConnected) return null;
@@ -184,6 +202,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
+   * One trust predicate at the wiring level: every event arm acts on user
+   * input only. Script-synthesized gestures (assertions replays, page-probe
+   * experiments) must not reach the machine's state arms — the uniform
+   * idiom the pointerdown and the pill's click already carry.
+   */
+  const isTrustedUserEvent = (event: Event): boolean => event.isTrusted;
+
+  /**
    * Bind the drag's pointer listeners to the chrome (their element dies with
    * the shadow host; teardown also rides the context): trusted primary
    * presses decide a handle and the capture routes the whole gesture back
@@ -195,7 +221,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     ctx.addEventListener(chrome, 'pointerdown', (event) => {
       // WXT's ctx overload stays at the `Event` level for element targets —
       // `instanceof` is the boundary narrowing (the shipped keydown idiom).
-      if (!(event instanceof PointerEvent) || !event.isTrusted) return;
+      if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       // Any press while a drag is live cancels it first: a right-press (the
       // brief's cancel nicety) and a second pointer's press must not be
       // subject to the primary-button guard below — cancel beats grab.
@@ -234,29 +260,32 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       });
     });
     ctx.addEventListener(chrome, 'pointermove', (event) => {
-      if (!(event instanceof PointerEvent)) return;
+      if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       dragController?.trackMove({
         point: { x: event.clientX, y: event.clientY },
         pointerId: event.pointerId
       });
     });
     ctx.addEventListener(chrome, 'pointerup', (event) => {
-      if (!(event instanceof PointerEvent)) return;
+      if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       dragController?.settle(event.pointerId);
     });
-    ctx.addEventListener(chrome, 'pointercancel', () => {
+    ctx.addEventListener(chrome, 'pointercancel', (event) => {
+      if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
     });
-    ctx.addEventListener(chrome, 'lostpointercapture', () => {
+    ctx.addEventListener(chrome, 'lostpointercapture', (event) => {
       // A capture lost outside the release path (element detached, pointer
       // gone) is pointercancel-shaped: restore the pre-drag position.
+      if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
     });
-    ctx.addEventListener(chrome, 'contextmenu', () => {
+    ctx.addEventListener(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button
       // pressed while the left pointer is captured delivers NO pointerdown —
       // the chrome gets `contextmenu` alone. The brief's right-click cancel
       // rides it (no preventDefault: the host keeps its native menu).
+      if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
     });
   }
@@ -387,7 +416,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // the root), and the listener rides `ctx` so teardown rides the same
       // abort signal every other callback here does.
       ctx.addEventListener(created.shadow, 'keydown', (event) => {
-        if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
+        // The same trust gate: a synthetic Escape must not close or cancel a
+        // mounted widget's state (real key input is always trusted here).
+        if (
+          isTrustedUserEvent(event) &&
+          event instanceof KeyboardEvent &&
+          event.key === 'Escape' &&
+          !ctx.isInvalid
+        ) {
           event.stopPropagation();
           if (dragController?.isDragging() === true) {
             dragController.cancel();

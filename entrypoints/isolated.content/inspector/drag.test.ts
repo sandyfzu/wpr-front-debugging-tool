@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampDragPosition,
   createDragController,
+  isPointerInitiatedClick,
   DRAG_TUNING,
   type DragBox,
   type DragMachineDeps,
@@ -142,6 +143,34 @@ describe('clampDragPosition', () => {
     );
     expect(shifted.left).toBe(MIN - 100); // the left-edge strip survives
   });
+
+  it('resolves the negative available range deterministically (never NaN)', () => {
+    const shape100 = { width: 100, height: 100 };
+    const free = clampDragPosition({ left: 0, top: 0 }, shape100, { width: 10, height: 10 }, MIN);
+    // Range [32−100, 10−32] = [−68, −22]: the desired value sits past the
+    // upper bound → the boundary value wins (stable order, always finite).
+    expect(free.left).toBe(10 - MIN);
+    expect(free.top).toBe(10 - MIN);
+    expect(Number.isNaN(free.left + free.top)).toBe(false);
+    const lower = clampDragPosition(
+      { left: -1000, top: -1000 },
+      shape100,
+      { width: 10, height: 10 },
+      MIN
+    );
+    // A desired value below the range's lower bound → the lower boundary wins.
+    expect(lower.left).toBe(MIN - 100);
+    expect(lower.top).toBe(MIN - 100);
+    expect(Number.isNaN(lower.left + lower.top)).toBe(false);
+  });
+});
+
+describe('isPointerInitiatedClick', () => {
+  it('keyboard activations count zero; pointer clicks count', () => {
+    expect(isPointerInitiatedClick(0)).toBe(false);
+    expect(isPointerInitiatedClick(1)).toBe(true);
+    expect(isPointerInitiatedClick(2)).toBe(true);
+  });
 });
 
 describe('createDragController', () => {
@@ -172,6 +201,31 @@ describe('createDragController', () => {
     expect(seams.affordances).toEqual([]);
     expect(drag.isDragging()).toBe(false);
     expect(drag.consumeClickSuppression()).toBe(false);
+  });
+
+  it('the (3, 4)-triangle boundary: travel below the slop holds, crossing it drags', () => {
+    const seamsHold = recordingSeams({ width: 200, height: 40 });
+    const hold = createDragController(seamsHold.deps);
+    const holdStart = centerOf(seamsHold.liveBox());
+    hold.beginGrab({ point: holdStart, pointerId: 1 });
+    // hypot(2.99, 3.99) < 5: strictly inside → still a click.
+    hold.trackMove({ point: { x: holdStart.x + 2.99, y: holdStart.y + 3.99 }, pointerId: 1 });
+    hold.settle(1);
+    expect(seamsHold.applied).toEqual([]);
+    expect(hold.consumeClickSuppression()).toBe(false);
+
+    const seamsExact = recordingSeams({ width: 200, height: 40 });
+    const exact = createDragController(seamsExact.deps);
+    const exactStart = centerOf(seamsExact.liveBox());
+    exact.beginGrab({ point: exactStart, pointerId: 1 });
+    // hypot(3, 4) = exactly 5: `travel < slop` is false, so the slop's
+    // exclusive-inside semantics promote the press at this value (the
+    // boundary probe pins the shipped `<` at drag.ts's guard).
+    exact.trackMove({ point: { x: exactStart.x + 3, y: exactStart.y + 4 }, pointerId: 1 });
+    expect(exact.isDragging()).toBe(true);
+    expect(seamsExact.applied).toHaveLength(1);
+    exact.settle(1);
+    expect(exact.consumeClickSuppression()).toBe(true);
   });
 
   it('follows 1:1 past the slop, flipping the grabbing affordance once', () => {

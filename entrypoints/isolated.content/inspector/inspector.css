@@ -63,7 +63,8 @@
 /* ---- Marker pill -------------------------------------------------------------
  * Anchored bottom-right; when the card opens the pill departs downward on
  * the same beat, then stops receiving input; closing hands the anchor back.
- * Locked at 40vw max (narrow hosts drop the stamp text, never the identity).
+ * Locked under the host's viewport (max-width `100vw - 32px`: the anchor's
+ * two 16 px margins), so narrow hosts drop the stamp text, never the identity.
  * The pill is a drag handle too (P12A.5): its cursor stays the button's
  * pointer (the card toggle is its primary affordance), and touch-action none
  * keeps a touch drag from becoming a page pan (SB-D16). */

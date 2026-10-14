@@ -123,6 +123,21 @@ export interface DragController {
   consumeClickSuppression(): boolean;
 }
 
+/**
+ * Whether a click event belongs to the pointer path — the suppression's only
+ * audience. The discriminator is the click's `detail`: keyboard activations
+ * (Enter on the focused pill) dispatch with `detail === 0`, pointer clicks
+ * count their presses — verified against this Chromium's real input pipeline
+ * (a trusted keyboard click and its untrusted synthetic replay both carry
+ * `detail === 0`; the replay is separately gated on `isTrusted`). A keyboard
+ * activation therefore never reads the drag path's suppression state.
+ *
+ * @param detail The click event's `detail` count.
+ */
+export function isPointerInitiatedClick(detail: number): boolean {
+  return detail > 0;
+}
+
 /** The machine's internal live-drag state. */
 interface ActiveDrag {
   /** The pointer the drag tracks (all other pointers are ignored mid-drag). */
