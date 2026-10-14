@@ -77,6 +77,7 @@ worker context**:
 | `site-improvements-admin`  | P4.3 over real wp-admin: the option-on D-bugger entry (built once), the option-off removal, the restore                                                                                                                                                                                                                                                         |
 | `site-side-by-side`        | P4.3 on genuinely cached pages: the two frames' real cache-state bodies (footprint + delay markers in the cached frame, none in the bypassed), real refresh, scroll restore                                                                                                                                                                                     |
 | `panel-nav`                | P5 adaptive nav: the icon rail is the only form at every width (no morphology switch, no top-bar edge — resize-pinned), real hash links + `aria-current`, the honest error-state boot, tooltip focus/hover wiring incl. the disabled reserved row + the right-placement pin (an open tooltip never covers the sibling rows), keyboard reach with a visible ring |
+| `panel-cold-start`         | P5I cold-start timing row: the shell's three `performance.marks` land once and in order on a real timeline, both windows exist, and the script-start → first-settle span stays within the `panel cold-start ≤ 500 ms` row read straight from `scripts/budgets.json` (the settle leg pinned: the standalone boot's honest recorded error)                        |
 | `theme`                    | The injected-UI palette (every shadow-rooted UI through `mount.ts`): `system` declared on the container resolves dark under a dark OS and follows it in real time; explicit dark wins — see 05e's 2026-10-11 palette fix                                                                                                                                        |
 
 ## Manual remainder (recorded, never silently dropped)
@@ -115,6 +116,16 @@ automatable — each is named in the owning phase's checklist:
   main-frame event races the service worker's first listener registration.
   The driver warms the capture with one throwaway local page after the worker
   event, so every suite's real pages capture deterministically.
+
+## Known flake class + the retry policy (recorded 2026-10-13, the P5I audit round)
+
+The site suites assert against the **live** dockerized site's real cache, and a
+shared run can race it: one observed shape is a frame's
+`performance.timeOrigin` advancing under `site-side-by-side`'s per-side refresh
+(the shared site re-issued the document mid-assertion). **Policy:** on a
+failure of that shape, wait ~90 s and re-run the failing suite **once** — a
+deliberate manual retry. Playwright's own `retries` stay `0`, so nothing ever
+auto-passes; a clean full `pnpm test:e2e` run is the gate's evidence.
 
 ## Environment facts (verified against the installed tooling)
 

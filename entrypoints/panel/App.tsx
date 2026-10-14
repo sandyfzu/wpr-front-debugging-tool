@@ -31,6 +31,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
+import { panelColdStart } from './cold-start';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute } from './routes';
@@ -208,6 +209,16 @@ export function PanelApp(props: AppProps): JSX.Element {
     }
   });
 
+  // The cold-start chain's last entry: the boot flight's first settle, in
+  // whichever arm it lands (ready or error — both are genuine answers). The
+  // instrument's once-guard makes the effect free to re-run per transition.
+  createEffect(() => {
+    const current = data.state();
+    if (current.status === 'ready' || current.status === 'error') {
+      panelColdStart.markFirstDataState();
+    }
+  });
+
   /**
    * The loaded page data for the nav's live-state selectors — null
    * everywhere else, so rows stay state-free until data is trustworthy.
@@ -254,7 +265,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                       cause: error instanceof Error ? { message: error.message } : error
                     });
                     return (
-                      <div class="p-4">
+                      <div class="p-3">
                         <ErrorState
                           title="The panel came apart"
                           message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
@@ -274,7 +285,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                     {/* The error view with its retry (the phase's dead-end rule). */}
                     <Match when={errorState()} keyed>
                       {(error) => (
-                        <div class="p-4">
+                        <div class="p-3">
                           <ErrorState
                             title="Couldn't load page data"
                             message={error.cause}

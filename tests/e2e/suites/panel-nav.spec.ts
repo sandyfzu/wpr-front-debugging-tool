@@ -15,13 +15,7 @@
  * the checked promises — while the nav keeps rendering stateless.
  */
 import type { Page } from '@playwright/test';
-import { expect, test, type ExtensionDriver } from '../helpers/extension';
-
-/** The panel page's URL under the driven extension install. */
-async function panelUrl(extension: ExtensionDriver): Promise<string> {
-  const id = await extension.extensionId();
-  return `chrome-extension://${id}/panel.html`;
-}
+import { expect, panelPageUrl, test } from '../helpers/extension';
 
 /** The rail geometry, read identically at every width. */
 interface NavGeometry {
@@ -59,7 +53,7 @@ test.describe('panel nav (icon rail + tooltips)', () => {
     const page = await extension.browserContext.newPage();
     try {
       await page.setViewportSize({ width: 700, height: 900 });
-      await page.goto(await panelUrl(extension), { waitUntil: 'load' });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
 
       // Narrow: the rail column beside the content.
       const narrow = await readGeometry(page);
@@ -94,7 +88,7 @@ test.describe('panel nav (icon rail + tooltips)', () => {
     const page = await extension.browserContext.newPage();
     try {
       await page.setViewportSize({ width: 1000, height: 700 });
-      await page.goto(await panelUrl(extension), { waitUntil: 'load' });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
 
       // Standalone boot: no inspected tab ⇒ the recorded error state with
       // its retry affordance — and the nav still renders stateless.
@@ -122,7 +116,7 @@ test.describe('panel nav (icon rail + tooltips)', () => {
     try {
       // The rail's geometry: icon-only rows answer their tooltips.
       await page.setViewportSize({ width: 700, height: 900 });
-      await page.goto(await panelUrl(extension), { waitUntil: 'load' });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
 
       const trigger = page.getByRole('link', { name: 'Detections' });
       await trigger.focus();
@@ -205,7 +199,7 @@ test.describe('panel nav (icon rail + tooltips)', () => {
     const page = await extension.browserContext.newPage();
     try {
       await page.setViewportSize({ width: 700, height: 900 });
-      await page.goto(await panelUrl(extension), { waitUntil: 'load' });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
 
       // Tab through the shell until a nav row is focused; keyboard-triggered
       // focus matches :focus-visible, so the accent outline must be real

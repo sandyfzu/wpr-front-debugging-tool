@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { matchesGlob, measureSurface } from './check-budgets.mjs';
+import { matchesGlob, measureSurface, parseBudgetRows } from './check-budgets.mjs';
 
 /* Pure pieces of the budget gate; the CLI `main()` (output discovery + table
  * printing) is thin glue and stays untested. */
@@ -82,5 +82,81 @@ describe('measureSurface', () => {
     expect(files).toEqual([]);
     expect(rawBytes).toBe(0);
     expect(gzipBytes).toBe(0);
+  });
+});
+
+describe('parseBudgetRows', () => {
+  /** A valid bytes row (the default kind every pre-existing row used). */
+  const bytesRow = {
+    surface: 'popup JS',
+    globs: ['chunks/popup-*.js'],
+    maxKb: { raw: 50 }
+  };
+  /** A valid timing row (the runtime-facing kind). */
+  const timingRow = {
+    surface: 'panel cold-start (harness fixture)',
+    kind: 'timing',
+    maxMs: 500,
+    measuredBy: 'the P5.1 harness spec'
+  };
+
+  it('parses kindless rows as bytes rows', () => {
+    expect(parseBudgetRows([bytesRow])).toEqual([
+      { ...bytesRow, kind: 'bytes' } // normalization adds the kind
+    ]);
+  });
+
+  it('treats an explicit bytes kind identically', () => {
+    expect(parseBudgetRows([{ ...bytesRow, kind: 'bytes' }])).toEqual(parseBudgetRows([bytesRow]));
+  });
+
+  it('accepts a well-formed timing row', () => {
+    expect(parseBudgetRows([bytesRow, timingRow])).toEqual([
+      { ...bytesRow, kind: 'bytes' },
+      timingRow
+    ]);
+  });
+
+  it('still rejects the old bytes-row malformations', () => {
+    expect(() => parseBudgetRows([{ ...bytesRow, globs: [] }])).toThrow(/globs/i);
+    expect(() => parseBudgetRows([{ ...bytesRow, maxKb: {} }])).toThrow(/maxKb/i);
+    expect(() => parseBudgetRows('not an array')).toThrow('must contain an array');
+  });
+
+  it('rejects an unknown kind naming the row', () => {
+    expect(() => parseBudgetRows([{ ...timingRow, kind: 'ms' }])).toThrow(
+      /kind must be "bytes" or "timing"/
+    );
+  });
+
+  it('rejects timing rows with a broken ceiling or runner, naming the row', () => {
+    const broken = [
+      { ...timingRow, maxMs: 0 },
+      { ...timingRow, maxMs: -500 },
+      { ...timingRow, maxMs: Number.POSITIVE_INFINITY },
+      { ...timingRow, maxMs: '500' },
+      { ...timingRow, maxMs: undefined },
+      { ...timingRow, measuredBy: '' },
+      { ...timingRow, measuredBy: undefined }
+    ];
+    for (const row of broken) {
+      expect(() => parseBudgetRows([bytesRow, row])).toThrow(/panel cold-start/);
+    }
+  });
+
+  it('rejects timing rows that carry bundle fields (a mixed row would measure nothing)', () => {
+    expect(() => parseBudgetRows([{ ...timingRow, globs: ['panel.js'] }])).toThrow(
+      /timing row.*globs/
+    );
+    expect(() => parseBudgetRows([{ ...timingRow, maxKb: { raw: 600 } }])).toThrow(
+      /timing row.*maxKb/
+    );
+  });
+
+  it('rejects bytes rows that carry timing fields (dead letters would read like maxima)', () => {
+    expect(() => parseBudgetRows([{ ...bytesRow, maxMs: 500 }])).toThrow(/bytes row.*maxMs/);
+    expect(() => parseBudgetRows([{ ...bytesRow, measuredBy: 'a runner' }])).toThrow(
+      /bytes row.*measuredBy/
+    );
   });
 });

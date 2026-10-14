@@ -487,6 +487,20 @@ export async function openFixturePage(
 let tabIdentitySequence = 0;
 
 /**
+ * The panel page's URL under the driven extension install — the extension
+ * shell the panel suites drive as a standalone extension page (no DevTools
+ * window; the store's missing-inspected-tab degradation is part of what it
+ * answers honestly).
+ *
+ * @param extension The extension driver.
+ * @returns The `chrome-extension://…/panel.html` URL.
+ */
+export async function panelPageUrl(extension: ExtensionDriver): Promise<string> {
+  const id = await extension.extensionId();
+  return `chrome-extension://${id}/panel.html`;
+}
+
+/**
  * The suite-facing Playwright test: one installed extension per WORKER (per
  * test file on parallel runs) — the second generic maps the worker-scoped
  * fixture type (Playwright's extend<T, W> contract).
