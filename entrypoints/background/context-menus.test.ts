@@ -11,9 +11,29 @@ import type { DbUpdateResult } from '../../lib/messaging/validate';
 import {
   dispatchMenuClickEvent,
   menuActionFor,
+  menuClickOrigin,
   menuCreateParams,
   type MenuClickDeps
 } from './context-menus';
+
+/** The dockerized site's origin (the e2e site's URL host form in unit tests). */
+const SITE = 'http://127.0.0.1:8493';
+
+describe('menuClickOrigin', () => {
+  it('derives the origin from the click document URL, without the path', () => {
+    expect(
+      menuClickOrigin({
+        menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget,
+        pageUrl: `${SITE}/fdt/`
+      })
+    ).toBe(SITE);
+  });
+
+  it('answers null for an absent or unparseable document URL', () => {
+    expect(menuClickOrigin({ menuItemId: 42 })).toBeNull();
+    expect(menuClickOrigin({ menuItemId: 42, pageUrl: 'not a url ?%' })).toBeNull();
+  });
+});
 
 describe('menuActionFor', () => {
   it('routes each registered entry to its action and its action only', () => {
@@ -21,6 +41,7 @@ describe('menuActionFor', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.psiSideBySide)).toBe('psi-side-by-side');
     expect(menuActionFor(CONTEXT_MENU_IDS.exclusionBuilderPage)).toBe('exclusion-builder');
     expect(menuActionFor(CONTEXT_MENU_IDS.updateKnownConflictsDB)).toBe('refresh-database');
+    expect(menuActionFor(CONTEXT_MENU_IDS.toggleDetectionWidget)).toBe('toggle-detection-widget');
   });
 
   it('leaves foreign or numeric ids unrouted', () => {
@@ -57,6 +78,12 @@ describe('menuCreateParams', () => {
         id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
         title: 'Update Known Conflicts Database',
         contexts: ['action']
+      },
+      {
+        id: CONTEXT_MENU_IDS.toggleDetectionWidget,
+        title: 'Toggle the detection widget on this site',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
       }
     ]);
   });
@@ -67,10 +94,13 @@ interface Recorded {
   sent: Array<{ type: string; target: { tabId: number } }>;
   opened: string[];
   refreshes: number;
+  toggles: string[];
+  /** The rejection the next toggle inside throws (undefined: it resolves). */
+  toggleFailure?: Error;
 }
 
 function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
-  const recorded: Recorded = { sent: [], opened: [], refreshes: 0 };
+  const recorded: Recorded = { sent: [], opened: [], refreshes: 0, toggles: [] };
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => {
       recorded.sent.push({ type, target });
@@ -83,6 +113,15 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
     refreshDatabase: (): Promise<DbUpdateResult | null> => {
       recorded.refreshes += 1;
       return Promise.resolve({ updatedAt: 1 });
+    },
+    toggleDetectionWidget: (origin) => {
+      recorded.toggles.push(origin);
+      if (recorded.toggleFailure !== undefined) {
+        return Promise.reject(recorded.toggleFailure);
+      }
+      // The storage module owns the flip; the recording answers its
+      // regression shape: an unknown origin's first flip enables.
+      return Promise.resolve(true);
     }
   };
   return { deps, recorded };
@@ -213,5 +252,64 @@ describe('dispatchMenuClickEvent', () => {
     expect(recorded.sent).toHaveLength(0);
     expect(recorded.opened).toHaveLength(0);
     expect(recorded.refreshes).toBe(0);
+    expect(recorded.toggles).toHaveLength(0);
+  });
+
+  it('the detection-widget toggle writes the click document origin', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget, pageUrl: `${SITE}/fdt/` },
+      { id: 4 },
+      deps
+    );
+    expect(recorded.toggles).toEqual([SITE]);
+    expect(recorded.sent).toHaveLength(0);
+    expect(recorded.refreshes).toBe(0);
+  });
+
+  it('a toggle click whose document origin is unresolvable is a logged no-op', async () => {
+    const warnings = spyMenuWarnings();
+    const { deps, recorded } = recordingDeps();
+    try {
+      // No pageUrl (an action-scoped forgery) and a malformed pageUrl both
+      // must not guess a site.
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget },
+        { id: 4 },
+        deps
+      );
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget, pageUrl: '%' },
+        { id: 4 },
+        deps
+      );
+      expect(recorded.toggles).toHaveLength(0);
+      expect(warnings.sawWarning('could not resolve the page origin')).toBe(true);
+    } finally {
+      warnings.restore();
+    }
+  });
+
+  it('a rejected toggle is an error-level branch, never an escaping rejection', async () => {
+    const { deps, recorded } = recordingDeps();
+    recorded.toggleFailure = new Error('storage write failed');
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(String(args[0]));
+    });
+    try {
+      await expect(
+        dispatchMenuClickEvent(
+          { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget, pageUrl: `${SITE}/fdt/` },
+          { id: 4 },
+          deps
+        )
+      ).resolves.toBeUndefined();
+      expect(errors.some((line) => line.includes('Toggling the detection widget failed'))).toBe(
+        true
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

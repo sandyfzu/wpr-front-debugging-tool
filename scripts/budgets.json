@@ -2,57 +2,80 @@
   {
     "surface": "background service worker",
     "globs": ["background.js"],
-    "maxKb": { "raw": 34 }
+    "maxKb": {
+      "raw": 36
+    }
   },
   {
     "surface": "known-conflicts DB seed asset (background-owned)",
     "globs": ["assets/background.json"],
-    "maxKb": { "raw": 85 }
+    "maxKb": {
+      "raw": 85
+    }
   },
   {
     "surface": "popup JS",
     "globs": ["chunks/popup-*.js", "popup.js"],
-    "maxKb": { "raw": 50 }
+    "maxKb": {
+      "raw": 50
+    }
   },
   {
     "surface": "options JS",
     "globs": ["chunks/options-*.js", "options.js"],
-    "maxKb": { "raw": 50 }
+    "maxKb": {
+      "raw": 50
+    }
   },
   {
     "surface": "exclusion builder JS",
     "globs": ["chunks/exclusion-builder-*.js", "exclusion-builder.js"],
-    "maxKb": { "raw": 50 }
+    "maxKb": {
+      "raw": 50
+    }
   },
   {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
-    "maxKb": { "raw": 102, "gzip": 35 }
+    "maxKb": {
+      "raw": 117,
+      "gzip": 41
+    }
   },
   {
     "surface": "main-world content script",
     "globs": ["content-scripts/main-world*.js"],
-    "maxKb": { "raw": 8 }
+    "maxKb": {
+      "raw": 8
+    }
   },
   {
     "surface": "ua-identity content script (MAIN world)",
     "globs": ["content-scripts/ua-identity*.js"],
-    "maxKb": { "raw": 7 }
+    "maxKb": {
+      "raw": 7
+    }
   },
   {
     "surface": "ua-relay content script (isolated world)",
     "globs": ["content-scripts/ua-relay*.js"],
-    "maxKb": { "raw": 11 }
+    "maxKb": {
+      "raw": 11
+    }
   },
   {
     "surface": "devtools page JS",
     "globs": ["chunks/devtools-*.js", "devtools.js"],
-    "maxKb": { "raw": 24 }
+    "maxKb": {
+      "raw": 24
+    }
   },
   {
     "surface": "devtools panel JS (all panel chunks)",
     "globs": ["chunks/panel-*.js", "panel.js", "chunks/fdt-*.js"],
-    "maxKb": { "raw": 600 }
+    "maxKb": {
+      "raw": 600
+    }
   },
   {
     "surface": "panel cold-start (harness fixture)",
@@ -63,6 +86,8 @@
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "content-scripts/*.js"],
-    "maxKb": { "raw": 857 }
+    "maxKb": {
+      "raw": 857
+    }
   }
 ]

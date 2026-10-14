@@ -263,6 +263,30 @@ export function extractWprVersion(metaContent: string): string | null {
   return metaContent.match(WPR_VERSION_PATTERN)?.[1] ?? null;
 }
 
+/** WordPress core's name in a generator meta content (`WordPress 6.8.1`). */
+export const WORDPRESS_NAME_PATTERN = /wordpress/i;
+
+/**
+ * Version match after the WordPress name: one leading digit required, then
+ * digits/dots greedy, then any word tail. (The audit round's robustness
+ * deviation: the parity pattern captured a bare `.` from a crafted
+ * `WordPress .` — rendering a dot as a "version" reads as data; abstention
+ * is the honest answer, so the digit requirement replaces raw parity here.)
+ */
+export const WORDPRESS_VERSION_PATTERN = new RegExp(
+  `${WORDPRESS_NAME_PATTERN.source}\\s*(\\d[\\d.]*\\w*)`,
+  'i'
+);
+
+/**
+ * WordPress version from a generator meta content, or null.
+ *
+ * @param metaContent The generator meta's raw content.
+ */
+export function extractWordPressVersion(metaContent: string): string | null {
+  return metaContent.match(WORDPRESS_VERSION_PATTERN)?.[1] ?? null;
+}
+
 /** Slug of the cache marker comment WP Rocket writes. */
 export const CACHE_COMMENT_MARKER = 'This website is like a Rocket';
 
@@ -315,7 +339,9 @@ export const CONTEXT_MENU_IDS = {
   wprSideBySide: 'wprSideBySide',
   psiSideBySide: 'psiSideBySide',
   updateKnownConflictsDB: 'updateKnownConflictsDB',
-  exclusionBuilderPage: 'exclusionBuilderPage'
+  exclusionBuilderPage: 'exclusionBuilderPage',
+  /** Toggles the on-page detection widget for the clicked page's origin. */
+  toggleDetectionWidget: 'toggleDetectionWidget'
 } as const;
 
 /**

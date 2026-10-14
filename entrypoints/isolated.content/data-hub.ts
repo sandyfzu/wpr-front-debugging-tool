@@ -37,6 +37,7 @@ import { parsePage } from '../../lib/detection/parse-page';
 import { applyPresencePropagation, runChecks } from '../../lib/detection/run-detection';
 import { describeDetections } from '../../lib/detection/describe';
 import { detectPreloadedResources } from '../../lib/detection/detect-optimizations';
+import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
 import { createLogger } from '../../lib/logger';
 
@@ -45,16 +46,105 @@ const log = createLogger('');
 /** The window event WP Rocket dispatches when all its scripts finished loading. */
 const ALL_SCRIPTS_LOADED_EVENT = 'rocket-allScriptsLoaded';
 
-/** One full page-processing result, immutable after the single pass. */
-interface PageData {
+/**
+ * The page-data pass's capture wait point: the one moment the serialized page
+ * becomes the pass's source, held as a promise so the same-context reader can
+ * join it later. Pure over injected seams, so its two rules are pinned by
+ * unit test:
+ *
+ * - an already-past parser-ready moment settles immediately (a boot-time
+ *   reader answers from a captured page);
+ * - an invalidation before the caller completed the capture releases the
+ *   waiter — the resolution belongs to the caller's own capture sequence
+ *   (`resolve()` after its serialization step), never to an independent
+ *   listener racing it: a waiter released before the source exists reads
+ *   "no data" and locks a presentation state behind a failed boot. (The
+ *   audit round's no-hang pin stays: an invalidated-before-capture context
+ *   resolves through the teardown trigger.)
+ */
+
+/** The wait point's context seams (the real `ctx` satisfies them). */
+export interface CaptureWaitPointDeps {
+  /** Whether the parser-ready moment already happened at setup time. */
+  pastParserReady(): boolean;
+  /** Register the teardown trigger (fires whenever the context dies). */
+  registerInvalidated(callback: () => void): void;
+}
+
+/** The capture's wait point, handed to the same-context readers. */
+export interface CaptureWaitPoint {
+  /** Resolves once the pass's source exists (or the context died). */
+  readonly settled: Promise<void>;
+  /** The capture moment fired — release any waiter (idempotent). */
+  resolve(): void;
+}
+
+/**
+ * Build the capture wait point. Arm-first: the invalidation trigger is
+ * registered immediately, so a context whose world ends between setup and the
+ * capture still releases its waiter — the exact no-hang pin the audit round
+ * demanded. The open waiter's only other release is the caller's `resolve()`,
+ * which must be called after the capture step completed (ordering by
+ * construction: no second listener can outrun it).
+ *
+ * @param deps The context seams.
+ */
+export function createCaptureWaitPoint(
+  deps: Pick<CaptureWaitPointDeps, 'pastParserReady' | 'registerInvalidated'>
+): CaptureWaitPoint {
+  let settleCapture!: () => void;
+  const settled = new Promise<void>((resolve) => {
+    settleCapture = resolve;
+  });
+  // Registration order is the no-hang contract: the teardown trigger
+  // resolves like the capture's own would.
+  deps.registerInvalidated(() => {
+    settleCapture();
+  });
+  if (deps.pastParserReady()) {
+    settleCapture();
+  }
+  return {
+    settled,
+    resolve: () => {
+      settleCapture();
+    }
+  };
+}
+
+/**
+ * One full page-processing result, immutable after the single pass. Read by
+ * same-context consumers through {@link pageDataFor}; the messaging
+ * contracts are untouched by this shape.
+ */
+export interface PageData {
   detections: WprDetections;
   preloadedResources: PreloadedResources;
   diagnoserData: DiagnoserDocData | null;
+  /** The WordPress core version the generator meta declared, or null. */
+  wordpressVersion: string | null;
+}
+
+/** The same-context read the hub hands out (null when the pass failed). */
+export type PageDataRead = () => Promise<PageData | null>;
+
+/** Same-context readers, keyed by the context they belong to. */
+const pageDataReaders = new WeakMap<ContentScriptContext, PageDataRead>();
+
+/**
+ * The hub's cached single-pass result for a same-context consumer (the
+ * widget reads what the panel reads). Setup order does not matter here: the
+ * consumer receives null when its context's hub has not wired a reader.
+ *
+ * @param ctx The consumer's own content-script context.
+ */
+export function pageDataFor(ctx: ContentScriptContext): PageDataRead | null {
+  return pageDataReaders.get(ctx) ?? null;
 }
 
 /**
  * Run the whole page pass over serialized HTML: detection engine, preloaded
- * resources, diagnoser report.
+ * resources, diagnoser report, the WordPress generator version.
  *
  * The page parses once (`parsePage`) and every consumer reads that same tree —
  * the single-`DOMParser` shape of the pass minus the engine's repeated document
@@ -72,8 +162,9 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   const detections = runChecks(page);
   const preloadedResources = detectPreloadedResources(page);
   applyPresencePropagation(detections);
+  const wordpressVersion = detectWordPressVersion(page.document);
   const diagnoserData = await extractDiagnoserData(page.document);
-  return { detections, preloadedResources, diagnoserData };
+  return { detections, preloadedResources, diagnoserData, wordpressVersion };
 }
 
 /**
@@ -156,8 +247,24 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   // The single capture moment: serialize, ask for the page's (already
   // captured) main-frame headers, then tell devtools to reload its panel.
+  /**
+   * The capture's one wait point ({@link createCaptureWaitPoint}): the pass's
+   * source exists from here on, and an invalidated-before-DCL context still
+   * releases its waiter — the context-owned DCL listener disappears with it,
+   * so the machine's invalidation trigger carries the resolution.
+   */
+  const captureWatchPoint = createCaptureWaitPoint({
+    pastParserReady: () => document.readyState !== 'loading',
+    registerInvalidated: (callback) => {
+      ctx.onInvalidated(callback);
+    }
+  });
   const onParserReady = (): void => {
     capture();
+    // Release the wait point after the capture (and its resolution belongs to
+    // this sequence — no second listener may outrun the source's existence):
+    // a same-context reader joins the pass's source from here on (idempotent).
+    captureWatchPoint.resolve();
     void ensureHeaders().then(() => {
       notifyPanel();
     });
@@ -170,6 +277,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   };
 
   if (document.readyState === 'loading') {
+    // The hub's capture work rides its own context-owned DCL listener (the
+    // machine's is the resolution-only leg); the readyState guard stays the
+    // one decision above the machine.
     ctx.addEventListener(document, 'DOMContentLoaded', onParserReady);
   } else {
     // Late injection (extension reloaded onto an open page): the capture
@@ -278,6 +388,20 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       return data?.detections ?? null;
     })
   );
+
+  // The same-context read (the widget consumes the pass result directly, per
+  // the hub's rules: one pass, no second parse — the reader joins whichever
+  // state the pass is in and never re-runs it). The wait point first: a
+  // boot-time read must answer after the capture exists, not with "no source
+  // yet" (the pass's honest null is a failure, not a pending page). An
+  // invalidated-before-capture world resolves through the machine's teardown
+  // trigger and answers null — never a hang.
+  const readPageData = async (): Promise<PageData | null> => {
+    await captureWatchPoint.settled;
+    await processData();
+    return data;
+  };
+  pageDataReaders.set(ctx, readPageData);
 
   // Both pushes are sender-tab-checked on the devtools side; from here they
   // are fire-and-forget with logged, expected-failure catches.
