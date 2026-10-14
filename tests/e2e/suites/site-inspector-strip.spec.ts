@@ -486,6 +486,9 @@ siteTest.describe('site detection widget', () => {
 
         await page.locator(`${STRIP_HOST} .ins-pill`).click();
         await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        // The width contract measures the SETTLED card: the open choreography's
+        // spring overshoots scale (a mid-flight rect reads wider than shipped).
+        await waitForChoreographySettle(page);
         const read = await readStrip(page);
         expect(read.cardOpen, 'the card is open').toBe(true);
         expect(read.cacheText, 'the header cache chip carries the stamp suffix').toMatch(
@@ -896,7 +899,7 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
-    'edge drags park the chrome inside the viewport and scroll nothing (SB-D16 pin)',
+    'drags keep the chrome fully inside the viewport and scroll nothing (SB-D16 pin)',
     async ({ extension }) => {
       await setWidgetEnabled(extension, true);
       const { page } = await openSitePage(extension, FDT_PAGE_URL);
@@ -913,29 +916,278 @@ siteTest.describe('site detection widget', () => {
 
         await pill.hover();
         await page.mouse.down();
+        // The grab point outruns toward the top-left corner; the chrome may
+        // not (full containment is the owner binding). Sample the live box
+        // MID-DRAG, before releasing.
         await page.mouse.move(2, 2, { steps: 14 });
+        const midDrag = await stripGeometry(page);
+        const midShape = midDrag.shape;
+        if (midShape === null) throw new Error('the mid-drag pill lost its shape');
+        expect(midDrag.dragging, 'the drag is live at the sampled point').toBe(true);
+        expect(
+          midShape.left,
+          'the mid-drag box stays inside the left edge (the containment margin)'
+        ).toBeGreaterThanOrEqual(4 - 2);
+        expect(midShape.top, 'the mid-drag box stays inside the top edge').toBeGreaterThanOrEqual(
+          4 - 2
+        );
+        expect(midShape.right, 'the mid-drag box stays inside the right edge').toBeLessThanOrEqual(
+          midDrag.viewport.width - 2
+        );
+        expect(
+          midShape.bottom,
+          'the mid-drag box stays inside the bottom edge'
+        ).toBeLessThanOrEqual(midDrag.viewport.height - 2);
         await page.mouse.up();
         await waitForChoreographySettle(page);
         const parked = await stripGeometry(page);
         const shape = parked.shape;
         if (shape === null) throw new Error('the parked pill lost its shape');
-        // The DRAG_MIN_VISIBLE strip survives both edges: nothing dragged off.
+        // At rest, the box is completely inside: nothing sits offscreen.
+        expect(shape.left).toBeGreaterThanOrEqual(4 - 2);
+        expect(shape.top).toBeGreaterThanOrEqual(4 - 2);
+        expect(shape.right).toBeLessThanOrEqual(parked.viewport.width - 2);
+        expect(shape.bottom).toBeLessThanOrEqual(parked.viewport.height - 2);
+        // The park refused the offscreen trip: the committed position is not
+        // the corner the pressure asked for.
         expect(
-          shape.right,
-          'the left-parked strip keeps its visible right edge'
-        ).toBeGreaterThanOrEqual(32 - 2);
-        expect(shape.left, 'the park went past the left edge').toBeLessThan(0);
-        expect(
-          shape.bottom,
-          'the top-parked strip keeps its visible bottom edge'
-        ).toBeGreaterThanOrEqual(32 - 2);
-        expect(shape.top, 'the park went past the top edge').toBeLessThan(0);
+          Math.abs(shape.left - (before.shape?.left ?? shape.left)) +
+            Math.abs(shape.top - (before.shape?.top ?? shape.top)),
+          'the drag actually moved the chrome (the park is a clamped position)'
+        ).toBeGreaterThan(8);
         // Host coexistence (SB-D16): the page scrolled nowhere new, and the
         // drag introduced no scrollable overflow.
         expect(parked.scroll.x).toBe(before.scroll.x);
         expect(parked.scroll.y).toBe(before.scroll.y);
         expect(parked.scroll.extentWidth).toBe(before.scroll.extentWidth);
         expect(parked.scroll.extentHeight).toBe(before.scroll.extentHeight);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a viewport change re-settles the parked chrome inside (smoothly, instant under reduced motion)',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        // Park left of mid-page so a shrink to 640 Strands it near the edge.
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(pillBox.x - 500, pillBox.y - 300, { steps: 10 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const parked = await stripGeometry(page);
+        const shape = parked.shape;
+        if (shape === null) throw new Error('the parked pill lost its shape');
+        expect(shape.left, 'the drag landed inside the original viewport').toBeGreaterThan(0);
+
+        // Shrink: the parked position can no longer fit — the re-settle
+        // moves the chrome back inside, over the chrome's smooth position
+        // leg (the motion-token transition the owner instructed).
+        await page.setViewportSize({ width: 640, height: 480 });
+        // The smooth leg: while the re-settle class is on, the chrome's
+        // transition runs at the motion-token duration — observed live on
+        // the real element within the movement window.
+        await expect
+          .poll(
+            async () =>
+              await page.evaluate((host: string) => {
+                const chrome = document
+                  .querySelector(host)
+                  ?.shadowRoot?.querySelector('.ins-chrome');
+                if (chrome === null || chrome === undefined) return false;
+                return (
+                  chrome.classList.contains('ins-resettle') &&
+                  chrome
+                    .getAnimations()
+                    .some((a) => a instanceof CSSTransition && a.effect !== null)
+                );
+              }, STRIP_HOST),
+            { timeout: 5_000, intervals: [30, 60, 100] }
+          )
+          .toBe(true);
+        // Settled: fully inside the shrunken viewport.
+        await expect
+          .poll(
+            async () => {
+              const read = await page.evaluate((host: string) => {
+                const root = document.querySelector(host)?.shadowRoot ?? null;
+                const chrome = root?.querySelector<HTMLElement>('.ins-chrome') ?? null;
+                const pillNow = root?.querySelector<HTMLElement>('.ins-pill') ?? null;
+                if (chrome === null || pillNow === null) return null;
+                const pillRect = pillNow.getBoundingClientRect();
+                const resettle = chrome.classList.contains('ins-resettle');
+                return {
+                  left: pillRect.left,
+                  top: pillRect.top,
+                  right: pillRect.right,
+                  bottom: pillRect.bottom,
+                  viewportWidth: document.documentElement.clientWidth,
+                  viewportHeight: document.documentElement.clientHeight,
+                  resettle
+                };
+              }, STRIP_HOST);
+              if (read === null) return false;
+              if (read.resettle) return false; // still moving
+              return (
+                read.left >= 4 - 2 &&
+                read.top >= 4 - 2 &&
+                read.right <= read.viewportWidth - 2 &&
+                read.bottom <= read.viewportHeight - 2
+              );
+            },
+            { timeout: 5_000, intervals: [60, 120] }
+          )
+          .toBe(true);
+        // Reduced motion: the re-settle is the shipped instant snap — any
+        // transition the collapse still reports is sub-frame, and the box
+        // lands inside.
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await waitForChoreographySettle(page);
+        await page.setViewportSize({ width: 520, height: 420 });
+        await expect
+          .poll(
+            async () => {
+              const read = await page.evaluate((host: string) => {
+                const root = document.querySelector(host)?.shadowRoot ?? null;
+                const chrome = root?.querySelector<HTMLElement>('.ins-chrome') ?? null;
+                const pillNow = root?.querySelector<HTMLElement>('.ins-pill') ?? null;
+                if (chrome === null || pillNow === null) return null;
+                const pillRect = pillNow.getBoundingClientRect();
+                return {
+                  instResettle: chrome.classList.contains('ins-resettle'),
+                  running: chrome
+                    .getAnimations()
+                    .filter((a) => a instanceof CSSTransition)
+                    .some((a) => {
+                      const timing = a.effect?.getComputedTiming().duration;
+                      return typeof timing === 'number' && timing > 50;
+                    }),
+                  left: pillRect.left,
+                  top: pillRect.top,
+                  right: pillRect.right,
+                  bottom: pillRect.bottom,
+                  viewportWidth: document.documentElement.clientWidth,
+                  viewportHeight: document.documentElement.clientHeight
+                };
+              }, STRIP_HOST);
+              if (read === null) return false;
+              if (read.instResettle) return false; // mid-snap read
+              return (
+                !read.running &&
+                read.left >= 4 - 2 &&
+                read.top >= 4 - 2 &&
+                read.right <= read.viewportWidth - 2 &&
+                read.bottom <= read.viewportHeight - 2
+              );
+            },
+            { timeout: 5_000, intervals: [60, 120] }
+          )
+          .toBe(true);
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+      } finally {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'opening the card beyond an edge re-settles the chrome back inside',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/✓ Cached|Not cached/);
+        await waitForChoreographySettle(page);
+        const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+        const pillBox = (await pill.boundingBox()) ?? null;
+        if (pillBox === null) throw new Error('the pill is missing a box');
+        // Park near the TOP edge: the open card grows upward from the
+        // pill's anchored corner, so its box would breach the top edge —
+        // the re-settle holds the whole chrome inside.
+        await pill.hover();
+        await page.mouse.down();
+        await page.mouse.move(pillBox.x - 60, 6, { steps: 10 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const parked = await stripGeometry(page);
+        const shape = parked.shape;
+        if (shape === null) throw new Error('the parked pill lost its shape');
+        expect(shape.top, 'the pill parks at the containment margin').toBeGreaterThanOrEqual(2);
+
+        await pill.click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        // The card is a bigger box anchored at the pill's corner: its top
+        // would be far out — instead the chrome re-settled it inside.
+        expect(card.top).toBeGreaterThanOrEqual(4 - 2);
+        expect(card.left).toBeGreaterThanOrEqual(4 - 2);
+        expect(card.right).toBeLessThanOrEqual(opened.viewport.width - 2);
+        expect((await readStrip(page)).cardOpen, 'the card stayed open through the re-settle').toBe(
+          true
+        );
+        // Escape closes: the pill comes back inside at the re-settled corner.
+        await page.keyboard.press('Escape');
+        await waitForChoreographySettle(page);
+        const closed = await stripGeometry(page);
+        const returned = closed.shape;
+        if (returned === null) throw new Error('the returned pill lost its shape');
+        expect(returned.top).toBeGreaterThanOrEqual(2);
+        expect(returned.left).toBeGreaterThanOrEqual(2);
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a versionless detection renders the honest unknown-version identity everywhere',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, `${FDT_PAGE_URL}?fdt-wpr-versionless=1`);
+      try {
+        // The versionless copy's verdict: present + cached with NO version —
+        // the pill's identity is the pinned unknown-version form, never a
+        // fabricated number.
+        await expect
+          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+          .toMatch(/^WP Rocket page analysis: WPR \(unknown version\)✓ Cached/s);
+        const pillText = (await readStrip(page)).pillText ?? '';
+        expect(pillText, 'the pill never renders a version digit').not.toMatch(/WPR \d/);
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        const read = await readStrip(page);
+        expect(read.cardOpen, 'the card is open').toBe(true);
+        expect(read.title, 'the card carries the same honest identity').toBe(
+          'WPR (unknown version)'
+        );
+        expect(read.cacheText, 'the cached verdict rides the versionless state').toMatch(
+          /✓ Cached · [0-9-]{10} [0-9:]{8} UTC/
+        );
+        expect(read.footer, 'the footer dashes the unknown version slot').toMatch(
+          /^WPR — · WP [\w.-]+ · FDT [\w.-]+$/
+        );
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);

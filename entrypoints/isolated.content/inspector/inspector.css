@@ -45,8 +45,9 @@
    * never behave differently per child — the SB-D3 user-select pin rides the
    * whole chrome (SB-D12/13's discipline), eyebrow and group heads included.
    * The drag translate (P12A.5) rides the custom properties — unset is the
-   * stylesheet anchor, and no position transition exists on the chrome: the
-   * drag is 1:1 (SB-D12). */
+   * stylesheet anchor, and no position transition exists on the chrome
+   * outside the re-settle leg (a drag is 1:1, SB-D12; the containment
+   * re-settle animates only its own move, never the drag's). */
   position: fixed;
   bottom: 16px;
   right: 16px;
@@ -486,11 +487,25 @@
   color: var(--fg-muted);
 }
 
-/* ---- Drag affordance (P12A.5) ------------------------------------------------
+/* ---- Drag affordance + containment re-settle (P12A.5) --------------------------
  * The grab sides: the open card's header/footer regions (the card's body
  * scroll region is deliberately not a handle — its gestures are the scroll's)
  * and the pill; while a drag is live the whole chrome grabs. Press/hover
- * theatrics stand down mid-hold (SB-D12: 1:1 follow, no scale). */
+ * theatrics stand down mid-hold (SB-D12: 1:1 follow, no scale).
+ *
+ * Full containment is the owner binding (feedback round, 2026-10-14): no
+ * part of the chrome may ever leave the viewport — the drag clamps every
+ * move, and the left-behind cases (a viewport change, the card growing or
+ * shrinking past an edge, a zoom step, a drag's drop) re-clamp through the
+ * re-settle state class below: the chrome's OWN position leg animates over
+ * the motion tokens while the machine moves it back inside. Direct
+ * manipulation is exempt by construction (the class leaves on the next
+ * press; a live drag carries no position transition — SB-D12). Reduced
+ * motion collapses the leg to an instant snap, which is correct. */
+
+.ins-resettle {
+  transition: transform var(--motion-base) var(--ease-standard);
+}
 
 .ins-card-head,
 .ins-card-foot {

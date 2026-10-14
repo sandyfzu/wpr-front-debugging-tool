@@ -15,6 +15,16 @@
  * re-triggered. The pass's result (detections + the WordPress version) is
  * immutable after the pass, so one read per mount is the widget's whole data
  * work; the presentation state machine (strip-state) renders it.
+ *
+ * Containment (the owner binding): no part of the chrome may leave the
+ * viewport, ever — the drag machine clamps every drag move, and this module
+ * re-clamps the RESTING chrome through the containment watcher whenever the
+ * viewport changed, the visible box grew or shrank (card open/close, the
+ * pass's rows landing), or a drag dropped/canceled. A moved re-clamp rides
+ * the chrome's re-settle state class (a smooth position leg over the motion
+ * tokens; still under reduced motion, where the collapse is the honest
+ * instant); a starting drag clears it — direct manipulation never moves
+ * through a transition.
  */
 
 import { createMemo } from 'solid-js';
@@ -33,6 +43,7 @@ import { mountShadowUi } from '../ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
+import { createContainmentWatch, type ContainmentWatch } from './containment';
 import type { StripDataSnapshot } from './strip-state';
 import { buildStripCardModel, INSPECTOR_UI_NAME, insMood } from './strip-state';
 import { InspectorView, type InspectorUiActions } from './ui';
@@ -110,6 +121,11 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   let dragController: DragController | null = null;
   /**
+   * The current mount's containment watcher (the re-settle cycle runner) —
+   * torn down with the mount like everything above. Null at no-mount.
+   */
+  let containmentWatch: ContainmentWatch | null = null;
+  /**
    * Which visible shape the active press grabbed (the drag box's element):
    * the pill path sets the pill, a card handle sets the card. A handler-local
    * read between the grab and the live re-reads — never read at rest.
@@ -154,11 +170,15 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // Focus the card once the class state is on (prevents page scroll on
       // the move — mouse users keep the viewport, keyboard users land in).
       if (cardElement !== null) moveFocus(cardElement, 'card', focusDeps);
+      // The card grew the chrome's visible box: park it back inside the
+      // viewport when it crosses an edge (smoothly — the re-settle leg).
+      startContainmentCycle();
     },
     closeCard: () => {
       setState('cardOpen', false);
       // The invoker regains focus (standard popover choreography).
       if (pillElement !== null) moveFocus(pillElement, 'marker', focusDeps);
+      startContainmentCycle(); // same beat, the shrinking shape
     }
   };
 
@@ -180,7 +200,12 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       height: document.documentElement.clientHeight
     }),
     readBox: (): DragBox | null => {
-      const shape = grabbedShape;
+      // The VISIBLE shape: the open card rides the anchored corner and alone
+      // defines the box while `ins-open` is on; otherwise the pill. This is
+      // both the drag's live box (the grabbed shape is the visible shape by
+      // construction — the departing pill cannot be grabbed) and the resting
+      // box the containment re-clamp holds inside the viewport.
+      const shape = state.cardOpen ? cardElement : pillElement;
       if (shape === null || !shape.isConnected) return null;
       const rect = shape.getBoundingClientRect();
       return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
@@ -199,6 +224,46 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     applyDragging: (dragging) => {
       chromeElement?.classList.toggle('ins-dragging', dragging);
     }
+  };
+
+  /**
+   * The smooth re-settle arm (the owner binding's "re-clamps back inside
+   * with a smooth movement"): a moved re-clamp flips the chrome's re-settle
+   * state class ON before the position write, so the position leg animates
+   * over the motion tokens; the class leaves when that one transition ends
+   * (or when the next pointer press takes over — direct manipulation never
+   * moves through a transition). Reduced motion collapses the token to an
+   * instant snap, which is the shipped correct answer.
+   *
+   * @param moved Whether the re-clamp actually repositioned the chrome.
+   */
+  const resettleSmoothly = (moved: boolean): void => {
+    const chrome = chromeElement;
+    if (chrome === null || !moved) return;
+    // Re-arm cleanly over any glue from an interrupted prior re-settle: the
+    // class arriving again must be a fresh decision, never a stale rider.
+    chrome.classList.remove('ins-resettle');
+    chrome.classList.add('ins-resettle');
+  };
+
+  /**
+   * The re-settle release: run the machine's re-clamp and let a moved
+   * result ride the smooth leg.
+   */
+  const reformContainment = (): void => {
+    resettleSmoothly(dragController?.reclamp() ?? false);
+  };
+
+  /**
+   * The containment triggers, bound once per widget (never per mount): a
+   * viewport change (window resize, zoom) and — on the mounts themselves —
+   * the box-growth beats (card open/close, data landing) and the drag's
+   * settle/cancel. Every trigger routes through the one re-settle cycle;
+   * the cycle samples until the chrome stands still, so a trigger arriving
+   * mid-choreography re-clamps against the settled geometry.
+   */
+  const startContainmentCycle = (): void => {
+    if (containmentWatch !== null) containmentWatch.request();
   };
 
   /**
@@ -222,11 +287,17 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // WXT's ctx overload stays at the `Event` level for element targets —
       // `instanceof` is the boundary narrowing (the shipped keydown idiom).
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
+      // Direct manipulation takes over the moment a pointer presses the
+      // chrome: an in-flight smooth re-settle ends right here (removal snaps
+      // its position leg to the settled value) — a drag is 1:1, never a
+      // transitioned follow (SB-D12).
+      chrome.classList.remove('ins-resettle');
       // Any press while a drag is live cancels it first: a right-press (the
       // brief's cancel nicety) and a second pointer's press must not be
       // subject to the primary-button guard below — cancel beats grab.
       if (dragController?.isDragging() === true) {
         dragController.cancel();
+        startContainmentCycle(); // the restored position may itself need re-clamping
         return;
       }
       if (event.button !== 0) return; // A wrong button never grabs the chrome.
@@ -269,16 +340,22 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     ctx.addEventListener(chrome, 'pointerup', (event) => {
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       dragController?.settle(event.pointerId);
+      // Drop re-settle: the committed position is re-clamped against the
+      // live viewport (and moves smoothly when it moved — the owner's
+      // "at drop" leg).
+      startContainmentCycle();
     });
     ctx.addEventListener(chrome, 'pointercancel', (event) => {
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
+      startContainmentCycle();
     });
     ctx.addEventListener(chrome, 'lostpointercapture', (event) => {
       // A capture lost outside the release path (element detached, pointer
       // gone) is pointercancel-shaped: restore the pre-drag position.
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
+      startContainmentCycle();
     });
     ctx.addEventListener(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button
@@ -287,6 +364,34 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // rides it (no preventDefault: the host keeps its native menu).
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
+      startContainmentCycle();
+    });
+    ctx.addEventListener(chrome, 'transitionend', (event) => {
+      // The smooth re-settle's end: exactly the CHROME's own position leg
+      // (child transitions bubble here and must not clear it). Synthetic
+      // events are ignored with the shared trust gate.
+      if (
+        !isTrustedUserEvent(event) ||
+        !(event instanceof TransitionEvent) ||
+        event.target !== chrome ||
+        event.propertyName !== 'transform'
+      ) {
+        return;
+      }
+      chrome.classList.remove('ins-resettle');
+    });
+    ctx.addEventListener(chrome, 'transitioncancel', (event) => {
+      // A transition that never completes must not strand the class (it is
+      // the position-interruption guard; same narrowing as above).
+      if (
+        !isTrustedUserEvent(event) ||
+        !(event instanceof TransitionEvent) ||
+        event.target !== chrome ||
+        event.propertyName !== 'transform'
+      ) {
+        return;
+      }
+      chrome.classList.remove('ins-resettle');
     });
   }
 
@@ -321,6 +426,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       snapshot: { phase: 'ready', detections: result.detections },
       wordpressVersion: result.wordpressVersion
     });
+    // The card's rows just landed (its body changes height): the containment
+    // re-settle reads the settled box for exactly this growth.
+    startContainmentCycle();
   };
 
   /**
@@ -341,10 +449,24 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   const mountIntoShadow = async (): Promise<void> => {
     if (shadowUi !== null || mountPending) return;
     mountPending = true;
-    // One controller per mount: a fresh mount starts at the stylesheet
-    // anchor, so navigation/reload resets the session-local drag position
-    // (P12A.5's no-persistence shape — nothing is stored anywhere).
+    // One controller + its containment watcher per mount: a fresh mount
+    // starts at the stylesheet anchor, so navigation/reload resets the
+    // session-local drag position (P12A.5's no-persistence shape — nothing
+    // is stored anywhere).
     dragController = createDragController(dragDeps);
+    containmentWatch = createContainmentWatch({
+      // Offset through an arrow: the watch's seam never holds the deps
+      // object as a receiver (the same unbound-method discipline above).
+      readBox: () => dragDeps.readBox(),
+      isInvalid: invalidNow,
+      // The context's own frame seam: a dead context never delivers the
+      // release (and the cycle's liveness read ends it at once anyway).
+      nextFrame: (callback) => {
+        ctx.requestAnimationFrame(callback);
+      },
+      reform: reformContainment,
+      log
+    });
     grabbedShape = null;
     try {
       // The page's anchor must exist first: the CS boots at document_start,
@@ -361,6 +483,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       if (invalidNow()) {
         // A page whose world ended before its body settled: nothing mounts.
         dragController = null;
+        containmentWatch = null;
         mountPending = false;
         return;
       }
@@ -395,6 +518,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
           chromeElement = null;
           grabbedShape = null;
           dragController = null;
+          containmentWatch?.stop();
+          containmentWatch = null;
         }
       });
       if (invalidNow()) {
@@ -427,6 +552,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
           event.stopPropagation();
           if (dragController?.isDragging() === true) {
             dragController.cancel();
+            startContainmentCycle();
             return;
           }
           actions.closeCard();
@@ -439,6 +565,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       );
       shadowUi = null;
       dragController = null;
+      containmentWatch = null;
     } finally {
       mountPending = false;
     }
@@ -464,6 +591,18 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     shadowUi = null;
     setState('cardOpen', false);
   };
+
+  /**
+   * The viewport-side containment trigger, bound once per widget (never per
+   * mount): a window resize or a zoom step re-reads the layout viewport and
+   * may strand a parked chrome outside the full-containment bound. The
+   * cycle samples the settled box, so a resize burst coalesces into one
+   * re-clamp (browser-triggered and trusted; no page writes either way).
+   */
+  ctx.addEventListener(window, 'resize', () => {
+    if (ctx.isInvalid) return;
+    startContainmentCycle();
+  });
 
   /**
    * Arm-first boot: the watch is the gate's authority once armed, so the

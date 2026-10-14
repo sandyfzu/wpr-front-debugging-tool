@@ -19,7 +19,8 @@ import {
 const REST_VIEWPORT: ViewportSize = { width: 1280, height: 800 };
 /** The chrome's resting anchor inset (the stylesheet's bottom/right 16 px). */
 const ANCHOR_PX = 16;
-const MIN = DRAG_TUNING.minVisiblePx;
+/** The air margin the full-visibility clamp keeps (DRAG_TUNING's figure). */
+const MARGIN = DRAG_TUNING.containmentMarginPx;
 
 /**
  * Recording seams over a font-accurate stand-in for the chrome: the shape
@@ -98,69 +99,79 @@ const centerOf = (box: DragBox): DragPoint => ({
   y: box.top + box.height / 2
 });
 
-describe('clampDragPosition', () => {
+describe('clampDragPosition (full containment — the owner binding)', () => {
   const shape = { width: 200, height: 40 };
 
   it('keeps an interior position untouched', () => {
-    expect(clampDragPosition({ left: 100, top: 100 }, shape, REST_VIEWPORT, MIN)).toEqual({
+    expect(clampDragPosition({ left: 100, top: 100 }, shape, REST_VIEWPORT, MARGIN)).toEqual({
       left: 100,
       top: 100
     });
   });
 
-  it('parks off the left/top edge keeping exactly the minimum visible strip', () => {
-    const parked = clampDragPosition({ left: -1000, top: -1000 }, shape, REST_VIEWPORT, MIN);
-    expect(parked.left).toBe(MIN - shape.width);
-    expect(parked.top).toBe(MIN - shape.height);
+  it('contains the whole box against the left/top edge, MARGIN px inside', () => {
+    const parked = clampDragPosition({ left: -1000, top: -1000 }, shape, REST_VIEWPORT, MARGIN);
+    expect(parked.left).toBe(MARGIN);
+    expect(parked.top).toBe(MARGIN);
+    expect(parked.left + shape.width).toBeLessThanOrEqual(REST_VIEWPORT.width);
+    expect(parked.top + shape.height).toBeLessThanOrEqual(REST_VIEWPORT.height);
   });
 
-  it('parks off the right/bottom edge keeping exactly the minimum visible strip', () => {
-    const parked = clampDragPosition({ left: 2000, top: 2000 }, shape, REST_VIEWPORT, MIN);
-    expect(parked.left).toBe(REST_VIEWPORT.width - MIN);
-    expect(parked.top).toBe(REST_VIEWPORT.height - MIN);
+  it('contains the whole box against the right/bottom edge, MARGIN px inside', () => {
+    const parked = clampDragPosition({ left: 2000, top: 2000 }, shape, REST_VIEWPORT, MARGIN);
+    expect(parked.left).toBe(REST_VIEWPORT.width - MARGIN - shape.width);
+    expect(parked.top).toBe(REST_VIEWPORT.height - MARGIN - shape.height);
   });
 
   it('is drift-free: clamping again changes nothing', () => {
-    const first = clampDragPosition({ left: -500, top: 3000 }, shape, REST_VIEWPORT, MIN);
-    expect(clampDragPosition(first, shape, REST_VIEWPORT, MIN)).toEqual(first);
+    const first = clampDragPosition({ left: -500, top: 3000 }, shape, REST_VIEWPORT, MARGIN);
+    expect(clampDragPosition(first, shape, REST_VIEWPORT, MARGIN)).toEqual(first);
   });
 
-  it('stays finite and strip-coherent when the range inverts (viewport smaller than the margins)', () => {
+  it('a viewport too small for the shape one-sides to the left/top margin (never NaN)', () => {
     const tiny: ViewportSize = { width: 60, height: 60 };
     const narrow = clampDragPosition(
       { left: 1000, top: 1000 },
       { width: 100, height: 100 },
       tiny,
-      MIN
+      MARGIN
     );
-    expect(narrow.left).toBe(tiny.width - MIN); // the right-edge strip survives
+    // The inverted range [MARGIN, tiny.width − MARGIN − width] collapses to
+    // its lower bound for any desired value: deterministic, finite, parked
+    // at the left/top margin.
+    expect(narrow.left).toBe(MARGIN);
     expect(Number.isNaN(narrow.left + narrow.top)).toBe(false);
     const shifted = clampDragPosition(
       { left: -1000, top: -1000 },
       { width: 100, height: 100 },
       tiny,
-      MIN
+      MARGIN
     );
-    expect(shifted.left).toBe(MIN - 100); // the left-edge strip survives
+    expect(shifted.left).toBe(MARGIN);
+    expect(shifted.top).toBe(MARGIN);
   });
 
   it('resolves the negative available range deterministically (never NaN)', () => {
     const shape100 = { width: 100, height: 100 };
-    const free = clampDragPosition({ left: 0, top: 0 }, shape100, { width: 10, height: 10 }, MIN);
-    // Range [32−100, 10−32] = [−68, −22]: the desired value sits past the
-    // upper bound → the boundary value wins (stable order, always finite).
-    expect(free.left).toBe(10 - MIN);
-    expect(free.top).toBe(10 - MIN);
+    const free = clampDragPosition(
+      { left: 0, top: 0 },
+      shape100,
+      { width: 10, height: 10 },
+      MARGIN
+    );
+    // Range [MARGIN, 10−MARGIN−100] = [4, −94] is inverted: the lower (left/
+    // top) bound wins, always finite.
+    expect(free.left).toBe(MARGIN);
+    expect(free.top).toBe(MARGIN);
     expect(Number.isNaN(free.left + free.top)).toBe(false);
     const lower = clampDragPosition(
       { left: -1000, top: -1000 },
       shape100,
       { width: 10, height: 10 },
-      MIN
+      MARGIN
     );
-    // A desired value below the range's lower bound → the lower boundary wins.
-    expect(lower.left).toBe(MIN - 100);
-    expect(lower.top).toBe(MIN - 100);
+    expect(lower.left).toBe(MARGIN);
+    expect(lower.top).toBe(MARGIN);
     expect(Number.isNaN(lower.left + lower.top)).toBe(false);
   });
 });
@@ -252,19 +263,19 @@ describe('createDragController', () => {
     expect(seams.applied.at(-1)).toEqual({ x: -10, y: -20 });
   });
 
-  it('clamps all four edges while following', () => {
+  it('clamps all four edges while following, keeping the whole box inside', () => {
     const seams = recordingSeams({ width: 200, height: 40 });
     const drag = createDragController(seams.deps);
     drag.beginGrab({ point: centerOf(seams.liveBox()), pointerId: 1 });
     drag.trackMove({ point: { x: -5000, y: -5000 }, pointerId: 1 });
     const upper = seams.applied.at(-1);
-    // The box parks at the min-visible strip: 32 px visible past each edge.
-    expect(upper?.x).toBe(MIN - 200 - (REST_VIEWPORT.width - ANCHOR_PX - 200));
-    expect(upper?.y).toBe(MIN - 40 - (REST_VIEWPORT.height - ANCHOR_PX - 40));
+    // The box parks fully inside, MARGIN px off the anchored edge pair.
+    expect(upper?.x).toBe(MARGIN - (REST_VIEWPORT.width - ANCHOR_PX - 200));
+    expect(upper?.y).toBe(MARGIN - (REST_VIEWPORT.height - ANCHOR_PX - 40));
     drag.trackMove({ point: { x: 5000, y: 5000 }, pointerId: 1 });
     const box = seams.liveBox();
-    expect(box.left).toBe(REST_VIEWPORT.width - MIN);
-    expect(box.top).toBe(REST_VIEWPORT.height - MIN);
+    expect(box.left).toBe(REST_VIEWPORT.width - MARGIN - 200);
+    expect(box.top).toBe(REST_VIEWPORT.height - MARGIN - 40);
   });
 
   it('settle commits; a settled anchor is the next cancel restored pre-drag state', () => {
@@ -359,24 +370,44 @@ describe('createDragController', () => {
     expect(seams.applied).toHaveLength(2);
   });
 
-  it('re-bases on the live box when the card grows mid-drag, still keeping the grabbed point', () => {
+  it('re-bases on the live box when the card grows mid-drag, keeping the grabbed point', () => {
     const seams = recordingSeams({ width: 224, height: 40 });
     const drag = createDragController(seams.deps);
     const start = centerOf(seams.liveBox());
     drag.beginGrab({ point: start, pointerId: 1 });
     const pointer = { x: start.x - 100, y: start.y - 60 };
     drag.trackMove({ point: pointer, pointerId: 1 });
-    seams.growShape(224, 200); // rows arrived under the held pointer
+    seams.growShape(224, 100); // rows arrive under the held pointer
     // One more move; the machine re-derives the offset from the honest live
     // box, so the grabbed point (offset-glued to the box's top edge) returns
     // under the stationary pointer instead of sliding with the growth.
     drag.trackMove({ point: pointer, pointerId: 1 });
     const relocated = seams.liveBox();
     expect(relocated.width).toBe(224);
-    expect(relocated.height).toBe(200);
+    expect(relocated.height).toBe(100);
     // The grabbed point came from the center grab: pointer == box's top-left + (112, 20).
     expect(Math.abs(relocated.left + 112 - pointer.x)).toBeLessThan(1e-9);
     expect(Math.abs(relocated.top + 20 - pointer.y)).toBeLessThan(1e-9);
+  });
+
+  it('a growth that cannot keep the grab point clamps instead: containment wins over the pointer', () => {
+    const seams = recordingSeams({ width: 224, height: 40 });
+    const drag = createDragController(seams.deps);
+    const start = centerOf(seams.liveBox());
+    drag.beginGrab({ point: start, pointerId: 1 });
+    const pointer = { x: start.x - 100, y: start.y - 60 };
+    drag.trackMove({ point: pointer, pointerId: 1 });
+    // The card grew to a size whose desired top (pointer − offset) sits past
+    // the containment bound: the follow can no longer pin the grab point.
+    seams.growShape(224, 200);
+    drag.trackMove({ point: pointer, pointerId: 1 });
+    const relocated = seams.liveBox();
+    expect(relocated.height).toBe(200);
+    // The bottom edge parks exactly at the containment margin; the box rose
+    // as high as full visibility allows.
+    expect(relocated.top + relocated.height).toBe(REST_VIEWPORT.height - MARGIN);
+    expect(relocated.top).toBeLessThan(pointer.y); // the grab point left the pointer
+    expect(relocated.left).toBe(seams.liveBox().left); // the horizontal follow was in bounds
   });
 
   it('a viewport shrink re-clamps the next move against the live viewport', () => {
@@ -388,8 +419,93 @@ describe('createDragController', () => {
     seams.setViewport({ width: 640, height: 480 });
     drag.trackMove({ point: { x: 5000, y: 5000 }, pointerId: 1 });
     const box = seams.liveBox();
-    expect(box.left).toBe(640 - MIN);
-    expect(box.top).toBe(480 - MIN);
+    expect(box.left).toBe(640 - MARGIN - 200);
+    expect(box.top).toBe(480 - MARGIN - 40);
+  });
+
+  describe('reclamp (the resting containment leg)', () => {
+    it('a mount inside the viewport writes nothing and answers false', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toEqual([]);
+    });
+
+    it('an outside resting position re-clamps with one write, fully inside where it fits', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      // A real violation: the shape grows past what the viewport+anchor can
+      // contain (the card grew past the visible height).
+      seams.growShape(200, 800);
+      expect(drag.reclamp()).toBe(true);
+      const box = seams.liveBox();
+      // The horizontal anchor position was inside and stayed untouched;
+      // the vertical one clamps back to the top margin.
+      expect(box.left).toBe(REST_VIEWPORT.width - ANCHOR_PX - 200);
+      expect(box.top).toBe(MARGIN);
+      expect(seams.applied).toEqual([{ x: 0, y: 20 }]);
+      // Idempotent: the re-clamped box reclamps nothing again.
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(1);
+    });
+
+    it('a shrunk viewport re-clamps a committed position against its own bounds', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 300, y: start.y - 30 }, pointerId: 1 });
+      drag.settle(1);
+      expect(seams.applied.at(-1)).toEqual({ x: -300, y: -30 });
+      seams.setViewport({ width: 100, height: 60 });
+      // The live box (live anchor + the committed translate) now violates
+      // the left/top containment of its 100×60 window.
+      expect(seams.liveBox().left).toBeLessThan(MARGIN);
+      expect(drag.reclamp()).toBe(true);
+      const box = seams.liveBox();
+      // A 200-wide shape cannot fully fit a 100-px viewport: the clamp
+      // degrades one-sided to the left/top margins (both reachable, tested
+      // in clampDragPosition's inverted-range pins).
+      expect(box.left).toBe(MARGIN);
+      expect(box.top).toBe(MARGIN);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(2);
+    });
+
+    it('a live drag defers to its moves (reclamp is a no-op while grabbing)', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 40, y: start.y - 20 }, pointerId: 1 });
+      seams.setViewport({ width: 100, height: 100 });
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toHaveLength(1); // the drag's own write only
+      expect(drag.isDragging()).toBe(true);
+    });
+
+    it('a dead shape answers false with no write', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      seams.setShapeDetached(true);
+      expect(drag.reclamp()).toBe(false);
+      expect(seams.applied).toEqual([]);
+    });
+
+    it('the untouched anchor is not rewritten when it already sits inside', () => {
+      const seams = recordingSeams({ width: 224, height: 40 });
+      const drag = createDragController(seams.deps);
+      // Identity read first (no write), a violation read second (one write).
+      expect(drag.reclamp()).toBe(false);
+      seams.setViewport({ width: 100, height: 60 });
+      expect(drag.reclamp()).toBe(true);
+      expect(seams.applied).toHaveLength(1);
+      const box = seams.liveBox();
+      // Same one-sided degradation as the shrink re-clamp: the shape outgrew
+      // this viewport, the box parks at the left/top margins.
+      expect(box.left).toBe(MARGIN);
+      expect(box.top).toBe(MARGIN);
+    });
   });
 
   it('a dead chrome mid-drag freezes without throwing; the release cleans up', () => {
