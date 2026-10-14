@@ -13,6 +13,7 @@ Automate P6's per-page panel checklist: card sets, counts/filters, undefined-ref
 3. **Search flows:** perform/next/prev/cancel across pages; Escape semantics.
 4. **Perf gate (converted from the doc's "Playwright or chrome-trace" item):** the dev fixture generator's committed 5,000-row JSON loaded via the dev-only data override; interactions triggered (tab switch + filter change + search); `PerformanceObserver('longtask')` asserts **no entry > 50 ms and total blocking time < 200 ms**. Re-run hook noted for P15.
 5. **Keyboard + axe per page state** (the passes convert directly).
+6. **Reassigned from P6D (needs a real DevTools window):** (a) Lazyload and Preloaded Resources side-by-side vs the reference build on the same fixture pages — identical counts and filters; (b) the query-half search on both pages with the DevTools find bar — a find-bar query mirrors into the page's field and filters `src`/`href`, `cancelSearch` clears both, a route change resets.
 
 ## Definition of done
 
