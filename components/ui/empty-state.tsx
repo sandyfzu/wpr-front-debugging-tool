@@ -1,7 +1,8 @@
 /**
  * The empty view — icon, title, one-sentence explanation and an optional
- * forward action. Empty states explain rather than stare (the `? overlay and
- * every list on an unpopulated page render this instead of a blank void).
+ * forward action. Empty states explain rather than stare (the shortcuts
+ * overlay and every list on an unpopulated page render this instead of a
+ * blank void).
  */
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';

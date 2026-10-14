@@ -1,9 +1,9 @@
 /**
- * The `?` shortcuts overlay: every shortcut the panel answers, from the
+ * The shortcuts overlay: every shortcut the panel answers, from the
  * shortcuts table (the single source), in the shared modal dialog. It
  * dismisses through Escape, the explicit close control (its own visible
- * affordance — it has no keyboard trigger of its own beyond `?`), and an
- * outside click (it is an overlay over the panel, not a configuration
+ * affordance — its keyboard trigger is the declared overlay binding, `/`),
+ * and an outside click (it is an overlay over the panel, not a configuration
  * surface) — the dialog primitive owns all three.
  */
 import { For, Show, type JSX } from 'solid-js';

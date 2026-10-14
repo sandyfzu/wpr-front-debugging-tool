@@ -4,8 +4,9 @@
  * while the store is open (field autofocused, registry rows rendered, the
  * export row honestly gated), a page row closing AND swapping the route, the
  * reload action driving a second request flight through the data store, the
- * shortcuts overlay listing the table and closing through Escape, `?` typed
- * in the palette field staying a query, caret moves re-arming the Enter
+ * shortcuts overlay listing the table and closing through Escape, a field
+ * keystroke (`?`, and the `/` primary shares the guard) staying a query,
+ * caret moves re-arming the Enter
  * highlight, Tab dismissing instead of wiping the query, the open-time
  * snapshot holding against a mid-open data settle, and the shortcuts-row
  * swap landing one dialog with focus restored to the real trigger.
@@ -136,13 +137,23 @@ describe('the keyboard overlays in the shell', () => {
       expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
     });
     // Three of the table's rows (the palette key, the find row, the
-    // appearance cycle row the cross-persona trip names).
+    // appearance cycle row the cross-persona trip names), plus the overlay's
+    // own binding row rendered from the same declared table.
     expect(screen.getByText('Open or close the command palette')).toBeTruthy();
     expect(screen.getByText('Find in the panel')).toBeTruthy();
     expect(screen.getByText('Cycle appearance (system → dark → light)')).toBeTruthy();
+    expect(screen.getByText('/', { exact: true })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+    });
+  });
+
+  it('the declared primary opens the overlay from the shell document (the `/` binding)', async () => {
+    bootShellWithData();
+    fireEvent.keyDown(document.body, { key: '/', bubbles: true, cancelable: true });
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeTruthy();
     });
   });
 
