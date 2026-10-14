@@ -31,6 +31,9 @@ const SITE_ORIGIN = new URL(SITE_URL).origin;
 /** Settle window: the mount + the hub's pass answer after enablement. */
 const MOUNT_SETTLE = { timeout: 15_000, intervals: [250, 500] };
 
+/** The containment margin the drag clamp keeps (`DRAG_TUNING.containmentMarginPx`). */
+const DRAG_CONTAINMENT_MARGIN = 4;
+
 /**
  * The dockered site's real WP Rocket page verdict (the engine's shape), as
  * the protocol channel hands it over — only the fields the derivation reads.
@@ -1130,7 +1133,13 @@ siteTest.describe('site detection widget', () => {
         const parked = await stripGeometry(page);
         const shape = parked.shape;
         if (shape === null) throw new Error('the parked pill lost its shape');
-        expect(shape.top, 'the pill parks at the containment margin').toBeGreaterThanOrEqual(2);
+        // The parked pill: the drag's vertical demand crossed the top edge,
+        // so the clamp pinned the box's top at the containment margin —
+        // measured as the exact band (2 px tolerance = the leg's rounding).
+        expect(
+          Math.abs(shape.top - DRAG_CONTAINMENT_MARGIN),
+          'the pill parks pinned at the top containment margin'
+        ).toBeLessThanOrEqual(2);
 
         await pill.click();
         await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
@@ -1139,21 +1148,47 @@ siteTest.describe('site detection widget', () => {
         const card = opened.shape;
         if (card === null) throw new Error('the open card lost its shape');
         // The card is a bigger box anchored at the pill's corner: its top
-        // would be far out — instead the chrome re-settled it inside.
-        expect(card.top).toBeGreaterThanOrEqual(4 - 2);
-        expect(card.left).toBeGreaterThanOrEqual(4 - 2);
-        expect(card.right).toBeLessThanOrEqual(opened.viewport.width - 2);
+        // demand (corner − card height) sits far past the top edge, so the
+        // re-settle pinS the card's top at the margin — measured exactly.
+        expect(
+          Math.abs(card.top - DRAG_CONTAINMENT_MARGIN),
+          'the card re-settled with its top pinned at the containment margin'
+        ).toBeLessThanOrEqual(2);
+        // The unmoved edges stay fully inside (bands, per the shrink leg).
+        expect(card.left).toBeGreaterThanOrEqual(DRAG_CONTAINMENT_MARGIN - 2);
+        expect(card.right).toBeLessThanOrEqual(opened.viewport.width - DRAG_CONTAINMENT_MARGIN + 2);
+        // The relocation is real: the card's bottom landed far below the
+        // parked pill's corner (the chrome moved DOWN to let the card fit).
+        expect(
+          card.top + card.height - shape.bottom,
+          'the re-settle moved the chrome down by the card\u2019s grown extent'
+        ).toBeGreaterThan(100);
         expect((await readStrip(page)).cardOpen, 'the card stayed open through the re-settle').toBe(
           true
         );
-        // Escape closes: the pill comes back inside at the re-settled corner.
+        // Escape closes: the pill returns at the card's own re-settled corner
+        // (the anchor rides the chrome) — measured corner-for-corner.
         await page.keyboard.press('Escape');
         await waitForChoreographySettle(page);
         const closed = await stripGeometry(page);
         const returned = closed.shape;
         if (returned === null) throw new Error('the returned pill lost its shape');
-        expect(returned.top).toBeGreaterThanOrEqual(2);
-        expect(returned.left).toBeGreaterThanOrEqual(2);
+        expect(
+          Math.abs(returned.right - card.right),
+          'the returned pill took the card\u2019s re-settled right corner'
+        ).toBeLessThanOrEqual(2);
+        expect(
+          Math.abs(returned.bottom - card.bottom),
+          'the returned pill took the card\u2019s re-settled bottom corner'
+        ).toBeLessThanOrEqual(2);
+        expect(returned.left).toBeGreaterThanOrEqual(DRAG_CONTAINMENT_MARGIN - 2);
+        expect(returned.top).toBeGreaterThanOrEqual(DRAG_CONTAINMENT_MARGIN - 2);
+        expect(returned.right).toBeLessThanOrEqual(
+          closed.viewport.width - DRAG_CONTAINMENT_MARGIN + 2
+        );
+        expect(returned.bottom).toBeLessThanOrEqual(
+          closed.viewport.height - DRAG_CONTAINMENT_MARGIN + 2
+        );
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
