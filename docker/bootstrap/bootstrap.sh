@@ -165,7 +165,8 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 #   minify_css / minify_js               /wp-content/cache/min/ asset markers
 #   remove_unused_css                    the RUCSS gate (wpr-usedcss + beacon surface)
 #   cache_query_strings = [fdt-error, fdt-delay,
-#                          fdt-fonts-on, fdt-oci-off]
+#                          fdt-fonts-on, fdt-oci-off,
+#                          fdt-wpr-versionless]
 #                                        the scenario FLAGS themselves become cached
 #                                        URLs: the buffer pipeline only processes
 #                                        parameters from this option (verified in the
@@ -175,7 +176,12 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 #                                        The two Priority-Elements knobs are here for
 #                                        the same reason: a beacon-matrix round needs
 #                                        the forced state inside an optimized cached
-#                                        copy, not on the unprocessed fallback.
+#                                        copy, not on the unprocessed fallback. The
+#                                        versionless flag rides the same bus: its
+#                                        filter arm acts inside the buffer pipeline,
+#                                        so an unprocessed URL would show plain WP
+#                                        output and never answer the versionless
+#                                        question the fixture exists for.
 # Everything else keeps the plugin's own defaults — the exclusion lists in particular
 # stay at their untouched defaults so the delay queue mirrors a real site's baseline.
 # NOTE: `cache` is not a settings key: page caching is unconditional in WP Rocket
@@ -189,7 +195,7 @@ step "wp-rocket: applying baseline settings"
 for key in cache_mobile do_caching_mobile_files minify_css minify_js lazyload defer_all_js delay_js remove_unused_css; do
 	run_wp option patch update wp_rocket_settings "$key" 1 >/dev/null
 done
-run_wp option patch update wp_rocket_settings cache_query_strings '["fdt-error", "fdt-delay", "fdt-fonts-on", "fdt-oci-off"]' --format=json >/dev/null
+run_wp option patch update wp_rocket_settings cache_query_strings '["fdt-error", "fdt-delay", "fdt-fonts-on", "fdt-oci-off", "fdt-wpr-versionless"]' --format=json >/dev/null
 
 # Re-publish WP Rocket's per-host config file (the drop-in reads its state from there):
 # permalink + cached-query-string state must land in it before any page is served.

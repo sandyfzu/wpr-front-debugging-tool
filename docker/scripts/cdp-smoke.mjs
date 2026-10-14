@@ -20,6 +20,10 @@
  *     the arms always drive the desktop copies. Per-arm config absence is a legitimate
  *     row-state outcome (the beacon injects only while a registered factory row is
  *     missing; the smoke never resets site tables) — rule violations are the failures.
+ *  5. the versionless generator arm (?fdt-wpr-versionless=1, read as raw served HTML):
+ *     the baseline /fdt/ copy carries the versioned WP Rocket generator meta, the
+ *     flagged copy carries the SAME meta with no version tail, and both stay cached
+ *     pages (the flag removes the stamp, nothing else).
  *
  * Exits nonzero on any expectation miss: a missing proof is a failure, never a pass.
  */
@@ -308,6 +312,42 @@ for (let i = 0; i < PROBE_URLS.length; i += 2) {
   };
 }
 
+// ---- Scenario 5: the versionless generator arm (the WPR meta without the stamp) ---
+// `?fdt-wpr-versionless=1` serves WP Rocket's generator meta with no version stamp via
+// the plugin's own filter; every other footprint stays. Both arms read the meta + the
+// cache comment off the served HTML, one baseline copy and one flagged copy.
+const readGeneratorStamp = async () => {
+  const r = await send(
+    'Runtime.evaluate',
+    {
+      expression: `JSON.stringify((() => {
+  // The cache debug comment rides AFTER the document element (the plugin writes it
+  // behind </html>), so it is invisible to document.documentElement.outerHTML: the
+  // probe walks the document's own child nodes.
+  const m = document.documentElement.outerHTML.match(/<meta name="generator" content="WP Rocket([^"]*)"\\s*data-wpr-features="([^"]*)"/);
+  const cacheComment = Array.from(document.childNodes).some(
+    (n) => n.nodeType === Node.COMMENT_NODE && n.data.includes('This website is like a Rocket')
+  );
+  return {
+    meta: m ? { versionTail: m[1], features: m[2] } : null,
+    cacheComment,
+    wpCoreMeta: document.documentElement.outerHTML.includes('name="generator" content="WordPress'),
+  };
+})())`,
+      returnByValue: true
+    },
+    sessionId
+  );
+  return JSON.parse(r.result.result.value);
+};
+results.generatorStamp = {};
+for (const armName of ['baseline', 'versionless']) {
+  const url = armName === 'baseline' ? `${SITE}/fdt/` : `${SITE}/fdt/?fdt-wpr-versionless=1`;
+  await navigate(url);
+  await sleep(1500);
+  results.generatorStamp[armName] = await readGeneratorStamp();
+}
+
 // ---- Report ---------------------------------------------------------------------
 console.log(JSON.stringify(results, null, 2));
 
@@ -443,6 +483,30 @@ if (results.uaEcho.overridden.footprint)
         s.preconnect_external_domain === true
     }
   ]);
+}
+
+// Scenario 5 verdict: the baseline copy stamps the version, the flagged copy must serve
+// the same meta WITHOUT a version tail — the fixture arm the versionless-detection
+// rounds drive — and both stay cached pages (the flag only removes the stamp).
+{
+  const baseline = results.generatorStamp?.baseline;
+  const flagged = results.generatorStamp?.versionless;
+  if (!baseline || baseline.meta === null || !/\d/.test(baseline.meta.versionTail))
+    fail(
+      `scenario 5: the baseline /fdt/ copy does not carry a versioned generator meta: ${JSON.stringify(baseline)}`
+    );
+  if (!baseline.cacheComment)
+    fail('scenario 5: the baseline copy is not a cached page (no cache debug comment)');
+  if (!flagged || flagged.meta === null)
+    fail(
+      `scenario 5: the flagged copy lost the WP Rocket generator meta entirely: ${JSON.stringify(flagged)}`
+    );
+  if (/\d/.test(flagged.meta?.versionTail ?? ''))
+    fail(`scenario 5: the flagged copy still carries a version stamp: ${JSON.stringify(flagged)}`);
+  if (!flagged.meta?.features)
+    fail('scenario 5: the flagged copy lost the data-wpr-features footprint list');
+  if (!flagged.cacheComment)
+    fail('scenario 5: the flagged copy is not a cached page (no cache debug comment)');
 }
 
 console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');

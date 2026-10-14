@@ -18,6 +18,11 @@
  *                           delayed-execution reproduction: one throws exactly when the
  *                           delay queue runs; one completes benignly and tags its script
  *                           element `data-fdt-delay="executed"`)
+ *   ?fdt-wpr-versionless=1  WP Rocket's generator meta issued WITHOUT its version
+ *                           stamp (the plugin's own
+ *                           `rocket_display_meta_generator_content_version` filter
+ *                           answered false for the request): other footprints are
+ *                           untouched, so the page detects as present-but-versionless
  *
  * Two request-truth fixtures the side-by-side device-simulation rounds read (they echo
  * the request's own facts — per-request state, nothing stored, nothing to reset):
@@ -61,6 +66,7 @@ const FIXTURE_FLAG_DELAY = 'fdt-delay';
 const FIXTURE_FLAG_MOBILE_CACHE = 'fdt-mobile-cache';
 const FIXTURE_FLAG_FONTS_ON = 'fdt-fonts-on';
 const FIXTURE_FLAG_OCI_OFF = 'fdt-oci-off';
+const FIXTURE_FLAG_VERSIONLESS = 'fdt-wpr-versionless';
 
 // The fixed external-origin hint the beacon-page fixture carries: the Preconnect factory
 // needs at least one non-site hostname on the page (link/script/iframe elements only) for
@@ -332,6 +338,33 @@ function fixture_disable_critical_images_optimization( bool $allow ): bool {
 	return false;
 }
 add_filter( 'rocket_above_the_fold_optimization', 'fixture_disable_critical_images_optimization' );
+
+/**
+ * Let a request's cached copy carry WP Rocket's generator meta WITHOUT the
+ * version stamp.
+ *
+ * `?fdt-wpr-versionless=1` answers the plugin's own
+ * `rocket_display_meta_generator_content_version` filter with false — the
+ * filter deciding whether the meta's ``content`` gains the leading version
+ * substring. The meta itself (its `data-wpr-features` list) and every other
+ * footprint stay untouched, so the served page reads as present-but-versionless:
+ * exactly what the detection tool must report honestly when the generator meta
+ * carries no version. Read from the request (nothing stored): the flag is
+ * per-request state like every other fixture flag here. An absent flag must
+ * pass the plugin's decision through untouched, not coerce it.
+ *
+ * @param bool $display_version The decision the filter chain would otherwise produce.
+ * @return bool False when the flag asks for the stamp-free meta, else the passed value.
+ */
+function fixture_hide_wpr_version_stamp( bool $display_version ): bool {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_VERSIONLESS ] ) || '1' !== $_GET[ FIXTURE_FLAG_VERSIONLESS ] ) {
+		return $display_version;
+	}
+
+	return false;
+}
+add_filter( 'rocket_display_meta_generator_content_version', 'fixture_hide_wpr_version_stamp' );
 
 /**
  * Print the fixed external-origin hint the Preconnect factory collects.
