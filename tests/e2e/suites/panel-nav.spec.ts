@@ -89,6 +89,76 @@ const REGISTRY_ROWS = [
   'reserved'
 ];
 
+/**
+ * The menu plate's reach facts at one size: the plate's own scroll state,
+ * the rail's unchanged scroll-free state, and every hidden anchor's
+ * pointer reach *through* the plate's scroll (each item scrolled into the
+ * plate's view — the wheel's work — then hit-tested at its center).
+ */
+interface PlateReach {
+  /** The plate's computed vertical overflow (must be `auto` — the designed internal scroll). */
+  readonly plateOverflowY: string;
+  /** The plate's computed `scrollbar-gutter` (must be `auto` — no phantom reservation). */
+  readonly plateScrollbarGutter: string;
+  /** Whether the plate's content exceeds its clamped box (the scrollbar exists only then). */
+  readonly plateClamped: boolean;
+  /** Whether the plate's rows never overflow horizontally (no second-axis bar). */
+  readonly plateNoHorizontalOverflow: boolean;
+  /** The rail's own computed vertical overflow — unchanged while the plate scrolls. */
+  readonly railOverflowY: string;
+  /** The rail's own content-equals-visible state stays exact while the plate scrolls. */
+  readonly railScrollEqual: boolean;
+  /** Per hidden anchor: scrolled into the plate's view and hit-tested to itself. */
+  readonly items: ReadonlyArray<{
+    readonly href: string | null;
+    readonly inView: boolean;
+    readonly hitIsItem: boolean;
+  }>;
+}
+
+/**
+ * Read the plate's reach facts. The menu must already be open (a
+ * keyboard-opened menu reads the same facts as a clicked one).
+ *
+ * @param page The panel page with the menu open.
+ */
+async function readPlateReach(page: Page): Promise<PlateReach> {
+  return await page.evaluate((): PlateReach => {
+    const nav = document.querySelector<HTMLElement>('[data-fdt="panel-nav"]');
+    const plate = document.querySelector<HTMLElement>('[data-fdt="panel-nav-overflow-menu"]');
+    if (nav === null || plate === null) throw new Error('rail or plate not mounted');
+    const plateStyle = getComputedStyle(plate);
+    const plateBox = plate.getBoundingClientRect();
+    const railStyle = getComputedStyle(nav);
+    const items = [...plate.querySelectorAll<HTMLElement>('a[data-fdt="nav-overflow-item"]')].map(
+      (item) => {
+        // The wheel's work: bring the item into the plate's view, then
+        // hit-test it (window clamped for elements flush to an edge).
+        const nativeTop = item.offsetTop - plate.offsetTop;
+        plate.scrollTop = Math.max(0, nativeTop - (plate.clientHeight - item.offsetHeight) / 2);
+        const box = item.getBoundingClientRect();
+        const cx = Math.min(Math.max(box.left + box.width / 2, 0), window.innerWidth - 1);
+        const cy = Math.min(Math.max(box.top + box.height / 2, 0), window.innerHeight - 1);
+        const hit = document.elementFromPoint(cx, cy);
+        return {
+          href: item.getAttribute('href'),
+          inView: box.top >= plateBox.top - 0.5 && box.bottom <= plateBox.bottom + 0.5,
+          hitIsItem: hit === item || (hit !== null && item.contains(hit))
+        };
+      }
+    );
+    return {
+      plateOverflowY: plateStyle.overflowY,
+      plateScrollbarGutter: plateStyle.scrollbarGutter,
+      plateClamped: plate.scrollHeight > plate.clientHeight,
+      plateNoHorizontalOverflow: plate.scrollWidth <= plate.clientWidth,
+      railOverflowY: railStyle.overflowY,
+      railScrollEqual: nav.scrollHeight === nav.clientHeight,
+      items
+    };
+  });
+}
+
 /** The rail geometry, read identically at every width. */
 interface NavGeometry {
   /** The nav element's resolved flex direction (the rail's axis). */
@@ -565,6 +635,133 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       await expect(
         page.locator('[data-fdt="panel-nav-overflow-menu"] a[aria-current="page"]')
       ).toHaveAttribute('href', '#/lazyload');
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('the degenerate band keeps pointer reach: the plate scrolls its own overflow, the rail never does', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+
+      // The audit's degenerate band: windows too small for the plate to
+      // show all its rows. At every stop the plate clamps and scrolls
+      // internally (the designed token-thin hairline), every hidden route
+      // stays pointer-reachable through that scroll, and the rail's own
+      // scroll-free invariant is untouched by the plate's.
+      for (const height of [90, 120, 170, 220]) {
+        await shrinkTo(page, height);
+        await page.getByRole('button', { name: 'More pages' }).click();
+        const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
+        await expect(menu).toBeVisible();
+        const reach = await readPlateReach(page);
+        expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
+        expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
+        expect(reach.plateNoHorizontalOverflow).toBe(true);
+        // The clamp state: at 220 the plate fits without biting (its rows
+        // truly fit; no scrollbar exists then); below, it bites and the
+        // scroll carries the tail.
+        if (height === 220) {
+          expect(reach.plateClamped).toBe(false);
+        } else {
+          expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);
+        }
+        // Every hidden anchor: scrolled into view, hit-tested to itself.
+        expect(reach.items.length, `hidden anchors at ${String(height)}px`).toBeGreaterThan(0);
+        for (const [index, item] of reach.items.entries()) {
+          const label = `${item.href ?? '?'} at ${String(height)}px`;
+          expect(item.hitIsItem, `reach of ${label} (item ${String(index)})`).toBe(true);
+          expect(item.inView, `view of ${label} (item ${String(index)})`).toBe(true);
+        }
+        // The affordance's own overflow never reaches the rail: it stays
+        // scroll-free while the plate scrolls.
+        expect(reach.railOverflowY).toBe('hidden');
+        expect(reach.railScrollEqual).toBe(true);
+        await page.keyboard.press('Escape');
+        await expect(menu).not.toBeAttached();
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('no phantom gutter when the plate does not scroll (the label/chip row keeps its layout)', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      // A height the plate fits within: the auto overflow declares readiness
+      // without painting a scrollbar or reserving a gutter for it.
+      await page.setViewportSize({ width: 700, height: 250 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await page.getByRole('button', { name: 'More pages' }).click();
+      const reach = await readPlateReach(page);
+      expect(reach.plateOverflowY).toBe('auto');
+      expect(reach.plateScrollbarGutter).toBe('auto');
+      expect(reach.plateClamped).toBe(false);
+      expect(reach.plateNoHorizontalOverflow).toBe(true);
+      // Each row reaches at first position (no scroll interplay at all).
+      for (const item of reach.items) expect(item.hitIsItem).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('keyboard-opened selection scrolls the plate to the focused item (focus scroll)', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 90 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+
+      const trigger = page.getByRole('button', { name: 'More pages' });
+      await trigger.focus();
+      await page.keyboard.press('ArrowDown');
+      const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
+      await expect(menu).toBeVisible();
+
+      // Arrow to the deepest hidden anchor (disabled items are skipped by
+      // Kobalte's collection — the reserved row never takes a step): an
+      // ArrowUp from the open lands on the tail item, the one a below-fold
+      // keyboard walk must scroll the plate to read.
+      const tailHref = await menu
+        .locator('a[data-fdt="nav-overflow-item"]')
+        .last()
+        .getAttribute('href');
+      if (tailHref === null) throw new Error('no hidden anchor in the menu');
+      await page.keyboard.press('ArrowUp');
+      await expect
+        .poll(async () => {
+          return await page.evaluate((): string | null => {
+            const active = document.activeElement;
+            return active instanceof HTMLAnchorElement ? active.getAttribute('href') : null;
+          });
+        })
+        .toBe(tailHref);
+
+      // The plate's own scroll followed the keyboard focus: the focused
+      // item's box sits inside the plate's visible box (focus scroll; the
+      // 2px tolerance is the plate's own border/rounding slop).
+      const scrolled = await page.evaluate((expected: string): boolean => {
+        const plate = document.querySelector<HTMLElement>('[data-fdt="panel-nav-overflow-menu"]');
+        const active = document.activeElement;
+        if (plate === null || !(active instanceof HTMLAnchorElement)) return false;
+        if (active.getAttribute('href') !== expected) return false;
+        const plateBox = plate.getBoundingClientRect();
+        const box = active.getBoundingClientRect();
+        return box.top >= plateBox.top - 2 && box.bottom <= plateBox.bottom + 2;
+      }, tailHref);
+      expect(scrolled).toBe(true);
+
+      // Enter still navigates from the scrolled-away tail.
+      await page.keyboard.press('Enter');
+      await expect(menu).not.toBeAttached();
+      await page.waitForURL(new RegExp(`${tailHref.replace('/', '\/')}$`));
     } finally {
       await page.close();
     }
