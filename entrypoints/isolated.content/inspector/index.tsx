@@ -20,7 +20,11 @@
  * viewport, ever — the drag machine clamps every drag move, and this module
  * re-clamps the RESTING chrome through the containment watcher whenever the
  * viewport changed, the visible box grew or shrank (card open/close, the
- * pass's rows landing), or a drag dropped/canceled. A moved re-clamp rides
+ * pass's rows landing), or a drag dropped/canceled. The watcher samples the
+ * box until two consecutive reads agree within a wall-clock cap (the
+ * choreography's own entrance is timed in ms, so the cap is ms too), and
+ * the re-clamp targets the resting layout box — the post-choreography
+ * geometry, never an animated pose. A moved re-clamp rides
  * the chrome's re-settle state class (a smooth position leg over the motion
  * tokens; still under reduced motion, where the collapse is the honest
  * instant); a starting drag clears it — direct manipulation never moves
@@ -184,6 +188,17 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
+   * The visible shape's element: the open card rides the anchored corner
+   * and alone defines the box while `ins-open` is on; otherwise the pill.
+   * One selection for both the shape reads below (they answer the same
+   * shape, live and resting) — null once the element is gone.
+   */
+  const visibleShape = (): HTMLElement | null => {
+    const shape = state.cardOpen ? cardElement : pillElement;
+    return shape !== null && shape.isConnected ? shape : null;
+  };
+
+  /**
    * The drag machine's seams: the viewport and the VISIBLE shape's box are
    * read per call (each move re-clamps against the live truth), and the
    * position writes land as the chrome's drag-translate custom properties —
@@ -201,15 +216,42 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       height: document.documentElement.clientHeight
     }),
     readBox: (): DragBox | null => {
-      // The VISIBLE shape: the open card rides the anchored corner and alone
-      // defines the box while `ins-open` is on; otherwise the pill. This is
-      // both the drag's live box (the grabbed shape is the visible shape by
-      // construction — the departing pill cannot be grabbed) and the resting
-      // box the containment re-clamp holds inside the viewport.
-      const shape = state.cardOpen ? cardElement : pillElement;
-      if (shape === null || !shape.isConnected) return null;
+      // The drag-time live box: the shape's rect, however its choreography
+      // presents it mid-flight (the 1:1 drag follow's truth).
+      const shape = visibleShape();
+      if (shape === null) return null;
       const rect = shape.getBoundingClientRect();
       return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    },
+    readRestingBox: (): DragBox | null => {
+      // The re-clamp's resting box: the shape's LAYOUT box in viewport
+      // coordinates, transform-invariant — the pose the choreography ends
+      // at, clamped even while an entrance still runs. Both the chrome and
+      // the shape must be alive: the geometry derives across them.
+      const chrome = chromeElement;
+      const shape = visibleShape();
+      if (chrome === null || !chrome.isConnected || shape === null) return null;
+      // The layout arithmetic assumes the shape hangs off the chrome as
+      // its offsetParent (the stylesheet contract: a fixed chrome, two
+      // absolute shapes, and no zoom anywhere) — CSSOM-View measures
+      // offset* relative to that offsetParent's padding edge and ignoring
+      // all transforms, and the chrome carries no border/padding, so its
+      // padding edge is exactly its rect origin. Fail closed (null, the
+      // machine's no-clamp) on any violation.
+      if (shape.offsetParent !== chrome) return null;
+      // Sizes from offsetWidth/Height are transform-free by spec; the
+      // position adds the transform-free layout offset to the chrome's own
+      // rect top-left (which carries the chrome's applied translate) — at
+      // rest that is the applied pose's exact top-left, mid-resettle the
+      // transition's, which the re-clamp-on-stable-box architecture keeps
+      // harmless (the watcher releases only after the box stops moving).
+      const chromeRect = chrome.getBoundingClientRect();
+      return {
+        left: chromeRect.left + shape.offsetLeft,
+        top: chromeRect.top + shape.offsetTop,
+        width: shape.offsetWidth,
+        height: shape.offsetHeight
+      };
     },
     applyPosition: (position) => {
       const chrome = chromeElement;
@@ -260,8 +302,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * viewport change (window resize, zoom) and — on the mounts themselves —
    * the box-growth beats (card open/close, data landing) and the drag's
    * settle/cancel. Every trigger routes through the one re-settle cycle;
-   * the cycle samples until the chrome stands still, so a trigger arriving
-   * mid-choreography re-clamps against the settled geometry.
+   * the cycle samples until the chrome stands still and the re-clamp clamps
+   * the resting layout box, so mid-choreography triggers (and equality
+   * ties) target the choreography's end geometry, not the pose its
+   * animation happens to present.
    */
   const startContainmentCycle = (): void => {
     if (containmentWatch !== null) containmentWatch.request();
@@ -456,6 +500,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       nextFrame: (callback) => {
         ctx.requestAnimationFrame(callback);
       },
+      // The settle bound is wall-clock ms (the choreography it waits out is
+      // timed in ms), so the seam is the content script's own wall clock.
+      now: Date.now,
       reform: reformContainment,
       log
     });

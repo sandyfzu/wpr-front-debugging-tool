@@ -13,12 +13,21 @@
 import type { DragBox } from './drag';
 
 /**
- * The frames a re-settle cycle may wait for box stability before conceding.
- * The open/close choreography springs are ~17 frames (~280 ms) plus the
- * two stability frames; the bound exists for the pathological host (a box
- * that never stands still) — concedes without applying, never loops forever.
+ * The wall-clock span (ms) a re-settle cycle may keep sampling before it
+ * concedes. Time, not frames — the motion it waits for is timed in ms, so
+ * a frame-counted bound concedes on faster displays: the card's open
+ * choreography runs `--ins-enter` = `--motion-slow` = 280 ms, which is
+ * ~17 frames at 60 Hz but ~34 frames at 120 Hz before the two stability
+ * reads even land, exactly where a 32-frame bound gave up. The figure
+ * covers the worst realistic motion chain (an open→close→open thrash spans
+ * ~280 + 180 + 280 = 740 ms) plus the two idle stability reads at any
+ * realistic pacing (~17 ms per read at 60 Hz, ~8 ms at 120 Hz, ~4 ms at
+ * 240 Hz) plus frame jitter, with honest headroom. It caps the
+ * pathological host only (a box that never stands still): a settled pair
+ * releases whenever it lands — even past the bound — and a conceded cycle
+ * re-arms at the next trigger.
  */
-export const RESETTLE_MAX_FRAMES = 32;
+export const RESETTLE_MAX_MS = 1000;
 
 /** The watch's seams: reads and callbacks injected, nothing reached around. */
 export interface ContainmentWatchDeps {
@@ -35,6 +44,11 @@ export interface ContainmentWatchDeps {
    */
   nextFrame(callback: () => void): void;
   /**
+   * The wall clock the settle bound reads (ms); injected so tests pace it
+   * frame-accurately.
+   */
+  now(): number;
+  /**
    * The re-clamp release itself: the wiring calls the drag machine here and
    * renders a moved result smoothly. Runs exactly once per settled cycle.
    */
@@ -47,11 +61,12 @@ export interface ContainmentWatchDeps {
 export interface ContainmentWatch {
   /**
    * Arm a re-settle cycle: sample the box until two consecutive reads agree
-   * (a still chrome, whatever spring ran), then release {@link ContainmentWatchDeps.reform}
-   * once. The arm takes its own first sample synchronously (the trigger
-   * beat's pre-change box is the right baseline); requests while a cycle
-   * runs coalesce — the running cycle's conclusion already reflects the
-   * latest motion.
+   * (a still chrome, whatever spring ran — within a {@link RESETTLE_MAX_MS}
+   * wall-clock cap), then release {@link ContainmentWatchDeps.reform} once.
+   * The arm takes its own first sample synchronously (the trigger beat's
+   * pre-change box is the right baseline); requests while a cycle runs
+   * coalesce — the running cycle's conclusion already reflects the latest
+   * motion.
    */
   request(): void;
   /**
@@ -79,7 +94,9 @@ export function createContainmentWatch(deps: ContainmentWatchDeps): ContainmentW
 
   const runCycle = (): void => {
     let previous: DragBox | null = null;
-    let frames = 0;
+    // The cycle's first sample beat is the bound's origin: the entrance's
+    // whole ms duration is what the cycle may wait out.
+    const startedAt = deps.now();
     // The first frame samples the START of a possible motion, so the body
     // sees an unchanged second read only when nothing (or no longer)
     // animates between the ticks.
@@ -106,14 +123,13 @@ export function createContainmentWatch(deps: ContainmentWatchDeps): ContainmentW
         deps.reform();
         return;
       }
-      frames += 1;
-      if (frames > RESETTLE_MAX_FRAMES) {
+      if (deps.now() - startedAt > RESETTLE_MAX_MS) {
         armed = false;
         // Concede rather than clamp against a mid-motion box: a later
         // trigger re-arms, so a stable moment is only ever one request away.
         deps.log.debug(
           'the containment re-settle conceded without a still box (no stable read within ' +
-            `${String(RESETTLE_MAX_FRAMES)} frames)`
+            `${String(RESETTLE_MAX_MS)} ms)`
         );
         return;
       }
