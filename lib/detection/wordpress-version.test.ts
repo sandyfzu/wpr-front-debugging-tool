@@ -17,10 +17,14 @@ describe('detectWordPressVersion', () => {
     expect(read('<meta name="generator" content="WordPress 6.8.1">')).toBe('6.8.1');
   });
 
-  it('matches the baseline extraction: a hyphen tail truncates, an attached word tail survives', () => {
-    // The captured group is digits/dots then word chars: a hyphenated suffix
-    // is not matched (the behavioral baseline's regex reads the same page
-    // the same way), while an attached numeric tail stays whole.
+  it('matches the hardened parity extraction: a bare-dot tail abstains, real versions keep their shapes', () => {
+    // The digit requirement is the committed robustness deviation: a crafted
+    // `WordPress .` captures a bare dot under the raw parity pattern, which
+    // renders as a fake "version" — abstention beats data. Real shapes
+    // (hyphenated tails truncated at the hyphen, attached numeric tails
+    // whole) stay exactly as the baseline read them.
+    expect(read('<meta name="generator" content="WordPress .">')).toBeNull();
+    expect(read('<meta name="generator" content="WordPress -.5">')).toBeNull();
     expect(read('<meta name="generator" content="WordPress 6.8.1-beta1">')).toBe('6.8.1');
     expect(read('<meta name="generator" content="WordPress 6.8.1beta1">')).toBe('6.8.1beta1');
   });

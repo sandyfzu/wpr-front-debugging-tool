@@ -267,13 +267,14 @@ export function extractWprVersion(metaContent: string): string | null {
 export const WORDPRESS_NAME_PATTERN = /wordpress/i;
 
 /**
- * Version match after the WordPress name. Mirrors the behavioral baseline's
- * own extraction (digits and dots, greedy, then any word tail) — that tail
- * keeps numeric suffixes like `6.8.1beta` intact, and `null` on no match is
- * the honest absence (the meta may not name WordPress at all).
+ * Version match after the WordPress name: one leading digit required, then
+ * digits/dots greedy, then any word tail. (The audit round's robustness
+ * deviation: the parity pattern captured a bare `.` from a crafted
+ * `WordPress .` — rendering a dot as a "version" reads as data; abstention
+ * is the honest answer, so the digit requirement replaces raw parity here.)
  */
 export const WORDPRESS_VERSION_PATTERN = new RegExp(
-  `${WORDPRESS_NAME_PATTERN.source}\\s*([\\d.]+\\w*)`,
+  `${WORDPRESS_NAME_PATTERN.source}\\s*(\\d[\\d.]*\\w*)`,
   'i'
 );
 

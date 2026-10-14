@@ -47,6 +47,72 @@ const log = createLogger('');
 const ALL_SCRIPTS_LOADED_EVENT = 'rocket-allScriptsLoaded';
 
 /**
+ * The page-data pass's capture wait point: the one moment the serialized page
+ * becomes the pass's source, held as a promise so the same-context reader can
+ * join it later. Pure over injected seams, so its one failure mode is pinned
+ * by unit test: an invalidation before the parser-ready moment must resolve
+ * the wait anyway — the context-owned DOMContentLoaded listener is removed
+ * with its context, and an unresolved waiter would hang every same-context
+ * reader of a context that died on boot.
+ */
+
+/** The wait point's context seams (the real `ctx` satisfies them). */
+export interface CaptureWaitPointDeps {
+  /** Whether the parser-ready moment already happened at setup time. */
+  pastParserReady(): boolean;
+  /** Register the parser-ready trigger (the context-owned DCL listener). */
+  registerParserReady(callback: () => void): void;
+  /** Register the teardown trigger (fires whenever the context dies). */
+  registerInvalidated(callback: () => void): void;
+}
+
+/** The capture's wait point, handed to the same-context readers. */
+export interface CaptureWaitPoint {
+  /** Resolves once the pass's source exists (or the context died). */
+  readonly settled: Promise<void>;
+  /** The capture moment fired — release any waiter (idempotent). */
+  resolve(): void;
+}
+
+/**
+ * Build the capture wait point. Arm-first: the invalidation trigger is
+ * registered before anything else, so a context whose world ends between
+ * setup and the parser-ready moment still releases its waiter — the exact
+ * no-hang pin the audit round demanded.
+ *
+ * @param deps The context seams.
+ */
+export function createCaptureWaitPoint(deps: CaptureWaitPointDeps): CaptureWaitPoint {
+  let settleCapture!: () => void;
+  const settled = new Promise<void>((resolve) => {
+    settleCapture = resolve;
+  });
+  // Registration order is the no-hang contract: the teardown trigger
+  // resolves like the capture's own would.
+  deps.registerInvalidated(() => {
+    settleCapture();
+  });
+  if (deps.pastParserReady()) {
+    settleCapture();
+    return {
+      settled,
+      resolve: () => {
+        settleCapture();
+      }
+    };
+  }
+  deps.registerParserReady(() => {
+    settleCapture();
+  });
+  return {
+    settled,
+    resolve: () => {
+      settleCapture();
+    }
+  };
+}
+
+/**
  * One full page-processing result, immutable after the single pass. Read by
  * same-context consumers through {@link pageDataFor}; the messaging
  * contracts are untouched by this shape.
@@ -181,19 +247,27 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   // The single capture moment: serialize, ask for the page's (already
   // captured) main-frame headers, then tell devtools to reload its panel.
-  /** The capture's one wait point: the pass's source exists from here on. */
-  let captureReady: Promise<void>;
-  let resolveCaptureReady: (() => void) | null = null;
-  if (document.readyState === 'loading') {
-    captureReady = new Promise<void>((resolve) => {
-      resolveCaptureReady = resolve;
-    });
-  } else {
-    captureReady = Promise.resolve();
-  }
+  /**
+   * The capture's one wait point ({@link createCaptureWaitPoint}): the pass's
+   * source exists from here on, and an invalidated-before-DCL context still
+   * releases its waiter — the context-owned DCL listener disappears with it,
+   * so the machine's invalidation trigger carries the resolution.
+   */
+  const captureWatchPoint = createCaptureWaitPoint({
+    pastParserReady: () => document.readyState !== 'loading',
+    registerParserReady: (callback) => {
+      ctx.addEventListener(document, 'DOMContentLoaded', callback);
+    },
+    registerInvalidated: (callback) => {
+      ctx.onInvalidated(callback);
+    }
+  });
   const onParserReady = (): void => {
     capture();
-    resolveCaptureReady?.();
+    // Release the wait point before the follow-on work: a same-context
+    // reader joins the pass's source the moment it exists (and the machine's
+    // release is idempotent).
+    captureWatchPoint.resolve();
     void ensureHeaders().then(() => {
       notifyPanel();
     });
@@ -206,6 +280,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   };
 
   if (document.readyState === 'loading') {
+    // The hub's capture work rides its own context-owned DCL listener (the
+    // machine's is the resolution-only leg); the readyState guard stays the
+    // one decision above the machine.
     ctx.addEventListener(document, 'DOMContentLoaded', onParserReady);
   } else {
     // Late injection (extension reloaded onto an open page): the capture
@@ -319,9 +396,11 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   // the hub's rules: one pass, no second parse — the reader joins whichever
   // state the pass is in and never re-runs it). The wait point first: a
   // boot-time read must answer after the capture exists, not with "no source
-  // yet" (the pass's honest null is a failure, not a pending page).
+  // yet" (the pass's honest null is a failure, not a pending page). An
+  // invalidated-before-capture world resolves through the machine's teardown
+  // trigger and answers null — never a hang.
   const readPageData = async (): Promise<PageData | null> => {
-    await captureReady;
+    await captureWatchPoint.settled;
     await processData();
     return data;
   };

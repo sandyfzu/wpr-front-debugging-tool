@@ -81,17 +81,14 @@ export const TOOLS_GROUP_ICON: StripIconGlyph = {
   ]
 };
 
-/** The pill's present marker: the rocket (lucide `rocket`). */
+/**
+ * The pill's one presence marker: the rocket (lucide `rocket`), tinted by the
+ * chrome's mood — identity, not a state claim (the recorded deviation: no
+ * swapped icon pair, so a red failure never reads as an absence claim).
+ */
 export const PRESENT_ICON_PATHS = [
   'M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5',
   'M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09',
   'M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z',
   'M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05'
-] as const;
-
-/** The pill's absent marker: the crossed-out ring (lucide `circle-off`). */
-export const ABSENT_ICON_PATHS = [
-  'm2 2 20 20',
-  'M8.35 2.69A10 10 0 0 1 21.3 15.65',
-  'M19.08 19.08A10 10 0 1 1 4.92 4.92'
 ] as const;

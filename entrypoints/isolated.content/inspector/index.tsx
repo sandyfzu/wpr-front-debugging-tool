@@ -228,14 +228,15 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Apply the gate's next value: mount/refresh when enabled, unmount when
-   * not. The same-beat contract the theme follow proves: the storage write's
-   * watch callback is the enable/disable, so a UI toggle flips the page's
-   * widget without a reload.
+   * Apply the gate's next value. Same-value writes are skipped outright:
+   * a foreign origin's write (or a same-value rewrite) must not re-run the
+   * data read, whose only worthwhile input is this origin's entry — the
+   * equality is the equivalence.
    *
    * @param enabled The origin's entry.
    */
   const applyGate = (enabled: boolean): void => {
+    if (enabled === enabledNow) return;
     enabledNow = enabled;
     if (enabled) {
       void refreshData();
