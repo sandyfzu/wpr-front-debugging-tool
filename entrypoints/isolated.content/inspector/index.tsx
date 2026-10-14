@@ -126,9 +126,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   let containmentWatch: ContainmentWatch | null = null;
   /**
-   * Which visible shape the active press grabbed (the drag box's element):
-   * the pill path sets the pill, a card handle sets the card. A handler-local
-   * read between the grab and the live re-reads — never read at rest.
+   * The visible shape the active press grabbed — the CAPTURE site (its
+   * pointer capture routes the gesture back through the chrome's bubbling
+   * listeners). The live box reads through the seams' own visible-shape
+   * reader below, so this hold is capture-only.
    */
   let grabbedShape: HTMLElement | null = null;
 
@@ -183,7 +184,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * The drag machine's seams: the viewport and the grabbed shape's box are
+   * The drag machine's seams: the viewport and the VISIBLE shape's box are
    * read per call (each move re-clamps against the live truth), and the
    * position writes land as the chrome's drag-translate custom properties —
    * unset values are the stylesheet's bottom-right anchor, so "no translate"
