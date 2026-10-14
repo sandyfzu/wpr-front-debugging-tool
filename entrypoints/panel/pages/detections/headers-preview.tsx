@@ -30,6 +30,7 @@ import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
 import { KeyValue } from '../../../../components/ui/key-value';
 import {
   buildHeadersViewModel,
+  headersTruncationNote,
   type HeaderRowVM,
   type HeadersViewModel
 } from '../../../../lib/panel/headers-view-model';
@@ -123,6 +124,8 @@ export function previewModel(model: HeadersViewModel, limit = PREVIEW_ROW_LIMIT)
 export interface HeadersPreviewProps {
   /** The captured main-frame headers (non-null: the page omits the section otherwise). */
   headers: PageHeaders;
+  /** The capture's list-level mark (`pageHeadersTruncated`): rows were capped or clipped. */
+  truncated?: boolean;
 }
 
 /**
@@ -268,6 +271,13 @@ export function HeadersPreview(props: HeadersPreviewProps): JSX.Element {
               <p data-fdt="headers-preview-capped" class="text-2xs text-fg-secondary">
                 {cappedLine(preview().shown, preview().total)}
               </p>
+            </Show>
+            <Show when={headersTruncationNote(props.headers, props.truncated)}>
+              {(note) => (
+                <p data-fdt="headers-preview-truncated" class="text-2xs text-fg-muted">
+                  {note()}
+                </p>
+              )}
             </Show>
             <p class="text-2xs text-fg-muted">{HEADERS_FOOTNOTE}</p>
           </div>

@@ -5,7 +5,7 @@
  * shape (absent and empty captures), and rows-moved-never-dropped.
  */
 import { describe, expect, it } from 'vitest';
-import { buildHeadersViewModel } from './headers-view-model';
+import { buildHeadersViewModel, headersTruncationNote } from './headers-view-model';
 import type { PageHeaders } from '../wp-rocket/types';
 
 /**
@@ -158,5 +158,33 @@ describe('buildHeadersViewModel — the empty shapes', () => {
 
   it('an empty capture resolves to the renderable-empty shape', () => {
     expect(buildHeadersViewModel([])).toEqual({ caching: [], other: [] });
+  });
+});
+
+describe('headersTruncationNote', () => {
+  const rows = (n: number): PageHeaders =>
+    Array.from({ length: n }, (_, i) => ({ name: `x-${String(i)}`, value: 'v' }));
+  const clippedValue = { name: 'content-security-policy', value: 'x'.repeat(4096) };
+
+  it('says nothing for a complete capture', () => {
+    expect(headersTruncationNote(rows(300), undefined)).toBeNull();
+    expect(headersTruncationNote(rows(3), false)).toBeNull();
+  });
+
+  it('names each cause the rows show', () => {
+    expect(headersTruncationNote([clippedValue], true)).toBe(
+      'Some header values were clipped to 4,096 characters.'
+    );
+    expect(headersTruncationNote(rows(256), true)).toBe('The list was capped at 256 headers.');
+    expect(headersTruncationNote([...rows(255), clippedValue], true)).toBe(
+      'Some header values were clipped to 4,096 characters; the list was capped at 256 headers.'
+    );
+    expect(headersTruncationNote([{ name: 'n'.repeat(512) }], true)).toBe(
+      'Some header names were clipped to 512 characters.'
+    );
+  });
+
+  it('falls back to a generic line when the rows explain nothing', () => {
+    expect(headersTruncationNote(rows(3), true)).toBe('Some headers were clipped.');
   });
 });

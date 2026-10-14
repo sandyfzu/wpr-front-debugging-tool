@@ -176,3 +176,21 @@ describe('HeadersPreview', () => {
     expect(screen.getByText(NO_HEADERS_LINE)).toBeTruthy();
   });
 });
+
+describe('HeadersPreview — the truncation note', () => {
+  it('shows a muted note for a marked capture, and none otherwise', () => {
+    const headers: PageHeaders = [...filler(255), { name: 'csp', value: 'x'.repeat(4096) }];
+    render(() => <HeadersPreview headers={headers} truncated />);
+    fireEvent.click(toggle());
+    const note = document.querySelector('[data-fdt="headers-preview-truncated"]');
+    expect(note?.textContent).toBe(
+      'Some header values were clipped to 4,096 characters; the list was capped at 256 headers.'
+    );
+    expect(note?.className).toContain('text-fg-muted');
+    cleanup();
+
+    render(() => <HeadersPreview headers={headers} />);
+    fireEvent.click(toggle());
+    expect(document.querySelector('[data-fdt="headers-preview-truncated"]')).toBeNull();
+  });
+});

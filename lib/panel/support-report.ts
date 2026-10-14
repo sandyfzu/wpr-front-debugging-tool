@@ -23,7 +23,11 @@
 import { formatCacheTimestamp } from '../detection/describe';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
-import { buildHeadersViewModel, type HeaderRowVM } from './headers-view-model';
+import {
+  buildHeadersViewModel,
+  headersTruncationNote,
+  type HeaderRowVM
+} from './headers-view-model';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
 import { REDACTED, redactHeaderValue, redactUrl } from './redaction';
@@ -228,9 +232,10 @@ function headerValueCell(row: HeaderRowVM): string {
  * headers model's order), names and values only.
  *
  * @param headers The capture, or null when none was taken.
+ * @param truncated The capture's list-level mark (adds a one-line note).
  * @returns The section's lines.
  */
-function headerLines(headers: FdtData['pageHeaders']): string[] {
+function headerLines(headers: FdtData['pageHeaders'], truncated?: boolean): string[] {
   if (headers === null) {
     return ['### Response headers', '', 'Not captured for this page.'];
   }
@@ -239,9 +244,11 @@ function headerLines(headers: FdtData['pageHeaders']): string[] {
   if (rows.length === 0) {
     return ['### Response headers (0)', '', 'None were captured for this page.'];
   }
+  const note = headersTruncationNote(headers, truncated);
   return [
     `### Response headers (${rows.length.toString()})`,
     '',
+    ...(note === null ? [] : [note, '']),
     '| Header | Value |',
     '| --- | --- |',
     ...rows.map((row) => `| ${codeSpan(row.name, true)} | ${headerValueCell(row)} |`)
@@ -288,7 +295,7 @@ export function buildSupportReport(data: FdtData, context: SupportReportContext)
       ...summaryLines(summarizeDetections(items))
     ],
     detectionLines(items),
-    headerLines(data.pageHeaders),
+    headerLines(data.pageHeaders, data.pageHeadersTruncated),
     referenceLines(data.undefinedReferencesOnPage)
   ];
   return `${sections.map((lines) => lines.join('\n')).join('\n\n')}\n`;

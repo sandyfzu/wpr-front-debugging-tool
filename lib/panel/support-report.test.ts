@@ -181,6 +181,16 @@ describe('buildSupportReport — branches', () => {
     expect(report).toContain('| Server | Not active | — |');
   });
 
+  it('adds the truncation note under the headers heading only for a marked capture', () => {
+    const clipped = [{ name: 'content-security-policy', value: 'x'.repeat(4096) }];
+    const marked = lines(makeReportData({ pageHeaders: clipped, pageHeadersTruncated: true }));
+    const heading = marked.indexOf('### Response headers (1)');
+    expect(marked[heading + 2]).toBe('Some header values were clipped to 4,096 characters.');
+    expect(marked[heading + 4]).toBe('| Header | Value |');
+    const plain = lines(makeReportData({ pageHeaders: clipped }));
+    expect(plain.some((line) => line.includes('clipped'))).toBe(false);
+  });
+
   it('reports a cached page without a representable stamp honestly', () => {
     const report = lines(
       makeReportData({

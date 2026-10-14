@@ -88,7 +88,9 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
         </For>
       </ul>
       <Show when={props.data.pageHeaders}>
-        {(headers) => <HeadersPreview headers={headers()} />}
+        {(headers) => (
+          <HeadersPreview headers={headers()} truncated={props.data.pageHeadersTruncated} />
+        )}
       </Show>
     </PageFrame>
   );
