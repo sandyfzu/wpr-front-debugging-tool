@@ -11,11 +11,12 @@ import { describe, expect, it } from 'vitest';
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 import {
   PAYLOAD_LIMITS,
+  boundPageHeaders,
   boundPreloadedResources,
   boundWprDetections,
   clipString
 } from './payload-bounds';
-import { parsePreloadedResources, parseWprDetections } from './validate';
+import { parsePageHeaders, parsePreloadedResources, parseWprDetections } from './validate';
 import { validDetections } from './validate.fixtures';
 
 /** The populated, guard-genuine detections every case mutates. */
@@ -318,6 +319,87 @@ describe('boundPreloadedResources', () => {
     expect(boundPreloadedResources(absent)).toBe(absent);
     const within = report(3);
     expect(boundPreloadedResources(within)).toBe(within);
+  });
+});
+
+describe('boundWprDetections — the list-wide inline content budget', () => {
+  const { content: perScript, contentTotal } = PAYLOAD_LIMITS.delayScripts;
+  const full = Math.floor(contentTotal / perScript);
+  const fill = (lengths: number[]): WprDetections => {
+    const d = detections();
+    return {
+      ...d,
+      delay_js: {
+        ...d.delay_js,
+        scripts: lengths.map((length) => ({
+          ...script,
+          inline: true,
+          content: 'c'.repeat(length),
+          fdtExcluded: null
+        }))
+      }
+    };
+  };
+  const contents = (d: WprDetections): number[] =>
+    d.delay_js.scripts.map((entry) => entry.content?.length ?? -1);
+
+  it('keeps inline text summing exactly to the budget, unmarked', () => {
+    const input = fill(Array.from({ length: full }, () => perScript));
+    expect(boundWprDetections(input).delay_js).toBe(input.delay_js);
+  });
+
+  it('clips the overflow in document order and empties later scripts, marked', () => {
+    const bounded = boundWprDetections(
+      fill([...Array.from({ length: full - 1 }, () => perScript), perScript - 10, 30, 5])
+    );
+    expect(contents(bounded).slice(-3)).toEqual([perScript - 10, 10, 0]);
+    expect(bounded.delay_js.truncated).toBe(true);
+    expect(parseWprDetections(bounded)).not.toBeNull();
+  });
+});
+
+describe('boundPageHeaders', () => {
+  const caps = PAYLOAD_LIMITS.headers;
+  const rows = (n: number): { name: string; value: string }[] =>
+    Array.from({ length: n }, (_, i) => ({ name: `x-${String(i)}`, value: 'v' }));
+
+  for (const delta of [-1, 0, 1]) {
+    const n = caps.count + delta;
+    it(`keeps ${String(Math.min(n, caps.count))} of ${String(n)} rows`, () => {
+      const bounded = boundPageHeaders(rows(n));
+      expect(bounded.headers).toEqual(rows(n).slice(0, caps.count));
+      expect(bounded.truncated === true).toBe(n > caps.count);
+      expect(parsePageHeaders(bounded.headers)).toEqual(bounded.headers);
+    });
+  }
+
+  for (const delta of [-1, 0, 1]) {
+    it(`clips a ${String(caps.value + delta)}-char value and a ${String(caps.name + delta)}-char name`, () => {
+      const bounded = boundPageHeaders([
+        { name: 'n'.repeat(caps.name + delta), value: 'v'.repeat(caps.value + delta) },
+        { name: 'x-cache' }
+      ]);
+      expect(bounded.headers).toEqual([
+        {
+          name: 'n'.repeat(Math.min(caps.name, caps.name + delta)),
+          value: 'v'.repeat(Math.min(caps.value, caps.value + delta))
+        },
+        { name: 'x-cache' }
+      ]);
+      expect(bounded.truncated === true).toBe(delta > 0);
+      expect(parsePageHeaders(bounded.headers)).not.toBeNull();
+    });
+  }
+
+  it('returns the rows untouched when within the caps', () => {
+    const input = rows(3);
+    expect(boundPageHeaders(input)).toEqual({ headers: input });
+    expect(boundPageHeaders(input).headers).toBe(input);
+  });
+
+  it('never repairs a malformed row: the guard still rejects it', () => {
+    const bounded = boundPageHeaders([{ name: 7 as unknown as string, value: 'v' }]);
+    expect(parsePageHeaders(bounded.headers)).toBeNull();
   });
 });
 

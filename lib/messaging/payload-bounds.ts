@@ -10,11 +10,19 @@
  * (see `TruncationMark`) so consumers can say the list is partial. The guards
  * keep rejecting any violation wholesale — a bounded payload always passes,
  * and only a forged or drifted sender can fail them.
+ *
+ * Why the totals matter, not just the per-item caps: Chrome refuses any
+ * extension message over 64 MiB
+ * (https://developer.chrome.com/docs/extensions/develop/concepts/messaging,
+ * "Message size limits"), so the one unbounded-in-practice field — inline
+ * script text — also carries a per-payload character budget.
  */
 
 import type {
   DelayedScriptRecord,
   LazyloadImageRecord,
+  PageHeader,
+  PageHeaderCapture,
   PreloadedResources,
   WprDetections
 } from '../wp-rocket/types';
@@ -24,8 +32,14 @@ import type {
  * below), and the single declaring site for producer and guard alike.
  */
 export const PAYLOAD_LIMITS = {
-  /** Delay JS: script rows, src URL, inline content. */
-  delayScripts: { count: 5_000, src: 4096, content: 512 * 1024 },
+  /** Captured response headers: rows, and per-row name/value lengths. */
+  headers: { count: 256, name: 512, value: 4096 },
+  /**
+   * Delay JS: script rows, src URL, inline content per script, and inline
+   * content summed over the whole list (8 Mi chars stays far inside the
+   * message ceiling even when every char serializes as a 6-byte escape).
+   */
+  delayScripts: { count: 5_000, src: 4096, content: 512 * 1024, contentTotal: 8 * 1024 * 1024 },
   /** Defer JS sources. */
   deferScripts: { count: 5_000, chars: 4096 },
   /** Lazyload per-image records. */
@@ -105,13 +119,26 @@ function boundVersion(version: string | null, tracker: CutTracker): string | nul
   return version === null ? null : clipString(version, PAYLOAD_LIMITS.versions, tracker);
 }
 
-/** One Delay JS record: its src and inline content within their caps. */
-function boundDelayedScript(script: DelayedScriptRecord, tracker: CutTracker): DelayedScriptRecord {
+/**
+ * Delay JS records: src and inline content within their per-script caps, and
+ * the inline content within the list's total budget (document order — once
+ * spent, later scripts carry empty content, a legitimate engine value).
+ */
+function boundDelayedScripts(
+  scripts: readonly DelayedScriptRecord[],
+  tracker: CutTracker
+): DelayedScriptRecord[] {
   const caps = PAYLOAD_LIMITS.delayScripts;
-  const out = { ...script };
-  if (script.src !== undefined) out.src = clipString(script.src, caps.src, tracker);
-  if (script.content !== undefined) out.content = clipString(script.content, caps.content, tracker);
-  return out;
+  let budget = caps.contentTotal;
+  return boundList(scripts, caps.count, tracker, (script) => {
+    const out = { ...script };
+    if (script.src !== undefined) out.src = clipString(script.src, caps.src, tracker);
+    if (script.content !== undefined) {
+      out.content = clipString(script.content, Math.min(caps.content, budget), tracker);
+      budget -= out.content.length;
+    }
+    return out;
+  });
 }
 
 /**
@@ -128,9 +155,7 @@ export function boundWprDetections(detections: WprDetections): WprDetections {
     ...detections,
     wpr: boundRow(detections.wpr, (t) => ({ version: boundVersion(detections.wpr.version, t) })),
     delay_js: boundRow(detections.delay_js, (t) => ({
-      scripts: boundList(detections.delay_js.scripts, limits.delayScripts.count, t, (script) =>
-        boundDelayedScript(script, t)
-      ),
+      scripts: boundDelayedScripts(detections.delay_js.scripts, t),
       version: boundVersion(detections.delay_js.version, t)
     })),
     defer_all_js: boundRow(detections.defer_all_js, (t) => ({
@@ -177,5 +202,26 @@ export function boundPreloadedResources(report: PreloadedResources): PreloadedRe
       href: clipString(resource.href, caps.href, t),
       type: clipString(resource.type, caps.type, t)
     }))
+  }));
+}
+
+/**
+ * Bound a main frame's captured headers: the first rows up to the count cap,
+ * names and values clipped. Shape problems (a non-string name, …) are left
+ * for the guard to reject — bounding never repairs a malformed capture.
+ *
+ * @param headers The rows as captured.
+ * @returns The bounded capture, `truncated: true` when anything was cut.
+ */
+export function boundPageHeaders(headers: readonly PageHeader[]): PageHeaderCapture {
+  const caps = PAYLOAD_LIMITS.headers;
+  return boundRow({ headers }, (t) => ({
+    headers: boundList(headers, caps.count, t, (row) => {
+      if (typeof row.name !== 'string') return row;
+      const name = clipString(row.name, caps.name, t);
+      return typeof row.value === 'string'
+        ? { name, value: clipString(row.value, caps.value, t) }
+        : { name };
+    })
   }));
 }

@@ -136,18 +136,19 @@ test.describe('site header capture', () => {
     await popupPage.close();
   });
 
-  test('a main frame over the validation caps leaves the tab with no rows', async ({
+  test('a main frame over the row cap serves its first rows, marked truncated', async ({
     extension
   }) => {
-    // 300 filler rows exceed the 256-row capture cap: the P1 reject-whole
-    // policy rejects the capture wholesale, and the served result is null —
-    // never the previous page's rows, never a partial list.
+    // 300 filler rows exceed the 256-row capture cap: the capture is bounded
+    // at the producer (first 256 rows kept) and labeled, never dropped whole.
     const floodPage = await openFixturePage(extension, '/__e2e/header-flood');
     const floodFdt = await extension.sendToTab<{
-      pageHeaders: unknown;
+      pageHeaders: { name: string }[] | null;
+      pageHeadersTruncated?: true;
     } | null>(floodPage.tabId, 'getFdtData');
     expect(floodFdt, 'the flood page processed normally').toBeTruthy();
-    expect(floodFdt?.pageHeaders, 'the over-cap capture served null (wholesale reject)').toBeNull();
+    expect(floodFdt?.pageHeaders, 'the capture kept exactly the row cap').toHaveLength(256);
+    expect(floodFdt?.pageHeadersTruncated, 'the bounded capture is labeled').toBe(true);
     await floodPage.page.close();
   });
 });

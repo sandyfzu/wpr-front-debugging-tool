@@ -20,11 +20,12 @@
  */
 
 import { parsePageHeaders } from '../../lib/messaging/validate';
+import { boundPageHeaders } from '../../lib/messaging/payload-bounds';
 import { numericTabId, resolveSenderTabId } from '../../lib/messaging/sender';
 import { createLogger } from '../../lib/logger';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { onMessage } from '../../lib/messaging';
-import type { PageHeaders } from '../../lib/wp-rocket/types';
+import type { PageHeaderCapture, PageHeaders } from '../../lib/wp-rocket/types';
 import type { BadgeRuntime } from './badge';
 import type { SimMainFrameHook } from './device-simulation';
 
@@ -61,11 +62,11 @@ export interface HeaderCaptureStore {
  * OLDEST read — a queried tab is the last candidate for eviction.
  */
 export class CachedTabHeaders implements HeaderCaptureStore {
-  #cache = new Map<number, PageHeaders>();
+  #cache = new Map<number, PageHeaderCapture>();
 
-  private setFresh(tabId: number, headers: PageHeaders): void {
+  private setFresh(tabId: number, capture: PageHeaderCapture): void {
     this.#cache.delete(tabId);
-    this.#cache.set(tabId, headers);
+    this.#cache.set(tabId, capture);
     const over = this.#cache.size - HEADER_CACHE_CAPACITY;
     if (over <= 0) return;
     // One call only crosses the cap by one; delete the single oldest key.
@@ -76,7 +77,10 @@ export class CachedTabHeaders implements HeaderCaptureStore {
   /**
    * Store or reset one tab's headers. Every capture starts by clearing the
    * tab: rows failing validation must not silently keep the previous page's
-   * headers alive under the new page's tab.
+   * headers alive under the new page's tab. Oversize captures are bounded
+   * first (rows beyond the cap dropped, long names/values clipped, the
+   * capture marked `truncated`) — one large CSP or `Link` header is page
+   * reality and must not erase every other row; only malformed shapes reject.
    *
    * @param headers Raw rows as delivered by the event (possibly absent).
    * @returns True when usable rows were stored, false when the tab has none.
@@ -87,12 +91,16 @@ export class CachedTabHeaders implements HeaderCaptureStore {
     const normalized = headers.map((row) =>
       typeof row.value === 'string' ? { name: row.name, value: row.value } : { name: row.name }
     );
-    const validated = parsePageHeaders(normalized);
+    const bounded = boundPageHeaders(normalized);
+    const validated = parsePageHeaders(bounded.headers);
     if (validated === null) {
-      log.warn('Captured headers rejected', { tabId });
+      log.warn('Captured headers rejected (malformed rows)', { tabId });
       return false;
     }
-    this.setFresh(tabId, validated);
+    this.setFresh(
+      tabId,
+      bounded.truncated === true ? { headers: validated, truncated: true } : { headers: validated }
+    );
     return true;
   }
 
@@ -101,18 +109,28 @@ export class CachedTabHeaders implements HeaderCaptureStore {
    * queried tab is the last candidate for eviction, since the read counts as
    * use).
    *
-   * @returns The validated rows, or null for tabs with nothing usable stored.
+   * @returns The validated capture (rows + truncation mark), or null for
+   *   tabs with nothing usable stored.
    */
-  take(tabId: number): PageHeaders | null {
+  takeCapture(tabId: number): PageHeaderCapture | null {
     const stored = this.#cache.get(tabId);
     if (stored === undefined) return null;
     // An empty capture means nothing usable was served; the consumer omits
     // its header-derived cards on null, not on an empty list.
-    if (stored.length === 0) return null;
+    if (stored.headers.length === 0) return null;
     // A read refreshes the recency (delete + re-append to the end).
     this.#cache.delete(tabId);
     this.#cache.set(tabId, stored);
     return stored;
+  }
+
+  /**
+   * {@link takeCapture}'s rows alone (same recency effect).
+   *
+   * @returns The validated rows, or null for tabs with nothing usable stored.
+   */
+  take(tabId: number): PageHeaders | null {
+    return this.takeCapture(tabId)?.headers ?? null;
   }
 
   /** Drop a tab's rows (a page whose capture failed, or a closed tab). */
@@ -227,8 +245,8 @@ export function initHeaderCapture(badge: BadgeRuntime, sim: SimMainFrameHook): v
       log.warn('Tabless sender ignored');
       return null;
     }
-    const headers = capture.take(tabId);
-    if (headers !== null) log.debug('Headers served for tab', { tabId });
-    return headers;
+    const served = capture.takeCapture(tabId);
+    if (served !== null) log.debug('Headers served for tab', { tabId });
+    return served;
   });
 }

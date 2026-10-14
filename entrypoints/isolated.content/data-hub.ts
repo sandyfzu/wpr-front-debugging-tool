@@ -31,7 +31,7 @@ import type {
   DiagnoserDocData,
   FdtData,
   PageCookies,
-  PageHeaders,
+  PageHeaderCapture,
   PreloadedResources,
   WprDetections
 } from '../../lib/wp-rocket/types';
@@ -170,10 +170,21 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   return { detections, preloadedResources, diagnoserData, wordpressVersion };
 }
 
+/**
+ * The detections as served across the boundary (`getFdtData` and
+ * `getWprDetections` alike): bounded to the payload caps.
+ *
+ * @param data The pass result.
+ */
+export function servedDetections(data: PageData): WprDetections {
+  return boundWprDetections(data.detections);
+}
+
 /** The live page facts the hub tracks beside the single-pass result. */
 export interface LivePageFacts {
   allScriptsLoaded: boolean;
-  pageHeaders: PageHeaders | null;
+  /** The background's (already bounded) header capture, or null. */
+  headerCapture: PageHeaderCapture | null;
   undefinedReferences: string[];
   /** Null only if the capture invariant failed (the field is then omitted). */
   cookies: PageCookies | null;
@@ -193,11 +204,12 @@ export interface LivePageFacts {
 export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
   const payload = {
     allScriptsLoaded: live.allScriptsLoaded,
-    pageHeaders: live.pageHeaders,
+    pageHeaders: live.headerCapture?.headers ?? null,
     undefinedReferencesOnPage: live.undefinedReferences,
-    wprDetections: boundWprDetections(data.detections),
+    wprDetections: servedDetections(data),
     preloadedResources: boundPreloadedResources(data.preloadedResources),
-    diagnoserData: data.diagnoserData
+    diagnoserData: data.diagnoserData,
+    ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {})
   };
   // The capture (which redacts the values at the read) always runs before
   // processing can produce data, so the list is expected here; should that
@@ -230,7 +242,7 @@ export function mergeErrorWords(existing: string[], incoming: string[]): string[
  *   through it.
  */
 export function setupDataHub(ctx: ContentScriptContext): void {
-  let pageHeaders: PageHeaders | null = null;
+  let headerCapture: PageHeaderCapture | null = null;
   let undefinedReferences: string[] = [];
   let allScriptsLoaded = false;
   let pageHTML: string | null = null;
@@ -259,9 +271,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   const fetchHeaders = async (): Promise<void> => {
     try {
-      const headers = await sendMessage('getPageHeaders');
+      const capture = await sendMessage('getPageHeaders');
       if (ctx.isInvalid) return;
-      pageHeaders = headers;
+      headerCapture = capture;
     } catch (error) {
       // Background missing or failing is not a page problem; the panel
       // renders "no headers" for null, so this degrades explicitly.
@@ -411,7 +423,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     if (data === null) return null;
     return composeFdtData(data, {
       allScriptsLoaded,
-      pageHeaders,
+      headerCapture,
       undefinedReferences,
       cookies: pageCookies
     });
@@ -434,7 +446,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     onMessage('getWprDetections', async () => {
       await processData();
       // Bounded like the panel payload: this row crosses the same boundary.
-      return data === null ? null : boundWprDetections(data.detections);
+      return data === null ? null : servedDetections(data);
     })
   );
 

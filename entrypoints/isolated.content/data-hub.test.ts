@@ -16,6 +16,7 @@ import {
   createCaptureWaitPoint,
   mergeErrorWords,
   processSerializedPage,
+  servedDetections,
   type CaptureWaitPointDeps,
   type LivePageFacts
 } from './data-hub';
@@ -162,7 +163,7 @@ function pageWithPreloadedImages(count: number, cacheStamp = '1727000000'): stri
 
 const LIVE: LivePageFacts = {
   allScriptsLoaded: false,
-  pageHeaders: null,
+  headerCapture: null,
   undefinedReferences: [],
   cookies: null
 };
@@ -198,7 +199,7 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
     const cookies = { names: ['wprocket'], capturedAt: 1 };
     const payload = composeFdtData(data, {
       allScriptsLoaded: true,
-      pageHeaders: [{ name: 'x-cache', value: 'HIT' }],
+      headerCapture: { headers: [{ name: 'x-cache', value: 'HIT' }] },
       undefinedReferences: ['jQuery'],
       cookies
     });
@@ -209,5 +210,42 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
       cookies
     });
     expect('cookies' in composeFdtData(data, LIVE)).toBe(false);
+    expect('pageHeadersTruncated' in payload).toBe(false);
+  });
+
+  it('carries the header capture list-level mark to the payload', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1));
+    const payload = composeFdtData(data, {
+      ...LIVE,
+      headerCapture: { headers: [{ name: 'csp', value: 'x' }], truncated: true }
+    });
+    expect(payload.pageHeadersTruncated).toBe(true);
+    expect(parseFdtData(payload)).toMatchObject({ pageHeadersTruncated: true });
+  });
+
+  it('bounds the preloaded-resources report (5,001 links → 5,000, marked)', async () => {
+    // Attributed non-image preloads: they feed the resources report only,
+    // so this leg isolates its own bound from the critical-images list.
+    const cap = PAYLOAD_LIMITS.preloaded.count;
+    const links = Array.from(
+      { length: cap + 1 },
+      (_, i) => `<link rel="preload" as="script" data-rocket-preload href="/s-${String(i)}.js">`
+    ).join('');
+    const data = await processSerializedPage(`<!doctype html><html><head>${links}</head></html>`);
+    expect(data.preloadedResources.resources).toHaveLength(cap + 1);
+    const parsed = parseFdtData(composeFdtData(data, LIVE));
+    expect(parsed?.preloadedResources.resources).toHaveLength(cap);
+    expect(parsed?.preloadedResources.truncated).toBe(true);
+  });
+});
+
+describe('servedDetections — the getWprDetections reply', () => {
+  it('bounds the detections exactly like the panel payload', async () => {
+    const cap = PAYLOAD_LIMITS.preloadedImages.count;
+    const data = await processSerializedPage(pageWithPreloadedImages(cap + 1));
+    const served = servedDetections(data);
+    expect(served.rocket_above_the_fold_optimization.preloadedImages).toHaveLength(cap);
+    expect(served.rocket_above_the_fold_optimization.truncated).toBe(true);
+    expect(served).toEqual(composeFdtData(data, LIVE).wprDetections);
   });
 });

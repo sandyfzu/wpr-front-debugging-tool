@@ -24,6 +24,15 @@ export interface PageHeader {
 /** Page headers of the inspected page's main frame, in capture order. */
 export type PageHeaders = readonly PageHeader[];
 
+/**
+ * One tab's header capture as the background serves it: the bounded rows,
+ * marked when the capture had more rows or longer names/values than the
+ * boundary admits.
+ */
+export interface PageHeaderCapture extends TruncationMark {
+  headers: PageHeaders;
+}
+
 /** Per-script delayed/deferred classification for Delay JS. */
 export interface DelayedScriptRecord {
   /** Inline scripts carry their full text in `content`. */
@@ -280,6 +289,11 @@ export interface FdtData {
   allScriptsLoaded: boolean;
   /** Header list or null when nothing was captured for this tab. */
   pageHeaders: PageHeaders | null;
+  /**
+   * The header list was bounded (rows dropped beyond the cap, or names/values
+   * clipped). Additive: present only as `true`, only beside a non-empty list.
+   */
+  pageHeadersTruncated?: true;
   undefinedReferencesOnPage: string[];
   wprDetections: WprDetections;
   preloadedResources: PreloadedResources;

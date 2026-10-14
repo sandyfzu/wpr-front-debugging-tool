@@ -12,6 +12,7 @@ import {
   parseDiagnoserData,
   parseErrorWords,
   parseFdtData,
+  parseFdtDataExplained,
   parseKnownConflicts,
   parsePageCookies,
   parsePageHeaders,
@@ -19,7 +20,8 @@ import {
   parsePreloadedResources,
   parseWprDetections
 } from './validate';
-import { minimalDetections, validFdt } from './validate.fixtures';
+import { minimalDetections, validFdt, validFdtPayload } from './validate.fixtures';
+import { PAYLOAD_LIMITS } from './payload-bounds';
 import { COOKIE_NAME_LIMITS, sampleCookieNames } from '../wp-rocket/cookies';
 import { MAX_REPRESENTABLE_MS } from '../detection/describe';
 
@@ -608,9 +610,15 @@ describe('the optional truncation mark (additive, tolerant contract)', () => {
   /** Each markable detections row: where it lives and a populated form of it. */
   const markableRows: readonly (readonly [string, Record<string, unknown>])[] = [
     ['wpr', { present: true, cached: false, version: '3.20', timeStamp: null }],
-    ['delay_js', { present: false, scripts: [], version: null, delayedScripts: 0 }],
+    ['delay_js', { present: false, scripts: [], version: '2.0', delayedScripts: 0 }],
     ['defer_all_js', { present: true, scripts: ['/a.js'] }],
-    ['lazyload', { present: false, images: [] }],
+    [
+      'lazyload',
+      {
+        present: true,
+        images: [{ src: '/a.jpg', lazyloadDetected: true, excludedReasonsFound: [] }]
+      }
+    ],
     [
       'rocket_above_the_fold_optimization',
       { present: true, lcpComment: false, preloadedImages: ['/hero.webp'] }
@@ -677,5 +685,157 @@ describe('the optional truncation mark (additive, tolerant contract)', () => {
       truncated: true
     });
     expect(parseFdtData(payload)).not.toBeNull();
+  });
+});
+
+describe('parseFdtDataExplained — the first failing field, by path', () => {
+  /**
+   * A valid payload with the value at `keys` replaced (keys walk records by
+   * name and arrays by index).
+   */
+  const broken = (keys: readonly (string | number)[], value: unknown): unknown => {
+    const payload: unknown = structuredClone(validFdtPayload());
+    let node: unknown = payload;
+    keys.forEach((key, depth) => {
+      if (typeof node !== 'object' || node === null) throw new Error(`no node at ${String(key)}`);
+      const container = node as Record<string | number, unknown>;
+      if (depth === keys.length - 1) container[key] = value;
+      else node = container[key];
+    });
+    return payload;
+  };
+
+  it('passes a valid payload through', () => {
+    const result = parseFdtDataExplained(validFdtPayload());
+    expect(result).toEqual({ ok: true, data: parseFdtData(validFdtPayload()) });
+  });
+
+  it('names the root for a non-record payload', () => {
+    expect(parseFdtDataExplained('not a payload')).toEqual({ ok: false, path: '(root)' });
+  });
+
+  const cases: readonly (readonly [string, readonly (string | number)[], unknown])[] = [
+    ['allScriptsLoaded', ['allScriptsLoaded'], 'yes'],
+    ['pageHeaders[0].value', ['pageHeaders', 0, 'value'], 7],
+    ['pageHeadersTruncated', ['pageHeadersTruncated'], false],
+    ['undefinedReferencesOnPage[0]', ['undefinedReferencesOnPage', 0], ''],
+    ['wprDetections.wpr.timeStamp', ['wprDetections', 'wpr', 'timeStamp'], Infinity],
+    [
+      'wprDetections.delay_js.scripts[0].src',
+      ['wprDetections', 'delay_js', 'scripts', 0, 'src'],
+      1
+    ],
+    [
+      'wprDetections.lazyload.images[0].src',
+      ['wprDetections', 'lazyload', 'images', 0, 'src'],
+      null
+    ],
+    [
+      'wprDetections.rocket_above_the_fold_optimization.preloadedImages[0]',
+      ['wprDetections', 'rocket_above_the_fold_optimization', 'preloadedImages', 0],
+      'x'.repeat(5000)
+    ],
+    [
+      'wprDetections.auto_preload_fonts.fonts',
+      ['wprDetections', 'auto_preload_fonts', 'fonts'],
+      [1]
+    ],
+    ['wprDetections.rocket_cdn', ['wprDetections', 'rocket_cdn'], { present: 1 }],
+    [
+      'preloadedResources.resources[1].type',
+      ['preloadedResources'],
+      {
+        present: true,
+        resources: [
+          { href: '/a', type: 'image' },
+          { href: '/b', type: 9 }
+        ]
+      }
+    ]
+  ];
+  for (const [path, keys, value] of cases) {
+    it(`names ${path}`, () => {
+      expect(parseFdtDataExplained(broken(keys, value))).toEqual({ ok: false, path });
+    });
+  }
+
+  it('leaves no trail behind: a plain parse after an explained one records nothing', () => {
+    parseFdtDataExplained('not a payload');
+    expect(parseFdtData('still not a payload')).toBeNull();
+    expect(parseFdtDataExplained(validFdtPayload()).ok).toBe(true);
+  });
+});
+
+describe('the truncation mark on rows the producer cannot have cut', () => {
+  const withRow = (key: string, row: Record<string, unknown>): Record<string, unknown> => ({
+    ...minimalDetections(),
+    [key]: row
+  });
+
+  it('rejects it beside empty lists and null versions', () => {
+    const uncut: readonly (readonly [string, Record<string, unknown>])[] = [
+      ['wpr', { present: true, cached: false, version: null, timeStamp: null, truncated: true }],
+      [
+        'delay_js',
+        { present: false, scripts: [], version: null, delayedScripts: 0, truncated: true }
+      ],
+      ['defer_all_js', { present: true, scripts: [], truncated: true }],
+      ['lazyload', { present: true, images: [], truncated: true }]
+    ];
+    for (const [key, row] of uncut) {
+      expect(parseWprDetections(withRow(key, row)), key).toBeNull();
+    }
+    expect(parsePreloadedResources({ present: true, resources: [], truncated: true })).toBeNull();
+    const payload = validFdt();
+    expect(parseFdtData({ ...payload, pageHeaders: null, pageHeadersTruncated: true })).toBeNull();
+    expect(parseFdtData({ ...payload, pageHeaders: [], pageHeadersTruncated: true })).toBeNull();
+  });
+
+  it('accepts it where a cut was possible (a version alone, a non-empty list)', () => {
+    expect(
+      parseWprDetections(
+        withRow('delay_js', {
+          present: false,
+          scripts: [],
+          version: '2.0',
+          delayedScripts: 0,
+          truncated: true
+        })
+      )
+    ).not.toBeNull();
+    expect(parseFdtData({ ...validFdt(), pageHeadersTruncated: true })).toMatchObject({
+      pageHeadersTruncated: true
+    });
+  });
+});
+
+describe('Delay JS inline content: the list-wide budget', () => {
+  const { content: perScript, contentTotal } = PAYLOAD_LIMITS.delayScripts;
+  const inline = (length: number): Record<string, unknown> => ({
+    inline: true,
+    content: 'c'.repeat(length),
+    delayed: true,
+    deferred: false,
+    deferredByWPR: false,
+    fdtExcluded: null
+  });
+  const row = (scripts: Record<string, unknown>[]): Record<string, unknown> => ({
+    ...minimalDetections(),
+    delay_js: { present: true, scripts, version: null, delayedScripts: scripts.length }
+  });
+  const full = Math.floor(contentTotal / perScript);
+
+  it('accepts inline text summing exactly to the budget', () => {
+    expect(
+      parseWprDetections(row(Array.from({ length: full }, () => inline(perScript))))
+    ).not.toBeNull();
+  });
+
+  it('rejects one character over it', () => {
+    const scripts = [...Array.from({ length: full }, () => inline(perScript)), inline(1)];
+    expect(parseFdtDataExplained({ ...validFdt(), wprDetections: row(scripts) })).toEqual({
+      ok: false,
+      path: `wprDetections.delay_js.scripts[${String(full)}].content`
+    });
   });
 });

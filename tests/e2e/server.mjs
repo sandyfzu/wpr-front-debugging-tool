@@ -91,9 +91,8 @@ async function handle(request, response) {
   }
   if (url.pathname === '/__e2e/header-flood') {
     // A main frame whose response carries more header rows than the
-    // extension's capture validator accepts (256): the capture must reject
-    // the whole set wholesale, leaving the tab with no stored rows (the
-    // suites read the content script's served null).
+    // extension's capture cap (256): the capture is bounded to its first
+    // rows and marked truncated (the suites read the served, labeled list).
     const headers = { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' };
     for (let i = 0; i < 300; i += 1) headers[`x-e2e-filler-${String(i)}`] = 'filler';
     response.writeHead(200, headers);

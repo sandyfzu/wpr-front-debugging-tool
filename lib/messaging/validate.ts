@@ -56,8 +56,6 @@ import { PAYLOAD_LIMITS } from './payload-bounds';
 const LIMITS = {
   words: ERROR_WORD_LIMITS,
   cookies: COOKIE_NAME_LIMITS,
-  /** Captured response headers: rows, and per-row name/value lengths. */
-  headers: { count: 256, name: 512, value: 4096 },
   ...PAYLOAD_LIMITS,
   knownConflicts: {
     count: 500,
@@ -95,6 +93,41 @@ function truncationOf(keys: 0 | 1): { truncated?: true } {
   return keys === 1 ? { truncated: true } : {};
 }
 
+/**
+ * Rejection diagnostics. While an explained parse runs, every rejection site
+ * on the unwinding path prepends its segment, so the trail names the first
+ * failing field (`wprDetections.lazyload.images[3].src`) — field names and
+ * indices only, never values. Outside an explained parse `reject` records
+ * nothing (no cost, no state kept by the hot guards).
+ */
+let explaining = false;
+let rejectionTrail: string[] = [];
+
+/**
+ * Reject at `segments` (outermost first).
+ *
+ * @returns null, so rejection sites read `return reject('field')`.
+ */
+function reject(...segments: string[]): null {
+  if (explaining) rejectionTrail.unshift(...segments);
+  return null;
+}
+
+/** An index segment (`[3]`), joined to its list name without a dot. */
+function at(index: number): string {
+  return `[${index.toString()}]`;
+}
+
+/** Join trail segments into a path (`a.b[3].c`); empty ⇒ the root itself. */
+function joinTrail(segments: readonly string[]): string {
+  const path = segments.reduce(
+    (joined, segment) =>
+      segment.startsWith('[') || joined === '' ? joined + segment : `${joined}.${segment}`,
+    ''
+  );
+  return path === '' ? '(root)' : path;
+}
+
 // The printability rule and the word caps' canonical home is the shared
 // contract; re-exported so every caller of this guard module reads one public
 // path while the MAIN-world capture side imports the (side-effect-free) leaf.
@@ -119,12 +152,13 @@ export interface DbUpdateResult {
  * @returns The words, or null when the batch violates shape/limits.
  */
 export function parseErrorWords(input: unknown): string[] | null {
-  if (!Array.isArray(input) || input.length > LIMITS.words.count) return null;
+  if (!Array.isArray(input)) return reject();
+  if (input.length > LIMITS.words.count) return reject('length');
   const words: string[] = [];
-  for (const item of input) {
+  for (const [index, item] of input.entries()) {
     if (typeof item !== 'string' || item.length < 1 || item.length > LIMITS.words.chars)
-      return null;
-    if (!isPrintable(item)) return null;
+      return reject(at(index));
+    if (!isPrintable(item)) return reject(at(index));
     words.push(item);
   }
   return words;
@@ -137,20 +171,21 @@ export function parseErrorWords(input: unknown): string[] | null {
  * indistinguishable) stays missing.
  */
 export function parsePageHeaders(input: unknown): PageHeaders | null {
-  if (!Array.isArray(input) || input.length > LIMITS.headers.count) return null;
-  for (const item of input) {
-    if (!isRecord(item)) return null;
+  if (!Array.isArray(input)) return reject();
+  if (input.length > LIMITS.headers.count) return reject('length');
+  for (const [index, item] of input.entries()) {
+    if (!isRecord(item)) return reject(at(index));
     const keys = Object.keys(item);
-    if (keys.length > 2) return null;
+    if (keys.length > 2) return reject(at(index), 'keys');
     for (const key of keys) {
-      if (key !== 'name' && key !== 'value') return null;
+      if (key !== 'name' && key !== 'value') return reject(at(index), 'keys');
     }
     const name = item['name'];
     if (typeof name !== 'string' || name.length < 1 || name.length > LIMITS.headers.name)
-      return null;
+      return reject(at(index), 'name');
     const value = item['value'];
     if (value !== undefined && (typeof value !== 'string' || value.length > LIMITS.headers.value))
-      return null;
+      return reject(at(index), 'value');
   }
   return input.map((item) => {
     const row = item as { name: string; value?: string };
@@ -307,25 +342,29 @@ function isUsableString(value: unknown, max: number): value is string {
 
 /** Structural sanity for the per-page preloaded-resources report. */
 export function parsePreloadedResources(input: unknown): PreloadedResources | null {
-  if (!isRecord(input)) return null;
+  if (!isRecord(input)) return reject();
   const present = input['present'];
-  if (typeof present !== 'boolean') return null;
+  if (typeof present !== 'boolean') return reject('present');
   const keys = new Set(Object.keys(input));
-  if (!present) return keys.size === 1 ? { present: false } : null;
+  if (!present) return keys.size === 1 ? { present: false } : reject('keys');
   const mark = truncationKeys(input);
-  if (mark === null) return null;
-  if (!keys.has('resources') || keys.size !== 2 + mark || !Array.isArray(input['resources'])) {
-    return null;
-  }
-  if (input['resources'].length > LIMITS.preloaded.count) return null;
+  if (mark === null) return reject('truncated');
+  if (!keys.has('resources') || keys.size !== 2 + mark) return reject('keys');
+  const resources = input['resources'];
+  if (!Array.isArray(resources)) return reject('resources');
+  if (resources.length > LIMITS.preloaded.count) return reject('resources', 'length');
+  // Only a non-empty list can have been cut.
+  if (mark === 1 && resources.length === 0) return reject('truncated');
   const out: PreloadedResources['resources'] = [];
-  for (const item of input['resources']) {
-    if (!isRecord(item)) return null;
-    if (Object.keys(item).length !== 2) return null;
+  for (const [index, item] of resources.entries()) {
+    if (!isRecord(item)) return reject('resources', at(index));
+    if (Object.keys(item).length !== 2) return reject('resources', at(index), 'keys');
     // An empty href is legitimate engine output (a srcset-only preload hint
     // has no href attribute — the same '' entry the image lists carry).
-    if (!isBoundedString(item['href'], LIMITS.preloaded.href)) return null;
-    if (!isBoundedString(item['type'], LIMITS.preloaded.type)) return null;
+    if (!isBoundedString(item['href'], LIMITS.preloaded.href))
+      return reject('resources', at(index), 'href');
+    if (!isBoundedString(item['type'], LIMITS.preloaded.type))
+      return reject('resources', at(index), 'type');
     out.push({ href: item['href'], type: item['type'] });
   }
   return { present: true, resources: out, ...truncationOf(mark) };
@@ -338,67 +377,48 @@ export function parsePreloadedResources(input: unknown): PreloadedResources | nu
  * payload, which the panel renders as an error state rather than guessing.
  */
 export function parseWprDetections(input: unknown): WprDetections | null {
-  if (!isRecord(input)) return null;
-  const wprRaw = input['wpr'];
-  if (!isRecord(wprRaw)) return null;
-  const wpr = { ...wprRaw };
-  const wprMark = truncationKeys(wpr);
-  if (
-    wprMark === null ||
-    typeof wpr['present'] !== 'boolean' ||
-    typeof wpr['cached'] !== 'boolean' ||
-    !isBoundedNullableString(wpr['version'], LIMITS.versions) ||
-    (wpr['timeStamp'] !== null &&
-      (typeof wpr['timeStamp'] !== 'number' || !Number.isFinite(wpr['timeStamp']))) ||
-    Object.keys(wpr).length !== 4 + wprMark
-  ) {
-    return null;
-  }
-
-  const removeUnusedCss = parsePresenceRow(input['remove_unused_css']);
-  const asyncCss = parsePresenceRow(input['async_css']);
-  const lazyloadCssBgImg = parsePresenceRow(input['lazyload_css_bg_img']);
-  const minifyCss = parsePresenceRow(input['minify_css']);
-  const minifyJs = parsePresenceRow(input['minify_js']);
-  const preloadLinks = parsePresenceRow(input['preload_links']);
-  const rocketCdn = parsePresenceRow(input['rocket_cdn']);
-  const delayJs = parseDelayJsRow(input['delay_js']);
-  const deferAllJs = parseDeferRow(input['defer_all_js']);
-  const lazyload = parseLazyloadRow(input['lazyload']);
-  const lazyloadIframes = parseIframesRow(input['lazyload_iframes']);
-  const aboveTheFold = parseOptimizeCriticalImagesRow(input['rocket_above_the_fold_optimization']);
-  const lazyRender = parseLazyRenderRow(input['automatic_lazy_rendering']);
-  const preloadFonts = parsePreloadFontsRow(input['auto_preload_fonts']);
-  const preconnectDomains = parsePreconnectRow(input['preconnect_external_domains']);
-  const beacon = parseBeaconRow(input['priority_elements_beacon']);
-  if (
-    removeUnusedCss === null ||
-    asyncCss === null ||
-    lazyloadCssBgImg === null ||
-    minifyCss === null ||
-    minifyJs === null ||
-    preloadLinks === null ||
-    rocketCdn === null ||
-    delayJs === null ||
-    deferAllJs === null ||
-    lazyload === null ||
-    lazyloadIframes === null ||
-    aboveTheFold === null ||
-    lazyRender === null ||
-    preloadFonts === null ||
-    preconnectDomains === null ||
-    beacon === null
-  ) {
-    return null;
-  }
+  if (!isRecord(input)) return reject();
+  const wpr = parseWprRow(input['wpr']);
+  if (wpr === null) return reject('wpr');
+  /** One row through its parser; a rejection names the row. */
+  const row = <T>(key: string, parse: (value: unknown) => T | null): T | null => {
+    const parsed = parse(input[key]);
+    return parsed === null ? reject(key) : parsed;
+  };
+  const removeUnusedCss = row('remove_unused_css', parsePresenceRow);
+  if (removeUnusedCss === null) return null;
+  const asyncCss = row('async_css', parsePresenceRow);
+  if (asyncCss === null) return null;
+  const lazyloadCssBgImg = row('lazyload_css_bg_img', parsePresenceRow);
+  if (lazyloadCssBgImg === null) return null;
+  const minifyCss = row('minify_css', parsePresenceRow);
+  if (minifyCss === null) return null;
+  const minifyJs = row('minify_js', parsePresenceRow);
+  if (minifyJs === null) return null;
+  const preloadLinks = row('preload_links', parsePresenceRow);
+  if (preloadLinks === null) return null;
+  const rocketCdn = row('rocket_cdn', parsePresenceRow);
+  if (rocketCdn === null) return null;
+  const delayJs = row('delay_js', parseDelayJsRow);
+  if (delayJs === null) return null;
+  const deferAllJs = row('defer_all_js', parseDeferRow);
+  if (deferAllJs === null) return null;
+  const lazyload = row('lazyload', parseLazyloadRow);
+  if (lazyload === null) return null;
+  const lazyloadIframes = row('lazyload_iframes', parseIframesRow);
+  if (lazyloadIframes === null) return null;
+  const aboveTheFold = row('rocket_above_the_fold_optimization', parseOptimizeCriticalImagesRow);
+  if (aboveTheFold === null) return null;
+  const lazyRender = row('automatic_lazy_rendering', parseLazyRenderRow);
+  if (lazyRender === null) return null;
+  const preloadFonts = row('auto_preload_fonts', parsePreloadFontsRow);
+  if (preloadFonts === null) return null;
+  const preconnectDomains = row('preconnect_external_domains', parsePreconnectRow);
+  if (preconnectDomains === null) return null;
+  const beacon = row('priority_elements_beacon', parseBeaconRow);
+  if (beacon === null) return null;
   return {
-    wpr: {
-      present: wpr['present'],
-      cached: wpr['cached'],
-      version: wpr['version'],
-      timeStamp: wpr['timeStamp'],
-      ...truncationOf(wprMark)
-    },
+    wpr,
     remove_unused_css: removeUnusedCss,
     async_css: asyncCss,
     lazyload_css_bg_img: lazyloadCssBgImg,
@@ -418,6 +438,27 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   };
 }
 
+/** The WP Rocket footprint row: presence, cache state, version, cache stamp. */
+function parseWprRow(input: unknown): WprDetections['wpr'] | null {
+  if (!isRecord(input)) return reject();
+  const wpr = { ...input };
+  const mark = truncationKeys(wpr);
+  if (mark === null) return reject('truncated');
+  if (Object.keys(wpr).length !== 4 + mark) return reject('keys');
+  const present = wpr['present'];
+  const cached = wpr['cached'];
+  const version = wpr['version'];
+  const timeStamp = wpr['timeStamp'];
+  if (typeof present !== 'boolean') return reject('present');
+  if (typeof cached !== 'boolean') return reject('cached');
+  if (!isBoundedNullableString(version, LIMITS.versions)) return reject('version');
+  // The version is the row's only cuttable field: a null one was never cut.
+  if (mark === 1 && version === null) return reject('truncated');
+  if (timeStamp !== null && (typeof timeStamp !== 'number' || !Number.isFinite(timeStamp)))
+    return reject('timeStamp');
+  return { present, cached, version, timeStamp, ...truncationOf(mark) };
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
 function parsePresenceRow(input: unknown): { present: boolean } | null {
   if (!isRecord(input)) return null;
@@ -428,49 +469,51 @@ function parsePresenceRow(input: unknown): { present: boolean } | null {
 
 /** Delay JS row: script list plus presence/version/count bookkeeping. */
 function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
-  if (!isRecord(input)) return null;
+  if (!isRecord(input)) return reject();
   const row = { ...input };
   const mark = truncationKeys(row);
-  if (
-    mark === null ||
-    typeof row['present'] !== 'boolean' ||
-    !isBoundedNullableString(row['version'], LIMITS.versions) ||
-    typeof row['delayedScripts'] !== 'number' ||
-    !Number.isFinite(row['delayedScripts']) ||
-    row['delayedScripts'] < 0 ||
-    Object.keys(row).length !== 4 + mark ||
-    !Array.isArray(row['scripts'])
-  ) {
-    return null;
-  }
+  if (mark === null) return reject('truncated');
+  if (Object.keys(row).length !== 4 + mark) return reject('keys');
+  if (typeof row['present'] !== 'boolean') return reject('present');
+  if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
+  const delayedScripts = row['delayedScripts'];
+  if (typeof delayedScripts !== 'number' || !Number.isFinite(delayedScripts) || delayedScripts < 0)
+    return reject('delayedScripts');
+  const rawScripts = row['scripts'];
+  if (!Array.isArray(rawScripts)) return reject('scripts');
+  if (rawScripts.length > LIMITS.delayScripts.count) return reject('scripts', 'length');
+  // The cuttable fields are the list and the version: neither present ⇒ uncut.
+  if (mark === 1 && rawScripts.length === 0 && row['version'] === null) return reject('truncated');
   const scripts: WprDetections['delay_js']['scripts'] = [];
-  if (row['scripts'].length > LIMITS.delayScripts.count) return null;
-  for (const rawItem of row['scripts']) {
+  /** Inline text left in the list's total budget (the producer's same budget). */
+  let contentBudget: number = LIMITS.delayScripts.contentTotal;
+  for (const [index, rawItem] of rawScripts.entries()) {
     // Spread first: only own keys survive, so inherited (poisoned) records
     // arrive as empty objects and fail the shape checks below.
-    if (!isRecord(rawItem)) return null;
+    if (!isRecord(rawItem)) return reject('scripts', at(index));
     const item = { ...rawItem };
     const inline = item['inline'];
-    if (typeof inline !== 'boolean') return null;
+    if (typeof inline !== 'boolean') return reject('scripts', at(index), 'inline');
     const src = item['src'];
     const content = item['content'];
     // Empty src/content are legitimate engine outputs (empty attributes,
     // empty inline scripts) — only non-strings or oversizes reject.
-    if (src !== undefined && !isBoundedString(src, LIMITS.delayScripts.src)) return null;
-    if (content !== undefined && !isBoundedString(content, LIMITS.delayScripts.content))
-      return null;
+    if (src !== undefined && !isBoundedString(src, LIMITS.delayScripts.src))
+      return reject('scripts', at(index), 'src');
+    if (content !== undefined) {
+      if (!isBoundedString(content, Math.min(LIMITS.delayScripts.content, contentBudget)))
+        return reject('scripts', at(index), 'content');
+      contentBudget -= content.length;
+    }
     const delayed = item['delayed'];
     const deferred = item['deferred'];
     const deferredByWPR = item['deferredByWPR'];
     const fdtExcluded = item['fdtExcluded'];
-    if (
-      typeof delayed !== 'boolean' ||
-      typeof deferred !== 'boolean' ||
-      typeof deferredByWPR !== 'boolean' ||
-      (fdtExcluded !== null && typeof fdtExcluded !== 'string')
-    ) {
-      return null;
-    }
+    if (typeof delayed !== 'boolean') return reject('scripts', at(index), 'delayed');
+    if (typeof deferred !== 'boolean') return reject('scripts', at(index), 'deferred');
+    if (typeof deferredByWPR !== 'boolean') return reject('scripts', at(index), 'deferredByWPR');
+    if (fdtExcluded !== null && typeof fdtExcluded !== 'string')
+      return reject('scripts', at(index), 'fdtExcluded');
     const record: WprDetections['delay_js']['scripts'][number] = {
       delayed,
       inline,
@@ -486,22 +529,27 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     present: row['present'],
     scripts,
     version: row['version'],
-    delayedScripts: row['delayedScripts'],
+    delayedScripts,
     ...truncationOf(mark)
   };
 }
 
 /** Defer JS row: the source list of every WP Rocket-deferred script. */
 function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
-  if (!isRecord(input)) return null;
+  if (!isRecord(input)) return reject();
   const row = { ...input };
   const mark = truncationKeys(row);
-  if (mark === null || typeof row['present'] !== 'boolean') return null;
-  if (Object.keys(row).length !== 2 + mark || !Array.isArray(row['scripts'])) return null;
-  if (!isStringArray(row['scripts'])) return null;
-  if (row['scripts'].length > LIMITS.deferScripts.count) return null;
-  if (row['scripts'].some((src) => src.length > LIMITS.deferScripts.chars)) return null;
-  return { present: row['present'], scripts: [...row['scripts']], ...truncationOf(mark) };
+  if (mark === null) return reject('truncated');
+  if (Object.keys(row).length !== 2 + mark) return reject('keys');
+  if (typeof row['present'] !== 'boolean') return reject('present');
+  const scripts = row['scripts'];
+  if (!Array.isArray(scripts)) return reject('scripts');
+  if (scripts.length > LIMITS.deferScripts.count) return reject('scripts', 'length');
+  if (mark === 1 && scripts.length === 0) return reject('truncated');
+  for (const [index, src] of scripts.entries()) {
+    if (!isBoundedString(src, LIMITS.deferScripts.chars)) return reject('scripts', at(index));
+  }
+  return { present: row['present'], scripts: [...(scripts as string[])], ...truncationOf(mark) };
 }
 
 /** The reason domain is the exclusion list itself; more entries is malformed. */
@@ -509,22 +557,27 @@ const LAZYLOAD_REASON_LIMIT = LAZYLOAD_EXCLUSIONS_LIST.length;
 
 /** Lazyload row: one record per <img>, in document order. */
 function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
-  if (!isRecord(input)) return null;
+  if (!isRecord(input)) return reject();
   const row = { ...input };
   const mark = truncationKeys(row);
-  if (mark === null || typeof row['present'] !== 'boolean') return null;
-  if (Object.keys(row).length !== 2 + mark || !Array.isArray(row['images'])) return null;
-  if (row['images'].length > LIMITS.images.count) return null;
+  if (mark === null) return reject('truncated');
+  if (Object.keys(row).length !== 2 + mark) return reject('keys');
+  if (typeof row['present'] !== 'boolean') return reject('present');
+  const rawImages = row['images'];
+  if (!Array.isArray(rawImages)) return reject('images');
+  if (rawImages.length > LIMITS.images.count) return reject('images', 'length');
+  if (mark === 1 && rawImages.length === 0) return reject('truncated');
   const images: WprDetections['lazyload']['images'] = [];
-  for (const rawItem of row['images']) {
-    if (!isRecord(rawItem)) return null;
+  for (const [index, rawItem] of rawImages.entries()) {
+    if (!isRecord(rawItem)) return reject('images', at(index));
     const item = { ...rawItem };
-    if (Object.keys(item).length !== 3) return null;
-    if (!isBoundedString(item['src'], LIMITS.images.src)) return null;
-    if (typeof item['lazyloadDetected'] !== 'boolean') return null;
-    if (!isStringArray(item['excludedReasonsFound'])) return null;
+    if (Object.keys(item).length !== 3) return reject('images', at(index), 'keys');
+    if (!isBoundedString(item['src'], LIMITS.images.src)) return reject('images', at(index), 'src');
+    if (typeof item['lazyloadDetected'] !== 'boolean')
+      return reject('images', at(index), 'lazyloadDetected');
     const reasons = item['excludedReasonsFound'];
-    if (reasons.length > LAZYLOAD_REASON_LIMIT) return null;
+    if (!isStringArray(reasons) || reasons.length > LAZYLOAD_REASON_LIMIT)
+      return reject('images', at(index), 'excludedReasonsFound');
     images.push({
       src: item['src'],
       lazyloadDetected: item['lazyloadDetected'],
@@ -561,28 +614,21 @@ function parseOptimizeCriticalImagesRow(
   if (!present) {
     // The engines emit exactly `{ present: false, lcpComment }` — an image
     // list alongside it is not engine output, so it rejects.
-    if (keys.size !== 2) return null;
+    if (keys.size !== 2) return reject('keys');
     return { present: false, lcpComment };
   }
   // Only a non-empty list can have been cut, so the mark rides this arm only.
   const mark = truncationKeys(row);
-  if (mark === null) return null;
-  if (
-    !keys.has('preloadedImages') ||
-    keys.size !== 3 + mark ||
-    !isStringArray(row['preloadedImages'])
-  ) {
-    return null;
+  if (mark === null) return reject('truncated');
+  if (!keys.has('preloadedImages') || keys.size !== 3 + mark) return reject('keys');
+  if (!isStringArray(row['preloadedImages'])) return reject('preloadedImages');
+  const images = row['preloadedImages'];
+  if (images.length < 1) return reject('preloadedImages', 'length');
+  if (images.length > LIMITS.preloadedImages.count) return reject('preloadedImages', 'length');
+  for (const [index, url] of images.entries()) {
+    if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
   }
-  if (row['preloadedImages'].length < 1) return null;
-  if (row['preloadedImages'].length > LIMITS.preloadedImages.count) return null;
-  if (row['preloadedImages'].some((url) => url.length > LIMITS.preloadedImages.chars)) return null;
-  return {
-    present,
-    lcpComment,
-    preloadedImages: [...row['preloadedImages']],
-    ...truncationOf(mark)
-  };
+  return { present, lcpComment, preloadedImages: [...images], ...truncationOf(mark) };
 }
 
 /**
@@ -619,13 +665,14 @@ function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts
   if (typeof present !== 'boolean') return null;
   if (present) {
     const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
-    if (fonts === null || fonts.length < 1) return null;
+    if (fonts === null) return reject('fonts');
+    if (fonts.length < 1) return reject('fonts', 'length');
     return { present: true, fonts, ...truncationOf(mark) };
   }
   // Absent feature: the engines emit an empty list, never a populated one
   // (and an empty list was never cut).
-  if (mark === 1) return null;
-  if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return null;
+  if (mark === 1) return reject('truncated');
+  if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return reject('fonts');
   return { present: false, fonts: [] };
 }
 
@@ -641,11 +688,12 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
   if (preconnectCount === null) return null;
   if (present) {
     const domains = parseCappedStringList(row['domains'], LIMITS.domains);
-    if (domains === null || domains.length < 1) return null;
+    if (domains === null) return reject('domains');
+    if (domains.length < 1) return reject('domains', 'length');
     return { present: true, domains, preconnectCount, ...truncationOf(mark) };
   }
-  if (mark === 1) return null;
-  if (!isStringArray(row['domains']) || row['domains'].length !== 0) return null;
+  if (mark === 1) return reject('truncated');
+  if (!isStringArray(row['domains']) || row['domains'].length !== 0) return reject('domains');
   return { present: false, domains: [], preconnectCount };
 }
 
@@ -718,7 +766,7 @@ function parseBeaconRow(input: unknown): WprDetections['priority_elements_beacon
     if (row[field] === undefined) continue;
     // Empty lists are legitimate config values (the plugin's defaults).
     const list = parseCappedStringList(row[field], BEACON_CONFIG_LIMITS.lists);
-    if (list === null) return null;
+    if (list === null) return reject(field);
     out[field] = list;
   }
   return out;
@@ -762,40 +810,51 @@ function parseCappedStringList(
   value: unknown,
   limits: { count: number; chars: number }
 ): string[] | null {
-  if (!isStringArray(value) || value.length > limits.count) return null;
-  if (value.some((item) => item.length < 1 || item.length > limits.chars)) return null;
+  if (!isStringArray(value)) return null;
+  if (value.length > limits.count) return reject('length');
+  for (const [index, item] of value.entries()) {
+    if (item.length < 1 || item.length > limits.chars) return reject(at(index));
+  }
   return [...value];
 }
 
 /** Full panel payload. Every part is validated; any miss rejects the payload. */
 export function parseFdtData(input: unknown): FdtData | null {
-  if (!isRecord(input)) return null;
+  if (!isRecord(input)) return reject();
   // Fields the tool keeps adding live on `FdtData`; only the established keys
   // are required here (tolerant read of future additive fields).
   const pageHeadersRaw = input['pageHeaders'];
   const pageHeaders = pageHeadersRaw === null ? null : parsePageHeaders(pageHeadersRaw);
-  if (pageHeadersRaw !== null && pageHeaders === null) return null;
+  if (pageHeadersRaw !== null && pageHeaders === null) return reject('pageHeaders');
+  // The list-level header mark: absent, or `true` beside a non-empty list
+  // (an absent or empty capture was never cut).
+  const headersMark = input['pageHeadersTruncated'];
+  if (headersMark !== undefined && (headersMark !== true || !pageHeaders?.length))
+    return reject('pageHeadersTruncated');
   const undefinedReferencesRaw = input['undefinedReferencesOnPage'];
-  if (undefinedReferencesRaw === null || undefinedReferencesRaw === undefined) return null;
+  if (undefinedReferencesRaw === null || undefinedReferencesRaw === undefined)
+    return reject('undefinedReferencesOnPage');
   const undefinedReferencesOnPage = parseErrorWords(undefinedReferencesRaw);
-  if (undefinedReferencesOnPage === null) return null;
+  if (undefinedReferencesOnPage === null) return reject('undefinedReferencesOnPage');
   const wprDetections = parseWprDetections(input['wprDetections']);
-  if (wprDetections === null) return null;
+  if (wprDetections === null) return reject('wprDetections');
   const preloadedResourcesRaw = input['preloadedResources'];
-  if (preloadedResourcesRaw === null || preloadedResourcesRaw === undefined) return null;
+  if (preloadedResourcesRaw === null || preloadedResourcesRaw === undefined)
+    return reject('preloadedResources');
   const preloadedResources = parsePreloadedResources(preloadedResourcesRaw);
-  if (preloadedResources === null) return null;
+  if (preloadedResources === null) return reject('preloadedResources');
   const diagnoserRaw = input['diagnoserData'];
   const diagnoserData = diagnoserRaw === null ? null : parseDiagnoserData(diagnoserRaw);
-  if (diagnoserRaw !== null && diagnoserData === null) return null;
-  if (typeof input['allScriptsLoaded'] !== 'boolean') return null;
+  if (diagnoserRaw !== null && diagnoserData === null) return reject('diagnoserData');
+  if (typeof input['allScriptsLoaded'] !== 'boolean') return reject('allScriptsLoaded');
   const payload = {
     allScriptsLoaded: input['allScriptsLoaded'],
     pageHeaders,
     undefinedReferencesOnPage,
     wprDetections,
     preloadedResources,
-    diagnoserData
+    diagnoserData,
+    ...(headersMark === true ? { pageHeadersTruncated: true as const } : {})
   };
   // Additive field, absent from payloads captured before it existed — absence
   // reads through as absence (a consumer omits the section) instead of
@@ -803,8 +862,32 @@ export function parseFdtData(input: unknown): FdtData | null {
   const cookiesRaw = input['cookies'];
   if (cookiesRaw === undefined) return payload;
   const cookies = parsePageCookies(cookiesRaw);
-  if (cookies === null) return null;
+  if (cookies === null) return reject('cookies');
   return { ...payload, cookies };
+}
+
+/** A panel-payload parse with its rejection site (see `parseFdtDataExplained`). */
+export type ExplainedFdtData =
+  { readonly ok: true; readonly data: FdtData } | { readonly ok: false; readonly path: string };
+
+/**
+ * {@link parseFdtData}, naming the first failing field on rejection — the
+ * path (`wprDetections.lazyload.images[3].src`) is safe to log: field names
+ * and indices only, never a value.
+ *
+ * @param input The untrusted payload.
+ * @returns The parsed payload, or the rejection path.
+ */
+export function parseFdtDataExplained(input: unknown): ExplainedFdtData {
+  explaining = true;
+  rejectionTrail = [];
+  try {
+    const data = parseFdtData(input);
+    return data !== null ? { ok: true, data } : { ok: false, path: joinTrail(rejectionTrail) };
+  } finally {
+    explaining = false;
+    rejectionTrail = [];
+  }
 }
 
 /**
