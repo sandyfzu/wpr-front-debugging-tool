@@ -1,14 +1,19 @@
 /**
  * Test-only harness for the resource-list pages: renders a page body inside
  * the shell's two contexts with a signal-backed data store (so a test can
- * push a refresh) and the real search store, plus a layout-free virtualizer
- * double that renders every row (happy-dom has no layout engine). No shipped
- * module imports this file.
+ * push a refresh) and the real search store, plus layout-free virtualizer
+ * doubles (happy-dom has no layout engine) that render a bounded window, as
+ * the real virtualizer does — so a list at its 5,000-row cap still mounts
+ * only a viewport's worth of rows. No shipped module imports this file.
  */
 import { render } from '@solidjs/testing-library';
 import { createSignal, untrack, type Component, type JSX } from 'solid-js';
 import { vi } from 'vitest';
-import type { VirtualItem, VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import type {
+  VirtualItem,
+  VirtualizerFactory,
+  VirtualListOptions
+} from '../../../../components/ui/virtual-list';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
 import { createSearchStore, type SearchStore } from '../../state/search';
@@ -18,21 +23,39 @@ import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/us
 const DOUBLE_ROW_PX = 40;
 
 /**
- * A virtualizer double that renders all `count` rows (reactively — it reads
- * the list's live `count` and `getItemKey` on every pass).
+ * Rows the doubles mount at most: well above every small fixture (so those
+ * render whole) and far below the 5,000-row cap (which a happy-dom render
+ * of every row turns into seconds of DOM work).
  */
-export const renderAllRows: VirtualizerFactory = (options) => ({
-  getVirtualItems: (): VirtualItem[] =>
-    Array.from({ length: options.count }, (_, index) => ({
-      // Honors the list's keys, as the real virtualizer does: pages look rows
-      // up by key, so an index-keyed double would hide key bugs.
-      key: options.getItemKey?.(index) ?? index,
-      index,
-      start: index * DOUBLE_ROW_PX,
-      end: (index + 1) * DOUBLE_ROW_PX,
-      size: DOUBLE_ROW_PX,
-      lane: 0
-    })),
+export const DOUBLE_WINDOW_ROWS = 50;
+
+/**
+ * The window's items: the first `min(count, DOUBLE_WINDOW_ROWS)` rows, laid
+ * out at {@link DOUBLE_ROW_PX}.
+ *
+ * @param options The list's live virtualizer options (`count`, `getItemKey`).
+ * @returns The windowed items.
+ */
+function windowItems(options: VirtualListOptions): VirtualItem[] {
+  return Array.from({ length: Math.min(options.count, DOUBLE_WINDOW_ROWS) }, (_, index) => ({
+    // Honors the list's keys, as the real virtualizer does: pages look rows
+    // up by key, so an index-keyed double would hide key bugs.
+    key: options.getItemKey?.(index) ?? index,
+    index,
+    start: index * DOUBLE_ROW_PX,
+    end: (index + 1) * DOUBLE_ROW_PX,
+    size: DOUBLE_ROW_PX,
+    lane: 0
+  }));
+}
+
+/**
+ * A virtualizer double that mounts the top window of rows in step with the
+ * list (it reads the live `count` and `getItemKey` on every pass) and sizes
+ * the scroller for all `count` rows, like the real one at scroll top.
+ */
+export const renderWindowedRows: VirtualizerFactory = (options) => ({
+  getVirtualItems: () => windowItems(options),
   getTotalSize: () => options.count * DOUBLE_ROW_PX,
   measureElement: () => undefined
 });
@@ -52,13 +75,13 @@ export interface PageHarness {
  *
  * @param Page The page component (receives the virtualizer double).
  * @param data The payload to serve.
- * @param virtualizer The virtualizer double (default: every row, in step).
+ * @param virtualizer The virtualizer double (default: the top window, in step).
  * @returns The harness handles.
  */
 export function renderPage(
   Page: Component<{ createVirtualizer?: VirtualizerFactory }>,
   data: FdtData,
-  virtualizer: VirtualizerFactory = renderAllRows
+  virtualizer: VirtualizerFactory = renderWindowedRows
 ): PageHarness {
   const [state, setState] = createSignal<DataState>({ status: 'ready', data, fetchedAt: 0 });
   const store: FdtDataStore = {
@@ -107,22 +130,18 @@ export interface LaggedVirtualizer {
 export function laggedVirtualizer(): LaggedVirtualizer {
   const handle = { flush: (): void => undefined };
   const factory: VirtualizerFactory = (options) => {
-    const snapshot = (): VirtualItem[] =>
-      Array.from({ length: options.count }, (_, index) => ({
-        key: options.getItemKey?.(index) ?? index,
-        index,
-        start: index * DOUBLE_ROW_PX,
-        end: (index + 1) * DOUBLE_ROW_PX,
-        size: DOUBLE_ROW_PX,
-        lane: 0
-      }));
-    const [items, setItems] = createSignal(untrack(snapshot));
+    // Items and count lag together: both move only on flush.
+    const snapshot = (): { items: VirtualItem[]; count: number } => ({
+      items: windowItems(options),
+      count: options.count
+    });
+    const [view, setView] = createSignal(untrack(snapshot));
     handle.flush = () => {
-      setItems(untrack(snapshot));
+      setView(untrack(snapshot));
     };
     return {
-      getVirtualItems: items,
-      getTotalSize: () => items().length * DOUBLE_ROW_PX,
+      getVirtualItems: () => view().items,
+      getTotalSize: () => view().count * DOUBLE_ROW_PX,
       measureElement: () => undefined
     };
   };
