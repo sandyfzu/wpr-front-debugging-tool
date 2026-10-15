@@ -73,6 +73,86 @@ describe('CopyButton', () => {
     expect(toastItems()[0]?.title).toBe('Exclusion list copied');
   });
 
+  it('resolves complete text on demand, reports the real wait, and prevents duplicate reads', async () => {
+    let resolve: (text: string) => void = () => undefined;
+    const loadText = vi.fn(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        })
+    );
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    render(() => (
+      <CopyButton text="preview..." label="Script" loadText={loadText} clipboard={clipboard} />
+    ));
+    const button = screen.getByRole('button', { name: 'Script' });
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(button);
+    expect(loadText).toHaveBeenCalledTimes(1);
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+    resolve('complete 🛰️...');
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('complete 🛰️...');
+    });
+    expect(button.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('never copies a preview after source failure, and permits a retry with an actionable remedy', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    const loadText = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('private source'))
+      .mockResolvedValueOnce('full');
+    render(() => (
+      <CopyButton
+        text="preview..."
+        label="Script"
+        loadText={loadText}
+        sourceFailureDescription="Refresh the panel and try copying again."
+        clipboard={clipboard}
+      />
+    ));
+    const button = screen.getByRole('button', { name: 'Script' });
+    fireEvent.click(button);
+    await vi.waitFor(() => {
+      expect(toastItems()[0]?.description).toBe('Refresh the panel and try copying again.');
+    });
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+    expect(button.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(button);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('full');
+    });
+  });
+
+  it('aborts an outstanding source read on disposal and never writes its late result', async () => {
+    let resolve: (text: string) => void = () => undefined;
+    let signal: AbortSignal | undefined;
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    const { unmount } = render(() => (
+      <CopyButton
+        text="preview"
+        label="Script"
+        clipboard={clipboard}
+        loadText={(active) => {
+          signal = active;
+          return new Promise<string>((done) => {
+            resolve = done;
+          });
+        }}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Script' }));
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    resolve('late full source');
+    await Promise.resolve();
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+    expect(toastItems()).toHaveLength(0);
+  });
+
   it('renders the error toast with a remedy when the clipboard rejects', async () => {
     const clipboard: ClipboardLike = {
       writeText: vi.fn().mockRejectedValue(new Error('write blocked'))

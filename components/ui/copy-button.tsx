@@ -86,6 +86,10 @@ export async function performCopy(
 export interface CopyButtonProps {
   /** The text written to the clipboard. */
   text: string;
+  /** Resolve complete text on demand; display text is never used as a fallback on failure. */
+  loadText?: (signal: AbortSignal) => Promise<string>;
+  /** Actionable remedy when a source read fails before the clipboard write. */
+  sourceFailureDescription?: string;
   /**
    * The name of what is copied — phrased into the confirmation toast
    * (`"<label> copied"`) and the accessible name when the label text is
@@ -115,6 +119,8 @@ export interface CopyButtonProps {
  * a dead end this marker would point at itself.
  *
  * @param props.text The payload.
+ * @param props.loadText Optional complete-source reader, cancelled on disposal.
+ * @param props.sourceFailureDescription Remedy for a failed source read.
  * @param props.label What to name in feedback.
  * @param props.variant Button variant (default `ghost`).
  * @param props.size Button size (default `sm`).
@@ -127,10 +133,13 @@ export interface CopyButtonProps {
  */
 export function CopyButton(props: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  let pending: AbortController | undefined;
   let flashReset: ReturnType<typeof setTimeout> | undefined;
   // The flash never outlives the control: a disposed button's timer dies with it.
   onCleanup(() => {
     clearTimeout(flashReset);
+    pending?.abort();
   });
 
   const sink: CopyOutcomeSink = {
@@ -158,10 +167,32 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
    * @returns Resolves after the outcome landed in the sink (never rejects).
    */
   const guardedCopy = async (): Promise<void> => {
+    if (loading()) return;
+    const controller = new AbortController();
+    pending = controller;
+    const loadText = props.loadText;
+    const text = props.text;
+    setLoading(true);
     try {
-      await performCopy(props.text, props.clipboard ?? defaultClipboard(), sink);
+      let complete = text;
+      if (loadText !== undefined) {
+        try {
+          complete = await loadText(controller.signal);
+        } catch {
+          if (!controller.signal.aborted)
+            toast.error('Copy failed', {
+              description: props.sourceFailureDescription ?? COPY_FAILED_DESCRIPTION
+            });
+          return;
+        }
+      }
+      if (!controller.signal.aborted)
+        await performCopy(complete, props.clipboard ?? defaultClipboard(), sink);
     } catch (error: unknown) {
-      sink.failed(error);
+      if (!controller.signal.aborted) sink.failed(error);
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+      if (pending === controller) pending = undefined;
     }
   };
 
@@ -179,6 +210,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       variant={props.variant ?? 'ghost'}
       size={props.size ?? 'sm'}
       onClick={onCopy}
+      loading={loading()}
       class={cn('gap-1', props.class)}
     >
       {copied() ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}

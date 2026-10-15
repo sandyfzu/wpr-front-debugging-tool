@@ -454,6 +454,15 @@ describe('parseWprDetections', () => {
 });
 
 describe('parseFdtData', () => {
+  it('preserves an optional valid script snapshot identity and rejects malformed present values', () => {
+    const full = validFdt();
+    const scriptSnapshotId = '12345678123412341234123456789abc';
+    expect(parseFdtData({ ...full, scriptSnapshotId })?.scriptSnapshotId).toBe(scriptSnapshotId);
+    for (const invalid of [null, '', 'bad', 7, 'a'.repeat(1000)]) {
+      expect(parseFdtData({ ...full, scriptSnapshotId: invalid })).toBeNull();
+    }
+  });
+
   it('passes the panel payload through', () => {
     const payload = minimalDetections();
     const full = { ...validFdt(), wprDetections: payload };

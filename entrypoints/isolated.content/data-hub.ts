@@ -22,6 +22,7 @@
  * failure of the page work.
  */
 
+import { createScriptSnapshotId, readScriptSourceChunk } from '../../lib/messaging/script-source';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
@@ -242,6 +243,7 @@ export function mergeErrorWords(existing: string[], incoming: string[]): string[
  *   through it.
  */
 export function setupDataHub(ctx: ContentScriptContext): void {
+  const scriptSnapshotId = createScriptSnapshotId();
   let headerCapture: PageHeaderCapture | null = null;
   let undefinedReferences: string[] = [];
   let allScriptsLoaded = false;
@@ -421,12 +423,15 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   /** The panel payload; null when processing failed or nothing was captured. */
   const fdtData = (): FdtData | null => {
     if (data === null) return null;
-    return composeFdtData(data, {
-      allScriptsLoaded,
-      headerCapture,
-      undefinedReferences,
-      cookies: pageCookies
-    });
+    return {
+      scriptSnapshotId,
+      ...composeFdtData(data, {
+        allScriptsLoaded,
+        headerCapture,
+        undefinedReferences,
+        cookies: pageCookies
+      })
+    };
   };
 
   ctx.onInvalidated(
@@ -441,6 +446,13 @@ export function setupDataHub(ctx: ContentScriptContext): void {
       await ensureHeaders();
       return fdtData();
     })
+  );
+  ctx.onInvalidated(
+    onMessage('getScriptSourceChunk', ({ data: request }) =>
+      data === null || ctx.isInvalid
+        ? { status: 'unavailable' }
+        : readScriptSourceChunk(data.detections.delay_js.scripts, scriptSnapshotId, request)
+    )
   );
   ctx.onInvalidated(
     onMessage('getWprDetections', async () => {

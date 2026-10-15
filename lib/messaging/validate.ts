@@ -17,6 +17,7 @@
  * bounded payload always passes and a partial list is always labeled.
  */
 
+import { isScriptSnapshotId } from './script-source';
 import type {
   BeaconFeatureStatus,
   DiagnoserDocData,
@@ -866,7 +867,11 @@ export function parseFdtData(input: unknown): FdtData | null {
   const diagnoserData = diagnoserRaw === null ? null : parseDiagnoserData(diagnoserRaw);
   if (diagnoserRaw !== null && diagnoserData === null) return reject('diagnoserData');
   if (typeof input['allScriptsLoaded'] !== 'boolean') return reject('allScriptsLoaded');
+  const scriptSnapshotId = input['scriptSnapshotId'];
+  if (scriptSnapshotId !== undefined && !isScriptSnapshotId(scriptSnapshotId))
+    return reject('scriptSnapshotId');
   const payload = {
+    ...(scriptSnapshotId === undefined ? {} : { scriptSnapshotId }),
     allScriptsLoaded: input['allScriptsLoaded'],
     pageHeaders,
     undefinedReferencesOnPage,
