@@ -64,7 +64,7 @@
 
 - **P-1** One source, one `createMemo` chain (rows → filtered rows → counts in one pass); nothing derived in row renderers; no `createEffect` writing what a memo can derive; stable row keys.
 - **P-2** Lists whose source can exceed 100 rows always render through `components/ui/virtual-list` (one code path, no count-switched dual rendering — `UX-D10`). Per-row cost O(rendered rows): no Kobalte `Tooltip` per virtual row (use `title`), no per-row observers beyond `CodeBlock`'s own.
-- **P-3** On a 5,000-row fixture, filter change / search commit / view switch: no long task > 50 ms, TBT < 200 ms. Heavy deps load lazily (shiki only via `CodeBlock`); every surface stays under its `scripts/budgets.json` row and receipts its delta.
+- **P-3** On a 5,000-row fixture, filter change / search commit / view switch: no long task > 50 ms, TBT < 200 ms. Heavy deps load lazily and heavy work leaves the main thread: shiki runs only in `CodeBlock`'s highlight Web Worker, each block time-boxed (a runaway block's worker is terminated and the block stays plain text), and the main thread only mounts bounded markup; every surface stays under its `scripts/budgets.json` row and receipts its delta.
 - **P-4** Images and other remote fetches from extension surfaces are lazy, fixed-size (zero layout shift) and `referrerpolicy="no-referrer"`.
 
 ## W — Words (`UX-D12`)
@@ -89,3 +89,4 @@
 - 2026-10-14 — `L-1` states what a breakpoint measures (the container's content box; panel pages: the content region, not the panel) — P6A.1 audit round; no value moved.
 - 2026-10-14 — `L-3` card-grid track 13 rem → 15 rem (13 rem wrapped feature names to 3 lines at 1000–1400 px panels, measured on the Detections page) and the compact grouped-rows form for long card grids — P6B audit round.
 - 2026-10-14 — `L-3` copy-controls clause aligned with what ships: icon-only only where it truly saves title-row space; primary actions keep their label (Detections `Copy report`) — P6B verification round.
+- 2026-10-14 — `P-3` names where code highlighting runs: off the main thread in a time-boxed worker (no grammar-cost model on the main thread) — P6C verification round; no value moved.

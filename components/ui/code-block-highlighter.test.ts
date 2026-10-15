@@ -23,12 +23,18 @@ import githubLight from 'shiki/themes/github-light.mjs';
 import { contrastRatio } from '../../utils/contrast';
 import {
   COLOR_REPLACEMENTS,
+  MAX_TOKENIZED_LINE,
   THEME_PAIR,
   getHighlighter,
+  styleToClass,
   pendingHighlighter,
   resetHighlighter,
   type CodeHighlighter
 } from './code-block-highlighter';
+import { answerHighlight } from './code-block-worker-protocol';
+import { isTokenStyle, tokenClassName } from './code-block-token-styles';
+import { createHighlighterCore } from 'shiki/core';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
 /** The hostile payloads that must survive highlighting as text only. */
 const HOSTILE_CASES: Array<{ lang: 'javascript' | 'json'; code: string; name: string }> = [
@@ -71,7 +77,7 @@ function rootTagOf(output: string): string {
 
 describe('real highlighter — safety contract (regression-pinned)', () => {
   it.each(HOSTILE_CASES)('escapes hostile input ($name) to text only', ({ lang, code }) => {
-    const output = highlighter.highlight(code, { lang });
+    const output = highlighter.highlight(code, { lang }).html;
     // No hostile tag survives as markup: `<img`/`<script` must never appear
     // un-escaped in the emitted HTML.
     expect(output).not.toMatch(/<img|<script/i);
@@ -81,18 +87,40 @@ describe('real highlighter — safety contract (regression-pinned)', () => {
     expect(output.startsWith('<pre')).toBe(true);
   });
 
-  it('colors tokens with the light-dark pair for both palettes', () => {
-    const output = highlighter.highlight('const a = 1;', { lang: 'javascript' });
-    // The palette mechanism: per-token `color:light-dark(<light>,<dark>)`
+  it('tags tokens with classes whose rules carry the light-dark pair', () => {
+    const { html, styles } = highlighter.highlight('const a = 1;', { lang: 'javascript' });
+    // No per-span inline styles: tokens carry generated classes.
+    expect(html).not.toContain('style=');
+    expect(html).toMatch(/class="fdt-tk-[0-9a-z]+"/);
+    // The palette mechanism lives in the class rules: `color:light-dark(<light>, <dark>)`
     // resolved by the browser's color-scheme — the same mechanism as tokens.
-    expect(output).toContain('light-dark(');
-    expect(output).toContain('--shiki-light');
-    expect(output).toContain('--shiki-dark');
+    expect(styles.length).toBeGreaterThan(0);
+    for (const [className, declarations] of styles) {
+      expect(className).toBe(tokenClassName(declarations));
+      expect(html).toContain(className);
+      expect(declarations).toMatch(/^color:light-dark\(/);
+      expect(declarations).not.toContain('--shiki');
+    }
+  });
+
+  it('emits only token styles the main thread accepts (the allow-list), for both languages', () => {
+    const samples = [
+      [
+        'javascript',
+        '/* c */ const a = `t${b}` + /re/g; // x\nfunction f(x) { return x?.y ?? 1; }'
+      ],
+      ['json', '{"a": [1, true, null, "s"]}']
+    ] as const;
+    for (const [lang, code] of samples) {
+      for (const style of highlighter.highlight(code, { lang }).styles) {
+        expect(isTokenStyle(style)).toBe(true);
+      }
+    }
   });
 
   it('stays out of chrome: no inline style or tabindex on the root pre', () => {
     for (const lang of ['javascript', 'json'] as const) {
-      const output = highlighter.highlight('const a = 1;', { lang });
+      const output = highlighter.highlight('const a = 1;', { lang }).html;
       const root = rootTagOf(output);
       expect(root).not.toContain('style=');
       expect(root).not.toContain('tabindex');
@@ -256,13 +284,111 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
   it('emits the swapped colors in real output (keyword light, comment dark)', () => {
     const output = highlighter
       .highlight('// note\nconst a = 1;', { lang: 'javascript' })
-      .toLowerCase();
+      .styles.map(([, declarations]) => declarations.toLowerCase())
+      .join('\n');
     // Swaps are theme-scoped: the light keyword and the dark comment move,
     // the light comment (AA already) keeps the theme's own color.
-    expect(output).toContain('--shiki-light:#cf222e');
-    expect(output).toContain('--shiki-dark:#8b949e');
-    expect(output).toContain('--shiki-light:#6a737d');
+    expect(output).toContain('light-dark(#cf222e,');
+    expect(output).toContain('light-dark(#6a737d, #8b949e)');
     expect(output).not.toContain('#d73a49');
-    expect(output).not.toContain('--shiki-dark:#6a737d');
+    expect(output).not.toContain(', #6a737d)');
+  });
+});
+
+/** The reference: plain shiki over the whole block with the loader's options. */
+async function referenceHtml(code: string): Promise<string> {
+  const reference = await createHighlighterCore({
+    langs: [javascript, json],
+    themes: [githubLight, githubDark],
+    engine: createJavaScriptRegexEngine({ forgiving: true })
+  });
+  const html = reference.codeToHtml(code, {
+    lang: 'javascript',
+    themes: THEME_PAIR,
+    defaultColor: 'light-dark()',
+    colorReplacements: COLOR_REPLACEMENTS,
+    tokenizeMaxLineLength: MAX_TOKENIZED_LINE,
+    transformers: [styleToClass(new Map())],
+    rootStyle: false,
+    tabindex: false
+  });
+  reference.dispose();
+  return html;
+}
+
+/** The distinct inline colors of one output line. */
+function colorsOfLine(html: string, line: number): Set<string> {
+  const text = html.split('<span class="line">')[line + 1] ?? '';
+  return new Set(text.match(/fdt-tk-[0-9a-z]+/g));
+}
+
+describe('worker handler — whole-block highlighting (regression pins)', () => {
+  /** Answer one request through the worker's handler with the real highlighter. */
+  async function answer(code: string): Promise<string> {
+    const response = await answerHighlight(getHighlighter, { id: 7, code, lang: 'javascript' });
+    expect(response.id).toBe(7);
+    if (!('html' in response)) throw new Error(`no html: ${response.error}`);
+    return response.html;
+  }
+
+  it.each([
+    [
+      'six long keys on one line (under the line cap)',
+      `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(230)}${String(i)}": ${String(i)}`).join(', ')}};`
+    ],
+    [
+      'a CJK config line',
+      `var i18n = ${JSON.stringify(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`key${String(i)}`, '設定を保存しました。'])))};`
+    ],
+    ['an identifier and an ellipsis', 'const value = compute(); // …'],
+    ['a comment closing after a long line', `/*\n${'x'.repeat(400)} */\nvar a = 1;`],
+    ['a template closing after a long line', `var s = \`\n${'x'.repeat(400)}\`;\nvar a = 1;`]
+  ])('colors %s exactly as plain shiki over the whole block', async (_name, code) => {
+    const html = await answer(code);
+    expect(html).toBe(await referenceHtml(code));
+    expect(html).toMatch(/fdt-tk-/);
+  });
+
+  it('leaves a giant line uncolored inline while the rest of the block colors', async () => {
+    const uri = `var img = "data:image/png;base64,${'QUJD'.repeat(7_500)}";`;
+    expect(uri.length).toBeGreaterThan(MAX_TOKENIZED_LINE);
+    const html = await answer(`${uri}\nconst after = 1;`);
+    expect(colorsOfLine(html, 0).size).toBe(0);
+    expect(colorsOfLine(html, 1).size).toBeGreaterThan(1);
+  });
+
+  it('returns the six 319-char keys line (over the cap) plain, the next line colored', async () => {
+    const keys = `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(318)}${String(i)}": ${String(i)}`).join(', ')}};`;
+    expect(keys.length).toBeGreaterThanOrEqual(MAX_TOKENIZED_LINE);
+    const code = `${keys}\nconst after = 1;`;
+    const html = await answer(code);
+    expect(html).toBe(await referenceHtml(code));
+    expect(colorsOfLine(html, 0).size).toBe(0);
+    expect(colorsOfLine(html, 1).size).toBeGreaterThan(1);
+  });
+
+  it('colors the code after a long comment line as code, not comment', async () => {
+    const html = await answer(`/*\n${'x'.repeat(400)} */\nvar a = 1;`);
+    // `var`, `a`, `=`, `1` — several colors, not the comment's single one.
+    expect(colorsOfLine(html, 2).size).toBeGreaterThan(1);
+  });
+
+  it('answers a failure as an error response (the client renders plain)', async () => {
+    const response = await answerHighlight(getHighlighter, {
+      id: 3,
+      code: 'x',
+      lang: 'yaml' as 'json'
+    });
+    expect(response).toMatchObject({ id: 3 });
+    expect('error' in response).toBe(true);
+  });
+
+  it('answers a loader failure as an error response', async () => {
+    const response = await answerHighlight(() => Promise.reject(new Error('chunk gone')), {
+      id: 4,
+      code: 'x',
+      lang: 'javascript'
+    });
+    expect(response).toEqual({ id: 4, error: 'chunk gone' });
   });
 });

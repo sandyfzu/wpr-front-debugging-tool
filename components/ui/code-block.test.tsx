@@ -8,9 +8,14 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CodeBlock, type IntersectionGate } from './code-block';
+import { CodeBlock, HIGHLIGHT_MAX_CHARS, PLAIN_NOTES, type IntersectionGate } from './code-block';
+import { HighlightUnavailableError, type HighlightFailure } from './code-block-worker-client';
+import type { HighlightedBlock } from './code-block-worker-protocol';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
 import type { OverflowWatcher } from './overflow-watch';
+
+/** A multi-line block (5,000 chars over 50 lines). */
+const MULTI_SLICE = Array.from({ length: 50 }, () => 'y'.repeat(99)).join('\n');
 
 afterEach(() => {
   cleanup();
@@ -85,12 +90,14 @@ function manualOverflow(): {
 
 /** A loader double returning a highlighter that echoes the code, wrapped. */
 function stubLoader(): () => Promise<{
-  highlight: (code: string, options: { lang: string }) => string;
+  highlight: (code: string, options: { lang: string }) => HighlightedBlock;
 }> {
   return () =>
     Promise.resolve({
-      highlight: (code, options) =>
-        `<pre class="shiki-probe" data-local-lang="${options.lang}"><code>${code}</code></pre>`
+      highlight: (code, options) => ({
+        html: `<pre class="shiki-probe" data-local-lang="${options.lang}"><code>${code}</code></pre>`,
+        styles: []
+      })
     });
 }
 
@@ -399,5 +406,246 @@ describe('CodeBlock', () => {
         <CodeBlock text="x" lang="json" maxLines={lines} createObserver={() => manualGate()} />
       ))
     ).toThrow(/maxLines must be a positive integer/);
+  });
+});
+
+/** An async loader double (the worker client's shape): requests resolve or fail on demand. */
+function asyncLoader(): {
+  load: () => Promise<{
+    highlight: (code: string, options: { signal?: AbortSignal }) => Promise<HighlightedBlock>;
+  }>;
+  requests: Array<{
+    code: string;
+    signal?: AbortSignal;
+    resolve: () => void;
+    fail: (reason: HighlightFailure) => void;
+  }>;
+} {
+  const requests: Array<{
+    code: string;
+    signal?: AbortSignal;
+    resolve: () => void;
+    fail: (reason: HighlightFailure) => void;
+  }> = [];
+  return {
+    requests,
+    load: () =>
+      Promise.resolve({
+        highlight: (code: string, options: { signal?: AbortSignal }) =>
+          new Promise<HighlightedBlock>((resolve, reject) => {
+            requests.push({
+              code,
+              signal: options.signal,
+              resolve: () => {
+                resolve({
+                  html: `<pre class="probe"><code><span class="line"><span class="fdt-tk-probe">${String(code.length)}</span></span></code></pre>`,
+                  styles: [['fdt-tk-probe', 'color:light-dark(#111111, #eeeeee)']]
+                });
+              },
+              fail: (reason) => {
+                reject(new HighlightUnavailableError(reason));
+              }
+            });
+          })
+      })
+  };
+}
+
+describe('CodeBlock — worker highlighting', () => {
+  /** Render a block over the async loader, latched visible. */
+  async function mount(
+    text: () => string,
+    loader = asyncLoader()
+  ): Promise<{ loader: ReturnType<typeof asyncLoader>; unmount: () => void }> {
+    const gate = manualGate();
+    const { unmount } = render(() => (
+      <CodeBlock
+        text={text()}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.requests.length).toBeGreaterThan(0);
+    });
+    return { loader, unmount };
+  }
+
+  it('shows raw text until the worker answers, then the highlighted markup', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    loader.requests[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted?.textContent).toBe(String(MULTI_SLICE.length));
+    });
+  });
+
+  it('drops stale colors and aborts the request in flight when the text changes', async () => {
+    const [text, setText] = createSignal('first();');
+    // eslint-disable-next-line solid/reactivity -- the accessor itself is handed over, read inside the component
+    const { loader } = await mount(text);
+    loader.requests[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    setText(MULTI_SLICE);
+    // The previous colors never linger over the new text.
+    expect(controls().highlighted).toBeNull();
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    await vi.waitFor(() => {
+      expect(loader.requests).toHaveLength(2);
+    });
+    setText('third();');
+    expect(loader.requests[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('aborts the request in flight when the block unmounts', async () => {
+    const { loader, unmount } = await mount(() => MULTI_SLICE);
+    expect(loader.requests[0]?.signal?.aborted).toBe(false);
+    unmount();
+    expect(loader.requests[0]?.signal?.aborted).toBe(true);
+  });
+
+  it("installs the block's token classes into its document before painting", async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    loader.requests[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    const rules = document.adoptedStyleSheets
+      .flatMap((sheet) => [...sheet.cssRules])
+      .map((rule) => rule.cssText);
+    expect(rules.some((rule) => rule.includes('fdt-tk-probe'))).toBe(true);
+  });
+
+  it('never paints an answer that arrives after its request was superseded', async () => {
+    const [text, setText] = createSignal(MULTI_SLICE);
+    // eslint-disable-next-line solid/reactivity -- the accessor itself is handed over, read inside the component
+    const { loader } = await mount(text);
+    setText('next();');
+    // The aborted request still answers (a double that ignores the signal).
+    loader.requests[0]?.resolve();
+    // Let the whole promise chain settle (a macrotask outlasts its microtasks).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controls().highlighted).toBeNull();
+    expect(controls().fallback?.textContent).toBe('next();');
+  });
+
+  it('shows no failure note for a request that failed after it was superseded', async () => {
+    const [text, setText] = createSignal(MULTI_SLICE);
+    // eslint-disable-next-line solid/reactivity -- the accessor itself is handed over, read inside the component
+    const { loader } = await mount(text);
+    setText('next();');
+    loader.requests[0]?.fail('timeout');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+  });
+
+  it('keeps raw text and says so when the block took too long', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    loader.requests[0]?.fail('timeout');
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+        'Not highlighted (took too long)'
+      );
+    });
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+  });
+
+  it('keeps raw text quietly when workers are unavailable', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    loader.requests[0]?.fail('unavailable');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+  });
+
+  it('never requests code above the size limit and says so', async () => {
+    const gate = manualGate();
+    const loader = asyncLoader();
+    const text = 'z'.repeat(HIGHLIGHT_MAX_CHARS + 1);
+    render(() => (
+      <CodeBlock
+        text={text}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loader.requests).toHaveLength(0);
+    expect(controls().fallback?.textContent).toBe(text);
+    expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+      PLAIN_NOTES['too-large']
+    );
+  });
+
+  it('shows no plain note for code within the limit', () => {
+    render(() => <CodeBlock text="a" lang="javascript" loadHighlighter={stubLoader()} />);
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+  });
+});
+
+describe('CodeBlock — clip reporting', () => {
+  it('reports whether the clamp cuts lines off, false while unclamped', () => {
+    const overflow = manualOverflow();
+    const reports: boolean[] = [];
+    const [lines, setLines] = createSignal<number | undefined>(3);
+    render(() => (
+      <CodeBlock
+        text={'a\nb\nc\nd'}
+        lang="javascript"
+        maxLines={lines()}
+        watchOverflow={overflow.watcher}
+        onClipChange={(clipped) => reports.push(clipped)}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    expect(reports).toEqual([false]);
+    overflow.setClipped(true);
+    expect(reports).toEqual([false, true]);
+    setLines(undefined);
+    expect(reports).toEqual([false, true, false]);
+  });
+});
+
+describe('CodeBlock — cut marks', () => {
+  it('marks the named lines with an ellipsis outside the text, raw and highlighted', async () => {
+    const gate = manualGate();
+    const loader = asyncLoader();
+    render(() => (
+      <CodeBlock
+        text={'first\nsecond\nthird'}
+        lang="javascript"
+        cutLines={[1]}
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    // Raw: one element per line, the cut one marked; the text itself unchanged.
+    const raw = [...document.querySelectorAll('[data-fdt-code-fallback] .line')];
+    expect(raw.map((line) => line.textContent)).toEqual(['first', 'second', 'third']);
+    expect(raw.map((line) => line.hasAttribute('data-fdt-cut'))).toEqual([false, true, false]);
+    expect(controls().fallback?.textContent).toBe('first\nsecond\nthird');
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.requests).toHaveLength(1);
+    });
+    loader.requests[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    // The probe markup has one line: it is not cut (index 0).
+    expect(controls().highlighted?.querySelector('[data-fdt-cut]')).toBeNull();
+  });
+
+  it('renders the raw text as one node when nothing is cut', () => {
+    render(() => <CodeBlock text={'a\nb'} lang="javascript" loadHighlighter={stubLoader()} />);
+    expect(document.querySelector('[data-fdt-code-fallback] .line')).toBeNull();
   });
 });

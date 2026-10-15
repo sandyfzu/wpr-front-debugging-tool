@@ -8,16 +8,15 @@
  * document palette exactly like the design tokens, with no appearance hook
  * and no re-render on theme switches.
  *
- * Loading discipline: shiki is reached **only** through the dynamic
- * `import()` inside this file's default loader — this component file carries
- * no value import of the highlighter module (its types come through a pure
- * `import type`, erased at build time), and the language vocabulary comes
- * from the shiki-free `code-block-langs.ts`. Consumers importing `CodeBlock`
- * therefore keep shiki out of their static chunk — the property proven by
- * an esbuild consumer spike in the 2026-10-12 audit round (entry/eager
- * chunk: no shiki; a separate lazy chunk: all of it). Until the highlighter
- * resolves, the raw text shows in a plain `<pre>` fallback — content is
- * never hidden behind loading.
+ * Off the main thread: shiki runs only in the highlight worker
+ * (`code-block-highlight.worker.ts`), reached through the shiki-free client
+ * (`code-block-worker-client.ts`) — this file imports neither shiki nor the
+ * worker's modules as values, so consumers' chunks never carry shiki. The
+ * client bounds each block with a hard time budget (a runaway block's worker
+ * is terminated), so no code shape can freeze the panel; the main thread only
+ * mounts the result. Until it arrives — or when it never does (timeout, no
+ * worker support, too large) — the raw text shows in a plain `<pre>`:
+ * content is never hidden behind loading.
  *
  * Lazy rendering: highlight work latches behind an `IntersectionObserver` on
  * this block's always-mounted wrapper element, and the observer is
@@ -40,18 +39,45 @@
  * edge fades only while lines are actually cut off (`data-fdt-clipped`).
  */
 import type { ComponentProps, JSX } from 'solid-js';
-import { createMemo, createSignal, onCleanup, onMount, splitProps } from 'solid-js';
-import { Show } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  splitProps,
+  untrack
+} from 'solid-js';
+import { For, Show } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
 import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
 import type { HighlightedCode } from './code-block-highlighter';
+import { installTokenStyles } from './code-block-token-styles';
+import type { HighlightedBlock } from './code-block-worker-protocol';
+import {
+  HighlightUnavailableError,
+  sharedWorkerHighlighter,
+  type HighlightFailure
+} from './code-block-worker-client';
 import { isClippedVertically, watchOverflow, type OverflowWatcher } from './overflow-watch';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
 const logger = createLogger('code-block');
+
+/**
+ * Code longer than this (chars) is never highlighted: it renders as plain
+ * monospace text with a quiet note. Tokenizing runs in the worker, but the
+ * markup is mounted on the main thread in one go. With class-tagged tokens
+ * (no per-span inline styles) that mount measured, in Chromium (2026-10-14),
+ * 17–18 ms at 31.7 K chars and 11–15 ms at 20 K at normal speed, but 68–76
+ * and 44–45 ms under 4× CPU throttling; 20 K keeps a slow machine under a
+ * long task (50 ms). It also bounds what a message carries; past it are
+ * bundles, where colors stop paying for the work.
+ */
+export const HIGHLIGHT_MAX_CHARS = 20_000;
 
 /** How far ahead of the viewport a block pre-highlights (px of root margin). */
 const INTERSECTION_MARGIN = '150px';
@@ -63,10 +89,21 @@ const INTERSECTION_MARGIN = '150px';
 interface HighlighterLike {
   /**
    * Highlight code text (see the loader's safety TSDoc — output is safe for
-   * `innerHTML` even for untrusted source text).
+   * `innerHTML` even for untrusted source text). The production client
+   * answers asynchronously and rejects with a `HighlightUnavailableError`;
+   * test doubles may answer synchronously.
    */
-  highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
+  highlight: (
+    code: string,
+    options: { lang: CodeLanguage; signal?: AbortSignal }
+  ) => HighlightedBlock | Promise<HighlightedBlock>;
 }
+
+/** The toolbar note per reason a block stays plain. */
+export const PLAIN_NOTES: Readonly<Partial<Record<HighlightFailure | 'too-large', string>>> = {
+  'too-large': 'Not highlighted (too large)',
+  timeout: 'Not highlighted (took too long)'
+};
 
 /**
  * The intersection gate: observe one element, latch first visibility, stop.
@@ -114,6 +151,19 @@ export type CodeBlockProps = {
    * Reactive: toggling it expands/collapses in place, instantly.
    */
   maxLines?: number;
+  /**
+   * Told whether the clamp currently cuts lines off (`false` while
+   * unclamped) — on mount and on every change, e.g. when wrapping folds a
+   * long line past the clamp. Lets the consumer offer its reveal control
+   * only when there is something to reveal.
+   */
+  onClipChange?: (clipped: boolean) => void;
+  /**
+   * Line indexes (0-based) the consumer cut short — e.g. a preview's long
+   * lines. Each gets a muted `…` drawn **after** the line (`::after`), outside
+   * the code text: never highlighted, never selected or copied.
+   */
+  cutLines?: readonly number[];
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -179,6 +229,7 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * @param props.label The scroll region's name (default "`<lang>` code";
  *   pass a distinct one per block when a page shows several).
  * @param props.maxLines Clamp to N visible lines (collapsed preview).
+ * @param props.onClipChange Told whether the clamp cuts lines off.
  * @param props.watchOverflow Overflow seam (tests inject a manual watcher).
  * @param props.class Extra classes on the container.
  * @param props.* Native div props (`id`, `aria-*`, …) pass through.
@@ -203,6 +254,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'createObserver',
     'label',
     'maxLines',
+    'onClipChange',
+    'cutLines',
     'watchOverflow',
     'class'
   ]);
@@ -233,13 +286,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Whether the clamp currently cuts lines off (drives the fade).
   const [clipped, setClipped] = createSignal(false);
 
-  /**
-   * The default loader: the dynamic `import()` of the shiki module graph —
-   * the single place shiki can ever enter a build; the component file itself
-   * stays statically free of it.
-   */
-  const defaultLoader = (): Promise<HighlighterLike> =>
-    import('./code-block-highlighter').then((module) => module.getHighlighter());
+  /** The default loader: the panel's one worker client (shiki-free here). */
+  const defaultLoader = (): Promise<HighlighterLike> => Promise.resolve(sharedWorkerHighlighter());
 
   onMount(() => {
     if (container === undefined) {
@@ -287,23 +335,63 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     onCleanup(watch(content, lines, setClipped, isClippedVertically));
   });
 
-  /**
-   * The highlighted output — computed only when the highlighter arrived;
-   * sync per highlight-center (verified: `codeToHtml` is synchronous on a
-   * constructed core highlighter).
-   */
-  const highlighted = createMemo<HighlightedCode | undefined>(() => {
-    const loader = highlighter();
-    if (loader === undefined) return undefined;
-    try {
-      return loader.highlight(own.text, { lang: own.lang });
-    } catch (error: unknown) {
-      // Structural failure (never reached with the two registered languages) —
-      // degrade to the fallback rather than unmounting content.
-      logger.warn('Highlighting threw; falling back to raw text.', error);
-      return undefined;
-    }
+  // The clamp's cut-off state, reported to the consumer (unclamped: false).
+  createEffect(() => {
+    const cut = maxLines() !== undefined && clipped();
+    untrack(() => own.onClipChange)?.(cut);
   });
+
+  /** Too large to highlight: plain text, with the note in the toolbar. */
+  const tooLarge = (): boolean => own.text.length > HIGHLIGHT_MAX_CHARS;
+
+  // The highlighted output for the current text — requested once the
+  // highlighter arrived; the raw text shows meanwhile. A text change drops
+  // the stale colors at once (the shown text always matches `text`); a newer
+  // text or unmount aborts the request in flight.
+  const [highlighted, setHighlighted] = createSignal<HighlightedCode | undefined>();
+  // Why the current text stays plain, when the highlighter gave up on it.
+  const [failure, setFailure] = createSignal<HighlightFailure | undefined>();
+  createEffect(() => {
+    const loader = highlighter();
+    const text = own.text;
+    const language = own.lang;
+    setHighlighted(undefined);
+    setFailure(undefined);
+    if (loader === undefined || tooLarge()) return;
+    const controller = new AbortController();
+    onCleanup(() => {
+      controller.abort();
+    });
+    Promise.resolve()
+      .then(() => loader.highlight(text, { lang: language, signal: controller.signal }))
+      .then((block) => {
+        if (controller.signal.aborted) return; // superseded: never paint stale colors
+        // Token colors are classes: their rules go into this block's root first.
+        if (container !== undefined) installTokenStyles(container.getRootNode(), block.styles);
+        setHighlighted(block.html);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return; // superseded: nothing to report
+        // Degradation, not a dead end: the raw text stays, the reason is logged.
+        if (error instanceof HighlightUnavailableError) setFailure(error.reason);
+        logger.warn('Highlighting unavailable; raw text stays visible.', error);
+      });
+  });
+  // The cut marks: tag the rendered line elements (raw or highlighted) the
+  // consumer named; the `…` itself is CSS generated content.
+  createEffect(() => {
+    // Re-run whenever the rendered lines change (new text, new markup).
+    const rendered = [highlighted(), own.text];
+    const cut = new Set(own.cutLines ?? []);
+    if (lines === undefined || rendered.length === 0) return;
+    lines.querySelectorAll('.line').forEach((line, index) => {
+      line.toggleAttribute('data-fdt-cut', cut.has(index));
+    });
+  });
+
+  /** The toolbar note, when the block stays plain for a reason worth naming. */
+  const plainNote = (): string | undefined =>
+    tooLarge() ? PLAIN_NOTES['too-large'] : PLAIN_NOTES[failure() ?? 'aborted'];
 
   return (
     <div
@@ -314,8 +402,17 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
       {...rest}
     >
       <div class="flex items-center justify-between gap-2 border-b border-line-1 bg-surface-2 px-2 py-0.5">
-        <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
-          {own.lang}
+        <span class="flex min-w-0 items-center gap-2">
+          <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
+            {own.lang}
+          </span>
+          <Show when={plainNote()}>
+            {(note) => (
+              <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
+                {note()}
+              </span>
+            )}
+          </Show>
         </span>
         <Button
           type="button"
@@ -378,12 +475,17 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
             // Fade only the bottom padding strip — the half-shown next line —
             // and only while lines are really cut off; the last whole line
             // stays fully legible.
-            maxLines() !== undefined && clipped() && 'mask-b-from-[calc(100%-0.5rem)]'
+            maxLines() !== undefined && clipped() && 'mask-b-from-[calc(100%-0.5rem)]',
+            // A cut line ends in a muted ellipsis outside the code text.
+            "[&_[data-fdt-cut]]:after:text-fg-muted [&_[data-fdt-cut]]:after:content-['…']"
           )}
         >
           {/* The natural-height lines, measured against the clamp. */}
           <div ref={lines} data-fdt-code-lines>
-            <Show when={highlighted()} fallback={<RawPre text={own.text} />}>
+            <Show
+              when={highlighted()}
+              fallback={<RawPre text={own.text} lines={(own.cutLines?.length ?? 0) > 0} />}
+            >
               {(html) => <HighlightedSurface html={html()} />}
             </Show>
           </div>
@@ -396,12 +498,28 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
 /**
  * The fallback surface: the raw text in a plain `<pre>`, present from first
  * mount — the "content is never hidden" guarantee, and the state unloading
- * resolves into (highlight-load failures degrade here, logged).
+ * resolves into (highlight-load failures degrade here, logged). When lines
+ * carry cut marks, each line is its own `.line` element (shiki's structure),
+ * so the marks show before highlighting too; otherwise one text node.
  *
  * @param props.text The raw code text.
+ * @param props.lines Render one element per line.
  */
-function RawPre(props: { text: string }): JSX.Element {
-  return <pre data-fdt-code-fallback>{props.text}</pre>;
+function RawPre(props: { text: string; lines: boolean }): JSX.Element {
+  return (
+    <pre data-fdt-code-fallback>
+      <Show when={props.lines} fallback={props.text}>
+        <For each={props.text.split('\n')}>
+          {(line, index) => (
+            <>
+              {index() > 0 ? '\n' : ''}
+              <span class="line">{line}</span>
+            </>
+          )}
+        </For>
+      </Show>
+    </pre>
+  );
 }
 
 /**
