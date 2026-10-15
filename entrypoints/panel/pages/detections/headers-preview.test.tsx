@@ -10,6 +10,8 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
+import { REDACTED } from '../../../../lib/panel/redaction';
+import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import {
   cappedLine,
@@ -60,7 +62,12 @@ describe('previewModel', () => {
       {
         key: 'other',
         label: null,
-        rows: [{ key: 'other:server#0', header: { name: 'Server', value: 'x', hint: null } }]
+        rows: [
+          {
+            key: 'other:server#0',
+            header: { name: 'Server', value: 'x', hint: null, redacted: false }
+          }
+        ]
       }
     ]);
     expect(previewModel(buildHeadersViewModel([]))).toEqual({ groups: [], shown: 0, total: 0 });
@@ -174,6 +181,48 @@ describe('HeadersPreview', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Response headers' })).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByText(NO_HEADERS_LINE)).toBeTruthy();
+  });
+});
+
+describe('HeadersPreview — secrets', () => {
+  it('withholds secret values exactly as the Headers & Cookies page does', () => {
+    render(() => (
+      <HeadersPreview
+        headers={[
+          { name: 'Set-Cookie', value: 'sid=COOKIESECRET; Path=/; HttpOnly' },
+          { name: 'Set-Cookie', value: 'NAMELESSSECRET' },
+          { name: 'Authorization', value: 'Bearer AUTHSECRET' },
+          { name: 'location', value: '/next?token=LOCSECRET' },
+          { name: 'Server', value: 'nginx' }
+        ]}
+      />
+    ));
+    fireEvent.click(toggle());
+    const html = document.body.innerHTML;
+    for (const leak of ['COOKIESECRET', 'NAMELESSSECRET', 'AUTHSECRET', 'LOCSECRET', 'HttpOnly']) {
+      expect(html).not.toContain(leak);
+    }
+    const markers = [...document.querySelectorAll('[data-fdt-redacted]')];
+    expect(markers.map((marker) => marker.getAttribute('title'))).toEqual([
+      WITHHELD_NOTE,
+      WITHHELD_NOTE,
+      WITHHELD_NOTE
+    ]);
+    expect(markers.map((marker) => marker.textContent.replace(` — ${WITHHELD_NOTE}`, ''))).toEqual([
+      `sid=${REDACTED}`,
+      REDACTED,
+      REDACTED
+    ]);
+    expect(document.body.textContent).toContain('/next?token=[redacted]');
+    expect(document.body.textContent).toContain('nginx');
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+    expect(document.body.textContent).toContain(WITHHELD_LEGEND);
+  });
+
+  it('shows no withheld legend when nothing is withheld', () => {
+    render(() => <HeadersPreview headers={HEADERS} />);
+    fireEvent.click(toggle());
+    expect(document.querySelector('[data-fdt="withheld-legend"]')).toBeNull();
   });
 });
 

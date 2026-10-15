@@ -79,7 +79,11 @@ async function panelSettle(page: Page): Promise<void> {
 interface AxeViolation {
   readonly id: string;
   readonly impact: string | null;
-  readonly nodes: readonly { readonly target: readonly string[] }[];
+  readonly nodes: readonly {
+    readonly target: readonly string[];
+    /** The checks' outcomes; an unresolved node's `data.messageKey` names why. */
+    readonly any?: readonly { readonly data?: { readonly messageKey?: string } | null }[];
+  }[];
 }
 
 /** The axe.run result slice the suite consumes (violations + incompletes + targets). */
@@ -145,7 +149,10 @@ async function runAxe(page: Page, include?: string): Promise<AxeResults> {
  *   highlighted palette row's eliding name span (a token-transparent span,
  *   the row's highlight paints behind it) and "Element content contains
  *   only non-text characters" on the overlay's arrows kbd (`↑ ↓` — no text
- *   ratio to compute). The whole-document run — no modal up — resolves
+ *   ratio to compute), and — palette scope, reason-keyed — a hint chip on
+ *   the row straddling the listbox's scroll edge ("partially obscured":
+ *   the list holds more rows than its `max-h-72` shows; the fully visible
+ *   hints resolve and pass). The whole-document run — no modal up — resolves
  *   `incomplete` empty (asserted outright below).
  *
  * @param results The axe output the caller's scope produced.
@@ -159,11 +166,13 @@ function assertAxeClean(results: AxeResults, allowance: readonly UnresolvedAllow
     for (const rule of found) {
       for (const node of rule.nodes) {
         const reported = node.target.join(' ');
+        const reasons = (node.any ?? []).map((check) => check.data?.messageKey);
         const tolerated =
           kind === 'unresolved' &&
           allowance.some(
             (row) =>
               row.id === rule.id &&
+              (row.reason === undefined || reasons.includes(row.reason)) &&
               row.targets.some((shape) =>
                 typeof shape === 'string' ? shape === reported : shape.test(reported)
               )
@@ -188,6 +197,12 @@ interface UnresolvedAllowance {
    * is unambiguous in that run's document snapshot).
    */
   readonly targets: readonly (string | RegExp)[];
+  /**
+   * When set, the review covered only this unresolved reason (axe's
+   * `messageKey`, e.g. `elmPartiallyObscured`): the same node unresolved
+   * for any other reason still fails.
+   */
+  readonly reason?: string;
 }
 
 /** The open palette's reviewed unresolved rows (derivation on {@link assertAxeClean}). */
@@ -198,6 +213,19 @@ const PALETTE_ALLOWANCE: readonly UnresolvedAllowance[] = [
     id: 'color-contrast',
     // The highlighted row's eliding name span (generated per-registry row id → a shape).
     targets: [/^#fdt-command-palette-listbox-item-.* > \.truncate/]
+  },
+  {
+    id: 'color-contrast',
+    // A row's hint chip clipped at the listbox's scroll edge: the list
+    // (`max-h-72`) holds more rows than it shows at the audited 700×900
+    // size, so the row straddling its bottom edge has text axe cannot
+    // sample ("partially obscured"). Fully visible rows' hints resolve and
+    // pass (the same fg-secondary-on-surface token pair, AA by
+    // construction); only that reason is tolerated, on the hint hook only.
+    targets: [
+      /^#fdt-command-palette-listbox-item-[\w-]+ > (?:\.[^\s>]+)*\[data-fdt="palette-command-hint"\]$/
+    ],
+    reason: 'elmPartiallyObscured'
   }
 ];
 

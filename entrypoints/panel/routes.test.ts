@@ -22,12 +22,13 @@ function liveStateOf(
 }
 
 describe('NAV_ROUTES', () => {
-  it('lists the six rows in the journey order', () => {
+  it('lists the seven rows in the journey order', () => {
     expect(NAV_ROUTES.map((row) => row.id)).toEqual([
       'detections',
       'javascript',
       'lazyload',
       'preloaded-resources',
+      'headers-cookies',
       'undefined-references',
       'diagnoser'
     ]);
@@ -36,9 +37,19 @@ describe('NAV_ROUTES', () => {
       'Inspect',
       'Inspect',
       'Inspect',
+      'Inspect',
       'Diagnose',
       'Diagnose'
     ]);
+  });
+
+  it('declares Headers & Cookies as a state-free Inspect row', () => {
+    const row = navRoute('headers-cookies');
+    expect(row?.label).toBe('Headers & Cookies');
+    expect(row?.group).toBe('Inspect');
+    expect(row?.reserved).toBeUndefined();
+    // Its cache answers are the status bar's: the nav says nothing.
+    expect(row?.liveState).toBeUndefined();
   });
 
   it('uses only known groups in known order', () => {

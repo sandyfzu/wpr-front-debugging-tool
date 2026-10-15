@@ -9,6 +9,8 @@ import {
   isSensitiveName,
   REDACTED,
   REDACTED_PARAM,
+  shownHeader,
+  reduceHeaderValue,
   redactHeaderValue,
   redactUrl
 } from './redaction';
@@ -58,7 +60,7 @@ describe('isSensitiveName', () => {
     ['pass word (query)', 'user_pass'],
     ['sig word', 'X-Sig'],
     ['trailing key', 'X-Access-Key'],
-    ['trailing key (over-match)', 'X-Cache-Key'],
+    ['trailing key (the exemptions are exact names)', 'x-edge-cache-key'],
     ['trailing key (query)', 'license_key'],
     ['sid word', 'x-sid'],
     ['ticket word', 'x-ticket'],
@@ -73,6 +75,41 @@ describe('isSensitiveName', () => {
     expect(isSensitiveName(name)).toBe(true);
   });
 
+  // One name per fragment that carries ONLY that fragment, so dropping any
+  // single alternative from the rule fails its own row.
+  it.each([
+    ['token', 'x-token-id'],
+    ['secret', 'x-client-secret'],
+    ['session', 'x-session'],
+    ['auth', 'x-auth'],
+    ['nonce', 'x-nonce-value'],
+    ['signature', 'x-signature'],
+    ['api-key', 'x-api-key-id'],
+    ['apikey', 'x-apikey'],
+    ['csrf', 'x-csrf'],
+    ['xsrf', 'x-xsrf'],
+    ['password', 'x-password'],
+    ['passwd', 'x-passwd'],
+    ['credential', 'x-credential'],
+    ['jwt', 'x-jwt-id'],
+    ['hmac', 'x-hmac-id'],
+    ['bearer', 'x-bearer'],
+    ['private', 'x-private'],
+    ['pwd', 'x-pwd'],
+    ['pass word', 'x-pass-id'],
+    ['sig word', 'x-sig-id'],
+    ['sid word', 'x-sid-id'],
+    ['ticket word', 'x-ticket-id'],
+    ['otp word', 'x-otp-id'],
+    ['hash word', 'x-hash-id'],
+    ['email word', 'x-email-id'],
+    ['login word', 'x-login-id'],
+    ['trailing key word', 'x-access-key'],
+    ['exact cookie, trimmed', ' Cookie ']
+  ])('redacts the isolated %s case (%j)', (_fragment, name) => {
+    expect(isSensitiveName(name)).toBe(true);
+  });
+
   it.each([
     'Server',
     'Cache-Control',
@@ -82,6 +119,13 @@ describe('isSensitiveName', () => {
     'X-Rocket-Cache',
     'Link',
     'X-Request-Id',
+    'x-keyword',
+    'surrogate-key',
+    'Surrogate-Key',
+    'cache-key',
+    'X-Cache-Key',
+    ' x-cache-key ',
+    'WWW-Authenticate',
     'nowprocket',
     'page',
     'keyword',
@@ -134,9 +178,76 @@ describe('redactHeaderValue', () => {
     expect(redactHeaderValue('Set-Cookie', value)).toEqual({ redacted: true, cookieName: null });
   });
 
+  it.each([
+    ['SECRET\nname=v', 'a folded value whose first cookie is nameless'],
+    ['  ; a=b', 'a blank first segment']
+  ])('keeps nothing of %j — %s', (value) => {
+    expect(redactHeaderValue('Set-Cookie', value)).toEqual({ redacted: true, cookieName: null });
+  });
+
+  it('names the first cookie of a folded or attribute-laden value only', () => {
+    expect(redactHeaderValue('Set-Cookie', 'a=1; Path=/\nb=2')).toEqual({
+      redacted: true,
+      cookieName: 'a'
+    });
+    expect(redactHeaderValue('Set-Cookie', 'token=x=y==; Path=/')).toEqual({
+      redacted: true,
+      cookieName: 'token'
+    });
+  });
+
+  it.each(['set-cookie2', 'Set-Cookie2', ' SET-COOKIE '])(
+    'treats %j as a Set-Cookie (cookie name kept)',
+    (name) => {
+      expect(redactHeaderValue(name, 'wp=abc; HttpOnly')).toEqual({
+        redacted: true,
+        cookieName: 'wp'
+      });
+    }
+  );
+
+  it('reduces URL-valued headers instead of passing them raw', () => {
+    expect(redactHeaderValue('Location', 'https://a.example/next?token=abc&p=1')).toEqual({
+      redacted: false,
+      value: `https://a.example/next?token=${REDACTED_PARAM}&p=1`
+    });
+  });
+
   it('names the redaction markers once', () => {
     expect(REDACTED).toBe('(value redacted)');
     expect(REDACTED_PARAM).toBe('[redacted]');
+  });
+});
+
+describe('embedded URLs', () => {
+  it('follows exactly one level of URL-in-a-parameter (the bound that keeps it finite)', () => {
+    const inner = `https://b.example/?token=${encodeURIComponent('DEEP')}`;
+    const middle = `https://a.example/?next=${encodeURIComponent(inner)}&token=MID`;
+    const outer = `https://o.example/?go=${encodeURIComponent(middle)}`;
+    const reduced = redactUrl(outer) ?? '';
+    const level1 = decodeURIComponent(new URL(reduced).searchParams.get('go') ?? '');
+    // The first embedded level is reduced…
+    expect(level1).toContain(`token=${REDACTED_PARAM}`);
+    expect(level1).not.toContain('MID');
+    // …and its own embedded URL is left as written (no second descent).
+    expect(new URL(level1).searchParams.get('next')).toBe(inner);
+  });
+
+  it('leaves a parameter that only looks like a URL untouched', () => {
+    expect(redactUrl('https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt')).toBe(
+      'https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt'
+    );
+  });
+});
+
+describe('decoding depth', () => {
+  it('reads a doubly encoded separator in a parameter name (two decoding passes)', () => {
+    expect(redactUrl('https://a.example/?api%252Bkey=SECRET')).toBe(
+      `https://a.example/?api%252Bkey=${REDACTED_PARAM}`
+    );
+    expect(redactUrl('https://a.example/?api%25252Bkey=SECRET')).toBe(
+      `https://a.example/?api%25252Bkey=${REDACTED_PARAM}`
+    );
   });
 });
 
@@ -234,4 +345,194 @@ describe('redactUrl', () => {
       expect(redactUrl(raw)).toBeNull();
     }
   );
+});
+
+describe('reduceHeaderValue', () => {
+  it.each([
+    [
+      'location',
+      'https://a.example/n?token=t&p=1',
+      `https://a.example/n?token=${REDACTED_PARAM}&p=1`
+    ],
+    ['Location', 'https://u:pw@a.example/', 'https://a.example/'],
+    [' location ', 'https://a.example/?token=t', `https://a.example/?token=${REDACTED_PARAM}`],
+    ['content-location', '/n?_wpnonce=x', `/n?_wpnonce=${REDACTED_PARAM}`],
+    ['location', '//cdn.example/a.js?sig=1', `//cdn.example/a.js?sig=${REDACTED_PARAM}`],
+    ['location', '/cb#access_token=abc', '/cb'],
+    ['location', 'javascript:alert(1)', REDACTED_PARAM],
+    ['location', 'http://[bad', REDACTED_PARAM],
+    ['refresh', '5; url=/n?token=t', `5; url=/n?token=${REDACTED_PARAM}`],
+    [
+      'Refresh',
+      "0;URL='https://a.example/?key=k'",
+      `0;URL='https://a.example/?key=${REDACTED_PARAM}'`
+    ],
+    ['refresh', '3, /n?session=s', `3, /n?session=${REDACTED_PARAM}`],
+    ['refresh', 'url=/n?token=t', `url=/n?token=${REDACTED_PARAM}`],
+    ['refresh', ' URL = "/n?token=t"', ` URL = "/n?token=${REDACTED_PARAM}"`],
+    ['location', 'next?token=x', `next?token=${REDACTED_PARAM}`],
+    [
+      'location',
+      'next;jsessionid=SECRET?token=x',
+      `next;jsessionid=${REDACTED_PARAM}?token=${REDACTED_PARAM}`
+    ],
+    ['location', 'a/b;sid=SECRET/c', `a/b;sid=${REDACTED_PARAM}/c`],
+    [
+      'location',
+      '#access_token=SECRET&state=s&page=2',
+      `#access_token=${REDACTED_PARAM}&state=${REDACTED_PARAM}&page=2`
+    ],
+    ['location', '#eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl', `#${REDACTED_PARAM}`],
+    [
+      'link',
+      'https://cdn.example/a?token=X; rel=preload',
+      `https://cdn.example/a?token=${REDACTED_PARAM}; rel=preload`
+    ],
+    [
+      'link',
+      ' /a.css?sig=X; rel=preload, https://cdn.example/b.js; rel=preload',
+      ` /a.css?sig=${REDACTED_PARAM}; rel=preload, https://cdn.example/b.js; rel=preload`
+    ],
+    [
+      'link',
+      `</a.css>; rel=preload; title*=UTF-8''${encodeURIComponent('see https://a.example/?token=T')}`,
+      `</a.css>; rel=preload; title*=UTF-8''${encodeURIComponent(`see https://a.example/?token=${REDACTED_PARAM}`)}`
+    ],
+    ['location', 'a/b/../c?token=x&p=1#frag', `a/b/../c?token=${REDACTED_PARAM}&p=1`],
+    ['location', '?token=x', `?token=${REDACTED_PARAM}`],
+    ['x-redirect-to', '/next?nonce=n', `/next?nonce=${REDACTED_PARAM}`],
+    [
+      'X-Pingback',
+      'https://a.example/xmlrpc.php?key=k',
+      `https://a.example/xmlrpc.php?key=${REDACTED_PARAM}`
+    ],
+    [
+      'location',
+      '/login?redirect_to=https%3A%2F%2Fa.example%2Fadmin%3Ftoken%3DSECRET&x=1',
+      `/login?redirect_to=${encodeURIComponent(`https://a.example/admin?token=${REDACTED_PARAM}`)}&x=1`
+    ],
+    ['link', '</a.css?token=x', `<${REDACTED_PARAM}`],
+    [
+      'link',
+      '<https://a.example/x.css>; rel=preload, </b?token=SECRET',
+      `<https://a.example/x.css>; rel=preload, <${REDACTED_PARAM}`
+    ],
+    [
+      'link',
+      '</a.css>; rel=preload; anchor="/page?token=x"',
+      `</a.css>; rel=preload; anchor="/page?token=${REDACTED_PARAM}"`
+    ],
+    [
+      'link',
+      '</a.jpg>; rel=preload; imagesrcset="https://a.example/a.jpg?sig=s 1x, https://a.example/b.jpg 2x"',
+      `</a.jpg>; rel=preload; imagesrcset="https://a.example/a.jpg?sig=${REDACTED_PARAM} 1x, https://a.example/b.jpg 2x"`
+    ],
+    ['link', '</a.css>; anchor=/p?token=x', `</a.css>; anchor=/p?token=${REDACTED_PARAM}`],
+    ['www-authenticate', 'Basic realm="WordPress", charset="UTF-8"', 'Basic realm="WordPress"'],
+    [
+      'WWW-Authenticate',
+      'Digest realm="api", nonce="SECRETNONCE", opaque="OPAQUE", qop="auth"',
+      'Digest realm="api"'
+    ],
+    ['www-authenticate', 'Negotiate YIIBhwYGKwYBBQUCoIIBezCCAXegAw', `Negotiate ${REDACTED}`],
+    ['www-authenticate', 'NTLM TlRMTVNTUAACAAAADAAMADgAAAAFgo', `NTLM ${REDACTED}`],
+    [
+      'www-authenticate',
+      'Bearer realm="x", error="invalid_token", Negotiate',
+      'Bearer realm="x", Negotiate'
+    ],
+    [
+      'www-authenticate',
+      'Newauth realm="apps", type=1, title="Login, please", Basic realm="simple"',
+      'Newauth realm="apps", Basic realm="simple"'
+    ],
+    ['www-authenticate', 'Custom SECRETTOKEN68==', 'Custom'],
+    ['www-authenticate', 'realm="orphan", Basic', 'Basic'],
+    ['www-authenticate', 'Digest realm="a", qop = "auth"', 'Digest realm="a"'],
+    ['www-authenticate', 'Basic , , Digest realm=r, nonce=n', 'Basic, Digest realm=r'],
+    ['www-authenticate', ' ', ''],
+    [
+      'link',
+      '</a.css?token=x>; rel=preload, <https://a.example/b.js>; rel=preload',
+      `</a.css?token=${REDACTED_PARAM}>; rel=preload, <https://a.example/b.js>; rel=preload`
+    ]
+  ])('reduces %s: %j', (name, value, expected) => {
+    expect(reduceHeaderValue(name, value)).toBe(expected);
+  });
+
+  it.each([
+    ['location', 'https://a.example'],
+    ['location', '/plain/path?page=2'],
+    ['location', ''],
+    ['refresh', '5'],
+    ['www-authenticate', 'Basic'],
+    ['www-authenticate', 'Negotiate'],
+    ['location', '#top'],
+    ['location', 'next?page=2'],
+    ['location', '#section-2'],
+    ['location', 'a/b;v=2/c'],
+    ['link', 'https://cdn.example/a.css; rel=preload'],
+    ['link', ` </a.css>; title*=UTF-8'en'${encodeURIComponent('A title')}`],
+    ['link', `</a.css>; title*=nodelimiters`],
+    ['location', '/login?redirect_to=https%3A%2F%2Fa.example%2Fadmin'],
+    ['location', '/login?redirect_to=http%3A%2F%2F%5Bbad'],
+    ['link', '<https://a.example/x.css>; rel=preload'],
+    ['x-redirect-by', 'WordPress'],
+    ['x-other', 'https://a.example/?token=kept-not-a-url-header']
+  ])('keeps %s %j exactly as sent', (name, value) => {
+    expect(reduceHeaderValue(name, value)).toBe(value);
+  });
+});
+
+describe('shownHeader', () => {
+  it.each(['set-cookie', 'Set-Cookie', 'SET-COOKIE2'])(
+    'keeps only the cookie name of %s',
+    (name) => {
+      const shown = shownHeader({ name, value: 'k=v; Path=/; HttpOnly', hint: null });
+      expect(shown).toEqual({ name, value: `k=${REDACTED}`, hint: null, redacted: true });
+    }
+  );
+
+  it.each(['NAMELESSSECRETTOKEN', 'tok; Path=/'])(
+    'withholds a nameless Set-Cookie (%s) entirely',
+    (value) => {
+      const shown = shownHeader({ name: 'Set-Cookie', value, hint: null });
+      expect(shown.value).toBe(REDACTED);
+      expect(JSON.stringify(shown)).not.toContain(value.split(';')[0]);
+    }
+  );
+
+  it('withholds credential and token values, hint included', () => {
+    expect(shownHeader({ name: 'Authorization', value: 'Bearer abc.def', hint: 'x' })).toEqual({
+      name: 'Authorization',
+      value: REDACTED,
+      hint: null,
+      redacted: true
+    });
+    expect(shownHeader({ name: 'x-wp-nonce', value: '1a2b3c', hint: null }).value).toBe(REDACTED);
+  });
+
+  it('withholds a folded Set-Cookie whose first cookie is nameless', () => {
+    const shown = shownHeader({ name: 'set-cookie', value: 'SECRET\nname=v', hint: null });
+    expect(shown.value).toBe(REDACTED);
+    expect(JSON.stringify(shown)).not.toContain('SECRET');
+  });
+
+  it('keeps a URL-valued header visible with its secret query values reduced', () => {
+    expect(
+      shownHeader({ name: 'location', value: 'https://a.example/n?token=abc', hint: null })
+    ).toEqual({
+      name: 'location',
+      value: 'https://a.example/n?token=[redacted]',
+      hint: null,
+      redacted: false
+    });
+  });
+
+  it('passes every other header (and valueless rows) through', () => {
+    const row = { name: 'cache-control', value: 'max-age=0', hint: 'hint' };
+    expect(shownHeader(row)).toEqual({ ...row, redacted: false });
+    const valueless = { name: 'set-cookie', value: null, hint: null };
+    expect(shownHeader(valueless)).toEqual({ ...valueless, redacted: false });
+  });
 });

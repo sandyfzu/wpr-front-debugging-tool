@@ -85,6 +85,7 @@ const REGISTRY_ROWS = [
   '#/javascript',
   '#/lazyload',
   '#/preloaded-resources',
+  '#/headers-cookies',
   '#/undefined-references',
   'reserved'
 ];
@@ -483,6 +484,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         '#/javascript',
         '#/lazyload',
         '#/preloaded-resources',
+        '#/headers-cookies',
         '#/undefined-references'
       ];
       const menuHrefs = pageHrefs.filter((href) => !railRows.includes(href));
@@ -700,7 +702,7 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
       // internally (the designed token-thin hairline), every hidden route
       // stays pointer-reachable through that scroll, and the rail's own
       // scroll-free invariant is untouched by the plate's.
-      for (const height of [90, 120, 170, 220]) {
+      for (const height of [90, 120, 170, 220, 240]) {
         await shrinkTo(page, height);
         await page.getByRole('button', { name: 'More pages' }).click();
         const menu = page.locator('[data-fdt="panel-nav-overflow-menu"]');
@@ -709,10 +711,12 @@ test.describe('rail overflow (the height-shrink affordance)', () => {
         expect(reach.plateOverflowY, `plate overflow at ${String(height)}px`).toBe('auto');
         expect(reach.plateScrollbarGutter, `plate gutter at ${String(height)}px`).toBe('auto');
         expect(reach.plateNoHorizontalOverflow).toBe(true);
-        // The clamp state: at 220 the plate fits without biting (its rows
+        // The clamp state: at 240 the plate fits without biting (its rows
         // truly fit; no scrollbar exists then); below, it bites and the
-        // scroll carries the tail.
-        if (height === 220) {
+        // scroll carries the tail. The fit line follows the registry's row
+        // count — with seven rows it sits at 235 px (probed in 5 px steps;
+        // 220 now clamps, since one more row is hidden there).
+        if (height === 240) {
           expect(reach.plateClamped).toBe(false);
         } else {
           expect(reach.plateClamped, `plate clamped at ${String(height)}px`).toBe(true);
