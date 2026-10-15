@@ -32,6 +32,10 @@ describe('isSensitiveName', () => {
     // Digits split words too.
     'userPass2',
     'sid1',
+    // A trailing key, numbered.
+    'key2',
+    'license_key_2',
+    'licenseKey2',
     'version_hash'
   ])('reads camelCase, salt and PKCE names word by word: %s is sensitive', (name) => {
     expect(isSensitiveName(name)).toBe(true);
@@ -41,6 +45,8 @@ describe('isSensitiveName', () => {
     // Evidence WP Rocket support compares across purges (a file-name stamp).
     'minify_css_key',
     'minify_js_key',
+    'minifyCssKey',
+    'minify-js-key',
     'cacheKey',
     'surrogateKey',
     // camelCase identifiers whose words are harmless.
@@ -300,6 +306,19 @@ describe('embedded URLs', () => {
     const reduced = redactUrl(`https://a.example/?next=${value}`) ?? '';
     expect(reduced).not.toMatch(/TABBED|SPACED|UPPER/);
     expect(decodeURIComponent(reduced)).toContain(`token=${REDACTED_PARAM}`);
+  });
+
+  it('follows a nested protocol-relative URL, keeping it protocol-relative', () => {
+    const value = encodeURIComponent('//b.example/?token=PROTO&ok=1');
+    const reduced = redactUrl(`https://a.example/?r=${value}`) ?? '';
+    expect(reduced).not.toContain('PROTO');
+    expect(decodeURIComponent(new URL(reduced).searchParams.get('r') ?? '')).toBe(
+      `//b.example/?token=${REDACTED_PARAM}&ok=1`
+    );
+    // Unchanged when nothing in it is sensitive.
+    expect(redactUrl('https://a.example/?r=%2F%2Fb.example%2Fx')).toBe(
+      'https://a.example/?r=%2F%2Fb.example%2Fx'
+    );
   });
 
   it('leaves a parameter that only looks like a URL untouched', () => {

@@ -24,8 +24,9 @@
  *   `signal`, `turnkey` or `postcode` pass while `userEmail` and
  *   `licenseKey` do not) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`,
  *   `salt`, the personal-data names `email` and `login` (`user_login`), and
- *   a trailing `key` (`X-Access-Key`; an unlisted cache key over-matches,
- *   which is acceptable); plus the PKCE `code_verifier`.
+ *   a trailing `key`, numbered or not (`X-Access-Key`, `key2`,
+ *   `license_key_2`; an unlisted cache key over-matches, which is
+ *   acceptable); plus the PKCE `code_verifier`.
  *
  * Exemptions (exact names only, so `author_token` and the like stay
  * redacted): `author` (WordPress's `?author=1` archive id), the cache-key
@@ -75,7 +76,7 @@ const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
  * Matched against the normalised name ({@link normalizeName}).
  */
 const SENSITIVE_NAME_FRAGMENT =
-  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|code[-_]verifier|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login|salt)(?:[-_]|$)|(?:^|[-_])key$/;
+  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|code[-_]verifier|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login|salt)(?:[-_]|$)|(?:^|[-_])key(?:[-_]\d+)?$/;
 
 /**
  * Exact names exempt from the fragments and words — useful context, never a
@@ -85,8 +86,9 @@ const SENSITIVE_NAME_FRAGMENT =
  * (it names a scheme and realm; it carries no client secret), and WP
  * Rocket's `minify_css_key`/`minify_js_key` options — a `uniqid()` salt for
  * minified file names, regenerated on purge: a cache-busting stamp support
- * compares across purges, not a credential. Compared in the normalised form
- * too, so `cacheKey`-style spellings are exempt alike.
+ * compares across purges, not a credential. Listed and compared in the
+ * normalised form with `_` read as `-`, so every spelling of one name
+ * (`minify_css_key`, `minifyCssKey`, `minify-css-key`) is exempt alike.
  */
 const EXEMPT_NAMES: ReadonlySet<string> = new Set([
   'author',
@@ -94,8 +96,8 @@ const EXEMPT_NAMES: ReadonlySet<string> = new Set([
   'cache-key',
   'x-cache-key',
   'www-authenticate',
-  'minify_css_key',
-  'minify_js_key'
+  'minify-css-key',
+  'minify-js-key'
 ]);
 
 /** A valueless query pair this long reads as a bare token. */
@@ -140,7 +142,7 @@ export function isSensitiveName(name: string): boolean {
   const lower = trimmed.toLowerCase();
   if (SENSITIVE_EXACT_NAMES.has(lower)) return true;
   const normalized = normalizeName(trimmed);
-  if (EXEMPT_NAMES.has(lower) || EXEMPT_NAMES.has(normalized)) return false;
+  if (EXEMPT_NAMES.has(normalized.replace(/_/g, '-'))) return false;
   return SENSITIVE_NAME_FRAGMENT.test(normalized);
 }
 
@@ -420,16 +422,23 @@ function isBareToken(pair: string): boolean {
 }
 
 /**
- * Whether text can parse as an http(s) URL, read the way the URL parser
- * reads a scheme: leading C0 controls and spaces stripped, tabs and line
- * breaks ignored anywhere. A false answer is exact (the parser would not
- * yield an http(s) URL either), so callers may skip the parse.
+ * The web URL a query value may hold, read the way the URL parser reads a
+ * scheme: leading C0 controls and spaces stripped, tabs and line breaks
+ * ignored anywhere. An absolute http(s) value is taken as written; a
+ * protocol-relative one (`//host/?token=…`) is read against `https:` so the
+ * rule can reduce it, and the caller drops that prefix again. A null answer
+ * is exact (no http(s) URL can come out of the text), so callers may skip
+ * the (throwing, slow) parse.
  *
  * @param text The candidate text.
- * @returns False only when the text cannot be an absolute http(s) URL.
+ * @returns The text to parse and the scheme prefix the caller added, or
+ *   null when the text cannot be a web URL.
  */
-function looksLikeWebUrl(text: string): boolean {
-  return /^[\u0000-\u0020]*https?:/i.test(text.replace(/[\t\n\r]/g, ''));
+function nestedWebUrl(text: string): { readonly url: string; readonly added: string } | null {
+  const lead = text.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+/, '');
+  if (/^https?:/i.test(lead)) return { url: text, added: '' };
+  if (lead.startsWith('//')) return { url: `https:${lead}`, added: 'https:' };
+  return null;
 }
 
 /**
@@ -451,12 +460,13 @@ function redactQueryPair(pair: string, depth: number): string {
   if (decoded.trim() === '' || isSensitiveName(decoded)) return `${name}=${REDACTED_PARAM}`;
   if (depth <= 0) return pair;
   const value = decodeParamName(pair.slice(equals + 1));
-  // Only an http(s) URL is followed: skip the (throwing, slow) parse for the
+  // Only a web URL is followed: skip the (throwing, slow) parse for the
   // ordinary values (`ver=1.2`) that make up nearly every query.
-  if (!looksLikeWebUrl(value)) return pair;
-  const reduced = redactUrlAt(value, depth - 1);
-  if (reduced === null || reduced === new URL(value).href) return pair;
-  return `${name}=${encodeURIComponent(reduced)}`;
+  const nested = nestedWebUrl(value);
+  if (nested === null) return pair;
+  const reduced = redactUrlAt(nested.url, depth - 1);
+  if (reduced === null || reduced === new URL(nested.url).href) return pair;
+  return `${name}=${encodeURIComponent(reduced.slice(nested.added.length))}`;
 }
 
 /**
