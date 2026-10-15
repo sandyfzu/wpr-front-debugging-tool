@@ -89,7 +89,9 @@ function ToastCard(props: ToastCardProps): JSX.Element {
   // Initial duration within a tracked scope (the item is immutable per queue
   // entry — duration can never change under it).
   const [remaining, setRemaining] = createSignal(Number.MAX_SAFE_INTEGER);
-  const [paused, setPaused] = createSignal(false);
+  // Each interaction owns its pause; leaving one must not cancel the other.
+  const [hovered, setHovered] = createSignal(false);
+  const [focused, setFocused] = createSignal(false);
   createRenderEffect(() => setRemaining(Math.max(props.item.duration, 0)));
 
   // The interval is created/destroyed per pause state AND per remaining
@@ -97,7 +99,7 @@ function ToastCard(props: ToastCardProps): JSX.Element {
   // time never drifts, every tick re-anchors the wall-clock deadline, and
   // unmounts always cancel the interval.
   createEffect(() => {
-    if (paused() || remaining() <= 0) return;
+    if (hovered() || focused() || remaining() <= 0) return;
     // The deadline is wall-clock anchored: each tick measures real elapsed
     // time, so under a throttled interval (hidden tab, busy devtools host)
     // the visible lifetime stays true to the enqueued duration instead of
@@ -122,16 +124,19 @@ function ToastCard(props: ToastCardProps): JSX.Element {
       data-fdt-tone={props.item.tone}
       class="pointer-events-auto flex items-start gap-1.5 rounded-md border border-line-2 bg-surface-2 px-2 py-1.5 shadow-elev-2"
       onPointerEnter={() => {
-        setPaused(true);
+        setHovered(true);
       }}
       onPointerLeave={() => {
-        setPaused(false);
+        setHovered(false);
       }}
       onFocusIn={() => {
-        setPaused(true);
+        setFocused(true);
       }}
-      onFocusOut={() => {
-        setPaused(false);
+      onFocusOut={(event) => {
+        // Descendant-to-descendant focus moves stay inside the same pause.
+        setFocused(
+          event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)
+        );
       }}
     >
       <Dynamic

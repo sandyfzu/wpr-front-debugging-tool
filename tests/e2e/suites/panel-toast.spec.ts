@@ -10,6 +10,43 @@ const AXE_SOURCE = readFileSync(
   'utf8'
 );
 
+for (const leavingFirst of ['pointer', 'focus'] as const) {
+  test(`copy notification stays paused when ${leavingFirst} leaves before the other interaction`, async ({
+    extension
+  }) => {
+    const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+    try {
+      await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write']);
+      const copy = panel.getByRole('button', { name: 'Copy report', exact: true });
+      await copy.focus();
+      await copy.press('Enter');
+      const status = panel.getByRole('region', { name: 'Notifications' }).getByRole('status');
+      await expect(status).toHaveText('Report copied');
+      const dismiss = panel.getByRole('button', { name: 'Dismiss — Report copied' });
+      if (leavingFirst === 'pointer') {
+        await dismiss.hover();
+        await dismiss.focus();
+        await panel.mouse.move(0, 0);
+        await expect(dismiss).toBeFocused();
+      } else {
+        await dismiss.focus();
+        await dismiss.hover();
+        await copy.focus();
+        await expect(copy).toBeFocused();
+      }
+      // Outlive the success duration: either remaining interaction must prevent dismissal.
+      await panel.waitForTimeout(4500);
+      await expect(status).toBeVisible();
+      if (leavingFirst === 'pointer') await copy.focus();
+      else await panel.mouse.move(0, 0);
+      await expect(status).toHaveCount(0, { timeout: 5000 });
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+}
+
 test('copy success and failure notifications preserve native list items and clean axe results', async ({
   extension
 }) => {
