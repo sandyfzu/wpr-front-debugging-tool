@@ -143,10 +143,33 @@ describe('buildHeadersViewModel — the verdict copy', () => {
   it('a name-only row renders with a null value and never invents a hint', () => {
     expect(buildHeadersViewModel([{ name: 'x-cache' }, { name: 'X-Kinsta-Cache' }])).toEqual({
       caching: [
-        { name: 'x-cache', value: null, hint: null },
-        { name: 'X-Kinsta-Cache', value: null, hint: null }
+        { name: 'x-cache', value: null, hint: null, redacted: false },
+        { name: 'X-Kinsta-Cache', value: null, hint: null, redacted: false }
       ],
       other: []
+    });
+  });
+});
+
+describe('buildHeadersViewModel — rows withheld at capture', () => {
+  it('keeps a withheld row in its group, no value, its kept cookie name apart, never a hint', () => {
+    expect(
+      buildHeadersViewModel([
+        { name: 'X-Rocket-Nonce', redacted: true },
+        { name: 'Set-Cookie', redacted: true, cookieName: 'sid' },
+        { name: 'x-cache', value: 'HIT' }
+      ])
+    ).toEqual({
+      caching: [
+        {
+          name: 'x-cache',
+          value: 'HIT',
+          hint: 'The edge/proxy cache reports it served this response from cache (HIT).',
+          redacted: false
+        },
+        { name: 'X-Rocket-Nonce', value: null, hint: null, redacted: true }
+      ],
+      other: [{ name: 'Set-Cookie', value: null, hint: null, redacted: true, cookieName: 'sid' }]
     });
   });
 });
@@ -169,6 +192,17 @@ describe('headersTruncationNote', () => {
   it('says nothing for a complete capture', () => {
     expect(headersTruncationNote(rows(300), undefined)).toBeNull();
     expect(headersTruncationNote(rows(3), false)).toBeNull();
+  });
+
+  it('reads a withheld row clipped at its cookie name as a clipped value', () => {
+    const clippedCookie = {
+      name: 'Set-Cookie',
+      redacted: true,
+      cookieName: 'c'.repeat(4096)
+    } as const;
+    expect(headersTruncationNote([clippedCookie], true)).toBe(
+      'Some header values were clipped to 4,096 characters.'
+    );
   });
 
   it('names each cause the rows show', () => {

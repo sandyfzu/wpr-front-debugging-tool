@@ -210,7 +210,7 @@ export function boundPreloadedResources(report: PreloadedResources): PreloadedRe
 
 /**
  * Bound a main frame's captured headers: the first rows up to the count cap,
- * names and values clipped. Shape problems (a non-string name, …) are left
+ * names, values and withheld rows' cookie names clipped. Shape problems (a non-string name, …) are left
  * for the guard to reject — bounding never repairs a malformed capture.
  *
  * @param headers The rows as captured.
@@ -222,6 +222,13 @@ export function boundPageHeaders(headers: readonly PageHeader[]): PageHeaderCapt
     headers: boundList(headers, caps.count, t, (row) => {
       if (typeof row.name !== 'string') return row;
       const name = clipString(row.name, caps.name, t);
+      // A withheld row keeps its flag (and its clipped cookie name): bounding
+      // must never turn a redacted row back into an ordinary one.
+      if (row.redacted === true) {
+        return typeof row.cookieName === 'string'
+          ? { name, redacted: true, cookieName: clipString(row.cookieName, caps.value, t) }
+          : { name, redacted: true };
+      }
       return typeof row.value === 'string'
         ? { name, value: clipString(row.value, caps.value, t) }
         : { name };

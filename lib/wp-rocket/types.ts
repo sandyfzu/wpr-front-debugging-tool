@@ -15,10 +15,24 @@ export interface TruncationMark {
   truncated?: true;
 }
 
-/** One response header as captured by the background (`webRequest` shape). */
+/**
+ * One response header as the background serves it (`webRequest` shape),
+ * already through the redaction rule (`lib/redaction`): a secret-bearing
+ * value never leaves the capture. Ordinary rows carry their (URL-reduced)
+ * `value`; a withheld row carries `redacted: true` and NO `value`, so a
+ * reader unaware of the flag sees a valueless row, never a secret.
+ */
 export interface PageHeader {
   name: string;
+  /** The value, reduced by the rule; absent on valueless and withheld rows. */
   value?: string;
+  /** Additive: present (always `true`) only when the capture withheld the value. */
+  redacted?: true;
+  /**
+   * Additive, only beside `redacted`: the cookie a withheld `Set-Cookie`
+   * set (caching evidence); its value and attributes are never kept.
+   */
+  cookieName?: string;
 }
 
 /** Page headers of the inspected page's main frame, in capture order. */

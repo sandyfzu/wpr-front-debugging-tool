@@ -1,6 +1,7 @@
 /**
  * The Export-page-data-as-JSON action's mechanism: one `Blob` + anchor
- * download of the currently loaded `FdtData`, with a clipboard fallback when
+ * download of the currently loaded `FdtData` — redacted by the shared rule
+ * and headed by a notice saying so (`lib/redaction/page-data`) — with a clipboard fallback when
  * the download cannot run in the current context — a DevTools panel document
  * has no dedicated downloads API (the `downloads` permission is not held),
  * so the browser's own anchor download is the mechanism; its unreliability
@@ -14,6 +15,7 @@ import type { ClipboardLike, CopyOutcomeSink } from '../../../components/ui/copy
 import { performCopy } from '../../../components/ui/copy-button';
 import { createLogger } from '../../../lib/logger';
 import type { FdtData } from '../../../lib/wp-rocket/types';
+import { redactPageDataForExport } from '../../../lib/redaction/page-data';
 import { toast } from '../../../components/ui/toast-store';
 
 const log = createLogger('panel');
@@ -61,7 +63,8 @@ export function exportFilename(at: Date): string {
  * answer. The raw platform error never renders — the toasts carry the
  * actionable framing, the log carries the cause.
  *
- * @param data The loaded page data (the whole `FdtData` shape, pretty-printed).
+ * @param data The loaded page data (the whole `FdtData` shape, redacted and
+ *   pretty-printed; a redaction failure exports nothing).
  * @param deps The seams (download + clipboard + clock).
  * @returns The outcome; never rejects.
  */
@@ -69,7 +72,19 @@ export async function exportPageDataJson(
   data: FdtData,
   deps: JsonExportDeps
 ): Promise<JsonExportResult> {
-  const payload = JSON.stringify(data, null, 2);
+  let payload: string;
+  try {
+    payload = JSON.stringify(redactPageDataForExport(data), null, 2);
+  } catch (cause) {
+    // Never fall back to the unredacted data: a failed redaction exports nothing.
+    log.error('The page data could not be redacted for export', {
+      cause: cause instanceof Error ? { message: cause.message } : cause
+    });
+    toast.error('Page data could not be exported', {
+      description: 'Preparing the redacted export failed.'
+    });
+    return 'failed';
+  }
   const filename = exportFilename(deps.now());
   try {
     deps.download(payload, filename);

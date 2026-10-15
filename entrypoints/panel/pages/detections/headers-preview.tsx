@@ -34,7 +34,7 @@ import {
   type HeaderRowVM,
   type HeadersViewModel
 } from '../../../../lib/panel/headers-view-model';
-import { shownHeader, type ShownHeader } from '../../../../lib/panel/redaction';
+import { shownHeader, type ShownHeader } from '../../../../lib/panel/shown-header';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { WithheldLegend, WithheldValue } from '../withheld-value';

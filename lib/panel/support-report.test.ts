@@ -16,6 +16,8 @@ import {
   type SupportReportContext
 } from './support-report';
 import { emptyDetections, makeReportData } from './support-report.fixtures';
+import { redactPageHeaders } from '../redaction/headers';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../redaction/planted-secrets.fixtures';
 
 /** A fixed provenance: 2026-10-14 12:00:00 UTC, version 1.4.0, a known page. */
 const CONTEXT: SupportReportContext = {
@@ -330,6 +332,21 @@ describe('buildSupportReport — secrets never reach the report', () => {
     const report = reportFor(name, 'HUNTER2-SECRET');
     expect(report).not.toContain('HUNTER2-SECRET');
     expect(report).toContain(`| \`${name}\` | (value redacted) |`);
+  });
+
+  it('renders capture-withheld rows exactly as it renders the same rows unflagged', () => {
+    const raw = fullData();
+    const captured = { ...raw, pageHeaders: redactPageHeaders(raw.pageHeaders ?? []) };
+    expect(captured.pageHeaders.some((row) => row.redacted === true)).toBe(true);
+    expect(buildSupportReport(captured, CONTEXT)).toBe(buildSupportReport(raw, CONTEXT));
+  });
+
+  it('carries no planted secret, from a capture-redacted or a raw header list', () => {
+    for (const pageHeaders of [redactPageHeaders(PLANTED_RAW_HEADERS), PLANTED_RAW_HEADERS]) {
+      const report = buildSupportReport(makeReportData({ pageHeaders }), CONTEXT);
+      expect(report).not.toContain(PLANTED);
+      expect(report).toContain('`wordpress_logged_in_ab` (value redacted)');
+    }
   });
 
   it('flattens C1, line-separator and bidi controls in page strings', () => {

@@ -116,6 +116,41 @@ describe('parsePageHeaders', () => {
     expect(parsePageHeaders([{ name: 'ok', value: 'a'.repeat(4097) }])).toBeNull();
     expect(parsePageHeaders([{ name: 'ok', value: 7 }])).toBeNull();
   });
+
+  it('accepts withheld rows, with or without a kept cookie name', () => {
+    const rows = [
+      { name: 'Set-Cookie', redacted: true, cookieName: 'sid' },
+      { name: 'Authorization', redacted: true },
+      { name: 'Location', value: 'https://a.example/?token=[redacted]' }
+    ];
+    expect(parsePageHeaders(rows)).toEqual(rows);
+  });
+
+  it('still accepts rows from before the withheld flag (old payloads)', () => {
+    const old = [{ name: 'Set-Cookie', value: 'sid=1' }, { name: 'x-cache' }];
+    expect(parsePageHeaders(old)).toEqual(old);
+  });
+
+  it.each([
+    ['a withheld row that still carries a value', { name: 'A', redacted: true, value: 'secret' }],
+    ['a flag other than true', { name: 'A', redacted: false }],
+    ['a cookie name without the flag', { name: 'Set-Cookie', value: 'x', cookieName: 'sid' }],
+    ['an empty cookie name', { name: 'Set-Cookie', redacted: true, cookieName: '' }],
+    ['a non-string cookie name', { name: 'Set-Cookie', redacted: true, cookieName: 1 }],
+    [
+      'an over-long cookie name',
+      { name: 'Set-Cookie', redacted: true, cookieName: 'c'.repeat(4097) }
+    ],
+    ['an unknown key', { name: 'A', value: 'v', extra: 1 }]
+  ])('rejects %s', (_label, row) => {
+    expect(parsePageHeaders([row])).toBeNull();
+  });
+
+  it('rebuilds rows with only the known keys', () => {
+    const parsed = parsePageHeaders([{ name: 'A', redacted: true, cookieName: undefined }]);
+    expect(parsed).toEqual([{ name: 'A', redacted: true }]);
+    expect(Object.keys(parsed?.[0] ?? {})).toEqual(['name', 'redacted']);
+  });
 });
 
 describe('parseDetectionSummary', () => {

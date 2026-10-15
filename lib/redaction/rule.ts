@@ -1,9 +1,10 @@
 /**
- * Redaction for anything the panel exports (a copied report, a ticket, a
- * log): which NAMES mark a secret — header names and URL query-parameter
- * names share one rule — and how a header value or a page URL is reduced
- * before it leaves the panel. The ONE declaring site: every export path
- * runs its values through {@link redactHeaderValue} / {@link redactUrl}.
+ * The redaction rule for anything secret-bearing the extension captures or
+ * hands out (the background's header capture, a copied report, a ticket, an
+ * export): which NAMES mark a secret — header names and URL query-parameter
+ * names share one rule — and how a header value or a URL is reduced. The ONE
+ * declaring site: every capture and export path runs its values through
+ * {@link redactHeaderValue} / {@link redactUrl} / {@link redactUrlReference}.
  *
  * The rule is name-based and deliberately over-inclusive — redacting a
  * harmless value costs a support engineer one question, leaking a session
@@ -19,15 +20,19 @@
  *   `auth`, `nonce`, `signature`, `api-key`/`api_key`/`apikey`, `csrf`,
  *   `xsrf`, `password`/`passwd`, `credential`, `jwt`, `hmac`, `bearer`,
  *   `private` or `pwd`;
- * - **whole words** (`-`/`_`/space-separated, so `signal`, `turnkey` or
- *   `postcode` pass) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`, the
- *   personal-data names `email` and `login` (`user_login`), and a trailing
- *   `key` (`X-Access-Key`; `X-Cache-Key` over-matches, which is acceptable).
+ * - **whole words** (`-`/`_`/space-separated or camelCase humps, so
+ *   `signal`, `turnkey` or `postcode` pass while `userEmail` and
+ *   `licenseKey` do not) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`,
+ *   `salt`, the personal-data names `email` and `login` (`user_login`), and
+ *   a trailing `key`, numbered or not (`X-Access-Key`, `key2`,
+ *   `license_key_2`; an unlisted cache key over-matches, which is
+ *   acceptable); plus the PKCE `code_verifier`.
  *
  * Exemptions (exact names only, so `author_token` and the like stay
  * redacted): `author` (WordPress's `?author=1` archive id), the cache-key
- * headers (`surrogate-key`, `cache-key`, `x-cache-key` — caching evidence)
- * and `www-authenticate` (a public server challenge).
+ * headers (`surrogate-key`, `cache-key`, `x-cache-key` — caching evidence),
+ * `www-authenticate` (a public server challenge) and WP Rocket's
+ * `minify_css_key`/`minify_js_key` (a file-name cache-busting stamp).
  *
  * Header values that are URLs ({@link redactHeaderValue}: `location`,
  * `content-location`, `refresh`'s `url=`, every `link` `<…>` target) run
@@ -45,8 +50,6 @@
  * NAME (which cookie the server set is useful evidence for caching issues);
  * its value and attributes never pass.
  */
-
-import type { HeaderRowVM } from './headers-view-model';
 
 /** Names whose values are always secret (compared trimmed, lowercase). */
 const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
@@ -70,24 +73,31 @@ const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
 /**
  * Name fragments (anywhere in the name) and whole words (between `-`/`_`
  * separators or the name's edges) that mark a name as secret-bearing.
- * Matched against the normalised name (lowercase, whitespace and `+` as `-`).
+ * Matched against the normalised name ({@link normalizeName}).
  */
 const SENSITIVE_NAME_FRAGMENT =
-  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login)(?:[-_]|$)|(?:^|[-_])key$/;
+  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|code[-_]verifier|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login|salt)(?:[-_]|$)|(?:^|[-_])key(?:[-_]\d+)?$/;
 
 /**
  * Exact names exempt from the fragments and words — useful context, never a
  * credential: WordPress's `?author=` archive id, the cache-key headers CDNs
  * and caches emit as caching evidence (`surrogate-key`, `cache-key`,
- * `x-cache-key`), and `www-authenticate`, a public challenge the server
- * sends (it names a scheme and realm; it carries no client secret).
+ * `x-cache-key`), `www-authenticate`, a public challenge the server sends
+ * (it names a scheme and realm; it carries no client secret), and WP
+ * Rocket's `minify_css_key`/`minify_js_key` options — a `uniqid()` salt for
+ * minified file names, regenerated on purge: a cache-busting stamp support
+ * compares across purges, not a credential. Listed and compared in the
+ * normalised form with `_` read as `-`, so every spelling of one name
+ * (`minify_css_key`, `minifyCssKey`, `minify-css-key`) is exempt alike.
  */
 const EXEMPT_NAMES: ReadonlySet<string> = new Set([
   'author',
   'surrogate-key',
   'cache-key',
   'x-cache-key',
-  'www-authenticate'
+  'www-authenticate',
+  'minify-css-key',
+  'minify-js-key'
 ]);
 
 /** A valueless query pair this long reads as a bare token. */
@@ -103,19 +113,37 @@ export const REDACTED = '(value redacted)';
 export const REDACTED_PARAM = '[redacted]';
 
 /**
+ * A name in the word-separated form the fragments and words match: camelCase
+ * humps (`accessKey`, `APIKey`) and letter/digit boundaries (`key2`) split
+ * with `-` BEFORE lowercasing (or `userEmail` would read as one word),
+ * whitespace and `+` read as `-` (`api key`, `api+key`).
+ *
+ * @param name The trimmed name, original casing.
+ * @returns The lowercase, `-`-split form.
+ */
+function normalizeName(name: string): string {
+  return name
+    .replace(/([a-z])(?=[A-Z])|([A-Z])(?=[A-Z][a-z])/g, '$1$2-')
+    .replace(/([A-Za-z])(?=\d)|(\d)(?=[A-Za-z])/g, '$1$2-')
+    .toLowerCase()
+    .replace(/[\s+]+/g, '-');
+}
+
+/**
  * Whether a header or query-parameter name marks its value as secret.
  *
- * @param name The (decoded) name, any casing; inner whitespace and `+`
- *   count as `-`.
+ * @param name The (decoded) name, any casing; camelCase humps, digits,
+ *   inner whitespace and `+` count as word separators.
  * @returns True for the exact names and any name carrying a fragment or
  *   word, except the exempt names.
  */
 export function isSensitiveName(name: string): boolean {
-  const lower = name.trim().toLowerCase();
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
   if (SENSITIVE_EXACT_NAMES.has(lower)) return true;
-  if (EXEMPT_NAMES.has(lower)) return false;
-  // Whitespace and `+` read as word separators (`api key`, `api+key`).
-  return SENSITIVE_NAME_FRAGMENT.test(lower.replace(/[\s+]+/g, '-'));
+  const normalized = normalizeName(trimmed);
+  if (EXEMPT_NAMES.has(normalized.replace(/_/g, '-'))) return false;
+  return SENSITIVE_NAME_FRAGMENT.test(normalized);
 }
 
 /** The `Set-Cookie` header names (lowercase) whose cookie name may be kept. */
@@ -160,36 +188,6 @@ export function redactHeaderValue(
   return { redacted: true, cookieName: setCookieName(value) };
 }
 
-/** A header row as a panel surface shows and copies it. */
-export interface ShownHeader extends HeaderRowVM {
-  /** True when the captured value was withheld (see {@link shownHeader}). */
-  readonly redacted: boolean;
-}
-
-/**
- * A header row of the shared headers model as every panel surface (the
- * Headers & Cookies page, the Detections preview) may show and copy it. A
- * secret-bearing header keeps its name and loses its whole value —
- * attributes and hint included (a hint can echo the value); a `Set-Cookie`
- * keeps only a well-formed cookie name, which is caching evidence. Other
- * headers keep their value as {@link reduceHeaderValue} leaves it. Valueless
- * rows pass untouched.
- *
- * @param header A row of the shared headers model.
- * @returns The row to render and copy, flagged when its value was withheld.
- */
-export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.value === null) return { ...header, redacted: false };
-  const exported = redactHeaderValue(header.name, header.value);
-  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
-  return {
-    name: header.name,
-    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
-    hint: null,
-    redacted: true
-  };
-}
-
 /** Headers whose whole value is one URL reference. */
 const URL_VALUED_HEADERS: ReadonlySet<string> = new Set([
   'location',
@@ -220,7 +218,7 @@ const RELATIVE_BASE = 'https://relative.invalid';
  * @param depth How many URL-in-a-parameter levels may still be followed.
  * @returns The reference, reduced where the rule bites.
  */
-function redactUrlReference(ref: string, depth = 1): string {
+export function redactUrlReference(ref: string, depth = 1): string {
   const trimmed = ref.trim();
   // A bare fragment has no URL to rebuild: its pairs get the pair rule
   // (`#access_token=…` → redacted; a plain anchor `#top` stays).
@@ -235,9 +233,12 @@ function redactUrlReference(ref: string, depth = 1): string {
     // Unparseable: nothing the rule can vouch for.
     return REDACTED_PARAM;
   }
-  const reduced = redactUrlAt(resolved.href, depth);
+  // One parse serves both the rule and the comparison (the rule mutates
+  // the parsed URL in place, so its pre-rule `href` is read first).
+  const original = resolved.href;
+  const reduced = reduceParsedUrl(resolved, depth);
   if (reduced === null) return REDACTED_PARAM;
-  if (reduced === resolved.href) return ref;
+  if (reduced === original) return ref;
   if (SCHEME.test(trimmed)) return reduced;
   if (trimmed.startsWith('//')) return reduced.slice(resolved.protocol.length);
   if (trimmed.startsWith('/')) return reduced.slice(RELATIVE_BASE.length);
@@ -394,7 +395,7 @@ const MAX_DECODE_PASSES = 3;
  * @param raw The name as written in the URL.
  * @returns The decoded name.
  */
-function decodeParamName(raw: string): string {
+export function decodeParamName(raw: string): string {
   let current = raw.replace(/\+/g, ' ');
   for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
     let next: string;
@@ -421,6 +422,26 @@ function isBareToken(pair: string): boolean {
 }
 
 /**
+ * The web URL a query value may hold, read the way the URL parser reads a
+ * scheme: leading C0 controls and spaces stripped, tabs and line breaks
+ * ignored anywhere. An absolute http(s) value is taken as written; a
+ * protocol-relative one (`//host/?token=…`) is read against `https:` so the
+ * rule can reduce it, and the caller drops that prefix again. A null answer
+ * is exact (no http(s) URL can come out of the text), so callers may skip
+ * the (throwing, slow) parse.
+ *
+ * @param text The candidate text.
+ * @returns The text to parse and the scheme prefix the caller added, or
+ *   null when the text cannot be a web URL.
+ */
+function nestedWebUrl(text: string): { readonly url: string; readonly added: string } | null {
+  const lead = text.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+/, '');
+  if (/^https?:/i.test(lead)) return { url: text, added: '' };
+  if (lead.startsWith('//')) return { url: `https:${lead}`, added: 'https:' };
+  return null;
+}
+
+/**
  * Redact one query pair. A value under an ordinary name that decodes to an
  * absolute http(s) URL (`redirect_to=https%3A%2F%2F…%3Ftoken%3D…`) is
  * itself reduced by the URL rule — once: `depth` bounds the recursion.
@@ -439,9 +460,13 @@ function redactQueryPair(pair: string, depth: number): string {
   if (decoded.trim() === '' || isSensitiveName(decoded)) return `${name}=${REDACTED_PARAM}`;
   if (depth <= 0) return pair;
   const value = decodeParamName(pair.slice(equals + 1));
-  const reduced = redactUrlAt(value, depth - 1);
-  if (reduced === null || reduced === new URL(value).href) return pair;
-  return `${name}=${encodeURIComponent(reduced)}`;
+  // Only a web URL is followed: skip the (throwing, slow) parse for the
+  // ordinary values (`ver=1.2`) that make up nearly every query.
+  const nested = nestedWebUrl(value);
+  if (nested === null) return pair;
+  const reduced = redactUrlAt(nested.url, depth - 1);
+  if (reduced === null || reduced === new URL(nested.url).href) return pair;
+  return `${name}=${encodeURIComponent(reduced.slice(nested.added.length))}`;
 }
 
 /**
@@ -476,12 +501,31 @@ function redactUrlAt(raw: string, depth: number): string | null {
     // Not a URL at all: nothing exportable.
     return null;
   }
+  return reduceParsedUrl(url, depth);
+}
+
+/**
+ * Apply the URL rule to an already parsed URL, in place. Each part is
+ * written back only when the rule changed it — a setter re-serializes, and
+ * skipping the no-op ones keeps long lists of ordinary URLs cheap.
+ *
+ * @param url The parsed URL (mutated).
+ * @param depth How many URL-in-a-parameter levels may still be followed.
+ * @returns The reduced `href`, or null when it is not an http(s) URL.
+ */
+function reduceParsedUrl(url: URL, depth: number): string | null {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  url.username = '';
-  url.password = '';
+  if (url.username !== '') url.username = '';
+  if (url.password !== '') url.password = '';
+  // Unconditional: an empty fragment (`#`) reads back as '' yet serializes.
   url.hash = '';
-  url.pathname = redactPathParams(url.pathname);
-  if (url.search !== '') url.search = redactPairs(url.search.slice(1), depth);
+  const path = redactPathParams(url.pathname);
+  if (path !== url.pathname) url.pathname = path;
+  const query = url.search.slice(1);
+  if (query !== '') {
+    const reducedQuery = redactPairs(query, depth);
+    if (reducedQuery !== query) url.search = reducedQuery;
+  }
   return url.href;
 }
 

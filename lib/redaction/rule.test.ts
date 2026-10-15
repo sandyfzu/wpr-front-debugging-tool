@@ -9,13 +9,78 @@ import {
   isSensitiveName,
   REDACTED,
   REDACTED_PARAM,
-  shownHeader,
   reduceHeaderValue,
   redactHeaderValue,
   redactUrl
-} from './redaction';
+} from './rule';
 
 describe('isSensitiveName', () => {
+  it.each([
+    'accessKey',
+    'licenseKey',
+    'userEmail',
+    'adminEmail',
+    'userLogin',
+    'userPass',
+    'APIKey',
+    'cloudflareApiKey',
+    'salt',
+    'AUTH_SALT',
+    'LOGGED_IN_SALT',
+    'code_verifier',
+    'codeVerifier',
+    // Digits split words too.
+    'userPass2',
+    'sid1',
+    // A trailing key, numbered.
+    'key2',
+    'license_key_2',
+    'licenseKey2',
+    'version_hash'
+  ])('reads camelCase, salt and PKCE names word by word: %s is sensitive', (name) => {
+    expect(isSensitiveName(name)).toBe(true);
+  });
+
+  it.each([
+    // Evidence WP Rocket support compares across purges (a file-name stamp).
+    'minify_css_key',
+    'minify_js_key',
+    'minifyCssKey',
+    'minify-js-key',
+    'cacheKey',
+    'surrogateKey',
+    // camelCase identifiers whose words are harmless.
+    'lazyloadDetected',
+    'locationHashes',
+    'deferredByWPR',
+    'timeStamp',
+    'cookieName',
+    'X-LiteSpeed-Cache',
+    'X-WP-TotalPages',
+    'X-RateLimit-Remaining',
+    'ETag',
+    'methodName',
+    'keyboard',
+    'basalt',
+    'salted',
+    'passport',
+    // WP Rocket options that are settings, not credentials.
+    'cache_logged_user',
+    'cache_reject_cookies',
+    'cdn_state',
+    'cdn_zone',
+    'cloudflare_auto_settings',
+    'cloudflare_zone_id',
+    'control_heartbeat',
+    'heartbeat_site_behavior',
+    'database_all_transients',
+    'exclude_inline_js',
+    'minify_google_fonts',
+    'purge_cron_unit'
+  ])('keeps %s visible', (name) => {
+    expect(isSensitiveName(name)).toBe(false);
+  });
+
   it.each([
     'cookie',
     'Set-Cookie',
@@ -231,6 +296,29 @@ describe('embedded URLs', () => {
     expect(level1).not.toContain('MID');
     // …and its own embedded URL is left as written (no second descent).
     expect(new URL(level1).searchParams.get('next')).toBe(inner);
+  });
+
+  it.each([
+    ['a tab inside the scheme', 'ht%09tps%3A%2F%2Fb.example%2F%3Ftoken%3DTABBED'],
+    ['a leading space', '%20https%3A%2F%2Fb.example%2F%3Ftoken%3DSPACED'],
+    ['an uppercase scheme', 'HTTPS%3A%2F%2Fb.example%2F%3Ftoken%3DUPPER']
+  ])('follows a nested URL written with %s (the parser reads it as http(s))', (_label, value) => {
+    const reduced = redactUrl(`https://a.example/?next=${value}`) ?? '';
+    expect(reduced).not.toMatch(/TABBED|SPACED|UPPER/);
+    expect(decodeURIComponent(reduced)).toContain(`token=${REDACTED_PARAM}`);
+  });
+
+  it('follows a nested protocol-relative URL, keeping it protocol-relative', () => {
+    const value = encodeURIComponent('//b.example/?token=PROTO&ok=1');
+    const reduced = redactUrl(`https://a.example/?r=${value}`) ?? '';
+    expect(reduced).not.toContain('PROTO');
+    expect(decodeURIComponent(new URL(reduced).searchParams.get('r') ?? '')).toBe(
+      `//b.example/?token=${REDACTED_PARAM}&ok=1`
+    );
+    // Unchanged when nothing in it is sensitive.
+    expect(redactUrl('https://a.example/?r=%2F%2Fb.example%2Fx')).toBe(
+      'https://a.example/?r=%2F%2Fb.example%2Fx'
+    );
   });
 
   it('leaves a parameter that only looks like a URL untouched', () => {
@@ -481,58 +569,5 @@ describe('reduceHeaderValue', () => {
     ['x-other', 'https://a.example/?token=kept-not-a-url-header']
   ])('keeps %s %j exactly as sent', (name, value) => {
     expect(reduceHeaderValue(name, value)).toBe(value);
-  });
-});
-
-describe('shownHeader', () => {
-  it.each(['set-cookie', 'Set-Cookie', 'SET-COOKIE2'])(
-    'keeps only the cookie name of %s',
-    (name) => {
-      const shown = shownHeader({ name, value: 'k=v; Path=/; HttpOnly', hint: null });
-      expect(shown).toEqual({ name, value: `k=${REDACTED}`, hint: null, redacted: true });
-    }
-  );
-
-  it.each(['NAMELESSSECRETTOKEN', 'tok; Path=/'])(
-    'withholds a nameless Set-Cookie (%s) entirely',
-    (value) => {
-      const shown = shownHeader({ name: 'Set-Cookie', value, hint: null });
-      expect(shown.value).toBe(REDACTED);
-      expect(JSON.stringify(shown)).not.toContain(value.split(';')[0]);
-    }
-  );
-
-  it('withholds credential and token values, hint included', () => {
-    expect(shownHeader({ name: 'Authorization', value: 'Bearer abc.def', hint: 'x' })).toEqual({
-      name: 'Authorization',
-      value: REDACTED,
-      hint: null,
-      redacted: true
-    });
-    expect(shownHeader({ name: 'x-wp-nonce', value: '1a2b3c', hint: null }).value).toBe(REDACTED);
-  });
-
-  it('withholds a folded Set-Cookie whose first cookie is nameless', () => {
-    const shown = shownHeader({ name: 'set-cookie', value: 'SECRET\nname=v', hint: null });
-    expect(shown.value).toBe(REDACTED);
-    expect(JSON.stringify(shown)).not.toContain('SECRET');
-  });
-
-  it('keeps a URL-valued header visible with its secret query values reduced', () => {
-    expect(
-      shownHeader({ name: 'location', value: 'https://a.example/n?token=abc', hint: null })
-    ).toEqual({
-      name: 'location',
-      value: 'https://a.example/n?token=[redacted]',
-      hint: null,
-      redacted: false
-    });
-  });
-
-  it('passes every other header (and valueless rows) through', () => {
-    const row = { name: 'cache-control', value: 'max-age=0', hint: 'hint' };
-    expect(shownHeader(row)).toEqual({ ...row, redacted: false });
-    const valueless = { name: 'set-cookie', value: null, hint: null };
-    expect(shownHeader(valueless)).toEqual({ ...valueless, redacted: false });
   });
 });

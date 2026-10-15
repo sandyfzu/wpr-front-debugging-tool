@@ -518,6 +518,59 @@ The caching-evidence trail (owner-committed 2026-10-12, effort S, Inspect group)
 - **Merge note:** the palette row count pin is P6B's derived form (`NAV_ROUTES.length` + actions), taken at the rebase.
 - **Gates (this tree, on `27569e7`):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ **2274/2274 in 162 files** (coverage 96.72 / 95.68 / 99.46 / 97.59; `redaction.ts` 100 % statements / 93.5 % branches — the uncovered branches are `??` fallbacks of always-matching regex groups) · `build` ✓ · `check:budgets` ✓ — **panel 342.3 → 357.6 raw / 105.2 → 110.1 gzip** against develop `27569e7` measured the same way: this page alone (the `VirtualList` + TanStack code already ships with P6D's resource pages, so the earlier "first consumer" delta no longer applies); whole 560.0 → 575.2 / 187.4.
 
+**Receipts — M4 follow-up: capture-level + Export JSON redaction (2026-10-14, branch `fix/redact-headers-at-capture` from develop `7ec183d`; commits `6307630` module move, `4d299e2` capture, `dc94234` export, `d7a3475` mutation pin + this docs commit).** Closes the M4 deferral above: the payload no longer holds raw values.
+
+- **Data flow verified (before):** `webRequest.onResponseStarted` (`entrypoints/background/headers.ts`) → `CachedTabHeaders.store` kept raw `{name, value}` rows → `getPageHeaders` served them → `data-hub.ts` `fetchHeaders`/`composeFdtData` put them in every `getFdtData` payload → `parseFdtData` → panel. Exits: Export JSON (`JSON.stringify(data)`, nothing redacted — headers, diagnoser `consumer_key`/`secret_key`/emails, URL tokens, inline-script nonces), the support report and both pages' display/clipboard (already redacted at render), logs (tab ids and error messages only — no values), cookies (names only at capture, unchanged).
+- **Module move:** the rule is `lib/redaction/rule.ts` (renamed, suite kept); `shownHeader` is `lib/panel/shown-header.ts` (it depends on the panel view model).
+- **Capture:** every row runs through the rule before bounding/storing (`lib/redaction/headers.ts`, called in `CachedTabHeaders.store`). Additive contract: a withheld row is `{ name, redacted: true, cookieName? }` with **no `value`** (a flag-unaware reader sees a valueless row); `Set-Cookie` keeps only its cookie name (folded `\n` values too); URL/challenge values keep their reduced value. The validator rejects a withheld row that carries a value, and a `cookieName` without the flag; old unflagged rows still parse. Bounding keeps the flag.
+- **Defence in depth kept, not removed:** `shownHeader` and the support report render withheld rows from the flag (no re-processing) and still apply the rule to unflagged rows, because the panel cannot prove a payload came through the capture (old payloads, fixtures, a future producer). The cost is small and the rule is a no-op on reduced values. Pinned: each page and the report render a capture-redacted list exactly like the same list unflagged.
+- **Export JSON:** `lib/redaction/page-data.ts` puts a `redaction` notice first, runs the header rule on `pageHeaders` and walks every other field. A sensitive-named field becomes `[redacted]`. Strings are scrubbed: URLs, sensitive query pairs (JSON-escaped and relative ones too) and `key: "value"` literals. `__proto__` stays data. A redaction failure exports nothing.
+- **Regression:** a planted capture (`lib/redaction/planted-secrets.fixtures.ts`, every class) has no `PLANTED` substring in the cache, the `composeFdtData` payload, the parsed payload, the export, the report, or either page's DOM and clipboard.
+- **Mutation (capture + export path, `scratchpad/mut/mutate.py`, 36 mutants over `lib/redaction/headers.ts`, the store, validator, bounds, view model, `shownHeader`, report, export):** 35 killed on the first run. The one survivor (an unflagged valueless row returned as-is) was killed by a new pin, so the result is 36/36.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2350/2350 in 165 files (coverage 96.83 / 95.87 / 99.48 / 97.64; no new test over 1 s) · `build` ✓ (+ `build:firefox` ✓) · `check:budgets` ✓. Measured against develop `7ec183d` built the same way: **background 35.1 → 39.5 raw** (the rule now ships in the worker), so its ceiling rises **36 → 41**. Isolated content script 120.6 → 120.6 (no change; 0.4 KB headroom left). Panel 357.6 → 359.4 raw / 110.1 → 110.7 gzip. Whole build 575.2 → 581.5.
+
+**Receipts — M4 follow-up, audit round (2026-10-14, commits `96a95b2` names, `0ce0601` withheld bodies, `a2f78aa` URL-rule speed, `aa16abd` dedicated `cookieName` + nits, `9a55cd2` e2e, + this docs commit).** The audit found no blockers and approved the background budget raise. Fixed:
+
+- **MAJOR — inline script bodies withheld from the export.** The text scrub missed real nonce forms: WP core's `createNonceMiddleware( "…" )`, Elementor's nested `nonces`, JSON inside strings, template literals, arrays, PHP `=>` and concatenation. Each Delay JS `content` now exports as `{ withheld: true, length: N }`; `src` and the flags stay, and the `redaction` notice says so. `scrubText` still serves the other strings. The planted regression covers every one of those forms, and none appears in the export.
+- **Name rule reads camelCase.** Names split at humps, acronyms and digits before lowercasing: `accessKey`, `licenseKey`, `userEmail`, `adminEmail`, `userLogin`, `userPass`, `APIKey` and `userPass2` are now redacted. Added `salt` and `code_verifier`. Pinned as still visible: the contract's own camelCase keys, `cacheKey`/`surrogateKey`, and WP Rocket's setting option names.
+- **`minify_css_key` / `minify_js_key` exempt.** Verified in WP Rocket 3.23.5.1: each is a `create_rocket_uniqid()` value mixed into minified file names and regenerated on purge — a cache-busting stamp support compares, not a credential. WP Rocket's own analytics also excludes them as site-identifying.
+- **`version_hash` stays redacted.** It is Gravity Forms' honeypot validation hash, found only inside inline bodies, which are now withheld anyway.
+- **Minor 2.** The audit's X1/X2/X6 survivors are killed by `scrubText` pins: an `&`-led relative pair, a sensitive name longer than 8 characters, and a percent-encoded name.
+- **Minor 3.**
+  - `&amp;` / `&#38;` / `&#038;` are now read as part of a URL and written back in the same escape (no fake `#038` fragment).
+  - A lowercase camelCase or snake_case identifier value under the exact names `key`/`code`/`state` is kept (`{key:"methodName"}`); a value with digits is still redacted.
+- **Minor 4.** `site-header-capture.spec.ts` allows `redacted`/`cookieName` (one-off exception; it now asserts no value beside the flag). It gains a `/__e2e/secret-headers` route and a capture-time redaction spec: Location token reduced, nonce withheld, Surrogate-Key intact, any captured Set-Cookie reduced to its name. Not run here; the coordinator runs e2e.
+- **Nits.**
+  - `store` TSDoc now gives the order redact → bound → validate.
+  - `withheld-value.tsx` now points at `lib/redaction/rule`.
+  - `headersTruncationNote` counts a clipped `cookieName`.
+  - `HeaderRowVM` gained a dedicated optional `cookieName`; a withheld row's `value` is always null.
+  - `redactPageHeader` rebuilds withheld rows.
+- **Export cost (5,000 scripts):** ~71 ms → ~13 ms (redact + stringify ~16 ms), under the 50 ms target without chunking. Withholding the bodies alone left ~60 ms; the rest came from the URL rule handing every plain query value to a throwing `new URL()`, and from parsing each reference twice. The rule now parses only values that can be http(s) URLs (an exact pre-check) and reuses one parse. Pinned under a 150 ms bound.
+- **Mutation:** 78 mutants (this round's set plus the audit's X1–X12 on the current text, `scratchpad/mut/mutate2.py`). 76 were killed on the first run; the 2 survivors (a poisoned name memo, the digit split) were killed by new pins, so the result is **78/78**.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2416/2416 in 165 files (coverage 96.89 / 95.96 / 99.49 / 97.68). The only test over 1 s is the existing `tooltip.test.tsx` trigger test (~1.2 s). `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓.
+  - Background 39.5 → **40.0** raw / 14.1 gzip (ceiling 41).
+  - Isolated content script 120.6 (unchanged).
+  - Panel 359.4 → 360.8 raw / 111.4 gzip.
+  - Whole build 581.5 → 583.4.
+- Each intermediate commit was checked in a detached temporary worktree: `tsc` clean, the full suite green.
+
+**Receipts — M4 follow-up, verification round (2026-10-14; rebased onto develop `84164e1`, the Firefox-min commit — the earlier receipts' hashes map to the rebased `93de877` move, `06bbfce` capture, `b3ecd0b` export, `ea18c40` pin, `a668f96` names, `99c50cc` bodies, `d6d200b` URL speed, `013aa42` `cookieName`, `946fbf2` e2e; this round `1662cd1`, `a56b959`, `6e9a92d` + this docs commit).** The verification found no blocker or major issue. Last items:
+
+- **Identifier exemption removed:** `key`/`code`/`state` literals are withheld whatever their shape. Measured: lowercase-letter-only tokens passed the exemption every time, and its motivating case (script bodies) no longer reaches the scrubber. The tests now pin `{key:"methodName"}` and a lowercase-only `state` as withheld.
+- **e2e Set-Cookie leg is a tripwire.** Chromium hides Set-Cookie from webRequest by design unless a listener asks for `extraHeaders`, and the capture asks only `responseHeaders`. The spec now asserts that no `set-cookie` row arrives, and its comment is corrected. Not run here; the coordinator runs e2e.
+- **Nits:**
+  - Exemptions are listed and compared in the normalised form with `_` read as `-` (`minifyCssKey` now matches).
+  - A trailing numbered `key` is sensitive (`key2`, `license_key_2`, `licenseKey2`).
+  - `&#x26;` (hex, any case or zero padding) is read as part of a URL, from one pattern source shared with the `&amp;`/`&#038;` forms.
+  - A nested protocol-relative URL (`?r=//b/?token=…`) is read against `https:` for the rule and stays protocol-relative.
+- **Mutation:** 11 mutants over this round's code (`scratchpad/mut/mutate3.py`), all killed.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2424/2424 in 165 files (coverage 96.89 / 95.95 / 99.49 / 97.69). The only test over 1 s is the existing tooltip test. `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓.
+  - Background **40.2** raw / 14.2 gzip (ceiling 41).
+  - Isolated content script 120.6 (unchanged).
+  - Panel 360.8 / 111.3.
+  - Whole build 583.6.
+
 ---
 
 ## P6G — Search navigation & per-page polish

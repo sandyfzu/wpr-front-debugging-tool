@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
-import { REDACTED } from '../../../../lib/panel/redaction';
+import { REDACTED } from '../../../../lib/redaction/rule';
 import type { PageCookies, PageHeaders } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
 import {

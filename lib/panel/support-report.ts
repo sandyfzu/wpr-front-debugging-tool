@@ -14,10 +14,11 @@
  * reference words) is untrusted: it lands inside a code span sized past its
  * own backtick runs, with control characters flattened and table pipes
  * escaped, so a hostile value can neither break the layout nor inject
- * markdown into the ticket. Secret-bearing header values are redacted by the
- * shared redaction rule (`redaction.ts`), and the page URL is rebuilt
- * without credentials, fragment or sensitive query values — a session token
- * must never travel into a ticket.
+ * markdown into the ticket. Secret-bearing header values arrive withheld
+ * (the background redacts at capture) and are re-checked by the shared rule
+ * (`lib/redaction`), and the page URL is rebuilt without credentials,
+ * fragment or sensitive query values — a session token must never travel
+ * into a ticket.
  */
 
 import { formatCacheTimestamp } from '../detection/describe';
@@ -30,7 +31,7 @@ import {
 } from './headers-view-model';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
-import { REDACTED, redactHeaderValue, redactUrl } from './redaction';
+import { REDACTED, redactHeaderValue, redactUrl } from '../redaction/rule';
 
 /** The report's provenance, read by the caller (keeps the builder pure). */
 export interface SupportReportContext {
@@ -212,19 +213,30 @@ function detectionLines(items: readonly StatusItem[]): string[] {
 }
 
 /**
- * One header row's value cell, secret-bearing values redacted by the shared
- * sensitive-header rule (a `Set-Cookie` keeps only a well-formed cookie name).
+ * The cell of a withheld value: the marker, after the kept `Set-Cookie`
+ * cookie name when there is one.
+ *
+ * @param cookieName The kept cookie name, or null.
+ * @returns The cell's markdown.
+ */
+function withheldCell(cookieName: string | null): string {
+  return cookieName === null ? REDACTED : `${codeSpan(cookieName, true)} ${REDACTED}`;
+}
+
+/**
+ * One header row's value cell. Rows the capture withheld render as the
+ * marker; any other row still runs through the shared sensitive-header rule
+ * (defence in depth for a payload that bypassed the capture — on an already
+ * reduced value the rule changes nothing).
  *
  * @param row The typed header row.
  * @returns The cell's markdown.
  */
 function headerValueCell(row: HeaderRowVM): string {
+  if (row.redacted) return withheldCell(row.cookieName ?? null);
   if (row.value === null) return NONE;
   const exported = redactHeaderValue(row.name, row.value);
-  if (!exported.redacted) return codeSpan(exported.value, true);
-  return exported.cookieName === null
-    ? REDACTED
-    : `${codeSpan(exported.cookieName, true)} ${REDACTED}`;
+  return exported.redacted ? withheldCell(exported.cookieName) : codeSpan(exported.value, true);
 }
 
 /**

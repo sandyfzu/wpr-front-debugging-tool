@@ -33,16 +33,22 @@ test.describe('site header capture', () => {
     // The permanent pin: a real navigation → real captured rows → served.
     const sitePage = await openSitePage(extension, SITE_URL_NO_LINK);
     const siteFdt = await extension.sendToTab<{
-      pageHeaders: { name: string; value?: string }[] | null;
+      pageHeaders: { name: string; value?: string; redacted?: true; cookieName?: string }[] | null;
     } | null>(sitePage.tabId, 'getFdtData');
     const siteRows = siteFdt?.pageHeaders;
     expect(siteRows, 'the site page served captured header rows (the P2 BLOCKER pin)').toBeTruthy();
     expect(Array.isArray(siteRows), 'the served shape is the P1 row-pair array').toBe(true);
     expect(siteRows?.length ?? 0).toBeGreaterThan(0);
     for (const row of siteRows ?? []) {
+      // A withheld row (capture-time redaction) carries `redacted` and,
+      // for a Set-Cookie, `cookieName` — never a value beside the flag.
       expect(
-        Object.keys(row).every((key) => key === 'name' || key === 'value'),
-        `row keys stay name/value: ${JSON.stringify(row)}`
+        Object.keys(row).every((key) => ['name', 'value', 'redacted', 'cookieName'].includes(key)),
+        `row keys stay within the contract: ${JSON.stringify(row)}`
+      ).toBe(true);
+      expect(
+        row.redacted === undefined || row.value === undefined,
+        'no value beside the flag'
       ).toBe(true);
       expect(typeof row.name, 'row name is a string').toBe('string');
       expect(row.value === undefined || typeof row.value === 'string').toBe(true);
@@ -134,6 +140,39 @@ test.describe('site header capture', () => {
     );
     expect(reply, 'the tabless sender got the handler null answer').toEqual({ res: null });
     await popupPage.close();
+  });
+
+  test('secret-bearing headers are redacted at capture, before anything is served', async ({
+    extension
+  }) => {
+    const page = await openFixturePage(extension, '/__e2e/secret-headers');
+    const fdt = await extension.sendToTab<{
+      pageHeaders: { name: string; value?: string; redacted?: true; cookieName?: string }[] | null;
+    } | null>(page.tabId, 'getFdtData');
+    const rows = fdt?.pageHeaders ?? [];
+    expect(rows.length, 'the secret page served captured rows').toBeGreaterThan(0);
+    // Not one planted secret reaches the content script's payload.
+    expect(JSON.stringify(fdt), 'no secret in the served payload').not.toContain('E2E_SECRET');
+    const row = (name: string): (typeof rows)[number] | undefined =>
+      rows.find((candidate) => candidate.name.toLowerCase() === name);
+    expect(row('location')?.value, 'the Location token is reduced').toBe(
+      '/next?token=[redacted]&ok=1'
+    );
+    expect(row('x-wp-nonce'), 'the nonce header is withheld whole').toEqual({
+      name: row('x-wp-nonce')?.name,
+      redacted: true
+    });
+    expect(row('surrogate-key')?.value, 'caching evidence stays intact').toBe('post-1 term-2');
+    // Chromium hides Set-Cookie from webRequest by design unless a listener
+    // asks for `extraHeaders`, and the capture asks only `responseHeaders`:
+    // no row may arrive. A tripwire — if one ever does (the listener grew
+    // `extraHeaders`, or Chromium changed), the capture-time withholding
+    // pinned by the unit suites must be re-verified here.
+    expect(
+      rows.filter((candidate) => candidate.name.toLowerCase() === 'set-cookie'),
+      'Chromium delivers no Set-Cookie row without extraHeaders'
+    ).toEqual([]);
+    await page.page.close();
   });
 
   test('a main frame over the row cap serves its first rows, marked truncated', async ({
