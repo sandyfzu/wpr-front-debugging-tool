@@ -39,7 +39,7 @@ const LAZYLOAD_STATUS_ATTRIBUTE = 'data-ll-status';
  * IMG selections (parity shape, in display order): `{ lazyloadDetected }`,
  * then either `imageLoaded` (stamped) or `excludedReasonsFound` (matched
  * against the exclusion list by substring on the serialized HTML), then
- * `src`. Non-element selections answer `{ please: 'Select an element' }`.
+ * `src`. Unsupported selections answer `{ please: 'Select an img element' }`.
  * Any other element reports its WP Rocket attribute inventory (see
  * {@link buildAttributeInventoryExpression}) instead of a dead end.
  *
@@ -92,7 +92,7 @@ export function buildLazyloadSidebarExpression(exclusions: readonly string[]): s
       rocketAttributes.push(${JSON.stringify(DATA_LAZY_SRCSET)});
     if (rocketAttributes.length > 0) return { rocketAttributes };
   }
-  return { please: 'Select an element' };
+  return { please: 'Select an img element' };
 })()`;
 }
 
