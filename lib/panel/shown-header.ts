@@ -1,36 +1,48 @@
 /**
  * A header row as every panel surface (the Headers & Cookies page, the
- * Detections preview) shows and copies it, through the shared redaction
- * rule (`lib/redaction/rule`).
+ * Detections preview) shows and copies it.
+ *
+ * The background already redacts at capture, so rows normally arrive
+ * withheld (`redacted`) or reduced; this step turns a withheld row into its
+ * marker text. It also re-applies the shared rule to any unflagged row —
+ * defence in depth for a payload that bypassed the capture (one produced
+ * before capture-time redaction existed, a test fixture, a future producer):
+ * the rule is cheap, and on an already reduced value it changes nothing.
  */
 
 import type { HeaderRowVM } from './headers-view-model';
 import { REDACTED, redactHeaderValue } from '../redaction/rule';
 
-/** A header row as a panel surface shows and copies it. */
-export interface ShownHeader extends HeaderRowVM {
-  /** True when the captured value was withheld (see {@link shownHeader}). */
-  readonly redacted: boolean;
+/** A header row whose `value` is display text (a withheld value reads as its marker). */
+export type ShownHeader = HeaderRowVM;
+
+/**
+ * The marker text of a withheld value.
+ *
+ * @param cookieName The kept `Set-Cookie` cookie name, or null.
+ * @returns `name=(value redacted)` or `(value redacted)`.
+ */
+function withheldText(cookieName: string | null): string {
+  return cookieName === null ? REDACTED : `${cookieName}=${REDACTED}`;
 }
 
 /**
- * A header row of the shared headers model as every panel surface may show
- * and copy it. A secret-bearing header keeps its name and loses its whole
- * value — attributes and hint included (a hint can echo the value); a
- * `Set-Cookie` keeps only a well-formed cookie name, which is caching
- * evidence. Other headers keep their value as the rule's
- * `reduceHeaderValue` leaves it. Valueless rows pass untouched.
+ * The shown form of one row of the shared headers model. A withheld row
+ * keeps its name and reads as the marker (a `Set-Cookie` with its cookie
+ * name), hint dropped (a hint can echo the value). Other rows keep their
+ * value as the rule leaves it. Valueless rows pass untouched.
  *
  * @param header A row of the shared headers model.
  * @returns The row to render and copy, flagged when its value was withheld.
  */
 export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.value === null) return { ...header, redacted: false };
+  if (header.redacted) return { ...header, value: withheldText(header.value), hint: null };
+  if (header.value === null) return header;
   const exported = redactHeaderValue(header.name, header.value);
-  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
+  if (!exported.redacted) return { ...header, value: exported.value };
   return {
     name: header.name,
-    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
+    value: withheldText(exported.cookieName),
     hint: null,
     redacted: true
   };

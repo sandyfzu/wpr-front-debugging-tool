@@ -11,6 +11,8 @@ import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { REDACTED } from '../../../../lib/redaction/rule';
+import { redactPageHeaders } from '../../../../lib/redaction/headers';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../../../../lib/redaction/planted-secrets.fixtures';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import {
@@ -217,6 +219,18 @@ describe('HeadersPreview — secrets', () => {
     expect(document.body.textContent).toContain('nginx');
     expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
     expect(document.body.textContent).toContain(WITHHELD_LEGEND);
+  });
+
+  it('renders capture-withheld rows exactly like the same rows unflagged, secret-free', () => {
+    render(() => <HeadersPreview headers={PLANTED_RAW_HEADERS} />);
+    fireEvent.click(toggle());
+    const unflagged = document.body.textContent;
+    cleanup();
+    render(() => <HeadersPreview headers={redactPageHeaders(PLANTED_RAW_HEADERS)} />);
+    fireEvent.click(toggle());
+    expect(document.body.textContent).toBe(unflagged);
+    expect(document.body.innerHTML).not.toContain(PLANTED);
+    expect(document.querySelectorAll('[data-fdt-redacted]')).toHaveLength(8);
   });
 
   it('shows no withheld legend when nothing is withheld', () => {

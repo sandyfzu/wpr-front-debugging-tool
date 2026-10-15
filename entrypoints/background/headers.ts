@@ -5,7 +5,9 @@
  * response headers per tab, and the `getPageHeaders` protocol request serves
  * a lookup of the sender's OWN tab (the id travels on the runtime sender —
  * a payload-borne id could be spoofed by any page-attached sender). This is
- * the data source for the panel's Server / Known Platform cards.
+ * the data source for the panel's Server / Known Platform cards and header
+ * pages. Values are redacted at capture: a credential, cookie or token in a
+ * response header never reaches the cache, the content script or the panel.
  *
  * Manifest note: `webRequest` listeners only see URLs the manifest grants
  * `host_permissions` for. The manifest single-sources the exact same
@@ -20,6 +22,7 @@
  */
 
 import { parsePageHeaders } from '../../lib/messaging/validate';
+import { redactPageHeader } from '../../lib/redaction/headers';
 import { boundPageHeaders } from '../../lib/messaging/payload-bounds';
 import { numericTabId, resolveSenderTabId } from '../../lib/messaging/sender';
 import { createLogger } from '../../lib/logger';
@@ -77,7 +80,9 @@ export class CachedTabHeaders implements HeaderCaptureStore {
   /**
    * Store or reset one tab's headers. Every capture starts by clearing the
    * tab: rows failing validation must not silently keep the previous page's
-   * headers alive under the new page's tab. Oversize captures are bounded
+   * headers alive under the new page's tab. Every row is redacted first
+   * (secret-bearing values withheld, URL values reduced), so the cache and
+   * every surface it serves only ever hold the redacted form. Oversize captures are bounded
    * first (rows beyond the cap dropped, long names/values clipped, the
    * capture marked `truncated`) — one large CSP or `Link` header is page
    * reality and must not erase every other row; only malformed shapes reject.
@@ -88,10 +93,16 @@ export class CachedTabHeaders implements HeaderCaptureStore {
   store(tabId: number, headers: readonly RawResponseHeader[] | undefined): boolean {
     this.#cache.delete(tabId);
     if (headers === undefined) return false;
-    const normalized = headers.map((row) =>
-      typeof row.value === 'string' ? { name: row.name, value: row.value } : { name: row.name }
-    );
-    const bounded = boundPageHeaders(normalized);
+    const redacted = headers.map((row) => {
+      const normalized =
+        typeof row.value === 'string' ? { name: row.name, value: row.value } : { name: row.name };
+      // A malformed name is left for the validator to reject (the rule reads
+      // names as strings); every well-formed row is redacted HERE, before it
+      // is stored, served or even bounded — the full value is what the rule
+      // judges, and no raw secret outlives this call.
+      return typeof normalized.name === 'string' ? redactPageHeader(normalized) : normalized;
+    });
+    const bounded = boundPageHeaders(redacted);
     const validated = parsePageHeaders(bounded.headers);
     if (validated === null) {
       log.warn('Captured headers rejected (malformed rows)', { tabId });

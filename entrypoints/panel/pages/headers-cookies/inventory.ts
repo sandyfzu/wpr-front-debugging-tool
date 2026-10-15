@@ -77,7 +77,7 @@ export interface Inventory {
  * @param header The (already shown/redacted) header row.
  * @returns The `name: value` (or `name:`) text.
  */
-export function headerCopyText(header: HeaderRowVM): string {
+export function headerCopyText(header: Omit<HeaderRowVM, 'redacted'>): string {
   return header.value === null ? `${header.name}:` : `${header.name}: ${header.value}`;
 }
 

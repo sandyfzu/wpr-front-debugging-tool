@@ -22,6 +22,7 @@ import type {
   DiagnoserDocData,
   FdtData,
   PageCookies,
+  PageHeader,
   PageHeaders,
   PanelSearchAction,
   PreloadedResources,
@@ -164,35 +165,53 @@ export function parseErrorWords(input: unknown): string[] | null {
   return words;
 }
 
+/** The keys a header row may carry (see `PageHeader`). */
+const PAGE_HEADER_KEYS: ReadonlySet<string> = new Set(['name', 'value', 'redacted', 'cookieName']);
+
 /**
- * Parse captured response headers: `{ name, value? }` rows, bounded per
- * {@link LIMITS.headers}. Rows are rebuilt as own-key objects with no keys
- * beyond name/value; a missing value key (or an `undefined` one, which is
- * indistinguishable) stays missing.
+ * Parse captured response headers: `{ name, value? }` rows, or withheld
+ * `{ name, redacted: true, cookieName? }` rows, bounded per
+ * {@link LIMITS.headers}. A withheld row carrying a `value` is contradictory
+ * (a secret may have travelled) and rejects; `cookieName` only rides a
+ * withheld row. Rows without the flag (payloads predating it) still parse.
+ * Rows are rebuilt as own-key objects with only the known keys; a missing
+ * value key (or an `undefined` one, which is indistinguishable) stays missing.
  */
 export function parsePageHeaders(input: unknown): PageHeaders | null {
   if (!Array.isArray(input)) return reject();
   if (input.length > LIMITS.headers.count) return reject('length');
+  const rows: PageHeader[] = [];
   for (const [index, item] of input.entries()) {
     if (!isRecord(item)) return reject(at(index));
-    const keys = Object.keys(item);
-    if (keys.length > 2) return reject(at(index), 'keys');
-    for (const key of keys) {
-      if (key !== 'name' && key !== 'value') return reject(at(index), 'keys');
-    }
+    if (Object.keys(item).some((key) => !PAGE_HEADER_KEYS.has(key)))
+      return reject(at(index), 'keys');
     const name = item['name'];
     if (typeof name !== 'string' || name.length < 1 || name.length > LIMITS.headers.name)
       return reject(at(index), 'name');
     const value = item['value'];
     if (value !== undefined && (typeof value !== 'string' || value.length > LIMITS.headers.value))
       return reject(at(index), 'value');
+    const redacted = item['redacted'];
+    if (redacted !== undefined && (redacted !== true || value !== undefined))
+      return reject(at(index), 'redacted');
+    const cookieName = item['cookieName'];
+    if (
+      cookieName !== undefined &&
+      (redacted !== true ||
+        typeof cookieName !== 'string' ||
+        cookieName.length < 1 ||
+        cookieName.length > LIMITS.headers.value)
+    )
+      return reject(at(index), 'cookieName');
+    if (redacted === true) {
+      rows.push(
+        typeof cookieName === 'string' ? { name, redacted, cookieName } : { name, redacted }
+      );
+    } else {
+      rows.push(typeof value === 'string' ? { name, value } : { name });
+    }
   }
-  return input.map((item) => {
-    const row = item as { name: string; value?: string };
-    return typeof row.value === 'string'
-      ? { name: row.name, value: row.value }
-      : { name: row.name };
-  });
+  return rows;
 }
 
 /**

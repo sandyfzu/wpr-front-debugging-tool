@@ -27,10 +27,16 @@ import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 export interface HeaderRowVM {
   /** The header name exactly as captured. */
   readonly name: string;
-  /** The captured value; null when the row carried no value. */
+  /**
+   * The captured value; null when the row carried no value. On a withheld
+   * row (`redacted`), the only part the capture kept: a `Set-Cookie`'s
+   * cookie name, else null — never a value to render as-is.
+   */
   readonly value: string | null;
   /** The plain-copy caching verdict, or null when the row yields no hint. */
   readonly hint: string | null;
+  /** True when the capture withheld the value (a hint is then never computed). */
+  readonly redacted: boolean;
 }
 
 /** The renderable header set: caching-relevant rows first, then the rest. */
@@ -199,11 +205,24 @@ export function buildHeadersViewModel(headers: PageHeaders | null): HeadersViewM
   const other: HeaderRowVM[] = [];
   for (const row of headers) {
     const nameLower = row.name.toLowerCase();
+    const placed = buckets.find(({ cachingClass }) => classMatches(cachingClass, nameLower));
+    if (row.redacted === true) {
+      // Withheld at capture: no value to read a verdict from, and the kept
+      // cookie name (if any) is the row's only shown part.
+      const withheld = {
+        name: row.name,
+        value: row.cookieName ?? null,
+        hint: null,
+        redacted: true
+      };
+      (placed?.rows ?? other).push(withheld);
+      continue;
+    }
     const base = {
       name: row.name,
-      value: row.value === undefined ? null : row.value
+      value: row.value === undefined ? null : row.value,
+      redacted: false
     };
-    const placed = buckets.find(({ cachingClass }) => classMatches(cachingClass, nameLower));
     if (placed === undefined) {
       // Unrelated inventory: full capture kept, capture order kept.
       other.push({ ...base, hint: null });

@@ -401,6 +401,21 @@ describe('boundPageHeaders', () => {
     const bounded = boundPageHeaders([{ name: 7 as unknown as string, value: 'v' }]);
     expect(parsePageHeaders(bounded.headers)).toBeNull();
   });
+
+  it('keeps withheld rows withheld, clipping only their kept cookie name', () => {
+    const bounded = boundPageHeaders([
+      { name: 'Authorization', redacted: true },
+      { name: 'Set-Cookie', redacted: true, cookieName: 'c'.repeat(caps.value + 1) }
+    ]);
+    expect(bounded).toEqual({
+      headers: [
+        { name: 'Authorization', redacted: true },
+        { name: 'Set-Cookie', redacted: true, cookieName: 'c'.repeat(caps.value) }
+      ],
+      truncated: true
+    });
+    expect(parsePageHeaders(bounded.headers)).toEqual(bounded.headers);
+  });
 });
 
 describe('clipString', () => {

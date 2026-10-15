@@ -22,6 +22,8 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { REDACTED } from '../../../../lib/redaction/rule';
+import { redactPageHeaders } from '../../../../lib/redaction/headers';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../../../../lib/redaction/planted-secrets.fixtures';
 import { HeadersCookiesPage, HeadersCookiesView, inspectedReloadAction, SPA_NOTE } from './page';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 
@@ -156,6 +158,23 @@ describe('HeadersCookiesView — populated', () => {
       `set-cookie: sid=${REDACTED}`,
       'x-empty:'
     ]);
+  });
+
+  it('renders a capture-withheld list exactly like the same list unflagged, secret-free', async () => {
+    renderView(makeFdtData({ pageHeaders: PLANTED_RAW_HEADERS }));
+    const unflagged = document.body.textContent;
+    cleanup();
+    renderView(makeFdtData({ pageHeaders: redactPageHeaders(PLANTED_RAW_HEADERS) }));
+    expect(document.body.textContent).toBe(unflagged);
+    expect(document.body.innerHTML).not.toContain(PLANTED);
+    expect(document.querySelectorAll('[data-fdt-redacted]')).toHaveLength(8);
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /All headers/ }));
+    await waitFor(() => {
+      expect(writes).toHaveLength(1);
+    });
+    expect(writes[0]).toContain(`Set-Cookie: wordpress_logged_in_ab=${REDACTED}`);
+    expect(writes[0]).not.toContain(PLANTED);
   });
 
   it('never puts a secret in the DOM or on the clipboard', async () => {

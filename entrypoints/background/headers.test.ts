@@ -17,6 +17,8 @@ import {
   type HeaderCaptureStore
 } from './headers';
 import type { BadgeEffect } from './badge';
+import { redactPageHeaders } from '../../lib/redaction/headers';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../../lib/redaction/planted-secrets.fixtures';
 import type { SimMainFrameHook } from './device-simulation';
 
 /** A capture-shaped header list: plain, with missing values, with odd rows. */
@@ -89,6 +91,34 @@ describe('CachedTabHeaders', () => {
     expect(cache.store(13, [...NORMAL_ROWS, { name: '', value: 'x' }])).toBe(false);
     // The prior page's rows must not survive for the new capture's tab.
     expect(cache.take(13)).toBeNull();
+  });
+
+  it('redacts at capture: no planted secret is stored or served', () => {
+    const cache = new CachedTabHeaders();
+    expect(cache.store(21, PLANTED_RAW_HEADERS)).toBe(true);
+    const served = cache.takeCapture(21);
+    expect(served).toEqual({ headers: redactPageHeaders(PLANTED_RAW_HEADERS) });
+    expect(JSON.stringify(served)).not.toContain(PLANTED);
+    expect(served?.headers).toContainEqual({
+      name: 'Set-Cookie',
+      redacted: true,
+      cookieName: 'wordpress_logged_in_ab'
+    });
+  });
+
+  it('withholds an over-cap secret whole: no clipped raw prefix survives', () => {
+    const cache = new CachedTabHeaders();
+    // Longer than the value cap: the rule judges the full value and the
+    // row is withheld, so no clipped prefix of the secret is kept either.
+    const long = `${'a'.repeat(5_000)}PLANTED_TAIL`;
+    cache.store(22, [{ name: 'Authorization', value: long }]);
+    expect(cache.takeCapture(22)).toEqual({ headers: [{ name: 'Authorization', redacted: true }] });
+  });
+
+  it('rejects a capture with a non-string name instead of crashing the rule', () => {
+    const cache = new CachedTabHeaders();
+    expect(cache.store(23, [{ name: 42, value: 'x' } as never])).toBe(false);
+    expect(cache.take(23)).toBeNull();
   });
 
   it('bounds an oversize capture instead of dropping it, and marks it truncated', () => {

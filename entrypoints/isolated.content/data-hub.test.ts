@@ -9,7 +9,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type FIXTURES, FIXTURE_DIR } from '../../lib/detection/fixtures/corpus';
-import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
+import { boundPageHeaders, PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
+import { redactPageHeaders } from '../../lib/redaction/headers';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../../lib/redaction/planted-secrets.fixtures';
 import { parseFdtData } from '../../lib/messaging/validate';
 import {
   composeFdtData,
@@ -211,6 +213,16 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
     });
     expect('cookies' in composeFdtData(data, LIVE)).toBe(false);
     expect('pageHeadersTruncated' in payload).toBe(false);
+  });
+
+  it('serves no planted secret: the capture arrives redacted and stays so through the panel boundary', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1));
+    // The capture exactly as the background serves it: redacted, then bounded.
+    const served = boundPageHeaders(redactPageHeaders(PLANTED_RAW_HEADERS));
+    const payload = composeFdtData(data, { ...LIVE, headerCapture: served });
+    expect(JSON.stringify(payload)).not.toContain(PLANTED);
+    const parsed = parseFdtData(payload);
+    expect(parsed?.pageHeaders).toEqual(served.headers);
   });
 
   it('carries the header capture list-level mark to the payload', async () => {
