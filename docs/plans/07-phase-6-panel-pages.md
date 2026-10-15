@@ -529,6 +529,32 @@ The caching-evidence trail (owner-committed 2026-10-12, effort S, Inspect group)
 - **Mutation (capture + export path, `scratchpad/mut/mutate.py`, 36 mutants over `lib/redaction/headers.ts`, the store, validator, bounds, view model, `shownHeader`, report, export):** 35 killed on the first run. The one survivor (an unflagged valueless row returned as-is) was killed by a new pin, so the result is 36/36.
 - **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2350/2350 in 165 files (coverage 96.83 / 95.87 / 99.48 / 97.64; no new test over 1 s) · `build` ✓ (+ `build:firefox` ✓) · `check:budgets` ✓. Measured against develop `7ec183d` built the same way: **background 35.1 → 39.5 raw** (the rule now ships in the worker), so its ceiling rises **36 → 41**. Isolated content script 120.6 → 120.6 (no change; 0.4 KB headroom left). Panel 357.6 → 359.4 raw / 110.1 → 110.7 gzip. Whole build 575.2 → 581.5.
 
+**Receipts — M4 follow-up, audit round (2026-10-14, commits `96a95b2` names, `0ce0601` withheld bodies, `a2f78aa` URL-rule speed, `aa16abd` dedicated `cookieName` + nits, `9a55cd2` e2e, + this docs commit).** The audit found no blockers and approved the background budget raise. Fixed:
+
+- **MAJOR — inline script bodies withheld from the export.** The text scrub missed real nonce forms: WP core's `createNonceMiddleware( "…" )`, Elementor's nested `nonces`, JSON inside strings, template literals, arrays, PHP `=>` and concatenation. Each Delay JS `content` now exports as `{ withheld: true, length: N }`; `src` and the flags stay, and the `redaction` notice says so. `scrubText` still serves the other strings. The planted regression covers every one of those forms, and none appears in the export.
+- **Name rule reads camelCase.** Names split at humps, acronyms and digits before lowercasing: `accessKey`, `licenseKey`, `userEmail`, `adminEmail`, `userLogin`, `userPass`, `APIKey` and `userPass2` are now redacted. Added `salt` and `code_verifier`. Pinned as still visible: the contract's own camelCase keys, `cacheKey`/`surrogateKey`, and WP Rocket's setting option names.
+- **`minify_css_key` / `minify_js_key` exempt.** Verified in WP Rocket 3.23.5.1: each is a `create_rocket_uniqid()` value mixed into minified file names and regenerated on purge — a cache-busting stamp support compares, not a credential. WP Rocket's own analytics also excludes them as site-identifying.
+- **`version_hash` stays redacted.** It is Gravity Forms' honeypot validation hash, found only inside inline bodies, which are now withheld anyway.
+- **Minor 2.** The audit's X1/X2/X6 survivors are killed by `scrubText` pins: an `&`-led relative pair, a sensitive name longer than 8 characters, and a percent-encoded name.
+- **Minor 3.**
+  - `&amp;` / `&#38;` / `&#038;` are now read as part of a URL and written back in the same escape (no fake `#038` fragment).
+  - A lowercase camelCase or snake_case identifier value under the exact names `key`/`code`/`state` is kept (`{key:"methodName"}`); a value with digits is still redacted.
+- **Minor 4.** `site-header-capture.spec.ts` allows `redacted`/`cookieName` (one-off exception; it now asserts no value beside the flag). It gains a `/__e2e/secret-headers` route and a capture-time redaction spec: Location token reduced, nonce withheld, Surrogate-Key intact, any captured Set-Cookie reduced to its name. Not run here; the coordinator runs e2e.
+- **Nits.**
+  - `store` TSDoc now gives the order redact → bound → validate.
+  - `withheld-value.tsx` now points at `lib/redaction/rule`.
+  - `headersTruncationNote` counts a clipped `cookieName`.
+  - `HeaderRowVM` gained a dedicated optional `cookieName`; a withheld row's `value` is always null.
+  - `redactPageHeader` rebuilds withheld rows.
+- **Export cost (5,000 scripts):** ~71 ms → ~13 ms (redact + stringify ~16 ms), under the 50 ms target without chunking. Withholding the bodies alone left ~60 ms; the rest came from the URL rule handing every plain query value to a throwing `new URL()`, and from parsing each reference twice. The rule now parses only values that can be http(s) URLs (an exact pre-check) and reuses one parse. Pinned under a 150 ms bound.
+- **Mutation:** 78 mutants (this round's set plus the audit's X1–X12 on the current text, `scratchpad/mut/mutate2.py`). 76 were killed on the first run; the 2 survivors (a poisoned name memo, the digit split) were killed by new pins, so the result is **78/78**.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2416/2416 in 165 files (coverage 96.89 / 95.96 / 99.49 / 97.68). The only test over 1 s is the existing `tooltip.test.tsx` trigger test (~1.2 s). `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓.
+  - Background 39.5 → **40.0** raw / 14.1 gzip (ceiling 41).
+  - Isolated content script 120.6 (unchanged).
+  - Panel 359.4 → 360.8 raw / 111.4 gzip.
+  - Whole build 581.5 → 583.4.
+- Each intermediate commit was checked in a detached temporary worktree: `tsc` clean, the full suite green.
+
 ---
 
 ## P6G — Search navigation & per-page polish
