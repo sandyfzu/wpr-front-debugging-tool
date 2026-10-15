@@ -167,6 +167,8 @@ Lands every piece the five letters would otherwise each invent or collide on, so
 
 ## P6B — Detections page (cards, summary strip, support report, headers preview)
 
+**Owner-directed follow-up (2026-10-15):** the Response headers preview is removed from Detections because Headers & Cookies already owns the inventory. The original P6B receipts below describe the earlier implementation; this follow-up supersedes its preview and P6G cross-link requirements. Header-derived Server / Known Platform cards and headers in `Copy report` remain. The unused preview module and its module-specific tests are deleted; page regressions now pin absence for populated, empty and missing captures and preserve card focus through refresh. `panel-header-ownership.spec.ts` checks the real captured response remains visible and copyable on Headers & Cookies after a route change. No strings are added; the Response headers disclosure and its preview-only copy are removed. Validation receipts follow after the gates complete.
+
 **Depends on:** P6A.1. **Parallelizable with:** P6C, P6D, P6E, P6F.
 
 The phase's overview surface — the status cards the audience reads first, then one click deeper: a one-line summary, a copyable support report, and the compact face of the Headers & Cookies tab.

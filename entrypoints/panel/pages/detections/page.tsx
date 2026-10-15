@@ -1,17 +1,15 @@
 /**
  * The Detections page — the panel's overview: a summary strip with the
  * page-level facts, the status card grid (one card per detection plus the
- * serving facts), and the "Response headers" preview; `Copy report` is the
- * page's one primary action.
+ * serving facts); `Copy report` is the page's one primary action.
  *
  * State matrix: the shell owns idle/fetching (skeleton), fetch error (+
  * Retry) and render crashes; this body renders only on `ready` and
  * `refreshing`. Within it: plugin absent → the strip says "WP Rocket not
  * detected" and the cards still render; headers not captured → the Server /
- * Known Platform cards and the headers section are omitted; an empty header
- * capture → the section's one-line empty state. A refresh swaps data only:
- * cards are keyed by their id, so focus, the open disclosure and its scroll
- * survive.
+ * Known Platform cards are omitted. The full header inventory lives on the
+ * Headers & Cookies page. A refresh swaps data only: cards are keyed by their
+ * id, so their DOM and focus survive.
  *
  * Card rendering is registry-driven — the view model's rows are the card
  * set and the page-local link table decides which become links — so a new
@@ -27,7 +25,6 @@ import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clo
 import { PageFrame } from '../page-frame';
 import { CARD_PAGE_LINKS } from './card-presentation';
 import { CopyReportButton } from './copy-report-button';
-import { HeadersPreview } from './headers-preview';
 import { StatusCard } from './status-card';
 import { SummaryStrip } from './summary-strip';
 
@@ -87,11 +84,6 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
           )}
         </For>
       </ul>
-      <Show when={props.data.pageHeaders}>
-        {(headers) => (
-          <HeadersPreview headers={headers()} truncated={props.data.pageHeadersTruncated} />
-        )}
-      </Show>
     </PageFrame>
   );
 }

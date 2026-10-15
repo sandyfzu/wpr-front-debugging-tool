@@ -2,9 +2,9 @@
  * The Detections page: frame + heading, the card grid in view-model order
  * with link vs static forms (only mapped ids are anchors; static cards take
  * no tab stop and carry no lift), the status vocabulary, the two tooltip
- * subtitles, the summary strip's agreement with the cards, the headers
- * section's omission on a missing capture, `Copy report`, refresh
- * stability (cards keep their DOM, the open disclosure stays open), and the
+ * subtitles, the summary strip's agreement with the cards, the absence of a
+ * duplicate header inventory, `Copy report`, refresh stability (cards keep
+ * their DOM and focus), and the
  * store wiring.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
@@ -192,23 +192,31 @@ describe('DetectionsView', () => {
     expect(STATUS_CARD_SURFACE).toContain(`@regular:${CARD_SURFACE_PAIR.line}`);
   });
 
-  it('omits the headers section (and the header cards) when nothing was captured', () => {
+  it('omits the header-derived cards when nothing was captured', () => {
     render(() => <DetectionsView data={richData({ pageHeaders: null })} now={NOW} />);
-    expect(document.querySelector('[data-fdt="headers-preview"]')).toBeNull();
     expect(document.querySelector('[data-fdt-card-id="server"]')).toBeNull();
     expect(document.querySelector('[data-fdt-card-id="known-platform"]')).toBeNull();
   });
 
-  it('keeps card nodes and the open disclosure across a data refresh', () => {
+  it.each([null, [], richData().pageHeaders])(
+    'leaves the header inventory to Headers & Cookies for capture %j',
+    (pageHeaders) => {
+      render(() => <DetectionsView data={richData({ pageHeaders })} now={NOW} />);
+      expect(screen.queryByText('Response headers')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Response headers/ })).toBeNull();
+      expect(screen.queryByText('max-age=60')).toBeNull();
+    }
+  );
+
+  it('keeps card nodes and focus across a data refresh', () => {
     const [data, setData] = createSignal(richData());
     render(() => <DetectionsView data={data()} now={NOW} />);
     const before = card('wpr');
-    fireEvent.click(screen.getByRole('button', { name: /Response headers/ }));
+    const link = card('lazyload');
+    link.focus();
     setData(richData({ undefinedReferencesOnPage: ['jQuery'] }));
     expect(card('wpr')).toBe(before);
-    expect(
-      screen.getByRole('button', { name: /Response headers/ }).getAttribute('aria-expanded')
-    ).toBe('true');
+    expect(document.activeElement).toBe(link);
   });
 
   it('copies the report from the page action', async () => {
