@@ -198,9 +198,12 @@ describe('scrubText', () => {
     ],
     ['https://a.example/p?a=1&amp;b=2', 'https://a.example/p?a=1&amp;b=2'],
     ['https://a.example/p?a=1&#38;b=2#frag', 'https://a.example/p?a=1&#38;b=2'],
-    // Identifier values under `key`/`code`/`state` are not secrets; tokens are.
-    ['{key:"methodName"}', '{key:"methodName"}'],
-    ['{"state":"is_open","code":"value"}', '{"state":"is_open","code":"value"}'],
+    ['https://a.example/p?a=1&#x26;sig=s#f', 'https://a.example/p?a=1&#x26;sig=[redacted]'],
+    ['https://a.example/p?a=1&#X0026;b=2', 'https://a.example/p?a=1&#X0026;b=2'],
+    // `key`/`code`/`state` values are withheld whatever they look like
+    // (a lowercase-only token reads exactly like an identifier).
+    ['{key:"methodName"}', '{key:"[redacted]"}'],
+    ['{"state":"abcdefghijklmnop","code":"value"}', '{"state":"[redacted]","code":"[redacted]"}'],
     ['{"state":"af0ifjsldkj9","code":"4/0AX4XfWh"}', '{"state":"[redacted]","code":"[redacted]"}'],
     ['{"nonce":"methodName"}', '{"nonce":"[redacted]"}'],
     [

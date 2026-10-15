@@ -41,25 +41,21 @@ export type PageDataExport = { readonly redaction: typeof EXPORT_REDACTION_NOTIC
   Record<string, unknown>
 >;
 
-/** An HTML-escaped `&` (`&amp;`, `&#38;`, `&#038;`): part of a URL in page markup. */
-const ESCAPED_AMP = /&(?:amp|#0*38);/i;
+/**
+ * An HTML-escaped `&` (`&amp;`, decimal `&#38;`/`&#038;`, hex `&#x26;`):
+ * part of a URL in page markup. One source for both patterns below.
+ */
+const ESCAPED_AMP_SOURCE = '&(?:amp|#0*38|#x0*26);';
+
+/** One {@link ESCAPED_AMP_SOURCE} occurrence. */
+const ESCAPED_AMP = new RegExp(ESCAPED_AMP_SOURCE, 'i');
 
 /**
  * An absolute http(s) URL inside text, its HTML-escaped `&`s included (a
  * bare `;` or `#` would otherwise cut `&#038;` into a fake fragment). The
  * run has nothing after it to fail on, so the alternation never backtracks.
  */
-const TEXT_URL = /https?:\/\/(?:&(?:amp|#0*38);|[^\s,;"<>])+/gi;
-
-/**
- * Exact names whose values are often plain identifiers (`{key:"methodName"}`,
- * `state: "open"`): a lowercase camelCase or snake_case word under one of
- * them is not a secret; anything else (digits, mixed runs) still is.
- */
-const IDENTIFIER_VALUED_NAMES: ReadonlySet<string> = new Set(['key', 'code', 'state']);
-
-/** A lowercase camelCase or snake_case word, at most 40 characters. */
-const IDENTIFIER_VALUE = /^(?=.{1,40}$)(?:[a-z]+(?:[A-Z][a-z]+)*|[a-z]+(?:_[a-z]+)+)$/;
+const TEXT_URL = new RegExp(`https?://(?:${ESCAPED_AMP_SOURCE}|[^\\s,;"<>])+`, 'gi');
 
 /**
  * A query/fragment pair inside text (`?token=…`, `&_wpnonce=…`, also in a
@@ -85,23 +81,10 @@ const KEYED_STRING =
  */
 function reduceTextUrl(url: string): string {
   const escape = ESCAPED_AMP.exec(url)?.[0];
-  const plain = escape === undefined ? url : url.replace(new RegExp(ESCAPED_AMP, 'gi'), '&');
+  const plain = escape === undefined ? url : url.replace(new RegExp(ESCAPED_AMP_SOURCE, 'gi'), '&');
   const reduced = redactUrlReference(plain);
   if (reduced === plain) return url;
   return escape === undefined ? reduced : reduced.replace(/&/g, escape);
-}
-
-/**
- * Whether a keyed string literal's value must be withheld.
- *
- * @param key The literal's key.
- * @param value The literal's value, as written.
- * @returns True for a sensitive key, unless an identifier-valued name holds
- *   an identifier.
- */
-function isSecretLiteral(key: string, value: string): boolean {
-  if (!isSensitiveName(key)) return false;
-  return !(IDENTIFIER_VALUED_NAMES.has(key.toLowerCase()) && IDENTIFIER_VALUE.test(value));
 }
 
 /**
@@ -123,8 +106,8 @@ export function scrubText(text: string): string {
     )
     .replace(
       KEYED_STRING,
-      (whole, keyQuote: string, key: string, assign: string, valueQuote: string, value: string) =>
-        isSecretLiteral(key, value)
+      (whole, keyQuote: string, key: string, assign: string, valueQuote: string) =>
+        isSensitiveName(key)
           ? `${keyQuote}${key}${keyQuote}${assign}${valueQuote}${REDACTED_PARAM}${valueQuote}`
           : whole
     );
