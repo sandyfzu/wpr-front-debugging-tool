@@ -184,6 +184,19 @@ describe('createWorkerHighlighter — aborts', () => {
     expect(workers[0]?.terminated).toBe(true);
   });
 
+  it('aborting a queued job leaves the running one alone', async () => {
+    const { client, workers } = setup();
+    const running = client.highlight('a', { lang: 'javascript' });
+    const controller = new AbortController();
+    const queued = client.highlight('b', { lang: 'javascript', signal: controller.signal });
+    controller.abort();
+    expect(await reasonOf(queued)).toBe('aborted');
+    vi.advanceTimersByTime(ABORT_GRACE_MS * 4);
+    expect(workers[0]?.terminated).toBe(false);
+    workers[0]?.answer('A', 1);
+    await expect(running).resolves.toEqual(block('A'));
+  });
+
   it('lets an aborted block that answers within the grace finish (no respawn; result cached)', async () => {
     const { client, workers } = setup();
     const controller = new AbortController();
@@ -297,6 +310,22 @@ describe('createWorkerHighlighter — the cache', () => {
 });
 
 describe('ResultCache', () => {
+  it('weighs code, markup and class declarations against the memory bound', () => {
+    const cache = new ResultCache();
+    cache.set('ab', { html: '<pre>xyz</pre>', styles: [['fdt-tk-a', 'color:red']] });
+    expect(cache.weight).toBe(2 + '<pre>xyz</pre>'.length + 'fdt-tk-a'.length + 'color:red'.length);
+    // Small code with huge markup is evicted by the markup, not the code.
+    const huge = { html: 'h'.repeat(CACHE_MAX_CHARS / 2), styles: [] };
+    cache.set('x', huge);
+    cache.set('y', huge);
+    expect(cache.get('ab')).toBeUndefined();
+    expect(cache.get('x')).toBeUndefined();
+    expect(cache.get('y')).toEqual(huge);
+    expect(cache.weight).toBeLessThanOrEqual(CACHE_MAX_CHARS);
+    cache.set('z', { html: 'h'.repeat(CACHE_MAX_CHARS), styles: [] });
+    expect(cache.get('z')).toBeUndefined();
+  });
+
   it('evicts the least recently used beyond its entry bound', () => {
     const cache = new ResultCache();
     for (let i = 0; i < CACHE_MAX_ENTRIES; i += 1) cache.set(`k${String(i)}`, block(String(i)));
@@ -321,11 +350,12 @@ describe('ResultCache', () => {
 
   it('re-caching a key replaces it without double-counting', () => {
     const cache = new ResultCache();
-    const big = 'z'.repeat(CACHE_MAX_CHARS / 2);
-    cache.set(big, block('1'));
-    cache.set(big, block('2'));
-    cache.set(`w${'z'.repeat(CACHE_MAX_CHARS / 2 - 2)}`, block('w'));
-    expect(cache.get(big)).toEqual(block('2'));
-    expect(cache.size).toBe(2);
+    cache.set('k', block('first'));
+    const once = cache.weight;
+    cache.set('k', block('first'));
+    expect(cache.weight).toBe(once);
+    cache.set('k', block('much longer markup'));
+    expect(cache.weight).toBe(once + 'much longer markup'.length - 'first'.length);
+    expect(cache.size).toBe(1);
   });
 });

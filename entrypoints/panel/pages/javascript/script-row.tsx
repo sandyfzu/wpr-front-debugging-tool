@@ -12,13 +12,23 @@ import ChevronDown from 'lucide-solid/icons/chevron-down';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { MOTION_TURN } from '../../../../components/ui/classes';
-import { CodeBlock, type CodeBlockProps } from '../../../../components/ui/code-block';
+import {
+  CodeBlock,
+  HIGHLIGHT_MAX_CHARS,
+  type CodeBlockProps
+} from '../../../../components/ui/code-block';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { cn } from '../../../../utils/cn';
 import { ExternalLink } from '../page-frame';
 import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
-import { COLLAPSED_CODE_LINES, codeToggleLabel, lineCount } from './script-view';
+import {
+  COLLAPSED_CODE_LINES,
+  codeToggleLabel,
+  expandedCutNote,
+  expandedText,
+  lineCount
+} from './script-view';
 
 /** The code block's test seams, forwarded untouched (production omits them). */
 export type CodeBlockSeams = Pick<
@@ -193,6 +203,9 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
   // alone gates the code; the note below tells the two empty causes apart.
   const hasCode = (): boolean => !props.code.blank;
   const toggleable = (): boolean => props.expanded || props.code.expandable || clamped();
+  // Expanded, a script past the render limit shows its start (and says so).
+  const expandedView = (): { text: string; cut: boolean } =>
+    expandedText(props.source, HIGHLIGHT_MAX_CHARS);
   return (
     <>
       <div class="flex flex-wrap items-center gap-1">
@@ -219,7 +232,7 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
       >
         <CodeBlock
           id={props.domId}
-          text={collapsed() ? props.code.preview : props.source}
+          text={collapsed() ? props.code.preview : expandedView().text}
           lang="javascript"
           label={`Inline script ${String(props.ordinal)}`}
           maxLines={collapsed() ? COLLAPSED_CODE_LINES : undefined}
@@ -230,6 +243,11 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
           createObserver={props.codeBlock?.createObserver}
           watchOverflow={props.codeBlock?.watchOverflow}
         />
+        <Show when={!collapsed() && expandedView().cut}>
+          <p data-fdt="script-expanded-cut" class="text-2xs text-fg-muted">
+            {expandedCutNote(HIGHLIGHT_MAX_CHARS)}
+          </p>
+        </Show>
         <Show when={toggleable()}>
           <Button
             variant="ghost"

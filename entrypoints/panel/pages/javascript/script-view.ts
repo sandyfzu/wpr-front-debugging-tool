@@ -204,6 +204,33 @@ export function inlineCode(text: string): InlineCode {
 }
 
 /**
+ * The text an expanded block renders: the whole source, or — past what the
+ * code block highlights (`HIGHLIGHT_MAX_CHARS`) — its first that many chars,
+ * so expanding a 500 KB bundle mounts a bounded block (highlighted, too)
+ * instead of the whole text. Never cuts a surrogate pair; copy keeps using
+ * the full source.
+ *
+ * @param source The full inline source.
+ * @param max The render limit (`HIGHLIGHT_MAX_CHARS`).
+ * @returns The text to render and whether it was cut.
+ */
+export function expandedText(source: string, max: number): { text: string; cut: boolean } {
+  if (source.length <= max) return { text: source, cut: false };
+  const last = source.charCodeAt(max - 1);
+  const end = last >= 0xd800 && last <= 0xdbff ? max - 1 : max;
+  return { text: source.slice(0, end), cut: true };
+}
+
+/**
+ * The note under an expanded block that shows only the start of its script.
+ *
+ * @param max The render limit.
+ */
+export function expandedCutNote(max: number): string {
+  return `Showing the first ${formatCount(max)} characters — copy gets the full script.`;
+}
+
+/**
  * The collapse toggle's words: how much a click reveals — "Show all 40
  * lines", "Show full lines" when the preview cut long lines (each marked
  * by a `…` outside the code), or "Expand" when the clamp hides a wrapped

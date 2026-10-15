@@ -11,12 +11,43 @@ export type TokenStyle = readonly [className: string, declarations: string];
 /** The class-name shape the worker emits. */
 const CLASS_NAME = /^fdt-tk-[0-9a-z]+$/;
 
+/** The properties a token class may set — what themes use for tokens. */
+const TOKEN_PROPERTIES: ReadonlySet<string> = new Set([
+  'color',
+  'font-style',
+  'font-weight',
+  'text-decoration'
+]);
+
+/** A hex color: `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa`. */
+const HEX = '#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})';
+
 /**
- * Declarations a token class may carry: plain `property:value` pairs with
- * no braces, angle brackets, quotes or backslashes (the values are theme
- * colors and font keywords) — checked before any rule is inserted.
+ * The values a token declaration may take: a hex color, a
+ * `light-dark(<hex>, <hex>)` pair, or a bare keyword (`italic`, `bold`,
+ * `underline`, `inherit`…) — nothing that can load or reference anything.
  */
-const DECLARATIONS = /^[a-z-]+:[^;{}<>"'\\]+(?:;[a-z-]+:[^;{}<>"'\\]+)*$/;
+const TOKEN_VALUE = new RegExp(
+  `^(?:${HEX}|light-dark\\(\\s*${HEX}\\s*,\\s*${HEX}\\s*\\)|[a-z]+(?:-[a-z]+)*)$`
+);
+
+/**
+ * Whether a declaration list is an allowed token style: `property:value`
+ * pairs separated by `;`, each property on the allow-list and each value of
+ * an allowed form. Checked before any rule is inserted.
+ *
+ * @param declarations The candidate declaration list.
+ */
+export function isTokenDeclarations(declarations: string): boolean {
+  if (declarations === '') return false;
+  return declarations.split(';').every((declaration) => {
+    const colon = declaration.indexOf(':');
+    if (colon <= 0) return false;
+    const property = declaration.slice(0, colon).trim();
+    const value = declaration.slice(colon + 1).trim();
+    return TOKEN_PROPERTIES.has(property) && TOKEN_VALUE.test(value);
+  });
+}
 
 /**
  * The class name for a declaration list (32-bit FNV-1a, base 36).
@@ -44,7 +75,7 @@ export function isTokenStyle(style: unknown): style is TokenStyle {
     typeof style[0] === 'string' &&
     typeof style[1] === 'string' &&
     CLASS_NAME.test(style[0]) &&
-    DECLARATIONS.test(style[1])
+    isTokenDeclarations(style[1])
   );
 }
 

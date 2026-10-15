@@ -38,8 +38,12 @@ export const ABORT_GRACE_MS = 50;
 /** Cached results kept at most (entries). */
 export const CACHE_MAX_ENTRIES = 64;
 
-/** Cached code kept at most (characters, summed over entries). */
-export const CACHE_MAX_CHARS = 1_000_000;
+/**
+ * Cache memory bound, in characters summed over entries — each entry counts
+ * its code **and** its highlighted markup (≈ 30 markup chars per code char,
+ * so the markup dominates).
+ */
+export const CACHE_MAX_CHARS = 4_000_000;
 
 /** Why a block got no highlighting (the caller renders plain text). */
 export type HighlightFailure = 'timeout' | 'unavailable' | 'failed' | 'aborted';
@@ -125,7 +129,18 @@ function cacheKey(request: Pick<HighlightRequest, 'code' | 'lang'>): string {
   return `${request.lang}\u0000${request.code}`;
 }
 
-/** A bounded LRU of results, by entries and by cached characters. */
+/**
+ * An entry's memory weight in characters: its key (the code) plus its
+ * markup and class declarations.
+ */
+function entryWeight(key: string, block: HighlightedBlock): number {
+  let weight = key.length + block.html.length;
+  for (const [className, declarations] of block.styles)
+    weight += className.length + declarations.length;
+  return weight;
+}
+
+/** A bounded LRU of results, by entries and by cached characters (code + markup). */
 export class ResultCache {
   private readonly entries = new Map<string, HighlightedBlock>();
   private chars = 0;
@@ -151,15 +166,25 @@ export class ResultCache {
    * @param block The result.
    */
   set(key: string, block: HighlightedBlock): void {
-    if (key.length > CACHE_MAX_CHARS) return;
-    if (this.entries.delete(key)) this.chars -= key.length;
+    const weight = entryWeight(key, block);
+    if (weight > CACHE_MAX_CHARS) return;
+    const replaced = this.entries.get(key);
+    if (replaced !== undefined) {
+      this.entries.delete(key);
+      this.chars -= entryWeight(key, replaced);
+    }
     this.entries.set(key, block);
-    this.chars += key.length;
-    for (const oldest of this.entries.keys()) {
+    this.chars += weight;
+    for (const [oldest, oldBlock] of this.entries) {
       if (this.entries.size <= CACHE_MAX_ENTRIES && this.chars <= CACHE_MAX_CHARS) break;
       this.entries.delete(oldest);
-      this.chars -= oldest.length;
+      this.chars -= entryWeight(oldest, oldBlock);
     }
+  }
+
+  /** Characters held (tests). */
+  get weight(): number {
+    return this.chars;
   }
 
   /** Entries held (tests). */

@@ -17,6 +17,8 @@ import {
   collapsedPreview,
   countLines,
   estimateRowSize,
+  expandedCutNote,
+  expandedText,
   formatCount,
   inlineCode,
   lineCount,
@@ -272,5 +274,24 @@ describe('phrases', () => {
     expect(resultAnnouncement(3, 10, true)).toBe('3 of 10 scripts shown');
     expect(resultAnnouncement(0, 1, true)).toBe('0 of 1 script shown');
     expect(resultAnnouncement(1200, 5000, true)).toBe('1,200 of 5,000 scripts shown');
+  });
+});
+
+describe('expandedText', () => {
+  it('keeps a source within the limit whole', () => {
+    expect(expandedText('abc', 3)).toEqual({ text: 'abc', cut: false });
+  });
+
+  it('cuts a longer source at the limit, never splitting a surrogate pair', () => {
+    expect(expandedText('abcd', 3)).toEqual({ text: 'abc', cut: true });
+    // '😀' is two UTF-16 units: a cut through it keeps neither half.
+    expect(expandedText('ab😀cd', 3)).toEqual({ text: 'ab', cut: true });
+    expect(expandedText('ab😀cd', 4)).toEqual({ text: 'ab😀', cut: true });
+  });
+
+  it('names the limit in its note', () => {
+    expect(expandedCutNote(20_000)).toBe(
+      'Showing the first 20,000 characters — copy gets the full script.'
+    );
   });
 });

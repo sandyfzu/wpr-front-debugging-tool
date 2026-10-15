@@ -32,7 +32,7 @@ import {
   type CodeHighlighter
 } from './code-block-highlighter';
 import { answerHighlight } from './code-block-worker-protocol';
-import { tokenClassName } from './code-block-token-styles';
+import { isTokenStyle, tokenClassName } from './code-block-token-styles';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
@@ -100,6 +100,21 @@ describe('real highlighter — safety contract (regression-pinned)', () => {
       expect(html).toContain(className);
       expect(declarations).toMatch(/^color:light-dark\(/);
       expect(declarations).not.toContain('--shiki');
+    }
+  });
+
+  it('emits only token styles the main thread accepts (the allow-list), for both languages', () => {
+    const samples = [
+      [
+        'javascript',
+        '/* c */ const a = `t${b}` + /re/g; // x\nfunction f(x) { return x?.y ?? 1; }'
+      ],
+      ['json', '{"a": [1, true, null, "s"]}']
+    ] as const;
+    for (const [lang, code] of samples) {
+      for (const style of highlighter.highlight(code, { lang }).styles) {
+        expect(isTokenStyle(style)).toBe(true);
+      }
     }
   });
 

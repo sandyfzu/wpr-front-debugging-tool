@@ -3,7 +3,12 @@
  * once per class per root (document or shadow root).
  */
 import { describe, expect, it } from 'vitest';
-import { installTokenStyles, isTokenStyle, tokenClassName } from './code-block-token-styles';
+import {
+  installTokenStyles,
+  isTokenDeclarations,
+  isTokenStyle,
+  tokenClassName
+} from './code-block-token-styles';
 
 describe('tokenClassName', () => {
   it('names a declaration list deterministically', () => {
@@ -16,7 +21,18 @@ describe('tokenClassName', () => {
 describe('isTokenStyle', () => {
   it.each([
     [['fdt-tk-a1', 'color:light-dark(#cf222e, #ff7b72)'], true],
+    [['fdt-tk-a1', 'color:light-dark(#CF222E,#FF7B72)'], true],
+    [['fdt-tk-a1', 'color:#0550ae;font-style:italic'], true],
     [['fdt-tk-a1', 'color:red;font-style:italic'], true],
+    [['fdt-tk-a1', 'font-weight:bold;text-decoration:underline'], true],
+    [['fdt-tk-a1', 'background-image:url(https://evil.test/x.png)'], false],
+    [['fdt-tk-a1', 'color:url(x)'], false],
+    [['fdt-tk-a1', 'color:var(--x)'], false],
+    [['fdt-tk-a1', 'color:light-dark(red, url(x))'], false],
+    [['fdt-tk-a1', 'color:#12'], false],
+    [['fdt-tk-a1', 'background:red'], false],
+    [['fdt-tk-a1', 'color'], false],
+    [['fdt-tk-a1', 'color:red;'], false],
     [['fdt-tk-A1', 'color:red'], false],
     [['other', 'color:red'], false],
     [['fdt-tk-a1', 'color:red}x{color:blue'], false],
@@ -44,6 +60,16 @@ describe('installTokenStyles', () => {
     expect(rules).toEqual(['.fdt-tk-one{color:red;}', '.fdt-tk-two{color:blue;}']);
   });
 
+  it("keeps a root's existing adopted sheets when adding its own", () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const existing = new CSSStyleSheet();
+    shadow.adoptedStyleSheets = [existing];
+    installTokenStyles(shadow, [['fdt-tk-one', 'color:red']]);
+    expect(shadow.adoptedStyleSheets).toHaveLength(2);
+    expect(shadow.adoptedStyleSheets[0]).toBe(existing);
+  });
+
   it('installs into a shadow root separately and ignores detached nodes', () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });
@@ -53,5 +79,18 @@ describe('installTokenStyles', () => {
     expect(() => {
       installTokenStyles(detached, [['fdt-tk-one', 'color:red']]);
     }).not.toThrow();
+  });
+});
+
+describe('isTokenDeclarations', () => {
+  it('accepts the declarations the real themes emit', () => {
+    expect(isTokenDeclarations('color:light-dark(#24292E, #E1E4E8)')).toBe(true);
+    expect(isTokenDeclarations('color:light-dark(#6A737D, #8b949e);font-style:italic')).toBe(true);
+  });
+
+  it('rejects anything outside the allow-list', () => {
+    expect(isTokenDeclarations('')).toBe(false);
+    expect(isTokenDeclarations('background-image:url(x)')).toBe(false);
+    expect(isTokenDeclarations(':red')).toBe(false);
   });
 });

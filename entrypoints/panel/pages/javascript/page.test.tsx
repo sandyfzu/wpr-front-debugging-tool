@@ -19,6 +19,7 @@ import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../s
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { JavaScriptPage, JavaScriptView, listCutNote } from './page';
 import { PREVIEW_LINE_CHARS } from './script-view';
+import { HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import type { CodeBlockSeams } from './script-row';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 
@@ -540,6 +541,42 @@ describe('JavaScriptView — copy', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Inline script — copy' }));
     await vi.waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('line1();\nline2();\nline3();\nline4();\nline5();');
+    });
+  });
+});
+
+describe('JavaScriptView — very large scripts', () => {
+  it('expands to the first part of a script past the render limit, copying the whole', async () => {
+    const big = Array.from(
+      { length: 2_000 },
+      (_, i) => `step(${String(i)}); // ${'c'.repeat(10)}`
+    ).join('\n');
+    expect(big.length).toBeGreaterThan(HIGHLIGHT_MAX_CHARS);
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView(
+      dataWith([
+        {
+          inline: true,
+          content: big,
+          delayed: false,
+          deferred: false,
+          deferredByWPR: false,
+          fdtExcluded: null
+        }
+      ])
+    );
+    const row = rows()[0] as HTMLElement;
+    expect(row.querySelector('[data-fdt="script-expanded-cut"]')).toBeNull();
+    fireEvent.click(within(row).getByRole('button', { name: /Show all/ }));
+    const shown = row.querySelector('[data-fdt-code-fallback]')?.textContent ?? '';
+    expect(shown).toBe(big.slice(0, HIGHLIGHT_MAX_CHARS));
+    expect(row.querySelector('[data-fdt="script-expanded-cut"]')?.textContent).toBe(
+      'Showing the first 20,000 characters — copy gets the full script.'
+    );
+    fireEvent.click(within(row).getByRole('button', { name: 'Inline script — copy' }));
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(big);
     });
   });
 });
