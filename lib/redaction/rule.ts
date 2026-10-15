@@ -20,15 +20,18 @@
  *   `auth`, `nonce`, `signature`, `api-key`/`api_key`/`apikey`, `csrf`,
  *   `xsrf`, `password`/`passwd`, `credential`, `jwt`, `hmac`, `bearer`,
  *   `private` or `pwd`;
- * - **whole words** (`-`/`_`/space-separated, so `signal`, `turnkey` or
- *   `postcode` pass) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`, the
- *   personal-data names `email` and `login` (`user_login`), and a trailing
- *   `key` (`X-Access-Key`; `X-Cache-Key` over-matches, which is acceptable).
+ * - **whole words** (`-`/`_`/space-separated or camelCase humps, so
+ *   `signal`, `turnkey` or `postcode` pass while `userEmail` and
+ *   `licenseKey` do not) — `pass`, `sig`, `sid`, `ticket`, `otp`, `hash`,
+ *   `salt`, the personal-data names `email` and `login` (`user_login`), and
+ *   a trailing `key` (`X-Access-Key`; an unlisted cache key over-matches,
+ *   which is acceptable); plus the PKCE `code_verifier`.
  *
  * Exemptions (exact names only, so `author_token` and the like stay
  * redacted): `author` (WordPress's `?author=1` archive id), the cache-key
- * headers (`surrogate-key`, `cache-key`, `x-cache-key` — caching evidence)
- * and `www-authenticate` (a public server challenge).
+ * headers (`surrogate-key`, `cache-key`, `x-cache-key` — caching evidence),
+ * `www-authenticate` (a public server challenge) and WP Rocket's
+ * `minify_css_key`/`minify_js_key` (a file-name cache-busting stamp).
  *
  * Header values that are URLs ({@link redactHeaderValue}: `location`,
  * `content-location`, `refresh`'s `url=`, every `link` `<…>` target) run
@@ -69,24 +72,30 @@ const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
 /**
  * Name fragments (anywhere in the name) and whole words (between `-`/`_`
  * separators or the name's edges) that mark a name as secret-bearing.
- * Matched against the normalised name (lowercase, whitespace and `+` as `-`).
+ * Matched against the normalised name ({@link normalizeName}).
  */
 const SENSITIVE_NAME_FRAGMENT =
-  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login)(?:[-_]|$)|(?:^|[-_])key$/;
+  /token|secret|session|auth|nonce|signature|api[-_]?key|csrf|xsrf|passw(?:or)?d|credential|jwt|hmac|bearer|private|pwd|code[-_]verifier|(?:^|[-_])(?:pass|sig|sid|ticket|otp|hash|email|login|salt)(?:[-_]|$)|(?:^|[-_])key$/;
 
 /**
  * Exact names exempt from the fragments and words — useful context, never a
  * credential: WordPress's `?author=` archive id, the cache-key headers CDNs
  * and caches emit as caching evidence (`surrogate-key`, `cache-key`,
- * `x-cache-key`), and `www-authenticate`, a public challenge the server
- * sends (it names a scheme and realm; it carries no client secret).
+ * `x-cache-key`), `www-authenticate`, a public challenge the server sends
+ * (it names a scheme and realm; it carries no client secret), and WP
+ * Rocket's `minify_css_key`/`minify_js_key` options — a `uniqid()` salt for
+ * minified file names, regenerated on purge: a cache-busting stamp support
+ * compares across purges, not a credential. Compared in the normalised form
+ * too, so `cacheKey`-style spellings are exempt alike.
  */
 const EXEMPT_NAMES: ReadonlySet<string> = new Set([
   'author',
   'surrogate-key',
   'cache-key',
   'x-cache-key',
-  'www-authenticate'
+  'www-authenticate',
+  'minify_css_key',
+  'minify_js_key'
 ]);
 
 /** A valueless query pair this long reads as a bare token. */
@@ -102,19 +111,37 @@ export const REDACTED = '(value redacted)';
 export const REDACTED_PARAM = '[redacted]';
 
 /**
+ * A name in the word-separated form the fragments and words match: camelCase
+ * humps (`accessKey`, `APIKey`) and letter/digit boundaries (`key2`) split
+ * with `-` BEFORE lowercasing (or `userEmail` would read as one word),
+ * whitespace and `+` read as `-` (`api key`, `api+key`).
+ *
+ * @param name The trimmed name, original casing.
+ * @returns The lowercase, `-`-split form.
+ */
+function normalizeName(name: string): string {
+  return name
+    .replace(/([a-z])(?=[A-Z])|([A-Z])(?=[A-Z][a-z])/g, '$1$2-')
+    .replace(/([A-Za-z])(?=\d)|(\d)(?=[A-Za-z])/g, '$1$2-')
+    .toLowerCase()
+    .replace(/[\s+]+/g, '-');
+}
+
+/**
  * Whether a header or query-parameter name marks its value as secret.
  *
- * @param name The (decoded) name, any casing; inner whitespace and `+`
- *   count as `-`.
+ * @param name The (decoded) name, any casing; camelCase humps, digits,
+ *   inner whitespace and `+` count as word separators.
  * @returns True for the exact names and any name carrying a fragment or
  *   word, except the exempt names.
  */
 export function isSensitiveName(name: string): boolean {
-  const lower = name.trim().toLowerCase();
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
   if (SENSITIVE_EXACT_NAMES.has(lower)) return true;
-  if (EXEMPT_NAMES.has(lower)) return false;
-  // Whitespace and `+` read as word separators (`api key`, `api+key`).
-  return SENSITIVE_NAME_FRAGMENT.test(lower.replace(/[\s+]+/g, '-'));
+  const normalized = normalizeName(trimmed);
+  if (EXEMPT_NAMES.has(lower) || EXEMPT_NAMES.has(normalized)) return false;
+  return SENSITIVE_NAME_FRAGMENT.test(normalized);
 }
 
 /** The `Set-Cookie` header names (lowercase) whose cookie name may be kept. */

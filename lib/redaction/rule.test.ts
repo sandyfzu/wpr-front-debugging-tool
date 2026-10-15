@@ -16,6 +16,66 @@ import {
 
 describe('isSensitiveName', () => {
   it.each([
+    'accessKey',
+    'licenseKey',
+    'userEmail',
+    'adminEmail',
+    'userLogin',
+    'userPass',
+    'APIKey',
+    'cloudflareApiKey',
+    'salt',
+    'AUTH_SALT',
+    'LOGGED_IN_SALT',
+    'code_verifier',
+    'codeVerifier',
+    // Digits split words too.
+    'userPass2',
+    'sid1',
+    'version_hash'
+  ])('reads camelCase, salt and PKCE names word by word: %s is sensitive', (name) => {
+    expect(isSensitiveName(name)).toBe(true);
+  });
+
+  it.each([
+    // Evidence WP Rocket support compares across purges (a file-name stamp).
+    'minify_css_key',
+    'minify_js_key',
+    'cacheKey',
+    'surrogateKey',
+    // camelCase identifiers whose words are harmless.
+    'lazyloadDetected',
+    'locationHashes',
+    'deferredByWPR',
+    'timeStamp',
+    'cookieName',
+    'X-LiteSpeed-Cache',
+    'X-WP-TotalPages',
+    'X-RateLimit-Remaining',
+    'ETag',
+    'methodName',
+    'keyboard',
+    'basalt',
+    'salted',
+    'passport',
+    // WP Rocket options that are settings, not credentials.
+    'cache_logged_user',
+    'cache_reject_cookies',
+    'cdn_state',
+    'cdn_zone',
+    'cloudflare_auto_settings',
+    'cloudflare_zone_id',
+    'control_heartbeat',
+    'heartbeat_site_behavior',
+    'database_all_transients',
+    'exclude_inline_js',
+    'minify_google_fonts',
+    'purge_cron_unit'
+  ])('keeps %s visible', (name) => {
+    expect(isSensitiveName(name)).toBe(false);
+  });
+
+  it.each([
     'cookie',
     'Set-Cookie',
     'SET-COOKIE2',
