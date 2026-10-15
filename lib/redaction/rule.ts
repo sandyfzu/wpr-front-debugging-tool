@@ -1,9 +1,10 @@
 /**
- * Redaction for anything the panel exports (a copied report, a ticket, a
- * log): which NAMES mark a secret — header names and URL query-parameter
- * names share one rule — and how a header value or a page URL is reduced
- * before it leaves the panel. The ONE declaring site: every export path
- * runs its values through {@link redactHeaderValue} / {@link redactUrl}.
+ * The redaction rule for anything secret-bearing the extension captures or
+ * hands out (the background's header capture, a copied report, a ticket, an
+ * export): which NAMES mark a secret — header names and URL query-parameter
+ * names share one rule — and how a header value or a URL is reduced. The ONE
+ * declaring site: every capture and export path runs its values through
+ * {@link redactHeaderValue} / {@link redactUrl} / {@link redactUrlReference}.
  *
  * The rule is name-based and deliberately over-inclusive — redacting a
  * harmless value costs a support engineer one question, leaking a session
@@ -45,8 +46,6 @@
  * NAME (which cookie the server set is useful evidence for caching issues);
  * its value and attributes never pass.
  */
-
-import type { HeaderRowVM } from './headers-view-model';
 
 /** Names whose values are always secret (compared trimmed, lowercase). */
 const SENSITIVE_EXACT_NAMES: ReadonlySet<string> = new Set([
@@ -160,36 +159,6 @@ export function redactHeaderValue(
   return { redacted: true, cookieName: setCookieName(value) };
 }
 
-/** A header row as a panel surface shows and copies it. */
-export interface ShownHeader extends HeaderRowVM {
-  /** True when the captured value was withheld (see {@link shownHeader}). */
-  readonly redacted: boolean;
-}
-
-/**
- * A header row of the shared headers model as every panel surface (the
- * Headers & Cookies page, the Detections preview) may show and copy it. A
- * secret-bearing header keeps its name and loses its whole value —
- * attributes and hint included (a hint can echo the value); a `Set-Cookie`
- * keeps only a well-formed cookie name, which is caching evidence. Other
- * headers keep their value as {@link reduceHeaderValue} leaves it. Valueless
- * rows pass untouched.
- *
- * @param header A row of the shared headers model.
- * @returns The row to render and copy, flagged when its value was withheld.
- */
-export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.value === null) return { ...header, redacted: false };
-  const exported = redactHeaderValue(header.name, header.value);
-  if (!exported.redacted) return { ...header, value: exported.value, redacted: false };
-  return {
-    name: header.name,
-    value: exported.cookieName === null ? REDACTED : `${exported.cookieName}=${REDACTED}`,
-    hint: null,
-    redacted: true
-  };
-}
-
 /** Headers whose whole value is one URL reference. */
 const URL_VALUED_HEADERS: ReadonlySet<string> = new Set([
   'location',
@@ -220,7 +189,7 @@ const RELATIVE_BASE = 'https://relative.invalid';
  * @param depth How many URL-in-a-parameter levels may still be followed.
  * @returns The reference, reduced where the rule bites.
  */
-function redactUrlReference(ref: string, depth = 1): string {
+export function redactUrlReference(ref: string, depth = 1): string {
   const trimmed = ref.trim();
   // A bare fragment has no URL to rebuild: its pairs get the pair rule
   // (`#access_token=…` → redacted; a plain anchor `#top` stays).
@@ -275,7 +244,7 @@ function reduceLinkParam(param: string, inner: string): string {
  * @param text The text.
  * @returns The text with each URL reduced by the URL rule.
  */
-function reduceAbsoluteUrls(text: string): string {
+export function reduceAbsoluteUrls(text: string): string {
   return text.replace(/https?:\/\/[^\s,;"<>]+/gi, (url) => redactUrlReference(url));
 }
 
@@ -394,7 +363,7 @@ const MAX_DECODE_PASSES = 3;
  * @param raw The name as written in the URL.
  * @returns The decoded name.
  */
-function decodeParamName(raw: string): string {
+export function decodeParamName(raw: string): string {
   let current = raw.replace(/\+/g, ' ');
   for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
     let next: string;

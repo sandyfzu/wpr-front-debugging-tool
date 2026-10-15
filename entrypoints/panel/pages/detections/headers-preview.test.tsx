@@ -10,7 +10,7 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
-import { REDACTED } from '../../../../lib/panel/redaction';
+import { REDACTED } from '../../../../lib/redaction/rule';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import {

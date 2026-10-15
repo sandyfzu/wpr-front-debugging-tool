@@ -15,7 +15,7 @@
  * own backtick runs, with control characters flattened and table pipes
  * escaped, so a hostile value can neither break the layout nor inject
  * markdown into the ticket. Secret-bearing header values are redacted by the
- * shared redaction rule (`redaction.ts`), and the page URL is rebuilt
+ * shared redaction rule (`lib/redaction/rule`), and the page URL is rebuilt
  * without credentials, fragment or sensitive query values — a session token
  * must never travel into a ticket.
  */
@@ -30,7 +30,7 @@ import {
 } from './headers-view-model';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
-import { REDACTED, redactHeaderValue, redactUrl } from './redaction';
+import { REDACTED, redactHeaderValue, redactUrl } from '../redaction/rule';
 
 /** The report's provenance, read by the caller (keeps the builder pure). */
 export interface SupportReportContext {

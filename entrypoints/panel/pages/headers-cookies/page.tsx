@@ -37,7 +37,7 @@ import { KeyValue } from '../../../../components/ui/key-value';
 import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
-import type { ShownHeader } from '../../../../lib/panel/redaction';
+import type { ShownHeader } from '../../../../lib/panel/shown-header';
 import {
   buildHeadersViewModel,
   headersTruncationNote

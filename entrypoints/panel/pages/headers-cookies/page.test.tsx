@@ -21,7 +21,7 @@ import type { FdtData, PageHeaders } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
 import { makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
-import { REDACTED } from '../../../../lib/panel/redaction';
+import { REDACTED } from '../../../../lib/redaction/rule';
 import { HeadersCookiesPage, HeadersCookiesView, inspectedReloadAction, SPA_NOTE } from './page';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 

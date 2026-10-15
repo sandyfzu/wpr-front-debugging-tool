@@ -12,7 +12,7 @@
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
-import { shownHeader, type ShownHeader } from '../../../../lib/panel/redaction';
+import { shownHeader, type ShownHeader } from '../../../../lib/panel/shown-header';
 import type { DataState } from '../../state/fdt-state-machine';
 import type { PageCookies } from '../../../../lib/wp-rocket/types';
 
