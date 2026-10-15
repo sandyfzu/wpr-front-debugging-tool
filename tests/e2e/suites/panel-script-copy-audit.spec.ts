@@ -48,6 +48,69 @@ test('keeps keyboard focus after an asynchronous complete-source read', async ({
   }
 });
 
+test('guards keyboard and mouse repeats without reclaiming focus moved during a source read', async ({
+  extension
+}) => {
+  const { panel, fixture } = await openPanelForFixture(extension, '/clipboard/scripts.html', {
+    bootHash: '#/javascript'
+  });
+  try {
+    await expect(panel.getByRole('heading', { name: 'JavaScript', level: 1 })).toBeVisible();
+    await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await panel.evaluate(() => {
+      const original = chrome.tabs.sendMessage;
+      const loose = original as unknown as (
+        tabId: number,
+        message: { type: string },
+        options: unknown,
+        callback: (response: unknown) => void
+      ) => unknown;
+      chrome.tabs.sendMessage = ((
+        tabId: number,
+        message: { type: string },
+        options: unknown,
+        callback: (response: unknown) => void
+      ) => {
+        if (message.type === 'getScriptSourceChunk') {
+          document.documentElement.dataset.copyAuditRequests = String(
+            Number(document.documentElement.dataset.copyAuditRequests ?? '0') + 1
+          );
+          return loose(tabId, message, options, (response: unknown) => {
+            setTimeout(() => {
+              callback(response);
+            }, 1000);
+          });
+        }
+        return loose(tabId, message, options, callback);
+      }) as typeof original;
+    });
+    const copy = panel.getByRole('button', { name: 'Script URL — copy' });
+    await copy.focus();
+    await copy.press('Enter');
+    await expect(copy).toHaveAttribute('aria-busy', 'true');
+    await expect(copy).toHaveAttribute('aria-disabled', 'true');
+    expect(await copy.evaluate((node) => node.hasAttribute('disabled'))).toBe(false);
+    await copy.press('Enter');
+    await copy.press('Space');
+    const box = await copy.boundingBox();
+    expect(box).not.toBeNull();
+    if (box === null) throw new Error('The script copy button has no mouse target.');
+    await panel.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(copy).toHaveAttribute('aria-busy', 'true');
+    const search = panel.getByRole('searchbox', { name: 'Search scripts' });
+    await search.focus();
+    await expect(panel.getByText('Script URL copied', { exact: true })).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect(copy).not.toHaveAttribute('aria-busy', 'true');
+    expect(await panel.evaluate(() => document.documentElement.dataset.copyAuditRequests)).toBe(
+      '1'
+    );
+  } finally {
+    await panel.close();
+    await fixture.page.close();
+  }
+});
+
 test('copies a row beyond the entire inventory text budget through the real clipboard', async ({
   extension
 }) => {
