@@ -32,7 +32,6 @@
 import type { ComponentProps, JSX } from 'solid-js';
 import { DropdownMenu as KobalteMenu } from '@kobalte/core';
 import { cn } from '../../utils/cn';
-import { SCROLLBAR_THIN_CLASSES } from './scroll-area';
 
 /**
  * Where a menu content's chrome lives (the dialog plate's language,
@@ -44,8 +43,7 @@ import { SCROLLBAR_THIN_CLASSES } from './scroll-area';
  * internal scroll instead of items painting past the plate — the menu's
  * own overflow, not the shell's (the rail itself never scrolls or gains a
  * scrollbar; its scroll-free invariant is separate and pinned). The
- * scrollbar treatment is the scroll surface's shared token-thin one, so a
- * degenerate-case bar is a designed hairline, never the native one; it
+ * native scrollbar treatment comes from the shared token stylesheet; it
  * exists only while the clamp actually bites (`scrollbar-gutter` stays at
  * its `auto` default — deliberately *not* `stable`, which would reserve a
  * phantom right gutter on every plate at every height, shifting the
@@ -53,8 +51,7 @@ import { SCROLLBAR_THIN_CLASSES } from './scroll-area';
  * a fast wheel from bouncing the DevTools host through the flyout.
  */
 export const MENU_CONTENT_CLASSES = cn(
-  'z-50 max-h-[var(--kb-popper-content-available-height)] w-max min-w-40 max-w-72 overflow-y-auto overscroll-contain rounded-md border border-line-2 bg-surface-2 p-1 shadow-elev-2 outline-none',
-  SCROLLBAR_THIN_CLASSES
+  'z-50 max-h-[var(--kb-popper-content-available-height)] w-max min-w-40 max-w-72 overflow-y-auto overscroll-contain rounded-md border border-line-2 bg-surface-2 p-1 shadow-elev-2 outline-none'
 );
 
 /**
