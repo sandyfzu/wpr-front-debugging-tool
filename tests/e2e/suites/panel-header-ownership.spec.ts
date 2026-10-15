@@ -27,9 +27,7 @@ test('keeps captured response headers on their dedicated page', async ({ extensi
     await expect(panel.getByRole('heading', { level: 1, name: 'Headers & Cookies' })).toBeVisible();
     await expect(panel.getByText('cache-control', { exact: true })).toBeVisible();
     await expect(panel.getByText('no-store', { exact: true })).toBeVisible();
-    await expect(
-      panel.getByRole('button', { name: 'Copy All headers', exact: true })
-    ).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'All headers', exact: true })).toBeVisible();
 
     await panel
       .getByRole('navigation', { name: 'WPR FDT pages' })
