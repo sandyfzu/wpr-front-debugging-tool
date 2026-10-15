@@ -142,16 +142,16 @@ describe('buildLazyloadSidebarExpression', () => {
     });
   });
 
-  it('answers the fallback object when nothing applies', () => {
+  it('asks for an img element when a plain element has no relevant attributes', () => {
     expect(
       runExpression(buildLazyloadSidebarExpression([]), document.createElement('div'))
-    ).toEqual({ please: 'Select an element' });
+    ).toEqual({ please: 'Select an img element' });
   });
 
   it('treats non-element selections (or no selection) as the fallback', () => {
     for (const selection of [null, undefined, document.createTextNode('text')]) {
       expect(runExpression(buildLazyloadSidebarExpression([]), selection)).toEqual({
-        please: 'Select an element'
+        please: 'Select an img element'
       });
     }
   });
@@ -168,7 +168,15 @@ describe('buildLazyloadSidebarExpression', () => {
       expect(
         runExpression(buildLazyloadSidebarExpression([]), node),
         `selection kind: ${name}`
-      ).toEqual({ please: 'Select an element' });
+      ).toEqual({ please: 'Select an img element' });
+    }
+  });
+
+  it('ships the image-specific prompt for unsupported selections', () => {
+    for (const selection of [undefined, document.createElement('div')]) {
+      expect(runExpression(LAZYLOAD_SIDEBAR_EXPRESSION, selection)).toEqual({
+        please: 'Select an img element'
+      });
     }
   });
 
