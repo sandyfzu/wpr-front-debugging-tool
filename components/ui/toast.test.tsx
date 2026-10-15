@@ -172,4 +172,87 @@ describe('toast region', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss — Notice' }));
     expect(screen.queryByRole('status')).toBeNull();
   });
+
+  it.each(['pointer', 'focus'] as const)(
+    'keeps overlapping interactions paused when %s leaves first',
+    (leavingFirst) => {
+      vi.useFakeTimers();
+      try {
+        render(() => <Toasts />);
+        toast.info('Notice', { duration: 1000 });
+        vi.advanceTimersByTime(300);
+        const item = screen.getByRole('listitem');
+        const dismiss = screen.getByRole('button');
+        if (leavingFirst === 'pointer') {
+          fireEvent.pointerEnter(item);
+          fireEvent.focusIn(dismiss);
+          fireEvent.pointerLeave(item);
+        } else {
+          fireEvent.focusIn(dismiss);
+          fireEvent.pointerEnter(item);
+          fireEvent.focusOut(dismiss);
+        }
+        vi.advanceTimersByTime(3000);
+        expect(screen.getByRole('status')).toBeTruthy();
+        expect(vi.getTimerCount()).toBe(0);
+
+        if (leavingFirst === 'pointer') fireEvent.focusOut(dismiss);
+        else fireEvent.pointerLeave(item);
+        vi.advanceTimersByTime(600);
+        expect(screen.getByRole('status')).toBeTruthy();
+        vi.advanceTimersByTime(100);
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('keeps focus paused across descendants until focus leaves the whole toast', () => {
+    vi.useFakeTimers();
+    try {
+      render(() => <Toasts />);
+      toast.info('Notice', { duration: 1000 });
+      const item = screen.getByRole('listitem');
+      const dismiss = screen.getByRole('button');
+      fireEvent.focusIn(item);
+      fireEvent.focusOut(item, { relatedTarget: dismiss });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(3000);
+      expect(screen.getByRole('status')).toBeTruthy();
+      fireEvent.focusIn(dismiss);
+      fireEvent.focusOut(dismiss, { relatedTarget: document.body });
+      vi.advanceTimersByTime(1000);
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cleans up paused and running cards without leaking their state into new toasts', () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(() => <Toasts />);
+      toast.info('Paused', { duration: 1000 });
+      fireEvent.pointerEnter(screen.getByRole('listitem'));
+      fireEvent.focusIn(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button'));
+      expect(vi.getTimerCount()).toBe(0);
+      toast.info('Fresh', { duration: 1000 });
+      vi.advanceTimersByTime(1000);
+      expect(screen.queryByRole('status')).toBeNull();
+      toast.info('Running', { duration: 1000 });
+      expect(vi.getTimerCount()).toBe(1);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      toast.clear();
+      render(() => <Toasts />);
+      toast.info('Remounted', { duration: 1000 });
+      vi.advanceTimersByTime(1000);
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
