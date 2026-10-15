@@ -642,6 +642,14 @@ Completes the search protocol: P5C's cursor signals finally consumed — a highl
 
 - [ ] **Search integration** — every list page reads the P5 search store: `performSearch` sets query; **`nextSearchResult`/`previousSearchResult` move a highlight cursor across matching rows and scroll-into-view** (new capability implied by legacy's protocol — fixes the dead half of the protocol, master #8, and completes the store work referenced in master #18); `cancelSearch` clears; route change resets (parity). (The read/filter halves landed with the page letters — P6C filters `content`, P6D filters `src`/`href`; Detections and Undefined References have no search rows on the reference surface. This block adds the cursor half and its per-page polish.)
 
+**Promotion follow-ups (tracked 2026-10-15; evidence: P6C "Full duplication set" + Nits, P6D and P6F promotion candidates):**
+
+- [ ] **One promoted list module** for the JavaScript page (`pages/javascript/`) and the resource pages (`pages/resource-list/`): today each piece exists twice with drifted behaviour. (1) Zero-count chip rule: `buildChips` (`script-view.ts`, hardcodes `'all'`) vs `buildFilterChips` (`resource-list-view.ts`, `defaultChipId`). (2) Row reconcile on refresh: `reconcileRowViews` (`script-identity.ts`, identity keys) vs `reconcileRows` (`resource-list-view.ts`, numeric `id`). (3) Search field + Esc: `bindSearchField` (`search-field.ts`) + `page.tsx`'s Esc handler vs `resource-list.tsx`'s inline signal + handler; field width `w-full @regular:max-w-80` vs `w-full @regular:w-72`. (4) Live region: `resultAnnouncement` ("N of M scripts shown", silent unless narrowed, `aria-live="off"` on refresh) vs `resultsAnnouncement` ("Showing N of M …" / "No … match" / "Showing all …"). (5) Count format: `formatCount` twice (`toLocaleString` vs `Intl.NumberFormat`; `routes.ts`'s private `shownTotal` a third). (6) Content width: `CONTENT_WIDTH` `@wide:max-w-6xl` vs `LIST_WIDTH` `@wide:max-w-5xl`. Also the list-cut rule (`scriptListCut` ≈ `listCapped` ≈ `routes.ts` `listCut`). Pick one wording/behaviour per piece (bar `K-4`, `L-3`), one declaring site, both pages consume it.
+- [ ] **`FilterBar` chip counts thousands-grouped** (`components/ui/filter-bar.tsx` renders `{props.chip.count}` raw: "5000" beside page totals' "5,000"); format with the promoted count formatter; the chip's accessible name follows.
+- [ ] **`ExternalLink` title capped** (`pages/page-frame.tsx` sets `title={props.href}` uncapped; URLs/data URIs reach 4,096 chars): apply the 300-code-point rule (`capTitle`/`TITLE_MAX`/`capText`, today in `resource-list-view.ts`, promoted to one shared site first).
+- [ ] **Compact, toolbar-less `CodeBlock` variant** for list rows: each inline script row repeats the "javascript · Wrap" toolbar under its own header; the row header carries the language and the toggle once.
+- [ ] **`VirtualList` keyboard entry:** Tab into a scrolled-down list lands on the first mounted row (overscan, off-screen) and jumps the viewport (P6F candidate c); focus must enter at the first visible row, without a bespoke roving model (bar `K-3`).
+
 **Rides:** the wrap-around + cancellation/route-change cursor semantics pinned here (the tail of Tests row 1); the touched pages' final polish pass (highlight styling via tokens, exact scroll targeting).
 
 **Tests:** cursor wrap-around; `cancelSearch`/route change clearing query + cursor + highlight; scroll targeting landing on the matched row; the touched pages' polished states keyboard/axe-clean.
@@ -667,6 +675,12 @@ The letters may not edit `components/ui/*`, `assets/css/*` or `scripts/budgets.j
   - **Trimming:** only `javascript` + `json` are registered (no html/css), so nothing is left to drop. The JS grammar (171 KiB raw, 16 KiB gzip) is shiki's only JavaScript grammar. The remaining lever is precompiled grammars + the raw JS engine (`@shikijs/langs-precompiled`, a new dependency, size trade-off unmeasured). It is noted for the P15 budget re-audit, not taken.
   - **Seen while measuring, not changed:** the Solid runtime (`chunks/web-*.js`, 23.5 KiB) and the WXT shared helpers (`chunks/types-*.js`, 6.4 KiB) are shared chunks matched by no surface row, so only the backstop counts them. This is for the P15 re-audit.
 - **Gates (this branch):** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 1451/1451 in 132 files (coverage 95.41 % stmts) · `build` ✓ + `check:budgets` ✓ · `build:firefox` ✓.
+
+---
+
+## Phase-close notes
+
+- **Budget record (2026-10-15, develop `5638ea9`, `pnpm build && pnpm check:budgets`, KB = 1,024 B):** devtools panel JS **382.7 raw / 118.3 gzip** of 600: under the ceiling, **past the ≤ 350 KB stretch** (not met; reason owed at phase close, Verification checklist row 1). The shiki highlighter ships as its own lazily spawned Web Worker bundle (`assets/code-block-highlight.worker-*.js`, never in the panel chunk): **356.4 raw / 73.0 gzip** of 368 / 75. Whole build **961.8** of 1,225 (270.7 gzip). P15's budget re-audit picks this up.
 
 ---
 
