@@ -9,6 +9,8 @@ import type { ClipboardLike } from '../../../components/ui/copy-button';
 import { toast, toastItems, type ToastItem } from '../../../components/ui/toast-store';
 import { makeFdtData } from '../state/fixtures';
 import { exportFilename, exportPageDataJson, type JsonExportDeps } from './export-json';
+import { EXPORT_REDACTION_NOTICE, redactPageDataForExport } from '../../../lib/redaction/page-data';
+import { PLANTED, PLANTED_RAW_HEADERS } from '../../../lib/redaction/planted-secrets.fixtures';
 
 /** The fixed stamp the filename test builds (2026-10-13 04:25 UTC-local). */
 const STAMP = new Date(2026, 9, 13, 4, 25);
@@ -67,13 +69,51 @@ describe('exportPageDataJson', () => {
   it('downloads a pretty-printed JSON file and confirms with a success toast', async () => {
     const download = vi.fn((payload: string, filename: string) => {
       expect(filename).toBe('wpr-fdt-export-20261013-0425.json');
-      // The whole contract shape serializes (real FdtData through the fixture).
-      expect(JSON.parse(payload)).toEqual(makeFdtData());
+      // The whole contract shape serializes (real FdtData through the fixture),
+      // through the export redaction and headed by its notice.
+      expect(JSON.parse(payload)).toEqual(redactPageDataForExport(makeFdtData()));
     });
     const result = await exportPageDataJson(makeFdtData(), makeDeps({ download }));
     expect(result).toBe('downloaded');
     expect(latestToast()?.tone).toBe('success');
     expect(latestToast()?.description).toContain('.json');
+  });
+
+  it('exports no planted secret and states that values are redacted', async () => {
+    let payload = '';
+    const result = await exportPageDataJson(
+      makeFdtData({ pageHeaders: PLANTED_RAW_HEADERS }),
+      makeDeps({
+        download: (text) => {
+          payload = text;
+        }
+      })
+    );
+    expect(result).toBe('downloaded');
+    expect(payload).not.toContain(PLANTED);
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    expect(Object.keys(parsed)[0]).toBe('redaction');
+    expect(parsed['redaction']).toEqual(EXPORT_REDACTION_NOTICE);
+  });
+
+  it('exports nothing when the redaction itself fails (never the raw data)', async () => {
+    const download = vi.fn();
+    const writeText = vi.fn((): Promise<void> => Promise.resolve(undefined));
+    const data = makeFdtData();
+    Object.defineProperty(data, 'wprDetections', {
+      enumerable: true,
+      get: () => {
+        throw new Error('unreadable');
+      }
+    });
+    const result = await exportPageDataJson(
+      data,
+      makeDeps({ download, clipboard: { writeText } as unknown as ClipboardLike })
+    );
+    expect(result).toBe('failed');
+    expect(download).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(latestToast()?.tone).toBe('error');
   });
 
   it('degrades a download failure to the clipboard copy with its info toast', async () => {
@@ -89,7 +129,9 @@ describe('exportPageDataJson', () => {
     );
     expect(result).toBe('copied');
     // The clipboard carried the exact payload...
-    expect(writeText).toHaveBeenCalledWith(JSON.stringify(makeFdtData(), null, 2));
+    expect(writeText).toHaveBeenCalledWith(
+      JSON.stringify(redactPageDataForExport(makeFdtData()), null, 2)
+    );
     // ...the framing names the degrade (no platform error renders).
     const item = latestToast();
     expect(item?.tone).toBe('info');
