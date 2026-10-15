@@ -10,11 +10,18 @@ export default defineConfig({
   vite: () => ({
     plugins: [tailwindcss()]
   }),
-  manifest: {
+  // Function form: WXT passes the target browser, so Firefox-only keys stay out
+  // of the Chromium manifest.
+  manifest: ({ browser }) => ({
     name: NAME,
     // `description` and `version` are filled from package.json by default.
     // Chromium floor per project policy; see AGENTS.md (Chromium-based primary target).
     minimum_chrome_version: '145',
+    // Explicit supported Firefox floor (owner-chosen): without it any old Firefox
+    // could install a build it was never verified on.
+    ...(browser === 'firefox' && {
+      browser_specific_settings: { gecko: { strict_min_version: '150.0' } }
+    }),
     // Least privilege — every permission has a concrete consumer somewhere in the
     // ported feature set; each is added/removed by the phase that owns that feature.
     permissions: [
@@ -41,5 +48,5 @@ export default defineConfig({
     // phases that would need it must first verify they cannot work without it.
     // Same list the runtime listeners use — single-sourced in lib/wp-rocket/constants.
     host_permissions: [...URL_PATTERNS]
-  }
+  })
 });
