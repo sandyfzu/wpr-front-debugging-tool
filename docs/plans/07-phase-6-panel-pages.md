@@ -555,6 +555,22 @@ The caching-evidence trail (owner-committed 2026-10-12, effort S, Inspect group)
   - Whole build 581.5 → 583.4.
 - Each intermediate commit was checked in a detached temporary worktree: `tsc` clean, the full suite green.
 
+**Receipts — M4 follow-up, verification round (2026-10-14; rebased onto develop `84164e1`, the Firefox-min commit — the earlier receipts' hashes map to the rebased `93de877` move, `06bbfce` capture, `b3ecd0b` export, `ea18c40` pin, `a668f96` names, `99c50cc` bodies, `d6d200b` URL speed, `013aa42` `cookieName`, `946fbf2` e2e; this round `1662cd1`, `a56b959`, `6e9a92d` + this docs commit).** The verification found no blocker or major issue. Last items:
+
+- **Identifier exemption removed:** `key`/`code`/`state` literals are withheld whatever their shape. Measured: lowercase-letter-only tokens passed the exemption every time, and its motivating case (script bodies) no longer reaches the scrubber. The tests now pin `{key:"methodName"}` and a lowercase-only `state` as withheld.
+- **e2e Set-Cookie leg is a tripwire.** Chromium hides Set-Cookie from webRequest by design unless a listener asks for `extraHeaders`, and the capture asks only `responseHeaders`. The spec now asserts that no `set-cookie` row arrives, and its comment is corrected. Not run here; the coordinator runs e2e.
+- **Nits:**
+  - Exemptions are listed and compared in the normalised form with `_` read as `-` (`minifyCssKey` now matches).
+  - A trailing numbered `key` is sensitive (`key2`, `license_key_2`, `licenseKey2`).
+  - `&#x26;` (hex, any case or zero padding) is read as part of a URL, from one pattern source shared with the `&amp;`/`&#038;` forms.
+  - A nested protocol-relative URL (`?r=//b/?token=…`) is read against `https:` for the rule and stays protocol-relative.
+- **Mutation:** 11 mutants over this round's code (`scratchpad/mut/mutate3.py`), all killed.
+- **Gates:** `compile` ✓ · `lint` ✓ · `format:check` ✓ · `test` ✓ 2424/2424 in 165 files (coverage 96.89 / 95.95 / 99.49 / 97.69). The only test over 1 s is the existing tooltip test. `build` ✓ · `build:firefox` ✓ · `check:budgets` ✓.
+  - Background **40.2** raw / 14.2 gzip (ceiling 41).
+  - Isolated content script 120.6 (unchanged).
+  - Panel 360.8 / 111.3.
+  - Whole build 583.6.
+
 ---
 
 ## P6G — Search navigation & per-page polish
