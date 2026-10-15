@@ -8,7 +8,8 @@ import {
   lazyloadNotes,
   lazyloadRowEstimate,
   lazyloadStateBadge,
-  sameImageRow
+  sameImageRow,
+  showLazyloadReasons
 } from './lazyload-rows';
 
 /** One image row with overrides. */
@@ -51,10 +52,25 @@ describe('exclusionReasons', () => {
   });
 });
 
+describe('showLazyloadReasons', () => {
+  it.each([
+    [true, true, false],
+    [true, false, true],
+    [false, true, false],
+    [false, false, false]
+  ])('feature present %s, image lazyloaded %s → reasons %s', (present, lazyloaded, expected) => {
+    const image = row({ lazyloaded });
+    expect(showLazyloadReasons(image, present)).toBe(expected);
+    expect(lazyloadRowEstimate(image, present)).toBe(
+      expected ? LAZYLOAD_ROW_WITH_REASONS_ESTIMATE : LAZYLOAD_ROW_ESTIMATE
+    );
+  });
+});
+
 describe('lazyloadRowEstimate', () => {
   it('seeds lazyloaded rows without the reasons line', () => {
-    expect(lazyloadRowEstimate(row({ lazyloaded: true }))).toBe(LAZYLOAD_ROW_ESTIMATE);
-    expect(lazyloadRowEstimate(row())).toBe(LAZYLOAD_ROW_WITH_REASONS_ESTIMATE);
+    expect(lazyloadRowEstimate(row({ lazyloaded: true }), true)).toBe(LAZYLOAD_ROW_ESTIMATE);
+    expect(lazyloadRowEstimate(row(), true)).toBe(LAZYLOAD_ROW_WITH_REASONS_ESTIMATE);
     expect(LAZYLOAD_ROW_WITH_REASONS_ESTIMATE).toBeGreaterThan(LAZYLOAD_ROW_ESTIMATE);
   });
 });

@@ -56,6 +56,17 @@ export function exclusionReasons(row: LazyloadImageResource): ExclusionReasons {
   };
 }
 
+/**
+ * Exclusion evidence is meaningful only while the page's lazyload feature is detected.
+ *
+ * @param row The image row.
+ * @param featurePresent Whether image lazyload was detected on the page.
+ * @returns Whether to render the row's exclusion details, including the empty fallback.
+ */
+export function showLazyloadReasons(row: LazyloadImageResource, featurePresent: boolean): boolean {
+  return featurePresent && !row.lazyloaded;
+}
+
 /** Seed height of a row without reasons (name line + URL line), in px. */
 export const LAZYLOAD_ROW_ESTIMATE = 55;
 
@@ -63,14 +74,16 @@ export const LAZYLOAD_ROW_ESTIMATE = 55;
 export const LAZYLOAD_ROW_WITH_REASONS_ESTIMATE = 79;
 
 /**
- * The row's seed height for the virtual list: lazyloaded rows are the identity
- * block only, the rest add their reasons line.
+ * Seed the virtual list with the same visibility rule as the reasons line.
  *
  * @param row The image row.
+ * @param featurePresent Whether image lazyload was detected on the page.
  * @returns The estimate in px.
  */
-export function lazyloadRowEstimate(row: LazyloadImageResource): number {
-  return row.lazyloaded ? LAZYLOAD_ROW_ESTIMATE : LAZYLOAD_ROW_WITH_REASONS_ESTIMATE;
+export function lazyloadRowEstimate(row: LazyloadImageResource, featurePresent: boolean): number {
+  return showLazyloadReasons(row, featurePresent)
+    ? LAZYLOAD_ROW_WITH_REASONS_ESTIMATE
+    : LAZYLOAD_ROW_ESTIMATE;
 }
 
 /**

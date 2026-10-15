@@ -152,6 +152,37 @@ describe('LazyloadPage — rows', () => {
     expect(within(items[0] as HTMLElement).queryByText('Reasons')).toBeNull();
   });
 
+  it('hides all exclusion details when lazyload is not detected, while keeping image rows', () => {
+    const data = fixture();
+    const { root } = renderPage(
+      LazyloadPage,
+      withImages(data.wprDetections.lazyload.images, false)
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+    expect(screen.getAllByText('Not lazyloaded')).toHaveLength(3);
+    expect(root.querySelector('[data-fdt="lazyload-reasons"]')).toBeNull();
+    expect(screen.queryByText('Reasons')).toBeNull();
+    expect(screen.queryByText('No reasons found')).toBeNull();
+    expect(screen.queryByText('Excluded by FDT')).toBeNull();
+    expect(screen.queryByText('data-skip-lazy')).toBeNull();
+  });
+
+  it('updates exclusion details on detection-only refreshes without remounting rows or losing focus', () => {
+    const data = fixture();
+    const page = renderPage(LazyloadPage, withImages(data.wprDetections.lazyload.images, false));
+    const before = screen.getAllByRole('listitem');
+    const copy = screen.getByRole('button', { name: 'Image URL (logo.png) — copy' });
+    copy.focus();
+    for (const present of [true, false, true]) {
+      page.refresh(withImages(data.wprDetections.lazyload.images, present));
+      expect(page.root.querySelectorAll('[data-fdt="lazyload-reasons"]')).toHaveLength(
+        present ? 3 : 0
+      );
+      expect(screen.getAllByRole('listitem')).toEqual(before);
+      expect(document.activeElement).toBe(copy);
+    }
+  });
+
   it('names rows by file and keeps relative URLs as plain text', () => {
     const { root } = renderPage(LazyloadPage, fixture());
     expect(rowNames(root)).toEqual([

@@ -1,8 +1,8 @@
 /**
  * The Lazyload page: every `<img>` the lazyload check classified, whether
- * WP Rocket lazyloads it, and — when it does not — the reasons found on the
- * element. Chips: all / lazyloaded / non-lazyloaded; the search narrows by
- * image URL (`src`). Layout, search wiring and states: `ResourceListPage`.
+ * WP Rocket lazyloads it, and — when the feature is detected — exclusion
+ * evidence for images it does not lazyload. Chips: all / lazyloaded /
+ * non-lazyloaded; the search narrows by image URL (`src`). Layout, search wiring and states: `ResourceListPage`.
  *
  * **Thumbnails: not shipped (decided 2026-10-14, verified on the built
  * extension).** The ship criteria were: remote `img-src` allowed by the
@@ -51,7 +51,8 @@ import {
   lazyloadNotes,
   lazyloadRowEstimate,
   lazyloadStateBadge,
-  sameImageRow
+  sameImageRow,
+  showLazyloadReasons
 } from './lazyload-rows';
 
 /**
@@ -103,10 +104,11 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       listLabel="Images"
       searchLabel="Search image URLs"
       searchPlaceholder="Search image URLs…"
-      estimateSize={lazyloadRowEstimate}
+      estimateSize={(row) => lazyloadRowEstimate(row, lazyload()?.present ?? false)}
       renderRow={(row) => (
         <LazyloadRow
           row={row}
+          featurePresent={lazyload()?.present ?? false}
           clipped={urlClipped(lazyload()?.truncated, row.src, PAYLOAD_LIMITS.images.src)}
         />
       )}
@@ -125,12 +127,17 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
 
 /**
  * One image row: name, state badge, copy and the full URL; a non-lazyloaded
- * image adds its reasons on the meta line.
+ * image adds its reasons on the meta line only when lazyload is detected.
  *
  * @param props.row The image row.
+ * @param props.featurePresent Whether image lazyload was detected on the page.
  * @param props.clipped Whether the capture clipped its URL.
  */
-function LazyloadRow(props: { row: LazyloadImageResource; clipped: boolean }): JSX.Element {
+function LazyloadRow(props: {
+  row: LazyloadImageResource;
+  featurePresent: boolean;
+  clipped: boolean;
+}): JSX.Element {
   const state = (): ReturnType<typeof lazyloadStateBadge> => lazyloadStateBadge(props.row);
   return (
     <ResourceLink
@@ -143,7 +150,9 @@ function LazyloadRow(props: { row: LazyloadImageResource; clipped: boolean }): J
         </StatusBadge>
       }
     >
-      {props.row.lazyloaded ? undefined : <ReasonsLine row={props.row} />}
+      <Show when={showLazyloadReasons(props.row, props.featurePresent)}>
+        <ReasonsLine row={props.row} />
+      </Show>
     </ResourceLink>
   );
 }
