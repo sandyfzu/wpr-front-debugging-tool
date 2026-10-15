@@ -101,6 +101,22 @@ async function handle(request, response) {
     );
     return;
   }
+  if (url.pathname === '/__e2e/secret-headers') {
+    // A main frame whose response carries secret-bearing headers: the
+    // capture must withhold or reduce every one before anything is stored.
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'set-cookie': ['fdt_session=E2E_SECRET_COOKIE; Path=/; HttpOnly', 'fdt_pref=E2E_SECRET_PREF'],
+      location: '/next?token=E2E_SECRET_TOKEN&ok=1',
+      'x-wp-nonce': 'E2E_SECRET_NONCE',
+      'surrogate-key': 'post-1 term-2'
+    });
+    response.end(
+      '<!doctype html><html><head><title>secret headers</title></head><body>secret headers</body></html>'
+    );
+    return;
+  }
   if (url.pathname === '/favicon.ico') {
     // Browsers always request this; answering 204 keeps the fixture pages'
     // console baseline clean (a 404 would surface as error-level noise the
