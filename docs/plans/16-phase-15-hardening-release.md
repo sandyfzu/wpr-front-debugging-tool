@@ -11,6 +11,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 ### 1. Budget & performance audit (master §1.3, §5.6)
 
 - [ ] `pnpm build` (both browsers) → `pnpm check:budgets` (P0 script) → pass/fail table committed into this file with raw + gzip per surface; **the panel's ≤ 350 KB stretch target reported met/not-met with reason**.
+- [ ] **Re-audit from P6's record** ([07 §Phase-close notes](./07-phase-6-panel-pages.md#phase-close-notes), 2026-10-15: panel past the stretch, the shiki worker near its row): re-measure against it and decide the levers 07 left open — precompiled grammars + raw JS engine (07 §Shared design-system fixes, "Trimming") and the shared chunks no surface row counts (`chunks/web-*.js`, `chunks/types-*.js`).
 - [ ] **Speed gate (automated):** `pnpm bench:detection` → commit its table (fixture | new median ms | reference median ms | ratio | PASS on `median(new) ≤ 0.70 × median(reference)`). Supplement with the scripted real-page protocol: same machine, same WP Rocket fixture page, ≥ 5 page loads per build (legacy + new), medians of the timing logs recorded in the same table — cross-environment confirmation of the in-process result.
 - [ ] Panel interaction: re-run the P6 long-task gate (5,000-row fixture; none > 50 ms, TBT < 200 ms); shiki loads only on demand (network log).
 - [ ] Startup audit (grep gate): no top-level `await` in `entrypoints/background/**` outside handler functions — SW cold-start only registers listeners; CS `document_start` footprint measured.
@@ -28,6 +29,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 ### 3. Reliability & cross-browser pass
 
 - [ ] Reload-storm test: reload extension 10×, navigate 20× — no duplicate context menus (legacy's fix preserved), no duplicate admin-bar entries, no leaked observers (heap snapshot delta on HS page).
+- [ ] **Unit-tier flake risk (tracked 2026-10-15):** `components/ui/tooltip.test.tsx`'s first case pays the cold `import('./tooltip')` after `vi.resetModules()` — 0.88 s alone, 1.2–1.5 s in full runs (07's P6C/P6F gate receipts), up to 3.8 s reported locally — against Vitest's 5 s default. Warm the import once (e.g. `beforeAll`), never raise the timeout. Owned here: P6.1 is the Playwright tier only, and this is the release pass over test reliability; pull it forward if CI times out first.
 - [ ] Long-session test: panel open across 50 navigations — memory stable (no accumulating caches; header LRU bounded).
 - [ ] Firefox E2E: every surface smoke-tested via `pnpm dev:firefox`; known FF deltas documented (MAIN-world CS support, FSA fallback, host-permission grant flow) in README.
 - [ ] `web-ext lint` (devDependency already present) clean or documented exceptions.
