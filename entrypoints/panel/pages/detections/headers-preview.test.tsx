@@ -11,7 +11,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildHeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import { REDACTED } from '../../../../lib/panel/redaction';
-import { WITHHELD_NOTE } from '../withheld-value';
+import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import {
   cappedLine,
@@ -215,6 +215,14 @@ describe('HeadersPreview — secrets', () => {
     ]);
     expect(document.body.textContent).toContain('/next?token=[redacted]');
     expect(document.body.textContent).toContain('nginx');
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+    expect(document.body.textContent).toContain(WITHHELD_LEGEND);
+  });
+
+  it('shows no withheld legend when nothing is withheld', () => {
+    render(() => <HeadersPreview headers={HEADERS} />);
+    fireEvent.click(toggle());
+    expect(document.querySelector('[data-fdt="withheld-legend"]')).toBeNull();
   });
 });
 

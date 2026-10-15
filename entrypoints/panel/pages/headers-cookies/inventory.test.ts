@@ -247,7 +247,7 @@ describe('estimateRowHeight', () => {
       { kind: 'cookie', id: 'c', name: 'n' },
       { kind: 'note', id: 'n', text: 't' }
     ];
-    expect(rows.map(estimateRowHeight)).toEqual([40, 64, 44, 62, 62, 32, 32]);
+    expect(rows.map(estimateRowHeight)).toEqual([40, 64, 44, 62, 44, 32, 32]);
   });
 });
 

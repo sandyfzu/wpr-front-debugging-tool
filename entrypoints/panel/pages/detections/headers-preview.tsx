@@ -37,7 +37,7 @@ import {
 import { shownHeader, type ShownHeader } from '../../../../lib/panel/redaction';
 import type { PageHeaders } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
-import { WithheldValue } from '../withheld-value';
+import { WithheldLegend, WithheldValue } from '../withheld-value';
 
 /** One preview row: its stable key and the header it renders. */
 export interface PreviewRow {
@@ -288,6 +288,11 @@ export function HeadersPreview(props: HeadersPreviewProps): JSX.Element {
                   {note()}
                 </p>
               )}
+            </Show>
+            <Show
+              when={preview().groups.some((group) => group.rows.some((row) => row.header.redacted))}
+            >
+              <WithheldLegend />
             </Show>
             <p class="text-2xs text-fg-muted">{HEADERS_FOOTNOTE}</p>
           </div>

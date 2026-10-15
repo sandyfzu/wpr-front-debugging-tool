@@ -4,7 +4,9 @@
  * that lists headers so the same header never reads differently on two
  * pages: a lock plus the marker text, muted and italic so it never passes
  * for a value; the reason rides the `title` and screen-reader text, which
- * keeps repeated rows on one line at narrow widths.
+ * keeps repeated rows on one line at narrow widths. A surface with any
+ * withheld value also renders {@link WithheldLegend} once, so the reason is
+ * visible to touch and keyboard users without a per-row line.
  */
 import type { JSX } from 'solid-js';
 import Lock from 'lucide-solid/icons/lock';
@@ -12,6 +14,35 @@ import { cn } from '../../../utils/cn';
 
 /** Why a value is withheld (the hover title and screen-reader text). */
 export const WITHHELD_NOTE = 'Withheld — this header can carry credentials';
+
+/** The one visible line explaining the lock markers of a list. */
+export const WITHHELD_LEGEND =
+  'Values marked with a lock are withheld — those headers can carry credentials.';
+
+/** Props of {@link WithheldLegend}. */
+export interface WithheldLegendProps {
+  /** Extra classes, merged last so callers win. */
+  class?: string;
+}
+
+/**
+ * Render the legend for a list holding withheld values — once per list,
+ * where every user can read it.
+ *
+ * @param props See {@link WithheldLegendProps}.
+ * @returns The legend line.
+ */
+export function WithheldLegend(props: WithheldLegendProps): JSX.Element {
+  return (
+    <p
+      data-fdt="withheld-legend"
+      class={cn('flex items-start gap-1.5 text-2xs text-fg-muted', props.class)}
+    >
+      <Lock size={12} class="mt-0.5 shrink-0" aria-hidden="true" />
+      <span>{WITHHELD_LEGEND}</span>
+    </p>
+  );
+}
 
 /** Props of {@link WithheldValue}. */
 export interface WithheldValueProps {

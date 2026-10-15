@@ -23,7 +23,7 @@ import { makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { REDACTED } from '../../../../lib/panel/redaction';
 import { HeadersCookiesPage, HeadersCookiesView, inspectedReloadAction, SPA_NOTE } from './page';
-import { WITHHELD_NOTE } from '../withheld-value';
+import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
 
 /** A cookie value that must never reach the DOM or the clipboard. */
 const SECRET = 'S3CRET-SESSION-VALUE';
@@ -247,6 +247,22 @@ describe('HeadersCookiesView — rows', () => {
     expect(marker?.getAttribute('title')).toBe(WITHHELD_NOTE);
     expect(marker?.querySelector('svg')).not.toBeNull();
     expect(row?.textContent).not.toContain('Bearer x');
+  });
+
+  it('shows the withheld legend once when (and only when) a value is withheld', () => {
+    renderView(
+      makeFdtData({
+        pageHeaders: [
+          { name: 'Authorization', value: 'Bearer x' },
+          { name: 'Cookie', value: 'a=b' }
+        ]
+      })
+    );
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+    expect(screen.getByText(WITHHELD_LEGEND)).toBeTruthy();
+    cleanup();
+    renderView(makeFdtData({ pageHeaders: HEADERS.filter((row) => row.name !== 'set-cookie') }));
+    expect(document.querySelector('[data-fdt="withheld-legend"]')).toBeNull();
   });
 
   it('names same-name copy controls apart and titles every icon-only control', () => {

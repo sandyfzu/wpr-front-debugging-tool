@@ -207,8 +207,9 @@ export function estimateRowHeight(row: InventoryRow): number {
     case 'section':
       return row.section === 'cookies' ? 64 : 40;
     case 'header':
-      // A hint or the withheld-value explanation adds a second line.
-      return row.header.hint === null && !row.header.redacted ? 44 : 62;
+      // A hint adds a second line (a withheld value is one line: its
+      // marker never carries a hint).
+      return row.header.hint === null ? 44 : 62;
     case 'cookie':
     case 'note':
       return 32;

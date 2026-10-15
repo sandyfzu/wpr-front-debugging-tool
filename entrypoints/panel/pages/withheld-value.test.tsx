@@ -4,7 +4,7 @@
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
-import { WITHHELD_NOTE, WithheldValue } from './withheld-value';
+import { WITHHELD_LEGEND, WITHHELD_NOTE, WithheldLegend, WithheldValue } from './withheld-value';
 
 afterEach(() => {
   cleanup();
@@ -18,6 +18,16 @@ describe('WithheldValue', () => {
     expect(node?.className).toContain('extra');
     expect(node?.textContent).toBe(`sid=(value redacted) — ${WITHHELD_NOTE}`);
     expect(node?.querySelector('.sr-only')?.textContent).toBe(` — ${WITHHELD_NOTE}`);
+    expect(node?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+});
+
+describe('WithheldLegend', () => {
+  it('states the reason once, visibly, with a decorative lock', () => {
+    render(() => <WithheldLegend class="extra" />);
+    const node = document.querySelector('[data-fdt="withheld-legend"]');
+    expect(node?.textContent).toBe(WITHHELD_LEGEND);
+    expect(node?.className).toContain('extra');
     expect(node?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 });

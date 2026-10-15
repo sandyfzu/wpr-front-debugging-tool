@@ -48,7 +48,7 @@ import { useFdtData } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { relativeAge } from '../../status-bar/relative-age';
 import { PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
-import { WithheldValue } from '../withheld-value';
+import { WithheldLegend, WithheldValue } from '../withheld-value';
 import {
   canReloadInspected,
   reloadInspected,
@@ -180,6 +180,9 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
   );
   const rows = (): readonly InventoryRow[] => inventory().rows;
   const allHeaders = createMemo(() => allHeadersCopyText(rows()));
+  const hasWithheld = createMemo(() =>
+    rows().some((row) => row.kind === 'header' && row.header.redacted)
+  );
   // The stamps as `Show` conditions: an object, so a stamp of 0 still shows.
   const fetched = (): { at: number } | undefined => {
     const at = shownStamp(props.fetchedAt);
@@ -268,6 +271,9 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
               {note()}
             </p>
           )}
+        </Show>
+        <Show when={hasWithheld()}>
+          <WithheldLegend class="-mt-2" />
         </Show>
       </Show>
       <Show when={rows().length > 0}>
