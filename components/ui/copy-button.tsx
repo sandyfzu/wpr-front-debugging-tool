@@ -10,6 +10,7 @@ import { onCleanup } from 'solid-js';
 import type { ComponentProps } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import Copy from 'lucide-solid/icons/copy';
+import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
@@ -113,6 +114,9 @@ export interface CopyButtonProps {
  *
  * Feedback: success = `"<label> copied"` toast + check-icon flash; failure =
  * the error toast with {@link COPY_FAILED_DESCRIPTION} as its one action line.
+ * A pending read/write keeps keyboard focus and announces busy/disabled through
+ * ARIA; the invocation guard suppresses repeat activation without native disabling.
+ * Disposal aborts source reads and suppresses late write feedback.
  * The flash reintroduced timer edge auto-resets — state must not stick.
  * Disabling is caller-owned: hiding a control that cannot copy (empty
  * content) is the page's call, an always-present control that never copies is
@@ -144,12 +148,14 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
 
   const sink: CopyOutcomeSink = {
     copied: () => {
+      if (pending?.signal.aborted) return;
       toast.success(`${props.label} copied`);
       setCopied(true);
       clearTimeout(flashReset);
       flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
     },
     failed: (error: unknown) => {
+      if (pending?.signal.aborted) return;
       // One degradation, two channels: the actionable toast (the platform
       // error text is never rendered) + the warn log naming the cause.
       logger.warn('Copy rejected; the error toast stays the visible feedback.', error);
@@ -210,10 +216,19 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       variant={props.variant ?? 'ghost'}
       size={props.size ?? 'sm'}
       onClick={onCopy}
-      loading={loading()}
+      // Native disabling would remove focus during a slow read; the guarded action stays focusable.
+      aria-disabled={loading() || undefined}
+      aria-busy={loading() || undefined}
+      data-fdt-loading={loading() ? '' : undefined}
       class={cn('gap-1', props.class)}
     >
-      {copied() ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      {loading() ? (
+        <LoaderCircle size={14} class="animate-spin shrink-0" aria-hidden="true" data-fdt-spinner />
+      ) : copied() ? (
+        <Check size={14} aria-hidden="true" />
+      ) : (
+        <Copy size={14} aria-hidden="true" />
+      )}
       {props.showLabel !== false && props.label}
     </Button>
   );

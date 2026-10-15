@@ -88,7 +88,11 @@ describe('CopyButton', () => {
     const button = screen.getByRole('button', { name: 'Script' });
     fireEvent.click(button);
     expect(button.getAttribute('aria-busy')).toBe('true');
-    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.querySelector('[data-fdt-spinner]')).not.toBeNull();
+    button.focus();
+    expect(document.activeElement).toBe(button);
     fireEvent.click(button);
     expect(loadText).toHaveBeenCalledTimes(1);
     expect(clipboard.writeText).not.toHaveBeenCalled();
@@ -96,7 +100,9 @@ describe('CopyButton', () => {
     await vi.waitFor(() => {
       expect(clipboard.writeText).toHaveBeenCalledWith('complete 🛰️...');
     });
-    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    expect(document.activeElement).toBe(button);
   });
 
   it('never copies a preview after source failure, and permits a retry with an actionable remedy', async () => {
@@ -152,6 +158,65 @@ describe('CopyButton', () => {
     expect(clipboard.writeText).not.toHaveBeenCalled();
     expect(toastItems()).toHaveLength(0);
   });
+
+  it('guards repeat activation through a pending write and leaves user-moved focus alone', async () => {
+    let resolve: () => void = () => undefined;
+    const clipboard = {
+      writeText: vi.fn(
+        () =>
+          new Promise<void>((done) => {
+            resolve = done;
+          })
+      )
+    };
+    render(() => (
+      <>
+        <CopyButton text="complete" label="Script" clipboard={clipboard} />
+        <button type="button">Next action</button>
+      </>
+    ));
+    const button = screen.getByRole('button', { name: 'Script' });
+    button.focus();
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(clipboard.writeText).toHaveBeenCalledTimes(1);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    const next = screen.getByRole('button', { name: 'Next action' });
+    next.focus();
+    resolve();
+    await vi.waitFor(() => {
+      expect(button.hasAttribute('aria-busy')).toBe(false);
+    });
+    expect(document.activeElement).toBe(next);
+    expect(toastItems()).toHaveLength(1);
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'suppresses late clipboard %s feedback after disposal',
+    async (outcome) => {
+      let resolve: () => void = () => undefined;
+      let reject: (error: Error) => void = () => undefined;
+      const clipboard = {
+        writeText: vi.fn(
+          () =>
+            new Promise<void>((done, fail) => {
+              resolve = done;
+              reject = fail;
+            })
+        )
+      };
+      const { unmount } = render(() => (
+        <CopyButton text="complete" label="Script" clipboard={clipboard} />
+      ));
+      fireEvent.click(screen.getByRole('button', { name: 'Script' }));
+      unmount();
+      if (outcome === 'resolve') resolve();
+      else reject(new Error('late write failure'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(toastItems()).toHaveLength(0);
+    }
+  );
 
   it('renders the error toast with a remedy when the clipboard rejects', async () => {
     const clipboard: ClipboardLike = {
