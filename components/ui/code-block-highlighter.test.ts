@@ -23,13 +23,16 @@ import githubLight from 'shiki/themes/github-light.mjs';
 import { contrastRatio } from '../../utils/contrast';
 import {
   COLOR_REPLACEMENTS,
+  MAX_TOKENIZED_LINE,
   THEME_PAIR,
   getHighlighter,
+  styleToClass,
   pendingHighlighter,
   resetHighlighter,
   type CodeHighlighter
 } from './code-block-highlighter';
 import { answerHighlight } from './code-block-worker-protocol';
+import { tokenClassName } from './code-block-token-styles';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
@@ -74,7 +77,7 @@ function rootTagOf(output: string): string {
 
 describe('real highlighter — safety contract (regression-pinned)', () => {
   it.each(HOSTILE_CASES)('escapes hostile input ($name) to text only', ({ lang, code }) => {
-    const output = highlighter.highlight(code, { lang });
+    const output = highlighter.highlight(code, { lang }).html;
     // No hostile tag survives as markup: `<img`/`<script` must never appear
     // un-escaped in the emitted HTML.
     expect(output).not.toMatch(/<img|<script/i);
@@ -84,18 +87,25 @@ describe('real highlighter — safety contract (regression-pinned)', () => {
     expect(output.startsWith('<pre')).toBe(true);
   });
 
-  it('colors tokens with the light-dark pair for both palettes', () => {
-    const output = highlighter.highlight('const a = 1;', { lang: 'javascript' });
-    // The palette mechanism: per-token `color:light-dark(<light>,<dark>)`
+  it('tags tokens with classes whose rules carry the light-dark pair', () => {
+    const { html, styles } = highlighter.highlight('const a = 1;', { lang: 'javascript' });
+    // No per-span inline styles: tokens carry generated classes.
+    expect(html).not.toContain('style=');
+    expect(html).toMatch(/class="fdt-tk-[0-9a-z]+"/);
+    // The palette mechanism lives in the class rules: `color:light-dark(<light>, <dark>)`
     // resolved by the browser's color-scheme — the same mechanism as tokens.
-    expect(output).toContain('light-dark(');
-    expect(output).toContain('--shiki-light');
-    expect(output).toContain('--shiki-dark');
+    expect(styles.length).toBeGreaterThan(0);
+    for (const [className, declarations] of styles) {
+      expect(className).toBe(tokenClassName(declarations));
+      expect(html).toContain(className);
+      expect(declarations).toMatch(/^color:light-dark\(/);
+      expect(declarations).not.toContain('--shiki');
+    }
   });
 
   it('stays out of chrome: no inline style or tabindex on the root pre', () => {
     for (const lang of ['javascript', 'json'] as const) {
-      const output = highlighter.highlight('const a = 1;', { lang });
+      const output = highlighter.highlight('const a = 1;', { lang }).html;
       const root = rootTagOf(output);
       expect(root).not.toContain('style=');
       expect(root).not.toContain('tabindex');
@@ -259,14 +269,14 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
   it('emits the swapped colors in real output (keyword light, comment dark)', () => {
     const output = highlighter
       .highlight('// note\nconst a = 1;', { lang: 'javascript' })
-      .toLowerCase();
+      .styles.map(([, declarations]) => declarations.toLowerCase())
+      .join('\n');
     // Swaps are theme-scoped: the light keyword and the dark comment move,
     // the light comment (AA already) keeps the theme's own color.
-    expect(output).toContain('--shiki-light:#cf222e');
-    expect(output).toContain('--shiki-dark:#8b949e');
-    expect(output).toContain('--shiki-light:#6a737d');
+    expect(output).toContain('light-dark(#cf222e,');
+    expect(output).toContain('light-dark(#6a737d, #8b949e)');
     expect(output).not.toContain('#d73a49');
-    expect(output).not.toContain('--shiki-dark:#6a737d');
+    expect(output).not.toContain(', #6a737d)');
   });
 });
 
@@ -282,6 +292,8 @@ async function referenceHtml(code: string): Promise<string> {
     themes: THEME_PAIR,
     defaultColor: 'light-dark()',
     colorReplacements: COLOR_REPLACEMENTS,
+    tokenizeMaxLineLength: MAX_TOKENIZED_LINE,
+    transformers: [styleToClass(new Map())],
     rootStyle: false,
     tabindex: false
   });
@@ -292,7 +304,7 @@ async function referenceHtml(code: string): Promise<string> {
 /** The distinct inline colors of one output line. */
 function colorsOfLine(html: string, line: number): Set<string> {
   const text = html.split('<span class="line">')[line + 1] ?? '';
-  return new Set(text.match(/color:[^;"]+/g));
+  return new Set(text.match(/fdt-tk-[0-9a-z]+/g));
 }
 
 describe('worker handler — whole-block highlighting (regression pins)', () => {
@@ -306,8 +318,8 @@ describe('worker handler — whole-block highlighting (regression pins)', () => 
 
   it.each([
     [
-      'six long keys on one line',
-      `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(318)}${String(i)}": ${String(i)}`).join(', ')}};`
+      'six long keys on one line (under the line cap)',
+      `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(230)}${String(i)}": ${String(i)}`).join(', ')}};`
     ],
     [
       'a CJK config line',
@@ -319,7 +331,25 @@ describe('worker handler — whole-block highlighting (regression pins)', () => 
   ])('colors %s exactly as plain shiki over the whole block', async (_name, code) => {
     const html = await answer(code);
     expect(html).toBe(await referenceHtml(code));
-    expect(html).toMatch(/light-dark\(/);
+    expect(html).toMatch(/fdt-tk-/);
+  });
+
+  it('leaves a giant line uncolored inline while the rest of the block colors', async () => {
+    const uri = `var img = "data:image/png;base64,${'QUJD'.repeat(7_500)}";`;
+    expect(uri.length).toBeGreaterThan(MAX_TOKENIZED_LINE);
+    const html = await answer(`${uri}\nconst after = 1;`);
+    expect(colorsOfLine(html, 0).size).toBe(0);
+    expect(colorsOfLine(html, 1).size).toBeGreaterThan(1);
+  });
+
+  it('returns the six 319-char keys line (over the cap) plain, the next line colored', async () => {
+    const keys = `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(318)}${String(i)}": ${String(i)}`).join(', ')}};`;
+    expect(keys.length).toBeGreaterThanOrEqual(MAX_TOKENIZED_LINE);
+    const code = `${keys}\nconst after = 1;`;
+    const html = await answer(code);
+    expect(html).toBe(await referenceHtml(code));
+    expect(colorsOfLine(html, 0).size).toBe(0);
+    expect(colorsOfLine(html, 1).size).toBeGreaterThan(1);
   });
 
   it('colors the code after a long comment line as code, not comment', async () => {

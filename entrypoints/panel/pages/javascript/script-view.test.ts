@@ -96,23 +96,31 @@ describe('countLines', () => {
 describe('collapsedPreview', () => {
   it('returns the text itself when nothing is cut', () => {
     for (const text of ['', 'a', 'a\nb\nc', 'a\nb\nc\n']) {
-      expect(collapsedPreview(text)).toEqual({ preview: text, lineCut: false });
+      expect(collapsedPreview(text)).toEqual({ preview: text, lineCut: false, cutLines: [] });
     }
   });
 
   it('keeps only the first three lines', () => {
-    expect(collapsedPreview('a\nb\nc\nd\ne')).toEqual({ preview: 'a\nb\nc', lineCut: false });
+    expect(collapsedPreview('a\nb\nc\nd\ne')).toEqual({
+      preview: 'a\nb\nc',
+      lineCut: false,
+      cutLines: []
+    });
   });
 
   it('cuts a long line at the cap, writing no mark into the code', () => {
     const long = 'y'.repeat(PREVIEW_LINE_CHARS + 1);
     // No mark inside the code: the cut is announced by the toggle.
     const cut = 'y'.repeat(PREVIEW_LINE_CHARS);
-    expect(collapsedPreview(long)).toEqual({ preview: cut, lineCut: true });
-    expect(collapsedPreview(`a\n${long}\nc`).preview).toBe(`a\n${cut}\nc`);
+    expect(collapsedPreview(long)).toEqual({ preview: cut, lineCut: true, cutLines: [0] });
+    expect(collapsedPreview(`a\n${long}\nc`)).toEqual({
+      preview: `a\n${cut}\nc`,
+      lineCut: true,
+      cutLines: [1]
+    });
     // Exactly at the cap is not cut.
     const exact = 'y'.repeat(PREVIEW_LINE_CHARS);
-    expect(collapsedPreview(exact)).toEqual({ preview: exact, lineCut: false });
+    expect(collapsedPreview(exact)).toEqual({ preview: exact, lineCut: false, cutLines: [] });
   });
 });
 
@@ -123,6 +131,7 @@ describe('inlineCode', () => {
       expandable: true,
       preview: 'a\nb\nc',
       lineCut: false,
+      cutLines: [],
       blank: false
     });
     expect(inlineCode('a\nb\nc').expandable).toBe(false);

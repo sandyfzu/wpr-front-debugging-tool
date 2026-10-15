@@ -18,6 +18,7 @@ import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { createSearchStore, SEARCH_DEBOUNCE_MS, type SearchStore } from '../../state/search';
 import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { JavaScriptPage, JavaScriptView, listCutNote } from './page';
+import { PREVIEW_LINE_CHARS } from './script-view';
 import type { CodeBlockSeams } from './script-row';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 
@@ -319,6 +320,26 @@ describe('JavaScriptView — rows', () => {
     expect(expand.isConnected).toBe(true);
     expect(expand.textContent).toBe('Collapse');
     expect(document.activeElement).toBe(expand);
+  });
+
+  it('marks a preview line cut at its cap with an ellipsis outside the code', () => {
+    const long = `var cfg = "${'z'.repeat(PREVIEW_LINE_CHARS + 50)}";`;
+    renderView(
+      dataWith([
+        {
+          inline: true,
+          content: long,
+          delayed: false,
+          deferred: false,
+          deferredByWPR: false,
+          fdtExcluded: null
+        }
+      ])
+    );
+    const row = rows()[0] as HTMLElement;
+    const cut = row.querySelector('[data-fdt-code-fallback] .line[data-fdt-cut]');
+    expect(cut?.textContent).toBe(long.slice(0, PREVIEW_LINE_CHARS));
+    expect(within(row).getByRole('button', { name: 'Show full lines' })).toBeTruthy();
   });
 
   it('names each inline block by its inline ordinal', () => {

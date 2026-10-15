@@ -30,8 +30,9 @@ export const COLLAPSED_CODE_LINES = 3;
  * visual lines at most: at the widest panel a wrapped mono line holds ≈ 200
  * chars, so three of them ≈ 600 — the cap never shortens what is visible,
  * while a minified one-line bundle is not shipped to the highlighter until
- * expanded. The cut is announced outside the code (the toggle reads "Show
- * full lines"), never by a mark inside the highlighted text.
+ * expanded. A cut line shows a muted `…` drawn after it by the code block
+ * (outside the text: never highlighted, selected or copied), and the toggle
+ * reads "Show full lines".
  */
 export const PREVIEW_LINE_CHARS = 750;
 
@@ -49,6 +50,8 @@ export interface InlineCode {
   readonly preview: string;
   /** A preview line was cut at {@link PREVIEW_LINE_CHARS}. */
   readonly lineCut: boolean;
+  /** The preview lines (0-based) cut at {@link PREVIEW_LINE_CHARS}, for their `…` mark. */
+  readonly cutLines: readonly number[];
   /** Blank source (empty or whitespace only): nothing to show or copy. */
   readonly blank: boolean;
 }
@@ -153,8 +156,13 @@ export function countLines(text: string): number {
  * @returns The preview and whether a line was cut at the cap (the text
  *   itself when nothing is cut).
  */
-export function collapsedPreview(text: string): { preview: string; lineCut: boolean } {
+export function collapsedPreview(text: string): {
+  preview: string;
+  lineCut: boolean;
+  cutLines: number[];
+} {
   const kept: string[] = [];
+  const cutLines: number[] = [];
   let start = 0;
   let lineCut = false;
   let moreLines = false;
@@ -163,6 +171,7 @@ export function collapsedPreview(text: string): { preview: string; lineCut: bool
     const line = end === -1 ? text.slice(start) : text.slice(start, end);
     if (line.length > PREVIEW_LINE_CHARS) {
       lineCut = true;
+      cutLines.push(kept.length);
       kept.push(line.slice(0, PREVIEW_LINE_CHARS));
     } else {
       kept.push(line);
@@ -171,7 +180,7 @@ export function collapsedPreview(text: string): { preview: string; lineCut: bool
     start = end + 1;
     if (kept.length === COLLAPSED_CODE_LINES && start < text.length) moreLines = true;
   }
-  return { preview: lineCut || moreLines ? kept.join('\n') : text, lineCut };
+  return { preview: lineCut || moreLines ? kept.join('\n') : text, lineCut, cutLines };
 }
 
 /**
@@ -182,22 +191,23 @@ export function collapsedPreview(text: string): { preview: string; lineCut: bool
  */
 export function inlineCode(text: string): InlineCode {
   const lines = countLines(text);
-  const { preview, lineCut } = collapsedPreview(text);
+  const { preview, lineCut, cutLines } = collapsedPreview(text);
   const blank = text.trim() === '';
   return {
     lines,
     expandable: !blank && (lines > COLLAPSED_CODE_LINES || lineCut),
     preview,
     lineCut,
+    cutLines,
     blank
   };
 }
 
 /**
  * The collapse toggle's words: how much a click reveals — "Show all 40
- * lines", "Show full lines" when the preview cut long lines (the cut's only
- * mark: none is written into the code), or "Expand" when the clamp hides a
- * wrapped line.
+ * lines", "Show full lines" when the preview cut long lines (each marked
+ * by a `…` outside the code), or "Expand" when the clamp hides a wrapped
+ * line.
  *
  * @param code The script's code shape.
  * @param expanded Whether the code is expanded.

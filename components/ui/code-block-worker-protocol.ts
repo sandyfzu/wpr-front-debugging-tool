@@ -4,7 +4,8 @@
  * request handler as a pure function of an injected highlighter (the worker
  * entry only wires it to `self`; tests run it against the real highlighter).
  */
-import type { CodeLanguage } from './code-block-langs';
+import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
+import { isTokenStyle, type TokenStyle } from './code-block-token-styles';
 
 /** Highlight one block. `id` matches the answer to its request. */
 export interface HighlightRequest {
@@ -13,13 +14,24 @@ export interface HighlightRequest {
   readonly lang: CodeLanguage;
 }
 
-/** The worker's answer: the highlighted `<pre>` HTML, or why there is none. */
+/** A highlighted block: class-tagged markup plus its token classes. */
+export interface HighlightedBlock {
+  readonly html: string;
+  readonly styles: readonly TokenStyle[];
+}
+
+/** The worker's answer: the highlighted block, or why there is none. */
 export type HighlightResponse =
-  { readonly id: number; readonly html: string } | { readonly id: number; readonly error: string };
+  ({ readonly id: number } & HighlightedBlock) | { readonly id: number; readonly error: string };
 
 /** The highlighting surface the handler needs (the shiki loader's shape). */
 export interface WorkerHighlighter {
-  highlight: (code: string, options: { lang: CodeLanguage }) => string;
+  highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedBlock;
+}
+
+/** Whether a value is a request/response id (a positive safe integer). */
+function isId(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 /**
@@ -32,9 +44,9 @@ export function isHighlightRequest(data: unknown): data is HighlightRequest {
   if (typeof data !== 'object' || data === null) return false;
   const record = data as Record<string, unknown>;
   return (
-    typeof record['id'] === 'number' &&
+    isId(record['id']) &&
     typeof record['code'] === 'string' &&
-    (record['lang'] === 'javascript' || record['lang'] === 'json')
+    (CODE_BLOCK_LANGS as readonly unknown[]).includes(record['lang'])
   );
 }
 
@@ -46,9 +58,12 @@ export function isHighlightRequest(data: unknown): data is HighlightRequest {
 export function isHighlightResponse(data: unknown): data is HighlightResponse {
   if (typeof data !== 'object' || data === null) return false;
   const record = data as Record<string, unknown>;
+  if (!isId(record['id'])) return false;
+  if (typeof record['error'] === 'string') return record['html'] === undefined;
   return (
-    typeof record['id'] === 'number' &&
-    (typeof record['html'] === 'string' || typeof record['error'] === 'string')
+    typeof record['html'] === 'string' &&
+    Array.isArray(record['styles']) &&
+    record['styles'].every(isTokenStyle)
   );
 }
 
@@ -66,7 +81,8 @@ export async function answerHighlight(
 ): Promise<HighlightResponse> {
   try {
     const highlighter = await load();
-    return { id: request.id, html: highlighter.highlight(request.code, { lang: request.lang }) };
+    const block = highlighter.highlight(request.code, { lang: request.lang });
+    return { id: request.id, html: block.html, styles: block.styles };
   } catch (error: unknown) {
     return { id: request.id, error: error instanceof Error ? error.message : String(error) };
   }

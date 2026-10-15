@@ -223,6 +223,7 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
           lang="javascript"
           label={`Inline script ${String(props.ordinal)}`}
           maxLines={collapsed() ? COLLAPSED_CODE_LINES : undefined}
+          cutLines={collapsed() ? props.code.cutLines : undefined}
           onClipChange={setClamped}
           class="min-w-0"
           loadHighlighter={props.codeBlock?.loadHighlighter}

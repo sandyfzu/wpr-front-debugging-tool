@@ -3,17 +3,43 @@
  * one block at a time to the highlight worker and enforces a hard per-block
  * time budget. A block that overruns gets its worker terminated (the next
  * request respawns one lazily) and renders as plain text, so no code shape —
- * however pathological for the grammar — can freeze the panel. Requests
- * queue in order; an aborted request leaves the queue at once, and an
- * in-flight one is answered "aborted" immediately, its late result dropped
- * by id. Without worker support the client answers "unavailable" (plain
- * text), never falling back to main-thread tokenizing.
+ * however pathological for the grammar — can freeze the panel.
+ *
+ * Requests queue in order. An aborted request leaves the queue at once; an
+ * in-flight one is answered "aborted" immediately and its worker is cut short
+ * after a short grace (a near-done block may still finish; a long one must
+ * not hold up the blocks queued behind it), its late result dropped by id.
+ * Results are cached (bounded LRU), so a remounted row does not re-highlight.
+ * Without worker support the client answers "unavailable" (plain text),
+ * never falling back to main-thread tokenizing.
  */
 import type { CodeLanguage } from './code-block-langs';
-import { isHighlightResponse, type HighlightRequest } from './code-block-worker-protocol';
+import {
+  isHighlightResponse,
+  type HighlightedBlock,
+  type HighlightRequest
+} from './code-block-worker-protocol';
 
-/** Per-block time budget (ms) — generous for real code, fatal for runaways. */
-export const HIGHLIGHT_TIMEOUT_MS = 1_500;
+/**
+ * Per-block time budget (ms). Measured in the worker (2026-10-14, with the
+ * 1,500-char line cap): blocks under the render cap highlight in
+ * ≤ ≈ 0.8 s (sixty quoted 480-char lines, the slowest shape seen; dense
+ * ordinary code ≈ 0.1 s); a runaway is cut here and renders plain.
+ */
+export const HIGHLIGHT_TIMEOUT_MS = 1_000;
+
+/**
+ * Grace (ms) an aborted in-flight block keeps running before its worker is
+ * terminated: short blocks finish inside it (no respawn), long ones stop
+ * blocking the queue almost at once (a respawn costs ≈ 80 ms).
+ */
+export const ABORT_GRACE_MS = 50;
+
+/** Cached results kept at most (entries). */
+export const CACHE_MAX_ENTRIES = 64;
+
+/** Cached code kept at most (characters, summed over entries). */
+export const CACHE_MAX_CHARS = 1_000_000;
 
 /** Why a block got no highlighting (the caller renders plain text). */
 export type HighlightFailure = 'timeout' | 'unavailable' | 'failed' | 'aborted';
@@ -43,38 +69,41 @@ export interface WorkerHighlighterOptions {
   createWorker?: () => WorkerLike;
   /** The per-block budget (default {@link HIGHLIGHT_TIMEOUT_MS}). */
   timeoutMs?: number;
+  /** The monotonic clock (default `performance.now`). */
+  now?: () => number;
 }
 
 /** The client: what `CodeBlock` calls. */
 export interface WorkerHighlighter {
   /**
-   * Highlight one block in the worker.
+   * Highlight one block in the worker (or answer from the cache).
    *
-   * @returns The `<pre>` HTML (escaped by shiki — safe for `innerHTML`).
+   * @returns The class-tagged `<pre>` HTML (escaped by shiki — safe for
+   *   `innerHTML`) and its token classes.
    * @throws {@link HighlightUnavailableError} (rejection) on timeout, abort,
    *   worker failure or a platform without workers.
    */
   highlight: (
     code: string,
     options: { lang: CodeLanguage; signal?: AbortSignal }
-  ) => Promise<string>;
+  ) => Promise<HighlightedBlock>;
   /** Terminate the worker and fail every pending request (tests, teardown). */
   dispose: () => void;
 }
 
 /** How one request ended. */
-type Outcome = { readonly html: string } | { readonly failure: HighlightFailure };
+type Outcome = { readonly block: HighlightedBlock } | { readonly failure: HighlightFailure };
 
 /** One queued request. */
 interface Job {
   readonly request: HighlightRequest;
-  readonly resolve: (html: string) => void;
+  readonly resolve: (block: HighlightedBlock) => void;
   readonly reject: (error: HighlightUnavailableError) => void;
   settled: boolean;
 }
 
 /**
- * The real worker: Vite bundles the entry (shiki included) as its own chunk
+ * The real worker: Vite bundles the entry (shiki included) as its own file
  * from this exact `new Worker(new URL(…, import.meta.url))` form.
  *
  * @throws {@link Error} when the platform has no `Worker`.
@@ -87,17 +116,73 @@ function spawnHighlightWorker(): WorkerLike {
 }
 
 /**
+ * The cache key: language and the exact text (the markup is theme-agnostic —
+ * its colors resolve through `light-dark()` rules).
+ *
+ * @param request The request's text and language.
+ */
+function cacheKey(request: Pick<HighlightRequest, 'code' | 'lang'>): string {
+  return `${request.lang}\u0000${request.code}`;
+}
+
+/** A bounded LRU of results, by entries and by cached characters. */
+export class ResultCache {
+  private readonly entries = new Map<string, HighlightedBlock>();
+  private chars = 0;
+
+  /**
+   * The cached block, refreshed as the most recent.
+   *
+   * @param key The cache key.
+   */
+  get(key: string): HighlightedBlock | undefined {
+    const block = this.entries.get(key);
+    if (block === undefined) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, block);
+    return block;
+  }
+
+  /**
+   * Cache a block, evicting the least recent beyond either bound (a key
+   * larger than the whole budget is not cached).
+   *
+   * @param key The cache key.
+   * @param block The result.
+   */
+  set(key: string, block: HighlightedBlock): void {
+    if (key.length > CACHE_MAX_CHARS) return;
+    if (this.entries.delete(key)) this.chars -= key.length;
+    this.entries.set(key, block);
+    this.chars += key.length;
+    for (const oldest of this.entries.keys()) {
+      if (this.entries.size <= CACHE_MAX_ENTRIES && this.chars <= CACHE_MAX_CHARS) break;
+      this.entries.delete(oldest);
+      this.chars -= oldest.length;
+    }
+  }
+
+  /** Entries held (tests). */
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+/**
  * Create a client.
  *
- * @param options The seams (default: the real worker and budget).
+ * @param options The seams (default: the real worker, budget and clock).
  */
 export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}): WorkerHighlighter {
   const createWorker = options.createWorker ?? spawnHighlightWorker;
   const timeoutMs = options.timeoutMs ?? HIGHLIGHT_TIMEOUT_MS;
+  const now = options.now ?? (() => performance.now());
+  const cache = new ResultCache();
   const queue: Job[] = [];
   let worker: WorkerLike | undefined;
   let unavailable = false;
   let current: Job | undefined;
+  let startedAt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let nextId = 1;
 
@@ -105,7 +190,7 @@ export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}):
   const settle = (job: Job, outcome: Outcome): void => {
     if (job.settled) return;
     job.settled = true;
-    if ('html' in outcome) job.resolve(outcome.html);
+    if ('block' in outcome) job.resolve(outcome.block);
     else job.reject(new HighlightUnavailableError(outcome.failure));
   };
 
@@ -125,6 +210,18 @@ export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}):
     pump();
   };
 
+  /**
+   * Arm the in-flight request's deadline `delay` ms from now: at expiry the
+   * worker is killed and the request ends with `failure`.
+   */
+  const armDeadline = (delay: number, failure: HighlightFailure): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      killWorker();
+      finishCurrent({ failure });
+    }, delay);
+  };
+
   /** The worker, spawned on demand; `undefined` when the platform has none. */
   const ensureWorker = (): WorkerLike | undefined => {
     if (worker !== undefined || unavailable) return worker;
@@ -134,7 +231,13 @@ export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}):
         const data = event.data;
         // Stale (an aborted or timed-out request's late answer) or malformed: drop.
         if (!isHighlightResponse(data) || current?.request.id !== data.id) return;
-        finishCurrent('html' in data ? { html: data.html } : { failure: 'failed' });
+        if ('error' in data) {
+          finishCurrent({ failure: 'failed' });
+          return;
+        }
+        const block: HighlightedBlock = { html: data.html, styles: data.styles };
+        cache.set(cacheKey(current.request), block);
+        finishCurrent({ block });
       };
       spawned.onerror = () => {
         // The worker script itself failed (load, CSP): it will not recover.
@@ -165,28 +268,34 @@ export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}):
       return;
     }
     current = job;
+    startedAt = now();
     target.postMessage(job.request);
-    timer = setTimeout(() => {
-      // A runaway block: kill the worker so it stops burning CPU.
-      killWorker();
-      finishCurrent({ failure: 'timeout' });
-    }, timeoutMs);
+    armDeadline(timeoutMs, 'timeout');
   }
+
+  /** Abort one job: queued, it never runs; in flight, it is cut short after the grace. */
+  const abort = (job: Job): void => {
+    settle(job, { failure: 'aborted' });
+    if (current === job) armDeadline(Math.max(0, startedAt + ABORT_GRACE_MS - now()), 'aborted');
+  };
 
   return {
     highlight(code, { lang, signal }) {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<HighlightedBlock>((resolve, reject) => {
         if (signal?.aborted === true) {
           reject(new HighlightUnavailableError('aborted'));
+          return;
+        }
+        const cached = cache.get(cacheKey({ code, lang }));
+        if (cached !== undefined) {
+          resolve(cached);
           return;
         }
         const job: Job = { request: { id: nextId++, code, lang }, resolve, reject, settled: false };
         signal?.addEventListener(
           'abort',
           () => {
-            // Queued: it simply never runs. In flight: the caller is answered
-            // now; the worker's late answer is dropped by id.
-            settle(job, { failure: 'aborted' });
+            abort(job);
           },
           { once: true }
         );
@@ -196,6 +305,7 @@ export function createWorkerHighlighter(options: WorkerHighlighterOptions = {}):
     },
     dispose() {
       clearTimeout(timer);
+      timer = undefined;
       killWorker();
       const pending = [current, ...queue.splice(0)];
       current = undefined;
