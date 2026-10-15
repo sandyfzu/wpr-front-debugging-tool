@@ -292,6 +292,16 @@ describe('embedded URLs', () => {
     expect(new URL(level1).searchParams.get('next')).toBe(inner);
   });
 
+  it.each([
+    ['a tab inside the scheme', 'ht%09tps%3A%2F%2Fb.example%2F%3Ftoken%3DTABBED'],
+    ['a leading space', '%20https%3A%2F%2Fb.example%2F%3Ftoken%3DSPACED'],
+    ['an uppercase scheme', 'HTTPS%3A%2F%2Fb.example%2F%3Ftoken%3DUPPER']
+  ])('follows a nested URL written with %s (the parser reads it as http(s))', (_label, value) => {
+    const reduced = redactUrl(`https://a.example/?next=${value}`) ?? '';
+    expect(reduced).not.toMatch(/TABBED|SPACED|UPPER/);
+    expect(decodeURIComponent(reduced)).toContain(`token=${REDACTED_PARAM}`);
+  });
+
   it('leaves a parameter that only looks like a URL untouched', () => {
     expect(redactUrl('https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt')).toBe(
       'https://a.example/?next=ftp%3A%2F%2Fx%2F%3Ftoken%3Dt'

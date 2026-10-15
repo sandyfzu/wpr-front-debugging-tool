@@ -231,9 +231,12 @@ export function redactUrlReference(ref: string, depth = 1): string {
     // Unparseable: nothing the rule can vouch for.
     return REDACTED_PARAM;
   }
-  const reduced = redactUrlAt(resolved.href, depth);
+  // One parse serves both the rule and the comparison (the rule mutates
+  // the parsed URL in place, so its pre-rule `href` is read first).
+  const original = resolved.href;
+  const reduced = reduceParsedUrl(resolved, depth);
   if (reduced === null) return REDACTED_PARAM;
-  if (reduced === resolved.href) return ref;
+  if (reduced === original) return ref;
   if (SCHEME.test(trimmed)) return reduced;
   if (trimmed.startsWith('//')) return reduced.slice(resolved.protocol.length);
   if (trimmed.startsWith('/')) return reduced.slice(RELATIVE_BASE.length);
@@ -417,6 +420,19 @@ function isBareToken(pair: string): boolean {
 }
 
 /**
+ * Whether text can parse as an http(s) URL, read the way the URL parser
+ * reads a scheme: leading C0 controls and spaces stripped, tabs and line
+ * breaks ignored anywhere. A false answer is exact (the parser would not
+ * yield an http(s) URL either), so callers may skip the parse.
+ *
+ * @param text The candidate text.
+ * @returns False only when the text cannot be an absolute http(s) URL.
+ */
+function looksLikeWebUrl(text: string): boolean {
+  return /^[\u0000-\u0020]*https?:/i.test(text.replace(/[\t\n\r]/g, ''));
+}
+
+/**
  * Redact one query pair. A value under an ordinary name that decodes to an
  * absolute http(s) URL (`redirect_to=https%3A%2F%2F…%3Ftoken%3D…`) is
  * itself reduced by the URL rule — once: `depth` bounds the recursion.
@@ -435,6 +451,9 @@ function redactQueryPair(pair: string, depth: number): string {
   if (decoded.trim() === '' || isSensitiveName(decoded)) return `${name}=${REDACTED_PARAM}`;
   if (depth <= 0) return pair;
   const value = decodeParamName(pair.slice(equals + 1));
+  // Only an http(s) URL is followed: skip the (throwing, slow) parse for the
+  // ordinary values (`ver=1.2`) that make up nearly every query.
+  if (!looksLikeWebUrl(value)) return pair;
   const reduced = redactUrlAt(value, depth - 1);
   if (reduced === null || reduced === new URL(value).href) return pair;
   return `${name}=${encodeURIComponent(reduced)}`;
@@ -472,12 +491,31 @@ function redactUrlAt(raw: string, depth: number): string | null {
     // Not a URL at all: nothing exportable.
     return null;
   }
+  return reduceParsedUrl(url, depth);
+}
+
+/**
+ * Apply the URL rule to an already parsed URL, in place. Each part is
+ * written back only when the rule changed it — a setter re-serializes, and
+ * skipping the no-op ones keeps long lists of ordinary URLs cheap.
+ *
+ * @param url The parsed URL (mutated).
+ * @param depth How many URL-in-a-parameter levels may still be followed.
+ * @returns The reduced `href`, or null when it is not an http(s) URL.
+ */
+function reduceParsedUrl(url: URL, depth: number): string | null {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  url.username = '';
-  url.password = '';
+  if (url.username !== '') url.username = '';
+  if (url.password !== '') url.password = '';
+  // Unconditional: an empty fragment (`#`) reads back as '' yet serializes.
   url.hash = '';
-  url.pathname = redactPathParams(url.pathname);
-  if (url.search !== '') url.search = redactPairs(url.search.slice(1), depth);
+  const path = redactPathParams(url.pathname);
+  if (path !== url.pathname) url.pathname = path;
+  const query = url.search.slice(1);
+  if (query !== '') {
+    const reducedQuery = redactPairs(query, depth);
+    if (reducedQuery !== query) url.search = reducedQuery;
+  }
   return url.href;
 }
 
