@@ -79,11 +79,32 @@ describe('toast region', () => {
     toast.success('Report copied');
     toast.error('Clipboard unavailable', { description: 'Retry the copy' });
     const status = screen.getByRole('status');
-    expect(status.getAttribute('data-fdt-tone')).toBe('success');
+    expect(status.closest('li')?.getAttribute('data-fdt-tone')).toBe('success');
     expect(status.textContent).toContain('Report copied');
     const alert = screen.getByRole('alert');
-    expect(alert.getAttribute('data-fdt-tone')).toBe('error');
+    expect(alert.closest('li')?.getAttribute('data-fdt-tone')).toBe('error');
     expect(within(alert).getByText('Retry the copy')).toBeTruthy();
+  });
+
+  it('keeps every tone in a native list item with only its message announced', () => {
+    render(() => <Toasts />);
+    toast.success('Copied');
+    toast.info('Context', { description: 'Details' });
+    toast.error('Failed', { description: 'Retry' });
+    const list = screen.getByRole('list');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect([...list.children]).toEqual(items);
+    for (const [index, item] of items.entries()) {
+      expect(item.tagName).toBe('LI');
+      expect(item.hasAttribute('role')).toBe(false);
+      const message = within(item).getByRole(index === 2 ? 'alert' : 'status');
+      expect(message.tagName).toBe('DIV');
+      expect(message.getAttribute('aria-atomic')).toBe('true');
+      expect(message.textContent).toBe(['Copied', 'ContextDetails', 'FailedRetry'][index]);
+      expect(within(message).queryByRole('button')).toBeNull();
+      expect(within(item).getByRole('button').getAttribute('aria-label')).toMatch(/^Dismiss — /);
+    }
   });
 
   it('ranks the region above the dialog plate (the notifications layer intent)', () => {
@@ -113,7 +134,7 @@ describe('toast region', () => {
     try {
       render(() => <Toasts />);
       toast.info('Notice', { duration: 1000 });
-      const item = screen.getByRole('status');
+      const item = screen.getByRole('listitem');
       fireEvent.pointerEnter(item);
       vi.advanceTimersByTime(3000);
       expect(screen.getByRole('status')).toBeTruthy();
@@ -130,7 +151,7 @@ describe('toast region', () => {
     try {
       render(() => <Toasts />);
       toast.info('Notice', { duration: 1000 });
-      const item = screen.getByRole('status');
+      const item = screen.getByRole('listitem');
       fireEvent.focusIn(item);
       vi.advanceTimersByTime(3000);
       expect(screen.getByRole('status')).toBeTruthy();
