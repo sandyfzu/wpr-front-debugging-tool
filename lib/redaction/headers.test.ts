@@ -67,6 +67,10 @@ describe('redactPageHeader', () => {
 
   it('keeps valueless rows valueless', () => {
     expect(redactPageHeader({ name: 'Set-Cookie' })).toEqual({ name: 'Set-Cookie' });
+    // A cookie name only travels on a withheld row: a stray one is dropped.
+    expect(redactPageHeader({ name: 'Set-Cookie', cookieName: 'sid' })).toEqual({
+      name: 'Set-Cookie'
+    });
   });
 
   it('is final on already withheld rows (no double processing)', () => {
