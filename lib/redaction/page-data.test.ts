@@ -6,10 +6,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import { makeReportData } from '../panel/support-report.fixtures';
-import type { FdtData } from '../wp-rocket/types';
+import type { DelayedScriptRecord, FdtData } from '../wp-rocket/types';
 import { redactPageHeaders } from './headers';
 import { EXPORT_REDACTION_NOTICE, redactPageDataForExport, scrubText } from './page-data';
-import { PLANTED, PLANTED_RAW_HEADERS } from './planted-secrets.fixtures';
+import {
+  PLANTED,
+  PLANTED_INLINE_BODIES,
+  PLANTED_OPTIONS,
+  PLANTED_RAW_HEADERS
+} from './planted-secrets.fixtures';
+import { isSensitiveName } from './rule';
 
 /** A page whose every free-text corner carries a planted secret. */
 function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
@@ -21,17 +27,22 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
       delay_js: {
         present: true,
         version: null,
-        delayedScripts: 1,
+        delayedScripts: PLANTED_INLINE_BODIES.length + 1,
         scripts: [
-          {
+          ...PLANTED_INLINE_BODIES.map((content) => ({
             inline: true,
-            content:
-              'var wpApiSettings = {"root":"https:\\/\\/a.example\\/wp-json\\/","nonce":"PLANTED_JSON_NONCE"};' +
-              "var cfg = { api_key: 'PLANTED_SINGLE', ajax: '/admin-ajax.php?_wpnonce=PLANTED_REL' };" +
-              'var secretToken = "PLANTED_ASSIGN";',
+            content,
             delayed: true,
             deferred: false,
             deferredByWPR: false,
+            fdtExcluded: null
+          })),
+          {
+            inline: false,
+            src: 'https://a.example/s.js?ver=2&amp;nonce=PLANTED_SRC_NONCE',
+            delayed: true,
+            deferred: false,
+            deferredByWPR: true,
             fdtExcluded: null
           }
         ]
@@ -50,7 +61,8 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
     diagnoserData: {
       noRocketData: {
         constants: { WP_ROCKET_KEY: 'PLANTED_LICENSE', WP_ROCKET_EMAIL: 'PLANTED@a.example' },
-        server_info: { web_server: 'nginx' }
+        server_info: { web_server: 'nginx' },
+        imagify: PLANTED_OPTIONS
       },
       rocketData: {
         options: {
@@ -65,6 +77,60 @@ function plantedPage(pageHeaders: FdtData['pageHeaders']): FdtData {
 }
 
 describe('redactPageDataForExport', () => {
+  it('withholds every inline script body, keeping its length, src and flags', () => {
+    const exported = redactPageDataForExport(plantedPage(null));
+    const scripts = (exported['wprDetections'] as FdtData['wprDetections']).delay_js
+      .scripts as unknown[];
+    expect(scripts.slice(0, PLANTED_INLINE_BODIES.length)).toEqual(
+      PLANTED_INLINE_BODIES.map((body) => ({
+        inline: true,
+        content: { withheld: true, length: body.length },
+        delayed: true,
+        deferred: false,
+        deferredByWPR: false,
+        fdtExcluded: null
+      }))
+    );
+    // An external script keeps its src (reduced) and every flag, no content key.
+    expect(scripts.at(-1)).toEqual({
+      inline: false,
+      src: 'https://a.example/s.js?ver=2&amp;nonce=[redacted]',
+      delayed: true,
+      deferred: false,
+      deferredByWPR: true,
+      fdtExcluded: null
+    });
+    expect(EXPORT_REDACTION_NOTICE.note).toContain('inline script bodies are withheld');
+  });
+
+  it('withholds camelCase and salt/PKCE-named options, keeping the evidence ones', () => {
+    const json = JSON.stringify(redactPageDataForExport(plantedPage(null)));
+    expect(json).not.toContain(PLANTED);
+    expect(json).toContain('"minify_css_key":"5f1a2b3c4d5e6"');
+    expect(json).toContain('"cdn_state":"enabled"');
+    expect(json).toContain('"licenseKey":"[redacted]"');
+  });
+
+  it('redacts every occurrence of a repeated sensitive key (the memoised rule)', () => {
+    const exported = redactPageDataForExport({
+      ...makeReportData(),
+      diagnoserData: {
+        noRocketData: { a: { apiKey: 'PLANTED_FIRST' }, b: { apiKey: 'PLANTED_SECOND' } },
+        rocketData: null
+      }
+    });
+    expect(JSON.stringify(exported)).not.toContain(PLANTED);
+  });
+
+  it('never reads a key of the contract itself as sensitive', () => {
+    const contractKeys = [
+      ...'allScriptsLoaded async_css atf auto_preload_fonts automatic_lazy_rendering cached capturedAt constants content cookieName cookies defer_all_js deferred deferredByWPR delay_js delayed delayedScripts diagnoserData domains elements excludedReasonsFound external_font_exclusions fdtExcluded filters fonts get_rocket_option headers href images imagify inline inlineCssPresent isMobile lazyload lazyload_css_bg_img lazyload_iframes lazyloadDetected lazyRenderElements lcpComment locationHashes lrc minify_css minify_js name names noRocketData option_name options pageHeaders pageHeadersTruncated php_memory_limit post_meta_excluded_options preconnect_external_domain preconnect_external_domain_elements preconnect_external_domain_exclusions preconnect_external_domains preconnectCount preload_fonts preload_fonts_exclusions preload_links preload_rucss_parameters preload_rucss_tasks preloadedImages preloadedResources present priority_elements_beacon processed_extensions querystrings redacted remove_unused_css replaceImage resources rocket_above_the_fold_optimization rocket_cdn rocketData scripts server_info server_load src status timeStamp truncated type undefinedReferencesOnPage user_agent value version web_server wp_max_memory_limit wp_memory_limit wpr wpr_diagnoser_version wpr_plugin wprDetections withheld length redaction applied note'.split(
+        ' '
+      )
+    ];
+    expect(contractKeys.filter((key) => isSensitiveName(key))).toEqual([]);
+  });
+
   it('heads the document with the redaction notice', () => {
     const exported = redactPageDataForExport(makeReportData());
     expect(Object.keys(exported)[0]).toBe('redaction');
@@ -121,6 +187,26 @@ describe('redactPageDataForExport', () => {
 
 describe('scrubText', () => {
   it.each([
+    // An `&`-led pair in a relative URL, a long sensitive name, an encoded name.
+    ['/rel?a=1&token=t', '/rel?a=1&token=[redacted]'],
+    ['/rel?a=1&access_token=t', '/rel?a=1&access_token=[redacted]'],
+    ['/rel?%74oken=t', '/rel?%74oken=[redacted]'],
+    // HTML-escaped `&` stays part of the URL: no fake fragment, escape kept.
+    [
+      'https://a.example/p?a=1&#038;nonce=n&#038;b=2',
+      'https://a.example/p?a=1&#038;nonce=[redacted]&#038;b=2'
+    ],
+    ['https://a.example/p?a=1&amp;b=2', 'https://a.example/p?a=1&amp;b=2'],
+    ['https://a.example/p?a=1&#38;b=2#frag', 'https://a.example/p?a=1&#38;b=2'],
+    // Identifier values under `key`/`code`/`state` are not secrets; tokens are.
+    ['{key:"methodName"}', '{key:"methodName"}'],
+    ['{"state":"is_open","code":"value"}', '{"state":"is_open","code":"value"}'],
+    ['{"state":"af0ifjsldkj9","code":"4/0AX4XfWh"}', '{"state":"[redacted]","code":"[redacted]"}'],
+    ['{"nonce":"methodName"}', '{"nonce":"[redacted]"}'],
+    [
+      '{"userEmail":"a@b.c","accessKey":"k"}',
+      '{"userEmail":"[redacted]","accessKey":"[redacted]"}'
+    ],
     ['plain text', 'plain text'],
     ['img, .hero > picture', 'img, .hero > picture'],
     ['https://a.example/p?x=1', 'https://a.example/p?x=1'],
@@ -146,5 +232,35 @@ describe('scrubText', () => {
     const started = performance.now();
     scrubText(text);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe('export cost', () => {
+  it('redacts a 5,000-script page well within a frame budget (bodies withheld)', () => {
+    const base = plantedPage(null);
+    const scripts = Array.from({ length: 5_000 }, (_, i): DelayedScriptRecord => ({
+      inline: i % 2 === 0,
+      ...(i % 2 === 0
+        ? { content: `var c${String(i)} = {"nonce":"n"}; ${'f(a,b); '.repeat(200)}` }
+        : { src: `https://s.example/p/s${String(i)}.js?ver=1.${String(i)}` }),
+      delayed: true,
+      deferred: false,
+      deferredByWPR: false,
+      fdtExcluded: null
+    }));
+    const data: FdtData = {
+      ...base,
+      wprDetections: {
+        ...base.wprDetections,
+        delay_js: { present: true, version: null, delayedScripts: 5_000, scripts },
+        defer_all_js: { present: true, scripts: scripts.map((script) => script.src ?? '') }
+      }
+    };
+    redactPageDataForExport(data); // warm-up (JIT)
+    const started = performance.now();
+    redactPageDataForExport(data);
+    // Measured ~13 ms locally; the bound only catches a regression to the
+    // per-value throwing parse (~50 ms+) with CI headroom.
+    expect(performance.now() - started).toBeLessThan(150);
   });
 });

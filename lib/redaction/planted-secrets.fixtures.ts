@@ -37,3 +37,41 @@ export const PLANTED_RAW_HEADERS: readonly PageHeader[] = [
   { name: 'WWW-Authenticate', value: 'Digest realm="site", nonce="PLANTED_DIGEST"' },
   { name: 'X-Binary' }
 ];
+
+/**
+ * Inline script bodies carrying nonces and keys in every shape a text scrub
+ * misses — call arguments, nested objects, JSON inside strings, template
+ * literals, arrays, PHP-style `=>`, concatenation: an export must withhold
+ * the bodies whole.
+ */
+export const PLANTED_INLINE_BODIES: readonly string[] = [
+  'wp.apiFetch.nonceMiddleware = wp.apiFetch.createNonceMiddleware( "PLANTED_CORE_NONCE" );',
+  'var elementorFrontendConfig = {"nonces":{"floatingButtonsClickTracking":"PLANTED_ELEMENTOR"}};',
+  'var s = JSON.parse(\'{\\"nonce\\":\\"PLANTED_JSON_IN_STRING\\"}\');',
+  'const k = { nonce: `PLANTED_TEMPLATE` };',
+  'var c = {"nonce":["PLANTED_ARRAY"]};',
+  "$cfg = array( 'nonce' => 'PLANTED_PHP_ARROW' );",
+  'var o = {"nonce":"a"+"PLANTED_CONCAT"};',
+  "var wcSettings = JSON.parse( decodeURIComponent( '%7B%22storeApiNonce%22%3A%22PLANTED_ENCODED%22%7D' ) );",
+  'var cfg = {"root":"https:\\/\\/a.example\\/wp-json\\/","nonce":"PLANTED_LOCALIZED"};'
+];
+
+/**
+ * Diagnoser/options-like objects keyed in camelCase and the other spellings
+ * the name rule must read word by word.
+ */
+export const PLANTED_OPTIONS: Readonly<Record<string, unknown>> = {
+  accessKey: 'PLANTED_ACCESS_KEY',
+  licenseKey: 'PLANTED_LICENSE_KEY',
+  userEmail: 'PLANTED_USER_EMAIL',
+  adminEmail: 'PLANTED_ADMIN_EMAIL',
+  userLogin: 'PLANTED_USER_LOGIN',
+  userPass: 'PLANTED_USER_PASS',
+  APIKey: 'PLANTED_API_KEY_CAPS',
+  LOGGED_IN_SALT: 'PLANTED_SALT',
+  code_verifier: 'PLANTED_PKCE',
+  nested: { cloudflareApiKey: 'PLANTED_CF', secret_cache_key: 'PLANTED_CACHE_SECRET' },
+  // Visible evidence: never redacted.
+  minify_css_key: '5f1a2b3c4d5e6',
+  cdn_state: 'enabled'
+};

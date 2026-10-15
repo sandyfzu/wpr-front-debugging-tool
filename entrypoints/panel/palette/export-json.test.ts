@@ -10,7 +10,12 @@ import { toast, toastItems, type ToastItem } from '../../../components/ui/toast-
 import { makeFdtData } from '../state/fixtures';
 import { exportFilename, exportPageDataJson, type JsonExportDeps } from './export-json';
 import { EXPORT_REDACTION_NOTICE, redactPageDataForExport } from '../../../lib/redaction/page-data';
-import { PLANTED, PLANTED_RAW_HEADERS } from '../../../lib/redaction/planted-secrets.fixtures';
+import {
+  PLANTED,
+  PLANTED_INLINE_BODIES,
+  PLANTED_OPTIONS,
+  PLANTED_RAW_HEADERS
+} from '../../../lib/redaction/planted-secrets.fixtures';
 
 /** The fixed stamp the filename test builds (2026-10-13 04:25 UTC-local). */
 const STAMP = new Date(2026, 9, 13, 4, 25);
@@ -81,8 +86,29 @@ describe('exportPageDataJson', () => {
 
   it('exports no planted secret and states that values are redacted', async () => {
     let payload = '';
+    const base = makeFdtData();
+    const planted = makeFdtData({
+      pageHeaders: PLANTED_RAW_HEADERS,
+      wprDetections: {
+        ...base.wprDetections,
+        delay_js: {
+          present: true,
+          version: null,
+          delayedScripts: PLANTED_INLINE_BODIES.length,
+          scripts: PLANTED_INLINE_BODIES.map((content) => ({
+            inline: true,
+            content,
+            delayed: true,
+            deferred: false,
+            deferredByWPR: false,
+            fdtExcluded: null
+          }))
+        }
+      },
+      diagnoserData: { noRocketData: { constants: PLANTED_OPTIONS }, rocketData: null }
+    });
     const result = await exportPageDataJson(
-      makeFdtData({ pageHeaders: PLANTED_RAW_HEADERS }),
+      planted,
       makeDeps({
         download: (text) => {
           payload = text;

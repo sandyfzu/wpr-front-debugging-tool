@@ -271,7 +271,7 @@ function reduceLinkParam(param: string, inner: string): string {
  * @param text The text.
  * @returns The text with each URL reduced by the URL rule.
  */
-export function reduceAbsoluteUrls(text: string): string {
+function reduceAbsoluteUrls(text: string): string {
   return text.replace(/https?:\/\/[^\s,;"<>]+/gi, (url) => redactUrlReference(url));
 }
 
