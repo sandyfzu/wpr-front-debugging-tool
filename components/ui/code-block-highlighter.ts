@@ -22,7 +22,7 @@ import json from 'shiki/langs/json.mjs';
 import githubDark from 'shiki/themes/github-dark.mjs';
 import githubLight from 'shiki/themes/github-light.mjs';
 import type { CodeLanguage } from './code-block-langs';
-import { MAX_TOKENIZED_LINE, lineSpans, sliceLines } from './code-block-slices';
+import { MAX_TOKENIZED_LINE, lineSpans, sliceLines, type CodeSlice } from './code-block-slices';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
 export const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
@@ -137,12 +137,80 @@ const CODE_OPEN = '<code>';
 /** The `</code></pre>` tail. */
 const CODE_CLOSE = '</code></pre>';
 
+/** One rendered slice: its line markup and the grammar state after it. */
+interface RenderedSlice {
+  /** The whole `<pre><code>…</code></pre>` of the slice (its head is shared chrome). */
+  html: string;
+  state: GrammarState | undefined;
+}
+
 /**
- * Highlight in bounded slices (see {@link CodeHighlighter.highlightSliced}).
- * Each slice is a run of whole lines (see {@link sliceLines}) tokenized from the previous slice's
- * grammar state; the slices' line markup is joined exactly as shiki joins
- * lines (a `\n` text node), under the first slice's root chrome — the
- * result equals the one-shot output.
+ * Render one slice from the grammar state before it. A plain slice goes
+ * through shiki with every line capped (`tokenizeMaxLineLength: 1`): the
+ * lines come out untokenized in shiki's own markup and the grammar state
+ * passes through unchanged — exactly how shiki treats an over-long line.
+ */
+function renderSlice(
+  highlighter: HighlighterCore,
+  code: string,
+  spans: ReadonlyArray<readonly [number, number]>,
+  slice: CodeSlice,
+  lang: CodeLanguage,
+  state: GrammarState | undefined
+): RenderedSlice {
+  const text = code.slice(spans[slice.first]?.[0] ?? 0, spans[slice.last]?.[1] ?? 0);
+  const root = highlighter.codeToHast(text, {
+    ...hastOptions(lang),
+    ...(slice.plain ? { tokenizeMaxLineLength: 1 } : {}),
+    grammarState: state
+  });
+  return { html: hastToHtml(root), state: highlighter.getLastGrammarState(root) ?? state };
+}
+
+/** Joins rendered slices under the first slice's root chrome, as shiki joins lines. */
+class SliceJoiner {
+  private head = '';
+  private readonly parts: string[] = [];
+
+  /** Add one slice's lines. */
+  add(html: string): void {
+    const open = html.indexOf(CODE_OPEN) + CODE_OPEN.length;
+    if (this.head === '') this.head = html.slice(0, open);
+    this.parts.push(html.slice(open, html.length - CODE_CLOSE.length));
+  }
+
+  /** The joined `<pre>` HTML. */
+  html(): HighlightedCode {
+    return `${this.head}${this.parts.join('\n')}${CODE_CLOSE}`;
+  }
+}
+
+/**
+ * Highlight in one synchronous pass over the same slices — the reference
+ * output the sliced path must equal (callers keep it to text that fits one
+ * slice; see `fitsOneSlice`).
+ */
+function highlightAll(
+  highlighter: HighlighterCore,
+  code: string,
+  lang: CodeLanguage
+): HighlightedCode {
+  const spans = lineSpans(code);
+  const joiner = new SliceJoiner();
+  let state: GrammarState | undefined;
+  for (const slice of sliceLines(code, spans)) {
+    const rendered = renderSlice(highlighter, code, spans, slice, lang, state);
+    joiner.add(rendered.html);
+    state = rendered.state;
+  }
+  return joiner.html();
+}
+
+/**
+ * Highlight in bounded slices (see {@link CodeHighlighter.highlightSliced}
+ * and `sliceLines`), the grammar state carried across slices, a yield before
+ * each one (the first too: the call often runs inside a click, whose task
+ * stays lean) — the same output as {@link highlightAll}.
  *
  * @throws The signal's reason when aborted between slices.
  */
@@ -153,27 +221,16 @@ async function highlightInSlices(
   options: { signal?: AbortSignal; yieldToMain: () => Promise<void> }
 ): Promise<HighlightedCode> {
   const spans = lineSpans(code);
-  const parts: string[] = [];
-  let head = '';
+  const joiner = new SliceJoiner();
   let state: GrammarState | undefined;
-  for (const [first, last] of sliceLines(spans)) {
-    // Yield before every slice, the first too: the call often runs inside a
-    // click, whose task stays lean.
+  for (const slice of sliceLines(code, spans)) {
     await options.yieldToMain();
     options.signal?.throwIfAborted();
-    const start = spans[first]?.[0] ?? 0;
-    const end = spans[last]?.[1] ?? 0;
-    const root = highlighter.codeToHast(code.slice(start, end), {
-      ...hastOptions(lang),
-      grammarState: state
-    });
-    state = highlighter.getLastGrammarState(root);
-    const html = hastToHtml(root);
-    const open = html.indexOf(CODE_OPEN) + CODE_OPEN.length;
-    if (head === '') head = html.slice(0, open);
-    parts.push(html.slice(open, html.length - CODE_CLOSE.length));
+    const rendered = renderSlice(highlighter, code, spans, slice, lang, state);
+    joiner.add(rendered.html);
+    state = rendered.state;
   }
-  return `${head}${parts.join('\n')}${CODE_CLOSE}`;
+  return joiner.html();
 }
 
 /** The process-wide singleton promise — grammars are expensive to wire. */
@@ -195,7 +252,7 @@ export function getHighlighter(): Promise<CodeHighlighter> {
     themes: [githubLight, githubDark],
     engine: createJavaScriptRegexEngine({ forgiving: true })
   }).then((highlighter: HighlighterCore): CodeHighlighter => ({
-    highlight: (code, options) => highlighter.codeToHtml(code, hastOptions(options.lang)),
+    highlight: (code, options) => highlightAll(highlighter, code, options.lang),
     highlightSliced: (code, options) =>
       highlightInSlices(highlighter, code, options.lang, {
         signal: options.signal,

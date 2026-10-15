@@ -29,7 +29,9 @@ import {
   resetHighlighter,
   type CodeHighlighter
 } from './code-block-highlighter';
-import { MAX_SLICE_CHARS, MAX_TOKENIZED_LINE } from './code-block-slices';
+import { MAX_TOKEN_SPAN, MAX_TOKENIZED_LINE } from './code-block-slices';
+import { createHighlighterCore } from 'shiki/core';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
 /** The hostile payloads that must survive highlighting as text only. */
 const HOSTILE_CASES: Array<{ lang: 'javascript' | 'json'; code: string; name: string }> = [
@@ -319,7 +321,8 @@ describe('real highlighter — sliced highlighting', () => {
     if (code.split('\n').length > 16) expect(yields).toBeGreaterThan(0);
   });
 
-  it('slices long-string lines one per slice (the quadratic bound), output unchanged', async () => {
+  it('emits long-string lines plain, one slice each, output unchanged', async () => {
+    // The 15 × 1,980-char repro: one slow string token per line.
     const line = (i: number): string =>
       `var s${String(i)} = "${'q'.repeat(MAX_TOKENIZED_LINE - 20)}";`;
     const code = Array.from({ length: 15 }, (_, i) => line(i)).join('\n');
@@ -332,9 +335,52 @@ describe('real highlighter — sliced highlighting', () => {
       }
     });
     expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
-    // One yield per slice: each near-cap string line is a slice of its own.
     expect(yields).toBe(15);
-    expect(code.length).toBeLessThan(MAX_SLICE_CHARS * 2);
+    expect(sliced.match(/<span style=/g) ?? []).toHaveLength(0);
+  });
+
+  it('keeps a long config line with short strings colored', () => {
+    const config = `var wpApiSettings = ${JSON.stringify(
+      Object.fromEntries(
+        Array.from({ length: 80 }, (_, i) => [`key${String(i)}`, `value-${String(i)}`])
+      )
+    )};`;
+    expect(config.length).toBeGreaterThan(1_400);
+    expect(config.length).toBeLessThan(MAX_TOKENIZED_LINE);
+    expect(highlighter.highlight(config, { lang: 'javascript' })).toMatch(/light-dark\(/);
+  });
+
+  it('equals plain shiki on code with no plain lines (multi-slice)', async () => {
+    const reference = await createHighlighterCore({
+      langs: [javascript, json],
+      themes: [githubLight, githubDark],
+      engine: createJavaScriptRegexEngine({ forgiving: true })
+    });
+    const code = stateful(600);
+    expect(highlighter.highlight(code, { lang: 'javascript' })).toBe(
+      reference.codeToHtml(code, {
+        lang: 'javascript',
+        themes: THEME_PAIR,
+        defaultColor: 'light-dark()',
+        colorReplacements: COLOR_REPLACEMENTS,
+        tokenizeMaxLineLength: MAX_TOKENIZED_LINE,
+        rootStyle: false,
+        tabindex: false
+      })
+    );
+    reference.dispose();
+  });
+
+  it('keeps grammar state across a plain line inside a block comment', async () => {
+    const code = `/* opens\nx = "${'q'.repeat(MAX_TOKEN_SPAN)}";\nstill comment */ const after = 1;`;
+    const sliced = await highlighter.highlightSliced(code, {
+      lang: 'javascript',
+      yieldToMain: () => Promise.resolve()
+    });
+    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
+    // The third line still opens inside the comment, then leaves it: two colors.
+    const third = sliced.split('\n')[2] ?? '';
+    expect(new Set(third.match(/color:[^;"]+/g)).size).toBeGreaterThan(1);
   });
 
   it('stops at the next slice once aborted', async () => {

@@ -1,17 +1,32 @@
 /**
- * The highlighting cost model: line spans, slice bounds (characters and the
- * quadratic weight of long string lines) and the one-slice test the block
- * uses to choose synchronous highlighting.
+ * The highlighting cost model: line spans, the quote-free span measure, the
+ * plain-line rule, slice bounds (characters and the quadratic span weight)
+ * and the one-slice test the block uses to choose synchronous highlighting.
  */
 import { describe, expect, it } from 'vitest';
 import {
   MAX_SLICE_CHARS,
-  MAX_SLICE_WEIGHT,
+  MAX_TOKEN_SPAN,
   MAX_TOKENIZED_LINE,
   fitsOneSlice,
   lineSpans,
+  longestQuoteFreeSpan,
   sliceLines
 } from './code-block-slices';
+
+/** The slices of a text, as `[first, last, plain]` triples. */
+function slicesOf(code: string): Array<[number, number, boolean]> {
+  return sliceLines(code, lineSpans(code)).map((slice) => [slice.first, slice.last, slice.plain]);
+}
+
+/** A config-object line: many short strings, any total length. */
+function configLine(chars: number): string {
+  const items: string[] = [];
+  for (let i = 0; items.join(',').length < chars; i += 1) {
+    items.push(`"key${String(i)}":"v${String(i)}"`);
+  }
+  return `var wpApiSettings = {${items.join(',')}};`;
+}
 
 describe('lineSpans', () => {
   it('splits on LF and CRLF, excluding the break', () => {
@@ -30,46 +45,69 @@ describe('lineSpans', () => {
   });
 });
 
+describe('longestQuoteFreeSpan', () => {
+  it('measures the longest run between quote characters or line ends', () => {
+    expect(longestQuoteFreeSpan('', 0, 0)).toBe(0);
+    expect(longestQuoteFreeSpan('abc', 0, 3)).toBe(3);
+    expect(longestQuoteFreeSpan('a"bcd"e', 0, 7)).toBe(3);
+    expect(longestQuoteFreeSpan("x='12345'`ab`", 0, 13)).toBe(5);
+    // Only the given line counts.
+    expect(longestQuoteFreeSpan('zzzz"a"zzzz', 4, 7)).toBe(1);
+  });
+});
+
 describe('sliceLines', () => {
-  /** Spans of `count` lines of `length` chars each. */
-  const lines = (count: number, length: number): Array<[number, number]> =>
-    lineSpans(Array.from({ length: count }, () => 'x'.repeat(length)).join('\n'));
-
-  it('keeps short code in one slice', () => {
-    expect(sliceLines(lines(10, 40))).toEqual([[0, 9]]);
-  });
-
-  it('caps a slice by characters', () => {
-    const slices = sliceLines(lines(100, 99));
-    for (const [first, last] of slices)
-      expect((last - first + 1) * 100 - 1).toBeLessThanOrEqual(MAX_SLICE_CHARS);
-    expect(slices.at(-1)?.[1]).toBe(99);
-  });
-
-  it('caps a slice by the quadratic weight: one near-cap line each', () => {
-    const near = MAX_TOKENIZED_LINE - 1;
-    expect(near * near).toBeLessThanOrEqual(MAX_SLICE_WEIGHT);
-    expect(sliceLines(lines(3, near))).toEqual([
-      [0, 0],
-      [1, 1],
-      [2, 2]
+  it('keeps short code in one tokenized slice', () => {
+    expect(slicesOf(Array.from({ length: 10 }, () => 'f("a", 1);').join('\n'))).toEqual([
+      [0, 9, false]
     ]);
   });
 
-  it('weighs lines at the cap as plain text (linear only)', () => {
-    // Untokenized lines cost no quadratic weight; the char cap still applies.
-    expect(sliceLines(lines(3, MAX_TOKENIZED_LINE))).toEqual([[0, 2]]);
-    expect(sliceLines(lines(1, MAX_SLICE_CHARS * 3))).toEqual([[0, 0]]);
+  it('caps a tokenized slice by characters', () => {
+    const code = Array.from(
+      { length: 100 },
+      () => `f("${'a'.repeat(40)}", 1); // ${'c'.repeat(40)}`
+    ).join('\n');
+    const spans = lineSpans(code);
+    const slices = sliceLines(code, spans);
+    expect(slices.length).toBeGreaterThan(1);
+    for (const slice of slices) {
+      const chars = (spans[slice.last]?.[1] ?? 0) - (spans[slice.first]?.[0] ?? 0);
+      expect(chars <= MAX_SLICE_CHARS || slice.first === slice.last).toBe(true);
+    }
+  });
+
+  it('caps a tokenized slice by the quadratic weight: one near-cap span each', () => {
+    const near = `x = "${'q'.repeat(MAX_TOKEN_SPAN - 1)}";`;
+    expect(slicesOf([near, near, near].join('\n'))).toEqual([
+      [0, 0, false],
+      [1, 1, false],
+      [2, 2, false]
+    ]);
+  });
+
+  it('emits a long string, regex or comment line plain, and keeps long config lines tokenized', () => {
+    const longString = `x = "${'q'.repeat(MAX_TOKEN_SPAN)}";`;
+    const longRegex = `var r = /${'q'.repeat(MAX_TOKEN_SPAN)}/;`;
+    const config = configLine(1_500);
+    expect(config.length).toBeGreaterThan(1_400);
+    expect(slicesOf([longString, longRegex, config].join('\n'))).toEqual([
+      [0, 1, true],
+      [2, 2, false]
+    ]);
+    expect(slicesOf('y'.repeat(MAX_TOKENIZED_LINE).replace(/(.{100})/g, '"$1'))).toEqual([
+      [0, 0, true]
+    ]);
   });
 
   it('covers every line exactly once, in order', () => {
-    const spans = lineSpans(
-      Array.from({ length: 300 }, (_, i) => 'z'.repeat((i * 37) % 700)).join('\n')
+    const code = Array.from({ length: 300 }, (_, i) => `"${'z'.repeat((i * 37) % 700)}"`).join(
+      '\n'
     );
-    const covered = sliceLines(spans).flatMap(([first, last]) =>
-      Array.from({ length: last - first + 1 }, (_, k) => first + k)
+    const covered = sliceLines(code, lineSpans(code)).flatMap((slice) =>
+      Array.from({ length: slice.last - slice.first + 1 }, (_, k) => slice.first + k)
     );
-    expect(covered).toEqual(spans.map((_, index) => index));
+    expect(covered).toEqual(lineSpans(code).map((_, index) => index));
   });
 });
 
@@ -77,8 +115,11 @@ describe('fitsOneSlice', () => {
   it('is true for short code and false past either bound', () => {
     expect(fitsOneSlice('const a = 1;')).toBe(true);
     expect(fitsOneSlice('')).toBe(true);
-    expect(fitsOneSlice(Array.from({ length: 50 }, () => 'y'.repeat(99)).join('\n'))).toBe(false);
-    const near = 'q'.repeat(MAX_TOKENIZED_LINE - 1);
+    expect(fitsOneSlice(configLine(1_500))).toBe(true);
+    expect(fitsOneSlice(Array.from({ length: 50 }, () => '"y", 1;'.repeat(12)).join('\n'))).toBe(
+      false
+    );
+    const near = `x = "${'q'.repeat(MAX_TOKEN_SPAN - 1)}";`;
     expect(fitsOneSlice(`${near}\n${near}`)).toBe(false);
   });
 });

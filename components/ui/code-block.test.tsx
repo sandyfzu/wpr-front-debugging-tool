@@ -9,11 +9,11 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodeBlock, HIGHLIGHT_MAX_CHARS, type IntersectionGate } from './code-block';
+import { CODE_BLOCK_LANGS } from './code-block-langs';
+import type { OverflowWatcher } from './overflow-watch';
 
 /** Code that does not fit one highlighting slice (5,000 chars over 50 lines). */
 const MULTI_SLICE = Array.from({ length: 50 }, () => 'y'.repeat(99)).join('\n');
-import { CODE_BLOCK_LANGS } from './code-block-langs';
-import type { OverflowWatcher } from './overflow-watch';
 
 afterEach(() => {
   cleanup();
@@ -512,6 +512,26 @@ describe('CodeBlock — highlighting cost bounds', () => {
     // The short text's colors never linger over the long text.
     expect(controls().highlighted).toBeNull();
     expect(controls().fallback?.textContent).toBe(long);
+  });
+
+  it('aborts the slices in flight when the block unmounts', async () => {
+    const gate = manualGate();
+    const loader = slicedLoader();
+    const { unmount } = render(() => (
+      <CodeBlock
+        text={MULTI_SLICE}
+        lang="javascript"
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.sliced).toHaveLength(1);
+    });
+    expect(loader.sliced[0]?.signal?.aborted).toBe(false);
+    unmount();
+    expect(loader.sliced[0]?.signal?.aborted).toBe(true);
   });
 
   it('never highlights code above the size limit and says so', async () => {
