@@ -8,12 +8,10 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  CodeBlock,
-  HIGHLIGHT_MAX_CHARS,
-  SYNC_HIGHLIGHT_MAX_CHARS,
-  type IntersectionGate
-} from './code-block';
+import { CodeBlock, HIGHLIGHT_MAX_CHARS, type IntersectionGate } from './code-block';
+
+/** Code that does not fit one highlighting slice (5,000 chars over 50 lines). */
+const MULTI_SLICE = Array.from({ length: 50 }, () => 'y'.repeat(99)).join('\n');
 import { CODE_BLOCK_LANGS } from './code-block-langs';
 import type { OverflowWatcher } from './overflow-watch';
 
@@ -469,7 +467,7 @@ describe('CodeBlock — highlighting cost bounds', () => {
   it('highlights longer code in slices, raw text showing until they finish', async () => {
     const gate = manualGate();
     const loader = slicedLoader();
-    const text = 'x'.repeat(SYNC_HIGHLIGHT_MAX_CHARS + 1);
+    const text = MULTI_SLICE;
     render(() => (
       <CodeBlock
         text={text}
@@ -493,7 +491,7 @@ describe('CodeBlock — highlighting cost bounds', () => {
   it('drops stale colors and aborts the slices in flight when the text changes', async () => {
     const gate = manualGate();
     const loader = slicedLoader();
-    const long = 'y'.repeat(SYNC_HIGHLIGHT_MAX_CHARS + 5);
+    const long = MULTI_SLICE;
     const [text, setText] = createSignal(long);
     render(() => (
       <CodeBlock

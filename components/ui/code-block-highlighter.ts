@@ -22,6 +22,7 @@ import json from 'shiki/langs/json.mjs';
 import githubDark from 'shiki/themes/github-dark.mjs';
 import githubLight from 'shiki/themes/github-light.mjs';
 import type { CodeLanguage } from './code-block-langs';
+import { MAX_TOKENIZED_LINE, lineSpans, sliceLines } from './code-block-slices';
 
 /** The light/dark theme pair — one resolved pair so code is always palette-paired. */
 export const THEME_PAIR = { light: 'github-light', dark: 'github-dark' } as const;
@@ -46,30 +47,6 @@ export const COLOR_REPLACEMENTS = {
     '#6a737d': '#8b949e' // comments
   }
 } as const satisfies Record<string, Record<string, string>>;
-
-/**
- * Lines at or above this length are emitted as plain text, untokenized
- * (shiki's `tokenizeMaxLineLength`). The JS grammar's time grows with the
- * square of a token's length — a 30 KB data-URI string blocks for seconds —
- * and measured on the registered grammar a 2,000-char string line costs
- * ≈ 15 ms, comfortably inside one 50 ms task; minified one-liners above it
- * stay readable, just uncolored.
- */
-export const MAX_TOKENIZED_LINE = 2_000;
-
-/**
- * Work budget of one highlighting slice (ms): {@link CodeHighlighter.highlightSliced}
- * tokenizes as many lines as fit, then yields to the event loop, so no block
- * ever holds the main thread for a long task (> 50 ms) — one line is the
- * smallest unit, and {@link MAX_TOKENIZED_LINE} bounds it.
- */
-export const HIGHLIGHT_SLICE_MS = 8;
-
-/** Lines tokenized in a block's first slice (later slices adapt to the measured pace). */
-const FIRST_SLICE_LINES = 16;
-
-/** Upper bound of one slice's line count (the pace estimate never runs away). */
-const MAX_SLICE_LINES = 4_000;
 
 /** A highlighted result: the full `<pre>` HTML, ready for a scoped `innerHTML`. */
 export type HighlightedCode = string;
@@ -97,7 +74,7 @@ export interface CodeHighlighter {
    */
   highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
   /**
-   * Highlight code text in time slices: the same output as
+   * Highlight code text in bounded slices: the same output as
    * {@link CodeHighlighter.highlight} (same safety contract), produced a few
    * lines at a time with the grammar state carried across slices and a yield
    * to the event loop between them, so a large block never becomes one long
@@ -155,35 +132,14 @@ function yieldToMain(): Promise<void> {
   });
 }
 
-/**
- * The end offsets of the text's lines, exclusive of their break (`\n`, or
- * `\r\n` as one break — shiki's own line split).
- *
- * @param code The code text.
- * @returns One `[start, end)` pair per line.
- */
-export function lineSpans(code: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
-  let start = 0;
-  for (;;) {
-    const newline = code.indexOf('\n', start);
-    if (newline === -1) {
-      spans.push([start, code.length]);
-      return spans;
-    }
-    spans.push([start, newline > start && code[newline - 1] === '\r' ? newline - 1 : newline]);
-    start = newline + 1;
-  }
-}
-
 /** The `<pre …><code>` head of a highlighted output (the shared root chrome). */
 const CODE_OPEN = '<code>';
 /** The `</code></pre>` tail. */
 const CODE_CLOSE = '</code></pre>';
 
 /**
- * Highlight in time slices (see {@link CodeHighlighter.highlightSliced}).
- * Each slice is a run of whole lines tokenized from the previous slice's
+ * Highlight in bounded slices (see {@link CodeHighlighter.highlightSliced}).
+ * Each slice is a run of whole lines (see {@link sliceLines}) tokenized from the previous slice's
  * grammar state; the slices' line markup is joined exactly as shiki joins
  * lines (a `\n` text node), under the first slice's root chrome — the
  * result equals the one-shot output.
@@ -200,27 +156,22 @@ async function highlightInSlices(
   const parts: string[] = [];
   let head = '';
   let state: GrammarState | undefined;
-  let size = FIRST_SLICE_LINES;
-  for (let first = 0; first < spans.length;) {
+  for (const [first, last] of sliceLines(spans)) {
+    // Yield before every slice, the first too: the call often runs inside a
+    // click, whose task stays lean.
+    await options.yieldToMain();
     options.signal?.throwIfAborted();
-    const last = Math.min(first + size, spans.length) - 1;
-    const text = code.slice(spans[first]?.[0] ?? 0, spans[last]?.[1] ?? 0);
-    const started = performance.now();
-    const root = highlighter.codeToHast(text, { ...hastOptions(lang), grammarState: state });
+    const start = spans[first]?.[0] ?? 0;
+    const end = spans[last]?.[1] ?? 0;
+    const root = highlighter.codeToHast(code.slice(start, end), {
+      ...hastOptions(lang),
+      grammarState: state
+    });
     state = highlighter.getLastGrammarState(root);
     const html = hastToHtml(root);
     const open = html.indexOf(CODE_OPEN) + CODE_OPEN.length;
     if (head === '') head = html.slice(0, open);
     parts.push(html.slice(open, html.length - CODE_CLOSE.length));
-    const elapsed = performance.now() - started;
-    const done = last + 1 - first;
-    // Aim the next slice at the budget from this slice's pace.
-    size = Math.max(
-      1,
-      Math.min(MAX_SLICE_LINES, Math.floor((done * HIGHLIGHT_SLICE_MS) / Math.max(elapsed, 0.5)))
-    );
-    first = last + 1;
-    if (first < spans.length) await options.yieldToMain();
   }
   return `${head}${parts.join('\n')}${CODE_CLOSE}`;
 }

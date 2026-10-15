@@ -307,6 +307,20 @@ describe('JavaScriptView — rows', () => {
     expect(within(row).getByRole('button', { name: 'Expand' })).toBeTruthy();
   });
 
+  it('keeps the toggle, and focus on it, once expanding ends the clamp that offered it', () => {
+    clampClips = true;
+    renderView();
+    const row = rows()[4] as HTMLElement;
+    const expand = within(row).getByRole('button', { name: 'Expand' });
+    expand.focus();
+    fireEvent.click(expand);
+    // Unclamped now, the block reports no clipping — the toggle must stay.
+    expect(row.querySelector('[data-fdt-code-area]')?.hasAttribute('data-fdt-clamped')).toBe(false);
+    expect(expand.isConnected).toBe(true);
+    expect(expand.textContent).toBe('Collapse');
+    expect(document.activeElement).toBe(expand);
+  });
+
   it('names each inline block by its inline ordinal', () => {
     areaScrolls = true;
     renderView();
@@ -620,16 +634,21 @@ describe('JavaScriptView — keyboard and announcements', () => {
     expect(other.defaultPrevented).toBe(false);
   });
 
-  it('announces a committed query alone, and stays silent on a data refresh', () => {
+  it('announces a committed query, and refreshes the count silently on a data refresh', () => {
     const { setData } = renderView();
-    const status = (): string | null | undefined =>
-      document.querySelector('[data-fdt="script-results-status"]')?.textContent;
-    expect(status()).toBe('');
+    const region = (): HTMLElement | null =>
+      document.querySelector<HTMLElement>('[data-fdt="script-results-status"]');
+    expect(region()?.textContent).toBe('');
     fireEvent.input(field(), { target: { value: 'example.test' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(status()).toBe('2 of 6 scripts shown');
+    expect(region()?.textContent).toBe('2 of 6 scripts shown');
+    expect(region()?.getAttribute('aria-live')).toBe('polite');
     setData(dataWith(scripts().slice(0, 1)));
-    expect(status()).toBe('2 of 6 scripts shown');
+    // Current, but muted: a refresh is not the user's action.
+    expect(region()?.textContent).toBe('1 of 1 script shown');
+    expect(region()?.getAttribute('aria-live')).toBe('off');
+    fireEvent.click(chip('delayed'));
+    expect(region()?.getAttribute('aria-live')).toBe('polite');
   });
 
   it('lands focus on the "all" chip after Show all', () => {

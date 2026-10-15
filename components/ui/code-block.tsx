@@ -55,6 +55,7 @@ import { createLogger } from '../../lib/logger';
 import { Button } from './button';
 import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
+import { fitsOneSlice } from './code-block-slices';
 import type { HighlightedCode } from './code-block-highlighter';
 import { isClippedVertically, watchOverflow, type OverflowWatcher } from './overflow-watch';
 
@@ -72,13 +73,6 @@ const logger = createLogger('code-block');
  */
 export const HIGHLIGHT_MAX_CHARS = 32_000;
 
-/**
- * Code up to this size (chars) highlights in one synchronous call — measured
- * well under a frame — so a block swaps in without a plain-text flash; longer
- * code highlights in time slices (`highlightSliced`), never as a long task.
- */
-export const SYNC_HIGHLIGHT_MAX_CHARS = 2_000;
-
 /** How far ahead of the viewport a block pre-highlights (px of root margin). */
 const INTERSECTION_MARGIN = '150px';
 
@@ -93,7 +87,7 @@ interface HighlighterLike {
    */
   highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
   /**
-   * The time-sliced variant for longer code (same output); doubles may omit
+   * The sliced variant for longer code (same output); doubles may omit
    * it, then every size goes through {@link HighlighterLike.highlight}.
    */
   highlightSliced?: (
@@ -351,7 +345,9 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     const language = own.lang;
     setHighlighted(undefined);
     if (loader === undefined || tooLarge()) return;
-    if (loader.highlightSliced === undefined || text.length <= SYNC_HIGHLIGHT_MAX_CHARS) {
+    // Code within one bounded slice highlights synchronously (no plain-text
+    // flash); anything longer goes through the slices, never a long task.
+    if (loader.highlightSliced === undefined || fitsOneSlice(text)) {
       try {
         setHighlighted(loader.highlight(text, { lang: language }));
       } catch (error: unknown) {

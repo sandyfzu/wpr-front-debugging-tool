@@ -23,14 +23,13 @@ import githubLight from 'shiki/themes/github-light.mjs';
 import { contrastRatio } from '../../utils/contrast';
 import {
   COLOR_REPLACEMENTS,
-  MAX_TOKENIZED_LINE,
   THEME_PAIR,
   getHighlighter,
-  lineSpans,
   pendingHighlighter,
   resetHighlighter,
   type CodeHighlighter
 } from './code-block-highlighter';
+import { MAX_SLICE_CHARS, MAX_TOKENIZED_LINE } from './code-block-slices';
 
 /** The hostile payloads that must survive highlighting as text only. */
 const HOSTILE_CASES: Array<{ lang: 'javascript' | 'json'; code: string; name: string }> = [
@@ -301,23 +300,6 @@ describe('real highlighter — line cap', () => {
   });
 });
 
-describe('lineSpans', () => {
-  it('splits on LF and CRLF, excluding the break', () => {
-    expect(lineSpans('')).toEqual([[0, 0]]);
-    expect(lineSpans('ab')).toEqual([[0, 2]]);
-    expect(lineSpans('a\nbc\r\nd\n')).toEqual([
-      [0, 1],
-      [2, 4],
-      [6, 7],
-      [8, 8]
-    ]);
-    expect(lineSpans('\r\n')).toEqual([
-      [0, 0],
-      [2, 2]
-    ]);
-  });
-});
-
 describe('real highlighter — sliced highlighting', () => {
   it.each([
     ['empty', ''],
@@ -335,6 +317,24 @@ describe('real highlighter — sliced highlighting', () => {
     });
     expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
     if (code.split('\n').length > 16) expect(yields).toBeGreaterThan(0);
+  });
+
+  it('slices long-string lines one per slice (the quadratic bound), output unchanged', async () => {
+    const line = (i: number): string =>
+      `var s${String(i)} = "${'q'.repeat(MAX_TOKENIZED_LINE - 20)}";`;
+    const code = Array.from({ length: 15 }, (_, i) => line(i)).join('\n');
+    let yields = 0;
+    const sliced = await highlighter.highlightSliced(code, {
+      lang: 'javascript',
+      yieldToMain: () => {
+        yields += 1;
+        return Promise.resolve();
+      }
+    });
+    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
+    // One yield per slice: each near-cap string line is a slice of its own.
+    expect(yields).toBe(15);
+    expect(code.length).toBeLessThan(MAX_SLICE_CHARS * 2);
   });
 
   it('stops at the next slice once aborted', async () => {

@@ -141,13 +141,16 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
   const chips = createMemo(() => buildChips(JS_VIEW_RESOURCES.filters, counts(), selected()));
-  // Announced when the user narrows or widens the list (chip, committed
-  // query) — never on a data refresh, which changes counts by itself.
-  const announcement = createMemo(
-    on([selected, query], ([chip, text]) =>
-      resultAnnouncement(filtered().length, views().length, chip !== 'all' || text !== '')
-    )
+  // The result count, always current; announced only when the user narrows
+  // or widens the list (chip, committed query). A data refresh updates the
+  // text with the region muted (`aria-live="off"` set in the same DOM update),
+  // so the count stays true when read without being spoken unprompted.
+  const announcement = createMemo(() =>
+    resultAnnouncement(filtered().length, views().length, selected() !== 'all' || query() !== '')
   );
+  const [announceQuietly, setAnnounceQuietly] = createSignal(false);
+  createComputed(on(views, () => setAnnounceQuietly(true), { defer: true }));
+  createComputed(on([selected, query], () => setAnnounceQuietly(false), { defer: true }));
   const selectedLabel = (): string | undefined =>
     selected() === 'all'
       ? undefined
@@ -230,7 +233,12 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
               searchLabel="Search scripts"
             />
           </div>
-          <div role="status" class="sr-only" data-fdt="script-results-status">
+          <div
+            role="status"
+            aria-live={announceQuietly() ? 'off' : 'polite'}
+            class="sr-only"
+            data-fdt="script-results-status"
+          >
             {announcement()}
           </div>
           <Show
