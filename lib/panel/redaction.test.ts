@@ -371,6 +371,33 @@ describe('reduceHeaderValue', () => {
     ['refresh', 'url=/n?token=t', `url=/n?token=${REDACTED_PARAM}`],
     ['refresh', ' URL = "/n?token=t"', ` URL = "/n?token=${REDACTED_PARAM}"`],
     ['location', 'next?token=x', `next?token=${REDACTED_PARAM}`],
+    [
+      'location',
+      'next;jsessionid=SECRET?token=x',
+      `next;jsessionid=${REDACTED_PARAM}?token=${REDACTED_PARAM}`
+    ],
+    ['location', 'a/b;sid=SECRET/c', `a/b;sid=${REDACTED_PARAM}/c`],
+    [
+      'location',
+      '#access_token=SECRET&state=s&page=2',
+      `#access_token=${REDACTED_PARAM}&state=${REDACTED_PARAM}&page=2`
+    ],
+    ['location', '#eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl', `#${REDACTED_PARAM}`],
+    [
+      'link',
+      'https://cdn.example/a?token=X; rel=preload',
+      `https://cdn.example/a?token=${REDACTED_PARAM}; rel=preload`
+    ],
+    [
+      'link',
+      ' /a.css?sig=X; rel=preload, https://cdn.example/b.js; rel=preload',
+      ` /a.css?sig=${REDACTED_PARAM}; rel=preload, https://cdn.example/b.js; rel=preload`
+    ],
+    [
+      'link',
+      `</a.css>; rel=preload; title*=UTF-8''${encodeURIComponent('see https://a.example/?token=T')}`,
+      `</a.css>; rel=preload; title*=UTF-8''${encodeURIComponent(`see https://a.example/?token=${REDACTED_PARAM}`)}`
+    ],
     ['location', 'a/b/../c?token=x&p=1#frag', `a/b/../c?token=${REDACTED_PARAM}&p=1`],
     ['location', '?token=x', `?token=${REDACTED_PARAM}`],
     ['x-redirect-to', '/next?nonce=n', `/next?nonce=${REDACTED_PARAM}`],
@@ -441,8 +468,12 @@ describe('reduceHeaderValue', () => {
     ['www-authenticate', 'Basic'],
     ['www-authenticate', 'Negotiate'],
     ['location', '#top'],
-    ['location', '#access_token=kept-bare-fragment'],
     ['location', 'next?page=2'],
+    ['location', '#section-2'],
+    ['location', 'a/b;v=2/c'],
+    ['link', 'https://cdn.example/a.css; rel=preload'],
+    ['link', ` </a.css>; title*=UTF-8'en'${encodeURIComponent('A title')}`],
+    ['link', `</a.css>; title*=nodelimiters`],
     ['location', '/login?redirect_to=https%3A%2F%2Fa.example%2Fadmin'],
     ['location', '/login?redirect_to=http%3A%2F%2F%5Bbad'],
     ['link', '<https://a.example/x.css>; rel=preload'],

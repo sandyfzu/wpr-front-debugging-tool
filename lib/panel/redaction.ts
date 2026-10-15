@@ -211,7 +211,8 @@ const RELATIVE_BASE = 'https://relative.invalid';
  * protocol-relative one drops what the throwaway base added; a
  * path-relative one (`next?token=…`, `?a=1`) keeps its original path text
  * and only its query is rebuilt (its fragment dropped, as the rule does);
- * a bare fragment (`#top`) stays as written. A non-web absolute reference
+ * a bare fragment keeps its plain anchor and loses its sensitive pair values
+ * (`#access_token=…`). A non-web absolute reference
  * ({@link redactUrl} answers null for it) and an unparseable one are
  * withheld whole.
  *
@@ -221,7 +222,12 @@ const RELATIVE_BASE = 'https://relative.invalid';
  */
 function redactUrlReference(ref: string, depth = 1): string {
   const trimmed = ref.trim();
-  if (trimmed.startsWith('#')) return ref;
+  // A bare fragment has no URL to rebuild: its pairs get the pair rule
+  // (`#access_token=…` → redacted; a plain anchor `#top` stays).
+  if (trimmed.startsWith('#')) {
+    const reduced = `#${redactPairs(trimmed.slice(1), depth)}`;
+    return reduced === trimmed ? ref : reduced;
+  }
   let resolved: URL;
   try {
     resolved = SCHEME.test(trimmed) ? new URL(trimmed) : new URL(trimmed, RELATIVE_BASE);
@@ -235,34 +241,74 @@ function redactUrlReference(ref: string, depth = 1): string {
   if (SCHEME.test(trimmed)) return reduced;
   if (trimmed.startsWith('//')) return reduced.slice(resolved.protocol.length);
   if (trimmed.startsWith('/')) return reduced.slice(RELATIVE_BASE.length);
-  // Path-relative: the original path text, the rebuilt query.
+  // Path-relative: the original path text (its `;name=value` parameters
+  // through the same rule), the rebuilt query.
   const pathText = trimmed.split(/[?#]/, 1)[0] ?? '';
-  return `${pathText}${new URL(reduced).search}`;
+  return `${redactPathParams(pathText)}${new URL(reduced).search}`;
 }
 
 /**
- * Reduce a `link` value: every well-formed `<…>` target and every `anchor`
- * parameter through the URL rule, absolute URLs inside any other parameter
- * likewise, and an unterminated `<…` (no closing `>`) withheld whole.
+ * Reduce one `link` parameter value: `anchor` is a URL reference; an RFC
+ * 8187 extended value (`title*=UTF-8''…`) is decoded, reduced and
+ * re-encoded; any other value has its absolute URLs reduced.
+ *
+ * @param param The parameter name as written.
+ * @param inner The value, unquoted.
+ * @returns The reduced value (the same string when nothing changed).
+ */
+function reduceLinkParam(param: string, inner: string): string {
+  if (param.toLowerCase() === 'anchor') return redactUrlReference(inner);
+  const extended = param.endsWith('*') ? /^([^']*)'([^']*)'(.*)$/.exec(inner) : null;
+  if (extended !== null) {
+    const decoded = decodeParamName(extended[3] ?? '');
+    const reduced = reduceAbsoluteUrls(decoded);
+    return reduced === decoded
+      ? inner
+      : `${extended[1] ?? ''}'${extended[2] ?? ''}'${encodeURIComponent(reduced)}`;
+  }
+  return reduceAbsoluteUrls(inner);
+}
+
+/**
+ * Reduce every absolute http(s) URL inside free text.
+ *
+ * @param text The text.
+ * @returns The text with each URL reduced by the URL rule.
+ */
+function reduceAbsoluteUrls(text: string): string {
+  return text.replace(/https?:\/\/[^\s,;"<>]+/gi, (url) => redactUrlReference(url));
+}
+
+/**
+ * Reduce a `link` value: every well-formed `<…>` target, every parameter
+ * value (see {@link reduceLinkParam}), and an unterminated `<…` (no closing
+ * `>`) withheld whole. A malformed value written without `<…>` at all has
+ * the leading target of each comma-separated link run through the URL rule.
  *
  * @param value The raw `link` value.
  * @returns The reduced value.
  */
 function reduceLinkValue(value: string): string {
-  const targets = value.replace(
-    /<([^<>]*)>/g,
-    (_whole, target: string) => `<${redactUrlReference(target)}>`
-  );
-  const terminated = targets.replace(/<[^>]*$/, `<${REDACTED_PARAM}`);
-  return terminated.replace(
+  const targets = value.includes('<')
+    ? value
+        .replace(/<([^<>]*)>/g, (_whole, target: string) => `<${redactUrlReference(target)}>`)
+        .replace(/<[^>]*$/, `<${REDACTED_PARAM}`)
+    : value
+        .split(',')
+        .map((link) =>
+          // A blank target stays blank: the rule hands an empty reference back.
+          link.replace(
+            /^(\s*)([^;]*)/,
+            (_whole, lead: string, target: string) => `${lead}${redactUrlReference(target)}`
+          )
+        )
+        .join(',');
+  return targets.replace(
     /(;\s*)([\w*-]+)(\s*=\s*)("[^"]*"|[^;,\s]*)/g,
     (whole, lead: string, param: string, equals: string, raw: string) => {
       const quoted = raw.startsWith('"');
       const inner = quoted ? raw.slice(1, -1) : raw;
-      const reduced =
-        param.toLowerCase() === 'anchor'
-          ? redactUrlReference(inner)
-          : inner.replace(/https?:\/\/[^\s,"<>]+/gi, (url) => redactUrlReference(url));
+      const reduced = reduceLinkParam(param, inner);
       if (reduced === inner) return whole;
       return `${lead}${param}${equals}${quoted ? `"${reduced}"` : reduced}`;
     }
@@ -434,17 +480,36 @@ function redactUrlAt(raw: string, depth: number): string | null {
   url.username = '';
   url.password = '';
   url.hash = '';
-  url.pathname = url.pathname.replace(/;([^/;=]*)=([^/;]*)/g, (whole, name: string) =>
+  url.pathname = redactPathParams(url.pathname);
+  if (url.search !== '') url.search = redactPairs(url.search.slice(1), depth);
+  return url.href;
+}
+
+/**
+ * Run a path's `;name=value` parameters (`;jsessionid=…`) through the name
+ * rule.
+ *
+ * @param path The path text as written.
+ * @returns The path with sensitive parameter values redacted.
+ */
+function redactPathParams(path: string): string {
+  return path.replace(/;([^/;=]*)=([^/;]*)/g, (whole, name: string) =>
     isSensitiveName(decodeParamName(name)) ? `;${name}=${REDACTED_PARAM}` : whole
   );
-  if (url.search !== '') {
-    // Split keeping the separators (odd indexes), so `;`-joined queries
-    // round-trip with their own separators.
-    url.search = url.search
-      .slice(1)
-      .split(/([&;])/)
-      .map((part, index) => (index % 2 === 1 ? part : redactQueryPair(part, depth)))
-      .join('');
-  }
-  return url.href;
+}
+
+/**
+ * Run a `&`/`;`-separated list of pairs (a query, or a fragment written
+ * like one) through the pair rule, keeping each separator as written.
+ *
+ * @param pairs The pairs text, without its leading `?`/`#`.
+ * @param depth How many URL-in-a-parameter levels may still be followed.
+ * @returns The pairs with sensitive values (and bare tokens) redacted.
+ */
+function redactPairs(pairs: string, depth: number): string {
+  // Split keeping the separators (odd indexes).
+  return pairs
+    .split(/([&;])/)
+    .map((part, index) => (index % 2 === 1 ? part : redactQueryPair(part, depth)))
+    .join('');
 }
