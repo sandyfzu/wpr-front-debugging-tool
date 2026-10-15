@@ -163,15 +163,15 @@ test.describe('site header capture', () => {
       redacted: true
     });
     expect(row('surrogate-key')?.value, 'caching evidence stays intact').toBe('post-1 term-2');
-    // Chromium may hide Set-Cookie from webRequest; when it is captured
-    // (Firefox, or a future Chromium), only the cookie names survive.
-    for (const cookie of rows.filter(
-      (candidate) => candidate.name.toLowerCase() === 'set-cookie'
-    )) {
-      expect(cookie.redacted, 'a captured Set-Cookie is withheld').toBe(true);
-      expect(cookie.value, 'no Set-Cookie value').toBeUndefined();
-      expect(['fdt_session', 'fdt_pref']).toContain(cookie.cookieName);
-    }
+    // Chromium hides Set-Cookie from webRequest by design unless a listener
+    // asks for `extraHeaders`, and the capture asks only `responseHeaders`:
+    // no row may arrive. A tripwire — if one ever does (the listener grew
+    // `extraHeaders`, or Chromium changed), the capture-time withholding
+    // pinned by the unit suites must be re-verified here.
+    expect(
+      rows.filter((candidate) => candidate.name.toLowerCase() === 'set-cookie'),
+      'Chromium delivers no Set-Cookie row without extraHeaders'
+    ).toEqual([]);
     await page.page.close();
   });
 
