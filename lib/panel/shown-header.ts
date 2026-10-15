@@ -36,7 +36,14 @@ function withheldText(cookieName: string | null): string {
  * @returns The row to render and copy, flagged when its value was withheld.
  */
 export function shownHeader(header: HeaderRowVM): ShownHeader {
-  if (header.redacted) return { ...header, value: withheldText(header.value), hint: null };
+  if (header.redacted) {
+    return {
+      name: header.name,
+      value: withheldText(header.cookieName ?? null),
+      hint: null,
+      redacted: true
+    };
+  }
   if (header.value === null) return header;
   const exported = redactHeaderValue(header.name, header.value);
   if (!exported.redacted) return { ...header, value: exported.value };

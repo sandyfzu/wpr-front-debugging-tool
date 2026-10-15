@@ -27,16 +27,14 @@ import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 export interface HeaderRowVM {
   /** The header name exactly as captured. */
   readonly name: string;
-  /**
-   * The captured value; null when the row carried no value. On a withheld
-   * row (`redacted`), the only part the capture kept: a `Set-Cookie`'s
-   * cookie name, else null — never a value to render as-is.
-   */
+  /** The captured value; null when the row carried no value or was withheld. */
   readonly value: string | null;
   /** The plain-copy caching verdict, or null when the row yields no hint. */
   readonly hint: string | null;
   /** True when the capture withheld the value (a hint is then never computed). */
   readonly redacted: boolean;
+  /** On a withheld `Set-Cookie` row only: the cookie name the capture kept. */
+  readonly cookieName?: string;
 }
 
 /** The renderable header set: caching-relevant rows first, then the rest. */
@@ -209,11 +207,12 @@ export function buildHeadersViewModel(headers: PageHeaders | null): HeadersViewM
     if (row.redacted === true) {
       // Withheld at capture: no value to read a verdict from, and the kept
       // cookie name (if any) is the row's only shown part.
-      const withheld = {
+      const withheld: HeaderRowVM = {
         name: row.name,
-        value: row.cookieName ?? null,
+        value: null,
         hint: null,
-        redacted: true
+        redacted: true,
+        ...(row.cookieName === undefined ? {} : { cookieName: row.cookieName })
       };
       (placed?.rows ?? other).push(withheld);
       continue;
@@ -258,7 +257,10 @@ export function headersTruncationNote(
   if (truncated !== true) return null;
   const caps = PAYLOAD_LIMITS.headers;
   const capped = headers.length >= caps.count;
-  const valuesClipped = headers.some((row) => row.value?.length === caps.value);
+  // A withheld row's kept cookie name is clipped to the value cap too.
+  const valuesClipped = headers.some(
+    (row) => row.value?.length === caps.value || row.cookieName?.length === caps.value
+  );
   const namesClipped = headers.some((row) => row.name.length === caps.name);
   const parts: string[] = [];
   if (valuesClipped)

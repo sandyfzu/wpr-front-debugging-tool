@@ -1,6 +1,6 @@
 /**
  * The one presentation of a header value the panel withheld (a cookie,
- * credential or token — see `lib/panel/redaction`), shared by every page
+ * credential or token — see `lib/redaction/rule`), shared by every page
  * that lists headers so the same header never reads differently on two
  * pages: a lock plus the marker text, muted and italic so it never passes
  * for a value; the reason rides the `title` and screen-reader text, which

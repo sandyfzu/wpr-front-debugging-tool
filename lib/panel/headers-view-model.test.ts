@@ -152,7 +152,7 @@ describe('buildHeadersViewModel — the verdict copy', () => {
 });
 
 describe('buildHeadersViewModel — rows withheld at capture', () => {
-  it('keeps a withheld row in its group, its kept cookie name as the value, never a hint', () => {
+  it('keeps a withheld row in its group, no value, its kept cookie name apart, never a hint', () => {
     expect(
       buildHeadersViewModel([
         { name: 'X-Rocket-Nonce', redacted: true },
@@ -169,7 +169,7 @@ describe('buildHeadersViewModel — rows withheld at capture', () => {
         },
         { name: 'X-Rocket-Nonce', value: null, hint: null, redacted: true }
       ],
-      other: [{ name: 'Set-Cookie', value: 'sid', hint: null, redacted: true }]
+      other: [{ name: 'Set-Cookie', value: null, hint: null, redacted: true, cookieName: 'sid' }]
     });
   });
 });
@@ -192,6 +192,17 @@ describe('headersTruncationNote', () => {
   it('says nothing for a complete capture', () => {
     expect(headersTruncationNote(rows(300), undefined)).toBeNull();
     expect(headersTruncationNote(rows(3), false)).toBeNull();
+  });
+
+  it('reads a withheld row clipped at its cookie name as a clipped value', () => {
+    const clippedCookie = {
+      name: 'Set-Cookie',
+      redacted: true,
+      cookieName: 'c'.repeat(4096)
+    } as const;
+    expect(headersTruncationNote([clippedCookie], true)).toBe(
+      'Some header values were clipped to 4,096 characters.'
+    );
   });
 
   it('names each cause the rows show', () => {

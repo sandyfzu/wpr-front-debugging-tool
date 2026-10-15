@@ -73,9 +73,15 @@ describe('redactPageHeader', () => {
     });
   });
 
-  it('is final on already withheld rows (no double processing)', () => {
+  it('keeps withheld rows withheld, rebuilt with only their own keys', () => {
     const withheld = { name: 'Set-Cookie', redacted: true, cookieName: 'sid' } as const;
-    expect(redactPageHeader(withheld)).toBe(withheld);
+    expect(redactPageHeader(withheld)).toEqual(withheld);
+    expect(redactPageHeader(withheld)).not.toBe(withheld);
+    // A stray value beside the flag never survives; the flag is never re-judged.
+    expect(redactPageHeader({ name: 'X-Cache', redacted: true, value: 'SECRET' })).toEqual({
+      name: 'X-Cache',
+      redacted: true
+    });
     const once = redactPageHeaders(PLANTED_RAW_HEADERS);
     expect(redactPageHeaders(once)).toEqual(once);
   });

@@ -80,12 +80,14 @@ export class CachedTabHeaders implements HeaderCaptureStore {
   /**
    * Store or reset one tab's headers. Every capture starts by clearing the
    * tab: rows failing validation must not silently keep the previous page's
-   * headers alive under the new page's tab. Every row is redacted first
-   * (secret-bearing values withheld, URL values reduced), so the cache and
-   * every surface it serves only ever hold the redacted form. Oversize captures are bounded
-   * first (rows beyond the cap dropped, long names/values clipped, the
-   * capture marked `truncated`) — one large CSP or `Link` header is page
-   * reality and must not erase every other row; only malformed shapes reject.
+   * headers alive under the new page's tab. Then, in order:
+   * 1. **redact** — every row through the rule on its full value
+   *    (secret-bearing values withheld, URL values reduced), so the cache
+   *    and every surface it serves only ever hold the redacted form;
+   * 2. **bound** — rows beyond the cap dropped, long names/values clipped,
+   *    the capture marked `truncated` (one large CSP or `Link` header is
+   *    page reality and must not erase every other row);
+   * 3. **validate** — only malformed shapes reject.
    *
    * @param headers Raw rows as delivered by the event (possibly absent).
    * @returns True when usable rows were stored, false when the tab has none.

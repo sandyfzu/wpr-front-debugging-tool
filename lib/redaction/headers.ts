@@ -13,19 +13,29 @@ import { redactHeaderValue } from './rule';
  * Redact one header row.
  *
  * @param row A row as captured or served: an ordinary `{ name, value? }`
- *   pair, or an already withheld row (returned as is).
- * @returns The row the contract admits: an ordinary row with its value
- *   reduced by the rule, or a withheld `{ name, redacted: true,
+ *   pair, or an already withheld row (kept withheld, never re-judged).
+ * @returns A fresh row with only the contract's keys: an ordinary row with
+ *   its value reduced by the rule, or a withheld `{ name, redacted: true,
  *   cookieName? }` row with no value at all.
  */
 export function redactPageHeader(row: PageHeader): PageHeader {
-  if (row.redacted === true) return row;
+  if (row.redacted === true) return withheld(row.name, row.cookieName ?? null);
   if (row.value === undefined) return { name: row.name };
   const reduced = redactHeaderValue(row.name, row.value);
   if (!reduced.redacted) return { name: row.name, value: reduced.value };
-  return reduced.cookieName === null
-    ? { name: row.name, redacted: true }
-    : { name: row.name, redacted: true, cookieName: reduced.cookieName };
+  return withheld(row.name, reduced.cookieName);
+}
+
+/**
+ * A withheld row, rebuilt with only its own keys (a stray `value` beside the
+ * flag never survives).
+ *
+ * @param name The header name.
+ * @param cookieName The kept `Set-Cookie` cookie name, or null.
+ * @returns The withheld row.
+ */
+function withheld(name: string, cookieName: string | null): PageHeader {
+  return cookieName === null ? { name, redacted: true } : { name, redacted: true, cookieName };
 }
 
 /**

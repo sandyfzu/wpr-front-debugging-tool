@@ -233,7 +233,7 @@ function withheldCell(cookieName: string | null): string {
  * @returns The cell's markdown.
  */
 function headerValueCell(row: HeaderRowVM): string {
-  if (row.redacted) return withheldCell(row.value);
+  if (row.redacted) return withheldCell(row.cookieName ?? null);
   if (row.value === null) return NONE;
   const exported = redactHeaderValue(row.name, row.value);
   return exported.redacted ? withheldCell(exported.cookieName) : codeSpan(exported.value, true);

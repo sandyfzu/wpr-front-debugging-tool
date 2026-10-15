@@ -13,7 +13,15 @@ import { PLANTED, PLANTED_RAW_HEADERS } from '../redaction/planted-secrets.fixtu
 
 describe('shownHeader — rows withheld at capture', () => {
   it('reads a withheld Set-Cookie as its cookie name plus the marker', () => {
-    expect(shownHeader({ name: 'Set-Cookie', value: 'sid', hint: null, redacted: true })).toEqual({
+    expect(
+      shownHeader({
+        name: 'Set-Cookie',
+        value: null,
+        hint: null,
+        redacted: true,
+        cookieName: 'sid'
+      })
+    ).toEqual({
       name: 'Set-Cookie',
       value: `sid=${REDACTED}`,
       hint: null,
@@ -30,9 +38,9 @@ describe('shownHeader — rows withheld at capture', () => {
     });
   });
 
-  it('never re-processes a withheld row (the marker is not read as a cookie value)', () => {
-    const shown = shownHeader({ name: 'Set-Cookie', value: 'sid', hint: null, redacted: true });
-    expect(shownHeader({ ...shown, value: 'sid', redacted: true }).value).toBe(`sid=${REDACTED}`);
+  it('never re-processes a withheld row (a stray value is not read as a cookie)', () => {
+    const row = { name: 'Set-Cookie', value: 'raw=SECRET', hint: null, redacted: true };
+    expect(shownHeader(row).value).toBe(REDACTED);
   });
 
   it('shows the capture-redacted planted headers without a single secret', () => {
