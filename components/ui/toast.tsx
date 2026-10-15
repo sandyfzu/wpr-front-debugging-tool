@@ -31,7 +31,7 @@ const TONE_ICONS: Record<ToastTone, LucideIcon> = {
   info: Info
 };
 
-// `success`/`info` announce politely; `error` is an assertive live region.
+/** Success/info announce politely; errors use an assertive live region. */
 const TONE_ROLES: Record<ToastTone, 'status' | 'alert'> = {
   success: 'status',
   info: 'status',
@@ -118,7 +118,6 @@ function ToastCard(props: ToastCardProps): JSX.Element {
 
   return (
     <li
-      role={TONE_ROLES[props.item.tone]}
       data-fdt="toast"
       data-fdt-tone={props.item.tone}
       class="pointer-events-auto flex items-start gap-1.5 rounded-md border border-line-2 bg-surface-2 px-2 py-1.5 shadow-elev-2"
@@ -141,7 +140,8 @@ function ToastCard(props: ToastCardProps): JSX.Element {
         class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES[TONE_STATUS_KIND[props.item.tone]])}
         aria-hidden="true"
       />
-      <div class="min-w-0 flex-1">
+      {/* Keep the native list item; only message text belongs to the live region. */}
+      <div role={TONE_ROLES[props.item.tone]} aria-atomic="true" class="min-w-0 flex-1">
         <div class="text-xs font-medium text-fg-primary">{props.item.title}</div>
         <Show when={props.item.description}>
           <div class="mt-0.5 text-2xs leading-snug text-fg-secondary">{props.item.description}</div>
