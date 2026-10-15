@@ -26,16 +26,14 @@ export interface ScriptBadge {
 export const COLLAPSED_CODE_LINES = 3;
 
 /**
- * Per-line cap of the collapsed preview (a cut line ends in `…`). The
- * collapsed block shows three visual lines at most: at the widest panel a
- * wrapped mono line holds ≈ 200 chars, so three of them ≈ 600 — the cap
- * never shortens what is visible, while a minified one-line bundle stays out
- * of the highlighter until expanded.
+ * Per-line cap of the collapsed preview. The collapsed block shows three
+ * visual lines at most: at the widest panel a wrapped mono line holds ≈ 200
+ * chars, so three of them ≈ 600 — the cap never shortens what is visible,
+ * while a minified one-line bundle is not shipped to the highlighter until
+ * expanded. The cut is announced outside the code (the toggle reads "Show
+ * full lines"), never by a mark inside the highlighted text.
  */
 export const PREVIEW_LINE_CHARS = 750;
-
-/** The mark a preview line cut at {@link PREVIEW_LINE_CHARS} ends with. */
-export const PREVIEW_CUT_MARK = '…';
 
 /** The shape of an inline script's code, derived once per row. */
 export interface InlineCode {
@@ -49,6 +47,8 @@ export interface InlineCode {
   readonly expandable: boolean;
   /** The text the collapsed block renders and highlights. */
   readonly preview: string;
+  /** A preview line was cut at {@link PREVIEW_LINE_CHARS}. */
+  readonly lineCut: boolean;
   /** Blank source (empty or whitespace only): nothing to show or copy. */
   readonly blank: boolean;
 }
@@ -145,10 +145,9 @@ export function countLines(text: string): number {
 
 /**
  * The text the collapsed block renders: the first {@link COLLAPSED_CODE_LINES}
- * lines, each cut at {@link PREVIEW_LINE_CHARS} and marked with
- * {@link PREVIEW_CUT_MARK}. Highlighting tokenizes left to right, so the
- * visible lines color as in the full text, while the highlighter never sees
- * the hidden bulk of a large script.
+ * lines, each cut at {@link PREVIEW_LINE_CHARS}. Highlighting tokenizes left
+ * to right, so the visible lines color as in the full text, while the
+ * highlighter never sees the hidden bulk of a large script.
  *
  * @param text The full source text.
  * @returns The preview and whether a line was cut at the cap (the text
@@ -164,7 +163,7 @@ export function collapsedPreview(text: string): { preview: string; lineCut: bool
     const line = end === -1 ? text.slice(start) : text.slice(start, end);
     if (line.length > PREVIEW_LINE_CHARS) {
       lineCut = true;
-      kept.push(`${line.slice(0, PREVIEW_LINE_CHARS)}${PREVIEW_CUT_MARK}`);
+      kept.push(line.slice(0, PREVIEW_LINE_CHARS));
     } else {
       kept.push(line);
     }
@@ -189,20 +188,24 @@ export function inlineCode(text: string): InlineCode {
     lines,
     expandable: !blank && (lines > COLLAPSED_CODE_LINES || lineCut),
     preview,
+    lineCut,
     blank
   };
 }
 
 /**
- * The collapse toggle's words: how much a click reveals ("Show all 40
- * lines"), or "Expand" when the collapsed block hides the rest of its lines.
+ * The collapse toggle's words: how much a click reveals — "Show all 40
+ * lines", "Show full lines" when the preview cut long lines (the cut's only
+ * mark: none is written into the code), or "Expand" when the clamp hides a
+ * wrapped line.
  *
  * @param code The script's code shape.
  * @param expanded Whether the code is expanded.
  */
 export function codeToggleLabel(code: InlineCode, expanded: boolean): string {
   if (expanded) return 'Collapse';
-  return code.lines > COLLAPSED_CODE_LINES ? `Show all ${lineCount(code.lines)}` : 'Expand';
+  if (code.lines > COLLAPSED_CODE_LINES) return `Show all ${lineCount(code.lines)}`;
+  return code.lineCut ? 'Show full lines' : 'Expand';
 }
 
 /** Whether two classified scripts carry the same data (position ignored). */

@@ -8,16 +8,15 @@
  * document palette exactly like the design tokens, with no appearance hook
  * and no re-render on theme switches.
  *
- * Loading discipline: shiki is reached **only** through the dynamic
- * `import()` inside this file's default loader — this component file carries
- * no value import of the highlighter module (its types come through a pure
- * `import type`, erased at build time), and the language vocabulary comes
- * from the shiki-free `code-block-langs.ts`. Consumers importing `CodeBlock`
- * therefore keep shiki out of their static chunk — the property proven by
- * an esbuild consumer spike in the 2026-10-12 audit round (entry/eager
- * chunk: no shiki; a separate lazy chunk: all of it). Until the highlighter
- * resolves, the raw text shows in a plain `<pre>` fallback — content is
- * never hidden behind loading.
+ * Off the main thread: shiki runs only in the highlight worker
+ * (`code-block-highlight.worker.ts`), reached through the shiki-free client
+ * (`code-block-worker-client.ts`) — this file imports neither shiki nor the
+ * worker's modules as values, so consumers' chunks never carry shiki. The
+ * client bounds each block with a hard time budget (a runaway block's worker
+ * is terminated), so no code shape can freeze the panel; the main thread only
+ * mounts the result. Until it arrives — or when it never does (timeout, no
+ * worker support, too large) — the raw text shows in a plain `<pre>`:
+ * content is never hidden behind loading.
  *
  * Lazy rendering: highlight work latches behind an `IntersectionObserver` on
  * this block's always-mounted wrapper element, and the observer is
@@ -55,8 +54,12 @@ import { createLogger } from '../../lib/logger';
 import { Button } from './button';
 import { FOCUS_RING } from './classes';
 import { CODE_BLOCK_LANGS, type CodeLanguage } from './code-block-langs';
-import { fitsOneSlice } from './code-block-slices';
 import type { HighlightedCode } from './code-block-highlighter';
+import {
+  HighlightUnavailableError,
+  sharedWorkerHighlighter,
+  type HighlightFailure
+} from './code-block-worker-client';
 import { isClippedVertically, watchOverflow, type OverflowWatcher } from './overflow-watch';
 
 /** The logger for load failures — raw text stays the rendered fallback. */
@@ -64,12 +67,12 @@ const logger = createLogger('code-block');
 
 /**
  * Code longer than this (chars) is never highlighted: it renders as plain
- * monospace text with a quiet "not highlighted" note. Tokenizing is sliced
- * (never a long task), but the highlighted markup is mounted in one go and
- * weighs ≈ 33 HTML chars per code char; measured in Chromium (2026-10-14),
- * mounting stays under 50 ms up to ≈ 47 K chars and becomes one 85–107 ms
- * task from ≈ 66 K. 32 K keeps a margin for slower machines; scripts past it
- * are bundles, where colors stop paying for the work.
+ * monospace text with a quiet note. Tokenizing runs in the worker, but the
+ * highlighted markup is mounted on the main thread in one go and weighs
+ * ≈ 33 HTML chars per code char; measured in Chromium (2026-10-14), mounting
+ * stays under 50 ms up to ≈ 47 K chars and becomes one 85–107 ms task from
+ * ≈ 66 K. 32 K keeps a margin for slower machines (it also bounds what a
+ * message carries); scripts past it are bundles, where colors stop paying.
  */
 export const HIGHLIGHT_MAX_CHARS = 32_000;
 
@@ -83,18 +86,21 @@ const INTERSECTION_MARGIN = '150px';
 interface HighlighterLike {
   /**
    * Highlight code text (see the loader's safety TSDoc — output is safe for
-   * `innerHTML` even for untrusted source text).
+   * `innerHTML` even for untrusted source text). The production client
+   * answers asynchronously and rejects with a `HighlightUnavailableError`;
+   * test doubles may answer synchronously.
    */
-  highlight: (code: string, options: { lang: CodeLanguage }) => HighlightedCode;
-  /**
-   * The sliced variant for longer code (same output); doubles may omit
-   * it, then every size goes through {@link HighlighterLike.highlight}.
-   */
-  highlightSliced?: (
+  highlight: (
     code: string,
     options: { lang: CodeLanguage; signal?: AbortSignal }
-  ) => Promise<HighlightedCode>;
+  ) => HighlightedCode | Promise<HighlightedCode>;
 }
+
+/** The toolbar note per reason a block stays plain. */
+export const PLAIN_NOTES: Readonly<Partial<Record<HighlightFailure | 'too-large', string>>> = {
+  'too-large': 'Not highlighted (too large)',
+  timeout: 'Not highlighted (took too long)'
+};
 
 /**
  * The intersection gate: observe one element, latch first visibility, stop.
@@ -270,13 +276,8 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   // Whether the clamp currently cuts lines off (drives the fade).
   const [clipped, setClipped] = createSignal(false);
 
-  /**
-   * The default loader: the dynamic `import()` of the shiki module graph —
-   * the single place shiki can ever enter a build; the component file itself
-   * stays statically free of it.
-   */
-  const defaultLoader = (): Promise<HighlighterLike> =>
-    import('./code-block-highlighter').then((module) => module.getHighlighter());
+  /** The default loader: the panel's one worker client (shiki-free here). */
+  const defaultLoader = (): Promise<HighlighterLike> => Promise.resolve(sharedWorkerHighlighter());
 
   onMount(() => {
     if (container === undefined) {
@@ -333,42 +334,39 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
   /** Too large to highlight: plain text, with the note in the toolbar. */
   const tooLarge = (): boolean => own.text.length > HIGHLIGHT_MAX_CHARS;
 
-  // The highlighted output for the current text — set once the highlighter
-  // arrived. Short code highlights synchronously; longer code in slices, the
-  // raw text showing meanwhile (a text change drops the stale colors at once,
-  // so the shown text always matches `text`). A newer text or unmount aborts
-  // the slices in flight.
+  // The highlighted output for the current text — requested once the
+  // highlighter arrived; the raw text shows meanwhile. A text change drops
+  // the stale colors at once (the shown text always matches `text`); a newer
+  // text or unmount aborts the request in flight.
   const [highlighted, setHighlighted] = createSignal<HighlightedCode | undefined>();
+  // Why the current text stays plain, when the highlighter gave up on it.
+  const [failure, setFailure] = createSignal<HighlightFailure | undefined>();
   createEffect(() => {
     const loader = highlighter();
     const text = own.text;
     const language = own.lang;
     setHighlighted(undefined);
+    setFailure(undefined);
     if (loader === undefined || tooLarge()) return;
-    // Code within one bounded slice highlights synchronously (no plain-text
-    // flash); anything longer goes through the slices, never a long task.
-    if (loader.highlightSliced === undefined || fitsOneSlice(text)) {
-      try {
-        setHighlighted(loader.highlight(text, { lang: language }));
-      } catch (error: unknown) {
-        // Structural failure (never reached with the two registered
-        // languages) — degrade to the fallback rather than unmounting content.
-        logger.warn('Highlighting threw; falling back to raw text.', error);
-      }
-      return;
-    }
     const controller = new AbortController();
     onCleanup(() => {
       controller.abort();
     });
-    loader
-      .highlightSliced(text, { lang: language, signal: controller.signal })
-      .then(setHighlighted)
+    Promise.resolve()
+      .then(() => loader.highlight(text, { lang: language, signal: controller.signal }))
+      .then((html) => {
+        if (!controller.signal.aborted) setHighlighted(html);
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return; // superseded: nothing to report
-        logger.warn('Highlighting threw; falling back to raw text.', error);
+        // Degradation, not a dead end: the raw text stays, the reason is logged.
+        if (error instanceof HighlightUnavailableError) setFailure(error.reason);
+        logger.warn('Highlighting unavailable; raw text stays visible.', error);
       });
   });
+  /** The toolbar note, when the block stays plain for a reason worth naming. */
+  const plainNote = (): string | undefined =>
+    tooLarge() ? PLAIN_NOTES['too-large'] : PLAIN_NOTES[failure() ?? 'aborted'];
 
   return (
     <div
@@ -383,10 +381,12 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
           <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
             {own.lang}
           </span>
-          <Show when={tooLarge()}>
-            <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
-              Not highlighted (too large)
-            </span>
+          <Show when={plainNote()}>
+            {(note) => (
+              <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
+                {note()}
+              </span>
+            )}
           </Show>
         </span>
         <Button

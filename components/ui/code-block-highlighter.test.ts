@@ -29,7 +29,7 @@ import {
   resetHighlighter,
   type CodeHighlighter
 } from './code-block-highlighter';
-import { MAX_TOKEN_SPAN, MAX_TOKENIZED_LINE } from './code-block-slices';
+import { answerHighlight } from './code-block-worker-protocol';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 
@@ -270,129 +270,80 @@ describe('real highlighter — contrast on the code surface (WCAG AA)', () => {
   });
 });
 
-/** A JS sample whose comments/templates/strings span many lines (grammar state matters). */
-function stateful(lines: number): string {
-  const out: string[] = [];
-  for (let i = 0; i < lines; i += 1) {
-    if (i % 23 === 0) out.push('/* a block comment');
-    else if (i % 23 === 3) out.push('   that ends here */ const c = 1;');
-    else if (i % 31 === 0) out.push('const t = `template ${i} opens');
-    else if (i % 31 === 4) out.push('and closes ${`nested`}`;');
-    else out.push(`  if (a${String(i)}) { foo.bar(${String(i)}, "s"); } // c`);
-  }
-  return out.join('\n');
+/** The reference: plain shiki over the whole block with the loader's options. */
+async function referenceHtml(code: string): Promise<string> {
+  const reference = await createHighlighterCore({
+    langs: [javascript, json],
+    themes: [githubLight, githubDark],
+    engine: createJavaScriptRegexEngine({ forgiving: true })
+  });
+  const html = reference.codeToHtml(code, {
+    lang: 'javascript',
+    themes: THEME_PAIR,
+    defaultColor: 'light-dark()',
+    colorReplacements: COLOR_REPLACEMENTS,
+    rootStyle: false,
+    tabindex: false
+  });
+  reference.dispose();
+  return html;
 }
 
-describe('real highlighter — line cap', () => {
-  it('emits a line at the cap untokenized and keeps tokenizing shorter lines', () => {
-    const long = `var x = "${'a'.repeat(MAX_TOKENIZED_LINE)}";`;
-    const output = highlighter.highlight(`${long}\nconst y = 1;`, { lang: 'javascript' });
-    const [first, second] = output.split('\n');
-    // The long line is one uncolored span; the next line is colored tokens.
-    expect(first?.match(/<span style=/g) ?? []).toHaveLength(0);
-    expect(second).toMatch(/light-dark\(/);
-  });
+/** The distinct inline colors of one output line. */
+function colorsOfLine(html: string, line: number): Set<string> {
+  const text = html.split('<span class="line">')[line + 1] ?? '';
+  return new Set(text.match(/color:[^;"]+/g));
+}
 
-  it('leaves a quadratic-prone 30 KB string line untokenized (no timing assertion)', () => {
-    const uri = `var u = "data:image/png;base64,${'iVBORw0KGgo'.repeat(2_800)}";`;
-    const output = highlighter.highlight(uri, { lang: 'javascript' });
-    // One plain span: the grammar never ran over the line.
-    expect(output.match(/<span style=/g) ?? []).toHaveLength(0);
-    expect(output).toContain('iVBORw0KGgo');
-  });
-});
+describe('worker handler — whole-block highlighting (regression pins)', () => {
+  /** Answer one request through the worker's handler with the real highlighter. */
+  async function answer(code: string): Promise<string> {
+    const response = await answerHighlight(getHighlighter, { id: 7, code, lang: 'javascript' });
+    expect(response.id).toBe(7);
+    if (!('html' in response)) throw new Error(`no html: ${response.error}`);
+    return response.html;
+  }
 
-describe('real highlighter — sliced highlighting', () => {
   it.each([
-    ['empty', ''],
-    ['one line', 'const a = 1;'],
-    ['CRLF breaks', 'const a = 1;\r\n/* x\r\n y */\r\nconst b = `t\r\n${a}`;'],
-    ['grammar state across many slices', stateful(600)]
-  ])('equals the one-shot output (%s)', async (_name, code) => {
-    let yields = 0;
-    const sliced = await highlighter.highlightSliced(code, {
-      lang: 'javascript',
-      yieldToMain: () => {
-        yields += 1;
-        return Promise.resolve();
-      }
-    });
-    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
-    if (code.split('\n').length > 16) expect(yields).toBeGreaterThan(0);
+    [
+      'six long keys on one line',
+      `var o = {${Array.from({ length: 6 }, (_, i) => `"${'k'.repeat(318)}${String(i)}": ${String(i)}`).join(', ')}};`
+    ],
+    [
+      'a CJK config line',
+      `var i18n = ${JSON.stringify(Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`key${String(i)}`, '設定を保存しました。'])))};`
+    ],
+    ['an identifier and an ellipsis', 'const value = compute(); // …'],
+    ['a comment closing after a long line', `/*\n${'x'.repeat(400)} */\nvar a = 1;`],
+    ['a template closing after a long line', `var s = \`\n${'x'.repeat(400)}\`;\nvar a = 1;`]
+  ])('colors %s exactly as plain shiki over the whole block', async (_name, code) => {
+    const html = await answer(code);
+    expect(html).toBe(await referenceHtml(code));
+    expect(html).toMatch(/light-dark\(/);
   });
 
-  it('emits long-string lines plain, one slice each, output unchanged', async () => {
-    // The 15 × 1,980-char repro: one slow string token per line.
-    const line = (i: number): string =>
-      `var s${String(i)} = "${'q'.repeat(MAX_TOKENIZED_LINE - 20)}";`;
-    const code = Array.from({ length: 15 }, (_, i) => line(i)).join('\n');
-    let yields = 0;
-    const sliced = await highlighter.highlightSliced(code, {
-      lang: 'javascript',
-      yieldToMain: () => {
-        yields += 1;
-        return Promise.resolve();
-      }
-    });
-    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
-    expect(yields).toBe(15);
-    expect(sliced.match(/<span style=/g) ?? []).toHaveLength(0);
+  it('colors the code after a long comment line as code, not comment', async () => {
+    const html = await answer(`/*\n${'x'.repeat(400)} */\nvar a = 1;`);
+    // `var`, `a`, `=`, `1` — several colors, not the comment's single one.
+    expect(colorsOfLine(html, 2).size).toBeGreaterThan(1);
   });
 
-  it('keeps a long config line with short strings colored', () => {
-    const config = `var wpApiSettings = ${JSON.stringify(
-      Object.fromEntries(
-        Array.from({ length: 80 }, (_, i) => [`key${String(i)}`, `value-${String(i)}`])
-      )
-    )};`;
-    expect(config.length).toBeGreaterThan(1_400);
-    expect(config.length).toBeLessThan(MAX_TOKENIZED_LINE);
-    expect(highlighter.highlight(config, { lang: 'javascript' })).toMatch(/light-dark\(/);
+  it('answers a failure as an error response (the client renders plain)', async () => {
+    const response = await answerHighlight(getHighlighter, {
+      id: 3,
+      code: 'x',
+      lang: 'yaml' as 'json'
+    });
+    expect(response).toMatchObject({ id: 3 });
+    expect('error' in response).toBe(true);
   });
 
-  it('equals plain shiki on code with no plain lines (multi-slice)', async () => {
-    const reference = await createHighlighterCore({
-      langs: [javascript, json],
-      themes: [githubLight, githubDark],
-      engine: createJavaScriptRegexEngine({ forgiving: true })
+  it('answers a loader failure as an error response', async () => {
+    const response = await answerHighlight(() => Promise.reject(new Error('chunk gone')), {
+      id: 4,
+      code: 'x',
+      lang: 'javascript'
     });
-    const code = stateful(600);
-    expect(highlighter.highlight(code, { lang: 'javascript' })).toBe(
-      reference.codeToHtml(code, {
-        lang: 'javascript',
-        themes: THEME_PAIR,
-        defaultColor: 'light-dark()',
-        colorReplacements: COLOR_REPLACEMENTS,
-        tokenizeMaxLineLength: MAX_TOKENIZED_LINE,
-        rootStyle: false,
-        tabindex: false
-      })
-    );
-    reference.dispose();
-  });
-
-  it('keeps grammar state across a plain line inside a block comment', async () => {
-    const code = `/* opens\nx = "${'q'.repeat(MAX_TOKEN_SPAN)}";\nstill comment */ const after = 1;`;
-    const sliced = await highlighter.highlightSliced(code, {
-      lang: 'javascript',
-      yieldToMain: () => Promise.resolve()
-    });
-    expect(sliced).toBe(highlighter.highlight(code, { lang: 'javascript' }));
-    // The third line still opens inside the comment, then leaves it: two colors.
-    const third = sliced.split('\n')[2] ?? '';
-    expect(new Set(third.match(/color:[^;"]+/g)).size).toBeGreaterThan(1);
-  });
-
-  it('stops at the next slice once aborted', async () => {
-    const controller = new AbortController();
-    const pending = highlighter.highlightSliced(stateful(600), {
-      lang: 'javascript',
-      signal: controller.signal,
-      yieldToMain: () => {
-        controller.abort(new Error('superseded'));
-        return Promise.resolve();
-      }
-    });
-    await expect(pending).rejects.toThrow('superseded');
+    expect(response).toEqual({ id: 4, error: 'chunk gone' });
   });
 });

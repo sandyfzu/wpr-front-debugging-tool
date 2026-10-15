@@ -8,11 +8,12 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CodeBlock, HIGHLIGHT_MAX_CHARS, type IntersectionGate } from './code-block';
+import { CodeBlock, HIGHLIGHT_MAX_CHARS, PLAIN_NOTES, type IntersectionGate } from './code-block';
+import { HighlightUnavailableError, type HighlightFailure } from './code-block-worker-client';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
 import type { OverflowWatcher } from './overflow-watch';
 
-/** Code that does not fit one highlighting slice (5,000 chars over 50 lines). */
+/** A multi-line block (5,000 chars over 50 lines). */
 const MULTI_SLICE = Array.from({ length: 50 }, () => 'y'.repeat(99)).join('\n');
 
 afterEach(() => {
@@ -405,38 +406,38 @@ describe('CodeBlock', () => {
   });
 });
 
-/** A sliced-capable loader double: records each call, resolves on demand. */
-function slicedLoader(): {
+/** An async loader double (the worker client's shape): requests resolve or fail on demand. */
+function asyncLoader(): {
   load: () => Promise<{
-    highlight: (code: string) => string;
-    highlightSliced: (code: string, options: { signal?: AbortSignal }) => Promise<string>;
+    highlight: (code: string, options: { signal?: AbortSignal }) => Promise<string>;
   }>;
-  syncCalls: string[];
-  sliced: Array<{ code: string; signal?: AbortSignal; resolve: () => void }>;
+  requests: Array<{
+    code: string;
+    signal?: AbortSignal;
+    resolve: () => void;
+    fail: (reason: HighlightFailure) => void;
+  }>;
 } {
-  const syncCalls: string[] = [];
-  const sliced: Array<{ code: string; signal?: AbortSignal; resolve: () => void }> = [];
-  const wrap = (code: string): string =>
-    `<pre class="probe"><code>${String(code.length)}</code></pre>`;
+  const requests: Array<{
+    code: string;
+    signal?: AbortSignal;
+    resolve: () => void;
+    fail: (reason: HighlightFailure) => void;
+  }> = [];
   return {
-    syncCalls,
-    sliced,
+    requests,
     load: () =>
       Promise.resolve({
-        highlight: (code: string) => {
-          syncCalls.push(code);
-          return wrap(code);
-        },
-        highlightSliced: (code: string, options: { signal?: AbortSignal }) =>
+        highlight: (code: string, options: { signal?: AbortSignal }) =>
           new Promise<string>((resolve, reject) => {
-            options.signal?.addEventListener('abort', () => {
-              reject(new Error('aborted'));
-            });
-            sliced.push({
+            requests.push({
               code,
               signal: options.signal,
               resolve: () => {
-                resolve(wrap(code));
+                resolve(`<pre class="probe"><code>${String(code.length)}</code></pre>`);
+              },
+              fail: (reason) => {
+                reject(new HighlightUnavailableError(reason));
               }
             });
           })
@@ -444,56 +445,14 @@ function slicedLoader(): {
   };
 }
 
-describe('CodeBlock — highlighting cost bounds', () => {
-  it('highlights short code synchronously (no plain-text flash)', async () => {
+describe('CodeBlock — worker highlighting', () => {
+  /** Render a block over the async loader, latched visible. */
+  async function mount(
+    text: () => string,
+    loader = asyncLoader()
+  ): Promise<{ loader: ReturnType<typeof asyncLoader>; unmount: () => void }> {
     const gate = manualGate();
-    const loader = slicedLoader();
-    render(() => (
-      <CodeBlock
-        text="const a = 1;"
-        lang="javascript"
-        createObserver={() => gate}
-        loadHighlighter={loader.load}
-      />
-    ));
-    gate.fires();
-    await vi.waitFor(() => {
-      expect(controls().highlighted).toBeTruthy();
-    });
-    expect(loader.syncCalls).toEqual(['const a = 1;']);
-    expect(loader.sliced).toHaveLength(0);
-  });
-
-  it('highlights longer code in slices, raw text showing until they finish', async () => {
-    const gate = manualGate();
-    const loader = slicedLoader();
-    const text = MULTI_SLICE;
-    render(() => (
-      <CodeBlock
-        text={text}
-        lang="javascript"
-        createObserver={() => gate}
-        loadHighlighter={loader.load}
-      />
-    ));
-    gate.fires();
-    await vi.waitFor(() => {
-      expect(loader.sliced).toHaveLength(1);
-    });
-    expect(loader.syncCalls).toHaveLength(0);
-    expect(controls().fallback?.textContent).toBe(text);
-    loader.sliced[0]?.resolve();
-    await vi.waitFor(() => {
-      expect(controls().highlighted?.textContent).toBe(String(text.length));
-    });
-  });
-
-  it('drops stale colors and aborts the slices in flight when the text changes', async () => {
-    const gate = manualGate();
-    const loader = slicedLoader();
-    const long = MULTI_SLICE;
-    const [text, setText] = createSignal(long);
-    render(() => (
+    const { unmount } = render(() => (
       <CodeBlock
         text={text()}
         lang="javascript"
@@ -503,40 +462,69 @@ describe('CodeBlock — highlighting cost bounds', () => {
     ));
     gate.fires();
     await vi.waitFor(() => {
-      expect(loader.sliced).toHaveLength(1);
+      expect(loader.requests.length).toBeGreaterThan(0);
     });
-    setText('short();');
-    expect(loader.sliced[0]?.signal?.aborted).toBe(true);
-    expect(controls().highlighted?.textContent).toBe(String('short();'.length));
-    setText(long);
-    // The short text's colors never linger over the long text.
-    expect(controls().highlighted).toBeNull();
-    expect(controls().fallback?.textContent).toBe(long);
-  });
+    return { loader, unmount };
+  }
 
-  it('aborts the slices in flight when the block unmounts', async () => {
-    const gate = manualGate();
-    const loader = slicedLoader();
-    const { unmount } = render(() => (
-      <CodeBlock
-        text={MULTI_SLICE}
-        lang="javascript"
-        createObserver={() => gate}
-        loadHighlighter={loader.load}
-      />
-    ));
-    gate.fires();
+  it('shows raw text until the worker answers, then the highlighted markup', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    loader.requests[0]?.resolve();
     await vi.waitFor(() => {
-      expect(loader.sliced).toHaveLength(1);
+      expect(controls().highlighted?.textContent).toBe(String(MULTI_SLICE.length));
     });
-    expect(loader.sliced[0]?.signal?.aborted).toBe(false);
-    unmount();
-    expect(loader.sliced[0]?.signal?.aborted).toBe(true);
   });
 
-  it('never highlights code above the size limit and says so', async () => {
+  it('drops stale colors and aborts the request in flight when the text changes', async () => {
+    const [text, setText] = createSignal('first();');
+    // eslint-disable-next-line solid/reactivity -- the accessor itself is handed over, read inside the component
+    const { loader } = await mount(text);
+    loader.requests[0]?.resolve();
+    await vi.waitFor(() => {
+      expect(controls().highlighted).toBeTruthy();
+    });
+    setText(MULTI_SLICE);
+    // The previous colors never linger over the new text.
+    expect(controls().highlighted).toBeNull();
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    await vi.waitFor(() => {
+      expect(loader.requests).toHaveLength(2);
+    });
+    setText('third();');
+    expect(loader.requests[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('aborts the request in flight when the block unmounts', async () => {
+    const { loader, unmount } = await mount(() => MULTI_SLICE);
+    expect(loader.requests[0]?.signal?.aborted).toBe(false);
+    unmount();
+    expect(loader.requests[0]?.signal?.aborted).toBe(true);
+  });
+
+  it('keeps raw text and says so when the block took too long', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    loader.requests[0]?.fail('timeout');
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+        'Not highlighted (took too long)'
+      );
+    });
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+  });
+
+  it('keeps raw text quietly when workers are unavailable', async () => {
+    const { loader } = await mount(() => MULTI_SLICE);
+    loader.requests[0]?.fail('unavailable');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+  });
+
+  it('never requests code above the size limit and says so', async () => {
     const gate = manualGate();
-    const loader = slicedLoader();
+    const loader = asyncLoader();
     const text = 'z'.repeat(HIGHLIGHT_MAX_CHARS + 1);
     render(() => (
       <CodeBlock
@@ -549,15 +537,14 @@ describe('CodeBlock — highlighting cost bounds', () => {
     gate.fires();
     await Promise.resolve();
     await Promise.resolve();
-    expect(loader.syncCalls).toHaveLength(0);
-    expect(loader.sliced).toHaveLength(0);
+    expect(loader.requests).toHaveLength(0);
     expect(controls().fallback?.textContent).toBe(text);
     expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
-      'Not highlighted (too large)'
+      PLAIN_NOTES['too-large']
     );
   });
 
-  it('shows no size note for code within the limit', () => {
+  it('shows no plain note for code within the limit', () => {
     render(() => <CodeBlock text="a" lang="javascript" loadHighlighter={stubLoader()} />);
     expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
   });

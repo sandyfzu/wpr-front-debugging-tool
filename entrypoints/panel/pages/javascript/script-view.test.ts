@@ -10,7 +10,6 @@ import { buildRowView } from './script-identity';
 import {
   COLLAPSED_CODE_LINES,
   JS_VIEW_RESOURCES,
-  PREVIEW_CUT_MARK,
   PREVIEW_LINE_CHARS,
   ROW_ESTIMATES,
   buildChips,
@@ -105,9 +104,10 @@ describe('collapsedPreview', () => {
     expect(collapsedPreview('a\nb\nc\nd\ne')).toEqual({ preview: 'a\nb\nc', lineCut: false });
   });
 
-  it('cuts a long line at the cap and marks it with an ellipsis', () => {
+  it('cuts a long line at the cap, writing no mark into the code', () => {
     const long = 'y'.repeat(PREVIEW_LINE_CHARS + 1);
-    const cut = `${'y'.repeat(PREVIEW_LINE_CHARS)}${PREVIEW_CUT_MARK}`;
+    // No mark inside the code: the cut is announced by the toggle.
+    const cut = 'y'.repeat(PREVIEW_LINE_CHARS);
     expect(collapsedPreview(long)).toEqual({ preview: cut, lineCut: true });
     expect(collapsedPreview(`a\n${long}\nc`).preview).toBe(`a\n${cut}\nc`);
     // Exactly at the cap is not cut.
@@ -122,6 +122,7 @@ describe('inlineCode', () => {
       lines: 4,
       expandable: true,
       preview: 'a\nb\nc',
+      lineCut: false,
       blank: false
     });
     expect(inlineCode('a\nb\nc').expandable).toBe(false);
@@ -140,6 +141,9 @@ describe('codeToggleLabel', () => {
   it('names how much the click reveals, or collapses', () => {
     expect(codeToggleLabel(inlineCode('a\nb\nc\nd'), false)).toBe('Show all 4 lines');
     expect(codeToggleLabel(inlineCode('z'.repeat(COLLAPSED_CODE_LINES)), false)).toBe('Expand');
+    expect(codeToggleLabel(inlineCode('z'.repeat(PREVIEW_LINE_CHARS + 1)), false)).toBe(
+      'Show full lines'
+    );
     expect(codeToggleLabel(inlineCode('a\nb\nc\nd'), true)).toBe('Collapse');
   });
 });
