@@ -21,6 +21,11 @@ import { JavaScriptPage, JavaScriptView, listCutNote } from './page';
 import { PREVIEW_LINE_CHARS } from './script-view';
 import { HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import type { CodeBlockSeams } from './script-row';
+import {
+  readScriptSourceChunk,
+  type ScriptSourceRequest
+} from '../../../../lib/messaging/script-source';
+import { boundWprDetections } from '../../../../lib/messaging/payload-bounds';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 
 afterEach(() => {
@@ -142,7 +147,10 @@ function dataWith(
 }
 
 /** Render the view over a data signal. */
-function renderView(initial: FdtData = dataWith(scripts())): {
+function renderView(
+  initial: FdtData = dataWith(scripts()),
+  readSourceChunk?: (request: ScriptSourceRequest) => Promise<unknown>
+): {
   setData: Setter<FdtData>;
   search: SearchStore;
   virtualizer: ReturnType<typeof windowedVirtualizer>;
@@ -156,6 +164,7 @@ function renderView(initial: FdtData = dataWith(scripts())): {
       search={search}
       createVirtualizer={virtualizer.factory}
       codeBlock={CODE_SEAMS}
+      readSourceChunk={readSourceChunk}
     />
   ));
   return { setData, search, virtualizer };
@@ -545,6 +554,114 @@ describe('JavaScriptView — copy', () => {
   });
 });
 
+describe('JavaScriptView — complete snapshot copy', () => {
+  it('copies the complete captured inline content and URL after real upstream truncation', async () => {
+    const snapshotId = '12345678123412341234123456789abc';
+    const source =
+      '/*' + 'a'.repeat(PAYLOAD_LIMITS.delayScripts.content + 1) + '🛰️*/\r\n// final...';
+    const url = 'https://example.test/script.js?q=' + 'x'.repeat(5000) + '&exact=%20#end...';
+    const raw = [
+      makeDelayScript({ inline: true, src: undefined, content: source }),
+      makeDelayScript({ src: url })
+    ];
+    const data = dataWith(raw);
+    const bounded = {
+      ...data,
+      scriptSnapshotId: snapshotId,
+      wprDetections: boundWprDetections(data.wprDetections)
+    };
+    expect(bounded.wprDetections.delay_js.scripts[0]?.content?.length).toBeLessThan(source.length);
+    expect(bounded.wprDetections.delay_js.scripts[1]?.src?.length).toBeLessThan(url.length);
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView(bounded, (request) =>
+      Promise.resolve(readScriptSourceChunk(raw, snapshotId, request))
+    );
+    fireEvent.click(
+      within(rows()[0] as HTMLElement).getByRole('button', { name: 'Inline script — copy' })
+    );
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(source);
+    });
+    fireEvent.click(
+      within(rows()[1] as HTMLElement).getByRole('button', { name: 'Script URL — copy' })
+    );
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(url);
+    });
+    expect(rows()[0]?.textContent.length).toBeLessThan(2000);
+  });
+
+  it('never silently copies bounded text from a payload without source provenance', async () => {
+    const data = dataWith([
+      makeDelayScript({
+        inline: true,
+        src: undefined,
+        content: 'a'.repeat(PAYLOAD_LIMITS.delayScripts.content)
+      })
+    ]);
+    data.wprDetections.delay_js.truncated = true;
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView(data);
+    const button = within(rows()[0] as HTMLElement).getByRole('button', {
+      name: 'Inline script — copy'
+    });
+    fireEvent.click(button);
+    await vi.waitFor(() => {
+      expect(button.hasAttribute('disabled')).toBe(false);
+    });
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('copies full content when the entire inline inventory budget was spent before its row', async () => {
+    const snapshotId = '12345678123412341234123456789abc';
+    const content = 'a'.repeat(PAYLOAD_LIMITS.delayScripts.content);
+    const raw = Array.from({ length: 16 }, () =>
+      makeDelayScript({ inline: true, src: undefined, content })
+    );
+    raw.push(makeDelayScript({ inline: true, src: undefined, content: 'after the budget 🛰️...' }));
+    const data = dataWith(raw);
+    const bounded = {
+      ...data,
+      scriptSnapshotId: snapshotId,
+      wprDetections: boundWprDetections(data.wprDetections)
+    };
+    expect(bounded.wprDetections.delay_js.scripts[16]?.content).toBe('');
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView(bounded, (request) =>
+      Promise.resolve(readScriptSourceChunk(raw, snapshotId, request))
+    );
+    fireEvent.click(
+      within(rows()[16] as HTMLElement).getByRole('button', { name: 'Inline script — copy' })
+    );
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('after the budget 🛰️...');
+    });
+  });
+
+  it('keeps the current document index when unchanged row objects survive insertions', async () => {
+    const snapshotId = '12345678123412341234123456789abc';
+    const read = vi.fn(() => Promise.resolve({ status: 'ok', text: 'current', total: 7 }));
+    const data = {
+      ...dataWith([makeDelayScript({ src: 'first.js' })]),
+      scriptSnapshotId: snapshotId
+    };
+    const { setData } = renderView(data, read);
+    setData({
+      ...dataWith([makeDelayScript({ src: 'new.js' }), makeDelayScript({ src: 'first.js' })]),
+      scriptSnapshotId: snapshotId
+    });
+    fireEvent.click(
+      within(rows()[1] as HTMLElement).getByRole('button', { name: 'Script URL — copy' })
+    );
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledWith({ snapshotId, scriptIndex: 1, offset: 0 });
+    });
+  });
+});
+
 describe('JavaScriptView — very large scripts', () => {
   it('expands to the first part of a script past the render limit, copying the whole', async () => {
     const big = Array.from(
@@ -614,7 +731,7 @@ describe('JavaScriptView — capture bounds', () => {
     expect(document.querySelector('[data-fdt="script-total"]')?.textContent).toBe('6 scripts');
   });
 
-  it('marks clipped text, warns on copy, and names text the budget left out', () => {
+  it('marks bounded text and offers full-source copy even when the inventory budget left text out', () => {
     const big = 'x'.repeat(CAPS.content);
     const spent = Array.from({ length: CAPS.contentTotal / CAPS.content }, () => ({
       inline: true,
@@ -628,13 +745,11 @@ describe('JavaScriptView — capture bounds', () => {
     renderView(truncatedData([...spent, left]));
     const first = rows()[0] as HTMLElement;
     expect(within(first).getByText('Content clipped')).toBeTruthy();
-    expect(
-      within(first).getByRole('button', { name: 'Clipped inline script — copy' })
-    ).toBeTruthy();
+    expect(within(first).getByRole('button', { name: 'Inline script — copy' })).toBeTruthy();
     const last = rows().at(-1) as HTMLElement;
     expect(last.textContent).toContain('Content not captured (size budget)');
     expect(last.textContent).not.toContain('Empty inline script');
-    expect(within(last).queryByRole('button', { name: /copy/ })).toBeNull();
+    expect(within(last).getByRole('button', { name: 'Inline script — copy' })).toBeTruthy();
   });
 });
 

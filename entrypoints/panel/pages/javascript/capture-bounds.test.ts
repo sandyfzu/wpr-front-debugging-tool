@@ -68,6 +68,14 @@ describe('contentCaptures', () => {
     ]);
   });
 
+  it('conservatively marks text and URLs ending one unit below their cap after surrogate-safe clipping', () => {
+    expect(
+      contentCaptures(
+        row([inline(CAPS.content - 1), { ...EXTERNAL, src: 'x'.repeat(CAPS.src - 1) }], true)
+      )
+    ).toEqual(['clipped', 'clipped']);
+  });
+
   it('marks the script that exhausted the budget clipped and later ones not captured', () => {
     // Sixteen full scripts spend the 8 Mi budget exactly; the next ones get nothing.
     const spent = Array.from({ length: CAPS.contentTotal / CAPS.content }, () =>

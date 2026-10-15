@@ -28,7 +28,7 @@ export function scriptListCut(delayJs: WprDetections['delay_js']): boolean {
  * because the list-wide budget was spent was **not captured**; one whose
  * text fills its allowance was **clipped** (a text exactly that long reads
  * as clipped too — the producer leaves no way to tell, and "clipped" is the
- * safe claim). External scripts are always `complete`.
+ * safe claim). External URLs filling their cap (allowing for a split surrogate) are `clipped` too.
  *
  * @param delayJs The Delay JS detection row.
  * @returns One capture state per script, in document order.
@@ -37,10 +37,12 @@ export function contentCaptures(delayJs: WprDetections['delay_js']): ContentCapt
   const caps = PAYLOAD_LIMITS.delayScripts;
   let budget = caps.contentTotal;
   return delayJs.scripts.map((script): ContentCapture => {
-    if (script.content === undefined || delayJs.truncated !== true) return 'complete';
+    if (delayJs.truncated !== true) return 'complete';
+    if (script.content === undefined)
+      return (script.src?.length ?? 0) >= caps.src - 1 ? 'clipped' : 'complete';
     const allowance = Math.min(caps.content, budget);
     budget -= script.content.length;
     if (allowance <= 0) return 'not-captured';
-    return script.content.length >= allowance ? 'clipped' : 'complete';
+    return script.content.length >= allowance - 1 ? 'clipped' : 'complete';
   });
 }
