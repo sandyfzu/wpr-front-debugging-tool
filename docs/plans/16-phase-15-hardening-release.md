@@ -24,7 +24,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 - [ ] Confirm no `innerHTML`/`insertAdjacentHTML` with any non-static string anywhere (`grep` gate), all external links `rel="noopener noreferrer"`, all `window.open` targets explicit.
 - [ ] Manifest review: least privilege final state documented in `wxt.config.ts` why-comments; CSP untouched (default MV3); no remote code (KC fetch is data-only, validated).
 - [ ] Error-word cap & KC item caps confirmed effective (hostile fixture page).
-- [ ] **Dependency-ban gate:** `pnpm ls --depth 0` output diffed against the master §1.4 stack table and committed — none of `framer-motion`/`wouter`/`react-hot-toast`/`react-syntax-highlighter` (nor any React package) present (the eslint rules from P0 are the per-commit guard; this is the release gate). The one accepted runtime addition from the second baseline (`wp-rocket-scripts`, P14) must appear at its pinned version and is the only extra entry on the diff.
+- [ ] **Dependency-ban gate:** commit `pnpm ls --depth 0` diff against master §1.4's stack decisions: no framer-motion/wouter/react-hot-toast/react-syntax-highlighter or React package. ESLint is the ongoing guard; this is release verification. The second baseline's only accepted runtime addition, `wp-rocket-scripts` (P14), must appear at its exact pin.
 
 ### 3. Reliability & cross-browser pass
 
@@ -49,7 +49,7 @@ Cross-surface verification of every master-plan promise (speed, size, security, 
 
 ### 6. Enhancement re-audit (closes README rule 3)
 
-- [ ] Walk every phase file's **Explicit enhancements section** (P0–P14) bullet by bullet: mark each **DELIVERED / DEFERRED / DROPPED** with evidence (test name, measurement, or manual-check note). Deferred/Dropped entries need a written justification. This is the enforcement point promised by README rule 3 ("must ship in that phase, not 'later'") — a phase cannot be considered done with unaccounted enhancements. Walk master §8's committed-extensions table (toolbar badge, support report, headers viewer, exclusion bridge, KC freshness, sidebar inventory, CI) **and master §9's second-baseline table (phases 11–14)** row by row with the same discipline.
+- [ ] Audit every **Explicit enhancements** bullet (P0–P14) and every master §8/§9 extension/integration item: **DELIVERED / DEFERRED / DROPPED** + test/measurement/manual evidence; justify every deferral/drop. This enforces README rule 3's owning-phase commitment; no phase is done with unaccounted enhancements. Include badge, report, headers, exclusion bridge, KC freshness, sidebar, CI, and all P11–P14 additions.
 - [ ] Re-check cross-phase promises that phases defer to each other (e.g. P0 → P9 appearance selector; P1 logger → P2/P3; P6 gate → here) — each resolved in its owning phase.
 
 ### 7. Release

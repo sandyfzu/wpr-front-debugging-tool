@@ -4,7 +4,7 @@
 
 ## Goal
 
-Port the three background responsibilities (header capture, KC-DB updater, context menus) with the legacy bugs fixed, correct permissions, and defensive error handling. Thin `entrypoints/background/index.ts`; all logic in `entrypoints/background/` siblings or `lib/`.
+Port headers, KC updates, and menus with fixed defects, justified permissions, and handled failures. Keep `entrypoints/background/index.ts` thin; logic belongs in siblings or `lib/`.
 
 ## Legacy reference
 
@@ -17,7 +17,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 
 ### 1. `entrypoints/background/index.ts`
 
-- [x] `defineBackground(() => { ... })` (module type default in MV3) wiring the three modules; top-level `try/catch` per module init so one failing subsystem can't blank the others; structured logs via `lib/logger`. Every init call awaited/branched (legacy fired them un-awaited — master #46); global `error` + `unhandledrejection` handlers registered first (log + continue, per AGENTS.md); all listener registration inside `main()` (legacy registered `onStartup` at import time — master #46). Done — `main()` boots each sibling with its own degrade path (`bootBadge`/`bootDatabaseService`/guarded registrations) and every boot branch logs its cause.
+- [x] `defineBackground` (MV3 module default): register global `error`/`unhandledrejection` handlers first, then wire siblings inside `main()`, never at import (#46). Await/branch each init with independent guards and `lib/logger` cause logs, so one subsystem cannot disable another. Shipped seams: `bootBadge`, `bootDatabaseService`, guarded registrations.
 
 ### 2. `entrypoints/background/headers.ts`
 
@@ -29,7 +29,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 ### 3. `entrypoints/background/known-conflicts.ts`
 
 - [x] Alarm lifecycle: ensure alarm exists (periodInMinutes: 60), `onAlarm` filter by name, onStartup trigger. **Also port the KC context-menu click trigger:** legacy wires `updateKnownConflictsDB` inside `knownConflictsBackground.ts` (menu id `updateKnownConflictsDB` → direct function call); in the port the single `contextMenus.onClicked` handler in `context-menus.ts` calls `updateKnownConflictsDb()` for that id — one listener total (legacy had two). Done — one `onAlarm` name filter + one `onStartup`; the creation call passes only `periodInMinutes` (see shipped deltas: the cross-session persistence flag is a Chrome-150+ property and this manifest's floor is 145).
-- [x] `updateKnownConflictsDb()` rewritten: single-flight with **try/finally** reset (fixes master #1), fetch with `AbortSignal.timeout(10_000)`, `r.ok` check, JSON shape validation via `parseKnownConflicts` (P1) — invalid shape = failure, storage untouched, `lastUpdate` meta only on success; log outcome. Done — the distinct failure taxonomy (`network-error`/`timeout`/`http-error`/`malformed-payload`/`invalid-payload`/`storage-error`) replaces the laundered `null`.
+- [x] `updateKnownConflictsDb()`: single-flight **try/finally** reset (#1), `AbortSignal.timeout(10_000)`, `r.ok`, `parseKnownConflicts` validation. Failure leaves storage/meta untouched; success stamps `lastUpdate` (shipped key `updatedAt`, notes below). Log distinct `network-error`/`timeout`/`http-error`/`malformed-payload`/`invalid-payload`/`storage-error`, not undifferentiated null.
 - [x] Initial seed: if storage is empty (first install), run one update immediately at startup (improvement: legacy shipped the embedded DB as fallback and waited up to an hour for freshness; we keep the embedded fallback **in this bundle only** via static import in background — content scripts never embed it, see P3). Serve `getKnownConflictsDb` (P1 protocol) from storage: if empty, trigger an update and return its result (background is the single owner of the DB bundle). Done — serve order stored → one refresh → embedded snapshot; boot seeds the snapshot when storage is empty and the refresh fails.
 - [x] Unit tests: update logic with injected `fetch` (success, non-ok, malformed JSON, network error, timeout, single-flight race) — pure core extracted as `fetchAndStoreKnownConflicts(deps)` with injectable fetch/storage/clock; **plus the `getKnownConflictsDb` serve path** (storage hit returns cached; empty storage triggers update and returns its result). Done — both covered with distinct-outcome assertions.
 
@@ -39,7 +39,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 - [x] Click handler: `openSideBySide` / `openSideBySidePerformance` messages targeted to the clicked tab (`sendMessage(type, undefined, tabId)`), with **real error handling** — if the CS is not there (chrome://, store pages), log + no-op visibly in console rather than swallowed catch (fixes master #3). Use the click event's own `tab` — no re-query (legacy's `tabs.query({ active, currentWindow })` approximated the SW's notion of the current window; master #45). Done — the dispatch decision surface (`dispatchMenuClickEvent`, injected effects) is table-tested: both channels with tab targeting, absent-CS branch resolves with a visible log, private-window skip, refresh trigger, tabless/foreign clicks ignored.
 - [x] `exclusionBuilderPage`: skip incognito (parity), `browser.runtime.getURL('exclusion-builder.html')` + `tabs.create` — verify no `tabs` permission needed for `tabs.create` (it isn't; verification note here). Done — the dispatch hands the page path to the injected `openTab` glue, which does `getURL` + `tabs.create` (the only `tabs` use); the manifest carries no `tabs` permission and creation works (build + manual hook).
 
-**Forward note (P16):** the registry gains the page-scoped "Debug this tab as mobile" click-toggle entry (one row + its action arm + an injected toggle hook, the refresh entry's pattern) — the state itself lives in P16's device-simulation service, this file only routes the click.
+**Historical P16 forward note:** the proposed “Debug this tab as mobile” menu never shipped; [05e Feature B](./05e-phase-16-sbs-scroll-sync-device-simulation.md#feature-b--mobile-simulation-per-tab) records its supersession by overlay-only comparison (05g).
 
 ### 5. Toolbar action badge (new capability — master §8)
 
@@ -48,7 +48,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 - [x] Gate on `features.toolbarBadge` from `optionsStore`: read once at init + `optionsStore.watch` to apply P9's toggle without restart. Done — resolved after boot; unresolved/off gates render nothing, re-applies from recorded values on toggle.
 - [x] Pure core (`entrypoints/background/badge.ts`): `badgeFor(summary | null): { text: string; color: string } | null` + the navigation/removed state machine — unit-tested; `browser.action` calls stay thin glue. Done — the state machine effect surfaces are the tests; `applyBadgeEffect` is the glue.
 
-**Forward note (P16):** the badge renders a "simulated" mark over the presence colors while that tab has an active mobile simulation — a `badgeFor` pure-core extension owned and tested by P16; the existing color verbs keep their meaning and the mark clears with the state.
+**Historical P16 forward note:** the proposed simulated badge mark never shipped; the same Feature B supersession owns that decision. Comparison state is visible in the overlay.
 
 ## Explicit enhancements over legacy
 
@@ -83,15 +83,7 @@ Port the three background responsibilities (header capture, KC-DB updater, conte
 - **Alarm creation dropped `persistAcrossSessions`:** that property is Chrome 150+ on a manifest whose floor is 145 — on 145–149 the `alarms.create` call rejects and the hourly alarm would never exist. Alarms persist by default where the browser supports it and the worker re-provisions the alarm on every start, so no behavior is lost (module TSDoc updated).
 - **Boot steps decoupled:** `prime` now guards alarm provisioning and the boot-time seed/refresh independently — a rejected alarm step logs its own cause and the first-install seed still runs (and vice versa), never a blank subsystem from one cause.
 - **Context menus:** the creation mapping (`menuCreateParams`) and the click dispatch (`dispatchMenuClickEvent` over injected `MenuClickDeps`) are testable pure functions; behavior is unchanged — the real `browser.*` calls (`sendMessage`, `getURL` + `tabs.create`, the `lastError` acknowledgment) remain thin glue.
-- **Cold-start badge reconciliation (owner-session fix, 2026-10-08):** the state machine cleared
-  only what its memory said it had applied, but Chrome keeps rendering per-tab badges across the
-  service-worker restarts that empty that memory — after a wake, a navigation to a non-WPR page
-  stranded the previous page's badge indefinitely, and a gate resolving off could not reach
-  pre-restart badges. Clears are now unconditional (every navigation and every absence report
-  writes its clear; idempotent and cheap), and a gate resolving off sweeps every tab via the
-  permission-free `tabs.query({})` id list (sweep helper `sweepRenderedBadges`).
-  Tests that pinned the skipped-write optimization were re-pinned to the survival contract —
-  the old pins encoded a memory-truth assumption that is false across restarts.
+- **Restart-safe badge clears (owner, 2026-10-08):** Chrome retains badges after SW memory resets; memory-only clears stranded old badges after navigation/off-gate. Navigation/absence clears now write unconditionally; off-gate `sweepRenderedBadges` queries all tab IDs with permission-free `tabs.query({})`. Re-pinned skipped-write tests: their memory-truth premise was false across restarts.
 - **Logger tags aligned to the dominant convention** (bare module/feature names): `headers`, `known-conflicts`, `badge`, `context-menus` (the `background.headers` / `background.context-menus` dot forms were the outliers).
 - **Uncaught-error reporting gets real details and attribution (owner-reported defect, 2026-10-08):** the
   worker-scope global handlers logged the event wrapper itself (`[object ErrorEvent]` on the

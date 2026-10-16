@@ -23,7 +23,7 @@ Port the popup that turns WP Rocket optimizations on/off by rewriting Diagnoser-
 - [ ] **UI:** header (rocket mark + "Disable or enable optimizations" title); toolbar (Enable all / Disable all — parity); list of switches via `switch.tsx` (real Kobalte controls, labels clickable, keyboard operable — fixes #15), Cache row first (parity), groups visually ordered like legacy; sticky footer: Apply (primary) + Reset URL (secondary, tooltip "Removes all the querystrings related to the diagnoser" — parity); footer note with link to `https://github.com/wp-media/wp-rocket-diagnoser/releases` (target `_blank`, `rel="noopener noreferrer"` — legacy lacked rel). The list region scrolls within the fixed 320×576 (fixes master #28); row ids are unique and properly associated with their switches (fixes master #27).
 - [ ] Apply/Reset: `browser.tabs.update({ url })` + `window.close()`; guard: if `tabs.update` rejects (e.g. restricted URL race) show error toast instead of closing (enhancement).
 - [ ] Status line (enhancement): "Detected on this page: Cache ✅, Delay JS ✅ …" — the toggles initialize from detections, make the initialization visible with a subtle "detected" tick on rows that came from detection vs untouched.
-- [ ] **Device-simulation row (P16's mechanism):** one row beneath the switches — "Debug this tab as mobile" — reflecting + flipping the clicked tab's per-tab state from P16. Capability is feature-detection: on browsers without the API the row renders its typed unavailable state with the documented fallback hint (P16's Firefox rule). It applies **immediately** via P16's rule mechanism — deliberately **not** part of the Apply/Reset URL flow (different mechanism; the row carries a one-line hint saying so). The popup's tab query already carries the target tab id.
+- **Withdrawn device-simulation row:** the original immediate “Debug this tab as mobile” control (outside Apply/Reset, with unavailable hint) never shipped. The owner's 2026-10-11 overlay-only refinement explicitly removed the popup row; [05e Feature B](./05e-phase-16-sbs-scroll-sync-device-simulation.md#feature-b--mobile-simulation-per-tab)/[05g](./05g-phase-16-2-sbs-mobile-comparison.md) own the decision and shipped capability. It is not pending P8 scope.
 
 ## Explicit enhancements over legacy
 
@@ -32,7 +32,7 @@ Port the popup that turns WP Rocket optimizations on/off by rewriting Diagnoser-
 ## Tests
 
 - `toggles.test.ts` — initial-state matrix (cached or not, each option present/absent, cdn/concat never pre-set), apply (params `0`/`1` + strip set), reset (**full param set: 12 + `nowprocket` + `wpr_activate_all` + `wpr_deactivate_all` + `wpr_new_cache`**), `nowprocket` handling (pre-present and absent), param preservation of unrelated querystrings, **Enable All = the full 12-param set**; **`detectedIds` input set for the "detected" tick** (pure selector: which rows came from detection vs untouched) so the tick affordance has an owned test.
-- Device-simulation row state derivation (P16 mechanism): active/inactive/unavailable matrix over the state ask + the capability detection (pure) — the flip itself and the rule behavior are P16-owned suites.
+- The withdrawn device row needs no popup tests; active/inactive/unavailable simulation coverage stays with 05g/P16.1.
 
 ## Verification checklist
 

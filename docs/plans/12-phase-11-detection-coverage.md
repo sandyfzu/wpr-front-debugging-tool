@@ -107,4 +107,4 @@ The two baselines' checks merge **individually** — for every overlapping check
 
 ## Docs to update
 
-AGENTS.md — no layout change expected (`lib/detection/` extension); update if the four checks require a new file per AGENTS conventions. Master plan §9 table updated with delivered rows at phase end.
+AGENTS.md — no layout change expected (`lib/detection/` extension); update if the four checks require a new file per AGENTS conventions. Update master §9's feature record with delivered items at phase end.

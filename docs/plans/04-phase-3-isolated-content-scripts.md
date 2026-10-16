@@ -4,7 +4,7 @@
 
 ## Goal
 
-Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page improvements, the Known Conflicts UI, and Side-by-Side. Content-script safety rules from AGENTS.md apply to everything here: wrap risky work, clean up via `ContentScriptContext`, never break the host page.
+Port the isolated data hub, improvements, KC UI, and SBS. Apply AGENTS.md's page-safety/`ContentScriptContext` cleanup rules throughout.
 
 ## Legacy reference
 
@@ -35,7 +35,7 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 
 ### 3. `entrypoints/isolated.content.ts/improvements.ts`
 
-- [x] **Parity-only by explicit decision** (the smallest module in the extension: a one-shot, option-gated DOM injection of a static link — there is no honest improvement to make here beyond hygiene, and inventing one would be churn). Port: read `optionsStore` once; if enabled, on `load` (guarded for late injection) append `li#wp-admin-bar-d-bugger` with link `/wp-admin/tools.php?page=wprockettoolset` into `#wp-admin-bar-wp-rocket-default`; skip if already present or bar missing; DOM ops in try/catch; build the node with `createElement` + `textContent` instead of legacy's `innerHTML` (hygiene, not a behavioral change — the string is static); no listeners to clean (one-shot). Known legacy limitation (master #50) handled here: the link is root-relative and 404s on subdirectory WordPress installs — derive the admin path from the WPR admin-bar item's own link when it exposes one, else ship parity and record the decision in this file.
+- [x] **Parity-only beyond hygiene:** one-shot static admin link, no speculative enhancement. Read `optionsStore` once; if enabled, append `li#wp-admin-bar-d-bugger` under `#wp-admin-bar-wp-rocket-default` on load (late-injection guard), skipping missing bar/duplicate. Guard DOM work; use `createElement`/`textContent`, not `innerHTML`; no lasting listeners. Derive the admin base from the existing WPR link where available; otherwise retain `/wp-admin/tools.php?page=wprockettoolset` and document the subdirectory-404 limitation (#50).
 
 ### 4. `entrypoints/isolated.content.ts/known-conflicts/` (UI rebuilt, behavior parity)
 
@@ -53,7 +53,7 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 - [x] Refresh fix (#19): via `iframe.contentWindow?.location.reload()` when same-origin-safe, else re-assign `src` (keep assignment fallback; document choice); open/close via CSS class transitions — state changes never depend on `transitionend` (guards: `{ once: true }` + fallback timeout; reduced-motion skips animation entirely — fixes master #49's stuck-container hazard; replaces legacy's `setTimeout(10)`/1 ms hacks); overflow save/restore exactly like legacy (html+body); re-open after close shows the previously loaded iframes (parity with legacy's `first` flag — do not reset `src` on close).
 - [x] Iframes `sandbox`/`credentialless` evaluation: **decision — do not sandbox** (the whole point is loading the real page authenticated); document why in TSDoc (security reviewer note).
 
-**Forward note (P16):** the overlay's scroll-sync toggle and the header chip for an active mobile simulation land in P16 (`lib/side-by-side/scroll-sync.ts` engine + the device-sim relay, budgets re-checked there) — no rework in this phase; P16's doc owns placement, mechanism and tests.
+**P16 forward note:** owns scroll sync (`lib/side-by-side/scroll-sync.ts`), device relay, tests, and budgets. The proposed mobile header chip was superseded by 05g's overlay switch/side marks; see [05e Feature B](./05e-phase-16-sbs-scroll-sync-device-simulation.md#feature-b--mobile-simulation-per-tab).
 
 ## Explicit enhancements over legacy
 
@@ -96,27 +96,8 @@ Port `isolatedWord.content.ts` and its four modules: the devtools data hub, page
 - **Budget row re-derived (committed change).** Measured composition of the finished surface (rollup visualizer + build deltas): Solid runtime ≈ 27 KB raw (P1.4 stack decision; every injected UI surface carries its own copy), `@wxt-dev/storage` ≈ 8 KB, the P1 engine + validators ≈ 10 KB, `jsonrepair` ≈ 7.5 KB (P1 committed it for diagnoser tolerance; IIFE content scripts cannot split dynamic imports), WXT messaging/context/UI helpers ≈ 16 KB, and ~24 KB of this phase's feature code. The committed stack sums past 60 KB before page features begin; the honest floor after the icon decision is **77.1 KB raw / 27.5 KB gzip**. `scripts/budgets.json` rows updated to raw 80 / gzip 30 (measured + ~4 % headroom; still −35 % raw / −21 % gzip vs the 122/35 baseline) and the whole-build backstop to 857 (the same sum-safe update). **Post-integration measurement:** the P1.1 panel-engine integration landed shared modules into this bundle and consumed the planned headroom — the committed surface measures **78.97 KB raw / 27.5 KB gzip** at that point, and **79.7 KB / 27.7 KB** (79,699 / 28,341 bytes) after the audit's content-script fixes — the 80/30 row still holds throughout. The P15 re-audit owns re-deriving the table when P12–P14 extend this surface.
 - **PSI auto-open also fires for late injection** (deliberate, behavior-superior delta). The compare flow's PageSpeed Insights auto-open runs once now when the content script injects after DOM load (`document.readyState !== 'loading'`), where the source only auto-opened from a DOMContentLoaded listener — a late-injected analysis page (restored navigation, extension-driven reload) gets the two-analysis comparison instead of silently skipping it.
 - **Component-render tests are P5's setup** (per the P0 note: "tsx component tests later feed configs through `vite-plugin-solid`, owned by P5"). This phase test-covers the logic layers fully (scan-state, extract, urls, conflicts-db, improvements derivation, data-hub pass + word merge) and deliberately leaves UI atom renders to P5's configuration.
-- **Processing is eager, not panel-gated (owner decision, 2026-10-08).** Task §2's "Lazy processing
-  exactly once (`processPageData` or first data request)" is superseded: the single pass starts at
-  the capture moment (`onParserReady`) — the toolbar badge (`reportDetectionSummary`, master §8
-  "at a glance per tab") and the `[WPR FDT] Page data processed in X ms` timing log must work with
-  no devtools panel ever opened; a panel gating both made the badge worthless (the panel already
-  shows everything). Panel requests are unchanged as callers — they are cache hits of that same
-  single-flight pass (one `DOMParser` construction per page still holds). The deliberate tradeoff,
-  owned here: the engine pass now runs on every http/https page load (the ≥30 %-faster benchmark
-  still governs its cost), and the multi-MB snapshot is released on every page instead of being
-  retained for the page lifetime — strictly better than the panel-gated retention. The
-  summary-push failure log moved debug → warn: a live context failing to deliver is abnormal
-  (the background owns the listener from boot) and must not be prod-silent. Site-round verification
-  (badge without a panel, log format, elapsed benchmarks) rides the P4.3 rounds.
-- **Global error handlers attribute by source (owner-reported defect, 2026-10-08).** The
-  page-safety last line logged the `ErrorEvent` wrapper itself (`[object ErrorEvent]`, no details)
-  and sat on the page-shared `window`, so every uncaught _host-page_ error was claimed under our
-  prefix on the extensions error page. The handlers are now the shared `lib/uncaught-errors.ts`
-  factories through `ctx`: only errors sourced under the runtime URL prefix are claimed (rejections
-  by stack), reported with the real message + source/line + the error object; foreign events are
-  skipped — the page reports its own failures natively, and our error page stays ours. Tests pin
-  the attribution rule, the detail shape, and the worker-scope no-prefix mode.
+- **Eager processing (owner, 2026-10-08) supersedes §2's lazy plan:** `onParserReady` starts one pass so `reportDetectionSummary`/badge and `[WPR FDT] Page data processed in X ms` work without DevTools. Panel requests read that flight's cache; still one `DOMParser` per page. Tradeoff: process every http/https load (≥30%-faster gate remains), but release every multi-MB snapshot instead of retaining it. Summary-delivery failure moves debug → warn: background listens from boot, so a live-context failure must remain production-visible. P4.3 verifies panel-free badge/logs/benchmarks.
+- **Source-attributed errors (owner, 2026-10-08):** shared `lib/uncaught-errors.ts` factories through `ctx` replace detail-free `ErrorEvent` logging that claimed host failures. Claim runtime-URL-prefix errors only (rejections by stack), report message/source/line/raw error, and leave foreign events native. Tests pin attribution/details and worker no-prefix mode; P2's Shipped deltas records shared reporting hardening.
 - **Badge is a three-state, transparent-tile dot (owner decision, 2026-10-08).** Every reported
   page now carries a visible state dot — green cached, blue present-uncached, **gray no WP Rocket**
   (the plan's "none = absent" is superseded: a badge only worth having when the panel shows the

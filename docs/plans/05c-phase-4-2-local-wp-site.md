@@ -6,11 +6,11 @@
 
 ## TLDR
 
-A reproducible **local WordPress environment in this repo** — Docker Compose, wp-admin test credentials in a git-ignored `.env`, WP Rocket installed from an `apvm`-built zip, free Known-Conflicts plugins preinstalled, and mu-plugin fixtures that inject the deterministic problems the debug tool exists to catch. The default site for every browser suite (owner decision: docker is the default; external real site is future scope only for what docker cannot fake).
+Reproducible **local WordPress**: Docker Compose, ignored `.env` credentials, apvm-built WP Rocket, free KC plugins, and deterministic self-resetting mu-plugin problems. **Owner decision, 2026-10-08:** Docker is the default browser-suite target; [P14.6](./15d-phase-14-6-external-site-track.md) owns future external-site/spawner scope. [P4.1](./05b-phase-4-1-e2e-harness.md) owns the local-only/no-e2e-CI rule.
 
 ## Goal
 
-Make the "real site" checklists (P2–P4 retro suites in P4.3, later X.1 suites, the P7 diagnoser plugin, P11 detection matrix, P13 RUCSS runs, P14 beacon rounds) runnable on demand locally — always the same shape, self-resetting fixtures, no drifting server state.
+Run real-site checklists locally without state drift: P4.3's P2–P4 coverage, later X.1 suites, P7 Diagnoser, P11 detection, P13 RUCSS, P14 beacon.
 
 ## Contents
 
@@ -41,7 +41,7 @@ Live external services (PSI production runs, HelpScout) — fixture-served local
 
 ## Shipped (implementation record)
 
-**Delivered everything above.** Commit-tracked units, in build order:
+Delivered units, in build order:
 
 | Piece                                                                     | What actually ships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
