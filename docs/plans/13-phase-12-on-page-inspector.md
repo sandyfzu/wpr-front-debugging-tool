@@ -1,98 +1,98 @@
-# Phase 12 — On-page inspector (the floating detection strip)
+# P12: on-page widget — shipped baseline and remaining work
 
-**Depends on:** P11 (statuses + registry HUD facet), P3 (content-script infra + data hub), P5 (design tokens), and for the toggle rows: P8 (popup) + P9 (options). **Effort:** M. **Parallelizable:** with P13/P14 once its own deps are done (their quick-actions ride on it but degrade gracefully without it).
+## TLDR
 
-> **UI/UX bar:** this phase's UI meets [`docs/ui-ux-bar.md`](../ui-ux-bar.md) (rules cited by id; its §D checks are receipted with every UI change) — this doc keeps only surface-specific decisions.
+**P12A detections/session drag shipped; full P12/P12.1 remain planned.** Extend the existing KC-style pill/card, origin store, single-pass hub and audited drag; do not rebuild the original narrow always-open strip. P11 supplies final hud registry; P8/P9 supply toggle surfaces; P13/P14 supply shared executors. FullP12 depends:P11/P3/P5 (+toggle surfaces); can parallel P13/P14 after shared contracts. No dependencies planned; installed WXT/Solid/tokens/Vitest/Playwright.
 
-## Goal
+Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file owns explicit deviations/current implementation. Source v4.1.1 inspector template/styles/draggable behavior: groups/status/drag/Alt+H/tool feedback, not its fixed100px CSS, global keydown assignment, page cookies, incognito-only activation or console dumps.
 
-Port the inspector source's floating on-page strip: a drag-aware, collapsible mini-panel showing every WP Rocket feature as a status chip grouped like the Detections page, plus quick-action entries for the live tools (RUCSS test, beacon test, LCP analysis — their execution follows in P13/P14). It is the piece the first baseline never had: glanceable WP Rocket status on any page **without opening devtools**.
+## Shipped P12A (2026-10-13/14)
 
-Rebuilt, not copied: a **completely redesigned** chip-strip under the P5 strip design brief (a purpose-built floating-element visual language, not a re-skin of the source's CSS), shadow-DOM-isolated Solid UI, opt-in per site (the source shows itself on every page), per-site state in extension storage instead of cookies visible to the host page, one keyboard shortcut, and no console spam per feature.
+### Presentation and ownership
 
-## Early start — P12A (owner directive, 2026-10-13; [13a](./13a-phase-12a-inspector-strip-early-detections.md)) — **shipped, 2026-10-13**
+- Same-context `pageDataFor` joins capture→cached single-flight detection, **no second pass**. Producer is eager since2026-10-08, not lazy-until-widget. Labels promoted to `lib/detection/labels.ts`; provisional strip-items typed table **delete when P11 hud lands**. WordPress-version parser shared, leading digit required.
+- Marker pill default bottom-right16/16, opposite KC; opens grouped static-evidence report card. Width **min(352px,100vw−32px)**, not original224/40vw (7/15 labels elided there, measured need~349). Values separate18px info-pair pills/10px tabular at4px gap. At300px none elide;280px2/264px3 elide, value wraps first—not an unlimited “never elides” promise.
+- Mood cached green/present-uncached amber/absent gray/scanning pulse/real pass failure red. Applied ok, collecting attention, not-applied/not-enabled neutral; cache warning distinct. Identity WPR version or **WPR (unknown version)**/WPR not found; unknown footer WPR—. Failure cache dash+named reason, never fabricated verdict. Static chips no dead clicks; rocket mark identity, not per-state icon.
+- Shadow `wpr-fdt-inspector`, ins-* classes, LTR,z2147483647; shared token/live theme and focus helper. ESC/card/pill focus handoff attempts/verifies/retries next frame, context-owned. Held-visible departing leg/reduced-motion machinery-free card, **no row stagger**. Same-value origin writes don't re-read hub. Trusted-event gating ignores host synthetic reopen clicks; pointer-vs-keyboard distinguished by click.detail, not isTrusted alone.
+- Arm-first origin watch; body-anchor wait/recheck handles document-start; capture waiter resolves only after serialization or invalidation. P12A guards its host-creation/enablement races, **not the shared asynchronous render/disposer race**; that remains P12M below.
 
-**Shipped before these deps:** detections-only KC pill/report card with audited motion/focus and P5H chip vocabulary. [13a §7](./13a-phase-12a-inspector-strip-early-detections.md#7-shipped-the-p12a-implementation-round-2026-10-13) owns build-out/gates/audits; its §1 owns brief deviations: pill instead of header bar, bottom-right anchor, session-local P12A.5 drag, context-menu opt-in writing **P12's final per-origin item**. Full P12 still owns SB-D11 collapse, SB-D1 persisted position, Alt+H, popup/Detections/options controls, and P13/P14 tool chips/banner. Replace/delete the provisional chip registry once P11's `hud` facet lands—never keep two feature lists. The checklist below is unchanged; completed early-slice rows are ticked in 13a.
+### Origin state (reuse, do not fork)
 
-## Reference (wpr-inspector, verified on 2026-10-06 by full-source read)
+`lib/storage/inspector-origins.ts`, **sync:inspector-origins**, origin→enabled; context-menu **Toggle the detection widget on this site** writes clicked document's origin. This is P12's established item, not a temporary alternative to resurrecting local:on-page-inspector.
 
-- `wpr-inspector/templates/inspector.html` + `css/inspector.css` (imported `?raw` into a shadow root attached to `div.wpr_inspector_tool_root` on `document.body`; `adoptedStyleSheets`). Fixed top area (`top: 200px; left: 5px`, z-index `999999999` — the source figure everywhere in its CSS; the `2147483647` this plan previously quoted was a transcription error, see the strip design brief's `SB-D1` for the port's own, different value), `direction: ltr`; a vertical strip (`top: 50%`, `transform: translateY(-50%)`, `max-width: 100px`).
-- Chip groups (verbatim labels): **Cache** (`version` chip "WPR-V-x" / "WPR-V-NF", `cache`, `cache_time` + `.cache_creation` "N/A"), **File Optimization** (`css_minify`, `rucss`, `cpcss`, `js_minify`, `ljd`, `dje` + hidden `.wpr_djev` version + hidden `#wpr_ins_check_scripts` "check scripts" action, unhidden only when DJE detected), **Media** (`lazyload` "LazyLoad img", `lazyload_bckg`, `lazyload_iframes`, `image_dimensions` "Image Dim...", `self_hosted_fonts` "SHGF"), **Preload** (`preload_links` "PL Links"), **CDN** (`rocketcdn` "RocketCDN"), **Features** (`oci`, `alr`), **Tools** (`#wpr_ins_rucss_tester_tool` "RUCSS Tester", `#wpr_ins_list_scripts_tool` "List Scripts", `#wpr_ins_beacon_tester_tool` "Beacon Tester", `#wpr_ins_lcp_tool` "LCP Tester"), footer with `[wpfeature="version"]` WordPress stamp + Notion-doc link + extension-version span (`.wpriv`).
-- Chip state is class-driven: `.enabled` (green), `.disabled` (red), `.unsure` (amber); tool chips are blue + clickable.
-- Visibility model: always injected on every matched page; production gate = content script itself only fires in incognito (`wpr-inspect.js`: `browser.extension.inIncognitoContext` asked directly; dev mode also fires). Toggle: `Alt+H`/`Alt+0` via `document.onkeydown =` assignment; persisted as a **host-page-visible cookie** `wprInspectorVisibility`.
-- Drag: `js/draggable.js` — mousedown + touchstart on the strip, document move listeners, right-click cancels, touch uses a non-passive `touchmove` that disables page scroll; position saved as cookie `<id>-Position` = `"left,top"`; no viewport clamping.
-- Every pass runs eagerly in the constructor (also with no devtools anywhere nearby), booting via `console.log` per feature.
+Original200-origin cap was false under sync8192-byte/item quota. Serialized **key+JSON byte budget with headroom**, insertion-oldest trim/newest retained; worst253-char hosts/120-toggle tests. Oversized singleton rejection propagates, not fake success. Extend with position/LRU metadata only after rederiving quota/eviction; keep backward-compatible enabled entries. No host cookies/localStorage for widget state.
 
-## Source quirks fixed in this phase (verified in the source)
+### Drag and containment: final behavior
 
-| #   | Quirk in the inspector source                                                                                                                                                       | Fix here                                                                                                                                                                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | `document.onkeydown =` assignment **clobbers any host-page keydown handler**                                                                                                        | `addEventListener('keydown', …, { capture: false })`, registered only while the strip is enabled, removed on context invalidation                                        |
-| 2   | Two identical `save/loadInspectorVisibilityState` bodies kept in the class (lines 49–74 vs 80–105)                                                                                  | Single state module                                                                                                                                                      |
-| 3   | Visibility + drag-position state in host-page cookies (`wprInspectorVisibility`, `<id>-Position`) — the site's own JS can read it                                                   | Extension storage (`local:on-page-inspector`), keyed per origin; nothing about our state visible to the page                                                             |
-| 4   | `draggable` has no viewport clamping — the strip can be dragged off-screen; touch path listens on `document` `touchmove` non-passively for the whole drag with no cancel-card reset | Pointer-based drag with position clamped to the viewport minus a 4 px margin; the non-passive `touchmove` is registered per active drag and removed on pointer up/cancel |
-| 5   | The strip auto-runs on every page in incognito/dev — no opt-out per site, no per-site memory                                                                                        | Opt-in per origin (popup switch / Detections page button / options default); per-site memory so a chosen site stays chosen                                               |
-| 6   | Per-feature `console.log` on the host page (10+ lines per load)                                                                                                                     | Zero console usage; diagnosis output lives in the panel                                                                                                                  |
+- One document-local controller, no persisted coordinates yet. Pill+noninteractive card header/footer handles; body retains touch scroll/close not handle. Capture on **grabbed shape**, not chrome (compat click retarget matters); listeners chrome/context-owned, handle-only touch-action none, no page-wide preventDefault.
+  -5px slop (3,4 triangle **starts** drag), live1:1 pointer math rebased on current box. Full viewport containment4px air, layout viewport=documentElement.clientWidth/Height (exclude native scrollbar), not obsolete32px offscreen park. Pill click suppressed after moved pointer drag; keyboard click.detail0 bypasses pointer-only suppression so first Enter works after card drag.
+- Escape/right-contextmenu/OS pointercancel/second pointer restore pre-drag position. Actual Chromium second-button path may be move(buttons3)+contextmenu, no pointerdown; compat click can precede settle, so suppression covers live moved drag.
+- **lostpointercapture settles own pointer**, keeping last clamped position, not cancel/snapback. Healthy pointerup→loss no-op; stray pointer ID ignored, later release cannot move it. This fixed quick out-of-window macOS flick reproduced via trusted capture loss; cancel machine tests unchanged because wiring mapping was defect.
+- At rest/resize/zoom/open/close/data growth, containment watcher awaits stable consecutive boxes then reclamps **resting layout geometry** (offsetParent-guarded transform-invariant offsets), never animated entrance pose. Active drag defers; direct manipulation never transitions position. Outside drag, owner-approved ins-resettle corrective token motion; next press clears it, reduced motion instant. This is explicit SB-D13 positional-motion exception, not permission to animate drag.
+- Cap **1000ms wall clock**, not32 frames (120Hz outran280ms animation and conceded early). Stability wins even past cap; never-stable concedes/logs, future demand re-arms. Coalesced demand at concession gets **one fresh bounded cycle**, flag cleared at every conclusion; dead/stop/settle never restart, no input means at most two concessions. Measured three-leg thrash~885ms+stability~919ms, not old740 estimate.
+  -1px quantum suppresses subpixel rewrites, not containment; integer edge quantization means actual worst air~2–2.5px, **not guaranteed3**. Null resting/offset-parent mismatch fails closed, no animated-rect fallback.200k randomized mounts kept nonnegative air; tests8.3/16.7/4.2ms pacing prove refresh-rate independence.
 
-## Tasks
+### Era/version record
 
-### 1. State: `lib/storage/on-page-inspector.ts`
+WP Rocket **3.17.2 (2024-10-30)** introduced data-wpr-features (issue6879,commit a1bdab0). Conditional: bypass/DONOTROCKETOPTIMIZE/white-label/logged-in renders may omit it; version filter can remove digits without removing tag. Cache/attributed footprints still prove versionless presence, never fabricate version. Pre-3.17.2 pages remain inspectable by footprints; bypass+uncached/no evidence means not found at any version, not unsupported-version policy. Pre-2016 exhaustiveness unverified.
 
-- [ ] `onPageInspectorStore = storage.defineItem<OnPageInspectorState>('local:on-page-inspector', fallback: {})` — `{ [origin]: { enabled: boolean; position?: { x: number; y: number }; lastActivated: number } }` (`lastActivated` drives eviction only, never shown); `parseOnPageInspectorState` validator (origin keys only, coords finite numbers, empty-string origin rejected), **cap 200 origins** (evict the least-recently-used `lastActivated` entry — the same unbounded-map lesson as the header-map bugs reviewed in P2).
-- [ ] Option default: `features.onPageInspector: false` in `StoredOptions` (owned by the P9 registry) — the _default activation state for unconfigured origins_. Per-origin entries always win over the default.
-- [ ] Toggle flows: popup row (current tab's origin) and the Detections page button read/write this store (storage-watch, reusing the P3 KC re-scan pattern — no new messaging channel; the isolated CS watches and mounts/unmounts reactively).
+Fixture `fdt-wpr-versionless=1` uses real rocket_display_meta_generator_content_version filter; CDP smoke pins baseline/digits-free and bypass null separately. P11 must reuse parser/era evidence, not create another version implementation.
 
-### 2. Strip UI: `entrypoints/isolated.content.ts/inspector/` — completely redesigned per the P5 strip design brief
+### Evidence/budget record
 
-- [ ] **Design mandate (user requirement, binding):** this strip is NOT a visual re-creation of the source's DOM/CSS — it is a redesign under P5's committed strip design brief (visual spec, states, motion, outcome-banner pattern). The chips must look intentionally better than the source's strip: grouped chips on the P0 surface/status tokens (incl. the amber `attention-unsure` state), per-group iconography, one density scale for a floating element, crisp internal hierarchy (header row = identity + cache state; groups below; tools separated; footer micro-info). Design deviations from the brief are reported in this file, not invented here.
-- [ ] **Isolation (user requirement, binding):** the strip lives entirely in its own shadow root via `createShadowRootUi` + Solid with adopted styles — nothing page-scoped, no host CSS in or out, per the P5 injectable-UI isolation standard; verified against a hostile-CSS host page in the checklist. **Palette per the P5 palette rule:** correct in both palettes via the P0 tokens, honoring the stored appearance (system default follows `prefers-color-scheme`, dark/light override; `[data-theme]` on the strip container).
-- [ ] `createShadowRootUi` + Solid; groups and chips rendered from the P11 registry (`hud` facet: `shortLabel`, `group`, ordering) + the processed detections — one source of truth; nothing hardcodes a feature list a second time.
-- [ ] Groups mirror the source's strip for transferable muscle memory: **Cache / File Optimization / Media / Preload / CDN / Features / Tools**; parity short labels carried verbatim (`WPR-V`, `N/A`, `LazyLoad img`, `Image Dim...`, `SHGF`, `PL Links`, `RocketCDN`, `OCI`, `ALR`, `RUCSS Tester`, `Beacon Tester`, `LCP Tester`, "List Scripts" becomes "Script overview" — full names in tooltips; label deltas listed here only).
-- [ ] Statuses: green/red/amber from the P0 shared tokens; `unsure` state explains itself in the tooltip (e.g. "optimized but cache signature missing — headers point to siteground").
-- [ ] Footer: WPR version, WP version, extension version — no Notion-doc link (product-surface decision: this extension's docs live in its README/options; recorded delta).
-- [ ] Tools group: chips for RUCSS Test / Beacon Test / LCP / Script overview. They render disabled-with-tooltip until P13/P14 land; when available: RUCSS/Beacon/LCP trigger their runs with the persisted config (§4 below); "Script overview" deep-state: opens the JS page's section via `processPageData`-style data pull (P14); on devtools-open pages the chip also nudges "full view in the panel" (hint, not an action — the page cannot programmatically focus a devtools tab; documented).
-- [ ] DJE-present affordance carried over: the "check scripts" chip shows only when `delay_js` is present (data from the same detections); it triggers the P14 runtime-status view or surfaces the JS summary in a tooltip when the panel is closed.
-- [ ] Cache chip extra (union): the cache slot shows the shared `formatCacheTimestamp` output ("N/A" when uncached — P11's util, panel/strip single format) + the exclusion-marker hint line from P11.
+Initial8 site cases: hidden/menu ID/real detection rows/disable+reload/keyboard-reduce/KC coexistence/live themes; drag then containment/versionless/capture-loss grew strip suite to **20 passing**. Dispatch unit-pinned, native context-menu click itself not automated. Per-suite cookie wipe/relogin prevents cross-file admin-state leakage. Drag units cover slop/cancel/foreign IDs/negative ranges/shape growth/suppression; real trusted wiring proves capture-loss and trailing click. Built-artifact negative controls distinguish snapback position from click suppression (card verdict alone cannot distinguish settle/cancel).
 
-### 3. Drag + visibility behaviors
+Final early tree:1255 tests/121 files; build/budgets/Firefox green. Full run87 pass/3 known cache-warmth failures; affected files clean after documented~90s one retry, **not a clean first full run**. Strip pristine20/20 no retry. Earlier feedback70/70 twice; high-refresh86/86 after cold-cache rerun.
 
-- [ ] Drag: pointer events (pointerdown/move/up + touch passthrough) with the P1 pointer-utilities; viewport-clamped; position persisted per origin on drop (`position`, clamped to a sane integer range — validated by the store parser); the tools group's cards (P13/P14) are NOT draggable (single draggable element, unlike the source where every panel had its own drag cookie).
-- [ ] Shortcut: `Alt+H` only (the source's duplicated `Alt+0` collapses to one binding — documented delta), `addEventListener`, capture false, no `preventDefault` when the strip is closed; hides/shows the strip **for the current page session** and persists per origin; listener removed via `ctx.onInvalidated`.
-- [ ] Activation semantics: strip mounts once enabled (via toggle or default); the data hub's lazy processing is triggered on mount (why: an enabled origin opted into the extra work; unchanged origins keep the first-baseline lazy behavior). All detection state comes from the same hub cache the panel reads — no second detection pass, ever.
-- [ ] Full cleanup on `ctx.onInvalidated`: shadow UI removed, keydown listener removed, any active drag terminated. **Owned alongside the mount-lifecycle work (carried from the 2026-10-12 P5H conformance round):** the shared mount's async window — WXT's `onRemove` can fire before the async mount resolves — currently leaves the armed appearance-follow watch plus the immature Solid tree as detached dead work in that losing race (page-safe, tiny, pre-existing; the shared leg adds one storage listener to a leak that already leaked the tree). This phase hardens the shared mount's lifecycle (both shipped injected UIs inherit it) — see the P5H receipts in `06` for the verified mechanics.
+Budget derivations retained: strip estimate≤10KiB was optimistic; strip-less build verified **+12.9 raw/+3.8 gzip** (compiled view~9+state/copy~3). Isolated102/35→114/39 (113.1/38.6 measured with quota/wait/gate fixes); worker34→36 for menu/store (34.2 measured). Drag+3/+1.1→117/41; containment/value chips+1.5/+0.6→119/42; later resting-ms/quick-loss fixes118.3/40.5 fit unchanged. Whole-build857 backstop unchanged then. Current budget table supersedes these values; remaining tools need new measurement, not old10KiB claim.
 
-### 4. Quick-action contract (codesigned with P13/P14)
+Build-stamp audit fix: `pnpm build` itself writes fingerprint via scripts/build-stamp.ts; old harness-only stamp could trust manual strip-less output. Strict poisoned-build repro now refuses, normal gate rebuilds, warm gate skips. Do not undo this provenance requirement.
 
-- [ ] The strip has no own test runtime: identical logic to panel-triggered runs (`runRucssTest` / `runBeaconTest` / `runLcpAnalysis` call sites) — P13/P14 own the executors under the tab CS; the strip call sites just await them. Config lives in the tester stores (P13/P14) — first-run affordance: the chip tooltip says "configure in the panel" when no config exists yet.
-- [ ] Result feedback: a compact transient banner inside the strip's shadow UI (fixed top-center, auto-hide 5 s, `Show details → ` opens the panel route by hash when a devtools instance is already open; otherwise it states where the outcome landed) — outcome copy owned by each tool's phase.
+## Remaining full P12 slices
 
-## Explicit enhancements over the inspector source
+### P12M — Shared asynchronous mount cleanup
 
-- **Completely redesigned strip** on the shared design language + isolation standard (P5 brief): the source's strip styling/classes are treated as a baseline, not a target — the shipped strip is designed around the panel's status tokens, per-group icons, hover/drag/press states, and the outcome-banner pattern.
-- Opt-in per origin (with a global default) instead of blanket-on per browser mode; host-page-invisible state (extension storage, capped map) instead of cookies; no keydown clobbering; no off-screen strip; one shortcut; zero host-console noise; clamped pointer drag with responsive touch; Solid shadow UI on the shared tokens; tooltips that carry full feature names + self-explaining `unsure` states; drag-with-cookie-spread removed (one element, no cookie writes).
-- Registry-driven chips: P11's rows feed it — a future WP Rocket feature is one registry row for both panel and strip.
+Depends: P3/P5H/shared mount. Parallel: P11 pure detection work; serialize injected-UI edits. Size: S. Goal: removal during the awaited appearance read cannot leave detached render work or a live watcher.
 
-## Tests
+- [ ] Harden `ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
 
-- `lib/storage/on-page-inspector.test.ts` — validator matrix (valid/invalid origins, coords; cap eviction; no host-content inside).
-- `entrypoints/isolated.content.ts/inspector/build-strip-items.test.ts` (pure view-model) — registry → chip list mapping (groups, ordering, short labels, tool gating by `delay_js` presence), state coloring matrix incl. cache-time insertion and exclusion hint; snapshot-stable.
-- Drag clamp util tests (pure geometry): clamp within viewport, integer output, no drift on repeated drops.
-- Storage-watch mount/unmount: enabling/disabling per origin via fake storage in tests (mounts on the origin's entry, unmounts otherwise, options-default honored).
+DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-theme tests; no leaked tree/watch or remount, UI bar/gates/browser regression green. This is the open P5H lifecycle requirement, not a new feature.
 
-## Verification checklist
+### P12B — Final registry/state/toggle integration
 
-- [ ] Gates green; `pnpm check:budgets` — the isolated-CS budget (§1.3) now includes the strip; the table row reported (strip ≤ 10 KB raw on top of the existing budget; virtualization not required for ~18 chips).
-- [ ] **Design-brief conformance pass:** the shipped strip is reviewed against the P5 strip design brief item by item (states, motion, banner, density) — deviations listed with reasons; the strip's marked-up states match the "completely redesigned" mandate (no unfolded source CSS survives: grep the strip module for the source's class names as a 0-hit gate).
-- [ ] **Isolation audit (hostile-CSS host page):** on a page with aggressive global CSS (`* { all: unset !important }`-style resets, high-specificity rules), the strip renders unchanged; page styles are unaffected by the strip (computed-style diff on host nodes before/after strip mount = none); no un-scoped `<style>` exists outside the strip's shadow root.
-- [ ] Manual (dev on a normal window): strip hidden on every site by default; enabling via popup/Detections makes it appear at a sane position; disable hides and stays hidden across reloads; drag persists; per-origin memory works while another site stays hidden.
-- [ ] Manual (incognito same origin): per-origin state applies (origin is the key, browser mode is not).
-- [ ] `Alt+H` toggles on an enabled site, does nothing on a disabled one (until the option default flips it); page keydown handlers verified intact (a site with its own `keydown` handler, e.g. a code editor page, must not regress).
-- [ ] Drag does not select text or trigger links beneath while dragging; right-click while dragging cancels cleanly (source-parity nicety kept).
-- [ ] Mobile-sized viewport (touch): draggable, clamped, page scroll unaffected after drop.
-- [ ] UX/interaction pass per the P5 strip design brief: glance test (status readable ≤ 2 s), hover/press/drag states all present, tooltips explain every non-obvious chip, keyboard reachable when focusable, axe run on the shadow UI (contrast inherited from P0 token pairs), reduced-motion honored; **both palettes verified and the stored appearance honored on the strip (system/dark/light — flipping the option in Options restyles the strip without a reload)**.
-- [ ] `dev:firefox` smoke test: strip mounts, Alt+H works, no `chrome.*` calls (both browsers' outcomes documented).
-- [ ] A page with zero WP Rocket markers: strip shows the disabled/unsure chips with honest tooltips, never fabricated states.
+Depends:P11/P8/P9 (existing P12A baseline). Parallel:P13/P14 executor work. Size:S–M.
 
-## Docs to update
+- [ ] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons. No old SHGF/OCI/ALR tool-internal short labels restored.
+- [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global features.onPageInspector false for unconfigured origins, per-origin override wins; popup/Detections/options/context menu share one item/toggle, no new runtime channel.
+- [ ] Complete collapse/session visibility and **Alt+H only**, capture:false listener, no document.onkeydown clobber; disabled origin no action, context cleanup. Original text mixed “session-only” and “persisted” shortcut visibility: decide/document that distinction before implementation; persistent activation and persisted position remain required, never silently invent second store.
 
-AGENTS.md (entrypoints/isolated content structure additions if the strip adds colocated modules; options key `features.onPageInspector` listed); README privacy note extended ("no per-site state leaks to host pages; on-page strip is opt-in per site"); master plan §9 row states.
+DoD: storage origin/coord/quota/eviction/corrupt/legacy tests, mount/unmount/default overrides, same-origin/incognito behavior specified, keyboard host-handler preservation. UI bar §D/gates.
+
+### P12C — Persisted drag/brief reconciliation
+
+Depends:B. Parallel:independent tool executors. Size:S.
+
+- [ ] Persist on settled drop; restore/reclamp through **existing** resting containment seam for current viewport/shape, sane finite coordinates. Session reset only until this lands; no new geometry engine.
+- [ ] Reconcile every SB-D ID against owner-approved KC pill/card/width/value-chip/motion deviations above; controls≥24, one scroll region/header/footer, no host styles/cookies/scroll lock or console narration. Hostile CSS computed diffs both directions, source-class no-copy grep.
+
+DoD: persistence/reload/new viewport/card growth/right-cancel/capture-loss/first Enter, no host text selection/link activation/page-scroll break, touch/multitouch tests+hardware limitation named. Style/focus/palettes/reduce/axe and budgets green.
+
+### P12D — Tool hooks/banner
+
+Depends:B/C; configs/executorsP13/P14 as available. Parallel:their internals, not shared files. Size:S.
+
+- [ ] RUCSS/beacon/LCP/script overview controls; unavailable/configure-in-panel explanation until executable. Delay-only check-scripts affordance. Panel owns forms, strip calls **same** protocol/executors/persisted config, no second runtime.
+- [ ] Latest single outcome banner as sibling of transformed chrome, top-center,5s pause/close/details per brief. Real route signal only when panel is already open; platform cannot open/focus DevTools, so otherwise location hint, never fake link. Tools/results not draggable. Footer versions/no Notion link; cache age/exclusion evidence shared formatter.
+
+DoD: config/run/timeout/error/unavailable/state→banner tests, no duplicate test-mode copy, renderer-boundary guards, clean teardown/theme/reduce/keyboard/axe/budgets. FullP12 not declared done before these integrations or explicit named blockers.
+
+## P12.1 — Browser acceptance
+
+Depends: P12M/B–D/P4.1/P4.2; parallel P13/P14 independent work.
+
+- [ ] Default hidden; all opt-in controls live mount/hide/reload per origin, other origin unaffected; persisted drag/restore+clamp, right cancel, no text/link/pan side effects, touch-emulated narrow screen.
+- [ ] Alt+H enabled only; host editor-like keydown handler still fires. Hostile reset/high-specificity page: identical strip, no unscoped style, host computed diff none.
+- [ ] System/Dark/Light live Options writes+OS flips; reduced motion, keyboard/axe shadow UI; zero-marker honest states/tooltips; tool/banner states.
+- [ ] Brief deviation receipt/size delta and UI bar D1–D7; keep early20 cases, not replace with shallow smoke.
+
+Manual/open: native context-menu clicks, incognito origin sharing, glance≤2s/perceptual resettle at real60/120Hz, real touch/multitouch, Firefox installed-extension smoke. Build-only parity is not runtime. Update privacy README/AGENTS when adding real option/state structure, and index only to actual verification level.

@@ -1,76 +1,66 @@
-# Phase 15 — Hardening, audits & release
+# P14.6 external verification and P15 release gate
 
-**Depends on:** P0–P14 complete. **Effort:** M. **Parallelizable:** none (final gate; requires everything else done first).
+## TLDR
 
-## Goal
+P14.6 verifies production-only behavior **after P14.5**; then deferredP7→P5J→P15. If owner site unavailable, record scoped skip and carry survivors into P15, never imply runtime pass. P15 closes every required promise across browsers, not just compile/build. No implementation/commit/tag/push/publication authorized merely by this checklist.
 
-Cross-surface verification of every master-plan promise (speed, size, security, reliability, UI), documentation debt, and store/release readiness for Chrome + Firefox.
+## P14.6 external-site track
 
-## Tasks
+Depends:P4.1/P14.5+owner-authorized site/spawner. Parallel:—chosen slot. Size:S to scope, then small per-flow suites if needed. Existing local browser harness only, no CI.
 
-### 1. Budget & performance audit (master §1.3, §5.6)
+- [ ] Owner supplies disposable site/credentials through ignored env, never logs. At execution enumerate every external-tagged survivor from core/SBS/P11–P14; decide automatable suites vs manual reasons.
+- [ ] Real PSI framing/auto-flow/cross-origin refresh; real hosting/CDN/stripped cache signature; live RUCSS/beacon service behavior; mobile-cache identity/independent tab/restoration. Local intercepted/stub/fixture tiers stay offline regressions, not replaced or misrepresented as production proof.
+- [ ] If available: local external suites green+survivors documented here. If unavailable: **skipped-by-scope / reason / surviving P15 rows**, explicit owner scope, no fabricated acceptance.
 
-- [ ] `pnpm build` (both browsers) → `pnpm check:budgets` (P0 script) → pass/fail table committed into this file with raw + gzip per surface; **the panel's ≤ 350 KB stretch target reported met/not-met with reason**.
-- [ ] **Re-audit from P6's record** ([07 §Phase-close notes](./07-phase-6-panel-pages.md#phase-close-notes), 2026-10-15: panel past the stretch, the shiki worker near its row): re-measure against it and decide the levers 07 left open — precompiled grammars + raw JS engine (07 §Shared design-system fixes, "Trimming") and the shared chunks no surface row counts (`chunks/web-*.js`, `chunks/types-*.js`).
-- [ ] **Speed gate (automated):** `pnpm bench:detection` → commit its table (fixture | new median ms | reference median ms | ratio | PASS on `median(new) ≤ 0.70 × median(reference)`). Supplement with the scripted real-page protocol: same machine, same WP Rocket fixture page, ≥ 5 page loads per build (legacy + new), medians of the timing logs recorded in the same table — cross-environment confirmation of the in-process result.
-- [ ] Panel interaction: re-run the P6 long-task gate (5,000-row fixture; none > 50 ms, TBT < 200 ms); shiki loads only on demand (network log).
-- [ ] Startup audit (grep gate): no top-level `await` in `entrypoints/background/**` outside handler functions — SW cold-start only registers listeners; CS `document_start` footprint measured.
-- [ ] CI gate: the P0 workflow (compile/lint/format/test/check:budgets + both-browser build) green on the release commit; evidence links to the run.
+DoD: one of those two evidenced outcomes, secret-safe site cleanup/preconditions. HelpScout authenticated mailbox ergonomics, visual judgment, publication/OS accidents remain manual owner verdicts, not automatically covered by site availability.
 
-### 2. Security audit
+## P15 hardening/release
 
-- [ ] Enumerate every boundary (message types × senders, storage keys, fetched KC JSON, page-derived DOM strings, file input) and verify a validator + test exists (walk `lib/*/validate` + P1 protocol).
-- [ ] **Injected-UI isolation audit (release gate, AGENTS.md rule):** every UI injected into host pages (Known Conflicts, Side-by-Side, on-page strip, tool banners) verified shadow-rooted via `createShadowRootUi` with adopted styles only — grep gate for un-scoped injection patterns (`document.head.append`, `document.adoptedStyleSheets`, root-level `<style>` creation outside a shadow root) = 0 hits; hostile-CSS host page re-run for every injected surface (P12's audit repeated for the older P3 overlays).
-- [ ] Confirm no `innerHTML`/`insertAdjacentHTML` with any non-static string anywhere (`grep` gate), all external links `rel="noopener noreferrer"`, all `window.open` targets explicit.
-- [ ] Manifest review: least privilege final state documented in `wxt.config.ts` why-comments; CSP untouched (default MV3); no remote code (KC fetch is data-only, validated).
-- [ ] Error-word cap & KC item caps confirmed effective (hostile fixture page).
-- [ ] **Dependency-ban gate:** commit `pnpm ls --depth 0` diff against master §1.4's stack decisions: no framer-motion/wouter/react-hot-toast/react-syntax-highlighter or React package. ESLint is the ongoing guard; this is release verification. The second baseline's only accepted runtime addition, `wp-rocket-scripts` (P14), must appear at its exact pin.
+Depends:all required phases inclP14.5/P14.6 disposition/P7/P5J; P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
 
-### 3. Reliability & cross-browser pass
+### P15A — Budgets/performance
 
-- [ ] Reload-storm test: reload extension 10×, navigate 20× — no duplicate context menus (legacy's fix preserved), no duplicate admin-bar entries, no leaked observers (heap snapshot delta on HS page).
-- [ ] **Unit-tier flake risk (tracked 2026-10-15):** `components/ui/tooltip.test.tsx`'s first case pays the cold `import('./tooltip')` after `vi.resetModules()` — 0.88 s alone, 1.2–1.5 s in full runs (07's P6C/P6F gate receipts), up to 3.8 s reported locally — against Vitest's 5 s default. Warm the import once (e.g. `beforeAll`), never raise the timeout. Owned here: P6.1 is the Playwright tier only, and this is the release pass over test reliability; pull it forward if CI times out first.
-- [ ] Long-session test: panel open across 50 navigations — memory stable (no accumulating caches; header LRU bounded).
-- [ ] Firefox E2E: every surface smoke-tested via `pnpm dev:firefox`; known FF deltas documented (MAIN-world CS support, FSA fallback, host-permission grant flow) in README.
-- [ ] `web-ext lint` (devDependency already present) clean or documented exceptions.
-- [ ] Built-HTML audit (master #25): every entrypoint HTML in both `.output` trees references the emitted CSS assets — grep gate; no silently dropped stylesheets (legacy dropped `common.css` on itself).
+Depends:implementation complete. Parallel:—.
 
-### 4. UI/UX polish & a11y final pass
+- [ ] Fresh both-browser builds, `pnpm check:budgets`, committed raw/gzip table per surface; panel600KiB hard/**350 stretch met/not with measured reason**. Last historical panel387.1KiB exceeded stretch; worker near368/75 row. Remeasure, not receipt reuse.
+- [ ] Reaudit whole-build accounting including worker/assets and shared web/types chunks only backstop-counted. Evaluate precompiled grammar/raw-engine lever only with dependency/size evidence; no silent ceiling nudge. Current budget table authoritative.
+- [ ] `pnpm bench:detection` checks median ratio≤0.70 table; real same-machine/source+port at least5 page loads each, timing medians, counts and source-compiled normalization comparison. happy-dom fixture parity alone not absolute browser count/perf proof.
+- [ ]5000-row view/filter/search/navigation gate no task>50ms/TBT<200ms; worker-only highlight/on-demand network, byte/timeout/abort/cache boundaries. Startup listener registration/no blocking top-level await; measure CS document-start and disclose cold-start pre-mark import cost.
+- [ ] CI common gates/build/budgets+**add/verify Firefox build** on release revision, green run link. E2E and machine benchmark remain local-only.
 
-- [ ] Full keyboard-only walkthrough of all surfaces; axe run on every page/state with **0 violations** as the pass bar; focus management on route change.
-- [ ] **"Better UI" acceptance gate — all five green or the claim fails:** (a) axe 0 violations everywhere; (b) keyboard-only checklist 100 % ticked; (c) P6 long-task gate green on the 5,000-row fixture; (d) motion-token gate — grep for bare `transition:`/`animation:` outside the P0 motion tokens/`theme.css` = 0 hits (`prefers-reduced-motion` coverage); (e) palette-token gate — grep for hardcoded palette classes (`bg-gray-*`, inline hex colors) outside `assets/css` = 0 hits, plus a committed light- **and** dark-mode screenshot set of every page (the appearance gate: System/Dark/Light each render correctly per AGENTS.md's UI-themes rule — System screenshotted under both OS settings); (f) **design-craft pass:** per surface, spacing/alignment on the grid, one semantic accent, type ramp consistent, icon set unified, empty/error/skeleton states present everywhere (the P5 UX-study decisions respected — deviations re-audit against the study, not against taste).
-- [ ] Copy sweep (grep gate): no "FDT legacy", no legacy typos ("Trucated", "ocurred", "Know conflict", "Resouces"), no double periods (".."), "Non-delayed"/"Non-Deferred" consistent, "if there are any" (not "in there are any"), "No known conflicts found" (not "No Know conflict found"), garbled options label rewritten, consistent product name "WPR Front Debugging Tool".
+DoD: current measured table/protocol/CI evidence and all ceilings green, stretch explicitly accounted.
 
-### 5. Documentation
+### P15B — Security/reliability/browser matrix
 
-- [ ] README rewrite: what the tool does (with screenshots), dev setup, build/zip, browser notes, link to `docs/`.
-- [ ] `docs/`: architecture deep-dive (data flow diagram from master §2), detection-engine reference (each check's footprint + fixtures), messaging protocol table.
-- [ ] AGENTS.md final sync (scripts incl. `test`/`check:budgets`/`bench:detection`, permissions, structure, conventions that changed during the port).
+Depends:A baseline and all boundaries. Parallel:—.
 
-### 6. Enhancement re-audit (closes README rule 3)
+- [ ] Inventory messages×senders/storage/KC JSON/DOM/file inputs with tested validators/caps. Redaction at capture/export/report/DOM/copy, intentional full-source clipboard distinguished; hostile word/header/DB fixtures. Least privilege why-comments/CSP/remote-code/data separation, exact wp-rocket-scripts pin/adapter. Dependency-ban listing diff vs master choices, no React/router/motion/toast/highlighter replacements creeping back.
+- [ ] Shadow/adopted-style isolation+hostile CSS for every injected surface; no unscoped style/font/property leak. Respect documented native admin-bar/SBS overflow/session-continuity exceptions and intentional tester style mutation. Grep review **does not blindly reject** validated Shiki-generated HTML/token sheets or RUCSS's requested style injection; verify safe boundaries/allowlist, not source string absence alone. External links noopener/noreferrer, explicit window.open targets.
+- [ ] Reload extension10×/navigate20×: unique menus/admin entries, observer cleanup/HS heap. Panel50 navigations memory stable/header LRU bounded. Native reload limitation/race distinguished from profile relaunch proxy; no retry masking.
+- [ ] Tooltip first cold-import test can approach Vitest5s (observed0.88–3.8s). Reproduce/warm import once if needed, **never raise timeout** just to hide it; pull forward if CI fails. No unrelated test weakening.
+- [ ] Installed Firefox every surface inclMAIN/message/mount/DNR/badge/clipboard/FSA fallback/host grants; [Firefox workstream](./17-firefox-runtime-parity.md) may close named rows only with actual results. `web-ext lint` clean or explicit exceptions; current floor150 vs MAIN API128 distinct. Gecko ID/data-collection declarations remain AMO gates.
+- [ ] Both built HTML trees reference real emitted CSS; no silent dropped source links. Chrome145 floor, Windows native high contrast, touch/RTL/AT/native popup/docking/undocked/find-bar limits from UI acceptance either verified or explicitly dispositioned.
 
-- [ ] Audit every **Explicit enhancements** bullet (P0–P14) and every master §8/§9 extension/integration item: **DELIVERED / DEFERRED / DROPPED** + test/measurement/manual evidence; justify every deferral/drop. This enforces README rule 3's owning-phase commitment; no phase is done with unaccounted enhancements. Include badge, report, headers, exclusion bridge, KC freshness, sidebar, CI, and all P11–P14 additions.
-- [ ] Re-check cross-phase promises that phases defer to each other (e.g. P0 → P9 appearance selector; P1 logger → P2/P3; P6 gate → here) — each resolved in its owning phase.
+DoD: all required security/reliability/runtime rows pass or owner-approved scoped disposition, no false build=runtime/store acceptance.
 
-### 7. Release
+### P15C — UI/copy/enhancement audit
 
-- [ ] Version bump to `1.0.0` (SemVer; store-ready milestone), changelog section in README or `docs/` summarizing the port + enhancements.
-- [ ] `pnpm zip` + `pnpm zip:firefox` produce store artifacts; verify zips contain no dev artifacts (`.output` hygiene, `.gitignore` respected).
-- [ ] Store listing assets: 128-px icon check, description text, screenshots from the new UI (panel Detections, Diagnoser, Exclusion Builder).
-- [ ] Re-verify both behavioral sources haven't moved before release: the legacy tool past v2.2.5 (it moved once during planning — the WP 7.x KC-selector fix) **and** `wp-media/wpr-inspector` HEAD (P11–P14 build from its v4.1.1 audit — fold any newer commits into the affected phase docs first).
-- [ ] Re-sync the committed Known Conflicts DB snapshot with the live endpoint (AGENTS.md rule): refresh `lib/known-conflicts/known-conflicts-db.json`, re-pin the row count, and re-derive the seed-asset budget row.
-- [ ] Tag `v1.0.0`, Conventional-Commits history clean.
+Depends:B. Parallel:—.
 
-## Verification checklist (phase exit = project exit)
+- [ ] Every surface/state keyboard-complete, visible focus, one truthful h1/page, strict axe0 violations; incomplete results fail unless exact evidence-reviewed target allowance. UI bar D1–D7: required widths/dockings, live System/Light/Dark (System under both OS palettes), reduce, state recovery/refresh, perf.
+- [ ] All **six** quality checks: axe, full keyboard, large-list gate, approved token motion only, palette tokens+committed screenshots, design-craft hierarchy/spacing/type/icons/async states. Current bar wins over old literal-zero-animation/bare-transition grep wording; real-wait busy motion/finished animation objects documented, no idle theater.
+- [ ] Copy sweep: no source suffix/Trucated/ocurred/Know conflict/Resouces/double periods, inconsistent Non-delayed/Non-Deferred, “in there are any,” garbled D-bugger label; product/native names consistent. Header freshness **captured vs fetched** wording from P6F explicitly resolved here. No accidental new abbreviated feature names.
+- [ ] Ledger every master extension/second-baseline integration and completed/active plan enhancement **DELIVERED/DEFERRED/DROPPED+test/measurement/runtime evidence+reason**. Include badge/log/report/headers/exclusion bridge/element inventory/KC/CI/appearance/SBS/strip/testers/CWV/coverage tools. Cross-phase deferrals can't disappear; required owning-phase work needs explicit scope decision, not automatic P15 backlog.
 
-- [ ] All budgets pass (table filled here; stretch target accounted for).
-- [ ] `pnpm bench:detection` table committed with PASS; real-page protocol numbers recorded.
-- [ ] Security + reliability checklists above fully ticked (all grep gates 0 hits).
-- [ ] Enhancement re-audit table complete (every bullet DELIVERED/DEFERRED/DROPPED + evidence).
-- [ ] Both browsers verified; artifacts built.
-- [ ] Docs complete and accurate (spot-check every command and path cited).
-- [ ] Master-plan TL;DR promises each mapped to evidence (list them here with links to commits/checks).
+DoD: quality checks/ledger/copy/visual receipts complete, master promises each evidence-linked.
 
-## Docs to update
+### P15D — Docs/release
 
-README (full), docs/ (architecture), AGENTS.md (final sync), this file (audit tables).
+Depends:A–C. Parallel:—.
+
+- [ ] README actual features/screenshots/setup/build/zip/browser/privacy notes; concise architecture/detection/protocol references from owning code, no duplicate implementation diary. AGENTS final scripts/deps/permissions/structure/conventions sync; paths/commands checked.
+- [ ] Recheck both behavioral sources past audited v2.2.5/v4.1.1; fold drift into owning scope first. Refresh live KC seed verbatim, format, repin exact row count/comment/asset budget as AGENTS requires.
+- [ ] Authorized1.0.0 version/changelog, both store ZIPs free of development output/secrets;128px icon/listing assets (actual implemented surfaces), manifests/Firefox consent identity/policy review. Build success not store approval.
+- [ ] CI on release revision, artifacts validated, Conventional history; tag v1.0.0/commit/push/publish **only when separately requested**.
+
+DoD: budgets/speed/security/reliability/UI/ledger/docs/browser artifacts all complete, remaining limitations explicit, no claimed release until owner authorizes.

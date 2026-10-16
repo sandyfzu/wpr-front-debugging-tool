@@ -1,51 +1,23 @@
-# Phase 7 — Diagnoser pages (General Info + Optimizations Info)
+# P7: Diagnoser and P7.1 suites
 
-**Deferred — executes last (owner decision 2026-10-12):** after P14.6, before P15. The WP Rocket **Support Diagnoser plugin** is being rebuilt; these pages must target the rebuilt plugin's JSON shape, so building against the current plugin's shape would be reworked. Until then the panel route stays **reserved** — a disabled nav row with a "returns with the Diagnoser plugin v2" tooltip (P5's registry). The CS-side diagnoser extraction and the `lib/diagnostics` parser (P1–P3) are already built and suite-covered — only the rendering waits; when this un-defers, the parser adapts to the v2 shape first.
+## TLDR
 
-**Depends on:** P5, P6 shell, P1 diagnostics parser (all built long before) **+ the rebuilt Diagnoser plugin's JSON shape — the actual gate.** **Effort:** M. **Parallelizable with:** P8, P9, P10 (they no longer wait on this).
+**Deferred until rebuilt Support Diagnoser JSON is available.** Parser/extraction already ship; adapt them to v2 before rendering. Execute **after P14.6, before P5J/P15**; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P8/P9/parked P10 need not wait. Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
 
-## Goal
+## Reference and retained requirements
 
-Port the two Diagnoser tabs with the same data semantics as legacy but typed, validated, and rendered with the design system (dense key-value cards, real JSON tree, accessible tabs).
+First-baseline DiagnoserPage, GeneralInfoPage/utility/cards, OptimizationsInfoPage/OptimizationInfoItem. Capture v2 fixtures before deciding exact fields; preserve source behaviors where still meaningful:
 
-## Legacy reference
+- General: post-meta disabled-option banner only nonempty; plugin status/WPR+Diagnoser versions/Imagify/querystrings/user-agent; server load/web server/PHP and WP memory limits; constants; preload-RUCSS task/parameter rows; options minus version, filters minus null.
+- Pure general/optimization models entry-local, defensive optional access with explicit fallback. Server load formatted percent or couldn't-get, status based on **actual load**, not serverInfo object. Constants WP_CACHE true→ok, DONOT* false→ok, others neutral. No conditional React hook/module-cache patterns.
+- Option status1/true active,0/false off,other warn; native names via option map. Preserve empty-array **Empty Array**, empty string/null/undefined **Empty**, boolean0/1 option Active/Inactive, other String. Filters do not inherit inappropriate option status semantics.37-char label cap/full tooltip; real array item vs explicitly labeled string-character counts.
+- Shared APG General/Optimizations tabs, default General; one page-store selection across route switches and sessionStorage across panel reload (extension). Plugin absent/not detected and WP Rocket inactive get distinct helpful original states/copy (native naming/typo rule still wins).
+- Dense general card grid; copy user-agent/JSON, bounded collapsible JsonValue, no highlighter JSON dumps. Optimization cards expanded by default; nested array/long values consistently collapsed behind count, both Options/Filters honor toggle (source arrays ignored it). Expanding one card doesn't rebuild siblings.
 
-- `pages/DiagnoserPage.tsx` — if no `noRocketData`: NothingToShow "WP Rocket - Support Diagnoser plugin was not detected…" (parity text); otherwise two tabs (General / Optimizations) with tab-state cached in a module variable (works-around remounts — irrelevant in Solid). Tab selection is triple-sourced (module cache + local state + uncontrolled `defaultValue`; `TabsContent` unused) and wiped by panel reload anyway (master #38).
-- `pages/DiagnoserGeneralInfoPage.tsx` + `components/diagnoser/utils.ts` — `getGeneralInfo(diagnoser)` builds: `postMetaDisabledOptions` (from `rocketData.post_meta_excluded_options` keys — rendered when non-empty), `pluginInfo` (`wpr_plugin` status, WPR version from `get_rocket_option.version`, `imagify`, `querystrings`, `user_agent`, `wpr_diagnoser_version`), `serverInfo` (`server_info.server_load/web_server/php_memory_limit/wp_memory_limit/wp_max_memory_limit`), `constants` (name → `{defined, value}`), `preload_rucss_tasks`, `preload_rucss_parameters`, `someOptions` (`get_rocket_option` minus `version`), `someFilters` (`filters` minus null values).
-- Cards (visual + logic to port): PluginInfoCard (status/versions badges, querystrings JSON block, user-agent code, imagify), ServerInfoCard (5 rows; **bug:** Server Load badge colored via `serverInfo !== null` — always true — master #5), ConstantsCard (defined/undefined badges; WP_CACHE green-when-true; DONOT* green-when-false), PreloadRUCSSTasksStatusCard, PreloadRUCSSParametersCard, SomeFiltersAndOptionsCard (options/filters; scalar → truthy-colored badge, empty string/array → "empty", object → JSON block).
-- `pages/DiagnoserOptimizationsInfoPage.tsx` + `OptimizationInfoItem.tsx` — if no `rocketData.options`: NothingToShow "WP Rocket seems to be inactive…"; else per-option collapsible card: status icon from `get_rocket_option[key]` (1/true → ok, 0/false → off, else warn), title via `getRealOptionName`, Options section (per-key rows: status when key === option name, truncated labels > 37 chars, boolean/0/1 → Active/Inactive, arrays/long strings → count badge + expandable JSON), Filters section (same renderer minus Active/Inactive mapping). The options-section array branch ignores the expand toggle while the filters section honors it, and long strings show their character length as an item count (master #30).
+## Small execution slices
 
-## Tasks
+- **P7A model/parser:** deps rebuilt plugin+P1; parallel none. Capture v2 JSON, adapt validators/extraction additively, pure field/value/status models. DoD: captured/missing/null/unknown fields, post-meta/server/constants/status/count/truncation tests green, no sensitive-data regression.
+- **P7B pages:** depsA/P5/P6; parallel independent P8/P9. Tabs/cards/not-detected/inactive/persistence and copy above. DoD: render/state/focus/tab/disclosure tests, UI bar §D and bundle gates green.
+- **P7.1 suites:** depsB/P4.1/P4.2+plugin install slot. Parallel independent P8–P10 technical work. Real site capture→panel fields/badges both tabs; unsupported/inactive/plugin-absent/degenerate fixture states; keyboard+axe every state. DoD: repeatable plugin/site preconditions, local suites green, same-page source comparison and manual fine-visual/Firefox outcomes identified, no fake store presented as real capture.
 
-### View-models (pure, in `entrypoints/panel/pages/diagnoser/`)
-
-- [ ] `general-info.ts` — port `getGeneralInfo` + sub-builders with P1 types; defensive access (every diagnoser field is optional until proven) with explicit fallbacks; `formatServerLoad(n): 'X%' | "couldn't get"`; constants color semantics extracted as `constantState(name, {defined, value}): 'ok' | 'error' | 'neutral'` (WP_CACHE true=ok; DONOT* false=ok; else neutral) — parity with legacy's `getColors`.
-- [ ] `optimizations-view-model.ts` — normalize each option entry `{ status, options: [k,v][], filters: [k,v][] }` (filters null-stripped, `version` option hidden — parity); `formatOptionValue(v, isOption)` parity (non-empty arrays → list, **empty array → the literal `'Empty Array'` badge string**, `'' | null | undefined` → 'Empty', boolean/0/1 → Active/Inactive, else `String(v)`); label truncation helper (37 chars parity) + `title` tooltip. Count badges show true item counts for arrays and clearly labeled character counts for long strings (fixes master #30).
-- [ ] Option-name lookups via `lib/options-map` (`getRealOptionName`) — parity.
-
-### Pages
-
-- [ ] **Tab shell** — `tabs.tsx` (Kobalte) with General/Optimizations (icons + ARIA); selection persisted across route switches in the page store (parity of `currentPageCache`), default General, and across panel reloads via `sessionStorage` (extension — legacy's cache died on every `reloadDevTools`).
-- [ ] **Not-detected / inactive states** — `empty-state.tsx` with legacy copy (exact strings preserved).
-- [ ] **General Info** — card grid: Disabled-on-page banner (red soft card, badge list) only when non-empty (parity); General Info card (status badge active/inactive, versions, user-agent mono block with copy button, querystrings via `json-value.tsx`, imagify when present); Server Info card (fix #5 — badge color keyed on the actual value); Constants card (state-colored badges + value); Preload tasks + parameters cards (dense `key-value.tsx` rows); "Get Rocket Option" + "Filters" cards (scalars → colored badges, empties → neutral "empty", objects/arrays → `json-value.tsx` collapsible).
-- [ ] **Optimizations Info** — responsive grid of collapsible option cards (Kobalte-free disclosure with CSS animation, expanded-by-default parity): header = status icon + `getRealOptionName` + chevron; body = Options rows (status row labelled "Status" when key === option name — parity; count badge + expandable `json-value` for arrays/long values — replaces the JSON-in-highlighter dumps) + Filters rows; row labels truncated at 37 with full-name tooltip (parity); count/expand state local to card. **Intentional delta (master bug #23):** legacy renders arrays unconditionally expanded and the chevron is a no-op for them; here arrays start collapsed behind their count badge like every other expandable — consistent, and one click closer to the summary view. Both sections use identical expand/collapse semantics (fixes master #30's two-inches-apart inconsistency).
-
-## Explicit enhancements over legacy
-
-- Fully typed diagnoser data (no `any` chains) with runtime validation; `json-value` tree instead of syntax-highlighted JSON strings; copy buttons on user-agent/JSON; consistent status color system; fixed Server Load badge bug; no hook-order landmine (legacy #4); fine-grained updates (expanding one card doesn't re-render siblings). Tab selection survives panel reloads (extension); consistent expand/collapse and truthful count badges (master #30); tab state single-sourced (master #38).
-
-## Tests
-
-- `general-info.test.ts` — full matrix over a captured diagnoser JSON fixture (missing `rocketData`, missing `server_info` pieces, null filters, `version` hidden, post-meta disabled options on/off).
-- `optimizations-view-model.test.ts` — status mapping (1/true/0/false/other), value formatting matrix, truncation, filter null-stripping, count-badge truthfulness (array length vs labeled char count).
-
-## Verification checklist
-
-- [ ] Gates green.
-- [ ] Side-by-side vs legacy on a site with the Support Diagnoser plugin active: identical fields/badges across both tabs; with plugin absent → not-detected state; WP Rocket inactive → inactive state.
-- [ ] Fixture-driven UI check (dev-only data override) for the degenerate shapes above.
-- [ ] Keyboard/axe pass on both tabs (tablist semantics, disclosures operable).
-
-## Docs to update
-
-None expected; if diagnoser JSON reveals undocumented fields, document them in `lib/diagnostics` TSDoc.
+All slices run master gates; parser unknown fields documented in TSDoc. Final acceptance: same meaningful fields/badges as source on same plugin/page, deliberate v2 deltas recorded; rebuild-required gate never bypassed by coding against obsolete shape.

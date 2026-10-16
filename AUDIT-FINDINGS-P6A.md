@@ -2,7 +2,7 @@
 
 Independent adversarial audit of sub-phase **P6A** (`feat/p6a-panel-foundations`, 6 commits on base `2986582`). The auditor reproduced every attack below against this tree; **nothing was fixed or modified** — tracked tree state equals HEAD (probes were transient untracked test files, deleted after evidence capture).
 
-> **Closing round (2026-10-14).** Every finding below is resolved on this branch — `e02820a` (the cookie-contract fixes + their repro/pin tests), `5022972` (the panel pins + the seam rework), and the `docs(plans)` receipts commit. The full per-finding record lives in `docs/plans/07-phase-6-panel-pages.md` § P6A "Receipts — closing audit round". The auditor's evidence text below is untouched; each finding carries a `RESOLVED` status line with its commit and tests.
+> **Closing round (2026-10-14).** Every finding below is resolved on this branch — `e02820a` (the cookie-contract fixes + their repro/pin tests), `5022972` (the panel pins + the seam rework), and the `docs(plans)` receipts commit. The consolidated resolution record is [P6A/A.1 shared models and frame](docs/plans/completed-panel-pages.md#p6aa1-shared-models-and-frame). The auditor's evidence text below is untouched; each finding carries a `RESOLVED` status line with its commit and tests.
 
 ## Gate re-measure (cold, this tree, independent)
 

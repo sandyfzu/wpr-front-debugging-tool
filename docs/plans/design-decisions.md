@@ -1,0 +1,74 @@
+# Binding design decisions
+
+## TLDR
+
+Keep first answers glanceable, keyboard-complete and honest; preserve context on refresh. `UX-D1`–`UX-D16` and `SB-D1`–`SB-D16` retain their original IDs. This consolidates P5's 2026-10-12 study/strip brief, later owner revisions and isolation clarifications. P12's recorded early-widget deviations remain intentional, not permission to invent more.
+
+Precedence: plugin/settings/KB names → these decisions → [UI/UX bar](../ui-ux-bar.md) → phase details. Change an affected decision here, dated, before contradicting it. The bar alone owns shared layout/motion/contrast/performance values; code/tokens own implementations. Do not restore retired specifications from historical receipts.
+
+## Audience and interaction budget
+
+Research was source/standards inspection, **not interviews**: support engineer needs caching/version/platform and a report; QA needs same-position verification after reload; developer needs scripts/errors→usable exclusion. Sources: both built behavioral baselines; Nielsen heuristics; WCAG2.2/APG; DevTools docking/keyboard conventions.
+
+Count deliberate clicks/keypresses after ready; opening DevTools, hover and waiting excluded. At ≥480px, initial answers need no scroll; narrower layouts wrap. Gates:
+
+- Cached/version/platform/server, cache age, delayed/undefined count: ≤1 interaction (initial status/counts ideally0).
+- Feature state≤2; reverify change≤1 (soft refresh0); delayed source≤3; exclusion≤2; support report≤1; JSON export≤2; page jump≤2; appearance≤2; error recovery≤1; search clear≤1; keyboard access complete.
+- Interactive shell+first genuine data state≤500ms. Measurement begins at entry execution, not ESM import evaluation; no unmeasured “instant startup” claim.
+- Main hierarchy: status bar short answers; Detections statuses/report; resource pages counts→filters→rows; references names→definitions→exclusion; Headers & Cookies cache evidence→full names-only inventory; reserved Diagnoser disabled/explained; tools appear only when implemented. Elements remains a native object inventory. Cookie values, header credentials and raw page-content logs are never glanceable output.
+
+## Panel decisions
+
+- **UX-D1 — First-paint answers:** persistent presence/version, cached/age, platform/server, freshness segments. Boot is honest; absent plugin neutral. Navigate only where a real owner exists. Freshness currently text (no invented destination); its timestamp is the last full fetch, not a word/scripts push.
+- **UX-D2 — Informative navigation:** one Overview/Inspect/Diagnose/Tools registry with live counts/dots, tab-scoped pushes, reserved notes. **Owner revision2026-10-13:** icon rail at every width; grouped top bar retired. Only P5J's design-first pass may introduce a new wide form.
+- **UX-D3 — Keyboard:** APG combobox palette (`Cmd/Ctrl+K`, wrapping arrows/Home/End/Enter/Esc, active descendant keeps caret); route switch focuses page h1, not ordinary data updates. One shortcut declaration drives listener/help/hints. **Revision2026-10-13:** advertise `/`; `?` accepted unadvertised because DevTools reserves `?`/F1 Settings. Match typed key, not physical layout; reject Ctrl/Meta/Alt+glyph, allow legitimate Shift composition; editable fields keep text. Native host interception remains a separate check. Tab dismisses palette; overlays do not stack with each other.
+- **UX-D4 — Search:**250ms stream debounce (source400), next/previous matching-row cursor, nearest scroll, Esc clear, route reset. The shared store owns it; never a second page query store. P6G completes navigation.
+- **UX-D5 — Refresh:** refetch inspected navigation without remounting page/losing route, scroll, selection, expansion or focus. Only logged contract failure invokes hard reload.
+- **UX-D6 — Data-first:** compact mono/tabular data, semantic accent/tokens, shared mount motion; no row stagger/idle pulse, reduced motion honored, skeletons only real waits. UI bar owns allowed effects.
+- **UX-D7 — Status vocabulary:** ok/warn/error/info/neutral through shared tables. Attention/unsure uses existing amber pair in warn family, not a new semantic color. Optional off is neutral, not failure; status never color-only.
+- **UX-D8 — Glanceability:** four status segments visible without scroll from480px, wrap at320–480; no horizontal scrolling at supported dockings. Actual container content width, not shell width, decides page tiers.
+- **UX-D9 — No dead ends:** actionable error/Retry, meaningful absent/empty/filtered-empty, side-effect confirmation and remedy, explicit context-invalidated instruction.
+- **UX-D10 — Shared patterns:** APG automatic tabs, filter bar, virtual lists for sources that can exceed100; no page-specific reinventions. Render state belongs above virtual rows.
+- **UX-D11 — One on-page product:** shared tokens/statuses/live appearance, per-origin opt-in, Alt+H only, persisted drag, shadow isolation. P12A's session-local drag is a staged deviation, not full persistence.
+- **UX-D12 — Native words:** plugin/settings/KB names override source abbreviations/typos. Track intentional copy deltas; P15 sweeps final copy.
+- **UX-D13 — Measured speed:** cold-start row≤500ms; heavy work lazy/off-main-thread; P6/P15 large-list gates. No benchmark claim inferred from a responsive screenshot.
+- **UX-D14 — Additive IA:** routes/chips/filters are registry rows+tests; removal should not reach unrelated siblings. Optional Compare P17 requires a decision.
+- **UX-D15 — Height loss (owner2026-10-13):** content shrinks first; measured rail prefix plus “More pages” suffix, never scrolling/clipped rail or compressed hit boxes. Registry-order measured boxes include separator/gap; no hardcoded pitch in fit logic. Trigger/status/brand remain reachable. APG menu wraps/Home/End/typeahead/Enter/Esc-return; disabled reserved items skipped but explained. Menu plate may scroll **internally** under height clamp; no phantom stable gutter. Rail `scrollHeight==clientHeight`; stacking must keep micro-height trigger pointer-reachable. Palette remains a zero-scroll launcher. Right-side bottom-edge tooltips stay in viewport.
+- **UX-D16 — Group spacing (owner2026-10-13):**6px lead+1px hairline+6px below (13px); in-group gap4px, rows32px. Measured geometry fixture follows it. Rejected hover inset/first-row-only pad: they change the wrong boxes. Decorative line token need not meet text contrast.
+
+Original friction IDs retained for old references: F1 buried opening facts; F2 bare nav; F3 error dead end; F4 dropped/cancelled search; F5 triple tab state; F6 fake waits; F7 stagger/idle motion; F8 hard-refresh context loss; F9 foreign-tab pushes; F10 hardcoded palette; F11 missing built CSS; F12 IMG-only/eval failure; F13 invisible headers; F14 manual transcription/no bridge; F15 bad copy; F16 weak keyboard; F17 no nav preview; F18 no freshness. Their remedies are the decisions above/master bug owners, not a second checklist.
+
+Open observations, not approved features: System follows OS, not independent DevTools theme (exactly three choices remains binding); density/ultrawide preference and configurable breakpoints need owner evidence/decision. No i18n commitment.
+
+## On-page strip brief (P5H)
+
+P12 implements these IDs or records **ID / brief / shipped / reason** deviations in its plan; P15 audits conformance. P11 registry owns labels/group/order/status evidence, P12 owns storage/toggle/drag, P13/P14 own tools/outcome copy. Group names and labels cannot be duplicated in rendering tables. Native plugin naming wins over old mockup shorthand.
+
+- **SB-D1 — Chrome:** one shadow-host-contained inner fixed chrome (WXT resets host), LTR, z-index2147483647; accepted top-layer/tie/stacking limits, not a universal “unbeatable” claim. Original default12px top/left,224px width, max-width`min(224px,40vw)`, max-height`min(70vh,520px)`, stored origin position wins/clamps4px. P12A explicitly replaces geometry with KC pill/card language; full P12 must preserve/reconcile that decision, not blindly restore this original card.
+- **SB-D2 — Anatomy:** header and footer outside one scroll region; Cache/File Optimization/Media/Preload/CDN/Features/Tools, omit empty groups, Tools last with hairline. Registry is sole group/chip source.
+- **SB-D3 — Density:**12px mono/1.5 base;11px600 secondary group headers+12px icons;12px500 chip labels;10px muted footer/meta;8px padding/group gaps,4px chip gaps,22px pill visuals with≥24×24 hit boxes. User-select none on draggable chrome; only owned chrome takes pointer events. These surface-specific values do not authorize global token changes.
+- **SB-D4 — Surface:** surface2, line2 border,8px radius,elev3; Tools line1 divider; dragging changes cursor only, not scale/opacity.
+- **SB-D5 — Chips:** status text on matching soft background; applied ok, genuine failed error, degraded warn, unsure attention/warn, information info, idle/optional absent neutral. Tool action accent-strong/on-accent; unavailable neutral with explanation. Optional value suffix holds cache age/N/A/exclusion hint. Later honesty/naming decisions override source's blanket red-disabled convention.
+- **SB-D6 — Certainty:** no new color vocabulary; unsure tooltip explains evidence/missing signature; zero markers never fabricate enabled. No more certainty than scan.
+- **SB-D7 — Icons:**24-viewBox/1.5stroke/round caps, inline data rather than injected icon runtime;12px group glyphs (database/file-sliders/image/download-cloud/globe/puzzle/wrench), only needed utility grip/chevron/close/refresh. Group headings not controls/tab stops.
+- **SB-D8 — Identity:** grip+version identity+cache state+collapse header; footer WPR/WP/extension versions, truncated one line, no external links. Native title full name/reason where helpful, accessible equivalent for essential information. P12A suppresses unknown version badges per its later era policy.
+- **SB-D9 — Real actions only:** tool buttons, supported detail-linked chips, static information. Disabled tool explains why; no attempt to open DevTools without platform capability. If panel cannot be opened, give location hint rather than fake link.
+- **SB-D10 — Controls:** token hover/press, accent focus ring2px/offset2, disabled explanation; no text-only hover affordance. Current UI bar governs motion/opacity constraints over the earlier brief's decorative suggestions.
+- **SB-D11 — Collapse:** immediate class state, chevron token rotation; collapsed header survives; collapse is session-local, not persisted.
+- **SB-D12 — Drag:** noninteractive chrome/grip starts grab;1:1 position, no transition lag, pointer capture, no host text selection.4px viewport clamp; persist per origin on drop in full P12. Right-click cancels/restores; tools/results not independently draggable. P12A shipped session-local first, including movement/handoff fixes in P12 record.
+- **SB-D13 — Motion:** mount/show one fade+4px rise through tokens, no row/group stagger, instant hide acceptable, no idle loops/position animation; reduce globally. Real scanning/running waits may use bar-sanctioned wait treatment. Button color changes instant under current bar; original interaction-transition recommendation is superseded. Banner one entrance/exit, state never waits for transition.
+- **SB-D14 — Outcome:** one latest banner, running/info→success/ok or actionable failure/error, polite status without focus theft. Viewport top-center8px, max-width`min(480px,90vw)`, surface/card treatment,12px mono,8–12px padding; **sibling of transformed dragged chrome**, never descendant (fixed containing-block trap).5s lifetime, hover pauses/restarts5s, close≥24px, Show details only with real destination. Full P12 must account for focus interaction as well as mouse when implementing accessible lifetime.
+- **SB-D15 — Appearance:** tokens only, no feature-local OS queries; shared mount sets theme before paint and follows storage live. Injected System explicitly declares `data-theme=system`/color-scheme light dark; documents leave System attribute unset. Do not override token values; AA gate belongs to token tests.
+- **SB-D16 — Coexistence:** no strip scroll lock/body styles/host cookies or CSS, no ordinary console narration, event isolation, minimal cleaned drag/toggle listeners. Hostile CSS inert both directions; verify computed styles/behavior rather than treating shadow DOM as proof by itself.
+
+### Isolation clarifications
+
+Every designed injected surface uses WXT shadow root/adopted styles; extension documents need no shadow but share design tokens. Audit unscoped injection at release; `@font-face`/`@property` must not trigger WXT document-level style leakage.
+
+Approved feature-specific exceptions: admin-bar D-bugger is a **host-native unstyled li**, not our designed UI; SBS exact overflow capture/restore is deliberate; SBS consume-once href continuity in sessionStorage is reviewed and degrades safely. None permits strip cookies/global styles/page takeover. P12 owns invalidation during async mount so a dead context cannot leave a watcher/tree.
+
+### Revision record
+
+-2026-10-13/14: rail-only/nav overflow+spacing, `/` help key; early KC-shell strip/drag/era behavior supersedes original anatomy where explicitly recorded.
+-2026-10-14: UI bar centralizes shared values; worker-only highlighting supersedes old main-thread schemes.
+-2026-10-15/16: centered route-owned canvas, honest fallback h1s, focus-safe copy, corrected toast roles/independent pause and native fixed Chromium scrollbars accepted; see [UI acceptance](./completed-ui-acceptance.md). These receipts supersede stale impossibility/no-heading/thin-scrollbar instructions.
