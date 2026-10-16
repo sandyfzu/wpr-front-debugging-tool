@@ -161,7 +161,7 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
   };
 
   return (
-    <PageFrame id="undefined-references" title={TITLE} subtitle={SUBTITLE} fill reading>
+    <PageFrame id="undefined-references" title={TITLE} subtitle={SUBTITLE} fill>
       {/* Mounted for the page's life so later arrivals are announced. The
           alternating no-break space makes an identical sentence a new one. */}
       <p role="status" class="sr-only" data-fdt="undefined-refs-status">

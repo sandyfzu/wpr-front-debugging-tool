@@ -19,6 +19,7 @@ import { createFdtDataStore, type FdtDataStore } from './state/use-fdt-data';
 import type { PanelReceivers } from './state/edges';
 import { makeFdtData, makeHardReloadBudget } from './state/fixtures';
 import { PAGES } from './pages';
+import { ROUTE_IDS } from './routes';
 
 /** One page load's worth of valid data. */
 const pageData = (): FdtData => makeFdtData({ allScriptsLoaded: false });
@@ -104,6 +105,62 @@ afterEach(() => {
 });
 
 describe('PanelApp boot states', () => {
+  it.each(ROUTE_IDS)(
+    'keeps %s on its canvas through loading, error, retry and ready',
+    async (id) => {
+      hashTo(id);
+      const shell = makeShell();
+      render(() => <PanelApp search={shell.search} data={shell.data} />);
+      const expected = ['undefined-references', 'diagnoser'].includes(id)
+        ? 'max-w-4xl'
+        : 'max-w-7xl';
+      /** Assert the width policy without relying on layout unavailable in happy-dom. */
+      const assertCanvas = (): void => {
+        const body = document.querySelector('[data-fdt="panel-content"] [data-fdt="page-body"]');
+        expect(body?.classList).toContain(expected);
+        expect(body?.classList).toContain('mx-auto');
+        expect(body?.classList).toContain('p-3');
+      };
+      assertCanvas();
+      expect(document.querySelector('h1')).toBeNull();
+      const placeholders = document.querySelectorAll(
+        '[data-fdt-page="fetching"] [data-fdt="skeleton"]'
+      );
+      expect(placeholders).toHaveLength(4);
+      for (const placeholder of placeholders) {
+        if (!placeholder.classList.contains('w-full'))
+          expect(placeholder.classList).toContain('max-w-full');
+      }
+      shell.fail(new Error('Could not establish connection. Receiving end does not exist.'));
+      await waitFor(() => {
+        expect(screen.getByText("Couldn't load page data")).toBeTruthy();
+      });
+      assertCanvas();
+      shell.data.retry();
+      assertCanvas();
+      shell.settle(pageData());
+      await waitFor(() => {
+        expect(document.querySelector(`[data-fdt-page="${id}"] h1`)).not.toBeNull();
+      });
+      assertCanvas();
+    }
+  );
+
+  it('updates the loading and error canvas when the route changes before data arrives', async () => {
+    const shell = makeShell();
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    const loading = document.querySelector('[data-fdt-page="fetching"]');
+    hashTo('undefined-references');
+    expect(loading?.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-4xl');
+    expect(document.querySelector('[data-fdt-page="fetching"]')).toBe(loading);
+    shell.fail(new Error('Could not establish connection. Receiving end does not exist.'));
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load page data")).toBeTruthy();
+    });
+    hashTo('javascript');
+    expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
+  });
+
   it('renders the fetching skeleton first, then the page body on settle', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
@@ -349,6 +406,9 @@ describe('unmount + crash boundaries', () => {
       // The card explains the recovery, not the raw failure:
       expect(screen.getByText(/Reloading the panel restores it/)).toBeTruthy();
       expect(screen.queryByText('boom — a body bug')).toBeNull();
+      expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');
+      hashTo('undefined-references');
+      expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-4xl');
       // The retry affordance reloads the whole panel document:
       screen.getByRole('button', { name: 'Retry' }).click();
       expect(reload).toHaveBeenCalledTimes(1);

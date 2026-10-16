@@ -2,6 +2,9 @@
 
 ## Verdict
 
+**Follow-up:** the scoped [canvas fallback fix](panel-layout-fix.md) addresses
+both findings below; this audit remains the original pre-fix evidence.
+
 The ready-state change is small, coherent and visually improves alignment. No
 new ready-state functional, security, theme or overflow regression was found.
 **Do not describe the work as consistent across all states yet:** two confirmed

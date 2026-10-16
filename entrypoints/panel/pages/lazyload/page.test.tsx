@@ -356,7 +356,7 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(rowNames(page.root)).toEqual(['1.jpg', '2.jpg']);
   });
 
-  it('caps the list width at the wide tier', () => {
+  it('leaves list width to the page frame', () => {
     renderPage(LazyloadPage, fixture());
     expect(screen.getByRole('list', { name: 'Images' }).className).not.toContain('max-w-');
   });

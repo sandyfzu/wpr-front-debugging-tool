@@ -78,7 +78,7 @@ describe('PageFrame', () => {
   });
 
   it('uses a shorter reading canvas without changing the query container', () => {
-    render(() => <PageFrame id="undefined-references" title="Undefined References" reading />);
+    render(() => <PageFrame id="undefined-references" title="Undefined References" />);
     expect(frameBody().classList).toContain('max-w-4xl');
     expect(frameBody().classList).not.toContain('max-w-7xl');
     expect(frameRoot().classList).toContain('@container');

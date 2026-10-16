@@ -21,7 +21,7 @@ export function placeholderPage(id: RouteId): Component {
   const label = row.label;
   return function PlaceholderPage(): JSX.Element {
     return (
-      <PageFrame id={id} title={label} reading>
+      <PageFrame id={id} title={label}>
         <p class="mt-1.5 max-w-96 text-2xs leading-snug text-fg-secondary">
           This page arrives in a later pass of the tool's panel work.
         </p>

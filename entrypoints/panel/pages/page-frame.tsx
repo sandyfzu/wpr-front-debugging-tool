@@ -13,7 +13,7 @@ import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
 import { isHttpUrl } from '../../../utils/urls';
-import type { RouteId } from '../routes';
+import { navRoute, type RouteId } from '../routes';
 
 /**
  * Classes for the one scroller of a `fill` frame (usually the `VirtualList`):
@@ -42,8 +42,6 @@ export interface PageFrameProps {
    * natural height.
    */
   fill?: boolean;
-  /** Narrower canvas for explanation-heavy pages; data workspaces are the default. */
-  reading?: boolean;
   /** The page content, laid out as a `gap-3` column of sections below the header. */
   children?: JSX.Element;
 }
@@ -65,7 +63,6 @@ export interface PageFrameProps {
  * @param props.subtitle Optional intro line.
  * @param props.actions Optional actions cluster.
  * @param props.fill Full-height flex column for list pages (default `false`).
- * @param props.reading Keep explanations and their actions within a shorter reading measure.
  * @param props.children The page sections.
  */
 export function PageFrame(props: PageFrameProps): JSX.Element {
@@ -74,19 +71,42 @@ export function PageFrame(props: PageFrameProps): JSX.Element {
       class={cn('fdt-page @container', props.fill && 'flex min-h-full flex-col')}
       data-fdt-page={props.id}
     >
-      <div
-        data-fdt="page-body"
-        class={cn(
-          // Center the whole canvas, not just results: headings and controls share its edges.
-          'mx-auto flex w-full min-w-0 flex-col gap-3 p-3',
-          props.reading ? 'max-w-4xl' : 'max-w-7xl',
-          props.fill && 'flex-1'
-        )}
-      >
+      <PageCanvas id={props.id} fill={props.fill}>
         <PageHeader title={props.title} subtitle={props.subtitle} actions={props.actions} />
         {props.children}
-      </div>
+      </PageCanvas>
     </section>
+  );
+}
+
+/** Props of the shared canvas used by page bodies and their shell fallbacks. */
+interface PageCanvasProps {
+  /** The destination route owns the width, even before its data arrives. */
+  id: RouteId;
+  /** Stretch inside a full-height page frame. */
+  fill?: boolean;
+  /** Ready content, genuine loading placeholders, or an actionable error. */
+  children?: JSX.Element;
+}
+
+/**
+ * Keep every state on the route's centered, padded canvas without inventing a heading.
+ * The caller keeps the unpadded query container outside this wrapper.
+ * @param props Destination route, optional fill mode, and body content.
+ * @returns The shared body column; changing routes updates its width in place.
+ */
+export function PageCanvas(props: PageCanvasProps): JSX.Element {
+  return (
+    <div
+      data-fdt="page-body"
+      class={cn(
+        'mx-auto flex w-full min-w-0 flex-col gap-3 p-3',
+        navRoute(props.id)?.reading ? 'max-w-4xl' : 'max-w-7xl',
+        props.fill && 'flex-1'
+      )}
+    >
+      {props.children}
+    </div>
   );
 }
 

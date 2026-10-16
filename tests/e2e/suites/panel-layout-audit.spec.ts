@@ -265,10 +265,6 @@ test('loading placeholder uses the same centered bounded canvas as ready data', 
       body: JSON.stringify({ ...geometry, overflow }),
       contentType: 'application/json'
     });
-    test.fail(
-      true,
-      'Audit LAYOUT-1/2: shell skeleton is unbounded and its fixed bar overflows at 320px.'
-    );
     expect.soft(geometry.left).toBeCloseTo((geometry.regionWidth - 1280) / 2 + 12, 0);
     expect.soft(overflow).toBe(0);
   } finally {

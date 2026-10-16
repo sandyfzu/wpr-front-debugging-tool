@@ -34,7 +34,8 @@ import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
-import { navRoute } from './routes';
+import { navRoute, type RouteId } from './routes';
+import { PageCanvas } from './pages/page-frame';
 import { StatusBar } from './status-bar/status-bar';
 import { PAGES } from './pages';
 import { focusRouteHeading } from './palette/focus';
@@ -285,13 +286,13 @@ export function PanelApp(props: AppProps): JSX.Element {
                       cause: error instanceof Error ? { message: error.message } : error
                     });
                     return (
-                      <div class="p-3">
+                      <PageCanvas id={router.route()}>
                         <ErrorState
                           title="The panel came apart"
                           message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
                           onRetry={props.reload ?? reloadPanelDocument}
                         />
-                      </div>
+                      </PageCanvas>
                     );
                   }}
                 >
@@ -300,12 +301,12 @@ export function PanelApp(props: AppProps): JSX.Element {
                     <Match
                       when={data.state().status === 'fetching' || data.state().status === 'idle'}
                     >
-                      <SkeletonPage />
+                      <SkeletonPage route={router.route()} />
                     </Match>
                     {/* The error view with its retry (the phase's dead-end rule). */}
                     <Match when={errorState()} keyed>
                       {(error) => (
-                        <div class="p-3">
+                        <PageCanvas id={router.route()}>
                           <ErrorState
                             title="Couldn't load page data"
                             message={error.cause}
@@ -313,7 +314,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                               data.retry();
                             }}
                           />
-                        </div>
+                        </PageCanvas>
                       )}
                     </Match>
                     {/* `ready` and `refreshing` render the same body — the data
@@ -348,16 +349,24 @@ export function PanelApp(props: AppProps): JSX.Element {
   );
 }
 
-/** The while-loading page body: three ranked skeleton blocks, nothing else. */
-function SkeletonPage(): JSX.Element {
+/**
+ * Preview the destination canvas during a real wait, with no fake heading.
+ * @param props The current route; changes during boot update the canvas width.
+ * @returns Ranked placeholders bounded by the available inline size.
+ */
+function SkeletonPage(props: { route: RouteId }): JSX.Element {
   return (
-    <section class="fdt-page p-3" data-fdt-page="fetching">
-      <Skeleton class="h-5 w-36" />
-      <div class="mt-4 grid gap-2">
-        <Skeleton class="h-14 w-full" />
-        <Skeleton class="h-14 w-full" />
-        <Skeleton class="h-14 w-64" />
-      </div>
+    <section class="fdt-page @container" data-fdt-page="fetching">
+      <PageCanvas id={props.route}>
+        <Skeleton class="h-5 w-36 max-w-full" />
+        {/* A zero-minimum track lets the fixed short bar's max-width resolve
+            against available space instead of widening the grid intrinsically. */}
+        <div class="mt-1 grid grid-cols-1 gap-2">
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-64 max-w-full" />
+        </div>
+      </PageCanvas>
     </section>
   );
 }
