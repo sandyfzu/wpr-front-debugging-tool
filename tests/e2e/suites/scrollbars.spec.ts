@@ -61,10 +61,10 @@ async function assertBarPixels(page: Page, resting = true): Promise<Buffer> {
     bitmap.close();
     const coordinates: [number, number][] = [
       [4, 4],
-      [canvas.width - 6, 10],
-      [canvas.width - 6, 60],
-      [10, canvas.height - 6],
-      [60, canvas.height - 6]
+      [canvas.width - 4, 10],
+      [canvas.width - 4, 60],
+      [10, canvas.height - 4],
+      [60, canvas.height - 4]
     ];
     /**
      * Read one opaque screenshot pixel as a comparable resolved CSS color.
@@ -98,14 +98,15 @@ async function assertBarPixels(page: Page, resting = true): Promise<Buffer> {
       corner: getComputedStyle(el, '::-webkit-scrollbar-corner').backgroundColor,
       border: getComputedStyle(el, '::-webkit-scrollbar-thumb').borderTopColor,
       axes: [
-        Array.from({ length: canvas.height - 12 }, (_, y) => colorAt(canvas.width - 6, y)),
-        Array.from({ length: canvas.width - 12 }, (_, x) => colorAt(x, canvas.height - 6))
+        Array.from({ length: canvas.height - 8 }, (_, y) => colorAt(canvas.width - 4, y)),
+        Array.from({ length: canvas.width - 8 }, (_, x) => colorAt(x, canvas.height - 4))
       ]
     };
   }, image.toString('base64'));
   expect(pixels.thumb).not.toBe(pixels.track);
   for (const axis of pixels.axes) {
-    expect(axis.filter((color) => color === pixels.thumb).length).toBeGreaterThanOrEqual(20);
+    // Rounded caps on the narrower thumb leave fewer fully opaque centerline pixels.
+    expect(axis.filter((color) => color === pixels.thumb).length).toBeGreaterThanOrEqual(16);
     expect(axis.filter((color) => color === pixels.track).length).toBeGreaterThanOrEqual(20);
   }
   if (resting) {
@@ -144,12 +145,12 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
     x: el.offsetWidth - el.clientWidth,
     y: el.offsetHeight - el.clientHeight
   }));
-  expect(geometry).toEqual({ x: 12, y: 12 });
+  expect(geometry).toEqual({ x: 8, y: 8 });
   await probe.hover();
   expect((await probe.screenshot()).equals(idle)).toBe(true);
   const box = await probe.boundingBox();
   if (!box) throw new Error('Scrollbar probe has no rendered box');
-  await page.mouse.move(box.x + box.width - 6, box.y + 10);
+  await page.mouse.move(box.x + box.width - 4, box.y + 10);
   await page.waitForTimeout(400);
   expect((await probe.screenshot()).equals(idle)).toBe(true);
   await probe.evaluate((el) => {
@@ -174,27 +175,27 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
     el.style.overflow = 'auto';
   });
   // Drag the actual native thumb, rather than simulating scrolling in JavaScript.
-  await page.mouse.move(box.x + box.width - 6, box.y + 10);
+  await page.mouse.move(box.x + box.width - 4, box.y + 10);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 6, box.y + 55, { steps: 5 });
-  expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(12);
+  await page.mouse.move(box.x + box.width - 4, box.y + 55, { steps: 5 });
+  expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(8);
   await test.info().attach('vertical-drag-held', {
     body: await assertBarPixels(page, false),
     contentType: 'image/png'
   });
   await page.mouse.up();
   await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(12);
+  expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(8);
   // Let the compositor finish the native drag before restoring its scroll offset.
   await page.mouse.move(500, 300);
   await page.waitForTimeout(400);
   await probe.evaluate((el) => {
     el.scrollTo(0, 0);
   });
-  await page.mouse.move(box.x + 10, box.y + box.height - 6);
+  await page.mouse.move(box.x + 10, box.y + box.height - 4);
   await page.mouse.down();
-  await page.mouse.move(box.x + 55, box.y + box.height - 6, { steps: 5 });
-  expect(await probe.evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)).toBe(12);
+  await page.mouse.move(box.x + 55, box.y + box.height - 4, { steps: 5 });
+  expect(await probe.evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)).toBe(8);
   await test.info().attach('horizontal-drag-held', {
     body: await assertBarPixels(page, false),
     contentType: 'image/png'
@@ -297,7 +298,7 @@ test('all built page elements get fixed bars, live palettes and native scrolling
       document.documentElement.removeAttribute('data-theme');
     });
     expect(await scrollbarState(page, selector)).toEqual({
-      width: '12px',
+      width: '8px',
       color: THUMB.light,
       overflowX: true,
       overflowY: true
@@ -323,13 +324,13 @@ test('all built page elements get fixed bars, live palettes and native scrolling
       await page.evaluate((value) => {
         document.documentElement.setAttribute('data-theme', value);
       }, theme);
-      expect((await scrollbarState(page, selector)).width).toBe('12px');
+      expect((await scrollbarState(page, selector)).width).toBe('8px');
       expect(await probe.evaluate((el) => getComputedStyle(el).forcedColorAdjust)).toBe('auto');
       expect(await probe.evaluate((el) => getComputedStyle(el).scrollbarColor)).toBe('auto');
       await assertPaintedStableBars(page);
     }
     await page.emulateMedia({ forcedColors: 'none' });
-    expect((await scrollbarState(page, selector)).width).toBe('12px');
+    expect((await scrollbarState(page, selector)).width).toBe('8px');
     await page.close();
   }
 });
@@ -367,7 +368,7 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
             parseFloat(getComputedStyle(el).borderRightWidth),
           horizontal: el.scrollWidth > el.clientWidth
         }))
-      ).toEqual({ gutter: 12, horizontal: false });
+      ).toEqual({ gutter: 8, horizontal: false });
       const code = panel.getByRole('group', { name: 'Inline script 2', exact: true });
       await expect(code).toBeVisible();
       expect(
@@ -376,7 +377,7 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
           vertical: el.scrollHeight > el.clientHeight,
           height: getComputedStyle(el, '::-webkit-scrollbar').height
         }))
-      ).toEqual({ horizontal: true, vertical: false, height: '12px' });
+      ).toEqual({ horizontal: true, vertical: false, height: '8px' });
       expect(
         await panel.evaluate(
           () => document.documentElement.scrollWidth === document.documentElement.clientWidth
@@ -384,13 +385,15 @@ test('JavaScript virtual lists and nested code keep fixed native bars at narrow 
       ).toBe(true);
       // The code pane owns horizontal overflow and the list owns vertical overflow;
       // their page ancestor must not become a second vertical scroller at normal height.
-      expect(
-        await list.evaluate((el) => {
-          const area = el.closest('[data-fdt="panel-content"]');
-          if (!area) throw new Error('Scripts list has no page scroll area');
-          return area.scrollHeight <= area.clientHeight;
-        })
-      ).toBe(true);
+      await expect
+        .poll(() =>
+          list.evaluate((el) => {
+            const area = el.closest('[data-fdt="panel-content"]');
+            if (!area) throw new Error('Scripts list has no page scroll area');
+            return area.scrollHeight <= area.clientHeight;
+          })
+        )
+        .toBe(true);
       await test.info().attach(`javascript-scrollbars-${String(width)}`, {
         body: await panel.screenshot(),
         contentType: 'image/png'
@@ -428,9 +431,9 @@ test('injected bars follow the owned palette and leave host page bars untouched'
   await expect(page.locator('wpr-fdt-side-by-side .sbs-overlay--open')).toHaveCount(1);
   const selector = await addProbe(page, true);
   // WXT adopts the shadow stylesheet asynchronously after mounting the host.
-  await expect.poll(async () => (await scrollbarState(page, selector)).width).toBe('12px');
+  await expect.poll(async () => (await scrollbarState(page, selector)).width).toBe('8px');
   expect(await scrollbarState(page, selector)).toEqual({
-    width: '12px',
+    width: '8px',
     color: THUMB.dark,
     overflowX: true,
     overflowY: true
@@ -454,7 +457,7 @@ test('injected bars follow the owned palette and leave host page bars untouched'
     await page.locator('wpr-fdt-side-by-side').evaluate((el) => getComputedStyle(el).scrollbarWidth)
   ).toBe('auto');
   await page.emulateMedia({ forcedColors: 'active' });
-  expect((await scrollbarState(page, selector)).width).toBe('12px');
+  expect((await scrollbarState(page, selector)).width).toBe('8px');
   await assertPaintedStableBars(page);
   expect(
     await page.locator('html').evaluate((el) => getComputedStyle(el, '::-webkit-scrollbar').width)

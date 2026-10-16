@@ -388,7 +388,7 @@ for (const theme of ['light', 'dark']) {
                 overflows: element.scrollHeight > element.clientHeight,
                 trackWidth: element.getBoundingClientRect().width - element.clientWidth
               }))
-            ).toEqual({ overflows: true, trackWidth: 12 });
+            ).toEqual({ overflows: true, trackWidth: 8 });
           }
           await auditState(panel);
           await info.attach(`fetch-error-${theme}-${String(width)}`, {
