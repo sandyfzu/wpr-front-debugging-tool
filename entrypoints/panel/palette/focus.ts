@@ -2,8 +2,8 @@
  * The route-switch focus rule — the one shared owner of "where focus lands
  * when the route changes" (nav click, palette navigation, deep link). The
  * move targets the route body's own `h1`, which announces the destination by
- * being a heading; bodies without an `h1` (the fetch skeleton, the error
- * card) are skipped deliberately — nothing there gains from a focus move.
+ * being a heading. Loading names the actual wait; a fallback outside a route
+ * body is skipped rather than treating a failure title as the destination.
  */
 import { createLogger } from '../../../lib/logger';
 
@@ -25,9 +25,7 @@ export const ROUTE_HEADING_SELECTOR = '[data-fdt-page] h1';
 export function focusRouteHeading(region: ParentNode = document): void {
   const heading = region.querySelector<HTMLElement>(ROUTE_HEADING_SELECTOR);
   if (heading === null) {
-    // Skeleton/error states have no heading to land on — the skip is the
-    // rule, not an omission (a focus move with no target would strand focus
-    // somewhere worse than where it is).
+    // A fallback outside a route body has no destination heading to land on.
     log.debug('Route heading focus skipped — the current body has no h1.');
     return;
   }

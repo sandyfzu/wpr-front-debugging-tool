@@ -24,6 +24,7 @@ describe('ErrorState', () => {
     const region = screen.getByRole('alert');
     expect(region.dataset.fdt).toBe('error-state');
     expect(screen.getByText('Extension context lost')).toBeTruthy();
+    expect(screen.queryByRole('heading')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -42,5 +43,14 @@ describe('ErrorState', () => {
     render(() => <ErrorState onRetry={() => undefined} />);
     expect(screen.getByText("Couldn't load this view")).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+  });
+
+  it('uses one visible page heading only when it owns the whole page', () => {
+    render(() => <ErrorState pageHeading title="Page data unavailable" onRetry={vi.fn()} />);
+    const heading = screen.getByRole('heading', { level: 1, name: 'Page data unavailable' });
+    expect(screen.getAllByRole('heading')).toHaveLength(1);
+    expect(heading.classList).toContain('text-base');
+    expect(heading.classList).not.toContain('sr-only');
+    expect(screen.getByRole('alert').contains(heading)).toBe(true);
   });
 });

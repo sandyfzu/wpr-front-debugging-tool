@@ -122,11 +122,12 @@ describe('PanelApp boot states', () => {
         expect(body?.classList).toContain('p-3');
       };
       assertCanvas();
-      expect(document.querySelector('h1')).toBeNull();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(screen.getByRole('heading', { name: 'Loading page data' })).toBeTruthy();
       const placeholders = document.querySelectorAll(
         '[data-fdt-page="fetching"] [data-fdt="skeleton"]'
       );
-      expect(placeholders).toHaveLength(4);
+      expect(placeholders).toHaveLength(3);
       for (const placeholder of placeholders) {
         if (!placeholder.classList.contains('w-full'))
           expect(placeholder.classList).toContain('max-w-full');
@@ -136,8 +137,14 @@ describe('PanelApp boot states', () => {
         expect(screen.getByText("Couldn't load page data")).toBeTruthy();
       });
       assertCanvas();
+      expect(screen.getAllByRole('heading')).toHaveLength(1);
+      expect(
+        screen.getByRole('heading', { level: 1, name: "Couldn't load page data" })
+      ).toBeTruthy();
       shell.data.retry();
       assertCanvas();
+      expect(screen.getAllByRole('heading')).toHaveLength(1);
+      expect(screen.getByRole('heading', { name: 'Loading page data' })).toBeTruthy();
       shell.settle(pageData());
       await waitFor(() => {
         expect(document.querySelector(`[data-fdt-page="${id}"] h1`)).not.toBeNull();
@@ -164,7 +171,7 @@ describe('PanelApp boot states', () => {
   it('renders the fetching skeleton first, then the page body on settle', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
-    expect(screen.getByText('Loading page data')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: 'Loading page data' })).toBeTruthy();
     expect(document.querySelector('[data-fdt-page="fetching"]')).not.toBeNull();
 
     shell.settle(pageData());
@@ -304,7 +311,7 @@ describe('PanelApp shell structure', () => {
     render(() => <PanelApp search={shell.search} data={shell.data} />);
     const region = document.querySelector('[data-fdt="panel-status"]');
     expect(region?.getAttribute('aria-live')).toBe('polite');
-    expect(screen.getByText('Loading page data')).toBeTruthy();
+    expect(region?.textContent).toBe('Loading page data');
     shell.settle(pageData());
     await waitFor(() => {
       expect(screen.getByText('Detections loaded')).toBeTruthy();
@@ -404,6 +411,8 @@ describe('unmount + crash boundaries', () => {
         expect(screen.getByText('The panel came apart')).toBeTruthy();
       });
       // The card explains the recovery, not the raw failure:
+      expect(screen.getAllByRole('heading')).toHaveLength(1);
+      expect(screen.getByRole('heading', { level: 1, name: 'The panel came apart' })).toBeTruthy();
       expect(screen.getByText(/Reloading the panel restores it/)).toBeTruthy();
       expect(screen.queryByText('boom — a body bug')).toBeNull();
       expect(document.querySelector('[data-fdt="page-body"]')?.classList).toContain('max-w-7xl');

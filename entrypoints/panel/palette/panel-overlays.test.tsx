@@ -344,7 +344,7 @@ describe('focus on route switch', () => {
     expect(document.activeElement?.textContent).toBe('JavaScript');
   });
 
-  it('skips the move on the skeleton body (no heading — focus stays put)', () => {
+  it('names the real wait on route changes without stealing focus when data settles', async () => {
     let settle!: (payload: unknown) => void;
     const data = createFdtDataStore({
       inspectedTabId: () => 42,
@@ -361,9 +361,13 @@ describe('focus on route switch', () => {
     render(() => <PanelApp data={data} />);
     expect(document.querySelector('[data-fdt-page="fetching"]')).not.toBeNull();
     hashTo('javascript');
-    // The route change ran; the body still has no heading — the move skipped.
-    expect(document.querySelector('[data-fdt-page] h1')).toBeNull();
-    expect(document.activeElement).toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Loading page data' }));
+    const nav = screen.getByRole('link', { name: 'JavaScript' });
+    nav.focus();
     settle(makeFdtData());
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'JavaScript' })).toBeTruthy();
+    });
+    expect(document.activeElement).toBe(nav);
   });
 });

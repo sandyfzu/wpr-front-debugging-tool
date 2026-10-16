@@ -71,13 +71,14 @@ async function canvasGeometry(panel: Page, id: string): Promise<{ left: number; 
 }
 
 /**
- * Audit fallbacks after paint, pinning the existing heading-less shell exception.
- * Loading must not invent a route heading; the ready route owns the real h1.
- * No rules are disabled: any other violation or incomplete result fails.
+ * Audit the whole fallback document after paint without excluding any axe rules.
+ * The visible h1 names the actual state, never pretends route data is ready.
  * @param panel The visible loading or data-error document to audit.
  * @returns Resolves after every axe result has been asserted.
  */
 async function auditState(panel: Page): Promise<void> {
+  await expect(panel.getByRole('heading', { level: 1 })).toHaveCount(1);
+  await expect(panel.getByRole('heading', { level: 1 })).toBeVisible();
   await panel.evaluate(AXE_SOURCE);
   const result = await panel.evaluate(async () => {
     await new Promise<void>((resolve) =>
@@ -96,7 +97,7 @@ async function auditState(panel: Page): Promise<void> {
       incomplete: audit.incomplete.map((rule) => rule.id)
     };
   });
-  expect(result).toEqual({ violations: ['page-has-heading-one'], incomplete: [] });
+  expect(result).toEqual({ violations: [], incomplete: [] });
 }
 
 for (const theme of ['system', 'light', 'dark']) {
@@ -165,6 +166,7 @@ for (const theme of ['system', 'light', 'dark']) {
       await panel.keyboard.press('Enter');
       await expect(panel).toHaveURL(/#\/javascript$/);
       await expect(loading).toBeVisible();
+      await expect(panel.getByRole('heading', { name: 'Loading page data' })).toBeFocused();
       await expect
         .poll(() =>
           panel.evaluate(
@@ -307,4 +309,152 @@ for (const theme of ['system', 'light', 'dark']) {
       await fixture.page.close();
     }
   });
+}
+
+for (const theme of ['light', 'dark']) {
+  for (const recoveryWidth of [320, 1920]) {
+    test(`keeps fetch failure, held Retry and crash recovery accessible in ${theme} at ${String(recoveryWidth)}px`, async ({
+      extension
+    }, info) => {
+      await extension.evaluateInWorker(async (appearance: string) => {
+        await chrome.storage.sync.set({ options: { appearance, improvements: {}, features: {} } });
+      }, theme);
+      const fixture = await openFixturePage(extension, '/pipeline/markers.html');
+      const panel = await extension.browserContext.newPage();
+      try {
+        await panel.emulateMedia({ reducedMotion: 'reduce' });
+        await panel.addInitScript((tabId: number) => {
+          // WXT reads the available browser namespace; messaging uses Chrome's callback API.
+          const namespaces = window as unknown as {
+            chrome: typeof chrome;
+            browser?: typeof chrome;
+          };
+          for (const ns of [namespaces.chrome, namespaces.browser]) {
+            if (ns)
+              Object.defineProperty(ns, 'devtools', {
+                configurable: true,
+                value: { inspectedWindow: { tabId } }
+              });
+          }
+          const win = window as unknown as {
+            releaseStateReply: () => void;
+            stateReplyHeld: boolean;
+          };
+          let released = sessionStorage.getItem('state-recovered') === 'yes';
+          const pending: (() => void)[] = [];
+          win.releaseStateReply = (): void => {
+            released = true;
+            sessionStorage.setItem('state-recovered', 'yes');
+            for (const reply of pending.splice(0)) reply();
+          };
+          const send = chrome.tabs.sendMessage.bind(chrome.tabs);
+          chrome.tabs.sendMessage = ((...args: unknown[]): unknown => {
+            const callback = args.pop() as (reply: unknown) => void;
+            return Reflect.apply(send, chrome.tabs, [
+              ...args,
+              (reply: unknown) => {
+                if (sessionStorage.getItem('state-failed') !== 'yes') {
+                  sessionStorage.setItem('state-failed', 'yes');
+                  callback({
+                    err: 'Could not establish connection. Receiving end does not exist.'
+                  });
+                } else if (released) callback(reply);
+                else {
+                  pending.push(() => {
+                    callback(reply);
+                  });
+                  win.stateReplyHeld = true;
+                }
+              }
+            ]);
+          }) as typeof chrome.tabs.sendMessage;
+        }, fixture.tabId);
+        await panel.goto(`${await panelPageUrl(extension)}#/undefined-references`);
+        const title = panel.getByRole('heading', { level: 1 });
+        await expect(title).toHaveText("Couldn't load page data");
+        await expect(panel.getByRole('alert')).toContainText('no data source reachable');
+        expect(await panel.evaluate(() => sessionStorage.getItem('state-failed'))).toBe('yes');
+        for (const width of [320, 1920]) {
+          await panel.setViewportSize({ width, height: 220 });
+          await canvasGeometry(panel, 'undefined-references');
+          await auditState(panel);
+          await info.attach(`fetch-error-${theme}-${String(width)}`, {
+            body: await panel.screenshot(),
+            contentType: 'image/png'
+          });
+        }
+        await panel.setViewportSize({ width: recoveryWidth, height: 220 });
+        const retry = panel.getByRole('button', { name: 'Retry', exact: true });
+        for (let stop = 0; stop < 30; stop += 1) {
+          await panel.keyboard.press('Tab');
+          if (await retry.evaluate((el) => el === document.activeElement)) break;
+        }
+        await expect(retry).toBeFocused();
+        await panel.keyboard.press('Enter');
+        await expect(title).toHaveText('Loading page data');
+        await expect(panel.getByRole('alert')).toHaveCount(0);
+        await expect
+          .poll(() =>
+            panel.evaluate(() => (window as unknown as { stateReplyHeld: boolean }).stateReplyHeld)
+          )
+          .toBe(true);
+        for (const width of [320, 1920]) {
+          await panel.setViewportSize({ width, height: 220 });
+          await canvasGeometry(panel, 'undefined-references');
+          await auditState(panel);
+        }
+        await panel.evaluate(() => {
+          (window as unknown as { releaseStateReply: () => void }).releaseStateReply();
+        });
+        await expect(title).toHaveText('Undefined References');
+        await expect(panel.locator('[data-fdt-page="fetching"]')).toHaveCount(0);
+        // Throw once at an actual route render, restoring the native method first.
+        await panel.evaluate(() => {
+          // Keep the native function identity for restoration; calls below bind the element.
+          // eslint-disable-next-line @typescript-eslint/unbound-method
+          const setAttribute = Element.prototype.setAttribute;
+          /** Fail only the requested render; all other writes retain their native receiver. */
+          Element.prototype.setAttribute = function (name: string, value: string): void {
+            if (name === 'data-fdt-page' && value === 'javascript') {
+              Element.prototype.setAttribute = setAttribute;
+              throw new Error('One-shot browser render failure');
+            }
+            setAttribute.call(this, name, value);
+          };
+          location.hash = '#/javascript';
+        });
+        await expect(title).toHaveText('The panel came apart');
+        await expect(panel.getByText('One-shot browser render failure')).toHaveCount(0);
+        for (const width of [320, 1920]) {
+          await panel.setViewportSize({ width, height: 220 });
+          for (const id of ROUTES) {
+            await panel.evaluate((route) => {
+              location.hash = `#/${route}`;
+            }, id);
+            await expect(panel).toHaveURL(new RegExp(`#/${id}$`));
+            await canvasGeometry(panel, id);
+          }
+          await auditState(panel);
+          await info.attach(`crash-${theme}-${String(width)}`, {
+            body: await panel.screenshot(),
+            contentType: 'image/png'
+          });
+        }
+        await panel.setViewportSize({ width: recoveryWidth, height: 220 });
+        for (let stop = 0; stop < 30; stop += 1) {
+          await panel.keyboard.press('Tab');
+          if (await retry.evaluate((el) => el === document.activeElement)) break;
+        }
+        await expect(retry).toBeFocused();
+        await panel.keyboard.press('Enter');
+        await expect(panel.locator('[data-fdt-page="diagnoser"]')).toBeVisible();
+        await expect(panel.getByRole('alert')).toHaveCount(0);
+        await expect(title).toHaveCount(1);
+        await auditState(panel);
+      } finally {
+        await panel.close();
+        await fixture.page.close();
+      }
+    });
+  }
 }
