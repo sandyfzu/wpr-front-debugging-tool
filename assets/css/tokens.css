@@ -161,11 +161,43 @@
  * Width is not inherited: styling only a page wrapper misses nested scrollers.
  * In injected stylesheets `*` stays inside the shadow tree; deliberately omit
  * `:host` so a host-page scroll container never receives our scrollbar rules.
- * Native thin bars keep platform dragging, keyboard and wheel behavior; the
- * muted foreground already has AA contrast against every owned surface. */
+ * The standard fallback preserves native scrolling on non-WebKit engines. */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--fg-muted) transparent;
+  scrollbar-width: auto;
+  scrollbar-color: var(--fg-muted) var(--surface-1);
+}
+
+/* A fixed native track is discoverable even with OS auto-hiding enabled.
+ * Both standard properties MUST be auto here: either non-auto value overrides
+ * the pseudo-elements in Chromium, restoring the expanding overlay scrollbar.
+ * Keep geometry identical at rest/hover/drag; only overflowing axes paint bars.
+ * Do not reserve gutters globally: menus and non-scrolling nested panes would
+ * otherwise pay for empty tracks. ScrollArea owns its stable layout gutter. */
+@supports selector(::-webkit-scrollbar) {
+  @media (forced-colors: none) {
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+
+    *::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+      background: var(--surface-1);
+    }
+
+    *::-webkit-scrollbar-thumb {
+      min-width: 24px;
+      min-height: 24px;
+      border: 2px solid var(--surface-1);
+      border-radius: 999px;
+      background: var(--fg-muted);
+    }
+
+    *::-webkit-scrollbar-corner {
+      background: var(--surface-1);
+    }
+  }
 }
 
 /* Let the user's high-contrast palette and full native hit area take over. */
