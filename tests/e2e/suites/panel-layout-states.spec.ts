@@ -40,16 +40,20 @@ async function canvasGeometry(panel: Page, id: string): Promise<{ left: number; 
     const body = element.querySelector<HTMLElement>('[data-fdt="page-body"]');
     if (!body) throw new Error('Missing page canvas');
     const region = element.getBoundingClientRect();
+    // A painted native track occupies the border box, not the canvas's usable scrollport.
+    const regionLeft = region.left + element.clientLeft;
+    const regionRight = regionLeft + element.clientWidth;
     const box = body.getBoundingClientRect();
     const contentLeft = box.left + 12;
     const contentRight = box.right - 12;
     return {
-      regionWidth: region.width,
+      regionWidth: element.clientWidth,
+      trackWidth: region.width - element.clientWidth,
       hash: location.hash,
       classes: body.className,
       width: box.width,
-      left: box.left - region.left,
-      right: region.right - box.right,
+      left: box.left - regionLeft,
+      right: regionRight - box.right,
       overflow: element.scrollWidth - element.clientWidth,
       bodyOverflow: body.scrollWidth - body.clientWidth,
       barsContained: [...body.querySelectorAll('[data-fdt="skeleton"]')].every((bar) => {
@@ -377,6 +381,15 @@ for (const theme of ['light', 'dark']) {
         for (const width of [320, 1920]) {
           await panel.setViewportSize({ width, height: 220 });
           await canvasGeometry(panel, 'undefined-references');
+          if (width === 320) {
+            // Keep this a genuine occupied-track regression, never an overlay-only pass.
+            expect(
+              await panel.locator('[data-fdt="panel-content"]').evaluate((element) => ({
+                overflows: element.scrollHeight > element.clientHeight,
+                trackWidth: element.getBoundingClientRect().width - element.clientWidth
+              }))
+            ).toEqual({ overflows: true, trackWidth: 12 });
+          }
           await auditState(panel);
           await info.attach(`fetch-error-${theme}-${String(width)}`, {
             body: await panel.screenshot(),
