@@ -31,7 +31,7 @@ const TONE_ICONS: Record<ToastTone, LucideIcon> = {
   info: Info
 };
 
-// `success`/`info` announce politely; `error` is an assertive live region.
+/** Success/info announce politely; errors use an assertive live region. */
 const TONE_ROLES: Record<ToastTone, 'status' | 'alert'> = {
   success: 'status',
   info: 'status',
@@ -89,7 +89,9 @@ function ToastCard(props: ToastCardProps): JSX.Element {
   // Initial duration within a tracked scope (the item is immutable per queue
   // entry — duration can never change under it).
   const [remaining, setRemaining] = createSignal(Number.MAX_SAFE_INTEGER);
-  const [paused, setPaused] = createSignal(false);
+  // Each interaction owns its pause; leaving one must not cancel the other.
+  const [hovered, setHovered] = createSignal(false);
+  const [focused, setFocused] = createSignal(false);
   createRenderEffect(() => setRemaining(Math.max(props.item.duration, 0)));
 
   // The interval is created/destroyed per pause state AND per remaining
@@ -97,7 +99,7 @@ function ToastCard(props: ToastCardProps): JSX.Element {
   // time never drifts, every tick re-anchors the wall-clock deadline, and
   // unmounts always cancel the interval.
   createEffect(() => {
-    if (paused() || remaining() <= 0) return;
+    if (hovered() || focused() || remaining() <= 0) return;
     // The deadline is wall-clock anchored: each tick measures real elapsed
     // time, so under a throttled interval (hidden tab, busy devtools host)
     // the visible lifetime stays true to the enqueued duration instead of
@@ -118,21 +120,23 @@ function ToastCard(props: ToastCardProps): JSX.Element {
 
   return (
     <li
-      role={TONE_ROLES[props.item.tone]}
       data-fdt="toast"
       data-fdt-tone={props.item.tone}
       class="pointer-events-auto flex items-start gap-1.5 rounded-md border border-line-2 bg-surface-2 px-2 py-1.5 shadow-elev-2"
       onPointerEnter={() => {
-        setPaused(true);
+        setHovered(true);
       }}
       onPointerLeave={() => {
-        setPaused(false);
+        setHovered(false);
       }}
       onFocusIn={() => {
-        setPaused(true);
+        setFocused(true);
       }}
-      onFocusOut={() => {
-        setPaused(false);
+      onFocusOut={(event) => {
+        // Descendant-to-descendant focus moves stay inside the same pause.
+        setFocused(
+          event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)
+        );
       }}
     >
       <Dynamic
@@ -141,7 +145,8 @@ function ToastCard(props: ToastCardProps): JSX.Element {
         class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES[TONE_STATUS_KIND[props.item.tone]])}
         aria-hidden="true"
       />
-      <div class="min-w-0 flex-1">
+      {/* Keep the native list item; only message text belongs to the live region. */}
+      <div role={TONE_ROLES[props.item.tone]} aria-atomic="true" class="min-w-0 flex-1">
         <div class="text-xs font-medium text-fg-primary">{props.item.title}</div>
         <Show when={props.item.description}>
           <div class="mt-0.5 text-2xs leading-snug text-fg-secondary">{props.item.description}</div>

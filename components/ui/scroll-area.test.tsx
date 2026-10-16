@@ -1,6 +1,6 @@
 /**
- * Render tests for the scroll surface: per-axis overflow mapping and the thin
- * token-colored scrollbar classes. No JS scrolling to test — that's the point.
+ * Render tests for per-axis overflow mapping and the stable gutter. Shared
+ * native scrollbar appearance and scrolling are verified in the browser tier.
  */
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -40,17 +40,15 @@ describe('ScrollArea', () => {
     expect(screen.getByText('anywhere').parentElement?.className).toContain('overflow-auto');
   });
 
-  it('applies the thin token scrollbar treatment', () => {
+  it('reserves a stable gutter without overriding shared scrollbar accessibility styles', () => {
     render(() => (
       <ScrollArea>
         <p>content</p>
       </ScrollArea>
     ));
     const area = screen.getByText('content').parentElement;
-    expect(area?.className).toContain('[scrollbar-width:thin]');
-    // Both engines read the same standard-property treatment (no webkit
-    // pseudo styling: Chromium overrides it whenever these are computed).
-    expect(area?.className).toContain('[scrollbar-color:var(--line-2)_transparent]');
-    expect(area?.className).not.toContain('-webkit-scrollbar');
+    expect(area?.className).toContain('[scrollbar-gutter:stable]');
+    expect(area?.className).not.toContain('scrollbar-width:');
+    expect(area?.className).not.toContain('scrollbar-color:');
   });
 });

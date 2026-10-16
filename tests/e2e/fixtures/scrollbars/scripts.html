@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scrollable script inventory</title>
+  </head>
+  <body>
+    <h1>Scrollable script inventory</h1>
+    <script>
+      // Inert scripts exercise the real capture path without running fixture payloads.
+      for (let index = 0; index < 300; index += 1) {
+        const script = document.createElement('script');
+        script.type = 'application/json';
+        script.textContent = JSON.stringify({ index, source: 'scrollbar'.repeat(100) });
+        document.body.append(script);
+      }
+    </script>
+  </body>
+</html>

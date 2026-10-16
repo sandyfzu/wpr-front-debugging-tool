@@ -30,6 +30,9 @@ import {
   lineCount
 } from './script-view';
 
+/** One remedy for unavailable/stale source reads; partial previews are never a copy fallback. */
+const SOURCE_READ_REMEDY = 'Refresh the panel and try copying again.';
+
 /** The code block's test seams, forwarded untouched (production omits them). */
 export type CodeBlockSeams = Pick<
   CodeBlockProps,
@@ -56,6 +59,8 @@ export interface ScriptRowProps {
   onToggle: (toggle: HTMLButtonElement) => void;
   /** Code block seams (tests only). */
   codeBlock?: CodeBlockSeams;
+  /** Read the exact full captured source when the inventory was bounded. */
+  loadSource?: (signal: AbortSignal) => Promise<string>;
 }
 
 /**
@@ -84,7 +89,14 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
       <Show
         when={props.view.code}
         fallback={
-          <ExternalScript url={props.view.row.content} chips={<RowChips view={props.view} />} />
+          <ExternalScript
+            url={props.view.row.content}
+            loadSource={
+              props.loadSource ??
+              (props.view.capture === 'clipped' ? missingSnapshotSource : undefined)
+            }
+            chips={<RowChips view={props.view} />}
+          />
         }
       >
         {(code) => (
@@ -93,6 +105,7 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
             ordinal={props.inlineOrdinal}
             capture={props.view.capture}
             source={props.view.row.content}
+            loadSource={props.loadSource}
             code={code()}
             chips={<RowChips view={props.view} />}
             expanded={props.expanded}
@@ -140,7 +153,11 @@ function RowChips(props: { view: ScriptRowView }): JSX.Element {
  * @param props.url The script URL (possibly relative or empty).
  * @param props.chips The row's chips.
  */
-function ExternalScript(props: { url: string; chips: JSX.Element }): JSX.Element {
+function ExternalScript(props: {
+  url: string;
+  chips: JSX.Element;
+  loadSource?: (signal: AbortSignal) => Promise<string>;
+}): JSX.Element {
   return (
     <div class="flex flex-wrap items-center gap-1">
       {props.chips}
@@ -152,7 +169,14 @@ function ExternalScript(props: { url: string; chips: JSX.Element }): JSX.Element
           <div class="min-w-0 flex-1">
             <ExternalLink href={props.url} />
           </div>
-          <CopyButton text={props.url} label="Script URL" showLabel={false} class="shrink-0" />
+          <CopyButton
+            loadText={props.loadSource}
+            sourceFailureDescription={SOURCE_READ_REMEDY}
+            text={props.url}
+            label="Script URL"
+            showLabel={false}
+            class="shrink-0"
+          />
         </Show>
       </div>
     </div>
@@ -179,6 +203,8 @@ interface InlineScriptProps {
   onToggle: (toggle: HTMLButtonElement) => void;
   /** Code block seams (tests only). */
   codeBlock?: CodeBlockSeams;
+  /** Read the exact full captured source when the inventory was bounded. */
+  loadSource?: (signal: AbortSignal) => Promise<string>;
 }
 
 /**
@@ -186,12 +212,12 @@ interface InlineScriptProps {
  * code — clamped to three lines while collapsed (the block fades the edge
  * only when lines are cut off) — and the toggle. Collapsed, the block
  * renders (and highlights) only the preview; the full source arrives on
- * expand. The toggle is offered only when it reveals something: more lines,
+ * expand up to the render limit. Copy reads the complete snapshot separately. The toggle is offered only when it reveals something: more lines,
  * a cut preview line, or a clamp that clips (a wrapped long line).
  *
- * Capture states: a clipped text is marked "Content clipped" and copies as a
- * "Clipped inline script"; text the size budget left out reads "Content not
- * captured (size budget)" — never "Empty inline script", which is reserved
+ * Capture states: a clipped preview is marked "Content clipped"; copy reads
+ * the complete script through the snapshot reader. Text the size budget left
+ * out reads "Content not captured (size budget)" — never "Empty inline script", which is reserved
  * for a script that really has no text.
  *
  * @param props See {@link InlineScriptProps}.
@@ -215,12 +241,19 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
             Content clipped
           </Badge>
         </Show>
-        <Show when={hasCode()}>
+        <Show when={hasCode() || props.capture === 'not-captured'}>
           <span class="ms-auto flex items-center gap-1 ps-1">
-            <span class="text-2xs text-fg-muted tabular-nums">{lineCount(props.code.lines)}</span>
+            <Show when={hasCode()}>
+              <span class="text-2xs text-fg-muted tabular-nums">{lineCount(props.code.lines)}</span>
+            </Show>
             <CopyButton
               text={props.source}
-              label={props.capture === 'clipped' ? 'Clipped inline script' : 'Inline script'}
+              loadText={
+                props.loadSource ??
+                (props.capture !== 'complete' ? missingSnapshotSource : undefined)
+              }
+              sourceFailureDescription={SOURCE_READ_REMEDY}
+              label="Inline script"
               showLabel={false}
             />
           </span>
@@ -280,4 +313,12 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
  */
 export function emptyNote(capture: ContentCapture): string {
   return capture === 'not-captured' ? 'Content not captured (size budget)' : 'Empty inline script';
+}
+
+/**
+ * Refuse to copy a bounded preview without the capture needed to recover its source.
+ * @returns A rejected read, handled by the shared copy control's refresh remedy.
+ */
+function missingSnapshotSource(): Promise<string> {
+  return Promise.reject(new Error('Refresh the panel to capture the complete script source.'));
 }

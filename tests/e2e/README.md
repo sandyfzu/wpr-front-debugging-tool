@@ -15,6 +15,10 @@ pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the las
 ## What runs
 
 - **Playwright (latest stable) launches Chromium from the `chromium` channel with the unpacked extension preloaded** from `.output/chrome-mv3/` (`--disable-extensions-except` + `--load-extension`, the documented extension-loading path). Runs are **headless by default** — a gate run never opens windows or steals the foreground; `E2E_HEADED=1` is the debugging opt-in (real windows open and close). The channel's modern headless hosts extensions (verified against the installed build); the legacy headless shell cannot, which is why the tier launched headed-only when it was built.
+- The driver omits Playwright's default `--hide-scrollbars`: scrollbar painting and
+  layout must match real browsing. `scrollbars.spec.ts` checks idle thumb pixels,
+  fixed hover/drag geometry, palettes, forced colors, keyboard/wheel/drag scrolling,
+  shadow isolation, and the JavaScript page's real virtual list + code panes.
 - **`global-setup.ts` refuses a stale build**: it fingerprints every file the
   build reads (`entrypoints/`, `components/`, `lib/`, `utils/`, `assets/`,
   `public/`, `wxt.config.ts`, `package.json`) and compares against

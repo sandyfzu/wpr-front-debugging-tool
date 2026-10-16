@@ -27,6 +27,7 @@ import {
 import { Dynamic } from 'solid-js/web';
 import Rocket from 'lucide-solid/icons/rocket';
 import { ErrorState } from '../../components/ui/error-state';
+import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
 import { createLogger } from '../../lib/logger';
@@ -34,7 +35,8 @@ import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
 import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
-import { navRoute } from './routes';
+import { navRoute, type RouteId } from './routes';
+import { PageCanvas } from './pages/page-frame';
 import { StatusBar } from './status-bar/status-bar';
 import { PAGES } from './pages';
 import { focusRouteHeading } from './palette/focus';
@@ -194,9 +196,9 @@ export function PanelApp(props: AppProps): JSX.Element {
 
   // The route-switch focus rule: every route change (nav click, palette
   // navigation, deep link) moves focus to the page body's own h1, which
-  // announces the destination; bodies without one (skeleton/error) skip the
-  // move. Soft refreshes never re-run this — they do not change the route,
-  // so the preservation contract (scroll/focus survive a refresh) holds.
+  // announces the destination or its real loading state. Errors outside a
+  // route body skip the move. Soft refreshes leave the route unchanged, so
+  // they never re-run this: scroll and focus survive the refresh.
   createEffect(
     on(
       router.route,
@@ -285,13 +287,14 @@ export function PanelApp(props: AppProps): JSX.Element {
                       cause: error instanceof Error ? { message: error.message } : error
                     });
                     return (
-                      <div class="p-3">
+                      <PageCanvas id={router.route()}>
                         <ErrorState
+                          pageHeading
                           title="The panel came apart"
                           message="This view failed while rendering. Reloading the panel restores it — the inspected page is unaffected."
                           onRetry={props.reload ?? reloadPanelDocument}
                         />
-                      </div>
+                      </PageCanvas>
                     );
                   }}
                 >
@@ -300,20 +303,21 @@ export function PanelApp(props: AppProps): JSX.Element {
                     <Match
                       when={data.state().status === 'fetching' || data.state().status === 'idle'}
                     >
-                      <SkeletonPage />
+                      <SkeletonPage route={router.route()} />
                     </Match>
                     {/* The error view with its retry (the phase's dead-end rule). */}
                     <Match when={errorState()} keyed>
                       {(error) => (
-                        <div class="p-3">
+                        <PageCanvas id={router.route()}>
                           <ErrorState
+                            pageHeading
                             title="Couldn't load page data"
                             message={error.cause}
                             onRetry={() => {
                               data.retry();
                             }}
                           />
-                        </div>
+                        </PageCanvas>
                       )}
                     </Match>
                     {/* `ready` and `refreshing` render the same body — the data
@@ -348,16 +352,24 @@ export function PanelApp(props: AppProps): JSX.Element {
   );
 }
 
-/** The while-loading page body: three ranked skeleton blocks, nothing else. */
-function SkeletonPage(): JSX.Element {
+/**
+ * Name the real wait above placeholders on the destination's canvas.
+ * @param props The current route; changes during boot update the canvas width.
+ * @returns A visible loading title and placeholders bounded by available inline size.
+ */
+function SkeletonPage(props: { route: RouteId }): JSX.Element {
   return (
-    <section class="fdt-page p-3" data-fdt-page="fetching">
-      <Skeleton class="h-5 w-36" />
-      <div class="mt-4 grid gap-2">
-        <Skeleton class="h-14 w-full" />
-        <Skeleton class="h-14 w-full" />
-        <Skeleton class="h-14 w-64" />
-      </div>
+    <section class="fdt-page @container" data-fdt-page="fetching">
+      <PageCanvas id={props.route}>
+        <PageHeader title="Loading page data" />
+        {/* A zero-minimum track lets the fixed short bar's max-width resolve
+            against available space instead of widening the grid intrinsically. */}
+        <div class="mt-1 grid grid-cols-1 gap-2">
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-64 max-w-full" />
+        </div>
+      </PageCanvas>
     </section>
   );
 }

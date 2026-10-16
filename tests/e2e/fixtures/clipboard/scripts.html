@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Complete script clipboard fixture</title>
+  </head>
+  <body>
+    <h1>Complete script clipboard fixture</h1>
+    <script>
+      // Build oversized inert sources before DOMContentLoaded without a large committed fixture.
+      const inline = document.createElement('script');
+      inline.id = 'copy-inline';
+      inline.type = 'application/json';
+      inline.textContent = '/*full-copy*/' + 'a'.repeat(600000) + '🛰️\n// actual tail...';
+      document.body.append(inline);
+      const external = document.createElement('script');
+      external.id = 'copy-external';
+      external.type = 'rocketlazyloadscript';
+      external.setAttribute(
+        'data-rocket-src',
+        '/script.js?q=' + 'x'.repeat(5000) + '&exact=%20#tail...'
+      );
+      document.body.append(external);
+    </script>
+  </body>
+</html>

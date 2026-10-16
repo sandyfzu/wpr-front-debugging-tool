@@ -170,6 +170,9 @@ export class ExtensionDriver {
       this.context = await chromium.launchPersistentContext(this.profileDir, {
         channel: 'chromium',
         headless: process.env.E2E_HEADED !== '1',
+        // Playwright hides painted scrollbars in headless by default. Keep real
+        // scrollbar geometry/painting so layout and visibility assertions are honest.
+        ignoreDefaultArgs: ['--hide-scrollbars'],
         viewport: { width: 1280, height: 800 },
         timeout: LAUNCH_TIMEOUT_MS,
         args: [

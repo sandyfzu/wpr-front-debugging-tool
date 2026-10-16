@@ -155,6 +155,63 @@
     0 10px 28px light-dark(rgb(10 14 22 / 16%), rgb(0 0 0 / 45%));
 }
 
+/* ---- Native scrollbars --------------------------------------------------- */
+/* Every owned element can overflow (code, textareas, virtual lists, menus or
+ * the document itself), so the treatment belongs beside the shared tokens.
+ * Width is not inherited: styling only a page wrapper misses nested scrollers.
+ * In injected stylesheets `*` stays inside the shadow tree; deliberately omit
+ * `:host` so a host-page scroll container never receives our scrollbar rules.
+ * The standard fallback preserves native scrolling on non-WebKit engines. */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: var(--fg-muted) var(--surface-1);
+}
+
+/* A fixed native track is discoverable even with OS auto-hiding enabled.
+ * Both standard properties MUST be auto here: either non-auto value overrides
+ * the pseudo-elements in Chromium, restoring the expanding overlay scrollbar.
+ * Keep geometry identical at rest/hover/drag; only overflowing axes paint bars.
+ * Do not reserve gutters globally: menus and non-scrolling nested panes would
+ * otherwise pay for empty tracks. ScrollArea owns its stable layout gutter. */
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+    --scrollbar-track: var(--surface-1);
+    --scrollbar-thumb: var(--fg-muted);
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    min-width: 24px;
+    min-height: 24px;
+    border: 2px solid var(--scrollbar-track);
+    border-radius: 999px;
+    background: var(--scrollbar-thumb);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
+  }
+}
+
+/* Keep fixed native geometry in high contrast: reverting to overlay bars hides
+ * idle thumbs. System colors preserve the user's palette without opting any
+ * element out of forced-color adjustment. Non-WebKit engines stay native. */
+@media (forced-colors: active) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+    --scrollbar-track: Canvas;
+    --scrollbar-thumb: CanvasText;
+  }
+}
+
 /* ---- Reduced motion --------------------------------------------------------- */
 /* Users who opt out of motion get near-instant state changes everywhere. State
  * itself is never expressed through a transition: open/close chrome toggles

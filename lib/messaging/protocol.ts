@@ -45,6 +45,7 @@ import type {
 } from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
+import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 
 export interface ProtocolMap {
@@ -59,6 +60,8 @@ export interface ProtocolMap {
   processPageData(): boolean;
   /** Devtools → tab content script: everything the panel renders. */
   getFdtData(): FdtData | null;
+  /** Panel → tab: bounded read from the exact immutable script capture. */
+  getScriptSourceChunk(data: ScriptSourceRequest): ScriptSourceReply;
   /** Popup → tab content script: detections only. */
   getWprDetections(): WprDetections | null;
   /** Content script → devtools (push, sender-tab checked): reload the panel. */

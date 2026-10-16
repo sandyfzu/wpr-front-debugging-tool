@@ -225,17 +225,10 @@ function CenteredState(props: { children: JSX.Element }): JSX.Element {
   return <div class="flex flex-1 flex-col justify-center pb-8">{props.children}</div>;
 }
 
-/** The width cap of the page's content on the wide tier (actions stay near their links). */
-const CONTENT_WIDTH = 'w-full @wide:max-w-4xl';
-
 /** The processing body: two skeleton cards in the word card's shape. */
 function ProcessingState(): JSX.Element {
   return (
-    <div
-      data-fdt="undefined-refs-processing"
-      aria-busy="true"
-      class={cn('flex flex-col gap-2', CONTENT_WIDTH)}
-    >
+    <div data-fdt="undefined-refs-processing" aria-busy="true" class="flex w-full flex-col gap-2">
       <p class="text-2xs text-fg-secondary">Reading the page's scripts…</p>
       <For each={[0, 1]}>{() => <SkeletonCard />}</For>
     </div>
@@ -301,10 +294,7 @@ function WordsState(props: WordsStateProps): JSX.Element {
     summarizeResults(props.store.words(), (word) => props.store.answerOf(word))
   );
   return (
-    <div
-      data-fdt="undefined-refs-results"
-      class={cn('flex flex-col gap-2', CONTENT_WIDTH, MOTION_REVEAL)}
-    >
+    <div data-fdt="undefined-refs-results" class={cn('flex w-full flex-col gap-2', MOTION_REVEAL)}>
       <Show when={failure()}>
         {(kind) => <FailureNotice failure={kind()} store={props.store} />}
       </Show>

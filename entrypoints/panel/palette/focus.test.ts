@@ -1,8 +1,7 @@
 /**
  * The route-switch focus rule at the unit level: the body's own h1 becomes
- * program-focusable and receives focus on a ready page; the skeleton and
- * error bodies (no h1) are skipped — the move is genuinely absent, never a
- * fallthrough.
+ * program-focusable and receives focus; a missing destination heading is
+ * skipped defensively, never a fallthrough to an unrelated element.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { ROUTE_HEADING_SELECTOR, focusRouteHeading } from './focus';
@@ -18,8 +17,8 @@ function readyBody(): { section: HTMLElement; heading: HTMLElement } {
   return { section, heading };
 }
 
-/** One skeleton body (the fetching state): a body root, no h1. */
-function skeletonBody(): HTMLElement {
+/** A malformed route body with no heading, to exercise the defensive no-op. */
+function headinglessBody(): HTMLElement {
   const section = document.createElement('section');
   section.setAttribute('data-fdt-page', 'fetching');
   document.body.append(section);
@@ -49,8 +48,8 @@ describe('focusRouteHeading', () => {
     expect(heading.getAttribute('tabindex')).toBe('-1'); // exactly one attribute write path
   });
 
-  it('is a no-op on the skeleton body (no heading — the deliberate skip)', () => {
-    skeletonBody();
+  it('is a no-op when a route body has no heading', () => {
+    headinglessBody();
     const focused = document.createElement('button');
     document.body.append(focused);
     focused.focus();

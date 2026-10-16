@@ -61,6 +61,8 @@ export type NavLiveStateSelector = (data: FdtData | null) => NavLiveState | null
 /** One row of the nav registry. */
 export interface NavRoute {
   id: RouteId;
+  /** Explanation-heavy routes use the same shorter canvas in every data state. */
+  reading?: boolean;
   /** User-facing label (P15 copy sweep owns its final wording). */
   label: string;
   /** The row's lucide icon (the nav renders it when it has room for it). */
@@ -193,6 +195,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   // actually implements — tracked for the copy sweep.
   {
     id: 'undefined-references',
+    reading: true,
     label: 'Undefined References',
     icon: SearchX,
     group: 'Diagnose',
@@ -207,6 +210,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
   },
   {
     id: 'diagnoser',
+    reading: true,
     label: 'Diagnoser',
     icon: Stethoscope,
     group: 'Diagnose',

@@ -18,6 +18,16 @@ pnpm build && pnpm check:budgets   # production build + size-budget gate
 
 Design tokens (light/dark/system appearance, status vocabulary, motion) live in `assets/css/tokens.css` (definitions) and `assets/css/theme.css` (Tailwind layer; every page surface imports it, injected shadow UIs import the tokens file); a unit test pins WCAG AA contrast for the committed text/background pairs in both palettes.
 
+## Scrollbar visibility
+
+Chromium uses fixed native scrollbars on overflowing content, including in forced
+colors. Firefox keeps the platform's native scrollbar behavior: on systems with
+auto-hide enabled, bars can disappear at idle, even with a stable gutter. Scroll
+with the wheel/trackpad to reveal them, or focus a scrollable region and use the
+arrow keys. For persistent native bars on macOS, you can choose **System Settings
+→ Appearance → Show scroll bars → Always** ([Apple's instructions](https://support.apple.com/guide/mac-help/change-appearance-settings-mchlp1225/mac)).
+This is a user-controlled system setting; the extension never changes it.
+
 ## Privacy
 
 - The Known Conflicts DB, per-site options and the on-page detection widget's per-origin opt-in live entirely inside the extension's own storage — the host page never sees them, and the page-visible state of every injected surface is the shadow-isolated UI itself.

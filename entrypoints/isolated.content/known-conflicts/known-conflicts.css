@@ -385,8 +385,6 @@
   padding: 2px 10px 10px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
 }
 
 /* One finding: soft error roundel + name/summary stack + a hover reveal of

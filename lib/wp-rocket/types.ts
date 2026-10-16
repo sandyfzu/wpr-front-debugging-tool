@@ -300,6 +300,8 @@ export interface PageCookies {
 
 /** Anything the panel needs about the current page, served by the content script. */
 export interface FdtData {
+  /** Immutable page capture identity for on-demand complete script copies. */
+  scriptSnapshotId?: string;
   allScriptsLoaded: boolean;
   /** Header list or null when nothing was captured for this tab. */
   pageHeaders: PageHeaders | null;

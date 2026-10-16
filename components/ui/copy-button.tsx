@@ -10,6 +10,7 @@ import { onCleanup } from 'solid-js';
 import type { ComponentProps } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import Copy from 'lucide-solid/icons/copy';
+import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
@@ -86,6 +87,10 @@ export async function performCopy(
 export interface CopyButtonProps {
   /** The text written to the clipboard. */
   text: string;
+  /** Resolve complete text on demand; display text is never used as a fallback on failure. */
+  loadText?: (signal: AbortSignal) => Promise<string>;
+  /** Actionable remedy when a source read fails before the clipboard write. */
+  sourceFailureDescription?: string;
   /**
    * The name of what is copied — phrased into the confirmation toast
    * (`"<label> copied"`) and the accessible name when the label text is
@@ -109,12 +114,17 @@ export interface CopyButtonProps {
  *
  * Feedback: success = `"<label> copied"` toast + check-icon flash; failure =
  * the error toast with {@link COPY_FAILED_DESCRIPTION} as its one action line.
+ * A pending read/write keeps keyboard focus and announces busy/disabled through
+ * ARIA; the invocation guard suppresses repeat activation without native disabling.
+ * Disposal aborts source reads and suppresses late write feedback.
  * The flash reintroduced timer edge auto-resets — state must not stick.
  * Disabling is caller-owned: hiding a control that cannot copy (empty
  * content) is the page's call, an always-present control that never copies is
  * a dead end this marker would point at itself.
  *
  * @param props.text The payload.
+ * @param props.loadText Optional complete-source reader, cancelled on disposal.
+ * @param props.sourceFailureDescription Remedy for a failed source read.
  * @param props.label What to name in feedback.
  * @param props.variant Button variant (default `ghost`).
  * @param props.size Button size (default `sm`).
@@ -127,20 +137,25 @@ export interface CopyButtonProps {
  */
 export function CopyButton(props: CopyButtonProps): JSX.Element {
   const [copied, setCopied] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  let pending: AbortController | undefined;
   let flashReset: ReturnType<typeof setTimeout> | undefined;
   // The flash never outlives the control: a disposed button's timer dies with it.
   onCleanup(() => {
     clearTimeout(flashReset);
+    pending?.abort();
   });
 
   const sink: CopyOutcomeSink = {
     copied: () => {
+      if (pending?.signal.aborted) return;
       toast.success(`${props.label} copied`);
       setCopied(true);
       clearTimeout(flashReset);
       flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
     },
     failed: (error: unknown) => {
+      if (pending?.signal.aborted) return;
       // One degradation, two channels: the actionable toast (the platform
       // error text is never rendered) + the warn log naming the cause.
       logger.warn('Copy rejected; the error toast stays the visible feedback.', error);
@@ -158,10 +173,32 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
    * @returns Resolves after the outcome landed in the sink (never rejects).
    */
   const guardedCopy = async (): Promise<void> => {
+    if (loading()) return;
+    const controller = new AbortController();
+    pending = controller;
+    const loadText = props.loadText;
+    const text = props.text;
+    setLoading(true);
     try {
-      await performCopy(props.text, props.clipboard ?? defaultClipboard(), sink);
+      let complete = text;
+      if (loadText !== undefined) {
+        try {
+          complete = await loadText(controller.signal);
+        } catch {
+          if (!controller.signal.aborted)
+            toast.error('Copy failed', {
+              description: props.sourceFailureDescription ?? COPY_FAILED_DESCRIPTION
+            });
+          return;
+        }
+      }
+      if (!controller.signal.aborted)
+        await performCopy(complete, props.clipboard ?? defaultClipboard(), sink);
     } catch (error: unknown) {
-      sink.failed(error);
+      if (!controller.signal.aborted) sink.failed(error);
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+      if (pending === controller) pending = undefined;
     }
   };
 
@@ -179,9 +216,19 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       variant={props.variant ?? 'ghost'}
       size={props.size ?? 'sm'}
       onClick={onCopy}
+      // Native disabling would remove focus during a slow read; the guarded action stays focusable.
+      aria-disabled={loading() || undefined}
+      aria-busy={loading() || undefined}
+      data-fdt-loading={loading() ? '' : undefined}
       class={cn('gap-1', props.class)}
     >
-      {copied() ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      {loading() ? (
+        <LoaderCircle size={14} class="animate-spin shrink-0" aria-hidden="true" data-fdt-spinner />
+      ) : copied() ? (
+        <Check size={14} aria-hidden="true" />
+      ) : (
+        <Copy size={14} aria-hidden="true" />
+      )}
       {props.showLabel !== false && props.label}
     </Button>
   );

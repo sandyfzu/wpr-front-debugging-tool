@@ -63,12 +63,6 @@ export interface ResourceRow {
 /** The list region's frame — the same box for rows, empty and filtered-empty views. */
 const LIST_REGION = 'rounded-md border border-line-1 bg-surface-1';
 
-/**
- * The list's width cap at the wide tier: past ~64 rem a row's name and its
- * badge drift too far apart to read as one line.
- */
-export const LIST_WIDTH = '@wide:max-w-5xl';
-
 /** Props of {@link ResourceListPage}. */
 export interface ResourceListPageProps<Row extends ResourceRow, Id extends string> {
   /** The route this body renders. */
@@ -214,9 +208,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
       />
       <Show
         when={rows().length > 0}
-        fallback={
-          <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH, 'grid')}>{props.empty}</div>
-        }
+        fallback={<div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid')}>{props.empty}</div>}
       >
         <div ref={controls} onKeyDown={onControlsKeyDown}>
           <FilterBar
@@ -239,7 +231,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
         <Show
           when={visible().length > 0}
           fallback={
-            <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH, 'grid place-items-center')}>
+            <div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid place-items-center')}>
               <NoMatches
                 chipLabel={narrowingChipLabel(props.definition, selected())}
                 query={query()}
@@ -264,7 +256,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
             // URL (the same image twice), stable across chip/search changes.
             getItemKey={(index) => visible()[index]?.id ?? `index-${index.toString()}`}
             createVirtualizer={props.createVirtualizer}
-            class={cn(PAGE_FILL_SCROLLER, LIST_REGION, LIST_WIDTH)}
+            class={cn(PAGE_FILL_SCROLLER, LIST_REGION)}
           >
             {(item) => (
               <Show when={rowById().get(item.key)} keyed>
