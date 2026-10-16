@@ -6,6 +6,8 @@
 
 Automate P6's per-page panel checklist: card sets, counts/filters, undefined-references definitions, the copyable-report contract, the response-headers section's presence/absence rule, search flows — plus the **committed long-task perf gate** (the 5,000-row fixture) as a repeatable `pnpm test:e2e` assertion, no more eyeballing.
 
+**P6G handoff:** [07c](./07c-phase-6g-search-and-polish.md) divides P6G into P6G.1–P6G.10. Each implementation piece supplies focused regressions; P6G.10 supplies the integrated acceptance receipt. Suite 3 inherits P6G.5's row-cursor/highlight/scroll cases, suite 4 includes large-list result navigation, and suite 5 covers the changed primitive/page states. Those focused checks do not replace this phase's full parity/performance matrix. Real-DevTools find-bar checks must be identified separately from standalone extension-page automation.
+
 ## Suites
 
 1. **Card parity over fixtures:** Detections (identical card set/subtitles to legacy on the same fixture pages), JS/Lazyload/Preloaded Resources (identical counts + filters), Undefined References (identical definitions on the error fixture pages — the P4.1 fixture corpus doubles as input).

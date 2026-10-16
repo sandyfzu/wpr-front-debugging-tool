@@ -52,6 +52,10 @@ Read `00-master-port-plan.md` first. Then execute phases in the dependency order
 | [15d-phase-14-6-external-site-track.md](./15d-phase-14-6-external-site-track.md)                                           | P14.6 | External-site test track (future-scoped; owner-provided site/spawner) — the last test step before release; executes only when the site is in play, else a documented scope skip                                                                                                                                                                                                                    |
 | [16-phase-15-hardening-release.md](./16-phase-15-hardening-release.md)                                                     | P15   | Cross-surface hardening, perf/security/UX audits (incl. injected-UI isolation), docs, release prep                                                                                                                                                                                                                                                                                                 |
 
+### P6G execution pieces
+
+[07c — P6G search and polish](./07c-phase-6g-search-and-polish.md) splits the final panel-pages implementation block into **P6G.1–P6G.10**: formatting/titles → shared list rules → search controls/announcements → virtual-list keyboard entry → **next/previous search results** → compact code rows → copy feedback → headers navigation/polish → remaining promotion decisions → integration acceptance. Its dependency table permits independent module work; numbered order is the safe default. Each piece has tests and its own definition of done. All remain planned; P6.1 still closes the wider phase.
+
 ## Status
 
 Update the Status column as phases complete (`⬜ planned → 🟨 in progress → ✅ done`).

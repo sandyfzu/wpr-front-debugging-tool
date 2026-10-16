@@ -655,25 +655,36 @@ The caching-evidence trail (owner-committed 2026-10-12, effort S, Inspect group)
 
 **Depends on:** P6C, P6D (the letters that land the search-row pages) + P6B, P6F (the cross-link). **Parallelizable with:** — (after the rows it navigates).
 
-Also owns: the Detections preview's "Open Headers & Cookies" link (needs both P6B's preview and P6F's route); the letters' **promotion candidates** — duplicated resource-page code across P6C/P6D, `CopyButton` `description` (P6E), anything else receipted — each promoted (into `components/ui/` or `pages/`) or recorded as kept local, with reasons; the cursor scroll uses `scrollIntoView({ block: 'nearest' })` / the virtualizer's index scroll, never a smooth JS option (bar `M-5`).
+### TLDR
 
-Completes the search protocol: P5C's cursor signals finally consumed — a highlight cursor moving across the matching rows the pages filtered, with scroll-into-view.
+Execute P6G as **ten topic-owned sub-phases**, not one cross-page rewrite. The detailed implementation boundaries, dependencies, tests, and definitions of done live in **[07c — P6G execution plan](./07c-phase-6g-search-and-polish.md)**. Each implementation piece ends usable and independently reviewable; P6G.10 closes integration, then P6.1 closes the wider panel-pages phase.
 
-- [ ] **Search integration** — every list page reads the P5 search store: `performSearch` sets query; **`nextSearchResult`/`previousSearchResult` move a highlight cursor across matching rows and scroll-into-view** (new capability implied by legacy's protocol — fixes the dead half of the protocol, master #8, and completes the store work referenced in master #18); `cancelSearch` clears; route change resets (parity). (The read/filter halves landed with the page letters — P6C filters `content`, P6D filters `src`/`href`; Detections and Undefined References have no search rows on the reference surface. This block adds the cursor half and its per-page polish.)
+| Sub-phase | Topic                                                  | Depends on    | Can run alongside                 |
+| --------- | ------------------------------------------------------ | ------------- | --------------------------------- |
+| P6G.1     | Shared count formatting and capped link titles         | P6B–P6F       | P6G.4, P6G.6, P6G.7               |
+| P6G.2     | Shared list derivation and row reconciliation          | P6G.1         | P6G.4, P6G.6, P6G.7               |
+| P6G.3     | Shared search controls, announcements, and list layout | P6G.2         | P6G.4, P6G.7                      |
+| P6G.4     | Virtual-list keyboard entry                            | P6B–P6F       | P6G.1–P6G.3, P6G.6–P6G.8          |
+| P6G.5     | Next/previous search results, highlight, and scroll    | P6G.3, P6G.4  | P6G.7, P6G.8                      |
+| P6G.6     | Compact inline-code surface                            | P6C           | P6G.1, P6G.2, P6G.4, P6G.7, P6G.8 |
+| P6G.7     | Shared copy feedback                                   | P6B, P6C, P6E | P6G.1–P6G.6, P6G.8                |
+| P6G.8     | Headers navigation and page-local evidence polish      | P6B, P6F      | P6G.4–P6G.7                       |
+| P6G.9     | Remaining promotion decisions                          | P6G.1–P6G.8   | —                                 |
+| P6G.10    | Integration acceptance and P6.1 handoff                | P6G.9         | —                                 |
 
-**Promotion follow-ups (tracked 2026-10-15; evidence: P6C "Full duplication set" + Nits, P6D and P6F promotion candidates):**
+Parallelism is conditional on the file-ownership rules in 07c; the table is not permission to edit the same row component or primitive concurrently. The safe default is the numbered order. P6G's full scope is preserved:
 
-- [ ] **One promoted list module** for the JavaScript page (`pages/javascript/`) and the resource pages (`pages/resource-list/`): today each piece exists twice with drifted behaviour. (1) Zero-count chip rule: `buildChips` (`script-view.ts`, hardcodes `'all'`) vs `buildFilterChips` (`resource-list-view.ts`, `defaultChipId`). (2) Row reconcile on refresh: `reconcileRowViews` (`script-identity.ts`, identity keys) vs `reconcileRows` (`resource-list-view.ts`, numeric `id`). (3) Search field + Esc: `bindSearchField` (`search-field.ts`) + `page.tsx`'s Esc handler vs `resource-list.tsx`'s inline signal + handler; field width `w-full @regular:max-w-80` vs `w-full @regular:w-72`. (4) Live region: `resultAnnouncement` ("N of M scripts shown", silent unless narrowed, `aria-live="off"` on refresh) vs `resultsAnnouncement` ("Showing N of M …" / "No … match" / "Showing all …"). (5) Count format: `formatCount` twice (`toLocaleString` vs `Intl.NumberFormat`; `routes.ts`'s private `shownTotal` a third). (6) Content width: `CONTENT_WIDTH` `@wide:max-w-6xl` vs `LIST_WIDTH` `@wide:max-w-5xl`. Also the list-cut rule (`scriptListCut` ≈ `listCapped` ≈ `routes.ts` `listCut`). Pick one wording/behaviour per piece (bar `K-4`, `L-3`), one declaring site, both pages consume it.
-- [ ] **`FilterBar` chip counts thousands-grouped** (`components/ui/filter-bar.tsx` renders `{props.chip.count}` raw: "5000" beside page totals' "5,000"); format with the promoted count formatter; the chip's accessible name follows.
-- [ ] **`ExternalLink` title capped** (`pages/page-frame.tsx` sets `title={props.href}` uncapped; URLs/data URIs reach 4,096 chars): apply the 300-code-point rule (`capTitle`/`TITLE_MAX`/`capText`, today in `resource-list-view.ts`, promoted to one shared site first).
-- [ ] **Compact, toolbar-less `CodeBlock` variant** for list rows: each inline script row repeats the "javascript · Wrap" toolbar under its own header; the row header carries the language and the toggle once.
-- [ ] **`VirtualList` keyboard entry:** Tab into a scrolled-down list lands on the first mounted row (overscan, off-screen) and jumps the viewport (P6F candidate c); focus must enter at the first visible row, without a bespoke roving model (bar `K-3`).
+- [ ] Formatting/title consolidation — **P6G.1**.
+- [ ] One shared list module: chip rules, reconciliation, list-cut rules — **P6G.2**; search field + Esc, announcements, width/rhythm — **P6G.3**. Preserve page-specific row identity and code state.
+- [ ] Keyboard entry without overscan-induced viewport jumps — **P6G.4**.
+- [ ] Search cursor consumption, wrap-around, cancellation/route reset, exact virtual-row targeting — **P6G.5** (master **#8**, completes **#18**).
+- [ ] Toolbar-less code-row variant — **P6G.6**.
+- [ ] Copy-feedback promotion candidates — **P6G.7**.
+- [ ] Detections → Headers & Cookies cross-link; P6F's approved tone hints and in-page filter — **P6G.8**.
+- [ ] Every remaining candidate promoted or explicitly kept local with reasons — **P6G.9**.
+- [ ] Final keyboard/axe checks, real-DevTools search verification, budget receipt, and suite ownership — **P6G.10**.
 
-**Rides:** the wrap-around + cancellation/route-change cursor semantics pinned here (the tail of Tests row 1); the touched pages' final polish pass (highlight styling via tokens, exact scroll targeting).
-
-**Tests:** cursor wrap-around; `cancelSearch`/route change clearing query + cursor + highlight; scroll targeting landing on the matched row; the touched pages' polished states keyboard/axe-clean.
-
-**DoD:** gates green + the budget re-measure; from the Verification checklist the search E2E closes here by hand (perform/next/prev/cancel with the DevTools search box — automated in P6.1, suite 3), and the cursor-touched page states re-run their keyboard + axe checks. Fixes master **#8** (the dead protocol half) and completes the store work referenced by **#18**.
+No implementation is claimed by this decomposition. Existing P6B–P6F receipts remain historical evidence; 07c requires checking current code before acting on a candidate.
 
 ---
 
