@@ -12,15 +12,134 @@ import { openPanelForFixture } from '../helpers/panel-data';
 const THUMB = { light: 'rgb(93, 102, 117)', dark: 'rgb(139, 150, 169)' } as const;
 
 /**
+ * Exercise native keyboard and wheel scrolling on both axes, without scripted input substitutes.
+ * @param page Page containing the keyboard-focusable probe at its starting offset.
+ */
+async function assertKeyboardAndWheel(page: Page): Promise<void> {
+  const probe = page.locator('#scrollbar-probe');
+  await probe.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => probe.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  // Native keyboard scrolling is compositor-animated; do not reset mid-flight.
+  await page.waitForTimeout(400);
+  await probe.evaluate((el) => {
+    el.scrollTo(0, 0);
+    el.blur();
+  });
+  await probe.hover();
+  await page.waitForTimeout(150);
+  await page.mouse.wheel(100, 100);
+  await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => probe.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  await page.waitForTimeout(400);
+  await probe.evaluate((el) => {
+    el.scrollTo(0, 0);
+  });
+}
+
+/**
+ * Decode real screenshot pixels, including an identifying mark proving the probe
+ * is painted above the overlay. CSS readbacks alone cannot detect idle auto-hide.
+ * @param page Page owning the probe (including an open shadow tree).
+ * @param resting Whether the probe is at the origin, with its identifying mark visible.
+ * @returns The screenshot, after checking both thumb/track pairs against their palette.
+ */
+async function assertBarPixels(page: Page, resting = true): Promise<Buffer> {
+  const probe = page.locator('#scrollbar-probe');
+  const image = await probe.screenshot({ scale: 'css' });
+  const pixels = await probe.evaluate(async (el, base64) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Scrollbar pixel probe has no canvas context');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const coordinates: [number, number][] = [
+      [4, 4],
+      [canvas.width - 6, 10],
+      [canvas.width - 6, 60],
+      [10, canvas.height - 6],
+      [60, canvas.height - 6]
+    ];
+    /**
+     * Read one opaque screenshot pixel as a comparable resolved CSS color.
+     * @param x Horizontal screenshot coordinate.
+     * @param y Vertical screenshot coordinate.
+     * @returns The pixel's resolved RGB color.
+     */
+    const colorAt = (x: number, y: number): string => {
+      const data = context.getImageData(x, y, 1, 1).data;
+      return `rgb(${String(data[0])}, ${String(data[1])}, ${String(data[2])})`;
+    };
+    const actual = coordinates.map(([x, y]) => colorAt(x, y));
+    const marker = el.querySelector('[data-paint-marker]');
+    if (!marker) throw new Error('Scrollbar probe has no identifying paint marker');
+    const forced = matchMedia('(forced-colors: active)').matches;
+    const systemTrack = document.createElement('span');
+    systemTrack.style.backgroundColor = 'Canvas';
+    el.append(systemTrack);
+    const canvasColor = getComputedStyle(systemTrack).backgroundColor;
+    systemTrack.remove();
+    return {
+      actual,
+      marker: getComputedStyle(marker).backgroundColor,
+      thumb: getComputedStyle(el, '::-webkit-scrollbar-thumb').backgroundColor,
+      track: getComputedStyle(el, '::-webkit-scrollbar').backgroundColor,
+      forced,
+      canvasColor,
+      parts: ['::-webkit-scrollbar', '::-webkit-scrollbar-thumb', '::-webkit-scrollbar-corner'].map(
+        (part) => getComputedStyle(el, part).forcedColorAdjust
+      ),
+      corner: getComputedStyle(el, '::-webkit-scrollbar-corner').backgroundColor,
+      border: getComputedStyle(el, '::-webkit-scrollbar-thumb').borderTopColor,
+      axes: [
+        Array.from({ length: canvas.height - 12 }, (_, y) => colorAt(canvas.width - 6, y)),
+        Array.from({ length: canvas.width - 12 }, (_, x) => colorAt(x, canvas.height - 6))
+      ]
+    };
+  }, image.toString('base64'));
+  expect(pixels.thumb).not.toBe(pixels.track);
+  for (const axis of pixels.axes) {
+    expect(axis.filter((color) => color === pixels.thumb).length).toBeGreaterThanOrEqual(20);
+    expect(axis.filter((color) => color === pixels.track).length).toBeGreaterThanOrEqual(20);
+  }
+  if (resting) {
+    expect(pixels.actual).toEqual([
+      pixels.marker,
+      pixels.thumb,
+      pixels.track,
+      pixels.thumb,
+      pixels.track
+    ]);
+  }
+  if (pixels.forced) {
+    expect(pixels.thumb).toBe(pixels.marker);
+    expect(pixels.track).toBe(pixels.canvasColor);
+    expect(pixels.corner).toBe(pixels.canvasColor);
+    expect(pixels.border).toBe(pixels.canvasColor);
+    expect(pixels.parts).toEqual(['auto', 'auto', 'auto']);
+  }
+  return image;
+}
+
+/**
  * Assert painted idle thumbs, not merely computed styling, then stable hover geometry.
  * @param page Built extension page containing the bare two-axis probe.
  */
 async function assertPaintedStableBars(page: Page): Promise<void> {
   const probe = page.locator('#scrollbar-probe');
+  await probe.evaluate((el) => {
+    el.scrollTo(0, 0);
+  });
   await page.mouse.move(500, 300);
   // Outlast the OS overlay fade: a computed width alone did not detect the bug.
-  await page.waitForTimeout(1200);
-  const idle = await probe.screenshot();
+  await page.waitForTimeout(2200);
+  const idle = await assertBarPixels(page);
   const geometry = await probe.evaluate((el: HTMLElement) => ({
     x: el.offsetWidth - el.clientWidth,
     y: el.offsetHeight - el.clientHeight
@@ -34,13 +153,13 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
   await page.waitForTimeout(400);
   expect((await probe.screenshot()).equals(idle)).toBe(true);
   await probe.evaluate((el) => {
-    el.style.setProperty('--fg-muted', 'transparent');
+    el.style.setProperty('--scrollbar-thumb', 'transparent');
   });
   await expect
     .poll(() =>
       probe.evaluate((el) => getComputedStyle(el, '::-webkit-scrollbar-thumb').backgroundColor)
     )
-    .toBe('rgba(0, 0, 0, 0)');
+    .toMatch(/^rgba\(\d+, \d+, \d+, 0\)$/);
   // Trigger native scrollbar repaint after the token swap (Chromium caches parts).
   await probe.evaluate((el: HTMLElement) => {
     el.style.overflow = 'hidden';
@@ -49,7 +168,7 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
   });
   expect((await probe.screenshot()).equals(idle)).toBe(false);
   await probe.evaluate((el: HTMLElement) => {
-    el.style.removeProperty('--fg-muted');
+    el.style.removeProperty('--scrollbar-thumb');
     el.style.overflow = 'hidden';
     el.getBoundingClientRect();
     el.style.overflow = 'auto';
@@ -58,6 +177,11 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
   await page.mouse.move(box.x + box.width - 6, box.y + 10);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width - 6, box.y + 55, { steps: 5 });
+  expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(12);
+  await test.info().attach('vertical-drag-held', {
+    body: await assertBarPixels(page, false),
+    contentType: 'image/png'
+  });
   await page.mouse.up();
   await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   expect(await probe.evaluate((el: HTMLElement) => el.offsetWidth - el.clientWidth)).toBe(12);
@@ -67,12 +191,28 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
   await probe.evaluate((el) => {
     el.scrollTo(0, 0);
   });
+  await page.mouse.move(box.x + 10, box.y + box.height - 6);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 55, box.y + box.height - 6, { steps: 5 });
+  expect(await probe.evaluate((el: HTMLElement) => el.offsetHeight - el.clientHeight)).toBe(12);
+  await test.info().attach('horizontal-drag-held', {
+    body: await assertBarPixels(page, false),
+    contentType: 'image/png'
+  });
+  await page.mouse.up();
+  await expect.poll(() => probe.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  await page.mouse.move(500, 300);
+  await page.waitForTimeout(400);
+  await probe.evaluate((el) => {
+    el.scrollTo(0, 0);
+  });
   await expect.poll(() => probe.evaluate((el) => [el.scrollLeft, el.scrollTop])).toEqual([0, 0]);
-  await page.waitForTimeout(1200);
-  const afterScroll = await probe.screenshot();
+  await page.waitForTimeout(2200);
+  const afterScroll = await assertBarPixels(page);
   await test.info().attach('idle-thumb', { body: idle, contentType: 'image/png' });
   await test.info().attach('after-scroll-thumb', { body: afterScroll, contentType: 'image/png' });
   expect(afterScroll.equals(idle)).toBe(true);
+  await assertKeyboardAndWheel(page);
   await probe.evaluate((el) => {
     const content = el.firstElementChild;
     if (!(content instanceof HTMLElement)) throw new Error('Scrollbar probe has no content');
@@ -102,7 +242,9 @@ async function assertPaintedStableBars(page: Page): Promise<void> {
 async function addProbe(page: Page, shadow = false): Promise<string> {
   await page.evaluate((inShadow: boolean) => {
     const parent = inShadow
-      ? document.querySelector('wpr-fdt-side-by-side')?.shadowRoot?.querySelector('[data-theme]')
+      ? document
+          .querySelector('wpr-fdt-side-by-side')
+          ?.shadowRoot?.querySelector('.sbs-overlay--open')
       : document.body;
     if (!parent) throw new Error('Scrollbar probe has no owned container');
     const probe = document.createElement('div');
@@ -113,7 +255,10 @@ async function addProbe(page: Page, shadow = false): Promise<string> {
       'position:fixed;inset:10px auto auto 10px;width:120px;height:100px;overflow:auto;z-index:9999;background:var(--surface-1)';
     const content = document.createElement('div');
     content.style.cssText = 'width:800px;height:800px';
-    content.textContent = 'Overflow content';
+    const marker = document.createElement('div');
+    marker.dataset.paintMarker = '';
+    marker.style.cssText = 'width:8px;height:8px;background:CanvasText';
+    content.append(marker);
     probe.append(content);
     parent.append(probe);
   }, shadow);
@@ -131,13 +276,9 @@ async function scrollbarState(
   selector: string
 ): Promise<{ width: string; color: string; overflowX: boolean; overflowY: boolean }> {
   return await page.locator(selector).evaluate((element) => {
-    const style = getComputedStyle(element);
-    const forced = matchMedia('(forced-colors: active)').matches;
     return {
-      width: forced ? style.scrollbarWidth : getComputedStyle(element, '::-webkit-scrollbar').width,
-      color: forced
-        ? style.scrollbarColor
-        : getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
+      width: getComputedStyle(element, '::-webkit-scrollbar').width,
+      color: getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor,
       overflowX: element.scrollWidth > element.clientWidth,
       overflowY: element.scrollHeight > element.clientHeight
     };
@@ -167,6 +308,7 @@ test('all built page elements get fixed bars, live palettes and native scrolling
       document.documentElement.setAttribute('data-theme', 'light');
     });
     expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+    await assertPaintedStableBars(page);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-theme', 'dark');
     });
@@ -176,21 +318,16 @@ test('all built page elements get fixed bars, live palettes and native scrolling
     );
     const probe = page.locator(selector);
     await assertPaintedStableBars(page);
-    await probe.focus();
-    await page.keyboard.press('ArrowDown');
-    await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-    await page.keyboard.press('ArrowRight');
-    await expect.poll(() => probe.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-    await probe.evaluate((el) => {
-      el.scrollTo(0, 0);
-    });
-    await probe.hover();
-    await page.mouse.wheel(100, 100);
-    await expect.poll(() => probe.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-    await expect.poll(() => probe.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
     await page.emulateMedia({ forcedColors: 'active' });
-    expect((await scrollbarState(page, selector)).width).toBe('auto');
-    expect((await scrollbarState(page, selector)).color).toBe('auto');
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => {
+        document.documentElement.setAttribute('data-theme', value);
+      }, theme);
+      expect((await scrollbarState(page, selector)).width).toBe('12px');
+      expect(await probe.evaluate((el) => getComputedStyle(el).forcedColorAdjust)).toBe('auto');
+      expect(await probe.evaluate((el) => getComputedStyle(el).scrollbarColor)).toBe('auto');
+      await assertPaintedStableBars(page);
+    }
     await page.emulateMedia({ forcedColors: 'none' });
     expect((await scrollbarState(page, selector)).width).toBe('12px');
     await page.close();
@@ -298,8 +435,10 @@ test('injected bars follow the owned palette and leave host page bars untouched'
     overflowX: true,
     overflowY: true
   });
+  await assertPaintedStableBars(page);
   await page.emulateMedia({ colorScheme: 'light' });
   expect((await scrollbarState(page, selector)).color).toContain(THUMB.light);
+  await assertPaintedStableBars(page);
   await extension.evaluateInWorker(
     () => chrome.storage.sync.set({ options: { appearance: 'dark' } }),
     undefined
@@ -315,7 +454,15 @@ test('injected bars follow the owned palette and leave host page bars untouched'
     await page.locator('wpr-fdt-side-by-side').evaluate((el) => getComputedStyle(el).scrollbarWidth)
   ).toBe('auto');
   await page.emulateMedia({ forcedColors: 'active' });
-  expect((await scrollbarState(page, selector)).width).toBe('auto');
-  expect((await scrollbarState(page, selector)).color).toBe('auto');
+  expect((await scrollbarState(page, selector)).width).toBe('12px');
+  await assertPaintedStableBars(page);
+  expect(
+    await page.locator('html').evaluate((el) => getComputedStyle(el, '::-webkit-scrollbar').width)
+  ).toBe('auto');
+  expect(
+    await page
+      .locator('wpr-fdt-side-by-side')
+      .evaluate((el) => getComputedStyle(el).forcedColorAdjust)
+  ).toBe('auto');
   await page.close();
 });
