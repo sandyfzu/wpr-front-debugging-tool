@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { capTitle, TITLE_MAX } from '../../../../utils/cap-text';
+import { formatCount } from '../../../../utils/format-count';
 import {
   LAZYLOAD_PAGE_RESOURCES,
   PRELOADED_PAGE_RESOURCES,
@@ -6,11 +8,8 @@ import {
 } from '../../../../lib/panel/resources-view-model';
 import {
   buildFilterChips,
-  capTitle,
-  formatCount,
   listCapped,
   reconcileRows,
-  TITLE_MAX,
   urlClipped,
   countLabel,
   defaultChipId,

@@ -6,7 +6,8 @@
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import type { PreloadedResource } from '../../../../lib/panel/resources-view-model';
 import type { PreloadedResources } from '../../../../lib/wp-rocket/types';
-import { formatCount, listCapped } from '../resource-list/resource-list-view';
+import { formatCount } from '../../../../utils/format-count';
+import { listCapped } from '../resource-list/resource-list-view';
 
 /**
  * What the page can say about the report:

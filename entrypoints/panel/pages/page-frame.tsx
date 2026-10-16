@@ -12,6 +12,7 @@ import { FOCUS_RING } from '../../../components/ui/classes';
 import { EmptyState } from '../../../components/ui/empty-state';
 import { PageHeader } from '../../../components/ui/page-header';
 import { cn } from '../../../utils/cn';
+import { capTitle } from '../../../utils/cap-text';
 import { isHttpUrl } from '../../../utils/urls';
 import { navRoute, type RouteId } from '../routes';
 
@@ -273,9 +274,9 @@ export interface ExternalLinkProps {
  * trailing icon, a new tab with `rel="noopener noreferrer"`, and
  * "(opens in a new tab)" in its accessible name.
  *
- * The full URL rides `title` on the **text span**, not the anchor: hovering
- * the text still reveals it, while screen readers do not announce the URL a
- * second time as the link's description (the anchor's name already carries it).
+ * A bounded URL preview rides `title` on the **text span**, not the anchor,
+ * avoiding a duplicate link description. The visible text and accessible name
+ * retain the full URL, independently of the hover preview.
  *
  * Only absolute `http:`/`https:` URLs become links. Everything else — including
  * relative and protocol-relative values, which raw captured attributes (e.g.
@@ -289,7 +290,7 @@ export interface ExternalLinkProps {
  */
 export function ExternalLink(props: ExternalLinkProps): JSX.Element {
   const text = (): JSX.Element => (
-    <span class="truncate" title={props.href}>
+    <span class="truncate" title={capTitle(props.href)}>
       {props.href}
     </span>
   );

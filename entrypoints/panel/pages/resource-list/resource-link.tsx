@@ -21,8 +21,9 @@ import { children, Show } from 'solid-js';
 import { Badge } from '../../../../components/ui/badge';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { cn } from '../../../../utils/cn';
+import { capText, capTitle } from '../../../../utils/cap-text';
 import { ExternalLink } from '../page-frame';
-import { capText, capTitle, LABEL_NAME_MAX, resourceName } from './resource-list-view';
+import { LABEL_NAME_MAX, resourceName } from './resource-list-view';
 
 /** Props of {@link ResourceLink}. */
 export interface ResourceLinkProps {

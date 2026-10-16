@@ -10,6 +10,7 @@ import type { JSX } from 'solid-js';
 import { createMemo, For, Show, splitProps } from 'solid-js';
 import Search from 'lucide-solid/icons/search';
 import { cn } from '../../utils/cn';
+import { formatCount } from '../../utils/format-count';
 import { DISABLED, FOCUS_RING } from './classes';
 import { Input } from './input';
 
@@ -240,7 +241,7 @@ function FilterChipButton(props: {
           props.selected ? COUNT_SELECTED : COUNT_UNSELECTED
         )}
       >
-        {props.chip.count}
+        {formatCount(props.chip.count)}
       </span>
       <span class="sr-only"> matching</span>
     </button>

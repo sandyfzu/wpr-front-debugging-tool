@@ -54,7 +54,7 @@ Read `00-master-port-plan.md` first. Then execute phases in the dependency order
 
 ### P6G execution pieces
 
-[07c — P6G search and polish](./07c-phase-6g-search-and-polish.md) splits the final panel-pages implementation block into **P6G.1–P6G.10**: formatting/titles → shared list rules → search controls/announcements → virtual-list keyboard entry → **next/previous search results** → compact code rows → copy feedback → headers navigation/polish → remaining promotion decisions → integration acceptance. Its dependency table permits independent module work; numbered order is the safe default. Each piece has tests and its own definition of done. All remain planned; P6.1 still closes the wider phase.
+[07c — P6G search and polish](./07c-phase-6g-search-and-polish.md) splits the final panel-pages implementation block into **P6G.1–P6G.10**: formatting/titles → shared list rules → search controls/announcements → virtual-list keyboard entry → **next/previous search results** → compact code rows → copy feedback → headers navigation/polish → remaining promotion decisions → integration acceptance. Its dependency table permits independent module work; numbered order is the safe default. Each piece has tests and its own definition of done. **P6G.1 complete (2026-10-16); P6G.2–P6G.10 planned.** P6.1 still closes the wider phase.
 
 ## Status
 

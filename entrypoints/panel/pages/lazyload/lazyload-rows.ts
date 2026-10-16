@@ -9,7 +9,8 @@ import type { LazyloadImageResource } from '../../../../lib/panel/resources-view
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { FDT_EXCLUDED_RESOURCE } from '../../../../lib/wp-rocket/constants';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
-import { formatCount, listCapped } from '../resource-list/resource-list-view';
+import { formatCount } from '../../../../utils/format-count';
+import { listCapped } from '../resource-list/resource-list-view';
 
 /** The state badge of one image row. */
 export interface LazyloadStateBadge {

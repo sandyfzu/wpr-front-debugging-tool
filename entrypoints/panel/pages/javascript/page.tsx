@@ -44,6 +44,7 @@ import {
 } from '../../../../lib/panel/resources-view-model';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
+import { formatCount } from '../../../../utils/format-count';
 import type { SearchStore } from '../../state/search';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
@@ -54,7 +55,6 @@ import {
   estimateRowSize,
   pruneExpanded,
   resultAnnouncement,
-  formatCount,
   scriptCount,
   toggleExpanded,
   type ScriptRowView

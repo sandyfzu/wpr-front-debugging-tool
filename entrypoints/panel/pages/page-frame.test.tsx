@@ -332,6 +332,36 @@ describe('NoMatches focus hand-off', () => {
 describe('ExternalLink', () => {
   const url = 'https://example.com/wp-content/a.js?ver=1';
 
+  it.each(['https://example.com/', 'data:image/svg+xml,'])(
+    'caps long hover text without altering full display text or link targets: %s',
+    (prefix) => {
+      const href = `${prefix}${'😀'.repeat(301)}`;
+      render(() => <ExternalLink href={href} />);
+      const text = document.querySelector('[data-fdt="external-link"] .truncate');
+      expect(text?.getAttribute('title')).toBe(`${Array.from(href).slice(0, 300).join('')}…`);
+      expect(text?.textContent).toBe(href);
+      if (prefix.startsWith('https:')) {
+        expect(
+          screen.getByRole('link', { name: `${href} (opens in a new tab)` }).getAttribute('href')
+        ).toBe(href);
+      } else {
+        expect(screen.queryByRole('link')).toBeNull();
+      }
+    }
+  );
+
+  it('updates bounded titles and full hrefs reactively', () => {
+    const [href, setHref] = createSignal(url);
+    render(() => <ExternalLink href={href()} />);
+    const link = screen.getByRole('link');
+    const long = `https://example.com/${'x'.repeat(400)}`;
+    setHref(long);
+    expect(link.getAttribute('href')).toBe(long);
+    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(`${long.slice(0, 300)}…`);
+    setHref(url);
+    expect(link.querySelector('.truncate')?.getAttribute('title')).toBe(url);
+  });
+
   it('opens http(s) URLs in a new tab without opener or referrer', () => {
     render(() => <ExternalLink href={url} />);
     const link = screen.getByRole('link');

@@ -15,6 +15,7 @@ import type {
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
+import { formatCount } from '../../../../utils/format-count';
 
 /** One state chip on a script row: its words and its vocabulary kind. */
 export interface ScriptBadge {
@@ -360,11 +361,6 @@ export function toggleExpanded(expanded: ReadonlySet<string>, key: string): Read
   const next = new Set(expanded);
   if (!next.delete(key)) next.add(key);
   return next;
-}
-
-/** Thousands-grouped count ("5,000"), the panel's number format. */
-export function formatCount(count: number): string {
-  return count.toLocaleString('en-US');
 }
 
 /**

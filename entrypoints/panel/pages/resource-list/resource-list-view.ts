@@ -7,6 +7,7 @@
  */
 import type { FilterChip } from '../../../../components/ui/filter-bar';
 import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
+import { formatCount } from '../../../../utils/format-count';
 
 /** A noun in its two English count forms ("image" / "images"). */
 export interface CountNoun {
@@ -14,19 +15,6 @@ export interface CountNoun {
   readonly one: string;
   /** The plural form, used for zero and many. */
   readonly other: string;
-}
-
-/** Count formatting: digits with thousands separators (`5,000`), one locale everywhere. */
-const COUNT_FORMAT = new Intl.NumberFormat('en-US');
-
-/**
- * Format a count as digits with thousands separators (`5,000`).
- *
- * @param count A non-negative count.
- * @returns The formatted digits.
- */
-export function formatCount(count: number): string {
-  return COUNT_FORMAT.format(count);
 }
 
 /**
@@ -189,34 +177,8 @@ function decodeSegment(segment: string): string {
   }
 }
 
-/** Longest text a hover `title` carries (a 4,096-char URL tooltip covers the screen). */
-export const TITLE_MAX = 300;
-
 /** Longest resource name echoed inside a control's accessible name. */
 export const LABEL_NAME_MAX = 60;
-
-/**
- * Cap a text at `max` code points, eliding the rest with `…` (never splitting
- * a surrogate pair).
- *
- * @param text The full text.
- * @param max The longest kept length, in code points.
- * @returns The text, or its first `max` code points plus `…`.
- */
-export function capText(text: string, max: number): string {
-  const points = Array.from(text);
-  return points.length > max ? `${points.slice(0, max).join('')}…` : text;
-}
-
-/**
- * Cap a hover-title text (see {@link TITLE_MAX}).
- *
- * @param text The full text.
- * @returns The capped text.
- */
-export function capTitle(text: string): string {
-  return capText(text, TITLE_MAX);
-}
 
 /**
  * Reuse the previous refresh's row objects where a row is unchanged, so the

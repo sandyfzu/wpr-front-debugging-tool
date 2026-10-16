@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
+import { formatCount } from '../../../../utils/format-count';
 import { buildRowView } from './script-identity';
 import {
   COLLAPSED_CODE_LINES,
@@ -19,7 +20,6 @@ import {
   estimateRowSize,
   expandedCutNote,
   expandedText,
-  formatCount,
   inlineCode,
   lineCount,
   pruneExpanded,

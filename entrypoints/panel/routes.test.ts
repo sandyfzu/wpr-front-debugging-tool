@@ -84,6 +84,34 @@ describe('NAV_ROUTES', () => {
 });
 
 describe('nav live-state selectors', () => {
+  it('groups uncapped totals consistently across every counted route', () => {
+    const base = makeFdtData();
+    const loaded = makeFdtData({
+      wprDetections: {
+        ...base.wprDetections,
+        delay_js: {
+          present: true,
+          scripts: Array.from({ length: 1000 }, () => makeDelayScript()),
+          delayedScripts: 1000,
+          version: null
+        },
+        lazyload: {
+          present: true,
+          images: Array.from({ length: 1000 }, () => makeLazyImage())
+        }
+      },
+      preloadedResources: {
+        present: true,
+        resources: Array.from({ length: 1000 }, () => ({ href: '/x', type: 'script' }))
+      },
+      undefinedReferencesOnPage: Array.from({ length: 1000 }, (_, i) => `missing${String(i)}`)
+    });
+    expect(liveStateOf('javascript', loaded)?.text).toBe('delayed 1,000/1,000');
+    expect(liveStateOf('lazyload', loaded)?.text).toBe('1,000 images');
+    expect(liveStateOf('preloaded-resources', loaded)?.text).toBe('1,000 links');
+    expect(liveStateOf('undefined-references', loaded)?.text).toBe('1,000 found');
+  });
+
   it('answers null before any data is loaded — silence, not stale counts', () => {
     for (const row of NAV_ROUTES) {
       expect(row.liveState?.(null) ?? null, `${row.id} with null data`).toBeNull();
@@ -125,7 +153,7 @@ describe('nav live-state selectors', () => {
           }
         }
       });
-    expect(liveStateOf('javascript', delay(5000, 6000, true))?.text).toBe('delayed 6000/5,000+');
+    expect(liveStateOf('javascript', delay(5000, 6000, true))?.text).toBe('delayed 6,000/5,000+');
     // No mark but a count over the shown list: still marked, never "6/5".
     expect(liveStateOf('javascript', delay(5, 6))?.text).toBe('delayed 6/5+');
     expect(liveStateOf('javascript', delay(5, 5))?.text).toBe('delayed 5/5');

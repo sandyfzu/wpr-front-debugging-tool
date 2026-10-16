@@ -31,6 +31,28 @@ function throwAt(index: number): never {
 }
 
 describe('FilterBar', () => {
+  it.each([
+    [0, '0'],
+    [1, '1'],
+    [1000, '1,000'],
+    [5000, '5,000']
+  ])('uses the same grouped count for visible text and accessible name: %i', (count, shown) => {
+    render(() => <FilterBar chips={[{ value: 'all', label: 'All', count }]} selected="all" />);
+    const chip = screen.getByRole('button', { name: `All ${shown} matching` });
+    expect(chip.querySelector('[data-fdt-filter-count]')?.textContent).toBe(shown);
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('retains focus and the same button across a thousands boundary', () => {
+    const [count, setCount] = createSignal(999);
+    render(() => <FilterBar chips={[{ value: 'all', label: 'All', count: count() }]} />);
+    const chip = screen.getByRole('button', { name: 'All 999 matching' });
+    chip.focus();
+    setCount(1000);
+    expect(screen.getByRole('button', { name: 'All 1,000 matching' })).toBe(chip);
+    expect(document.activeElement).toBe(chip);
+  });
+
   it('renders chips with registry order, counts and the search field', () => {
     render(() => <FilterBar chips={CHIPS} />);
     const chips = getChips();

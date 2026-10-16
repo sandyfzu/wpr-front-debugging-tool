@@ -674,7 +674,7 @@ Execute P6G as **ten topic-owned sub-phases**, not one cross-page rewrite. The d
 
 Parallelism is conditional on the file-ownership rules in 07c; the table is not permission to edit the same row component or primitive concurrently. The safe default is the numbered order. P6G's full scope is preserved:
 
-- [ ] Formatting/title consolidation — **P6G.1**.
+- [x] Formatting/title consolidation — **P6G.1**; [implementation and validation receipt](./07c-phase-6g-search-and-polish.md#p6g1-receipt--2026-10-16).
 - [ ] One shared list module: chip rules, reconciliation, list-cut rules — **P6G.2**; search field + Esc, announcements, width/rhythm — **P6G.3**. Preserve page-specific row identity and code state.
 - [ ] Keyboard entry without overscan-induced viewport jumps — **P6G.4**.
 - [ ] Search cursor consumption, wrap-around, cancellation/route reset, exact virtual-row targeting — **P6G.5** (master **#8**, completes **#18**).
@@ -684,7 +684,7 @@ Parallelism is conditional on the file-ownership rules in 07c; the table is not 
 - [ ] Every remaining candidate promoted or explicitly kept local with reasons — **P6G.9**.
 - [ ] Final keyboard/axe checks, real-DevTools search verification, budget receipt, and suite ownership — **P6G.10**.
 
-No implementation is claimed by this decomposition. Existing P6B–P6F receipts remain historical evidence; 07c requires checking current code before acting on a candidate.
+**Status (2026-10-16):** P6G.1 is complete; P6G.2–P6G.10 remain planned. Existing P6B–P6F receipts remain historical evidence; 07c requires checking current code before acting on a candidate.
 
 ---
 

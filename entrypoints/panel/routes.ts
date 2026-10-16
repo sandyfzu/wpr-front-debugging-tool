@@ -19,6 +19,7 @@ import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
+import { formatCount } from '../../utils/format-count';
 
 /** Journey groups, in the order the nav renders them. */
 export const NAV_GROUPS = ['Overview', 'Inspect', 'Diagnose', 'Tools'] as const;
@@ -94,9 +95,14 @@ function counted(count: number, noun: string, partial = false): string {
   return `${shownTotal(count, partial)} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/** A shown list total: plain, or `5,000+` when the list was cut. */
+/**
+ * Format a navigation total while keeping its capture-floor marker local.
+ * @param count The captured list's length.
+ * @param partial Whether more entries exist beyond the captured list.
+ * @returns Grouped digits, suffixed with `+` only for a partial inventory.
+ */
 function shownTotal(count: number, partial: boolean): string {
-  return partial ? `${count.toLocaleString('en-US')}+` : count.toString();
+  return `${formatCount(count)}${partial ? '+' : ''}`;
 }
 
 /**
@@ -141,7 +147,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
         listCut(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count) ||
         delayedScripts > scripts.length;
       return {
-        text: `delayed ${delayedScripts.toString()}/${shownTotal(scripts.length, partial)}`,
+        text: `delayed ${formatCount(delayedScripts)}/${shownTotal(scripts.length, partial)}`,
         tone: 'info'
       };
     }
@@ -202,7 +208,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
     liveState: (data) => {
       if (data === null) return null;
       const found = data.undefinedReferencesOnPage.length;
-      if (found > 0) return { text: `${found.toString()} found`, tone: 'warn' };
+      if (found > 0) return { text: `${formatCount(found)} found`, tone: 'warn' };
       // Nothing found while the page still loads means the finder is
       // watching; once loading settled, a clean page is silence.
       return data.allScriptsLoaded ? null : { text: 'Monitoring', tone: 'neutral' };
