@@ -12,11 +12,14 @@ import { Show } from 'solid-js';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { cn } from '../../utils/cn';
 import { Button } from './button';
+import { PageHeader } from './page-header';
 import { STATUS_TEXT_CLASSES } from './status-badge';
 
 export interface ErrorStateProps {
   /** The state name (default a neutral "couldn't render this" headline). */
   title?: string;
+  /** Own the document's h1 only when this error replaces the entire page. */
+  pageHeading?: boolean;
   /** What failed + what it means (the caller names the actual failure). */
   message?: string;
   /** Required recovery action — a page reload, a re-fetch, whatever applies. */
@@ -44,6 +47,7 @@ const DEFAULT_RETRY_LABEL = 'Retry';
  * is a normal button, so it composes with toasts and shortcuts.
  *
  * @param props.title State name (default "Couldn't load this view").
+ * @param props.pageHeading Render the title as the page's single h1 (default false).
  * @param props.message What failed, named concretely.
  * @param props.onRetry The recovery callback (required).
  * @param props.retryLabel Label of the retry control (default "Retry").
@@ -62,7 +66,14 @@ export function ErrorState(props: ErrorStateProps): JSX.Element {
         class={cn('shrink-0', STATUS_TEXT_CLASSES.error)}
         aria-hidden="true"
       />
-      <div class="text-xs font-medium text-fg-primary">{props.title ?? DEFAULT_TITLE}</div>
+      <Show
+        when={props.pageHeading}
+        fallback={
+          <div class="text-xs font-medium text-fg-primary">{props.title ?? DEFAULT_TITLE}</div>
+        }
+      >
+        <PageHeader title={props.title ?? DEFAULT_TITLE} />
+      </Show>
       <Show when={props.message}>
         <p class="max-w-72 text-2xs leading-snug text-fg-secondary">{props.message}</p>
       </Show>

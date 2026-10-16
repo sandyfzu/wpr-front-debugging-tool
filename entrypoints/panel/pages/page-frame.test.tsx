@@ -69,6 +69,21 @@ describe('PageFrame', () => {
     expect(screen.getByText('Images the page deferred')).toBeTruthy();
   });
 
+  it('centers and bounds the entire workspace, including its header', () => {
+    render(() => <PageFrame id="javascript" title="JavaScript" />);
+    for (const token of ['mx-auto', 'w-full', 'min-w-0', 'max-w-7xl']) {
+      expect(frameBody().classList).toContain(token);
+    }
+    expect(frameBody().classList).not.toContain('max-w-4xl');
+  });
+
+  it('uses a shorter reading canvas without changing the query container', () => {
+    render(() => <PageFrame id="undefined-references" title="Undefined References" />);
+    expect(frameBody().classList).toContain('max-w-4xl');
+    expect(frameBody().classList).not.toContain('max-w-7xl');
+    expect(frameRoot().classList).toContain('@container');
+  });
+
   it('renders actions in the header and children after it, in order', () => {
     render(() => (
       <PageFrame id="detections" title="Detections" actions={<button type="button">Copy</button>}>

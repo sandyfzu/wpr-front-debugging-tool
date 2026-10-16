@@ -1,5 +1,5 @@
 /**
- * The scroll surface — the devtools pane's scrolling container with a thin,
+ * The scroll surface — the devtools pane's scrolling container with a stable,
  * token-colored scrollbar. Pure CSS: native `overflow` plus scrollbar
  * styling, so platform scroll physics, speed and keyboard behavior stay the
  * devtools ones. No JS scrolling, no wheel listeners, ever.
