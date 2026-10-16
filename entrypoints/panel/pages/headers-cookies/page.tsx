@@ -293,9 +293,7 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
             createVirtualizer={props.createVirtualizer}
             class={cn(
               PAGE_FILL_SCROLLER,
-              // Capped at the wide tier: rows (and their hairlines) end with
-              // their content instead of running across an empty band.
-              '-mx-1 border-t px-1 @wide:max-w-5xl',
+              '-mx-1 border-t px-1',
               scrolled() ? 'border-line-2' : 'border-transparent'
             )}
           >

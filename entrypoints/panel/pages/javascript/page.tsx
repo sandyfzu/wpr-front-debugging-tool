@@ -76,9 +76,6 @@ const LIST_OVERSCAN = 8;
  */
 const SEARCH_FIELD_WIDTH = '[&_input[type=search]]:w-full @regular:[&_input[type=search]]:max-w-80';
 
-/** The page's content width: the full region, capped on wide panels for line length. */
-const CONTENT_WIDTH = '@wide:max-w-6xl';
-
 /**
  * The muted note under the summary when the capture cut the list at its cap.
  *
@@ -205,7 +202,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       subtitle="How WP Rocket delays and defers each script on the page."
       fill
     >
-      <div class={cn('flex w-full flex-1 flex-col gap-3', CONTENT_WIDTH)}>
+      <div class="flex w-full flex-1 flex-col gap-3">
         <ScriptSummary
           present={delayJs().present}
           version={delayJs().version}

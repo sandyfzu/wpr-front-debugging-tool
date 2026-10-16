@@ -9,7 +9,6 @@ import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 import { makeFdtData, makeLazyImage } from '../../state/fixtures';
 import { laggedVirtualizer, renderPage, type PageHarness } from '../resource-list/page-harness';
-import { LIST_WIDTH } from '../resource-list/resource-list';
 import { LazyloadPage } from './page';
 
 /** A payload with the given images and lazyload presence. */
@@ -359,7 +358,7 @@ describe('LazyloadPage — refresh and edge states', () => {
 
   it('caps the list width at the wide tier', () => {
     renderPage(LazyloadPage, fixture());
-    expect(screen.getByRole('list', { name: 'Images' }).className).toContain(LIST_WIDTH);
+    expect(screen.getByRole('list', { name: 'Images' }).className).not.toContain('max-w-');
   });
 
   it('notes a capped list only when the list sits at its cap', () => {

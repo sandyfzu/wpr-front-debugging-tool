@@ -266,7 +266,7 @@ describe('UndefinedReferencesPage — results', () => {
     const results = document.querySelector<HTMLElement>('[data-fdt="undefined-refs-results"]');
     for (const token of MOTION_REVEAL.split(' ')) expect(results?.classList).toContain(token);
     // Capped on the wide tier, so actions sit near their links.
-    expect(results?.classList).toContain('@wide:max-w-4xl');
+    expect(results?.closest('[data-fdt="page-body"]')?.classList).toContain('max-w-4xl');
     const list = screen.getByRole('list', { name: 'Undefined references' });
     expect(list.querySelectorAll(':scope > li')).toHaveLength(4);
     // No per-card entrance: nothing below the container carries a transition but the chevrons.

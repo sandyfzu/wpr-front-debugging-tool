@@ -42,6 +42,8 @@ export interface PageFrameProps {
    * natural height.
    */
   fill?: boolean;
+  /** Narrower canvas for explanation-heavy pages; data workspaces are the default. */
+  reading?: boolean;
   /** The page content, laid out as a `gap-3` column of sections below the header. */
   children?: JSX.Element;
 }
@@ -63,6 +65,7 @@ export interface PageFrameProps {
  * @param props.subtitle Optional intro line.
  * @param props.actions Optional actions cluster.
  * @param props.fill Full-height flex column for list pages (default `false`).
+ * @param props.reading Keep explanations and their actions within a shorter reading measure.
  * @param props.children The page sections.
  */
 export function PageFrame(props: PageFrameProps): JSX.Element {
@@ -71,7 +74,15 @@ export function PageFrame(props: PageFrameProps): JSX.Element {
       class={cn('fdt-page @container', props.fill && 'flex min-h-full flex-col')}
       data-fdt-page={props.id}
     >
-      <div data-fdt="page-body" class={cn('flex flex-col gap-3 p-3', props.fill && 'flex-1')}>
+      <div
+        data-fdt="page-body"
+        class={cn(
+          // Center the whole canvas, not just results: headings and controls share its edges.
+          'mx-auto flex w-full min-w-0 flex-col gap-3 p-3',
+          props.reading ? 'max-w-4xl' : 'max-w-7xl',
+          props.fill && 'flex-1'
+        )}
+      >
         <PageHeader title={props.title} subtitle={props.subtitle} actions={props.actions} />
         {props.children}
       </div>
