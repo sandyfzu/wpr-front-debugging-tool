@@ -29,7 +29,7 @@ Count deliberate clicks/keypresses after ready; opening DevTools, hover and wait
 - **UX-D8 — Glanceability:** four status segments visible without scroll from480px, wrap at320–480; no horizontal scrolling at supported dockings. Actual container content width, not shell width, decides page tiers.
 - **UX-D9 — No dead ends:** actionable error/Retry, meaningful absent/empty/filtered-empty, side-effect confirmation and remedy, explicit context-invalidated instruction.
 - **UX-D10 — Shared patterns:** APG automatic tabs, filter bar, virtual lists for sources that can exceed100; no page-specific reinventions. Render state belongs above virtual rows.
-- **UX-D11 — One on-page product:** shared tokens/statuses/live appearance, per-origin opt-in, Alt+H only, persisted drag, shadow isolation. P12A's session-local drag is a staged deviation, not full persistence.
+- **UX-D11 — One on-page product:** shared tokens/statuses/live appearance, per-origin overrides over a default-on chip, Alt+H only, persisted drag, shadow isolation. P12A's session-local drag is a staged deviation, not full persistence.
 - **UX-D12 — Native words:** plugin/settings/KB names override source abbreviations/typos. Track intentional copy deltas; P15 sweeps final copy.
 - **UX-D13 — Measured speed:** cold-start row≤500ms; heavy work lazy/off-main-thread; P6/P15 large-list gates. No benchmark claim inferred from a responsive screenshot.
 - **UX-D14 — Additive IA:** routes/chips/filters are registry rows+tests; removal should not reach unrelated siblings. Optional Compare P17 requires a decision.

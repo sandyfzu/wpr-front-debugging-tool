@@ -88,9 +88,12 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     contexts: ['action']
   },
   {
-    // The per-origin opt-in for the on-page detection widget — the same
-    // store item the full phase's popup/Detections/options rows will write,
-    // so enablement exists on the pages themselves before those surfaces do.
+    // The per-origin override of the on-page detection widget's global
+    // default (default-on; the entry wins) — the same store item the
+    // full phase's popup/Detections/options rows will write, so the
+    // page-level toggle exists on the pages themselves before those
+    // surfaces do. Flipping recomputes from the site's effective state,
+    // so every right-click changes the site's visible state.
     action: 'toggle-detection-widget',
     id: CONTEXT_MENU_IDS.toggleDetectionWidget,
     title: 'Toggle the detection widget on this site',
@@ -329,9 +332,9 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
       await browser.tabs.create({ url: browser.runtime.getURL(pagePath) });
     },
     refreshDatabase,
-    // The on-page widget's opt-in writes through the storage module's one
-    // toggle — the menu row is the page-context writer; the popup and the
-    // options row write the same item later.
+    // The on-page widget's per-origin override writes through the storage
+    // module's one toggle — the menu row is the page-context writer; the
+    // popup and the options row write the same item later.
     toggleDetectionWidget: toggleInspectorOrigin
   };
 

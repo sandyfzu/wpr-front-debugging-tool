@@ -1,24 +1,24 @@
 /**
  * The inspector-origin store: validator matrix, the serialized-byte bound
  * (the sync platform's real quota — the audit round's replacement for the
- * untestable count cap), the corrupt-storage degradations, and the toggle's
- * read-modify-write (the one toggling semantics every writer shares).
+ * untestable count cap), the corrupt-storage degradations, the
+ * entry-over-default resolution, and the toggle's effective-state flip (the
+ * one toggling semantics every writer shares).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  INSPECTOR_DEFAULT_ENABLED,
   INSPECTOR_ORIGINS_BYTE_BUDGET,
   INSPECTOR_ORIGINS_KEY,
   INSPECTOR_ORIGINS_QUOTA_LIMIT,
   getInspectorOrigins,
   inspectorOriginsStore,
   isInspectorOriginEnabled,
-  originEnabled,
   parseInspectorOrigins,
-  toggleInspectorOrigin
+  toggleInspectorOrigin,
+  effectiveInspectorEnabled
 } from './inspector-origins';
-
-const VALID = { 'https://example.com': { enabled: true } };
 
 /** The serialized item's real length: the key + the map's JSON. */
 const serialized = (origins: unknown): number =>
@@ -111,10 +111,10 @@ describe('getInspectorOrigins with corrupt storage', () => {
     expect(await inspectorOriginsStore.getValue()).toEqual({});
   });
 
-  it('a corrupt value degrades to empty (the widget stays hidden, the safe default)', async () => {
+  it('a corrupt value degrades to no entries (unconfigured origins follow the default)', async () => {
     await fakeBrowser.storage.sync.set({ 'inspector-origins': 'corrupted' });
     expect(await getInspectorOrigins()).toEqual({});
-    expect(await isInspectorOriginEnabled('https://example.com')).toBe(false);
+    expect(await isInspectorOriginEnabled('https://example.com')).toBe(INSPECTOR_DEFAULT_ENABLED);
     await fakeBrowser.storage.sync.set({ 'inspector-origins': ['not-a-map'] });
     expect(await getInspectorOrigins()).toEqual({});
     // A wrong-shaped ENTRY is dropped; a valid-looking one survives (the
@@ -136,31 +136,57 @@ describe('getInspectorOrigins with corrupt storage', () => {
   });
 });
 
-describe('originEnabled / isInspectorOriginEnabled', () => {
-  it('defaults disabled; enabled only for an explicit enabled entry', () => {
-    expect(originEnabled({}, 'https://example.com')).toBe(false);
-    expect(originEnabled(VALID, 'https://example.com')).toBe(true);
-    expect(originEnabled(VALID, 'https://other.com')).toBe(false);
+describe('effectiveInspectorEnabled / isInspectorOriginEnabled', () => {
+  it('an unconfigured origin follows the global default', () => {
+    expect(effectiveInspectorEnabled({}, 'https://example.com')).toBe(INSPECTOR_DEFAULT_ENABLED);
+  });
+
+  it('an explicit entry wins over the default, in both polarities', () => {
+    // Both overrides must beat whatever the default reads, so the
+    // precedence contradicts the constant's own value in both directions.
+    expect(
+      effectiveInspectorEnabled({ 'https://a.com': { enabled: false } }, 'https://a.com')
+    ).toBe(false);
+    expect(effectiveInspectorEnabled({ 'https://a.com': { enabled: true } }, 'https://a.com')).toBe(
+      true
+    );
+    expect(effectiveInspectorEnabled({ 'https://a.com': { enabled: true } }, 'https://b.com')).toBe(
+      INSPECTOR_DEFAULT_ENABLED
+    );
   });
 
   it('reads the stored map per origin', async () => {
-    await inspectorOriginsStore.setValue({ 'https://example.com': { enabled: true } });
-    expect(await isInspectorOriginEnabled('https://example.com')).toBe(true);
-    expect(await isInspectorOriginEnabled('https://other.com')).toBe(false);
+    await inspectorOriginsStore.setValue({ 'https://example.com': { enabled: false } });
+    expect(await isInspectorOriginEnabled('https://example.com')).toBe(false);
+    expect(await isInspectorOriginEnabled('https://other.com')).toBe(INSPECTOR_DEFAULT_ENABLED);
   });
 });
 
 describe('toggleInspectorOrigin (the shared toggle semantics)', () => {
-  it('flips an unknown origin to enabled and persists exactly one entry', async () => {
-    expect(await toggleInspectorOrigin('https://example.com')).toBe(true);
-    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: true } });
+  it("flips the site's current visible state, not the entry's absence", async () => {
+    // At the default-on state an unconfigured origin IS showing, so the
+    // first right-click hides it (writing the explicit off entry) — a flip
+    // that left the widget mounted would make the menu row a dead end.
+    expect(await toggleInspectorOrigin('https://example.com')).toBe(false);
+    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: false } });
   });
 
-  it('cycles: on → off → on', async () => {
-    expect(await toggleInspectorOrigin('https://example.com')).toBe(true);
+  it('cycles: off → on → off, persisting only the explicit entries', async () => {
     expect(await toggleInspectorOrigin('https://example.com')).toBe(false);
     expect(await toggleInspectorOrigin('https://example.com')).toBe(true);
-    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: true } });
+    expect(await toggleInspectorOrigin('https://example.com')).toBe(false);
+    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: false } });
+  });
+
+  it('a toggle landing on an entry that matches the default still flips off it', async () => {
+    // The precedent for a later default change: an entry equal to the
+    // default changes nothing visibly today, but flipping persists the
+    // opposite polarity — the entry is the site's persisted truth, not an
+    // echo of the default.
+    await inspectorOriginsStore.setValue({
+      'https://example.com': { enabled: INSPECTOR_DEFAULT_ENABLED }
+    });
+    expect(await toggleInspectorOrigin('https://example.com')).toBe(!INSPECTOR_DEFAULT_ENABLED);
   });
 
   it('preserves every sibling origin while the map stays under the bound', async () => {
@@ -174,9 +200,9 @@ describe('toggleInspectorOrigin (the shared toggle semantics)', () => {
       seeded[`https://filler-${String(i)}.example.com`] = { enabled: i === 0 };
     }
     await inspectorOriginsStore.setValue(seeded);
-    expect(await toggleInspectorOrigin('https://new.example.com')).toBe(true);
+    expect(await toggleInspectorOrigin('https://new.example.com')).toBe(false);
     const stored = await getInspectorOrigins();
-    expect(stored['https://new.example.com']?.enabled).toBe(true);
+    expect(stored['https://new.example.com']?.enabled).toBe(false);
     expect(stored['https://a.com']).toEqual({ enabled: true });
     expect(stored['https://b.com']).toEqual({ enabled: false });
     expect(stored['https://filler-0.example.com']).toEqual({ enabled: true });
@@ -187,14 +213,16 @@ describe('toggleInspectorOrigin (the shared toggle semantics)', () => {
   it('a print-cap toggle keeps the map under the platform quota (end-to-end bound)', async () => {
     // Right-click many long-origin sites in a row: every write evicts the
     // oldest so the toggle never lands a map the platform would reject —
-    // the audited dead-right-click case, now closed at the source.
+    // the audited dead-right-click case, now closed at the source. Each
+    // unconfigured site's flip rides the default-on state, so every entry
+    // lands `false` (the sites are visibly hidden).
     for (let i = 0; i < 120; i += 1) {
       const state = await toggleInspectorOrigin(longOrigin(i));
-      expect(state, `toggle ${String(i)} persists truthfully`).toBe(true);
+      expect(state, `toggle ${String(i)} persists truthfully`).toBe(false);
     }
     const stored = await getInspectorOrigins();
     expect(serialized(stored)).toBeLessThanOrEqual(INSPECTOR_ORIGINS_QUOTA_LIMIT);
-    expect(stored[longOrigin(119)]?.enabled).toBe(true);
+    expect(stored[longOrigin(119)]?.enabled).toBe(false);
     // Budget sanity for an audit-time reference: the persisted map carries
     // nowhere near the count cap the old logic pretended to enforce.
     expect(Object.keys(stored).length).toBeGreaterThan(10);
@@ -203,7 +231,7 @@ describe('toggleInspectorOrigin (the shared toggle semantics)', () => {
 
   it('toggling over corrupt storage writes the fresh valid map (self-healing)', async () => {
     await fakeBrowser.storage.sync.set({ 'inspector-origins': 'corrupted' });
-    expect(await toggleInspectorOrigin('https://example.com')).toBe(true);
-    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: true } });
+    expect(await toggleInspectorOrigin('https://example.com')).toBe(false);
+    expect(await getInspectorOrigins()).toEqual({ 'https://example.com': { enabled: false } });
   });
 });

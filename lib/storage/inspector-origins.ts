@@ -1,15 +1,19 @@
 /**
- * The on-page detection widget's per-origin opt-in store (the early slice of
- * the phase-12 per-origin store, which later grows the drag-position field):
- * one bounded origin → `{ enabled }` map sync'd across a user's browsers.
+ * The on-page detection widget's per-origin override store (it later grows
+ * the drag-position field): one bounded origin → `{ enabled }` map sync'd
+ * across a user's browsers.
  *
- * Every writer (the context-menu row today, the popup/Detections/options
- * rows later) toggles through the one helper here, so the toggling semantics
- * live exactly once: read-modify-write over the validated shape, capped, and
- * coercing corrupt storage into the fresh valid map (the options store's
- * self-healing degradation — a broken value never blocks the user's toggle).
- * Reads validate; corrupt or foreign values degrade to no-origins-enabled
- * (the widget stays hidden — a safe default), never to fabricated opt-ins.
+ * Precedence: an explicit per-origin entry wins over the global default,
+ * and origins without an entry follow it (`INSPECTOR_DEFAULT_ENABLED` —
+ * the chip shows by default since the owner's 2026-10-17 turn-on). Every
+ * writer (the context-menu row today, the popup/Detections/options rows
+ * later) toggles through the one helper here, so the toggling semantics
+ * live exactly once: a toggle flips the site's current effective state and
+ * persists it as an explicit entry — read-modify-write over the validated
+ * shape, capped, and coercing corrupt storage into the fresh valid map (a
+ * broken value never blocks the user's toggle). Reads validate; corrupt or
+ * foreign values degrade to no-explicit-entries (every origin follows the
+ * default), never to fabricated overrides.
  */
 
 import { storage } from 'wxt/utils/storage';
@@ -24,6 +28,22 @@ export interface InspectorOriginEntry {
 
 /** The stored map: origin → entry. */
 export type InspectorOrigins = Record<string, InspectorOriginEntry>;
+
+/**
+ * The chip's global default for origins without an explicit entry: the
+ * widget shows (`true` — the owner's 2026-10-17 turn-on: a fresh install
+ * reports on every page with no opt-in step). Until the options page ships
+ * the "show the detection chip on pages by default" toggle, this constant
+ * IS that default; the stored option will replace it as the unconfigured
+ * origins' source, and `effectiveInspectorEnabled` will keep reading
+ * per-origin entries ahead of it.
+ *
+ * The default-on flip must land together with the per-origin toggle's
+ * effective-state flip (below): with the widget shown by default, a
+ * right-click that flipped "absent → enabled" would leave the visible
+ * state unchanged.
+ */
+export const INSPECTOR_DEFAULT_ENABLED = true;
 
 /**
  * The origin map's honest bound: the serialized byte budget the stored JSON
@@ -113,32 +133,47 @@ export function parseInspectorOrigins(input: unknown): InspectorOrigins | null {
 
 /**
  * Read the map through the validator: corrupt storage degrades to empty
- * (every origin reads disabled), not to fabricated entries.
+ * (every origin resolves to the global default), never to fabricated
+ * entries.
  */
 export async function getInspectorOrigins(): Promise<InspectorOrigins> {
   return parseInspectorOrigins(await inspectorOriginsStore.getValue()) ?? {};
 }
 
-/** Whether one origin is enabled on a validated map. */
-export function originEnabled(origins: InspectorOrigins, origin: string): boolean {
-  return origins[origin]?.enabled === true;
+/**
+ * One origin's effective chip state: an explicit per-origin entry wins;
+ * origins without one follow the global default. An empty map (a fresh
+ * install) or a degraded corrupt read therefore reports the default
+ * everywhere — no overrides are ever invented from thin air.
+ *
+ * @param origins A validated own-copy map.
+ * @param origin The page origin to resolve.
+ */
+export function effectiveInspectorEnabled(origins: InspectorOrigins, origin: string): boolean {
+  return origins[origin]?.enabled ?? INSPECTOR_DEFAULT_ENABLED;
 }
 
 /**
- * Whether one origin is enabled on the stored map (the mount gate's ask).
- * A corrupt map reads disabled.
+ * Whether one origin is enabled on the stored map (the mount gate's boot
+ * ask). A corrupt map carries no entries, so every origin resolves to the
+ * default.
  *
  * @param origin The page origin to look up.
  */
 export async function isInspectorOriginEnabled(origin: string): Promise<boolean> {
-  return originEnabled(await getInspectorOrigins(), origin);
+  return effectiveInspectorEnabled(await getInspectorOrigins(), origin);
 }
 
 /**
- * Flip one origin's entry and persist the whole map (read-modify-write over
- * the validated shape, capped, so every other origin — and any field a
- * future slice adds — survives the write). A corrupt stored value degrades
- * to the fresh valid map (the only truth a toggle can write).
+ * Flip one origin's visible state and persist it as an explicit entry. A
+ * toggle always changes the site's behavior whatever the default reads: at
+ * the default-on state an unconfigured origin is showing, so the flip
+ * writes `false` — whose entry then keeps the site closed even if the
+ * global default changes later — and the next toggle reads that entry back.
+ * The whole map persists read-modify-write over the validated shape,
+ * capped, so every other origin — and any field a future slice adds —
+ * survives the write. A corrupt stored value degrades to the fresh valid
+ * map (the only truth a toggle can write).
  *
  * @param origin The origin to toggle.
  * @returns The entry state after the write (the persisted truth).
@@ -150,7 +185,7 @@ export async function toggleInspectorOrigin(origin: string): Promise<boolean> {
   const current: InspectorOrigins = stored ?? {};
   const next: InspectorOrigins = withinByteBudget({
     ...current,
-    [origin]: { enabled: !originEnabled(current, origin) }
+    [origin]: { enabled: !effectiveInspectorEnabled(current, origin) }
   });
   await inspectorOriginsStore.setValue(next);
   return next[origin]?.enabled ?? false;

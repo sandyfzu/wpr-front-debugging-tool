@@ -20,6 +20,8 @@ Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file own
 
 `lib/storage/inspector-origins.ts`, **sync:inspector-origins**, origin→enabled; context-menu **Toggle the detection widget on this site** writes clicked document's origin. This is P12's established item, not a temporary alternative to resurrecting local:on-page-inspector.
 
+Resolution (owner's 2026-10-17 turn-on): an explicit per-origin entry wins over the global default in **both** polarities; origins without an entry mount the chip (the interim `INSPECTOR_DEFAULT_ENABLED` constant until the options row lands). Corrupt storage degrades to no-entries — every origin follows the default — never to fabricated overrides. The toggle flips the site's **current effective state** (a right-click always changes the site's behavior; under default-on an unconfigured right-click writes `{enabled:false}`), never storage absence, and explicit entries outlive a later default change.
+
 Original200-origin cap was false under sync8192-byte/item quota. Serialized **key+JSON byte budget with headroom**, insertion-oldest trim/newest retained; worst253-char hosts/120-toggle tests. Oversized singleton rejection propagates, not fake success. Extend with position/LRU metadata only after rederiving quota/eviction; keep backward-compatible enabled entries. No host cookies/localStorage for widget state.
 
 ### Drag and containment: final behavior
@@ -48,6 +50,12 @@ Budget derivations retained: strip estimate≤10KiB was optimistic; strip-less b
 
 Build-stamp audit fix: `pnpm build` itself writes fingerprint via scripts/build-stamp.ts; old harness-only stamp could trust manual strip-less output. Strict poisoned-build repro now refuses, normal gate rebuilds, warm gate skips. Do not undo this provenance requirement.
 
+#### Default-on chip — 2026-10-17
+
+Owner decision: the chip is **active by default** on every surfaced page (a fresh install reports with no opt-in step) and the planned options toggle ("show the detection chip on pages by default") takes over the unconfigured-origin default when the options page lands — until then `INSPECTOR_DEFAULT_ENABLED` is that default. Per-site right-click stays separate and **wins over** the default in both directions; toggling it off on one site does not change other sites. Shipped the same day: the resolution lives in `lib/storage/inspector-origins.ts` (`effectiveInspectorEnabled` — entry-over-default precedence; `originEnabled`'s absence-reads-hidden helper retired) and the context-menu toggle flips the **effective** state (previously it flipped the entry, which would no-op against a default-on entryless site). The mounted-widget's armed watch read moves with it. When the options row replaces the constant, precedence must not move.
+
+Validation: the unit tier green with the origin-store suite retargeted to the new contract (unconfigured→default, both override polarities, the effective-state flip, corrupt→default, self-heal) and the strip browser suite's first leg inverted (`the widget mounts by default on every page`; suite table/header reworded). The **full browser tier passes — 151 legs** — which is the chip's coexistence proof: default-on now mounts it on every fixture and site page the other 34 suites drive, and none needed a change.
+
 ## Remaining full P12 slices
 
 ### P12M — Shared asynchronous mount cleanup
@@ -63,7 +71,7 @@ DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-
 Depends:P11/P8/P9 (existing P12A baseline). Parallel:P13/P14 executor work. Size:S–M.
 
 - [ ] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons. No old SHGF/OCI/ALR tool-internal short labels restored.
-- [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global features.onPageInspector false for unconfigured origins, per-origin override wins; popup/Detections/options/context menu share one item/toggle, no new runtime channel.
+- [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global `features.onPageInspector` — the options page's **show the detection chip on pages by default** row — is **true by default** (owner 2026-10-17; the interim `INSPECTOR_DEFAULT_ENABLED` constant already ships that behavior with per-origin entries winning both ways); popup/Detections/options/context menu share one item/toggle, no new runtime channel; the stored option replaces only the constant's role, never the precedence.
 - [ ] Complete collapse/session visibility and **Alt+H only**, capture:false listener, no document.onkeydown clobber; disabled origin no action, context cleanup. Original text mixed “session-only” and “persisted” shortcut visibility: decide/document that distinction before implementation; persistent activation and persisted position remain required, never silently invent second store.
 
 DoD: storage origin/coord/quota/eviction/corrupt/legacy tests, mount/unmount/default overrides, same-origin/incognito behavior specified, keyboard host-handler preservation. UI bar §D/gates.
@@ -90,7 +98,7 @@ DoD: config/run/timeout/error/unavailable/state→banner tests, no duplicate tes
 
 Depends: P12M/B–D/P4.1/P4.2; parallel P13/P14 independent work.
 
-- [ ] Default hidden; all opt-in controls live mount/hide/reload per origin, other origin unaffected; persisted drag/restore+clamp, right cancel, no text/link/pan side effects, touch-emulated narrow screen.
+- [ ] Default on for unconfigured origins; per-origin entries override the global default in both directions and the toggle surfaces live mount/hide/reload per origin, other origin unaffected; persisted drag/restore+clamp, right cancel, no text/link/pan side effects, touch-emulated narrow screen.
 - [ ] Alt+H enabled only; host editor-like keydown handler still fires. Hostile reset/high-specificity page: identical strip, no unscoped style, host computed diff none.
 - [ ] System/Dark/Light live Options writes+OS flips; reduced motion, keyboard/axe shadow UI; zero-marker honest states/tooltips; tool/banner states.
 - [ ] Brief deviation receipt/size delta and UI bar D1–D7; keep early20 cases, not replace with shallow smoke.

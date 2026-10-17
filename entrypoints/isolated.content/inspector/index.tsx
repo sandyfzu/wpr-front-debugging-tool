@@ -1,14 +1,18 @@
 /**
- * The on-page detection widget: the per-origin opt-in opens it, the hub's
- * already-cached single pass feeds it, and the Known Conflicts shell carries
- * its motion and focus choreography.
+ * The on-page detection widget: the per-origin override steers a
+ * default-on gate, the hub's already-cached single pass feeds it, and the
+ * Known Conflicts shell carries its motion and focus choreography.
  *
  * Gate: one validated storage item read + armed watch (arm-first, the
  * live-theme lesson — a write landing inside the read window is applied by
- * the watch, and the read result is skipped in its favor). Enabling mounts
- * the widget on this page with no reload; disabling removes the shadow host
- * the same beat; other origins' entries cannot touch this page. A disabled
- * page costs one invalidated-safe storage read at boot, nothing mounted.
+ * the watch, and the read result is skipped in its favor). Origins without
+ * an explicit entry show the widget by default (the owner's 2026-10-17
+ * turn-on: the chip mounts on a fresh install with no opt-in step); a
+ * per-origin entry stored by the context menu overrides that default in
+ * both directions. A state change mounts or removes the widget on this
+ * page with no reload; other origins' entries cannot touch this page. A
+ * hidden page costs one invalidated-safe storage read at boot, nothing
+ * mounted.
  *
  * Data: the widget reads the hub's cached pass result for this page through
  * the hub's same-context reader — a running pass is joined, never
@@ -39,6 +43,7 @@ import { createLogger } from '../../../lib/logger';
 import type { PageData } from '../data-hub';
 import { pageDataFor } from '../data-hub';
 import {
+  effectiveInspectorEnabled,
   parseInspectorOrigins,
   isInspectorOriginEnabled,
   inspectorOriginsStore
@@ -664,7 +669,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     gateWrites += 1;
     if (ctx.isInvalid) return;
     const parsed = parseInspectorOrigins(raw);
-    applyGate(parsed?.[pageOrigin]?.enabled === true);
+    // One resolution for every gate read: no explicit entry here means the
+    // global default on; only a stored entry — either polarity — overrides
+    // it. Corrupt raw degrades to the same unconfigured shape.
+    applyGate(effectiveInspectorEnabled(parsed ?? {}, pageOrigin));
   });
   ctx.onInvalidated(unwatch);
 

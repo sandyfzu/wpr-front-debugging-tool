@@ -1,19 +1,22 @@
 /**
  * P12A suite — the on-page detection widget over the real docker site.
  *
- * The strip mounts on a per-origin opt-in (the context-menu row's storage
- * item) and reports the real WP Rocket install's detections from the data
- * hub's already-cached single pass. Every page-native fact asserted here is
+ * The chip mounts by default for the site's origin (the fresh-install
+ * shape: origins without an entry follow the global default-on state) and
+ * reports the real WP Rocket install's detections from the data hub's
+ * already-cached single pass. Every page-native fact asserted here is
  * derived inline from what the extension itself reports through its real
  * protocol channel (`getWprDetections`) — the D-2 state matrix restated as
  * the assertion's derivation, never imported from the bundle.
  *
  * The native right-click is Playwright-unreachable (see the tier README's
- * manual remainder): enablement is driven through the same storage seam the
- * menu dispatch arm writes, and the menu row's registration is probed.
+ * manual remainder): the per-origin override (the context-menu row's
+ * storage item) is driven through the same storage seam the menu dispatch
+ * arm writes, and the menu row's registration is probed.
  *
  * Test order is load-bearing inside this worker profile: every leg cleans up
- * its own opt-in writes so the later suites see an inert store.
+ * its own override writes so no leg's explicit entry leaks into the later
+ * legs — nothing here reads back an entry a previous leg wrote.
  */
 
 import type { Page } from '@playwright/test';
@@ -443,7 +446,7 @@ async function waitForChoreographySettle(page: Page): Promise<void> {
     .toBe('settled');
 }
 
-/** Remove the opt-in map entirely (the later suites must see an inert store). */
+/** Remove the override map entirely (no leg's explicit entry outlives its leg). */
 async function clearWidgetOptIn(driver: ExtensionDriver): Promise<void> {
   await driver.evaluateInWorker(async (key: string) => {
     await chrome.storage.sync.remove([key]);
@@ -522,10 +525,16 @@ siteTest.describe('site detection widget', () => {
     await loginAdminPage(adminPage);
   });
 
-  siteTest('the widget is hidden by default on every page', async ({ extension }) => {
-    const page = (await openSitePage(extension, FDT_PAGE_URL)).page;
-    await expect(page.locator(STRIP_HOST)).toHaveCount(0);
-    await page.close();
+  siteTest('the widget mounts by default on every page', async ({ extension }) => {
+    // Fresh-install shape: no entry rides the store, so the resolution
+    // follows the global default-on state — this body seeds nothing first,
+    // and the pill must mount.
+    const { page } = await openSitePage(extension, FDT_PAGE_URL);
+    try {
+      await expect(page.locator(STRIP_HOST)).toHaveCount(1);
+    } finally {
+      await page.close();
+    }
   });
 
   siteTest('the opt-in row is registered once in the menu registry', async ({ extension }) => {
@@ -1786,7 +1795,7 @@ siteTest.describe('site detection widget', () => {
    * The drag legs (P12A.5): session-local repositioning, SB-D12's semantics
    * minus persistence. Every drag goes through Playwright's real input
    * (trusted events — the synthetic-click gate must not block them), and
-   * every leg cleans up its own opt-in write so the later suites see the
-   * inert store.
+   * every leg cleans up its own override writes so no leg's explicit
+   * entry leaks into the later legs.
    */
 });
