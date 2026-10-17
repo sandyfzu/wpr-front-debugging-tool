@@ -2,7 +2,7 @@
 
 ## TLDR
 
-P6A/A.1/B–F and P6G.1 shipped; **P6G.2–.10 and P6.1 remain open**. Implement the small pieces below, then close integrated browser parity/performance. [Completed pages](./completed-panel-pages.md) owns decisions/evidence, [UI acceptance](./completed-ui-acceptance.md) owns merged layout/feedback fixes. Do not reread completed execution history by default or reimplement a solved candidate.
+P6A/A.1/B–F and P6G.1–.2 shipped; **P6G.3–.10 and P6.1 remain open**. Implement the small pieces below, then close integrated browser parity/performance. [Completed pages](./completed-panel-pages.md) owns decisions/evidence, [UI acceptance](./completed-ui-acceptance.md) owns merged layout/feedback fixes. Do not reread completed execution history by default or reimplement a solved candidate.
 
 Stack: installed Node24/pnpm, TS5.9, WXT/Solid, Tailwind4, Kobalte0.13 wrappers, TanStack Virtual, Shiki worker, Vitest/Solid Testing Library/happy-dom, Playwright/axe; lockfile/AGENTS authoritative. No new dependency needed. All pieces inherit master gates and UI bar §D, include focused unit/component/browser regressions, and remain usable independently. Shared primitive changes also run Firefox build. No ceiling increases merely to pass.
 
@@ -20,15 +20,27 @@ Safe default .2→.3→.4→.5→.6→.7→.8→.9→.10; independent pieces may
 
 Grouped count/accessible names and bounded300-code-point hover titles promoted to `utils/format-count.ts`/`cap-text.ts`; full copy/hrefs unchanged. [Receipt](./completed-panel-pages.md#p6g1-counttitle-consolidation-2026-10-16). Consume these owners, never recreate aliases.
 
-### P6G.2 — Shared list rules/reuse
+### P6G.2 — Shared list rules/reuse — done
 
 Depends: .1. Parallel: .4/.6/.7. Size:S–M. Goal: one pure list-behavior seam without merging different identity models.
 
-- [ ] Consolidate chip/default/zero-count rules, query normalization and list-cut predicate (scriptListCut/listCapped/nav counters). Predicate/search-field definitions stay with resource owner; extraction stays capture-specific.
-- [ ] Sentence-case chip labels in declaring table; IDs/predicates unchanged, literal wording tests.
-- [ ] Reconciliation with explicit key/equality inputs; retain script identity+occurrence, unchanged-object reuse, resource identity, expanded pruning. Never document-position script keys or script-typed resource framework. Migrate/delete duplicate implementations, no markup/search redesign.
+- [x] Consolidate chip/default/zero-count rules, query normalization and list-cut predicate (scriptListCut/listCapped/nav counters). Predicate/search-field definitions stay with resource owner; extraction stays capture-specific.
+- [x] Sentence-case chip labels in declaring table; IDs/predicates unchanged, literal wording tests.
+- [x] Reconciliation with explicit key/equality inputs; retain script identity+occurrence, unchanged-object reuse, resource identity, expanded pruning. Never document-position script keys or script-typed resource framework. Migrate/delete duplicate implementations, no markup/search redesign.
 
 DoD/tests: all/selected-zero reachable, other zero disabled; refresh insert/delete/reorder/change/duplicates preserve correct objects/focus/scroll/expanded state; string clipping alone never claims list cut. Browser refresh checks both families; gates green, no generic list framework.
+
+#### Receipt — 2026-10-16; adversarial audit 2026-10-17
+
+- `lib/panel/list-behavior.ts` owns chip/default/zero-count rules, committed-query trimming, list-limit evidence and keyed reconciliation. Small page adapters retain script derivation/capture rules and numeric resource IDs; script keys remain signature+occurrence, full-content equality still rejects signature collisions, unchanged arrays/objects are reused, expanded-state pruning stays page-owned. No markup, capture contract, dependencies or search controls changed.
+- Wording delta: `Show All`→`Show all` on all three inventories; `Non-Deferred`→`Non-deferred`. Existing literal assertions changed only to pin this required copy delta; new shared-rule tests pin all labels and a non-`all` default ID.
+- Real Chromium regression exposed retained DOM losing focus when keyed nodes move on reorder. `virtual-list-focus.ts` captures before the keyed render and restores in a microtask only for the same connected control after an observed removal/reinsertion when focus fell to body. One short-lived observer per focused list update, never per row; capture-phase focus listening respects transfers even when controls stop bubbling events. Settlement/cancellation releases listeners, observer and the retained control reference. No scroll, timers, keyboard-entry or roving-tabindex changes; P6G.4 remains open.
+- Unit/component coverage includes counts/zero states, trimming, clipping-vs-list-cut, insertion/deletion/reorder/change/duplicates, capture changes, signature collisions, unchanged-object reuse and expansion pruning. New `panel-list-reuse` browser suite proves focused-node+scroll retention through real append/delete capture pushes on JS/Lazyload/Preloaded, and script duplicate-node reuse+expanded focus through insertion/reorder, then pruning on removal/re-add.
+- Audit findings fixed: **P2** focus was reclaimed after a deliberate no-move blur, and a stopped bubbling `focusin` could hide a deliberate transfer. New regressions failed before the fixes; exact-helper Chromium scenarios now cover moves/ancestor moves, no-move blur, unrelated mutations, normal/stopped transfer+blur, removal/replacement and disposal. **P3** JS still hardcoded its default/reset chip despite the shared rule; all paths now derive it from the definition. Duplicate browser assertions now require two initial nodes, and a 100-round immutable refresh oracle checks keys/content/object reuse/derivation counts. Changed-data capture refreshes additionally prove stale resource DOM is replaced, not refocused.
+- Audit evidence limit/copy fix: the producer's shared `truncated` mark cannot distinguish text-only clipping from dropped entries at exactly the list cap. A real `boundPreloadedResources`→shared-predicate test pins this ambiguity and the below-cap distinction. Keep the existing conservative boundary/lower-bound marker, but replace JS's definite `the page has more` with `more may exist`; no capture-contract expansion. Tests changed only to assert the corrected wording, not to weaken truncation coverage.
+- Requested boot-test fix: replace stale `0.0.0` with the version imported from `package.json`, WXT's verified declaring site. The runtime manifest still has to equal the independently read package version; no version bump or exclusion. This test change corrects obsolete metadata, not a broken worker.
+- Final gates: compile/lint/format/test pass (**2,757 passed, one existing skip**); Chromium+Firefox builds and budgets pass; unrestricted browser tier **150 passed**, no exclusions/retries, final run 3.6m. One earlier run had a 20s `/wp-admin/plugins.php` navigation timeout; isolated replay and the final full run passed without changing that test or its timeout. Firefox's pre-existing data-consent/add-on-ID build warnings remain in its owning workstream.
+- UI bar: D1–D4 width/theme/reduced-motion/keyboard/strict axe exercised by `panel-counts-titles` plus existing layout/a11y suites; D5 by the real-capture suite; D6 unchanged styles/no prohibited additions; D7 existing 5k action/long-task suite passes. Panel **387.8KiB raw/120.1KiB gzip** (before P6G.2: 387.1KiB raw; guarded focus repair adds ~0.7KiB), worker 356.3KiB raw/72.6KiB gzip; all ceilings unchanged, 350KiB stretch still unmet. No native-docking, Firefox-runtime or source-build parity claim: this slice reshapes existing rules, not newly ported behavior. Baseline HEADs rechecked: first `704dbe3`, second `a6a4900`; integrated/native acceptance remains P6G.10/P6.1.
 
 ### P6G.3 — Shared search controls/announcements/layout
 

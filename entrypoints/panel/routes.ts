@@ -19,6 +19,7 @@ import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
+import { listCapped } from '../../lib/panel/list-behavior';
 import { formatCount } from '../../utils/format-count';
 
 /** Journey groups, in the order the nav renders them. */
@@ -85,11 +86,11 @@ export interface NavRoute {
 
 /**
  * An English-counted chip copy: '1 image', '2 images' — or '5,000+ images'
- * for a list the producer cut to its cap (the page has more).
+ * when the inventory may extend past the capture cap (a lower bound).
  *
  * @param count The load's count.
  * @param noun The singular noun the count quantifies.
- * @param partial The list was cut: the count is a floor.
+ * @param partial The inventory may be incomplete: the count is a floor.
  */
 function counted(count: number, noun: string, partial = false): string {
   return `${shownTotal(count, partial)} ${noun}${count === 1 ? '' : 's'}`;
@@ -98,23 +99,11 @@ function counted(count: number, noun: string, partial = false): string {
 /**
  * Format a navigation total while keeping its capture-floor marker local.
  * @param count The captured list's length.
- * @param partial Whether more entries exist beyond the captured list.
- * @returns Grouped digits, suffixed with `+` only for a partial inventory.
+ * @param partial Whether more entries may exist beyond the captured list.
+ * @returns Grouped digits, suffixed with `+` when only a lower bound is known.
  */
 function shownTotal(count: number, partial: boolean): string {
   return `${formatCount(count)}${partial ? '+' : ''}`;
-}
-
-/**
- * Whether a row's list itself was cut: the mark alone also covers clipped
- * strings, so only a marked list sitting at its count cap lost entries.
- *
- * @param truncated The row's truncation mark.
- * @param length The shown list's length.
- * @param cap The list's count cap.
- */
-function listCut(truncated: true | undefined, length: number, cap: number): boolean {
-  return truncated === true && length >= cap;
 }
 
 /**
@@ -142,9 +131,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       if (data === null || !data.wprDetections.delay_js.present) return null;
       const { delayedScripts, scripts, truncated } = data.wprDetections.delay_js;
       // The delayed count is the whole page's: never print it over a shorter
-      // shown list without the "more exists" marker.
+      // shown list without the lower-bound marker.
       const partial =
-        listCut(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count) ||
+        listCapped(truncated, scripts.length, PAYLOAD_LIMITS.delayScripts.count) ||
         delayedScripts > scripts.length;
       return {
         text: `delayed ${formatCount(delayedScripts)}/${shownTotal(scripts.length, partial)}`,
@@ -162,7 +151,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       // The feature is active either way; "no images" is the page's state.
       const { images, truncated } = data.wprDetections.lazyload;
       const count = images.length;
-      const partial = listCut(truncated, count, PAYLOAD_LIMITS.images.count);
+      const partial = listCapped(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
         ? { text: counted(count, 'image', partial), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
@@ -185,7 +174,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
             ? counted(
                 resources.length,
                 'link',
-                listCut(
+                listCapped(
                   data.preloadedResources.truncated,
                   resources.length,
                   PAYLOAD_LIMITS.preloaded.count

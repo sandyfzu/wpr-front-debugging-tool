@@ -721,7 +721,7 @@ describe('JavaScriptView — capture bounds', () => {
     expect(document.querySelector('[data-fdt="script-list-cut"]')?.textContent).toBe(
       listCutNote(CAPS.count)
     );
-    expect(listCutNote(CAPS.count)).toBe('Showing the first 5,000 scripts — the page has more.');
+    expect(listCutNote(CAPS.count)).toBe('Showing the first 5,000 scripts — more may exist.');
     expect(document.querySelector('[data-fdt="script-total"]')?.textContent).toBe('5,000+ scripts');
   });
 

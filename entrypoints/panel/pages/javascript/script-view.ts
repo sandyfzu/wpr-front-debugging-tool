@@ -14,6 +14,7 @@ import type {
   ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
+import { buildFilterChips } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
 
@@ -290,15 +291,7 @@ export function buildChips(
   counts: Readonly<Record<JsFilterId, number>>,
   selected: JsFilterId
 ): FilterChip[] {
-  return filters.map((filter) => {
-    const count = counts[filter.id];
-    return {
-      value: filter.id,
-      label: filter.label,
-      count,
-      disabled: count === 0 && filter.id !== 'all' && filter.id !== selected
-    };
-  });
+  return buildFilterChips({ filters }, counts, selected);
 }
 
 /** Seed heights (px) for rows not measured yet — measurement corrects them. */
@@ -365,10 +358,10 @@ export function toggleExpanded(expanded: ReadonlySet<string>, key: string): Read
 
 /**
  * Count phrase for scripts ("1 script", "1,204 scripts", or "5,000+
- * scripts" for a list the capture cut — the count is then a floor).
+ * scripts" when the captured list may be incomplete — the count is then a floor).
  *
  * @param count The number of scripts.
- * @param partial The list was cut at its cap.
+ * @param partial More entries may exist beyond the capture cap.
  */
 export function scriptCount(count: number, partial = false): string {
   return `${formatCount(count)}${partial ? '+' : ''} ${count === 1 && !partial ? 'script' : 'scripts'}`;

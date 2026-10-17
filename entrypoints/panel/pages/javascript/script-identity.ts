@@ -4,6 +4,7 @@
  * every other row's key — its DOM, its expanded flag — untouched.
  */
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
+import { reconcileList } from '../../../../lib/panel/list-behavior';
 import {
   inlineCode,
   sameScript,
@@ -111,19 +112,25 @@ export function reconcileRowViews(
   rows: readonly JsScriptResource[],
   captures: readonly ContentCapture[] = []
 ): readonly ScriptRowView[] {
-  const byKey = new Map(previous.map((view) => [view.key, view]));
   const keys = scriptKeys(rows);
-  let changed = previous.length !== rows.length;
-  const next = rows.map((row, index) => {
-    const key = keys[index] ?? String(index);
-    const capture = captures[index] ?? 'complete';
-    const prior = byKey.get(key);
-    const view =
-      prior !== undefined && prior.capture === capture && sameScript(prior.row, row)
-        ? prior
-        : buildRowView(row, key, capture);
-    if (view !== previous[index]) changed = true;
-    return view;
-  });
-  return changed ? next : previous;
+  /**
+   * Resolve the parallel key array without falling back to document-position identity.
+   * @param index The classified row's position.
+   * @returns Its signature-and-occurrence key.
+   * @throws {@link Error} When the parallel key array is inconsistent.
+   */
+  const keyAt = (index: number): string => {
+    const key = keys[index];
+    if (key === undefined) throw new Error(`Missing script identity at row ${String(index)}.`);
+    return key;
+  };
+  return reconcileList(
+    previous,
+    rows,
+    (view) => view.key,
+    (_row, index) => keyAt(index),
+    (prior, row, index) =>
+      prior.capture === (captures[index] ?? 'complete') && sameScript(prior.row, row),
+    (row, index) => buildRowView(row, keyAt(index), captures[index] ?? 'complete')
+  );
 }

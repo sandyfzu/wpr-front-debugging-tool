@@ -53,7 +53,7 @@ describe('buildFilterChips', () => {
       'all'
     );
     expect(chips).toEqual([
-      { value: 'all', label: 'Show All', count: 3, disabled: false },
+      { value: 'all', label: 'Show all', count: 3, disabled: false },
       { value: 'lazyloaded', label: 'Lazyloaded', count: 2, disabled: false },
       { value: 'non-lazyloaded', label: 'Non-lazyloaded', count: 1, disabled: false }
     ]);

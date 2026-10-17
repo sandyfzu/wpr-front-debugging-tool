@@ -7,18 +7,19 @@
  * document order, so it needs no per-row field.
  */
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
+import { listCapped } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import type { ContentCapture } from './script-view';
 
 /**
  * Whether the script list was cut: the mark alone also covers clipped
- * strings, so only a marked list sitting at its count cap lost entries (the
- * nav's rule for the same list).
+ * strings, so only a marked list sitting at its count cap may have lost entries
+ * (the nav's rule for the same list). The mark cannot prove extra rows exist.
  *
  * @param delayJs The Delay JS detection row.
  */
 export function scriptListCut(delayJs: WprDetections['delay_js']): boolean {
-  return delayJs.truncated === true && delayJs.scripts.length >= PAYLOAD_LIMITS.delayScripts.count;
+  return listCapped(delayJs.truncated, delayJs.scripts.length, PAYLOAD_LIMITS.delayScripts.count);
 }
 
 /**

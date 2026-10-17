@@ -126,11 +126,11 @@ describe('buildPreloadedRows', () => {
 describe('the page definitions — chips and predicates', () => {
   it('the JavaScript pattern carries the reference chip labels in order', () => {
     expect(JS_PAGE_RESOURCES.filters.map((filter) => [filter.id, filter.label])).toEqual([
-      ['all', 'Show All'],
+      ['all', 'Show all'],
       ['delayed', 'Delayed'],
       ['non-delayed', 'Non-delayed'],
       ['deferred', 'Deferred'],
-      ['non-deferred', 'Non-Deferred'],
+      ['non-deferred', 'Non-deferred'],
       ['inline', 'Inline'],
       ['external', 'External']
     ]);

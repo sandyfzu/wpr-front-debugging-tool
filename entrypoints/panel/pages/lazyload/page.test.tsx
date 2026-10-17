@@ -96,7 +96,7 @@ describe('LazyloadPage — frame and summary', () => {
 
   it('puts per-filter counts on the chips', () => {
     const { root } = renderPage(LazyloadPage, fixture());
-    expect(screen.getByRole('button', { name: 'Show All 5 matching' })).toBe(chip(root, 'all'));
+    expect(screen.getByRole('button', { name: 'Show all 5 matching' })).toBe(chip(root, 'all'));
     expect(screen.getByRole('button', { name: 'Lazyloaded 2 matching' })).toBe(
       chip(root, 'lazyloaded')
     );

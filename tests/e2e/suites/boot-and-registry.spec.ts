@@ -26,6 +26,7 @@
  */
 
 import { expect, test } from '../helpers/extension';
+import packageInfo from '../../../package.json' with { type: 'json' };
 
 test.describe('boot & registry', () => {
   test('service worker is alive and answers', async ({ extension }) => {
@@ -34,7 +35,8 @@ test.describe('boot & registry', () => {
       undefined
     );
     expect(manifest.name).toBe('WPR Front Debugging Tool');
-    expect(manifest.version).toBe('0.0.0');
+    // WXT derives the manifest version from the package, not a separate test pin.
+    expect(manifest.version).toBe(packageInfo.version);
     // The worker target is the MV3 background itself; the id derivation is
     // the official Playwright extension-docs surface.
     const id = await extension.extensionId();

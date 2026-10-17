@@ -60,6 +60,7 @@ import {
   type ScriptRowView
 } from './script-view';
 import { bindSearchField } from './search-field';
+import { defaultChipId, normalizeQuery } from '../../../../lib/panel/list-behavior';
 import { contentCaptures, scriptListCut } from './capture-bounds';
 import { reconcileRowViews } from './script-identity';
 
@@ -77,12 +78,12 @@ const LIST_OVERSCAN = 8;
 const SEARCH_FIELD_WIDTH = '[&_input[type=search]]:w-full @regular:[&_input[type=search]]:max-w-80';
 
 /**
- * The muted note under the summary when the capture cut the list at its cap.
+ * The muted note at the capture limit; the shared truncation mark cannot prove omitted entries.
  *
  * @param shown The scripts received (the cap).
  */
 export function listCutNote(shown: number): string {
-  return `Showing the first ${formatCount(shown)} scripts — the page has more.`;
+  return `Showing the first ${formatCount(shown)} scripts — more may exist.`;
 }
 
 /** Props of {@link JavaScriptView}. */
@@ -140,8 +141,9 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   });
   const counts = createMemo(() => filterCounts(views(), JS_VIEW_RESOURCES));
 
-  const [selected, setSelected] = createSignal<JsFilterId>('all');
-  const query = createMemo(() => props.search.query().trim());
+  const allChip = defaultChipId(JS_VIEW_RESOURCES);
+  const [selected, setSelected] = createSignal<JsFilterId>(allChip);
+  const query = createMemo(() => normalizeQuery(props.search.query()));
   const filtered = createMemo(() =>
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
@@ -151,13 +153,13 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   // text with the region muted (`aria-live="off"` set in the same DOM update),
   // so the count stays true when read without being spoken unprompted.
   const announcement = createMemo(() =>
-    resultAnnouncement(filtered().length, views().length, selected() !== 'all' || query() !== '')
+    resultAnnouncement(filtered().length, views().length, selected() !== allChip || query() !== '')
   );
   const [announceQuietly, setAnnounceQuietly] = createSignal(false);
   createComputed(on(views, () => setAnnounceQuietly(true), { defer: true }));
   createComputed(on([selected, query], () => setAnnounceQuietly(false), { defer: true }));
   const selectedLabel = (): string | undefined =>
-    selected() === 'all'
+    selected() === allChip
       ? undefined
       : JS_VIEW_RESOURCES.filters.find((filter) => filter.id === selected())?.label;
 
@@ -255,11 +257,11 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                 onClearSearch={() => {
                   field.clear();
                 }}
-                onShowAll={() => setSelected('all')}
+                onShowAll={() => setSelected(allChip)}
                 focusAfter={(action) =>
                   action === 'clear-search'
                     ? filterArea?.querySelector<HTMLElement>('input[type="search"]')
-                    : filterArea?.querySelector<HTMLElement>('[data-fdt-filter-chip="all"]')
+                    : filterArea?.querySelector<HTMLElement>(`[data-fdt-filter-chip="${allChip}"]`)
                 }
               />
             }

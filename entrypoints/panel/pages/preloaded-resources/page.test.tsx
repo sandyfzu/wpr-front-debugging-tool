@@ -67,7 +67,7 @@ describe('PreloadedResourcesPage', () => {
 
   it('counts images and fonts case-insensitively on the chips', () => {
     const { root } = renderPage(PreloadedResourcesPage, fixture());
-    expect(screen.getByRole('button', { name: 'Show All 6 matching' })).toBe(chip(root, 'all'));
+    expect(screen.getByRole('button', { name: 'Show all 6 matching' })).toBe(chip(root, 'all'));
     expect(screen.getByRole('button', { name: 'Images 3 matching' })).toBe(chip(root, 'images'));
     expect(screen.getByRole('button', { name: 'Fonts 1 matching' })).toBe(chip(root, 'fonts'));
   });

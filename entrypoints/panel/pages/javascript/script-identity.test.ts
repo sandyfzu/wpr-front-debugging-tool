@@ -151,4 +151,19 @@ describe('reconcileRowViews', () => {
     expect(reordered).not.toBe(first);
     expect(reordered[0]).toBe(first[1]);
   });
+
+  it('keeps repeated scripts distinct when another script is inserted and removed', () => {
+    const duplicate = script({ content: 'https://x.test/repeated.js' });
+    const first = reconcileRowViews([], [duplicate, { ...duplicate }]);
+    expect(first[0]?.key).not.toBe(first[1]?.key);
+    const inserted = reconcileRowViews(first, [
+      inline('new'),
+      { ...duplicate, id: 1 },
+      { ...duplicate, id: 2 }
+    ]);
+    expect(inserted[1]).toBe(first[0]);
+    expect(inserted[2]).toBe(first[1]);
+    const removed = reconcileRowViews(inserted, [{ ...duplicate }]);
+    expect(removed[0]).toBe(first[0]);
+  });
 });

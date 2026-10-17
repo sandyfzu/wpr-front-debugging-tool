@@ -214,7 +214,7 @@ describe('buildChips', () => {
     const empty = Object.fromEntries(Object.keys(counts).map((key) => [key, 0])) as typeof counts;
     for (const selected of ['all', 'delayed'] as const) {
       const all = buildChips(JS_PAGE_RESOURCES.filters, empty, selected)[0];
-      expect(all).toMatchObject({ value: 'all', disabled: false, label: 'Show All' });
+      expect(all).toMatchObject({ value: 'all', disabled: false, label: 'Show all' });
     }
   });
 });

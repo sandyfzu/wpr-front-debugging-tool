@@ -1,0 +1,191 @@
+/** Shared list contracts, independently of page rendering and identity construction. */
+import { describe, expect, it, vi } from 'vitest';
+import { boundPreloadedResources, PAYLOAD_LIMITS } from '../messaging/payload-bounds';
+import {
+  buildFilterChips,
+  defaultChipId,
+  listCapped,
+  normalizeQuery,
+  reconcileList
+} from './list-behavior';
+import {
+  JS_PAGE_RESOURCES,
+  LAZYLOAD_PAGE_RESOURCES,
+  PRELOADED_PAGE_RESOURCES
+} from './resources-view-model';
+
+describe('shared chip rules', () => {
+  it('pins sentence-case labels for every shipped inventory', () => {
+    expect(JS_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
+      'Show all',
+      'Delayed',
+      'Non-delayed',
+      'Deferred',
+      'Non-deferred',
+      'Inline',
+      'External'
+    ]);
+    expect(LAZYLOAD_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
+      'Show all',
+      'Lazyloaded',
+      'Non-lazyloaded'
+    ]);
+    expect(PRELOADED_PAGE_RESOURCES.filters.map(({ label }) => label)).toEqual([
+      'Show all',
+      'Images',
+      'Fonts'
+    ]);
+  });
+  it('uses declaration order, not a hardcoded all id, for recovery', () => {
+    const definition = {
+      filters: [
+        { id: 'everything', label: 'Everything' },
+        { id: 'chosen', label: 'Chosen' },
+        { id: 'other', label: 'Other' }
+      ]
+    } as const;
+    expect(defaultChipId(definition)).toBe('everything');
+    expect(
+      buildFilterChips(definition, { everything: 0, chosen: 0, other: 0 }, 'chosen').map(
+        ({ disabled }) => disabled
+      )
+    ).toEqual([false, false, true]);
+    expect(() => defaultChipId({ filters: [] })).toThrow(/no filter chips/);
+  });
+});
+
+describe('query and capture boundaries', () => {
+  it.each([
+    [' \n\t ', ''],
+    ['  Ab c  ', 'Ab c'],
+    ['', '']
+  ])('normalizes %j', (raw, expected) => {
+    expect(normalizeQuery(raw)).toBe(expected);
+  });
+  it('requires both the capture mark and the list limit', () => {
+    expect(listCapped(undefined, 5, 5)).toBe(false);
+    expect(listCapped(true, 4, 5)).toBe(false);
+    expect(listCapped(true, 5, 5)).toBe(true);
+    expect(listCapped(true, 6, 5)).toBe(true);
+  });
+
+  it('keeps exact-cap ambiguity explicit when the producer clips only a string', () => {
+    const cap = PAYLOAD_LIMITS.preloaded;
+    const resources = Array.from({ length: cap.count }, (_, index) => ({
+      href: index === 0 ? 'x'.repeat(cap.href + 1) : `/${String(index)}.js`,
+      type: 'script'
+    }));
+    const bounded = boundPreloadedResources({ present: true, resources });
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.resources).toHaveLength(resources.length);
+    expect(bounded.resources?.[0]?.href).toHaveLength(cap.href);
+    expect(listCapped(bounded.truncated, bounded.resources?.length ?? 0, cap.count)).toBe(true);
+    const shorter = boundPreloadedResources({ present: true, resources: resources.slice(0, -1) });
+    expect(shorter.truncated).toBe(true);
+    expect(listCapped(shorter.truncated, shorter.resources?.length ?? 0, cap.count)).toBe(false);
+  });
+});
+
+describe('reconcileList', () => {
+  /** A resource-like input with explicit stable identity. */
+  interface Row {
+    readonly key: string;
+    readonly value: string;
+  }
+  /** Rendered data deliberately differs from the incoming row shape. */
+  interface View {
+    readonly identity: string;
+    readonly text: string;
+  }
+  /** Reconcile using caller-owned keys and content equality, not position. */
+  function run(
+    previous: readonly View[],
+    rows: readonly Row[],
+    create = (row: Row): View => ({ identity: row.key, text: row.value })
+  ): readonly View[] {
+    return reconcileList(
+      previous,
+      rows,
+      (view) => view.identity,
+      (row) => row.key,
+      (view, row) => view.text === row.value,
+      create
+    );
+  }
+  const a = { identity: 'a', text: 'A' };
+  const b = { identity: 'b', text: 'B' };
+  it('returns the same array and skips derivation when unchanged', () => {
+    const previous = [a, b];
+    const create = vi.fn((row: Row): View => ({ identity: row.key, text: row.value }));
+    expect(
+      run(
+        previous,
+        [
+          { key: 'a', value: 'A' },
+          { key: 'b', value: 'B' }
+        ],
+        create
+      )
+    ).toBe(previous);
+    expect(create).not.toHaveBeenCalled();
+    const empty: View[] = [];
+    expect(run(empty, [])).toBe(empty);
+  });
+  it('preserves unchanged objects through insertion, deletion and reorder', () => {
+    const next = run(
+      [a, b],
+      [
+        { key: 'c', value: 'C' },
+        { key: 'b', value: 'B' },
+        { key: 'a', value: 'A' }
+      ]
+    );
+    expect(next[1]).toBe(b);
+    expect(next[2]).toBe(a);
+    expect(run(next, [{ key: 'a', value: 'A' }])[0]).toBe(a);
+    expect(run([a, b], [])).toEqual([]);
+  });
+  it('replaces only changed data and respects occurrence-disambiguated keys', () => {
+    const first = { identity: 'same#0', text: 'A' };
+    const second = { identity: 'same#1', text: 'A' };
+    const next = run(
+      [first, second],
+      [
+        { key: 'same#0', value: 'edited' },
+        { key: 'same#1', value: 'A' }
+      ]
+    );
+    expect(next[0]).not.toBe(first);
+    expect(next[0]?.text).toBe('edited');
+    expect(next[1]).toBe(second);
+  });
+
+  it('matches an independent reuse oracle over repeated immutable refreshes', () => {
+    let previous: readonly View[] = [];
+    for (let round = 0; round < 100; round += 1) {
+      const fresh = Object.freeze(
+        Array.from({ length: 9 }, (_, index) => (index * 5 + round) % 9)
+          .filter((key) => (key + round) % 4 !== 0)
+          .map((key) =>
+            Object.freeze({ key: String(key), value: String((key + Math.floor(round / 3)) % 3) })
+          )
+      );
+      const create = vi.fn((row: Row): View =>
+        Object.freeze({ identity: row.key, text: row.value })
+      );
+      const actual = run(Object.freeze(previous), fresh, create);
+      let changedRows = 0;
+      for (const [index, row] of fresh.entries()) {
+        const reusable = previous.find(
+          (view) => view.identity === row.key && view.text === row.value
+        );
+        expect(actual[index]).toEqual({ identity: row.key, text: row.value });
+        if (reusable === undefined) changedRows += 1;
+        else expect(actual[index]).toBe(reusable);
+      }
+      expect(create).toHaveBeenCalledTimes(changedRows);
+      expect(actual).toHaveLength(fresh.length);
+      previous = actual;
+    }
+  });
+});

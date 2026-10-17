@@ -7,11 +7,12 @@
  * virtualization math anywhere in the port.
  */
 import type { JSX } from 'solid-js';
-import { createMemo, For, splitProps } from 'solid-js';
+import { createComputed, createMemo, For, on, onCleanup, splitProps } from 'solid-js';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
 import { cn } from '../../utils/cn';
+import { preserveMovedFocus } from './virtual-list-focus';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
@@ -268,6 +269,23 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
   });
   /** The window's keys in order — primitives, so `For` maps one element per key. */
   const windowKeys = createMemo(() => [...rowByKey().keys()]);
+  let cancelFocusRestore: (() => void) | undefined;
+  onCleanup(() => cancelFocusRestore?.());
+
+  // Capture before For moves keyed DOM nodes: insertBefore drops native focus
+  // even when the control survives. Restore only a retained control, never a replacement.
+  createComputed(
+    on(
+      windowKeys,
+      () => {
+        if (scroller !== undefined && scroller.contains(scroller.ownerDocument.activeElement)) {
+          cancelFocusRestore?.();
+          cancelFocusRestore = preserveMovedFocus(scroller);
+        }
+      },
+      { defer: true }
+    )
+  );
 
   /**
    * A live row view for one key: reads the item currently holding that key,

@@ -15,7 +15,7 @@ import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
 
 /** One classified script row on the JavaScript page. */
 export interface JsScriptResource {
-  /** Document order (the page keys rows on it). */
+  /** Capture position; script identity is derived separately from content and occurrence. */
   readonly id: number;
   readonly type: 'inline' | 'external';
   /** The searched field: the inline source, or the external URL. */
@@ -69,11 +69,11 @@ export type JsFilterId =
 /** The JavaScript page's pattern (labels are the reference-surface chips). */
 export const JS_PAGE_RESOURCES: ResourcePageDefinition<JsScriptResource, JsFilterId> = {
   filters: [
-    { id: 'all', label: 'Show All', predicate: () => true },
+    { id: 'all', label: 'Show all', predicate: () => true },
     { id: 'delayed', label: 'Delayed', predicate: (row) => row.delayed },
     { id: 'non-delayed', label: 'Non-delayed', predicate: (row) => !row.delayed },
     { id: 'deferred', label: 'Deferred', predicate: (row) => row.deferred },
-    { id: 'non-deferred', label: 'Non-Deferred', predicate: (row) => !row.deferred },
+    { id: 'non-deferred', label: 'Non-deferred', predicate: (row) => !row.deferred },
     { id: 'inline', label: 'Inline', predicate: (row) => row.type === 'inline' },
     { id: 'external', label: 'External', predicate: (row) => row.type === 'external' }
   ],
@@ -89,7 +89,7 @@ export const LAZYLOAD_PAGE_RESOURCES: ResourcePageDefinition<
   LazyloadFilterId
 > = {
   filters: [
-    { id: 'all', label: 'Show All', predicate: () => true },
+    { id: 'all', label: 'Show all', predicate: () => true },
     { id: 'lazyloaded', label: 'Lazyloaded', predicate: (row) => row.lazyloaded },
     { id: 'non-lazyloaded', label: 'Non-lazyloaded', predicate: (row) => !row.lazyloaded }
   ],
@@ -109,7 +109,7 @@ export const PRELOADED_PAGE_RESOURCES: ResourcePageDefinition<
   PreloadedFilterId
 > = {
   filters: [
-    { id: 'all', label: 'Show All', predicate: () => true },
+    { id: 'all', label: 'Show all', predicate: () => true },
     {
       id: 'images',
       label: 'Images',
