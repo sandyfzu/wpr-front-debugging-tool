@@ -14,7 +14,7 @@ import type {
   ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
-import { buildFilterChips } from '../../../../lib/panel/list-behavior';
+import { buildFilterChips, type CountNoun } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
 
@@ -276,6 +276,12 @@ export const JS_VIEW_RESOURCES: ResourcePageDefinition<ScriptRowView, JsFilterId
 };
 
 /**
+ * The JavaScript page's rows' noun (its count-phrasing vocabulary, shared
+ * phrasing rules live in `lib/panel/list-behavior`).
+ */
+export const SCRIPTS_NOUN: CountNoun = { one: 'script', other: 'scripts' };
+
+/**
  * The chip bar's data. A chip with nothing to select is disabled (no
  * dead-end click) — except the "all" chip and the selected chip: a refresh
  * that empties the selected filter keeps it selected (and reachable) so the
@@ -357,35 +363,10 @@ export function toggleExpanded(expanded: ReadonlySet<string>, key: string): Read
 }
 
 /**
- * Count phrase for scripts ("1 script", "1,204 scripts", or "5,000+
- * scripts" when the captured list may be incomplete — the count is then a floor).
- *
- * @param count The number of scripts.
- * @param partial More entries may exist beyond the capture cap.
- */
-export function scriptCount(count: number, partial = false): string {
-  return `${formatCount(count)}${partial ? '+' : ''} ${count === 1 && !partial ? 'script' : 'scripts'}`;
-}
-
-/**
  * Count phrase for code lines ("1 line", "1,040 lines").
  *
  * @param count The number of lines.
  */
 export function lineCount(count: number): string {
   return `${formatCount(count)} ${count === 1 ? 'line' : 'lines'}`;
-}
-
-/**
- * The polite result-count announcement: said only while a chip or a
- * committed query narrows the list (an unfiltered list has nothing to
- * report), never per keystroke — the query it reads is the committed one.
- *
- * @param shown Rows rendered.
- * @param total Rows on the page.
- * @param narrowed Whether a chip or query is active.
- */
-export function resultAnnouncement(shown: number, total: number, narrowed: boolean): string {
-  if (!narrowed) return '';
-  return `${formatCount(shown)} of ${scriptCount(total)} shown`;
 }

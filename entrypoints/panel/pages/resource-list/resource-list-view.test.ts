@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { capTitle, TITLE_MAX } from '../../../../utils/cap-text';
-import { formatCount } from '../../../../utils/format-count';
 import {
   LAZYLOAD_PAGE_RESOURCES,
   PRELOADED_PAGE_RESOURCES,
@@ -11,27 +10,11 @@ import {
   listCapped,
   reconcileRows,
   urlClipped,
-  countLabel,
   defaultChipId,
   narrowingChipLabel,
   normalizeQuery,
-  resourceName,
-  resultsAnnouncement
+  resourceName
 } from './resource-list-view';
-
-const IMAGES = { one: 'image', other: 'images' };
-
-describe('countLabel', () => {
-  it.each([
-    [0, '0 images'],
-    [1, '1 image'],
-    [2, '2 images'],
-    [5000, '5,000 images'],
-    [1234567, '1,234,567 images']
-  ])('%i → %s', (count, expected) => {
-    expect(countLabel(count, IMAGES)).toBe(expected);
-  });
-});
 
 describe('defaultChipId', () => {
   it('is the first chip of each shipped definition ("all")', () => {
@@ -91,15 +74,6 @@ describe('normalizeQuery', () => {
   });
 });
 
-describe('resultsAnnouncement', () => {
-  it('says none, all, or "N of M"', () => {
-    expect(resultsAnnouncement(0, 4, IMAGES)).toBe('No images match');
-    expect(resultsAnnouncement(4, 4, IMAGES)).toBe('Showing all 4 images');
-    expect(resultsAnnouncement(1, 1, IMAGES)).toBe('Showing all 1 image');
-    expect(resultsAnnouncement(1, 4, IMAGES)).toBe('Showing 1 of 4 images');
-  });
-});
-
 describe('resourceName', () => {
   it.each([
     ['https://cdn.example/wp-content/uploads/hero.webp', 'hero.webp'],
@@ -134,14 +108,6 @@ describe('resourceName', () => {
 
   it('names a blob URL by its last segment', () => {
     expect(resourceName('blob:https://cdn.example/3f2a')).toBe('3f2a');
-  });
-});
-
-describe('formatCount', () => {
-  it('groups thousands', () => {
-    expect(formatCount(0)).toBe('0');
-    expect(formatCount(999)).toBe('999');
-    expect(formatCount(5000)).toBe('5,000');
   });
 });
 

@@ -1,9 +1,9 @@
 /**
  * Pure presentation rules shared by the resource-list pages (Lazyload,
- * Preloaded Resources): chip states, the filtered-empty chip name, query
- * normalization, counted nouns, the polite result announcement, row reuse
- * across refreshes and resource naming. No Solid, no DOM — the page component
- * composes these inside its memo chain.
+ * Preloaded Resources): the filtered-empty chip name, query normalization,
+ * row reuse across refreshes and resource naming. No Solid, no DOM — the
+ * page component composes these inside its memo chain. Count phrasing and
+ * the results announcement are shared rules of `lib/panel/list-behavior`.
  */
 import { defaultChipId, reconcileList } from '../../../../lib/panel/list-behavior';
 export {
@@ -13,27 +13,6 @@ export {
   listCapped
 } from '../../../../lib/panel/list-behavior';
 import type { ResourcePageDefinition } from '../../../../lib/panel/resources-view-model';
-import { formatCount } from '../../../../utils/format-count';
-
-/** A noun in its two English count forms ("image" / "images"). */
-export interface CountNoun {
-  /** The singular form, used for exactly one. */
-  readonly one: string;
-  /** The plural form, used for zero and many. */
-  readonly other: string;
-}
-
-/**
- * Phrase a count with its noun: `1 image`, `0 images`, `5,000 images` —
- * digits rather than words, so counts scan and compare at a glance.
- *
- * @param count A non-negative row count.
- * @param noun The noun's count forms.
- * @returns The counted phrase.
- */
-export function countLabel(count: number, noun: CountNoun): string {
-  return `${formatCount(count)} ${count === 1 ? noun.one : noun.other}`;
-}
 
 /**
  * The selected chip's label for the filtered-empty sentence, or `undefined`
@@ -50,22 +29,6 @@ export function narrowingChipLabel<Row, Id extends string>(
 ): string | undefined {
   if (selected === defaultChipId(definition)) return undefined;
   return definition.filters.find((filter) => filter.id === selected)?.label;
-}
-
-/**
- * The polite announcement after a committed filter or query change: how many
- * rows the list now shows out of how many exist (one line per commit, so a
- * screen reader hears the result without a per-keystroke stream).
- *
- * @param shown Rows the list renders after chip + query.
- * @param total Rows on the page.
- * @param noun The rows' noun.
- * @returns One short sentence for the page's `role="status"` line.
- */
-export function resultsAnnouncement(shown: number, total: number, noun: CountNoun): string {
-  if (shown === 0) return `No ${noun.other} match`;
-  if (shown === total) return `Showing all ${countLabel(total, noun)}`;
-  return `Showing ${formatCount(shown)} of ${countLabel(total, noun)}`;
 }
 
 /** Schemes whose path names a resource (relative URLs resolve to `https:`). */

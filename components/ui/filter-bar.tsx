@@ -14,6 +14,14 @@ import { formatCount } from '../../utils/format-count';
 import { DISABLED, FOCUS_RING } from './classes';
 import { Input } from './input';
 
+/**
+ * The shared bar's search-field width: the full row while the panel is
+ * compact, a comfortable bounded field (20 rem) from the regular tier —
+ * the bar keeps the field's intrinsic width above that instead of a fixed
+ * width that would read as a banner or float apart from the canvas.
+ */
+const SEARCH_FIELD_WIDTH = 'w-full @regular:max-w-80';
+
 /** One filter chip in the registry — declared by its owning page. */
 export interface FilterChip {
   /**
@@ -144,7 +152,7 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
             placeholder={own.searchPlaceholder ?? 'Search…'}
             value={own.searchQuery}
             onInput={(event) => own.onSearchChange?.(event.currentTarget.value)}
-            class="ps-7"
+            class={cn('ps-7', SEARCH_FIELD_WIDTH)}
           />
         </div>
       </Show>

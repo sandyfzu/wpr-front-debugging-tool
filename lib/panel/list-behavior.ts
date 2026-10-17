@@ -1,4 +1,5 @@
 /** Pure list rules shared by panel inventories; identity stays with each caller. */
+import { formatCount } from '../../utils/format-count';
 
 /** Ordered chip metadata; predicates and searched fields belong to the page definition. */
 interface ChipDefinition<Id extends string> {
@@ -89,4 +90,48 @@ export function reconcileList<Previous, Next, Key>(
     return result;
   });
   return changed ? merged : previous;
+}
+
+/** A noun in its two English count forms ("script" / "scripts"). */
+export interface CountNoun {
+  /** The singular form, used for exactly one. */
+  readonly one: string;
+  /** The plural form, used for zero and many. */
+  readonly other: string;
+}
+
+/**
+ * Phrase a count with its noun: `1 image`, `0 images`, `5,000 scripts` —
+ * digits rather than words, so counts scan and compare at a glance.
+ *
+ * @param count A non-negative row count.
+ * @param noun The noun's count forms.
+ * @param partial Mark the count as a capture floor: `+` after the figures
+ *   (`5,000+ scripts`) and always plural, since entries beyond the shown
+ *   list may exist. A cut list can never hold exactly one row in truth, so
+ *   the singular form is reserved for full lists.
+ * @returns The counted phrase.
+ */
+export function countLabel(count: number, noun: CountNoun, partial = false): string {
+  return `${formatCount(count)}${partial ? '+' : ''} ${count === 1 && !partial ? noun.one : noun.other}`;
+}
+
+/**
+ * The polite result-count announcement after a committed filter or query
+ * change: how many rows the list now shows out of how many exist (one line
+ * per commit, so a screen reader hears the result without a per-keystroke
+ * stream). An empty inventory announces nothing here — the page's own empty
+ * state speaks for it; `No … match` is reserved for a filter that hides rows
+ * that exist.
+ *
+ * @param shown Rows the list renders after chip + query.
+ * @param total Rows on the page.
+ * @param noun The rows' noun.
+ * @returns One short sentence for the page's `role="status"` line.
+ */
+export function resultsAnnouncement(shown: number, total: number, noun: CountNoun): string {
+  if (total === 0) return '';
+  if (shown === 0) return `No ${noun.other} match`;
+  if (shown === total) return `Showing all ${countLabel(total, noun)}`;
+  return `Showing ${formatCount(shown)} of ${countLabel(total, noun)}`;
 }

@@ -97,6 +97,31 @@ describe('createSearchStore', () => {
   });
 });
 
+describe('the delivery revision (explicit reset notification)', () => {
+  it('bumps on every perform and cancel, whatever the query that follows', () => {
+    const store = createSearchStore();
+    expect(store.revision()).toBe(0);
+    store.perform('wp');
+    store.cancel();
+    store.perform('roc');
+    expect(store.revision()).toBe(3);
+    store.perform(''); // an emptied delivery is a reset even with no query change
+    expect(store.revision()).toBe(4);
+  });
+
+  it('never bumps for a commit, an advance or a match count', async () => {
+    const store = createSearchStore();
+    store.perform('wp');
+    const before = store.revision();
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    expect(store.revision()).toBe(before);
+    store.setMatchCount(3);
+    store.advance(1);
+    store.advance(-1);
+    expect(store.revision()).toBe(before);
+  });
+});
+
 describe('moveCursor (pure cursor math)', () => {
   it('wraps forward past the end and backward past the start', () => {
     expect(moveCursor(2, 3, 1)).toBe(0);

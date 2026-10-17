@@ -15,12 +15,12 @@
  * rows keep their very objects, so their DOM survives the refresh.
  *
  * Search: the in-page field and the DevTools search box drive the panel's
- * one search store (see `search-field`); the committed query filters each
- * script's searched content (an external script's URL, an inline script's
- * code), composed with the selected chip, ignoring surrounding whitespace.
- * The DevTools box cannot show text typed here — the platform has no setter.
- * A route change unmounts the page (resetting chip and expanded rows) and the
- * shell resets the search.
+ * one search store through the shared field binding (`state/search-field`);
+ * the committed query filters each script's searched content (an external
+ * script's URL, an inline script's code), composed with the selected chip,
+ * ignoring surrounding whitespace. The DevTools box cannot show text typed
+ * here — the platform has no setter. A route change unmounts the page
+ * (resetting chip and expanded rows) and the shell resets the search.
  */
 import { sendMessage } from '../../../../lib/messaging';
 import {
@@ -42,25 +42,25 @@ import {
   filterCounts,
   type JsFilterId
 } from '../../../../lib/panel/resources-view-model';
+import { countLabel, defaultChipId, normalizeQuery } from '../../../../lib/panel/list-behavior';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { formatCount } from '../../../../utils/format-count';
 import type { SearchStore } from '../../state/search';
+import { bindSearchField } from '../../state/search-field';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { createResultsAnnouncement } from '../results-announcement';
 import { ScriptRow, type CodeBlockSeams } from './script-row';
 import {
   JS_VIEW_RESOURCES,
   buildChips,
   estimateRowSize,
   pruneExpanded,
-  resultAnnouncement,
-  scriptCount,
+  SCRIPTS_NOUN,
   toggleExpanded,
   type ScriptRowView
 } from './script-view';
-import { bindSearchField } from './search-field';
-import { defaultChipId, normalizeQuery } from '../../../../lib/panel/list-behavior';
 import { contentCaptures, scriptListCut } from './capture-bounds';
 import { reconcileRowViews } from './script-identity';
 
@@ -70,12 +70,6 @@ import { reconcileRowViews } from './script-identity';
  * and the window follows) — sequential Tab never escapes the list.
  */
 const LIST_OVERSCAN = 8;
-
-/**
- * The search field's width: the full row when compact, a comfortable 20 rem
- * from the regular tier (the bar leaves the field at its intrinsic width).
- */
-const SEARCH_FIELD_WIDTH = '[&_input[type=search]]:w-full @regular:[&_input[type=search]]:max-w-80';
 
 /**
  * The muted note at the capture limit; the shared truncation mark cannot prove omitted entries.
@@ -148,16 +142,17 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
   const chips = createMemo(() => buildChips(JS_VIEW_RESOURCES.filters, counts(), selected()));
-  // The result count, always current; announced only when the user narrows
-  // or widens the list (chip, committed query). A data refresh updates the
-  // text with the region muted (`aria-live="off"` set in the same DOM update),
-  // so the count stays true when read without being spoken unprompted.
-  const announcement = createMemo(() =>
-    resultAnnouncement(filtered().length, views().length, selected() !== allChip || query() !== '')
-  );
-  const [announceQuietly, setAnnounceQuietly] = createSignal(false);
-  createComputed(on(views, () => setAnnounceQuietly(true), { defer: true }));
-  createComputed(on([selected, query], () => setAnnounceQuietly(false), { defer: true }));
+  // The count line and its announce switch come from the shared filter-page
+  // lifecycle: truthful text always; a data refresh updates it silently
+  // (`aria-live="off"` in the same reactive wave), a committed filter/query
+  // change announces again. Mount never announces (the region renders with
+  // its initial content).
+  const { text: announcement, live } = createResultsAnnouncement({
+    rows: views,
+    visible: filtered,
+    noun: SCRIPTS_NOUN,
+    actions: [selected, () => query()]
+  });
   const selectedLabel = (): string | undefined =>
     selected() === allChip
       ? undefined
@@ -189,14 +184,6 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
     if (collapsing) toggle.scrollIntoView({ block: 'nearest' });
   };
 
-  /** Esc in the search field clears the search (the panel-wide Esc rule). */
-  const onFilterKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || field.value() === '') return;
-    if (!(event.target instanceof HTMLInputElement)) return;
-    event.preventDefault();
-    field.clear();
-  };
-
   return (
     <PageFrame
       id="javascript"
@@ -226,7 +213,9 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
             />
           }
         >
-          <div ref={filterArea} onKeyDown={onFilterKeyDown} class={SEARCH_FIELD_WIDTH}>
+          {/* The field binding owns the Esc rule; the ref targets the way-back
+              focus (the shared seam, not a page-local keydown anymore). */}
+          <div ref={filterArea} onKeyDown={field.onKeyDown}>
             <FilterBar
               chips={chips()}
               selected={selected()}
@@ -240,12 +229,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
               searchLabel="Search scripts"
             />
           </div>
-          <div
-            role="status"
-            aria-live={announceQuietly() ? 'off' : 'polite'}
-            class="sr-only"
-            data-fdt="script-results-status"
-          >
+          <div role="status" aria-live={live()} class="sr-only" data-fdt="script-results-status">
             {announcement()}
           </div>
           <Show
@@ -359,7 +343,7 @@ function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
         )}
       </Show>
       <span data-fdt="script-total" class="ms-auto ps-2 text-fg-secondary tabular-nums">
-        {scriptCount(props.total, props.partial)}
+        {countLabel(props.total, SCRIPTS_NOUN, props.partial)}
       </span>
     </div>
   );

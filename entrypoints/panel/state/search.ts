@@ -43,6 +43,15 @@ export function moveCursor(cursor: number, count: number, delta: SearchDirection
 export interface SearchStore {
   /** The committed query — last input that survived the quiet period. */
   readonly query: Accessor<string>;
+  /**
+   * Delivery revision: one bump per `perform`/`cancel`, whatever the
+   * committed query that follows. A committed-query listener alone cannot
+   * see a reset that lands while the query is already empty (a find-bar
+   * cancel clearing a field's pending text reports no query change), so
+   * field bindings key their "came from elsewhere" re-sync off this counter
+   * together with the query.
+   */
+  readonly revision: Accessor<number>;
   /** The match cursor the page pairs with `matchCount` for next/prev. */
   readonly cursor: Accessor<number>;
   /** The match set's size; pages report it, the store only carries it. */
@@ -68,6 +77,7 @@ export interface SearchStore {
  */
 export function createSearchStore(): SearchStore {
   const [query, setQuery] = createSignal<string>('');
+  const [revision, setRevision] = createSignal<number>(0);
   const [cursor, setCursor] = createSignal<number>(0);
   const [matchCount, setMatchCount] = createSignal<number>(0);
 
@@ -90,9 +100,13 @@ export function createSearchStore(): SearchStore {
 
   return {
     query,
+    revision,
     cursor,
     matchCount,
-    perform(rawQuery) {
+    perform(rawQuery: string) {
+      // Every delivery re-notifies; the query change alone is not the whole
+      // story (an empty delivery clears with no query change at all).
+      setRevision((current) => current + 1);
       if (rawQuery === '') {
         // An emptied find bar carries the same intent as Escape: clear now
         // (a pending burst must not resurrect the just-cleared text).
@@ -101,11 +115,16 @@ export function createSearchStore(): SearchStore {
       }
       commit(rawQuery);
     },
-    cancel: clear,
+    cancel() {
+      // Reset is a state event even when the query is already empty: its
+      // consumers (the field binding's pending echo) must still adopt it.
+      setRevision((current) => current + 1);
+      clear();
+    },
     advance(delta) {
       setCursor((current) => moveCursor(current, matchCount(), delta));
     },
-    setMatchCount(count) {
+    setMatchCount(count: number) {
       setMatchCount(Number.isInteger(count) && count >= 0 ? count : 0);
     }
   };

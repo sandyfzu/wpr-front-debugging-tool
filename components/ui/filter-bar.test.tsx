@@ -145,6 +145,15 @@ describe('FilterBar', () => {
     expect(screen.queryByRole('searchbox')).toBeNull();
   });
 
+  it('sizes the search field: full row while compact, bounded from the regular tier', () => {
+    // The width lives on the bar (the list pages' shared pattern), so callers
+    // stop re-declaring per-page width caps.
+    render(() => <FilterBar chips={CHIPS} />);
+    const field = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search' });
+    expect(field.className).toContain('w-full');
+    expect(field.className).toContain('@regular:max-w-80');
+  });
+
   it('names the chip group "Filters" (renamable) so the group is announced', () => {
     render(() => <FilterBar chips={CHIPS} />);
     expect(screen.getByRole('group', { name: 'Filters' })).toBeTruthy();

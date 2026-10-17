@@ -13,20 +13,21 @@
  * - **populated**: the virtualized list (`role="list"`, rows `listitem` with
  *   their set size and position).
  *
- * Search — one query, two inputs: the in-page field and the DevTools find bar
- * drive the same search store. The field streams into `perform` (the store
- * owns the debounce), keeps its own raw text while typing, and re-syncs from
- * the committed query whenever it changes elsewhere (find bar, `cancel`,
- * route reset); clearing it (✕ or Esc) cancels at once. Limitation: the
- * DevTools find bar's own text cannot be written back (no platform setter),
- * and a find-bar cancel that lands while the committed query is already empty
- * leaves the field's uncommitted text in place (the store reports no change).
+ * Search — one query, two inputs, through the shared field binding
+ * (`state/search-field`): the in-page field and the DevTools find bar drive
+ * the same search store. The field streams into `perform` (the store owns the
+ * debounce), keeps its own raw text while typing, and re-syncs from the
+ * committed query whenever another input changes (find bar, `cancel`, route
+ * reset) — a find-bar cancel drops the field's pending echo even when the
+ * committed query is already empty (the reset is a store event with no
+ * query change). Clearing it (✕ or Esc) cancels at once. Limitation: the
+ * DevTools find bar's own text cannot be written back (no platform setter).
  *
  * Selection and query survive a data refresh (the body stays mounted); the
  * selection resets with the route (the body remounts).
  */
 import type { JSX } from 'solid-js';
-import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
+import { createMemo, createSignal, For, Show } from 'solid-js';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import {
@@ -39,19 +40,18 @@ import {
   filterCounts,
   type ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
+import { countLabel, defaultChipId, type CountNoun } from '../../../../lib/panel/list-behavior';
 import { cn } from '../../../../utils/cn';
 import type { RouteId } from '../../routes';
 import { useSearch } from '../../state/use-fdt-data';
+import { bindSearchField } from '../../state/search-field';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { createResultsAnnouncement } from '../results-announcement';
 import {
   buildFilterChips,
-  countLabel,
-  defaultChipId,
   narrowingChipLabel,
   normalizeQuery,
-  reconcileRows,
-  resultsAnnouncement,
-  type CountNoun
+  reconcileRows
 } from './resource-list-view';
 
 /** The row contract: a unique, stable id (source position) the list keys on. */
@@ -118,20 +118,12 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   // eslint-disable-next-line solid/reactivity -- read once on purpose: a page's definition is a module constant
   const allChip = defaultChipId(props.definition);
   const [selected, setSelected] = createSignal<Id>(allChip);
-  const [fieldText, setFieldText] = createSignal(search.query());
+  // The shared field binding: raw echo, the one store, the Esc rule.
+  const field = bindSearchField(search);
   let controls: HTMLDivElement | undefined;
 
-  // The store changed elsewhere (find bar, cancel, route reset): the field follows.
-  createEffect(
-    on(
-      search.query,
-      (query) => {
-        setFieldText(query);
-      },
-      { defer: true }
-    )
-  );
-
+  // The list filters on the committed query (the store owns the debounce);
+  // the field's raw echo only shows what the field displays.
   const query = createMemo(() => normalizeQuery(search.query()));
   // A refresh rebuilds every row object; reconciling by id keeps unchanged
   // rows' objects, so their keyed list rows (and focus inside) survive it.
@@ -148,49 +140,19 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   );
   const chips = createMemo(() => buildFilterChips(props.definition, counts(), selected()));
 
-  // One polite line per committed filter/query change — never per keystroke
-  // (the store commits after its debounce) and never on mount; a data refresh
-  // clears it (its count would be stale, and the shell announces refreshes).
-  const [announcement, setAnnouncement] = createSignal('');
-  createEffect(
-    on(
-      [selected, query],
-      () => {
-        setAnnouncement(resultsAnnouncement(visible().length, rows().length, props.noun));
-      },
-      { defer: true }
-    )
-  );
-  createEffect(
-    on(
-      rows,
-      () => {
-        setAnnouncement('');
-      },
-      { defer: true }
-    )
-  );
-
-  /** Typing streams into the store; a blank field clears it now. */
-  const onSearchChange = (text: string): void => {
-    setFieldText(text);
-    if (normalizeQuery(text) === '') search.cancel();
-    else search.perform(text);
-  };
-
-  /** The `Clear search` way back (and Esc in the field). */
-  const clearSearch = (): void => {
-    setFieldText('');
-    search.cancel();
-  };
-
-  /** Esc in the search field clears it, whatever the engine's native search-field behavior. */
-  const onControlsKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || !(event.target instanceof HTMLInputElement)) return;
-    if (event.target.type !== 'search' || fieldText() === '') return;
-    event.preventDefault();
-    clearSearch();
-  };
+  // The shared count line: truthful text always; a data refresh updates it
+  // silently (`aria-live="off"` in the same reactive wave), a committed
+  // filter/query change announces again — never per keystroke, never on
+  // mount (the region renders with its initial content). The noun is a
+  // page-level constant (declared with the page's rows' vocabulary).
+  // eslint-disable-next-line solid/reactivity -- read once on purpose: a page's noun is a module constant
+  const noun = props.noun;
+  const { text: announcement, live } = createResultsAnnouncement({
+    rows,
+    visible,
+    noun,
+    actions: [() => selected(), query]
+  });
 
   /** Where focus lands once a `NoMatches` way back removes its button. */
   const focusAfter = (action: 'clear-search' | 'show-all'): HTMLElement | null | undefined =>
@@ -203,14 +165,15 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
       <ResourceSummary
         featureLabel={props.featureLabel}
         featurePresent={props.featurePresent}
-        total={rows().length > 0 ? countLabel(rows().length, props.noun) : undefined}
+        total={rows().length > 0 ? countLabel(rows().length, noun) : undefined}
         notes={props.notes}
       />
       <Show
         when={rows().length > 0}
         fallback={<div class={cn(PAGE_FILL_SCROLLER, LIST_REGION, 'grid')}>{props.empty}</div>}
       >
-        <div ref={controls} onKeyDown={onControlsKeyDown}>
+        {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
+        <div ref={controls} onKeyDown={field.onKeyDown}>
           <FilterBar
             chips={chips()}
             selected={selected()}
@@ -219,13 +182,12 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
               setSelected(() => value as Id);
             }}
             filterLabel={`Filter ${props.listLabel.toLowerCase()}`}
-            searchQuery={fieldText()}
-            onSearchChange={onSearchChange}
+            searchQuery={field.value()}
+            onSearchChange={(raw) => {
+              field.input(raw);
+            }}
             searchLabel={props.searchLabel}
             searchPlaceholder={props.searchPlaceholder}
-            // The field spans the column when compact; a fixed comfortable
-            // width from the regular tier (a full-width field reads as a banner).
-            class="[&_input]:w-full @regular:[&_input]:w-72"
           />
         </div>
         <Show
@@ -235,7 +197,9 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
               <NoMatches
                 chipLabel={narrowingChipLabel(props.definition, selected())}
                 query={query()}
-                onClearSearch={clearSearch}
+                onClearSearch={() => {
+                  field.clear();
+                }}
                 onShowAll={() => {
                   setSelected(() => allChip);
                 }}
@@ -276,7 +240,7 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
           </VirtualList>
         </Show>
       </Show>
-      <div role="status" class="sr-only" data-fdt="resource-results-status">
+      <div role="status" aria-live={live()} class="sr-only" data-fdt="resource-results-status">
         {announcement()}
       </div>
     </PageFrame>

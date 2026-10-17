@@ -23,9 +23,7 @@ import {
   inlineCode,
   lineCount,
   pruneExpanded,
-  resultAnnouncement,
   sameScript,
-  scriptCount,
   scriptStateBadges,
   toggleExpanded
 } from './script-view';
@@ -258,22 +256,8 @@ describe('expanded-set bookkeeping', () => {
 describe('phrases', () => {
   it('formats counts with thousands separators', () => {
     expect(formatCount(5000)).toBe('5,000');
-    expect(scriptCount(0)).toBe('0 scripts');
-    expect(scriptCount(1)).toBe('1 script');
-    expect(scriptCount(1204)).toBe('1,204 scripts');
     expect(lineCount(1)).toBe('1 line');
     expect(lineCount(1040)).toBe('1,040 lines');
-  });
-
-  it('floors a cut total', () => {
-    expect(scriptCount(5000, true)).toBe('5,000+ scripts');
-  });
-
-  it('announces only while the list is narrowed', () => {
-    expect(resultAnnouncement(3, 10, false)).toBe('');
-    expect(resultAnnouncement(3, 10, true)).toBe('3 of 10 scripts shown');
-    expect(resultAnnouncement(0, 1, true)).toBe('0 of 1 script shown');
-    expect(resultAnnouncement(1200, 5000, true)).toBe('1,200 of 5,000 scripts shown');
   });
 });
 

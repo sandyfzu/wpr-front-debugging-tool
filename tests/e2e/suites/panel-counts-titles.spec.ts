@@ -81,6 +81,33 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
               message: `${id} must fit at ${String(width)}px`
             })
             .toBe(0);
+          if (width === 320 || width === 1280) {
+            // The shared filter field: bounded to 20 rem from the regular
+            // tier, full row below it — no per-page width cap, real geometry.
+            const sample = await root.evaluate((page) => {
+              const bar = page.querySelector('[data-fdt="filter-bar"]');
+              const input = page.querySelector<HTMLInputElement>('input[type="search"]');
+              if (!(bar instanceof HTMLElement) || !(input instanceof HTMLInputElement)) {
+                return null;
+              }
+              return {
+                row: bar.clientWidth,
+                field: input.getBoundingClientRect().width,
+                // The tier cap is 20 rem; rem resolves against the root font
+                // size (not the field's own — that is the 0.75 rem `text-xs`
+                // token), so the cap is derived from it and a density move
+                // fails as the changed cap, not as a stale pixel count.
+                cap: parseFloat(getComputedStyle(document.documentElement).fontSize) * 20
+              };
+            });
+            if (sample === null) throw new Error('filter bar or search field missing');
+            if (width === 1280) {
+              expect(sample.field).toBeLessThanOrEqual(sample.cap + 1);
+              expect(sample.field).toBeLessThan(sample.row - 10);
+            } else {
+              expect(sample.field).toBeGreaterThanOrEqual(sample.row - 2);
+            }
+          }
         }
         // Route focus lands on h1; native Tab enters the first grouped chip.
         await root.getByRole('heading', { level: 1 }).focus();
@@ -140,6 +167,23 @@ test('keeps grouped names, bounded titles and full copy/link values on all list 
           .toBe(0);
       }
     }
+    // The field's Esc rule on a real page (the field's own rule — the
+    // find-bar relay is the search-relay suite): a query narrows the list
+    // and lands on the shared count line, Esc clears field and store, the
+    // full list comes back. The lightweight a11y engine must pass over it.
+    await panel.setViewportSize({ width: 1280, height: 800 });
+    await panel.evaluate(() => {
+      location.hash = '#/javascript';
+    });
+    const jsRoot = panel.locator('[data-fdt-page="javascript"]');
+    const searchField = jsRoot.locator('input[type="search"]');
+    await searchField.fill('example.test/4');
+    const status = jsRoot.locator('[data-fdt="script-results-status"]');
+    await expect(status).toHaveText(/Showing \d[\d,]* of 5,000 scripts/);
+    await searchField.press('Escape');
+    await expect(searchField).toHaveValue('');
+    await expect(status).toHaveText('Showing all 5,000 scripts');
+    await expect(jsRoot.locator('[data-fdt-filter-chip][aria-pressed="true"]')).toBeVisible();
   } finally {
     await panel.close();
     await fixture.page.close();

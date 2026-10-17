@@ -232,7 +232,9 @@ describe('LazyloadPage — filters, search and states', () => {
     fireEvent.input(field(), { target: { value: 'hero' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1);
     expect(rowNames(page.root)).toHaveLength(5);
-    expect(announced(page.root)).toBe('');
+    // The count line states the unfiltered page from mount (rendered content,
+    // never a keystroke announcement); it changes only with the commit.
+    expect(announced(page.root)).toBe('Showing all 5 images');
     vi.advanceTimersByTime(1);
     expect(rowNames(page.root)).toEqual(['hero.webp']);
   });
@@ -249,7 +251,8 @@ describe('LazyloadPage — filters, search and states', () => {
 
   it('treats a blank query as no search (never a dead-end filtered view)', () => {
     type('   ');
-    expect(page.search.query()).toBe('');
+    // The echo commits as typed; the list normalizes it away — all rows stay.
+    expect(page.search.query()).toBe('   ');
     expect(rowNames(page.root)).toHaveLength(5);
   });
 
@@ -259,6 +262,25 @@ describe('LazyloadPage — filters, search and states', () => {
     expect(field().value).toBe('');
     expect(page.search.query()).toBe('');
     expect(rowNames(page.root)).toHaveLength(5);
+  });
+
+  it('drops a pending field echo when a cancel lands while the query is already empty', () => {
+    fireEvent.input(field(), { target: { value: 'pending' } });
+    expect(page.search.query()).toBe(''); // the echo has not committed
+    page.search.cancel(); // from the DevTools side; no query change is involved
+    expect(field().value).toBe('');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2);
+    expect(page.search.query()).toBe(''); // the cancelled burst commits nothing
+    expect(rowNames(page.root)).toHaveLength(5);
+  });
+
+  it('a foreign keystroke takes query ownership at once, dropping a pending echo', () => {
+    fireEvent.input(field(), { target: { value: 'pending' } });
+    page.search.perform('logo');
+    expect(field().value).toBe(''); // the committed query, not the stale echo
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(page.search.query()).toBe('logo');
+    expect(rowNames(page.root)).toEqual(['logo.png']);
   });
 
   it('ignores Esc on an empty field and other keys', () => {
@@ -414,8 +436,12 @@ describe('LazyloadPage — refresh and edge states', () => {
     expect(chip(page.root, 'non-lazyloaded').getAttribute('aria-pressed')).toBe('true');
     expect(field().value).toBe('jpg');
     expect(rowNames(page.root)).toEqual(['new.jpg']);
-    // A refresh clears the line: its count would be stale.
-    expect(announced(page.root)).toBe('');
+    // The line stays truthful through a refresh (the refreshed count is
+    // correct to read), but silent: `aria-live` is off for that update.
+    expect(announced(page.root)).toBe('Showing 1 of 2 images');
+    expect(
+      page.root.querySelector('[data-fdt="resource-results-status"]')?.getAttribute('aria-live')
+    ).toBe('off');
   });
 
   it('disables an empty chip, but keeps a selected chip that a refresh emptied', () => {

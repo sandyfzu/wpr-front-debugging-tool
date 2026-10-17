@@ -450,7 +450,7 @@ describe('JavaScriptView — search', () => {
     fireEvent.click(chip('delayed'));
     expect(rows()).toHaveLength(1);
     expect(document.querySelector('[data-fdt="script-results-status"]')?.textContent).toBe(
-      '1 of 6 scripts shown'
+      'Showing 1 of 6 scripts'
     );
   });
 
@@ -462,7 +462,24 @@ describe('JavaScriptView — search', () => {
     fireEvent.input(field(), { target: { value: '   ' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
     expect(rows()).toHaveLength(6);
-    expect(document.querySelector('[data-fdt="script-results-status"]')?.textContent).toBe('');
+    // The count line is truthful always: an unfiltered list says "all".
+    expect(document.querySelector('[data-fdt="script-results-status"]')?.textContent).toBe(
+      'Showing all 6 scripts'
+    );
+  });
+
+  it('drops a pending field echo when a cancel lands while the query is already empty', () => {
+    const { search } = renderView();
+    // Typing into the field with the committed query empty: the echo is
+    // uncommitted (the debounce has not landed).
+    fireEvent.input(field(), { target: { value: 'pending' } });
+    expect(rows()).toHaveLength(6);
+    search.cancel(); // from the DevTools side; the committed query never left ''
+    expect(field().value).toBe('');
+    // The cancelled burst commits nothing: the list was never narrowed twice.
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS * 2);
+    expect(search.query()).toBe('');
+    expect(rows()).toHaveLength(6);
   });
 
   it('shows a DevTools-box query in the field and clears with a cancel', () => {
@@ -811,14 +828,16 @@ describe('JavaScriptView — keyboard and announcements', () => {
     const { setData } = renderView();
     const region = (): HTMLElement | null =>
       document.querySelector<HTMLElement>('[data-fdt="script-results-status"]');
-    expect(region()?.textContent).toBe('');
+    // Truthful from mount (rendered content; a live region announces only changes).
+    expect(region()?.textContent).toBe('Showing all 6 scripts');
+    expect(region()?.getAttribute('aria-live')).toBe('polite');
     fireEvent.input(field(), { target: { value: 'example.test' } });
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    expect(region()?.textContent).toBe('2 of 6 scripts shown');
+    expect(region()?.textContent).toBe('Showing 2 of 6 scripts');
     expect(region()?.getAttribute('aria-live')).toBe('polite');
     setData(dataWith(scripts().slice(0, 1)));
     // Current, but muted: a refresh is not the user's action.
-    expect(region()?.textContent).toBe('1 of 1 script shown');
+    expect(region()?.textContent).toBe('Showing all 1 script');
     expect(region()?.getAttribute('aria-live')).toBe('off');
     fireEvent.click(chip('delayed'));
     expect(region()?.getAttribute('aria-live')).toBe('polite');

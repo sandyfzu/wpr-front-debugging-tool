@@ -3,16 +3,62 @@ import { describe, expect, it, vi } from 'vitest';
 import { boundPreloadedResources, PAYLOAD_LIMITS } from '../messaging/payload-bounds';
 import {
   buildFilterChips,
+  countLabel,
   defaultChipId,
   listCapped,
   normalizeQuery,
-  reconcileList
+  reconcileList,
+  resultsAnnouncement,
+  type CountNoun
 } from './list-behavior';
 import {
   JS_PAGE_RESOURCES,
   LAZYLOAD_PAGE_RESOURCES,
   PRELOADED_PAGE_RESOURCES
 } from './resources-view-model';
+
+const IMAGES: CountNoun = { one: 'image', other: 'images' };
+const SCRIPTS: CountNoun = { one: 'script', other: 'scripts' };
+
+describe('countLabel (shared noun phrasing)', () => {
+  it.each([
+    [0, '0 images'],
+    [1, '1 image'],
+    [2, '2 images'],
+    [5000, '5,000 images'],
+    [1234567, '1,234,567 images']
+  ])('%i → %s', (count, expected) => {
+    expect(countLabel(count, IMAGES)).toBe(expected);
+  });
+
+  it('serves every noun from one rule', () => {
+    expect(countLabel(0, SCRIPTS)).toBe('0 scripts');
+    expect(countLabel(1, SCRIPTS)).toBe('1 script');
+    expect(countLabel(1204, SCRIPTS)).toBe('1,204 scripts');
+  });
+
+  it('marks a cut total as a floor, always plural', () => {
+    expect(countLabel(5000, SCRIPTS, true)).toBe('5,000+ scripts');
+    // A cut list cannot truthfully hold exactly one row, so no singular form.
+    expect(countLabel(1, IMAGES, true)).toBe('1+ images');
+  });
+});
+
+describe('resultsAnnouncement (shared count line)', () => {
+  it('says none, all, or "N of M"', () => {
+    expect(resultsAnnouncement(0, 4, IMAGES)).toBe('No images match');
+    expect(resultsAnnouncement(4, 4, IMAGES)).toBe('Showing all 4 images');
+    expect(resultsAnnouncement(1, 1, IMAGES)).toBe('Showing all 1 image');
+    expect(resultsAnnouncement(1, 4, IMAGES)).toBe('Showing 1 of 4 images');
+    expect(resultsAnnouncement(1200, 5000, SCRIPTS)).toBe('Showing 1,200 of 5,000 scripts');
+  });
+
+  it('reserves "No … match" for a filter hiding existing rows; an empty page says nothing', () => {
+    // shown === total === 0 is the page's own empty state, not a filtering result.
+    expect(resultsAnnouncement(0, 0, IMAGES)).toBe('');
+    expect(resultsAnnouncement(0, 3, SCRIPTS)).toBe('No scripts match');
+  });
+});
 
 describe('shared chip rules', () => {
   it('pins sentence-case labels for every shipped inventory', () => {
