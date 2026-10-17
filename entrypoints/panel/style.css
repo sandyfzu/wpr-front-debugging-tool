@@ -26,5 +26,12 @@
 }
 
 .fdt-page {
+  /* Keep the entrance's translated pixels inside the page's natural bounds.
+   * Unlike hidden, clip creates no extra scroller; tall pages still enlarge
+   * the shell's scroll area, and lists keep their own scrolling. */
+  overflow: clip;
+}
+
+.fdt-page > [data-fdt='page-body'] {
   animation: panel-page-enter var(--motion-base) var(--ease-entrance) both;
 }

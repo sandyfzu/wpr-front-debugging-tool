@@ -55,7 +55,8 @@ export interface PageFrameProps {
  * route-switch focus target. The root is also the **unpadded** `@container`:
  * a page's tier variants (`@regular:`/`@wide:`, UI/UX bar L-1) read the full content-region width
  * (panel width − the ≈ 49 px icon rail), not the width left after the frame's
- * own `p-3`. The entrance leaves a transform on the root, so nothing inside a
+ * own `p-3`. The root clips its animated canvas's visual overflow so entrance
+ * motion cannot add a scrollbar. The canvas retains a transform, so nothing inside a
  * page may be `position: fixed` — floating UI goes through the portaled
  * primitives.
  *

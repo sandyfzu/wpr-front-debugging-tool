@@ -21,6 +21,69 @@ const ROUTES = [
   { id: 'diagnoser', label: 'Diagnoser' }
 ];
 
+test('page entrances do not add transient scrollbars or suppress real overflow', async ({
+  extension
+}) => {
+  const { panel, fixture } = await openPanelForFixture(extension, '/pipeline/markers.html');
+  try {
+    await panel.emulateMedia({ reducedMotion: 'no-preference' });
+    for (const width of [1280, 768, 480, 320]) {
+      for (const height of [800, 360]) {
+        await panel.setViewportSize({ width, height });
+        for (const route of ROUTES) {
+          await panel.evaluate((id) => {
+            location.hash = `#/${id}`;
+          }, route.id);
+          const root = panel.locator(`[data-fdt-page="${route.id}"]`);
+          await expect(root).toBeVisible();
+          const geometry = await root.evaluate((element) => {
+            const region = element.closest<HTMLElement>('[data-fdt="panel-content"]');
+            if (!region) throw new Error('Panel content missing');
+            const animation = element
+              .getAnimations({ subtree: true })
+              .find(
+                (candidate) =>
+                  candidate instanceof CSSAnimation &&
+                  candidate.animationName === 'panel-page-enter'
+              );
+            if (!animation) throw new Error('Page entrance missing');
+            animation.pause();
+            animation.currentTime = 0;
+            const initial = { width: region.scrollWidth, height: region.scrollHeight };
+            animation.currentTime = Number(animation.effect?.getTiming().duration) / 2;
+            const middle = { width: region.scrollWidth, height: region.scrollHeight };
+            animation.finish();
+            const settled = { width: region.scrollWidth, height: region.scrollHeight };
+            // Tall pages must still reach their bottom through the shell scroller.
+            region.scrollTop = region.scrollHeight;
+            const bottom = region.scrollTop;
+            region.scrollTop = 0;
+            return {
+              initial,
+              middle,
+              settled,
+              bottom,
+              maxScroll: region.scrollHeight - region.clientHeight,
+              width: region.clientWidth,
+              overflow: getComputedStyle(region).overflowY
+            };
+          });
+          expect(geometry.initial, `${route.id} at ${String(width)}×${String(height)}`).toEqual(
+            geometry.settled
+          );
+          expect(geometry.initial.width).toBe(geometry.width);
+          expect(geometry.middle).toEqual(geometry.settled);
+          expect(geometry.bottom).toBe(geometry.maxScroll);
+          expect(geometry.overflow).toBe('auto');
+        }
+      }
+    }
+  } finally {
+    await panel.close();
+    await fixture.page.close();
+  }
+});
+
 for (const theme of ['light', 'dark'] as const) {
   for (const height of [360, 800]) {
     test(`balances page canvases in ${theme} at ${String(height)}px height`, async ({
