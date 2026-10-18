@@ -8,10 +8,12 @@
  */
 import type { JSX } from 'solid-js';
 import { createComputed, createMemo, For, on, onCleanup, splitProps } from 'solid-js';
+import type { EntryMaskHandle } from './virtual-list-entry';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
 import { cn } from '../../utils/cn';
+import { attachEntryMask } from './virtual-list-entry';
 import { preserveMovedFocus } from './virtual-list-focus';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
@@ -171,6 +173,11 @@ export type VirtualListProps = {
  * is Solid-wired by its own adapter (its `_didMount` cleanup runs on
  * unmount).
  *
+ * Tab entry: the wrapper masks rows entirely outside its viewport for the
+ * duration of one Tab/Shift+Tab press, so browser navigation lands on the
+ * first or last visible row's control instead of an offscreen overscan row
+ * (see `./virtual-list-entry`).
+ *
  * Rows render exactly what the caller's `children` maps per row — this
  * wrapper owns geometry only, never data shape.
  *
@@ -204,6 +211,8 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
   ]);
 
   let scroller: HTMLDivElement | undefined;
+  let releaseEntryMask: EntryMaskHandle | undefined;
+  onCleanup(() => releaseEntryMask?.());
 
   /**
    * The instance factory resolution — read through a closure so the prop read
@@ -329,7 +338,10 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
 
   return (
     <div
-      ref={scroller}
+      ref={(el) => {
+        scroller = el;
+        releaseEntryMask = attachEntryMask(el);
+      }}
       data-fdt="virtual-list"
       role={own.scrollerRole}
       class={cn('relative overflow-y-auto', own.class)}

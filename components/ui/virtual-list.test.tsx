@@ -16,7 +16,6 @@ import {
   type VirtualizerFactory,
   type VirtualListOptions
 } from './virtual-list';
-
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -378,5 +377,80 @@ describe('VirtualList — row identity follows the key', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     renderKeyed(storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b')]));
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('VirtualList — Tab entry masking', () => {
+  /** The document-level Tab keydown the navigation dispatches. */
+  const press = (): void => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    );
+  };
+
+  /**
+   * Mount the shared entry-mask scenario: a keyed three-row list (a visible,
+   * b crossing the 60 px band edge, c entirely outside) with happy-dom-absent
+   * rect/client metrics stubbed on the scroller and rows, resolving after the
+   * document-level wiring settles. The caller presses and pops itself.
+   *
+   * @throws {@link Error} When the mount contract is broken (no scroller/row).
+   */
+  async function renderEntryScenario(): Promise<void> {
+    const p = storeProbe([row(0, 0, 40, 'a'), row(1, 40, 40, 'b'), row(2, 80, 40, 'c')]);
+    render(() => (
+      <VirtualList count={10} estimateSize={() => 40} createVirtualizer={p.factory}>
+        {(item) => <button type="button">{String(item.key)}</button>}
+      </VirtualList>
+    ));
+    // The document-level wiring settles on a microtask after the sync mount.
+    await Promise.resolve();
+    const scroller = document.querySelector<HTMLElement>('[data-fdt="virtual-list"]');
+    if (!(scroller instanceof HTMLElement)) throw new Error('scroller not mounted');
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      bottom: 60,
+      height: 60
+    } as DOMRect);
+    // The real element reports its content metrics; happy-dom's are zeros —
+    // stub a borderless scroller so the content-box band equals the box.
+    Object.defineProperty(scroller, 'clientTop', { value: 0 });
+    Object.defineProperty(scroller, 'clientHeight', { value: 60 });
+    for (const [id, top] of [
+      ['a', 0],
+      ['b', 40],
+      ['c', 80]
+    ] as const) {
+      const rowEl = rowOf(id);
+      if (!rowEl) throw new Error(`row ${id} not mounted`);
+      vi.spyOn(rowEl, 'getBoundingClientRect').mockReturnValue({
+        top,
+        bottom: top + 40,
+        height: 40
+      } as DOMRect);
+    }
+  }
+
+  it('masks whole-offscreen overscan rows for a Tab press and pops on focusin', async () => {
+    // Window a (0–40) visible, b (40–80) crossing the band edge (0–60), and
+    // c (80–120) entirely outside — the masked press must spare a and b and
+    // suppress only c, then pop on the navigation's own focusin.
+    await renderEntryScenario();
+    press();
+    expect(rowOf('a')?.inert).toBe(false);
+    expect(rowOf('b')?.inert).toBe(false);
+    expect(rowOf('c')?.inert).toBe(true);
+    document.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(rowOf('c')?.inert).toBe(false);
+  });
+
+  it('restores rows and detaches when the list unmounts mid-mask', async () => {
+    await renderEntryScenario();
+    press();
+    const c = rowOf('c');
+    expect(c?.inert).toBe(true);
+    // An unmount during the one-frame mask window pops the in-flight mask.
+    cleanup();
+    expect(c?.inert).toBe(false);
   });
 });
