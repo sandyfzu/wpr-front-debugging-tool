@@ -18,6 +18,7 @@ tests/e2e/.e2e-fixture-server.log
 node_modules
 .output
 coverage
+.vitest
 stats.html
 stats-*.json
 .wxt

@@ -56,8 +56,11 @@ export default defineConfig({
   webServer: [
     {
       // Path relative to this config's directory (Playwright webServer cwd).
+      // `E2E_FIXTURE_PORT` reaches the spawned server through Playwright's
+      // default process.env pass-through, so the spawned server's port is
+      // the same one this gate and the suite origins read.
       command: 'node ./server.mjs',
-      url: 'http://127.0.0.1:8891/__e2e/health',
+      url: `http://127.0.0.1:${String(process.env.E2E_FIXTURE_PORT ?? 8891)}/__e2e/health`,
       reuseExistingServer: true,
       timeout: 30_000
     },

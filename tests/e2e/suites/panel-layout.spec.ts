@@ -176,15 +176,56 @@ for (const theme of ['light', 'dark'] as const) {
                     axe: {
                       run: () => Promise<{
                         violations: { id: string }[];
-                        incomplete: { id: string }[];
+                        incomplete: {
+                          id: string;
+                          nodes: {
+                            any: { data: { messageKey?: string } | null }[];
+                            target: unknown;
+                          }[];
+                        }[];
                       }>;
                     };
                   }
                 ).axe;
                 const result = await axe.run();
+                // The one reviewed incomplete allowance: contrast unresolved
+                // because a virtual row sits half-clipped at the scroller's
+                // edge (`elmPartiallyObscured` — the row is fully readable by
+                // scrolling; the P6F receipt discloses exactly this for
+                // virtual lists and P6.1 carries the same allowance). Every
+                // node must match the message AND resolve inside a virtual
+                // list; anything else stays unresolved and fails.
+                const insideVirtualList = (target: unknown): boolean => {
+                  if (!(target instanceof Array) || target.length === 0) return false;
+                  const selector = target.filter((part) => typeof part === 'string').join(' ');
+                  try {
+                    // Resolve explicitly: an unresolvable target (row
+                    // unmounted, selector drift) must stay unresolved —
+                    // `null?.closest() !== null` would classify it in-list.
+                    const el = document.querySelector(selector);
+                    return el !== null && el.closest('[data-fdt="virtual-list"]') !== null;
+                  } catch {
+                    return false;
+                  }
+                };
+                const unresolved = result.incomplete.filter(
+                  (rule) =>
+                    !(
+                      rule.id === 'color-contrast' &&
+                      rule.nodes.length > 0 &&
+                      rule.nodes.every(
+                        (node) =>
+                          node.any.length > 0 &&
+                          node.any.every(
+                            (check) => check.data?.messageKey === 'elmPartiallyObscured'
+                          ) &&
+                          insideVirtualList(node.target)
+                      )
+                    )
+                );
                 return {
                   violations: result.violations.map((rule) => rule.id),
-                  incomplete: result.incomplete.map((rule) => rule.id)
+                  incomplete: unresolved.map((rule) => rule.id)
                 };
               });
               expect(audit).toEqual({ violations: [], incomplete: [] });

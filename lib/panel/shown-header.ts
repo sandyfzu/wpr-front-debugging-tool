@@ -41,7 +41,10 @@ export function shownHeader(header: HeaderRowVM): ShownHeader {
       name: header.name,
       value: withheldText(header.cookieName ?? null),
       hint: null,
-      redacted: true
+      redacted: true,
+      // Carried so re-passing a shown row is idempotent: the second pass
+      // reads the same cookie name and rebuilds the same marker text.
+      ...(header.cookieName === undefined ? {} : { cookieName: header.cookieName })
     };
   }
   if (header.value === null) return header;

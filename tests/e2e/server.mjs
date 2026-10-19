@@ -31,8 +31,23 @@ import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** The single fixed port both origins are bound to (verified free before committing this value). */
-const PORT = 8891;
+/**
+ * The single fixed port both origins are bound to (verified free before
+ * committing this value). `E2E_FIXTURE_PORT` overrides it for a local run —
+ * the way to keep two concurrent harness users (another worktree's runs)
+ * off each other's servers; the health gate in `playwright.config.ts` reads
+ * the same override, so a run is self-consistent by construction. The
+ * override is validated here, once: a junk value fails fast naming the env
+ * var instead of surfacing as a NaN bind or a silent port 0 (whose health
+ * gate would poll forever).
+ */
+const RAW_PORT = process.env.E2E_FIXTURE_PORT;
+const PORT = Number(RAW_PORT ?? 8891);
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error(
+    `E2E_FIXTURE_PORT must be a valid port number (1-65535), got "${String(RAW_PORT)}"`
+  );
+}
 
 /** The fixtures root: everything the browser may load under this directory. */
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), 'fixtures'));
@@ -84,6 +99,30 @@ function resolveFixturePath(urlPath) {
  */
 async function handle(request, response) {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`);
+  if (url.pathname === '/__e2e/header-filter') {
+    // A main frame with a small, distinguishable header set for the Headers
+    // page's filter: caching rows with a hit and a miss verdict, an
+    // unrelated row, and cookies the page itself writes (the capture reads
+    // only script-readable names — non-HttpOnly on purpose).
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-cache': 'HIT from edge-01',
+      age: '7',
+      via: '1.1 filter-fixture',
+      'x-unique-header': 'unique-value'
+    });
+    response.end(
+      `<!doctype html><html><head><title>header filter</title></head><body>header filter
+        <script>
+          document.cookie = 'fdt_filter_alpha=1; path=/; SameSite=Lax';
+          document.cookie = 'fdt_filter_beta=2; path=/; SameSite=Lax';
+          document.cookie = 'unrelated_name=3; path=/; SameSite=Lax';
+        </script>
+      </body></html>`
+    );
+    return;
+  }
   if (url.pathname === '/__e2e/health') {
     response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('ok');

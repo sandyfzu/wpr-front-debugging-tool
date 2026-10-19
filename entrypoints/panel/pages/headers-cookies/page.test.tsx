@@ -3,8 +3,11 @@
  * inventory (sections, hints, per-row copy), the empty-headers state with and
  * without cookies, the older payload without a cookie capture, the empty
  * cookie capture, the two honest timestamps (fetch vs capture), the
- * no-cookie-value-in-the-DOM guarantee, refresh stability, and the store
- * wiring (fetch stamp held across a refresh, the aging clock's lifetime).
+ * no-cookie-value-in-the-DOM guarantee, refresh stability, the store wiring
+ * (fetch stamp held across a refresh with a NEW payload, the aging clock's
+ * lifetime), the find bar's isolation from the page's local filter, and the
+ * filter states (debounce commitment, scaffold-only view under a stale
+ * query).
  *
  * The list renders through a virtualizer double serving every row (happy-dom
  * has no layout); virtualization itself is the browser tier's.
@@ -19,13 +22,22 @@ import type {
 } from '../../../../components/ui/virtual-list';
 import type { FdtData, PageHeaders } from '../../../../lib/wp-rocket/types';
 import type { DataState } from '../../state/fdt-state-machine';
+import type { SearchStore } from '../../state/search';
 import { makeFdtData } from '../../state/fixtures';
-import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
+import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/use-fdt-data';
 import { REDACTED } from '../../../../lib/redaction/rule';
 import { redactPageHeaders } from '../../../../lib/redaction/headers';
 import { PLANTED, PLANTED_RAW_HEADERS } from '../../../../lib/redaction/planted-secrets.fixtures';
-import { HeadersCookiesPage, HeadersCookiesView, inspectedReloadAction, SPA_NOTE } from './page';
+import {
+  HeadersCookiesPage,
+  HeadersCookiesView,
+  inspectedReloadAction,
+  SEARCH_LABEL,
+  SEARCH_PLACEHOLDER,
+  SPA_NOTE
+} from './page';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
+import { SEARCH_DEBOUNCE_MS } from '../../state/search';
 
 /** A cookie value that must never reach the DOM or the clipboard. */
 const SECRET = 'S3CRET-SESSION-VALUE';
@@ -78,6 +90,22 @@ function sectionNames(): string[] {
   return screen
     .queryAllByRole('heading', { level: 2 })
     .map((heading) => heading.textContent.replace(/\s+/g, ' ').trim());
+}
+
+/** The page's filter field. */
+function field(): HTMLInputElement {
+  return screen.getByRole('searchbox', { name: SEARCH_LABEL });
+}
+
+/** The status line's current text. */
+function status(): string | null {
+  return document.querySelector('[data-fdt="headers-results-status"]')?.textContent ?? null;
+}
+
+/** Type into the filter field and commit the store's debounce (fake timers). */
+function typeAndCommit(raw: string): void {
+  fireEvent.input(field(), { target: { value: raw } });
+  vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
 }
 
 let writes: string[];
@@ -435,6 +463,176 @@ describe('HeadersCookiesView — refresh', () => {
   });
 });
 
+describe('HeadersCookiesView — the name filter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+
+  it('renders the filter between the meta lines and the list, no chip group', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW } }));
+    expect(field().placeholder).toBe(SEARCH_PLACEHOLDER);
+    expect(screen.queryByRole('group')).toBeNull();
+    // The field sits after the fetched line and before the list.
+    const fetched = document.querySelector('[data-fdt="headers-fetched"]');
+    const list = screen.getByRole('list', { name: 'Response headers and cookies' });
+    if (!(fetched instanceof HTMLElement)) throw new Error('the fetched line did not render');
+    expect(
+      fetched.compareDocumentPosition(field()) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(field().compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The "All headers" action (frame header) precedes the fetched line.
+    const all = screen.getByRole('button', { name: /All headers/ });
+    expect(all.compareDocumentPosition(fetched) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('narrows by name across sections, badges restated, positions over the filtered set', () => {
+    renderView(
+      makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['age_cookie'], capturedAt: NOW } })
+    );
+    typeAndCommit('age');
+    expect(sectionNames()).toEqual(['Caching evidence 1 header', 'Cookies 1 cookie']);
+    const list = screen.getByRole('list');
+    const items = within(list)
+      .getAllByRole('listitem')
+      .filter((item) => item.getAttribute('data-fdt-inventory-row') !== 'section');
+    expect(items).toHaveLength(2);
+    // Positions keep counting the section bands (the unfiltered page's
+    // semantics — the set is the whole flattened filtered list).
+    expect(items.map((item) => item.getAttribute('aria-posinset'))).toEqual(['2', '4']);
+    expect(items.every((item) => item.getAttribute('aria-setsize') === '4')).toBe(true);
+  });
+
+  it('never searches a value: a value-naming query lands on the filtered-empty view', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    typeAndCommit('nginx');
+    expect(screen.getByText('No matches')).toBeTruthy();
+    expect(screen.getByText('Nothing matches "nginx".')).toBeTruthy();
+    // The withheld secret is no search path either.
+    typeAndCommit('S3CRET');
+    expect(screen.getByText('No matches')).toBeTruthy();
+  });
+
+  it('the way back clears the field, restores the list and keeps focus there', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    typeAndCommit('nginx');
+    // The keyboard way: focused, then activated — the focus hand-off reads it.
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(field().value).toBe('');
+    expect(screen.getByRole('button', { name: 'age header — copy' })).toBeTruthy();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it('Esc in the field clears it and restores the full list', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    typeAndCommit('age');
+    fireEvent.keyDown(field(), { key: 'Escape' });
+    expect(field().value).toBe('');
+    expect(sectionNames()).toEqual(['Caching evidence 2 headers', 'Other headers 3 headers']);
+    expect(status()).toBe('Showing all 5 entries');
+  });
+
+  it('commits on the debounce, never per keystroke', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    const live = (): string | null =>
+      document.querySelector('[data-fdt="headers-results-status"]')?.getAttribute('aria-live') ??
+      null;
+    const liveAtMount = live();
+    fireEvent.input(field(), { target: { value: 'age' } });
+    // Before the quiet period elapses: the echo shows, nothing else moved —
+    // the count line, its live switch and the list are untouched.
+    expect(field().value).toBe('age');
+    expect(status()).toBe('Showing all 5 entries');
+    expect(live()).toBe(liveAtMount);
+    expect(sectionNames()).toEqual(['Caching evidence 2 headers', 'Other headers 3 headers']);
+    // The quiet period elapses: the query commits and the list narrows.
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(status()).toBe('Showing 1 of 5 entries');
+  });
+
+  it('a stale query over a scaffold-only list renders the scaffold, never No matches', () => {
+    const [data, setData] = createSignal(
+      makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW } })
+    );
+    render(() => (
+      <HeadersCookiesView data={data()} fetchedAt={NOW} now={NOW} createVirtualizer={everyRow} />
+    ));
+    typeAndCommit('age');
+    // The refresh lands an all-empty payload (no headers, zero cookie
+    // names): the live query has no searchable rows left to hide, so the
+    // filter does not apply and the scaffold (section + note) renders.
+    setData(makeFdtData({ pageHeaders: null, cookies: { names: [], capturedAt: NOW } }));
+    expect(screen.getByText('No response headers captured')).toBeTruthy();
+    expect(screen.getByText('No cookies are readable by page scripts.')).toBeTruthy();
+    expect(screen.queryByText('No matches')).toBeNull();
+    // The way back is not needed: no field exists to clear.
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
+  it('announces the committed count and stays quiet through a refresh', () => {
+    const [data, setData] = createSignal(makeFdtData({ pageHeaders: HEADERS }));
+    render(() => (
+      <HeadersCookiesView data={data()} fetchedAt={NOW} now={NOW} createVirtualizer={everyRow} />
+    ));
+    const region = (): Element | null =>
+      document.querySelector('[data-fdt="headers-results-status"]');
+    expect(status()).toBe('Showing all 5 entries');
+    typeAndCommit('age');
+    expect(status()).toBe('Showing 1 of 5 entries');
+    expect(region()?.getAttribute('aria-live')).toBe('polite');
+    // A data refresh keeps the text true and mutes the announcement.
+    setData(makeFdtData({ pageHeaders: HEADERS.map((row) => ({ ...row })) }));
+    expect(status()).toBe('Showing 1 of 5 entries');
+    expect(region()?.getAttribute('aria-live')).toBe('off');
+    // The filtered state survives the refresh; a new commit announces again.
+    expect(field().value).toBe('age');
+    typeAndCommit('cache');
+    expect(status()).toBe('Showing 1 of 5 entries');
+    expect(region()?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('presents each verdict hint with its evidence tone on the icon', () => {
+    renderView(
+      makeFdtData({
+        pageHeaders: [
+          { name: 'x-cache', value: 'HIT from cdn-1' },
+          { name: 'cache-control', value: 'no-store' },
+          { name: 'via', value: '1.1 squid-3' }
+        ]
+      })
+    );
+    // The hint line's leading icon is the tone carrier: the shared status
+    // vocabulary's class on the row's one toned svg — decorative (hidden
+    // from the accessibility tree; the wording states the verdict).
+    const iconOf = (name: string): string | null =>
+      screen
+        .getByRole('button', { name })
+        .closest('[role="listitem"]')
+        ?.querySelector('svg[class*="text-status-"]')
+        ?.getAttribute('class') ?? null;
+    expect(iconOf('x-cache header — copy')).toContain('text-status-ok');
+    expect(iconOf('cache-control header — copy')).toContain('text-status-warn');
+    expect(iconOf('via header — copy')).toContain('text-status-info');
+    // The icon is decorative: hidden from the accessibility tree — the
+    // wording, not the color or the shape alone, states the verdict.
+    expect(
+      screen
+        .getByRole('button', { name: 'x-cache header — copy' })
+        .closest('[role="listitem"]')
+        ?.querySelector('svg[class*="text-status-"]')
+        ?.getAttribute('aria-hidden')
+    ).toBe('true');
+  });
+
+  it('the withheld legend is stable page meta: present with the capture, unmoved by the filter', () => {
+    renderView(makeFdtData({ pageHeaders: HEADERS }));
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+    typeAndCommit('age');
+    expect(document.querySelectorAll('[data-fdt="withheld-legend"]')).toHaveLength(1);
+  });
+});
+
 describe('HeadersCookiesPage — store wiring', () => {
   /** A store double over a settable machine state. */
   function storeOf(initial: DataState): { store: FdtDataStore; set: (s: DataState) => void } {
@@ -455,16 +653,74 @@ describe('HeadersCookiesPage — store wiring', () => {
       </FdtDataContext.Provider>
     ));
     expect(screen.getByText('Fetched just now')).toBeTruthy();
+    // A committed query first: a refresh must keep the field and the query.
+    typeAndCommit('age');
+    expect(status()).toBe('Showing 1 of 5 entries');
+    const fetchedLine = document.querySelector('[data-fdt="headers-fetched"]');
+    if (!(fetchedLine instanceof HTMLElement)) throw new Error('the fetched line did not render');
     // A soft refresh keeps the fetch instant of the data still on screen.
     set({ status: 'refreshing', data, requestedAt: NOW + 60_000 });
     vi.advanceTimersByTime(120_000);
     expect(screen.getByText('Fetched 2 min ago')).toBeTruthy();
-    // A new fetch re-stamps.
-    set({ status: 'ready', data, fetchedAt: NOW + 120_000 });
+    // A new fetch re-stamps and delivers a NEW payload object: the page
+    // keeps its fetched-line node, the field, and the committed query — the
+    // announcement mutes (aria-live off) while its text stays true.
+    set({
+      status: 'ready',
+      data: makeFdtData({ pageHeaders: HEADERS.map((row) => ({ ...row })) }),
+      fetchedAt: NOW + 120_000
+    });
     expect(screen.getByText('Fetched just now')).toBeTruthy();
+    expect(document.querySelector('[data-fdt="headers-fetched"]')).toBe(fetchedLine);
+    expect(field().value).toBe('age');
+    expect(status()).toBe('Showing 1 of 5 entries');
+    expect(
+      document.querySelector('[data-fdt="headers-results-status"]')?.getAttribute('aria-live')
+    ).toBe('off');
     expect(vi.getTimerCount()).toBeGreaterThan(0);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('the panel-wide find bar cannot touch this page (no search-store adoption)', () => {
+    vi.useFakeTimers({ now: NOW });
+    const { store } = storeOf({
+      status: 'ready',
+      data: makeFdtData({ pageHeaders: HEADERS }),
+      fetchedAt: NOW
+    });
+    // A SearchContext double that really commits: if the page adopted the
+    // provided store, its field would echo the query and report the count.
+    const [providedQuery, setProvidedQuery] = createSignal('');
+    const setMatchCount = vi.fn();
+    const provided: SearchStore = {
+      query: providedQuery,
+      revision: () => 0,
+      cursor: () => 0,
+      matchCount: () => 0,
+      perform: (raw: string) => {
+        setProvidedQuery(raw);
+      },
+      cancel: () => {
+        setProvidedQuery('');
+      },
+      advance: () => undefined,
+      setMatchCount
+    };
+    render(() => (
+      <SearchContext.Provider value={provided}>
+        <FdtDataContext.Provider value={store}>
+          <HeadersCookiesPage />
+        </FdtDataContext.Provider>
+      </SearchContext.Provider>
+    ));
+    provided.perform('cache-control');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    // The page's field stays empty, the count line unmoved, and the find
+    // protocol never hears a match count from this page.
+    expect(field().value).toBe('');
+    expect(status()).toBe('Showing all 5 entries');
+    expect(setMatchCount).not.toHaveBeenCalled();
   });
 
   it('renders nothing outside the loaded states', () => {

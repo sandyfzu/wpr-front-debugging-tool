@@ -24,7 +24,7 @@
  * morphing (panel-nav's rail surface), not the refresh contract.
  */
 import type { Page } from '@playwright/test';
-import { expect, test } from '../helpers/extension';
+import { expect, test, ORIGIN_A } from '../helpers/extension';
 import { openPanelForFixture, type InspectedPanel } from '../helpers/panel-data';
 
 /** The route body's single heading (the ready body's first observable). */
@@ -93,7 +93,7 @@ test.describe('panel soft refresh (the real push)', () => {
 
       // The fixture tab navigates for real: the content script recaptures,
       // pushes `notifyPanelReload` (sender = its own tab), the flight runs.
-      await fixture.page.goto('http://localhost:8891/pipeline/plain.html', {
+      await fixture.page.goto(`${ORIGIN_A}/pipeline/plain.html`, {
         waitUntil: 'load'
       });
 
@@ -149,7 +149,7 @@ test.describe('panel soft refresh (the real push)', () => {
       expect(precondition, 'the content region must really scroll before the swap').toBe(true);
       const realm = await stampRealm(panel);
 
-      await fixture.page.goto('http://localhost:8891/pipeline/plain.html', {
+      await fixture.page.goto(`${ORIGIN_A}/pipeline/plain.html`, {
         waitUntil: 'load'
       });
       await expect
@@ -189,7 +189,7 @@ test.describe('panel soft refresh (the real push)', () => {
       // The SIBLING's tab navigates: both panels receive the push (runtime
       // broadcasts reach every extension listener), and only the sibling's
       // scope (`sender.tabId === its inspected tab`) drives its flight.
-      await sibling.fixture.page.goto('http://localhost:8891/pipeline/plain.html', {
+      await sibling.fixture.page.goto(`${ORIGIN_A}/pipeline/plain.html`, {
         waitUntil: 'load'
       });
       await expect

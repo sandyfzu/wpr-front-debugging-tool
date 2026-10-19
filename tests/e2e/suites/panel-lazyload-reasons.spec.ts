@@ -1,5 +1,5 @@
 /** Browser regression for exclusion details across real detection refreshes. */
-import { expect, test } from '../helpers/extension';
+import { expect, test, ORIGIN_A } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
 
 /**
@@ -36,9 +36,7 @@ test('shows reasons only while image lazyload is detected, including after page 
       });
     });
     for (const present of [false, true, false, true]) {
-      await fixture.page.goto(
-        `http://localhost:8891/pipeline/plain.html?lazyload=${present ? '1' : '0'}`
-      );
+      await fixture.page.goto(`${ORIGIN_A}/pipeline/plain.html?lazyload=${present ? '1' : '0'}`);
       const summary = panel.locator('[data-fdt="resource-summary"]');
       await expect(
         summary.getByText(present ? 'detected' : 'not detected', { exact: true })

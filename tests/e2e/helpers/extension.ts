@@ -62,9 +62,13 @@ export const EXTENSION_PATH = path.resolve(
   'chrome-mv3'
 );
 
-/** The fixture server's two local origins — distinct origins, one server. */
-export const ORIGIN_A = 'http://localhost:8891';
-export const ORIGIN_B = 'http://127.0.0.1:8891';
+/** The fixture server's primary local origin (`localhost`; `127.0.0.1` is
+ * the distinct-origin partner, exercised through the cross-origin fixture's
+ * `location.port` derivation). The port rides `E2E_FIXTURE_PORT` (the
+ * override the config's health gate and `server.mjs` read; default 8891,
+ * the documented pinned port). */
+const FIXTURE_PORT = Number(process.env.E2E_FIXTURE_PORT ?? 8891);
+export const ORIGIN_A = `http://localhost:${String(FIXTURE_PORT)}`;
 
 /** The five menu ids the background's registry creates (P2 + P12A parity). */
 export const MENU_PARITY_IDS = [
