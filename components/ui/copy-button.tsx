@@ -136,6 +136,13 @@ export interface CopyButtonProps {
   successDescription?: string;
   /** The failure toast's remedy override (default {@link COPY_FAILED_DESCRIPTION}). */
   failureDescription?: string;
+  /**
+   * The control waits on a caller-owned resolution (e.g. the original-host
+   * map) — not this button's own work: it stays focusable, announces
+   * busy/disabled, shows the spinner and suppresses activation until the
+   * caller drops the flag (the payload may still change under it).
+   */
+  pending?: boolean;
   /** Visual weight (same variants as `Button`, default `ghost`). */
   variant?: ComponentProps<typeof Button>['variant'];
   /** Density (same sizes as `Button`, default `sm`). */
@@ -177,6 +184,8 @@ export interface CopyButtonProps {
  * @param props.successTitle Success-toast title override.
  * @param props.successDescription Success-toast hint line.
  * @param props.failureDescription Failure-toast remedy override.
+ * @param props.pending Caller-owned upstream wait: focusable, announced
+ *   busy/disabled, spinner shown, activation suppressed while set.
  * @param props.variant Button variant (default `ghost`).
  * @param props.size Button size (default `sm`).
  * @param props.clipboard Clipboard seam; defaults to `navigator.clipboard`.
@@ -195,6 +204,13 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     clearTimeout(flashReset);
     pending?.abort();
   });
+
+  /**
+   * Busy in either sense: the button's own read/write in flight, or the
+   * caller-owned upstream resolution. Both keep the control focusable and
+   * announced, and both suppress (re)activation.
+   */
+  const busy = (): boolean => loading() || props.pending === true;
 
   /**
    * Drop a standing success flash: a later failure (rejected write, failed
@@ -239,7 +255,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
    * @returns Resolves after the outcome landed in the sink (never rejects).
    */
   const guardedCopy = async (): Promise<void> => {
-    if (loading()) return;
+    if (loading() || props.pending === true) return;
     const controller = new AbortController();
     pending = controller;
     const loadText = props.loadText;
@@ -289,12 +305,12 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       size={props.size ?? 'sm'}
       onClick={onCopy}
       // Native disabling would remove focus during a slow read; the guarded action stays focusable.
-      aria-disabled={loading() || undefined}
-      aria-busy={loading() || undefined}
-      data-fdt-loading={loading() ? '' : undefined}
+      aria-disabled={busy() || undefined}
+      aria-busy={busy() || undefined}
+      data-fdt-loading={busy() ? '' : undefined}
       class={cn('gap-1', props.class)}
     >
-      {loading() ? (
+      {busy() ? (
         <LoaderCircle size={14} class="animate-spin shrink-0" aria-hidden="true" data-fdt-spinner />
       ) : copied() ? (
         <Check size={14} class={cn('shrink-0', STATUS_TEXT_CLASSES.ok)} aria-hidden="true" />

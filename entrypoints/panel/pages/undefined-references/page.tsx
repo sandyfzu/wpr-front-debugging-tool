@@ -96,6 +96,14 @@ export const FAILED_WORDS_NOTE =
 /** The stale-read hint beside the summary. */
 export const STALE_NOTE = 'New scripts loaded since the last read.';
 
+/**
+ * The bypass-map failure notice (one per page, above the list): the check
+ * for some scripts' original hosts failed, what the rows fall back to, and
+ * the existing flows that retry it — no separate control.
+ */
+export const BYPASS_NOTICE =
+  "Some scripts' original hosts could not be verified (the page blocked the check or it timed out), so their exclusions copy the path only. Rescan or reload the page to try again.";
+
 /** Props of {@link UndefinedReferencesPage} — test seams only; production passes none. */
 export interface UndefinedReferencesPageProps {
   /** Override the store's effects (inspected-window reader, timers, search pacing). */
@@ -294,6 +302,18 @@ function WordsState(props: WordsStateProps): JSX.Element {
       <Show when={failure()}>
         {(kind) => <FailureNotice failure={kind()} store={props.store} />}
       </Show>
+      <Show when={props.store.bypassDegraded()}>
+        <Card>
+          <p class="flex items-start gap-1.5 text-2xs leading-snug text-fg-secondary">
+            <Info
+              size={12}
+              class={cn('mt-px shrink-0', STATUS_TEXT_CLASSES.info)}
+              aria-hidden="true"
+            />
+            {BYPASS_NOTICE}
+          </p>
+        </Card>
+      </Show>
       <Show when={unsupported()}>
         <Card>
           <p class="flex items-start gap-1.5 text-2xs leading-snug text-fg-secondary">
@@ -338,6 +358,7 @@ function WordsState(props: WordsStateProps): JSX.Element {
                 word={word}
                 answer={props.store.answerOf(word)}
                 pageOrigin={props.store.pageOrigin()}
+                originalHostOf={props.store.originalHostOf}
                 unreadable={props.store.unreadableScripts()}
                 inlineCut={props.inlineCut()}
               />

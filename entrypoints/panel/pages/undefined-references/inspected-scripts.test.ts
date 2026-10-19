@@ -476,3 +476,88 @@ describe('realInspectedScripts', () => {
     }
   });
 });
+
+describe('createInspectedScripts — bypassed page', () => {
+  /** The bypass eval's ok answer. */
+  const bypassOk = (html: string, url = 'https://example.com/?nowprocket=1'): string =>
+    JSON.stringify({ ok: true, url, html });
+
+  /** Deps for the bypass expression, asserting its static, injection-inert shape. */
+  function bypassDeps(
+    evalAnswer: (onResult: (result: unknown, exception: unknown) => void) => void,
+    lastErrors: (string | null)[] = []
+  ): { value: InspectedWindowDeps } {
+    const expressions: string[] = [];
+    return {
+      value: {
+        ...deps([]),
+        readLastError: () => lastErrors.shift() ?? null,
+        evaluate: (expression, onResult) => {
+          expressions.push(expression);
+          // One static expression: the URL comes from the page's own location
+          // (the bypassed flag added to the existing params); the extension
+          // interpolates nothing into it — no eval-injection surface.
+          expect(expression).toContain('new URL(location.href)');
+          expect(expression).toContain("searchParams.set('nowprocket', '1')");
+          evalAnswer(onResult);
+        }
+      }
+    };
+  }
+
+  it('parses the ok answer through (the response URL and the html)', async () => {
+    const { value } = bypassDeps((done) => {
+      done(bypassOk('<p>x</p>', 'https://example.com/?nowprocket=1'), undefined);
+    });
+    await expect(createInspectedScripts(value).readBypassedPage()).resolves.toEqual({
+      url: 'https://example.com/?nowprocket=1',
+      html: '<p>x</p>'
+    });
+  });
+
+  it('answers null for every degraded shape, never throwing', async () => {
+    const cases = [
+      // The page's own degraded answers: a non-2xx status, a blocked or
+      // oversized body.
+      bypassDeps((done) => {
+        done(JSON.stringify({ ok: false, reason: 'status 404' }), undefined);
+      }),
+      bypassDeps((done) => {
+        done(JSON.stringify({ ok: false, reason: 'oversized' }), undefined);
+      }),
+      // Junk values the page's world could hand back.
+      bypassDeps((done) => {
+        done(undefined, undefined);
+      }),
+      bypassDeps((done) => {
+        done('not json', undefined);
+      }),
+      bypassDeps((done) => {
+        done(bypassOk('<p/>', 'javascript:alert(1)'), undefined);
+      }),
+      bypassDeps((done) => {
+        done(JSON.stringify({ ok: true, html: '<p/>' }), undefined);
+      }),
+      // A devtools-side error, a JS exception in the eval, a lastError
+      // ahead of the answer, and a throwing eval call (context invalidated).
+      bypassDeps((done) => {
+        done(undefined, { isError: true, code: 'E_FAILED' });
+      }),
+      bypassDeps((done) => {
+        done(undefined, { isException: true, value: 'boom' });
+      }),
+      bypassDeps(
+        (done) => {
+          done(bypassOk('<p/>'), undefined);
+        },
+        ['Inspected target navigated or closed']
+      ),
+      bypassDeps(() => {
+        throw new Error('Extension context invalidated.');
+      })
+    ];
+    for (const { value } of cases) {
+      await expect(createInspectedScripts(value).readBypassedPage()).resolves.toBeNull();
+    }
+  });
+});

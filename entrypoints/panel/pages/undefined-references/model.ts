@@ -7,6 +7,7 @@
  */
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
+import { parsePage } from '../../../../lib/detection/parse-page';
 
 /** Why a script scan failed — each maps to its own user-facing remedy. */
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
@@ -644,6 +645,22 @@ function rawStretchPattern(text: string): string {
 }
 
 /**
+ * The pattern text over a raw URL chain: percent-runs become their dual
+ * spellings ({@link encodedRunPattern}), raw stretches follow
+ * {@link rawStretchPattern}. Both exclusion builders share it, so the two
+ * lanes can never drift.
+ *
+ * @param raw The raw URL text (host when kept, path, kept query).
+ * @returns Its pattern text.
+ */
+function rawUrlPattern(raw: string): string {
+  return raw
+    .split(PERCENT_RUN_SPLIT)
+    .map((piece, index) => (index % 2 === 1 ? encodedRunPattern(piece) : rawStretchPattern(piece)))
+    .join('');
+}
+
+/**
  * The Delay JS exclusion for a script: the part of its URL that identifies
  * it and survives updates — its path (no scheme, no query: a baked-in
  * `?ver=` stops matching after the next plugin update). The host leads when
@@ -679,11 +696,109 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
   const query = fileless ? (parsed.search.split('&')[0] ?? '') : '';
   const keepHost = parsed.origin !== pageOrigin || fileless || segments <= 1;
   const raw = `${keepHost ? parsed.host : ''}${path}${query}`;
-  const pattern = raw
-    .split(PERCENT_RUN_SPLIT)
-    .map((piece, index) => (index % 2 === 1 ? encodedRunPattern(piece) : rawStretchPattern(piece)))
-    .join('');
+  const pattern = rawUrlPattern(raw);
   return query.length > 1 ? `${pattern}${QUERY_VALUE_END}` : pattern;
+}
+
+/**
+ * The Delay JS exclusion for a script whose served URL hid its original
+ * host (the minify cache mirrored a remote or custom-content-dir path):
+ * the original path alone, never a host — the path is the one identifier
+ * that survives both minify states, since the minified tag spells it under
+ * the site's cache and the plain tag spells it under the true host. The
+ * leading `/` is kept (added when missing) so the pattern cannot end-match
+ * inside a longer file name. A host-led pattern is impossible here by
+ * construction — a host the URL does not carry is never fabricated.
+ *
+ * Shares {@link exclusionPattern}'s raw machinery — percent-run handling,
+ * char table, dual spellings — so the two lanes can never drift.
+ *
+ * @param originalPath The original URL path exactly as recovered (no host,
+ *   no query; percent-runs preserved).
+ * @returns The exclusion text, or `null` for an empty path.
+ */
+export function exclusionPatternFromOriginalPath(originalPath: string): string | null {
+  if (originalPath === '') return null;
+  return rawUrlPattern(originalPath.startsWith('/') ? originalPath : `/${originalPath}`);
+}
+
+/** The bypass map's verdict for one host-hidden original path. */
+export type HostResolution =
+  | {
+      /** The bypass read is running; the row's copy control waits on it. */
+      readonly kind: 'pending';
+    }
+  | {
+      /** Exactly one origin served the original path in the bypassed page. */
+      readonly kind: 'resolved';
+      /**
+       * The serving origin (scheme + host) — composable into the original
+       * script's absolute URL (`${origin}/${originalPath}`). The page's own
+       * origin appears as any other, so a site-local original resolves
+       * through the same field.
+       */
+      readonly origin: string;
+    }
+  | {
+      /** No unique host: absent, ambiguous, or the pass failed. The row copies the hostless path. */
+      readonly kind: 'unresolved';
+    };
+
+/**
+ * Normalize a script path to the bypass join's comparison key: the leading
+ * `/` kept (added when the minify cache's `ltrim` removed it), percent-runs
+ * decoded so both spellings of the same path compare equal (a run that does
+ * not decode stays encoded — both sides treat it the same), and no query
+ * (paths never carry one — the minified URL strips it).
+ *
+ * @param path A script URL path (either spelling of the leading slash).
+ * @returns The comparison key.
+ */
+export function normalizeOriginalPath(path: string): string {
+  const withSlash = path.startsWith('/') ? path : `/${path}`;
+  try {
+    return decodeURIComponent(withSlash);
+  } catch {
+    return withSlash;
+  }
+}
+
+/**
+ * The bypass join, pure: every `src` the bypassed page's scripts carry,
+ * http(s)-only and resolved against the read's own URL (relative and
+ * protocol-relative `src` values included), keyed by
+ * {@link normalizeOriginalPath} with the origin that served it. A path two
+ * different origins served is ambiguous — dropped, never guessed. The
+ * page's own origin appears as any other (a custom content-dir original
+ * resolves site-local through it).
+ *
+ * @param html The bypassed page's HTML.
+ * @param pageUrl The URL the bypassed document actually came from.
+ * @returns The uniquely-served paths' origins.
+ */
+export function resolveOriginalHosts(html: string, pageUrl: string): ReadonlyMap<string, string> {
+  const origins = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const script of parsePage(html).scripts) {
+    const src = script.getAttribute('src');
+    if (src === null || src === '') continue;
+    let resolved: URL;
+    try {
+      resolved = new URL(src, pageUrl);
+    } catch {
+      continue;
+    }
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue;
+    const key = normalizeOriginalPath(resolved.pathname);
+    if (ambiguous.has(key)) continue;
+    const previous = origins.get(key);
+    if (previous === undefined) origins.set(key, resolved.origin);
+    else if (previous !== resolved.origin) {
+      origins.delete(key);
+      ambiguous.add(key);
+    }
+  }
+  return origins;
 }
 
 /** Two origins name the same script (or both the inline stack). */

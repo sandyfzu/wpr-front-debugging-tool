@@ -30,6 +30,77 @@ const log = createLogger('panel');
  */
 export const CONTENT_TIMEOUT_MS = 5_000;
 
+/**
+ * The bypass read's response cap (UTF-16 units). The read feeds a script-`src`
+ * extraction only, and real pages sit far below; a page padded beyond it
+ * degrades the pass instead of growing the page's memory without bound.
+ */
+export const BYPASS_HTML_CAP = 5 * 1024 * 1024;
+
+/** The bypassed page read (the plain render the original-host map joins against). */
+export interface BypassedPageRead {
+  /** The URL the bypassed document actually came from (post-redirect). */
+  readonly url: string;
+  /** The HTML, within {@link BYPASS_HTML_CAP}. */
+  readonly html: string;
+}
+
+/**
+ * The in-page bypass read, as one synchronous expression. The eval seam
+ * cannot await a promise — its result must be JSON-compliant at callback
+ * time (both vendors' API contracts) — so the same-origin GET rides a
+ * synchronous XHR inside the expression: one bounded same-origin request
+ * per pass, nothing left behind in the page (no globals, no polling). The
+ * URL comes from the page's own `location` and every decision (status,
+ * cap) is made in the page's world — the extension interpolates nothing,
+ * so the expression is injection-inert. The browser may log its sync-XHR
+ * deprecation line in the page's console once — the accepted cost of the
+ * one-shot read. A page CSP blocking `connect-src` (or a non-2xx answer,
+ * or an oversized body) lands in the caller's degraded lane through the
+ * `ok: false` shape.
+ */
+const BYPASS_EVAL_EXPRESSION = `(function () {
+  try {
+    var bypassed = new URL(location.href);
+    bypassed.searchParams.set('nowprocket', '1');
+    var request = new XMLHttpRequest();
+    request.open('GET', bypassed.href, false);
+    request.send(null);
+    if (request.status < 200 || request.status >= 300) {
+      return JSON.stringify({ ok: false, reason: 'status ' + request.status });
+    }
+    var html = request.responseText;
+    if (html.length > ${String(BYPASS_HTML_CAP)}) return JSON.stringify({ ok: false, reason: 'oversized' });
+    return JSON.stringify({ ok: true, url: request.responseURL, html: html });
+  } catch (error) {
+    return JSON.stringify({ ok: false, reason: 'error' });
+  }
+})()`;
+
+/**
+ * Validate the bypass read's eval result: a JSON string the page produced
+ * (`{ ok: true, url, html }`), the URL an http(s) absolute — everything
+ * else (the degraded shapes included) is `null`, never trusted raw.
+ *
+ * @param value The evaluated value.
+ * @returns The read, or `null`.
+ */
+export function parseBypassedPageRead(value: unknown): BypassedPageRead | null {
+  if (typeof value !== 'string') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const read = parsed as { ok?: unknown; url?: unknown; html?: unknown };
+  if (read.ok !== true) return null;
+  if (typeof read.url !== 'string' || typeof read.html !== 'string') return null;
+  if (!isHttpUrl(read.url)) return null;
+  return { url: read.url, html: read.html };
+}
+
 /** One read of the page's scripts. */
 export interface ScriptRead {
   /** The searchable sources (external files + the inline stack). */
@@ -59,6 +130,13 @@ export interface InspectedScripts {
    * @returns The unsubscribe (a no-op where the browser has no such event).
    */
   readonly watchAddedScripts: (onAdded: (url: string) => void) => () => void;
+  /**
+   * Read the page's plain render — the same URL with `nowprocket=1` added to
+   * its existing search params, fetched same-origin in the page's own world.
+   * Resolves `null` on any failure (eval error, degraded shape, oversized
+   * body): the caller degrades per its own lane, never retries here.
+   */
+  readonly readBypassedPage: () => Promise<BypassedPageRead | null>;
 }
 
 /** The platform calls the loader needs — injected so the adapter is unit-testable. */
@@ -287,6 +365,24 @@ export interface InspectedWindowDeps extends ScriptLoaderDeps {
 export function createInspectedScripts(deps: InspectedWindowDeps): InspectedScripts {
   return {
     load: createScriptLoader(deps),
+    readBypassedPage: () =>
+      new Promise<BypassedPageRead | null>((resolve) => {
+        try {
+          deps.evaluate(BYPASS_EVAL_EXPRESSION, (result, exception) => {
+            const failure = deps.readLastError();
+            const thrown = exception as EvalExceptionShape | null | undefined;
+            if (failure !== null || thrown?.isError === true || thrown?.isException === true) {
+              log.debug('The bypassed page could not be read', { failure });
+              resolve(null);
+              return;
+            }
+            resolve(parseBypassedPageRead(result));
+          });
+        } catch (cause) {
+          log.debug('The bypassed page could not be read', cause);
+          resolve(null);
+        }
+      }),
     readPageOrigin: () =>
       new Promise<string | null>((resolve) => {
         try {

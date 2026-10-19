@@ -14,7 +14,6 @@ import ExternalLinkIcon from 'lucide-solid/icons/external-link';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
-import { CopyButton } from '../../../../components/ui/copy-button';
 import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import {
@@ -25,10 +24,12 @@ import {
 } from '../../../../components/ui/status-badge';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { cn } from '../../../../utils/cn';
-import { exclusionCopyProps } from './copy-exclusion';
+import { recoverOriginalScript } from '../../../../lib/wp-rocket/minify-url-recovery';
+import { COMBINED_EXCLUSION_NOTE, ExclusionCopyButton } from './copy-exclusion';
 import {
   displayWord,
   exclusionPattern,
+  exclusionPatternFromOriginalPath,
   isCrossOriginSentinel,
   isSingleLetterWord,
   scriptLocation,
@@ -36,6 +37,7 @@ import {
   verdictText,
   wordVerdict,
   type DefinitionAnswer,
+  type HostResolution,
   type WordVerdict
 } from './model';
 
@@ -108,6 +110,8 @@ export interface WordCardProps {
   answer: DefinitionAnswer;
   /** The inspected page's origin, or `null` when unknown (shapes rows and patterns). */
   pageOrigin: string | null;
+  /** The bypass map's verdict reader for host-hidden originals. */
+  originalHostOf: (originalPath: string) => HostResolution;
   /** Scripts the read had to skip (softens a not-found verdict; default 0). */
   unreadable?: number;
   /** The inline scripts reached the panel cut to size (softens a not-found verdict too). */
@@ -206,6 +210,7 @@ export function WordCard(props: WordCardProps): JSX.Element {
               word={props.word}
               definitions={definitions()}
               pageOrigin={props.pageOrigin}
+              originalHostOf={props.originalHostOf}
             />
           </Match>
           <Match when={verdict().kind === 'hidden'}>
@@ -230,6 +235,8 @@ interface DefinitionListProps {
   definitions: readonly ScriptOrigin[];
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
+  /** The bypass map's verdict reader for host-hidden originals. */
+  originalHostOf: (originalPath: string) => HostResolution;
 }
 
 /**
@@ -253,7 +260,13 @@ function DefinitionList(props: DefinitionListProps): JSX.Element {
         class="-my-1 flex flex-col"
       >
         <For each={shown()}>
-          {(origin) => <DefinitionRow origin={origin} pageOrigin={props.pageOrigin} />}
+          {(origin) => (
+            <DefinitionRow
+              origin={origin}
+              pageOrigin={props.pageOrigin}
+              originalHostOf={props.originalHostOf}
+            />
+          )}
         </For>
       </ul>
       <Show when={capped()}>
@@ -284,6 +297,8 @@ interface DefinitionRowProps {
   origin: ScriptOrigin;
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
+  /** The bypass map's verdict reader for host-hidden originals. */
+  originalHostOf: (originalPath: string) => HostResolution;
 }
 
 /**
@@ -307,7 +322,13 @@ function DefinitionRow(props: DefinitionRowProps): JSX.Element {
           </Badge>
         }
       >
-        {(origin) => <ScriptRow url={origin().url} pageOrigin={props.pageOrigin} />}
+        {(origin) => (
+          <ScriptRow
+            url={origin().url}
+            pageOrigin={props.pageOrigin}
+            originalHostOf={props.originalHostOf}
+          />
+        )}
       </Show>
     </li>
   );
@@ -319,24 +340,63 @@ interface ScriptRowProps {
   url: string;
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
+  /** The bypass map's verdict reader for host-hidden originals. */
+  originalHostOf: (originalPath: string) => HostResolution;
 }
 
 /**
  * A script file as a network panel lists it: the file name (the identifying
  * part) as the link text with its query muted, where it lives on a muted
  * line below (the page's own host dropped), and the copy action through the
- * shared copy button rendered with the action's own vocabulary
- * ({@link exclusionCopyProps}). The full URL rides `title`; the link's
- * accessible name carries the location too, so the same file from two hosts
- * reads apart. It keeps the external-link contract (new tab,
- * `noopener noreferrer`, "(opens in a new tab)") and only `http(s):` URLs
- * become links or get a copy action.
+ * action's own vocabulary ({@link ExclusionCopyButton}). The full URL rides
+ * `title`; the link's accessible name carries the location too, so the same
+ * file from two hosts reads apart. It keeps the external-link contract (new
+ * tab, `noopener noreferrer`, "(opens in a new tab)") and only `http(s):`
+ * URLs become links or get a copy action.
+ *
+ * The copy payload names the script's ORIGINAL path: a served minified-URL
+ * row recovers the original path the cache URL mirrors (the exclusion that
+ * survives minify off/on) — page-origin composed when the host is the
+ * site's own, host-led once the bypass map resolves a hidden host, hostless
+ * while it runs and when it fails — and a combined-bundle row, whose URL
+ * carries no original path, says so in place of a copy control
+ * ({@link COMBINED_EXCLUSION_NOTE}). The link itself is untouched by all of
+ * this: it opens what actually loaded.
  *
  * @param props See {@link ScriptRowProps}.
  */
 function ScriptRow(props: ScriptRowProps): JSX.Element {
   const parts = createMemo(() => splitScriptUrl(props.url, props.pageOrigin));
-  const pattern = createMemo(() => exclusionPattern(props.url, props.pageOrigin));
+  const recovery = createMemo(() => recoverOriginalScript(props.url));
+  // The copy payload per recovery class, re-read when a resolution lands.
+  const pattern = createMemo(() => {
+    const recovered = recovery();
+    if (recovered.kind === 'combined') return null;
+    if (recovered.kind === 'untouched') return exclusionPattern(props.url, props.pageOrigin);
+    if (recovered.hostKnown === 'site') {
+      return props.pageOrigin === null
+        ? exclusionPatternFromOriginalPath(recovered.originalPath)
+        : exclusionPattern(`${props.pageOrigin}/${recovered.originalPath}`, props.pageOrigin);
+    }
+    // Host hidden by the served URL: the bypass map's verdict decides.
+    const resolution = props.originalHostOf(recovered.originalPath);
+    if (resolution.kind === 'resolved') {
+      return exclusionPattern(`${resolution.origin}/${recovered.originalPath}`, props.pageOrigin);
+    }
+    return exclusionPatternFromOriginalPath(recovered.originalPath);
+  });
+  // The row waits exactly while its hidden host's verdict is pending.
+  const pending = createMemo(() => {
+    const recovered = recovery();
+    return (
+      recovered.kind === 'original' &&
+      recovered.hostKnown === 'unknown' &&
+      props.originalHostOf(recovered.originalPath).kind === 'pending'
+    );
+  });
+  // A combined row's URL is http(s) by construction (it matched the cache
+  // shape); every other row is linkable exactly when its pattern exists.
+  const linkable = createMemo(() => recovery().kind === 'combined' || pattern() !== null);
   const location = (): string => scriptLocation(parts());
   const name = (): JSX.Element => (
     <span class="truncate" title={props.url}>
@@ -348,7 +408,7 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
     <>
       <div class="flex min-w-0 flex-1 flex-col">
         <Show
-          when={pattern() !== null}
+          when={linkable()}
           fallback={
             <span data-fdt="script-link" class="flex min-w-0 font-mono text-xs text-fg-primary">
               {name()}
@@ -384,13 +444,22 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
           </span>
         </Show>
       </div>
+      <Switch>
+        <Match when={recovery().kind === 'combined'}>
+          <p data-fdt="combined-note" class={cn(BODY_NOTE, 'max-w-56 shrink')}>
+            {COMBINED_EXCLUSION_NOTE}
+          </p>
+        </Match>
+      </Switch>
+      {/* Non-keyed Show: the control mounts on truthiness and its payload
+          accessor re-reads per access — a host-hidden row's pattern resolves
+          (hostless → host-led) under the same mounted control, focus kept. */}
       <Show when={pattern()}>
         {(value) => (
-          <CopyButton
-            {...exclusionCopyProps({
-              pattern: value(),
-              name: copyExclusionName(parts().file, parts().host)
-            })}
+          <ExclusionCopyButton
+            pattern={value}
+            pending={pending}
+            name={copyExclusionName(parts().file, parts().host)}
             class="shrink-0"
           />
         )}

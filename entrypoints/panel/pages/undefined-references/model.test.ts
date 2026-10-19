@@ -14,11 +14,14 @@ import {
   classifyScanError,
   displayWord,
   exclusionPattern,
+  exclusionPatternFromOriginalPath,
   isCrossOriginSentinel,
   isRetryable,
   isSingleLetterWord,
   newReferencesAnnouncement,
+  normalizeOriginalPath,
   reconcileOrigins,
+  resolveOriginalHosts,
   resolvePageView,
   scanFailureMessage,
   searchableAssets,
@@ -661,6 +664,133 @@ describe('exclusionPattern', () => {
     expect(
       wpRocketMatches(pattern, '<script src="https://shop.example.com/js/b.js"></script>')
     ).toBe(false);
+  });
+});
+
+describe('exclusionPatternFromOriginalPath', () => {
+  it('writes the recovered path hostless, leading slash kept', () => {
+    expect(
+      exclusionPatternFromOriginalPath('wp-content/mu-plugins/assets/fdt-delayed-definer.js')
+    ).toBe('/wp-content/mu-plugins/assets/fdt-delayed-definer.js');
+    expect(exclusionPatternFromOriginalPath('/onsite/js/PD7as8/klaviyo.js')).toBe(
+      '/onsite/js/PD7as8/klaviyo.js'
+    );
+  });
+
+  it('matches both minify states of the live docker capture under both readers', () => {
+    const pattern =
+      exclusionPatternFromOriginalPath('wp-content/mu-plugins/assets/fdt-delayed-definer.js') ?? '';
+    const tags = [
+      // The served state: the minified tag, delayed spelling included.
+      '<script type="text/javascript" data-rocket-src="http://127.0.0.1:8493/wp-content/cache/min/1/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1792430636" data-rocket-status="delayed"></script>',
+      // The state debugging workflows create: minify off, the plain tag.
+      '<script src="http://127.0.0.1:8493/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1.0"></script>'
+    ];
+    for (const tag of tags) {
+      expect(regexpMatches(pattern, tag), `${pattern} ~ ${tag}`).toBe(true);
+      expect(wpRocketMatches(pattern, tag), `WPR ${pattern} ~ ${tag}`).toBe(true);
+    }
+    // The cache path is what the defect copied — the payload never carries it.
+    expect(pattern).not.toContain('cache/min');
+  });
+
+  it('matches the remote mirror in both states (minified under the site, plain under the true host)', () => {
+    const pattern = exclusionPatternFromOriginalPath('onsite/js/PD7as8/klaviyo.js') ?? '';
+    const tags = [
+      '<script type="text/javascript" data-rocket-src="https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187"></script>',
+      '<script async src="//static.klaviyo.com/onsite/js/PD7as8/klaviyo.js?ver=3.7.3"></script>'
+    ];
+    for (const tag of tags) {
+      expect(regexpMatches(pattern, tag), `${pattern} ~ ${tag}`).toBe(true);
+      expect(wpRocketMatches(pattern, tag), `WPR ${pattern} ~ ${tag}`).toBe(true);
+    }
+  });
+
+  it('keeps the percent-run machinery — dual spellings, no bare %XX', () => {
+    expect(exclusionPatternFromOriginalPath('wp-content/plugins/a%2Bb/x.js')).toBe(
+      '/wp-content/plugins/a(?:[+]|[%]2B)b/x.js'
+    );
+    const value = exclusionPatternFromOriginalPath('wp-content/plugins/a%FF.js') ?? '';
+    expect(value).not.toMatch(/%[0-9a-f]{2}/i);
+    // WP Rocket's save pipeline leaves it unchanged.
+    expect(wpRocketSave(value)).toBe(value);
+  });
+
+  it('never fabricates a host — even for a real remote mirror', () => {
+    const value = exclusionPatternFromOriginalPath('bootstrap/v5/tp.widget.bootstrap.min.js') ?? '';
+    expect(value).toBe('/bootstrap/v5/tp.widget.bootstrap.min.js');
+    expect(value).not.toMatch(/https?:|wp-rocket\.me/);
+  });
+
+  it('answers null for an empty path', () => {
+    expect(exclusionPatternFromOriginalPath('')).toBeNull();
+  });
+});
+
+describe('normalizeOriginalPath', () => {
+  it('adds the missing leading slash, keeps one already there', () => {
+    expect(normalizeOriginalPath('onsite/js/PD7as8/klaviyo.js')).toBe(
+      '/onsite/js/PD7as8/klaviyo.js'
+    );
+    expect(normalizeOriginalPath('/onsite/js/PD7as8/klaviyo.js')).toBe(
+      '/onsite/js/PD7as8/klaviyo.js'
+    );
+  });
+
+  it('decodes percent runs so either spelling of a path joins', () => {
+    expect(normalizeOriginalPath('wp-content/plugins/a%2Bb/x.js')).toBe(
+      '/wp-content/plugins/a+b/x.js'
+    );
+    // A run that cannot decode stays encoded — both sides treat it the same.
+    expect(normalizeOriginalPath('wp-content/plugins/a%FF.js')).toBe('/wp-content/plugins/a%FF.js');
+  });
+});
+
+describe('resolveOriginalHosts', () => {
+  const PAGE_URL = 'https://wp-rocket.me/?fdt-delay=1&nowprocket=1';
+
+  it('joins each uniquely-served script path to its origin, query dropped', () => {
+    const hosts = resolveOriginalHosts(
+      '<script src="https://static.klaviyo.com/onsite/js/PD7as8/klaviyo.js?ver=3.7.3"></script>' +
+        '<script src="/wp-content/plugins/a+b/app.js?ver=1.2"></script>' +
+        '<script src="//cdn.example.net/bootstrap/v5/tp.widget.bootstrap.min.js"></script>',
+      PAGE_URL
+    );
+    expect(hosts.get('/onsite/js/PD7as8/klaviyo.js')).toBe('https://static.klaviyo.com');
+    expect(hosts.get('/wp-content/plugins/a+b/app.js')).toBe('https://wp-rocket.me');
+    expect(hosts.get('/bootstrap/v5/tp.widget.bootstrap.min.js')).toBe('https://cdn.example.net');
+  });
+
+  it('compares decoded paths — the row\u2019s encoded spelling joins the raw one', () => {
+    const hosts = resolveOriginalHosts(
+      '<script src="https://cdn.test/wp-content/plugins/a%2Bb/x.js"></script>',
+      PAGE_URL
+    );
+    expect(hosts.get('/wp-content/plugins/a+b/x.js')).toBe('https://cdn.test');
+  });
+
+  it('drops an ambiguous path — two origins served it', () => {
+    const hosts = resolveOriginalHosts(
+      '<script src="https://a.test/x/y.js"></script><script src="https://b.test/x/y.js"></script>',
+      PAGE_URL
+    );
+    expect(hosts.has('/x/y.js')).toBe(false);
+  });
+
+  it('keeps the page-origin relatives, drops inline and non-http(s) srcs', () => {
+    const hosts = resolveOriginalHosts(
+      '<script>var inline = 1;</script>' +
+        '<script src="data:text/plain,x.js"></script>' +
+        '<script src="app/plugins/fixture.js"></script>',
+      PAGE_URL
+    );
+    expect(hosts.size).toBe(1);
+    expect(hosts.get('/app/plugins/fixture.js')).toBe('https://wp-rocket.me');
+  });
+
+  it('a missing script is simply absent', () => {
+    const hosts = resolveOriginalHosts('<script src="https://a.test/x/y.js"></script>', PAGE_URL);
+    expect(hosts.has('/missing.js')).toBe(false);
   });
 });
 

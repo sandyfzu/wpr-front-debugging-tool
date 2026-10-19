@@ -8,9 +8,10 @@
 import { batch, createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { InlineScriptSource, ScriptAsset } from '../../../../lib/panel/undefined-refs';
-import type { InspectedScripts, ScriptRead } from './inspected-scripts';
+import type { BypassedPageRead, InspectedScripts, ScriptRead } from './inspected-scripts';
 import type { ScanFailure } from './model';
 import {
+  BYPASS_TIMEOUT_MS,
   SCAN_TIMEOUT_MS,
   createUndefinedReferencesStore,
   type UndefinedReferencesStore
@@ -22,6 +23,11 @@ interface PendingRead {
   /** Settle with these assets (and optionally a count of skipped scripts). */
   resolve(assets: ScriptAsset[], unreadable?: number): void;
   reject(cause: unknown): void;
+}
+
+/** One controllable bypass read. */
+interface PendingBypass {
+  resolve(read: BypassedPageRead | null): void;
 }
 
 const URL_A = 'https://x.test/a.js';
@@ -48,6 +54,7 @@ interface HarnessOptions {
 /** A store over controllable signals, a scripted reader and a manual timer. */
 function harness(options: HarnessOptions = {}) {
   const reads: PendingRead[] = [];
+  const bypassReads: PendingBypass[] = [];
   const timers: { run: () => void; ms: number; cancelled: boolean }[] = [];
   const searches: string[] = [];
   const rescanFailures: ScanFailure[] = [];
@@ -71,7 +78,11 @@ function harness(options: HarnessOptions = {}) {
     watchAddedScripts: (onAdded) => {
       addedListeners.push(onAdded);
       return unwatch;
-    }
+    },
+    readBypassedPage: () =>
+      new Promise<BypassedPageRead | null>((resolve) => {
+        bypassReads.push({ resolve });
+      })
   };
   const [delayJs, setDelayJs] = createSignal(options.delayJs ?? false);
   const [allLoaded, setAllLoaded] = createSignal(options.allLoaded ?? false);
@@ -116,6 +127,7 @@ function harness(options: HarnessOptions = {}) {
     store,
     dispose,
     reads,
+    bypassReads,
     timers,
     searches,
     rescanFailures,
@@ -194,7 +206,8 @@ describe('the read gate (state trigger conditions)', () => {
                 })
               ),
             readPageOrigin: () => Promise.resolve(null),
-            watchAddedScripts: () => () => undefined
+            watchAddedScripts: () => () => undefined,
+            readBypassedPage: () => Promise.resolve(null)
           },
           // Every checkpoint yields and holds until released.
           now: (() => {
@@ -431,7 +444,8 @@ describe('page origin and stale scripts', () => {
               new Promise((resolve) => {
                 answer = resolve;
               }),
-            watchAddedScripts: () => () => undefined
+            watchAddedScripts: () => () => undefined,
+            readBypassedPage: () => Promise.resolve(null)
           }
         }
       );
@@ -564,5 +578,111 @@ describe('page-owned state', () => {
     // A fresh search: the word is searched again, not served from the old store.
     expect(second.searches).toEqual(['alpha']);
     second.dispose();
+  });
+});
+
+describe('the original-host bypass map', () => {
+  const MIRROR_URL =
+    'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187';
+  const BYPASSED_HTML =
+    '<script src="https://static.klaviyo.com/onsite/js/PD7as8/klaviyo.js?ver=3.7.3"></script>';
+
+  it('runs one pass when a row needs it, resolves the verdict, runs no more', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    expect(h.bypassReads).toHaveLength(1);
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({ kind: 'pending' });
+    // The pass's timeout is armed beside the read's own.
+    expect(h.timers.some((timer) => timer.ms === BYPASS_TIMEOUT_MS && !timer.cancelled)).toBe(true);
+    h.bypassReads[0]?.resolve({
+      url: 'https://wp-rocket.me/?fdt-delay=1&nowprocket=1',
+      html: BYPASSED_HTML
+    });
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({
+      kind: 'resolved',
+      origin: 'https://static.klaviyo.com'
+    });
+    // A path the bypassed page does not carry: no unique host to vouch for.
+    expect(h.store.originalHostOf('bootstrap/v5/x.js')).toEqual({ kind: 'unresolved' });
+    // Settled, the pass never runs again for this page.
+    expect(h.bypassReads).toHaveLength(1);
+    expect(h.timers.every((timer) => timer.cancelled || timer.ms !== BYPASS_TIMEOUT_MS)).toBe(true);
+    expect(h.store.bypassDegraded()).toBe(false);
+  });
+
+  it('does not run when no answered row hides its host', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve(ASSETS);
+    await flush();
+    expect(h.bypassReads).toHaveLength(0);
+    expect(h.store.bypassDegraded()).toBe(false);
+  });
+
+  it('a refetch retries the pass (one pass per page, not per store)', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    h.bypassReads[0]?.resolve(null);
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({ kind: 'unresolved' });
+    expect(h.store.bypassDegraded()).toBe(true);
+    // The refetch resets the lane and a new pass runs for the new page.
+    h.refetch(2, ['alpha']);
+    await flush();
+    expect(h.bypassReads).toHaveLength(2);
+    h.reads[1]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    h.bypassReads[1]?.resolve({ url: 'https://wp-rocket.me/?nowprocket=1', html: BYPASSED_HTML });
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({
+      kind: 'resolved',
+      origin: 'https://static.klaviyo.com'
+    });
+    expect(h.store.bypassDegraded()).toBe(false);
+  });
+
+  it('a rescan retries a failed pass through the same flow', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    h.bypassReads[0]?.resolve(null);
+    await flush();
+    expect(h.store.bypassDegraded()).toBe(true);
+    h.store.rescan();
+    await flush();
+    expect(h.bypassReads).toHaveLength(2);
+  });
+
+  it('a timeout degrades the lane; a late answer lands nowhere', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    const bypassTimer = h.timers.find((timer) => timer.ms === BYPASS_TIMEOUT_MS);
+    if (!bypassTimer) throw new Error('no bypass timer armed');
+    bypassTimer.run();
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({ kind: 'unresolved' });
+    expect(h.store.bypassDegraded()).toBe(true);
+    // The late read answers into a stale ticket: the state holds.
+    h.bypassReads[0]?.resolve({ url: 'https://wp-rocket.me/?nowprocket=1', html: BYPASSED_HTML });
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({ kind: 'unresolved' });
+  });
+
+  it('an ambiguous page answer resolves nothing (never guessed)', async () => {
+    const h = harness({ words: ['alpha'] });
+    h.reads[0]?.resolve([{ origin: { kind: 'url', url: MIRROR_URL }, content: 'var alpha = 1;' }]);
+    await flush();
+    h.bypassReads[0]?.resolve({
+      url: 'https://wp-rocket.me/?nowprocket=1',
+      html:
+        '<script src="https://a.test/onsite/js/PD7as8/klaviyo.js"></script>' +
+        '<script src="https://b.test/onsite/js/PD7as8/klaviyo.js"></script>'
+    });
+    await flush();
+    expect(h.store.originalHostOf('onsite/js/PD7as8/klaviyo.js')).toEqual({ kind: 'unresolved' });
+    expect(h.store.bypassDegraded()).toBe(false);
   });
 });

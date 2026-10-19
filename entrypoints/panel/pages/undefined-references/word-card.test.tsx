@@ -13,7 +13,15 @@ import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
 import { toastItems } from '../../../../components/ui/toast-store';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
+import { createSignal } from 'solid-js';
+import type { HostResolution } from './model';
 import { WordCard, copyExclusionName } from './word-card';
+
+/**
+ * The bypass map's verdict for tests that never exercise it: every
+ * host-hidden row falls back to the hostless pattern immediately.
+ */
+const unresolvedHost = (): HostResolution => ({ kind: 'unresolved' });
 
 afterEach(() => {
   cleanup();
@@ -52,7 +60,12 @@ describe('WordCard — script rows', () => {
   it('names the link by file + location, drops the page host, copies the path', async () => {
     const clipboard = writer('resolve');
     render(() => (
-      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     expect(screen.getByText('Undefined')).toBeTruthy();
     expect(verdict().textContent).toBe('In 1 script');
@@ -87,6 +100,7 @@ describe('WordCard — script rows', () => {
           { kind: 'url', url: URL_CDN }
         ]}
         pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
       />
     ));
     const names = screen.getAllByRole('link').map((link) => link.textContent);
@@ -124,7 +138,12 @@ describe('WordCard — script rows', () => {
     vi.useFakeTimers();
     writer('resolve');
     render(() => (
-      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     expect(copy.textContent).toBe('Copy as exclusion');
@@ -151,7 +170,12 @@ describe('WordCard — script rows', () => {
         })
     );
     render(() => (
-      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     fireEvent.click(copy);
@@ -173,7 +197,12 @@ describe('WordCard — script rows', () => {
     const clipboard = writer('reject');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     render(() => (
-      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     fireEvent.click(copy);
@@ -193,7 +222,12 @@ describe('WordCard — script rows', () => {
   it('copies through the shared action with no injection (the default clipboard)', async () => {
     const clipboard = writer('resolve');
     render(() => (
-      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+      <WordCard
+        word="jQuery"
+        answer={[{ kind: 'url', url: URL_A }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' }));
     await vi.waitFor(() => {
@@ -203,7 +237,12 @@ describe('WordCard — script rows', () => {
 
   it('renders a non-http(s) URL as plain text with no copy action', () => {
     render(() => (
-      <WordCard word="x" answer={[{ kind: 'url', url: 'javascript:alert(1)' }]} pageOrigin={PAGE} />
+      <WordCard
+        word="x"
+        answer={[{ kind: 'url', url: 'javascript:alert(1)' }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
@@ -219,9 +258,177 @@ describe('WordCard — script rows', () => {
   });
 });
 
+describe('WordCard — copy payload names the original path', () => {
+  const SITE = 'http://127.0.0.1:8493';
+  // The live docker capture pair: the fixture enqueue's served copy.
+  const SERVED_MINIFIED = `${SITE}/wp-content/cache/min/1/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1792430636`;
+  const ORIGINAL_PATH = '/wp-content/mu-plugins/assets/fdt-delayed-definer.js';
+  // The live docker combined-bundle capture.
+  const COMBINED = `${SITE}/wp-content/cache/min/1/cdb2e71f9f3da2a001630dcca225acbf.js`;
+
+  it('copies the original path for a served minified URL, not the cache path', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="fdtDelayTypedDependency"
+        answer={[{ kind: 'url', url: SERVED_MINIFIED }]}
+        pageOrigin={SITE}
+        originalHostOf={unresolvedHost}
+      />
+    ));
+    // The row's link still opens what actually loaded (the served URL).
+    expect(screen.getByRole('link', { name: /fdt-delayed-definer\.js/ }).getAttribute('href')).toBe(
+      SERVED_MINIFIED
+    );
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: fdt-delayed-definer.js' });
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(ORIGINAL_PATH);
+    });
+  });
+
+  it('falls back to the hostless original path when the page origin is unknown', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="fdtDelayTypedDependency"
+        answer={[{ kind: 'url', url: SERVED_MINIFIED }]}
+        pageOrigin={null}
+        originalHostOf={unresolvedHost}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole('button', {
+        // An unknown page origin keeps the served host in the row's name.
+        name: 'Copy as exclusion: fdt-delayed-definer.js (127.0.0.1:8493)'
+      })
+    );
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(ORIGINAL_PATH);
+    });
+  });
+
+  it('copies the hostless original path when the minified URL hides a remote host', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="Klaviyo"
+        answer={[
+          {
+            kind: 'url',
+            url: 'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187'
+          }
+        ]}
+        pageOrigin="https://wp-rocket.me"
+        originalHostOf={unresolvedHost}
+      />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: klaviyo.js' });
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('/onsite/js/PD7as8/klaviyo.js');
+    });
+  });
+
+  it('replaces the copy control with the combined-bundle note and keeps the link', () => {
+    render(() => (
+      <WordCard
+        word="bundle"
+        answer={[{ kind: 'url', url: COMBINED }]}
+        pageOrigin={SITE}
+        originalHostOf={unresolvedHost}
+      />
+    ));
+    expect(screen.queryByRole('button')).toBeNull();
+    const link = screen.getByRole('link', { name: /cdb2e71f9f3da2a001630dcca225acbf\.js/ });
+    expect(link.getAttribute('href')).toBe(COMBINED);
+    const note = document.querySelector('[data-fdt="combined-note"]');
+    if (!note) throw new Error('no combined note rendered');
+    expect(note.textContent).toBe(
+      "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in File Optimization."
+    );
+  });
+
+  it('waits on the resolution, then copies the resolved-host pattern in the same control', async () => {
+    const clipboard = writer('resolve');
+    const [resolution, setResolution] = createSignal<HostResolution>({ kind: 'pending' });
+    render(() => (
+      <WordCard
+        word="Klaviyo"
+        answer={[
+          {
+            kind: 'url',
+            url: 'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187'
+          }
+        ]}
+        pageOrigin="https://wp-rocket.me"
+        originalHostOf={(path) =>
+          path === 'onsite/js/PD7as8/klaviyo.js' ? resolution() : { kind: 'unresolved' }
+        }
+      />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: klaviyo.js' });
+    // Pending: focusable, announced, activation suppressed.
+    expect(copy.getAttribute('aria-busy')).toBe('true');
+    expect(copy.getAttribute('aria-disabled')).toBe('true');
+    expect(copy.hasAttribute('data-fdt-loading')).toBe(true);
+    expect(copy.getAttribute('title')).toBe('Resolving the script\u2019s original path\u2026');
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).not.toHaveBeenCalled();
+    });
+    // The verdict lands: the wait drops and the payload becomes host-led.
+    setResolution({ kind: 'resolved', origin: 'https://static.klaviyo.com' });
+    await vi.waitFor(() => {
+      expect(copy.hasAttribute('aria-busy')).toBe(false);
+    });
+    expect(copy.hasAttribute('data-fdt-loading')).toBe(false);
+    expect(copy.getAttribute('title')).toBe(
+      'Copy an exclusion for this script, to exclude it from Delay JavaScript execution'
+    );
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(
+        'static.klaviyo.com/onsite/js/PD7as8/klaviyo.js'
+      );
+    });
+  });
+
+  it('resolves a page-origin host to the same-origin path pattern', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="fixture"
+        answer={[
+          { kind: 'url', url: 'https://x.test/wp-content/cache/min/1/app/plugins/fixture.js?ver=1' }
+        ]}
+        pageOrigin="https://x.test"
+        originalHostOf={(path) =>
+          path === 'app/plugins/fixture.js'
+            ? { kind: 'resolved', origin: 'https://x.test' }
+            : { kind: 'unresolved' }
+        }
+      />
+    ));
+    // A custom content-dir original resolves site-local: the standard
+    // same-origin shape (path only, no host) — through the same builder.
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: fixture.js' }));
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('/app/plugins/fixture.js');
+    });
+  });
+});
+
 describe('WordCard — definition list', () => {
   it('renders an inline definition as a chip — never a link', () => {
-    render(() => <WordCard word="gamma" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard
+        word="gamma"
+        answer={[{ kind: 'inline' }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
+    ));
     expect(screen.getByText('Inline Script')).toBeTruthy();
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
@@ -232,7 +439,9 @@ describe('WordCard — definition list', () => {
       kind: 'url',
       url: `https://example.com/js/file-${String(i)}.js`
     }));
-    render(() => <WordCard word="$" answer={definitions} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="$" answer={definitions} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(verdict().textContent).toBe('In 7 scripts');
     const list = screen.getByRole('list', { name: 'Possible definitions of $' });
     expect(list.querySelectorAll('li')).toHaveLength(5);
@@ -254,14 +463,23 @@ describe('WordCard — definition list', () => {
       kind: 'url',
       url: `https://example.com/js/f${String(i)}.js`
     }));
-    render(() => <WordCard word="x" answer={definitions} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="x" answer={definitions} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(document.querySelector('[data-fdt="definitions-toggle"]')).toBeNull();
   });
 });
 
 describe('WordCard — single-letter note', () => {
   it('opens a found card with the warn-styled note qualifying its matches', () => {
-    render(() => <WordCard word="a" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard
+        word="a"
+        answer={[{ kind: 'inline' }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
+    ));
     const noteEl = screen.getByText(
       'Single-letter name — usually an artifact of minified code; the matches below are likely coincidental.'
     );
@@ -272,7 +490,9 @@ describe('WordCard — single-letter note', () => {
   });
 
   it('opens a not-found card with the warn-styled note above the explanation', () => {
-    render(() => <WordCard word="a" answer={[]} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="a" answer={[]} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     const noteEl = screen.getByText('Single-letter name — usually an artifact of minified code.');
     expect(noteEl.className).toContain('text-status-warn');
     expect(
@@ -288,7 +508,12 @@ describe('WordCard — single-letter note', () => {
   it('carries the note on no other word or body', () => {
     for (const word of ['$', '_', 'ab']) {
       const { unmount } = render(() => (
-        <WordCard word={word} answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />
+        <WordCard
+          word={word}
+          answer={[{ kind: 'inline' }]}
+          pageOrigin={PAGE}
+          originalHostOf={unresolvedHost}
+        />
       ));
       expect(screen.queryByText(/Single-letter name/)).toBeNull();
       unmount();
@@ -296,18 +521,27 @@ describe('WordCard — single-letter note', () => {
     // The sentinel's body is its own explanation, and a header-only
     // single-letter card has no body for the note to ride.
     render(() => (
-      <WordCard word={UNDEFINED_REFERENCE_EXTERNAL_ERROR} answer={[]} pageOrigin={PAGE} />
+      <WordCard
+        word={UNDEFINED_REFERENCE_EXTERNAL_ERROR}
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     expect(screen.queryByText(/Single-letter name/)).toBeNull();
     cleanup();
-    render(() => <WordCard word="a" answer="pending" pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="a" answer="pending" pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(screen.queryByText(/Single-letter name/)).toBeNull();
   });
 });
 
 describe('WordCard — verdicts and bodies', () => {
   it('says "No definition found" in text with the explanation below', () => {
-    render(() => <WordCard word="nope" answer={[]} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="nope" answer={[]} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(verdict().textContent).toBe('No definition found');
     expect(
       screen.getByText("No declaration or assignment of this name was found in the page's scripts.")
@@ -316,7 +550,13 @@ describe('WordCard — verdicts and bodies', () => {
 
   it('softens not-found when some scripts could not be read', () => {
     const { unmount } = render(() => (
-      <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={2} />
+      <WordCard
+        word="nope"
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+        unreadable={2}
+      />
     ));
     expect(verdict().textContent).toBe('No definition found in the readable scripts');
     expect(
@@ -325,13 +565,27 @@ describe('WordCard — verdicts and bodies', () => {
       )
     ).toBeTruthy();
     unmount();
-    render(() => <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={1} />);
+    render(() => (
+      <WordCard
+        word="nope"
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+        unreadable={1}
+      />
+    ));
     expect(screen.getByText(/1 script could not be read/)).toBeTruthy();
   });
 
   it('says when the inline scripts were only partly captured', () => {
     const { unmount } = render(() => (
-      <WordCard word="nope" answer={[]} pageOrigin={PAGE} inlineCut={true} />
+      <WordCard
+        word="nope"
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+        inlineCut={true}
+      />
     ));
     expect(verdict().textContent).toBe('No definition found in the readable scripts');
     expect(
@@ -341,7 +595,14 @@ describe('WordCard — verdicts and bodies', () => {
     ).toBeTruthy();
     unmount();
     render(() => (
-      <WordCard word="nope" answer={[]} pageOrigin={PAGE} unreadable={1} inlineCut={true} />
+      <WordCard
+        word="nope"
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+        unreadable={1}
+        inlineCut={true}
+      />
     ));
     expect(
       screen.getByText(
@@ -352,14 +613,25 @@ describe('WordCard — verdicts and bodies', () => {
 
   it('keeps a found verdict unchanged when scripts were skipped', () => {
     render(() => (
-      <WordCard word="x" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} unreadable={3} />
+      <WordCard
+        word="x"
+        answer={[{ kind: 'inline' }]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+        unreadable={3}
+      />
     ));
     expect(verdict().textContent).toBe('In 1 script');
   });
 
   it('renders the cross-origin sentinel with a neutral badge and its explanation', () => {
     render(() => (
-      <WordCard word={UNDEFINED_REFERENCE_EXTERNAL_ERROR} answer={[]} pageOrigin={PAGE} />
+      <WordCard
+        word={UNDEFINED_REFERENCE_EXTERNAL_ERROR}
+        answer={[]}
+        pageOrigin={PAGE}
+        originalHostOf={unresolvedHost}
+      />
     ));
     expect(screen.getByText('Script error.')).toBeTruthy();
     expect(screen.queryByText(UNDEFINED_REFERENCE_EXTERNAL_ERROR)).toBeNull();
@@ -375,11 +647,15 @@ describe('WordCard — verdicts and bodies', () => {
   });
 
   it('renders searching and unsearched words as their heading row alone', () => {
-    const { unmount } = render(() => <WordCard word="alpha" answer="pending" pageOrigin={PAGE} />);
+    const { unmount } = render(() => (
+      <WordCard word="alpha" answer="pending" pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(verdict().textContent).toBe('Searching…');
     expect(document.querySelector('[data-fdt="card-header"]')).toBeNull();
     unmount();
-    render(() => <WordCard word="alpha" answer={null} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word="alpha" answer={null} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(verdict().textContent).toBe('Not searched');
     expect(document.querySelector('[data-fdt="card-header"]')).toBeNull();
     expect(document.querySelectorAll('[data-fdt="card"]')).toHaveLength(1);
@@ -387,7 +663,9 @@ describe('WordCard — verdicts and bodies', () => {
 
   it('renders a page-controlled word as inert text', () => {
     const hostile = '<img src=x onerror="window.__pwned=1">';
-    render(() => <WordCard word={hostile} answer={[]} pageOrigin={PAGE} />);
+    render(() => (
+      <WordCard word={hostile} answer={[]} pageOrigin={PAGE} originalHostOf={unresolvedHost} />
+    ));
     expect(screen.getByText(hostile)).toBeTruthy();
     expect(document.querySelector('img')).toBeNull();
   });
