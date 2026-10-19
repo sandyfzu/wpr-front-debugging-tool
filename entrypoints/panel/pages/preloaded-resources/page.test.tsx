@@ -133,4 +133,64 @@ describe('PreloadedResourcesPage', () => {
     page.refresh(fixture());
     expect(screen.getAllByRole('listitem')).toHaveLength(6);
   });
+
+  describe('find navigation (the resource-list body’s side)', () => {
+    /** The refresh handle plus the store this body reads. */
+    function findPage(): ReturnType<typeof renderPage> {
+      return renderPage(PreloadedResourcesPage, fixture());
+    }
+
+    /** The row carrying the find's current match, if any. */
+    function currentRow(): HTMLElement | null {
+      return document.querySelector<HTMLElement>('[role="listitem"][aria-current="true"]');
+    }
+
+    it('reports the match count and marks the cursor’s row under a live query', () => {
+      const page = findPage();
+      page.search.perform('cdn.example');
+      vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+      const items = screen.getAllByRole('listitem');
+      expect(items).toHaveLength(5); // every row with an href
+      expect(page.search.matchCount()).toBe(5);
+      expect(currentRow()).toBe(items[0]); // hero.webp
+
+      page.search.advance(1);
+      expect(currentRow()).toBe(screen.getAllByRole('listitem')[1]); // logo.png
+
+      page.search.advance(-1);
+      expect(currentRow()).toBe(items[0]);
+      page.search.advance(-1); // backward wrap: first → last (blob.bin)
+      expect(currentRow()).toBe(items[4]);
+
+      page.search.cancel();
+      expect(page.search.matchCount()).toBe(0);
+      expect(currentRow()).toBeNull();
+    });
+
+    it('a refresh shrinking the set re-reports and hides an out-of-range cursor', () => {
+      const page = findPage();
+      page.search.perform('cdn.example');
+      vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+      page.search.advance(1); // cursor on the third row (inter.woff2)
+      page.search.advance(1);
+      expect(currentRow()).toBeTruthy();
+
+      // The refresh keeps two of the five href rows: the cursor (2) is past
+      // the set — no row is named, and the reported count follows the list.
+      page.refresh(
+        withReport({
+          present: true,
+          resources: [
+            { href: 'https://cdn.example/wp/hero.webp', type: 'image' },
+            { href: 'https://cdn.example/wp/logo.png', type: 'IMAGE' }
+          ]
+        })
+      );
+      expect(page.search.matchCount()).toBe(2);
+      expect(currentRow()).toBeNull();
+
+      page.search.advance(1); // snaps the stale cursor into range
+      expect(currentRow()).toBe(screen.getAllByRole('listitem')[0]);
+    });
+  });
 });

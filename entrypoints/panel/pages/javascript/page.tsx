@@ -42,13 +42,19 @@ import {
   filterCounts,
   type JsFilterId
 } from '../../../../lib/panel/resources-view-model';
-import { countLabel, defaultChipId, normalizeQuery } from '../../../../lib/panel/list-behavior';
+import {
+  countLabel,
+  defaultChipId,
+  fallbackRowKey,
+  normalizeQuery
+} from '../../../../lib/panel/list-behavior';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { formatCount } from '../../../../utils/format-count';
 import type { SearchStore } from '../../state/search';
 import { bindSearchField } from '../../state/search-field';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
+import { createCurrentMatch } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import { ScriptRow, type CodeBlockSeams } from './script-row';
@@ -141,6 +147,10 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const filtered = createMemo(() =>
     filterAndSearch(views(), JS_VIEW_RESOURCES, selected(), query())
   );
+  // The find's page side: the rendered list is the match set — it reports the
+  // count and names the row the find's cursor sits on (highlight + scroll).
+  // eslint-disable-next-line solid/reactivity -- bootstrap: the shell's search store is one instance per panel run
+  const match = createCurrentMatch(props.search, () => filtered().length);
   const chips = createMemo(() => buildChips(JS_VIEW_RESOURCES.filters, counts(), selected()));
   // The count line and its announce switch come from the shared filter-page
   // lifecycle: truthful text always; a data refresh updates it silently
@@ -258,9 +268,10 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                 const view = filtered()[index];
                 return view === undefined ? 0 : estimateRowSize(view);
               }}
-              getItemKey={(index) => filtered()[index]?.key ?? String(index)}
+              getItemKey={(index) => filtered()[index]?.key ?? fallbackRowKey(index)}
               overscan={LIST_OVERSCAN}
               createVirtualizer={props.createVirtualizer}
+              scrollTo={match.request}
               class={cn(PAGE_FILL_SCROLLER, 'rounded-md border border-line-1 bg-surface-1')}
             >
               {(item) => (
@@ -270,6 +281,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                       view={view}
                       index={item.index}
                       setSize={filtered().length}
+                      current={match.current() === item.index}
                       inlineOrdinal={inlineOrdinals().get(view.key) ?? 0}
                       expanded={expanded().has(view.key)}
                       onToggle={(toggle) => {

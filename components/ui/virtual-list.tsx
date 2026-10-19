@@ -6,8 +6,8 @@
  * a page declares rows as data and gets a dense, cheap list — no per-page
  * virtualization math anywhere in the port.
  */
-import type { JSX } from 'solid-js';
-import { createComputed, createMemo, For, on, onCleanup, splitProps } from 'solid-js';
+import type { Accessor, JSX } from 'solid-js';
+import { createComputed, createEffect, createMemo, For, on, onCleanup, splitProps } from 'solid-js';
 import type { EntryMaskHandle } from './virtual-list-entry';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
@@ -65,7 +65,31 @@ export type VirtualizerInstance = {
    * @param node The row element carrying `data-index`.
    */
   measureElement: (node: HTMLElement | null) => void;
+  /**
+   * The core's typed index scroll, consumed by the {@link VirtualListProps.scrollTo}
+   * requests — instant (the core's `behavior: 'auto'`), aligned to the nearest
+   * edge for a row partly or wholly outside the viewport, and a no-op for a
+   * fully visible row. The real instance always provides it; layout-free test
+   * doubles may omit it (then a request lands nothing).
+   *
+   * @param index The row index (clamped into `count` by the core).
+   * @param options Alignment (`'auto'` is the nearest-edge semantics above).
+   */
+  scrollToIndex?: (
+    index: number,
+    options?: { align?: 'auto' | 'start' | 'end' | 'center' }
+  ) => void;
 };
+
+/**
+ * One scroll request: which virtual row to land on. The row's identity is its
+ * index in the list the *consumer* renders (the same index space
+ * `children(row)` runs in), so a request names a row the list knows.
+ */
+export interface VirtualScrollRequest {
+  /** Zero-based virtual row index. */
+  readonly index: number;
+}
 
 /**
  * The instance seam — default wires the library; tests inject a double
@@ -131,6 +155,24 @@ export type VirtualListProps = {
   paddingEnd?: number;
   /** The instance seam (default: the TanStack factory). */
   createVirtualizer?: VirtualizerFactory;
+  /**
+   * The row a scroll request keeps in view, or `null` without one. Each
+   * request scrolls once, when it *changes* (a fresh request object per
+   * event; the consumer builds requests, e.g. the panel search's active
+   * match): instant, nearest-edge alignment (`behavior: 'auto'`), and no
+   * movement at all for a fully visible row — reactive scrolls never
+   * re-fire for an unchanged request, so list refreshes and user scrolling
+   * do not animate under a live request.
+   *
+   * A request that already exists when the list mounts is not a scroll
+   * order: mount geometry is unmeasured (seed estimates), so an anchor would
+   * land by estimate and visibly re-land when measurement corrects. The
+   * deliberate contract — a page remounting under a live find (the
+   * refresh/retry lifecycle) re-reports the count and renders the marker at
+   * the cursor's row but never auto-anchors; the user keeps the page they
+   * asked for, and the next find event's fresh request is the scroll.
+   */
+  scrollTo?: Accessor<VirtualScrollRequest | null>;
   /** Classes on the scroller (height caps belong here, e.g. `h-full`). */
   class?: string;
   /**
@@ -191,6 +233,7 @@ export type VirtualListProps = {
  * @param props.paddingStart Scroller-top padding (px).
  * @param props.paddingEnd Bottom padding (px).
  * @param props.createVirtualizer Instance seam.
+ * @param props.scrollTo The row a scroll request lands on (see the prop's doc).
  * @param props.class Classes on the scroller.
  * @param props.children Row renderer per virtual row.
  * @returns The rendered scroller.
@@ -206,6 +249,7 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     'paddingStart',
     'paddingEnd',
     'createVirtualizer',
+    'scrollTo',
     'class',
     'children'
   ]);
@@ -250,6 +294,21 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       return own.paddingEnd;
     }
   });
+
+  // The scroll requests: one instant, nearest-edge write per fresh request
+  // (an updated index), per the `scrollTo` prop's contract. The deferred `on`
+  // is that contract's mechanics — a request present at mount is not a
+  // scroll order (only events after the mount are) — and the core clamps
+  // the index.
+  createEffect(
+    on(
+      () => own.scrollTo?.() ?? null,
+      (request) => {
+        if (request !== null) virtualizer.scrollToIndex?.(request.index);
+      },
+      { defer: true }
+    )
+  );
 
   /**
    * Hand a new row element to measurement. Solid runs `ref` before it

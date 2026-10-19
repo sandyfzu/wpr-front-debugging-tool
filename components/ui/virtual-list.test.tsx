@@ -14,7 +14,8 @@ import {
   VirtualList,
   type VirtualItem,
   type VirtualizerFactory,
-  type VirtualListOptions
+  type VirtualListOptions,
+  type VirtualScrollRequest
 } from './virtual-list';
 afterEach(() => {
   cleanup();
@@ -29,6 +30,8 @@ interface VirtualizerInstanceProbe {
   getTotalSize: () => number;
   /** The measurement binding the wrapper hands row elements into. */
   measureElement: (node: HTMLElement | null) => void;
+  /** The optional core scroll: records every landed row index. */
+  scrollToIndex?: (index: number, options?: { align?: string }) => void;
 }
 
 /** A fixed virtual row (the core's own shape — verified in the installed types). */
@@ -452,5 +455,78 @@ describe('VirtualList — Tab entry masking', () => {
     // An unmount during the one-frame mask window pops the in-flight mask.
     cleanup();
     expect(c?.inert).toBe(false);
+  });
+});
+
+describe('VirtualList — scroll requests', () => {
+  /** A scroll-recording double: the landed indexes, in order. */
+  function scrollProbe(
+    items: VirtualItem[],
+    totalSize: number
+  ): {
+    factory: VirtualizerFactory;
+    landed: number[];
+  } {
+    const landed: number[] = [];
+    const factory: VirtualizerFactory = () => ({
+      getVirtualItems: () => items,
+      getTotalSize: () => totalSize,
+      measureElement: () => {},
+      scrollToIndex: (index: number): void => {
+        landed.push(index);
+      }
+    });
+    return { factory, landed };
+  }
+
+  it('lands a request when it changes; the mount request and retentions never scroll', () => {
+    const p = scrollProbe([row(9, 360, 40)], 800);
+    const [target, setTarget] = createSignal<VirtualScrollRequest | null>({ index: 9 });
+    render(() => (
+      <VirtualList
+        count={20}
+        estimateSize={() => 40}
+        createVirtualizer={p.factory}
+        scrollTo={target}
+      >
+        {(item) => <span data-fdt-row={String(item.index)}>row {String(item.index)}</span>}
+      </VirtualList>
+    ));
+    // A request held at mount is not a scroll order (the in-page find only
+    // ever follows its own events; the consumer's defer decides).
+    expect(p.landed).toEqual([]);
+
+    setTarget({ index: 3 });
+    expect(p.landed).toEqual([3]);
+    // The request object is the event: a retained identity (the same object
+    // flowing from a memo without a find event) re-fires nothing.
+    // eslint-disable-next-line solid/reactivity -- the test reads the request at rest to re-send the very same object
+    const held = target();
+    setTarget(held);
+    expect(p.landed).toEqual([3]);
+    // A fresh object is a new event even at the same row index (a new
+    // query's first match lands exactly the same row again).
+    setTarget({ index: 3 });
+    expect(p.landed).toEqual([3, 3]);
+
+    setTarget(null);
+    expect(p.landed).toEqual([3, 3]);
+  });
+
+  it('tolerates a double without the optional scroll seam when a request changes', () => {
+    const p = probe([row(0, 0, 40)], 40); // the plain double omits scrollToIndex
+    const [target, setTarget] = createSignal<VirtualScrollRequest | null>(null);
+    render(() => (
+      <VirtualList
+        count={2}
+        estimateSize={() => 40}
+        createVirtualizer={p.factory}
+        scrollTo={target}
+      >
+        {(item) => <span data-fdt-row={String(item.index)}>row {String(item.index)}</span>}
+      </VirtualList>
+    ));
+    expect(() => setTarget({ index: 1 })).not.toThrow();
+    expect(document.querySelector('[data-fdt-row="0"]')).not.toBeNull();
   });
 });

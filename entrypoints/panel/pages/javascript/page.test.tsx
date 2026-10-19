@@ -39,9 +39,14 @@ afterEach(() => {
 function windowedVirtualizer(): {
   factory: VirtualizerFactory;
   setWindow: Setter<[number, number]>;
+  /** Scroll orders the double received, in order (an opt-in assertion read). */
+  landed: number[];
+  /** Drop the record at a boundary the test owns (e.g. a remount). */
+  clearScrolls: () => void;
 } {
   // A bounded window, as a real list renders: a 5,000-row page mounts 40 rows.
   const [range, setWindow] = createSignal<[number, number]>([0, 40]);
+  const landed: number[] = [];
   const factory: VirtualizerFactory = (options) => ({
     getVirtualItems: (): VirtualItem[] => {
       const [from, to] = range();
@@ -60,9 +65,12 @@ function windowedVirtualizer(): {
       return items;
     },
     getTotalSize: () => options.count * 40,
-    measureElement: () => undefined
+    measureElement: () => undefined,
+    scrollToIndex: (index) => {
+      landed.push(index);
+    }
   });
-  return { factory, setWindow };
+  return { factory, setWindow, landed, clearScrolls: () => landed.splice(0, landed.length) };
 }
 
 /**
@@ -514,6 +522,118 @@ describe('JavaScriptView — search', () => {
     fireEvent.click(clear);
     expect(rows()).toHaveLength(6);
     expect(document.activeElement).toBe(field());
+  });
+});
+
+describe('JavaScriptView — find navigation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  /** The row carrying the find's current match, if any. */
+  function currentRow(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[role="listitem"][aria-current="true"]');
+  }
+
+  it('reports the matching-row count and marks the cursor’s row (only for a live find)', () => {
+    const { search } = renderView();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(rows()).toHaveLength(2);
+    expect(search.matchCount()).toBe(2);
+    expect(currentRow()).toBe(rows()[0]); // the cursor sits on the first match
+
+    search.perform(' ');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(rows()).toHaveLength(6);
+    // No find is active: no count to navigate, no row named.
+    expect(search.matchCount()).toBe(0);
+    expect(currentRow()).toBeNull();
+  });
+
+  it('steps next/previous over the match set with both wraps', () => {
+    const { search } = renderView();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(currentRow()).toBe(rows()[0]);
+    search.advance(1);
+    expect(currentRow()).toBe(rows()[1]); // forward step
+    search.advance(1);
+    expect(currentRow()).toBe(rows()[0]); // forward wrap: last → first
+    search.advance(-1);
+    expect(currentRow()).toBe(rows()[1]); // backward wrap: first → last
+    search.advance(-1);
+    expect(currentRow()).toBe(rows()[0]);
+  });
+
+  it('a refresh shrinking the set re-reports and hides an out-of-range cursor; the step recovers', () => {
+    const { search, setData } = renderView();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    search.advance(1);
+    expect(currentRow()).toBe(rows()[1]);
+
+    // A refresh leaves one matching script (jquery.js is gone): the cursor
+    // now points past the set — no row is the match; the count repairs.
+    setData(dataWith([makeDelayScript({ src: 'https://example.test/cart.js', delayed: false })]));
+    expect(search.matchCount()).toBe(1);
+    expect(currentRow()).toBeNull();
+
+    search.advance(1); // the wrap math snaps the stale cursor into range
+    expect(currentRow()).toBe(rows()[0]); // the one matching row
+  });
+
+  it('cancel clears the find; unmount clears the page’s own report', () => {
+    const { search } = renderView();
+    search.perform('cart');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(search.matchCount()).toBe(1);
+    expect(currentRow()).toBe(rows()[0]); // the only rendered match
+
+    search.cancel();
+    expect(search.matchCount()).toBe(0);
+    expect(currentRow()).toBeNull();
+
+    // Unmounting un-reports (the disposed page leaves no stale count).
+    cleanup();
+    expect(search.matchCount()).toBe(0);
+  });
+
+  it('a remount under a live find re-reports and marks, but never re-anchors', () => {
+    // The refresh/retry lifecycle: the same store under a fresh page body.
+    // The cursor (and live query) survive; the mount-time request is not a
+    // scroll order (the wrapper's scrollTo contract), so the marker shows
+    // wherever the fresh window is, and the next find event is the anchor.
+    const search = createSearchStore();
+    const virtualizer = windowedVirtualizer();
+    const [data, setData] = createSignal(dataWith(scripts()));
+    const mount = (): void => {
+      render(() => (
+        <JavaScriptView
+          data={data}
+          search={search}
+          createVirtualizer={virtualizer.factory}
+          codeBlock={CODE_SEAMS}
+        />
+      ));
+    };
+
+    mount();
+    search.perform('example.test');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(rows()).toHaveLength(2);
+    cleanup();
+    expect(search.matchCount()).toBe(0);
+    setData(dataWith(scripts())); // the retry re-feeds the same inventory
+
+    virtualizer.clearScrolls(); // the remount begins here — expect silence
+    mount();
+    expect(search.matchCount()).toBe(2);
+    expect(currentRow()).toBe(rows()[0]); // the cursor survives and drives the marker
+    expect(virtualizer.landed).toEqual([]);
+    search.advance(1);
+    expect(virtualizer.landed).toEqual([1]); // the next find event re-anchors
+    expect(currentRow()).toBe(rows()[1]);
   });
 });
 

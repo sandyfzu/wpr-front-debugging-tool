@@ -50,6 +50,19 @@ export function normalizeQuery(raw: string): string {
 }
 
 /**
+ * A list row's key for an index the filtered rows no longer name — the
+ * transient window read while a chip/query swap is landing. Stable and
+ * unique per list instance; one declared spelling, so the list pages'
+ * `getItemKey` fallbacks can never spell the same fallback two ways.
+ *
+ * @param index A virtual row index.
+ * @returns The index's fallback key.
+ */
+export function fallbackRowKey(index: number): string {
+  return `index-${String(index)}`;
+}
+
+/**
  * Distinguish list truncation from the same payload mark's string clipping.
  * At exactly the cap, string-only clipping is indistinguishable from omitted
  * entries: this is a conservative boundary signal, not proof of additional rows.

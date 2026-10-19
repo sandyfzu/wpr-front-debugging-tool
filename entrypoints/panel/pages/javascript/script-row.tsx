@@ -20,6 +20,7 @@ import {
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { cn } from '../../../../utils/cn';
+import { CURRENT_MATCH_ROW } from '../current-match';
 import { ExternalLink } from '../page-frame';
 import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
 import {
@@ -51,6 +52,8 @@ export interface ScriptRowProps {
   inlineOrdinal: number;
   /** Whether the inline code is expanded (page-owned state). */
   expanded: boolean;
+  /** The find's current match — `aria-current` + the shared row marker. */
+  current?: boolean;
   /**
    * Flip the expanded state.
    *
@@ -81,9 +84,11 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
       role="listitem"
       aria-setsize={props.setSize}
       aria-posinset={props.index + 1}
+      aria-current={props.current === true ? 'true' : undefined}
       class={cn(
         'flex flex-col gap-1.5 px-2 py-1.5',
-        props.index < props.setSize - 1 && 'border-b border-line-1'
+        props.index < props.setSize - 1 && 'border-b border-line-1',
+        props.current === true && CURRENT_MATCH_ROW
       )}
     >
       <Show

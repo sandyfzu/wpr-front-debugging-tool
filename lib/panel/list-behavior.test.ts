@@ -5,6 +5,7 @@ import {
   buildFilterChips,
   countLabel,
   defaultChipId,
+  fallbackRowKey,
   listCapped,
   normalizeQuery,
   reconcileList,
@@ -107,6 +108,11 @@ describe('query and capture boundaries', () => {
     ['', '']
   ])('normalizes %j', (raw, expected) => {
     expect(normalizeQuery(raw)).toBe(expected);
+  });
+  it('keys an unnamed index stably and uniquely (the shared fallback spelling)', () => {
+    expect(fallbackRowKey(0)).toBe('index-0');
+    expect(fallbackRowKey(17)).toBe('index-17');
+    expect(fallbackRowKey(0)).not.toBe(fallbackRowKey(1));
   });
   it('requires both the capture mark and the list limit', () => {
     expect(listCapped(undefined, 5, 5)).toBe(false);

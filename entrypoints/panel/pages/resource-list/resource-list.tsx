@@ -40,11 +40,17 @@ import {
   filterCounts,
   type ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
-import { countLabel, defaultChipId, type CountNoun } from '../../../../lib/panel/list-behavior';
+import {
+  countLabel,
+  defaultChipId,
+  fallbackRowKey,
+  type CountNoun
+} from '../../../../lib/panel/list-behavior';
 import { cn } from '../../../../utils/cn';
 import type { RouteId } from '../../routes';
 import { useSearch } from '../../state/use-fdt-data';
 import { bindSearchField } from '../../state/search-field';
+import { createCurrentMatch, CURRENT_MATCH_ROW } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import {
@@ -133,6 +139,9 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
   );
   const counts = createMemo(() => filterCounts(rows(), props.definition));
   const visible = createMemo(() => filterAndSearch(rows(), props.definition, selected(), query()));
+  // The find's page side: the rendered list is the match set — it reports the
+  // count and names the row the find's cursor sits on (highlight + scroll).
+  const match = createCurrentMatch(search, () => visible().length);
   // Rows are looked up by the list's key, never by window index: an index
   // read during a chip change can name another row for a moment and remount it.
   const rowById = createMemo(
@@ -218,8 +227,9 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
             }}
             // Row ids are source positions — unique even when two rows share a
             // URL (the same image twice), stable across chip/search changes.
-            getItemKey={(index) => visible()[index]?.id ?? `index-${index.toString()}`}
+            getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
             createVirtualizer={props.createVirtualizer}
+            scrollTo={match.request}
             class={cn(PAGE_FILL_SCROLLER, LIST_REGION)}
           >
             {(item) => (
@@ -230,7 +240,12 @@ export function ResourceListPage<Row extends ResourceRow, Id extends string>(
                     aria-setsize={visible().length}
                     aria-posinset={item.index + 1}
                     data-fdt="resource-row"
-                    class={cn('min-h-8 px-2 py-1.5', item.index > 0 && 'border-t border-line-1')}
+                    aria-current={match.current() === item.index ? 'true' : undefined}
+                    class={cn(
+                      'min-h-8 px-2 py-1.5',
+                      item.index > 0 && 'border-t border-line-1',
+                      match.current() === item.index && CURRENT_MATCH_ROW
+                    )}
                   >
                     {props.renderRow(row)}
                   </div>
