@@ -1,24 +1,26 @@
 /**
- * The Copy-as-exclusion action, configured onto the shared copy button: the
- * pattern reaches the clipboard byte-exact, the confirmation toast names the
- * WP Rocket setting to paste it into, and every failure shape — a rejected
+ * The Copy-as-exclusion action, rendered from its vocabulary: the pattern
+ * reaches the clipboard byte-exact, the confirmation toast names the WP
+ * Rocket setting to paste it into, and every failure shape — a rejected
  * write, no clipboard in the context — ends in the error toast naming the
  * pattern, never a throw.
  */
 import { fireEvent, render, screen, cleanup } from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CopyButton, type ClipboardLike } from '../../../../components/ui/copy-button';
+import type { ClipboardLike } from '../../../../components/ui/copy-button';
 import { toast, toastItems } from '../../../../components/ui/toast-store';
-import { copyFailedRemedy, exclusionCopyProps, COPIED_DESCRIPTION } from './copy-exclusion';
+import { copyFailedRemedy, ExclusionCopyButton, COPIED_DESCRIPTION } from './copy-exclusion';
 
 const PATTERN = '/wp-content/plugins/p/a.js';
 
-/** The configured control under test (clipboard injected). */
+/** The configured control under test (clipboard injected, pattern static). */
 function ExclusionCopy(props: { clipboard?: ClipboardLike }) {
   return (
-    <CopyButton
-      {...exclusionCopyProps({ pattern: PATTERN, name: 'Copy as exclusion: a.js' })}
+    <ExclusionCopyButton
+      pattern={() => PATTERN}
+      name="Copy as exclusion: a.js"
       clipboard={props.clipboard}
+      class="shrink-0"
     />
   );
 }
@@ -35,7 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('exclusionCopyProps', () => {
+describe('ExclusionCopyButton', () => {
   it('copies the pattern verbatim and toasts the setting to paste it into', async () => {
     const writeText = vi.fn(() => Promise.resolve());
     render(() => <ExclusionCopy clipboard={{ writeText }} />);

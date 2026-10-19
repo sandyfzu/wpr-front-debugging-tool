@@ -14,7 +14,6 @@ import ExternalLinkIcon from 'lucide-solid/icons/external-link';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
-import { CopyButton } from '../../../../components/ui/copy-button';
 import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import {
@@ -25,10 +24,12 @@ import {
 } from '../../../../components/ui/status-badge';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { cn } from '../../../../utils/cn';
-import { exclusionCopyProps } from './copy-exclusion';
+import { recoverOriginalScript } from '../../../../lib/wp-rocket/minify-url-recovery';
+import { COMBINED_EXCLUSION_NOTE, ExclusionCopyButton } from './copy-exclusion';
 import {
   displayWord,
   exclusionPattern,
+  exclusionPatternFromOriginalPath,
   isCrossOriginSentinel,
   isSingleLetterWord,
   scriptLocation,
@@ -325,18 +326,45 @@ interface ScriptRowProps {
  * A script file as a network panel lists it: the file name (the identifying
  * part) as the link text with its query muted, where it lives on a muted
  * line below (the page's own host dropped), and the copy action through the
- * shared copy button rendered with the action's own vocabulary
- * ({@link exclusionCopyProps}). The full URL rides `title`; the link's
- * accessible name carries the location too, so the same file from two hosts
- * reads apart. It keeps the external-link contract (new tab,
- * `noopener noreferrer`, "(opens in a new tab)") and only `http(s):` URLs
- * become links or get a copy action.
+ * action's own vocabulary ({@link ExclusionCopyButton}). The full URL rides
+ * `title`; the link's accessible name carries the location too, so the same
+ * file from two hosts reads apart. It keeps the external-link contract (new
+ * tab, `noopener noreferrer`, "(opens in a new tab)") and only `http(s):`
+ * URLs become links or get a copy action.
+ *
+ * The copy payload names the script's ORIGINAL path: a served minified-URL
+ * row recovers the original path the cache URL mirrors (the exclusion that
+ * survives minify off/on) — page-origin composed when the host is the
+ * site's own, hostless for a host the URL hides (the path is the one
+ * identifier both minify states spell; a host the URL does not carry is
+ * never fabricated) — and a combined-bundle row, whose URL carries no
+ * original path, says so in place of a copy control
+ * ({@link COMBINED_EXCLUSION_NOTE}). The link itself is untouched by all of
+ * this: it opens what actually loaded.
  *
  * @param props See {@link ScriptRowProps}.
  */
 function ScriptRow(props: ScriptRowProps): JSX.Element {
   const parts = createMemo(() => splitScriptUrl(props.url, props.pageOrigin));
-  const pattern = createMemo(() => exclusionPattern(props.url, props.pageOrigin));
+  const recovery = createMemo(() => recoverOriginalScript(props.url));
+  // The copy payload per recovery class.
+  const pattern = createMemo(() => {
+    const recovered = recovery();
+    if (recovered.kind === 'combined') return null;
+    if (recovered.kind === 'untouched') return exclusionPattern(props.url, props.pageOrigin);
+    if (recovered.hostKnown === 'site') {
+      return props.pageOrigin === null
+        ? exclusionPatternFromOriginalPath(recovered.originalPath)
+        : exclusionPattern(`${props.pageOrigin}/${recovered.originalPath}`, props.pageOrigin);
+    }
+    // Host hidden by the served URL: the original path alone — it matches the
+    // served minified tag and the un-minified one alike (both spell the path),
+    // while a fabricated host could never be verified from the URL.
+    return exclusionPatternFromOriginalPath(recovered.originalPath);
+  });
+  // A combined row's URL is http(s) by construction (it matched the cache
+  // shape); every other row is linkable exactly when its pattern exists.
+  const linkable = createMemo(() => recovery().kind === 'combined' || pattern() !== null);
   const location = (): string => scriptLocation(parts());
   const name = (): JSX.Element => (
     <span class="truncate" title={props.url}>
@@ -348,7 +376,7 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
     <>
       <div class="flex min-w-0 flex-1 flex-col">
         <Show
-          when={pattern() !== null}
+          when={linkable()}
           fallback={
             <span data-fdt="script-link" class="flex min-w-0 font-mono text-xs text-fg-primary">
               {name()}
@@ -384,13 +412,21 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
           </span>
         </Show>
       </div>
+      <Switch>
+        <Match when={recovery().kind === 'combined'}>
+          <p data-fdt="combined-note" class={cn(BODY_NOTE, 'max-w-56 shrink')}>
+            {COMBINED_EXCLUSION_NOTE}
+          </p>
+        </Match>
+      </Switch>
+      {/* Non-keyed Show: the control mounts on truthiness and its payload
+          accessor re-reads per access — a refreshed answer's payload swap
+          happens under the same mounted control, focus kept. */}
       <Show when={pattern()}>
         {(value) => (
-          <CopyButton
-            {...exclusionCopyProps({
-              pattern: value(),
-              name: copyExclusionName(parts().file, parts().host)
-            })}
+          <ExclusionCopyButton
+            pattern={value}
+            name={copyExclusionName(parts().file, parts().host)}
             class="shrink-0"
           />
         )}

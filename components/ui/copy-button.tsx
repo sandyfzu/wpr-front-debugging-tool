@@ -158,7 +158,7 @@ export interface CopyButtonProps {
  * ({@link CopyButtonProps.failureDescription} or the shared fallback) — never
  * the platform's error text, never silence — and a standing success flash is
  * flushed, so the error never sits beside the stale check it contradicts.
- * A pending read/write keeps keyboard focus and announces busy/disabled through
+ * An in-flight read/write keeps keyboard focus and announces busy/disabled through
  * ARIA; the invocation guard suppresses repeat activation without native disabling.
  * Disposal aborts source reads and suppresses late write feedback.
  * The flash reintroduced timer edge auto-resets — state must not stick.

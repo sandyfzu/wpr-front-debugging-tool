@@ -75,7 +75,7 @@ export interface UndefinedReferencesDeps {
   readonly inspected: InspectedScripts | null;
   /** Arm a one-shot timer; returns its cancel. Default `setTimeout`. */
   readonly schedule?: (run: () => void, ms: number) => () => void;
-  /** The read timeout (default {@link SCAN_TIMEOUT_MS}). */
+  /** The timeout (default {@link SCAN_TIMEOUT_MS}). */
   readonly timeoutMs?: number;
   /** Report a failed rescan (results stay; the page toasts it). */
   readonly onRescanFailed?: (failure: ScanFailure) => void;

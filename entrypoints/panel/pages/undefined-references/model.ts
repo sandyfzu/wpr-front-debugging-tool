@@ -644,6 +644,22 @@ function rawStretchPattern(text: string): string {
 }
 
 /**
+ * The pattern text over a raw URL chain: percent-runs become their dual
+ * spellings ({@link encodedRunPattern}), raw stretches follow
+ * {@link rawStretchPattern}. Both exclusion builders share it, so the two
+ * lanes can never drift.
+ *
+ * @param raw The raw URL text (host when kept, path, kept query).
+ * @returns Its pattern text.
+ */
+function rawUrlPattern(raw: string): string {
+  return raw
+    .split(PERCENT_RUN_SPLIT)
+    .map((piece, index) => (index % 2 === 1 ? encodedRunPattern(piece) : rawStretchPattern(piece)))
+    .join('');
+}
+
+/**
  * The Delay JS exclusion for a script: the part of its URL that identifies
  * it and survives updates — its path (no scheme, no query: a baked-in
  * `?ver=` stops matching after the next plugin update). The host leads when
@@ -679,11 +695,30 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
   const query = fileless ? (parsed.search.split('&')[0] ?? '') : '';
   const keepHost = parsed.origin !== pageOrigin || fileless || segments <= 1;
   const raw = `${keepHost ? parsed.host : ''}${path}${query}`;
-  const pattern = raw
-    .split(PERCENT_RUN_SPLIT)
-    .map((piece, index) => (index % 2 === 1 ? encodedRunPattern(piece) : rawStretchPattern(piece)))
-    .join('');
+  const pattern = rawUrlPattern(raw);
   return query.length > 1 ? `${pattern}${QUERY_VALUE_END}` : pattern;
+}
+
+/**
+ * The Delay JS exclusion for a script whose served URL hid its original
+ * host (the minify cache mirrored a remote or custom-content-dir path):
+ * the original path alone, never a host — the path is the one identifier
+ * that survives both minify states, since the minified tag spells it under
+ * the site's cache and the plain tag spells it under the true host. The
+ * leading `/` is kept (added when missing) so the pattern cannot end-match
+ * inside a longer file name. A host-led pattern is impossible here by
+ * construction — a host the URL does not carry is never fabricated.
+ *
+ * Shares {@link exclusionPattern}'s raw machinery — percent-run handling,
+ * char table, dual spellings — so the two lanes can never drift.
+ *
+ * @param originalPath The original URL path exactly as recovered (no host,
+ *   no query; percent-runs preserved).
+ * @returns The exclusion text, or `null` for an empty path.
+ */
+export function exclusionPatternFromOriginalPath(originalPath: string): string | null {
+  if (originalPath === '') return null;
+  return rawUrlPattern(originalPath.startsWith('/') ? originalPath : `/${originalPath}`);
 }
 
 /** Two origins name the same script (or both the inline stack). */

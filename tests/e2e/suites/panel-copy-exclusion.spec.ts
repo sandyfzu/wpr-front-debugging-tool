@@ -154,3 +154,103 @@ test('names the pattern to add by hand when the clipboard write is rejected', as
     await fixture.page.close();
   }
 });
+
+/** The live docker capture pair's served URL (P18.0): the fixture enqueue's minified copy. */
+const DOCKER_SERVED =
+  'http://127.0.0.1:8493/wp-content/cache/min/1/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1792430636';
+/** …and the original path its copy payload must carry. */
+const DOCKER_ORIGINAL_PATH = '/wp-content/mu-plugins/assets/fdt-delayed-definer.js';
+/** The real remote-mirror capture (the klaviyo delay row), served minified with a hidden host. */
+const KLAVIYO_SERVED =
+  'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187';
+/** The klaviyo row's hostless payload — the host-hidden row's final answer. */
+const KLAVIYO_HOSTLESS = '/onsite/js/PD7as8/klaviyo.js';
+
+test('the minified served URL copies the original path, not the cache path', async ({
+  extension
+}) => {
+  const opened = await openPanelForFixture(extension, '/errors/found-reference.html', {
+    bootHash: '#/undefined-references',
+    inspect: {
+      origin: 'http://127.0.0.1:8493',
+      resources: [{ url: DOCKER_SERVED, content: 'window.wocketInventory = null;' }]
+    }
+  });
+  const { panel, fixture } = opened;
+  try {
+    // The row presents the SERVED file (what actually loaded); the link opens it.
+    const copy = panel.getByRole('button', {
+      name: 'Copy as exclusion: fdt-delayed-definer.js'
+    });
+    await expect(copy).toBeVisible();
+    const link = panel.getByRole('link', { name: /fdt-delayed-definer\.js/ });
+    await expect(link).toHaveAttribute('href', DOCKER_SERVED);
+    // The clipboard write is audited through the page's dataset.
+    await panel.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            document.documentElement.dataset.auditLast = text;
+            return Promise.resolve();
+          }
+        }
+      });
+    });
+    await copy.click();
+    await expect
+      .poll(() => panel.evaluate(() => document.documentElement.dataset.auditLast))
+      .toBe(DOCKER_ORIGINAL_PATH);
+    // The cache path is never the payload — the defect this fixes copied it.
+    expect(DOCKER_ORIGINAL_PATH).not.toContain('cache/min');
+  } finally {
+    await panel.close();
+    await fixture.page.close();
+  }
+});
+
+test('a remote-mirror row copies the hostless original path — no notice, no pending state', async ({
+  extension
+}) => {
+  const opened = await openPanelForFixture(extension, '/errors/found-reference.html', {
+    bootHash: '#/undefined-references',
+    inspect: {
+      origin: ORIGIN_A,
+      resources: [{ url: KLAVIYO_SERVED, content: 'window.wocketInventory = null;' }]
+    }
+  });
+  const { panel, fixture } = opened;
+  try {
+    // The hostless pattern is the row's final answer the moment it renders:
+    // the control is ready immediately (no resolution wait) and no notice
+    // ever appears (the path matches both minify states; no host to resolve).
+    const copy = panel.getByRole('button', {
+      name: 'Copy as exclusion: klaviyo.js (wp-rocket.me)'
+    });
+    await expect(copy).toBeVisible();
+    await expect(copy).not.toHaveAttribute('aria-busy');
+    await expect(copy).toHaveAttribute(
+      'title',
+      'Copy an exclusion for this script, to exclude it from Delay JavaScript execution'
+    );
+    await expect(panel.getByText(/original hosts could not be verified/)).toHaveCount(0);
+    await panel.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: (text: string) => {
+            document.documentElement.dataset.auditLast = text;
+            return Promise.resolve();
+          }
+        }
+      });
+    });
+    await copy.click();
+    await expect
+      .poll(() => panel.evaluate(() => document.documentElement.dataset.auditLast))
+      .toBe(KLAVIYO_HOSTLESS);
+  } finally {
+    await panel.close();
+    await fixture.page.close();
+  }
+});

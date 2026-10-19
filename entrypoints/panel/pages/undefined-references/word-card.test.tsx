@@ -219,6 +219,93 @@ describe('WordCard — script rows', () => {
   });
 });
 
+describe('WordCard — copy payload names the original path', () => {
+  const SITE = 'http://127.0.0.1:8493';
+  // The live docker capture pair: the fixture enqueue's served copy.
+  const SERVED_MINIFIED = `${SITE}/wp-content/cache/min/1/wp-content/mu-plugins/assets/fdt-delayed-definer.js?ver=1792430636`;
+  const ORIGINAL_PATH = '/wp-content/mu-plugins/assets/fdt-delayed-definer.js';
+  // The live docker combined-bundle capture.
+  const COMBINED = `${SITE}/wp-content/cache/min/1/cdb2e71f9f3da2a001630dcca225acbf.js`;
+
+  it('copies the original path for a served minified URL, not the cache path', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="fdtDelayTypedDependency"
+        answer={[{ kind: 'url', url: SERVED_MINIFIED }]}
+        pageOrigin={SITE}
+      />
+    ));
+    // The row's link still opens what actually loaded (the served URL).
+    expect(screen.getByRole('link', { name: /fdt-delayed-definer\.js/ }).getAttribute('href')).toBe(
+      SERVED_MINIFIED
+    );
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: fdt-delayed-definer.js' });
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(ORIGINAL_PATH);
+    });
+  });
+
+  it('copies the hostless original path when the page origin is unknown', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="fdtDelayTypedDependency"
+        answer={[{ kind: 'url', url: SERVED_MINIFIED }]}
+        pageOrigin={null}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole('button', {
+        // An unknown page origin keeps the served host in the row's name.
+        name: 'Copy as exclusion: fdt-delayed-definer.js (127.0.0.1:8493)'
+      })
+    );
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(ORIGINAL_PATH);
+    });
+  });
+
+  it('a remote-mirrored row copies the hostless original path — its final answer', async () => {
+    const clipboard = writer('resolve');
+    render(() => (
+      <WordCard
+        word="Klaviyo"
+        answer={[
+          {
+            kind: 'url',
+            url: 'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187'
+          }
+        ]}
+        pageOrigin="https://wp-rocket.me"
+      />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: klaviyo.js' });
+    // No pending state, no wait: the hostless pattern is the row's final
+    // answer, ready the moment the row renders.
+    expect(copy.hasAttribute('aria-busy')).toBe(false);
+    fireEvent.click(copy);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith('/onsite/js/PD7as8/klaviyo.js');
+    });
+  });
+
+  it('replaces the copy control with the combined-bundle note and keeps the link', () => {
+    render(() => (
+      <WordCard word="bundle" answer={[{ kind: 'url', url: COMBINED }]} pageOrigin={SITE} />
+    ));
+    expect(screen.queryByRole('button')).toBeNull();
+    const link = screen.getByRole('link', { name: /cdb2e71f9f3da2a001630dcca225acbf\.js/ });
+    expect(link.getAttribute('href')).toBe(COMBINED);
+    const note = document.querySelector('[data-fdt="combined-note"]');
+    if (!note) throw new Error('no combined note rendered');
+    expect(note.textContent).toBe(
+      "This script ships inside WP Rocket's combined JS bundle — per-file Delay exclusion is not available. The remedy is disabling Combine JS or excluding the original file in File Optimization."
+    );
+  });
+});
+
 describe('WordCard — definition list', () => {
   it('renders an inline definition as a chip — never a link', () => {
     render(() => <WordCard word="gamma" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />);
