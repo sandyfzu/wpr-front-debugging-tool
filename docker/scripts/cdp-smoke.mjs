@@ -7,7 +7,10 @@
  *     dispatching a real mousemove (WP Rocket's delay queue listens for it; verified in
  *     the 3.23.5.1 lazyload-scripts runtime) runs the queue: the delayed script throws
  *     its ReferenceError at execution time, the benign one tags itself
- *     data-fdt-delay="executed", and WP Rocket sets data-rocket-status on both nodes.
+ *     data-fdt-delay="executed", WP Rocket sets data-rocket-status on the nodes, and
+ *     the definer — held in the queue as the last delayed script — runs only after the
+ *     throw and defines the thrown name (the found-verdict replay: a real throw, a
+ *     real late definition).
  *  3. /wp-json/fdt/v1/ua-echo    -> the uncached text echo of the request's User-Agent
  *     (marker first): the body carries the browser UA, changes when the UA is
  *     overridden — a stored or HTTP-cached copy could not — and carries no WP Rocket
@@ -195,6 +198,25 @@ const beforeStatus = await statusOf('[data-fdt-delay], [data-rocket-status]', [
   'data-rocket-status',
   'data-fdt-delay'
 ]);
+// The definer must sit in the delay queue at this point: served as a held
+// script (type moved off the runtime value, src rewritten into the plugin's
+// data attribute), never as a plain load-time script.
+const heldBefore = await send(
+  'Runtime.evaluate',
+  {
+    expression: `JSON.stringify({
+  definerNotHeld: [...document.querySelectorAll('script[src*="fdt-delayed-definer"]')].length,
+  definerHeld: [
+    ...document.querySelectorAll(
+      'script[type$="rocketlazyloadscript"][data-rocket-src*="fdt-delayed-definer"]'
+    )
+  ].length,
+  definedBefore: typeof window.fdtDelayTypedDependency,
+})`,
+    returnByValue: true
+  },
+  sessionId
+).then((r) => JSON.parse(r.result.result.value));
 const thrownBefore = thrown(t0).length;
 // a real user action: move + press + release (the runtime listens on mousemove & co.)
 await send('Input.dispatchMouseEvent', { type: 'mousemove', x: 200, y: 200 }, sessionId);
@@ -213,14 +235,21 @@ const afterStatus = await statusOf('[data-rocket-status], [data-fdt-delay]', [
   'data-rocket-status',
   'data-fdt-delay'
 ]);
+const definedAfter = await send(
+  'Runtime.evaluate',
+  { expression: 'typeof window.fdtDelayTypedDependency', returnByValue: true },
+  sessionId
+).then((r) => r.result.result.value);
 const delayErrs = thrown(t0).map(
   (e) => e.params.exceptionDetails?.exception?.description || e.params.exceptionDetails?.text
 );
 results.delay = {
   beforeStatus,
+  heldBefore,
   afterStatus,
   thrownBeforeInteraction: thrownBefore,
-  errorsAfter: delayErrs
+  errorsAfter: delayErrs,
+  definedAfter
 };
 
 // ---- Scenario 3: the uncached UA-echo endpoint (the per-request network truth) ----
@@ -366,6 +395,19 @@ const refMsg = results.delay.errorsAfter.find(
 if (results.delay.thrownBeforeInteraction !== 0)
   fail('scenario 2: errors before the interaction — delay queue did not hold the scripts');
 if (!refMsg) fail('scenario 2: the delayed ReferenceError for fdtDelayTypedDependency never fired');
+if (results.delay.heldBefore.definerNotHeld !== 0 || results.delay.heldBefore.definerHeld < 1)
+  fail(
+    'scenario 2: the definer is not held in the delay queue as a last delayed script ' +
+      `(served ${JSON.stringify(results.delay.heldBefore)})`
+  );
+if (results.delay.heldBefore.definedBefore !== 'undefined')
+  fail(
+    `scenario 2: the definer already defined the name before the interaction (${results.delay.heldBefore.definedBefore}) — the throw would not be real`
+  );
+if (results.delay.definedAfter !== 'function')
+  fail(
+    `scenario 2: the definer never defined fdtDelayTypedDependency after the interaction (${results.delay.definedAfter})`
+  );
 if (!results.delay.afterStatus.some((s) => s['data-rocket-status'] === 'executed'))
   fail('scenario 2: no data-rocket-status="executed" observed after interaction');
 if (!results.delay.afterStatus.some((s) => s['data-fdt-delay'] === 'executed'))

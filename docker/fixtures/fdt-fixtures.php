@@ -14,10 +14,14 @@
  *   ?fdt-error=reference    immediate `ReferenceError: X is not defined` at load
  *   ?fdt-error=reading      immediate `TypeError: Cannot read properties of undefined (reading 'X')` at load
  *   ?fdt-error=notfunction  immediate `TypeError: X is not a function` at load
- *   ?fdt-delay=1            two scripts handed to WP Rocket's Delay JS queue (the
- *                           delayed-execution reproduction: one throws exactly when the
- *                           delay queue runs; one completes benignly and tags its script
- *                           element `data-fdt-delay="executed"`)
+ *   ?fdt-delay=1            three scripts handed to WP Rocket's Delay JS queue (the
+ *                           delayed-execution reproduction, enqueue order = delay
+ *                           execution order): one throws exactly when the delay queue
+ *                           runs it, one completes benignly and tags its script element
+ *                           `data-fdt-delay="executed"`, and one defines the thrown
+ *                           name only LAST — it loaded too late for the call that
+ *                           needed it, so the debugging tool's definition search
+ *                           legitimately answers it (the found-verdict replay)
  *   ?fdt-wpr-versionless=1  WP Rocket's generator meta issued WITHOUT its version
  *                           stamp (the plugin's own
  *                           `rocket_display_meta_generator_content_version` filter
@@ -99,7 +103,15 @@ function fixture_error_assets(): array {
 }
 
 /**
- * The two assets handed to WP Rocket's Delay JS queue by `?fdt-delay=1`.
+ * The assets handed to WP Rocket's Delay JS queue by `?fdt-delay=1`.
+ *
+ * The order is the delay-execution order, and the found-replay contract rides
+ * it: when the queue runs, the reference throw happens while the name it calls
+ * has no definition anywhere on the page; the benign marker runs next; the
+ * definer runs LAST, adding a real definition of the thrown name only after
+ * the failure — so the definition search answers fdt-delayed-definer.js and
+ * the undefined-references card offers "Copy as exclusion" for its path
+ * (executed-too-late is the story the search tells, and it tells it honestly).
  *
  * @return string[] Asset filename stems, in enqueue (delay-execution) order.
  */
@@ -107,6 +119,7 @@ function fixture_delay_assets(): array {
 	return [
 		'fdt-delayed-reference', // throws the ReferenceError exactly when Delay JS runs it
 		'fdt-delayed-lifecycle', // completes benignly: sets fdtDelayExecutedAt marker
+		'fdt-delayed-definer',   // defines the thrown name last: the found-verdict replay
 	];
 }
 
