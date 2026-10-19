@@ -143,6 +143,37 @@ wpc 'wp --path=/var/www/html plugin list --format=csv'           # all conflicts
 wpc 'wp --path=/var/www/html eval "rocket_clean_domain(); rocket_clean_minify();"'   # own purge
 ```
 
+### The minify arms the exclusion panels copy from (P18 capture arms)
+
+The panel's Undefined References "Copy as exclusion" names the script's ORIGINAL
+path on a minified site: WP Rocket's per-file Minify mirrors the original URL
+path into the cache URL (`cache/min/<site-id>/<original-path>`), and the panel
+recovers it (verified live on this site — the defect it fixes copied the cache
+path instead). Combined bundles (`minify_concatenate_js`) carry only an md5
+filename — the row says so instead of a copy control.
+
+To reproduce the **combined-bundle capture arm** (recorded in
+`docs/plans/18-exclusion-original-path.md`), flip the two options, regenerate
+the per-host config, purge, fetch, and restore:
+
+```bash
+wpc 'wp --path=/var/www/html option patch update wp_rocket_settings minify_concatenate_js 1
+     wp --path=/var/www/html option patch update wp_rocket_settings delay_js 0
+     wp --path=/var/www/html eval "do_action( \"permalink_structure_changed\" );"
+     wp --path=/var/www/html eval "rocket_clean_domain(); rocket_clean_minify();"'
+curl -s "http://127.0.0.1:8493/fdt/?fdt-delay=1" | grep -o 'src="[^"]*cache/min[^"]*"'
+# → .../cache/min/1/<32-hex>.js — the combined bundle (no ?ver=).
+# Restore the baseline (the next `up.sh` would anyway):
+wpc 'wp --path=/var/www/html option patch update wp_rocket_settings minify_concatenate_js 0
+     wp --path=/var/www/html option patch update wp_rocket_settings delay_js 1
+     wp --path=/var/www/html eval "do_action( \"permalink_structure_changed\" );"
+     wp --path=/var/www/html eval "rocket_clean_domain(); rocket_clean_minify();"'
+```
+
+A `?nowprocket=1` fetch of any page serves the plain render — the panel's
+original-host map uses it (in-page, same-origin) to resolve remote-mirrored
+scripts' true hosts.
+
 The WPR admin's real options are seeded by the bootstrap through one authenticated admin
 request (`wp_rocket_settings` exists only after an admin-page-context hit — wp-cli
 activation does not seed it; verified against the bundled WP-CLI 2.12.0).
