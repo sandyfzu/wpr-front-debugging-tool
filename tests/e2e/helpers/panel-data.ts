@@ -56,14 +56,25 @@ function devtoolsShim(tabId: number, inspect: OpenPanelOptions['inspect']): stri
   // The whole stub rides as a JSON literal: the init script self-contains it,
   // sharing no state with the suite beyond this call's arguments.
   const stub =
-    inspect === undefined ? null : { origin: inspect.origin, resources: inspect.resources };
+    inspect === undefined
+      ? null
+      : { origin: inspect.origin, resources: inspect.resources, bypassEval: inspect.bypassEval };
   return `(() => {
     const stub = ${JSON.stringify(stub)};
     const inspectedWindow = stub === null
       ? { tabId: ${JSON.stringify(tabId)} }
       : {
           tabId: ${JSON.stringify(tabId)},
-          eval: (expression, onComplete) => { onComplete(stub.origin, null); },
+          eval: (expression, onComplete) => {
+            // The bypass read's one eval (its static expression names the
+            // flag): the suite answers it or never does (the timeout arm).
+            if (String(expression).includes('nowprocket')) {
+              if (stub.bypassEval?.neverAnswer === true) return;
+              onComplete(stub.bypassEval?.answer ?? stub.origin, null);
+              return;
+            }
+            onComplete(stub.origin, null);
+          },
           getResources: (onComplete) => {
             onComplete(stub.resources.map((resource) => ({
               url: resource.url,
@@ -112,6 +123,19 @@ export interface OpenPanelOptions {
     readonly origin: string;
     /** The page's script resources (the fixture page's external scripts). */
     readonly resources: readonly InspectedResourceStub[];
+    /**
+     * What the bypass read's eval answers (the original-host map's one
+     * in-page read). Absent: the eval answers the fixture origin — a junk
+     * bypass answer, the fastest degraded arm. `answer`: the eval's exact
+     * result (the resolution arm). `neverAnswer`: the eval never calls
+     * back — the store's real timeout arm.
+     */
+    readonly bypassEval?: {
+      /** The eval's exact result value (a JSON string the adapter parses). */
+      readonly answer?: string;
+      /** The eval never calls its callback back. */
+      readonly neverAnswer?: boolean;
+    };
   };
 }
 
