@@ -39,6 +39,7 @@ afterEach(() => {
   cleanup();
   toast.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 /** Let promise chains (reads, the search loop) run to quiescence. */
@@ -109,9 +110,10 @@ function mount(options: MountOptions) {
       return () => undefined;
     }
   };
-  const onCopy = vi.fn<(pattern: string) => Promise<'copied' | 'failed'>>(() =>
-    Promise.resolve('copied')
-  );
+  // The rows' copy routes through the shared control's default clipboard;
+  // the stub records what the rows write without touching the platform.
+  const writeText = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
   render(() => (
     <FdtDataContext.Provider value={store}>
       <UndefinedReferencesPage
@@ -119,7 +121,6 @@ function mount(options: MountOptions) {
           inspected: options.unsupported ? null : inspected,
           yieldToMain: () => Promise.resolve()
         }}
-        onCopy={onCopy}
       />
     </FdtDataContext.Provider>
   ));
@@ -136,7 +137,7 @@ function mount(options: MountOptions) {
     setState({ status: 'refreshing', data: current.data, requestedAt: fetchedAt });
     setState({ status: 'ready', data, fetchedAt });
   };
-  return { reads, added, push, refresh, onCopy };
+  return { reads, added, push, refresh, writeText };
 }
 
 /** The page's polite status line. */
@@ -279,10 +280,10 @@ describe('UndefinedReferencesPage — results', () => {
   });
 
   it('copies the same-origin path through the row action', async () => {
-    const { onCopy } = await withResults(['alpha']);
+    const { writeText } = await withResults(['alpha']);
     fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: a.js' }));
     await vi.waitFor(() => {
-      expect(onCopy).toHaveBeenCalledWith('/wp-content/plugins/p/a.js');
+      expect(writeText).toHaveBeenCalledWith('/wp-content/plugins/p/a.js');
     });
     expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe('plugins/p/');
   });

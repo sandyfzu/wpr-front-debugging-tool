@@ -43,15 +43,38 @@ export interface InspectedPanel {
 /**
  * The init script the seam installs: stamp `devtools.inspectedWindow.tabId`
  * onto every namespace object the extension page exposes (`chrome` and
- * `browser` — see the file header's verified facts), and nothing else.
+ * `browser` — see the file header's verified facts), and — only when the
+ * suite passes {@link OpenPanelOptions.inspect} — the resource table and
+ * page origin the undefined-references reader enumerates through. That stub
+ * answers with suite-provided values only; the shipped adapter's shape
+ * checks, the definition search and the store flow around it are app code.
  *
  * @param tabId The tab id a real DevTools window would report.
+ * @param inspect The suite-provided resource stub, when one is needed.
  */
-function devtoolsShim(tabId: number): string {
+function devtoolsShim(tabId: number, inspect: OpenPanelOptions['inspect']): string {
+  // The whole stub rides as a JSON literal: the init script self-contains it,
+  // sharing no state with the suite beyond this call's arguments.
+  const stub =
+    inspect === undefined ? null : { origin: inspect.origin, resources: inspect.resources };
   return `(() => {
+    const stub = ${JSON.stringify(stub)};
+    const inspectedWindow = stub === null
+      ? { tabId: ${JSON.stringify(tabId)} }
+      : {
+          tabId: ${JSON.stringify(tabId)},
+          eval: (expression, onComplete) => { onComplete(stub.origin, null); },
+          getResources: (onComplete) => {
+            onComplete(stub.resources.map((resource) => ({
+              url: resource.url,
+              type: 'script',
+              getContent(onContent) { onContent(resource.content, ''); }
+            })));
+          }
+        };
     const stamp = (namespace) => {
       if (namespace === undefined || namespace === null) return false;
-      namespace['devtools'] = { inspectedWindow: { tabId: ${JSON.stringify(tabId)} } };
+      namespace['devtools'] = { inspectedWindow };
       return true;
     };
     const win = window;
@@ -60,12 +83,36 @@ function devtoolsShim(tabId: number): string {
   })()`;
 }
 
+/** One script resource the {@link OpenPanelOptions.inspect} stub answers with. */
+export interface InspectedResourceStub {
+  /**
+   * The absolute http(s) URL DevTools would report — the fixture page's own
+   * origin plus its path (the shipped reader only enumerates http(s)).
+   */
+  readonly url: string;
+  /** The script source `getContent` answers with. */
+  readonly content: string;
+}
+
 /** The seam's opening options (defaults keep the plain two-arg form). */
 export interface OpenPanelOptions {
   /** Which local origin to load the fixture from (default ORIGIN_A). */
   readonly origin?: string;
   /** The panel document's boot hash (e.g. `#/lazyload`) for deep-link boots. */
   readonly bootHash?: string;
+  /**
+   * The undefined-references reader's `devtools.inspectedWindow` stub: one
+   * fixture origin (what `eval('location.origin')` answers) and the script
+   * resources `getResources` enumerates. Without it the seam stamps only the
+   * tab id, and standalone panel pages have no resource table — exactly the
+   * fact the suites that exercise the reader need stubbed.
+   */
+  readonly inspect?: {
+    /** The page origin the reader reads (the fixture page's own origin). */
+    readonly origin: string;
+    /** The page's script resources (the fixture page's external scripts). */
+    readonly resources: readonly InspectedResourceStub[];
+  };
 }
 
 /**
@@ -92,7 +139,7 @@ export async function openPanelForFixture(
   const panel = await extension.browserContext.newPage();
   // Before any module script, so the accessor's feature-detection reads the
   // stamped id at its first read (the boot flight's timing).
-  await panel.addInitScript(devtoolsShim(fixture.tabId));
+  await panel.addInitScript(devtoolsShim(fixture.tabId, options.inspect));
   await panel.goto(`${await panelPageUrl(extension)}${options.bootHash ?? ''}`, {
     waitUntil: 'load'
   });

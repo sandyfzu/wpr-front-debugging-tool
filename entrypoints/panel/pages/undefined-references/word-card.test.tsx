@@ -7,10 +7,12 @@
  * URLs rendered inertly. User-facing copy is pinned literally.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { toastItems } from '../../../../components/ui/toast-store';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
-import { COPIED_FLASH_MS, WordCard, copyExclusionName } from './word-card';
+import { WordCard, copyExclusionName } from './word-card';
 
 afterEach(() => {
   cleanup();
@@ -22,6 +24,22 @@ const PAGE = 'https://example.com';
 const URL_A = 'https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1';
 const URL_CDN = 'https://cdn.example.net/wp-includes/js/jquery/jquery.min.js?ver=3.7.1';
 
+/**
+ * A clipboard double recorded through the default navigator seam (the card's
+ * copy routes through the shared button's own clipboard resolution).
+ */
+function writer(behavior: 'resolve' | 'reject'): { writeText: Mock } {
+  const clipboard = {
+    writeText: vi.fn((): Promise<void> =>
+      behavior === 'resolve'
+        ? Promise.resolve()
+        : Promise.reject(new Error('Document is not focused.'))
+    )
+  };
+  vi.stubGlobal('navigator', { clipboard });
+  return clipboard;
+}
+
 /** The rendered verdict span. */
 function verdict(): HTMLElement {
   const node = document.querySelector<HTMLElement>('[data-fdt-verdict]');
@@ -29,21 +47,11 @@ function verdict(): HTMLElement {
   return node;
 }
 
-/** A copy handler that resolves copied and records what it got. */
-function recorder() {
-  return vi.fn<(pattern: string) => Promise<'copied' | 'failed'>>(() => Promise.resolve('copied'));
-}
-
 describe('WordCard — script rows', () => {
   it('names the link by file + location, drops the page host, copies the path', async () => {
-    const onCopy = recorder();
+    const clipboard = writer('resolve');
     render(() => (
-      <WordCard
-        word="jQuery"
-        answer={[{ kind: 'url', url: URL_A }]}
-        pageOrigin={PAGE}
-        onCopy={onCopy}
-      />
+      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
     ));
     expect(screen.getByText('Undefined')).toBeTruthy();
     expect(verdict().textContent).toBe('In 1 script');
@@ -64,11 +72,12 @@ describe('WordCard — script rows', () => {
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     fireEvent.click(copy);
     await vi.waitFor(() => {
-      expect(onCopy).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
+      expect(clipboard.writeText).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
     });
   });
 
-  it('keeps the host for another origin, so the same file from two hosts reads apart', () => {
+  it('keeps the host for another origin, so the same file from two hosts reads apart', async () => {
+    const clipboard = writer('resolve');
     render(() => (
       <WordCard
         word="jQuery"
@@ -77,7 +86,6 @@ describe('WordCard — script rows', () => {
           { kind: 'url', url: URL_CDN }
         ]}
         pageOrigin={PAGE}
-        onCopy={recorder()}
       />
     ));
     const names = screen.getAllByRole('link').map((link) => link.textContent);
@@ -98,20 +106,31 @@ describe('WordCard — script rows', () => {
     expect(
       [...document.querySelectorAll('[data-fdt="script-location"]')].map((node) => node.textContent)
     ).toEqual(['wp-includes/js/jquery/', 'wp-includes/js/jquery/ · cdn.example.net']);
+    // Only the clicked row's pattern reaches the clipboard (the CDN host included).
+    const rows = screen.getAllByRole('button', { name: /^Copy as exclusion/ });
+    const secondRow = rows[1];
+    if (secondRow === undefined) throw new Error('two copy rows expected');
+    fireEvent.click(secondRow);
+    await vi.waitFor(() => {
+      expect(clipboard.writeText).toHaveBeenCalledWith(
+        'cdn.example.net/wp-includes/js/jquery/jquery.min.js'
+      );
+    });
+    expect(clipboard.writeText).toHaveBeenCalledTimes(1);
   });
 
   it('flashes "Copied" in place after a confirmed copy, then reverts', async () => {
     vi.useFakeTimers();
+    writer('resolve');
     render(() => (
-      <WordCard
-        word="jQuery"
-        answer={[{ kind: 'url', url: URL_A }]}
-        pageOrigin={PAGE}
-        onCopy={recorder()}
-      />
+      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
     ));
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     expect(copy.textContent).toBe('Copy as exclusion');
+    // The full intent rides the hover hint (not the accessible name).
+    expect(copy.getAttribute('title')).toBe(
+      'Copy an exclusion for this script, to exclude it from Delay JavaScript execution'
+    );
     fireEvent.click(copy);
     await vi.advanceTimersByTimeAsync(0);
     expect(copy.hasAttribute('data-fdt-copied')).toBe(true);
@@ -121,48 +140,63 @@ describe('WordCard — script rows', () => {
     expect(copy.textContent).toBe('Copy as exclusion');
   });
 
-  it('does not flash on a failed copy, and survives a throwing handler', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const failing = vi.fn(() => Promise.resolve<'copied' | 'failed'>('failed'));
-    const { unmount } = render(() => (
-      <WordCard
-        word="jQuery"
-        answer={[{ kind: 'url', url: URL_A }]}
-        pageOrigin={PAGE}
-        onCopy={failing}
-      />
+  it('issues exactly one clipboard write when repeat activation rides a pending copy', async () => {
+    let resolveWrite: () => void = () => undefined;
+    const clipboard = writer('resolve');
+    clipboard.writeText.mockImplementationOnce(
+      () =>
+        new Promise<void>((done) => {
+          resolveWrite = done;
+        })
+    );
+    render(() => (
+      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
+    ));
+    const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
+    fireEvent.click(copy);
+    expect(copy.getAttribute('aria-busy')).toBe('true');
+    // The card routes through the shared control's pending guard: the repeat
+    // click must not issue its own write (one report per intent).
+    fireEvent.click(copy);
+    expect(clipboard.writeText).toHaveBeenCalledTimes(1);
+    resolveWrite();
+    await vi.waitFor(() => {
+      expect(copy.hasAttribute('aria-busy')).toBe(false);
+    });
+    expect(clipboard.writeText).toHaveBeenCalledTimes(1);
+    // The single confirmed copy lands its feedback exactly once.
+    expect(copy.hasAttribute('data-fdt-copied')).toBe(true);
+  });
+
+  it('does not flash on a failed copy; the toast error names the pattern', async () => {
+    const clipboard = writer('reject');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    render(() => (
+      <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
     ));
     const copy = screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' });
     fireEvent.click(copy);
     await vi.waitFor(() => {
-      expect(failing).toHaveBeenCalledOnce();
+      expect(toastItems().some((item) => item.tone === 'error')).toBe(true);
     });
     expect(copy.hasAttribute('data-fdt-copied')).toBe(false);
-    unmount();
-    render(() => (
-      <WordCard
-        word="jQuery"
-        answer={[{ kind: 'url', url: URL_A }]}
-        pageOrigin={PAGE}
-        onCopy={() => Promise.reject(new Error('boom'))}
-      />
-    ));
-    fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' }));
+    expect(copy.textContent).toBe('Copy as exclusion');
+    // The toast error landed (the answer to what went wrong); usable again.
+    fireEvent.click(copy);
     await vi.waitFor(() => {
-      expect(console.warn).toHaveBeenCalled();
+      expect(clipboard.writeText).toHaveBeenCalledTimes(2);
     });
-    vi.restoreAllMocks();
+    warn.mockRestore();
   });
 
-  it('copies through the real action when no override is given', async () => {
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal('navigator', { clipboard: { writeText } });
+  it('copies through the shared action with no injection (the default clipboard)', async () => {
+    const clipboard = writer('resolve');
     render(() => (
       <WordCard word="jQuery" answer={[{ kind: 'url', url: URL_A }]} pageOrigin={PAGE} />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Copy as exclusion: jquery.min.js' }));
     await vi.waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
+      expect(clipboard.writeText).toHaveBeenCalledWith('/wp-includes/js/jquery/jquery.min.js');
     });
   });
 
@@ -197,7 +231,7 @@ describe('WordCard — definition list', () => {
       kind: 'url',
       url: `https://example.com/js/file-${String(i)}.js`
     }));
-    render(() => <WordCard word="$" answer={definitions} pageOrigin={PAGE} onCopy={recorder()} />);
+    render(() => <WordCard word="$" answer={definitions} pageOrigin={PAGE} />);
     expect(verdict().textContent).toBe('In 7 scripts');
     const list = screen.getByRole('list', { name: 'Possible definitions of $' });
     expect(list.querySelectorAll('li')).toHaveLength(5);
@@ -219,7 +253,7 @@ describe('WordCard — definition list', () => {
       kind: 'url',
       url: `https://example.com/js/f${String(i)}.js`
     }));
-    render(() => <WordCard word="x" answer={definitions} pageOrigin={PAGE} onCopy={recorder()} />);
+    render(() => <WordCard word="x" answer={definitions} pageOrigin={PAGE} />);
     expect(document.querySelector('[data-fdt="definitions-toggle"]')).toBeNull();
   });
 });

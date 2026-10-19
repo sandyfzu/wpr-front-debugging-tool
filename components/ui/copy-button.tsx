@@ -1,8 +1,10 @@
 /**
  * The copy control — one button for every "copy this" affordance (evidence
  * snippets, exclusion lists, reports). Its feedback never degrades to silence:
- * a confirmed write confirms via the toast store; a rejected write renders the
- * error toast with the remedy — copy failures are never silent.
+ * a confirmed write confirms via the toast store (its title and hint are the
+ * consumer's copy vocabulary); a rejected write renders the error toast with
+ * the remedy — copy failures are never silent. The in-place check flash and
+ * its window are shared too, so no consumer re-implements feedback.
  */
 import type { JSX } from 'solid-js';
 import { createSignal } from 'solid-js';
@@ -14,13 +16,21 @@ import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import { cn } from '../../utils/cn';
 import { createLogger } from '../../lib/logger';
 import { Button } from './button';
+import { STATUS_TEXT_CLASSES } from './status-badge';
 import { toast } from './toast-store';
 
 /** The logger for copy degradations — the toast is the user feedback, this is the operational record. */
 const logger = createLogger('copy-button');
 
-/** How long the check confirmation state lingers after a successful copy (ms). */
-const COPIED_FLASH_MS = 1600;
+/**
+ * How long the check confirmation state lingers after a successful copy (ms).
+ * The shared flash's one declaring site — every flash consumer times with it,
+ * so confirmation feedback keeps one rhythm everywhere.
+ */
+export const COPIED_FLASH_MS = 1600;
+
+/** The error toast's title — the copy mechanism, not the copied thing, failed. */
+const COPY_FAILED_TITLE = 'Copy failed';
 
 /** The stable remedy line for a rejected clipboard write. */
 const COPY_FAILED_DESCRIPTION = 'Copy it from selection instead.';
@@ -92,17 +102,44 @@ export interface CopyButtonProps {
   /** Actionable remedy when a source read fails before the clipboard write. */
   sourceFailureDescription?: string;
   /**
-   * The name of what is copied — phrased into the confirmation toast
-   * (`"<label> copied"`) and the accessible name when the label text is
-   * hidden. Required so no unnamed copy control reaches a surface.
+   * The name of what is copied — the visible label, the fallback accessible
+   * name when the label is hidden (`"<label> — copy"`), and the success
+   * toast's default title (`"<label> copied"`). Required so no unnamed copy
+   * control reaches a surface.
    */
   label: string;
+  /**
+   * The full accessible name when it must differ from the visible label
+   * (a per-row say: the file or pattern the name should identify). Set means
+   * the name is stable across the flash even when {@link copiedLabel} swaps
+   * the visible text; unset, the name follows the rendered text.
+   */
+  ariaLabel?: string;
+  /** The control's hover hint (its full intent; never the accessible name). */
+  title?: string;
+  /**
+   * Whether the label renders beside the icon: `true` (default) always,
+   * `false` never (accessible name synthesized), `'regular-up'` visible from
+   * the regular tier and sr-only below (an icon-only compact row keeps the
+   * name), so a dense row's copy control shrinks with the page.
+   */
+  showLabel?: boolean | 'regular-up';
+  /**
+   * The visible label's wording while the check flash shows (default: the
+   * label stays). The flash text with no {@link ariaLabel} changes the name
+   * with it; pair them when the name must hold still.
+   */
+  copiedLabel?: string;
+  /** The success toast's title override (default `"<label> copied"`). */
+  successTitle?: string;
+  /** The success toast's secondary line — a destination hint ("paste it into …"). */
+  successDescription?: string;
+  /** The failure toast's remedy override (default {@link COPY_FAILED_DESCRIPTION}). */
+  failureDescription?: string;
   /** Visual weight (same variants as `Button`, default `ghost`). */
   variant?: ComponentProps<typeof Button>['variant'];
   /** Density (same sizes as `Button`, default `sm`). */
   size?: ComponentProps<typeof Button>['size'];
-  /** Whether the label renders beside the icon (default `true`; icon-only otherwise). */
-  showLabel?: boolean;
   /** The clipboard seam (default `navigator.clipboard`). */
   clipboard?: ClipboardLike;
   /** Extra classes, merged last so callers win. */
@@ -112,8 +149,15 @@ export interface CopyButtonProps {
 /**
  * Render the shared copy button.
  *
- * Feedback: success = `"<label> copied"` toast + check-icon flash; failure =
- * the error toast with {@link COPY_FAILED_DESCRIPTION} as its one action line.
+ * Feedback: success = the toast (`"<label> copied"` unless
+ * {@link CopyButtonProps.successTitle} overrides it, with the destination
+ * hint when one is given) plus the shared check flash — the icon turns to a
+ * confirmation for {@link COPIED_FLASH_MS}, to the ok status color while
+ * {@link CopyButtonProps.copiedLabel} may reword the label. Failure = the
+ * error toast: the mechanism's title with the remedy line
+ * ({@link CopyButtonProps.failureDescription} or the shared fallback) — never
+ * the platform's error text, never silence — and a standing success flash is
+ * flushed, so the error never sits beside the stale check it contradicts.
  * A pending read/write keeps keyboard focus and announces busy/disabled through
  * ARIA; the invocation guard suppresses repeat activation without native disabling.
  * Disposal aborts source reads and suppresses late write feedback.
@@ -125,10 +169,16 @@ export interface CopyButtonProps {
  * @param props.text The payload.
  * @param props.loadText Optional complete-source reader, cancelled on disposal.
  * @param props.sourceFailureDescription Remedy for a failed source read.
- * @param props.label What to name in feedback.
+ * @param props.label The base name: visible label, fallback name, toast default.
+ * @param props.ariaLabel Accessible-name override when the visible label differs.
+ * @param props.title Hover hint (not the accessible name).
+ * @param props.showLabel Label rendering (`true`/`false`/`'regular-up'`).
+ * @param props.copiedLabel Label wording while the flash shows.
+ * @param props.successTitle Success-toast title override.
+ * @param props.successDescription Success-toast hint line.
+ * @param props.failureDescription Failure-toast remedy override.
  * @param props.variant Button variant (default `ghost`).
  * @param props.size Button size (default `sm`).
- * @param props.showLabel Whether to render the visible label (default `true`).
  * @param props.clipboard Clipboard seam; defaults to `navigator.clipboard`.
  * @param props.class Extra classes.
  * @returns The rendered control (never a dead end: every failure path —
@@ -146,10 +196,21 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     pending?.abort();
   });
 
+  /**
+   * Drop a standing success flash: a later failure (rejected write, failed
+   * source read) must not sit beside the stale check it contradicts.
+   */
+  const flashDown = (): void => {
+    setCopied(false);
+    clearTimeout(flashReset);
+  };
+
   const sink: CopyOutcomeSink = {
     copied: () => {
       if (pending?.signal.aborted) return;
-      toast.success(`${props.label} copied`);
+      toast.success(props.successTitle ?? `${props.label} copied`, {
+        description: props.successDescription
+      });
       setCopied(true);
       clearTimeout(flashReset);
       flashReset = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
@@ -159,7 +220,12 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       // One degradation, two channels: the actionable toast (the platform
       // error text is never rendered) + the warn log naming the cause.
       logger.warn('Copy rejected; the error toast stays the visible feedback.', error);
-      toast.error('Copy failed', { description: COPY_FAILED_DESCRIPTION });
+      toast.error(COPY_FAILED_TITLE, {
+        description: props.failureDescription ?? COPY_FAILED_DESCRIPTION
+      });
+      // The failure is the live feedback: flush a standing success flash from
+      // an earlier attempt so no stale check claims success beside it.
+      flashDown();
     }
   };
 
@@ -185,10 +251,13 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
         try {
           complete = await loadText(controller.signal);
         } catch {
-          if (!controller.signal.aborted)
-            toast.error('Copy failed', {
+          // Same flash flush as a rejected write: this failure is the live feedback.
+          if (!controller.signal.aborted) {
+            flashDown();
+            toast.error(COPY_FAILED_TITLE, {
               description: props.sourceFailureDescription ?? COPY_FAILED_DESCRIPTION
             });
+          }
           return;
         }
       }
@@ -212,7 +281,10 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       type="button"
       data-fdt="copy-button"
       data-fdt-copied={copied() ? '' : undefined}
-      aria-label={props.showLabel === false ? `${props.label} — copy` : undefined}
+      title={props.title}
+      aria-label={
+        props.ariaLabel ?? (props.showLabel === false ? `${props.label} — copy` : undefined)
+      }
       variant={props.variant ?? 'ghost'}
       size={props.size ?? 'sm'}
       onClick={onCopy}
@@ -225,11 +297,15 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
       {loading() ? (
         <LoaderCircle size={14} class="animate-spin shrink-0" aria-hidden="true" data-fdt-spinner />
       ) : copied() ? (
-        <Check size={14} aria-hidden="true" />
+        <Check size={14} class={cn('shrink-0', STATUS_TEXT_CLASSES.ok)} aria-hidden="true" />
       ) : (
         <Copy size={14} aria-hidden="true" />
       )}
-      {props.showLabel !== false && props.label}
+      {props.showLabel !== false && (
+        <span class={cn(props.showLabel === 'regular-up' && '@max-regular:sr-only')}>
+          {copied() && props.copiedLabel !== undefined ? props.copiedLabel : props.label}
+        </span>
+      )}
     </Button>
   );
 }

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Found-reference fixture</title>
+  </head>
+  <body>
+    <h1>Throws a ReferenceError a script file then (textually) defines</h1>
+    <p>
+      The inline script runs first and throws, so the name is genuinely undefined at the throw; the
+      file below then assigns it. Its assignment line keeps the name in a page script's text, so the
+      definition search answers the file — the found-verdict card with a Copy-as-exclusion row.
+    </p>
+    <script>
+      wocketInventory;
+    </script>
+    <script src="/errors/wocket-definer.js"></script>
+  </body>
+</html>

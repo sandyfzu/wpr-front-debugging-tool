@@ -1,23 +1,28 @@
 /**
- * The "Copy as exclusion" action: copy a script's exclusion pattern and say
- * where it goes. A script that defines a name other code reads too early is
- * the usual Delay JS casualty, and excluding that script from Delay JS is the
- * usual fix — so the confirmation names the WP Rocket setting to paste into,
- * not just "copied".
+ * The "Copy as exclusion" action's copy vocabulary: what the row control, its
+ * toasts and its remedies say. The shared copy button renders the mechanism
+ * (the guarded write, the pending guard, the flash, the toasts); this module
+ * owns the words and the one configuration that aims them.
+ *
+ * A script that defines a name other code reads too early is the usual Delay
+ * JS casualty, and excluding that script from Delay JS is the usual fix — so
+ * the confirmation names the WP Rocket setting to paste into, not just
+ * "copied", and a rejected write names the pattern to add by hand.
  */
-import {
-  performCopy,
-  defaultClipboard,
-  type ClipboardLike
-} from '../../../../components/ui/copy-button';
-import { toast } from '../../../../components/ui/toast-store';
+import type { CopyButtonProps } from '../../../../components/ui/copy-button';
 import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
-import { createLogger } from '../../../../lib/logger';
 
-const log = createLogger('panel');
+/** The row control's visible action label (its rest wording above the tier). */
+const VISIBLE_LABEL = 'Copy as exclusion';
+
+/** The visible label's wording while the check flash shows. */
+const FLASH_LABEL = 'Copied';
+
+/** The row control's hover hint (its purpose, in full). */
+const HOVER_TITLE = `Copy an exclusion for this script, to exclude it from ${LABEL_DELAY_JAVASCRIPT_EXECUTION}`;
 
 /** The success toast's title. */
-export const COPIED_TITLE = 'Exclusion copied';
+const COPIED_TITLE = 'Exclusion copied';
 
 /**
  * Where the pattern goes (the success toast's description): WP Rocket's
@@ -25,9 +30,6 @@ export const COPIED_TITLE = 'Exclusion copied';
  * field under it.
  */
 export const COPIED_DESCRIPTION = `Paste it into WP Rocket's ${LABEL_DELAY_JAVASCRIPT_EXECUTION} → Excluded JavaScript Files.`;
-
-/** The failure toast's title (the shared copy-failure shape). */
-export const COPY_FAILED_TITLE = 'Copy failed';
 
 /**
  * The failure remedy, naming the pattern so it can be typed in by hand.
@@ -39,36 +41,33 @@ export function copyFailedRemedy(pattern: string): string {
   return `Add it by hand: ${pattern}`;
 }
 
+/** What one row's copy control is for: the pattern it copies and its full name. */
+export interface ExclusionCopyInput {
+  /** The exclusion pattern to copy (same-origin path, or host-joined). */
+  readonly pattern: string;
+  /** The control's full accessible name (`copyExclusionName`'s shape). */
+  readonly name: string;
+}
+
 /**
- * Copy one exclusion pattern and toast the outcome. Never throws: a missing
- * clipboard (insecure or blocked context) and a rejected write both end in
- * the error toast plus a warn log.
+ * The "Copy as exclusion" action configured onto the shared copy button shape:
+ * exact pattern on the clipboard, in-place feedback at the row, the
+ * setting-naming toast, and a hand-typing remedy when the write fails. The
+ * clipboard seam and the placement class stay with the caller.
  *
- * @param pattern The exclusion pattern to copy.
- * @param resolveClipboard The clipboard seam resolver (default: the platform clipboard).
- * @returns `'copied'` when the write was confirmed, else `'failed'`.
+ * @param input The row's pattern and name.
+ * @returns The shared button's props.
  */
-export async function copyAsExclusion(
-  pattern: string,
-  resolveClipboard: () => ClipboardLike = defaultClipboard
-): Promise<'copied' | 'failed'> {
-  const failed = (cause: unknown): void => {
-    log.warn('Copying a script exclusion failed', {
-      cause: cause instanceof Error ? { message: cause.message } : cause
-    });
-    toast.error(COPY_FAILED_TITLE, { description: copyFailedRemedy(pattern) });
+export function exclusionCopyProps(input: ExclusionCopyInput): CopyButtonProps {
+  return {
+    text: input.pattern,
+    label: VISIBLE_LABEL,
+    ariaLabel: input.name,
+    title: HOVER_TITLE,
+    showLabel: 'regular-up',
+    copiedLabel: FLASH_LABEL,
+    successTitle: COPIED_TITLE,
+    successDescription: COPIED_DESCRIPTION,
+    failureDescription: copyFailedRemedy(input.pattern)
   };
-  let clipboard: ClipboardLike;
-  try {
-    clipboard = resolveClipboard();
-  } catch (cause) {
-    failed(cause);
-    return 'failed';
-  }
-  return performCopy(pattern, clipboard, {
-    copied: () => {
-      toast.success(COPIED_TITLE, { description: COPIED_DESCRIPTION });
-    },
-    failed
-  });
 }

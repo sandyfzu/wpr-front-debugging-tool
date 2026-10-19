@@ -11,14 +11,12 @@ import { createSignal, onCleanup } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import ClipboardCopy from 'lucide-solid/icons/clipboard-copy';
 import { Button } from '../../../../components/ui/button';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
 import { createLogger } from '../../../../lib/logger';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { copySupportReport, type CopyReportOutcome } from '../../report/copy-report';
 
 const log = createLogger('panel');
-
-/** How long the check confirmation lingers after a copy (ms). */
-export const COPIED_FLASH_MS = 1600;
 
 /** Props of {@link CopyReportButton}. */
 export interface CopyReportButtonProps {

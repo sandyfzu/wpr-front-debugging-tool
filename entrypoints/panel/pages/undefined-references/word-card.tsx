@@ -5,25 +5,15 @@
  * there are none.
  */
 import type { JSX } from 'solid-js';
-import {
-  For,
-  Match,
-  Show,
-  Switch,
-  createMemo,
-  createSignal,
-  createUniqueId,
-  onCleanup
-} from 'solid-js';
+import { For, Match, Show, Switch, createMemo, createSignal, createUniqueId } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import Check from 'lucide-solid/icons/check';
 import ChevronDown from 'lucide-solid/icons/chevron-down';
 import Code from 'lucide-solid/icons/code';
-import Copy from 'lucide-solid/icons/copy';
 import ExternalLinkIcon from 'lucide-solid/icons/external-link';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
+import { CopyButton } from '../../../../components/ui/copy-button';
 import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
 import {
   STATUS_ICONS,
@@ -31,11 +21,9 @@ import {
   StatusBadge,
   type StatusKind
 } from '../../../../components/ui/status-badge';
-import { LABEL_DELAY_JAVASCRIPT_EXECUTION } from '../../../../lib/detection/labels';
-import { createLogger } from '../../../../lib/logger';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { cn } from '../../../../utils/cn';
-import { copyAsExclusion } from './copy-exclusion';
+import { exclusionCopyProps } from './copy-exclusion';
 import {
   displayWord,
   exclusionPattern,
@@ -47,8 +35,6 @@ import {
   type DefinitionAnswer,
   type WordVerdict
 } from './model';
-
-const log = createLogger('panel');
 
 /** The vocabulary kind each verdict paints its icon with. */
 const VERDICT_KIND: Record<WordVerdict['kind'], StatusKind> = {
@@ -64,9 +50,6 @@ const HEADER_ONLY: ReadonlySet<WordVerdict['kind']> = new Set(['searching', 'not
 
 /** Definition rows a card lists before "Show all N" (the rest is one click away). */
 export const VISIBLE_DEFINITIONS = 5;
-
-/** How long the copy control shows its "Copied" check (ms) — as long as the shared copy button's. */
-export const COPIED_FLASH_MS = 1600;
 
 /**
  * Why a cross-origin error has no name: the browser hides the details of
@@ -99,14 +82,8 @@ export function notFoundExplanation(unreadable: number, inlineCut = false): stri
   return `${head} ${skipped} could not be read and the inline scripts were only partly captured, so a definition may still be in what was not searched.`;
 }
 
-/** The copy control's hover hint (its purpose, in full). */
-const COPY_TITLE = `Copy an exclusion for this script, to exclude it from ${LABEL_DELAY_JAVASCRIPT_EXECUTION}`;
-
 /** The muted sentence style of a card body without definitions. */
 const BODY_NOTE = 'text-2xs leading-snug text-fg-secondary';
-
-/** A copy handler: copies the pattern and reports the outcome. */
-export type CopyExclusion = (pattern: string) => Promise<'copied' | 'failed'>;
 
 /** Props of {@link WordCard}. */
 export interface WordCardProps {
@@ -120,8 +97,6 @@ export interface WordCardProps {
   unreadable?: number;
   /** The inline scripts reached the panel cut to size (softens a not-found verdict too). */
   inlineCut?: boolean;
-  /** Copy an exclusion (default: {@link copyAsExclusion}); injected by tests. */
-  onCopy?: CopyExclusion;
 }
 
 /**
@@ -193,7 +168,6 @@ export function WordCard(props: WordCardProps): JSX.Element {
               word={props.word}
               definitions={definitions()}
               pageOrigin={props.pageOrigin}
-              onCopy={props.onCopy}
             />
           </Match>
           <Match when={verdict().kind === 'hidden'}>
@@ -218,8 +192,6 @@ interface DefinitionListProps {
   definitions: readonly ScriptOrigin[];
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
-  /** The copy handler override (tests). */
-  onCopy?: CopyExclusion;
 }
 
 /**
@@ -243,9 +215,7 @@ function DefinitionList(props: DefinitionListProps): JSX.Element {
         class="-my-1 flex flex-col"
       >
         <For each={shown()}>
-          {(origin) => (
-            <DefinitionRow origin={origin} pageOrigin={props.pageOrigin} onCopy={props.onCopy} />
-          )}
+          {(origin) => <DefinitionRow origin={origin} pageOrigin={props.pageOrigin} />}
         </For>
       </ul>
       <Show when={capped()}>
@@ -276,8 +246,6 @@ interface DefinitionRowProps {
   origin: ScriptOrigin;
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
-  /** The copy handler override (tests). */
-  onCopy?: CopyExclusion;
 }
 
 /**
@@ -301,9 +269,7 @@ function DefinitionRow(props: DefinitionRowProps): JSX.Element {
           </Badge>
         }
       >
-        {(origin) => (
-          <ScriptRow url={origin().url} pageOrigin={props.pageOrigin} onCopy={props.onCopy} />
-        )}
+        {(origin) => <ScriptRow url={origin().url} pageOrigin={props.pageOrigin} />}
       </Show>
     </li>
   );
@@ -315,18 +281,18 @@ interface ScriptRowProps {
   url: string;
   /** The inspected page's origin, or `null`. */
   pageOrigin: string | null;
-  /** The copy handler override (tests). */
-  onCopy?: CopyExclusion;
 }
 
 /**
  * A script file as a network panel lists it: the file name (the identifying
  * part) as the link text with its query muted, where it lives on a muted
- * line below (the page's own host dropped), and the copy action. The full
- * URL rides `title`; the link's accessible name carries the location too, so
- * the same file from two hosts reads apart. It keeps the external-link
- * contract (new tab, `noopener noreferrer`, "(opens in a new tab)") and only
- * `http(s):` URLs become links or get a copy action.
+ * line below (the page's own host dropped), and the copy action through the
+ * shared copy button rendered with the action's own vocabulary
+ * ({@link exclusionCopyProps}). The full URL rides `title`; the link's
+ * accessible name carries the location too, so the same file from two hosts
+ * reads apart. It keeps the external-link contract (new tab,
+ * `noopener noreferrer`, "(opens in a new tab)") and only `http(s):` URLs
+ * become links or get a copy action.
  *
  * @param props See {@link ScriptRowProps}.
  */
@@ -382,10 +348,12 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
       </div>
       <Show when={pattern()}>
         {(value) => (
-          <CopyExclusionButton
-            pattern={value()}
-            name={copyExclusionName(parts().file, parts().host)}
-            onCopy={props.onCopy}
+          <CopyButton
+            {...exclusionCopyProps({
+              pattern: value(),
+              name: copyExclusionName(parts().file, parts().host)
+            })}
+            class="shrink-0"
           />
         )}
       </Show>
@@ -405,66 +373,4 @@ function ScriptRow(props: ScriptRowProps): JSX.Element {
  */
 export function copyExclusionName(file: string, host: string | null): string {
   return host === null ? `Copy as exclusion: ${file}` : `Copy as exclusion: ${file} (${host})`;
-}
-
-/** Props of {@link CopyExclusionButton}. */
-interface CopyExclusionButtonProps {
-  /** The exclusion pattern to copy. */
-  pattern: string;
-  /** The control's accessible name (see {@link copyExclusionName}). */
-  name: string;
-  /** The copy handler override (tests). */
-  onCopy?: CopyExclusion;
-}
-
-/**
- * The row's copy control: labeled at regular widths, icon-only below them;
- * its accessible name adds the file and any foreign host. A confirmed copy
- * flashes a check and "Copied" in place — feedback at the pointer, beside
- * the toast that says where to paste.
- *
- * @param props See {@link CopyExclusionButtonProps}.
- */
-function CopyExclusionButton(props: CopyExclusionButtonProps): JSX.Element {
-  const [copied, setCopied] = createSignal(false);
-  let resetFlash: ReturnType<typeof setTimeout> | undefined;
-  // The flash never outlives the control.
-  onCleanup(() => {
-    clearTimeout(resetFlash);
-  });
-  /** Copy and flash on success; never rejects (an override that throws is logged). */
-  const copy = async (): Promise<void> => {
-    let outcome: 'copied' | 'failed';
-    try {
-      outcome = await (props.onCopy ?? copyAsExclusion)(props.pattern);
-    } catch (cause) {
-      log.warn('The copy action failed unexpectedly', cause);
-      return;
-    }
-    if (outcome !== 'copied') return;
-    setCopied(true);
-    clearTimeout(resetFlash);
-    resetFlash = setTimeout(() => setCopied(false), COPIED_FLASH_MS);
-  };
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      class="shrink-0"
-      title={COPY_TITLE}
-      aria-label={props.name}
-      data-fdt-copy-exclusion
-      data-fdt-copied={copied() ? '' : undefined}
-      onClick={() => {
-        void copy();
-      }}
-    >
-      <Show when={copied()} fallback={<Copy size={14} class="shrink-0" aria-hidden="true" />}>
-        <Check size={14} class={cn('shrink-0', STATUS_TEXT_CLASSES.ok)} aria-hidden="true" />
-      </Show>
-      <span class="@max-regular:sr-only" aria-hidden="true">
-        {copied() ? 'Copied' : 'Copy as exclusion'}
-      </span>
-    </Button>
-  );
 }

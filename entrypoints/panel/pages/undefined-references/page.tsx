@@ -63,7 +63,8 @@ import {
   type UndefinedReferencesDeps,
   type UndefinedReferencesStore
 } from './store';
-import { COPIED_FLASH_MS, WordCard, type CopyExclusion } from './word-card';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { WordCard } from './word-card';
 
 /** The page title (the route's nav label). */
 const TITLE = 'Undefined References';
@@ -99,8 +100,6 @@ export const STALE_NOTE = 'New scripts loaded since the last read.';
 export interface UndefinedReferencesPageProps {
   /** Override the store's effects (inspected-window reader, timers, search pacing). */
   deps?: Partial<UndefinedReferencesDeps>;
-  /** Override the copy action of every definition row. */
-  onCopy?: CopyExclusion;
 }
 
 /** A stable empty list, so absent data never re-triggers the word memo. */
@@ -207,7 +206,6 @@ export function UndefinedReferencesPage(props: UndefinedReferencesPageProps): JS
           <WordsState
             store={store}
             inlineCut={() => loaded()?.wprDetections.delay_js.truncated === true}
-            onCopy={props.onCopy}
           />
         </Match>
       </Switch>
@@ -264,8 +262,6 @@ interface WordsStateProps {
    * row arrived marked truncated): the inline search saw only part of them.
    */
   inlineCut: () => boolean;
-  /** Copy override for the rows (tests). */
-  onCopy?: CopyExclusion;
 }
 
 /**
@@ -344,7 +340,6 @@ function WordsState(props: WordsStateProps): JSX.Element {
                 pageOrigin={props.store.pageOrigin()}
                 unreadable={props.store.unreadableScripts()}
                 inlineCut={props.inlineCut()}
-                onCopy={props.onCopy}
               />
             </li>
           )}
