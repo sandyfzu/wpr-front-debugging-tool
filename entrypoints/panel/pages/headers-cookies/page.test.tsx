@@ -5,9 +5,9 @@
  * cookie capture, the two honest timestamps (fetch vs capture), the
  * no-cookie-value-in-the-DOM guarantee, refresh stability, the store wiring
  * (fetch stamp held across a refresh with a NEW payload, the aging clock's
- * lifetime), the find bar's isolation from the page's local filter, and the
- * filter states (debounce commitment, scaffold-only view under a stale
- * query).
+ * lifetime), the find bar driving the page through the shared store (its
+ * query filters, its cursor marks, its cancel clears), and the filter states
+ * (debounce commitment, scaffold-only view under a stale query).
  *
  * The list renders through a virtualizer double serving every row (happy-dom
  * has no layout); virtualization itself is the browser tier's.
@@ -28,6 +28,7 @@ import { FdtDataContext, SearchContext, type FdtDataStore } from '../../state/us
 import { REDACTED } from '../../../../lib/redaction/rule';
 import { redactPageHeaders } from '../../../../lib/redaction/headers';
 import { PLANTED, PLANTED_RAW_HEADERS } from '../../../../lib/redaction/planted-secrets.fixtures';
+import { CURRENT_MATCH_ROW } from '../current-match';
 import {
   HeadersCookiesPage,
   HeadersCookiesView,
@@ -37,7 +38,7 @@ import {
   SPA_NOTE
 } from './page';
 import { WITHHELD_LEGEND, WITHHELD_NOTE } from '../withheld-value';
-import { SEARCH_DEBOUNCE_MS } from '../../state/search';
+import { SEARCH_DEBOUNCE_MS, createSearchStore } from '../../state/search';
 
 /** A cookie value that must never reach the DOM or the clipboard. */
 const SECRET = 'S3CRET-SESSION-VALUE';
@@ -54,10 +55,14 @@ const HEADERS: PageHeaders = [
   { name: 'x-empty' }
 ];
 
+/** The scroll orders the double received, in order (the find-scroll pins' read). */
+const landed: number[] = [];
+
 /**
  * A virtualizer double: every row, stacked at a fixed pitch, live over
  * `count`. Items are reused per index, like the real adapter's reconciled
- * store, so a data refresh does not remount rows.
+ * store, so a data refresh does not remount rows. `scrollToIndex` records
+ * its orders, so the find's scroll pins read the real mapped target.
  */
 const everyRow: VirtualizerFactory = (options: VirtualListOptions) => {
   const cache: VirtualItem[] = [];
@@ -74,14 +79,27 @@ const everyRow: VirtualizerFactory = (options: VirtualListOptions) => {
     getVirtualItems: (): VirtualItem[] =>
       Array.from({ length: options.count }, (_, index) => item(index)),
     getTotalSize: () => options.count * 40,
-    measureElement: () => undefined
+    measureElement: () => undefined,
+    scrollToIndex: (index) => {
+      landed.push(index);
+    }
   };
 };
 
-/** Render the view for a payload. */
-function renderView(data: FdtData, fetchedAt: number | null = NOW - 120_000): void {
+/** Render the view for a payload, over its own (or the given) search store. */
+function renderView(
+  data: FdtData,
+  fetchedAt: number | null = NOW - 120_000,
+  store: SearchStore = createSearchStore()
+): void {
   render(() => (
-    <HeadersCookiesView data={data} fetchedAt={fetchedAt} now={NOW} createVirtualizer={everyRow} />
+    <HeadersCookiesView
+      data={data}
+      search={store}
+      fetchedAt={fetchedAt}
+      now={NOW}
+      createVirtualizer={everyRow}
+    />
   ));
 }
 
@@ -112,6 +130,7 @@ let writes: string[];
 
 beforeEach(() => {
   writes = [];
+  landed.length = 0; // each test reads only its own scroll orders
   // The copy controls resolve `navigator.clipboard` at click time.
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -340,6 +359,7 @@ describe('HeadersCookiesView — rows', () => {
     render(() => (
       <HeadersCookiesView
         data={makeFdtData({ pageHeaders: HEADERS })}
+        search={createSearchStore()}
         fetchedAt={0}
         now={NOW}
         createVirtualizer={everyRow}
@@ -379,6 +399,7 @@ describe('HeadersCookiesView — degraded payloads', () => {
     render(() => (
       <HeadersCookiesView
         data={makeFdtData({ pageHeaders: null })}
+        search={createSearchStore()}
         fetchedAt={NOW}
         now={NOW}
         createVirtualizer={everyRow}
@@ -445,7 +466,13 @@ describe('HeadersCookiesView — refresh', () => {
   it('keeps row nodes (and focus) when a refresh re-delivers the same shape', () => {
     const [data, setData] = createSignal(makeFdtData({ pageHeaders: HEADERS }));
     render(() => (
-      <HeadersCookiesView data={data()} fetchedAt={NOW} now={NOW} createVirtualizer={everyRow} />
+      <HeadersCookiesView
+        data={data()}
+        search={createSearchStore()}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={everyRow}
+      />
     ));
     const button = screen.getByRole('button', { name: 'age header — copy' });
     button.focus();
@@ -555,8 +582,15 @@ describe('HeadersCookiesView — the name filter', () => {
     const [data, setData] = createSignal(
       makeFdtData({ pageHeaders: HEADERS, cookies: { names: ['a'], capturedAt: NOW } })
     );
+    const store = createSearchStore();
     render(() => (
-      <HeadersCookiesView data={data()} fetchedAt={NOW} now={NOW} createVirtualizer={everyRow} />
+      <HeadersCookiesView
+        data={data()}
+        search={store}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={everyRow}
+      />
     ));
     typeAndCommit('age');
     // The refresh lands an all-empty payload (no headers, zero cookie
@@ -566,6 +600,9 @@ describe('HeadersCookiesView — the name filter', () => {
     expect(screen.getByText('No response headers captured')).toBeTruthy();
     expect(screen.getByText('No cookies are readable by page scripts.')).toBeTruthy();
     expect(screen.queryByText('No matches')).toBeNull();
+    // The live query is reported honestly over the scaffold-only list: the
+    // store's find count is 0 (nothing searchable remains to hide).
+    expect(store.matchCount()).toBe(0);
     // The way back is not needed: no field exists to clear.
     expect(screen.queryByRole('searchbox')).toBeNull();
   });
@@ -573,7 +610,13 @@ describe('HeadersCookiesView — the name filter', () => {
   it('announces the committed count and stays quiet through a refresh', () => {
     const [data, setData] = createSignal(makeFdtData({ pageHeaders: HEADERS }));
     render(() => (
-      <HeadersCookiesView data={data()} fetchedAt={NOW} now={NOW} createVirtualizer={everyRow} />
+      <HeadersCookiesView
+        data={data()}
+        search={createSearchStore()}
+        fetchedAt={NOW}
+        now={NOW}
+        createVirtualizer={everyRow}
+      />
     ));
     const region = (): Element | null =>
       document.querySelector('[data-fdt="headers-results-status"]');
@@ -643,15 +686,26 @@ describe('HeadersCookiesPage — store wiring', () => {
     };
   }
 
+  /** Render the page under the shell's two contexts, over one real search store. */
+  function renderPage(
+    initial: DataState,
+    search: SearchStore = createSearchStore()
+  ): { set: (s: DataState) => void; search: SearchStore; unmount: () => void } {
+    const { store, set } = storeOf(initial);
+    const renderer = render(() => (
+      <SearchContext.Provider value={search}>
+        <FdtDataContext.Provider value={store}>
+          <HeadersCookiesPage createVirtualizer={everyRow} />
+        </FdtDataContext.Provider>
+      </SearchContext.Provider>
+    ));
+    return { set, search, unmount: renderer.unmount };
+  }
+
   it('shows the fetch stamp, holds it across a refresh, ticks, and stops its clock on unmount', () => {
     vi.useFakeTimers({ now: NOW });
     const data = makeFdtData({ pageHeaders: HEADERS });
-    const { store, set } = storeOf({ status: 'ready', data, fetchedAt: NOW });
-    const { unmount } = render(() => (
-      <FdtDataContext.Provider value={store}>
-        <HeadersCookiesPage />
-      </FdtDataContext.Provider>
-    ));
+    const { set, unmount } = renderPage({ status: 'ready', data, fetchedAt: NOW });
     expect(screen.getByText('Fetched just now')).toBeTruthy();
     // A committed query first: a refresh must keep the field and the query.
     typeAndCommit('age');
@@ -682,54 +736,93 @@ describe('HeadersCookiesPage — store wiring', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('the panel-wide find bar cannot touch this page (no search-store adoption)', () => {
+  it('the panel-wide find bar drives this page: its query filters, its cursor marks, its cancel clears', () => {
     vi.useFakeTimers({ now: NOW });
-    const { store } = storeOf({
+    const { search, set } = renderPage({
       status: 'ready',
       data: makeFdtData({ pageHeaders: HEADERS }),
       fetchedAt: NOW
     });
-    // A SearchContext double that really commits: if the page adopted the
-    // provided store, its field would echo the query and report the count.
-    const [providedQuery, setProvidedQuery] = createSignal('');
-    const setMatchCount = vi.fn();
-    const provided: SearchStore = {
-      query: providedQuery,
-      revision: () => 0,
-      cursor: () => 0,
-      matchCount: () => 0,
-      perform: (raw: string) => {
-        setProvidedQuery(raw);
-      },
-      cancel: () => {
-        setProvidedQuery('');
-      },
-      advance: () => undefined,
-      setMatchCount
-    };
-    render(() => (
-      <SearchContext.Provider value={provided}>
-        <FdtDataContext.Provider value={store}>
-          <HeadersCookiesPage />
-        </FdtDataContext.Provider>
-      </SearchContext.Provider>
-    ));
-    provided.perform('cache-control');
+    // A blank find at mount is not a scroll order: the list holds still
+    // until a find event happens.
+    expect(landed).toEqual([]);
+    // The find bar's stream (perform over the shared store) filters the
+    // page: the field echoes the foreign query, the list narrows, and the
+    // page reports the match count the cursor wraps over.
+    search.perform('a');
     vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
-    // The page's field stays empty, the count line unmoved, and the find
-    // protocol never hears a match count from this page.
+    expect(field().value).toBe('a');
+    expect(status()).toBe('Showing 2 of 5 entries');
+    // The cursor names the first matching row; a step moves the marker on
+    // (wrap included — two matches: cache-control, then age).
+    const marked = (): string | null =>
+      document
+        .querySelector('[data-fdt-inventory-row][aria-current="true"]')
+        ?.querySelector('[data-fdt-key-value-term]')?.textContent ?? null;
+    expect(marked()).toBe('cache-control');
+    // The find's scroll lands the marked row's rendered position — the
+    // match-table mapping (the cursor's match index sits at its row among
+    // the section scaffolding), never a naive cursor→row read. The virtual
+    // row wrapper owns the index.
+    const markedIndex = (): number => {
+      const wrapper = document
+        .querySelector('[data-fdt-page] [aria-current="true"]')
+        ?.closest<HTMLElement>('[data-index]');
+      if (!(wrapper instanceof HTMLElement)) throw new Error('the marked row did not render');
+      return Number(wrapper.dataset.index);
+    };
+    expect(landed).toEqual([markedIndex()]);
+    search.advance(1);
+    expect(marked()).toBe('age');
+    expect(landed[landed.length - 1]).toBe(markedIndex());
+    search.advance(1);
+    expect(marked()).toBe('cache-control');
+    // A refresh re-delivers the payload (a NEW object) under the live find:
+    // the marker re-derives through the re-derived match table and the list
+    // never re-scrolls — the find's scroll obeys find events only.
+    const scrollsAtFind = landed.length;
+    set({
+      status: 'ready',
+      data: makeFdtData({ pageHeaders: HEADERS.map((row) => ({ ...row })) }),
+      fetchedAt: NOW + 120_000
+    });
+    expect(marked()).toBe('cache-control');
+    expect(field().value).toBe('a');
+    expect(status()).toBe('Showing 2 of 5 entries');
+    expect(landed.length).toBe(scrollsAtFind);
+    // Cancel ends the find: the marker goes, the field empties, the list
+    // restores.
+    search.cancel();
+    expect(document.querySelector('[data-fdt-inventory-row][aria-current="true"]')).toBeNull();
     expect(field().value).toBe('');
     expect(status()).toBe('Showing all 5 entries');
-    expect(setMatchCount).not.toHaveBeenCalled();
+  });
+
+  it('the find names a cookie row too: the marker lands on a matched cookie name', () => {
+    vi.useFakeTimers({ now: NOW });
+    const { search } = renderPage({
+      status: 'ready',
+      data: makeFdtData({
+        pageHeaders: HEADERS,
+        cookies: { names: ['fdt_filter_alpha'], capturedAt: NOW }
+      }),
+      fetchedAt: NOW
+    });
+    // The term names only the cookie (no header name contains it): the
+    // marker must land on the cookie row itself — the shared shape and
+    // `aria-current`, never a header-only affordance.
+    search.perform('filter');
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS);
+    expect(status()).toBe('Showing 1 of 6 entries');
+    const row = document.querySelector('[data-fdt-inventory-row="cookie"][aria-current="true"]');
+    if (!(row instanceof HTMLElement)) throw new Error('the cookie match did not render');
+    expect(row.className).toContain(CURRENT_MATCH_ROW);
+    // A cookie row's name is its whole visible text (the icon is decorative).
+    expect(row.textContent).toBe('fdt_filter_alpha');
   });
 
   it('renders nothing outside the loaded states', () => {
-    const { store } = storeOf({ status: 'fetching' });
-    render(() => (
-      <FdtDataContext.Provider value={store}>
-        <HeadersCookiesPage />
-      </FdtDataContext.Provider>
-    ));
+    renderPage({ status: 'fetching' });
     expect(document.querySelector('[data-fdt-page]')).toBeNull();
   });
 });

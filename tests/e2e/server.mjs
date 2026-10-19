@@ -123,6 +123,34 @@ async function handle(request, response) {
     );
     return;
   }
+  if (url.pathname === '/__e2e/header-find-deep') {
+    // The find's deep-scroll fixture for the Headers page: the same header
+    // set as the filter fixture plus a long cookie list, so a find match
+    // lands viewports deep among the cookie rows (landing it is a real
+    // scroll) and the marked row can be a cookie row. Cookies are written
+    // in capture order, so `fdt_deep_5…` matches exactly 50–59 in sequence.
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-cache': 'HIT from edge-01',
+      age: '7',
+      via: '1.1 find-deep fixture',
+      'x-unique-header': 'unique-value'
+    });
+    const cookies = Array.from(
+      { length: 60 },
+      (_, index) =>
+        `document.cookie = 'fdt_deep_${String(index + 1).padStart(2, '0')}=${String(index + 1)}; path=/; SameSite=Lax';`
+    );
+    response.end(
+      `<!doctype html><html><head><title>header find deep</title></head><body>header find deep
+        <script>
+          ${cookies.join('\n          ')}
+        </script>
+      </body></html>`
+    );
+    return;
+  }
   if (url.pathname === '/__e2e/health') {
     response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     response.end('ok');

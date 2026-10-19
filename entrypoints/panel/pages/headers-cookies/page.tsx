@@ -24,11 +24,12 @@
  *   filtered-empty view is reserved for a filter that hides rows that exist).
  *
  * The filter narrows the list by name — header names and cookie names,
- * never a value. It is deliberately page-local: this page's rows stay
- * outside the panel-wide find protocol (its cursor/next/previous machinery
- * has no rows here), so the field drives its own store instance and dies
- * with the page — the route reset by the same rule every page-derived state
- * follows.
+ * never a value — and it is the page's side of the panel-wide find: the
+ * DevTools find bar (Cmd/Ctrl+F) drives the same store, so its query
+ * filters here, its Enter/Shift+Enter walk the matching rows (marker +
+ * scroll), and its Esc clears. The store is the shell's one search store
+ * (`useSearch`), shared with every list page; the route reset clears it by
+ * the standing rule.
  *
  * Timestamps are honest about what they stamp: headers carry no time of
  * their own, so the header side shows when the panel fetched the payload
@@ -59,11 +60,12 @@ import {
 import { fallbackRowKey, normalizeQuery } from '../../../../lib/panel/list-behavior';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
-import { useFdtData } from '../../state/use-fdt-data';
+import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { bindSearchField } from '../../state/search-field';
-import { createSearchStore } from '../../state/search';
+import type { SearchStore } from '../../state/search';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { relativeAge } from '../../status-bar/relative-age';
+import { CURRENT_MATCH_ROW, createCurrentMatch } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';
 import { WithheldLegend, WithheldValue } from '../withheld-value';
@@ -121,6 +123,12 @@ const LIST_OVERSCAN = 24;
 export interface HeadersCookiesViewProps {
   /** The loaded payload. */
   data: FdtData;
+  /**
+   * The panel's search store — the one the DevTools find bar drives. The
+   * page's name filter is its page side: the field binds it, the list
+   * reports the matching rows and names the cursor's row.
+   */
+  search: SearchStore;
   /** When the panel fetched the payload (ms), or null when unknown. */
   fetchedAt: number | null;
   /** The aging clock's reading (ms) the relative times age against. */
@@ -154,6 +162,12 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
   };
 }
 
+/** Props of {@link HeadersCookiesPage}. */
+export interface HeadersCookiesPageProps {
+  /** The virtualizer seam, forwarded to the list (tests inject a double). */
+  createVirtualizer?: VirtualizerFactory;
+}
+
 /**
  * Render the page body.
  *
@@ -164,8 +178,9 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
  *
  * @returns The page body, or nothing outside the loaded states.
  */
-export function HeadersCookiesPage(): JSX.Element {
+export function HeadersCookiesPage(props: HeadersCookiesPageProps = {}): JSX.Element {
   const store = useFdtData();
+  const search = useSearch();
   const clock = createAgingClock(realAgingClockDeps());
   clock.setLoaded(true);
   onCleanup(() => {
@@ -184,8 +199,10 @@ export function HeadersCookiesPage(): JSX.Element {
       {(data) => (
         <HeadersCookiesView
           data={data()}
+          search={search}
           fetchedAt={fetchedAt()}
           now={clock.now()}
+          createVirtualizer={props.createVirtualizer}
           reloadInspectedPage={inspectedReloadAction(browser)}
         />
       )}
@@ -194,14 +211,19 @@ export function HeadersCookiesPage(): JSX.Element {
 }
 
 /**
- * Render the page for one payload — the store-free half, so every state is
- * testable with plain props.
+ * Render the page for one payload — the messaging-free half (the store
+ * arrives as a prop), so every state is testable with plain props.
  *
  * Layout: the frame's fill mode; the fetched line, then the filter field,
  * then one virtual list over the flattened inventory (section headings +
  * rows) — one scroller for everything, never nested ones. The list renders
  * the query's matches; a query that matches nothing lands on the shared
  * filtered-empty view with its one-click way back.
+ *
+ * The find's page side: the rendered item rows under the query are the
+ * match set (reported to the store), and the find's cursor names one of
+ * them — the marker plus the scroll request land on the mapped row;
+ * scaffolding (headings, notes) never matches, having no name.
  *
  * @param props See {@link HeadersCookiesViewProps}.
  * @returns The page frame with its sections.
@@ -210,11 +232,13 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
   const inventory = createMemo(() =>
     buildInventory(buildHeadersViewModel(props.data.pageHeaders), props.data.cookies)
   );
-  // The page-local filter: the shared field binding and debounce rules over
-  // this page's own store instance — deliberately not the panel-wide search
-  // store, whose find protocol this page's rows stay outside of. The
-  // instance dies with the page: the route reset by the standing rule.
-  const search = createSearchStore();
+  // The shared field binding: raw echo, the shell's one store, the Esc
+  // rule — the DevTools find bar drives the same store. The store prop is
+  // read once: its identity is stable for the mounted view (the shell
+  // provides one), and the reactivity lives in its signals, which the
+  // memos below track.
+  // eslint-disable-next-line solid/reactivity -- read once on purpose
+  const search = props.search;
   const field = bindSearchField(search);
   const query = createMemo(() => normalizeQuery(search.query()));
   const rows = (): readonly InventoryRow[] => inventory().rows;
@@ -232,6 +256,13 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
     items().length === 0 ? rows() : filterInventory(rows(), query())
   );
   const visibleItems = createMemo(() => visible().filter(isItem));
+  // The find's page side: the filtered item rows are the match set — their
+  // positions in the rendered list (scaffold rows never match, having no
+  // name) — and the cursor's row is the marker + scroll target.
+  const matchIndices = createMemo(() =>
+    visible().flatMap((row, index) => (isItem(row) ? [index] : []))
+  );
+  const match = createCurrentMatch(search, () => matchIndices().length, matchIndices);
   const allHeaders = createMemo(() => allHeadersCopyText(rows()));
   // The legend is page-level meta (it names the lock-marker vocabulary for
   // the whole capture), so it reads the full inventory and never flips with
@@ -387,6 +418,7 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
               getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
               overscan={LIST_OVERSCAN}
               createVirtualizer={props.createVirtualizer}
+              scrollTo={match.request}
               class={cn(
                 PAGE_FILL_SCROLLER,
                 '-mx-1 border-t px-1',
@@ -400,6 +432,7 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
                       row={row()}
                       position={item.index + 1}
                       total={visible().length}
+                      matched={match.current() === item.index}
                       cookiesCapturedAt={cookiesCapturedAt()}
                       now={props.now}
                     />
@@ -425,6 +458,8 @@ interface InventoryItemProps {
   position: number;
   /** The list's length (`aria-setsize` — virtual rows are not all in the DOM). */
   total: number;
+  /** Whether the find's cursor names this row (the active match). */
+  matched: boolean;
   /** The cookie capture's stamp (shown on the cookie heading), or null. */
   cookiesCapturedAt: number | null;
   /** The aging clock's reading. */
@@ -434,7 +469,10 @@ interface InventoryItemProps {
 /**
  * Render one list row as a `listitem`, dispatching on its kind. Rows are
  * hairline-separated (a heading's line is one step stronger); the last row
- * has nothing below it to separate, so it draws none.
+ * has nothing below it to separate, so it draws none. The find's active
+ * match renders the shared current-row marker (a start-edge rail + wash,
+ * with `aria-current` — shape, never color alone); only item rows can
+ * match, the scaffolding never does.
  *
  * @param props See {@link InventoryItemProps}.
  * @returns The `listitem`.
@@ -454,9 +492,11 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
       aria-setsize={props.total}
       aria-posinset={props.position}
       data-fdt-inventory-row={props.row.kind}
+      aria-current={props.matched ? 'true' : undefined}
       class={cn(
         !last() && 'border-b',
-        props.row.kind === 'section' ? 'border-line-2' : 'border-line-1'
+        props.row.kind === 'section' ? 'border-line-2' : 'border-line-1',
+        props.matched && CURRENT_MATCH_ROW
       )}
     >
       <Switch>

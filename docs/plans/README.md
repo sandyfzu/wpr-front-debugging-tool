@@ -8,7 +8,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 
 ## Active work
 
-- **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.8 shipped; **G.9–G.10/P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
+- **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.8 + G.11 shipped; **G.9–G.10/P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
 - **P8/P9 planned**, may parallel P6/each other: [popup+8.1](./09-phase-8-popup.md), [options+9.1](./10-phase-9-options.md).
 - **P10 parked:** [Builder+10.1](./11-phase-10-exclusion-builder.md); owner requires replan, old design not executable.
 - **P11 planned:** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections.

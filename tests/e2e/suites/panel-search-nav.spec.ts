@@ -14,8 +14,13 @@
  *   the marked row), while the marker stays with the cursor's row;
  * - a `cancelSearch` delivery ends the find: no row is named, the field
  *   empties;
- * - the same contract runs on the shared resource-list page (Lazyload), so
- *   the seam is real for both page families, not just the JavaScript one.
+ * - the same contract runs on the shared resource-list page (Lazyload) and
+ *   on the Headers & Cookies page (whose match set is its filtered name
+ *   rows among the section scaffolding), so the seam is real for every page
+ *   family, not just the JavaScript one;
+ * - on the Headers & Cookies page the walk also lands viewports deep in a
+ *   long cookie list (a real scroll there, with a cookie row carrying the
+ *   marker), and cancel restores the full list with its exact count.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
@@ -200,6 +205,121 @@ test.describe('panel find navigation (wire-delivered)', () => {
         .toMatchObject({ inView: true });
       await relaySearchAction(extension, { action: 'cancelSearch', tabId: fixture.tabId });
       await expect.poll(() => markedRowName(panel)).toBeNull();
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the Headers & Cookies page joins the find: the query filters names, the cursor walks the matches', async ({
+    extension
+  }) => {
+    // The filter fixture's header set gives the term `cach` exactly two
+    // matches (cache-control, x-cache); no cookie name on this origin
+    // contains it, so the pins hold whatever the shared profile carried in.
+    const { panel, fixture } = await openPanelForFixture(extension, '/__e2e/header-filter', {
+      bootHash: '#/headers-cookies'
+    });
+    try {
+      const page = panel.locator('[data-fdt-page="headers-cookies"]');
+      await expect(page.locator('input[type="search"]')).toBeVisible();
+      /** The find-named row's header name, or null while none is named. */
+      const markedName = (): Promise<string | null> =>
+        panel.evaluate(
+          () =>
+            document.querySelector(
+              '[data-fdt-page] [data-fdt-inventory-row="header"][aria-current="true"] [data-fdt-key-value-term]'
+            )?.textContent ?? null
+        );
+      const field = page.locator('input[type="search"]');
+
+      // The find bar's stream filters the page: the field adopts the
+      // foreign query and the matched rows are the narrowed list.
+      await relaySearchAction(extension, {
+        action: 'performSearch',
+        query: 'cach',
+        tabId: fixture.tabId
+      });
+      await expect(field).toHaveValue('cach');
+      await expect.poll(markedName).toBe('cache-control');
+      // The cursor walks the two matches; cancel ends the find and restores.
+      await relaySearchAction(extension, { action: 'nextSearchResult', tabId: fixture.tabId });
+      await expect.poll(markedName).toBe('x-cache');
+      await relaySearchAction(extension, { action: 'previousSearchResult', tabId: fixture.tabId });
+      await expect.poll(markedName).toBe('cache-control');
+      await relaySearchAction(extension, { action: 'cancelSearch', tabId: fixture.tabId });
+      await expect.poll(markedName).toBeNull();
+      await expect(field).toHaveValue('');
+      // The restore is the whole list, not a surviving row: the status line
+      // names the full count again.
+      await expect(page.locator('[data-fdt="headers-results-status"]')).toHaveText(
+        'Showing all 13 entries'
+      );
+      await expect(
+        page.locator('[data-fdt-inventory-row="header"]', { hasText: 'x-unique-header' })
+      ).toBeVisible();
+    } finally {
+      await panel.close();
+      await fixture.page.close();
+    }
+  });
+
+  test('the find walks deep into the Headers page’s cookie list: a real scroll there, a cookie row marked', async ({
+    extension
+  }) => {
+    // Cookies persist per origin across suites (the shared worker-scoped
+    // profile), so this leg clears them first: the exact counts below pin
+    // this fixture's list alone.
+    await extension.browserContext.clearCookies();
+    const { panel, fixture } = await openPanelForFixture(extension, '/__e2e/header-find-deep', {
+      bootHash: '#/headers-cookies'
+    });
+    try {
+      const page = panel.locator('[data-fdt-page="headers-cookies"]');
+      // The capture's precondition: the full list (10 response headers + 60
+      // cookie names) is there before any find action is relayed.
+      const status = page.locator('[data-fdt="headers-results-status"]');
+      await expect(status).toHaveText('Showing all 70 entries');
+      const field = page.locator('input[type="search"]');
+      /**
+       * The find-named row's cookie-name token, or null while none is named.
+       * A cookie row's name is its whole visible text (the term span is the
+       * header rows' affordance), so the token is read from the row's text.
+       */
+      const markedName = (): Promise<string | null> =>
+        panel.evaluate(() => {
+          const row = document.querySelector(
+            '[data-fdt-page] [data-fdt-inventory-row][aria-current="true"]'
+          );
+          return row?.textContent.match(/fdt_deep_\d{2}/)?.[0] ?? null;
+        });
+
+      // The term matches ten cookie names (fdt_deep_50..59); the first sits
+      // viewports deep in the list, so landing it is a real scroll — and the
+      // marked row is a cookie row, not a header one.
+      await relaySearchAction(extension, {
+        action: 'performSearch',
+        query: 'fdt_deep_5',
+        tabId: fixture.tabId
+      });
+      await expect(field).toHaveValue('fdt_deep_5');
+      await expect.poll(markedName).toBe('fdt_deep_50');
+      await expect
+        .poll(() => markedRowGeometry(panel), { message: 'first cookie match visible' })
+        .toMatchObject({ inView: true });
+      // The walk steps onward through the cookie rows, each landing in view.
+      await relaySearchAction(extension, { action: 'nextSearchResult', tabId: fixture.tabId });
+      await expect.poll(markedName).toBe('fdt_deep_51');
+      await expect
+        .poll(() => markedRowGeometry(panel), { message: 'next cookie match visible' })
+        .toMatchObject({ inView: true });
+
+      // Cancel restores the whole list: nothing named, field emptied, the
+      // exact full count back on the status line.
+      await relaySearchAction(extension, { action: 'cancelSearch', tabId: fixture.tabId });
+      await expect.poll(markedName).toBeNull();
+      await expect(field).toHaveValue('');
+      await expect(status).toHaveText('Showing all 70 entries');
     } finally {
       await panel.close();
       await fixture.page.close();
