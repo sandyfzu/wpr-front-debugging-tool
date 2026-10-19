@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Add generator-feature evidence/source labels, missing font/dimension coverage, cache context and shared card/strip/report registry. P1.1 already owns Priority Elements footprints/status; P12A already exposes a provisional strip and WordPress-version parser. Reuse them. Depends:P1/P1.1/P6; chosen slot after parked-P10 resolution, before fullP12; no independent consumer work during contract changes. Installed stack, no dependencies planned.
+Add generator-feature evidence/source labels, missing font/dimension coverage, cache context (cache states declared once; an absent marker never renders a verdict) and shared card/strip/report registry. P1.1 already owns Priority Elements footprints/status; P12A already exposes a provisional strip and WordPress-version parser. Reuse them. Depends:P1/P1.1/P6; chosen slot after parked-P10 resolution, before fullP12; no independent consumer work during contract changes. Installed stack, no dependencies planned.
 
 > **NOTE FROM DEV:** P14.5 owns corrections to P11's meta-key table and footprint verdicts. Do not move that work into P11. The [coverage audit and exact corrections](./15b-phase-14-5-coverage-and-tooling.md) remain the declaring site; reconcile its decisions there, not by silently “fixing” this phase's scope.
 
@@ -34,7 +34,7 @@ Depends:A. Parallel:—. Preserve these footprint choices (P14.5 owns later upgr
 - [ ] Link preloading union `#rocket-preload-links-js-extra` or RocketPreloadLinksConfig count>1 (not one incidental string).
 - [ ] Priority family adds meta over P1.1: attributed OCI image preloads, lazyrender elements/style, collecting location hashes (never applied), attributed fonts/preconnect. Shared beacon asserts **none individually**. Auto-font false positives from manual fonts remain forbidden; RUCSS-font overlap recorded.
 - [ ] New self_hosted_fonts originally link[data-wpr-hosted-gf-parameters] or cache/fonts/1/google-fonts; P14.5 D7 owns style/blog-ID corrections. image_dimensions meta-only: no evidence means no source/“no known footprint,” never infer attribution from standard width/height.
-- [ ] Add wpr.signatureFound from robust sibling-comment walk. View model combines existing captured headers: cached green; signature+no cached→optimized/not cached amber; no signature+verified SiteGround/Cloudflare marker→possibly cached amber naming evidence. Remove fake marker, typed why-commented registry; no extra HEAD/request or speculative host guesses. Keep badge present/cached protocol unchanged.
+- [ ] Add wpr.signatureFound from robust sibling-comment walk. Wiring first: the strip hub read carries detections only today — the captured headers are panel-side (`FdtData.pageHeaders`) — so the header capture reaches the strip view model through the hub, with a headers-unavailable arm distinct from marker-absent (nothing captured proves nothing). Cache states declared once, every arm explicit, absence of a marker never renders a verdict: stamp → cached green; marker without stamp → plugin fingerprint on the served HTML, no cache proof for the visit (amber, never folded into "not cached"); no signature + verified SiteGround/Cloudflare marker → possibly cached amber naming evidence; no signature otherwise → "cache not detected"; "not cached" only with counter-evidence (a bypass the capture attests). Chip label/tooltip copy is the single declaring site; strip, status-bar segment, describe facts and the support report read it. Remove fake marker, typed why-commented registry; no extra HEAD/request or speculative host guesses. Keep badge present/cached protocol unchanged.
 - [ ] Reuse single timestamp/representability/relative-age owners; UI-density formatting only. Do not implement a second contradictory local-time formatter.
 
 DoD/tests: losing-marker adversarial fixtures (status-only Delay, inline defer, cache/min/7, incidental RocketCDN/CPCSS text, bare beacon/manual fonts), applied/collecting/mixed/disabled/bypass, missing resources; no-meta/no-footprint honest unknown; header/signature/present/cached matrix; version variants; snapshots/bench/reference where comparison exists. New meta expectations table-driven, not falsely called unchanged-source parity.
@@ -45,8 +45,9 @@ Depends:B/P6. Parallel:—.
 
 - [ ] Native-label cards/source chips, amber why; verify **Self-host Google Fonts/Add missing image dimensions** spelling on real settings/KB (no invented acronym). Existing family cards extended, not added twice.
 - [ ] One `hud` facet shortLabel/group/order feeds cards/strip/report; plugin-native compact wording/full-name tooltip. **Delete P12A provisional strip-items registry** and repoint; no second feature list. Summary/report adds WordPress version/cache-exclusion lines, golden update.
+- [ ] Cache-state consumers repoint to P11B's vocabulary — strip chip+tooltip, status-bar cache segment, the describe facts row ('page served from cache'), the support report's `Page cache:` line; each surface's honest state pinned in its consumers tests (support-report/describe goldens included). No surface keeps an absence-born "Not cached".
 
-DoD: registry→all consumers tests, UI bar §D/gates/budgets; current raw/gzip evidence, no engine-only/no-bundle-growth assumption after consumers import it.
+DoD: registry→all consumers tests, UI bar §D/gates/budgets; current raw/gzip evidence, no engine-only/no-bundle-growth assumption after consumers import it; strip e2e matchers pinning the old chip pair (/✓ Cached|Not cached/) updated with the vocabulary.
 
 ## P11.1 — Site matrix
 
