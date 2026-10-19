@@ -135,10 +135,16 @@ export const RUCSS_STYLE_SELECTOR = 'style#wpr-usedcss';
 export const CPCSS_MARK = 'wprRemoveCPCSS';
 
 /**
+ * The served minify-cache directory shape — `cache/min/<site-id>/` — the atom
+ * every minified-URL pattern composes, so the footprint cannot drift between
+ * the detection patterns and the exclusion-path recovery helper.
+ */
+export const MINIFY_CACHE_DIR_SOURCE = 'cache\\/min\\/\\d+\\/';
+/**
  * Served minified-asset URL footprint (`cache/min/<n>/<hash>….<ext>`) — one
  * base, one derived pattern per extension, so the fragment cannot drift.
  */
-const MINIFIED_CACHE_URL_SOURCE = '(.*)cache\\/min\\/\\d+\\/[a-zA-Z0-9_](.*).';
+const MINIFIED_CACHE_URL_SOURCE = `(.*)${MINIFY_CACHE_DIR_SOURCE}[a-zA-Z0-9_](.*).`;
 /** Minify CSS: stylesheet URLs under the minify cache. */
 export const MINIFY_CSS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}css(.*)`);
 /** Minify JS: script URLs under the minify cache. */
