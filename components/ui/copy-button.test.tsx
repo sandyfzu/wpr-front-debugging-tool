@@ -5,7 +5,6 @@
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSignal } from 'solid-js';
 import {
   COPIED_FLASH_MS,
   CopyButton,
@@ -110,41 +109,6 @@ describe('CopyButton', () => {
     expect(button.hasAttribute('aria-disabled')).toBe(false);
     expect(button.hasAttribute('aria-busy')).toBe(false);
     expect(document.activeElement).toBe(button);
-  });
-
-  it('waits on a caller-owned pending resolution: announced, spinner, activation suppressed', () => {
-    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
-    render(() => <CopyButton text="payload" label="Script" clipboard={clipboard} pending={true} />);
-    const button = screen.getByRole('button', { name: 'Script' });
-    expect(button.getAttribute('aria-busy')).toBe('true');
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(button.hasAttribute('disabled')).toBe(false);
-    expect(button.querySelector('[data-fdt-spinner]')).not.toBeNull();
-    // Focusable (not natively disabled) and activation is a no-op.
-    button.focus();
-    expect(document.activeElement).toBe(button);
-    fireEvent.click(button);
-    expect(clipboard.writeText).not.toHaveBeenCalled();
-    expect(toastItems()).toHaveLength(0);
-  });
-
-  it('copies when the caller drops the pending flag, reading the payload per access', async () => {
-    const [createPending, setPending] = createSignal(true);
-    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
-    render(() => (
-      <CopyButton
-        text="resolved payload"
-        label="Script"
-        clipboard={clipboard}
-        pending={createPending()}
-      />
-    ));
-    const button = screen.getByRole('button', { name: 'Script' });
-    setPending(false);
-    fireEvent.click(button);
-    await vi.waitFor(() => {
-      expect(clipboard.writeText).toHaveBeenCalledWith('resolved payload');
-    });
   });
 
   it('never copies a preview after source failure, and permits a retry with an actionable remedy', async () => {

@@ -163,7 +163,7 @@ const DOCKER_ORIGINAL_PATH = '/wp-content/mu-plugins/assets/fdt-delayed-definer.
 /** The real remote-mirror capture (the klaviyo delay row), served minified with a hidden host. */
 const KLAVIYO_SERVED =
   'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187';
-/** The klaviyo row's hostless fallback payload. */
+/** The klaviyo row's hostless payload — the host-hidden row's final answer. */
 const KLAVIYO_HOSTLESS = '/onsite/js/PD7as8/klaviyo.js';
 
 test('the minified served URL copies the original path, not the cache path', async ({
@@ -209,75 +209,31 @@ test('the minified served URL copies the original path, not the cache path', asy
   }
 });
 
-test('a failed host check degrades the row to the hostless payload with one notice', async ({
+test('a remote-mirror row copies the hostless original path — no notice, no pending state', async ({
   extension
 }) => {
   const opened = await openPanelForFixture(extension, '/errors/found-reference.html', {
     bootHash: '#/undefined-references',
     inspect: {
       origin: ORIGIN_A,
-      resources: [{ url: KLAVIYO_SERVED, content: 'window.wocketInventory = null;' }],
-      bypassEval: { answer: 'not json' }
+      resources: [{ url: KLAVIYO_SERVED, content: 'window.wocketInventory = null;' }]
     }
   });
   const { panel, fixture } = opened;
   try {
-    // The degraded lane: exactly one card-level notice (no per-row toasts).
-    await expect(panel.getByText(/original hosts could not be verified/)).toBeVisible();
-    await expect(panel.getByText(/original hosts could not be verified/)).toHaveCount(1);
-    // The row's control resolved to the hostless payload and works.
+    // The hostless pattern is the row's final answer the moment it renders:
+    // the control is ready immediately (no resolution wait) and no notice
+    // ever appears (the path matches both minify states; no host to resolve).
     const copy = panel.getByRole('button', {
       name: 'Copy as exclusion: klaviyo.js (wp-rocket.me)'
     });
     await expect(copy).toBeVisible();
     await expect(copy).not.toHaveAttribute('aria-busy');
-    await panel.evaluate(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: {
-          writeText: (text: string) => {
-            document.documentElement.dataset.auditLast = text;
-            return Promise.resolve();
-          }
-        }
-      });
-    });
-    await copy.click();
-    await expect
-      .poll(() => panel.evaluate(() => document.documentElement.dataset.auditLast))
-      .toBe(KLAVIYO_HOSTLESS);
-  } finally {
-    await panel.close();
-    await fixture.page.close();
-  }
-});
-
-test('a host check that never answers times out into the same degraded lane', async ({
-  extension
-}) => {
-  test.setTimeout(30_000);
-  const opened = await openPanelForFixture(extension, '/errors/found-reference.html', {
-    bootHash: '#/undefined-references',
-    inspect: {
-      origin: ORIGIN_A,
-      resources: [{ url: KLAVIYO_SERVED, content: 'window.wocketInventory = null;' }],
-      bypassEval: { neverAnswer: true }
-    }
-  });
-  const { panel, fixture } = opened;
-  try {
-    // While resolving: the row's control waits (announced, spinner, hint).
-    const copy = panel.getByRole('button', {
-      name: 'Copy as exclusion: klaviyo.js (wp-rocket.me)'
-    });
-    await expect(copy).toBeVisible();
-    await expect(copy).toHaveAttribute('aria-busy', 'true');
-    await expect(copy).toHaveAttribute('title', 'Resolving the script’s original path…');
-    // The store's real timeout passes: the same degraded lane as a failure.
-    await expect(panel.getByText(/original hosts could not be verified/)).toBeVisible({
-      timeout: 20_000
-    });
-    await expect(copy).not.toHaveAttribute('aria-busy');
+    await expect(copy).toHaveAttribute(
+      'title',
+      'Copy an exclusion for this script, to exclude it from Delay JavaScript execution'
+    );
+    await expect(panel.getByText(/original hosts could not be verified/)).toHaveCount(0);
     await panel.evaluate(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,

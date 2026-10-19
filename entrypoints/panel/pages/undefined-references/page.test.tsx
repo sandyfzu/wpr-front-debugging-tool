@@ -21,7 +21,7 @@ import type { DataState } from '../../state/fdt-state-machine';
 import { makeDelayScript, makeFdtData } from '../../state/fixtures';
 import { FdtDataContext, type FdtDataStore } from '../../state/use-fdt-data';
 import type { InspectedScripts } from './inspected-scripts';
-import { BYPASS_NOTICE, UndefinedReferencesPage } from './page';
+import { UndefinedReferencesPage } from './page';
 
 const PAGE = 'https://x.test';
 const URL_A = 'https://x.test/wp-content/plugins/p/a.js';
@@ -108,8 +108,7 @@ function mount(options: MountOptions) {
     watchAddedScripts: (onAdded) => {
       added.push(onAdded);
       return () => undefined;
-    },
-    readBypassedPage: () => Promise.resolve(null)
+    }
   };
   // The rows' copy routes through the shared control's default clipboard;
   // the stub records what the rows write without touching the platform.
@@ -287,31 +286,6 @@ describe('UndefinedReferencesPage — results', () => {
       expect(writeText).toHaveBeenCalledWith('/wp-content/plugins/p/a.js');
     });
     expect(document.querySelector('[data-fdt="script-location"]')?.textContent).toBe('plugins/p/');
-  });
-
-  it('shows the bypass notice once when the host check fails and rows need it', async () => {
-    // The double's bypass read answers null (the failure lane); the settled
-    // row's served URL hides a remote host, so the notice is its feedback.
-    const controls = mount({
-      data: pageData({ words: ['klaviyo'] })
-    });
-    controls.reads[0]?.resolve([
-      {
-        origin: {
-          kind: 'url',
-          url: 'https://wp-rocket.me/wp-content/cache/min/1/onsite/js/PD7as8/klaviyo.js?ver=1791299187'
-        },
-        content: 'var klaviyo = 1;'
-      }
-    ]);
-    await flush();
-    expect(screen.getAllByText(BYPASS_NOTICE)).toHaveLength(1);
-    // The row still copies (the hostless fallback), activation ready. The
-    // row's name keeps the served host (the mirror URL is cross-origin here).
-    const copy = screen.getByRole('button', {
-      name: 'Copy as exclusion: klaviyo.js (wp-rocket.me)'
-    });
-    expect(copy.hasAttribute('aria-busy')).toBe(false);
   });
 
   it('appends pushed words in place: existing cards keep their DOM and focus, one announcement', async () => {

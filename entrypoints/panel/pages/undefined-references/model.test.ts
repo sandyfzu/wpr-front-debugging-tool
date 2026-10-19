@@ -19,9 +19,7 @@ import {
   isRetryable,
   isSingleLetterWord,
   newReferencesAnnouncement,
-  normalizeOriginalPath,
   reconcileOrigins,
-  resolveOriginalHosts,
   resolvePageView,
   scanFailureMessage,
   searchableAssets,
@@ -724,73 +722,6 @@ describe('exclusionPatternFromOriginalPath', () => {
 
   it('answers null for an empty path', () => {
     expect(exclusionPatternFromOriginalPath('')).toBeNull();
-  });
-});
-
-describe('normalizeOriginalPath', () => {
-  it('adds the missing leading slash, keeps one already there', () => {
-    expect(normalizeOriginalPath('onsite/js/PD7as8/klaviyo.js')).toBe(
-      '/onsite/js/PD7as8/klaviyo.js'
-    );
-    expect(normalizeOriginalPath('/onsite/js/PD7as8/klaviyo.js')).toBe(
-      '/onsite/js/PD7as8/klaviyo.js'
-    );
-  });
-
-  it('decodes percent runs so either spelling of a path joins', () => {
-    expect(normalizeOriginalPath('wp-content/plugins/a%2Bb/x.js')).toBe(
-      '/wp-content/plugins/a+b/x.js'
-    );
-    // A run that cannot decode stays encoded — both sides treat it the same.
-    expect(normalizeOriginalPath('wp-content/plugins/a%FF.js')).toBe('/wp-content/plugins/a%FF.js');
-  });
-});
-
-describe('resolveOriginalHosts', () => {
-  const PAGE_URL = 'https://wp-rocket.me/?fdt-delay=1&nowprocket=1';
-
-  it('joins each uniquely-served script path to its origin, query dropped', () => {
-    const hosts = resolveOriginalHosts(
-      '<script src="https://static.klaviyo.com/onsite/js/PD7as8/klaviyo.js?ver=3.7.3"></script>' +
-        '<script src="/wp-content/plugins/a+b/app.js?ver=1.2"></script>' +
-        '<script src="//cdn.example.net/bootstrap/v5/tp.widget.bootstrap.min.js"></script>',
-      PAGE_URL
-    );
-    expect(hosts.get('/onsite/js/PD7as8/klaviyo.js')).toBe('https://static.klaviyo.com');
-    expect(hosts.get('/wp-content/plugins/a+b/app.js')).toBe('https://wp-rocket.me');
-    expect(hosts.get('/bootstrap/v5/tp.widget.bootstrap.min.js')).toBe('https://cdn.example.net');
-  });
-
-  it('compares decoded paths — the row\u2019s encoded spelling joins the raw one', () => {
-    const hosts = resolveOriginalHosts(
-      '<script src="https://cdn.test/wp-content/plugins/a%2Bb/x.js"></script>',
-      PAGE_URL
-    );
-    expect(hosts.get('/wp-content/plugins/a+b/x.js')).toBe('https://cdn.test');
-  });
-
-  it('drops an ambiguous path — two origins served it', () => {
-    const hosts = resolveOriginalHosts(
-      '<script src="https://a.test/x/y.js"></script><script src="https://b.test/x/y.js"></script>',
-      PAGE_URL
-    );
-    expect(hosts.has('/x/y.js')).toBe(false);
-  });
-
-  it('keeps the page-origin relatives, drops inline and non-http(s) srcs', () => {
-    const hosts = resolveOriginalHosts(
-      '<script>var inline = 1;</script>' +
-        '<script src="data:text/plain,x.js"></script>' +
-        '<script src="app/plugins/fixture.js"></script>',
-      PAGE_URL
-    );
-    expect(hosts.size).toBe(1);
-    expect(hosts.get('/app/plugins/fixture.js')).toBe('https://wp-rocket.me');
-  });
-
-  it('a missing script is simply absent', () => {
-    const hosts = resolveOriginalHosts('<script src="https://a.test/x/y.js"></script>', PAGE_URL);
-    expect(hosts.has('/missing.js')).toBe(false);
   });
 });
 

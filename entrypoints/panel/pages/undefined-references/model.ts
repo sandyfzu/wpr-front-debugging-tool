@@ -7,7 +7,6 @@
  */
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
-import { parsePage } from '../../../../lib/detection/parse-page';
 
 /** Why a script scan failed — each maps to its own user-facing remedy. */
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
@@ -720,85 +719,6 @@ export function exclusionPattern(url: string, pageOrigin: string | null): string
 export function exclusionPatternFromOriginalPath(originalPath: string): string | null {
   if (originalPath === '') return null;
   return rawUrlPattern(originalPath.startsWith('/') ? originalPath : `/${originalPath}`);
-}
-
-/** The bypass map's verdict for one host-hidden original path. */
-export type HostResolution =
-  | {
-      /** The bypass read is running; the row's copy control waits on it. */
-      readonly kind: 'pending';
-    }
-  | {
-      /** Exactly one origin served the original path in the bypassed page. */
-      readonly kind: 'resolved';
-      /**
-       * The serving origin (scheme + host) — composable into the original
-       * script's absolute URL (`${origin}/${originalPath}`). The page's own
-       * origin appears as any other, so a site-local original resolves
-       * through the same field.
-       */
-      readonly origin: string;
-    }
-  | {
-      /** No unique host: absent, ambiguous, or the pass failed. The row copies the hostless path. */
-      readonly kind: 'unresolved';
-    };
-
-/**
- * Normalize a script path to the bypass join's comparison key: the leading
- * `/` kept (added when the minify cache's `ltrim` removed it), percent-runs
- * decoded so both spellings of the same path compare equal (a run that does
- * not decode stays encoded — both sides treat it the same), and no query
- * (paths never carry one — the minified URL strips it).
- *
- * @param path A script URL path (either spelling of the leading slash).
- * @returns The comparison key.
- */
-export function normalizeOriginalPath(path: string): string {
-  const withSlash = path.startsWith('/') ? path : `/${path}`;
-  try {
-    return decodeURIComponent(withSlash);
-  } catch {
-    return withSlash;
-  }
-}
-
-/**
- * The bypass join, pure: every `src` the bypassed page's scripts carry,
- * http(s)-only and resolved against the read's own URL (relative and
- * protocol-relative `src` values included), keyed by
- * {@link normalizeOriginalPath} with the origin that served it. A path two
- * different origins served is ambiguous — dropped, never guessed. The
- * page's own origin appears as any other (a custom content-dir original
- * resolves site-local through it).
- *
- * @param html The bypassed page's HTML.
- * @param pageUrl The URL the bypassed document actually came from.
- * @returns The uniquely-served paths' origins.
- */
-export function resolveOriginalHosts(html: string, pageUrl: string): ReadonlyMap<string, string> {
-  const origins = new Map<string, string>();
-  const ambiguous = new Set<string>();
-  for (const script of parsePage(html).scripts) {
-    const src = script.getAttribute('src');
-    if (src === null || src === '') continue;
-    let resolved: URL;
-    try {
-      resolved = new URL(src, pageUrl);
-    } catch {
-      continue;
-    }
-    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue;
-    const key = normalizeOriginalPath(resolved.pathname);
-    if (ambiguous.has(key)) continue;
-    const previous = origins.get(key);
-    if (previous === undefined) origins.set(key, resolved.origin);
-    else if (previous !== resolved.origin) {
-      origins.delete(key);
-      ambiguous.add(key);
-    }
-  }
-  return origins;
 }
 
 /** Two origins name the same script (or both the inline stack). */

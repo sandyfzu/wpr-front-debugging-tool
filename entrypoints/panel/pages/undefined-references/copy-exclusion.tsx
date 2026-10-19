@@ -1,8 +1,8 @@
 /**
  * The "Copy as exclusion" action's copy vocabulary: what the row control, its
  * toasts and its remedies say. The shared copy button renders the mechanism
- * (the guarded write, the pending guard, the flash, the toasts); this module
- * owns the words and aims them, through one component every row renders.
+ * (the guarded write, the flash, the toasts); this module owns the words and
+ * aims them, through one component every row renders.
  *
  * A script that defines a name other code reads too early is the usual Delay
  * JS casualty, and excluding that script from Delay JS is the usual fix — so
@@ -22,12 +22,6 @@ const FLASH_LABEL = 'Copied';
 
 /** The row control's hover hint (its purpose, in full). */
 const HOVER_TITLE = `Copy an exclusion for this script, to exclude it from ${LABEL_DELAY_JAVASCRIPT_EXECUTION}`;
-
-/**
- * The row control's hover hint while the original-host resolution runs;
- * activation is suppressed until the copy payload settles.
- */
-const PENDING_TITLE = 'Resolving the script\u2019s original path\u2026';
 
 /** The success toast's title. */
 const COPIED_TITLE = 'Exclusion copied';
@@ -61,15 +55,12 @@ export const COMBINED_EXCLUSION_NOTE =
 /** Props of {@link ExclusionCopyButton}. */
 export interface ExclusionCopyButtonProps {
   /**
-   * The exclusion pattern to copy, read per access — a host-hidden row's
-   * payload resolves once (hostless → host-led) while the control is
-   * mounted.
+   * The exclusion pattern to copy, read per access — a refreshed answer's
+   * payload swap happens while the control stays mounted.
    */
   readonly pattern: () => string;
   /** The control's full accessible name (`copyExclusionName`'s shape). */
   readonly name: string;
-  /** Whether the original-host resolution is still running (read per access). */
-  readonly pending: () => boolean;
   /** The clipboard seam (default `navigator.clipboard`); injected by tests. */
   readonly clipboard?: ClipboardLike;
   /** Extra classes, merged last so callers win. */
@@ -79,8 +70,7 @@ export interface ExclusionCopyButtonProps {
 /**
  * The "Copy as exclusion" action on the shared copy button: the exact
  * pattern on the clipboard, in-place feedback at the row, the
- * setting-naming toast, a hand-typing remedy when the write fails, and the
- * resolution wait (the shared button's `pending`) with its own hint.
+ * setting-naming toast, and a hand-typing remedy when the write fails.
  *
  * @param props See {@link ExclusionCopyButtonProps}.
  */
@@ -90,8 +80,7 @@ export function ExclusionCopyButton(props: ExclusionCopyButtonProps): JSX.Elemen
       text={props.pattern()}
       label={VISIBLE_LABEL}
       ariaLabel={props.name}
-      title={props.pending() ? PENDING_TITLE : HOVER_TITLE}
-      pending={props.pending()}
+      title={HOVER_TITLE}
       showLabel="regular-up"
       copiedLabel={FLASH_LABEL}
       successTitle={COPIED_TITLE}

@@ -15,20 +15,17 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import { createLogger } from '../../../../lib/logger';
-import { recoverOriginalScript } from '../../../../lib/wp-rocket/minify-url-recovery';
 import type {
   InlineScriptSource,
   ScriptAsset,
   ScriptOrigin
 } from '../../../../lib/panel/undefined-refs';
-import type { BypassedPageRead, InspectedScripts, ScriptRead } from './inspected-scripts';
+import type { InspectedScripts, ScriptRead } from './inspected-scripts';
 import {
   arrivedWords,
   classifyScanError,
   newReferencesAnnouncement,
-  normalizeOriginalPath,
   reconcileOrigins,
-  resolveOriginalHosts,
   resolvePageView,
   SCAN_IDLE,
   SCAN_UNSUPPORTED,
@@ -36,7 +33,6 @@ import {
   transitionScan,
   uniqueWords,
   type DefinitionAnswer,
-  type HostResolution,
   type PageView,
   type ScanEvent,
   type ScanFailure,
@@ -58,13 +54,6 @@ const log = createLogger('panel');
  * leave the processing state up forever with no way out.
  */
 export const SCAN_TIMEOUT_MS = 15_000;
-
-/**
- * How long the original-host bypass pass may take (ms). One same-origin
- * request in the inspected page; past it the affected rows degrade to the
- * hostless pattern instead of a control that never resolves.
- */
-export const BYPASS_TIMEOUT_MS = 10_000;
 
 /** The page data the store reads (accessors, so it follows pushes). */
 export interface UndefinedReferencesInput {
@@ -88,8 +77,6 @@ export interface UndefinedReferencesDeps {
   readonly schedule?: (run: () => void, ms: number) => () => void;
   /** The timeout (default {@link SCAN_TIMEOUT_MS}). */
   readonly timeoutMs?: number;
-  /** The bypass pass's timeout (default {@link BYPASS_TIMEOUT_MS}). */
-  readonly bypassTimeoutMs?: number;
   /** Report a failed rescan (results stay; the page toasts it). */
   readonly onRescanFailed?: (failure: ScanFailure) => void;
   /** Hand the main thread back during the search (default: {@link defaultYieldToMain}). */
@@ -108,30 +95,6 @@ export interface Announcement {
   readonly seq: number;
 }
 
-/**
- * The original-host bypass map's state: one pass per page (a refetch or a
- * rescan retries it), started only when a rendered row actually needs it.
- *
- * - `unresolved` — not started yet (or reset by a refetch/rescan).
- * - `resolving` — the bypass read is in flight; affected rows' copy
- *   controls wait on it (pending, never dead).
- * - `resolved` — the pass joined the bypassed page: each uniquely-hosted
- *   original path maps to its host.
- * - `failed` — the pass could not run (eval error, degraded shape,
- *   oversized body, timeout): affected rows copy the hostless pattern and
- *   the page shows one notice.
- */
-export type BypassState =
-  | { readonly kind: 'unresolved' }
-  | { readonly kind: 'resolving' }
-  | { readonly kind: 'resolved'; readonly hosts: ReadonlyMap<string, string> }
-  | { readonly kind: 'failed' };
-
-/** The shared unresolved state (states are immutable, so one instance serves all). */
-const BYPASS_UNRESOLVED: BypassState = { kind: 'unresolved' };
-/** The shared failed state. */
-const BYPASS_FAILED: BypassState = { kind: 'failed' };
-
 /** What the page reads from the store. */
 export interface UndefinedReferencesStore {
   /** Which state body renders. */
@@ -147,21 +110,6 @@ export interface UndefinedReferencesStore {
   readonly answerOf: (word: string) => DefinitionAnswer;
   /** The inspected page's origin, once a read learned it. */
   readonly pageOrigin: Accessor<string | null>;
-  /**
-   * The bypass map's verdict for one host-hidden original path: the row's
-   * copy control waits while the pass runs (`pending`), copies the
-   * resolved-host pattern when a unique host answered, and the hostless
-   * pattern otherwise.
-   *
-   * @param originalPath The original path as the served URL mirrored it.
-   */
-  readonly originalHostOf: (originalPath: string) => HostResolution;
-  /**
-   * The bypass pass failed while rendered rows still need it: the page
-   * shows one card-level notice (never per-row toasts), and the existing
-   * rescan/refetch flow retries the map.
-   */
-  readonly bypassDegraded: Accessor<boolean>;
   /** Script files the last read had to skip (the search cannot see them). */
   readonly unreadableScripts: Accessor<number>;
   /** A user rescan is in flight (current results stay visible). */
@@ -201,7 +149,6 @@ export function createUndefinedReferencesStore(
   const inspected = deps.inspected;
   const schedule = deps.schedule ?? defaultSchedule;
   const timeoutMs = deps.timeoutMs ?? SCAN_TIMEOUT_MS;
-  const bypassTimeout = deps.bypassTimeoutMs ?? BYPASS_TIMEOUT_MS;
   const yieldToMain = deps.yieldToMain ?? defaultYieldToMain();
   const now = deps.now ?? (() => performance.now());
   const sliceMs = deps.sliceMs ?? SEARCH_SLICE_MS;
@@ -210,91 +157,18 @@ export function createUndefinedReferencesStore(
     inspected === null ? SCAN_UNSUPPORTED : SCAN_IDLE
   );
   const [pageOrigin, setPageOrigin] = createSignal<string | null>(null);
-  const [bypass, setBypass] = createSignal<BypassState>(BYPASS_UNRESOLVED);
   const [rescansDone, setRescansDone] = createSignal(0);
   const [staleScripts, setStaleScripts] = createSignal(false);
   const [unreadableScripts, setUnreadableScripts] = createSignal(0);
   /** Bumped by every new read, failure, reset and disposal: an old read's settle is stale. */
   let readTicket = 0;
-  /** Bumped by every bypass reset: an old pass's settle is stale. */
-  let bypassTicket = 0;
   /** Bumped by every data refetch: an origin read from an older page is dropped. */
   let pageGeneration = 0;
   let disposed = false;
   let cancelTimeout: (() => void) | null = null;
-  let cancelBypassTimeout: (() => void) | null = null;
 
   const words = createMemo(() => uniqueWords(input.words()));
   const gateOpen = (): boolean => !input.delayJsPresent() || input.allScriptsLoaded();
-
-  /** Drop the pending bypass timeout. */
-  const disarmBypass = (): void => {
-    cancelBypassTimeout?.();
-    cancelBypassTimeout = null;
-  };
-
-  /** Restart the bypass lane: a newer pass invalidates any in-flight or settled one. */
-  const resetBypass = (): void => {
-    bypassTicket += 1;
-    disarmBypass();
-    setBypass(BYPASS_UNRESOLVED);
-  };
-
-  /** Settle the bypass pass, unless a newer pass took over. A settled pass is final: a late answer lands nowhere. */
-  const settleBypass = (ticket: number, state: BypassState): void => {
-    if (ticket !== bypassTicket || disposed) return;
-    bypassTicket += 1;
-    disarmBypass();
-    if (state.kind === 'failed') {
-      log.warn('The original-host bypass pass failed; affected rows copy the hostless pattern');
-    }
-    setBypass(state);
-  };
-
-  /**
-   * Run the one bypass pass: re-read the page plain (same URL, `nowprocket`
-   * added) in the page's own world, and join every script `src` it carries
-   * into the per-path host map. The store's timeout arms against a read
-   * that never answers; a rejected read degrades exactly like a failed one.
-   */
-  const startBypass = (): void => {
-    if (inspected === null) {
-      setBypass(BYPASS_FAILED);
-      return;
-    }
-    bypassTicket += 1;
-    const ticket = bypassTicket;
-    setBypass({ kind: 'resolving' });
-    disarmBypass();
-    cancelBypassTimeout = schedule(() => {
-      settleBypass(ticket, BYPASS_FAILED);
-    }, bypassTimeout);
-    let read: Promise<BypassedPageRead | null>;
-    try {
-      read = inspected.readBypassedPage();
-    } catch (cause) {
-      log.warn('The bypass read threw before it could run', cause);
-      settleBypass(ticket, BYPASS_FAILED);
-      return;
-    }
-    read.then(
-      (pageRead) => {
-        if (ticket !== bypassTicket || disposed) return;
-        if (pageRead === null) {
-          settleBypass(ticket, BYPASS_FAILED);
-          return;
-        }
-        settleBypass(ticket, {
-          kind: 'resolved',
-          hosts: resolveOriginalHosts(pageRead.html, pageRead.url)
-        });
-      },
-      (cause: unknown) => {
-        log.warn('The bypass read was rejected', cause);
-        settleBypass(ticket, BYPASS_FAILED);
-      }
-    );
-  };
 
   /** Apply one scan event; returns the state before and after it. */
   const apply = (event: ScanEvent): { before: ScanState; after: ScanState } => {
@@ -362,9 +236,6 @@ export function createUndefinedReferencesStore(
   const transitionAndRead = (event: ScanEvent): void => {
     const { before, after } = apply(event);
     if (inspected !== null && after !== before && after.kind === 'scanning') {
-      // A fresh read may follow a navigation or a rescan: the bypass map
-      // rides the same reset (one pass per page, retried by this flow).
-      resetBypass();
       launchRead(inspected);
     }
   };
@@ -378,7 +249,6 @@ export function createUndefinedReferencesStore(
       () => {
         pageGeneration += 1;
         setStaleScripts(false);
-        resetBypass();
         const current = untrack(scan);
         if (current.kind === 'idle' || current.kind === 'unsupported') return;
         if (untrack(words).length > 0 && untrack(gateOpen)) {
@@ -471,39 +341,6 @@ export function createUndefinedReferencesStore(
     })
   );
 
-  // The original paths of every answered row whose served URL hid its host
-  // (remote mirrors, custom content dirs): exactly what the bypass map
-  // resolves, and nothing else.
-  const unknownOriginalPaths = createMemo(() => {
-    const paths = new Set<string>();
-    for (const origins of answers().values()) {
-      for (const origin of origins) {
-        if (origin.kind !== 'url') continue;
-        const recovered = recoverOriginalScript(origin.url);
-        if (recovered.kind === 'original' && recovered.hostKnown === 'unknown') {
-          paths.add(recovered.originalPath);
-        }
-      }
-    }
-    return paths;
-  });
-
-  // The bypass map: one pass per page — starts when a rendered row actually
-  // needs it (an answered origin classifies host-hidden) and the pass has
-  // not run for this page yet. A rescan or refetch resets the lane, so the
-  // existing flow retries it; there is no separate control.
-  createEffect(() => {
-    if (bypass().kind !== 'unresolved') return;
-    if (unknownOriginalPaths().size === 0) return;
-    startBypass();
-  });
-
-  // The one card-level degradation notice: the pass failed while answered
-  // rows still need it (never per-row toasts).
-  const bypassDegraded = createMemo(
-    () => bypass().kind === 'failed' && unknownOriginalPaths().size > 0
-  );
-
   // Scripts the page loads after a read: say a rescan would see them.
   if (inspected !== null) {
     const stopWatch = inspected.watchAddedScripts((url) => {
@@ -556,9 +393,7 @@ export function createUndefinedReferencesStore(
     disposed = true;
     readTicket += 1;
     searchTicket += 1;
-    bypassTicket += 1;
     disarm();
-    disarmBypass();
   });
 
   return {
@@ -566,17 +401,6 @@ export function createUndefinedReferencesStore(
     words,
     answerOf: (word) => (assets() === null ? null : (answers().get(word) ?? 'pending')),
     pageOrigin,
-    originalHostOf: (originalPath) => {
-      const state = bypass();
-      if (state.kind === 'resolved') {
-        const origin = state.hosts.get(normalizeOriginalPath(originalPath));
-        if (origin !== undefined) return { kind: 'resolved', origin };
-        // Absent from the bypassed page: no unique host to vouch for.
-        return { kind: 'unresolved' };
-      }
-      return state.kind === 'resolving' ? { kind: 'pending' } : { kind: 'unresolved' };
-    },
-    bypassDegraded,
     unreadableScripts,
     rescanning: () => {
       const current = scan();

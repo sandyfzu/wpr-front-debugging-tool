@@ -66,7 +66,7 @@ Every scenario is a URL flag; no admin state exists for any of them. Flags combi
 | `?fdt-wpr-versionless=1` | WP Rocket's generator meta issued WITHOUT its version (`rocket_display_meta_generator_content_version` answered false for the request — the plugin's own filter): the served copy still detects as present, cached and footprint-complete, but the WPR version reads absent. The scenario the versionless-identity surface renders against (the P12A widget round); the CDP smoke's scenario 5 asserts the arm's served HTML both ways                                                                                                                                                                                                                                               |
 
 Every page also carries one inert external-origin `<link>` (a `.invalid`-reserved hostname, never resolved) so the Preconnect factory's collecting phase always has at least one external domain to report — head + fixture-name, `rel="novelty"`, defined in the fixture mu-plugin; it asserts nothing itself by design.
-| `?nowprocket=1` | WP Rocket bypass: flags still fire their own scripts, but nothing is delayed/deferred/minified (serves the plain page) |
+| `?nowprocket=1` | WP Rocket bypass: flags still fire their own scripts; Delay JS skips (its queue and its delayed-script stamps), but Minify and Defer still apply — scripts stay deferred and minified (`data-minify="1"`, `cache/min/1/` srcs; live-verified 2026-10-19) |
 
 The delay scenario is the real delayed-execution reproduction: zero errors before the
 interaction, the error only when WP Rocket's delay queue runs (its trigger list —
@@ -106,7 +106,7 @@ served copy carries its own rendering marker:
 ```text
 Profile UA (Android + Mobile tokens) → index-mobile.html → data-wpr-features contains wpr_mobile
 Desktop UA                           → index.html           → data-wpr-features contains wpr_desktop
-?nowprocket=1                        → plain render, no WP Rocket stamps at all
+?nowprocket=1                        → bypassed render: no wpr_mobile/wpr_desktop markers (no data-wpr-features meta); scripts stay deferred + minified — only Delay JS skips
 ```
 
 Verified live by direct requests (2026-10-12, both copies built and listed below the
@@ -170,9 +170,10 @@ wpc 'wp --path=/var/www/html option patch update wp_rocket_settings minify_conca
      wp --path=/var/www/html eval "rocket_clean_domain(); rocket_clean_minify();"'
 ```
 
-A `?nowprocket=1` fetch of any page serves the plain render — the panel's
-original-host map uses it (in-page, same-origin) to resolve remote-mirrored
-scripts' true hosts.
+A `?nowprocket=1` fetch serves the bypassed render: Delay JS skips, but the scripts
+stay deferred and minified (`data-minify="1"`, `cache/min/1/` srcs) — the bypass does
+NOT un-minify (live-verified 2026-10-19; the panel's exclusion copy recovers original
+paths from the served minified URLs directly, no bypass fetch involved).
 
 The WPR admin's real options are seeded by the bootstrap through one authenticated admin
 request (`wp_rocket_settings` exists only after an admin-page-context hit — wp-cli
