@@ -1,23 +1,35 @@
 /**
  * The Headers & Cookies page — the caching-evidence trail: every captured
  * main-frame response header (caching-relevant ones first, each with its
- * plain-copy verdict hint) and the names of the cookies page scripts can
- * read. What this page shows and copies never carries a secret: the cookie
- * capture keeps names only, and secret-bearing header values (`Set-Cookie`,
- * credentials, tokens, secret URL query values) are withheld by the panel's
- * one redaction rule before they render or copy. That guarantee is this
- * page's display and clipboard only — the captured payload itself still
- * holds the raw header values.
+ * plain-copy verdict hint and its evidence tone) and the names of the
+ * cookies page scripts can read. What this page shows and copies never
+ * carries a secret: the cookie capture keeps names only, and secret-bearing
+ * header values (`Set-Cookie`, credentials, tokens, secret URL query
+ * values) are withheld by the panel's one redaction rule before they render
+ * or copy. That guarantee is this page's display and clipboard only — the
+ * captured payload itself still holds the raw header values.
  *
  * State matrix (the shell owns loading, fetch errors and render crashes —
  * this body renders only on `ready`/`refreshing`):
- * - headers captured → the fetched line + SPA note, then the inventory list;
+ * - headers captured → the fetched line + SPA note, the filter field, then
+ *   the inventory list;
  * - no headers (`null` or `[]`) → the empty state; the cookie section still
  *   lists when the payload carries it;
  * - payload without the cookie capture (an older content script) → the
  *   cookie section and its heading are omitted;
  * - cookie capture with no names → the section with its one-line note;
- * - neither headers nor cookies → the empty state alone.
+ * - neither headers nor cookies → the empty state alone;
+ * - an all-empty payload landing under a live query → the empty/scaffold
+ *   state alone: with no searchable rows the filter does not apply (the
+ *   filtered-empty view is reserved for a filter that hides rows that exist).
+ *
+ * The filter narrows the list by name — header names and cookie names,
+ * never a value — and it is the page's side of the panel-wide find: the
+ * DevTools find bar (Cmd/Ctrl+F) drives the same store, so its query
+ * filters here, its Enter/Shift+Enter walk the matching rows (marker +
+ * scroll), and its Esc clears. The store is the shell's one search store
+ * (`useSearch`), shared with every list page; the route reset clears it by
+ * the standing rule.
  *
  * Timestamps are honest about what they stamp: headers carry no time of
  * their own, so the header side shows when the panel fetched the payload
@@ -25,6 +37,7 @@
  * ("Captured …"). Both tick through one aging clock owned by the page.
  */
 import { createMemo, createSignal, Match, onCleanup, Show, Switch, type JSX } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import Cookie from 'lucide-solid/icons/cookie';
 import Info from 'lucide-solid/icons/info';
 import RotateCw from 'lucide-solid/icons/rotate-cw';
@@ -33,7 +46,9 @@ import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { EmptyState } from '../../../../components/ui/empty-state';
+import { FilterBar } from '../../../../components/ui/filter-bar';
 import { KeyValue } from '../../../../components/ui/key-value';
+import { STATUS_ICONS, STATUS_TEXT_CLASSES } from '../../../../components/ui/status-badge';
 import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
@@ -42,12 +57,17 @@ import {
   buildHeadersViewModel,
   headersTruncationNote
 } from '../../../../lib/panel/headers-view-model';
+import { fallbackRowKey, normalizeQuery } from '../../../../lib/panel/list-behavior';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
-import { useFdtData } from '../../state/use-fdt-data';
+import { useFdtData, useSearch } from '../../state/use-fdt-data';
+import { bindSearchField } from '../../state/search-field';
+import type { SearchStore } from '../../state/search';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
 import { relativeAge } from '../../status-bar/relative-age';
-import { PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { CURRENT_MATCH_ROW, createCurrentMatch } from '../current-match';
+import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
+import { createResultsAnnouncement } from '../results-announcement';
 import { WithheldLegend, WithheldValue } from '../withheld-value';
 import {
   canReloadInspected,
@@ -60,9 +80,12 @@ import {
   buildInventory,
   COOKIES_LEAD,
   estimateRowHeight,
+  filterInventory,
   headerCopyLabel,
   headerCopyText,
   heldFetchStamp,
+  INVENTORY_NOUN,
+  inventoryItemName,
   isoStamp,
   SECTION_TITLES,
   shownStamp,
@@ -76,6 +99,15 @@ export const PAGE_SUBTITLE = 'Main-frame response headers and readable cookie na
 /** The SPA limitation, stated where the fetched time is. */
 export const SPA_NOTE =
   "Headers come from the last main-frame response — in-page (SPA) navigations don't refresh them.";
+
+/**
+ * The filter field's accessible name — it declares the searched fields, so
+ * the name itself answers "search what?".
+ */
+export const SEARCH_LABEL = 'Search header and cookie names';
+
+/** The filter field's placeholder (the same declared fields, command form). */
+export const SEARCH_PLACEHOLDER = 'Search header and cookie names…';
 
 /** The scroller's accessible name. */
 const LIST_LABEL = 'Response headers and cookies';
@@ -91,6 +123,12 @@ const LIST_OVERSCAN = 24;
 export interface HeadersCookiesViewProps {
   /** The loaded payload. */
   data: FdtData;
+  /**
+   * The panel's search store — the one the DevTools find bar drives. The
+   * page's name filter is its page side: the field binds it, the list
+   * reports the matching rows and names the cursor's row.
+   */
+  search: SearchStore;
   /** When the panel fetched the payload (ms), or null when unknown. */
   fetchedAt: number | null;
   /** The aging clock's reading (ms) the relative times age against. */
@@ -124,6 +162,12 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
   };
 }
 
+/** Props of {@link HeadersCookiesPage}. */
+export interface HeadersCookiesPageProps {
+  /** The virtualizer seam, forwarded to the list (tests inject a double). */
+  createVirtualizer?: VirtualizerFactory;
+}
+
 /**
  * Render the page body.
  *
@@ -134,8 +178,9 @@ export function inspectedReloadAction(api: InspectedWindowReloadApi): (() => voi
  *
  * @returns The page body, or nothing outside the loaded states.
  */
-export function HeadersCookiesPage(): JSX.Element {
+export function HeadersCookiesPage(props: HeadersCookiesPageProps = {}): JSX.Element {
   const store = useFdtData();
+  const search = useSearch();
   const clock = createAgingClock(realAgingClockDeps());
   clock.setLoaded(true);
   onCleanup(() => {
@@ -154,8 +199,10 @@ export function HeadersCookiesPage(): JSX.Element {
       {(data) => (
         <HeadersCookiesView
           data={data()}
+          search={search}
           fetchedAt={fetchedAt()}
           now={clock.now()}
+          createVirtualizer={props.createVirtualizer}
           reloadInspectedPage={inspectedReloadAction(browser)}
         />
       )}
@@ -164,12 +211,19 @@ export function HeadersCookiesPage(): JSX.Element {
 }
 
 /**
- * Render the page for one payload — the store-free half, so every state is
- * testable with plain props.
+ * Render the page for one payload — the messaging-free half (the store
+ * arrives as a prop), so every state is testable with plain props.
  *
- * Layout: the frame's fill mode; the fetched line, then one virtual list
- * over the flattened inventory (section headings + rows) — one scroller for
- * everything, never nested ones.
+ * Layout: the frame's fill mode; the fetched line, then the filter field,
+ * then one virtual list over the flattened inventory (section headings +
+ * rows) — one scroller for everything, never nested ones. The list renders
+ * the query's matches; a query that matches nothing lands on the shared
+ * filtered-empty view with its one-click way back.
+ *
+ * The find's page side: the rendered item rows under the query are the
+ * match set (reported to the store), and the find's cursor names one of
+ * them — the marker plus the scroll request land on the mapped row;
+ * scaffolding (headings, notes) never matches, having no name.
  *
  * @param props See {@link HeadersCookiesViewProps}.
  * @returns The page frame with its sections.
@@ -178,17 +232,44 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
   const inventory = createMemo(() =>
     buildInventory(buildHeadersViewModel(props.data.pageHeaders), props.data.cookies)
   );
+  // The shared field binding: raw echo, the shell's one store, the Esc
+  // rule — the DevTools find bar drives the same store. The store prop is
+  // read once: its identity is stable for the mounted view (the shell
+  // provides one), and the reactivity lives in its signals, which the
+  // memos below track.
+  // eslint-disable-next-line solid/reactivity -- read once on purpose
+  const search = props.search;
+  const field = bindSearchField(search);
+  const query = createMemo(() => normalizeQuery(search.query()));
   const rows = (): readonly InventoryRow[] => inventory().rows;
+  // The searched rows (headers + cookie names) — the scaffold rows (headings,
+  // notes) are never counted by the shared count line.
+  const isItem = (row: InventoryRow): boolean => inventoryItemName(row) !== null;
+  const items = createMemo(() => rows().filter(isItem));
+  // The filtered rows: name evidence only (headers and cookie names — never
+  // a value), section counts restated to what survives. With no searchable
+  // rows the filter does not apply: a stale query over a scaffold-only list
+  // renders the scaffold (section + note), never NoMatches beside the
+  // EmptyState (the filtered-empty view is reserved for a filter that hides
+  // rows that exist).
+  const visible = createMemo(() =>
+    items().length === 0 ? rows() : filterInventory(rows(), query())
+  );
+  const visibleItems = createMemo(() => visible().filter(isItem));
+  // The find's page side: the filtered item rows are the match set — their
+  // positions in the rendered list (scaffold rows never match, having no
+  // name) — and the cursor's row is the marker + scroll target.
+  const matchIndices = createMemo(() =>
+    visible().flatMap((row, index) => (isItem(row) ? [index] : []))
+  );
+  const match = createCurrentMatch(search, () => matchIndices().length, matchIndices);
   const allHeaders = createMemo(() => allHeadersCopyText(rows()));
+  // The legend is page-level meta (it names the lock-marker vocabulary for
+  // the whole capture), so it reads the full inventory and never flips with
+  // the filter — it mounts once, where every user can read it.
   const hasWithheld = createMemo(() =>
     rows().some((row) => row.kind === 'header' && row.header.redacted)
   );
-  // The stamps as `Show` conditions: an object, so a stamp of 0 still shows.
-  const fetched = (): { at: number } | undefined => {
-    const at = shownStamp(props.fetchedAt);
-    return at === null ? undefined : { at };
-  };
-  const cookiesCapturedAt = (): number | null => shownStamp(props.data.cookies?.capturedAt);
   // The scroll-edge hairline appears only once the list has scrolled.
   const [scrolled, setScrolled] = createSignal(false);
   /**
@@ -208,6 +289,25 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
       wrapper.removeEventListener('scroll', onScroll, { capture: true });
     });
   };
+  let controls: HTMLDivElement | undefined;
+  /** Where focus lands after the filtered-empty view's way back clears the field. */
+  const focusAfter = (): HTMLElement | null | undefined =>
+    controls?.querySelector<HTMLElement>('input[type="search"]');
+  // The shared count line: truthful text always; a data refresh updates it
+  // silently, a committed query change announces again (never per keystroke,
+  // never on mount).
+  const { text: announcement, live } = createResultsAnnouncement({
+    rows: items,
+    visible: visibleItems,
+    noun: INVENTORY_NOUN,
+    actions: [query]
+  });
+  // The stamps as `Show` conditions: an object, so a stamp of 0 still shows.
+  const fetched = (): { at: number } | undefined => {
+    const at = shownStamp(props.fetchedAt);
+    return at === null ? undefined : { at };
+  };
+  const cookiesCapturedAt = (): number | null => shownStamp(props.data.cookies?.capturedAt);
   return (
     <PageFrame
       id="headers-cookies"
@@ -276,43 +376,76 @@ export function HeadersCookiesView(props: HeadersCookiesViewProps): JSX.Element 
           <WithheldLegend class="-mt-2" />
         </Show>
       </Show>
-      <Show when={rows().length > 0}>
-        {/* A layout-free wrapper: scroll does not bubble, so the list's own
-            scroll reaches the edge-hairline signal through a capture listener. */}
-        <div ref={watchListScroll} class="contents">
-          <VirtualList
-            scrollerRole="list"
-            aria-label={LIST_LABEL}
-            count={rows().length}
-            estimateSize={(index) => {
-              const row = rows()[index];
-              return row === undefined ? 32 : estimateRowHeight(row);
+      <Show when={items().length > 0}>
+        {/* Esc in the field is the binding's rule; the ref targets the way-back focus. */}
+        <div ref={controls} onKeyDown={field.onKeyDown}>
+          <FilterBar
+            searchQuery={field.value()}
+            onSearchChange={(raw) => {
+              field.input(raw);
             }}
-            getItemKey={(index) => rows()[index]?.id ?? index}
-            overscan={LIST_OVERSCAN}
-            createVirtualizer={props.createVirtualizer}
-            class={cn(
-              PAGE_FILL_SCROLLER,
-              '-mx-1 border-t px-1',
-              scrolled() ? 'border-line-2' : 'border-transparent'
-            )}
-          >
-            {(item) => (
-              <Show when={rows()[item.index]}>
-                {(row) => (
-                  <InventoryItem
-                    row={row()}
-                    position={item.index + 1}
-                    total={rows().length}
-                    cookiesCapturedAt={cookiesCapturedAt()}
-                    now={props.now}
-                  />
-                )}
-              </Show>
-            )}
-          </VirtualList>
+            searchLabel={SEARCH_LABEL}
+            searchPlaceholder={SEARCH_PLACEHOLDER}
+          />
         </div>
       </Show>
+      <Show when={rows().length > 0}>
+        <Show
+          when={visible().length > 0}
+          fallback={
+            <div class={cn(PAGE_FILL_SCROLLER, 'grid place-items-center')}>
+              <NoMatches
+                query={query()}
+                onClearSearch={() => {
+                  field.clear();
+                }}
+                focusAfter={focusAfter}
+              />
+            </div>
+          }
+        >
+          {/* A layout-free wrapper: scroll does not bubble, so the list's own
+              scroll reaches the edge-hairline signal through a capture listener. */}
+          <div ref={watchListScroll} class="contents">
+            <VirtualList
+              scrollerRole="list"
+              aria-label={LIST_LABEL}
+              count={visible().length}
+              estimateSize={(index) => {
+                const row = visible()[index];
+                return row === undefined ? 32 : estimateRowHeight(row);
+              }}
+              getItemKey={(index) => visible()[index]?.id ?? fallbackRowKey(index)}
+              overscan={LIST_OVERSCAN}
+              createVirtualizer={props.createVirtualizer}
+              scrollTo={match.request}
+              class={cn(
+                PAGE_FILL_SCROLLER,
+                '-mx-1 border-t px-1',
+                scrolled() ? 'border-line-2' : 'border-transparent'
+              )}
+            >
+              {(item) => (
+                <Show when={visible()[item.index]}>
+                  {(row) => (
+                    <InventoryItem
+                      row={row()}
+                      position={item.index + 1}
+                      total={visible().length}
+                      matched={match.current() === item.index}
+                      cookiesCapturedAt={cookiesCapturedAt()}
+                      now={props.now}
+                    />
+                  )}
+                </Show>
+              )}
+            </VirtualList>
+          </div>
+        </Show>
+      </Show>
+      <div role="status" aria-live={live()} class="sr-only" data-fdt="headers-results-status">
+        {announcement()}
+      </div>
     </PageFrame>
   );
 }
@@ -325,6 +458,8 @@ interface InventoryItemProps {
   position: number;
   /** The list's length (`aria-setsize` — virtual rows are not all in the DOM). */
   total: number;
+  /** Whether the find's cursor names this row (the active match). */
+  matched: boolean;
   /** The cookie capture's stamp (shown on the cookie heading), or null. */
   cookiesCapturedAt: number | null;
   /** The aging clock's reading. */
@@ -334,7 +469,10 @@ interface InventoryItemProps {
 /**
  * Render one list row as a `listitem`, dispatching on its kind. Rows are
  * hairline-separated (a heading's line is one step stronger); the last row
- * has nothing below it to separate, so it draws none.
+ * has nothing below it to separate, so it draws none. The find's active
+ * match renders the shared current-row marker (a start-edge rail + wash,
+ * with `aria-current` — shape, never color alone); only item rows can
+ * match, the scaffolding never does.
  *
  * @param props See {@link InventoryItemProps}.
  * @returns The `listitem`.
@@ -354,9 +492,11 @@ function InventoryItem(props: InventoryItemProps): JSX.Element {
       aria-setsize={props.total}
       aria-posinset={props.position}
       data-fdt-inventory-row={props.row.kind}
+      aria-current={props.matched ? 'true' : undefined}
       class={cn(
         !last() && 'border-b',
-        props.row.kind === 'section' ? 'border-line-2' : 'border-line-1'
+        props.row.kind === 'section' ? 'border-line-2' : 'border-line-1',
+        props.matched && CURRENT_MATCH_ROW
       )}
     >
       <Switch>
@@ -461,11 +601,12 @@ interface HeaderItemProps {
 /**
  * Render one header row: the name over its value (side by side from the
  * regular tier; the list itself is capped at the wide tier, so the copy
- * control stays near the value), the verdict hint under the value when the shared model
- * has one, and an always-visible copy control for the wire form
- * `name: value`. A withheld value renders through the shared
- * `WithheldValue` (lock + marker; the reason on hover and for screen
- * readers). The row tints on hover and
+ * control stays near the value), the verdict hint under the value when the
+ * shared model has one — its status-vocabulary icon carries the verdict's
+ * tone (shape + color; the wording always states the meaning) — and an
+ * always-visible copy control for the wire form `name: value`. A withheld
+ * value renders through the shared `WithheldValue` (lock + marker; the
+ * reason on hover and for screen readers). The row tints on hover and
  * while its control has focus (instant — no transition).
  *
  * @param props See {@link HeaderItemProps}.
@@ -497,8 +638,13 @@ function HeaderItem(props: HeaderItemProps): JSX.Element {
         <Show when={props.header.hint}>
           {(hint) => (
             <span class="mt-0.5 flex items-start gap-1 text-2xs text-fg-secondary">
-              <Info size={12} class="mt-0.5 shrink-0 text-status-info" aria-hidden="true" />
-              <span>{hint()}</span>
+              <Dynamic
+                component={STATUS_ICONS[hint().tone]}
+                size={12}
+                class={cn('mt-0.5 shrink-0', STATUS_TEXT_CLASSES[hint().tone])}
+                aria-hidden="true"
+              />
+              <span>{hint().text}</span>
             </span>
           )}
         </Show>

@@ -11,6 +11,7 @@
  * DOM or clipboard).
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
+import type { CountNoun } from '../../../../lib/panel/list-behavior';
 import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
 import { shownHeader, type ShownHeader } from '../../../../lib/panel/shown-header';
 import type { DataState } from '../../state/fdt-state-machine';
@@ -36,6 +37,13 @@ export const NO_COOKIES_NOTE = 'No cookies are readable by page scripts.';
 /** The cookie section's lead: both limits of what the section can show. */
 export const COOKIES_LEAD =
   'Names only — values are never captured. HttpOnly cookies are invisible to page scripts, so they never appear here.';
+
+/**
+ * The inventory's noun for the shared count line and its announcements: the
+ * one list mixes header rows and cookie rows, so neither kind's name can
+ * phrase its total.
+ */
+export const INVENTORY_NOUN: CountNoun = { one: 'entry', other: 'entries' };
 
 /** One row of the flattened inventory. */
 export type InventoryRow =
@@ -193,6 +201,79 @@ export function buildInventory(
     }
   }
   return { hasHeaders, hasCookies: cookies !== undefined, rows };
+}
+
+/**
+ * The row field the page's filter matches: the header's or cookie's name.
+ * Values are never searched — the page's contract is name evidence (cookie
+ * values are not captured, and a header value must not become a search
+ * path). Section headings and notes carry no searched name; the filter
+ * never matches their text.
+ *
+ * @param row The inventory row.
+ * @returns The searched name, or null for a row that searches nothing.
+ */
+export function inventoryItemName(row: InventoryRow): string | null {
+  switch (row.kind) {
+    case 'header':
+      return row.header.name;
+    case 'cookie':
+      return row.name;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The rows the page renders under one filter query: a case-insensitive
+ * substring match on each row's searched name (the resource pages' search
+ * semantics, over the names this page lists). A blank query is the whole
+ * inventory unchanged (same array identity, so an unaffected memo chain
+ * stays idle). Under a query:
+ *
+ * - a section heading survives only when its section holds a match, and its
+ *   count badge states the matching count (the badge never lies about what
+ *   the filtered list shows);
+ * - the capture notes (`NO_CACHING_HEADERS_NOTE`, `NO_COOKIES_NOTE`) drop —
+ *   they describe the capture, and under a filter they would read as
+ *   "nothing matches"; the page's filtered-empty state speaks instead;
+ * - rows keep their object identity, so a narrowing pass never rebuilds
+ *   matched rows (their keyed DOM, focus included, survives typing).
+ *
+ * @param rows The full inventory rows.
+ * @param rawQuery The field's committed text (trimmed here; whitespace is no filter).
+ * @returns The rows to render, in inventory order.
+ */
+export function filterInventory(
+  rows: readonly InventoryRow[],
+  rawQuery: string
+): readonly InventoryRow[] {
+  const needle = rawQuery.trim().toLowerCase();
+  if (needle === '') return rows;
+  const out: InventoryRow[] = [];
+  let pending: {
+    section: Extract<InventoryRow, { kind: 'section' }>;
+    items: InventoryRow[];
+  } | null = null;
+  const flushSection = (): void => {
+    if (pending === null || pending.items.length === 0) return;
+    out.push({ ...pending.section, count: pending.items.length });
+    out.push(...pending.items);
+  };
+  for (const row of rows) {
+    if (row.kind === 'section') {
+      flushSection();
+      pending = { section: row, items: [] };
+      continue;
+    }
+    if (row.kind === 'note') continue;
+    const name = inventoryItemName(row);
+    if (name === null || !name.toLowerCase().includes(needle)) continue;
+    if (pending === null) out.push(row);
+    else pending.items.push(row);
+  }
+  flushSection();
+  return out;
 }
 
 /**

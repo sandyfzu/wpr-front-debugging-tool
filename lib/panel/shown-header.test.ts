@@ -25,12 +25,20 @@ describe('shownHeader — rows withheld at capture', () => {
       name: 'Set-Cookie',
       value: `sid=${REDACTED}`,
       hint: null,
-      redacted: true
+      redacted: true,
+      cookieName: 'sid'
     });
   });
 
   it('reads a withheld row without a cookie name as the bare marker, hint dropped', () => {
-    expect(shownHeader({ name: 'Authorization', value: null, hint: 'x', redacted: true })).toEqual({
+    expect(
+      shownHeader({
+        name: 'Authorization',
+        value: null,
+        hint: { text: 'x', tone: 'info' },
+        redacted: true
+      })
+    ).toEqual({
       name: 'Authorization',
       value: REDACTED,
       hint: null,
@@ -43,6 +51,25 @@ describe('shownHeader — rows withheld at capture', () => {
     expect(shownHeader(row).value).toBe(REDACTED);
   });
 
+  it('re-passing a shown withheld row is idempotent (the cookie name is kept)', () => {
+    const shown = shownHeader({
+      name: 'Set-Cookie',
+      value: null,
+      hint: null,
+      redacted: true,
+      cookieName: 'sid'
+    });
+    const rePassed = shownHeader(shown);
+    expect(rePassed).toEqual(shown);
+    expect(rePassed).toEqual({
+      name: 'Set-Cookie',
+      value: `sid=${REDACTED}`,
+      hint: null,
+      redacted: true,
+      cookieName: 'sid'
+    });
+  });
+
   it('shows the capture-redacted planted headers without a single secret', () => {
     const model = buildHeadersViewModel(redactPageHeaders(PLANTED_RAW_HEADERS));
     const shown = [...model.caching, ...model.other].map(shownHeader);
@@ -52,7 +79,8 @@ describe('shownHeader — rows withheld at capture', () => {
       name: 'Set-Cookie',
       value: `wordpress_logged_in_ab=${REDACTED}`,
       hint: null,
-      redacted: true
+      redacted: true,
+      cookieName: 'wordpress_logged_in_ab'
     });
   });
 
@@ -88,7 +116,12 @@ describe('shownHeader — unflagged rows (defence in depth)', () => {
 
   it('withholds credential and token values, hint included', () => {
     expect(
-      shownHeader({ name: 'Authorization', value: 'Bearer abc.def', hint: 'x', redacted: false })
+      shownHeader({
+        name: 'Authorization',
+        value: 'Bearer abc.def',
+        hint: { text: 'x', tone: 'info' },
+        redacted: false
+      })
     ).toEqual({
       name: 'Authorization',
       value: REDACTED,
@@ -128,7 +161,12 @@ describe('shownHeader — unflagged rows (defence in depth)', () => {
   });
 
   it('passes every other header (and valueless rows) through', () => {
-    const row = { name: 'cache-control', value: 'max-age=0', hint: 'hint', redacted: false };
+    const row = {
+      name: 'cache-control',
+      value: 'max-age=0',
+      hint: { text: 'hint', tone: 'info' } as const,
+      redacted: false
+    };
     expect(shownHeader(row)).toEqual(row);
     const valueless = { name: 'set-cookie', value: null, hint: null, redacted: false };
     expect(shownHeader(valueless)).toEqual(valueless);

@@ -45,9 +45,10 @@ export type FilterBarProps = {
   /**
    * The chips in registry order (pages own their set — this bar is
    * set-agnostic). Freshly built objects per refresh are fine: chips are
-   * keyed by `value`, never by object identity.
+   * keyed by `value`, never by object identity. Omit (or pass `[]`) for a
+   * search-only bar: the chip group is not rendered at all.
    */
-  chips: FilterChip[];
+  chips?: FilterChip[];
   /** The selected chip value; `undefined` = none selected (severity: see `onSelect`). */
   selected?: string;
   /** Selection change callback. */
@@ -84,7 +85,7 @@ export type FilterBarProps = {
  * through the page's controlled value loop; this bar adds zero input
  * logic of its own.
  *
- * @param props.chips The chips.
+ * @param props.chips The chips; omitted/empty renders no chip group.
  * @param props.selected The selected chip value (undefined: nothing selected).
  * @param props.onSelect Selection change (1 callback to the page).
  * @param props.filterLabel The chip group's accessible name (default "Filters").
@@ -113,32 +114,34 @@ export function FilterBar(props: FilterBarProps): JSX.Element {
   // Chip identity is its `value`, so `<For>` maps the id strings (compared by
   // value) rather than the chip objects (compared by reference — rebuilt
   // objects would remount every button and drop focus on each refresh).
-  const chipsById = createMemo(() => indexChips(own.chips));
+  const chipsById = createMemo(() => indexChips(own.chips ?? []));
   const chipIds = createMemo(() => Array.from(chipsById().keys()));
 
   return (
     <div data-fdt="filter-bar" class={cn('flex flex-col gap-y-1.5', own.class)} {...rest}>
-      <div
-        class="flex flex-wrap items-center gap-1"
-        role="group"
-        aria-label={own.filterLabel ?? 'Filters'}
-      >
-        <For each={chipIds()}>
-          {(id) => (
-            // Non-keyed `Show`: the button stays mounted while the id exists;
-            // a rebuilt chip object only refreshes its bindings.
-            <Show when={chipsById().get(id)}>
-              {(chip) => (
-                <FilterChipButton
-                  chip={chip()}
-                  selected={own.selected === id}
-                  onSelect={own.onSelect}
-                />
-              )}
-            </Show>
-          )}
-        </For>
-      </div>
+      <Show when={chipIds().length > 0}>
+        <div
+          class="flex flex-wrap items-center gap-1"
+          role="group"
+          aria-label={own.filterLabel ?? 'Filters'}
+        >
+          <For each={chipIds()}>
+            {(id) => (
+              // Non-keyed `Show`: the button stays mounted while the id exists;
+              // a rebuilt chip object only refreshes its bindings.
+              <Show when={chipsById().get(id)}>
+                {(chip) => (
+                  <FilterChipButton
+                    chip={chip()}
+                    selected={own.selected === id}
+                    onSelect={own.onSelect}
+                  />
+                )}
+              </Show>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={own.showSearch ?? true}>
         <div class="relative flex items-center">
           <Search

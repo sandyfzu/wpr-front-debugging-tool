@@ -15,9 +15,11 @@ import {
   allHeadersCopyText,
   buildInventory,
   estimateRowHeight,
+  filterInventory,
   headerCopyLabel,
   headerCopyText,
   heldFetchStamp,
+  inventoryItemName,
   isoStamp,
   NO_CACHING_HEADERS_NOTE,
   NO_COOKIES_NOTE,
@@ -86,9 +88,11 @@ describe('buildInventory', () => {
       ['other', 4]
     ]);
     const age = inventory.rows.find((row) => row.kind === 'header' && row.header.name === 'age');
-    expect(age?.kind === 'header' && age.header.hint).toBe(
+    expect(age?.kind === 'header' && age.header.hint?.text).toBe(
       "Served from an intermediate cache 120 seconds ago (the cache's own counter)."
     );
+    // The verdict and its evidence tone are one declared fact.
+    expect(age?.kind === 'header' && age.header.hint?.tone).toBe('ok');
   });
 
   it('omits the cookie section entirely for a payload without the capture', () => {
@@ -175,6 +179,114 @@ describe('buildInventory', () => {
   });
 });
 
+describe("filterInventory — the page's name filter", () => {
+  /** The filtered rows' compact signature: kind + id (+ the searched name). */
+  function filteredShape(rows: readonly InventoryRow[]): string[] {
+    return rows.map((row) => {
+      const name = inventoryItemName(row);
+      return `${row.kind}:${row.id}${name === null ? '' : `(${name})`}`;
+    });
+  }
+
+  it('a blank query is the whole inventory, same identity', () => {
+    const inventory = inventoryOf(CAPTURE, { names: ['a'], capturedAt: 1 });
+    expect(filterInventory(inventory.rows, '')).toBe(inventory.rows);
+    expect(filterInventory(inventory.rows, '   ')).toBe(inventory.rows);
+  });
+
+  it('matches header names case-insensitively as a substring, order kept', () => {
+    const rows = inventoryOf(CAPTURE).rows;
+    expect(filteredShape(filterInventory(rows, 'CACHE'))).toEqual([
+      'section:section:caching',
+      'header:caching:cache-control#0(Cache-Control)',
+      'header:caching:x-rocket-cache#0(x-rocket-cache)'
+    ]);
+  });
+
+  it('matches cookie names, and sections without a match drop with their headings', () => {
+    const rows = inventoryOf(CAPTURE, { names: ['wpr_cookie'], capturedAt: 1 }).rows;
+    expect(filteredShape(filterInventory(rows, 'wpr'))).toEqual([
+      'section:section:cookies',
+      'cookie:cookie:wpr_cookie(wpr_cookie)'
+    ]);
+  });
+
+  it("restates a matched section's count badge to the matching rows", () => {
+    const rows = inventoryOf(CAPTURE, { names: ['a', 'age-cookie'], capturedAt: 1 }).rows;
+    const filtered = filterInventory(rows, 'a');
+    const sections = filtered.flatMap((row) => (row.kind === 'section' ? [row.count] : []));
+    // 'a' matches: cache-control/age/x-rocket-cache in caching; Date in
+    // other; both cookie names.
+    expect(sections).toEqual([3, 1, 2]);
+  });
+
+  it('never searches a value: a query naming a value matches nothing', () => {
+    const rows = inventoryOf(CAPTURE).rows;
+    // 'Apache' is the Server row's value; 's3cr3t' rides the Set-Cookie value.
+    expect(filterInventory(rows, 'apache')).toEqual([]);
+    expect(filterInventory(rows, 's3cr3t')).toEqual([]);
+  });
+
+  it('drops the capture notes under a query; the unfiltered view keeps them', () => {
+    const absent = inventoryOf([{ name: 'Server', value: 'nginx' }]).rows;
+    expect(filteredShape(absent)).toEqual([
+      'section:section:caching',
+      'note:note:caching',
+      'section:section:other',
+      'header:other:server#0(Server)'
+    ]);
+    expect(filteredShape(filterInventory(absent, 'server'))).toEqual([
+      'section:section:other',
+      'header:other:server#0(Server)'
+    ]);
+    const noCookies = inventoryOf(CAPTURE, { names: [], capturedAt: 1 }).rows;
+    expect(filteredShape(filterInventory(noCookies, 'age'))).toEqual([
+      'section:section:caching',
+      'header:caching:age#0(age)'
+    ]);
+  });
+
+  it('a query matching nothing yields an empty list (the filtered-empty state)', () => {
+    const rows = inventoryOf(CAPTURE).rows;
+    expect(filterInventory(rows, 'frobnicate')).toEqual([]);
+  });
+
+  it('matched item rows keep their object identity through the filtered pass', () => {
+    const inventory = inventoryOf(CAPTURE, { names: ['wpr_cookie'], capturedAt: 1 });
+    const target = inventory.rows.find(
+      (row): row is Extract<InventoryRow, { kind: 'header' }> =>
+        row.kind === 'header' && row.header.name === 'Cache-Control'
+    );
+    if (target === undefined) throw new Error('the fixture row was not built');
+    expect(filterInventory(inventory.rows, 'cache-control')).toContain(target);
+  });
+
+  it('an item row before any section heading matches on its own (no pending section)', () => {
+    // buildInventory always leads a group with its section row, so the arm
+    // for an item above every heading needs a hand-made list.
+    const rows: InventoryRow[] = [
+      { kind: 'cookie', id: 'cookie:orphan', name: 'orphan_cookie' },
+      { kind: 'section', id: 'section:cookies', section: 'cookies', count: 1 },
+      { kind: 'cookie', id: 'cookie:led', name: 'led_cookie' }
+    ];
+    expect(filteredShape(filterInventory(rows, 'orphan'))).toEqual([
+      'cookie:cookie:orphan(orphan_cookie)'
+    ]);
+  });
+
+  it('repeated names all match, each keeping its occurrence row', () => {
+    const rows = inventoryOf([
+      { name: 'Link', value: '<a>' },
+      { name: 'link', value: '<b>' }
+    ]).rows;
+    expect(filteredShape(filterInventory(rows, 'lin'))).toEqual([
+      'section:section:other',
+      'header:other:link#0(Link)',
+      'header:other:link#1(link)'
+    ]);
+  });
+});
+
 describe('headerCopyLabel', () => {
   it('names a unique header plainly and numbers repeated ones', () => {
     const rows = inventoryOf([
@@ -194,7 +306,9 @@ describe('headerCopyLabel', () => {
 
 describe('copy payloads', () => {
   it('copies one header as its wire form', () => {
-    expect(headerCopyText({ name: 'age', value: '12', hint: 'x' })).toBe('age: 12');
+    expect(headerCopyText({ name: 'age', value: '12', hint: { text: 'x', tone: 'info' } })).toBe(
+      'age: 12'
+    );
     expect(headerCopyText({ name: 'x-empty', value: null, hint: null })).toBe('x-empty:');
   });
 
@@ -232,7 +346,7 @@ describe('estimateRowHeight', () => {
         kind: 'header',
         id: 'h2',
         section: 'caching',
-        header: { name: 'age', value: '1', hint: 'hint', redacted: false },
+        header: { name: 'age', value: '1', hint: { text: 'hint', tone: 'info' }, redacted: false },
         occurrence: 1,
         occurrences: 1
       },

@@ -9,7 +9,7 @@
  * cursor over a count the consuming page reports; the cursor math is pure so
  * wrap/edge behavior is pinned.
  */
-import { createSignal, type Accessor } from 'solid-js';
+import { createSignal, getOwner, onCleanup, type Accessor } from 'solid-js';
 import { debounce } from '../../../utils/debounce';
 
 /** The quiet period before a typed query commits to the store. */
@@ -89,6 +89,16 @@ export function createSearchStore(): SearchStore {
     // first match again.
     setCursor(0);
   }, SEARCH_DEBOUNCE_MS);
+
+  // A store's owner unmounting drops its pending commit. The owner read is
+  // onCleanup's own condition made explicit: outside an owner there is
+  // nothing to clean up (the caller owns the store) — and Solid's dev build
+  // warns for a cleanup that would never run.
+  if (getOwner() !== null) {
+    onCleanup(() => {
+      commit.cancel();
+    });
+  }
 
   /** `cancel`-level clear: everything back to the empty state, now. */
   const clear = (): void => {

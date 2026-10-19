@@ -15,13 +15,33 @@
  * Honesty rules the copy: a hint is plain language about what the captured
  * row itself says ("HIT/MISS", a no-store directive, a positive `age`) —
  * hedgeable evidence, never a conflated verdict about whether the page as a
- * whole is cached. A row a template cannot read (unknown value shape,
- * mixed/ambiguous tokens) renders with its value and no hint instead of an
- * invented one.
+ * whole is cached. Each hint carries its evidence direction as a status
+ * tone (`ok` served / `warn` not-served / `info` neutral) for the shared
+ * status tables; the words, never the tone alone, state the verdict. A row
+ * a template cannot read (unknown value shape, mixed/ambiguous tokens)
+ * renders with its value and no hint instead of an invented one.
  */
 
 import type { PageHeaders } from '../wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
+
+/**
+ * The status-vocabulary kinds a verdict hint can carry (rendered through the
+ * shared `STATUS_*` tables). A hint is caching evidence, never a failure or a
+ * mere absence, so `error`/`neutral` are not hint tones: `ok` marks evidence
+ * a cache served the response, `warn` marks evidence it did not, `info`
+ * marks a neutral intermediary fact. The tone never carries the verdict
+ * alone — every hint's wording states it.
+ */
+export type HintTone = 'ok' | 'warn' | 'info';
+
+/** A verdict hint: its plain copy and the tone that presents it. */
+export interface VerdictHint {
+  /** The plain-copy caching verdict (hedgeable evidence, never a page verdict). */
+  readonly text: string;
+  /** The evidence direction the copy states, for the status-vocabulary icon. */
+  readonly tone: HintTone;
+}
 
 /** One typed header row: the captured pair plus its verdict hint (may be none). */
 export interface HeaderRowVM {
@@ -29,8 +49,8 @@ export interface HeaderRowVM {
   readonly name: string;
   /** The captured value; null when the row carried no value or was withheld. */
   readonly value: string | null;
-  /** The plain-copy caching verdict, or null when the row yields no hint. */
-  readonly hint: string | null;
+  /** The plain-copy caching verdict with its tone, or null when the row yields no hint. */
+  readonly hint: VerdictHint | null;
   /** True when the capture withheld the value (a hint is then never computed). */
   readonly redacted: boolean;
   /** On a withheld `Set-Cookie` row only: the cookie name the capture kept. */
@@ -50,8 +70,8 @@ export interface HeadersViewModel {
  * matching class.
  */
 type CachingHeaderClass =
-  | { readonly exact: string; hint(value: string): string | null }
-  | { readonly prefix: string; hint(value: string): string | null };
+  | { readonly exact: string; hint(value: string): VerdictHint | null }
+  | { readonly prefix: string; hint(value: string): VerdictHint | null };
 
 /** Name classification for one row: exact names compare, prefixes cover families. */
 function classMatches(cachingClass: CachingHeaderClass, nameLower: string): boolean {
@@ -60,13 +80,13 @@ function classMatches(cachingClass: CachingHeaderClass, nameLower: string): bool
 }
 
 /** First-cache-token reading for the HIT/MISS probe values (null = not clear). */
-function hitMissVerdict(value: string, hitCopy: string, missCopy: string): string | null {
+function hitMissVerdict(value: string, hitCopy: string, missCopy: string): VerdictHint | null {
   const token = (value.split(',')[0] ?? '').trim().toUpperCase();
   const hit = token.includes('HIT');
   const miss = token.includes('MISS');
   if (hit && miss) return null;
-  if (hit) return hitCopy;
-  if (miss) return missCopy;
+  if (hit) return { text: hitCopy, tone: 'ok' };
+  if (miss) return { text: missCopy, tone: 'warn' };
   return null;
 }
 
@@ -75,19 +95,31 @@ function hitMissVerdict(value: string, hitCopy: string, missCopy: string): strin
  * response can be cached at all, whether it must revalidate first, or
  * whether it carries a freshness lifetime intermediates may serve from.
  */
-function cacheControlVerdict(value: string): string | null {
+function cacheControlVerdict(value: string): VerdictHint | null {
   const directives = value.toLowerCase();
   if (directives.includes('no-store')) {
-    return 'Instructs receivers not to cache anything — a likely reason no request ever hit a cache.';
+    return {
+      text: 'Instructs receivers not to cache anything — a likely reason no request ever hit a cache.',
+      tone: 'warn'
+    };
   }
   if (directives.includes('no-cache')) {
-    return 'Allows caching but requires revalidation before every reuse — no stale copy is served.';
+    return {
+      text: 'Allows caching but requires revalidation before every reuse — no stale copy is served.',
+      tone: 'info'
+    };
   }
   if (/(?:s-)?max-age=0(?:[,\s]|$)/.test(directives)) {
-    return 'Zero freshness lifetime — every use must be revalidated first.';
+    return {
+      text: 'Zero freshness lifetime — every use must be revalidated first.',
+      tone: 'warn'
+    };
   }
   if (/(?:s-)?max-age=[1-9]/.test(directives)) {
-    return 'Carries a freshness lifetime — intermediate caches may serve the (fresh) copy: hittable.';
+    return {
+      text: 'Carries a freshness lifetime — intermediate caches may serve the (fresh) copy: hittable.',
+      tone: 'ok'
+    };
   }
   return null;
 }
@@ -97,23 +129,38 @@ function cacheControlVerdict(value: string): string | null {
  * positive age is middle-cache evidence (the response was served by one);
  * a missing/zero/unparseable age says nothing on its own.
  */
-function ageVerdict(value: string): string | null {
+function ageVerdict(value: string): VerdictHint | null {
   if (!/^\d+$/.test(value)) return null;
   const seconds = Number.parseInt(value, 10);
   return seconds > 0
-    ? `Served from an intermediate cache ${seconds.toString()} second${seconds === 1 ? '' : 's'} ago (the cache's own counter).`
+    ? {
+        text: `Served from an intermediate cache ${seconds.toString()} second${seconds === 1 ? '' : 's'} ago (the cache's own counter).`,
+        tone: 'ok'
+      }
     : null;
 }
 
 /** The `cache-control` directive copy for Cloudflare's status values. */
-function cloudflareVerdict(value: string): string | null {
+function cloudflareVerdict(value: string): VerdictHint | null {
   switch (value.toUpperCase()) {
     case 'DYNAMIC':
-      return 'Cloudflare marks this response dynamic — it does not cache it here (DYNAMIC).';
+      return {
+        text: 'Cloudflare marks this response dynamic — it does not cache it here (DYNAMIC).',
+        tone: 'warn'
+      };
     case 'BYPASS':
-      return 'Cloudflare was told to skip its cache for this response (BYPASS).';
+      return {
+        text: 'Cloudflare was told to skip its cache for this response (BYPASS).',
+        tone: 'warn'
+      };
     case 'EXPIRED':
-      return 'Cloudflare served its cached copy after it aged out and revalidated with origin (EXPIRED).';
+      // The info tone is deliberate: the frozen copy states serving
+      // (stale-then-revalidated), and the words carry that nuance — hedged
+      // evidence, never an ok verdict.
+      return {
+        text: 'Cloudflare served its cached copy after it aged out and revalidated with origin (EXPIRED).',
+        tone: 'info'
+      };
     default:
       return hitMissVerdict(
         value,
@@ -142,7 +189,10 @@ const CACHING_CLASSES: readonly CachingHeaderClass[] = [
   },
   {
     prefix: 'x-rocket-',
-    hint: () => "WP Rocket cache evidence on this response — the value is the plugin's own marker."
+    hint: () => ({
+      text: "WP Rocket cache evidence on this response — the value is the plugin's own marker.",
+      tone: 'ok'
+    })
   },
   { exact: 'cf-cache-status', hint: cloudflareVerdict },
   {
@@ -174,11 +224,17 @@ const CACHING_CLASSES: readonly CachingHeaderClass[] = [
   },
   {
     exact: 'x-served-by',
-    hint: () => 'An edge cache layer handled the response (its id sits in the value).'
+    hint: () => ({
+      text: 'An edge cache layer handled the response (its id sits in the value).',
+      tone: 'info'
+    })
   },
   {
     exact: 'via',
-    hint: () => 'An intermediary (proxy or CDN) passed this response along.'
+    hint: () => ({
+      text: 'An intermediary (proxy or CDN) passed this response along.',
+      tone: 'info'
+    })
   }
 ];
 
@@ -228,7 +284,8 @@ export function buildHeadersViewModel(headers: PageHeaders | null): HeadersViewM
       continue;
     }
     // The verdict copy rides the classification: the registry class owns
-    // its reading, the trim normalizes the compare against capture noise.
+    // its reading (copy + tone together, so they never drift), the trim
+    // normalizes the compare against capture noise.
     placed.rows.push({ ...base, hint: placed.cachingClass.hint((row.value ?? '').trim()) });
   }
   return { caching: buckets.flatMap((bucket) => bucket.rows), other };

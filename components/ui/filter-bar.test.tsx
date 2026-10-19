@@ -145,6 +145,12 @@ describe('FilterBar', () => {
     expect(screen.queryByRole('searchbox')).toBeNull();
   });
 
+  it('omits the chip group entirely for a search-only bar (no chips)', () => {
+    render(() => <FilterBar searchLabel="Search header and cookie names" />);
+    expect(screen.queryByRole('group')).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search header and cookie names' })).toBeTruthy();
+  });
+
   it('sizes the search field: full row while compact, bounded from the regular tier', () => {
     // The width lives on the bar (the list pages' shared pattern), so callers
     // stop re-declaring per-page width caps.

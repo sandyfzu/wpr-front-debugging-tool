@@ -40,8 +40,11 @@
         if (window.__sentinelErrorAt === null) window.__sentinelErrorAt = performance.now();
       });
       setTimeout(function injectCrossOriginThrower() {
+        // The second origin is this page's own port on the 127.0.0.1
+        // loopback host — distinct from the page's localhost origin for any
+        // port, so the harness's port override keeps the cross-origin pair.
         const script = document.createElement('script');
-        script.src = 'http://127.0.0.1:8891/errors/cross-origin-throw.js';
+        script.src = 'http://127.0.0.1:' + location.port + '/errors/cross-origin-throw.js';
         document.head.appendChild(script);
       }, 800);
     </script>
