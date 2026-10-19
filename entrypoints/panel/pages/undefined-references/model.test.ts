@@ -16,6 +16,7 @@ import {
   exclusionPattern,
   isCrossOriginSentinel,
   isRetryable,
+  isSingleLetterWord,
   newReferencesAnnouncement,
   reconcileOrigins,
   resolvePageView,
@@ -195,6 +196,13 @@ describe('words and verdicts', () => {
     expect(isCrossOriginSentinel('jQuery')).toBe(false);
     expect(displayWord(UNDEFINED_REFERENCE_EXTERNAL_ERROR)).toBe('Script error.');
     expect(displayWord('<img src=x onerror=alert(1)>')).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('reads a single-letter word: exactly one ASCII letter, `_`/`$` out', () => {
+    for (const single of ['a', 'A', 'q', 'z', 'Z']) expect(isSingleLetterWord(single)).toBe(true);
+    for (const other of ['', '_', '$', 'ab', 'A1', ' a', 'a ', 'ñ', '🙂']) {
+      expect(isSingleLetterWord(other), other).toBe(false);
+    }
   });
 
   it('derives the verdict: sentinel first, then unsearched, searching, found, not found', () => {

@@ -2,7 +2,8 @@
  * One undefined reference as a card: the word, a text verdict, and the body
  * that answers it — the possible definitions (inline scripts as chips, script
  * files as links with "Copy as exclusion"), or the sentence explaining why
- * there are none.
+ * there are none. A single-letter word (the minified-code shape) opens its
+ * body with a note qualifying the search's answer.
  */
 import type { JSX } from 'solid-js';
 import { For, Match, Show, Switch, createMemo, createSignal, createUniqueId } from 'solid-js';
@@ -15,6 +16,7 @@ import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { FOCUS_RING, MOTION_TURN } from '../../../../components/ui/classes';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import {
   STATUS_ICONS,
   STATUS_TEXT_CLASSES,
@@ -28,6 +30,7 @@ import {
   displayWord,
   exclusionPattern,
   isCrossOriginSentinel,
+  isSingleLetterWord,
   scriptLocation,
   splitScriptUrl,
   verdictText,
@@ -85,6 +88,18 @@ export function notFoundExplanation(unreadable: number, inlineCut = false): stri
 /** The muted sentence style of a card body without definitions. */
 const BODY_NOTE = 'text-2xs leading-snug text-fg-secondary';
 
+/**
+ * The note a single-letter word's card opens with: the name has the shape
+ * minified code produces, so the found matches are likely coincidental. The
+ * not-found body carries the qualification without the matches sentence.
+ */
+export const SINGLE_LETTER_FOUND_NOTE =
+  'Single-letter name — usually an artifact of minified code; the matches below are likely coincidental.';
+
+/** The not-found variant: the qualification alone. */
+export const SINGLE_LETTER_NOT_FOUND_NOTE =
+  'Single-letter name — usually an artifact of minified code.';
+
 /** Props of {@link WordCard}. */
 export interface WordCardProps {
   /** The undefined-reference word (page-controlled text; rendered as text only). */
@@ -119,6 +134,19 @@ export function WordCard(props: WordCardProps): JSX.Element {
   const definitions = (): readonly ScriptOrigin[] => {
     const answer = props.answer;
     return answer === null || answer === 'pending' ? [] : answer;
+  };
+  /**
+   * The note above the body's content, or `null` when this card carries
+   * none: a single-letter name gets the minified-code note wherever the
+   * card answers it (a found or a not-found body); the sentinel (never one
+   * letter) and the body-less verdicts carry none.
+   */
+  const note = (): string | null => {
+    const kind = verdict().kind;
+    if ((kind === 'found' || kind === 'not-found') && isSingleLetterWord(props.word)) {
+      return kind === 'found' ? SINGLE_LETTER_FOUND_NOTE : SINGLE_LETTER_NOT_FOUND_NOTE;
+    }
+    return null;
   };
   const heading = (): JSX.Element => (
     <div class="flex w-full min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -162,6 +190,16 @@ export function WordCard(props: WordCardProps): JSX.Element {
       fallback={<Card>{heading()}</Card>}
     >
       <Card header={heading()}>
+        <Show when={note()}>
+          {(text) => (
+            // The body-note line in the warn status color, led by the vocabulary's
+            // own warning icon (the caller-wins merge swaps the muted text token).
+            <p class={cn('flex items-start gap-1.5', BODY_NOTE, STATUS_TEXT_CLASSES.warn, 'mb-2')}>
+              <TriangleAlert size={12} class="mt-px shrink-0" aria-hidden="true" />
+              {text()}
+            </p>
+          )}
+        </Show>
         <Switch>
           <Match when={verdict().kind === 'found'}>
             <DefinitionList

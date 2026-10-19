@@ -4,7 +4,7 @@
  * Description: Query-flag-driven problem injection for the front-end debugging site.
  *              Designed to never require admin-UI state: every scenario is a URL flag on
  *              any page, so runs reproduce identically after every reset.
- * Version:     1.1.0
+ * Version:     1.2.0
  *
  * This must-use plugin injects the deterministic problems the debugging tool exists to
  * catch. It acts only on request data at render time: no options, no database writes, no
@@ -14,6 +14,10 @@
  *   ?fdt-error=reference    immediate `ReferenceError: X is not defined` at load
  *   ?fdt-error=reading      immediate `TypeError: Cannot read properties of undefined (reading 'X')` at load
  *   ?fdt-error=notfunction  immediate `TypeError: X is not a function` at load
+ *   ?fdt-error=minified     immediate `ReferenceError: a is not defined` at load — the
+ *                           single-letter name shape minified code produces, the word
+ *                           the undefined-references card qualifies with its
+ *                           minified-code note
  *   ?fdt-delay=1            three scripts handed to WP Rocket's Delay JS queue (the
  *                           delayed-execution reproduction, enqueue order = delay
  *                           execution order): one throws exactly when the delay queue
@@ -99,6 +103,7 @@ function fixture_error_assets(): array {
 		'reference'   => 'fdt-error-reference',
 		'reading'     => 'fdt-error-reading',
 		'notfunction' => 'fdt-error-notfunction',
+		'minified'    => 'fdt-error-minified',
 	];
 }
 

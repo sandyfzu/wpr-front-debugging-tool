@@ -202,12 +202,19 @@ run_wp option patch update wp_rocket_settings cache_query_strings '["fdt-error",
 step "wp-rocket: regenerating site config file"
 run_wp eval 'do_action( "permalink_structure_changed" );' >/dev/null
 
-# Fixture pages: created exactly once (by slug), content is a fixed string — no admin
-# state anywhere. Scenarios attach via URL flags, so page bodies stay deterministic.
+# Fixture pages: provisioned by slug with the fixed content below — no admin state
+# anywhere. Scenarios attach via URL flags, so page bodies stay deterministic, and
+# the committed string is the source of truth: on every boot the stored content is
+# re-applied when it drifted, so a content change in the baseline lands on existing
+# stacks at the next up (a reset is never required for a hub-content fix).
 step "pages: ensuring fixture pages"
 ensure_page() {
 	# $1 slug, $2 title, $3 content
-	if [ -n "$(run_wp post list --post_type=page --name="$1" --field=ID 2>/dev/null)" ]; then
+	page_id=$(run_wp post list --post_type=page --name="$1" --field=ID 2>/dev/null)
+	if [ -n "$page_id" ]; then
+		if [ "$(run_wp post list --post_type=page --name="$1" --field=post_content 2>/dev/null)" != "$3" ]; then
+			run_wp post update "$page_id" --post_content="$3" >/dev/null
+		fi
 		return
 	fi
 	run_wp post create --post_type=page --post_status=publish --post_name="$1" --post_title="$2" --post_content="$3" >/dev/null
@@ -219,6 +226,7 @@ ensure_page fdt 'Debug fixture hub' "<h1>Debug fixture hub</h1>
 <li><a href=\"/fdt/?fdt-error=reference\">?fdt-error=reference</a> — ReferenceError at load</li>
 <li><a href=\"/fdt/?fdt-error=reading\">?fdt-error=reading</a> — reading of undefined at load</li>
 <li><a href=\"/fdt/?fdt-error=notfunction\">?fdt-error=notfunction</a> — not a function at load</li>
+<li><a href=\"/fdt/?fdt-error=minified\">?fdt-error=minified</a> — one-letter ReferenceError (the minified-name shape)</li>
 <li><a href=\"/fdt/?fdt-delay=1\">?fdt-delay=1</a> — Delay JS queue (interact with the page to run it)</li>
 </ul>
 <p>The image below is an in-page LCP candidate for Lazyload and critical-image runs.</p>

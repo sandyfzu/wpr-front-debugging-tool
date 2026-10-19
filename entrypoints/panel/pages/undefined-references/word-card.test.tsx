@@ -3,8 +3,9 @@
  * name, muted query, location, the page's own host dropped), accessible
  * names that tell rows apart, the copy action with its in-place
  * confirmation, the five-row cap with its disclosure, the verdict as visible
- * text, the sentinel / not-found / header-only cards, and untrusted words and
- * URLs rendered inertly. User-facing copy is pinned literally.
+ * text, the single-letter note, the sentinel / not-found / header-only
+ * cards, and untrusted words and URLs rendered inertly. User-facing copy is
+ * pinned literally.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
@@ -255,6 +256,52 @@ describe('WordCard — definition list', () => {
     }));
     render(() => <WordCard word="x" answer={definitions} pageOrigin={PAGE} />);
     expect(document.querySelector('[data-fdt="definitions-toggle"]')).toBeNull();
+  });
+});
+
+describe('WordCard — single-letter note', () => {
+  it('opens a found card with the warn-styled note qualifying its matches', () => {
+    render(() => <WordCard word="a" answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />);
+    const noteEl = screen.getByText(
+      'Single-letter name — usually an artifact of minified code; the matches below are likely coincidental.'
+    );
+    expect(noteEl.className).toContain('text-status-warn');
+    // The warning reads apart from color alone: the vocabulary's icon leads it.
+    expect(noteEl.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByText('Inline Script')).toBeTruthy();
+  });
+
+  it('opens a not-found card with the warn-styled note above the explanation', () => {
+    render(() => <WordCard word="a" answer={[]} pageOrigin={PAGE} />);
+    const noteEl = screen.getByText('Single-letter name — usually an artifact of minified code.');
+    expect(noteEl.className).toContain('text-status-warn');
+    expect(
+      screen.getByText("No declaration or assignment of this name was found in the page's scripts.")
+    ).toBeTruthy();
+    // The note is the body's first content, the explanation answers under it.
+    const body = document.querySelector('[data-fdt="card-body"]');
+    const paragraphs = body?.querySelectorAll('p');
+    expect(paragraphs?.length).toBe(2);
+    expect(paragraphs?.[0]?.textContent).toContain('Single-letter name');
+  });
+
+  it('carries the note on no other word or body', () => {
+    for (const word of ['$', '_', 'ab']) {
+      const { unmount } = render(() => (
+        <WordCard word={word} answer={[{ kind: 'inline' }]} pageOrigin={PAGE} />
+      ));
+      expect(screen.queryByText(/Single-letter name/)).toBeNull();
+      unmount();
+    }
+    // The sentinel's body is its own explanation, and a header-only
+    // single-letter card has no body for the note to ride.
+    render(() => (
+      <WordCard word={UNDEFINED_REFERENCE_EXTERNAL_ERROR} answer={[]} pageOrigin={PAGE} />
+    ));
+    expect(screen.queryByText(/Single-letter name/)).toBeNull();
+    cleanup();
+    render(() => <WordCard word="a" answer="pending" pageOrigin={PAGE} />);
+    expect(screen.queryByText(/Single-letter name/)).toBeNull();
   });
 });
 

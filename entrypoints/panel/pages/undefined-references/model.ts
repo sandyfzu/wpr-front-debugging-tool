@@ -216,6 +216,19 @@ export function displayWord(word: string): string {
 }
 
 /**
+ * Whether a word is one ASCII letter — the name shape minified code produces
+ * (`a`, `q`), whose search answers are likely coincidental. `_` and `$` are
+ * deliberately excluded: they read as the well-known globals themselves, and
+ * anything but exactly one letter carries its own meaning.
+ *
+ * @param word A word from the page.
+ * @returns True for exactly one letter a–z or A–Z.
+ */
+export function isSingleLetterWord(word: string): boolean {
+  return /^[a-zA-Z]$/.test(word);
+}
+
+/**
  * A word's verdict from its search answer.
  *
  * @param word The word (the sentinel is always `hidden`).

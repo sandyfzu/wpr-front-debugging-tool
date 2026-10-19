@@ -144,7 +144,8 @@ const results = { immediate: null, delay: null, uaEcho: null };
 const immediateAll = [];
 for (const [flag, want] of [
   ['reading', "Cannot read properties of undefined (reading 'fdtFixtureProperty')"],
-  ['notfunction', 'document.body.fdtFixtureNotAFunction is not a function']
+  ['notfunction', 'document.body.fdtFixtureNotAFunction is not a function'],
+  ['minified', 'a is not defined']
 ]) {
   const from = Date.now();
   await navigate(`${SITE}/fdt/?fdt-error=${flag}`);
