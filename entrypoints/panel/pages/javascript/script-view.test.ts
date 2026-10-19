@@ -1,7 +1,7 @@
 /**
  * The JavaScript page's pure view layer: state badges, the inline-code shape
  * (line counting, the bounded preview, expandability), chips, estimates, the
- * expanded-set bookkeeping and the count phrases.
+ * per-row keyed flag bookkeeping (expanded, wrapped) and the count phrases.
  */
 import { describe, expect, it } from 'vitest';
 import type { JsScriptResource } from '../../../../lib/panel/resources-view-model';
@@ -14,6 +14,7 @@ import {
   PREVIEW_LINE_CHARS,
   ROW_ESTIMATES,
   buildChips,
+  codeCaption,
   codeToggleLabel,
   collapsedPreview,
   countLines,
@@ -22,10 +23,10 @@ import {
   expandedText,
   inlineCode,
   lineCount,
-  pruneExpanded,
+  pruneRowFlags,
   sameScript,
   scriptStateBadges,
-  toggleExpanded
+  toggleRowFlag
 } from './script-view';
 
 /** A classified script with overrides. */
@@ -228,28 +229,28 @@ describe('estimateRowSize', () => {
   });
 });
 
-describe('expanded-set bookkeeping', () => {
+describe('row-flag bookkeeping', () => {
   const a = buildRowView(script({ content: 'a' }), 'a');
   const b = buildRowView(script({ content: 'b' }), 'b');
 
   it('keeps keys whose view survived unchanged, by identity', () => {
-    const expanded = new Set(['a', 'b']);
-    expect(pruneExpanded(expanded, [a, b], [b, a])).toBe(expanded);
-    expect(pruneExpanded(new Set<string>(), [a], [])).toEqual(new Set());
+    const flags = new Set(['a', 'b']);
+    expect(pruneRowFlags(flags, [a, b], [b, a])).toBe(flags);
+    expect(pruneRowFlags(new Set<string>(), [a], [])).toEqual(new Set());
   });
 
   it('drops keys whose script is gone or changed under the same key', () => {
     const changed = buildRowView(script({ content: 'b2' }), 'b');
-    expect([...pruneExpanded(new Set(['a', 'b']), [a, b], [a])]).toEqual(['a']);
-    expect([...pruneExpanded(new Set(['a', 'b']), [a, b], [a, changed])]).toEqual(['a']);
+    expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a])]).toEqual(['a']);
+    expect([...pruneRowFlags(new Set(['a', 'b']), [a, b], [a, changed])]).toEqual(['a']);
   });
 
   it('toggles membership into a fresh set', () => {
     const empty = new Set<string>();
-    const one = toggleExpanded(empty, 'k');
+    const one = toggleRowFlag(empty, 'k');
     expect(one).not.toBe(empty);
     expect([...one]).toEqual(['k']);
-    expect([...toggleExpanded(one, 'k')]).toEqual([]);
+    expect([...toggleRowFlag(one, 'k')]).toEqual([]);
   });
 });
 
@@ -258,6 +259,11 @@ describe('phrases', () => {
     expect(formatCount(5000)).toBe('5,000');
     expect(lineCount(1)).toBe('1 line');
     expect(lineCount(1040)).toBe('1,040 lines');
+  });
+
+  it('joins the language and the count into the row caption', () => {
+    expect(codeCaption('javascript', 1)).toBe('javascript · 1 line');
+    expect(codeCaption('javascript', 1040)).toBe('javascript · 1,040 lines');
   });
 });
 

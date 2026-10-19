@@ -2,9 +2,11 @@
  * One row of the JavaScript page's script list: the type chip and state
  * chips, then the script itself — an external script's URL (opens in a new
  * tab, copyable) or an inline script's code (collapsed to three lines,
- * expandable, copyable). Rows are virtual: they mount and unmount with
- * scrolling, so they hold no state of their own — the expanded flag comes
- * from the page.
+ * expandable, copyable, wrapped by the row's own Wrap toggle — the compact
+ * row owns the language caption and the one toggle, the block owns no
+ * chrome). Rows are virtual: they mount and unmount with scrolling, so they
+ * hold no state of their own — the expanded and wrapped flags come from the
+ * page.
  */
 import type { JSX } from 'solid-js';
 import { createSignal, For, Show } from 'solid-js';
@@ -15,8 +17,10 @@ import { MOTION_TURN } from '../../../../components/ui/classes';
 import {
   CodeBlock,
   HIGHLIGHT_MAX_CHARS,
+  WRAP_LABEL,
   type CodeBlockProps
 } from '../../../../components/ui/code-block';
+import type { CodeLanguage } from '../../../../components/ui/code-block-langs';
 import { CopyButton } from '../../../../components/ui/copy-button';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { cn } from '../../../../utils/cn';
@@ -25,14 +29,17 @@ import { ExternalLink } from '../page-frame';
 import type { ContentCapture, InlineCode, ScriptRowView } from './script-view';
 import {
   COLLAPSED_CODE_LINES,
+  codeCaption,
   codeToggleLabel,
   expandedCutNote,
-  expandedText,
-  lineCount
+  expandedText
 } from './script-view';
 
 /** One remedy for unavailable/stale source reads; partial previews are never a copy fallback. */
 const SOURCE_READ_REMEDY = 'Refresh the panel and try copying again.';
+
+/** The one language inline code highlights (and the row's caption names). */
+const CODE_LANG: CodeLanguage = 'javascript';
 
 /** The code block's test seams, forwarded untouched (production omits them). */
 export type CodeBlockSeams = Pick<
@@ -52,14 +59,18 @@ export interface ScriptRowProps {
   inlineOrdinal: number;
   /** Whether the inline code is expanded (page-owned state). */
   expanded: boolean;
-  /** The find's current match — `aria-current` + the shared row marker. */
-  current?: boolean;
+  /** Whether the inline code wraps (page-owned state; rows hold none). */
+  wrap: boolean;
   /**
    * Flip the expanded state.
    *
    * @param toggle The toggle button, so a collapse can keep it in view.
    */
   onToggle: (toggle: HTMLButtonElement) => void;
+  /** Flip the wrapped state. */
+  onWrap: () => void;
+  /** The find's current match — `aria-current` + the shared row marker. */
+  current?: boolean;
   /** Code block seams (tests only). */
   codeBlock?: CodeBlockSeams;
   /** Read the exact full captured source when the inventory was bounded. */
@@ -114,9 +125,11 @@ export function ScriptRow(props: ScriptRowProps): JSX.Element {
             code={code()}
             chips={<RowChips view={props.view} />}
             expanded={props.expanded}
+            wrap={props.wrap}
             onToggle={(toggle) => {
               props.onToggle(toggle);
             }}
+            onWrap={props.onWrap}
             codeBlock={props.codeBlock}
           />
         )}
@@ -204,8 +217,12 @@ interface InlineScriptProps {
   chips: JSX.Element;
   /** Whether the code is expanded. */
   expanded: boolean;
+  /** Whether the code wraps. */
+  wrap: boolean;
   /** Flip the expanded state. */
   onToggle: (toggle: HTMLButtonElement) => void;
+  /** Flip the wrapped state. */
+  onWrap: () => void;
   /** Code block seams (tests only). */
   codeBlock?: CodeBlockSeams;
   /** Read the exact full captured source when the inventory was bounded. */
@@ -213,12 +230,18 @@ interface InlineScriptProps {
 }
 
 /**
- * An inline script: chips with the line count and copy control, then the
- * code — clamped to three lines while collapsed (the block fades the edge
- * only when lines are cut off) — and the toggle. Collapsed, the block
- * renders (and highlights) only the preview; the full source arrives on
- * expand up to the render limit. Copy reads the complete snapshot separately. The toggle is offered only when it reveals something: more lines,
- * a cut preview line, or a clamp that clips (a wrapped long line).
+ * An inline script: the chips line carries the row facts and the controls —
+ * chips, the language-and-count caption and the two code actions (wrap,
+ * copy) — then the toolbar-less code (clamped to three lines while
+ * collapsed; the block fades the edge only when lines are cut off) and the
+ * toggle. The block owns no chrome of its own: the caption is the row's one
+ * language statement, and the row's Wrap is the code's one accessible toggle
+ * (reactive through the page-owned state, so it survives a virtual
+ * remount). Collapsed, the block renders (and highlights) only the preview;
+ * the full source arrives on expand up to the render limit. Copy reads the
+ * complete snapshot separately. The toggle is offered only when it reveals
+ * something: more lines, a cut preview line, or a clamp that clips (a
+ * wrapped long line).
  *
  * Capture states: a clipped preview is marked "Content clipped"; copy reads
  * the complete script through the snapshot reader. Text the size budget left
@@ -249,7 +272,20 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
         <Show when={hasCode() || props.capture === 'not-captured'}>
           <span class="ms-auto flex items-center gap-1 ps-1">
             <Show when={hasCode()}>
-              <span class="text-2xs text-fg-muted tabular-nums">{lineCount(props.code.lines)}</span>
+              <span class="text-2xs text-fg-muted tabular-nums">
+                {codeCaption(CODE_LANG, props.code.lines)}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-fdt="script-code-wrap"
+                aria-pressed={props.wrap}
+                onClick={props.onWrap}
+                class="min-h-6 px-1.5 text-2xs"
+              >
+                {WRAP_LABEL}
+              </Button>
             </Show>
             <CopyButton
               text={props.source}
@@ -271,11 +307,13 @@ function InlineScript(props: InlineScriptProps): JSX.Element {
         <CodeBlock
           id={props.domId}
           text={collapsed() ? props.code.preview : expandedView().text}
-          lang="javascript"
+          lang={CODE_LANG}
           label={`Inline script ${String(props.ordinal)}`}
           maxLines={collapsed() ? COLLAPSED_CODE_LINES : undefined}
           cutLines={collapsed() ? props.code.cutLines : undefined}
           onClipChange={setClamped}
+          toolbar={false}
+          wrap={props.wrap}
           class="min-w-0"
           loadHighlighter={props.codeBlock?.loadHighlighter}
           createObserver={props.codeBlock?.createObserver}

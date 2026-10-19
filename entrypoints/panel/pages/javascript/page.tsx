@@ -11,7 +11,7 @@
  *   "all" chip as its button leaves).
  * - **populated** — the list.
  * A soft refresh keeps everything mounted: the selected chip, the query, the
- * expanded rows (pruned to rows still present), scroll and focus. Unchanged
+ * expanded and wrapped rows (pruned to rows still present), scroll and focus. Unchanged
  * rows keep their very objects, so their DOM survives the refresh.
  *
  * Search: the in-page field and the DevTools search box drive the panel's
@@ -62,9 +62,9 @@ import {
   JS_VIEW_RESOURCES,
   buildChips,
   estimateRowSize,
-  pruneExpanded,
+  pruneRowFlags,
   SCRIPTS_NOUN,
-  toggleExpanded,
+  toggleRowFlag,
   type ScriptRowView
 } from './script-view';
 import { contentCaptures, scriptListCut } from './capture-bounds';
@@ -168,15 +168,17 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
       ? undefined
       : JS_VIEW_RESOURCES.filters.find((filter) => filter.id === selected())?.label;
 
-  // Expanded rows live here, keyed by script identity, not in the (virtual,
-  // remounting) rows. A refresh that removes a script — or changes it under
-  // the same key — forgets its flag for good: pruning is a state transition,
-  // written synchronously before render rather than derived.
+  // Expanded and wrapped rows live here, keyed by script identity, not in the
+  // (virtual, remounting) rows. A refresh that removes a script — or changes
+  // it under the same key — forgets its flags for good: pruning is a state
+  // transition, written synchronously before render rather than derived.
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set());
+  const [wrapped, setWrapped] = createSignal<ReadonlySet<string>>(new Set());
   createComputed(
     on(views, (current, previous) => {
       if (previous === undefined) return;
-      setExpanded((keys) => pruneExpanded(keys, previous, current));
+      setExpanded((keys) => pruneRowFlags(keys, previous, current));
+      setWrapped((keys) => pruneRowFlags(keys, previous, current));
     })
   );
 
@@ -190,7 +192,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
    */
   const toggleRow = (key: string, toggle: HTMLButtonElement): void => {
     const collapsing = expanded().has(key);
-    setExpanded(toggleExpanded(expanded(), key));
+    setExpanded(toggleRowFlag(expanded(), key));
     if (collapsing) toggle.scrollIntoView({ block: 'nearest' });
   };
 
@@ -286,6 +288,10 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
                       expanded={expanded().has(view.key)}
                       onToggle={(toggle) => {
                         toggleRow(view.key, toggle);
+                      }}
+                      wrap={wrapped().has(view.key)}
+                      onWrap={() => {
+                        setWrapped(toggleRowFlag(wrapped(), view.key));
                       }}
                       codeBlock={props.codeBlock}
                       loadSource={

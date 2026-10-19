@@ -79,6 +79,13 @@ const logger = createLogger('code-block');
  */
 export const HIGHLIGHT_MAX_CHARS = 20_000;
 
+/**
+ * The visible wrap label — one declaration for both render sites (this
+ * toolbar's toggle and a consumer row's own toggle), so the vocabulary
+ * cannot fork at one surface.
+ */
+export const WRAP_LABEL = 'Wrap';
+
 /** How far ahead of the viewport a block pre-highlights (px of root margin). */
 const INTERSECTION_MARGIN = '150px';
 
@@ -164,6 +171,36 @@ export type CodeBlockProps = {
    * the code text: never highlighted, never selected or copied.
    */
   cutLines?: readonly number[];
+  /**
+   * Render the toolbar chrome (language label, plain note, Wrap toggle) —
+   * the default. Pass `false` for the toolbar-less chrome: the code alone,
+   * and the consumer owns the language presentation and the one Wrap control.
+   * Nothing is hid by CSS — the chrome is simply not rendered, and the plain
+   * note gets its own muted strip above the code (reasons are still required
+   * information in this mode). The area's wrap classes, focusability and
+   * clipping are unchanged either way.
+   */
+  toolbar?: boolean;
+  /**
+   * The wrap state when the consumer owns it (reactive): it decides the
+   * area's wrap instead of this block's internal signal, so a control outside
+   * the block — a row's toolbar-less Wrap button — drives it. Ownership is
+   * fixed per instance at mount, and a runtime flip is a caller bug either
+   * way: absent→present is ignored (ownership was already decided), while
+   * defined→undefined throws — the block cannot silently substitute its own
+   * state once it was rendering from the caller's. Required with the
+   * toolbar-less chrome, because without a reachable state the block's own
+   * toggle has nothing to move.
+   */
+  wrap?: boolean;
+  /**
+   * Press notification for the block's own Wrap button (toolbar chrome +
+   * consumer-owned state): the button computes the next state and hands it
+   * over, and the consumer's re-render feeds the block back through
+   * {@link CodeBlockProps.wrap}. Required with that combination — a visible
+   * button with no writer is a dead control.
+   */
+  onWrapToggle?: (wrap: boolean) => void;
   /** The overflow seam; defaults to the shared `ResizeObserver` watcher. */
   watchOverflow?: OverflowWatcher;
   /** Extra classes on the container, merged last so callers win. */
@@ -211,6 +248,65 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
 }
 
 /**
+ * The chrome contract, resolved once at mount and never after — state
+ * ownership is fixed per instance (a runtime flip is a caller bug, not a
+ * lifecycle). The `onWrapToggle` callback is deliberately not part of it: the
+ * press path reads the prop live at press time, so a consumer re-rendering
+ * with a fresh inline callback identity stays honored (a mount-time capture
+ * would answer stale closures).
+ */
+interface ChromeContract {
+  /** The toolbar chrome renders (language label, plain note, Wrap toggle). */
+  readonly toolbar: boolean;
+  /** The wrap state is consumer-owned via the `wrap` prop. */
+  readonly consumerWrap: boolean;
+}
+
+/**
+ * Resolve the chrome contract and fail fast on the caller-bug combinations
+ * that would strand a control or a callback: a consumer-owned state also
+ * seeded by `defaultWrap`, a toolbar-less block with no reachable state, a
+ * visible button with no writer, and a callback that can never fire.
+ *
+ * @param props The block's own (non-DOM) props, read once — not reactive.
+ *   Presence decides the rules; the `onWrapToggle` callback itself stays a
+ *   live prop (read at press time, see {@link ChromeContract}).
+ * @returns The contract the render reads; it never changes per instance.
+ * @throws {@link Error} naming the offending prop on any rule above.
+ */
+function resolveChrome(
+  props: Pick<CodeBlockProps, 'toolbar' | 'wrap' | 'onWrapToggle' | 'defaultWrap'>
+): ChromeContract {
+  // `untrack` is semantic, not cosmetic: the contract is resolved exactly
+  // once at mount; the lint rule then knows what the function is for.
+  return untrack(() => {
+    const consumerWrap = props.wrap !== undefined;
+    const toolbar = props.toolbar !== false;
+    if (consumerWrap && props.defaultWrap !== undefined) {
+      throw new Error(
+        'CodeBlock: wrap is consumer-owned; defaultWrap only seeds the block-internal state.'
+      );
+    }
+    if (!consumerWrap && !toolbar) {
+      throw new Error(
+        'CodeBlock: toolbar=false renders no Wrap control of its own; pass wrap (the consumer-owned state).'
+      );
+    }
+    if (consumerWrap && toolbar && props.onWrapToggle === undefined) {
+      throw new Error(
+        'CodeBlock: consumer-owned wrap with the toolbar also needs onWrapToggle, or the button is a dead control.'
+      );
+    }
+    if (!consumerWrap && props.onWrapToggle !== undefined) {
+      throw new Error(
+        'CodeBlock: onWrapToggle only answers the toolbar button; without wrap the block owns the state, so it would never fire.'
+      );
+    }
+    return { toolbar, consumerWrap };
+  });
+}
+
+/**
  * Render the shared code block.
  *
  * Paint order: the fallback `<pre>` with raw text renders from first mount
@@ -221,9 +317,19 @@ function defaultIntersectionGate(host: HTMLElement): IntersectionGate {
  * `CodeHighlighter.highlight`'s safety note); native div props pass through
  * to the container for `aria-*`/context attributes.
  *
+ * Chrome: the toolbar (default) renders the language label, the plain note
+ * and the Wrap toggle; the toolbar-less chrome (`toolbar={false}`) renders
+ * the code alone, the consumer owns the language presentation and the one
+ * Wrap control through the reactive `wrap` state, and the plain note still
+ * shows as its own strip. Ownership and combinations are resolved once at
+ * mount (`resolveChrome`), which fails fast on caller bugs.
+ *
  * @param props.text The code text.
  * @param props.lang The language (`javascript` | `json`).
  * @param props.defaultWrap Initial wrap state (toggleable afterwards).
+ * @param props.toolbar `false` renders the toolbar-less chrome (default: toolbar).
+ * @param props.wrap Consumer-owned, reactive wrap state (toolbar-less requires it).
+ * @param props.onWrapToggle Press notification of the toolbar's Wrap button when the state is consumer-owned.
  * @param props.loadHighlighter Loader seam (tests inject resolved doubles).
  * @param props.createObserver Intersection seam (tests inject manual gates).
  * @param props.label The scroll region's name (default "`<lang>` code";
@@ -256,11 +362,44 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
     'maxLines',
     'onClipChange',
     'cutLines',
+    'toolbar',
+    'wrap',
+    'onWrapToggle',
     'watchOverflow',
     'class'
   ]);
 
-  const [wrap, setWrap] = createSignal(own.defaultWrap ?? false);
+  // The chrome contract is resolved once at mount; a chrome-ownership caller
+  // bug throws here, never mid-flight. (Later prop-flip bugs surface in the
+  // readers below — see `wrap` and `maxLines`.)
+  const chrome = resolveChrome(own);
+  const [internalWrap, setInternalWrap] = createSignal(own.defaultWrap ?? false);
+  /**
+   * The effective wrap state: consumer-owned when resolved so, else internal.
+   * A controlled value must survive while the block renders from it: a prop
+   * that was defined at mount and becomes `undefined` later is the caller
+   * unowning its own state (a caller bug), so this read throws naming it
+   * instead of silently substituting the block-uncontrolled `false`.
+   */
+  const wrap = createMemo<boolean>(() => {
+    if (!chrome.consumerWrap) return internalWrap();
+    const value = own.wrap;
+    if (value === undefined) {
+      throw new Error(
+        'CodeBlock: consumer-owned wrap must stay defined — the prop became undefined after mount.'
+      );
+    }
+    return value;
+  });
+  /**
+   * The Wrap press, from whatever control: a consumer-owned state goes back
+   * through its callback (the re-render feeds this block through `wrap`),
+   * the internal state writes itself.
+   */
+  const toggleWrap = (): void => {
+    if (chrome.consumerWrap) own.onWrapToggle?.(!wrap());
+    else setInternalWrap(!wrap());
+  };
   const [highlighter, setHighlighter] = createSignal<HighlighterLike | undefined>();
 
   // Whether the code area overflows a scrollable axis, and whether it holds
@@ -401,31 +540,47 @@ export function CodeBlock(props: CodeBlockProps): JSX.Element {
       class={cn('rounded border border-line-1 bg-surface-1', own.class)}
       {...rest}
     >
-      <div class="flex items-center justify-between gap-2 border-b border-line-1 bg-surface-2 px-2 py-0.5">
-        <span class="flex min-w-0 items-center gap-2">
-          <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
-            {own.lang}
-          </span>
+      <Show
+        when={chrome.toolbar}
+        fallback={
           <Show when={plainNote()}>
             {(note) => (
-              <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
+              <div
+                data-fdt-code-block-plain
+                class="truncate border-b border-line-1 bg-surface-2 px-2 py-0.5 text-2xs text-fg-muted"
+              >
                 {note()}
-              </span>
+              </div>
             )}
           </Show>
-        </span>
-        <Button
-          type="button"
-          data-fdt-code-block-wrap
-          variant="ghost"
-          size="sm"
-          aria-pressed={wrap()}
-          onClick={() => setWrap((value) => !value)}
-          class="min-h-6 px-1.5 text-2xs"
-        >
-          Wrap
-        </Button>
-      </div>
+        }
+      >
+        <div class="flex items-center justify-between gap-2 border-b border-line-1 bg-surface-2 px-2 py-0.5">
+          <span class="flex min-w-0 items-center gap-2">
+            <span data-fdt-code-block-lang class="text-2xs font-medium text-fg-muted">
+              {own.lang}
+            </span>
+            <Show when={plainNote()}>
+              {(note) => (
+                <span data-fdt-code-block-plain class="truncate text-2xs text-fg-muted">
+                  {note()}
+                </span>
+              )}
+            </Show>
+          </span>
+          <Button
+            type="button"
+            data-fdt-code-block-wrap
+            variant="ghost"
+            size="sm"
+            aria-pressed={wrap()}
+            onClick={toggleWrap}
+            class="min-h-6 px-1.5 text-2xs"
+          >
+            {WRAP_LABEL}
+          </Button>
+        </div>
+      </Show>
       <div
         ref={area}
         data-fdt-code-area

@@ -305,11 +305,11 @@ export const ROW_ESTIMATES = {
   /** External row: one line at regular width (two when compact). */
   external: 37,
   /** Inline row without code to show (blank source). */
-  inlineBlank: 49,
-  /** Inline row, collapsed: badge line, toolbar + three code lines, toggle. */
-  inlineCollapsed: 165,
+  inlineBlank: 57,
+  /** Inline row, collapsed: caption/chips line, three code lines, toggle. */
+  inlineCollapsed: 145,
   /** Inline row with three lines or fewer and no toggle. */
-  inlineShort: 137
+  inlineShort: 115
 } as const;
 
 /**
@@ -325,39 +325,41 @@ export function estimateRowSize(view: ScriptRowView): number {
 }
 
 /**
- * Keep only the expanded keys whose script is still there **unchanged**: a
- * refresh that removed a script, or changed it under the same key, forgets
- * its expanded flag (a different script must not open expanded).
+ * Keep only the row keys whose row is still there **unchanged** in the
+ * page's per-row keyed state (the expanded and wrapped sets): a refresh that
+ * removed a script — or changed it under the same key — forgets its flags
+ * (a different script must not open expanded or wrapped).
  *
- * @param expanded The expanded keys.
+ * @param states The flags to prune.
  * @param previous The row views the flags were set on.
  * @param next The refreshed row views.
- * @returns `expanded` itself when nothing was dropped, else the kept keys.
+ * @returns `states` itself when nothing was dropped, else the kept keys.
  */
-export function pruneExpanded(
-  expanded: ReadonlySet<string>,
+export function pruneRowFlags(
+  states: ReadonlySet<string>,
   previous: readonly ScriptRowView[],
   next: readonly ScriptRowView[]
 ): ReadonlySet<string> {
-  if (expanded.size === 0) return expanded;
+  if (states.size === 0) return states;
   const before = new Map(previous.map((view) => [view.key, view]));
   const after = new Map(next.map((view) => [view.key, view]));
-  const kept = [...expanded].filter((key) => {
+  const kept = [...states].filter((key) => {
     const view = after.get(key);
     return view !== undefined && view === before.get(key);
   });
-  return kept.length === expanded.size ? expanded : new Set(kept);
+  return kept.length === states.size ? states : new Set(kept);
 }
 
 /**
- * Flip one key's membership.
+ * Flip one key's membership in a page's per-row keyed state (the expanded
+ * and wrapped sets).
  *
- * @param expanded The expanded keys.
+ * @param states The flags.
  * @param key The row to flip.
  * @returns A new set (sets in signals must change identity to notify).
  */
-export function toggleExpanded(expanded: ReadonlySet<string>, key: string): ReadonlySet<string> {
-  const next = new Set(expanded);
+export function toggleRowFlag(states: ReadonlySet<string>, key: string): ReadonlySet<string> {
+  const next = new Set(states);
   if (!next.delete(key)) next.add(key);
   return next;
 }
@@ -369,4 +371,16 @@ export function toggleExpanded(expanded: ReadonlySet<string>, key: string): Read
  */
 export function lineCount(count: number): string {
   return `${formatCount(count)} ${count === 1 ? 'line' : 'lines'}`;
+}
+
+/**
+ * The inline-code row's caption: the code's language, then the line count
+ * (`javascript · 3 lines`). The block's toolbar is gone in the compact rows,
+ * so the row carries this one muted caption instead — one fact, no chrome.
+ *
+ * @param lang The code's language (the block's `lang`).
+ * @param lines The line count.
+ */
+export function codeCaption(lang: string, lines: number): string {
+  return `${lang} · ${lineCount(lines)}`;
 }

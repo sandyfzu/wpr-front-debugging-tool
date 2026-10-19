@@ -387,6 +387,78 @@ describe('JavaScriptView — rows', () => {
   });
 });
 
+describe('JavaScriptView — compact code rows', () => {
+  /** The row's one wrap toggle. */
+  function wrap(row: HTMLElement): HTMLButtonElement {
+    return within(row).getByRole('button', { name: 'Wrap' });
+  }
+
+  it('owns the language caption and exactly one Wrap on every code row', () => {
+    renderView();
+    // Every row with code: one caption ("javascript · N lines"), one Wrap.
+    const inline = [rows()[3] as HTMLElement, rows()[4] as HTMLElement];
+    for (const row of inline) {
+      expect(row.textContent).toContain(`javascript ·`);
+      expect(within(row).getAllByRole('button', { name: 'Wrap' })).toHaveLength(1);
+    }
+    // The first row's caption names its real line count.
+    expect(within(rows()[3] as HTMLElement).getByText('javascript · 5 lines')).toBeTruthy();
+    // External rows have no caption, no Wrap: the URL row keeps its copy only.
+    const external = rows()[1] as HTMLElement;
+    expect(external.textContent).not.toContain('javascript ·');
+    expect(within(external).queryByRole('button', { name: 'Wrap' })).toBeNull();
+    // A blank inline row says its empty note; no code, no caption, no Wrap.
+    const blank = rows()[5] as HTMLElement;
+    expect(blank.textContent).not.toContain('javascript ·');
+    expect(within(blank).queryByRole('button', { name: 'Wrap' })).toBeNull();
+  });
+
+  it('wraps and unwraps the block through the page-owned state', () => {
+    renderView();
+    const row = rows()[3] as HTMLElement;
+    const button = wrap(row);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(row.querySelector('[data-fdt-code-area]')?.className).toContain('whitespace-pre-wrap');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps the wrapped state when the row remounts on scroll', () => {
+    const { virtualizer } = renderView();
+    fireEvent.click(wrap(rows()[3] as HTMLElement));
+    virtualizer.setWindow([0, 2]); // the wrapped row scrolls out of range
+    expect(document.querySelector('[data-fdt="script-code-wrap"]')).toBeNull();
+    virtualizer.setWindow([0, 40]);
+    const row = rows()[3] as HTMLElement;
+    expect(wrap(row).getAttribute('aria-pressed')).toBe('true');
+    expect(row.querySelector('[data-fdt-code-area]')?.className).toContain('whitespace-pre-wrap');
+    // Other rows never borrowed the flag.
+    expect(wrap(rows()[4] as HTMLElement).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('prunes the wrapped state when a refresh removes the row', () => {
+    const { setData } = renderView();
+    fireEvent.click(wrap(rows()[3] as HTMLElement));
+    const list = scripts();
+    setData(dataWith(list.slice(0, 3)));
+    setData(dataWith(list));
+    expect(wrap(rows()[3] as HTMLElement).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps the wrap flag across an expand/collapse round trip', () => {
+    renderView();
+    const row = rows()[3] as HTMLElement;
+    fireEvent.click(wrap(row));
+    fireEvent.click(within(row).getByRole('button', { name: 'Show all 5 lines' }));
+    expect(row.querySelector('[data-fdt-code-area]')?.className).toContain('whitespace-pre-wrap');
+    fireEvent.click(within(row).getByRole('button', { name: 'Collapse' }));
+    expect(wrap(row).getAttribute('aria-pressed')).toBe('true');
+    expect(row.querySelector('[data-fdt-code-area]')?.className).toContain('whitespace-pre-wrap');
+  });
+});
+
 describe('JavaScriptView — expand state', () => {
   /** The inline 5-line row's toggle. */
   function toggle(): HTMLButtonElement {

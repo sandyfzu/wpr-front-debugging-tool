@@ -8,7 +8,13 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CodeBlock, HIGHLIGHT_MAX_CHARS, PLAIN_NOTES, type IntersectionGate } from './code-block';
+import {
+  CodeBlock,
+  HIGHLIGHT_MAX_CHARS,
+  PLAIN_NOTES,
+  type CodeBlockProps,
+  type IntersectionGate
+} from './code-block';
 import { HighlightUnavailableError, type HighlightFailure } from './code-block-worker-client';
 import type { HighlightedBlock } from './code-block-worker-protocol';
 import { CODE_BLOCK_LANGS } from './code-block-langs';
@@ -406,6 +412,175 @@ describe('CodeBlock', () => {
         <CodeBlock text="x" lang="json" maxLines={lines} createObserver={() => manualGate()} />
       ))
     ).toThrow(/maxLines must be a positive integer/);
+  });
+});
+
+describe('CodeBlock — toolbar-less chrome', () => {
+  it('renders no toolbar chrome and no note strip by default', () => {
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        toolbar={false}
+        wrap={false}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    // The consumer owns language + Wrap: no chrome of the block's own.
+    expect(document.querySelector('[data-fdt-code-block-lang]')).toBeNull();
+    expect(document.querySelector('[data-fdt-code-block-wrap]')).toBeNull();
+    expect(document.querySelector('[data-fdt-code-block-plain]')).toBeNull();
+    // The code surface is exactly the toolbar-mode one minus the toolbar.
+    const { area, fallback, root } = controls();
+    expect(area?.className).toContain('whitespace-pre');
+    expect(fallback?.textContent).toBe('const a = 1;');
+    expect(root?.className).toContain('bg-surface-1');
+  });
+
+  it('shows the required plain note as its own strip (took too long)', async () => {
+    const gate = manualGate();
+    const loader = asyncLoader();
+    render(() => (
+      <CodeBlock
+        text={MULTI_SLICE}
+        lang="javascript"
+        toolbar={false}
+        wrap={false}
+        createObserver={() => gate}
+        loadHighlighter={loader.load}
+      />
+    ));
+    gate.fires();
+    await vi.waitFor(() => {
+      expect(loader.requests.length).toBeGreaterThan(0);
+    });
+    loader.requests[0]?.fail('timeout');
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+        'Not highlighted (took too long)'
+      );
+    });
+    // The raw text stays under the note, exactly as the toolbar presents it.
+    expect(controls().fallback?.textContent).toBe(MULTI_SLICE);
+  });
+
+  it('names too-large code in the strip and never requests it', async () => {
+    const loader = asyncLoader();
+    const text = 'z'.repeat(HIGHLIGHT_MAX_CHARS + 1);
+    render(() => (
+      <CodeBlock
+        text={text}
+        lang="javascript"
+        toolbar={false}
+        wrap={false}
+        createObserver={() => manualGate()}
+        loadHighlighter={loader.load}
+      />
+    ));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loader.requests).toHaveLength(0);
+    expect(document.querySelector('[data-fdt-code-block-plain]')?.textContent).toBe(
+      PLAIN_NOTES['too-large']
+    );
+  });
+
+  it('follows the consumer-owned wrap state, reactively', () => {
+    const [wrapping, setWrapping] = createSignal(false);
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        toolbar={false}
+        wrap={wrapping()}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    expect(area.className).not.toContain('whitespace-pre-wrap');
+    setWrapping(true);
+    expect(area.className).toContain('whitespace-pre-wrap');
+    expect(area.className).toContain('[&_pre]:wrap-anywhere');
+    setWrapping(false);
+    expect(area.className).toContain('[&_pre]:whitespace-pre');
+  });
+
+  it('throws when an owned wrap prop becomes undefined (fail fast)', () => {
+    const [wrapping, setWrapping] = createSignal<boolean | undefined>(false);
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        toolbar={false}
+        wrap={wrapping()}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    expect(area.className).not.toContain('whitespace-pre-wrap');
+    expect(() => {
+      setWrapping(undefined);
+    }).toThrow(/wrap must stay defined/);
+  });
+
+  it('keeps the group naming, clipping and overflow behavior identical to the toolbar', () => {
+    const overflow = manualOverflow();
+    render(() => (
+      <CodeBlock
+        text="const a = 1;"
+        lang="javascript"
+        toolbar={false}
+        wrap={false}
+        maxLines={2}
+        createObserver={() => manualGate()}
+        watchOverflow={overflow.watcher}
+      />
+    ));
+    const area = controls().area as HTMLElement;
+    overflow.set(true);
+    expect(screen.getByRole('group', { name: 'javascript code' })).toBe(area);
+    overflow.setClipped(true);
+    expect(area.getAttribute('data-fdt-clipped')).toBe('');
+  });
+
+  it('answers the toolbar button through onWrapToggle when the state is consumer-owned', () => {
+    const [wrapping, setWrapping] = createSignal(false);
+    render(() => (
+      <CodeBlock
+        text="x"
+        lang="json"
+        wrap={wrapping()}
+        onWrapToggle={setWrapping}
+        loadHighlighter={stubLoader()}
+      />
+    ));
+    const wrap = controls().wrap as Element;
+    expect(wrap.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it.each([
+    [
+      'consumer-owned state also seeded by defaultWrap',
+      { wrap: false, defaultWrap: true } satisfies Partial<CodeBlockProps>
+    ],
+    [
+      'toolbar-less without a reachable state',
+      { toolbar: false } satisfies Partial<CodeBlockProps>
+    ],
+    [
+      'consumer-owned state under the toolbar with no writer',
+      { wrap: false } satisfies Partial<CodeBlockProps>
+    ],
+    [
+      'a callback the block can never answer',
+      { onWrapToggle: () => undefined } satisfies Partial<CodeBlockProps>
+    ]
+  ])('throws on %s (fail fast)', (_reason, extra) => {
+    expect(() => render(() => <CodeBlock text="x" lang="json" {...extra} />)).toThrow(/CodeBlock:/);
   });
 });
 
