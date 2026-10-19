@@ -17,6 +17,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **P14.5 planned/decision-gated:** [coverage audit+tools](./15b-phase-14-5-coverage-and-tooling.md). Candidate approval≠decision gate complete.
 - **P14.6 planned:** [external track](./16-phase-15-hardening-release.md#p146-external-site-track), owner site or explicit scoped skip.
 - **P7 deferred:** [Diagnoser+7.1](./08-phase-7-diagnoser.md), afterP14.6 and rebuilt plugin JSON; then **P5J planned** [final header/nav](./06d-phase-5j-panel-topbar-redesign.md), last implementation; then **P15 planned** [release gate](./16-phase-15-hardening-release.md#p15-hardeningrelease).
+- **P18 planned (standalone defect fix):** [exclusion original-path](./18-exclusion-original-path.md) — undefined-references "Copy as exclusion" copies the original script path, not WP Rocket's minified cache path. Parallel with any phase not touching `entrypoints/panel/pages/undefined-references/`, `components/ui/copy-button.*` or `lib/wp-rocket/`.
 - **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships; add-on ID/badge/mount/panel runtime fixes not receipted.
 - **Optional P17** panel home remains unscheduled/decision-gated, scope only in master.
 
