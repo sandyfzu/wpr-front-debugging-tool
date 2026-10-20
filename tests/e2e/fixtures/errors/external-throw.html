@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Same-origin external-throw fixture</title>
+  </head>
+  <body>
+    <h1>A script from this page's own origin throws uncaught</h1>
+    <p>
+      Injects <code>external-throw.js</code> from this page's own origin after load — no
+      <code>crossorigin</code> attribute involved. A same-origin script file's uncaught error is
+      reported in full (message, file URL, and the error object whose stack names the external
+      file), so the capture extracts the word normally — the common real-world shape of a
+      bundled/minified script throwing inside itself.
+    </p>
+    <p>
+      The injection is deferred so the page has fully loaded first: the browser-test suite then
+      starts observing from a settled baseline and the capture observes a page-lifetime error, not a
+      document_start race.
+    </p>
+    <script>
+      setTimeout(function injectSameOriginThrower() {
+        // A relative URL keeps the script on whatever origin serves this
+        // page, so the throw stays same-origin and is reported in full.
+        const script = document.createElement('script');
+        script.src = '/errors/external-throw.js';
+        document.head.appendChild(script);
+      }, 1000);
+    </script>
+  </body>
+</html>

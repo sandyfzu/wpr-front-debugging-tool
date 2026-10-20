@@ -163,4 +163,45 @@ test.describe('undefined-references capture', () => {
     expect(rejectedWarnings, 'one rejection log per malformed batch').toHaveLength(3);
     expect(consoleErrors, 'the capture must stay silent at error level').toEqual([]);
   });
+
+  test('a throw inside a same-origin external script file is captured; page console unchanged', async ({
+    extension
+  }) => {
+    /** @type {string[]} */
+    const pageErrors: string[] = [];
+    /** @type {string[]} */
+    const consoleErrors: string[] = [];
+    const fixture = await openFixturePage(
+      extension,
+      '/errors/external-throw.html',
+      undefined,
+      (page) => {
+        page.on('pageerror', (error) => pageErrors.push(`${error.name}: ${error.message}`));
+        page.on('console', (message) => {
+          if (message.type() === 'error') consoleErrors.push(message.text());
+        });
+      }
+    );
+
+    // Before the deferred external file is injected and executed nothing is
+    // captured yet (the throw is a page-lifetime error from a network-loaded
+    // script, not a document_start one).
+    expect(await pullFdtData(extension, fixture)).not.toBeNull();
+    expect((await pullFdtData(extension, fixture))?.undefinedReferencesOnPage).toEqual([]);
+    await expect
+      .poll(
+        async () => (await pullFdtData(extension, fixture))?.undefinedReferencesOnPage,
+        POLL_OPTIONS
+      )
+      .toEqual(['externalThrowWord']);
+
+    // Page noise check: the ONLY uncaught error is the page's own throw from
+    // the external file — same origin, so the browser reports it in full and
+    // the capture extracts the word normally (no sentinel involved); the
+    // capture added none (no console-error level lines either).
+    expect(pageErrors, 'uncaught exceptions on the page').toEqual([
+      'ReferenceError: externalThrowWord is not defined'
+    ]);
+    expect(consoleErrors, 'the capture must stay silent at error level').toEqual([]);
+  });
 });
