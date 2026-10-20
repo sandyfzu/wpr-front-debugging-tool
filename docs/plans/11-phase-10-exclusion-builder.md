@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Full re-think of the parked design, agreed with the owner 2026-10-20. The old flow (separate unlisted page + file pick/rewrite + Chrome overrides to load edited HTML) is **superseded** — too many steps, unused in practice. New shape: the builder lives as a **shadow-isolated overlay injected into the inspected page** (same machinery as the on-page strip), the user picks scripts/elements and composes exclusions in place, then clicks **Apply**: the page reloads and the extension **rewrites the served HTML in flight before parse/render**, so the render is a real page with the exclusions applied. Backends per browser — Chromium: `chrome.debugger` + CDP `Fetch` (response-stage intercept → transform → fulfill); Firefox: `webRequest.filterResponseData` streaming rewrite. When interception is impossible (DevTools open on the tab on Chromium), the surface **degrades explicitly** (mode indicator; optional simulation mode — decision gate G-3). All http(s) hosts are already host permissions (`URL_PATTERNS`); Chromium needs the new `debugger` permission (Chromium manifest only, gated on spike + owner acceptance G-2). Implementation **starts only after G-1** (owner approval of this plan). Technically parallel with P11 (disjoint modules; additive contract rows only).
+Full re-think of the parked design, agreed with the owner 2026-10-20. The old flow (separate unlisted page + file pick/rewrite + Chrome overrides to load edited HTML) is **superseded** — too many steps, unused in practice. New shape: the builder lives as a **shadow-isolated overlay injected into the inspected page** (same machinery as the on-page strip), the user picks scripts/elements and composes exclusions in place, then clicks **Apply**: the page reloads and the extension **rewrites the served HTML in flight before parse/render**, so the render is a real page with the exclusions applied. Backends per browser — Chromium: `chrome.debugger` + CDP `Fetch` (response-stage intercept → transform → fulfill); Firefox: `webRequest.filterResponseData` streaming rewrite. When interception is unavailable, there is **no fallback** — a first-class warning state names the cause and remedy (G-3, decided 2026-10-20). All http(s) hosts are already host permissions (`URL_PATTERNS`); Chromium needs the new `debugger` permission (Chromium manifest only, gated on spike + owner acceptance G-2). Implementation **starts only after G-1** (owner approval of this plan). Technically parallel with P11 (disjoint modules; additive contract rows only).
 
 **Shared session surface (owner mandate 2026-10-20):** the overlay is a **tool shell on one in-page session**, and the interception backend exposes a **transform-pipeline seam** — P10 ships the shell + Exclusions mode; the inspector-baseline testers (RUCSS test, beacon/LCP test, live script/LCP views) plug into the same shell/session per their owning phases P13/P14, improved per the owner mandate ("target to improve them all" — code/UI/UX). Their implementations, contracts, and gates stay in P13/P14; P10 owns only the shell, the session lifecycle, and the pipeline seam.
 
@@ -10,9 +10,9 @@ Full re-think of the parked design, agreed with the owner 2026-10-20. The old fl
 
 - **G-1 (owner, blocks implementation): APPROVED 2026-10-20** — replan approved (in-page overlay surface, per-browser interception backends, phased order), with two owner amendments:
   1. **The panel's "Open Exclusion Builder" command-palette row must be removed** (it opens the old unlisted page; from a devtools-attached panel a `chrome.debugger` build can never attach that tab — structurally wrong once the builder is the in-page overlay). Removal lands at P10G's surfaces integration, together with retiring the old unlisted `exclusion-builder.html` entrypoint; the **context-menu** "Exclusion Builder" entry stays and re-points to the in-page overlay.
-  2. **DevTools-open must be managed explicitly at apply time**: P10D resolves the mode by _attempting_ the attach (per-browser reality decides, not an assumption — the spike found attach succeeding with DevTools open on CFT 156, pending stable-Chrome confirmation), and every outcome (interception armed / degraded to G-3 fallback / blocked) is surfaced honestly in the overlay indicator and the panel status row.
+  2. **DevTools-open must be managed explicitly at apply time**: P10D resolves the mode by _attempting_ the attach (per-browser reality decides, not an assumption — the spike found attach succeeding with DevTools open on CFT 156, pending stable-Chrome confirmation), and every outcome (interception armed / the G-3 warning state) is surfaced honestly in the overlay indicator and the panel status row.
 - **G-2 (owner): ACCEPTED 2026-10-20, conditional on store review** — owner accepts both warnings provided store approval is not blocked. Policy status: the `debugger` permission is store-legal (no policy prohibition), but it puts the submission under deeper review (justification/review notes, possible longer review; the broad-data warning is already shown by the existing all-hosts permissions). If store review ever blocks it, the fallback decision is split distribution (store build without interception, self-distributed build with it) — revisit only if it happens.
-- **G-3 (owner, by P10F): PENDING** — simulation-fallback scope when interception is unavailable — (a) DNR session rules for URL-pattern exclusions only, honest notice for attribute-level ops (recommended), (b) full DOM-hook simulation, or (c) no fallback — "close DevTools to apply" message only.
+- **G-3 (owner): DECIDED 2026-10-20 — no fallback, no simulation.** When interception is unavailable, Apply does nothing destructive: the overlay shows a first-class warning state naming the cause (attach denied / debugging policy / cancelled infobar / no support on this page) and the remedy, with Retry where the cause is transient — never a dead end (UX-D9), never a silent no-op. No DNR simulation, no DOM-hook simulation. Rarity rationale: the spike found interception available even with DevTools open (CFT 156); the realistic unavailable paths are managed-browser policy and a cancelled infobar — a clear warning beats building an approximate mode.
 - **G-4 (owner): APPROVED 2026-10-20** — keep the source's three feature-wide disable toggles (Delay JS / Defer JS / Automatic Lazy Rendering; no Lazyload toggle).
 - **G-5 (owner): APPROVED 2026-10-20** — the applied rewrite persists across navigations in the tab until **Stop** or tab close; cleanup contract: Stop, tab close, or extension reload restores unmodified rendering.
 
@@ -58,7 +58,7 @@ All four also inherit the shell's shared bar: pure logic in `lib/`, honest state
 - `lib/exclusion-builder/` — self-contained domain module: exclusion-set types, cached regex compilation, per-operation transforms, all-at-once prevalidation with inline invalid-pattern feedback, typed errors. Transforms compose into an ordered **pipeline** (`servedHtml + set → { html, report }` per transform; session = list of transforms + per-transform reports) — the seam P13's before-parse TEST MODE plugs into. No I/O, no DOM, no `browser.*`.
 - `lib/storage/` — typed items (established pattern): per-origin exclusion sets + last-applied session state (inspector-origins vocabulary).
 - `lib/messaging/` — additive channels: overlay↔background (session start/stop/apply/status), background→panel (builder-active push). Contracts validated at boundary.
-- `entrypoints/background/` — interception backends (Chromium CDP session lifecycle; Firefox streaming listener), session state machine, DNR session rules for the simulation mode.
+- `entrypoints/background/` — interception backends (Chromium CDP session lifecycle; Firefox streaming listener) + session state machine. (No DNR simulation — G-3 decision 2026-10-20.)
 - `entrypoints/isolated.content/exclusion-builder/` — overlay wiring only: mount/teardown via the existing `ui/` machinery, click-to-pick, renders from store.
 - Dependency direction and thin-entrypoint rules unchanged. Removing the feature = deleting the folder + its registry rows.
 
@@ -135,7 +135,7 @@ Depends:P10A+C. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session
 - [ ] `debugger` permission added (Chromium manifest only, `wxt.config.ts` comment: why + G-2 receipt; Firefox build unchanged).
 - [ ] Session state machine: attach → `Fetch.enable` (Document/Response) → reload/fulfill transform via engine → detach (or persist per G-5); every step's failure arm typed and surfaced (attach denied/target gone/no receiver); `onDetach` (DevTools opened, user Cancel on the infobar, navigation, crash) stops cleanly, never retries against a dead context. The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
 - [ ] Fidelity on fulfill: preserve the response's charset (`getResponseBody` base64 → decode with the original encoding → transform → encode back; `Content-Type`/headers passed through) — a wrong-charset fulfill corrupts the render.
-- [ ] Mode resolution: mode decided at apply time by attempting the attach (G-1 amendment 2 — never assumed): armed → intercept; unavailable → G-3 behavior; every outcome in the overlay indicator + panel status row (W-1, never color-only).
+- [ ] Mode resolution: mode decided at apply time by attempting the attach (G-1 amendment 2 — never assumed): armed → intercept; unavailable → the G-3 warning state (cause + remedy + Retry); every outcome in the overlay indicator + panel status row (W-1, never color-only).
 - [ ] Unit tests for the state machine with injected command ports; manual runtime evidence on the docker site.
 
 DoD: apply-and-render works end-to-end on Chromium with DevTools closed; every failure arm observed and handled; charset round-trip proven; no silent failures. Effort M · difficulty hard.
@@ -157,7 +157,7 @@ Depends:P10B+C (+G-3/G-4 decisions). Parallel:P10D/P10E wiring-free parts. Goal:
 - [ ] `entrypoints/isolated.content/exclusion-builder/`: mount/teardown via existing `ui/` machinery; tokens + live theme; top frame only; z-index/cleanup contract for hostile pages.
 - [ ] Editor: per-feature pattern/literal rows with inline validation, disable toggles (G-4), counts from the engine report; virtualized when >100 rows (P-2).
 - [ ] Click-to-pick: pick a script/element in the real page → candidate exclusion row (Delay/Defer/Lazyload/ALR lane per target); Esc cancels; works over SPAs (observer cleanup).
-- [ ] State matrix (S-1): loading, error + retry, feature absent, empty, populated, applied-active, applied-with-no-match warnings; mode indicator (interception vs G-3 fallback) never color-only (K-5).
+- [ ] State matrix (S-1): loading, error + retry, feature absent, empty, populated, applied-active, applied-with-no-match warnings, **interception-unavailable warning** (G-3: cause + remedy + Retry, per-arm words); mode indicator never color-only (K-5).
 - [ ] Apply/Reset/Stop controls: Apply → session start; Reset → re-apply from stored original; Stop → detach + restore original on next reload; every control keyboard-complete (K-1/K-2).
 - [ ] UI bar §D receipts (D-1..D-7) in this doc.
 
@@ -169,21 +169,20 @@ Depends:P10D+F. Parallel:—. Goal: the agreed flow live end-to-end.
 
 - [ ] Overlay Apply → background session → reload → fulfilled render → overlay re-injects at `document_start` and shows applied state (from persisted session state, not heuristics).
 - [ ] Shell mode registry: Exclusions mode (P10) plus the plug-in seam for P13/P14 tool modes (config + results panels); no second editor surface per tool.
-- [ ] Mode matrix wired: DevTools closed → interception; open → G-3 behavior; indicator + honest words (W-1); session persistence per G-5 reflected in the active-state indicator.
+- [ ] Mode matrix wired: attach attempted at Apply → armed (interception) or the G-3 warning state (cause + remedy + Retry); indicator + honest words (W-1); session persistence per G-5 reflected in the active-state indicator.
 - [ ] DevTools panel: builder entry/status row (link + active state via push channel); context-menu "Exclusion Builder" item opens the overlay (re-points the existing `contextMenus` consumer comment). **Remove the panel command-palette "Open Exclusion Builder" row** (`entrypoints/panel/palette/actions.ts` + `palette/exclusion-builder.ts`) and retire the old unlisted `exclusion-builder.html` entrypoint + its budgets row (G-1 amendment 1) — from a devtools-attached panel the overlay is the only correct surface; no second editor surface.
 - [ ] E2E-adjacent manual receipts on the docker site; budgets: content-script + background deltas receipted.
 
 DoD: owner flow "pick → apply → reload → real render with exclusions" works on Chromium; statuses honest in every mode. Effort M · difficulty medium.
 
-### P10H — Firefox wiring + simulation fallback (G-3)
+### P10H — Firefox wiring
 
 Depends:P10E+F, G for the shared wiring shape. Parallel:—.
 
 - [ ] Firefox apply flow end-to-end; streaming backend's applied-state surfaced in the same overlay contract.
-- [ ] G-3 outcome implemented at the P10D seam: DNR session rules for URL-pattern rows (+ honest notice for attribute-level ops), or the chosen fallback; rules cleaned up on Stop/detach/session end.
 - [ ] Cross-browser receipt: same exclusion set, both engines, same engine report.
 
-DoD: Firefox parity + fallback per G-3; no Chromium regression. Effort M · difficulty medium.
+DoD: Firefox parity with the shared flow (no fallback exists — G-3); no Chromium regression. Effort S · difficulty easy.
 
 ### P10.1 — Browser suites (this file, local tier)
 
@@ -207,5 +206,5 @@ DoD: all gates green, docs current, P10 closable pending owner live-check. Effor
 
 ## Non-goals
 
-- No file-import/export flow (superseded); no byte-identical old-notice mandate; no DOM-hook full simulation unless G-3 chooses it; no page-load performance instrumentation (P14's domain); no exclusion _recommendations_ engine (P6's copy-as-exclusion vocabulary remains the generator); no i18n; no new dependency; no POST-navigation applies (the apply targets a GET reload; POST endpoints out of scope).
+- No file-import/export flow (superseded); no byte-identical old-notice mandate; **no simulation fallback of any kind — interception unavailable = the G-3 warning state** (DNR and DOM-hook simulation both rejected by owner 2026-10-20); no page-load performance instrumentation (P14's domain); no exclusion _recommendations_ engine (P6's copy-as-exclusion vocabulary remains the generator); no i18n; no new dependency; no POST-navigation applies (the apply targets a GET reload; POST endpoints out of scope).
 - RUCSS tester, beacon/LCP, and script-runtime implementations stay in P13/P14 — P10 ships only the shell, session lifecycle, and pipeline seam (no tester config/results UI here).
