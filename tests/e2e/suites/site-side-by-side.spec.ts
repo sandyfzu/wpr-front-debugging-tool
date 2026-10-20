@@ -33,24 +33,44 @@ const CACHED_PAGE_URL = `${SITE_URL}/fdt/`;
 /** The page's reachable scroll depth at the harness viewport (verified live). */
 const SCROLLABLE_TO_Y = 600;
 
+/** One overlay frame's read: its `src` attribute plus its document's own truth. */
+interface FrameTruth {
+  /** The frame element's `src` attribute. */
+  src: string | null;
+  /** The document's own URL — the real page once committed, `about:blank` before. */
+  href: string | null;
+  /** The document's `readyState` (the load-settle signal). */
+  readyState: string | null;
+  /** The WP Rocket footprint comment sits at the document's root. */
+  footprint: boolean;
+  /** The document's delay-runtime script markers. */
+  markers: number;
+}
+
 /**
  * Read the overlay's open state and both frames' identity + document truth.
+ *
+ * `href`/`readyState` are load-bearing: an about:blank first commit reads the
+ * same footprint/markers as a bypassed page (none) — only the frame document's
+ * own URL and load state distinguish that initial commit from the real page.
  *
  * @param page The page the overlay was opened on.
  */
 async function readOverlay(page: Page): Promise<{
   open: boolean;
-  cached: { src: string | null; footprint: boolean; markers: number } | null;
-  bypassed: { src: string | null; footprint: boolean; markers: number } | null;
+  cached: FrameTruth | null;
+  bypassed: FrameTruth | null;
 }> {
   return await page.evaluate((host: string) => {
     const shadow = document.querySelector(host)?.shadowRoot ?? null;
-    const readSide = (title: string) => {
+    const readSide = (title: string): FrameTruth | null => {
       const frame = shadow?.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`) ?? null;
       if (frame === null) return null;
       const doc = frame.contentDocument;
       return {
         src: frame.getAttribute('src'),
+        href: doc?.location.href ?? null,
+        readyState: doc?.readyState ?? null,
         footprint:
           doc !== null &&
           [...doc.childNodes].some(
@@ -170,19 +190,38 @@ siteTest.describe('site side-by-side', () => {
   });
 
   siteTest('per-side refresh re-navigates the real frames independently', async ({ extension }) => {
+    const bypassUrl = `${CACHED_PAGE_URL}?nowprocket=1`;
     const main = await openSitePage(extension, CACHED_PAGE_URL);
     await openOverlay(extension, main.tabId);
 
-    // Wait until the cached frame's initial navigation has COMPLETED (a
-    // loaded, footprint-carrying document), so the identity baselines below
-    // belong to the loaded documents.
+    // Wait until BOTH frames sit on their real, fully loaded documents: the
+    // cached side's marker-carrying cache-served page AND the bypassed side
+    // on its real `?nowprocket=1` URL, both `readyState === 'complete'`. A
+    // cached-side-only settle masked a proven baseline race: an about:blank
+    // first commit reads the same footprint/markers as the bypassed page
+    // (none), so the bypassed frame's real document — the slower WordPress
+    // bootstrap under full-tier load — could commit INSIDE the
+    // baseline→assert window below, breaking the kept-document assert (and
+    // false-passing the second refresh leg) with zero site misbehavior.
+    // Gating both sides' real documents moves that commit ahead of the
+    // baselines.
     await expect
       .poll(
         async () => {
           const state = await readOverlay(main.page);
-          return state.open && (state.cached?.markers ?? 0) > 0;
+          const { cached, bypassed } = state;
+          return (
+            state.open &&
+            cached !== null &&
+            cached.markers > 0 &&
+            cached.href === CACHED_PAGE_URL &&
+            cached.readyState === 'complete' &&
+            bypassed !== null &&
+            bypassed.href === bypassUrl &&
+            bypassed.readyState === 'complete'
+          );
         },
-        { timeout: 8_000, intervals: [250] }
+        { timeout: 10_000, intervals: [250] }
       )
       .toBe(true);
 
@@ -200,14 +239,19 @@ siteTest.describe('site side-by-side', () => {
         intervals: [250]
       })
       .toBeGreaterThan(cachedOriginBefore ?? 0);
+    const afterCachedRefresh = await readOverlay(main.page);
     expect(
-      (await readOverlay(main.page)).cached?.footprint,
+      afterCachedRefresh.cached?.footprint,
       'the reloaded cached frame still shows the cache-served page'
     ).toBe(true);
     expect(
       await readDocumentOrigin(main.page, 'Not cached'),
       'the bypassed side kept its loaded document'
     ).toBe(bypassOriginBefore);
+    expect(
+      afterCachedRefresh.bypassed?.href,
+      'the bypassed side kept its real document URL (no about:blank strip)'
+    ).toBe(bypassUrl);
 
     // ...and the bypassed side refreshes on its own, leaving the cached side.
     const cachedOriginAfterRefresh = await readDocumentOrigin(main.page, 'Cached');
@@ -218,13 +262,18 @@ siteTest.describe('site side-by-side', () => {
         intervals: [250]
       })
       .toBeGreaterThan(bypassOriginBefore ?? 0);
+    const afterBypassedRefresh = await readOverlay(main.page);
     expect(
-      (await readOverlay(main.page)).bypassed?.footprint,
+      afterBypassedRefresh.bypassed?.footprint,
       'the reloaded bypassed frame still shows the plain page'
     ).toBe(false);
     expect(await readDocumentOrigin(main.page, 'Cached'), 'the cached side kept its document').toBe(
       cachedOriginAfterRefresh
     );
+    expect(
+      afterBypassedRefresh.cached?.href,
+      'the cached side kept its real document URL (no about:blank strip)'
+    ).toBe(CACHED_PAGE_URL);
     await main.page.close();
   });
 

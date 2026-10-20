@@ -52,7 +52,12 @@ export interface PanelAxeAudit {
  *
  * Callers pick palettes and viewport before calling; the runner forces
  * nothing beyond the settle (an emulated reduced-motion/palette state is
- * the calling round's, not a hidden default here).
+ * the calling round's, not a hidden default here). The settle waits behind
+ * running animations too: a contrast audit racing a mount entrance reads
+ * token colors mid-fade (alpha-blended against the canvas) and reports
+ * false `color-contrast` violations on pairs that are AA-clean at rest —
+ * the same measured race `panel-a11y`'s inline runner solves with its
+ * paint settle; finished fill-mode objects are not motion.
  *
  * @param panel The panel page to audit.
  * @returns `{ violations, incomplete }` — expected both empty; anything
@@ -62,6 +67,13 @@ export async function runPanelAxe(panel: Page): Promise<PanelAxeAudit> {
   await panel.evaluate(AXE_SOURCE);
   return await panel.evaluate(async (): Promise<PanelAxeAudit> => {
     await document.fonts.ready;
+    const settleDeadline = performance.now() + 2_000;
+    while (
+      document.getAnimations().some((animation) => animation.playState === 'running') &&
+      performance.now() < settleDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await new Promise<void>((done) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
