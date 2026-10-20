@@ -147,9 +147,21 @@ Audit (adversarial, 2026-10-20): 2 MAJOR + 5 MINOR + 8 NOTE (n8 skipped — over
 
 Gates: compile/lint/format green; `pnpm test` 205 files, 3246 tests (+1 skipped) green, coverage ≥ 90 %; `build` + `check:budgets` green (no consumers).
 
+### P10C.1 — Fix: sparse-array holes in message validators (next)
+
+Depends:—. Parallel:— (do before P10D). Goal: boundary guards never accept or crash on array holes.
+
+Found by the P10C audit (2026-10-20, verified by probe): `isStringArray` (`lib/messaging/validate.ts`) uses `.every`, which skips holes. Reachable over structured-clone transports only (Firefox runtime messaging, the window bridge); Chrome's JSON transport turns holes into `null`. Effects in `parseWprDetections`: sparse `preloadedImages` throws `TypeError` (reads `.length` of `undefined`) instead of returning `null`; sparse `excludedReasonsFound` is accepted and copied as a `string[]` holding `undefined`.
+
+- [ ] Fix `isStringArray` to check every index (holes = invalid); regression tests for both effects above, plus `cookies` names, `fonts`, `domains` and the `:833` caller.
+- [ ] Sweep every other untrusted-array guard in `lib/messaging/` + `lib/storage/` for hole-skipping iteration (`every`/`some`/`forEach`/`filter`/`map` over unvalidated arrays); fix and test each hit, or record "none".
+- [ ] Add sparse arrays to the pre-existing `fuzz.test.ts` hostile set (additive) so the class stays pinned.
+
+DoD: no guard accepts or throws on a hole; gates green. Effort XS · difficulty easy.
+
 ### P10D — Chromium interception backend
 
-Depends:P10A+C. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session in the background.
+Depends:P10A, P10C-C.1. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session in the background.
 
 - [ ] `debugger` permission added (Chromium manifest only, `wxt.config.ts` comment: why + G-2 receipt; Firefox build unchanged).
 - [ ] Session state machine: attach → `Fetch.enable` (Document/Response) → reload/fulfill transform via engine → detach (or persist per G-5); every step's failure arm typed and surfaced (attach denied/target gone/no receiver); `onDetach` (DevTools opened, user Cancel on the infobar, navigation, crash) stops cleanly, never retries against a dead context. The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
@@ -161,7 +173,7 @@ DoD: apply-and-render works end-to-end on Chromium with DevTools closed; every f
 
 ### P10E — Firefox streaming backend
 
-Depends:P10A+C. Parallel:P10D. Goal: `filterResponseData` rewrite with the same engine and the same session semantics.
+Depends:P10A, P10C-C.1. Parallel:P10D. Goal: `filterResponseData` rewrite with the same engine and the same session semantics.
 
 - [ ] Streaming transformer: buffer bounded, transform once, close/error exactly once (old stream-cleanup defect class explicitly closed); request filter = main frame, host patterns reused; charset/headers untouched (transform operates on the decoded stream per Firefox's TextDecoderStream contract, re-encoded on output). The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
 - [ ] Listener registration on event-page wake; session persistence per G-5 (active-session flag consulted per navigation, detached observers/rules cleaned up on Stop/tab close); applied-state persisted for the reload's overlay.
