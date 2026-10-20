@@ -80,8 +80,8 @@ export interface LazyloadImageRecord {
 }
 
 /**
- * Optimize critical images (Priority Elements family; the plugin's filter
- * identifier as the registry key — KB: "Optimize critical images").
+ * Optimize Critical Images (Priority Elements family; the plugin's filter
+ * identifier as the registry key — support-data name "Optimize Critical Images").
  */
 export interface OptimizeCriticalImagesDetection extends TruncationMark {
   /**
@@ -157,8 +157,8 @@ export interface AutoPreloadFontsDetection extends TruncationMark {
 }
 
 /**
- * Preconnect to external domains (Priority Elements family; registry key = the
- * plugin's feature-comment id, KB: "Preconnect to external domains").
+ * Preconnect to External Domains (Priority Elements family; registry key = the
+ * plugin's feature-comment id, admin-bar name "Preconnect to External Domains").
  */
 export interface PreconnectExternalDomainsDetection extends TruncationMark {
   /** The feature verdict; meta authority can declare it without markup. */
@@ -423,6 +423,12 @@ export interface FdtData {
    * never that the page was cached.
    */
   bypassAttested?: true;
+  /**
+   * The WordPress core version the page's generator meta declared. Additive
+   * and present only when declared (within the version cap): absence means
+   * undeclared or over-cap, never a version.
+   */
+  wordpressVersion?: string;
 }
 
 /**

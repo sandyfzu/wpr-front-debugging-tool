@@ -20,8 +20,13 @@ describe('CARD_PAGE_LINKS', () => {
 });
 
 describe('STATUS_TONES', () => {
-  it('maps active to ok and not-active to neutral (never error)', () => {
-    expect(STATUS_TONES).toEqual({ active: 'ok', 'not-active': 'neutral' });
+  it('maps active to ok, the unsure verdicts to amber and not-active to neutral (never error)', () => {
+    expect(STATUS_TONES).toEqual({
+      active: 'ok',
+      collecting: 'warn',
+      unknown: 'warn',
+      'not-active': 'neutral'
+    });
   });
 });
 

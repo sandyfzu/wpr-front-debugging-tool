@@ -6,7 +6,12 @@
 import { describe, expect, it } from 'vitest';
 import type { FdtData, WprDetections } from '../wp-rocket/types';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
-import { isOptimizationCard, STATUS_LABELS, summarizeDetections } from './detections-summary';
+import {
+  isOptimizationCard,
+  STATUS_LABELS,
+  summarizeDetections,
+  summarizeFdtData
+} from './detections-summary';
 import { makeReportData as makeFdtData } from './support-report.fixtures';
 
 /** Fixture data with detection-row overrides merged over the empty rowset. */
@@ -196,13 +201,81 @@ describe('summarizeDetections', () => {
       cache: { kind: 'not-applicable' },
       server: null,
       platform: null,
-      optimizations: { active: 0, total: 0 }
+      optimizations: { active: 0, total: 0 },
+      wordpressVersion: null,
+      cacheLayer: null
     });
   });
 });
 
 describe('STATUS_LABELS', () => {
-  it('names both verdicts in sentence case', () => {
-    expect(STATUS_LABELS).toEqual({ active: 'Active', 'not-active': 'Not active' });
+  it('names every verdict in sentence case', () => {
+    expect(STATUS_LABELS).toEqual({
+      active: 'Active',
+      collecting: 'Collecting',
+      unknown: 'Unknown',
+      'not-active': 'Not active'
+    });
+  });
+});
+
+describe('summarizeFdtData — the non-card page facts', () => {
+  const handled = {
+    wpr: {
+      present: true,
+      cacheMarkerFound: true,
+      cached: false,
+      version: '3.23',
+      timeStamp: null
+    }
+  };
+
+  it('carries the declared WordPress version and the served host layer', () => {
+    const payload = data(handled, {
+      wordpressVersion: '6.8.1',
+      pageHeaders: [{ name: 'cf-cache-status', value: 'HIT' }]
+    });
+    const { summary, items } = summarizeFdtData(payload);
+    expect(summary.wordpressVersion).toBe('6.8.1');
+    expect(summary.cacheLayer).toBe('Cloudflare');
+    // The signature outranks the host marker for the page-cache state.
+    expect(summary.cache).toEqual({ kind: 'uncertain-signature' });
+    // The cards are exactly the view model's (one wiring, no second card set).
+    expect(items).toEqual(buildStatusItems(payload));
+  });
+
+  it('states absence as null: no version declared, no served marker', () => {
+    const { summary } = summarizeFdtData(
+      data(handled, { pageHeaders: [{ name: 'cf-cache-status', value: 'BYPASS' }] })
+    );
+    expect(summary.wordpressVersion).toBeNull();
+    expect(summary.cacheLayer).toBeNull();
+  });
+
+  it('a plugin-absent page names no cache layer (no cache question there)', () => {
+    const { summary } = summarizeFdtData(
+      data(
+        {},
+        { pageHeaders: [{ name: 'cf-cache-status', value: 'HIT' }], wordpressVersion: '6.8' }
+      )
+    );
+    expect(summary.cache).toEqual({ kind: 'not-applicable' });
+    expect(summary.cacheLayer).toBeNull();
+    // The WordPress version is a page fact, not a plugin one.
+    expect(summary.wordpressVersion).toBe('6.8');
+  });
+
+  it('collecting and unknown cards never count as active', () => {
+    const { summary, items } = summarizeFdtData(
+      data({
+        ...handled,
+        priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: null }
+      })
+    );
+    expect(items.some((item) => item.status === 'collecting')).toBe(true);
+    expect(items.some((item) => item.status === 'unknown')).toBe(true);
+    expect(summary.optimizations.active).toBe(
+      items.filter((item) => isOptimizationCard(item.id) && item.status === 'active').length
+    );
   });
 });

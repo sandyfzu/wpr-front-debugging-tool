@@ -54,6 +54,8 @@ interface SiteDetections {
   minify_js: { present: boolean };
   preload_links: { present: boolean };
   rocket_cdn: { present: boolean };
+  image_dimensions: { present: boolean; source?: 'meta' | 'footprint' };
+  self_hosted_fonts: { present: boolean; source?: 'meta' | 'footprint' };
   rocket_above_the_fold_optimization: {
     present: boolean;
     preloadedImages?: string[];
@@ -83,25 +85,25 @@ const FAMILY_ROWS: Array<{
   applied: (d: SiteDetections) => number;
 }> = [
   {
-    label: 'Optimize critical images',
+    label: 'Critical Images',
     configKey: 'atf',
     id: 'critical-images',
     applied: (d) => d.rocket_above_the_fold_optimization.preloadedImages?.length ?? 0
   },
   {
-    label: 'Automatic lazy rendering',
+    label: 'Automatic Lazy Rendering',
     configKey: 'lrc',
     id: 'lazy-rendering',
     applied: (d) => d.automatic_lazy_rendering.lazyRenderElements
   },
   {
-    label: 'Preload fonts',
+    label: 'Preload Fonts',
     configKey: 'preload_fonts',
     id: 'preload-fonts',
     applied: (d) => d.auto_preload_fonts.fonts.length
   },
   {
-    label: 'Preconnect to external domains',
+    label: 'Preconnect to External Domains',
     configKey: 'preconnect_external_domain',
     id: 'preconnect-domains',
     applied: (d) => d.preconnect_external_domains.domains.length
@@ -109,21 +111,23 @@ const FAMILY_ROWS: Array<{
 ];
 
 /**
- * The row set the card renders, restated inside the assertion (the verified
- * feature names, the study's groups). Used to pin the card's row labels and
- * the group headers exactly.
+ * The row set the card renders, restated inside the assertion (the plugin's
+ * compact feature wordings the chips show, the study's groups). Used to pin
+ * the card's row labels and the group headers exactly.
  */
 const EXPECTED_ROWS: Array<{ label: string; group: string }> = [
   { label: 'Remove Unused CSS', group: 'File Optimization' },
-  { label: 'Delay JavaScript execution', group: 'File Optimization' },
-  { label: 'Load JavaScript deferred', group: 'File Optimization' },
+  { label: 'Delay JS', group: 'File Optimization' },
+  { label: 'Defer JS', group: 'File Optimization' },
   { label: 'Load CSS asynchronously', group: 'File Optimization' },
   { label: 'Minify CSS', group: 'File Optimization' },
-  { label: 'Minify JavaScript', group: 'File Optimization' },
-  { label: 'Image LazyLoad', group: 'Media' },
-  { label: 'Iframes and videos LazyLoad', group: 'Media' },
-  { label: 'CSS background images LazyLoad', group: 'Media' },
-  { label: 'Preload links', group: 'Preload' },
+  { label: 'Minify JS', group: 'File Optimization' },
+  { label: 'Lazyload Images', group: 'Media' },
+  { label: 'Lazyload Iframes', group: 'Media' },
+  { label: 'Lazyload CSS Background Images', group: 'Media' },
+  { label: 'Image Dimensions', group: 'Media' },
+  { label: 'Self-host Google Fonts', group: 'Media' },
+  { label: 'Preload Links', group: 'Preload' },
   { label: 'RocketCDN', group: 'CDN' },
   ...FAMILY_ROWS.map((row) => ({ label: row.label, group: 'Features' }))
 ];
@@ -174,18 +178,31 @@ function familyState(
  */
 function expectedChip(detections: SiteDetections, label: string): string {
   const family = FAMILY_ROWS.find((row) => row.label === label);
+  // The two rows whose footprint cannot prove absence: undecided (no source)
+  // on a WP Rocket page reads unknown — the amber attention pair.
+  const undecidable: Record<string, { present: boolean; source?: string } | undefined> = {
+    'Image Dimensions': detections.image_dimensions,
+    'Self-host Google Fonts': detections.self_hosted_fonts
+  };
+  const undecided = undecidable[label];
+  if (undecided !== undefined) {
+    if (detections.wpr.present && !undecided.present && undecided.source === undefined) {
+      return 'ins-chip-attention';
+    }
+    return chipStateFor(simpleState(undecided.present));
+  }
   if (family === undefined) {
     const presentByLabel: Record<string, boolean | undefined> = {
       'Remove Unused CSS': detections.remove_unused_css.present,
-      'Delay JavaScript execution': detections.delay_js.present,
-      'Load JavaScript deferred': detections.defer_all_js.present,
+      'Delay JS': detections.delay_js.present,
+      'Defer JS': detections.defer_all_js.present,
       'Load CSS asynchronously': detections.async_css.present,
-      'Image LazyLoad': detections.lazyload.present,
-      'Iframes and videos LazyLoad': detections.lazyload_iframes.present,
-      'CSS background images LazyLoad': detections.lazyload_css_bg_img.present,
+      'Lazyload Images': detections.lazyload.present,
+      'Lazyload Iframes': detections.lazyload_iframes.present,
+      'Lazyload CSS Background Images': detections.lazyload_css_bg_img.present,
       'Minify CSS': detections.minify_css.present,
-      'Minify JavaScript': detections.minify_js.present,
-      'Preload links': detections.preload_links.present,
+      'Minify JS': detections.minify_js.present,
+      'Preload Links': detections.preload_links.present,
       RocketCDN: detections.rocket_cdn.present
     };
     const present = presentByLabel[label];

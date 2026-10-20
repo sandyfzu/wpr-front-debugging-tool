@@ -14,7 +14,8 @@ import {
   boundPageHeaders,
   boundPreloadedResources,
   boundWprDetections,
-  clipString
+  clipString,
+  servableWordPressVersion
 } from './payload-bounds';
 import { parsePageHeaders, parsePreloadedResources, parseWprDetections } from './validate';
 import { validDetections } from './validate.fixtures';
@@ -441,5 +442,17 @@ describe('clipString', () => {
     const tracker = { cut: false };
     expect(clipString('abc', 3, tracker)).toBe('abc');
     expect(tracker.cut).toBe(false);
+  });
+});
+
+describe('servableWordPressVersion', () => {
+  it.each([
+    ['6.8.1', '6.8.1'],
+    ['x'.repeat(PAYLOAD_LIMITS.versions), 'x'.repeat(PAYLOAD_LIMITS.versions)],
+    ['x'.repeat(PAYLOAD_LIMITS.versions + 1), null],
+    ['', null],
+    [null, null]
+  ])('%s → %s (over-cap is dropped, never clipped)', (input, expected) => {
+    expect(servableWordPressVersion(input)).toBe(expected);
   });
 });

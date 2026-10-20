@@ -68,7 +68,7 @@ describe('describeDetections', () => {
       'configured device': 'unknown',
       'enabled features': []
     });
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'not applied',
       'preloaded images': 0
     });
@@ -134,7 +134,7 @@ describe('describeDetections', () => {
       state: 'applied',
       'deferred scripts': 3
     });
-    expect(report['Image LazyLoad']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
+    expect(report['LazyLoad for images']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
     expect(report.RocketCDN).toEqual({ state: 'applied' });
   });
 
@@ -151,11 +151,11 @@ describe('describeDetections', () => {
     const report = describeDetections(page);
     // Applied beats config truth; withheld or false context reads "not
     //  enabled".
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'not enabled',
       'converted elements': 0,
       'render hashes on page': 0
@@ -164,7 +164,7 @@ describe('describeDetections', () => {
     expect(report['Priority Elements beacon']).toEqual({
       detected: true,
       'configured device': 'desktop',
-      'enabled features': ['Optimize critical images', 'Preconnect to external domains']
+      'enabled features': ['Optimize Critical Images', 'Preconnect to External Domains']
     });
   });
 
@@ -177,7 +177,7 @@ describe('describeDetections', () => {
       locationHashes: 6
     };
     const report = describeDetections(page);
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 6
@@ -195,11 +195,11 @@ describe('describeDetections', () => {
     page.preconnect_external_domains = { present: true, domains: ['x'], preconnectCount: 1 };
     const report = describeDetections(page);
     expect(report['Preload fonts']).toEqual({ state: 'applied', 'preloaded fonts': 2 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'applied',
       'domains hinted': 1
     });
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
@@ -323,7 +323,7 @@ describe('describeDetections', () => {
       const page = zeroDetections();
       page.automatic_lazy_rendering = testCase.row;
       page.priority_elements_beacon = testCase.beacon;
-      expect(describeDetections(page)['Automatic lazy rendering'].state, testCase.name).toBe(
+      expect(describeDetections(page)['Automatic Lazy Rendering'].state, testCase.name).toBe(
         testCase.expected
       );
     }
@@ -353,18 +353,18 @@ describe('describeDetections', () => {
     };
     const report = describeDetections(page);
     for (const label of [
-      'Optimize critical images',
-      'Automatic lazy rendering',
+      'Optimize Critical Images',
+      'Automatic Lazy Rendering',
       'Preload fonts',
-      'Preconnect to external domains'
+      'Preconnect to External Domains'
     ] as const) {
       expect(report[label].state, label).toBe('collecting');
     }
     expect(report['Priority Elements beacon']['enabled features']).toEqual([
-      'Optimize critical images',
-      'Automatic lazy rendering',
+      'Optimize Critical Images',
+      'Automatic Lazy Rendering',
       'Preload fonts',
-      'Preconnect to external domains'
+      'Preconnect to External Domains'
     ]);
   });
 });
@@ -423,19 +423,19 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     'Delay JavaScript execution',
     'Load JavaScript deferred',
     'Load CSS asynchronously',
-    'Image LazyLoad',
-    'Iframes and videos LazyLoad',
-    'CSS background images LazyLoad',
+    'LazyLoad for images',
+    'LazyLoad for iframes/videos',
+    'LazyLoad CSS backgrounds',
     'Self-host Google Fonts',
     'Add missing image dimensions',
-    'Minify CSS',
-    'Minify JavaScript',
-    'Preload links',
+    'Minify CSS files',
+    'Minify JavaScript files',
+    'Preload Links',
     'RocketCDN',
-    'Optimize critical images',
-    'Automatic lazy rendering',
+    'Optimize Critical Images',
+    'Automatic Lazy Rendering',
     'Preload fonts',
-    'Preconnect to external domains',
+    'Preconnect to External Domains',
     'Priority Elements beacon'
   ];
 
@@ -463,17 +463,17 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
 
   it('reads the pending page: every family feature composing to "collecting"', () => {
     const report = analyze('priority-elements-pending.html');
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 0
     });
     expect(report['Preload fonts']).toEqual({ state: 'collecting', 'preloaded fonts': 0 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'collecting',
       'domains hinted': 0
     });
@@ -481,21 +481,21 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
       detected: true,
       'configured device': 'desktop',
       'enabled features': [
-        'Optimize critical images',
-        'Automatic lazy rendering',
+        'Optimize Critical Images',
+        'Automatic Lazy Rendering',
         'Preload fonts',
-        'Preconnect to external domains'
+        'Preconnect to External Domains'
       ]
     });
   });
 
   it('reads the mixed page: per-feature assembly over one config', () => {
     const report = analyze('mixed-partial-applied.html');
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'applied',
       'preloaded images': 1
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 2
@@ -503,14 +503,14 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     // The corpus's real config: fonts omitted, preconnect false — both the
     // plugin's own ways of saying "not enabled here".
     expect(report['Preload fonts']).toEqual({ state: 'not enabled', 'preloaded fonts': 0 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'not enabled',
       'domains hinted': 0
     });
     expect(report['Priority Elements beacon']).toEqual({
       detected: true,
       'configured device': 'mobile',
-      'enabled features': ['Optimize critical images', 'Automatic lazy rendering']
+      'enabled features': ['Optimize Critical Images', 'Automatic Lazy Rendering']
     });
   });
 });

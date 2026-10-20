@@ -1051,12 +1051,25 @@ export function parseFdtData(input: unknown): FdtData | null {
   const bypassRaw = input['bypassAttested'];
   if (bypassRaw !== undefined && bypassRaw !== true) return reject('bypassAttested');
   const bypass = bypassRaw === true ? { bypassAttested: true as const } : {};
+  // Additive envelope string: absent, or a non-empty version within its cap.
+  const wordpressRaw = input['wordpressVersion'];
+  if (
+    wordpressRaw !== undefined &&
+    (typeof wordpressRaw !== 'string' ||
+      wordpressRaw.length < 1 ||
+      wordpressRaw.length > LIMITS.versions)
+  )
+    return reject('wordpressVersion');
+  const extras = {
+    ...bypass,
+    ...(wordpressRaw === undefined ? {} : { wordpressVersion: wordpressRaw })
+  };
   if (cookiesRaw !== undefined) {
     const cookies = parsePageCookies(cookiesRaw);
     if (cookies === null) return reject('cookies');
-    return { ...payload, cookies, ...bypass };
+    return { ...payload, cookies, ...extras };
   }
-  return { ...payload, ...bypass };
+  return { ...payload, ...extras };
 }
 
 /** A panel-payload parse with its rejection site (see `parseFdtDataExplained`). */

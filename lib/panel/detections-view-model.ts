@@ -1,9 +1,10 @@
 /**
  * The Detections page's card view model: `FdtData` → the typed card list the
  * page renders. Pure — presentation decisions (layout, palette, motion)
- * belong to the page; this model owns the card set, the card names, the
- * two-state presence verdicts and the per-card subtitle composition, so the
- * page can stay registry-driven over these rows.
+ * belong to the page; this model owns the card set, the verdicts and the
+ * per-card subtitle composition; feature names, order, evidence source and
+ * unsure-state wording come from the HUD registry (`lib/detection/hud`), so
+ * the cards, the on-page strip and the report name a feature one way.
  *
  * Cards are keyed by the detection row's id (plus the three derived cards'
  * ids) — never by an index or a magic number, so a card's identity survives
@@ -11,19 +12,25 @@
  * no card-list edit.
  */
 
-import { formatCacheTimestamp, isRepresentableCacheStamp } from '../detection/describe';
 import {
-  LABEL_AUTOMATIC_LAZY_RENDERING,
-  LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
-  LABEL_PRIORITY_ELEMENTS_BEACON,
-  LABEL_SELF_HOST_GOOGLE_FONTS
-} from '../detection/labels';
+  describeDetections,
+  formatCacheTimestamp,
+  isRepresentableCacheStamp,
+  type PageAnalysisReport
+} from '../detection/describe';
+import { HUD_FEATURES, hudFeatureOf, readHudFeature, type HudVerdict } from '../detection/hud';
+import { LABEL_OPTIMIZE_CSS_DELIVERY, LABEL_PRIORITY_ELEMENTS_BEACON } from '../detection/labels';
 import { KNOWN_PLATFORMS } from '../wp-rocket/constants';
-import type { FdtData, PageHeader, WprDetections } from '../wp-rocket/types';
+import type { FdtData, FeatureEvidenceSource, PageHeader, WprDetections } from '../wp-rocket/types';
 import { getRealOptionName } from '../options-map/get-real-option-name';
+import { capitalize } from '../../utils/text';
 
-/** A card's presence verdict: the two states the data can actually hold. */
-export type StatusKind = 'active' | 'not-active';
+/**
+ * A card's verdict. `collecting` (an enabled Priority Elements feature not
+ * yet applied) and `unknown` (an undecided row whose footprint cannot prove
+ * absence) are the two unsure states; neither counts as active.
+ */
+export type StatusKind = 'active' | 'collecting' | 'unknown' | 'not-active';
 
 /** One detection row of the record, named by its own id (the card key). */
 export type DetectionRow = keyof WprDetections;
@@ -56,24 +63,21 @@ export interface StatusItem {
   readonly status: StatusKind;
   readonly subtitle?: string;
   readonly detail?: StatusItemDetail;
+  /** The evidence class that decided a feature card, when one did. */
+  readonly source?: FeatureEvidenceSource;
+  /** The sentence explaining an unsure verdict (`collecting` / `unknown`). */
+  readonly why?: string;
 }
 
-/**
- * Registry rows the option-name vocabulary doesn't cover (the Priority
- * Elements family the plugin names by feature id, its measurement beacon, and
- * the self-hosted-fonts row): their verified plugin-native labels — never a
- * raw row id on the page when a verified label exists.
- */
-const FEATURE_ROW_LABELS: ReadonlyMap<DetectionRow, string> = new Map([
-  ['automatic_lazy_rendering', LABEL_AUTOMATIC_LAZY_RENDERING],
-  ['preconnect_external_domains', LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS],
-  ['self_hosted_fonts', LABEL_SELF_HOST_GOOGLE_FONTS],
+/** The measurement beacon's verified label (the one non-feature row the option map lacks). */
+const NON_FEATURE_ROW_LABELS: ReadonlyMap<DetectionRow, string> = new Map([
   ['priority_elements_beacon', LABEL_PRIORITY_ELEMENTS_BEACON]
 ]);
 
 /**
- * Card name for a detection row: the option map's label, else the verified
- * feature label, else the raw row id. The raw-id fallback is the record-typed
+ * Card name for a detection row: the HUD registry's full name for a feature,
+ * else the option map's label (the plugin identity row), else the verified
+ * non-feature label, else the raw row id. The raw-id fallback is the record-typed
  * keying's futures-tolerance design, not a defect path: a future detection
  * row is carded automatically (named by its own id until the vocabulary learns
  * it). Row VALUES that are not `{ present }`-shaped are a boundary concern —
@@ -82,20 +86,64 @@ const FEATURE_ROW_LABELS: ReadonlyMap<DetectionRow, string> = new Map([
  * design (pinned by the view model's "futures tolerance" test).
  */
 function cardName(row: DetectionRow): string {
+  const feature = hudFeatureOf(row);
+  if (feature !== undefined) return feature.label;
   const mapped = getRealOptionName(row);
   if (mapped !== row) return mapped;
-  return FEATURE_ROW_LABELS.get(row) ?? row;
+  return NON_FEATURE_ROW_LABELS.get(row) ?? row;
 }
 
 /**
- * The record's rows in the payload's declaring order — enumerated, not
- * hand-held, so a future detection row is carded automatically (the render
- * registry the page's cards are built from stays the record itself). Keys
- * other than the record's own ids are impossible by construction; the cast
- * pins that fact for the compiler once, here.
+ * The record's rows in render order: the plugin identity row, then the HUD
+ * registry's features in its order, then every other row in the payload's
+ * declaring order (the beacon, and any future row — enumerated, never
+ * dropped). Keys other than the record's own ids are impossible by
+ * construction; the cast pins that fact for the compiler once, here.
  */
 function detectionRows(detections: WprDetections): DetectionRow[] {
-  return Object.keys(detections) as DetectionRow[];
+  const own = Object.keys(detections) as DetectionRow[];
+  const ownSet = new Set<DetectionRow>(own);
+  const features = HUD_FEATURES.map((feature) => feature.row).filter((row) => ownSet.has(row));
+  const featureSet = new Set<DetectionRow>(features);
+  const rest = own.filter((row) => row !== 'wpr' && !featureSet.has(row));
+  return [...(ownSet.has('wpr') ? (['wpr'] as const) : []), ...features, ...rest];
+}
+
+/** The card verdict of a HUD verdict (the report's state, folded to the card's four). */
+const CARD_STATUS: Readonly<Record<HudVerdict, StatusKind>> = {
+  applied: 'active',
+  collecting: 'collecting',
+  unknown: 'unknown',
+  'not enabled': 'not-active',
+  'not applied': 'not-active'
+};
+
+/**
+ * A feature card's verdict + evidence decoration, read through the HUD
+ * registry (the report's composition is the state's one owner).
+ *
+ * @param row The feature row.
+ * @param report The page-analysis report.
+ * @param detections The engine rows.
+ * @returns The status plus the optional source/why fields (spread-ready —
+ *   absent fields are omitted, never own `undefined`s).
+ */
+function featureFacts(
+  row: DetectionRow,
+  report: PageAnalysisReport,
+  detections: WprDetections
+): Pick<StatusItem, 'status' | 'source' | 'why'> {
+  const feature = hudFeatureOf(row);
+  if (feature === undefined) {
+    // A row outside the registry (a future row): its presence is the answer.
+    return { status: detections[row].present ? 'active' : 'not-active' };
+  }
+  const reading = readHudFeature(feature, report, detections);
+  return {
+    status: CARD_STATUS[reading.verdict],
+    ...(reading.source === null ? {} : { source: reading.source }),
+    ...(reading.why === null ? {} : { why: capitalize(reading.why) })
+  };
 }
 
 /**
@@ -164,10 +212,12 @@ function resolvePlatform(headers: readonly PageHeader[]): PlatformMatch | null {
  *    verdict follows the captured value (a value-less row is no value), and
  *    the `Known Platform` card exists only when a known platform's headers
  *    matched.
- * 2. One card per detection row except `async_css`, whose state is carried
- *    by the "Optimize CSS Delivery" card: with RUCSS absent but async-CSS
+ * 2. The `wpr` card, then one card per feature in HUD order (verdict,
+ *    source chip and unsure-state why from the HUD reading), then every
+ *    other row (the beacon, any future row) — except `async_css`, whose state is carried
+ *    by the "Optimize CSS delivery" card: with RUCSS absent but async-CSS
  *    applied the card is renamed to async CSS's own name and marked active;
- *    with both absent the card reads as the shared "Optimize CSS Delivery"
+ *    with both absent the card reads as the shared "Optimize CSS delivery"
  *    feature in its natural not-active state (the subtle presentation
  *    rules, ported deliberately).
  * 3. The `wpr` row carries the version subtitle and, on a cached page, the
@@ -181,6 +231,8 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
   const items: StatusItem[] = [];
   const detections = data.wprDetections;
   const statusOf = (present: boolean): StatusKind => (present ? 'active' : 'not-active');
+  // One report per build: the HUD readings' state owner.
+  const report = describeDetections(detections);
 
   if (data.pageHeaders !== null) {
     const captured = lastRowByName(data.pageHeaders);
@@ -211,7 +263,6 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
 
   for (const row of detectionRows(detections)) {
     if (row === 'async_css') continue;
-    const present = detections[row].present;
     switch (row) {
       case 'wpr': {
         const wpr = detections.wpr;
@@ -245,30 +296,43 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         const asyncCssPresent = detections.async_css.present;
         if (!asyncCssPresent && !rucssPresent) {
           // Both absent: the shared feature's own card, without the
-          // "which one of the two" subtitle.
-          items.push({ id: row, name: 'Optimize CSS Delivery', status: 'not-active' });
+          // "which one of the two" subtitle. A meta that refuted both rows
+          // decided the card, like any other refuted card.
+          const refuted =
+            detections.remove_unused_css.source === 'meta' &&
+            detections.async_css.source === 'meta';
+          items.push({
+            id: row,
+            name: LABEL_OPTIMIZE_CSS_DELIVERY,
+            status: 'not-active',
+            ...(refuted ? { source: 'meta' as const } : {})
+          });
           continue;
         }
+        // Async CSS applied by itself stands in for the disabled RUCSS card
+        // (the merge's standalone-evidence branch) — both render states here
+        // are the applied one, hence the fixed active verdict.
+        const shown = rucssPresent ? row : 'async_css';
+        const source = detections[shown].source;
         items.push({
           id: row,
-          // Async CSS applied by itself stands in for the disabled RUCSS
-          // card (the merge's standalone-evidence branch) — both render
-          // states here are the applied one, hence the fixed active verdict.
-          name: rucssPresent ? cardName(row) : cardName('async_css'),
+          name: cardName(shown),
           status: 'active',
-          subtitle: 'Optimize CSS Delivery'
+          subtitle: LABEL_OPTIMIZE_CSS_DELIVERY,
+          ...(source === undefined ? {} : { source })
         });
         continue;
       }
       case 'delay_js': {
+        const facts = featureFacts(row, report, detections);
         const version = detections.delay_js.version;
         items.push(
           version === null
-            ? { id: row, name: cardName(row), status: statusOf(present) }
+            ? { id: row, name: cardName(row), ...facts }
             : {
                 id: row,
                 name: cardName(row),
-                status: statusOf(present),
+                ...facts,
                 subtitle: `Version: ${version}`,
                 detail: { kind: 'version', version }
               }
@@ -276,48 +340,43 @@ export function buildStatusItems(data: FdtData): StatusItem[] {
         continue;
       }
       case 'lazyload_iframes': {
+        const facts = featureFacts(row, report, detections);
         const replaceImage = detections.lazyload_iframes.replaceImage;
         items.push(
           replaceImage
             ? {
                 id: row,
                 name: cardName(row),
-                status: statusOf(present),
+                ...facts,
                 subtitle: 'Replace iframe with preview image'
               }
-            : { id: row, name: cardName(row), status: statusOf(present) }
+            : { id: row, name: cardName(row), ...facts }
         );
         continue;
       }
       case 'rocket_above_the_fold_optimization': {
+        const facts = featureFacts(row, report, detections);
         const count = detections.rocket_above_the_fold_optimization.preloadedImages?.length ?? 0;
-        if (count > 0) {
-          // Applied evidence: the presentation's coarse count (past nine it
-          // reads "9+", not the exact figure the card would only sit on).
-          items.push({
-            id: row,
-            name: cardName(row),
-            status: statusOf(present),
-            subtitle: `Preloaded images detected: ${count <= 9 ? count.toString() : '9+'}`,
-            detail: { kind: 'preloaded-images', count }
-          });
-        } else if (detections.priority_elements_beacon.present) {
-          // Collecting phase: the beacon row is the family's measuring
-          // signal — this feature's card must never borrow it as its own
-          // "applied" verdict (that conflation is the P1.1 fix).
-          items.push({
-            id: row,
-            name: cardName(row),
-            status: statusOf(present),
-            subtitle: 'Beacon present, data being collected'
-          });
-        } else {
-          items.push({ id: row, name: cardName(row), status: statusOf(present) });
-        }
+        // Applied evidence only: the presentation's coarse count (past nine
+        // it reads "9+", not the exact figure the card would only sit on).
+        // A refuted render's remnant preloads assert nothing, and the
+        // collecting/not-enabled states speak through the verdict + why —
+        // the beacon row never lends this card a subtitle of its own.
+        items.push(
+          facts.status === 'active' && count > 0
+            ? {
+                id: row,
+                name: cardName(row),
+                ...facts,
+                subtitle: `Preloaded images detected: ${count <= 9 ? count.toString() : '9+'}`,
+                detail: { kind: 'preloaded-images', count }
+              }
+            : { id: row, name: cardName(row), ...facts }
+        );
         continue;
       }
       default:
-        items.push({ id: row, name: cardName(row), status: statusOf(present) });
+        items.push({ id: row, name: cardName(row), ...featureFacts(row, report, detections) });
     }
   }
   return items;

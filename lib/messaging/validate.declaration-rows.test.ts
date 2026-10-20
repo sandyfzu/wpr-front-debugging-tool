@@ -209,6 +209,35 @@ describe('the bypass mark', () => {
   });
 });
 
+describe('the WordPress version envelope field', () => {
+  it('is additive: absent, or a non-empty string within the version cap', () => {
+    expect(parseFdtData({ ...validFdt(), wordpressVersion: '6.8.1' })).toMatchObject({
+      wordpressVersion: '6.8.1'
+    });
+    expect(parseFdtData(validFdt())?.wordpressVersion).toBeUndefined();
+    expect(parseFdtData({ ...validFdt(), wordpressVersion: 'x'.repeat(64) })).not.toBeNull();
+  });
+
+  it.each([
+    ['empty', ''],
+    ['over cap', 'x'.repeat(65)],
+    ['number', 6.8],
+    ['null', null]
+  ])('rejects a %s value', (_name, value) => {
+    expect(parseFdtData({ ...validFdt(), wordpressVersion: value })).toBeNull();
+  });
+
+  it('keeps the field beside cookies and the bypass mark', () => {
+    const parsed = parseFdtData({
+      ...validFdt(),
+      cookies: { names: ['wprocket'], capturedAt: 1 },
+      bypassAttested: true,
+      wordpressVersion: '6.9'
+    });
+    expect(parsed).toMatchObject({ wordpressVersion: '6.9', bypassAttested: true });
+  });
+});
+
 describe('the defer count', () => {
   it('bounds the URL list and counts every attributed script', () => {
     const detections = validDetections();

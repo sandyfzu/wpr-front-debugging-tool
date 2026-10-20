@@ -117,7 +117,7 @@ describe('DetectionsView', () => {
     expect(card('delay_js').textContent).toBe(
       'Delay JavaScript execution, Active, Version 2.0, Open JavaScript'
     );
-    expect(card('lazyload').textContent).toBe('Lazyload for images, Active, Open Lazyload');
+    expect(card('lazyload').textContent).toBe('LazyLoad for images, Active, Open Lazyload');
     // The off feature's link is quiet: no lift, secondary "Open" line.
     expect(card('defer_all_js').className).not.toContain('hover:shadow-elev-2');
     expect(card('defer_all_js').textContent).toBe(
@@ -136,6 +136,56 @@ describe('DetectionsView', () => {
     expect(card('minify_css').querySelector('svg')?.getAttribute('class')).toContain(
       'text-status-neutral'
     );
+  });
+
+  it('renders the evidence line: source chips, amber unsure verdicts and their why, no extra tab stops', () => {
+    const base = richData();
+    render(() => (
+      <DetectionsView
+        data={richData({
+          wprDetections: {
+            ...base.wprDetections,
+            delay_js: {
+              present: true,
+              scripts: [],
+              version: '2.0',
+              delayedScripts: 0,
+              source: 'meta'
+            },
+            minify_css: { present: true, source: 'footprint' },
+            priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: null }
+          }
+        })}
+        now={NOW}
+      />
+    ));
+    const source = (id: string) => card(id).querySelector<HTMLElement>('[data-fdt-card-source]');
+    // A link card and a static card both carry the chip; its meaning is spoken.
+    expect(source('delay_js')?.textContent).toBe(
+      ", Meta: Decided by WP Rocket's generator meta tag on this page."
+    );
+    expect(source('delay_js')?.title).toBe(
+      "Decided by WP Rocket's generator meta tag on this page."
+    );
+    expect(source('minify_css')?.textContent).toContain('Footprint');
+    expect(source('lazyload')).toBeNull();
+    // Collecting: amber badge + its why, never the error red.
+    const badge = (id: string) => card(id).querySelector<HTMLElement>('[data-fdt="status-badge"]');
+    expect(badge('automatic_lazy_rendering')?.textContent).toBe('Collecting');
+    expect(badge('automatic_lazy_rendering')?.className).toContain('text-status-warn');
+    const why = card('automatic_lazy_rendering').querySelector('[data-fdt-card-why]');
+    expect(why?.textContent).toBe(', Enabled, not yet applied on this page.');
+    expect(why?.className).toContain('text-status-warn');
+    // Undecided image dimensions on a WP Rocket page: unknown, explained.
+    expect(badge('image_dimensions')?.textContent).toBe('Unknown');
+    expect(card('image_dimensions').querySelector('[data-fdt-card-why]')?.textContent).toContain(
+      'so its state is unknown.'
+    );
+    // Off features carry no evidence line at all.
+    expect(card('rocket_cdn').querySelector('[data-fdt-card-evidence]')).toBeNull();
+    // The decoration adds no focusable element (static cards stay inert).
+    expect(card('minify_css').querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
+    expect(document.querySelector('.text-status-error')).toBeNull();
   });
 
   it('renders typed subtitles: mono versions/server, the cached age and platform as tooltip triggers', () => {

@@ -215,6 +215,27 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
     expect('bypassAttested' in composeFdtData(data, LIVE)).toBe(false);
   });
 
+  it('carries a declared WordPress version only when it fits the version cap', async () => {
+    const page = (version: string): string =>
+      pageWithPreloadedImages(1).replace(
+        '<head>',
+        `<head><meta name="generator" content="WordPress ${version}">`
+      );
+    const declared = await processSerializedPage(page('6.8.1'));
+    expect(parseFdtData(composeFdtData(declared, LIVE))?.wordpressVersion).toBe('6.8.1');
+    // 65+ characters: dropped at collection, so the strip's same-context
+    // read and the panel payload agree (both have no version).
+    const oversized = await processSerializedPage(page('6'.repeat(65)));
+    expect(oversized.wordpressVersion).toBeNull();
+    const atCap = await processSerializedPage(page('6'.repeat(64)));
+    expect(atCap.wordpressVersion).toHaveLength(64);
+    const payload = composeFdtData(oversized, LIVE);
+    expect('wordpressVersion' in payload).toBe(false);
+    expect(parseFdtData(payload)).not.toBeNull();
+    const undeclared = await processSerializedPage(pageWithPreloadedImages(1));
+    expect('wordpressVersion' in composeFdtData(undeclared, LIVE)).toBe(false);
+  });
+
   it('carries the live facts and omits cookies only when none were captured', async () => {
     const data = await processSerializedPage(pageWithPreloadedImages(1));
     const cookies = { names: ['wprocket'], capturedAt: 1 };

@@ -123,6 +123,21 @@ function boundRow<R extends object>(row: R, rebuild: (tracker: CutTracker) => Pa
   return tracker.cut ? { ...row, ...bounded, truncated: true } : row;
 }
 
+/**
+ * The WordPress version as the panel payload may carry it: the declared
+ * value within the version cap, else null. An envelope field carries no
+ * truncation mark, so an over-cap value is dropped, never clipped into a
+ * different-looking version.
+ *
+ * @param version The generator meta's version, or null when undeclared.
+ */
+export function servableWordPressVersion(version: string | null): string | null {
+  if (version === null || version.length < 1 || version.length > PAYLOAD_LIMITS.versions) {
+    return null;
+  }
+  return version;
+}
+
 /** A nullable page version within its cap. */
 function boundVersion(version: string | null, tracker: CutTracker): string | null {
   return version === null ? null : clipString(version, PAYLOAD_LIMITS.versions, tracker);

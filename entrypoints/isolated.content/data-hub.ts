@@ -27,7 +27,11 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
 import { ERROR_WORD_LIMIT, parseErrorWords } from '../../lib/messaging/validate';
-import { boundPreloadedResources, boundWprDetections } from '../../lib/messaging/payload-bounds';
+import {
+  boundPreloadedResources,
+  boundWprDetections,
+  servableWordPressVersion
+} from '../../lib/messaging/payload-bounds';
 import type {
   DiagnoserDocData,
   FdtData,
@@ -128,7 +132,7 @@ export interface PageData {
   detections: WprDetections;
   preloadedResources: PreloadedResources;
   diagnoserData: DiagnoserDocData | null;
-  /** The WordPress core version the generator meta declared, or null. */
+  /** The WordPress core version the generator meta declared (within the version cap), or null. */
   wordpressVersion: string | null;
 }
 
@@ -180,7 +184,9 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   const detections = runChecks(page);
   const preloadedResources = detectPreloadedResources(page);
   applyPresencePropagation(detections);
-  const wordpressVersion = detectWordPressVersion(page.document);
+  // Bounded once at collection: the strip (same-context read) and the panel
+  // payload carry the same value — an over-cap version is dropped, not clipped.
+  const wordpressVersion = servableWordPressVersion(detectWordPressVersion(page.document));
   const diagnoserData = await extractDiagnoserData(page.document);
   return { detections, preloadedResources, diagnoserData, wordpressVersion };
 }
@@ -219,6 +225,9 @@ export interface LivePageFacts {
  * @returns The payload `getFdtData` serves.
  */
 export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
+  // Idempotent re-bound: a hand-built pass result can never make the guard
+  // reject the whole payload over one envelope string.
+  const wordpressVersion = servableWordPressVersion(data.wordpressVersion);
   const payload = {
     allScriptsLoaded: live.allScriptsLoaded,
     pageHeaders: live.headerCapture?.headers ?? null,
@@ -227,7 +236,8 @@ export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
     preloadedResources: boundPreloadedResources(data.preloadedResources),
     diagnoserData: data.diagnoserData,
     ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {}),
-    ...(live.bypassAttested ? { bypassAttested: true as const } : {})
+    ...(live.bypassAttested ? { bypassAttested: true as const } : {}),
+    ...(wordpressVersion === null ? {} : { wordpressVersion })
   };
   // The capture (which redacts the values at the read) always runs before
   // processing can produce data, so the list is expected here; should that

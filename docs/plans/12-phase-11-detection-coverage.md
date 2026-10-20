@@ -49,15 +49,76 @@ DoD/tests: losing-marker adversarial fixtures (status-only Delay, inline defer, 
 
 **Deltas/limits:** Delay's version read keeps the reference order (a delayed script earlier in the document still hides the controller version); the preload-links second signal counts occurrences across scripts, not the whole serialized page; the self-hosted footprint is link-only until D7. `wpr_minify_css`/`wpr_minify_js` declared-but-applied-nothing is pinned by test; no further per-row exception was found. RUCSS-font overlap: the automatic-font check still requires `data-rocket-preload`, so a RUCSS-emitted generic font preload cannot claim the feature (D7 rechecks the opt-in overlap). The corpus gained `footprint-branches.html` (status-only Delay, inline-only defer, `cache/min/7`, repeated preload config, path-only self-host font, white-label cached footer) plus the corrected adversarial lazyload fixture and the completed `synthetic-all-features` declaration, so snapshot/parity/bench exercise the new branches. Reference engine updated in lockstep (comment-only white-label markers, strict timestamp, Delay key order, `WPR_FEATURES_ATTRIBUTE` import); meta expectations live in `meta-authority.test.ts`, not a source-parity claim. Isolated budget raised **122/42 → 129/44 KB** (measured 127.9 raw / 43.6 gzip; the 127 raw row was exceeded by the P11B cache/header evidence, so the row was re-derived from the measured output); only that row changed — no pre-P11B byte baseline was compared for the other surfaces. Baseline: **3,062 unit/integration tests / 194 files (1 skipped)** before the audit fixes; post-fix **3,148 / 195 files (1 skipped)**, browser tier **194/194**. Checks-phase bench observed **0.39–0.54** across runs (including 0.40, 0.47 and 0.54; ceiling 0.70); Chromium + Firefox builds and all budget rows green.
 
-### P11C — Registry/consumers
+### P11C — Registry/consumers — **shipped 2026-10-20**
 
 Depends:B/P6. Parallel:—.
 
-- [ ] Native-label cards/source chips, amber why; verify **Self-host Google Fonts/Add missing image dimensions** spelling on real settings/KB (no invented acronym). Existing family cards extended, not added twice.
-- [ ] One `hud` facet shortLabel/group/order feeds cards/strip/report; plugin-native compact wording/full-name tooltip. **Delete P12A provisional strip-items registry** and repoint; no second feature list. Summary/report adds WordPress version/cache-exclusion lines, golden update.
-- [x] Cache-state consumers repointed in P11B — strip chip+tooltip, status-bar cache segment, the describe facts row (now `'page cache'`), the support report's `Page cache:` line; each surface's honest state pinned in its consumers tests (support-report/describe goldens included). No surface keeps an absence-born "Not cached". Remaining P11C work is the chip/source decoration and the shared HUD label registry, not another cache mapping. **P11C deferrals (explicit):** U1 panel cards lack a "collecting / not applied" vocabulary (the strip/report are correct; `familyState` must not change), U2 `SummaryStrip` renders only the cached stamp, not the other four cache states, U3 `image_dimensions`/`self_hosted_fonts` honest-unknown wording waits for source chips. None of these is a P11B engine defect.
+- [x] Native-label cards/source chips, amber why; verify **Self-host Google Fonts/Add missing image dimensions** spelling on real settings/KB (no invented acronym). Existing family cards extended, not added twice.
+- [x] One `hud` facet shortLabel/group/order feeds cards/strip/report; plugin-native compact wording/full-name tooltip. **Delete P12A provisional strip-items registry** and repoint; no second feature list. Summary/report adds WordPress version/cache-exclusion lines, golden update.
+- [x] Cache-state consumers repointed in P11B — strip chip+tooltip, status-bar cache segment, the describe facts row (now `'page cache'`), the support report's `Page cache:` line; each surface's honest state pinned in its consumers tests (support-report/describe goldens included). No surface keeps an absence-born "Not cached". Remaining P11C work is the chip/source decoration and the shared HUD label registry, not another cache mapping. **P11C deferrals (explicit):** U1 panel cards lack a "collecting / not applied" vocabulary (the strip/report are correct; `familyState` must not change), U2 `SummaryStrip` renders only the cached stamp, not the other four cache states, U3 `image_dimensions`/`self_hosted_fonts` honest-unknown wording waits for source chips. None of these is a P11B engine defect. — **All three closed in P11C (below).**
 
 DoD: registry→all consumers tests, UI bar §D/gates/budgets; current raw/gzip evidence, no engine-only/no-bundle-growth assumption after consumers import it; strip e2e matchers already carry the P11B vocabulary (the full browser tier is green), so P11C re-runs them rather than rewriting them.
+
+**Shipped state (2026-10-20, every string re-verified in WP Rocket 3.23.5.1 source from the apvm cache):** `lib/detection/hud.ts` is the one feature list. `HUD_FEATURES` has one row per `FeatureMetaRow` (pinned exhaustive against `FEATURE_META_TOKENS`) with `row`, `label` (the `labels.ts` full name), `shortLabel`, `group` (`HUD_GROUPS`: File Optimization/Media/Preload/CDN/Features), `unit`+`count`, and `undecided` copy. Array order is the render order everywhere (`hudGroupedFeatures()` flattens to exactly `HUD_FEATURES`). `readHudFeature` reads the state from `describeDetections`, so `familyState` is untouched, and adds `source` and a why. Copy owners: `hudStateLine`, `SOURCE_COPY` (chip/tooltip), `SOURCE_REPORT_TEXT` (report cell only — kept apart so `isolated.js` never carries it). Consumers: panel cards (`buildStatusItems`), the on-page strip (`strip-state.ts`; chips show `shortLabel`, tooltips the full name + state + source; group glyphs keyed by `HudGroupId` in `icons.tsx`), the support report (Feature/Source/Details). `inspector/strip-items.ts` (+test) is deleted; its grouping pins live in `hud.test.ts`.
+
+**Full names (`labels.ts`, the one declaring site; doubles as `describeDetections` report keys — a deliberate page-analysis-log contract change, pinned in `describe.test.ts`/`labels.test.ts`).** Preference: settings field label > settings section title > post-edit metabox name > support-data name > admin notice.
+
+| Row                                | Full name                      | Source (3.23.5.1)                          | Compact (strip)                | Source                                  |
+| ---------------------------------- | ------------------------------ | ------------------------------------------ | ------------------------------ | --------------------------------------- |
+| remove_unused_css                  | Remove Unused CSS              | Settings/Page.php:643                      | Remove Unused CSS              | Support/Data.php:35                     |
+| delay_js                           | Delay JavaScript execution     | Page.php:808                               | Delay JS                       | Data.php:27                             |
+| defer_all_js                       | Load JavaScript deferred       | Page.php:777                               | Defer JS                       | Data.php:26                             |
+| async_css                          | Load CSS asynchronously        | Page.php:672                               | Load CSS asynchronously        | Data.php:28                             |
+| minify_css                         | Minify CSS files               | Page.php:576                               | Minify CSS                     | Data.php:34                             |
+| minify_js                          | Minify JavaScript files        | Page.php:700                               | Minify JS                      | Data.php:37                             |
+| lazyload                           | LazyLoad for images            | Media/Lazyload/AdminSubscriber.php:62      | Lazyload Images                | Data.php:29                             |
+| lazyload_iframes                   | LazyLoad for iframes/videos    | same file :63                              | Lazyload Iframes               | Data.php:31                             |
+| lazyload_css_bg_img                | LazyLoad CSS backgrounds       | Media/Lazyload/CSS/Admin/Subscriber.php:49 | Lazyload CSS Background Images | Data.php:30                             |
+| image_dimensions                   | Add missing image dimensions   | Page.php:1082                              | Image Dimensions               | Page.php:974 (section)                  |
+| self_hosted_fonts                  | Self-host Google Fonts         | Page.php:1100                              | Self-host Google Fonts         | Page.php:1100                           |
+| preload_links                      | Preload Links                  | Page.php:1145 (section), Data.php:40       | Preload Links                  | Data.php:40                             |
+| rocket_cdn                         | RocketCDN                      | CDN/Render/Controller.php:202              | RocketCDN                      | same                                    |
+| rocket_above_the_fold_optimization | Optimize Critical Images       | Data.php:85 (no settings field)            | Critical Images                | PerformanceHints/Admin/AdminBar.php:103 |
+| automatic_lazy_rendering           | Automatic Lazy Rendering       | Data.php:90 (no settings field)            | Automatic Lazy Rendering       | same                                    |
+| auto_preload_fonts                 | Preload fonts                  | Page.php:1090 (Media › Fonts)              | Preload Fonts                  | AdminBar.php:103                        |
+| preconnect_external_domains        | Preconnect to External Domains | AdminBar.php:103 (only plugin name)        | Preconnect to External Domains | same                                    |
+
+The merged RUCSS/async card's heading is `LABEL_OPTIMIZE_CSS_DELIVERY` = "Optimize CSS delivery" (Page.php:608). "Priority Elements beacon" is the tool's own name (the plugin names no user-facing feature for the beacon). Group headings: File Optimization/Media/Preload are Page.php:517/897/1121. "CDN" is the `cdn` option's own label (the 3.23 tab title is "Content Delivery"). "Features" is the tool's heading for the beacon-measured family, grouped by mechanism rather than settings page (Preload fonts is a Media › Fonts field; the other three have no settings field). Both headings are kept from P12A.
+
+**One owner for feature names.** `lib/options-map` no longer re-types feature options: `FEATURE_OPTION_LABELS` maps the 16 feature/plugin option ids to the `labels.ts` constants, and the JSON keeps only non-feature options (27) and diagnoser labels (3). So the Lazyload page heading (`getRealOptionName('lazyload')`), the cards, the strip and the report all read "LazyLoad for images".
+
+- **Verdicts:** card `StatusKind` gains `collecting` and `unknown`. Both are amber `warn`, never counted active; the on-page strip uses `attention`.
+- **U1 (collecting vocabulary):** collecting family cards read "Collecting" plus "Enabled, not yet applied on this page."
+- **Critical-images subtitle:** "Beacon present, data being collected" is removed. It contradicted not-enabled and null-config verdicts and duplicated the why. The "Preloaded images detected" count now shows only on an active card, so a refuted render's remnant preloads assert nothing.
+- **U3 (honest unknown):** `image_dimensions`/`self_hosted_fonts` with no `source` on a page WP Rocket handled read **Unknown** with their row's why. A meta refutation reads Not active, and its state line names the meta ("WP Rocket's generator meta does not declare it on this page."), never a stale page. A plugin-absent page never reads unknown.
+- **Source chips:** `Meta`/`Footprint`, as an outline `Badge`. Meaning in `title` plus sr-only text; no focus stop. The merged card shows `Meta` when the meta refuted both rows.
+- **U2 (panel summary strip):** the Detections page `SummaryStrip` states every non-`cached` cache state as the shared `cacheCopy` chip text, with its tooltip on a focusable trigger. `CacheSummary = CacheState | not-applicable`.
+- **WordPress version:**
+  - `FdtData.wordpressVersion` is additive, ≤ 64 chars.
+  - `servableWordPressVersion` bounds it once at collection (`processSerializedPage`), so the on-page strip footer and the panel/report agree; `composeFdtData` re-bounds idempotently; the boundary validates it.
+  - Shown as a report line ("Not declared by the page" when absent) and a panel-summary-strip fact.
+- **Hosting cache layer ("cache exclusion"):** read as the behavioral baseline's signature nullifier. `cacheLayerHint(state, headers)` names a served verified marker only when the cache state neither settles it (`cached`: the stamp proves the signature survived) nor already names it (`possibly-cached`). In practice that is the signature-without-stamp state.
+  - Rendered as the `- **Hosting cache layer:**` report line and a panel-summary-strip fact.
+  - `summarizeFdtData` is the one wiring the page and the report share.
+- **Still open — owned by P12D, not P11C:** the SB-D5 exclusion-hint suffix on the **on-page** strip's cache chip. [P12D](./13-phase-12-on-page-inspector.md) "cache age/exclusion evidence shared formatter" owns it, per `design-decisions.md` SB-D5.
+- **Golden deltas (support report):**
+  - Source column.
+  - WordPress-version line.
+  - Detection rows in HUD order (was payload order).
+  - Full fixture gained meta/footprint sources, a collecting ALR, a meta-declared image-dimensions row, `cf-cache-status: HIT` (now no layer line: the page is cached) and WordPress 6.8.1.
+  - Names changed only where native wording differs: LazyLoad ×3, Optimize Critical Images, Automatic Lazy Rendering, Preconnect to External Domains, Optimize CSS delivery.
+- **Browser tier:**
+  - The source-parity spec keeps only four deltas, each justified in a comment: the three LazyLoad metabox names and the "Optimize CSS delivery" settings casing. The other renames are gone because the port now matches the source's native strings.
+  - The strip spec's `EXPECTED_ROWS` carry the compact wordings plus the two Media rows.
+- **Gates:**
+  - Unit: **3,239 passed + 1 skipped / 195 files**; compile/lint/format green.
+  - Chromium + Firefox builds green.
+  - Budget: isolated content script **129/44 → 131/45 KB** (measured **129.6 raw (132,670 B) / 44.3 gzip** vs P11B's recorded 127.9/43.6 — registry rows and unsure/source copy now ship in the strip). Every other row unchanged; panel JS 323.6/99.8 of 600.
+  - Browser tier: **194/194** on the final run. One earlier full run hit an unrelated timing flake in `site-side-by-side.spec.ts:426` (session-rule cleanup); it passed 3/3 in isolation and in the final full run.
+- **UI bar:**
+  - D-6 grep is empty over the changed UI files.
+  - New text uses `fg-*`/`status-warn` tokens (AA by construction), and no motion was added.
+  - Chips and whys are static visible text; the summary cache fact is a keyboard-focusable tooltip trigger (K-2/K-5).
 
 ## P11.1 — Site matrix
 

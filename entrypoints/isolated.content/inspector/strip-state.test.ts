@@ -25,7 +25,7 @@ import {
   footerStamp,
   type StripDataSnapshot
 } from './strip-state';
-import { STRIP_ITEMS, stripGroupedRows } from './strip-items';
+import { HUD_FEATURES, hudFeatureOf } from '../../../lib/detection/hud';
 
 /** The engine's zero page: every feature absent, beacon absent, no config. */
 function zeroDetections(): WprDetections {
@@ -117,6 +117,7 @@ describe('chipStateForFeature (the D-2 matrix)', () => {
   it('applied → ok, collecting → attention, both neutrals → neutral', () => {
     expect(chipStateForFeature('applied')).toBe('ok');
     expect(chipStateForFeature('collecting')).toBe('attention');
+    expect(chipStateForFeature('unknown')).toBe('attention');
     expect(chipStateForFeature('not applied')).toBe('neutral');
     expect(chipStateForFeature('not enabled')).toBe('neutral');
   });
@@ -314,12 +315,14 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     ]);
 
     const allRows = model.groups.flatMap((group) => group.rows);
-    expect(allRows).toHaveLength(STRIP_ITEMS.length);
-    // Every row names exactly the label the registry declares, and the chip
-    // state pair is always one of the five.
+    expect(allRows).toHaveLength(HUD_FEATURES.length);
+    // Every chip shows the registry's compact wording, its tooltip leads with
+    // the full name, and the chip state pair is always one of the five.
     for (const row of allRows) {
+      const feature = hudFeatureOf(row.id);
       expect(row.chipState).toEqual(expect.stringMatching(/^(ok|warn|attention|error|neutral)$/));
-      expect(row.tooltip.startsWith(row.label)).toBe(true);
+      expect(row.label).toBe(feature?.shortLabel);
+      expect(row.tooltip.startsWith(`${feature?.label ?? ''} — `)).toBe(true);
     }
   });
 
@@ -332,7 +335,7 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     });
     const delayRow = model.groups
       .flatMap((group) => group.rows)
-      .find((row) => row.id === 'delay-js');
+      .find((row) => row.id === 'delay_js');
     expect(delayRow?.count).toBe(detections.delay_js.delayedScripts);
     expect(delayRow?.unit).toBe('scripts');
     expect(delayRow?.chipState).toBe('ok');
@@ -377,7 +380,7 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     for (const row of rows) {
       expect(row.chipState).toBe('neutral');
       // The tooltip names what was looked for — never an error claim.
-      expect(row.tooltip.startsWith(row.label)).toBe(true);
+      expect(row.tooltip.startsWith(hudFeatureOf(row.id)?.label ?? '')).toBe(true);
     }
   });
 
@@ -408,14 +411,77 @@ describe('footerStamp', () => {
   });
 });
 
-describe('the registry grouping', () => {
-  it('only groups owning rows render, rows in registry order', () => {
-    const grouped = stripGroupedRows();
-    expect(grouped.map((group) => group.id)).toEqual(
-      expect.arrayContaining(['file-optimization', 'media', 'preload', 'cdn', 'features'])
+describe('the strip reads the HUD registry (one feature list)', () => {
+  /** A WP Rocket page with a meta-declared Delay JS and an enabled, unapplied ALR. */
+  function handled(): WprDetections {
+    return {
+      ...zeroDetections(),
+      wpr: {
+        present: true,
+        cacheMarkerFound: true,
+        cached: false,
+        version: '3.23',
+        timeStamp: null
+      },
+      delay_js: { present: true, scripts: [], version: null, delayedScripts: 2, source: 'meta' },
+      priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: null }
+    };
+  }
+
+  /** The ready model's rows, flat. */
+  function rows(detections: WprDetections) {
+    return buildStripCardModel({
+      snapshot: ready(detections),
+      wordpressVersion: null,
+      fdtVersion: '0'
+    }).groups.flatMap((group) => group.rows);
+  }
+
+  it('renders every HUD feature once, in registry order within its group, with the compact wording', () => {
+    const model = buildStripCardModel({
+      snapshot: ready(handled()),
+      wordpressVersion: null,
+      fdtVersion: '0'
+    });
+    for (const group of model.groups) {
+      expect(group.rows.map((row) => row.id)).toEqual(
+        HUD_FEATURES.filter((feature) => feature.group === group.id).map((feature) => feature.row)
+      );
+    }
+    expect(model.groups.flatMap((group) => group.rows.map((row) => row.label))).toEqual(
+      HUD_FEATURES.map((feature) => feature.shortLabel)
     );
-    expect(grouped.some((group) => group.id === 'cache')).toBe(false);
-    const flat = grouped.flatMap((group) => group.rows.map((row) => row.id));
-    expect(new Set(flat)).toHaveLength(STRIP_ITEMS.length);
+  });
+
+  it('the tooltip carries the full name, the state line and the deciding source', () => {
+    const delay = rows(handled()).find((row) => row.id === 'delay_js');
+    expect(delay?.label).toBe('Delay JS');
+    expect(delay?.tooltip).toBe(
+      "Delay JavaScript execution — applied on this page: 2 scripts. Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('collecting and undecided-unknown rows read the amber attention chip with their why', () => {
+    const all = rows(handled());
+    const alr = all.find((row) => row.id === 'automatic_lazy_rendering');
+    expect(alr?.chipState).toBe('attention');
+    expect(alr?.tooltip).toBe('Automatic Lazy Rendering — enabled, not yet applied on this page.');
+    const dims = all.find((row) => row.id === 'image_dimensions');
+    expect(dims?.chipState).toBe('attention');
+    expect(dims?.label).toBe('Image Dimensions');
+    expect(dims?.tooltip).toMatch(/^Add missing image dimensions — no generator meta declaration/);
+    const fonts = all.find((row) => row.id === 'self_hosted_fonts');
+    expect(fonts?.chipState).toBe('attention');
+  });
+
+  it('a meta-refuted undecided-capable row reads neutral not applied, never unknown', () => {
+    const detections = {
+      ...handled(),
+      image_dimensions: { present: false, source: 'meta' as const }
+    };
+    const dims = rows(detections).find((row) => row.id === 'image_dimensions');
+    expect(dims?.chipState).toBe('neutral');
+    expect(dims?.tooltip).toContain("WP Rocket's generator meta does not declare it");
+    expect(dims?.tooltip).not.toContain('predate');
   });
 });

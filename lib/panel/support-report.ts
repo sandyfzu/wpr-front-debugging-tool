@@ -1,7 +1,8 @@
 /**
  * The support report: one page's detection evidence as a markdown block a
- * support ticket can carry verbatim — the summary facts, every detection
- * card with its state, the captured response headers and the undefined
+ * support ticket can carry verbatim — the summary facts (WordPress version
+ * and hosting cache layer included), every detection card with its state
+ * and evidence source, the captured response headers and the undefined
  * references the page reported.
  *
  * Pure: the generation time, the extension version and the inspected page's
@@ -22,7 +23,8 @@
  */
 
 import { formatCacheTimestamp } from '../detection/describe';
-import { cacheCopy, cacheStateFromFdtData } from '../detection/cache-context';
+import { cacheCopy, cacheLayerCopy } from '../detection/cache-context';
+import { SOURCE_REPORT_TEXT } from '../detection/hud';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
 import {
@@ -30,8 +32,8 @@ import {
   headersTruncationNote,
   type HeaderRowVM
 } from './headers-view-model';
-import { buildStatusItems, type StatusItem } from './detections-view-model';
-import { STATUS_LABELS, summarizeDetections, type DetectionsSummary } from './detections-summary';
+import type { StatusItem } from './detections-view-model';
+import { STATUS_LABELS, summarizeFdtData, type DetectionsSummary } from './detections-summary';
 import { REDACTED, redactHeaderValue, redactUrl } from '../redaction/rule';
 
 /** The report's provenance, read by the caller (keeps the builder pure). */
@@ -107,13 +109,37 @@ function cellText(value: string): string {
 }
 
 /**
- * The "Details" cell of one card: the typed detail when the card carries
- * one (its page-derived parts as code), otherwise its own subtitle copy.
+ * The "Details" cell of one card: its facts ({@link factsCell}), then the
+ * unsure verdict's why when the card carries one.
  *
  * @param item The card.
  * @returns The cell's markdown.
  */
 function detailsCell(item: StatusItem): string {
+  const facts = factsCell(item);
+  if (item.why === undefined) return facts;
+  const why = cellText(item.why);
+  return facts === NONE ? why : `${facts}; ${why}`;
+}
+
+/**
+ * The evidence-source cell: the source's report wording, or a dash for a
+ * card no evidence class decided (non-feature cards included).
+ *
+ * @param item The card.
+ */
+function sourceCell(item: StatusItem): string {
+  return item.source === undefined ? NONE : SOURCE_REPORT_TEXT[item.source];
+}
+
+/**
+ * A card's facts: the typed detail when the card carries one (its
+ * page-derived parts as code), otherwise its own subtitle copy.
+ *
+ * @param item The card.
+ * @returns The cell's markdown.
+ */
+function factsCell(item: StatusItem): string {
   const detail = item.detail;
   switch (detail?.kind) {
     case 'server':
@@ -172,43 +198,19 @@ function summaryLines(summary: DetectionsSummary): string[] {
       : `Detected, version ${codeSpan(summary.wpr.version)}`
     : 'Not detected';
   const lines = [`- **WP Rocket:** ${wpr}`];
-  switch (summary.cache.kind) {
-    case 'cached':
-      lines.push(
-        `- **Page cache:** ${
-          cacheCopy({
-            kind: 'cached',
-            seconds: summary.cache.seconds,
-            formatted: summary.cache.formatted
-          }).report
-        }`
-      );
-      break;
-    case 'uncertain-signature':
-      lines.push(`- **Page cache:** ${cacheCopy({ kind: 'uncertain-signature' }).report}`);
-      break;
-    case 'possibly-cached':
-      lines.push(
-        `- **Page cache:** ${
-          cacheCopy({
-            kind: 'possibly-cached',
-            evidence: summary.cache.evidence,
-            ...(summary.cache.bypassAttested === true ? { bypassAttested: true as const } : {})
-          }).report
-        }`
-      );
-      break;
-    case 'not-detected':
-      lines.push(
-        `- **Page cache:** ${cacheCopy({ kind: 'not-detected', headers: summary.cache.headers }).report}`
-      );
-      break;
-    case 'not-cached':
-      lines.push(`- **Page cache:** ${cacheCopy({ kind: 'not-cached' }).report}`);
-      break;
-    case 'not-applicable':
-      break;
+  if (summary.cache.kind !== 'not-applicable') {
+    lines.push(`- **Page cache:** ${cacheCopy(summary.cache).report}`);
   }
+  if (summary.cacheLayer !== null) {
+    lines.push(`- **Hosting cache layer:** ${cacheLayerCopy(summary.cacheLayer).report}`);
+  }
+  lines.push(
+    `- **WordPress version:** ${
+      summary.wordpressVersion === null
+        ? 'Not declared by the page'
+        : codeSpan(summary.wordpressVersion)
+    }`
+  );
   if (summary.platform !== null) {
     lines.push(
       `- **Platform:** ${summary.platform.name} (matched by ${codeSpan(summary.platform.header)})`
@@ -231,10 +233,11 @@ function detectionLines(items: readonly StatusItem[]): string[] {
   return [
     '### Detections',
     '',
-    '| Feature | Status | Details |',
-    '| --- | --- | --- |',
+    '| Feature | Status | Source | Details |',
+    '| --- | --- | --- | --- |',
     ...items.map(
-      (item) => `| ${cellText(item.name)} | ${STATUS_LABELS[item.status]} | ${detailsCell(item)} |`
+      (item) =>
+        `| ${cellText(item.name)} | ${STATUS_LABELS[item.status]} | ${sourceCell(item)} | ${detailsCell(item)} |`
     )
   ];
 }
@@ -325,14 +328,9 @@ function referenceLines(words: readonly string[]): string[] {
  * @returns The markdown report, `\n`-separated, ending with a newline.
  */
 export function buildSupportReport(data: FdtData, context: SupportReportContext): string {
-  const items = buildStatusItems(data);
+  const { items, summary } = summarizeFdtData(data);
   const sections = [
-    [
-      SUPPORT_REPORT_TITLE,
-      '',
-      ...contextLines(context),
-      ...summaryLines(summarizeDetections(items, cacheStateFromFdtData(data) ?? undefined))
-    ],
+    [SUPPORT_REPORT_TITLE, '', ...contextLines(context), ...summaryLines(summary)],
     detectionLines(items),
     headerLines(data.pageHeaders, data.pageHeadersTruncated),
     referenceLines(data.undefinedReferencesOnPage)

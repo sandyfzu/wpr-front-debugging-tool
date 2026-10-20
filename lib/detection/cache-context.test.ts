@@ -10,8 +10,12 @@ import {
   cacheCopy,
   cacheStateForPage,
   cacheStateFromCapture,
-  cacheStateFromFdtData
+  cacheStateFromFdtData,
+  cacheLayerCopy,
+  cacheLayerHint,
+  servedCacheLayer
 } from './cache-context';
+import type { CacheState } from './cache-context';
 import type { CacheStateInput } from './cache-context';
 
 /** A `wpr` row with the given overrides (all-absent by default). */
@@ -368,5 +372,55 @@ describe('cacheCopy — one copy source', () => {
 
   it('exposes the not-applicable report for a page the plugin did not handle', () => {
     expect(CACHE_NOT_APPLICABLE_REPORT).toBe('Not applicable (WP Rocket not detected)');
+  });
+});
+
+describe('servedCacheLayer — the hosting layer that served the response', () => {
+  it.each([
+    ['nothing captured', null, null],
+    ['an empty capture', [], null],
+    ['a Cloudflare HIT', [{ name: 'CF-Cache-Status', value: 'HIT' }], 'Cloudflare'],
+    ['a Cloudflare MISS (not a serve)', [{ name: 'cf-cache-status', value: 'MISS' }], null],
+    ['a SiteGround HIT', [{ name: 'sg-f-cache', value: 'HIT' }], 'SiteGround'],
+    ['a withheld marker value', [{ name: 'sg-f-cache', redacted: true as const }], null],
+    ['the generic proxy header', [{ name: 'x-proxy-cache', value: 'HIT' }], null]
+  ] as const)('%s → %s', (_name, headers, expected) => {
+    expect(servedCacheLayer(headers as readonly PageHeader[] | null)).toBe(expected);
+  });
+
+  it('is independent of the WP Rocket state (a cached page still names its layer)', () => {
+    const headers: PageHeader[] = [{ name: 'cf-cache-status', value: 'STALE' }];
+    expect(
+      cacheStateForPage({ wpr: wpr({ cached: true }), headers, bypassAttested: false }).kind
+    ).toBe('cached');
+    expect(servedCacheLayer(headers)).toBe('Cloudflare');
+  });
+
+  it('names the layer in both renderings', () => {
+    const copy = cacheLayerCopy('SiteGround');
+    expect(copy.fact).toBe('SiteGround cache-layer marker captured');
+    expect(copy.report.startsWith(`${copy.fact} (`)).toBe(true);
+    expect(copy.report).toContain("may not have reached WP Rocket's cache");
+  });
+});
+
+describe('cacheLayerHint — every cache state', () => {
+  const served: PageHeader[] = [{ name: 'cf-cache-status', value: 'HIT' }];
+  it.each([
+    [{ kind: 'cached', seconds: 1, formatted: 'x' }, null],
+    [{ kind: 'possibly-cached', evidence: 'Cloudflare' }, null],
+    [{ kind: 'possibly-cached', evidence: 'Cloudflare', bypassAttested: true }, null],
+    [{ kind: 'uncertain-signature' }, 'Cloudflare'],
+    [{ kind: 'not-detected', headers: 'captured' }, 'Cloudflare'],
+    [{ kind: 'not-cached' }, 'Cloudflare']
+  ] as [CacheState, string | null][])('%o with a served marker → %s', (state, expected) => {
+    expect(cacheLayerHint(state, served)).toBe(expected);
+  });
+
+  it('names nothing when no served marker was captured, in any state', () => {
+    expect(cacheLayerHint({ kind: 'uncertain-signature' }, null)).toBeNull();
+    expect(
+      cacheLayerHint({ kind: 'uncertain-signature' }, [{ name: 'cf-cache-status', value: 'MISS' }])
+    ).toBeNull();
   });
 });

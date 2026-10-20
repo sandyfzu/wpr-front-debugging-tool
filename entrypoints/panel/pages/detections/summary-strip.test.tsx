@@ -7,7 +7,8 @@
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
-import { meterWidth, SummaryStrip } from './summary-strip';
+import { cacheCopy } from '../../../../lib/detection/cache-context';
+import { explainedCacheCopy, meterWidth, SummaryStrip } from './summary-strip';
 
 afterEach(() => {
   cleanup();
@@ -21,6 +22,8 @@ function summary(overrides?: Partial<DetectionsSummary>): DetectionsSummary {
     server: 'nginx',
     platform: null,
     optimizations: { active: 3, total: 12 },
+    wordpressVersion: null,
+    cacheLayer: null,
     ...overrides
   };
 }
@@ -92,7 +95,15 @@ describe('SummaryStrip', () => {
   });
 
   it('adds no facts row when the status bar already says it all (version-less plugin included)', () => {
-    render(() => <SummaryStrip summary={summary({ wpr: { present: true, version: null } })} />);
+    // A stamp-less cached page: the bar's "Cached" is the whole cache answer.
+    render(() => (
+      <SummaryStrip
+        summary={summary({
+          wpr: { present: true, version: null },
+          cache: { kind: 'cached', seconds: null, formatted: null }
+        })}
+      />
+    ));
     expect(document.querySelector('[aria-label="Page facts"]')).toBeNull();
     expect(document.querySelector('[data-fdt="detections-summary"]')?.textContent).toBe(
       '3 of 12 optimizations active'
@@ -110,5 +121,50 @@ describe('SummaryStrip', () => {
       />
     ));
     expect(fact('wpr')?.textContent).toBe('WP Rocket was not detected on this page.');
+  });
+
+  it.each([
+    [{ kind: 'uncertain-signature' }, 'Cache not proven'],
+    [{ kind: 'possibly-cached', evidence: 'Cloudflare' }, 'Possibly cached'],
+    [{ kind: 'not-detected', headers: 'unavailable' }, 'Cache not detected'],
+    [{ kind: 'not-detected', headers: 'captured' }, 'Cache not detected'],
+    [{ kind: 'not-cached' }, 'Not cached']
+  ] as const)(
+    'states the %o cache answer with the shared chip copy as a tooltip trigger',
+    (cache, chip) => {
+      render(() => <SummaryStrip summary={summary({ cache })} />);
+      const trigger = fact('cache')?.querySelector<HTMLElement>('[data-fdt="tooltip-trigger"]');
+      expect(trigger?.textContent).toBe(chip);
+      expect(trigger?.textContent).toBe(cacheCopy(cache).chip);
+      // A real control: keyboard-focusable, so the explanation is never hover-only.
+      expect(trigger?.tagName).toBe('BUTTON');
+    }
+  );
+
+  it('explains every state except cached (stamp fact) and not-applicable (no question)', () => {
+    expect(explainedCacheCopy({ kind: 'not-applicable' })).toBeNull();
+    expect(explainedCacheCopy({ kind: 'cached', seconds: null, formatted: null })).toBeNull();
+    expect(explainedCacheCopy({ kind: 'not-cached' })).toEqual(cacheCopy({ kind: 'not-cached' }));
+  });
+
+  it('names the WordPress version and the served hosting cache layer', () => {
+    render(() => (
+      <SummaryStrip
+        summary={summary({
+          cache: { kind: 'cached', seconds: null, formatted: null },
+          wordpressVersion: '6.8.1',
+          cacheLayer: 'Cloudflare'
+        })}
+      />
+    ));
+    expect(fact('wordpress')?.textContent).toBe('WordPress 6.8.1');
+    expect(fact('wordpress')?.querySelector('.font-mono')?.textContent).toBe('6.8.1');
+    expect(fact('cache-layer')?.textContent).toBe('Cloudflare cache-layer marker captured');
+  });
+
+  it('omits the WordPress and cache-layer facts when unknown', () => {
+    render(() => <SummaryStrip summary={summary()} />);
+    expect(fact('wordpress')).toBeNull();
+    expect(fact('cache-layer')).toBeNull();
   });
 });

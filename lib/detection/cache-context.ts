@@ -136,6 +136,53 @@ function scanCacheLayers(headers: PageHeaders): CacheLayerScan {
   return withheld ? { kind: 'withheld' } : { kind: 'none' };
 }
 
+/**
+ * The hosting cache layer whose captured marker says it served the response,
+ * independent of WP Rocket's own state — the layer that can strip the
+ * plugin's signature (and, on a cached page, served WP Rocket's copy).
+ *
+ * @param headers The captured response headers, or null when none were.
+ * @returns The layer's display name, or null (nothing captured proves nothing).
+ */
+export function servedCacheLayer(headers: PageHeaders | null): string | null {
+  if (headers === null) return null;
+  const layer = scanCacheLayers(headers);
+  return layer.kind === 'served' ? layer.evidence : null;
+}
+
+/**
+ * The hosting layer worth naming beside a page-cache state, or null. Never
+ * on `cached` (the debug stamp proves WP Rocket's copy and its signature
+ * survived) nor on `possibly-cached` (that state's own copy already names
+ * the vendor); every other state names a served marker when one was
+ * captured — in practice the signature-without-stamp state, where a host
+ * cache serving the response explains the missing stamp.
+ *
+ * @param state The resolved cache state.
+ * @param headers The captured response headers, or null.
+ * @returns The layer's display name, or null.
+ */
+export function cacheLayerHint(state: CacheState, headers: PageHeaders | null): string | null {
+  if (state.kind === 'cached' || state.kind === 'possibly-cached') return null;
+  return servedCacheLayer(headers);
+}
+
+/**
+ * The cache-layer hint's copy (summary fact and report line).
+ *
+ * @param evidence The layer's display name.
+ * @returns The short fact and the report line.
+ */
+export function cacheLayerCopy(evidence: string): {
+  readonly fact: string;
+  readonly report: string;
+} {
+  return {
+    fact: `${evidence} cache-layer marker captured`,
+    report: `${evidence} cache-layer marker captured (that layer served this response, so this visit may not have reached WP Rocket's cache)`
+  };
+}
+
 /** The inputs the cache answer reads. */
 export interface CacheStateInput {
   readonly wpr: WprDetections['wpr'];
