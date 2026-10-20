@@ -8,8 +8,8 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 
 ## Active work
 
-- **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.11 shipped (G.10 closed — owner's native-DevTools find-bar live-check, 2026-10-19, no issue); **P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
-- **P9 partial:** [options+9.1](./10-phase-9-options.md). P9A registry/model shipped (2026-10-19); **P9B page + P9.1 suites open**; may parallel P6.
+- **P6 closed** (2026-10-20): [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.11 shipped (G.10 closed — owner's native-DevTools find-bar live-check, 2026-10-19, no issue); **P6.1 closed** (2026-10-20 receipt: three acceptance suites + harness helpers, full tier 178/178, rows 1–5 annotated) — remaining owner rows: native dock geometry + real AT. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
+- **P9 partial:** [options+9.1](./10-phase-9-options.md). P9A registry/model + P9B page shipped (2026-10-19/20 receipts); **P9.1 suites open** (now also owns the options D-1 width walk + reduced-motion `getAnimations()` + L-2 ≥320px floor from P9B's deferrals).
 - **P8 deferred** (owner2026-10-19: popup not settled): [popup+8.1](./09-phase-8-popup.md) moves to the **last phase beforeP15** — afterP5J, immediately before release; no longer parallel withP6/P9.
 - **P10 parked:** [Builder+10.1](./11-phase-10-exclusion-builder.md); owner requires replan, old design not executable.
 - **P11 planned:** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections.
@@ -22,7 +22,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships; add-on ID/badge/mount/panel runtime fixes not receipted.
 - **Optional P17** panel home remains unscheduled/decision-gated, scope only in master.
 
-Chosen train: P6/P9→P10 owner disposition→P11→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.
+Chosen train: ~~P6/P9~~ done→P9.1→P10 owner disposition→P11→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.
 
 ## Completed references (read on demand)
 
