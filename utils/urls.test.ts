@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHttpUrl, parseUrl } from './urls';
+import { isHttpOrigin, isHttpUrl, parseUrl } from './urls';
 
 describe('parseUrl', () => {
   it('parses absolute URLs', () => {
@@ -37,6 +37,34 @@ describe('isHttpUrl', () => {
       ''
     ]) {
       expect(isHttpUrl(raw), raw).toBe(false);
+    }
+  });
+});
+
+describe('isHttpOrigin', () => {
+  it('accepts canonical http(s) origins, ports included', () => {
+    expect(isHttpOrigin('https://example.com')).toBe(true);
+    expect(isHttpOrigin('http://127.0.0.1:8493')).toBe(true);
+    expect(isHttpOrigin('https://xn--bcher-kva.example')).toBe(true);
+  });
+
+  it('rejects anything that is not its own canonical origin', () => {
+    for (const raw of [
+      '',
+      'example.com',
+      'https://example.com/',
+      'https://example.com/path',
+      'https://example.com?q=1',
+      'HTTPS://example.com',
+      'https://Example.com',
+      'https://example.com:443',
+      ' https://example.com',
+      'https://user@example.com',
+      'file:///etc/hosts',
+      'chrome-extension://abc',
+      'null'
+    ]) {
+      expect(isHttpOrigin(raw), raw).toBe(false);
     }
   });
 });

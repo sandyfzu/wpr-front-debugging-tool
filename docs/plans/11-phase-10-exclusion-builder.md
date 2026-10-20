@@ -56,7 +56,7 @@ All four also inherit the shell's shared bar: pure logic in `lib/`, honest state
 ## Architecture
 
 - `lib/exclusion-builder/` — self-contained domain module: exclusion-set types, cached regex compilation, per-operation transforms, all-at-once prevalidation with inline invalid-pattern feedback, typed errors. Transforms compose into an ordered **pipeline** (`servedHtml + set → { html, report }` per transform; session = list of transforms + per-transform reports) — the seam P13's before-parse TEST MODE plugs into. No I/O, no DOM, no `browser.*`.
-- `lib/storage/` — typed items (established pattern): per-origin exclusion sets + last-applied session state (inspector-origins vocabulary).
+- `lib/storage/` — typed items (established pattern): per-origin exclusion sets (`local:`) + per-tab session records (`session:`, see P10C receipt).
 - `lib/messaging/` — additive channels: overlay↔background (session start/stop/apply/status), background→panel (builder-active push). Contracts validated at boundary.
 - `entrypoints/background/` — interception backends (Chromium CDP session lifecycle; Firefox streaming listener) + session state machine. (No DNR simulation — G-3 decision 2026-10-20.)
 - `entrypoints/isolated.content/exclusion-builder/` — overlay wiring only: mount/teardown via the existing `ui/` machinery, click-to-pick, renders from store.
@@ -123,11 +123,29 @@ Implemented `9c93263`, adversarially audited (1 BLOCKER + 6 MAJOR + 10 MINOR + 3
 
 Depends:P10B (types). Parallel:P10A. Goal: typed, additive, validated seams.
 
-- [ ] `lib/storage/` items (per the established precedent): per-origin exclusion sets + last-applied session state in the **`local:`** area (per-origin, never synced — support-site data stays on the machine), tolerant read-back of unknown fields; corrupt/absent handling per storage conventions.
-- [ ] `lib/messaging/` channels with payload bounds/validation: overlay↔background session lifecycle + status; background→panel builder-active push. Sender-resolved tab IDs; no-receiver/timeout arms typed.
-- [ ] Unit tests at each boundary (validate + fuzz precedents).
+- [x] `lib/storage/` items (per the established precedent): per-origin exclusion sets in **`local:`**; last-applied session state per **tab** in **`session:`** (decision below) — both machine-local, never synced; tolerant read-back of unknown fields; corrupt/absent handling per storage conventions.
+- [x] `lib/messaging/` channels with payload bounds/validation: overlay↔background session lifecycle + status; background→panel builder-active push. Sender-resolved tab IDs; no-receiver/timeout arms typed.
+- [x] Unit tests at each boundary (validate + fuzz precedents).
 
 DoD: contracts green, additive only, zero consumers beyond tests. Effort S · difficulty easy.
+
+#### P10C receipt (2026-10-20)
+
+Uncommitted on `feat/p10` (supervisor commits). New: `lib/messaging/exclusion-session.ts` (+fixtures/test), `lib/messaging/bounded-ask.ts`, `lib/storage/exclusion-sets.ts`, `lib/storage/exclusion-sessions.ts`, `lib/storage/write-queue.ts` (each +test); additive: 8 `ProtocolMap` rows, `isHttpOrigin` (`utils/urls`), `resolveTopFrameSender` + `isExtensionPageSender` (`lib/messaging/sender`), fuzz block; `options.ts` now rides the shared write queue (behavior unchanged). Engine types (`ExclusionSet`, `TransformReport`, `InvalidExclusionRow`) re-validated, never re-declared. Zero consumers outside tests.
+
+Contract decisions downstream phases build on:
+
+- **Session state is per tab in `session:` (deviation from the `local:`/per-origin box text).** G-5 scopes a session to a tab (persists across navigations until Stop/tab close). `session:` is in memory (never on disk/synced), survives SW/event-page suspension, is cleared on browser shutdown and extension disable/uninstall (MDN); clearing on extension **reload/update is not verified** for either browser. Hence the **backend rule: a stored record is a hint** — on wake the backend re-validates it (no live attachment/listener for the tab ⇒ stale: clear it, serve unmodified); G-5's "reload restores unmodified rendering" rests on that, not on the area. Default access is extension contexts only → content scripts ask the background, never read a record. Per-origin persistence stays in `local:exclusion-sets` (restore source).
+- **Status union** (`ExclusionSessionStatus`): `inactive` (no record) · `active {origin, set, startedAt, document}` · `unavailable {cause, at}` (G-3 warning, kept until Stop or the next apply). `document` = last top-level document: `null` (armed) · `rewritten {reports}` · `over-budget {feature, row|null, budgetMs}` · `failed {reason: body-unavailable|decode-failed|engine-failed}` — served unmodified, session stays active. Reports must come from the record's set (rows ⊆ that feature's rows, one report/feature, `featureWide` ⇒ no rows, Σmatches ≤ candidates — engine invariants, verified).
+- **Unavailable causes** (`INTERCEPTION_UNAVAILABLE_CAUSES`, with `retryable`): `attach-denied`✓, `debugging-policy`✗, `infobar-cancelled`✓, `detached`✓, `unsupported-page`✗, `unsupported-browser`✗ (G-2), `session-limit`✓. UI copy maps over this table.
+- **Channels** (overlay rows: tab+origin via `resolveTopFrameSender`, top frame only; asked through `boundedAsk` + `EXCLUSION_SESSION_DEADLINES_MS` → `reply|no-receiver|timeout|invalid-reply|failed`; an internal background failure surfaces as `failed` — P10F renders it): `applyExclusionSession({set})→applying|invalid{rows}|unavailable{cause}` (answer `invalid` via `invalidApplyReply`, reasons wire-bounded), `stopExclusionSession()→status`, `getExclusionSession()→status`, `getSavedExclusionSet()→{set|null}` (restore before any session), `saveExclusionSet({set})→saved|not-saved{unsupported-page|invalid-request|storage-failed}`; `exclusionSessionChanged(status)` (bg→tab push, sent with `frameId: 0`); `getExclusionSessionForTab({tabId})→status` (answered only for `isExtensionPageSender`) + `exclusionSessionUpdated({tabId,status})` (panel drops it from senders with a tab and for other tabs).
+- **Saving**: the background is the only reader/writer of both stores. Apply saves the origin's set **only when answering `applying`** (`invalid`/`unavailable` save nothing); `saveExclusionSet` stores any wire-valid draft (engine-invalid rows included, so restore hands them back to fix).
+- **Reset needs no channel**: re-apply with the session's stored `set`.
+- **Bounds**: set ≤ 500 rows/feature, ≤ 2 048 chars/row, ≤ 64 Ki chars total (running budget), printable rows → ≤ ~200 KiB JSON; active record ≤ 512 KiB worst case (pinned, measured 488 307 B); reason cap = row cap + 512. `local:exclusion-sets` ≤ 4 MiB (LRU, just-saved kept); `session:` ≤ 8 **active** records (new live session past it → `limit-reached` → `session-limit`, never evicting one) + ≤ 32 warnings (oldest other dropped) → ≤ ~4 MiB under Chrome's 10 MiB `QUOTA_BYTES`. Messages: exact keys, own properties only; storage: unknown keys ignored; tab ids safe integers, canonical decimal keys.
+
+Audit (adversarial, 2026-10-20): 2 MAJOR + 5 MINOR + 8 NOTE (n8 skipped — over-counts in the safe direction), all fixed with regression tests: M1 reason over the wire cap (engine echoed the 2 KiB row + doubled "Invalid regular expression:" prefix — V8 already leads with it; engine now emits `Invalid regular expression: <detail>`); M2 saved-set rows; m1 warnings no longer take live slots; m2 report↔set invariants + honest size; m3 running char budget; m4 docs softened + hint rule; m5 fuzz asserts real properties; n1 sender helpers; n2/n3 push/drop/`failed` docs; n4 `boundedAsk` skips send after a sync timeout and maps sync-throw/non-thenable to `failed`; n5 store writers reject, never throw; n6 safe-integer tab ids, `1e+21` keys refused; n7 own properties only.
+
+Gates: compile/lint/format green; `pnpm test` 205 files, 3246 tests (+1 skipped) green, coverage ≥ 90 %; `build` + `check:budgets` green (no consumers).
 
 ### P10D — Chromium interception backend
 

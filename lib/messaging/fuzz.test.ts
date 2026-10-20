@@ -8,6 +8,13 @@
 import { describe, expect, it } from 'vitest';
 import { parseWprDetections } from './validate';
 import { validDetections } from './validate.fixtures';
+import {
+  parseExclusionSetPayload,
+  parseExclusionSessionRecord,
+  parseExclusionSessionStatus,
+  parseExclusionSessionTabStatus
+} from './exclusion-session';
+import { activeRecord, validSet } from './exclusion-session.fixtures';
 
 /** Deterministic LCG so every run exercises the exact same mutation set. */
 function makeRng(seed: number): () => number {
@@ -79,5 +86,111 @@ describe('payload guards — deterministic fuzz', () => {
       accepted += parseWprDetections(payload) !== null ? 1 : 0;
     }
     expect(accepted).toBeGreaterThanOrEqual(0);
+  });
+});
+
+/**
+ * The session block's hostile values: the shared set plus the shapes the
+ * session guards must reject inside row lists and texts — a sparse array
+ * (holes skip `every`), a lone surrogate, and a control character.
+ */
+const SESSION_HOSTILE: unknown[] = [
+  ...HOSTILE,
+  // The hole is the value under test.
+  ['a', , 'b'],
+  'bad\uD800half',
+  'ctl\u0007char'
+];
+
+/** The prefix of keys the fuzz injects (never a key any guard knows). */
+const INJECTED = 'injected';
+
+/**
+ * Overwrite, drop or inject one key at a random depth of a plain JSON tree —
+ * the session payloads nest deeper than the detections rows, so the walk
+ * descends until it picks a level.
+ */
+function mutateDeep(root: Record<string, unknown>, rng: () => number, tag: number): void {
+  const pick = (): unknown => SESSION_HOSTILE[Math.floor(rng() * SESSION_HOSTILE.length)];
+  // Arrays index by string keys too — one record view walks both.
+  let node: Record<string, unknown> = root;
+  for (;;) {
+    const keys = Object.keys(node);
+    if (keys.length === 0) return;
+    const key = keys[Math.floor(rng() * keys.length)] as string;
+    const child = node[key];
+    if (child !== null && typeof child === 'object' && rng() < 0.6) {
+      node = child as Record<string, unknown>;
+      continue;
+    }
+    const race = rng();
+    const target = node;
+    if (race < 0.5) target[key] = pick();
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- the fuzz drops arbitrary keys; a real delete is the mutation under test
+    else if (race < 0.75) delete target[key];
+    else target[`${INJECTED}${String(tag)}`] = pick();
+    return;
+  }
+}
+
+/**
+ * Whether an injected key survives on a non-array object of the tree — a
+ * key every `'reject'` guard must refuse (array extras are not entries, so
+ * guards rightly never see them).
+ */
+function hasInjectedKey(value: unknown, seen = new Set<unknown>()): boolean {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return false;
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(value) && Object.keys(record).some((key) => key.startsWith(INJECTED))) {
+    return true;
+  }
+  return Object.values(record).some((child) => hasInjectedKey(child, seen));
+}
+
+describe('exclusion-session guards — deterministic fuzz', () => {
+  /** One base payload and the `'reject'` guard of its shape. */
+  interface FuzzCase {
+    readonly base: () => Record<string, unknown>;
+    readonly parse: (input: unknown) => unknown;
+  }
+
+  const cases: readonly FuzzCase[] = [
+    { base: () => ({ set: validSet() }), parse: parseExclusionSetPayload },
+    { base: () => ({ ...activeRecord() }), parse: parseExclusionSessionStatus },
+    { base: () => ({ tabId: 4, status: activeRecord() }), parse: parseExclusionSessionTabStatus },
+    {
+      base: () => ({ state: 'unavailable', cause: 'detached', at: 1 }),
+      parse: parseExclusionSessionStatus
+    }
+  ];
+
+  it('2,000 mutated payloads: never throw, refuse injected keys, accepted values round-trip', () => {
+    const rng = makeRng(7);
+    let accepted = 0;
+    let refusedInjections = 0;
+    for (let i = 0; i < 2000; i++) {
+      const { base, parse } = cases[i % cases.length] as FuzzCase;
+      const payload = structuredClone(base());
+      const mutations = 1 + Math.floor(rng() * 3);
+      for (let m = 0; m < mutations; m++) mutateDeep(payload, rng, m);
+      const parsed = parse(payload);
+      if (hasInjectedKey(payload)) {
+        expect(parsed, JSON.stringify(payload)).toBeNull();
+        refusedInjections++;
+      }
+      if (parsed !== null) {
+        accepted++;
+        // A guard's output is its own fixed point: re-parsing changes nothing.
+        expect(parse(parsed)).toEqual(parsed);
+      }
+      // The tolerant store read must not throw either; when it accepts, its
+      // rebuild is also a fixed point under the strict guard.
+      const stored = parseExclusionSessionRecord(payload, 'ignore');
+      if (stored !== null) expect(parseExclusionSessionRecord(stored, 'reject')).toEqual(stored);
+    }
+    // The run must exercise both arms, or it proves nothing.
+    expect(accepted).toBeGreaterThan(0);
+    expect(refusedInjections).toBeGreaterThan(0);
   });
 });
