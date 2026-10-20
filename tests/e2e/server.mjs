@@ -8,7 +8,9 @@
  * Behavior contract (why this server, not a generic static handler):
  * - every response carries `cache-control: no-store`, so every frame load and
  *   reload is a genuine network round-trip — the Side-by-Side refresh probe
- *   can count loads, not cache hits;
+ *   can count loads, not cache hits. One deliberate exception:
+ *   `/__e2e/cache-evidence` serves `max-age=3600` freshness evidence on
+ *   purpose — it is the fixture exercising the caching verdicts;
  * - the `__E2E_FRAME_TOKEN__` placeholder inside any served `.html` file is
  *   replaced with a fresh random value per request — a fixture page can prove
  *   "this body came from the latest request" without a separate token
@@ -148,6 +150,49 @@ async function handle(request, response) {
           ${cookies.join('\n          ')}
         </script>
       </body></html>`
+    );
+    return;
+  }
+  if (url.pathname === '/__e2e/cache-evidence') {
+    // A main frame whose response carries one real caching-evidence header
+    // class per verdict shape the panel documents (freshness, HIT probes, a
+    // MISS probe, the WP Rocket marker family, Cloudflare DYNAMIC, edge
+    // hints), the platform/server cards' headers, and one value-less row —
+    // every verdict branch that a local dev site cannot produce. One class
+    // has no hint copy (partial overlap: severity left unknown), and the
+    // unrelated group carries capture-order rows incl. caching evidence
+    // exempt from redaction. The page writes two cookies, so the
+    // names-only-cookie guarantee is observable on this fixture too. The
+    // body carries the cache-debug comment (a document sibling, its parse
+    // position — the stamp's read site) so the strip's cached fact is
+    // covered on this fixture as well.
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'max-age=3600, stale-while-revalidate=60',
+      'cf-cache-status': 'DYNAMIC',
+      age: '37',
+      'x-cache': 'MISS from edge-02',
+      'x-cache-lookup': 'HIT',
+      'x-litespeed-cache': 'HIT',
+      'x-kinsta-cache': 'MISS',
+      'x-rocket-nginx-serving-static': 'HIT',
+      'x-served-by': 'edge-01',
+      via: '1.1 evidence-fixture',
+      server: 'nginx',
+      'x-powered-by': 'WP Engine/7.3',
+      'x-plain-empty': '',
+      'surrogate-key': 'post-1 term-2'
+    });
+    response.end(
+      `<!doctype html><html><head><meta charset="utf-8" />
+<meta name="generator" content="WP Rocket 3.20.1" /><title>Cache evidence fixture</title></head>
+<body><h1>Cache evidence fixture</h1>
+<script type="rocketlazyloadscript" data-rocket-src="/wp-content/plugins/wp-rocket/assets/js/lazyload/17.8.3/lazyload.min.js"></script>
+<script class="evidence-cookies">
+  document.cookie = 'fdt_evidence=1; path=/; SameSite=Lax';
+  document.cookie = 'fdt_evidence_two=fdt_never_served_value; path=/; SameSite=Lax';
+</script></body></html>
+<!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1792411200 -->`
     );
     return;
   }
