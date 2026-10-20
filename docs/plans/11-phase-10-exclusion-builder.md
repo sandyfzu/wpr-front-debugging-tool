@@ -8,11 +8,13 @@ Full re-think of the parked design, agreed with the owner 2026-10-20. The old fl
 
 ## Decision gates (G-*, not to be confused with the UI bar's §D receipt ids)
 
-- **G-1 (owner, blocks implementation):** approve this plan — surface (in-page overlay), backends, scope of operations, phased order below.
-- **G-2 (owner):** accept the `debugger` permission and its install-time warning (Chromium build only). Spike P10A supplies the exact warning text and the attach/DevTools conflict evidence.
-- **G-3 (owner, by P10F):** simulation-fallback scope when DevTools is open — (a) DNR session rules for URL-pattern exclusions only, honest notice for attribute-level ops (recommended), (b) full DOM-hook simulation, or (c) no fallback — "close DevTools to apply" message only.
-- **G-4 (owner, by P10F):** feature-wide disable toggles — keep the source's three (Delay JS / Defer JS / Automatic Lazy Rendering; **no** Lazyload toggle), or re-derive. Default: keep three.
-- **G-5 (owner, by P10D):** session persistence — (a) the applied rewrite persists across navigations in the tab until **Stop** or tab close (recommended: matches "browse the site with exclusions applied"), or (b) one applied reload only, overlay returns to idle after it. Cleanup contract identical in both: Stop, tab close, or extension reload restores unmodified rendering.
+- **G-1 (owner, blocks implementation): APPROVED 2026-10-20** — replan approved (in-page overlay surface, per-browser interception backends, phased order), with two owner amendments:
+  1. **The panel's "Open Exclusion Builder" command-palette row must be removed** (it opens the old unlisted page; from a devtools-attached panel a `chrome.debugger` build can never attach that tab — structurally wrong once the builder is the in-page overlay). Removal lands at P10G's surfaces integration, together with retiring the old unlisted `exclusion-builder.html` entrypoint; the **context-menu** "Exclusion Builder" entry stays and re-points to the in-page overlay.
+  2. **DevTools-open must be managed explicitly at apply time**: P10D resolves the mode by _attempting_ the attach (per-browser reality decides, not an assumption — the spike found attach succeeding with DevTools open on CFT 156, pending stable-Chrome confirmation), and every outcome (interception armed / degraded to G-3 fallback / blocked) is surfaced honestly in the overlay indicator and the panel status row.
+- **G-2 (owner): ACCEPTED 2026-10-20, conditional on store review** — owner accepts both warnings provided store approval is not blocked. Policy status: the `debugger` permission is store-legal (no policy prohibition), but it puts the submission under deeper review (justification/review notes, possible longer review; the broad-data warning is already shown by the existing all-hosts permissions). If store review ever blocks it, the fallback decision is split distribution (store build without interception, self-distributed build with it) — revisit only if it happens.
+- **G-3 (owner, by P10F): PENDING** — simulation-fallback scope when interception is unavailable — (a) DNR session rules for URL-pattern exclusions only, honest notice for attribute-level ops (recommended), (b) full DOM-hook simulation, or (c) no fallback — "close DevTools to apply" message only.
+- **G-4 (owner): APPROVED 2026-10-20** — keep the source's three feature-wide disable toggles (Delay JS / Defer JS / Automatic Lazy Rendering; no Lazyload toggle).
+- **G-5 (owner): APPROVED 2026-10-20** — the applied rewrite persists across navigations in the tab until **Stop** or tab close; cleanup contract: Stop, tab close, or extension reload restores unmodified rendering.
 
 ## Verified feasibility (2026-10-20)
 
@@ -133,7 +135,7 @@ Depends:P10A+C. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session
 - [ ] `debugger` permission added (Chromium manifest only, `wxt.config.ts` comment: why + G-2 receipt; Firefox build unchanged).
 - [ ] Session state machine: attach → `Fetch.enable` (Document/Response) → reload/fulfill transform via engine → detach (or persist per G-5); every step's failure arm typed and surfaced (attach denied/target gone/no receiver); `onDetach` (DevTools opened, user Cancel on the infobar, navigation, crash) stops cleanly, never retries against a dead context. The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
 - [ ] Fidelity on fulfill: preserve the response's charset (`getResponseBody` base64 → decode with the original encoding → transform → encode back; `Content-Type`/headers passed through) — a wrong-charset fulfill corrupts the render.
-- [ ] Mode resolution: interception possible (DevTools closed) vs not — the decision feeds the overlay's mode indicator; G-3 fallback plugged at this seam.
+- [ ] Mode resolution: mode decided at apply time by attempting the attach (G-1 amendment 2 — never assumed): armed → intercept; unavailable → G-3 behavior; every outcome in the overlay indicator + panel status row (W-1, never color-only).
 - [ ] Unit tests for the state machine with injected command ports; manual runtime evidence on the docker site.
 
 DoD: apply-and-render works end-to-end on Chromium with DevTools closed; every failure arm observed and handled; charset round-trip proven; no silent failures. Effort M · difficulty hard.
@@ -168,7 +170,7 @@ Depends:P10D+F. Parallel:—. Goal: the agreed flow live end-to-end.
 - [ ] Overlay Apply → background session → reload → fulfilled render → overlay re-injects at `document_start` and shows applied state (from persisted session state, not heuristics).
 - [ ] Shell mode registry: Exclusions mode (P10) plus the plug-in seam for P13/P14 tool modes (config + results panels); no second editor surface per tool.
 - [ ] Mode matrix wired: DevTools closed → interception; open → G-3 behavior; indicator + honest words (W-1); session persistence per G-5 reflected in the active-state indicator.
-- [ ] DevTools panel: builder entry/status row (link + active state via push channel); context-menu "Exclusion Builder" item opens the overlay (re-points the existing `contextMenus` consumer comment); no second editor surface.
+- [ ] DevTools panel: builder entry/status row (link + active state via push channel); context-menu "Exclusion Builder" item opens the overlay (re-points the existing `contextMenus` consumer comment). **Remove the panel command-palette "Open Exclusion Builder" row** (`entrypoints/panel/palette/actions.ts` + `palette/exclusion-builder.ts`) and retire the old unlisted `exclusion-builder.html` entrypoint + its budgets row (G-1 amendment 1) — from a devtools-attached panel the overlay is the only correct surface; no second editor surface.
 - [ ] E2E-adjacent manual receipts on the docker site; budgets: content-script + background deltas receipted.
 
 DoD: owner flow "pick → apply → reload → real render with exclusions" works on Chromium; statuses honest in every mode. Effort M · difficulty medium.
