@@ -96,7 +96,7 @@ docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`. `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`).
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`).
 
 ## Non-negotiable rules
 
