@@ -2,8 +2,13 @@
  * Compiled matchers. Each pattern compiles once and is reused across calls
  * (a bounded in-memory cache — transforms re-derive their compiled rows
  * per call, so the cache is what keeps repeated pipelines cheap); the
- * compiled regex carries no flags: case-sensitive like the plugin's own
+ * compiled regex carries no flags: case-sensitive per this tool's own row
  * matching, and stateless (no `lastIndex` to drift between tests).
+ *
+ * Consumers must bound a transform's wall time: rows are operator-provided
+ * regexes, so a pathological pattern can run long — the engine stays pure
+ * and unbounded by design, and the session backend owns the budget (an
+ * overrun is a typed session failure, never a hung navigation).
  */
 import { ExclusionValidationError } from './errors';
 import { featureRowProblems } from './validate';

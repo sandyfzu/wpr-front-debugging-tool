@@ -35,8 +35,8 @@ describe('prevalidateExclusionSet', () => {
     const problems = prevalidateExclusionSet(
       setWith({
         delayJs: ['valid.js', '(unclosed[', 'also-bad['],
-        deferJs: ['[a-'],
-        lazyRender: ['ok-tag', '+bad+[']
+        deferJs: ['[a-', '+bad+['],
+        lazyRender: ['ok-tag', '(also-fine[']
       })
     );
     expect(problems.valid).toBe(false);
@@ -44,7 +44,7 @@ describe('prevalidateExclusionSet', () => {
       expect.objectContaining({ feature: 'delay_js', index: 1, row: '(unclosed[' }),
       expect.objectContaining({ feature: 'delay_js', index: 2, row: 'also-bad[' }),
       expect.objectContaining({ feature: 'defer_all_js', index: 0, row: '[a-' }),
-      expect.objectContaining({ feature: 'automatic_lazy_rendering', index: 1, row: '+bad+[' })
+      expect.objectContaining({ feature: 'defer_all_js', index: 1, row: '+bad+[' })
     ]);
     for (const problem of problems.invalid) expect(problem.reason).toMatch(/regular expression/i);
   });
@@ -60,8 +60,10 @@ describe('prevalidateExclusionSet', () => {
     for (const problem of problems.invalid) expect(problem.reason).toMatch(/empty/i);
   });
 
-  it('never compiles literal rows — regex-looking Lazyload rows stay valid literals', () => {
-    const problems = prevalidateExclusionSet(setWith({ lazyload: ['[a-z]+("webp")'] }));
+  it('never compiles literal rows — regex metacharacters are valid for the literal features', () => {
+    const problems = prevalidateExclusionSet(
+      setWith({ lazyload: ['[a-z]+("webp")'], lazyRender: ['(pagination|[class='] })
+    );
     expect(problems).toEqual({ valid: true, invalid: [] });
   });
 });

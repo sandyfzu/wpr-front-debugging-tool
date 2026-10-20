@@ -1,8 +1,9 @@
 /**
- * The Automatic Lazy Rendering transform: rows match the child-cleared
- * outerHTML — for the string engine, the opening tag text — and the rewrite
- * removes the lazyrender attribute; the feature-wide disable de-stamps
- * every element, removes the inline CSS and the runner scripts.
+ * The Automatic Lazy Rendering transform: rows are LITERAL substrings of
+ * the child-cleared markup (the opening tag plus its end tag; void elements
+ * have none), the rewrite removes the lazyrender attribute, and the
+ * feature-wide disable de-stamps every element and removes the inline CSS
+ * block only — the plugin serves no runner script for this feature.
  */
 import { describe, expect, it } from 'vitest';
 import { lazyRenderTransform } from './lazy-render';
@@ -28,6 +29,7 @@ describe('lazyRenderTransform — identity arms', () => {
       featureWide: false,
       candidates: 0,
       rewritten: 0,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: ['pagination']
     });
@@ -44,7 +46,7 @@ describe('lazyRenderTransform — identity arms', () => {
 });
 
 describe('lazyRenderTransform — de-stamping a matched element', () => {
-  it('matches the opening tag (the child-cleared outerHTML) and removes the attribute', () => {
+  it('matches the child-cleared markup (opening tag + end tag) and removes the attribute', () => {
     const html =
       '<section data-wpr-lazyrender="1" class="below-fold"><p>deep child text</p></section>';
     const result = lazyRenderTransform(html, setWithRows(['below-fold']));
@@ -56,9 +58,23 @@ describe('lazyRenderTransform — de-stamping a matched element', () => {
       featureWide: false,
       candidates: 1,
       rewritten: 1,
-      matchedRows: [{ row: 'below-fold', rowKind: 'pattern', matches: 1 }],
+      regionRemovals: 0,
+      matchedRows: [{ row: 'below-fold', rowKind: 'literal', matches: 1 }],
       unmatchedRows: []
     });
+  });
+
+  it('matches rows anchored at the closing bracket — the clone serializes with its end tag', () => {
+    const html = '<div data-wpr-lazyrender="1" class="a"><p>x</p></div>';
+    const result = lazyRenderTransform(html, setWithRows(['></div>']));
+    expect(result.report.rewritten).toBe(1);
+  });
+
+  it('does not fabricate an end tag for a void element', () => {
+    const html = '<img src="a.jpg" data-wpr-lazyrender="1">';
+    expect(lazyRenderTransform(html, setWithRows(['></img>'])).report.rewritten).toBe(0);
+    // A row anchored at the tag's own closing bracket still matches.
+    expect(lazyRenderTransform(html, setWithRows(['lazyrender="1">'])).report.rewritten).toBe(1);
   });
 
   it('does not match a row naming the child content — the match target is child-cleared', () => {
@@ -66,6 +82,18 @@ describe('lazyRenderTransform — de-stamping a matched element', () => {
     const result = lazyRenderTransform(html, setWithRows(['child-token']));
     expect(result.report.rewritten).toBe(0);
     expect(result.html).toBe(html);
+  });
+
+  it('never interprets a row as a regular expression — metacharacters are literal', () => {
+    const html = '<div data-wpr-lazyrender="1" class="pagination"><span>1</span></div>';
+    // '(pagination|alternate)' is tested as literal text — it appears verbatim nowhere.
+    expect(
+      lazyRenderTransform(html, setWithRows(['(pagination|alternate)'])).report.rewritten
+    ).toBe(0);
+    expect(
+      lazyRenderTransform(html, setWithRows(['data-wpr-lazyrender="1" class="pagination"'])).report
+        .rewritten
+    ).toBe(1);
   });
 
   it('preserves other attributes and keeps nested stamped elements independent', () => {
@@ -90,7 +118,7 @@ describe('lazyRenderTransform — de-stamping a matched element', () => {
 });
 
 describe('lazyRenderTransform — feature-wide disable', () => {
-  it('de-stamps every element, removes the inline CSS and the runner scripts, keeps everything else', () => {
+  it('de-stamps every element and removes the inline CSS block — nothing else', () => {
     const html = [
       '<html><head>',
       '<style id="rocket-lazyrender-inline-css">[data-wpr-lazyrender] {content-visibility: auto;}</style>',
@@ -108,29 +136,26 @@ describe('lazyRenderTransform — feature-wide disable', () => {
       featureWide: true,
       candidates: 2,
       rewritten: 2,
+      regionRemovals: 1,
       matchedRows: [],
       unmatchedRows: []
     });
-    expect(result.html).not.toContain('data-wpr-lazyrender');
     expect(result.html).not.toContain('rocket-lazyrender-inline-css');
+    // The stamps are gone, but the page's own script naming the attribute survives —
+    // the disable removes no scripts.
+    expect(result.html).toContain('removeAttribute("data-wpr-lazyrender")');
     expect(result.html).toContain('<style id="other-css">body {color: red}</style>');
     expect(result.html).toContain('<p>keep</p>');
     expect(result.html).toContain('<script>ordinary();</script>');
     expect(result.html.match(/data-wpr-fdt-excluded="automatic_lazy_rendering"/g)?.length).toBe(2);
   });
 
-  it('removes a runner script by its asset-URL marker too', () => {
-    const html =
-      '<body><script src="https://s.tld/wp-content/plugins/wp-rocket/assets/js/lazyrender/runner.js"></script><div data-wpr-lazyrender="1">x</div></body>';
-    const result = lazyRenderTransform(html, setWithRows([], true));
-    expect(result.html).not.toContain('runner.js');
-    expect(result.html).toContain('<div data-wpr-fdt-excluded="automatic_lazy_rendering">');
-  });
-
-  it('still validates rows of a disabled feature', () => {
-    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows(['(bad['], true))).toThrow(
+  it('rejects an empty row of a disabled feature — but never compiles literal rows', () => {
+    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows([''], true))).toThrow(
       ExclusionValidationError
     );
+    // Regex metacharacters are plain text for a literal feature.
+    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows(['(bad['], true))).not.toThrow();
   });
 });
 

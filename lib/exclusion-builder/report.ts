@@ -4,10 +4,7 @@
  * transform found, how many it actually rewrote, and whether the
  * feature-wide disable (not a row) drove the rewrites.
  */
-import type { ExclusionFeatureId } from './set';
-
-/** How a feature's rows match — distinguishes the two row kinds in reports. */
-export type ExclusionRowKind = 'pattern' | 'literal';
+import type { ExclusionFeatureId, ExclusionRowKind } from './set';
 
 /** One row's match count within one transform run. */
 export interface ExclusionRowMatch {
@@ -15,7 +12,7 @@ export interface ExclusionRowMatch {
   readonly row: string;
   /** How the row matches (its feature's kind). */
   readonly rowKind: ExclusionRowKind;
-  /** Elements this row matched (first matching row only — the plugin's own semantics). */
+  /** Elements this row matched (first matching row wins per element — this tool's semantics). */
   readonly matches: number;
 }
 
@@ -29,6 +26,13 @@ export interface TransformReport {
   readonly candidates: number;
   /** Candidates actually rewritten (a candidate can carry nothing to restore). */
   readonly rewritten: number;
+  /**
+   * Whole-region removals — spans deleted outright (start..end), never
+   * attribute edits: the feature-wide disable's markup removals (the
+   * plugin's inline CSS block, its controller scripts). A row-matched run
+   * removes no region, so this is 0 there.
+   */
+  readonly regionRemovals: number;
   /** Rows that matched at least one element, in row order. */
   readonly matchedRows: readonly ExclusionRowMatch[];
   /** Rows that matched nothing — the honest no-match signal for status. */
@@ -51,6 +55,8 @@ export interface TransformCounters {
   readonly matchCounts: readonly number[];
   readonly candidates: number;
   readonly rewritten: number;
+  /** Whole-region removals (see {@link TransformReport.regionRemovals}). */
+  readonly regionRemovals: number;
   readonly featureWide: boolean;
 }
 
@@ -63,13 +69,23 @@ export interface TransformCounters {
  * @returns The report.
  */
 export function transformReport(counters: TransformCounters): TransformReport {
-  const { feature, rowKind, rows, matchCounts, candidates, rewritten, featureWide } = counters;
+  const {
+    feature,
+    rowKind,
+    rows,
+    matchCounts,
+    candidates,
+    rewritten,
+    regionRemovals,
+    featureWide
+  } = counters;
   if (featureWide) {
     return {
       feature,
       featureWide: true,
       candidates,
       rewritten,
+      regionRemovals,
       matchedRows: [],
       unmatchedRows: []
     };
@@ -81,5 +97,13 @@ export function transformReport(counters: TransformCounters): TransformReport {
     if (matches > 0) matchedRows.push({ row, rowKind, matches });
     else unmatchedRows.push(row);
   });
-  return { feature, featureWide: false, candidates, rewritten, matchedRows, unmatchedRows };
+  return {
+    feature,
+    featureWide: false,
+    candidates,
+    rewritten,
+    regionRemovals,
+    matchedRows,
+    unmatchedRows
+  };
 }

@@ -20,9 +20,6 @@ export interface InvalidExclusionRow {
  * Thrown when an exclusion set carries invalid rows — from
  * `applyPipeline` (every feature's problems at once, before any transform
  * runs) or from a directly-called transform (that feature's problems).
- *
- * @throws {@link ExclusionValidationError} itself is the typed failure; the
- *   tag marks the call sites that raise it.
  */
 export class ExclusionValidationError extends Error {
   override readonly name = 'ExclusionValidationError';

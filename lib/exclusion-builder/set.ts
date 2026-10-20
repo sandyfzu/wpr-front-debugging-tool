@@ -15,11 +15,14 @@
 export type ExclusionFeatureId =
   'delay_js' | 'defer_all_js' | 'lazyload' | 'automatic_lazy_rendering';
 
+/** How a feature's rows match: compiled as a regex or tested as a substring. */
+export type ExclusionRowKind = 'pattern' | 'literal';
+
 /**
  * A row matched as a regular expression. Compiled without flags —
- * case-sensitive and stateless, like the plugin's own matching of a served
- * tag; a row must never carry `g`/`y` (stateful) flags even if a user
- * writes one, because compilation drops them by construction.
+ * case-sensitive and stateless, per this tool's own row matching; a row
+ * must never carry `g`/`y` (stateful) flags even if a user writes one,
+ * because compilation drops them by construction.
  */
 export type PatternRow = string;
 
@@ -29,7 +32,7 @@ export type LiteralRow = string;
 /** How a feature's rows match, and where they live in the set. */
 export interface ExclusionFeatureSpec {
   readonly id: ExclusionFeatureId;
-  readonly rowKind: 'pattern' | 'literal';
+  readonly rowKind: ExclusionRowKind;
   readonly rowsKey: keyof ExclusionSetRows;
   /**
    * The feature-wide disable toggle's key, or `null` when the feature has
@@ -48,8 +51,11 @@ export interface ExclusionSetRows {
   readonly deferJs: readonly PatternRow[];
   /** Image Lazyload: literal rows matched against the restored img markup. */
   readonly lazyload: readonly LiteralRow[];
-  /** Automatic Lazy Rendering: regex rows matched against the opening tag. */
-  readonly lazyRender: readonly PatternRow[];
+  /**
+   * Automatic Lazy Rendering: literal rows matched against the child-cleared
+   * markup — the opening tag plus its end tag (void elements have none).
+   */
+  readonly lazyRender: readonly LiteralRow[];
 }
 
 /** The feature-wide disable toggles (three; no Lazyload toggle). */
@@ -71,19 +77,23 @@ export interface ExclusionSet {
 
 /**
  * The feature registry — the one declaring site mapping every feature to
- * its id, row kind, rows key and toggle key. Validation and compilation
- * map over it; adding a feature is one row here plus its transform.
+ * its id, row kind, rows key and toggle key, **in pipeline execution
+ * order** (the pipeline derives its step order from this list): Delay JS
+ * first (its restore reclaims `src`, which the Defer matcher then reads as
+ * the effective URL), then Defer JS, then Automatic Lazy Rendering, then
+ * Image Lazyload. Validation and compilation map over it; adding a feature
+ * is one row here plus its transform.
  */
 export const EXCLUSION_FEATURES: readonly ExclusionFeatureSpec[] = [
   { id: 'delay_js', rowKind: 'pattern', rowsKey: 'delayJs', toggleKey: 'delayJs' },
   { id: 'defer_all_js', rowKind: 'pattern', rowsKey: 'deferJs', toggleKey: 'deferJs' },
-  { id: 'lazyload', rowKind: 'literal', rowsKey: 'lazyload', toggleKey: null },
   {
     id: 'automatic_lazy_rendering',
-    rowKind: 'pattern',
+    rowKind: 'literal',
     rowsKey: 'lazyRender',
     toggleKey: 'lazyRender'
-  }
+  },
+  { id: 'lazyload', rowKind: 'literal', rowsKey: 'lazyload', toggleKey: null }
 ];
 
 /** The set with no rows and nothing disabled — every surface's starting point. */

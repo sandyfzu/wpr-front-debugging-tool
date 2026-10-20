@@ -1,8 +1,10 @@
 /**
  * The Delay JS transform: whole-markup matching against delayed scripts
  * (both served type variants, plus the runtime status marker), restoring
- * `type`/`src` per the controller's own runtime semantics, stamping the
- * exclusion marker as CSV, and honest identity when nothing matches.
+ * `type`/`src` per the controller's own runtime semantics (empty carriers
+ * count as absent), stamping the exclusion marker as CSV, honest identity
+ * when nothing matches, and the feature-wide disable's removal of the
+ * plugin's three controller scripts.
  */
 import { describe, expect, it } from 'vitest';
 import { delayJsTransform } from './delay-js';
@@ -34,6 +36,7 @@ describe('delayJsTransform — identity arms', () => {
       featureWide: false,
       candidates: 0,
       rewritten: 0,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: ['a.js']
     });
@@ -60,6 +63,7 @@ describe('delayJsTransform — restoring a live script', () => {
       featureWide: false,
       candidates: 1,
       rewritten: 1,
+      regionRemovals: 0,
       matchedRows: [{ row: 'a.js', rowKind: 'pattern', matches: 1 }],
       unmatchedRows: []
     });
@@ -90,6 +94,32 @@ describe('delayJsTransform — restoring a live script', () => {
     const result = delayJsTransform(html, setWithRows(['inline']));
     expect(result.html).toBe(
       '<script type="text/javascript" data-wpr-fdt-excluded="delay_js">inline();</script>'
+    );
+  });
+
+  it('overwrites a surviving plain `src` with the parked original', () => {
+    const html =
+      '<script type="rocketlazyloadscript" src="placeholder.js" data-rocket-src="real.js"></script>';
+    const result = delayJsTransform(html, setWithRows(['real\\.js']));
+    expect(result.html).toBe('<script src="real.js" data-wpr-fdt-excluded="delay_js"></script>');
+    expect(result.html).not.toContain('placeholder.js');
+  });
+
+  it('treats an empty `data-rocket-type` as no original type — `type` is removed entirely', () => {
+    const html =
+      '<script type="rocketlazyloadscript" data-rocket-type="" data-rocket-src="u.js"></script>';
+    const result = delayJsTransform(html, setWithRows(['u\\.js']));
+    expect(result.html).toBe('<script src="u.js" data-wpr-fdt-excluded="delay_js"></script>');
+    expect(result.html).not.toContain('type=');
+  });
+
+  it('treats an empty `data-rocket-src` as absent — kept, nothing restored from it', () => {
+    const html =
+      '<script type="rocketlazyloadscript" data-rocket-type="text/javascript" data-rocket-src="">inline();</script>';
+    const result = delayJsTransform(html, setWithRows(['inline']));
+    // The type still restores; the empty src carrier stays parked and adds no `src`.
+    expect(result.html).toBe(
+      '<script type="text/javascript" data-rocket-src="" data-wpr-fdt-excluded="delay_js">inline();</script>'
     );
   });
 
@@ -215,12 +245,68 @@ describe('delayJsTransform — feature-wide disable', () => {
       featureWide: true,
       candidates: 2,
       rewritten: 2,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: []
     });
     expect(result.html).toContain('src="https://s.tld/wp/a.js"');
     expect(result.html).toContain('src="zzz-other.js"');
     expect(result.html.match(/data-wpr-fdt-excluded="delay_js"/g)?.length).toBe(2);
+  });
+
+  it('removes the UA `?nowprocket=1` cookie/redirect bootstrap script', () => {
+    const html = [
+      '<script>if (navigator.userAgent.match(/iPhone|iPad|iPod/i)) {',
+      'document.cookie = "rocket_hide_all_js=1; path=/";',
+      'window.location.href = window.location.href + "?nowprocket=1";',
+      '}</script>'
+    ].join('');
+    const result = delayJsTransform(html, setWithRows([], true));
+    expect(result.html).toBe('');
+    expect(result.report.regionRemovals).toBe(1);
+  });
+
+  it('removes the delay controller run-invocation script', () => {
+    const html =
+      '<script>if (!window.RocketLazyLoadScripts) { window.RocketLazyLoadScripts = { listeners: [] }; } RocketLazyLoadScripts.run();</script>';
+    const result = delayJsTransform(html, setWithRows([], true));
+    expect(result.html).toBe('');
+    expect(result.report.regionRemovals).toBe(1);
+  });
+
+  it('removes the Elementor animation helper script', () => {
+    const html =
+      "<script>document.addEventListener('DOMContentLoaded', function () { RocketElementorAnimation.run(); });</script>";
+    const result = delayJsTransform(html, setWithRows([], true));
+    expect(result.html).toBe('');
+    expect(result.report.regionRemovals).toBe(1);
+  });
+
+  it('removes only the first script of each controller kind and restores the rest', () => {
+    const html = [
+      '<script>if (navigator.userAgent.match(/x/i)) location.href += "?nowprocket=1";</script>',
+      '<script>navigator.userAgent.match(/y/i) && location.assign("?nowprocket=1");</script>',
+      '<script>RocketLazyLoadScripts.run();</script>',
+      '<script>RocketElementorAnimation.run();</script>',
+      OLD_TYPE
+    ].join('');
+    const result = delayJsTransform(html, setWithRows([], true));
+    expect(result.report.regionRemovals).toBe(3);
+    // The second UA-redirect lookalike survives (first-of-kind removal only);
+    // the delayed script is still restored.
+    expect(result.html).toContain('location.assign');
+    expect(result.html).toContain('src="https://s.tld/wp/a.js"');
+    expect(result.html.match(/data-wpr-fdt-excluded="delay_js"/g)?.length).toBe(1);
+  });
+
+  it('keeps ordinary scripts whose content merely mentions nearby tokens', () => {
+    const html = [
+      '<script>navigator.userAgent.match(/x/i);</script>',
+      '<script>const run = "RocketLazyLoadScripts";</script>'
+    ].join('');
+    const result = delayJsTransform(html, setWithRows([], true));
+    expect(result.html).toBe(html);
+    expect(result.report.regionRemovals).toBe(0);
   });
 
   it('still validates rows of a disabled feature — a broken row is surfaced, never silently inert', () => {
@@ -235,7 +321,7 @@ describe('delayJsTransform — marker accumulation', () => {
     const html =
       '<script type="rocketlazyloadscript" data-rocket-src="u.js" data-wpr-fdt-excluded="defer_all_js"></script>';
     const result = delayJsTransform(html, setWithRows(['u\\.js']));
-    expect(result.html).toContain('data-wpr-fdt-excluded="defer_all_js,delay_js"');
+    expect(result.html).toContain('data-wpr-fdt-excluded="defer_all_js, delay_js"');
   });
 
   it('leaves a marker that already lists the id untouched', () => {

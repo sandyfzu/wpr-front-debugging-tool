@@ -68,12 +68,12 @@ describe('composeSteps', () => {
 });
 
 describe('EXCLUSION_PIPELINE_IDS', () => {
-  it('declares the execution order once — delay, defer, lazyload, lazy render', () => {
+  it('declares the execution order once — delay, defer, lazy render, lazyload', () => {
     expect(EXCLUSION_PIPELINE_IDS).toEqual([
       'delay_js',
       'defer_all_js',
-      'lazyload',
-      'automatic_lazy_rendering'
+      'automatic_lazy_rendering',
+      'lazyload'
     ]);
   });
 });
@@ -88,8 +88,8 @@ describe('applyPipeline', () => {
     ).toEqual([
       ['delay_js', 1, 0],
       ['defer_all_js', 1, 0],
-      ['lazyload', 0, 0],
-      ['automatic_lazy_rendering', 0, 0]
+      ['automatic_lazy_rendering', 0, 0],
+      ['lazyload', 0, 0]
     ]);
   });
 
@@ -115,7 +115,7 @@ describe('applyPipeline', () => {
     expect(result.html).not.toContain('data-rocket-src');
     expect(result.html).not.toContain('data-rocket-defer');
     expect(result.html).toContain(
-      '<script src="combo.js" data-wpr-fdt-excluded="delay_js,defer_all_js"></script>'
+      '<script src="combo.js" data-wpr-fdt-excluded="delay_js, defer_all_js"></script>'
     );
     expect(result.html).toContain('src="photo.jpg" data-wpr-fdt-excluded="lazyload"');
     expect(result.html).toContain('<ul>1</ul>');
@@ -128,8 +128,8 @@ describe('applyPipeline', () => {
     expect(result.reports.map((report) => [report.feature, report.rewritten])).toEqual([
       ['delay_js', 1],
       ['defer_all_js', 1],
-      ['lazyload', 1],
-      ['automatic_lazy_rendering', 1]
+      ['automatic_lazy_rendering', 1],
+      ['lazyload', 1]
     ]);
   });
 
@@ -146,15 +146,15 @@ describe('applyPipeline', () => {
 
   it('throws the typed error naming every invalid row across features before any transform runs', () => {
     const throws = (): unknown =>
-      applyPipeline('<p>x</p>', setWith({ delayJs: ['(bad['], lazyRender: ['(also-bad['] }));
-    expect(throws).toThrow(/delay_js\[0\]|automatic_lazy_rendering\[0\]/);
+      applyPipeline('<p>x</p>', setWith({ delayJs: ['(bad['], deferJs: ['(also-bad['] }));
+    expect(throws).toThrow(/delay_js\[0\]|defer_all_js\[0\]/);
     try {
       throws();
     } catch (error) {
       const validationError = error as { invalid?: Array<{ feature: string }> };
       expect(validationError.invalid?.map((problem) => problem.feature)).toEqual([
         'delay_js',
-        'automatic_lazy_rendering'
+        'defer_all_js'
       ]);
     }
   });
@@ -199,8 +199,8 @@ describe('applyPipeline', () => {
     expect(reports.map((report) => report.feature)).toEqual([
       'delay_js',
       'defer_all_js',
-      'lazyload',
-      'automatic_lazy_rendering'
+      'automatic_lazy_rendering',
+      'lazyload'
     ]);
   });
 

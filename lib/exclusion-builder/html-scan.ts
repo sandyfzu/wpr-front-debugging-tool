@@ -3,9 +3,10 @@
  * the served HTML — the engine's candidate source. No DOMParser (this runs
  * where no parser exists and must stay cheap), no entity decoding (rows
  * match the raw served text; decode/encode is the session backends' job),
- * comments and declarations skipped, raw-text element regions (`script`,
- * `style`, `textarea`, `title`) bounded by their end tags the way the HTML
- * tokenizer bounds them.
+ * comments and declarations skipped per the tokenizer's comment states,
+ * raw-text element regions (`script`, `style`, `textarea`, `title`) closed
+ * only by their exact case-insensitive end tag (WHATWG §13.2.5.14) —
+ * running to EOF when no end tag exists.
  *
  * One linear pass; every span is an offset into the string scanned, so
  * rewrites stay patch-based and inputs are never mutated. The same parser
@@ -46,6 +47,13 @@ export interface ScannedTag {
    * `[start, end)`.
    */
   readonly end: number;
+  /**
+   * Offset where a raw-text element's content ends — the end tag's `<`, or
+   * the end of input when the end tag is missing; equals `openingEnd` for
+   * every other tag (their content is not raw text). The content text is
+   * `[openingEnd, contentEnd)`.
+   */
+  readonly contentEnd: number;
   /** Whether the opening tag was spelled self-closing (`/>`). */
   readonly selfClosing: boolean;
 }
@@ -55,6 +63,35 @@ const HTML_WHITESPACE = new Set([' ', '\t', '\n', '\r', '\f']);
 
 /** Elements whose content is raw text — their region runs to the end tag. */
 const RAW_TEXT_TAGS = new Set(['script', 'style', 'textarea', 'title']);
+
+/**
+ * End-tag matchers for the raw-text elements, one compiled per tag name and
+ * hoisted to module scope (never per call). A region closes only on its
+ * exact case-insensitive name followed by whitespace, `/` or `>` —
+ * WHATWG §13.2.5.14's appropriate-end-tag check, so `</scripty>` stays
+ * script text while `</script x>` (an end tag with junk attributes) closes.
+ */
+const RAW_TEXT_END_TAG = new Map(
+  [...RAW_TEXT_TAGS].map((name) => [name, new RegExp(`</${name}[\\t\\n\\f\\r />]`, 'gi')])
+);
+
+/** The standard HTML void elements — serialized without an end tag. */
+export const HTML_VOID_ELEMENTS: ReadonlySet<string> = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+]);
 
 /** A tag opens only when an ASCII letter follows the `<`. */
 const TAG_NAME_START = /[a-zA-Z]/;
@@ -71,14 +108,23 @@ function isWhitespaceAt(text: string, index: number): boolean {
 }
 
 /**
- * Skip one comment region: from the `<` of `<!--` to past the first `-->`.
- * Comments do not nest; the first close ends the region.
+ * Skip one comment region: from the `<` of `<!--` to past its closer, per
+ * the tokenizer's comment states. `-->` ends the comment; `--!>` ends it
+ * the same way (an incorrectly closed comment); the empty-comment spellings
+ * `<!-->` and `<!--->` close immediately. Anything after the closer is
+ * markup again; an unclosed comment runs to the end of input.
  *
- * @returns The offset just past `-->`, or the end of input.
+ * @returns The offset just past the closer, or the end of input.
  */
 function skipComment(html: string, start: number): number {
+  if (html.startsWith('<!-->', start)) return start + 5;
+  if (html.startsWith('<!--->', start)) return start + 6;
+  // The first of the two closers wins — they cannot overlap into ambiguity.
   const close = html.indexOf('-->', start + 4);
-  return close === -1 ? html.length : close + 3;
+  const bang = html.indexOf('--!>', start + 4);
+  if (close === -1) return bang === -1 ? html.length : bang + 4;
+  if (bang === -1) return close + 3;
+  return Math.min(close + 3, bang + 4);
 }
 
 /**
@@ -217,28 +263,29 @@ export function parseTagAt(text: string, start: number): ParsedTag {
 }
 
 /**
- * Find where a raw-text element's content ends: matched case-insensitively
- * against its end tag, exactly how the HTML tokenizer bounds raw text.
+ * Find where a raw-text element's content and region end: the region closes
+ * only when the exact case-insensitive tag name's end tag starts here and
+ * is followed by whitespace, `/` or `>` (WHATWG §13.2.5.14) — the element's
+ * text then runs through that end tag's `>`; when no such end tag exists,
+ * everything to the end of input is element text.
  *
- * @returns The offset just past the end tag's `>`, or the end of input when
- *   the end tag is missing.
+ * @param tagName The raw-text element's (lowercased) name.
+ * @param text The string scanned.
+ * @param from Offset just past the opening tag.
+ * @returns `contentEnd`: the end tag's `<` (or the end of input), and
+ *   `end`: just past the end tag's `>` (or the end of input).
  */
-function rawTextEnd(tagName: string, text: string, from: number): number {
-  const strict = new RegExp(`</${tagName}\\s*>`, 'gi');
-  strict.lastIndex = from;
-  const strictMatch = strict.exec(text);
-  if (strictMatch !== null) {
-    return skipToTagEnd(text, strictMatch.index);
-  }
-  // Tolerate a malformed end tag carrying junk before `>` (`</script x>`):
-  // the first `</name` wins, the region closes at the next `>`.
-  const loose = new RegExp(`</${tagName}`, 'gi');
-  loose.lastIndex = from;
-  const looseMatch = loose.exec(text);
-  if (looseMatch !== null) {
-    return skipToTagEnd(text, looseMatch.index);
-  }
-  return text.length;
+function rawTextEnd(
+  tagName: string,
+  text: string,
+  from: number
+): { readonly contentEnd: number; readonly end: number } {
+  const pattern = RAW_TEXT_END_TAG.get(tagName);
+  if (pattern === undefined) return { contentEnd: text.length, end: text.length };
+  pattern.lastIndex = from;
+  const match = pattern.exec(text);
+  if (match === null) return { contentEnd: text.length, end: text.length };
+  return { contentEnd: match.index, end: skipToTagEnd(text, match.index) };
 }
 
 /**
@@ -272,18 +319,19 @@ export function scanTags(html: string): readonly ScannedTag[] {
       continue;
     }
     const parsed = parseTagAt(html, lt);
-    const end = RAW_TEXT_TAGS.has(parsed.name)
+    const rawText = RAW_TEXT_TAGS.has(parsed.name)
       ? rawTextEnd(parsed.name, html, parsed.openingEnd)
-      : parsed.openingEnd;
+      : null;
     tags.push({
       name: parsed.name,
       start: lt,
       openingEnd: parsed.openingEnd,
       attrs: parsed.attrs,
-      end,
+      end: rawText?.end ?? parsed.openingEnd,
+      contentEnd: rawText?.contentEnd ?? parsed.openingEnd,
       selfClosing: parsed.selfClosing
     });
-    pos = end;
+    pos = rawText?.end ?? parsed.openingEnd;
   }
   return tags;
 }

@@ -135,10 +135,10 @@ describe('stampExclusionMarker', () => {
     );
   });
 
-  it('appends to an existing marker as CSV without clobbering its raw value', () => {
+  it('appends to an existing marker as CSV (comma + space) without clobbering its raw value', () => {
     const { tagText } = firstTag('<script src="a.js" data-wpr-fdt-excluded="defer_all_js">');
     expect(stampExclusionMarker(tagText, 'delay_js')).toBe(
-      '<script src="a.js" data-wpr-fdt-excluded="defer_all_js,delay_js">'
+      '<script src="a.js" data-wpr-fdt-excluded="defer_all_js, delay_js">'
     );
   });
 

@@ -1,16 +1,19 @@
 /**
  * The Automatic Lazy Rendering transform: reverses the feature's served
- * effect. Rows match the child-cleared outerHTML — for the string engine,
- * the element's opening-tag text, which is what remains when the children
- * are cleared — and the rewrite removes the `data-wpr-lazyrender`
- * attribute so the served `content-visibility` CSS no longer applies. The
- * feature-wide disable de-stamps every element and also removes the
- * inline CSS block and the runner scripts (any script whose markup carries
- * the lazyrender marker).
+ * effect. Rows are LITERAL substrings tested against the child-cleared
+ * markup — the element's opening tag plus its end tag (a void element
+ * serializes without one), which is what remains when the children are
+ * cleared — and the rewrite removes the `data-wpr-lazyrender` attribute so
+ * the served `content-visibility` CSS no longer applies. The feature-wide
+ * disable de-stamps every element and also removes the inline CSS block;
+ * it removes nothing else — the plugin serves no runner script for this
+ * feature.
  */
 import { LAZY_RENDER_ATTRIBUTE, LAZY_RENDER_INLINE_CSS_ID } from '../wp-rocket/constants';
-import { scanTags, parseTagAt } from './html-scan';
-import { compilePatternRows } from './compile';
+import { HTML_VOID_ELEMENTS, scanTags, parseTagAt } from './html-scan';
+import type { ScannedTag } from './html-scan';
+import { ExclusionValidationError } from './errors';
+import { featureRowProblems } from './validate';
 import { transformReport, type TransformResult } from './report';
 import {
   applyPatches,
@@ -23,15 +26,20 @@ import type { ExclusionFeatureId, ExclusionSet } from './set';
 
 const FEATURE: ExclusionFeatureId = 'automatic_lazy_rendering';
 const STYLE_TAG = 'style';
-const SCRIPT_TAG = 'script';
 const ID_ATTRIBUTE = 'id';
 
 /**
- * The marker inside a runner script's markup — the attribute the runner
- * queries and the inline CSS id both contain, so one substring covers
- * inline runners, runner asset URLs, and the CSS id reference alike.
+ * The child-cleared markup a row matches: the opening-tag text, closed by
+ * the element's end tag — `outerHTML` of the element with its children
+ * cleared. Void elements serialize without an end tag.
+ *
+ * @param servedHtml The document being scanned (the tag's spans index it).
+ * @param tag The scanned element.
  */
-const RUNNER_MARKER = 'lazyrender';
+function childClearedMarkup(servedHtml: string, tag: ScannedTag): string {
+  const endTag = HTML_VOID_ELEMENTS.has(tag.name) ? '' : `</${tag.name}>`;
+  return `${servedHtml.slice(tag.start, tag.openingEnd)}${endTag}`;
+}
 
 /**
  * The Automatic Lazy Rendering transform: `servedHtml` + the exclusion set
@@ -40,21 +48,23 @@ const RUNNER_MARKER = 'lazyrender';
  * de-stamped element.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
- * @param set The exclusion set (Automatic Lazy Rendering rows + toggle slice).
+ * @param set The exclusion set (Automatic Lazy Rendering literal rows + toggle slice).
  * @returns The rewritten html and the report.
- * @throws {@link ExclusionValidationError} when any row is invalid — even
+ * @throws {@link ExclusionValidationError} when any row is empty — even
  *   under the feature-wide disable, where a broken row is surfaced, never
- *   silently inert.
+ *   silently inert. Rows are never compiled as regexes, so regex-looking
+ *   text is a fine literal.
  */
 export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): TransformResult {
   const rows = set.rows.lazyRender;
-  const compiled = compilePatternRows(rows, FEATURE);
+  const problems = featureRowProblems(FEATURE, 'literal', rows);
+  if (problems.length > 0) throw new ExclusionValidationError(problems);
   const featureWide = set.disable.lazyRender;
   const matchCounts = rows.map(() => 0);
   const tags = scanTags(servedHtml);
   const patches: TextPatch[] = [];
-  // Whole-region removals (the inline CSS, runner scripts) — per-tag
-  // attribute edits are skipped for anything inside these spans.
+  // Whole-region removals (the inline CSS block) — counted separately from
+  // the attribute-level de-stamps.
   const removals: TextPatch[] = [];
   let candidates = 0;
   let rewritten = 0;
@@ -64,23 +74,21 @@ export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): Tran
         tag.name === STYLE_TAG &&
         findAttribute(parseTagAt(servedHtml.slice(tag.start, tag.openingEnd), 0), ID_ATTRIBUTE)
           ?.value === LAZY_RENDER_INLINE_CSS_ID;
-      const isRunnerScript =
-        tag.name === SCRIPT_TAG && servedHtml.slice(tag.start, tag.end).includes(RUNNER_MARKER);
-      if (isInlineCss || isRunnerScript) {
-        removals.push({ start: tag.start, end: tag.end, text: '' });
-      }
+      if (isInlineCss) removals.push({ start: tag.start, end: tag.end, text: '' });
     }
   }
-  const insideRemoval = (tag: { readonly start: number; readonly end: number }): boolean =>
+  const insideRemoval = (tag: ScannedTag): boolean =>
     removals.some((removal) => tag.start >= removal.start && tag.end <= removal.end);
   for (const tag of tags) {
+    // A removal covers an element outright (its spans would overlap a
+    // de-stamp patch) — it is not a de-stamp candidate.
     if (insideRemoval(tag)) continue;
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     if (findAttribute(parseTagAt(tagText, 0), LAZY_RENDER_ATTRIBUTE) === null) continue;
     candidates++;
     if (!featureWide) {
-      // The child-cleared outerHTML is the match target: the opening tag text.
-      const rowIndex = compiled.findIndex(({ regex }) => regex.test(tagText));
+      // The child-cleared markup is the match target — first row wins.
+      const rowIndex = rows.findIndex((row) => childClearedMarkup(servedHtml, tag).includes(row));
       if (rowIndex === -1) continue;
       matchCounts[rowIndex] = (matchCounts[rowIndex] ?? 0) + 1;
     }
@@ -95,11 +103,12 @@ export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): Tran
     html: applyPatches(servedHtml, [...patches, ...removals]),
     report: transformReport({
       feature: FEATURE,
-      rowKind: 'pattern',
+      rowKind: 'literal',
       rows,
       matchCounts,
       candidates,
       rewritten,
+      regionRemovals: removals.length,
       featureWide
     })
   };

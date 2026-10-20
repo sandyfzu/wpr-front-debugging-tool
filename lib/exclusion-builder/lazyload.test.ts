@@ -1,8 +1,9 @@
 /**
- * The Image Lazyload transform: candidate images are those carrying lazy
- * attributes; rows are LITERAL substrings tested against the img markup
- * with the lazy values restored (the clone — the image's real identity);
- * the rewrite moves `src`/`srcset`/`sizes` back from their lazy carriers.
+ * The Image Lazyload transform: candidate images carry a truthy
+ * `data-lazy-src` (the plugin's own runtime candidacy); rows are LITERAL
+ * substrings tested against the clone with only `src` restored (the other
+ * lazy carriers still parked — the image's real identity); a matched image
+ * then moves `src`/`srcset`/`sizes` back from their carriers.
  */
 import { describe, expect, it } from 'vitest';
 import { lazyloadTransform } from './lazyload';
@@ -20,7 +21,7 @@ const LAZY_IMG =
 const LAZY_FULL =
   '<img src="ph.gif" data-lazy-src="real.jpg" data-lazy-srcset="real.jpg 1x, real@2x.jpg 2x" data-lazy-sizes="(max-width: 800px) 100vw" alt="x">';
 
-describe('lazyloadTransform — identity arms', () => {
+describe('lazyloadTransform — candidacy', () => {
   it('is the identity when no image carries lazy attributes', () => {
     const html = '<img src="eager.jpg"><img data-lazy-original>';
     const result = lazyloadTransform(html, setWithRows(['eager.jpg']));
@@ -30,6 +31,7 @@ describe('lazyloadTransform — identity arms', () => {
       featureWide: false,
       candidates: 0,
       rewritten: 0,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: ['eager.jpg']
     });
@@ -42,9 +44,30 @@ describe('lazyloadTransform — identity arms', () => {
     expect(emptySet.report.rewritten).toBe(0);
     expect(lazyloadTransform('', setWithRows(['x'])).html).toBe('');
   });
+
+  it('is not a candidate on srcset-only or sizes-only carriers — no truthy `data-lazy-src`', () => {
+    const html =
+      '<img src="ph.gif" data-lazy-srcset="real.jpg 1x"><img src="ph.gif" data-lazy-sizes="100vw">';
+    const result = lazyloadTransform(html, setWithRows(['real.jpg']));
+    expect(result.report.candidates).toBe(0);
+    expect(result.html).toBe(html);
+  });
+
+  it('is not a candidate on a valueless or empty `data-lazy-src`', () => {
+    const html = '<img src="ph" data-lazy-src><img src="ph2" data-lazy-src="">';
+    const result = lazyloadTransform(html, setWithRows(['ph']));
+    expect(result.report.candidates).toBe(0);
+    expect(result.html).toBe(html);
+  });
+
+  it('never lets the served placeholder clobber the restored value — an empty `src` is overwritten', () => {
+    const html = '<img src="" data-lazy-src="real.jpg">';
+    const result = lazyloadTransform(html, setWithRows(['real.jpg']));
+    expect(result.html).toBe('<img src="real.jpg" data-wpr-fdt-excluded="lazyload">');
+  });
 });
 
-describe('lazyloadTransform — restoring', () => {
+describe('lazyloadTransform — restoring a matched image', () => {
   it('moves the lazy src back into `src` and drops the carrier attribute', () => {
     const result = lazyloadTransform(LAZY_IMG, setWithRows(['photo.jpg']));
     expect(result.html).toBe(
@@ -55,6 +78,7 @@ describe('lazyloadTransform — restoring', () => {
       featureWide: false,
       candidates: 1,
       rewritten: 1,
+      regionRemovals: 0,
       matchedRows: [{ row: 'photo.jpg', rowKind: 'literal', matches: 1 }],
       unmatchedRows: []
     });
@@ -69,33 +93,25 @@ describe('lazyloadTransform — restoring', () => {
     );
   });
 
-  it('covers the srcset-only case: srcset restored, the placeholder src untouched', () => {
-    const html = '<img src="ph.gif" data-lazy-srcset="real.jpg 1x">';
-    const result = lazyloadTransform(html, setWithRows(['real.jpg 1x']));
+  it('restores a matched image whose srcset is carrier-only (sizes absent)', () => {
+    const html = '<img src="ph.gif" data-lazy-src="real.jpg" data-lazy-srcset="real.jpg 1x">';
+    const result = lazyloadTransform(html, setWithRows(['real.jpg']));
     expect(result.html).toBe(
-      '<img src="ph.gif" srcset="real.jpg 1x" data-wpr-fdt-excluded="lazyload">'
+      '<img src="real.jpg" srcset="real.jpg 1x" data-wpr-fdt-excluded="lazyload">'
     );
   });
 
-  it('restores an empty lazy value as an empty destination value', () => {
-    const html = '<img src="ph" data-lazy-src>';
-    const result = lazyloadTransform(html, setWithRows(['ph']));
-    // The bare lazy carrier restores `src=""` — and the row still matches the clone's `ph`... it cannot:
-    // the clone's src is now empty, so only the served row text could have matched. No rewrite.
-    expect(result.report.candidates).toBe(1);
-    expect(result.report.rewritten).toBe(0);
-  });
-
   it('moves a value into an existing destination attribute', () => {
-    const html = '<img src="ph.gif" srcset="old 1x" data-lazy-srcset="real.jpg 1x">';
+    const html =
+      '<img src="ph.gif" srcset="old 1x" data-lazy-src="real.jpg" data-lazy-srcset="new 1x">';
     const result = lazyloadTransform(html, setWithRows(['real.jpg']));
     expect(result.html).toBe(
-      '<img src="ph.gif" srcset="real.jpg 1x" data-wpr-fdt-excluded="lazyload">'
+      '<img src="real.jpg" srcset="new 1x" data-wpr-fdt-excluded="lazyload">'
     );
   });
 });
 
-describe('lazyloadTransform — literal matching', () => {
+describe('lazyloadTransform — literal matching against the only-src-restored clone', () => {
   it('matches the restored clone, not the served markup: the real URL matches, the placeholder does not', () => {
     // The real URL only exists in the clone (the served markup still holds the placeholder).
     expect(
@@ -104,6 +120,16 @@ describe('lazyloadTransform — literal matching', () => {
     // The placeholder is gone from the clone (src was restored over it).
     expect(lazyloadTransform(LAZY_IMG, setWithRows(['data:image/svg+xml'])).report.rewritten).toBe(
       0
+    );
+  });
+
+  it('matches the still-parked srcset carrier — only `src` is restored on the clone', () => {
+    const html = '<img src="ph.gif" data-lazy-src="real.jpg" data-lazy-srcset="real.jpg 1x">';
+    const result = lazyloadTransform(html, setWithRows(['data-lazy-srcset="real.jpg 1x"']));
+    expect(result.report.rewritten).toBe(1);
+    // …and the restore still moves the carrier's value across.
+    expect(result.html).toBe(
+      '<img src="real.jpg" srcset="real.jpg 1x" data-wpr-fdt-excluded="lazyload">'
     );
   });
 
@@ -160,6 +186,7 @@ describe('lazyloadTransform — adversarial markup', () => {
     const result = lazyloadTransform(html, setWithRows(['préférences.jpg']));
     expect(result.html.startsWith('<!doctype html>\n')).toBe(true);
     expect(result.html).toContain('src="préférences.jpg"');
+    expect(result.html).toContain('préférences.jpg');
     expect(result.html.endsWith('\uD800')).toBe(true);
   });
 
@@ -175,6 +202,6 @@ describe('lazyloadTransform — marker accumulation', () => {
   it('appends the lazyload id to an existing marker value', () => {
     const html = '<img src="ph" data-lazy-src="real.jpg" data-wpr-fdt-excluded="delay_js">';
     const result = lazyloadTransform(html, setWithRows(['real.jpg']));
-    expect(result.html).toContain('data-wpr-fdt-excluded="delay_js,lazyload"');
+    expect(result.html).toContain('data-wpr-fdt-excluded="delay_js, lazyload"');
   });
 });

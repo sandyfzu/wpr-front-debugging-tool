@@ -1,9 +1,16 @@
 /**
  * The exclusion pipeline: the four transforms composed in their one
- * declared order, plus the generic composition seam a session backend (or
- * a later tester mode) plugs other operations into. `applyPipeline` is the
- * engine's front door: served html + exclusion set → rewritten html and a
- * combined per-transform report for UI/status consumption.
+ * declared order (the set registry's — `EXCLUSION_FEATURES`), plus the
+ * generic composition seam a session backend (or a later tester mode)
+ * plugs other operations into. `applyPipeline` is the engine's front door:
+ * served html + exclusion set → rewritten html and a combined per-transform
+ * report for UI/status consumption.
+ *
+ * Consumers must bound the pipeline's wall time: rows are operator-provided
+ * patterns, so a pathological one can run long — the engine stays pure and
+ * unbounded by design; the session backend owns the budget (an overrun is
+ * a typed session failure naming the offending feature/row, never a hung
+ * navigation).
  */
 import { delayJsTransform } from './delay-js';
 import { deferJsTransform } from './defer-js';
@@ -11,8 +18,8 @@ import { lazyloadTransform } from './lazyload';
 import { lazyRenderTransform } from './lazy-render';
 import { ExclusionValidationError } from './errors';
 import { prevalidateExclusionSet } from './validate';
+import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
 import type { TransformReport, TransformResult } from './report';
-import type { ExclusionFeatureId, ExclusionSet } from './set';
 
 /** One composition step: a named transform over the html so far. */
 export interface PipelineStep<R> {
@@ -55,17 +62,25 @@ interface FeatureEntry {
 }
 
 /**
- * The four transforms in their one declared execution order: Delay JS
- * first (its restore reclaims `src`, which the Defer matcher then reads as
- * the effective URL), then Defer JS, then the two markup features. Adding
- * a feature = one row here + its transform module.
+ * Feature id → transform. The execution order is owned by the set registry
+ * (`EXCLUSION_FEATURES` — the one declaring site); this table only binds
+ * each feature to its operation, so adding a feature cannot fork the order.
  */
-const FEATURE_PIPELINE: readonly FeatureEntry[] = [
-  { id: 'delay_js', transform: delayJsTransform },
-  { id: 'defer_all_js', transform: deferJsTransform },
-  { id: 'lazyload', transform: lazyloadTransform },
-  { id: 'automatic_lazy_rendering', transform: lazyRenderTransform }
-];
+const FEATURE_TRANSFORMS: Record<
+  ExclusionFeatureId,
+  (servedHtml: string, set: ExclusionSet) => TransformResult
+> = {
+  delay_js: delayJsTransform,
+  defer_all_js: deferJsTransform,
+  lazyload: lazyloadTransform,
+  automatic_lazy_rendering: lazyRenderTransform
+};
+
+/** The pipeline steps, derived from the registry's declared execution order. */
+const FEATURE_PIPELINE: readonly FeatureEntry[] = EXCLUSION_FEATURES.map(({ id }) => ({
+  id,
+  transform: FEATURE_TRANSFORMS[id]
+}));
 
 /** The pipeline's execution order, for consumers that display it. */
 export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIPELINE.map(

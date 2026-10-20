@@ -134,6 +134,67 @@ describe('scanTags — hostile inputs terminate cleanly', () => {
     expect(html.slice(tags[0]?.start ?? 0, tags[0]?.end ?? 0)).toBe('<script>a</script x>');
   });
 
+  it('does not close a raw-text region on a longer tag name (`</scripty>` is element text)', () => {
+    const html = '<script>a</scripty><img src="swallowed.jpg">';
+    const tags = scanTags(html);
+    expect(tags.map((tag) => tag.name)).toEqual(['script']);
+    expect(tags[0]?.end).toBe(html.length);
+  });
+
+  it('does not close a style region on a longer tag name either', () => {
+    const html = '<style>a</stylename><b>swallowed</b>';
+    expect(scanTags(html).map((tag) => tag.name)).toEqual(['style']);
+  });
+
+  it('closes on the exact name even when a longer name appears first', () => {
+    const html = '<script>a</scripty>b</script><img src="after.jpg">';
+    expect(scanTags(html).map((tag) => tag.name)).toEqual(['script', 'img']);
+  });
+
+  it('bounds textarea and title regions the same way (their content is raw text, not markup)', () => {
+    const html =
+      '<textarea><img src="in-textarea.jpg"></textarea><title><b>not a tag</b></title><img src="after.jpg">';
+    const tags = scanTags(html);
+    expect(tags.map((tag) => tag.name)).toEqual(['textarea', 'title', 'img']);
+    expect(tags[2]?.attrs[0]).toEqual(expect.objectContaining({ value: 'after.jpg' }));
+  });
+
+  it('closes a comment on `--!>` — content after it is markup again', () => {
+    const html = '<!-- c --!><img src="after-bang.jpg">';
+    const [tag] = scanTags(html);
+    expect(tag?.name).toBe('img');
+    expect(tag?.attrs[0]).toEqual(expect.objectContaining({ value: 'after-bang.jpg' }));
+  });
+
+  it('closes the empty-comment spellings `<!-->` and `<!--->` immediately', () => {
+    for (const [closer, source] of [
+      ['<!-->', '<!--><img src="after-empty.jpg">'],
+      ['<!--->', '<!---><img src="after-dash.jpg">']
+    ] as const) {
+      const [tag] = scanTags(source);
+      expect(tag?.name).toBe('img');
+      expect(source.startsWith(closer)).toBe(true);
+    }
+  });
+
+  it('runs an unclosed comment to the end of input', () => {
+    const html = '<!-- <img src="swallowed.jpg"> never closes';
+    expect(scanTags(html)).toEqual([]);
+  });
+
+  it('treats CDATA as a bogus comment ending at the first `>` (HTML is not XML)', () => {
+    const html = '<![CDATA[<img src="in-cdata.jpg">]]><img src="after.jpg">';
+    const tags = scanTags(html);
+    expect(tags.map((tag) => tag.name)).toEqual(['img']);
+    expect(tags[0]?.attrs[0]).toEqual(expect.objectContaining({ value: 'after.jpg' }));
+  });
+
+  it('reports duplicate attributes in document order, unmerged', () => {
+    const html = '<img src="a.jpg" src="b.jpg" data-x="1" data-x="2">';
+    const [tag] = scanTags(html);
+    expect(tag?.attrs.map((attr) => attr.value)).toEqual(['a.jpg', 'b.jpg', '1', '2']);
+  });
+
   it('handles the empty string', () => {
     expect(scanTags('')).toEqual([]);
   });

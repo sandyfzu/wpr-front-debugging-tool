@@ -24,13 +24,16 @@ export interface TextPatch {
 
 /**
  * Apply patches right-to-left over the original coordinates. Patches must
- * be disjoint — a transform emits at most one patch per tag span, so an
- * overlap is broken transform logic, never input shape.
+ * not overlap — a transform emits at most one patch per tag span, so an
+ * overlap is broken transform logic, never input shape. Adjacent patches
+ * are fine: sharing an edge coordinate (`previous.end === patch.start`,
+ * zero-width insertions at one offset included) is not an overlap.
  *
  * @param html The original document text.
  * @param patches The patches (any order; zero-width insertions allowed).
  * @returns The rewritten text; the input itself when there are no patches.
- * @throws {@link Error} when two patches overlap — a bug to fix, not to hide.
+ * @throws {@link Error} when two patches overlap (a patch's start strictly
+ *   inside a previous patch's span) — a bug to fix, not to hide.
  */
 export function applyPatches(html: string, patches: readonly TextPatch[]): string {
   if (patches.length === 0) return html;
@@ -161,9 +164,10 @@ export function addAttributeValue(tagText: string, name: string, value: string):
 
 /**
  * Stamp the FDT exclusion marker on an element, accumulating the feature id
- * as CSV: an absent marker gains the id; a present one keeps its raw value
- * and appends `,id` — never clobbering, never duplicating (already-listed
- * ids, compared trimmed, stamp nothing).
+ * as CSV (comma + space, the tool's own accumulation format): an absent
+ * marker gains the id; a present one keeps its raw value and appends `, id`
+ * — never clobbering, never duplicating (already-listed ids, compared
+ * trimmed, stamp nothing).
  *
  * @param tagText The tag's current text.
  * @param featureId The feature to list on the marker.
@@ -175,5 +179,5 @@ export function stampExclusionMarker(tagText: string, featureId: ExclusionFeatur
   if (attr.value === null) return setAttributeValue(tagText, FDT_EXCLUDED_RESOURCE, featureId);
   const listed = attr.value.split(',').map((part) => part.trim());
   if (listed.includes(featureId)) return tagText;
-  return setAttributeValue(tagText, FDT_EXCLUDED_RESOURCE, `${attr.value},${featureId}`);
+  return setAttributeValue(tagText, FDT_EXCLUDED_RESOURCE, `${attr.value}, ${featureId}`);
 }

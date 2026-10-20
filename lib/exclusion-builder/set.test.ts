@@ -11,17 +11,17 @@ describe('EXCLUSION_FEATURES', () => {
     expect(EXCLUSION_FEATURES.map((feature) => feature.id)).toEqual([
       'delay_js',
       'defer_all_js',
-      'lazyload',
-      'automatic_lazy_rendering'
+      'automatic_lazy_rendering',
+      'lazyload'
     ]);
   });
 
-  it("declares each feature's row kind — patterns everywhere except Lazyload's literals", () => {
+  it("declares each feature's row kind — literals for Lazyload and Automatic Lazy Rendering", () => {
     expect(EXCLUSION_FEATURES.map((feature) => feature.rowKind)).toEqual([
       'pattern',
       'pattern',
       'literal',
-      'pattern'
+      'literal'
     ]);
   });
 
@@ -29,8 +29,8 @@ describe('EXCLUSION_FEATURES', () => {
     expect(EXCLUSION_FEATURES.map((feature) => feature.rowsKey)).toEqual([
       'delayJs',
       'deferJs',
-      'lazyload',
-      'lazyRender'
+      'lazyRender',
+      'lazyload'
     ]);
   });
 
@@ -38,8 +38,8 @@ describe('EXCLUSION_FEATURES', () => {
     expect(EXCLUSION_FEATURES.map((feature) => feature.toggleKey)).toEqual([
       'delayJs',
       'deferJs',
-      null,
-      'lazyRender'
+      'lazyRender',
+      null
     ]);
   });
 });

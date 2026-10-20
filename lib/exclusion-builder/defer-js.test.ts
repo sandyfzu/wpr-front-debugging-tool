@@ -1,8 +1,9 @@
 /**
- * The Defer JS transform: matches the effective URL (`data-rocket-src` or
- * `src`) of WP Rocket-deferred scripts (the served `data-rocket-defer`
- * marker is the candidacy gate) and strips both defer markers; a bare
- * native `defer` the plugin never stamped is not this feature's work.
+ * The Defer JS transform: matches the effective URL (`data-rocket-src`, or
+ * `src` — raw and, with a document URL given, document-resolved) of WP
+ * Rocket-deferred scripts (the served `data-rocket-defer` marker is the
+ * candidacy gate) and strips both defer markers; a bare native `defer` the
+ * plugin never stamped is not this feature's work.
  */
 import { describe, expect, it } from 'vitest';
 import { deferJsTransform } from './defer-js';
@@ -31,6 +32,7 @@ describe('deferJsTransform — identity arms', () => {
       featureWide: false,
       candidates: 0,
       rewritten: 0,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: ['native-defer']
     });
@@ -56,6 +58,7 @@ describe('deferJsTransform — stripping the markers', () => {
       featureWide: false,
       candidates: 1,
       rewritten: 1,
+      regionRemovals: 0,
       matchedRows: [{ row: 'jquery\\.js$', rowKind: 'pattern', matches: 1 }],
       unmatchedRows: []
     });
@@ -131,9 +134,57 @@ describe('deferJsTransform — adversarial markup', () => {
       featureWide: false,
       candidates: 1,
       rewritten: 0,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: ['inline']
     });
+  });
+});
+
+describe('deferJsTransform — document URL resolution', () => {
+  const RELATIVE = '<script src="js/jquery.js" id="jquery" data-rocket-defer defer></script>';
+  const DOC_URL = 'https://s.tld/page/index.html';
+
+  it('matches the document-resolved absolute form of a relative src (what a DOM reads off script.src)', () => {
+    const result = deferJsTransform(
+      RELATIVE,
+      setWithRows(['^https://s\\.tld/page/js/jquery\\.js$']),
+      DOC_URL
+    );
+    expect(result.report.rewritten).toBe(1);
+  });
+
+  it('still matches the raw attribute form alongside the resolved one', () => {
+    const result = deferJsTransform(RELATIVE, setWithRows(['^js/jquery\\.js$']), DOC_URL);
+    expect(result.report.rewritten).toBe(1);
+  });
+
+  it('resolves nothing without a document URL — the raw attribute is the only target', () => {
+    expect(deferJsTransform(RELATIVE, setWithRows(['^https://'])).report.rewritten).toBe(0);
+  });
+
+  it('keeps an absolute src a single target — no double match counting', () => {
+    const result = deferJsTransform(DEFERRED, setWithRows(['jquery\\.js']), 'https://s.tld/page/');
+    expect(result.report.matchedRows).toEqual([
+      { row: 'jquery\\.js', rowKind: 'pattern', matches: 1 }
+    ]);
+  });
+
+  it('matches the delay-parked carrier raw, never resolved', () => {
+    const html =
+      '<script type="rocketlazyloadscript" data-rocket-src="js/x.js" data-rocket-defer defer></script>';
+    expect(
+      deferJsTransform(html, setWithRows(['^https://s\\.tld/js/x\\.js$']), 'https://s.tld/p/')
+        .report.rewritten
+    ).toBe(0);
+    expect(
+      deferJsTransform(html, setWithRows(['^js/x\\.js$']), 'https://s.tld/p/').report.rewritten
+    ).toBe(1);
+  });
+
+  it('survives an unresolvable document URL — the raw value stays the only target', () => {
+    const result = deferJsTransform(RELATIVE, setWithRows(['^js/jquery\\.js$']), 'not-a-url');
+    expect(result.report.rewritten).toBe(1);
   });
 });
 
@@ -146,6 +197,7 @@ describe('deferJsTransform — feature-wide disable', () => {
       featureWide: true,
       candidates: 2,
       rewritten: 2,
+      regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: []
     });
@@ -165,7 +217,7 @@ describe('deferJsTransform — marker accumulation', () => {
     const html =
       '<script src="a.js" data-rocket-defer="defer" data-wpr-fdt-excluded="delay_js"></script>';
     const result = deferJsTransform(html, setWithRows(['a\\.js']));
-    expect(result.html).toContain('data-wpr-fdt-excluded="delay_js,defer_all_js"');
+    expect(result.html).toContain('data-wpr-fdt-excluded="delay_js, defer_all_js"');
   });
 
   it('does not duplicate an id already listed', () => {

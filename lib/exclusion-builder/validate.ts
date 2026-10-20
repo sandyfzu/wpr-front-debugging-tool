@@ -5,7 +5,12 @@
  * inline in one pass. Pure: no compilation state is kept.
  */
 import type { InvalidExclusionRow } from './errors';
-import { EXCLUSION_FEATURES, type ExclusionSet, type ExclusionFeatureId } from './set';
+import {
+  EXCLUSION_FEATURES,
+  type ExclusionRowKind,
+  type ExclusionSet,
+  type ExclusionFeatureId
+} from './set';
 
 /** The outcome of validating a whole set. */
 export interface ExclusionSetProblems {
@@ -26,7 +31,7 @@ export interface ExclusionSetProblems {
  * @param row The row as given.
  * @param rowKind How the row will be matched.
  */
-function rowProblem(row: string, rowKind: 'pattern' | 'literal'): string | null {
+function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
   if (row.trim() === '') return 'Row is empty — it would match every element';
   if (rowKind === 'pattern') {
     try {
@@ -48,7 +53,7 @@ function rowProblem(row: string, rowKind: 'pattern' | 'literal'): string | null 
  */
 export function featureRowProblems(
   feature: ExclusionFeatureId,
-  rowKind: 'pattern' | 'literal',
+  rowKind: ExclusionRowKind,
   rows: readonly string[]
 ): readonly InvalidExclusionRow[] {
   const problems: InvalidExclusionRow[] = [];

@@ -32,8 +32,10 @@ Operations transform **WP Rocket's served HTML** (un-optimization): applying exc
 - **Delay JS:** matches whole delayed-script markup (both Delay types); restores `data-rocket-type`/`data-rocket-src` to a live script.
 - **Defer JS:** matches effective URL (`data-rocket-src` or `src`); removes `data-rocket-defer` + `defer`.
 - **Image Lazyload:** matches **literal substring** (not regex) on the clone with lazy src restored; restores `src`/`srcset`/`sizes`; `srcset`-only case in parity tests.
-- **Automatic Lazy Rendering:** matches child-cleared outerHTML; removes `data-wpr-lazyrender`; feature-wide disable also removes the runner scripts and `rocket-lazyrender-inline-css`.
+- **Automatic Lazy Rendering:** matches child-cleared outerHTML; removes `data-wpr-lazyrender`; feature-wide disable also removes the runner scripts and `rocket-lazyrender-inline-css`. **Correction 2026-10-20:** the "runner scripts" premise is retracted — a fresh read of the disable routine (utils.ts:318-326) plus a plugin-zip grep (2026-10-20) found no lazyrender runner-script asset; the disable removes the attribute and `rocket-lazyrender-inline-css` only.
 - **Exclusion attribute accumulates CSV**; doctype serialization preserved; feature-wide disable toggles = the source's three (G-4).
+- `data-rocket-status` stays a delayed-candidacy marker — snapshot-only evidence, inert for served HTML; kept for future-proofing (dispositioned 2026-10-20).
+- Delay candidacy matches the delay-type vocabulary by substring, so `;charset=…`-suffixed type values match too, rather than the served exact-match selector — detection-vocabulary reuse, documented divergence (dispositioned 2026-10-20).
 - Old **file-I/O surface dies with the flow** (disposition, incl. defect #35 error laundering/stream cleanup/working/external-edit loss): no file pick/read/working file — the engine input is the live served HTML; Reset = re-apply from the stored unmodified original; external edits don't exist. The old overwritten-page notice is superseded by the overlay's own applied-state indicator (byte-identical notice was never an approved mandate).
 
 ### What the session backend adds to each tester (P13/P14 own them)
@@ -99,7 +101,7 @@ DoD: contracts green, additive only, zero consumers beyond tests. Effort S · di
 Depends:P10A+C. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session in the background.
 
 - [ ] `debugger` permission added (Chromium manifest only, `wxt.config.ts` comment: why + G-2 receipt; Firefox build unchanged).
-- [ ] Session state machine: attach → `Fetch.enable` (Document/Response) → reload/fulfill transform via engine → detach (or persist per G-5); every step's failure arm typed and surfaced (attach denied/target gone/no receiver); `onDetach` (DevTools opened, user Cancel on the infobar, navigation, crash) stops cleanly, never retries against a dead context.
+- [ ] Session state machine: attach → `Fetch.enable` (Document/Response) → reload/fulfill transform via engine → detach (or persist per G-5); every step's failure arm typed and surfaced (attach denied/target gone/no receiver); `onDetach` (DevTools opened, user Cancel on the infobar, navigation, crash) stops cleanly, never retries against a dead context. The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
 - [ ] Fidelity on fulfill: preserve the response's charset (`getResponseBody` base64 → decode with the original encoding → transform → encode back; `Content-Type`/headers passed through) — a wrong-charset fulfill corrupts the render.
 - [ ] Mode resolution: interception possible (DevTools closed) vs not — the decision feeds the overlay's mode indicator; G-3 fallback plugged at this seam.
 - [ ] Unit tests for the state machine with injected command ports; manual runtime evidence on the docker site.
@@ -110,7 +112,7 @@ DoD: apply-and-render works end-to-end on Chromium with DevTools closed; every f
 
 Depends:P10A+C. Parallel:P10D. Goal: `filterResponseData` rewrite with the same engine and the same session semantics.
 
-- [ ] Streaming transformer: buffer bounded, transform once, close/error exactly once (old stream-cleanup defect class explicitly closed); request filter = main frame, host patterns reused; charset/headers untouched (transform operates on the decoded stream per Firefox's TextDecoderStream contract, re-encoded on output).
+- [ ] Streaming transformer: buffer bounded, transform once, close/error exactly once (old stream-cleanup defect class explicitly closed); request filter = main frame, host patterns reused; charset/headers untouched (transform operates on the decoded stream per Firefox's TextDecoderStream contract, re-encoded on output). The engine apply runs under a wall-time budget; an overrun is a typed session failure naming the offending feature/row — never a hung navigation.
 - [ ] Listener registration on event-page wake; session persistence per G-5 (active-session flag consulted per navigation, detached observers/rules cleaned up on Stop/tab close); applied-state persisted for the reload's overlay.
 - [ ] Unit tests with injected stream shims; manual runtime evidence on the docker Firefox build.
 
