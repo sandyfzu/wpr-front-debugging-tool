@@ -10,7 +10,7 @@
  * grows), never consumer branching: the page maps over these rows.
  */
 
-import { APPEARANCES, type Appearance } from '../../utils/theme';
+import { isAppearance, type Appearance } from '../../utils/theme';
 import {
   storedOptionsOrFallback,
   TOOLBAR_BADGE,
@@ -65,18 +65,6 @@ export interface AppearanceOptionRow {
 
 /** Any registry row — the union the page's controls render from. */
 export type OptionRow = BooleanOptionRow | AppearanceOptionRow;
-
-/**
- * Whether a draft value is one of the three documented appearance choices —
- * the vocabulary's guard for values typed wider than `Appearance` (the
- * draft's `boolean | Appearance`). Derived from the `APPEARANCES` order in
- * `utils/theme` — never a second spelling of the vocabulary.
- *
- * @param value Any value to test.
- */
-export function isAppearanceChoice(value: unknown): value is Appearance {
-  return typeof value === 'string' && (APPEARANCES as readonly string[]).includes(value);
-}
 
 /**
  * Freeze a table and each of its rows — the registry is immutable data, never
@@ -178,6 +166,6 @@ export function optionRowsIn(sectionId: OptionSectionId): readonly OptionRow[] {
  * @param value The value offered for it.
  */
 export function isValidOptionValue(row: OptionRow, value: boolean | Appearance): boolean {
-  if (row.kind === 'appearance') return isAppearanceChoice(value);
+  if (row.kind === 'appearance') return isAppearance(value);
   return typeof value === 'boolean';
 }

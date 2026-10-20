@@ -1,10 +1,11 @@
 /**
  * The options page model's contract, over the fake browser for the storage
  * seams and traced seams for the failure branches: load (populated, fresh
- * defaults, corrupt storage), dirty tracking and the dirty-only save gate,
- * the merged write that preserves unknown boolean fields and concurrent
- * non-registry options, typed save-failure outcomes (rejections never
- * swallowed), the load-rejection retry path, and the input guards.
+ * defaults, corrupt storage, one read in flight at a time), dirty tracking
+ * and the dirty-only save gate, the merged write that preserves unknown
+ * boolean fields and concurrent non-registry options, typed save-failure
+ * outcomes (rejections never swallowed), the load-rejection retry path,
+ * immutable exposed state, and the input guards.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
@@ -213,9 +214,11 @@ describe('load', () => {
     const failed = fx.model.snapshot();
     if (failed.status !== 'failed') throw new Error('expected failed');
     expect(failed.failure).toMatch(/retry/i);
-    // The retry affordance re-runs the load against the recovered seam.
+    // The retry affordance re-runs the load against the recovered seam —
+    // the busy guard released on the failure, the door is not stuck.
     await fx.model.load();
     expect(fx.model.snapshot().status).toBe('ready');
+    expect(io.read).toHaveBeenCalledTimes(2);
   });
 
   it('refuses to reload while ready (a reload would discard unsaved edits)', async () => {
@@ -225,6 +228,27 @@ describe('load', () => {
     expect(io.read).toHaveBeenCalledTimes(1);
     await fx.model.load();
     expect(io.read).toHaveBeenCalledTimes(1); // no second read
+  });
+
+  it('refuses a second load while one is still in flight (one read resolves over the state)', async () => {
+    let releaseRead: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const io = tracedIO({
+      read: vi.fn(async () => {
+        await gate;
+        return getOptions();
+      })
+    });
+    const fx = createFixture(io);
+    const first = fx.model.load();
+    await fx.model.load(); // Refused, logged — no second, racing read.
+    releaseRead?.();
+    await first;
+    expect(io.read).toHaveBeenCalledTimes(1);
+    expect(fx.model.snapshot()).toMatchObject({ status: 'ready', dirty: false });
+    expect(io.log.warn).toHaveBeenCalled();
   });
 });
 
@@ -238,6 +262,48 @@ describe('dirty tracking and input guards', () => {
     fx.model.setOption('toolbarBadge', false);
     expect(fx.model.snapshot()).toMatchObject({ dirty: false });
     expect(fx.snapshots.every((snapshot) => Object.isFrozen(snapshot))).toBe(true);
+  });
+
+  it('an edit after a successful save clears the toast (lastSave back to null)', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    fx.model.setOption('toolbarBadge', true);
+    await fx.model.save();
+    const saved = fx.model.snapshot();
+    expect(saved).toMatchObject({ dirty: false });
+    if (saved.status !== 'ready' || saved.lastSave === null || !saved.lastSave.ok) {
+      throw new Error('expected a successful save outcome');
+    }
+    fx.model.setOption('appearance', 'light');
+    expect(fx.model.snapshot()).toMatchObject({ dirty: true, lastSave: null });
+  });
+
+  it('exposes only frozen state — drafts after an edit, options after load and save', async () => {
+    await optionsStore.setValue(STORED_NONDEFAULT);
+    const fx = createFixture();
+    await fx.model.load();
+    // After load: the baseline (with its two boolean groups — the values are
+    // primitives, so this is the whole shape) hands out immutable.
+    const loaded = fx.model.snapshot();
+    if (loaded.status !== 'ready') throw new Error('expected ready');
+    expect(Object.isFrozen(loaded.options)).toBe(true);
+    expect(Object.isFrozen(loaded.options.improvements)).toBe(true);
+    expect(Object.isFrozen(loaded.options.features)).toBe(true);
+    // After setOption: the replacement draft, too.
+    fx.model.setOption('toolbarBadge', true);
+    const edited = fx.model.snapshot();
+    if (edited.status !== 'ready') throw new Error('expected ready');
+    expect(Object.isFrozen(edited.draft)).toBe(true);
+    // After save: the merged write is the exposed baseline and toast payload.
+    await fx.model.save();
+    const saved = fx.model.snapshot();
+    if (saved.status !== 'ready') throw new Error('expected ready');
+    const outcome = saved.lastSave;
+    if (outcome === null || !outcome.ok) throw new Error('expected a successful save outcome');
+    expect(Object.isFrozen(saved.options)).toBe(true);
+    expect(Object.isFrozen(outcome.options)).toBe(true);
+    expect(Object.isFrozen(outcome.options.features)).toBe(true);
   });
 
   it('setOption edits during a save re-dirty the page against the new baseline', async () => {

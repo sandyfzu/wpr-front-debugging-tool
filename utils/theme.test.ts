@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { applyTheme, nextAppearance, resolveTheme, type Appearance } from './theme';
+import { applyTheme, isAppearance, nextAppearance, resolveTheme, type Appearance } from './theme';
+
+describe('isAppearance (the vocabulary guard)', () => {
+  it('accepts exactly the three documented choices', () => {
+    expect(isAppearance('system')).toBe(true);
+    expect(isAppearance('dark')).toBe(true);
+    expect(isAppearance('light')).toBe(true);
+  });
+
+  it('rejects values typed wider than the vocabulary', () => {
+    expect(isAppearance('neon')).toBe(false);
+    expect(isAppearance('')).toBe(false);
+    expect(isAppearance(true)).toBe(false);
+    expect(isAppearance(0)).toBe(false);
+    expect(isAppearance(null)).toBe(false);
+    expect(isAppearance(undefined)).toBe(false);
+    // Casing is not forgiven: the vocabulary is exact.
+    expect(isAppearance('Dark')).toBe(false);
+  });
+});
 
 describe('nextAppearance (the keyboard cycle)', () => {
   it('walks the registry order and wraps system → dark → light → system', () => {

@@ -20,8 +20,8 @@
 
 import { createLogger, type Logger } from '../logger';
 import { getOptions, optionsStore, type StoredOptions } from '../storage/options';
-import type { Appearance } from '../../utils/theme';
-import { isAppearanceChoice, isValidOptionValue, OPTION_ROWS, readOption } from './registry';
+import { isAppearance, type Appearance } from '../../utils/theme';
+import { isValidOptionValue, OPTION_ROWS, readOption } from './registry';
 
 /** The actionable message the page renders when the initial load fails. */
 const LOAD_FAILURE_MESSAGE =
@@ -84,7 +84,7 @@ export function optionsWithDraft(base: StoredOptions, draft: OptionsDraft): Stor
     const value = draft[row.id];
     if (value === undefined) continue; // Belt: a draft always carries every row.
     if (row.kind === 'appearance') {
-      if (isAppearanceChoice(value)) appearance = value;
+      if (isAppearance(value)) appearance = value;
     } else if (typeof value === 'boolean') {
       if (row.section === 'improvements') improvements[row.id] = value;
       else features[row.id] = value;
@@ -156,14 +156,34 @@ export function createStorageOptionsPageIO(log: Logger = createLogger('options')
   };
 }
 
+/**
+ * Freeze an options value with its two boolean groups — the shape's values
+ * are primitives, so this two-level freeze is the whole state. Everything
+ * the model keeps or exposes must be immutable (the snapshots' own
+ * `Object.freeze` is shallow); safe because every options value here is
+ * freshly built by the storage contract's validator or the draft merge —
+ * never an alias of a caller's object.
+ *
+ * @param options The freshly built options value to freeze.
+ * @returns The same value, frozen for exposure.
+ */
+function freezeExposedOptions(options: StoredOptions): StoredOptions {
+  Object.freeze(options.improvements);
+  Object.freeze(options.features);
+  return Object.freeze(options);
+}
+
 /** The machine the page's wiring drives (one instance per mounted page). */
 export interface OptionsPageModel {
   /** The current snapshot (frozen; also the payload of every `onChange`). */
   snapshot(): Readonly<OptionsPageSnapshot>;
   /**
    * The initial load — and the failed state's retry target: reads options,
-   * populates the draft. A load while ready is a no-op (it would discard
-   * unsaved edits); while a save is in flight it is refused (logged).
+   * populates the draft. Invariant: at most one storage read is ever
+   * in flight — a load is refused (logged) while a load is already
+   * resolving or a save is being written, so a slow resolution can never
+   * overwrite a newer one or land over a save; a load while ready is a
+   * no-op (it would discard unsaved edits).
    */
   load(): Promise<void>;
   /**
@@ -205,6 +225,7 @@ export function createOptionsPageModel(
   let options: StoredOptions | null = null;
   let draft: OptionsDraft | null = null;
   let dirty = false;
+  let loading = false;
   let saving = false;
   let lastSave: OptionsSaveOutcome | null = null;
   let failure: string | null = null;
@@ -235,11 +256,16 @@ export function createOptionsPageModel(
     },
 
     async load(): Promise<void> {
+      if (loading) {
+        io.log.warn('Options load refused — a load is already in flight');
+        return;
+      }
       if (saving) {
         io.log.warn('Options load refused — a save is in flight');
         return;
       }
       if (status === 'ready') return; // A reload would discard unsaved edits.
+      loading = true;
       let loaded: StoredOptions;
       try {
         loaded = await io.read();
@@ -249,10 +275,13 @@ export function createOptionsPageModel(
         failure = LOAD_FAILURE_MESSAGE;
         notify();
         return;
+      } finally {
+        // Released on both legs, so a failure's retry affordance works.
+        loading = false;
       }
       status = 'ready';
       failure = null;
-      options = loaded;
+      options = freezeExposedOptions(loaded);
       draft = draftFromOptions(loaded);
       dirty = false;
       lastSave = null;
@@ -274,7 +303,9 @@ export function createOptionsPageModel(
           `setOption: ${JSON.stringify(value)} is not a legal value for the '${rowId}' row.`
         );
       }
-      draft = { ...draft, [rowId]: value };
+      // Frozen like every draft: the snapshot hands this object out, and a
+      // mutable one would let a consumer corrupt the edit buffer.
+      draft = Object.freeze({ ...draft, [rowId]: value });
       dirty = isDraftDirty(options, draft);
       lastSave = null; // A new edit supersedes the previous save's toast.
       notify();
@@ -301,7 +332,8 @@ export function createOptionsPageModel(
       saving = true;
       notify();
       // Fresh read first: the merge base must be what is stored *now*, so
-      // concurrent writers' fields survive the write.
+      // concurrent writers' fields survive the write. Registry rows the
+      // page owns are written from the draft — last-write-wins there.
       let fresh: StoredOptions;
       try {
         fresh = await io.read();
@@ -312,7 +344,9 @@ export function createOptionsPageModel(
         notify();
         return;
       }
-      const merged = optionsWithDraft(fresh, savedDraft);
+      // Frozen before it is written or exposed: the merged value becomes
+      // the snapshot's baseline and the toast's payload.
+      const merged = freezeExposedOptions(optionsWithDraft(fresh, savedDraft));
       try {
         await io.write(merged);
       } catch (cause) {
@@ -323,8 +357,7 @@ export function createOptionsPageModel(
         return;
       }
       // The baseline moves to what is stored; the draft keeps any edits made
-      // mid-flight (they re-dirty against the new baseline). Registry rows
-      // the page owns were written as approved — last-write-wins there.
+      // mid-flight (they re-dirty against the new baseline).
       options = merged;
       dirty = isDraftDirty(merged, draft);
       saving = false;

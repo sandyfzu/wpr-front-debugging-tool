@@ -4,6 +4,18 @@ export const APPEARANCES = ['system', 'dark', 'light'] as const;
 /** What every user-facing surface offers as its appearance choice. */
 export type Appearance = (typeof APPEARANCES)[number];
 
+/**
+ * Whether a value is one of the three documented appearance choices — the
+ * vocabulary's guard for values typed wider than `Appearance` (untrusted
+ * storage reads, registry row values). Derived from the `APPEARANCES` order
+ * — never a second spelling of the vocabulary.
+ *
+ * @param value Any value to test.
+ */
+export function isAppearance(value: unknown): value is Appearance {
+  return typeof value === 'string' && (APPEARANCES as readonly string[]).includes(value);
+}
+
 /** The palette CSS actually renders — what the three-way choice collapses to. */
 export type Theme = 'dark' | 'light';
 

@@ -10,7 +10,7 @@
  */
 
 import { storage } from 'wxt/utils/storage';
-import { APPEARANCES, nextAppearance, type Appearance } from '../../utils/theme';
+import { isAppearance, nextAppearance, type Appearance } from '../../utils/theme';
 
 /**
  * Canonical storage keys, declared once and reused by every slot below —
@@ -117,8 +117,7 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
   }
 
   const appearance = value['appearance'];
-  const appearanceOk =
-    typeof appearance === 'string' && (APPEARANCES as readonly string[]).includes(appearance);
+  const appearanceOk = isAppearance(appearance);
 
   // Same tolerant treatment as `improvements` above, seed-first: known flags
   // start from their documented defaults and every own boolean-valued key is
@@ -138,7 +137,7 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
 
   return {
     improvements: improvementsRows,
-    appearance: appearanceOk ? (appearance as StoredOptions['appearance']) : FALLBACK.appearance,
+    appearance: appearanceOk ? appearance : FALLBACK.appearance,
     features: featuresRows
   };
 }
