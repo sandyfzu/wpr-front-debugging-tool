@@ -12,7 +12,11 @@
  * plugin is not even present, a platform when no headers were captured)
  * renders honest silence instead of an invented answer.
  */
-import { formatCacheTimestamp, isRepresentableCacheStamp } from '../../../lib/detection/describe';
+import {
+  absoluteStampFromMs,
+  formatCacheTimestamp,
+  isRepresentableCacheStamp
+} from '../../../lib/detection/describe';
 import type { FdtData, PageHeader } from '../../../lib/wp-rocket/types';
 import type { DataState } from '../state/fdt-state-machine';
 import { relativeAge } from './relative-age';
@@ -129,17 +133,6 @@ const PLATFORM_SEPARATOR = ' · ';
 function headerValue(row: PageHeader): string | null {
   const value = row.value?.trim() ?? '';
   return value === '' ? null : value;
-}
-
-/**
- * Format a wall-clock millisecond stamp as the shared UTC timestamp form.
- *
- * @param ms The stamp (e.g. a fetch's settle time).
- * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null for a non-finite stamp.
- */
-function absoluteStampFromMs(ms: number): string | null {
-  if (!Number.isFinite(ms)) return null;
-  return formatCacheTimestamp(Math.round(ms / 1000));
 }
 
 /**

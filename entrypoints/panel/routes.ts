@@ -19,7 +19,7 @@ import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
-import { listCapped } from '../../lib/panel/list-behavior';
+import { listCapped, countLabel } from '../../lib/panel/list-behavior';
 import { formatCount } from '../../utils/format-count';
 
 /** Journey groups, in the order the nav renders them. */
@@ -85,18 +85,6 @@ export interface NavRoute {
 }
 
 /**
- * An English-counted chip copy: '1 image', '2 images' — or '5,000+ images'
- * when the inventory may extend past the capture cap (a lower bound).
- *
- * @param count The load's count.
- * @param noun The singular noun the count quantifies.
- * @param partial The inventory may be incomplete: the count is a floor.
- */
-function counted(count: number, noun: string, partial = false): string {
-  return `${shownTotal(count, partial)} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/**
  * Format a navigation total while keeping its capture-floor marker local.
  * @param count The captured list's length.
  * @param partial Whether more entries may exist beyond the captured list.
@@ -153,7 +141,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const count = images.length;
       const partial = listCapped(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
-        ? { text: counted(count, 'image', partial), tone: 'info' }
+        ? { text: countLabel(count, { one: 'image', other: 'images' }, partial), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
     }
   },
@@ -171,9 +159,9 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       return {
         text:
           resources.length > 0
-            ? counted(
+            ? countLabel(
                 resources.length,
-                'link',
+                { one: 'link', other: 'links' },
                 listCapped(
                   data.preloadedResources.truncated,
                   resources.length,

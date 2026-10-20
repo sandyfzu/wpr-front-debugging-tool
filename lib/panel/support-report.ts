@@ -134,6 +134,10 @@ function detailsCell(item: StatusItem): string {
 /**
  * The provenance lines: page, generation time, extension version.
  *
+ * The generation stamp truncates (`Math.floor`, deliberately not the shared
+ * ms helper — `absoluteStampFromMs` rounds): it shows the second the report
+ * was generated *in*, never one that had not happened yet.
+ *
  * @param context The report's provenance.
  * @returns The list lines (the page line only for a known http(s) URL, redacted).
  */
@@ -143,6 +147,7 @@ function contextLines(context: SupportReportContext): string[] {
   if (page !== null) {
     lines.push(`- **Page:** ${codeSpan(page)}`);
   }
+  // Truncation, not absoluteStampFromMs's rounding (why in the TSDoc above).
   const generated = formatCacheTimestamp(Math.floor(context.generatedAt / 1000));
   lines.push(`- **Generated:** ${generated ?? 'Time not available'}`);
   lines.push(

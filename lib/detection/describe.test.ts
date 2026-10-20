@@ -6,7 +6,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { describeDetections, formatCacheTimestamp, type PageAnalysisReport } from './describe';
+import {
+  absoluteStampFromMs,
+  describeDetections,
+  formatCacheTimestamp,
+  type PageAnalysisReport,
+  MAX_REPRESENTABLE_MS
+} from './describe';
 import { runDetection } from './run-detection';
 import { type FIXTURES, FIXTURE_DIR } from './fixtures/corpus';
 import type { WprDetections } from '../wp-rocket/types';
@@ -185,6 +191,34 @@ describe('formatCacheTimestamp', () => {
     expect(formatCacheTimestamp(9_999_999_999_999)).toBeNull();
     expect(formatCacheTimestamp(-9_999_999_999_999)).toBeNull();
     expect(formatCacheTimestamp(Number.NaN)).toBeNull();
+  });
+});
+
+describe('absoluteStampFromMs', () => {
+  it('formats a millisecond stamp in the shared UTC form, rounded to the second', () => {
+    expect(absoluteStampFromMs(Date.UTC(2026, 9, 14, 20, 47, 7, 400))).toBe(
+      '2026-10-14 20:47:07 UTC'
+    );
+    expect(absoluteStampFromMs(Date.UTC(2026, 9, 14, 20, 47, 7, 600))).toBe(
+      '2026-10-14 20:47:08 UTC'
+    );
+  });
+
+  it('answers null for a stamp that names no representable instant (never a throw)', () => {
+    expect(absoluteStampFromMs(Number.NaN)).toBeNull();
+    expect(absoluteStampFromMs(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(absoluteStampFromMs(Number.NEGATIVE_INFINITY)).toBeNull();
+    // Just past the ceiling: rounding to seconds must not resurrect a stamp
+    // that names no instant (the ceiling itself is the last real one).
+    expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS + 1)).toBeNull();
+    expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS + 499)).toBeNull();
+    expect(absoluteStampFromMs(-MAX_REPRESENTABLE_MS - 1)).toBeNull();
+  });
+
+  it('accepts the representable edge exactly', () => {
+    // The platform maximum instant is the one overflow-shaped stamp that is
+    // real; its text rides the shared formatter (year-overlong slice).
+    expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS)).toMatch(/^\+275760-09-13 .* UTC$/);
   });
 });
 

@@ -195,6 +195,38 @@ export function formatCacheTimestamp(seconds: number | null): string | null {
 }
 
 /**
+ * Whether a wall-clock millisecond stamp names a real, representable instant
+ * (finite, within the platform date range). The millisecond twin of
+ * {@link isRepresentableCacheStamp}: the machine's own stamps (a fetch's
+ * settle time, a cookie sample's capture time) arrive in milliseconds, and a
+ * caller that shows one must degrade to "no stamp" for a wild value — never
+ * construct a garbage `Date`.
+ *
+ * @param ms The stamp to judge.
+ */
+export function isRepresentableStampMs(ms: number): boolean {
+  return Number.isFinite(ms) && Math.abs(ms) <= MAX_REPRESENTABLE_MS;
+}
+
+/**
+ * Format a wall-clock millisecond stamp in the panel's absolute UTC form —
+ * the one spelling the status bar's freshness detail and the header
+ * inventory's Fetched/Captured stamps share, so two surfaces never disagree
+ * about one instant. Same guard family as {@link formatCacheTimestamp}: a
+ * stamp that names no representable instant renders as its absence (null) —
+ * never a made-up time beside a missing one — and the whole-second rounding
+ * is declared here, not re-derived per consumer.
+ *
+ * @param ms The stamp (epoch milliseconds).
+ * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null for a stamp that names no
+ *   representable instant.
+ */
+export function absoluteStampFromMs(ms: number): string | null {
+  if (!isRepresentableStampMs(ms)) return null;
+  return formatCacheTimestamp(Math.round(ms / 1000));
+}
+
+/**
  * Build the organized page-analysis report. Pure: same detections in, same
  * object out; prints expandably (`log.info('Page analysis', report)`), never
  * page content.

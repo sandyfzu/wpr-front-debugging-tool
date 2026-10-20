@@ -24,6 +24,7 @@
 
 import type { PageHeaders } from '../wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
+import { formatCount } from '../../utils/format-count';
 
 /**
  * The status-vocabulary kinds a verdict hint can carry (rendered through the
@@ -321,12 +322,10 @@ export function headersTruncationNote(
   const namesClipped = headers.some((row) => row.name.length === caps.name);
   const parts: string[] = [];
   if (valuesClipped)
-    parts.push(
-      `some header values were clipped to ${caps.value.toLocaleString('en-US')} characters`
-    );
+    parts.push(`some header values were clipped to ${formatCount(caps.value)} characters`);
   if (namesClipped)
-    parts.push(`some header names were clipped to ${caps.name.toLocaleString('en-US')} characters`);
-  if (capped) parts.push(`the list was capped at ${caps.count.toString()} headers`);
+    parts.push(`some header names were clipped to ${formatCount(caps.name)} characters`);
+  if (capped) parts.push(`the list was capped at ${formatCount(caps.count)} headers`);
   if (parts.length === 0) return 'Some headers were clipped.';
   const sentence = parts.join('; ');
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;

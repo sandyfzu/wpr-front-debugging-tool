@@ -52,6 +52,7 @@ import { STATUS_ICONS, STATUS_TEXT_CLASSES } from '../../../../components/ui/sta
 import { toast } from '../../../../components/ui/toast-store';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { absoluteStampFromMs } from '../../../../lib/detection/describe';
 import type { ShownHeader } from '../../../../lib/panel/shown-header';
 import {
   buildHeadersViewModel,
@@ -75,7 +76,6 @@ import {
   type InspectedWindowReloadApi
 } from './reload-inspected';
 import {
-  absoluteStamp,
   allHeadersCopyText,
   buildInventory,
   COOKIES_LEAD,
@@ -687,7 +687,7 @@ interface StampProps {
  */
 function Stamp(props: StampProps): JSX.Element {
   const relative = (): string => `${props.verb} ${relativeAge(props.now - props.at)}`;
-  const absolute = (): string | null => absoluteStamp(props.at);
+  const absolute = (): string | null => absoluteStampFromMs(props.at);
   return (
     <Show when={absolute()} fallback={<span>{relative()}</span>}>
       {(stamp) => (

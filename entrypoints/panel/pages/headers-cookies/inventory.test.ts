@@ -11,7 +11,6 @@ import { REDACTED } from '../../../../lib/redaction/rule';
 import type { PageCookies, PageHeaders } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
 import {
-  absoluteStamp,
   allHeadersCopyText,
   buildInventory,
   estimateRowHeight,
@@ -385,10 +384,8 @@ describe('heldFetchStamp', () => {
   });
 });
 
-describe('absoluteStamp / isoStamp', () => {
-  it('formats a stamp in the panel UTC form, rounded to the second', () => {
-    expect(absoluteStamp(Date.UTC(2026, 9, 14, 20, 47, 7, 400))).toBe('2026-10-14 20:47:07 UTC');
-    expect(absoluteStamp(Date.UTC(2026, 9, 14, 20, 47, 7, 600))).toBe('2026-10-14 20:47:08 UTC');
+describe('isoStamp', () => {
+  it('renders the full ISO instant, milliseconds intact', () => {
     expect(isoStamp(Date.UTC(2026, 9, 14, 20, 47, 7, 400))).toBe('2026-10-14T20:47:07.400Z');
   });
 
@@ -397,14 +394,11 @@ describe('absoluteStamp / isoStamp', () => {
     Number.POSITIVE_INFINITY,
     MAX_REPRESENTABLE_MS + 1,
     -MAX_REPRESENTABLE_MS - 1
-  ])('answers no absolute form for %s (never a throw)', (ms) => {
-    expect(absoluteStamp(ms)).toBeNull();
+  ])('answers no ISO form for %s (never a throw)', (ms) => {
     expect(isoStamp(ms)).toBeUndefined();
   });
 
   it('accepts the representable edge exactly', () => {
-    // The shared formatter owns the exact text; the edge only has to resolve.
-    expect(absoluteStamp(MAX_REPRESENTABLE_MS)).toMatch(/^\+275760-09-13 .* UTC$/);
     expect(isoStamp(MAX_REPRESENTABLE_MS)).toBe('+275760-09-13T00:00:00.000Z');
   });
 });

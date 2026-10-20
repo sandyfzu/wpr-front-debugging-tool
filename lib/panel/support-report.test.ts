@@ -273,6 +273,14 @@ describe('buildSupportReport — provenance', () => {
     expect(report).toContain('- **Generated:** Time not available');
     expect(report).toContain('- **Extension version:** `2`');
   });
+
+  it('truncates a sub-second stamp to the second it happened in (rounding would show :01)', () => {
+    const report = buildSupportReport(makeReportData(), {
+      ...CONTEXT,
+      generatedAt: Date.UTC(2026, 9, 14, 12, 0, 0, 900)
+    });
+    expect(report).toContain('- **Generated:** 2026-10-14 12:00:00 UTC');
+  });
 });
 
 describe('buildSupportReport — secrets never reach the report', () => {

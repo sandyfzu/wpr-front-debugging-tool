@@ -12,7 +12,7 @@
  */
 import type { HeaderRowVM, HeadersViewModel } from '../../../../lib/panel/headers-view-model';
 import type { CountNoun } from '../../../../lib/panel/list-behavior';
-import { formatCacheTimestamp, MAX_REPRESENTABLE_MS } from '../../../../lib/detection/describe';
+import { isRepresentableStampMs } from '../../../../lib/detection/describe';
 import { shownHeader, type ShownHeader } from '../../../../lib/panel/shown-header';
 import type { DataState } from '../../state/fdt-state-machine';
 import type { PageCookies } from '../../../../lib/wp-rocket/types';
@@ -313,31 +313,6 @@ export function heldFetchStamp(state: DataState, previous: number | null): numbe
 }
 
 /**
- * Whether a millisecond stamp names an instant `Date` can represent (a
- * hostile or broken stamp must degrade to "no absolute form", never throw).
- *
- * @param ms The stamp.
- * @returns True for a finite stamp within the platform's date range.
- */
-function isRepresentableMs(ms: number): boolean {
-  return Number.isFinite(ms) && Math.abs(ms) <= MAX_REPRESENTABLE_MS;
-}
-
-/**
- * Format a wall-clock millisecond stamp in the panel's absolute form — the
- * same whole-second rounding the status bar's freshness detail uses, so the
- * two surfaces never disagree about one fetch.
- *
- * @param ms The stamp.
- * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null when the stamp names no
- *   representable instant.
- */
-export function absoluteStamp(ms: number): string | null {
-  if (!isRepresentableMs(ms)) return null;
-  return formatCacheTimestamp(Math.round(ms / 1000));
-}
-
-/**
  * A stamp the page may show: one that names a representable instant. A
  * garbage stamp shows nothing — a relative age computed from it would be as
  * invented as its absolute form.
@@ -346,7 +321,7 @@ export function absoluteStamp(ms: number): string | null {
  * @returns The stamp, or null when there is none worth showing.
  */
 export function shownStamp(ms: number | null | undefined): number | null {
-  return ms !== null && ms !== undefined && isRepresentableMs(ms) ? ms : null;
+  return ms !== null && ms !== undefined && isRepresentableStampMs(ms) ? ms : null;
 }
 
 /**
@@ -356,5 +331,5 @@ export function shownStamp(ms: number | null | undefined): number | null {
  * @returns The ISO string, or undefined when the stamp names no representable instant.
  */
 export function isoStamp(ms: number): string | undefined {
-  return isRepresentableMs(ms) ? new Date(ms).toISOString() : undefined;
+  return isRepresentableStampMs(ms) ? new Date(ms).toISOString() : undefined;
 }
