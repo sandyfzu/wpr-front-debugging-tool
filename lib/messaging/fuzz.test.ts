@@ -1,9 +1,12 @@
 /**
- * Bounded deterministic fuzz over the payload guards: 2,000 mutated real
- * payloads must never throw — a guard's only two outcomes are the rebuilt
- * value or null. A throw would surface as an unhandled rejection on the
- * message path instead of an error state, so the no-throw property is
- * gate-level, not incidental.
+ * Bounded deterministic fuzz over the payload guards: 2,000 seeded mutations
+ * of real payloads, plus an exhaustive sweep putting every hostile value in
+ * every detections slot, must never throw — a guard's only two outcomes are
+ * the rebuilt value or null. A throw would surface as an unhandled rejection
+ * on the message path instead of an error state, so the no-throw property is
+ * gate-level, not incidental. The sweep also checks every accepted output:
+ * no array in it may hold a hole or `undefined` (a guard that skipped a hole
+ * would copy it through).
  */
 import { describe, expect, it } from 'vitest';
 import { parseWprDetections } from './validate';
@@ -42,6 +45,9 @@ const HOSTILE: unknown[] = [
   {},
   [],
   ['x', 5, null, {}],
+  // A leading hole before a valid string (structured clone keeps holes):
+  // the hole is the value under test.
+  [, 'https://s.com/x'],
   Symbol('no'),
   true,
   () => 'fn'
@@ -87,7 +93,62 @@ describe('payload guards — deterministic fuzz', () => {
     }
     expect(accepted).toBeGreaterThanOrEqual(0);
   });
+
+  it('every path × every hostile value: no throw, no hole in an accepted output', () => {
+    // The random run samples; this sweep guarantees each slot meets each
+    // hostile shape at least once (e.g. a hole inside every string list).
+    const paths = pathsOf(validDetections());
+    expect(paths.length).toBeGreaterThan(50);
+    for (const path of paths) {
+      for (const [index, hostile] of HOSTILE.entries()) {
+        const payload = structuredClone(validDetections());
+        setAt(payload, path, hostile);
+        const label = `${path.join('.')} ← HOSTILE[${String(index)}]`;
+        let parsed: unknown = null;
+        expect(() => (parsed = parseWprDetections(payload)), label).not.toThrow();
+        expect(holeyArrayPath(parsed), label).toBeNull();
+      }
+    }
+  });
 });
+
+/**
+ * Every key path in a plain JSON tree, parents before children (array
+ * indices included), so a sweep can replace any slot.
+ */
+function pathsOf(node: unknown, prefix: readonly string[] = []): string[][] {
+  if (node === null || typeof node !== 'object') return [];
+  return Object.entries(node).flatMap(([key, child]) => {
+    const path = [...prefix, key];
+    return [path, ...pathsOf(child, path)];
+  });
+}
+
+/**
+ * The path of the first array in `node` with a hole or an `undefined`
+ * member, or null when there is none — guard output is plain data, so either
+ * means a member that was never validated.
+ */
+function holeyArrayPath(node: unknown, path = '$'): string | null {
+  if (node === null || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (let index = 0; index < node.length; index += 1) {
+      if (!(index in node) || node[index] === undefined) return `${path}[${String(index)}]`;
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    const found = holeyArrayPath(child, `${path}.${key}`);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** Replace the slot at `path` (which {@link pathsOf} produced for this tree). */
+function setAt(root: Record<string, unknown>, path: readonly string[], value: unknown): void {
+  let node = root;
+  for (const key of path.slice(0, -1)) node = node[key] as Record<string, unknown>;
+  node[path[path.length - 1] as string] = value;
+}
 
 /**
  * The session block's hostile values: the shared set plus the shapes the

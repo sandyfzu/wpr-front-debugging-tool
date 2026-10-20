@@ -72,9 +72,19 @@ const LIMITS = {
   searchQuery: 200
 } as const;
 
-/** All members are strings. */
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+/**
+ * A list of at most `maxCount` strings. The cap is checked before any member
+ * is read, so the work is bounded by the cap, never by the declared `length`
+ * (a structured-cloned sparse array can claim 2^32−1 members in a few bytes).
+ * Every index is visited, so a hole reads as `undefined` and rejects.
+ *
+ * @param value The untrusted list.
+ * @param maxCount The largest member count the field allows.
+ */
+function isStringArray(value: unknown, maxCount: number): value is string[] {
+  if (!Array.isArray(value) || value.length > maxCount) return false;
+  for (const item of value) if (typeof item !== 'string') return false;
+  return true;
 }
 
 /**
@@ -263,7 +273,7 @@ export function parsePageCookies(input: unknown): PageCookies | null {
     return null;
   }
   const rawNames = input['names'];
-  if (!isStringArray(rawNames) || rawNames.length > LIMITS.cookies.count) return null;
+  if (!isStringArray(rawNames, LIMITS.cookies.count)) return null;
   const names: string[] = [];
   const seen = new Set<string>();
   for (const name of rawNames) {
@@ -596,7 +606,7 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     if (typeof item['lazyloadDetected'] !== 'boolean')
       return reject('images', at(index), 'lazyloadDetected');
     const reasons = item['excludedReasonsFound'];
-    if (!isStringArray(reasons) || reasons.length > LAZYLOAD_REASON_LIMIT)
+    if (!isStringArray(reasons, LAZYLOAD_REASON_LIMIT))
       return reject('images', at(index), 'excludedReasonsFound');
     images.push({
       src: item['src'],
@@ -641,14 +651,18 @@ function parseOptimizeCriticalImagesRow(
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
   if (!keys.has('preloadedImages') || keys.size !== 3 + mark) return reject('keys');
-  if (!isStringArray(row['preloadedImages'])) return reject('preloadedImages');
-  const images = row['preloadedImages'];
-  if (images.length < 1) return reject('preloadedImages', 'length');
-  if (images.length > LIMITS.preloadedImages.count) return reject('preloadedImages', 'length');
-  for (const [index, url] of images.entries()) {
-    if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
+  const rawImages = row['preloadedImages'];
+  if (!Array.isArray(rawImages)) return reject('preloadedImages');
+  // Count bounds before any member is read (bounded work on a sparse list).
+  if (rawImages.length < 1 || rawImages.length > LIMITS.preloadedImages.count)
+    return reject('preloadedImages', 'length');
+  const preloadedImages: string[] = [];
+  for (const [index, url] of rawImages.entries()) {
+    if (typeof url !== 'string' || url.length > LIMITS.preloadedImages.chars)
+      return reject('preloadedImages', at(index));
+    preloadedImages.push(url);
   }
-  return { present, lcpComment, preloadedImages: [...images], ...truncationOf(mark) };
+  return { present, lcpComment, preloadedImages, ...truncationOf(mark) };
 }
 
 /**
@@ -692,7 +706,7 @@ function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts
   // Absent feature: the engines emit an empty list, never a populated one
   // (and an empty list was never cut).
   if (mark === 1) return reject('truncated');
-  if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return reject('fonts');
+  if (!Array.isArray(row['fonts']) || row['fonts'].length !== 0) return reject('fonts');
   return { present: false, fonts: [] };
 }
 
@@ -713,7 +727,7 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
     return { present: true, domains, preconnectCount, ...truncationOf(mark) };
   }
   if (mark === 1) return reject('truncated');
-  if (!isStringArray(row['domains']) || row['domains'].length !== 0) return reject('domains');
+  if (!Array.isArray(row['domains']) || row['domains'].length !== 0) return reject('domains');
   return { present: false, domains: [], preconnectCount };
 }
 
@@ -825,17 +839,26 @@ function isBoundedStatusPrimitive(value: unknown): boolean {
   return false;
 }
 
-/** An array of non-empty bounded strings, rebuilt fresh (rejects wholesale on violation). */
+/**
+ * An array of non-empty bounded strings, rebuilt fresh (rejects wholesale on
+ * violation). The count cap is checked before any member is read; a bad
+ * member — wrong type, hole, empty or too long — rejects at its index.
+ *
+ * @returns The rebuilt list, or null (a non-array records no segment; the
+ *   caller names the field).
+ */
 function parseCappedStringList(
   value: unknown,
   limits: { count: number; chars: number }
 ): string[] | null {
-  if (!isStringArray(value)) return null;
+  if (!Array.isArray(value)) return null;
   if (value.length > limits.count) return reject('length');
+  const list: string[] = [];
   for (const [index, item] of value.entries()) {
-    if (item.length < 1 || item.length > limits.chars) return reject(at(index));
+    if (!isUsableString(item, limits.chars)) return reject(at(index));
+    list.push(item);
   }
-  return [...value];
+  return list;
 }
 
 /** Full panel payload. Every part is validated; any miss rejects the payload. */

@@ -147,19 +147,13 @@ Audit (adversarial, 2026-10-20): 2 MAJOR + 5 MINOR + 8 NOTE (n8 skipped — over
 
 Gates: compile/lint/format green; `pnpm test` 205 files, 3246 tests (+1 skipped) green, coverage ≥ 90 %; `build` + `check:budgets` green (no consumers).
 
-### P10C.1 — Fix: sparse-array holes in message validators (next)
+### P10C.1 — Fix: sparse-array holes in message validators ✅
 
-Depends:—. Parallel:— (do before P10D). Goal: boundary guards never accept or crash on array holes.
+Depends:—. Parallel:—. Done 2026-10-20.
 
-Found by the P10C audit (2026-10-20, verified by probe): `isStringArray` (`lib/messaging/validate.ts`) uses `.every`, which skips holes. Reachable over structured-clone transports only (Firefox runtime messaging, the window bridge); Chrome's JSON transport turns holes into `null`. Effects in `parseWprDetections`: sparse `preloadedImages` throws `TypeError` (reads `.length` of `undefined`) instead of returning `null`; sparse `excludedReasonsFound` is accepted and copied as a `string[]` holding `undefined`.
+Receipt: `isStringArray` (`lib/messaging/validate.ts`) skipped holes via `.every` and scanned before its callers' count caps. Reach: structured-clone runtime messaging — Firefox, Chrome only if the manifest opts into `message_serialization: structured_clone` (not set; default JSON turns holes into `null`) — from the extension's own content script, so defense in depth; the window bridge carries only error words (`parseErrorWords`, already hole-safe) and `DeviceSimState` (no arrays). Effects (reproduced): a hole threw `TypeError` in `preloadedImages` and every `parseCappedStringList` list (`fonts`, `domains`, beacon config lists) and was copied as `undefined` from `excludedReasonsFound`; a cloned `['x']` with `length` 2^32−1 cost ~64 s. Fix: `isStringArray(value, maxCount)` checks the cap first, then every index (hole ⇒ reject); `preloadedImages` + `parseCappedStringList` check count bounds first and reject a bad member at its index (`…fonts[1]`, was `…fonts`); absent `fonts`/`domains` only accept `[]` (no scan). Sweep of `lib/messaging/` + `lib/storage/`: no other hit — other untrusted-array guards are cap-first and use `for…of`/`.entries()` (holes read as `undefined`, then fail); storage array guards (`parseKnownConflicts`, `parseExclusionSet` → `parseRowList`) are those messaging guards. Tests (each regression fails on the old guard; the dense control and the cookie/words/headers/KC hole pins pass on both): `validate.test.ts` — per-field hole rejections over `structuredClone`, over-cap lists rejected with zero member touches (counting proxy) and a cloned 2^29-length sparse list rejected < 1 s (old guard: ~7.3 s), member-index explained paths; `fuzz.test.ts` — a hole in the hostile set and an exhaustive path × hostile sweep asserting no throw and no hole/`undefined` in any accepted output (the seeded random run alone missed the bug). Expectation changed: explained path for `fonts: [1]` is now `…fonts[0]` (a non-array row added to keep the field-level path pinned).
 
-- [ ] Fix `isStringArray` to check every index (holes = invalid); regression tests for both effects above, plus `cookies` names, `fonts`, `domains` and the `:833` caller.
-- [ ] Sweep every other untrusted-array guard in `lib/messaging/` + `lib/storage/` for hole-skipping iteration (`every`/`some`/`forEach`/`filter`/`map` over unvalidated arrays); fix and test each hit, or record "none".
-- [ ] Add sparse arrays to the pre-existing `fuzz.test.ts` hostile set (additive) so the class stays pinned.
-
-DoD: no guard accepts or throws on a hole; gates green. Effort XS · difficulty easy.
-
-### P10D — Chromium interception backend
+### P10D — Chromium interception backend (next)
 
 Depends:P10A, P10C-C.1. Parallel:P10E. Goal: a reliable, fully failure-aware CDP session in the background.
 
