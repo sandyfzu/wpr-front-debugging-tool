@@ -104,7 +104,14 @@ function withWpr(wpr: Partial<WprDetections['wpr']>): FdtData {
   return makeFdtData({
     wprDetections: {
       ...makeFdtData().wprDetections,
-      wpr: { present: false, cached: false, version: null, timeStamp: null, ...wpr }
+      wpr: {
+        present: false,
+        cacheMarkerFound: false,
+        cached: false,
+        version: null,
+        timeStamp: null,
+        ...wpr
+      }
     }
   });
 }
@@ -113,6 +120,7 @@ function withWpr(wpr: Partial<WprDetections['wpr']>): FdtData {
 function cachedData(): FdtData {
   const cached = withWpr({
     present: true,
+    cacheMarkerFound: true,
     cached: true,
     version: '3.20.0.2',
     timeStamp: (NOW_MS - 180_000) / 1000
@@ -190,6 +198,10 @@ describe('StatusBar (strip)', () => {
     expect(screen.queryByRole('link', { name: /Updated/ })).toBeNull();
     // The stamp's hover detail rides the real tooltip wiring — absolute UTC.
     const cacheLink = screen.getByRole('link', { name: /Cached/ });
+    // One check mark only: the chip text owns it, the badge adds no icon.
+    expect(cacheLink.textContent).toContain('✓ Cached');
+    expect(cacheLink.textContent.match(/✓/g)).toHaveLength(1);
+    expect(cacheLink.querySelector('svg')).toBeNull();
     expect(cacheLink.getAttribute('aria-describedby')).toBeNull();
     fireEvent.focus(cacheLink); // keyboard focus opens immediately
     expect(cacheLink.getAttribute('aria-describedby')).toBeTruthy();
@@ -206,7 +218,9 @@ describe('StatusBar (strip)', () => {
     const longVersion = `3.20.0.2${' x'.repeat(28)}`;
     const harness = makeHarness();
     renderStrip(harness);
-    harness.settle(withWpr({ present: true, cached: false, version: longVersion }));
+    harness.settle(
+      withWpr({ present: true, cacheMarkerFound: false, cached: false, version: longVersion })
+    );
     await flush();
 
     const chip = screen.getByRole('link', { name: `WP Rocket ${longVersion}` });
@@ -277,6 +291,40 @@ describe('StatusBar (strip)', () => {
     expect(screen.getByRole('link', { name: 'WP Rocket 3.20.0.2' })).toBeTruthy();
   });
 
+  it('renders the truncated cache arm from the copy module', async () => {
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle({
+      ...withWpr({ present: true, cacheMarkerFound: false, cached: false, timeStamp: null }),
+      pageHeaders: [{ name: 'server', value: 'nginx' }],
+      pageHeadersTruncated: true
+    });
+    await flush();
+    expect(screen.getByRole('link', { name: 'Cache not detected' })).toBeTruthy();
+  });
+
+  it('renders a captured host serve as "Possibly cached"', async () => {
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle({
+      ...withWpr({ present: true, cacheMarkerFound: false, cached: false, timeStamp: null }),
+      pageHeaders: [{ name: 'sg-f-cache', value: 'HIT' }]
+    });
+    await flush();
+    expect(screen.getByRole('link', { name: 'Possibly cached' })).toBeTruthy();
+  });
+
+  it('renders the qualified bypass arm as "Not cached"', async () => {
+    const harness = makeHarness();
+    renderStrip(harness);
+    harness.settle({
+      ...withWpr({ present: true, cacheMarkerFound: false, cached: false, timeStamp: null }),
+      bypassAttested: true
+    });
+    await flush();
+    expect(screen.getByRole('link', { name: 'Not cached' })).toBeTruthy();
+  });
+
   it('stays whole with quiet slots while the error view holds the cause', async () => {
     const harness = makeHarness();
     renderStrip(harness);
@@ -308,18 +356,19 @@ describe('StatusBar (strip)', () => {
     expect(theBar()).toBeTruthy();
   });
 
-  it('renders a validator-genuine hostile stamp as an unstamped cache, no downtime line', async () => {
-    // The payload the containment can really receive in production: fully
-    // valid page data (the boundary accepted it) whose page-crafted cache
-    // stamp is beyond the platform's date range. The segment's own leaf
-    // degrades the stamp; the strip stays up with every other answer whole.
+  it('renders an unstamped cached page without inventing a time', async () => {
+    // The boundary now enforces the cache display domain, so an out-of-range
+    // stamp never reaches the store; the segment's job is the unstamped case:
+    // "Cached" with no invented time and the rest of the strip intact.
     const harness = makeHarness();
     renderStrip(harness);
-    harness.settle(withWpr({ present: true, cached: true, timeStamp: 9_999_999_999_999 }));
+    harness.settle(
+      withWpr({ present: true, cacheMarkerFound: true, cached: true, timeStamp: null })
+    );
     await flush();
 
     expect(screen.queryByText('Status unavailable')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Cached' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '✓ Cached' })).toBeTruthy();
     expect(screen.queryByText(/^Cache generated at/)).toBeNull(); // No invented stamp either.
     // The rest of the row answers: platform/header silence stays a dash…
     expect(theBar().textContent).toContain('Updated');

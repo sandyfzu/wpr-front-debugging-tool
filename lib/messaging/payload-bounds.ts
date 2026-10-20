@@ -54,6 +54,12 @@ export const PAYLOAD_LIMITS = {
   /** Priority-Elements: font-preload list and preconnect domain list. */
   fonts: { count: 1_000, chars: 4096 },
   domains: { count: 500, chars: 2048 },
+  /**
+   * Page-sanity ceiling for script counts (attributed Delay/Defer totals).
+   * Far above any real page — a 5,000-row truncated list plus inline scripts
+   * still fits — and low enough that a forged 1e308 cannot reach the UI.
+   */
+  scriptCount: 1_000_000,
   /** Version strings read off the page. */
   versions: 64
 } as const;

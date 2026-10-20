@@ -9,13 +9,19 @@
   non-delayed elements, the preload-links blob, RocketCDN's dns-prefetch,
   the CSS-background container, the measuring beacon and preloaded critical
   images). Also carries the diagnoser json elements.
-  Snapshot note: minify_css present, minify_js present (non-delayed cache URL),
-  lazyload + lazyload_iframes + replaceImage + lazyload_css_bg_img present.
+  Snapshot note: every mapped feature is present — remove_unused_css,
+  async_css and rocket_cdn are declared by the meta and their real markup
+  also exists here; image_dimensions is declaration-only (true only by this
+  meta declaration — the fixture carries no footprint for it);
+  host_fonts_locally is declared because its footprint is exercised by the
+  dedicated branches fixture; minify_css, minify_js (non-delayed cache URL),
+  lazyload + lazyload_iframes + replaceImage + lazyload_css_bg_img are
+  present.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="WP Rocket 3.20.6.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_minify_js wpr_minify_css wpr_lazyload_images wpr_lazyload_iframes wpr_lazyload_css_bg_img wpr_oci wpr_preload_links wpr_desktop">
+  <meta name="generator" content="WP Rocket 3.20.6.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_minify_js wpr_minify_css wpr_lazyload_images wpr_lazyload_iframes wpr_lazyload_css_bg_img wpr_oci wpr_preload_links wpr_desktop wpr_remove_unused_css wpr_async_css wpr_cdn wpr_image_dimensions wpr_host_fonts_locally wpr_automatic_lazy_rendering wpr_auto_preload_fonts wpr_preconnect_external_domains">
   <title>all features present</title>
   <!-- Remove Unused CSS block. -->
   <style id="wpr-usedcss">body{margin:0}</style>

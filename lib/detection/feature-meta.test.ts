@@ -190,6 +190,8 @@ describe('FEATURE_META_TOKENS registry', () => {
     lazyload: 'wpr_lazyload_images',
     lazyload_iframes: 'wpr_lazyload_iframes',
     lazyload_css_bg_img: 'wpr_lazyload_css_bg_img',
+    self_hosted_fonts: 'wpr_host_fonts_locally',
+    image_dimensions: 'wpr_image_dimensions',
     rocket_above_the_fold_optimization: 'wpr_oci',
     automatic_lazy_rendering: 'wpr_automatic_lazy_rendering',
     auto_preload_fonts: 'wpr_auto_preload_fonts',

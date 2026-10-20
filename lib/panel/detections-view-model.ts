@@ -15,7 +15,8 @@ import { formatCacheTimestamp, isRepresentableCacheStamp } from '../detection/de
 import {
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
-  LABEL_PRIORITY_ELEMENTS_BEACON
+  LABEL_PRIORITY_ELEMENTS_BEACON,
+  LABEL_SELF_HOST_GOOGLE_FONTS
 } from '../detection/labels';
 import { KNOWN_PLATFORMS } from '../wp-rocket/constants';
 import type { FdtData, PageHeader, WprDetections } from '../wp-rocket/types';
@@ -59,13 +60,14 @@ export interface StatusItem {
 
 /**
  * Registry rows the option-name vocabulary doesn't cover (the Priority
- * Elements family the plugin names by feature id, plus its measurement
- * beacon): their verified plugin-native labels — never a raw row id on the
- * page when a verified label exists.
+ * Elements family the plugin names by feature id, its measurement beacon, and
+ * the self-hosted-fonts row): their verified plugin-native labels — never a
+ * raw row id on the page when a verified label exists.
  */
 const FEATURE_ROW_LABELS: ReadonlyMap<DetectionRow, string> = new Map([
   ['automatic_lazy_rendering', LABEL_AUTOMATIC_LAZY_RENDERING],
   ['preconnect_external_domains', LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS],
+  ['self_hosted_fonts', LABEL_SELF_HOST_GOOGLE_FONTS],
   ['priority_elements_beacon', LABEL_PRIORITY_ELEMENTS_BEACON]
 ]);
 

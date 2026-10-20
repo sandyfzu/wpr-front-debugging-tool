@@ -40,7 +40,7 @@ import { createStore } from 'solid-js/store';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { createLogger } from '../../../lib/logger';
-import type { PageData } from '../data-hub';
+import type { PageDataSnapshot } from '../data-hub';
 import { pageDataFor } from '../data-hub';
 import {
   effectiveInspectorEnabled,
@@ -83,7 +83,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
 
   const [state, setState] = createStore<InspectorUiState>({
     cardOpen: false,
-    snapshot: { phase: 'running', detections: null },
+    snapshot: { phase: 'running', detections: null, cacheState: null },
     wordpressVersion: null
   });
 
@@ -453,12 +453,15 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * re-triggers a pass, it waits for the page's one.
    */
   const refreshData = async (): Promise<void> => {
-    setState({ snapshot: { phase: 'running', detections: null }, wordpressVersion: null });
+    setState({
+      snapshot: { phase: 'running', detections: null, cacheState: null },
+      wordpressVersion: null
+    });
     if (reader === null) {
-      setState('snapshot', { phase: 'failed', detections: null });
+      setState('snapshot', { phase: 'failed', detections: null, cacheState: null });
       return;
     }
-    let result: PageData | null;
+    let result: PageDataSnapshot | null;
     try {
       result = await reader();
     } catch (cause) {
@@ -466,17 +469,21 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // economics' failure mode. Never an unhandled rejection.
       if (ctx.isInvalid) return;
       log.error('Reading the page data for the widget failed', cause);
-      setState('snapshot', { phase: 'failed', detections: null });
+      setState('snapshot', { phase: 'failed', detections: null, cacheState: null });
       return;
     }
     if (ctx.isInvalid) return;
     if (result === null) {
-      setState('snapshot', { phase: 'failed', detections: null });
+      setState('snapshot', { phase: 'failed', detections: null, cacheState: null });
       return;
     }
     setState({
-      snapshot: { phase: 'ready', detections: result.detections },
-      wordpressVersion: result.wordpressVersion
+      snapshot: {
+        phase: 'ready',
+        detections: result.data.detections,
+        cacheState: result.cacheState
+      },
+      wordpressVersion: result.data.wordpressVersion
     });
     // The card's rows just landed (its body changes height): the containment
     // re-settle reads the settled box for exactly this growth.

@@ -30,11 +30,15 @@ const fixture = (name: (typeof FIXTURES)[number]): string =>
 describe('processSerializedPage', () => {
   it('classifies a WP Rocket page end to end and applies presence propagation', async () => {
     const result = await processSerializedPage(fixture('me-home-cached.html'));
-    expect(result.detections.wpr).toMatchObject({ present: true, cached: true });
+    expect(result.detections.wpr).toMatchObject({
+      present: true,
+      cacheMarkerFound: true,
+      cached: true
+    });
     expect(result.detections.wpr.version).toMatch(/^\d+\.\d+/);
     // Rows are in the published record shape.
     expect(result.detections.delay_js.scripts.length).toBeGreaterThan(0);
-    expect(result.detections.rocket_cdn).toEqual({ present: false });
+    expect(result.detections.rocket_cdn).toEqual({ present: false, source: 'meta' });
     expect(result.preloadedResources).toEqual({
       present: true,
       resources: [
@@ -161,14 +165,15 @@ function pageWithPreloadedImages(count: number, cacheStamp = '1727000000'): stri
     (_, i) =>
       `<link rel="preload" as="image" data-rocket-preload href="https://example.test/lcp-${String(i)}.jpg">`
   ).join('');
-  return `<!doctype html><html><head>${links}</head><body></body></html><!-- This website is like a Rocket. Debug: cached@${cacheStamp} -->`;
+  return `<!doctype html><html><head>${links}</head><body></body></html><!-- This website is like a Rocket, isn't it? Debug: cached@${cacheStamp} -->`;
 }
 
 const LIVE: LivePageFacts = {
   allScriptsLoaded: false,
   headerCapture: null,
   undefinedReferences: [],
-  cookies: null
+  cookies: null,
+  bypassAttested: false
 };
 
 describe('composeFdtData — oversize pages still yield a payload the panel accepts', () => {
@@ -193,8 +198,21 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
 
   it('normalizes a cache stamp too long for a number to null (finite-only contract)', async () => {
     const data = await processSerializedPage(pageWithPreloadedImages(1, '9'.repeat(400)));
-    expect(data.detections.wpr).toMatchObject({ present: true, cached: true, timeStamp: null });
+    expect(data.detections.wpr).toMatchObject({
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      timeStamp: null
+    });
     expect(parseFdtData(composeFdtData(data, LIVE))).not.toBeNull();
+  });
+
+  it('carries the bypass attestation only when the capture saw it', async () => {
+    const data = await processSerializedPage(pageWithPreloadedImages(1));
+    expect(composeFdtData(data, { ...LIVE, bypassAttested: true })).toMatchObject({
+      bypassAttested: true
+    });
+    expect('bypassAttested' in composeFdtData(data, LIVE)).toBe(false);
   });
 
   it('carries the live facts and omits cookies only when none were captured', async () => {
@@ -204,7 +222,8 @@ describe('composeFdtData — oversize pages still yield a payload the panel acce
       allScriptsLoaded: true,
       headerCapture: { headers: [{ name: 'x-cache', value: 'HIT' }] },
       undefinedReferences: ['jQuery'],
-      cookies
+      cookies,
+      bypassAttested: false
     });
     expect(payload).toMatchObject({
       allScriptsLoaded: true,

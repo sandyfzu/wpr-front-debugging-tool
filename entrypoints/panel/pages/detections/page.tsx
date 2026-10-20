@@ -19,6 +19,7 @@ import type { JSX } from 'solid-js';
 import { createMemo, For, onCleanup, Show } from 'solid-js';
 import { buildStatusItems } from '../../../../lib/panel/detections-view-model';
 import { summarizeDetections } from '../../../../lib/panel/detections-summary';
+import { cacheStateFromFdtData } from '../../../../lib/detection/cache-context';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
@@ -61,7 +62,9 @@ export function DetectionsView(props: DetectionsViewProps): JSX.Element {
   // The ids are strings, so `For` keeps each card's DOM across refreshes
   // (a fresh item object per push would otherwise remount every card).
   const ids = createMemo(() => items().map((item) => item.id));
-  const summary = createMemo(() => summarizeDetections(items()));
+  const summary = createMemo(() =>
+    summarizeDetections(items(), cacheStateFromFdtData(props.data) ?? undefined)
+  );
 
   return (
     <PageFrame

@@ -8,6 +8,8 @@
  */
 
 import type { DetectionRow, StatusItem, StatusItemId, StatusKind } from './detections-view-model';
+import type { CacheState } from '../detection/cache-context';
+import { formatCacheTimestamp, isRepresentableCacheStamp } from '../detection/cache-time';
 
 /** The status words every Detections surface prints (badges, report) — sentence case. */
 export const STATUS_LABELS: Readonly<Record<StatusKind, string>> = {
@@ -22,18 +24,25 @@ export type WprSummary =
 /**
  * The page-cache answer. `not-applicable` = the plugin is absent and no
  * cache card exists (caching is not its question there); `cached` carries
- * the stamp only when it names a real instant.
+ * the stamp only when it names a real instant; `possibly-cached` carries the
+ * bypass qualification so the report can state both facts.
  */
 export type CacheSummary =
   | { readonly kind: 'not-applicable' }
-  | { readonly kind: 'not-cached' }
   | {
       readonly kind: 'cached';
       /** The stamp in epoch seconds, or null when the page carried no representable one. */
       readonly seconds: number | null;
       /** The stamp's absolute UTC form, or null alongside a null `seconds`. */
       readonly formatted: string | null;
-    };
+    }
+  | { readonly kind: 'uncertain-signature' }
+  | { readonly kind: 'possibly-cached'; readonly evidence: string; readonly bypassAttested?: true }
+  | {
+      readonly kind: 'not-detected';
+      readonly headers: 'captured' | 'unavailable' | 'truncated' | 'redacted';
+    }
+  | { readonly kind: 'not-cached' };
 
 /** The facts one Detections view states once, above (and inside) everything else. */
 export interface DetectionsSummary {
@@ -80,9 +89,16 @@ export function isOptimizationCard(id: StatusItemId): boolean {
  * cannot appear in the summary.
  *
  * @param items The status cards, in render order.
+ * @param cacheState The explicit cache answer when the caller has the
+ *   headers/bypass capture; omitted, the cards' `cached` card is the only
+ *   available fact and absence degrades to "cache not detected" — never a
+ *   not-cached verdict born from absence.
  * @returns The summary facts.
  */
-export function summarizeDetections(items: readonly StatusItem[]): DetectionsSummary {
+export function summarizeDetections(
+  items: readonly StatusItem[],
+  cacheState?: CacheState
+): DetectionsSummary {
   const byId = new Map(items.map((item) => [item.id, item]));
 
   const wprCard = byId.get('wpr');
@@ -96,7 +112,9 @@ export function summarizeDetections(items: readonly StatusItem[]): DetectionsSum
 
   const cachedCard = byId.get('cached');
   let cache: CacheSummary;
-  if (cachedCard !== undefined) {
+  if (cacheState !== undefined) {
+    cache = summaryCache(cacheState);
+  } else if (cachedCard !== undefined) {
     const detail = cachedCard.detail?.kind === 'cached-at' ? cachedCard.detail : null;
     cache = {
       kind: 'cached',
@@ -104,7 +122,10 @@ export function summarizeDetections(items: readonly StatusItem[]): DetectionsSum
       formatted: detail?.formatted ?? null
     };
   } else {
-    cache = wpr.present ? { kind: 'not-cached' } : { kind: 'not-applicable' };
+    // No explicit answer and no cached card: absence is never "not cached".
+    cache = wpr.present
+      ? { kind: 'not-detected', headers: 'unavailable' }
+      : { kind: 'not-applicable' };
   }
 
   const serverDetail = byId.get('server')?.detail;
@@ -128,4 +149,37 @@ export function summarizeDetections(items: readonly StatusItem[]): DetectionsSum
         : null,
     optimizations: { active, total }
   };
+}
+
+/**
+ * Map the explicit cache state onto the summary's narrow variant. The stamp
+ * is normalized here again so a hand-built state cannot violate the summary
+ * contract (null `seconds` and null `formatted` travel together).
+ *
+ * @param state The explicit state.
+ * @returns The summary cache fact.
+ */
+function summaryCache(state: CacheState): CacheSummary {
+  switch (state.kind) {
+    case 'cached': {
+      const seconds = isRepresentableCacheStamp(state.seconds) ? state.seconds : null;
+      return {
+        kind: 'cached',
+        seconds,
+        formatted: formatCacheTimestamp(seconds)
+      };
+    }
+    case 'uncertain-signature':
+      return { kind: 'uncertain-signature' };
+    case 'possibly-cached':
+      return {
+        kind: 'possibly-cached',
+        evidence: state.evidence,
+        ...(state.bypassAttested === true ? { bypassAttested: true as const } : {})
+      };
+    case 'not-detected':
+      return { kind: 'not-detected', headers: state.headers };
+    case 'not-cached':
+      return { kind: 'not-cached' };
+  }
 }

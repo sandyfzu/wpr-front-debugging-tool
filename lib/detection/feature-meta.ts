@@ -20,26 +20,15 @@
  * partial read), which falls every verdict back to footprint evidence.
  */
 
-import { WPR_FEATURES_ATTRIBUTE, WPR_FEATURES_META_SELECTOR } from '../wp-rocket/constants';
-import type { WprDetections } from '../wp-rocket/types';
+import {
+  FEATURE_META_LIMITS,
+  FEATURE_META_TOKENS,
+  WPR_FEATURES_ATTRIBUTE,
+  WPR_FEATURES_META_SELECTOR
+} from '../wp-rocket/constants';
+import type { FeatureMetaRow, WprDetections } from '../wp-rocket/types';
 
-/** Every detection row a meta token can decide (all but the identity and beacon rows). */
-export type FeatureMetaRow = Exclude<keyof WprDetections, 'wpr' | 'priority_elements_beacon'>;
-
-/**
- * Size caps for the untrusted attribute: real declarations carry ≤ ~20 short
- * tokens. Generous — and a violation degrades the whole declaration rather
- * than trusting a clipped token list (a truncated token could read as a
- * refutation of a feature that is actually on).
- */
-const FEATURE_META_LIMITS = {
-  /** Tokens per attribute. */
-  count: 64,
-  /** Characters per token. */
-  tokenChars: 128,
-  /** Characters of the whole attribute. */
-  totalChars: 8_192
-} as const;
+export type { FeatureMetaRow };
 
 /**
  * What the parsed declaration holds. `attributePresent` is the authority
@@ -99,12 +88,15 @@ export function parseFeatureMeta(document: Document): FeatureMetaEvidence {
 /**
  * What the declaration alone says about one feature token. The per-check
  * evidence rule built on it: `declared` makes the meta the deciding evidence
- * for presence; `refuted` makes it the deciding evidence for absence (the
- * page was plugin-processed and the feature is off — footprint fallback is
- * forbidden here, that is the whole point of the declaration); `absent`
- * leaves the check to its footprint evidence as before. A degraded
- * attribute decides nothing (`absent`), so hostile input can only lose
- * meta authority, never manufacture refutations.
+ * for presence; `refuted` makes it the deciding evidence that the applied
+ * marker is absent on this render. The declaration is assembled from feature
+ * comments the plugin emits only after a feature applies, so a refuted token
+ * is not an option-state claim — an enabled feature can be collecting with
+ * no applied marker yet (footprint fallback is still forbidden here, that is
+ * the whole point of the declaration); `absent` leaves the check to its
+ * footprint evidence as before. A degraded attribute decides nothing
+ * (`absent`), so hostile input can only lose meta authority, never
+ * manufacture refutations.
  */
 export type MetaFeatureVerdict = 'declared' | 'refuted' | 'absent';
 
@@ -122,39 +114,8 @@ export function featureMetaVerdict(meta: FeatureMetaEvidence, token: string): Me
   return meta.tokens.includes(token) ? 'declared' : 'refuted';
 }
 
-/**
- * The row↔token registry: each detection row and the exact token the plugin
- * declares for it. Verified token-by-token against the plugin's emitters
- * (each feature's `add_meta_comment` argument prefixed with `wpr_`, plus the
- * option-driven tokens the meta builder appends itself) — these literals are
- * the mapping's witness, so a plugin rename fails loudly here instead of
- * silently mis-detecting. Tokens the plugin emits for rows this port does not
- * carry yet are deliberately absent — `wpr_dns_prefetch`/`wpr_mobile`/
- * `wpr_desktop` come from the meta builder, while `wpr_cache_webp` (WebP
- * add-on) and `wpr_minify_concatenate_js` (JS combine pass) are comment
- * emitters, not builder appends: their rows are their own later work, and
- * mapping them to nothing now would invite a wrong fallback. The registry
- * carries the current emitter vocabulary; historical token spellings across
- * older plugin releases are the later coverage audit's re-verification
- * scope, not a mapping to invent now.
- */
-export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
-  remove_unused_css: 'wpr_remove_unused_css',
-  async_css: 'wpr_async_css',
-  delay_js: 'wpr_delay_js',
-  defer_all_js: 'wpr_defer_js',
-  lazyload: 'wpr_lazyload_images',
-  lazyload_iframes: 'wpr_lazyload_iframes',
-  lazyload_css_bg_img: 'wpr_lazyload_css_bg_img',
-  rocket_above_the_fold_optimization: 'wpr_oci',
-  automatic_lazy_rendering: 'wpr_automatic_lazy_rendering',
-  auto_preload_fonts: 'wpr_auto_preload_fonts',
-  preconnect_external_domains: 'wpr_preconnect_external_domains',
-  minify_css: 'wpr_minify_css',
-  minify_js: 'wpr_minify_js',
-  preload_links: 'wpr_preload_links',
-  rocket_cdn: 'wpr_cdn'
-};
+/** Re-export the data registry so feature-meta consumers keep one import path. */
+export { FEATURE_META_TOKENS };
 
 /**
  * The row a declared meta token belongs to, or null when the token maps to
@@ -169,4 +130,48 @@ export function featureRowForMetaToken(token: string): FeatureMetaRow | null {
     (candidate) => FEATURE_META_TOKENS[candidate] === token
   );
   return row ?? null;
+}
+
+/**
+ * Apply the declaration's authority to a completed footprint pass: rewrite
+ * each row's `present` when the meta decided it, and stamp `source` on every
+ * row that has deciding evidence. Inventory fields stay untouched — a
+ * declared feature keeps whatever markup the pass observed (a declared Delay
+ * JS with no script list is valid evidence, not a missing payload), and a
+ * refuted feature's leftover markup remains visible as inventory without
+ * asserting the verdict.
+ *
+ * The row's derived flags follow the verdict where they mean "applied":
+ * `lazyload_iframes.replaceImage` can only be true on an applied feature.
+ *
+ * @param detections The completed footprint pass (mutated in place).
+ * @param meta The page's parsed declaration.
+ */
+export function applyFeatureMetaAuthority(
+  detections: WprDetections,
+  meta: FeatureMetaEvidence
+): void {
+  // The generator tag itself is a plugin fingerprint: even a declaration with
+  // no feature tokens proves WP Rocket handled the render. This never invents
+  // a version (that still comes from the content's digits only).
+  if (meta.attributePresent) detections.wpr.present = true;
+
+  for (const row of Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]) {
+    const verdict = featureMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+    const entry: { present: boolean; source?: 'meta' | 'footprint' } = detections[row];
+    if (verdict === 'declared') {
+      entry.present = true;
+      entry.source = 'meta';
+    } else if (verdict === 'refuted') {
+      entry.present = false;
+      entry.source = 'meta';
+    } else if (entry.present) {
+      entry.source = 'footprint';
+    } else {
+      delete entry.source;
+    }
+  }
+
+  // Presence-derived flag: a refuted feature cannot have applied markup.
+  if (!detections.lazyload_iframes.present) detections.lazyload_iframes.replaceImage = false;
 }

@@ -16,16 +16,18 @@ import type { FdtData, WprDetections } from '../wp-rocket/types';
  */
 function fullDetections(overrides?: Partial<WprDetections>): WprDetections {
   return {
-    wpr: { present: false, cached: false, version: null, timeStamp: null },
+    wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
     remove_unused_css: { present: false },
     async_css: { present: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
@@ -196,7 +198,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: '3.20.0.2', timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: '3.20.0.2',
+            timeStamp: null
+          }
         })
       })
     );
@@ -213,7 +221,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: null, timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null
+          }
         })
       })
     );
@@ -229,7 +243,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: '3.20.0.2', timeStamp: 1_767_225_600 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.20.0.2',
+            timeStamp: 1_767_225_600
+          }
         })
       })
     );
@@ -247,7 +267,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: null, timeStamp: 9.99e99 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: 9.99e99
+          }
         })
       })
     );
@@ -263,7 +289,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: null, timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: null
+          }
         })
       })
     );
@@ -274,7 +306,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: null, timeStamp: 1_767_225_600 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: 1_767_225_600
+          }
         })
       })
     );
@@ -458,6 +496,8 @@ describe('buildStatusItems — keying and coverage', () => {
       'wpr',
       'remove_unused_css',
       'lazyload_css_bg_img',
+      'self_hosted_fonts',
+      'image_dimensions',
       'minify_css',
       'minify_js',
       'preload_links',
@@ -484,7 +524,7 @@ describe('buildStatusItems — keying and coverage', () => {
 
   it('an out-of-contract extra row is carded via the raw-id fallback (futures tolerance)', () => {
     // A payload the boundary validator would reject (it rebuilds the exact
-    // 17-row record) is still admitted by the view model's own contract: the
+    // 19-row record) is still admitted by the view model's own contract: the
     // card set enumerates the record's OWN keys, so a row the name vocabulary
     // does not know yet joins the set — named by its raw id, at its declaring
     // position — instead of being dropped. Pinned here so the fallback reads

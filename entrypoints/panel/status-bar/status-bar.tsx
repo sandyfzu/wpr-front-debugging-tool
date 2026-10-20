@@ -122,18 +122,6 @@ const SEGMENT_TARGETS: Record<Exclude<SegmentId, 'freshness'>, string> = {
 };
 
 /**
- * The cache answer's chip lead — rebuilt per call (no reactive reads
- * inside), so both the stamped and the unstamped link can share it.
- */
-function CacheChip(): JSX.Element {
-  return (
-    <StatusBadge kind="ok" icon class="min-w-0">
-      Cached
-    </StatusBadge>
-  );
-}
-
-/**
  * The freshness segment's hover detail: the data's absolute capture stamp,
  * plus the stale state's remedy.
  *
@@ -254,10 +242,10 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
 /**
  * The cached-or-not segment: the cache chip with its relative age when the
  * page is cached ("Cached" alone when no stamp exists — never an invented
- * age), "Not cached" when the plugin is present but the visit was uncached,
+ * age), the other four explicit cache states with their copy-module tooltip,
  * and a quiet slot while there is no answer — including when the plugin is
- * absent (caching is not its question there). The age's hover detail is the
- * stamp's absolute UTC form.
+ * absent (caching is not its question there). A bypass reads "Not cached"
+ * about WP Rocket's cache only, never a host/CDN claim.
  *
  * @param props The composed segments accessor (see {@link WprSegment}).
  */
@@ -266,6 +254,16 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
   const cached = createMemo(() => {
     const current = view();
     return current.kind === 'cached' ? current : undefined;
+  });
+  /** The non-cached, non-silent states (every one carries the copy module's pair). */
+  const cacheDetail = createMemo(() => {
+    const current = view();
+    return current.kind === 'uncertain-signature' ||
+      current.kind === 'possibly-cached' ||
+      current.kind === 'not-detected' ||
+      current.kind === 'not-cached'
+      ? current
+      : undefined;
   });
   return (
     <Switch>
@@ -278,12 +276,26 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
       <Match when={view().kind === 'not-applicable'}>
         <QuietSegment loading={false} />
       </Match>
-      <Match when={view().kind === 'not-cached'}>
-        <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
-          <StatusBadge kind="neutral" icon>
-            Not cached
-          </StatusBadge>
-        </a>
+      <Match when={cacheDetail()}>
+        {(state) => (
+          <Tooltip
+            as="a"
+            href={SEGMENT_TARGETS.cache}
+            content={state().copy.tooltip}
+            class={cn(SEGMENT, SEGMENT_HOVER)}
+          >
+            <StatusBadge
+              kind={
+                state().kind === 'uncertain-signature' || state().kind === 'possibly-cached'
+                  ? 'warn'
+                  : 'neutral'
+              }
+              icon
+            >
+              {state().copy.chip}
+            </StatusBadge>
+          </Tooltip>
+        )}
       </Match>
       <Match when={cached()}>
         {(state) => {
@@ -298,17 +310,21 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
               when={state().age !== null}
               fallback={
                 <a href={SEGMENT_TARGETS.cache} class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING)}>
-                  <CacheChip />
+                  <StatusBadge kind="ok" class="min-w-0">
+                    {state().copy.chip}
+                  </StatusBadge>
                 </a>
               }
             >
               <Tooltip
                 as="a"
                 href={SEGMENT_TARGETS.cache}
-                content={`Cache generated at ${state().capturedAt ?? ''}`}
+                content={state().copy.tooltip}
                 class={cn(SEGMENT, SEGMENT_HOVER)}
               >
-                <CacheChip />
+                <StatusBadge kind="ok" class="min-w-0">
+                  {state().copy.chip}
+                </StatusBadge>
                 <span class={SEGMENT_DETAIL}>{state().age ?? ''}</span>
               </Tooltip>
             </Show>

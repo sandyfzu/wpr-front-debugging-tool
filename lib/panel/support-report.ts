@@ -22,6 +22,7 @@
  */
 
 import { formatCacheTimestamp } from '../detection/describe';
+import { cacheCopy, cacheStateFromFdtData } from '../detection/cache-context';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
 import {
@@ -175,14 +176,35 @@ function summaryLines(summary: DetectionsSummary): string[] {
     case 'cached':
       lines.push(
         `- **Page cache:** ${
-          summary.cache.formatted === null
-            ? 'Cached (generation time not available)'
-            : `Cached, generated ${summary.cache.formatted}`
+          cacheCopy({
+            kind: 'cached',
+            seconds: summary.cache.seconds,
+            formatted: summary.cache.formatted
+          }).report
         }`
       );
       break;
+    case 'uncertain-signature':
+      lines.push(`- **Page cache:** ${cacheCopy({ kind: 'uncertain-signature' }).report}`);
+      break;
+    case 'possibly-cached':
+      lines.push(
+        `- **Page cache:** ${
+          cacheCopy({
+            kind: 'possibly-cached',
+            evidence: summary.cache.evidence,
+            ...(summary.cache.bypassAttested === true ? { bypassAttested: true as const } : {})
+          }).report
+        }`
+      );
+      break;
+    case 'not-detected':
+      lines.push(
+        `- **Page cache:** ${cacheCopy({ kind: 'not-detected', headers: summary.cache.headers }).report}`
+      );
+      break;
     case 'not-cached':
-      lines.push('- **Page cache:** Not cached');
+      lines.push(`- **Page cache:** ${cacheCopy({ kind: 'not-cached' }).report}`);
       break;
     case 'not-applicable':
       break;
@@ -309,7 +331,7 @@ export function buildSupportReport(data: FdtData, context: SupportReportContext)
       SUPPORT_REPORT_TITLE,
       '',
       ...contextLines(context),
-      ...summaryLines(summarizeDetections(items))
+      ...summaryLines(summarizeDetections(items, cacheStateFromFdtData(data) ?? undefined))
     ],
     detectionLines(items),
     headerLines(data.pageHeaders, data.pageHeadersTruncated),

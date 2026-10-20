@@ -773,7 +773,7 @@ siteTest.describe('site detection widget', () => {
         // under the held pointer (the pill's identity/chip re-composes).
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const resting = await stripGeometry(page);
         const pill = resting.shape;
@@ -821,7 +821,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const after = await stripGeometry(page);
         const againShape = after.shape;
@@ -850,7 +850,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -952,7 +952,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         // Open, then drag the card by its header: the release's captured click
@@ -998,7 +998,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -1068,7 +1068,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -1168,7 +1168,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         await page.locator(`${STRIP_HOST} .ins-pill`).click();
         await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
@@ -1225,7 +1225,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -1289,7 +1289,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         await page.locator(`${STRIP_HOST} .ins-pill`).click();
         await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
@@ -1342,7 +1342,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -1479,7 +1479,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         const pill = page.locator(`${STRIP_HOST} .ins-pill`);
         const pillBox = (await pill.boundingBox()) ?? null;
@@ -1601,7 +1601,7 @@ siteTest.describe('site detection widget', () => {
         await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
         await expect
           .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Not cached/);
+          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Not cached/);
         await waitForChoreographySettle(page);
         // Commit one drag first so the cancel has a real session position to
         // restore (not the untouched resting anchor).

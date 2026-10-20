@@ -35,7 +35,8 @@ import {
   BEACON_CONFIG_LIMITS,
   BEACON_CONFIG_LIST_FIELDS,
   BEACON_STATUS_KEYS,
-  LAZYLOAD_EXCLUSIONS_LIST
+  LAZYLOAD_EXCLUSIONS_LIST,
+  MAX_CACHE_STAMP_SECONDS
 } from '../wp-rocket/constants';
 import { COOKIE_NAME_LIMITS } from '../wp-rocket/cookies';
 import { PANEL_SEARCH_ACTIONS } from '../wp-rocket/types';
@@ -412,6 +413,10 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   if (asyncCss === null) return null;
   const lazyloadCssBgImg = row('lazyload_css_bg_img', parsePresenceRow);
   if (lazyloadCssBgImg === null) return null;
+  const selfHostedFonts = row('self_hosted_fonts', parsePresenceRow);
+  if (selfHostedFonts === null) return null;
+  const imageDimensions = row('image_dimensions', parseImageDimensionsRow);
+  if (imageDimensions === null) return null;
   const minifyCss = row('minify_css', parsePresenceRow);
   if (minifyCss === null) return null;
   const minifyJs = row('minify_js', parsePresenceRow);
@@ -443,6 +448,8 @@ export function parseWprDetections(input: unknown): WprDetections | null {
     remove_unused_css: removeUnusedCss,
     async_css: asyncCss,
     lazyload_css_bg_img: lazyloadCssBgImg,
+    self_hosted_fonts: selfHostedFonts,
+    image_dimensions: imageDimensions,
     minify_css: minifyCss,
     minify_js: minifyJs,
     preload_links: preloadLinks,
@@ -459,25 +466,44 @@ export function parseWprDetections(input: unknown): WprDetections | null {
   };
 }
 
-/** The WP Rocket footprint row: presence, cache state, version, cache stamp. */
+/**
+ * The WP Rocket footprint row: presence, signature/cache state, version, stamp.
+ *
+ * The semantic invariants are defense in depth: the engine only sets the
+ * marker and `cached` on a present page, and only parses a stamp inside the
+ * debug branch, so a payload contradicting them is corrupt. The stamp is held
+ * to the display domain (non-negative integer seconds through 9999-12-31),
+ * the same guard the formatter applies.
+ */
 function parseWprRow(input: unknown): WprDetections['wpr'] | null {
   if (!isRecord(input)) return reject();
   const wpr = { ...input };
   const mark = truncationKeys(wpr);
   if (mark === null) return reject('truncated');
-  if (Object.keys(wpr).length !== 4 + mark) return reject('keys');
+  if (Object.keys(wpr).length !== 5 + mark) return reject('keys');
   const present = wpr['present'];
+  const cacheMarkerFound = wpr['cacheMarkerFound'];
   const cached = wpr['cached'];
   const version = wpr['version'];
   const timeStamp = wpr['timeStamp'];
   if (typeof present !== 'boolean') return reject('present');
+  if (typeof cacheMarkerFound !== 'boolean') return reject('cacheMarkerFound');
   if (typeof cached !== 'boolean') return reject('cached');
+  if (!present && (cacheMarkerFound || cached)) return reject('present');
+  if (cached && !cacheMarkerFound) return reject('cacheMarkerFound');
   if (!isBoundedNullableString(version, LIMITS.versions)) return reject('version');
   // The version is the row's only cuttable field: a null one was never cut.
   if (mark === 1 && version === null) return reject('truncated');
-  if (timeStamp !== null && (typeof timeStamp !== 'number' || !Number.isFinite(timeStamp)))
+  if (
+    timeStamp !== null &&
+    (typeof timeStamp !== 'number' ||
+      !Number.isInteger(timeStamp) ||
+      timeStamp < 0 ||
+      timeStamp > MAX_CACHE_STAMP_SECONDS)
+  )
     return reject('timeStamp');
-  return { present, cached, version, timeStamp, ...truncationOf(mark) };
+  if (timeStamp !== null && !cached) return reject('timeStamp');
+  return { present, cacheMarkerFound, cached, version, timeStamp, ...truncationOf(mark) };
 }
 
 /**
@@ -537,11 +563,20 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (typeof row['present'] !== 'boolean') return reject('present');
   if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
   const delayedScripts = row['delayedScripts'];
-  if (typeof delayedScripts !== 'number' || !Number.isFinite(delayedScripts) || delayedScripts < 0)
+  if (
+    typeof delayedScripts !== 'number' ||
+    !Number.isSafeInteger(delayedScripts) ||
+    delayedScripts < 0 ||
+    delayedScripts > LIMITS.scriptCount
+  ) {
     return reject('delayedScripts');
+  }
   const rawScripts = row['scripts'];
   if (!Array.isArray(rawScripts)) return reject('scripts');
   if (rawScripts.length > LIMITS.delayScripts.count) return reject('scripts', 'length');
+  // Every page script is in the list, so an uncut list bounds the delayed
+  // count; only truncation can drop delayed entries from it.
+  if (mark === 0 && delayedScripts > rawScripts.length) return reject('delayedScripts');
   // The cuttable fields are the list and the version: neither present ⇒ uncut.
   if (mark === 1 && rawScripts.length === 0 && row['version'] === null) return reject('truncated');
   const scripts: WprDetections['delay_js']['scripts'] = [];
@@ -595,7 +630,10 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   };
 }
 
-/** Defer JS row: the source list of every WP Rocket-deferred script. */
+/**
+ * Defer JS row: the URL list of every WP Rocket-deferred script that carries
+ * one, plus the total attributed count (URL-bearing and inline).
+ */
 function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (!isRecord(input)) return reject();
   const row = { ...input };
@@ -603,7 +641,7 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark) return reject('keys');
+  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark) return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const scripts = row['scripts'];
   if (!Array.isArray(scripts)) return reject('scripts');
@@ -612,9 +650,19 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   for (const [index, src] of scripts.entries()) {
     if (!isBoundedString(src, LIMITS.deferScripts.chars)) return reject('scripts', at(index));
   }
+  const deferredScripts = row['deferredScripts'];
+  if (
+    typeof deferredScripts !== 'number' ||
+    !Number.isSafeInteger(deferredScripts) ||
+    deferredScripts < scripts.length ||
+    deferredScripts > LIMITS.scriptCount
+  ) {
+    return reject('deferredScripts');
+  }
   return {
     present: row['present'],
     scripts: [...(scripts as string[])],
+    deferredScripts,
     ...truncationOf(mark),
     ...(source === undefined ? {} : { source })
   };
@@ -669,6 +717,8 @@ function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | nu
   const source = parseOptionalSource(row['source']);
   if (source === null || Object.keys(row).length !== featureRowKeyCount(2, source)) return null;
   if (typeof row['present'] !== 'boolean' || typeof row['replaceImage'] !== 'boolean') return null;
+  // The replacement marker is applied evidence: it cannot exist on a refuted row.
+  if (row['replaceImage'] && !row['present']) return null;
   const parsed: WprDetections['lazyload_iframes'] = {
     present: row['present'],
     replaceImage: row['replaceImage']
@@ -678,9 +728,23 @@ function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | nu
 }
 
 /**
- * Optimize-critical-images row: the applied evidence decides presence
- * (present ⇔ image list non-empty — the engines' contract); the feature
- * comment is independent corroboration carried either way.
+ * Image-dimensions row: declaration-only, so the only deciding source is the
+ * generator meta. A footprint source (or a declared presence without one) is
+ * not engine output: standard `width`/`height` markup never attributes this
+ * feature.
+ */
+function parseImageDimensionsRow(input: unknown): WprDetections['image_dimensions'] | null {
+  const parsed = parsePresenceRow(input);
+  if (parsed === null || parsed.source === 'footprint') return null;
+  if (parsed.present && parsed.source !== 'meta') return null;
+  return parsed;
+}
+
+/**
+ * Optimize-critical-images row: the verdict (`present`) and the observed
+ * preload inventory are independent — meta authority can declare the feature
+ * without markup, and a refuted row keeps remnant preloads as inventory. The
+ * feature comment is corroboration carried either way.
  */
 function parseOptimizeCriticalImagesRow(
   input: unknown
@@ -690,45 +754,35 @@ function parseOptimizeCriticalImagesRow(
   const present = row['present'];
   const lcpComment = row['lcpComment'];
   if (typeof present !== 'boolean' || typeof lcpComment !== 'boolean') return null;
-  const keys = new Set(Object.keys(row));
-  if (!keys.has('present') || !keys.has('lcpComment')) return null;
   const source = parseOptionalSource(row['source']);
   if (source === null) return null;
-  if (!present) {
-    // The engines emit exactly `{ present: false, lcpComment }` — an image
-    // list alongside it is not engine output, so it rejects.
-    if (keys.size !== featureRowKeyCount(2, source)) return reject('keys');
-    const negative: WprDetections['rocket_above_the_fold_optimization'] = {
-      present: false,
-      lcpComment
-    };
-    if (source !== undefined) negative.source = source;
-    return negative;
-  }
-  // Only a non-empty list can have been cut, so the mark rides this arm only.
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
-  if (!keys.has('preloadedImages') || keys.size !== featureRowKeyCount(3, source) + mark)
+  const hasImages = Object.hasOwn(row, 'preloadedImages');
+  if (Object.keys(row).length !== featureRowKeyCount(2 + (hasImages ? 1 : 0), source) + mark)
     return reject('keys');
-  if (!isStringArray(row['preloadedImages'])) return reject('preloadedImages');
-  const images = row['preloadedImages'];
-  if (images.length < 1) return reject('preloadedImages', 'length');
-  if (images.length > LIMITS.preloadedImages.count) return reject('preloadedImages', 'length');
-  for (const [index, url] of images.entries()) {
-    if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
+  if (mark === 1 && !hasImages) return reject('truncated');
+  const parsed: WprDetections['rocket_above_the_fold_optimization'] = { present, lcpComment };
+  if (hasImages) {
+    const images = row['preloadedImages'];
+    if (!isStringArray(images)) return reject('preloadedImages');
+    if (images.length < 1) return reject('preloadedImages', 'length');
+    if (images.length > LIMITS.preloadedImages.count) return reject('preloadedImages', 'length');
+    for (const [index, url] of images.entries()) {
+      if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
+    }
+    parsed.preloadedImages = [...images];
   }
-  return {
-    present,
-    lcpComment,
-    preloadedImages: [...images],
-    ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
-  };
+  if (mark === 1) parsed.truncated = true;
+  if (source !== undefined) parsed.source = source;
+  return parsed;
 }
 
 /**
- * Automatic-Lazy-Rendering row: present ⇔ converted elements ≥ 1 (the
- * applied verdict); the style marker and hash count ride along as page facts.
+ * Automatic-Lazy-Rendering row: `present` is the feature verdict (a meta
+ * declaration can set it with zero converted elements; a refuted row keeps
+ * the observed counts as inventory). The style marker and hash count ride
+ * along as independent page facts.
  */
 function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rendering'] | null {
   if (!isRecord(input)) return null;
@@ -741,7 +795,9 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
   const lazyRenderElements = parseElementCount(row['lazyRenderElements']);
   const locationHashes = parseElementCount(row['locationHashes']);
   if (lazyRenderElements === null || locationHashes === null) return null;
-  if (present !== lazyRenderElements > 0) return null;
+  // `present` is the feature verdict (meta authority can declare it while a
+  // partial render carries no converted element); the counts are observed
+  // markup, so they stay independent.
   const parsed: WprDetections['automatic_lazy_rendering'] = {
     present,
     lazyRenderElements,
@@ -752,13 +808,20 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
   return parsed;
 }
 
-/** A non-negative finite integer element count (a scalar — no size cap). */
+/**
+ * A non-negative safe-integer element count within the page-sanity cap.
+ * Scalars (not lists) still get the cap so a forged 1e18 cannot render.
+ */
 function parseElementCount(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null;
-  return value;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return null;
+  return value <= LIMITS.scriptCount ? value : null;
 }
 
-/** Preload-fonts row: present ⇔ the attributed font list is non-empty. */
+/**
+ * Preload-fonts row: the verdict and the observed attributed list are
+ * independent (a meta declaration may arrive with an empty list; a refuted
+ * row may keep remnant preloads).
+ */
 function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
@@ -772,25 +835,22 @@ function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts
     return null;
   const present = row['present'];
   if (typeof present !== 'boolean') return null;
-  if (present) {
-    const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
-    if (fonts === null) return reject('fonts');
-    if (fonts.length < 1) return reject('fonts', 'length');
-    return {
-      present: true,
-      fonts,
-      ...truncationOf(mark),
-      ...(source === undefined ? {} : { source })
-    };
-  }
-  // Absent feature: the engines emit an empty list, never a populated one
-  // (and an empty list was never cut).
-  if (mark === 1) return reject('truncated');
-  if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return reject('fonts');
-  return { present: false, fonts: [], ...(source === undefined ? {} : { source }) };
+  const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
+  if (fonts === null) return reject('fonts');
+  if (mark === 1 && fonts.length === 0) return reject('truncated');
+  return {
+    present,
+    fonts,
+    ...truncationOf(mark),
+    ...(source === undefined ? {} : { source })
+  };
 }
 
-/** Preconnect row: present ⇔ the attributed domain list is non-empty. */
+/**
+ * Preconnect row: the verdict and the observed attributed list are
+ * independent (a meta declaration may arrive with an empty list; a refuted
+ * row may keep remnant hints).
+ */
 function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_domains'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
@@ -806,24 +866,14 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
   if (typeof present !== 'boolean') return null;
   const preconnectCount = parseElementCount(row['preconnectCount']);
   if (preconnectCount === null) return null;
-  if (present) {
-    const domains = parseCappedStringList(row['domains'], LIMITS.domains);
-    if (domains === null) return reject('domains');
-    if (domains.length < 1) return reject('domains', 'length');
-    return {
-      present: true,
-      domains,
-      preconnectCount,
-      ...truncationOf(mark),
-      ...(source === undefined ? {} : { source })
-    };
-  }
-  if (mark === 1) return reject('truncated');
-  if (!isStringArray(row['domains']) || row['domains'].length !== 0) return reject('domains');
+  const domains = parseCappedStringList(row['domains'], LIMITS.domains);
+  if (domains === null) return reject('domains');
+  if (mark === 1 && domains.length === 0) return reject('truncated');
   return {
-    present: false,
-    domains: [],
+    present,
+    domains,
     preconnectCount,
+    ...truncationOf(mark),
     ...(source === undefined ? {} : { source })
   };
 }
@@ -991,14 +1041,22 @@ export function parseFdtData(input: unknown): FdtData | null {
     diagnoserData,
     ...(headersMark === true ? { pageHeadersTruncated: true as const } : {})
   };
-  // Additive field, absent from payloads captured before it existed — absence
-  // reads through as absence (a consumer omits the section) instead of
-  // rejecting the whole payload; a present field must still be whole.
+  // Additive top-level field. An own `undefined` reads exactly like absence
+  // here (just as JSON serialization drops it) — the strict-additive key-count
+  // rule applies to row shapes such as `source`, not to this optional
+  // envelope flag. Payloads from before the field existed stay valid; payloads
+  // missing a newly required row key still reject below (an update invalidates
+  // the old content-script world, so the existing reload path recovers).
   const cookiesRaw = input['cookies'];
-  if (cookiesRaw === undefined) return payload;
-  const cookies = parsePageCookies(cookiesRaw);
-  if (cookies === null) return reject('cookies');
-  return { ...payload, cookies };
+  const bypassRaw = input['bypassAttested'];
+  if (bypassRaw !== undefined && bypassRaw !== true) return reject('bypassAttested');
+  const bypass = bypassRaw === true ? { bypassAttested: true as const } : {};
+  if (cookiesRaw !== undefined) {
+    const cookies = parsePageCookies(cookiesRaw);
+    if (cookies === null) return reject('cookies');
+    return { ...payload, cookies, ...bypass };
+  }
+  return { ...payload, ...bypass };
 }
 
 /** A panel-payload parse with its rejection site (see `parseFdtDataExplained`). */

@@ -77,10 +77,19 @@ describe('parsePreloadedResources — rejection arms', () => {
 });
 
 describe('parseWprDetections — rejection arms', () => {
-  it('rejects a wpr row missing any of the four keys', () => {
+  it('rejects a wpr row missing any of the five keys', () => {
     const payload = validDetections();
     expect(
-      parseWprDetections({ ...payload, wpr: { present: true, cached: false, version: '3' } })
+      parseWprDetections({
+        ...payload,
+        wpr: { present: true, cacheMarkerFound: false, cached: false, version: '3' }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...payload,
+        wpr: { present: true, cached: false, version: '3', timeStamp: null }
+      })
     ).toBeNull();
   });
 
@@ -180,7 +189,11 @@ describe('parseWprDetections — rejection arms', () => {
     expect(
       parseWprDetections({
         ...payload,
-        defer_all_js: { ...deferRow, scripts: Array.from({ length: 1_001 }, () => 'a') }
+        defer_all_js: {
+          ...deferRow,
+          scripts: Array.from({ length: 1_001 }, () => 'a'),
+          deferredScripts: 1_001
+        }
       })
     ).not.toBeNull();
   });
@@ -271,6 +284,8 @@ describe('parseWprDetections — rejection arms', () => {
         }
       })
     ).toBeNull();
+    // A refuted verdict keeps the observed preloads as inventory (meta
+    // authority is independent of the markup it overrides).
     expect(
       parseWprDetections({
         ...payload,
@@ -278,6 +293,18 @@ describe('parseWprDetections — rejection arms', () => {
           present: false,
           lcpComment: false,
           preloadedImages: ['/a.jpg']
+        }
+      })
+    ).not.toBeNull();
+    // An empty list is never engine output: the field is present only with
+    // at least one observed preload.
+    expect(
+      parseWprDetections({
+        ...payload,
+        rocket_above_the_fold_optimization: {
+          present: true,
+          lcpComment: false,
+          preloadedImages: []
         }
       })
     ).toBeNull();
@@ -316,19 +343,21 @@ describe('parseWprDetections — rejection arms', () => {
     expect(
       parseWprDetections({ ...payload, automatic_lazy_rendering: { ...row, locationHashes: '0' } })
     ).toBeNull();
-    // present ⇔ count ≥ 1, enforced both directions.
+    // The verdict and the observed count are independent: meta authority can
+    // declare the feature without converted elements, and a refuted verdict
+    // keeps remnant markup as inventory.
     expect(
       parseWprDetections({
         ...payload,
         automatic_lazy_rendering: { ...row, present: false }
       })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       parseWprDetections({
         ...payload,
         automatic_lazy_rendering: { ...row, present: true, lazyRenderElements: 0 }
       })
-    ).toBeNull();
+    ).not.toBeNull();
   });
 
   it('rejects font-preload rows that are inconsistent or oversized', () => {
@@ -339,15 +368,17 @@ describe('parseWprDetections — rejection arms', () => {
         auto_preload_fonts: { present: true, fonts: ['https://s.com/a.woff2'] }
       })
     ).not.toBeNull();
+    // The verdict and the observed list are independent (meta can declare
+    // without markup; a refuted row keeps remnant preloads).
     expect(
       parseWprDetections({ ...payload, auto_preload_fonts: { present: true, fonts: [] } })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       parseWprDetections({
         ...payload,
         auto_preload_fonts: { present: false, fonts: ['https://s.com/a.woff2'] }
       })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       parseWprDetections({ ...payload, auto_preload_fonts: { present: true, fonts: [''] } })
     ).toBeNull();
@@ -377,6 +408,8 @@ describe('parseWprDetections — rejection arms', () => {
         }
       })
     ).not.toBeNull();
+    // The verdict and the observed list are independent (meta declaration /
+    // refuted inventory) — the list's shape and cap still bind.
     expect(
       parseWprDetections({
         ...payload,
@@ -386,7 +419,7 @@ describe('parseWprDetections — rejection arms', () => {
           preconnectCount: 0
         }
       })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       parseWprDetections({
         ...payload,
@@ -396,7 +429,7 @@ describe('parseWprDetections — rejection arms', () => {
           preconnectCount: 0
         }
       })
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       parseWprDetections({
         ...payload,

@@ -16,6 +16,7 @@ import {
   type SupportReportContext
 } from './support-report';
 import { emptyDetections, makeReportData } from './support-report.fixtures';
+import { cacheCopy } from '../detection/cache-context';
 import { redactPageHeaders } from '../redaction/headers';
 import { PLANTED, PLANTED_RAW_HEADERS } from '../redaction/planted-secrets.fixtures';
 
@@ -47,7 +48,13 @@ function fullData(): FdtData {
     undefinedReferencesOnPage: ['jQuery', UNDEFINED_REFERENCE_EXTERNAL_ERROR],
     wprDetections: {
       ...emptyDetections(),
-      wpr: { present: true, cached: true, version: '3.20.1', timeStamp: 1791342253 },
+      wpr: {
+        present: true,
+        cacheMarkerFound: true,
+        cached: true,
+        version: '3.20.1',
+        timeStamp: 1791342253
+      },
       async_css: { present: true },
       delay_js: { present: true, scripts: [], version: '2.0', delayedScripts: 3 },
       lazyload: { present: true, images: [] },
@@ -72,7 +79,7 @@ const FULL_GOLDEN = [
   '- **Page cache:** Cached, generated 2026-10-07 03:04:13 UTC',
   '- **Platform:** WP Engine (matched by `X-Powered-By`)',
   '- **Server:** `nginx`',
-  '- **Optimizations:** 5 of 14 active',
+  '- **Optimizations:** 5 of 16 active',
   '',
   '### Detections',
   '',
@@ -84,6 +91,8 @@ const FULL_GOLDEN = [
   '| Cached | Active | Generated 2026-10-07 03:04:13 UTC |',
   '| Load CSS asynchronously | Active | Optimize CSS Delivery |',
   '| Lazyload for CSS background images | Not active | — |',
+  '| Self-host Google Fonts | Not active | — |',
+  '| Add missing image dimensions | Not active | — |',
   '| Minify CSS files | Not active | — |',
   '| Minify JavaScript files | Not active | — |',
   '| Preload Links | Not active | — |',
@@ -123,7 +132,7 @@ const ABSENT_GOLDEN = [
   '- **Generated:** 2026-10-14 12:00:00 UTC',
   '- **Extension version:** Not available',
   '- **WP Rocket:** Not detected',
-  '- **Optimizations:** 0 of 14 active',
+  '- **Optimizations:** 0 of 16 active',
   '',
   '### Detections',
   '',
@@ -132,6 +141,8 @@ const ABSENT_GOLDEN = [
   '| WP Rocket | Not active | — |',
   '| Optimize CSS Delivery | Not active | — |',
   '| Lazyload for CSS background images | Not active | — |',
+  '| Self-host Google Fonts | Not active | — |',
+  '| Add missing image dimensions | Not active | — |',
   '| Minify CSS files | Not active | — |',
   '| Minify JavaScript files | Not active | — |',
   '| Preload Links | Not active | — |',
@@ -198,7 +209,13 @@ describe('buildSupportReport — branches', () => {
       makeReportData({
         wprDetections: {
           ...emptyDetections(),
-          wpr: { present: true, cached: true, version: null, timeStamp: 9e20 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: 9e20
+          }
         }
       })
     );
@@ -208,16 +225,127 @@ describe('buildSupportReport — branches', () => {
     expect(report).toContain('| Cached | Active | Time not available |');
   });
 
-  it('reports a present-but-uncached plugin as not cached', () => {
+  it('spells the cache vocabulary per evidence class', () => {
+    const present = (overrides: Record<string, unknown>) =>
+      makeReportData({
+        wprDetections: {
+          ...makeReportData().wprDetections,
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null,
+            ...overrides
+          }
+        }
+      });
+
+    const signature = buildSupportReport(present({ cacheMarkerFound: true }), BARE_CONTEXT);
+    expect(signature).toContain(
+      '- **Page cache:** Plugin fingerprint found, cache not proven for this visit'
+    );
+
+    const possibly = buildSupportReport(
+      { ...present({}), pageHeaders: [{ name: 'sg-f-cache', value: 'HIT' }] },
+      BARE_CONTEXT
+    );
+    expect(possibly).toContain('- **Page cache:** Possibly cached (SiteGround');
+
+    const bypass = buildSupportReport({ ...present({}), bypassAttested: true }, BARE_CONTEXT);
+    expect(bypass).toContain('- **Page cache:** Not cached by WP Rocket (cache bypass requested)');
+
+    // A captured host serve outranks the bypass and keeps its qualification.
+    const bypassedHost = buildSupportReport(
+      {
+        ...present({}),
+        pageHeaders: [{ name: 'cf-cache-status', value: 'HIT' }],
+        bypassAttested: true
+      },
+      BARE_CONTEXT
+    );
+    expect(bypassedHost).toContain(
+      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature; WP Rocket cache bypassed)'
+    );
+  });
+
+  it('uses the copy module for the cached line (single declaring site)', () => {
+    const report = buildSupportReport(
+      makeReportData({
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.1',
+            timeStamp: 1791342253
+          }
+        }
+      }),
+      BARE_CONTEXT
+    );
+    expect(report).toContain(
+      `- **Page cache:** ${
+        cacheCopy({
+          kind: 'cached',
+          seconds: 1791342253,
+          formatted: '2026-10-07 03:04:13 UTC'
+        }).report
+      }`
+    );
+  });
+
+  it('spells the header-capture edge states', () => {
+    const captured = (data: Partial<Parameters<typeof buildSupportReport>[0]>) =>
+      buildSupportReport(
+        {
+          ...makeReportData({
+            wprDetections: {
+              ...emptyDetections(),
+              wpr: {
+                present: true,
+                cacheMarkerFound: false,
+                cached: false,
+                version: null,
+                timeStamp: null
+              }
+            }
+          }),
+          ...data
+        },
+        BARE_CONTEXT
+      );
+    expect(captured({ pageHeaders: [] })).toContain(
+      '- **Page cache:** Cache not detected (response headers unavailable)'
+    );
+    expect(
+      captured({
+        pageHeaders: [{ name: 'server', value: 'nginx' }],
+        pageHeadersTruncated: true
+      })
+    ).toContain('- **Page cache:** Cache not detected (header capture truncated)');
+    expect(captured({ pageHeaders: [{ name: 'cf-cache-status', redacted: true }] })).toContain(
+      '- **Page cache:** Cache not detected (cache header value withheld)'
+    );
+  });
+
+  it('reports a present page without a signature as cache not detected', () => {
     const report = lines(
       makeReportData({
         wprDetections: {
           ...emptyDetections(),
-          wpr: { present: true, cached: false, version: '3.1', timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: '3.1',
+            timeStamp: null
+          }
         }
       })
     );
-    expect(report).toContain('- **Page cache:** Not cached');
+    expect(report).toContain('- **Page cache:** Cache not detected (response headers unavailable)');
     expect(report.some((line) => line.startsWith('| Cached |'))).toBe(false);
   });
 

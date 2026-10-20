@@ -346,14 +346,14 @@ describe('parseWprDetections', () => {
         rocket_above_the_fold_optimization: { present: false, lcpComment: true }
       })?.rocket_above_the_fold_optimization
     ).toEqual({ present: false, lcpComment: true });
-    // present without the list is not engine output.
+    // A meta-declared verdict without observed markup is valid engine output.
     expect(
       parseWprDetections({
         ...detections,
         rocket_above_the_fold_optimization: { present: true, lcpComment: false }
-      })
-    ).toBeNull();
-    // Lazy rendering: present ⇔ converted elements ≥ 1.
+      })?.rocket_above_the_fold_optimization
+    ).toEqual({ present: true, lcpComment: false });
+    // Lazy rendering: the verdict and the observed count are independent.
     expect(
       parseWprDetections({
         ...detections,
@@ -374,9 +374,14 @@ describe('parseWprDetections', () => {
           inlineCssPresent: false,
           locationHashes: 5
         }
-      })
-    ).toBeNull();
-    // Fonts + preconnect: present ⇔ non-empty lists.
+      })?.automatic_lazy_rendering
+    ).toEqual({
+      present: false,
+      lazyRenderElements: 2,
+      inlineCssPresent: false,
+      locationHashes: 5
+    });
+    // Fonts + preconnect: the verdict and the observed lists are independent.
     expect(
       parseWprDetections({
         ...detections,
@@ -393,7 +398,7 @@ describe('parseWprDetections', () => {
         ...detections,
         auto_preload_fonts: { present: true, fonts: [] }
       })
-    ).toBeNull();
+    ).not.toBeNull();
   });
 
   it('keeps the beacon row and its config payload separate from the feature rows', () => {
@@ -463,6 +468,12 @@ describe('parseWprDetections', () => {
       for (const source of ['meta', 'footprint'] as const) {
         const row = { ...(base[key] as Record<string, unknown>), source };
         const parsed = parseWprDetections({ ...base, [key]: row });
+        // Image dimensions is declaration-only: a footprint source is not
+        // engine output for that row.
+        if (key === 'image_dimensions' && source === 'footprint') {
+          expect(parsed, `${key}/${source}`).toBeNull();
+          continue;
+        }
         expect(parsed, `${key}/${source}`).not.toBeNull();
         expect((parsed as unknown as Record<string, unknown>)[key], `${key}/${source}`).toEqual(
           row
@@ -701,9 +712,12 @@ describe('parsePanelSearchAction', () => {
 describe('the optional truncation mark (additive, tolerant contract)', () => {
   /** Each markable detections row: where it lives and a populated form of it. */
   const markableRows: readonly (readonly [string, Record<string, unknown>])[] = [
-    ['wpr', { present: true, cached: false, version: '3.20', timeStamp: null }],
+    [
+      'wpr',
+      { present: true, cacheMarkerFound: false, cached: false, version: '3.20', timeStamp: null }
+    ],
     ['delay_js', { present: false, scripts: [], version: '2.0', delayedScripts: 0 }],
-    ['defer_all_js', { present: true, scripts: ['/a.js'] }],
+    ['defer_all_js', { present: true, scripts: ['/a.js'], deferredScripts: 1 }],
     [
       'lazyload',
       {
@@ -866,7 +880,17 @@ describe('the truncation mark on rows the producer cannot have cut', () => {
 
   it('rejects it beside empty lists and null versions', () => {
     const uncut: readonly (readonly [string, Record<string, unknown>])[] = [
-      ['wpr', { present: true, cached: false, version: null, timeStamp: null, truncated: true }],
+      [
+        'wpr',
+        {
+          present: true,
+          cacheMarkerFound: false,
+          cached: false,
+          version: null,
+          timeStamp: null,
+          truncated: true
+        }
+      ],
       [
         'delay_js',
         { present: false, scripts: [], version: null, delayedScripts: 0, truncated: true }

@@ -19,7 +19,15 @@ describe('summarizeDetections', () => {
   it('reads plugin presence + version, cache stamp, platform and server off the cards', () => {
     const items = buildStatusItems(
       data(
-        { wpr: { present: true, cached: true, version: '3.20.1', timeStamp: 1791342253 } },
+        {
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.20.1',
+            timeStamp: 1791342253
+          }
+        },
         {
           pageHeaders: [
             { name: 'Server', value: 'nginx' },
@@ -42,11 +50,19 @@ describe('summarizeDetections', () => {
   it('answers a versionless plugin with a null version', () => {
     const summary = summarizeDetections(
       buildStatusItems(
-        data({ wpr: { present: true, cached: false, version: null, timeStamp: null } })
+        data({
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null
+          }
+        })
       )
     );
     expect(summary.wpr).toEqual({ present: true, version: null });
-    expect(summary.cache).toEqual({ kind: 'not-cached' });
+    expect(summary.cache).toEqual({ kind: 'not-detected', headers: 'unavailable' });
   });
 
   it('marks the cache not applicable when the plugin is absent and nothing was cached', () => {
@@ -58,10 +74,55 @@ describe('summarizeDetections', () => {
   it('keeps a cached card with an unrepresentable stamp as cached without a time', () => {
     const summary = summarizeDetections(
       buildStatusItems(
-        data({ wpr: { present: true, cached: true, version: '1', timeStamp: 9e20 } })
+        data({
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '1',
+            timeStamp: 9e20
+          }
+        })
       )
     );
     expect(summary.cache).toEqual({ kind: 'cached', seconds: null, formatted: null });
+  });
+
+  it('maps every explicit cache state, normalizing the stamp again', () => {
+    const items = buildStatusItems(
+      data({
+        wpr: {
+          present: true,
+          cacheMarkerFound: false,
+          cached: false,
+          version: null,
+          timeStamp: null
+        }
+      })
+    );
+    expect(
+      summarizeDetections(items, {
+        kind: 'cached',
+        seconds: 253_402_300_800,
+        formatted: 'not trusted'
+      }).cache
+    ).toEqual({ kind: 'cached', seconds: null, formatted: null });
+    expect(summarizeDetections(items, { kind: 'uncertain-signature' }).cache).toEqual({
+      kind: 'uncertain-signature'
+    });
+    expect(
+      summarizeDetections(items, {
+        kind: 'possibly-cached',
+        evidence: 'SiteGround',
+        bypassAttested: true
+      }).cache
+    ).toEqual({ kind: 'possibly-cached', evidence: 'SiteGround', bypassAttested: true });
+    expect(
+      summarizeDetections(items, { kind: 'not-detected', headers: 'truncated' }).cache
+    ).toEqual({ kind: 'not-detected', headers: 'truncated' });
+    expect(summarizeDetections(items, { kind: 'not-cached' }).cache).toEqual({
+      kind: 'not-cached'
+    });
   });
 
   it('states no server/platform when headers were not captured or carry neither', () => {
@@ -80,7 +141,7 @@ describe('summarizeDetections', () => {
     const items = buildStatusItems(
       data(
         {
-          wpr: { present: true, cached: true, version: '3', timeStamp: 1 },
+          wpr: { present: true, cacheMarkerFound: true, cached: true, version: '3', timeStamp: 1 },
           minify_css: { present: true },
           priority_elements_beacon: { present: true, status: null, isMobile: null }
         },
@@ -94,16 +155,22 @@ describe('summarizeDetections', () => {
       active: 1,
       total: optimizationCards.length
     });
-    // Every remaining row of the record is an optimization (14 of the 17 rows:
+    // Every remaining row of the record is an optimization (16 of the 19 rows:
     // async_css rides the CSS card, plus the plugin and beacon rows).
-    expect(optimizationCards).toHaveLength(14);
+    expect(optimizationCards).toHaveLength(16);
   });
 
   it('agrees with the cards for every card it states (strip ↔ card consistency)', () => {
     const items = buildStatusItems(
       data(
         {
-          wpr: { present: true, cached: true, version: '3.1', timeStamp: 1700000000 },
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.1',
+            timeStamp: 1700000000
+          },
           delay_js: { present: true, scripts: [], version: '2', delayedScripts: 0 },
           lazyload: { present: true, images: [] }
         },

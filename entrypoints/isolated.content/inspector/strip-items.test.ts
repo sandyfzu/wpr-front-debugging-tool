@@ -18,7 +18,7 @@ import type { PageAnalysisReport } from '../../../lib/detection/describe';
 const REPORT: PageAnalysisReport = {
   [LABEL_WP_ROCKET]: {
     'plugin detected': true,
-    'page served from cache': true,
+    'page cache': 'Cached',
     version: '3.23.5.1',
     'cache generated at': null
   },

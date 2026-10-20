@@ -16,7 +16,9 @@
  */
 
 import type { FeatureState, PageAnalysisReport } from '../../../lib/detection/describe';
-import { describeDetections, formatCacheTimestamp } from '../../../lib/detection/describe';
+import { describeDetections } from '../../../lib/detection/describe';
+import { cacheCopy } from '../../../lib/detection/cache-context';
+import type { CacheState } from '../../../lib/detection/cache-context';
 import type { WprDetections } from '../../../lib/wp-rocket/types';
 import { stripGroupedRows } from './strip-items';
 import type { StripGroupId, StripItemId } from './strip-items';
@@ -35,6 +37,8 @@ export type InspectorPhase = 'running' | 'ready' | 'failed';
 export interface StripDataSnapshot {
   phase: InspectorPhase;
   detections: WprDetections | null;
+  /** The hub's explicit cache answer (null while running/failed). */
+  cacheState: CacheState | null;
 }
 
 /**
@@ -43,10 +47,10 @@ export interface StripDataSnapshot {
  */
 export type StripChipState = 'ok' | 'warn' | 'attention' | 'error' | 'neutral';
 
-/** The cache chip, one of the four conversion-table shapes. */
+/** The cache chip: one of the five explicit cache states. */
 export interface StripCacheChip {
   state: StripChipState;
-  /** The chip's short label (`✓ Cached` · `Not cached` · `…` · `—`). */
+  /** The chip's short label (`✓ Cached` · `Cache not proven` · `Possibly cached` · `Cache not detected` · `Not cached` · `…` · `—`). */
   text: string;
   /** The cache stamp suffix when a served stamp formatted. */
   stamp: string | null;
@@ -93,9 +97,7 @@ export interface StripCardModel {
   cacheTooltip: string | null;
 }
 
-/** The cache chip's short labels, exactly as the conversion table lists them. */
-export const CACHE_CHIP_CACHED_TEXT = '✓ Cached';
-export const CACHE_CHIP_NOT_CACHED_TEXT = 'Not cached';
+/** The cache chip's phase placeholders (the state labels live in `cache-context`). */
 export const CACHE_CHIP_PENDING_TEXT = '…';
 export const CACHE_CHIP_IDLE_TEXT = '—';
 
@@ -114,9 +116,9 @@ export const CARD_ERROR_HINT = 'Reload the page and re-open the report to scan a
 export function insMood(snapshot: StripDataSnapshot): InspectorMood {
   if (snapshot.phase === 'running') return 'pulse';
   if (snapshot.phase === 'failed' || snapshot.detections === null) return 'red';
-  const { present, cached } = snapshot.detections.wpr;
+  const { present } = snapshot.detections.wpr;
   if (!present) return 'gray';
-  return cached ? 'green' : 'amber';
+  return snapshot.cacheState?.kind === 'cached' ? 'green' : 'amber';
 }
 
 /**
@@ -191,20 +193,23 @@ function cacheChip(snapshot: StripDataSnapshot): StripCacheChip | null {
   if (snapshot.phase === 'running') {
     return { state: 'neutral', text: CACHE_CHIP_PENDING_TEXT, stamp: null };
   }
-  if (snapshot.phase === 'failed' || snapshot.detections === null) {
+  if (snapshot.phase === 'failed' || snapshot.detections === null || snapshot.cacheState === null) {
     return { state: 'neutral', text: CACHE_CHIP_IDLE_TEXT, stamp: null };
   }
-  const { present, cached, timeStamp } = snapshot.detections.wpr;
-  if (!present) {
+  if (!snapshot.detections.wpr.present) {
     return { state: 'neutral', text: CACHE_CHIP_IDLE_TEXT, stamp: null };
   }
-  if (!cached) {
-    return { state: 'warn', text: CACHE_CHIP_NOT_CACHED_TEXT, stamp: null };
-  }
+  const copy = cacheCopy(snapshot.cacheState);
+  const state: StripChipState =
+    snapshot.cacheState.kind === 'cached'
+      ? 'ok'
+      : snapshot.cacheState.kind === 'not-detected' || snapshot.cacheState.kind === 'not-cached'
+        ? 'neutral'
+        : 'warn';
   return {
-    state: 'ok',
-    text: CACHE_CHIP_CACHED_TEXT,
-    stamp: formatCacheTimestamp(timeStamp)
+    state,
+    text: copy.chip,
+    stamp: snapshot.cacheState.kind === 'cached' ? snapshot.cacheState.formatted : null
   };
 }
 
@@ -214,15 +219,12 @@ function cacheChip(snapshot: StripDataSnapshot): StripCacheChip | null {
  * @param snapshot The hub read to render.
  */
 function cacheTooltip(snapshot: StripDataSnapshot): string | null {
-  const chip = cacheChip(snapshot);
-  if (chip === null) return null;
-  if (chip.stamp !== null) return `Cache generated ${chip.stamp}`;
   if (snapshot.phase === 'running') return 'The page scan has not answered yet.';
   if (snapshot.phase === 'failed') return 'The page scan failed — no cache verdict.';
   if (snapshot.detections === null) return 'No page answer yet.';
-  const { present, cached } = snapshot.detections.wpr;
-  if (!present) return 'WP Rocket did not handle this page.';
-  return cached ? 'The page is served from cache.' : 'The page is not served from cache.';
+  if (snapshot.cacheState === null) return 'No page answer yet.';
+  if (!snapshot.detections.wpr.present) return 'WP Rocket did not handle this page.';
+  return cacheCopy(snapshot.cacheState).tooltip;
 }
 
 /**
@@ -262,7 +264,7 @@ export function buildStripCardModel(input: {
   // and handed to the registry's row readers.
   const report: PageAnalysisReport | null =
     snapshot.phase === 'ready' && snapshot.detections !== null
-      ? describeDetections(snapshot.detections)
+      ? describeDetections(snapshot.detections, snapshot.cacheState ?? undefined)
       : null;
 
   const groups =

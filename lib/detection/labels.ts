@@ -20,6 +20,8 @@ export const LABEL_LOAD_CSS_ASYNCHRONOUSLY = 'Load CSS asynchronously';
 export const LABEL_IMAGE_LAZYLOAD = 'Image LazyLoad';
 export const LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD = 'Iframes and videos LazyLoad';
 export const LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD = 'CSS background images LazyLoad';
+export const LABEL_SELF_HOST_GOOGLE_FONTS = 'Self-host Google Fonts';
+export const LABEL_ADD_MISSING_IMAGE_DIMENSIONS = 'Add missing image dimensions';
 export const LABEL_MINIFY_CSS = 'Minify CSS';
 export const LABEL_MINIFY_JAVASCRIPT = 'Minify JavaScript';
 export const LABEL_PRELOAD_LINKS = 'Preload links';
@@ -45,6 +47,8 @@ export const FEATURE_LABELS = [
   LABEL_IMAGE_LAZYLOAD,
   LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD,
   LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
+  LABEL_SELF_HOST_GOOGLE_FONTS,
+  LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_MINIFY_CSS,
   LABEL_MINIFY_JAVASCRIPT,
   LABEL_PRELOAD_LINKS,

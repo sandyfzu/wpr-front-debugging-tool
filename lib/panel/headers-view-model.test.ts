@@ -209,6 +209,7 @@ describe('buildHeadersViewModel — the verdict tones', () => {
     expect(hintOf({ name: 'x-cache', value: 'MISS' }).tone).toBe('warn');
     expect(hintOf({ name: 'cf-cache-status', value: 'DYNAMIC' }).tone).toBe('warn');
     expect(hintOf({ name: 'cf-cache-status', value: 'BYPASS' }).tone).toBe('warn');
+    expect(hintOf({ name: 'cf-cache-status', value: 'EXPIRED' }).tone).toBe('warn');
     // The default arm (any value beyond the named Cloudflare statuses) too.
     expect(hintOf({ name: 'cf-cache-status', value: 'miss' }).tone).toBe('warn');
     expect(hintOf({ name: 'x-cache-lookup', value: 'MISS' }).tone).toBe('warn');
@@ -218,7 +219,6 @@ describe('buildHeadersViewModel — the verdict tones', () => {
 
   it('neutral facts read info, and an un-hinted row carries no tone at all', () => {
     expect(hintOf({ name: 'cache-control', value: 'no-cache' }).tone).toBe('info');
-    expect(hintOf({ name: 'cf-cache-status', value: 'EXPIRED' }).tone).toBe('info');
     expect(hintOf({ name: 'X-Served-By', value: 'edge-04' }).tone).toBe('info');
     expect(hintOf({ name: 'via', value: '1.1 squid-3' }).tone).toBe('info');
     // No verdict, no tone: the two are one null.

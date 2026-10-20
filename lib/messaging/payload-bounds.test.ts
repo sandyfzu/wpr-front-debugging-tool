@@ -61,7 +61,10 @@ const LIST_CASES: readonly ListCase[] = [
   {
     name: 'defer_all_js.scripts',
     cap: PAYLOAD_LIMITS.deferScripts.count,
-    fill: (d, n) => ({ ...d, defer_all_js: { present: true, scripts: strings(n) } }),
+    fill: (d, n) => ({
+      ...d,
+      defer_all_js: { present: true, scripts: strings(n), deferredScripts: n }
+    }),
     read: (d) => ({
       length: d.defer_all_js.scripts.length,
       truncated: d.defer_all_js.truncated === true
@@ -192,7 +195,10 @@ const STRING_CASES: readonly StringCase[] = [
   {
     name: 'defer_all_js.scripts[]',
     cap: PAYLOAD_LIMITS.deferScripts.chars,
-    fill: (d, value) => ({ ...d, defer_all_js: { present: true, scripts: [value] } }),
+    fill: (d, value) => ({
+      ...d,
+      defer_all_js: { present: true, scripts: [value], deferredScripts: 1 }
+    }),
     read: (d) => ({
       value: d.defer_all_js.scripts[0],
       truncated: d.defer_all_js.truncated === true

@@ -40,7 +40,13 @@ function richData(overrides?: Partial<FdtData>): FdtData {
     ],
     wprDetections: {
       ...base.wprDetections,
-      wpr: { present: true, cached: true, version: '3.20.1', timeStamp: STAMP },
+      wpr: {
+        present: true,
+        cacheMarkerFound: true,
+        cached: true,
+        version: '3.20.1',
+        timeStamp: STAMP
+      },
       delay_js: { present: true, scripts: [], version: '2.0', delayedScripts: 0 },
       lazyload: { present: true, images: [] }
     },
@@ -162,7 +168,7 @@ describe('DetectionsView', () => {
         el.querySelector('[data-fdt="status-badge"]')?.textContent === 'Active'
     ).length;
     expect(headline?.textContent).toBe(
-      `${activeOptimizations.toString()} of 14 optimizations active`
+      `${activeOptimizations.toString()} of 16 optimizations active`
     );
     expect(document.querySelector('[data-fdt-summary-fact="cache"]')?.textContent).toBe(
       'Cache generated 2023-11-14 22:13:20 UTC'

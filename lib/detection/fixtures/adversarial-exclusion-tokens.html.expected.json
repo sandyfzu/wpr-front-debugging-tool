@@ -2,6 +2,7 @@
   "wprDetections": {
     "wpr": {
       "present": false,
+      "cacheMarkerFound": false,
       "cached": false,
       "version": null,
       "timeStamp": null
@@ -37,7 +38,8 @@
     },
     "defer_all_js": {
       "present": false,
-      "scripts": []
+      "scripts": [],
+      "deferredScripts": 0
     },
     "lazyload": {
       "present": false,
@@ -94,6 +96,12 @@
       "replaceImage": false
     },
     "lazyload_css_bg_img": {
+      "present": false
+    },
+    "self_hosted_fonts": {
+      "present": false
+    },
+    "image_dimensions": {
       "present": false
     },
     "rocket_above_the_fold_optimization": {

@@ -84,6 +84,11 @@ export interface LazyloadImageRecord {
  * identifier as the registry key — KB: "Optimize critical images").
  */
 export interface OptimizeCriticalImagesDetection extends TruncationMark {
+  /**
+   * The feature verdict. Meta authority can declare it while the served
+   * markup carries no preload (the list below is then absent); footprint
+   * evidence needs the preloads.
+   */
   present: boolean;
   /** The evidence class that decided the verdict, when one did. */
   source?: FeatureEvidenceSource;
@@ -96,9 +101,10 @@ export interface OptimizeCriticalImagesDetection extends TruncationMark {
    */
   lcpComment: boolean;
   /**
-   * Resolved URLs of `data-rocket-preload` image links, document order.
-   * Present ⇔ non-empty (the applied evidence; an empty list means not
-   * applied, with or without the beacon).
+   * Resolved URLs of `data-rocket-preload` image links, document order — the
+   * observed markup, independent of the verdict: a meta-declared feature may
+   * carry no preload on a stripped or partial render (the field stays absent),
+   * and a meta-refuted render may still show remnant preloads.
    */
   preloadedImages?: string[];
 }
@@ -107,17 +113,18 @@ export interface OptimizeCriticalImagesDetection extends TruncationMark {
  * Automatic Lazy Rendering (Priority Elements family; registry key = the
  * plugin's real feature-comment id, KB: "Automatic Lazy Rendering").
  *
- * Evidence-pure: `present` requires applied markup; the collecting phase
- * (feature enabled, not yet applied) surfaces through `locationHashes` > 0
- * with `present: false` — the view model composes "collecting" with the
- * beacon row's status map.
+ * `present` is the feature verdict: meta authority can declare the feature
+ * even when the served markup is partial, while the counts below stay the
+ * observed markup. The collecting phase (feature enabled, not yet applied)
+ * surfaces through `locationHashes` > 0 with `present: false` — the view
+ * model composes "collecting" with the beacon row's status map.
  */
 export interface AutomaticLazyRenderingDetection {
-  /** ≥ 1 element stamped `data-wpr-lazyrender`. */
+  /** The feature verdict (meta declaration included). */
   present: boolean;
   /** The evidence class that decided the verdict, when one did. */
   source?: FeatureEvidenceSource;
-  /** Count of stamped elements. */
+  /** Count of elements stamped `data-wpr-lazyrender` (observed markup). */
   lazyRenderElements: number;
   /**
    * The feature's inline `content-visibility` style is present — corroborates
@@ -138,8 +145,12 @@ export interface AutomaticLazyRenderingDetection {
  * preloads — same markup, no attribute.
  */
 export interface AutoPreloadFontsDetection extends TruncationMark {
+  /** The feature verdict; meta authority can declare it without markup. */
   present: boolean;
-  /** Resolved hrefs of attributed font preloads, document order. Present ⇔ non-empty. */
+  /**
+   * Resolved hrefs of attributed font preloads, document order — observed
+   * markup, which can be empty under a meta declaration.
+   */
   fonts: string[];
   /** The evidence class that decided the verdict, when one did. */
   source?: FeatureEvidenceSource;
@@ -150,13 +161,15 @@ export interface AutoPreloadFontsDetection extends TruncationMark {
  * plugin's feature-comment id, KB: "Preconnect to external domains").
  */
 export interface PreconnectExternalDomainsDetection extends TruncationMark {
+  /** The feature verdict; meta authority can declare it without markup. */
   present: boolean;
   /** The evidence class that decided the verdict, when one did. */
   source?: FeatureEvidenceSource;
   /**
    * Attributed hint hrefs (both variants), first-occurrence order — a bare
    * dns-prefetch hint (e.g. the RocketCDN one) asserts nothing here; the
-   * attribution attributes are the whole claim. Present ⇔ non-empty.
+   * attribution attributes are the whole claim. Observed markup, which can be
+   * empty under a meta declaration.
    */
   domains: string[];
   /** Count of the `data-rocket-preconnect` (crossorigin) variant links. */
@@ -232,6 +245,13 @@ export type FeatureEvidenceSource = 'meta' | 'footprint';
 export interface WprDetections {
   wpr: TruncationMark & {
     present: boolean;
+    /**
+     * The served HTML carries WP Rocket's cache-signature comment. True even
+     * without the debug stamp: the plugin handled the page, but this visit's
+     * cache state is not proven until `cached` is true.
+     */
+    cacheMarkerFound: boolean;
+    /** The signature includes the cache debug stamp (`Debug: cached…`). */
     cached: boolean;
     version: string | null;
     /** Cache timestamp from the debug comment (seconds since epoch). */
@@ -251,9 +271,16 @@ export interface WprDetections {
     source?: FeatureEvidenceSource;
   };
   defer_all_js: TruncationMark & {
+    /** ≥ 1 script carries `data-rocket-defer` (inline/no-src scripts included). */
     present: boolean;
-    /** `data-rocket-src` or `src` of every WP Rocket-deferred script, doc order. */
+    /**
+     * `data-rocket-src` or `src` of every WP Rocket-deferred script that
+     * carries a URL, document order. Inline/no-src attributed scripts prove
+     * presence but contribute no URL — `deferredScripts` counts them.
+     */
     scripts: string[];
+    /** Every attributed script, URL-bearing or not. */
+    deferredScripts: number;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
@@ -281,12 +308,36 @@ export interface WprDetections {
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
+  self_hosted_fonts: {
+    present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
+  };
+  image_dimensions: {
+    present: boolean;
+    /**
+     * The evidence class that decided the verdict, when one did. This row is
+     * declaration-only: ordinary `width`/`height` attributes never attribute
+     * the feature, so an undeclared page has no footprint to decide it.
+     */
+    source?: FeatureEvidenceSource;
+  };
   minify_css: {
+    /**
+     * The feature verdict. A meta declaration means the minify stage ran, not
+     * necessarily that any stylesheet was rewritten on this render (the
+     * plugin appends its comment after the candidate loop).
+     */
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
   minify_js: {
+    /**
+     * The feature verdict. A meta declaration means the minify stage ran, not
+     * necessarily that any script was rewritten on this render (the plugin
+     * appends its comment after the candidate loop).
+     */
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
@@ -307,6 +358,13 @@ export interface WprDetections {
   preconnect_external_domains: PreconnectExternalDomainsDetection;
   priority_elements_beacon: PriorityElementsBeaconDetection;
 }
+
+/**
+ * Every detection row the generator meta can decide: all feature rows except
+ * the plugin's identity row and the shared measurement beacon (neither is a
+ * feature token).
+ */
+export type FeatureMetaRow = Exclude<keyof WprDetections, 'wpr' | 'priority_elements_beacon'>;
 
 /** WP Rocket-preloaded resources collected for the panel page. */
 export interface PreloadedResources extends TruncationMark {
@@ -359,6 +417,12 @@ export interface FdtData {
    * absence as graceful omission — never as a broken payload.
    */
   cookies?: PageCookies;
+  /**
+   * The captured URL carried WP Rocket's cache-bypass parameter. Additive and
+   * present only as `true`: absence means the URL did not attest a bypass,
+   * never that the page was cached.
+   */
+  bypassAttested?: true;
 }
 
 /**

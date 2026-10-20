@@ -1,13 +1,14 @@
 /**
  * Detection orchestrator: parse once, run every check once, apply the
- * presence-propagation rule, report the elapsed wall time for the
- * processing log.
+ * declaration's authority, then apply the presence-propagation rule; report
+ * the elapsed wall time for the processing log.
  *
- * WP Rocket is "present" when its footprints say so OR when any optimization
- * was detected — except the deferral check (other tools also defer scripts)
- * and the `wpr` row itself. The rule runs after every check. The beacon
- * counts as presence: a beacon-only page (features pending, zero applied
- * markers) is a WP Rocket page.
+ * WP Rocket is "present" when its generator declaration says so, when its
+ * footprints say so, or when any optimization was detected — except the
+ * deferral check (other tools also defer scripts) and the `wpr` row itself.
+ * The rule runs after every check. The beacon counts as presence: a
+ * beacon-only page (features pending, zero applied markers) is a WP Rocket
+ * page.
  */
 
 import type { PreloadedResources, WprDetections } from '../wp-rocket/types';
@@ -16,6 +17,7 @@ import {
   detectAsyncCss,
   detectDeferAllJs,
   detectDelayJs,
+  detectImageDimensions,
   detectLazyload,
   detectLazyloadCssBgImg,
   detectLazyloadIframes,
@@ -24,8 +26,10 @@ import {
   detectPreloadLinks,
   detectPreloadedResources,
   detectRemoveUnusedCss,
-  detectRocketCdn
+  detectRocketCdn,
+  detectSelfHostedFonts
 } from './detect-optimizations';
+import { applyFeatureMetaAuthority } from './feature-meta';
 import {
   detectAutoPreloadFonts,
   detectAutomaticLazyRendering,
@@ -61,11 +65,12 @@ export function runDetection(html: string): DetectionResult {
 }
 
 /**
- * Run every check once over an already-parsed page. Single-sourced so the
- * bench and the orchestrator can never drift apart. The beacon config is
- * parsed once here and fed to the beacon row's check (pending-state
- * composition stays out of the engine entirely — the four feature checks
- * read page markup only).
+ * Run every check once over an already-parsed page, then apply the generator
+ * declaration's authority (it rewrites mapped rows and stamps `source`).
+ * Single-sourced so the bench and the orchestrator can never drift apart. The
+ * beacon config is parsed once here and fed to the beacon row's check
+ * (pending-state composition stays out of the engine entirely — the four
+ * feature checks read page markup only).
  */
 export function runChecks(page: ParsedPage): WprDetections {
   // Registry order matches the reference engine's (it is also output key
@@ -73,7 +78,7 @@ export function runChecks(page: ParsedPage): WprDetections {
   // Elements rows sit together: the four feature checks, then the family's
   // shared beacon.
   const beaconConfig = parseBeaconConfig(page);
-  return {
+  const detections: WprDetections = {
     wpr: detectWpr(page.document),
     remove_unused_css: detectRemoveUnusedCss(page),
     async_css: detectAsyncCss(page),
@@ -82,6 +87,8 @@ export function runChecks(page: ParsedPage): WprDetections {
     lazyload: detectLazyload(page),
     lazyload_iframes: detectLazyloadIframes(page),
     lazyload_css_bg_img: detectLazyloadCssBgImg(page),
+    self_hosted_fonts: detectSelfHostedFonts(page),
+    image_dimensions: detectImageDimensions(),
     rocket_above_the_fold_optimization: detectOptimizeCriticalImages(page),
     automatic_lazy_rendering: detectAutomaticLazyRendering(page),
     auto_preload_fonts: detectAutoPreloadFonts(page),
@@ -92,6 +99,8 @@ export function runChecks(page: ParsedPage): WprDetections {
     preload_links: detectPreloadLinks(page),
     rocket_cdn: detectRocketCdn(page)
   };
+  applyFeatureMetaAuthority(detections, page.featureMeta);
+  return detections;
 }
 
 /** Rows whose presence implies nothing about WP Rocket itself. */

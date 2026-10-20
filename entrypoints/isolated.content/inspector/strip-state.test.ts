@@ -10,11 +10,11 @@ import { describe, expect, it } from 'vitest';
 import { runDetection } from '../../../lib/detection/run-detection';
 import { type FIXTURES, FIXTURE_DIR } from '../../../lib/detection/fixtures/corpus';
 import type { WprDetections } from '../../../lib/wp-rocket/types';
+import { cacheStateForPage } from '../../../lib/detection/cache-context';
+import type { CacheState } from '../../../lib/detection/cache-context';
 import {
   buildStripCardModel,
-  CACHE_CHIP_CACHED_TEXT,
   CACHE_CHIP_IDLE_TEXT,
-  CACHE_CHIP_NOT_CACHED_TEXT,
   CACHE_CHIP_PENDING_TEXT,
   CARD_ERROR_HINT,
   CARD_ERROR_TITLE,
@@ -30,14 +30,16 @@ import { STRIP_ITEMS, stripGroupedRows } from './strip-items';
 /** The engine's zero page: every feature absent, beacon absent, no config. */
 function zeroDetections(): WprDetections {
   return {
-    wpr: { present: false, cached: false, version: null, timeStamp: null },
+    wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
     remove_unused_css: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     async_css: { present: false },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },
@@ -58,11 +60,25 @@ function zeroDetections(): WprDetections {
 const fixture = (name: (typeof FIXTURES)[number]): string =>
   readFileSync(join(FIXTURE_DIR, name), 'utf8');
 
-const running = (): StripDataSnapshot => ({ phase: 'running', detections: null });
-const failed = (): StripDataSnapshot => ({ phase: 'failed', detections: null });
-const ready = (detections: StripDataSnapshot['detections']): StripDataSnapshot => ({
+const running = (): StripDataSnapshot => ({
+  phase: 'running',
+  detections: null,
+  cacheState: null
+});
+const failed = (): StripDataSnapshot => ({
+  phase: 'failed',
+  detections: null,
+  cacheState: null
+});
+const ready = (
+  detections: StripDataSnapshot['detections'],
+  cacheState: CacheState | null = detections === null
+    ? null
+    : cacheStateForPage({ wpr: detections.wpr, headers: null, bypassAttested: false })
+): StripDataSnapshot => ({
   phase: 'ready',
-  detections
+  detections,
+  cacheState
 });
 
 describe('insMood', () => {
@@ -73,11 +89,23 @@ describe('insMood', () => {
 
   it('present + cached is green, present + uncached amber, absent gray', () => {
     const cached = zeroDetections();
-    cached.wpr = { present: true, cached: true, version: '3.20.0.2', timeStamp: 1_730_000_000 };
+    cached.wpr = {
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      version: '3.20.0.2',
+      timeStamp: 1_730_000_000
+    };
     expect(insMood(ready(cached))).toBe('green');
 
     const uncached = zeroDetections();
-    uncached.wpr = { present: true, cached: false, version: null, timeStamp: null };
+    uncached.wpr = {
+      present: true,
+      cacheMarkerFound: false,
+      cached: false,
+      version: null,
+      timeStamp: null
+    };
     expect(insMood(ready(uncached))).toBe('amber');
 
     const absent = zeroDetections();
@@ -99,13 +127,20 @@ describe('identityText', () => {
     const withVersion = zeroDetections();
     withVersion.wpr = {
       present: true,
+      cacheMarkerFound: true,
       cached: true,
       version: '3.23.5.1',
       timeStamp: null
     };
     expect(identityText(ready(withVersion))).toBe('WPR 3.23.5.1');
     const noVersion = zeroDetections();
-    noVersion.wpr = { present: true, cached: false, version: null, timeStamp: null };
+    noVersion.wpr = {
+      present: true,
+      cacheMarkerFound: false,
+      cached: false,
+      version: null,
+      timeStamp: null
+    };
     expect(identityText(ready(noVersion))).toBe('WPR (unknown version)');
     expect(identityText(ready(zeroDetections()))).toBe('WPR not found');
     expect(identityText(running())).toBe('WPR');
@@ -113,11 +148,12 @@ describe('identityText', () => {
   });
 });
 
-describe('the cache chip (the four conversion-table shapes)', () => {
-  it('cached → ok chip with the formatted stamp; uncached → warn; absent → dash', () => {
+describe('the cache chip (the explicit cache vocabulary)', () => {
+  it('cached → ok chip with the stamp; signature/no-stamp → warn; absent → dash', () => {
     const cached = zeroDetections();
     cached.wpr = {
       present: true,
+      cacheMarkerFound: true,
       cached: true,
       version: '3.20.0.2',
       // A stamp outside the platform range formats to null (no dishonest stamp).
@@ -130,13 +166,14 @@ describe('the cache chip (the four conversion-table shapes)', () => {
     });
     expect(model.cacheChip).toEqual({
       state: 'ok',
-      text: CACHE_CHIP_CACHED_TEXT,
+      text: '✓ Cached',
       stamp: null
     });
 
     const stampCached = zeroDetections();
     stampCached.wpr = {
       present: true,
+      cacheMarkerFound: true,
       cached: true,
       version: '3.20.0.2',
       timeStamp: 1_730_000_000
@@ -147,21 +184,80 @@ describe('the cache chip (the four conversion-table shapes)', () => {
       fdtVersion: '0.0.0'
     });
     expect(stamped.cacheChip?.stamp).toBe('2024-10-27 03:33:20 UTC');
-    expect(stamped.cacheTooltip).toBe('Cache generated 2024-10-27 03:33:20 UTC');
+    expect(stamped.cacheTooltip).toBe(
+      "The page is served from WP Rocket's cache generated 2024-10-27 03:33:20 UTC."
+    );
 
-    const uncached = zeroDetections();
-    uncached.wpr = { present: true, cached: false, version: null, timeStamp: null };
-    const uncachedModel = buildStripCardModel({
-      snapshot: ready(uncached),
+    // Signature present, no debug stamp: the plugin handled the page, but the
+    // cache is not proven — never folded into "not cached".
+    const signature = zeroDetections();
+    signature.wpr = {
+      present: true,
+      cacheMarkerFound: true,
+      cached: false,
+      version: null,
+      timeStamp: null
+    };
+    const signatureModel = buildStripCardModel({
+      snapshot: ready(signature),
       wordpressVersion: null,
       fdtVersion: '0.0.0'
     });
-    expect(uncachedModel.cacheChip).toEqual({
+    expect(signatureModel.cacheChip).toEqual({
       state: 'warn',
-      text: CACHE_CHIP_NOT_CACHED_TEXT,
+      text: 'Cache not proven',
       stamp: null
     });
-    expect(uncachedModel.cacheTooltip).toBe('The page is not served from cache.');
+    expect(signatureModel.cacheTooltip).toContain("this visit's cache state is not proven");
+
+    // No signature, no headers: absence proves nothing.
+    const unknown = zeroDetections();
+    unknown.wpr = {
+      present: true,
+      cacheMarkerFound: false,
+      cached: false,
+      version: null,
+      timeStamp: null
+    };
+    const unknownModel = buildStripCardModel({
+      snapshot: ready(unknown),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(unknownModel.cacheChip).toEqual({
+      state: 'neutral',
+      text: 'Cache not detected',
+      stamp: null
+    });
+    expect(unknownModel.cacheTooltip).toContain('Response headers were not captured');
+
+    // A verified hosting marker is evidence, not proof.
+    const possibly = buildStripCardModel({
+      snapshot: ready(unknown, {
+        kind: 'possibly-cached',
+        evidence: 'SiteGround'
+      }),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(possibly.cacheChip).toEqual({
+      state: 'warn',
+      text: 'Possibly cached',
+      stamp: null
+    });
+    expect(possibly.cacheTooltip).toContain('SiteGround');
+
+    // The bypass is the one counter-evidence that earns "Not cached".
+    const bypassed = buildStripCardModel({
+      snapshot: ready(unknown, { kind: 'not-cached' }),
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(bypassed.cacheChip).toEqual({
+      state: 'neutral',
+      text: 'Not cached',
+      stamp: null
+    });
 
     const absentModel = buildStripCardModel({
       snapshot: ready(zeroDetections()),
@@ -253,7 +349,7 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     // no version stamp (the docker site's `?fdt-wpr-versionless=1` arm).
     const { detections } = runDetection(
       '<html><head><title>t</title></head><body>fixture page</body></html>' +
-        '<!-- This website is like a Rocket, is performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1699999999 -->'
+        "<!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket. Learn more: https://wp-rocket.me - Debug: cached@1699999999 -->"
     );
     expect(detections.wpr.present).toBe(true);
     expect(detections.wpr.cached).toBe(true);
