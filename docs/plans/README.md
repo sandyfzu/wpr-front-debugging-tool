@@ -8,7 +8,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 
 ## Active work
 
-- **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.9 + G.11 + G.10 shipped (G.10's native DevTools find-bar live-check pending owner); **P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
+- **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.11 shipped (G.10 closed — owner's native-DevTools find-bar live-check, 2026-10-19, no issue); **P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
 - **P9 partial:** [options+9.1](./10-phase-9-options.md). P9A registry/model shipped (2026-10-19); **P9B page + P9.1 suites open**; may parallel P6.
 - **P8 deferred** (owner2026-10-19: popup not settled): [popup+8.1](./09-phase-8-popup.md) moves to the **last phase beforeP15** — afterP5J, immediately before release; no longer parallel withP6/P9.
 - **P10 parked:** [Builder+10.1](./11-phase-10-exclusion-builder.md); owner requires replan, old design not executable.
