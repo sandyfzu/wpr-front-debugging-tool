@@ -4,6 +4,8 @@
 
 Panel form+strip trigger share one validated config/executor: **fetch first, then strip/inject**, typed outcomes and TEST MODE. Depends:P11/P12/P3/P5/P6; technically parallel independent P14 cores, but P14 executor integration needs this pattern. Installed stack, no new permission expected (existing HTTPS hosts cover endpoint). Local synthetic WP key cannot exercise live service RUCSS; fixture failures/services honestly separated.
 
+> **NOTE FROM DEV:** P10 replanned (2026-10-20) as an in-page session shell + interception backend. When P10 ships first, this phase's on-page trigger mounts into that shell (its mode registry) instead of standing alone, and the executor's strip/inject transforms must fit P10's pipeline seam. A **before-parse TEST MODE** (apply strip/inject during a P10 interception session so the reloaded page renders with only used CSS from first paint) is an owner-gated addition on top of this phase's fetch-first post-render flow — decide at P13C, implement only if approved.
+
 ## Verified source contract (v4.1.1)
 
 RUCSSTester.js/utils, audited2026-10-06:
