@@ -16,6 +16,12 @@ export interface SwitchProps {
   label?: string;
   /** Accessible name when no visible label accompanies the control. */
   'aria-label'?: string;
+  /**
+   * Accessible description: the id of the element describing the control
+   * (a row's explanatory sentence set under the switch). Forwarded to the
+   * switch input itself — the accessible node — never the wrapper.
+   */
+  'aria-describedby'?: string;
   /** Controlled checked state (with `onChange`). */
   checked?: boolean;
   /** Uncontrolled initial state. */
@@ -44,6 +50,8 @@ export interface SwitchProps {
  *
  * @param props.label The visible label text; a click target alongside the control.
  * @param props['aria-label'] The name when no visible label is rendered.
+ * @param props['aria-describedby'] The describing element's id, forwarded to
+ *   the accessible switch input (a row's description, wired by callers).
  * @param props.checked Controlled state; pair with `onChange`.
  * @param props.defaultChecked Uncontrolled initial state.
  * @param props.onChange Called with the new checked state.
@@ -52,15 +60,11 @@ export interface SwitchProps {
  * @param props.class Extra classes on the wrapper.
  */
 export function Switch(props: SwitchProps): JSX.Element {
-  const [own, rest] = splitProps(props, [
-    'label',
-    'checked',
-    'defaultChecked',
-    'onChange',
-    'disabled',
-    'labelSide',
-    'class'
-  ]);
+  const [own, describedBy, rest] = splitProps(
+    props,
+    ['label', 'checked', 'defaultChecked', 'onChange', 'disabled', 'labelSide', 'class'],
+    ['aria-describedby']
+  );
   const side = (): JSX.Element | null =>
     own.label !== undefined ? (
       <KobalteSwitch.Label data-fdt-switch-label class="text-fg-primary">
@@ -122,6 +126,9 @@ export function Switch(props: SwitchProps): JSX.Element {
         // When no visible label renders, the caller's aria-label names the
         // control; otherwise the labelledby wiring takes over (id-linked).
         aria-label={own.label === undefined ? props['aria-label'] : undefined}
+        // Any accessible description belongs to the accessible node (the
+        // hidden switch input), never the wrapper div around it.
+        aria-describedby={describedBy['aria-describedby']}
       />
     </KobalteSwitch.Root>
   );

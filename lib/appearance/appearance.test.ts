@@ -8,7 +8,7 @@
  * exactly once, in both boot arms).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { FALLBACK, type StoredOptions } from '../../lib/storage/options';
+import { FALLBACK, type StoredOptions } from '../storage/options';
 import {
   applyStoredAppearance,
   pageTheme,

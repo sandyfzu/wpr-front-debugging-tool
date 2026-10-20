@@ -119,7 +119,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     section: 'features',
     label: 'Show the toolbar badge',
     description:
-      'Colors the toolbar icon while WP Rocket is detected on the inspected page — applies live, no restart'
+      'Colors the toolbar icon while WP Rocket is detected on the inspected page — applies as soon as it is saved'
   }
 ]);
 

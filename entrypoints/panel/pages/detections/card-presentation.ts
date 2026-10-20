@@ -5,7 +5,7 @@
  */
 import type { StatusKind as Tone } from '../../../../components/ui/status-badge';
 import type { StatusItemId, StatusKind } from '../../../../lib/panel/detections-view-model';
-import { relativeAge } from '../../status-bar/relative-age';
+import { relativeAge } from '../../../../utils/relative-age';
 import type { RouteId } from '../../routes';
 
 /**

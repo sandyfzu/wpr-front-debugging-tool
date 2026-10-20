@@ -16,7 +16,7 @@
 import { render } from 'solid-js/web';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { createLogger } from '../../lib/logger';
-import { applyStoredAppearance, releaseThemeLock } from './appearance';
+import { applyStoredAppearance, releaseThemeLock } from '../../lib/appearance/appearance';
 import { panelColdStart } from './cold-start';
 import './style.css';
 import App from './App';

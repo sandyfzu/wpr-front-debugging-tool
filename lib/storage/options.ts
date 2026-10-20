@@ -6,7 +6,9 @@
  * phases may extend additively with a documented default.
  *
  * Read options through {@link getOptions} (validated, corrupt-tolerant);
- * `optionsStore` is the raw storage item, kept for `watch`/writes.
+ * whole-shape read-modify-writes go through {@link mutateOptions} (serialized,
+ * so concurrent writers cannot revert each other); `optionsStore` is the raw
+ * storage item, kept for `watch`/writes.
  */
 
 import { storage } from 'wxt/utils/storage';
@@ -171,9 +173,49 @@ export async function getOptions(): Promise<StoredOptions> {
 }
 
 /**
+ * The whole-shape read-modify-write queue.
+ *
+ * Every writer here reads and writes the WHOLE options shape; two
+ * unsynchronized read-modify-writes interleave (the later one's read sees the
+ * older stored value and writes it back), silently reverting the earlier
+ * writer's fields. One module-scope promise chain serializes the closures —
+ * a queued mutation's validated read only starts after the previous
+ * mutation's write settled, so a later writer always reads what the earlier
+ * one wrote.
+ *
+ * @param apply The whole-shape transformation (pure; called once, with the
+ *   validated stored options — a sync closure, or a thenable-returning one
+ *   when the write must wait, as the deferred tests need).
+ * @returns The shape that was written.
+ * @throws Whatever the read or the write rejects with — this mutation's
+ *   caller branches on it; the queue itself keeps flowing, so a rejecting
+ *   mutation never stalls the next one.
+ */
+let mutationQueue: Promise<unknown> = Promise.resolve();
+
+export function mutateOptions(
+  apply: (options: StoredOptions) => StoredOptions | Promise<StoredOptions>
+): Promise<StoredOptions> {
+  const run = mutationQueue.then(async () => {
+    const current = storedOptionsOrFallback(await optionsStore.getValue());
+    // `await` covers both closure kinds; a sync return passes through — and
+    // an unawaited async closure would otherwise hand setValue a Promise,
+    // serializing to a useless `{}`.
+    const written = await apply(current);
+    await optionsStore.setValue(written);
+    return written;
+  });
+  // The chain forgets this mutation's outcome: its rejection propagates to
+  // this mutation's own caller (above), never into the next queued one.
+  mutationQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
  * Advance the stored appearance one step in its registry order and persist
- * the whole options item (read-modify-write over the validated shape, so
- * every other option slot — and future unknown flags — survive the write).
+ * the whole options item (a queued read-modify-write over the validated
+ * shape, so every other option slot — and future unknown flags — survive the
+ * write; see {@link mutateOptions} for the serialization).
  *
  * The write rides the same storage item every surface reads, so appearance
  * followers (the panel's live watcher, injected UIs) pick the change up with
@@ -186,7 +228,26 @@ export async function getOptions(): Promise<StoredOptions> {
  *   does — callers branch on the rejection (validate-and-log, degrade).
  */
 export async function cycleAppearanceOption(): Promise<void> {
-  const options = storedOptionsOrFallback(await optionsStore.getValue());
-  const next = nextAppearance(options.appearance);
-  await optionsStore.setValue({ ...options, appearance: next });
+  await mutateOptions((options) => ({
+    ...options,
+    appearance: nextAppearance(options.appearance)
+  }));
+}
+
+/**
+ * Persist one explicit appearance choice and serve it through every surface's
+ * existing watch: a queued read-modify-write over the validated whole shape,
+ * exactly like {@link cycleAppearanceOption}, so every other option slot —
+ * and future unknown flags — survive the write (see {@link mutateOptions} for
+ * the serialization). This is the options page's choice seam (the selection
+ * applies as soon as it is stored); the cycle remains the keyboard surfaces'
+ * step-through.
+ *
+ * @param next The choice to persist (one of the three documented values).
+ * @throws Nothing deliberately: the storage item's write failure (e.g. an
+ *   invalidated extension context after a reload) rejects as the platform
+ *   does — callers branch on the rejection (validate-and-log, degrade).
+ */
+export async function setAppearanceOption(next: Appearance): Promise<void> {
+  await mutateOptions((options) => ({ ...options, appearance: next }));
 }

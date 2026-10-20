@@ -1,15 +1,15 @@
 /**
- * The panel document's appearance leg — the extension-<html> half of the
- * palette rule: the stored three-way choice (system default / dark / light)
- * resolves into the `[data-theme]` declaration on `<html>` *before* the app
- * renders (no wrong-palette frame), and follows later writes live while the
- * panel is mounted.
+ * The extension documents' appearance leg (panel + options boots) — the
+ * extension-<html> half of the palette rule: the stored three-way choice
+ * (system default / dark / light) resolves into the `[data-theme]`
+ * declaration on `<html>` *before* the app renders (no wrong-palette frame),
+ * and follows later writes live while the document is mounted.
  *
  * Page semantics (`tokens.css`'s appearance model): `system` needs no
  * attribute — the `:root` media query chain resolves it against the OS
- * scheme live, so an OS flip restyles the panel without any JS; an explicit
- * `dark`/`light` pins the attribute and wins over the media query. Only a
- * *change of the stored choice* therefore ever touches the tree.
+ * scheme live, so an OS flip restyles the document without any JS; an
+ * explicit `dark`/`light` pins the attribute and wins over the media query.
+ * Only a *change of the stored choice* therefore ever touches the tree.
  *
  * Arm-first discipline (the committed pattern from the injected-UI leg, kept
  * identical here): the storage watch arms before the read, so a write
@@ -29,7 +29,7 @@ import { optionsStore, storedOptionsOrFallback } from '../../lib/storage/options
 const THEME_LOCK_DONE = 'done';
 
 /**
- * Release the panel document's paint lock — set `<html>`'s
+ * Release an extension document's paint lock — set `<html>`'s
  * `data-theme-lock` to its done value, exactly once (a repeated release
  * writes nothing). The bootstrap calls this in both arms of the appearance
  * resolution: the resolved choice (after a successful read) and the token
@@ -66,16 +66,6 @@ export interface AppearanceSource {
 export function pageTheme(appearance: Appearance): Theme | null {
   return appearance === 'system' ? null : appearance;
 }
-
-/**
- * The declaration the document should carry for an options write the watch
- * receives. Because "keep the system choice" IS the unset attribute here,
- * the watch can't route through a "declared value or nothing" helper — it
- * computes the declaration and compares against the current attribute read
- * (only a real change may touch the tree; a rejected write degrades to the
- * documented defaults exactly like the read path — validation once, in the
- * owner).
- */
 
 /** The follow's stop handle — unsubscribes the write channel (idempotent). */
 export type AppearanceFollow = () => void;
@@ -131,7 +121,7 @@ export async function applyStoredAppearance(
 /**
  * The real source: the options storage item (declared once in
  * `lib/storage/options`). The watch payload is passed through raw — the
- * watch already validates first.
+ * consumer validates (the contract comment above).
  */
 const optionsStoreSource: AppearanceSource = {
   getValue: () => optionsStore.getValue(),
