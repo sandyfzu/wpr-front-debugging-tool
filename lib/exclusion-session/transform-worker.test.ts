@@ -389,6 +389,63 @@ describe('createWorkerTransformRunner', () => {
     expect(port.received.map((message) => message.id)).toEqual([0, 1]);
   });
 
+  it('bounds a queued run from its arrival: dropped as engine-failed at its own deadline', async () => {
+    const timers: { ms: number; run: () => void }[] = [];
+    const schedule: ScheduleTimer = (run, ms) => {
+      const timer = { ms, run };
+      timers.push(timer);
+      return () => timers.splice(timers.indexOf(timer), 1);
+    };
+    const port = new FakePort(() => undefined); // the first run never answers
+    const host = createWorkerTransformRunner({ spawn: () => port, schedule });
+    const first = host.run(REQUEST);
+    const queued = host.run({ ...REQUEST, budgetMs: 40 });
+    // Both deadlines are armed at hand-over, not when the queued run reaches the port.
+    expect(timers.map((timer) => timer.ms)).toEqual([100 + WORKER_GRACE_MS, 40 + WORKER_GRACE_MS]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    timers[1]?.run(); // the queued run's (shorter) deadline passes first
+    await expect(queued).resolves.toEqual({
+      ok: false,
+      outcome: { outcome: 'failed', reason: 'engine-failed' },
+      cause: new Error('Transform run queued past its deadline')
+    });
+    expect(port.received.map((message) => message.id)).toEqual([0]);
+    timers[0]?.run();
+    await expect(first).resolves.toMatchObject({ outcome: { outcome: 'over-budget' } });
+    expect(timers).toEqual([]);
+  });
+
+  it('a queued run reaching the port keeps only what is left of its deadline', async () => {
+    const pending = new Map<number, () => void>();
+    let nextTimer = 0;
+    const schedule: ScheduleTimer = (run) => {
+      const id = nextTimer++;
+      pending.set(id, run);
+      return () => pending.delete(id);
+    };
+    let release: (() => void) | null = null;
+    const port = new FakePort((self, message) => {
+      if (message.id === 0) {
+        release = () => {
+          working(self, message);
+        };
+      }
+      // the second run never answers
+    });
+    const host = createWorkerTransformRunner({ spawn: () => port, schedule });
+    const first = host.run(REQUEST);
+    const second = host.run(REQUEST);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    (release as (() => void) | null)?.();
+    await expect(first).resolves.toMatchObject({ ok: true });
+    expect(port.received.map((message) => message.id)).toEqual([0, 1]);
+    // No new timer was armed when the second run started: its arrival deadline kills it.
+    expect([...pending.keys()]).toEqual([1]);
+    pending.get(1)?.();
+    await expect(second).resolves.toMatchObject({ outcome: { outcome: 'over-budget' } });
+    expect(port.terminated).toBe(true);
+  });
+
   it('dispose kills the port and settles the in-flight run as engine-failed', async () => {
     const port = new FakePort(() => undefined);
     const host = createWorkerTransformRunner({

@@ -43,7 +43,12 @@ const EVENTS: Record<SessionEvent['type'], SessionEvent> = {
   'arm-failed': { type: 'arm-failed' },
   stop: { type: 'stop' },
   document: { type: 'document', startedAt: ACTIVE.startedAt, outcome: OUTCOME },
-  'interception-ended': { type: 'interception-ended', cause: 'detached', at: 9 },
+  'interception-ended': {
+    type: 'interception-ended',
+    startedAt: ACTIVE.startedAt,
+    cause: 'detached',
+    at: 9
+  },
   stale: { type: 'stale' },
   'tab-closed': { type: 'tab-closed' }
 };
@@ -196,6 +201,13 @@ describe('ending a session', () => {
       next: record,
       effects: [{ kind: 'disarm' }, { kind: 'store', record }, { kind: 'notify', status: record }]
     });
+  });
+
+  it('ignores the end of another generation (a replaced interception ending late)', () => {
+    for (const startedAt of [ACTIVE.startedAt - 1, ACTIVE.startedAt + 1]) {
+      const late: SessionEvent = { ...EVENTS['interception-ended'], startedAt } as SessionEvent;
+      expect(transition(ACTIVE, late)).toBeNull();
+    }
   });
 });
 

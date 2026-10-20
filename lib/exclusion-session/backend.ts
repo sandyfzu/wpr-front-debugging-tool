@@ -6,9 +6,35 @@
  * state machine, stores, pushes, the document step, charsets, budgets)
  * are backend-agnostic and live outside the backend; a backend only arms,
  * disarms, resumes, intercepts, and reports.
+ *
+ * **Generations.** Every arm and resume hands the backend the session's
+ * generation (its start time — strictly increasing per tab, opaque to the
+ * backend). The backend tags the interception it confirms or establishes
+ * with it, and reports an end with the generation of the interception that
+ * actually ended (read when the browser signals it, never "the latest") —
+ * so a late end of a replaced interception never kills a re-armed session.
+ *
+ * **Time bounds.** The controller time-boxes every backend call (a timed-
+ * out `arm` answers `attach-denied`; a timed-out `resume` is stale; a
+ * timed-out `disarm` is logged), and every host method resolves within
+ * `INTERCEPTION_HOST_BOUNDS_MS` (`./timeouts`). A backend still never
+ * trusts the host with a paused response: it arms its own release deadline
+ * above that bound and, when it passes, serves the response unmodified
+ * (CDP: continue; stream filter: write the buffered bytes through). An
+ * `arm` that settles after its timeout — or after a `disarm` — must not
+ * leave interception behind: the latest of arm/disarm per tab wins.
+ *
+ * **Eligibility.** Before reading or decoding any body, a backend passes
+ * only `isRewritableResponse` (`./document-transform`) responses to the host; every other
+ * response is passed through (continued) unrecorded — never reported via
+ * `documentBodyUnavailable`. The host re-checks it.
  */
 import type { InterceptionUnavailableCause } from '../messaging/exclusion-session';
-import type { DocumentTransformRunner, InterceptedDocumentBody } from './document-transform';
+import type {
+  DocumentTransformRunner,
+  InterceptedDocumentBody,
+  InterceptedResponseFacts
+} from './document-transform';
 
 /** Why arming failed — every cause but the live-session cap (the controller's own check). */
 export type ArmUnavailableCause = Exclude<InterceptionUnavailableCause, 'session-limit'>;
@@ -28,8 +54,8 @@ export type InterceptionEndCause = Exclude<
   'session-limit' | 'unsupported-browser'
 >;
 
-/** One intercepted top-level document of a tab. */
-export interface InterceptedDocument extends InterceptedDocumentBody {
+/** One intercepted top-level document of a tab, with its response facts. */
+export interface InterceptedDocument extends InterceptedDocumentBody, InterceptedResponseFacts {
   readonly tabId: number;
   /** The document's absolute URL (the session's origin gate reads it). */
   readonly documentUrl: string;
@@ -53,17 +79,26 @@ export interface InterceptionHost {
    * Rewrite one intercepted top-level document and record its outcome.
    *
    * @returns The bytes to serve, or null to serve the original bytes
-   *   unmodified (no active session for the tab, another origin, nothing
-   *   changed, or any failure — all recorded where a session exists).
+   *   unmodified (no active session for the tab, another origin, an
+   *   ineligible response — those unrecorded — nothing changed, a session
+   *   stopped or replaced while the engine ran, or any failure — recorded
+   *   where a session exists).
    *   Headers are the backend's: the body is in the response's own
    *   charset (never transcoded), so only `Content-Length` (and any
    *   `Content-Encoding` the backend already removed) needs fixing.
    */
   rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null>;
-  /** A top-level document's body could not be read (served unmodified) — recorded. */
+  /**
+   * An eligible top-level document's body could not be read (or exceeds
+   * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded.
+   */
   documentBodyUnavailable(tabId: number, documentUrl: string): Promise<void>;
-  /** The browser ended interception for the tab while the session was live. */
-  interceptionEnded(tabId: number, cause: InterceptionEndCause): Promise<void>;
+  /**
+   * The browser ended the tab's interception tagged `generation` (the
+   * value the backend was armed or resumed with). An end whose generation
+   * is not the live session's is dropped.
+   */
+  interceptionEnded(tabId: number, cause: InterceptionEndCause, generation: number): Promise<void>;
 }
 
 /**
@@ -75,17 +110,20 @@ export interface InterceptionBackend {
   /**
    * Arm interception for the tab's top-level documents. The mode is
    * decided by attempting (never assumed): armed, or why not. Idempotent:
-   * arming an armed tab confirms it (re-establishing a dead attachment).
+   * arming an armed tab confirms it (re-establishing a dead attachment)
+   * and re-tags it with `generation` (see the module doc).
    */
-  arm(tabId: number): Promise<ArmResult>;
+  arm(tabId: number, generation: number): Promise<ArmResult>;
   /** Drop the tab's interception and any bookkeeping; a no-op when unarmed. */
   disarm(tabId: number): Promise<void>;
   /**
    * Wake re-validation of a stored active session (the stored record is a
-   * hint): confirm or re-establish interception for the tab. False = stale
-   * (the session is cleared and the tab served unmodified).
+   * hint): confirm or re-establish interception for the tab, tagged with
+   * the stored session's `generation`. False = stale (the session is
+   * cleared and the tab served unmodified). Must not await host calls
+   * (the host waits for the re-validation `resume` is part of).
    */
-  resume(tabId: number): Promise<boolean>;
+  resume(tabId: number, generation: number): Promise<boolean>;
   /** A preempting engine runner (e.g. worker-hosted); absent → in-process. */
   readonly runner?: DocumentTransformRunner;
 }

@@ -27,7 +27,9 @@ import {
   type ExclusionSessionController,
   type ExclusionSessionControllerDeps
 } from './controller';
-import type { DocumentTransformRunner } from './document-transform';
+import { DOCUMENT_TRANSFORM_BUDGET_MS, type DocumentTransformRunner } from './document-transform';
+import type { ScheduleTimer } from '../messaging/bounded-ask';
+import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from './timeouts';
 
 const TAB = 3;
 const ORIGIN = 'https://site.test';
@@ -175,6 +177,52 @@ async function flush(): Promise<void> {
 }
 
 const encoder = new TextEncoder();
+
+/** An HTML document of the tab (eligible, same origin as the session). */
+function htmlDoc(url = `${ORIGIN}/next`, html = DELAYED) {
+  return {
+    tabId: TAB,
+    body: encoder.encode(html),
+    contentType: 'text/html; charset=utf-8',
+    documentUrl: url,
+    status: 200,
+    method: 'GET'
+  };
+}
+
+/** A promise that never settles (a hung browser API). */
+function never<T>(): Promise<T> {
+  return new Promise<T>(() => undefined);
+}
+
+/**
+ * Manual timers: `fire()` runs every pending deadline (settled steps cancel
+ * theirs), or only those of `ms` when given (the shortest stuck step first).
+ */
+function manualTimers(): {
+  schedule: ScheduleTimer;
+  fire: (ms?: number) => void;
+  delays: number[];
+} {
+  const pending = new Set<{ run: () => void; ms: number }>();
+  const delays: number[] = [];
+  return {
+    schedule: (run, ms) => {
+      const timer = { run, ms };
+      delays.push(ms);
+      pending.add(timer);
+      return () => pending.delete(timer);
+    },
+    fire: (ms) => {
+      for (const timer of [...pending]) {
+        if (ms !== undefined && timer.ms !== ms) continue;
+        pending.delete(timer);
+        timer.run();
+      }
+    },
+    delays
+  };
+}
 
 beforeEach(() => {
   fakeBrowser.reset();
@@ -479,7 +527,9 @@ describe('host', () => {
     tabId: TAB,
     body: encoder.encode(html),
     contentType: 'text/html; charset=utf-8',
-    documentUrl: url
+    documentUrl: url,
+    status: 200,
+    method: 'GET'
   });
 
   it('gates interception on an active session of the document’s origin', async () => {
@@ -573,7 +623,7 @@ describe('host', () => {
   it('turns an ended interception into the warning and notifies', async () => {
     const r = rig();
     await seedActive();
-    await r.host.interceptionEnded(TAB, 'infobar-cancelled');
+    await r.host.interceptionEnded(TAB, 'infobar-cancelled', NOW - 1000);
     const warning = { state: 'unavailable', cause: 'infobar-cancelled', at: NOW };
     await expect(getExclusionSessionStatus(TAB)).resolves.toEqual(warning);
     expect(r.backend.calls).toEqual([`disarm:${String(TAB)}`]);
@@ -582,7 +632,7 @@ describe('host', () => {
 
   it('ignores an ended interception without a live session', async () => {
     const r = rig();
-    await r.host.interceptionEnded(TAB, 'detached');
+    await r.host.interceptionEnded(TAB, 'detached', NOW - 1000);
     await expect(getExclusionSessionRecords()).resolves.toEqual({});
     expect(r.tabPushes).toEqual([]);
   });
@@ -741,11 +791,16 @@ describe('serialized races', () => {
       { outcome: 'applying' },
       { outcome: 'applying' }
     ]);
+    // Starts are issued per controller in task-start order (tab 3, tab 4, tab 3's second
+    // apply), so with a fixed clock every session gets a distinct, increasing start.
     await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
       set: EMPTY_EXCLUSION_SET,
+      startedAt: NOW + 2
+    });
+    await expect(getExclusionSessionStatus(4)).resolves.toMatchObject({
+      set: SET,
       startedAt: NOW + 1
     });
-    await expect(getExclusionSessionStatus(4)).resolves.toMatchObject({ set: SET, startedAt: NOW });
   });
 
   it('a failed task does not stall the tab’s next one', async () => {
@@ -753,6 +808,362 @@ describe('serialized races', () => {
     r.backend.armResult = new Error('once');
     await expect(r.controller.apply(page(), { set: SET })).rejects.toThrow();
     r.backend.armResult = { armed: true };
+    await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
+      outcome: 'applying'
+    });
+  });
+});
+
+describe('response eligibility (rewrite gate)', () => {
+  it.each([
+    ['plain text', { contentType: 'text/plain' }],
+    ['REST JSON', { contentType: 'application/json; charset=UTF-8' }],
+    ['an RSS feed', { contentType: 'application/rss+xml; charset=UTF-8' }],
+    ['SVG', { contentType: 'image/svg+xml' }],
+    ['XHTML', { contentType: 'application/xhtml+xml' }],
+    ['a redirect', { status: 301 }],
+    ['304 Not Modified', { status: 304 }],
+    ['a HEAD response', { method: 'HEAD' }]
+  ])('passes %s through unrecorded, without running the engine', async (_case, override) => {
+    const r = rig();
+    await seedActive();
+    const runner = vi.fn<DocumentTransformRunner>();
+    r.backend.runner = runner;
+    await expect(r.host.rewriteDocument({ ...htmlDoc(), ...override })).resolves.toBeNull();
+    await flush();
+    expect(runner).not.toHaveBeenCalled();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    expect(r.tabPushes).toEqual([]);
+  });
+
+  it('rewrites a themed 404 page', async () => {
+    const r = rig();
+    await seedActive();
+    await expect(r.host.rewriteDocument({ ...htmlDoc(), status: 404 })).resolves.not.toBeNull();
+  });
+});
+
+describe('time bounds', () => {
+  it('answers attach-denied when the arm never settles, and the tab queue moves on', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    r.backend.arm = () => never();
+    const applying = r.controller.apply(page(), { set: SET });
+    await flush();
+    expect(timers.delays).toContain(SESSION_STEP_TIMEOUTS_MS.arm);
+    timers.fire();
+    await expect(applying).resolves.toEqual({ outcome: 'unavailable', cause: 'attach-denied' });
+    expect(logged(r.log, 'warn', /arm timed out/)).toBe(true);
+    // The queue is not wedged: the next event of the tab runs.
+    await expect(r.controller.stop(page())).resolves.toEqual({ state: 'inactive' });
+  });
+
+  it('treats a never-settling resume as stale and still answers the asks waiting on the wake', async () => {
+    await seedActive();
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    r.backend.resume = () => never();
+    const revalidation = r.controller.revalidate();
+    const gate = r.host.shouldIntercept(TAB, `${ORIGIN}/`);
+    await flush();
+    timers.fire(); // the resume deadline (and any wait on it)
+    await flush();
+    timers.fire();
+    await revalidation;
+    await expect(gate).resolves.toBe(false);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+  });
+
+  it('still resumes an active record when the tab probe never answers', async () => {
+    await seedActive();
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule, tabExists: () => never() });
+    const revalidation = r.controller.revalidate();
+    await flush();
+    timers.fire();
+    await revalidation;
+    expect(r.backend.calls).toEqual([`resume:${String(TAB)}`]);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ state: 'active' });
+  });
+
+  it('serves unmodified when the session store never answers (host bound)', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    r.deps.sessions.read = () => never();
+    const gate = r.host.shouldIntercept(TAB, `${ORIGIN}/`);
+    const rewrite = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    timers.fire();
+    await expect(gate).resolves.toBe(false);
+    await expect(rewrite).resolves.toBeNull();
+  });
+
+  it('answers within the host bound even when every inner step is stuck', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    // A wake that never ends: the host waits for it only within its own bound.
+    r.deps.sessions.readAll = () => never();
+    void r.controller.revalidate();
+    const ended = r.host.interceptionEnded(TAB, 'detached', NOW - 1000);
+    await flush();
+    timers.fire();
+    await flush();
+    timers.fire();
+    await expect(ended).resolves.toBeUndefined();
+  });
+
+  it('records engine-failed when the runner never answers', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    r.backend.runner = () => never();
+    const rewrite = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    timers.fire(DOCUMENT_TRANSFORM_BUDGET_MS + SESSION_STEP_TIMEOUTS_MS.runnerOverhead);
+    await expect(rewrite).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
+  });
+
+  it('stops even when the disarm and the pushes never settle', async () => {
+    const timers = manualTimers();
+    const r = rig({
+      schedule: timers.schedule,
+      pushToTab: () => never(),
+      pushToPanels: () => never()
+    });
+    await seedActive();
+    r.backend.disarm = () => never();
+    const stopping = r.controller.stop(page());
+    for (let i = 0; i < 3; i++) {
+      await flush();
+      timers.fire();
+    }
+    await expect(stopping).resolves.toEqual({ state: 'inactive' });
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+    expect(logged(r.log, 'error', /Disarm failed/)).toBe(true);
+    expect(logged(r.log, 'error', /Session push failed/)).toBe(true);
+  });
+
+  it('fails a stuck store step without wedging the tab', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    r.deps.sessions.put = () => never();
+    const applying = r.controller.apply(page(), { set: SET });
+    await flush();
+    timers.fire();
+    await expect(applying).rejects.toThrow(/could not be armed/);
+    r.deps.sessions.put = putExclusionSessionRecord;
+    await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
+      outcome: 'applying'
+    });
+  });
+});
+
+describe('host safety nets', () => {
+  it('serves unmodified and records nothing when a rewrite runs past its host bound', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    await seedActive();
+    let release: () => void = () => undefined;
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({
+            ok: true,
+            html: `${request.html}x`,
+            outcome: { outcome: 'rewritten', reports: [] }
+          });
+        };
+      });
+    const rewrite = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    timers.fire(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
+    await expect(rewrite).resolves.toBeNull();
+    release();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+    expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
+  });
+
+  it('answers the safe default when a backend hands over a malformed document', async () => {
+    const r = rig();
+    await seedActive();
+    const malformed = { ...htmlDoc(), method: undefined } as unknown as ReturnType<typeof htmlDoc>;
+    await expect(r.host.rewriteDocument(malformed)).resolves.toBeNull();
+    expect(logged(r.log, 'error', /Host call failed/)).toBe(true);
+  });
+});
+
+describe('generations', () => {
+  it('drops a replaced interception’s late end after a re-apply', async () => {
+    const r = rig();
+    await seedActive(TAB, NOW - 1000);
+    await r.controller.apply(page(), { set: SET });
+    await r.host.interceptionEnded(TAB, 'detached', NOW - 1000);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      state: 'active',
+      startedAt: NOW
+    });
+    // The live generation's end still lands.
+    await r.host.interceptionEnded(TAB, 'detached', NOW);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ state: 'unavailable' });
+  });
+
+  it('hands the session start to arm and the stored start to resume', async () => {
+    const r = rig();
+    const arm = vi.spyOn(r.backend, 'arm');
+    await r.controller.apply(page(), { set: SET });
+    expect(arm).toHaveBeenCalledWith(TAB, NOW);
+    const resume = vi.spyOn(r.backend, 'resume');
+    await r.controller.revalidate();
+    expect(resume).toHaveBeenCalledWith(TAB, NOW);
+  });
+
+  it('issues a fresh start after stop → apply on a fixed clock: the old document never lands', async () => {
+    let release: () => void = () => undefined;
+    const r = rig();
+    await seedActive(TAB, NOW);
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({ ok: true, html: request.html, outcome: { outcome: 'rewritten', reports: [] } });
+        };
+      });
+    const pending = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    await r.controller.stop(page());
+    await r.controller.apply(page(), { set: SET });
+    release();
+    await expect(pending).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      startedAt: NOW + 1,
+      document: null
+    });
+  });
+
+  it('issues past a stored start with a backward clock (after a wake)', async () => {
+    await seedActive(4, NOW + 5_000);
+    const r = rig();
+    await r.controller.revalidate();
+    await r.controller.apply(page(), { set: SET });
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      startedAt: NOW + 5_001
+    });
+  });
+});
+
+describe('stored-state pushes', () => {
+  it('pushes the stored record when a document record write fails', async () => {
+    const r = rig();
+    await seedActive();
+    r.deps.sessions.put = () => Promise.reject(new Error('quota'));
+    await r.host.rewriteDocument(htmlDoc());
+    await flush();
+    expect(r.tabPushes).toEqual([[TAB, expect.objectContaining({ document: null })]]);
+    expect(r.panelPushes.at(-1)?.[1]).toMatchObject({ document: null });
+  });
+
+  it('pushes the stored (inactive) state when the warning write fails', async () => {
+    const r = rig();
+    r.backend.armResult = { armed: false, cause: 'debugging-policy' };
+    r.deps.sessions.put = () => Promise.reject(new Error('quota'));
+    await r.controller.apply(page(), { set: SET });
+    expect(r.tabPushes).toEqual([[TAB, { state: 'inactive' }]]);
+  });
+
+  it('skips the push when the record cannot be re-read', async () => {
+    const r = rig();
+    await seedActive();
+    r.deps.sessions.put = () => Promise.resolve('limit-reached');
+    let reads = 0;
+    r.deps.sessions.read = (tabId) =>
+      reads++ < 2 ? getExclusionSessionStatus(tabId) : Promise.reject(new Error('io'));
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/x`);
+    await flush();
+    expect(r.tabPushes).toEqual([]);
+    expect(logged(r.log, 'error', /re-read failed/)).toBe(true);
+  });
+
+  it('records engine-failed (served unmodified) for a runner outcome the record guard refuses', async () => {
+    const r = rig();
+    await seedActive();
+    r.backend.runner = (request) =>
+      Promise.resolve({
+        ok: true,
+        html: `${request.html}<!-- changed -->`,
+        outcome: {
+          outcome: 'rewritten',
+          reports: [
+            {
+              feature: 'delay_js',
+              featureWide: false,
+              candidates: 1,
+              rewritten: 1,
+              regionRemovals: 0,
+              matchedRows: [{ row: 'not-in-the-set', rowKind: 'pattern', matches: 1 }],
+              unmatchedRows: []
+            }
+          ]
+        }
+      });
+    await expect(r.host.rewriteDocument(htmlDoc())).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'failed', reason: 'engine-failed' }
+    });
+    expect(logged(r.log, 'error', /failed validation/)).toBe(true);
+  });
+});
+
+describe('stop during a rewrite', () => {
+  it('serves unmodified and records nothing when Stop lands while the engine runs', async () => {
+    let release: () => void = () => undefined;
+    const r = rig();
+    await seedActive();
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({
+            ok: true,
+            html: `${request.html}x`,
+            outcome: { outcome: 'rewritten', reports: [] }
+          });
+        };
+      });
+    const pending = r.host.rewriteDocument(htmlDoc());
+    await flush();
+    await r.controller.stop(page());
+    release();
+    await expect(pending).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+  });
+});
+
+describe('post-run session re-check', () => {
+  it('serves unmodified and records nothing when the re-check read fails', async () => {
+    const r = rig();
+    await seedActive();
+    let reads = 0;
+    r.deps.sessions.read = (tabId) =>
+      reads++ < 1 ? getExclusionSessionStatus(tabId) : Promise.reject(new Error('io'));
+    await expect(r.host.rewriteDocument(htmlDoc())).resolves.toBeNull();
+    await flush();
+    expect(logged(r.log, 'error', /re-check failed/)).toBe(true);
+    expect(r.tabPushes).toEqual([]);
+  });
+});
+
+describe('live-session cap', () => {
+  it('exempts the applying tab itself: its own live session + 7 others re-applies', async () => {
+    const r = rig();
+    await seedActive(TAB);
+    for (let tab = 100; tab < 100 + EXCLUSION_SESSION_LIMIT - 1; tab++) await seedActive(tab);
     await expect(r.controller.apply(page(), { set: SET })).resolves.toEqual({
       outcome: 'applying'
     });
@@ -767,8 +1178,10 @@ describe('defaults', () => {
       r.host.rewriteDocument({
         tabId: TAB,
         body: encoder.encode(DELAYED),
-        contentType: null,
-        documentUrl: `${ORIGIN}/`
+        contentType: 'text/html',
+        documentUrl: `${ORIGIN}/`,
+        status: 200,
+        method: 'GET'
       })
     ).resolves.not.toBeNull();
   });

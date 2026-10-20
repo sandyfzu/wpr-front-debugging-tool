@@ -262,16 +262,25 @@ function parseMimeType(raw: string): MimeType | null {
   return { essence: `${type.toLowerCase()}/${subtype.toLowerCase()}`, parameters };
 }
 
+/** What a `Content-Type` value declares: its MIME type essence and charset label. */
+export interface ExtractedMimeType {
+  /** Type/subtype, ASCII-lowercased (e.g. `text/html`). */
+  readonly essence: string;
+  /** The raw charset label, or null when none is declared. */
+  readonly charset: string | null;
+}
+
 /**
- * The charset label a `Content-Type` value declares, per Fetch's "extract a
- * MIME type" (a combined multi-header value is split on commas; a later
- * type with the same essence and no charset keeps the earlier charset).
+ * Fetch's "extract a MIME type" over a `Content-Type` value: a combined
+ * multi-header value is split on commas; unparsable values and the any-type wildcard are
+ * skipped; the last valid type wins, and a later type with the same
+ * essence and no charset keeps the earlier charset.
  *
  * @param contentType The header value (several headers joined with `, `),
  *   or null when absent.
- * @returns The raw label, or null when none is declared.
+ * @returns The essence and charset, or null when no valid type is declared.
  */
-export function contentTypeCharset(contentType: string | null): string | null {
+export function extractMimeType(contentType: string | null): ExtractedMimeType | null {
   if (contentType === null) return null;
   let charset: string | null = null;
   let essence: string | null = null;
@@ -286,7 +295,17 @@ export function contentTypeCharset(contentType: string | null): string | null {
       charset = declared;
     }
   }
-  return charset;
+  return essence === null ? null : { essence, charset };
+}
+
+/**
+ * The charset label a `Content-Type` value declares (see {@link extractMimeType}).
+ *
+ * @param contentType The header value, or null when absent.
+ * @returns The raw label, or null when none is declared.
+ */
+export function contentTypeCharset(contentType: string | null): string | null {
+  return extractMimeType(contentType)?.charset ?? null;
 }
 
 /** Whether a byte is HTML-prescan whitespace (TAB, LF, FF, CR, SP). */

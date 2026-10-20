@@ -7,15 +7,18 @@
  *
  * Both halves live here: {@link handleTransformWorkerMessage} is the
  * worker's whole message handler; {@link createWorkerTransformRunner} the
- * host. Runs are serialized on one live port; a killed port is replaced
- * lazily on the next run.
+ * host. Runs are serialized on one live port (FIFO); each run's deadline
+ * starts when it is handed over, so a document queued behind others is
+ * still answered within its own budget + grace from arrival. A killed port
+ * is replaced lazily on the next run.
  */
 import type { ExclusionFeatureId } from '../exclusion-builder/set';
 import { EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
-import type { ScheduleTimer } from '../messaging/bounded-ask';
-import { parseExclusionSet } from '../messaging/exclusion-session';
+import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
+import { isCount, isFeatureId, parseExclusionSet } from '../messaging/exclusion-session';
 import { isRecord } from '../../utils/is-record';
 import {
+  engineFailed,
   overBudgetOutcome,
   runDocumentPipeline,
   type DocumentTransformRequest,
@@ -46,23 +49,13 @@ export interface TransformWorkerPort {
   onerror: ((event: unknown) => void) | null;
 }
 
-/** A pipeline feature id (registry-derived). */
-function isPipelineFeature(value: unknown): value is ExclusionFeatureId {
-  return EXCLUSION_PIPELINE_IDS.some((id) => id === value);
-}
-
-/** A run id: a non-negative safe integer. */
-function isRunId(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
 /**
  * Parse a host request (structured-cloned into the worker).
  *
  * @returns The request, or null when malformed.
  */
 export function parseTransformWorkerRequest(data: unknown): TransformWorkerRequest | null {
-  if (!isRecord(data) || data['type'] !== 'transform' || !isRunId(data['id'])) return null;
+  if (!isRecord(data) || data['type'] !== 'transform' || !isCount(data['id'])) return null;
   const raw = data['request'];
   if (!isRecord(raw) || typeof raw['html'] !== 'string') return null;
   const documentUrl = raw['documentUrl'];
@@ -148,14 +141,6 @@ export interface WorkerTransformRunner {
   dispose(): void;
 }
 
-/** The platform timer. */
-const defaultSchedule: ScheduleTimer = (run, ms) => {
-  const handle = setTimeout(run, ms);
-  return () => {
-    clearTimeout(handle);
-  };
-};
-
 /**
  * The first pipeline feature — blamed when a run is killed before the
  * worker announced any step.
@@ -168,29 +153,38 @@ function firstPipelineFeature(): ExclusionFeatureId {
   return first;
 }
 
-/** The `engine-failed` result with its cause. */
-function failed(cause: unknown): DocumentTransformResult {
-  return { ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' }, cause };
+/** One handed-over run: its request, its answer, and where it stands. */
+interface PendingRun {
+  readonly request: DocumentTransformRequest;
+  readonly id: number;
+  /** Resolves the run's promise (first call wins). */
+  readonly settle: (result: DocumentTransformResult) => void;
+  /** Whether the run is on the port (else still queued). */
+  running: boolean;
+  /** The feature the worker last announced for this run. */
+  lastFeature: ExclusionFeatureId | null;
 }
 
 /**
- * Create the preempting host. Runs are serialized; each gets `budgetMs` +
- * grace before its port is terminated and the run answers `over-budget`
- * for the feature the worker last announced (the first pipeline feature
- * when none was). A port error or a spawn failure answers `engine-failed`.
+ * Create the preempting host. Runs are serialized (FIFO) on one port; each
+ * run's deadline — `budgetMs` + grace — starts at hand-over. At the
+ * deadline a running run's port is terminated and the run answers
+ * `over-budget` for the feature the worker last announced (the first
+ * pipeline feature when none was); a run still queued then is dropped as
+ * `engine-failed` (it never got to run). A port error or a spawn failure
+ * answers `engine-failed`.
  *
  * @param options The spawn seam, timers and grace.
  */
 export function createWorkerTransformRunner(
   options: WorkerTransformRunnerOptions
 ): WorkerTransformRunner {
-  const schedule = options.schedule ?? defaultSchedule;
+  const schedule = options.schedule ?? scheduleWithTimeout;
   const graceMs = options.graceMs ?? WORKER_GRACE_MS;
   let port: TransformWorkerPort | null = null;
   let nextId = 0;
-  let tail: Promise<unknown> = Promise.resolve();
-  /** Settles the in-flight run (dispose uses it). */
-  let abortInFlight: ((cause: unknown) => void) | null = null;
+  const queue: PendingRun[] = [];
+  let current: PendingRun | null = null;
 
   /** Kill the live port (the next run respawns one). */
   const kill = (): void => {
@@ -202,67 +196,91 @@ export function createWorkerTransformRunner(
     dead.terminate();
   };
 
-  /** Run one request on the live port (spawned on demand). */
-  const runOne = (request: DocumentTransformRequest): Promise<DocumentTransformResult> =>
+  /** Route a port message to the running run (a stale run's late message is dropped). */
+  const onPortMessage = (data: unknown): void => {
+    const run = current;
+    if (run === null || !isRecord(data) || data['id'] !== run.id) return;
+    if (data['type'] === 'step' && isFeatureId(data['feature'])) {
+      run.lastFeature = data['feature'];
+    } else if (data['type'] === 'result') {
+      const result = parseResult(data['result']);
+      run.settle(result ?? engineFailed(new Error('Transform worker sent a malformed result')));
+    }
+  };
+
+  /** Start the next queued run when the port is idle. */
+  const pump = (): void => {
+    if (current !== null) return;
+    const run = queue.shift();
+    if (run === undefined) return;
+    current = run;
+    run.running = true;
+    let live: TransformWorkerPort;
+    try {
+      live = port ?? options.spawn();
+    } catch (cause) {
+      run.settle(engineFailed(cause));
+      return;
+    }
+    port = live;
+    live.onmessage = (event) => {
+      onPortMessage(event.data);
+    };
+    live.onerror = (event) => {
+      kill();
+      current?.settle(engineFailed(event));
+    };
+    try {
+      live.postMessage({ type: 'transform', id: run.id, request: run.request });
+    } catch (cause) {
+      kill();
+      run.settle(engineFailed(cause));
+    }
+  };
+
+  /** Hand one request over: queue it, arm its deadline from now, pump. */
+  const run: DocumentTransformRunner = (request) =>
     new Promise((resolve) => {
-      let live: TransformWorkerPort;
-      try {
-        live = port ?? options.spawn();
-      } catch (cause) {
-        resolve(failed(cause));
-        return;
-      }
-      port = live;
-      const id = nextId++;
-      let lastFeature: ExclusionFeatureId | null = null;
       let settled = false;
-      let cancelTimer: () => void = () => undefined;
-      const settle = (result: DocumentTransformResult): void => {
-        if (settled) return;
-        settled = true;
-        cancelTimer();
-        abortInFlight = null;
-        resolve(result);
-      };
-      cancelTimer = schedule(() => {
-        kill();
-        const feature = lastFeature ?? firstPipelineFeature();
-        settle({ ok: false, outcome: overBudgetOutcome(request.set, feature, request.budgetMs) });
-      }, request.budgetMs + graceMs);
-      abortInFlight = (cause) => {
-        settle(failed(cause));
-      };
-      live.onmessage = (event) => {
-        const data: unknown = event.data;
-        if (!isRecord(data) || data['id'] !== id) return; // a stale run's late message
-        if (data['type'] === 'step' && isPipelineFeature(data['feature'])) {
-          lastFeature = data['feature'];
-        } else if (data['type'] === 'result') {
-          const result = parseResult(data['result']);
-          settle(result ?? failed(new Error('Transform worker sent a malformed result')));
+      let cancelDeadline: () => void = () => undefined;
+      const pending: PendingRun = {
+        request,
+        id: nextId++,
+        running: false,
+        lastFeature: null,
+        settle: (result) => {
+          if (settled) return;
+          settled = true;
+          cancelDeadline();
+          const queued = queue.indexOf(pending);
+          if (queued !== -1) queue.splice(queued, 1);
+          if (current === pending) current = null;
+          resolve(result);
+          pump();
         }
       };
-      live.onerror = (event) => {
+      cancelDeadline = schedule(() => {
+        if (!pending.running) {
+          pending.settle(engineFailed(new Error('Transform run queued past its deadline')));
+          return;
+        }
         kill();
-        settle(failed(event));
-      };
-      try {
-        live.postMessage({ type: 'transform', id, request });
-      } catch (cause) {
-        kill();
-        settle(failed(cause));
-      }
+        const feature = pending.lastFeature ?? firstPipelineFeature();
+        pending.settle({
+          ok: false,
+          outcome: overBudgetOutcome(request.set, feature, request.budgetMs)
+        });
+      }, request.budgetMs + graceMs);
+      queue.push(pending);
+      pump();
     });
 
   return {
-    run: (request) => {
-      const run = tail.then(() => runOne(request));
-      tail = run.catch(() => undefined);
-      return run;
-    },
+    run,
     dispose: () => {
+      const running = current;
       kill();
-      abortInFlight?.(new Error('Transform worker disposed'));
+      running?.settle(engineFailed(new Error('Transform worker disposed')));
     }
   };
 }

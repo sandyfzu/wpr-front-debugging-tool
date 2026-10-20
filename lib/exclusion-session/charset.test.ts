@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   contentTypeCharset,
+  extractMimeType,
   decodeDocument,
   encodeDocument,
   encodingForLabel,
@@ -110,6 +111,23 @@ describe('contentTypeCharset', () => {
   });
 });
 
+describe('extractMimeType', () => {
+  it.each([
+    ['TEXT/HTML; Charset=UTF-8', { essence: 'text/html', charset: 'UTF-8' }],
+    ['text/html', { essence: 'text/html', charset: null }],
+    ['application/xhtml+xml', { essence: 'application/xhtml+xml', charset: null }],
+    ['text/plain, text/html', { essence: 'text/html', charset: null }],
+    ['text/html; charset=koi8-r, */*', { essence: 'text/html', charset: 'koi8-r' }],
+    ['text/html, nonsense', { essence: 'text/html', charset: null }]
+  ])('extracts %j (last valid type wins)', (header, expected) => {
+    expect(extractMimeType(header)).toEqual(expected);
+  });
+
+  it.each([[null], [''], ['nonsense'], ['*/*'], ['text/']])('answers null for %j', (header) => {
+    expect(extractMimeType(header)).toBeNull();
+  });
+});
+
 describe('metaContentCharset', () => {
   it.each([
     ['text/html; charset=utf-8', 'utf-8'],
@@ -175,6 +193,14 @@ describe('prescanEncoding', () => {
   it('closes `<!-->` and `<!--->` immediately (the opener dashes count)', () => {
     expect(prescanEncoding(bytes('<!--><meta charset="koi8-r">'))).toBe('koi8-r');
     expect(prescanEncoding(bytes('<!---><meta charset="koi8-r">'))).toBe('koi8-r');
+  });
+
+  it('ends a comment only at a `-->` after its own `<` (back-to-back comments)', () => {
+    // A search starting before the opener would re-find the previous `-->` and never advance.
+    const head = '<!-- a --><!-- b --><!--><meta charset="koi8-r">';
+    expect(prescanEncoding(bytes(head))).toBe('koi8-r');
+    // `<!-->` ends at its own `>`: a search starting past it swallows the meta up to the later `-->`.
+    expect(prescanEncoding(bytes('<!--><meta charset="koi8-r"><!-- -->'))).toBe('koi8-r');
   });
 
   it('reads only the first 1024 bytes', () => {

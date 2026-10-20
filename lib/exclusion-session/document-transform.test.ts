@@ -9,6 +9,7 @@ import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set
 import {
   createInProcessTransformRunner,
   DOCUMENT_BODY_BYTE_LIMIT,
+  isRewritableResponse,
   DOCUMENT_TRANSFORM_BUDGET_MS,
   overBudgetOutcome,
   overrunRow,
@@ -202,7 +203,7 @@ describe('rewriteDocument', () => {
     expect(runnerSpy).not.toHaveBeenCalled();
   });
 
-  it('serves unmodified as decode-failed when the rewrite cannot be re-encoded', async () => {
+  it('serves unmodified as encode-failed when the rewrite cannot be re-encoded', async () => {
     const injecting: DocumentTransformRunner = (req) =>
       Promise.resolve({
         ok: true,
@@ -216,7 +217,7 @@ describe('rewriteDocument', () => {
       injecting
     );
     expect(rewrite).toEqual({
-      outcome: { outcome: 'failed', reason: 'decode-failed' },
+      outcome: { outcome: 'failed', reason: 'encode-failed' },
       body: null
     });
   });
@@ -290,5 +291,46 @@ describe('rewriteDocument', () => {
         budgetMs: DOCUMENT_TRANSFORM_BUDGET_MS
       }
     ]);
+  });
+});
+
+describe('isRewritableResponse', () => {
+  const html = { status: 200, method: 'GET', contentType: 'text/html; charset=utf-8' };
+
+  it.each([
+    ['a 200 GET HTML page', html],
+    ['a case-insensitive essence', { ...html, contentType: 'Text/HTML' }],
+    ['the last valid type of a combined header', { ...html, contentType: 'text/plain, text/html' }],
+    ['a POST result page', { ...html, method: 'POST' }],
+    ['a themed 404', { ...html, status: 404 }],
+    ['a 500 error page', { ...html, status: 500 }],
+    ['the lowest final status', { ...html, status: 200 }],
+    ['the highest status', { ...html, status: 599 }]
+  ])('rewrites %s', (_case, response) => {
+    expect(isRewritableResponse(response)).toBe(true);
+  });
+
+  it.each([
+    ['plain text', { ...html, contentType: 'text/plain' }],
+    ['JSON (REST API)', { ...html, contentType: 'application/json; charset=UTF-8' }],
+    ['an RSS feed', { ...html, contentType: 'application/rss+xml; charset=UTF-8' }],
+    ['SVG', { ...html, contentType: 'image/svg+xml' }],
+    ['XHTML (draconian XML parsing)', { ...html, contentType: 'application/xhtml+xml' }],
+    ['a missing type (the browser sniffs)', { ...html, contentType: null }],
+    ['an unparsable type', { ...html, contentType: 'html' }],
+    ['HTML followed by another type', { ...html, contentType: 'text/html, text/plain' }],
+    ['a redirect', { ...html, status: 302 }],
+    ['the first 3xx', { ...html, status: 300 }],
+    ['the last 3xx', { ...html, status: 399 }],
+    ['204 No Content', { ...html, status: 204 }],
+    ['205 Reset Content', { ...html, status: 205 }],
+    ['304 Not Modified', { ...html, status: 304 }],
+    ['an informational status', { ...html, status: 199 }],
+    ['an out-of-range status', { ...html, status: 600 }],
+    ['a non-integer status', { ...html, status: 200.5 }],
+    ['a HEAD request', { ...html, method: 'HEAD' }],
+    ['a lowercase head request', { ...html, method: 'head' }]
+  ])('passes %s through', (_case, response) => {
+    expect(isRewritableResponse(response)).toBe(false);
   });
 });

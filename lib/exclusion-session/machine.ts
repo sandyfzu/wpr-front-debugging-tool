@@ -13,7 +13,7 @@
  * inactive ─┐                 ┌─ armed ───────────────▶ active ─┬─ document ─▶ active
  * active ───┼─ apply ▶ arming ┼─ arm-unavailable ─────▶ unavailable           │
  * unavail. ─┘                 └─ arm-failed ──────────▶ inactive              │
- * active ── interception-ended ─────────────────────▶ unavailable            │
+ * active ── interception-ended (same start) ────────▶ unavailable            │
  * active ── stale ───────────────────────────────────▶ inactive               │
  * any settled ── stop | tab-closed ──────────────────▶ inactive ◀─────────────┘
  * ```
@@ -32,7 +32,7 @@ export interface ArmingSession {
   readonly state: 'arming';
   readonly origin: string;
   readonly set: ExclusionSet;
-  /** The start time the session will carry (strictly after a replaced session's). */
+  /** The start time the session will carry — its generation (strictly after a replaced session's). */
   readonly startedAt: number;
   /** The status before the apply (what observers still see). */
   readonly previous: ExclusionSessionStatus;
@@ -68,9 +68,10 @@ export type SessionEvent =
       readonly startedAt: number;
       readonly outcome: ExclusionDocumentOutcome;
     }
-  /** The browser ended interception under the session. */
+  /** The browser ended the interception of the session started at `startedAt`. */
   | {
       readonly type: 'interception-ended';
+      readonly startedAt: number;
       readonly cause: InterceptionUnavailableCause;
       readonly at: number;
     }
@@ -102,8 +103,8 @@ export interface SessionTransition {
   readonly effects: readonly SessionEffect[];
 }
 
-/** The inactive status. */
-const INACTIVE: ExclusionSessionStatus = { state: 'inactive' };
+/** The inactive status (no record). */
+export const INACTIVE: ExclusionSessionStatus = { state: 'inactive' };
 
 /**
  * End a settled session: disarm always (a backend may hold leftovers even
@@ -179,7 +180,8 @@ function settleArming(state: ArmingSession, event: SessionEvent): SessionTransit
  * @returns The next state and its effects, or null when the event does not
  *   apply in this state (ignored: no state change, nothing performed) — a
  *   late document of a replaced or ended session, an end signal with no
- *   live session, or an event that only an arming session accepts.
+ *   live session or for another generation, or an event that only an
+ *   arming session accepts.
  */
 export function transition(
   state: SessionMachineState,
@@ -206,7 +208,8 @@ export function transition(
       };
     }
     case 'interception-ended': {
-      if (state.state !== 'active') return null;
+      // A replaced interception's late end must not kill the re-armed session.
+      if (state.state !== 'active' || state.startedAt !== event.startedAt) return null;
       const record: ExclusionSessionRecord = {
         state: 'unavailable',
         cause: event.cause,

@@ -22,7 +22,7 @@ import {
 } from '../exclusion-builder/set';
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
-import { decodeDocument, encodeDocument } from './charset';
+import { decodeDocument, encodeDocument, extractMimeType } from './charset';
 
 /**
  * The engine's wall-time budget per document (ms). Measured 2026-10-20 on
@@ -109,8 +109,8 @@ export function overBudgetOutcome(
   return { outcome: 'over-budget', feature, row: overrunRow(set, feature), budgetMs };
 }
 
-/** The `engine-failed` outcome, carrying its cause for the log. */
-function engineFailed(cause: unknown): DocumentTransformResult {
+/** The `engine-failed` result, carrying its cause for the log (every runner's one builder). */
+export function engineFailed(cause: unknown): DocumentTransformResult {
   return { ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' }, cause };
 }
 
@@ -188,11 +188,59 @@ export interface DocumentRewrite {
   readonly cause?: unknown;
 }
 
-/** The `decode-failed` rewrite (the body cannot round-trip its charset). */
+/** The `decode-failed` rewrite (the body cannot be decoded in its charset). */
 const DECODE_FAILED: DocumentRewrite = {
   outcome: { outcome: 'failed', reason: 'decode-failed' },
   body: null
 };
+
+/** The `encode-failed` rewrite (the rewritten text cannot be encoded back into that charset). */
+const ENCODE_FAILED: DocumentRewrite = {
+  outcome: { outcome: 'failed', reason: 'encode-failed' },
+  body: null
+};
+
+/** The response facts the rewrite eligibility policy reads. */
+export interface InterceptedResponseFacts {
+  /** The final HTTP status code. */
+  readonly status: number;
+  /** The request method (e.g. `GET`). */
+  readonly method: string;
+  /** The response's `Content-Type` value (several headers joined with `, `), or null. */
+  readonly contentType: string | null;
+}
+
+/** Final statuses whose response carries no body to rewrite (RFC 9110 §15.3.5, §15.3.6, §15.4.5). */
+const BODYLESS_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
+
+/**
+ * Whether an intercepted top-level response is one the engine may rewrite —
+ * the one policy every backend and the host apply before any body is read
+ * or decoded. Everything else passes through untouched and unrecorded.
+ *
+ * - MIME essence (Fetch "extract a MIME type", case-insensitive) exactly
+ *   `text/html`. Not `application/xhtml+xml`: the engine is an HTML-
+ *   tokenizer string transformer, and an XML document is parsed
+ *   draconianly — one edit that is fine as HTML (an unquoted attribute, a
+ *   void tag) turns the whole page into a parse error. A missing or
+ *   unparsable type is not rewritten (the browser sniffs it; guessing HTML
+ *   could corrupt a non-HTML body).
+ * - A final status with a body: 200–599 minus 204/205/304 and every 3xx
+ *   (a redirect's body is never rendered). 4xx/5xx HTML is rewritten: it is
+ *   the page the site really renders (e.g. a themed 404), with the same
+ *   optimized markup a session tests.
+ * - Not `HEAD` (no body; methods compared ASCII-case-insensitively, as
+ *   Fetch normalizes them).
+ *
+ * @param response The status, method and content type.
+ */
+export function isRewritableResponse(response: InterceptedResponseFacts): boolean {
+  const { status, method, contentType } = response;
+  if (!Number.isInteger(status) || status < 200 || status > 599) return false;
+  if ((status >= 300 && status <= 399) || BODYLESS_STATUSES.has(status)) return false;
+  if (method.toUpperCase() === 'HEAD') return false;
+  return extractMimeType(contentType)?.essence === 'text/html';
+}
 
 /**
  * Rewrite one intercepted document: guard the size, decode in its charset,
@@ -203,10 +251,12 @@ const DECODE_FAILED: DocumentRewrite = {
  * @param runner The engine runner (in-process or preempting).
  * @param budgetMs The engine budget; defaults to {@link DOCUMENT_TRANSFORM_BUDGET_MS}.
  * @returns The outcome and the bytes to serve. Never rejects: an oversized
- *   body is `body-unavailable`, a body that cannot round-trip its charset
- *   (unsupported encoding, malformed bytes, an unencodable result) is
- *   `decode-failed`, an engine overrun `over-budget`, anything else the
- *   engine or runner throws `engine-failed` — all served unmodified.
+ *   body is `body-unavailable`, a body that cannot be decoded in its
+ *   charset (unsupported encoding, malformed bytes) `decode-failed`, a
+ *   rewrite that cannot be encoded back into it `encode-failed`, an engine
+ *   overrun `over-budget`, anything else the engine or runner throws
+ *   `engine-failed` — all served unmodified. Eligibility
+ *   ({@link isRewritableResponse}) is the caller's, checked before.
  */
 export async function rewriteDocument(
   document: InterceptedDocumentBody,
@@ -233,5 +283,5 @@ export async function rewriteDocument(
   }
   if (result.html === decoded.text) return { outcome: result.outcome, body: null };
   const encoded = encodeDocument(result.html, decoded.codec);
-  return encoded === null ? DECODE_FAILED : { outcome: result.outcome, body: encoded };
+  return encoded === null ? ENCODE_FAILED : { outcome: result.outcome, body: encoded };
 }

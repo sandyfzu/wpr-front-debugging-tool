@@ -200,6 +200,24 @@ describe('parseExclusionSessionStatus', () => {
     }
   });
 
+  it('pins the unmodified-document reasons (encode-failed is its own reason)', () => {
+    expect(EXCLUSION_DOCUMENT_FAILURES).toEqual([
+      'body-unavailable',
+      'decode-failed',
+      'encode-failed',
+      'engine-failed'
+    ]);
+    const encodeFailed = {
+      ...activeRecord(),
+      document: { outcome: 'failed', reason: 'encode-failed' }
+    };
+    expect(parseExclusionSessionRecord(encodeFailed, 'reject')).toEqual(encodeFailed);
+    expect(parseExclusionSessionRecord(encodeFailed, 'ignore')).toEqual(encodeFailed);
+    // A reason this build does not know drops the record on read-back, never fabricates one.
+    const unknown = { ...activeRecord(), document: { outcome: 'failed', reason: 'later-reason' } };
+    expect(parseExclusionSessionRecord(unknown, 'ignore')).toBeNull();
+  });
+
   it("accepts the engine's own reports for a real document", () => {
     const html =
       '<!doctype html><script type="rocketlazyloadscript" data-rocket-src="/gtag.js"></script>' +
