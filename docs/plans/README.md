@@ -9,19 +9,20 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 ## Active work
 
 - **P6 partial:** [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.9 + G.11 shipped; **G.10/P6.1 open**. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
-- **P8/P9 planned**, may parallel P6/each other: [popup+8.1](./09-phase-8-popup.md), [options+9.1](./10-phase-9-options.md).
+- **P9 planned**, may parallel P6: [options+9.1](./10-phase-9-options.md).
+- **P8 deferred** (owner2026-10-19: popup not settled): [popup+8.1](./09-phase-8-popup.md) moves to the **last phase beforeP15** — afterP5J, immediately before release; no longer parallel withP6/P9.
 - **P10 parked:** [Builder+10.1](./11-phase-10-exclusion-builder.md); owner requires replan, old design not executable.
 - **P11 planned:** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections.
 - **P12 partial:** [widget+12.1](./13-phase-12-on-page-inspector.md); early P12A detections/session drag shipped; shared mount cleanup, final registry/persistence/shortcut/controls/tools/conformance pending.
 - **P13/P14 planned:** [RUCSS+13.1](./14-phase-13-rucss-tester.md), [runtime+14.1](./15-phase-14-live-analysis-tools.md). Independent cores parallel; P14 integration follows P13 executor seam.
 - **P14.5 planned/decision-gated:** [coverage audit+tools](./15b-phase-14-5-coverage-and-tooling.md). Candidate approval≠decision gate complete.
 - **P14.6 planned:** [external track](./16-phase-15-hardening-release.md#p146-external-site-track), owner site or explicit scoped skip.
-- **P7 deferred:** [Diagnoser+7.1](./08-phase-7-diagnoser.md), afterP14.6 and rebuilt plugin JSON; then **P5J planned** [final header/nav](./06d-phase-5j-panel-topbar-redesign.md), last implementation; then **P15 planned** [release gate](./16-phase-15-hardening-release.md#p15-hardeningrelease).
+- **P7 deferred:** [Diagnoser+7.1](./08-phase-7-diagnoser.md), afterP14.6 and rebuilt plugin JSON; then **P5J planned** [final header/nav](./06d-phase-5j-panel-topbar-redesign.md); then **P8** in the last pre-release slot (above); then **P15 planned** [release gate](./16-phase-15-hardening-release.md#p15-hardeningrelease).
 - **P18 closed** (2026-10-19): [exclusion original-path](./18-exclusion-original-path.md). P18.0–P18.4 implemented, gated, and the owner's live-check received — cross-origin mirror row copies the hostless original path, no pending/notice; `?nowprocket` host map retracted on live+source evidence (see the phase doc).
 - **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships; add-on ID/badge/mount/panel runtime fixes not receipted.
 - **Optional P17** panel home remains unscheduled/decision-gated, scope only in master.
 
-Chosen train: P6/P8/P9→P10 owner disposition→P11→P12→P13/P14→P14.5→P14.6→P7→P5J→P15. Technical dependency nuance in master, not repeated as competing order.
+Chosen train: P6/P9→P10 owner disposition→P11→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.
 
 ## Completed references (read on demand)
 

@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5; parallel:P6/P9 (P10 parked). P7 is **not an implementation dependency**, but v2 plugin must later reverify URL contract. Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
+Build the12-parameter optimization popup with exact Apply/Reset URL behavior, accessible switches and truthful initial state. Depends:P1/P3/P5. **Deferred to the last pre-release slot** (owner2026-10-19: popup not settled): executes afterP5J, immediately beforeP15 — no longer parallel withP6/P9. P7 is **not an implementation dependency**, but v2 plugin must later reverify URL contract. Installed stack/shared UI; no planned dependencies. Mobile-simulation popup row is **withdrawn**, including its obsolete P8.1 suite/dependency.
 
 ## Reference/contract
 
@@ -17,8 +17,8 @@ First baseline popup App/activate-deactivate-options/style. Fixed320×576; list 
 
 ## Slices
 
-- **P8A pure/state:** depsP1/P3; parallel independent P9. Models/URL builders+typed fetching→incompatible/error/ready, failure-aware tab query/retry, detection-synchronous initialization (no all-off flash/debug dump). DoD: full param/strip/preserve/initial/detectedIds/Enable-all matrix, query/no-CS/nonHTTP/error tests. Verify web tab.url readable via current host permissions **without tabs**; only restore permission if empirically necessary, with rationale/AGENTS.
+- **P8A pure/state:** depsP1/P3. Models/URL builders+typed fetching→incompatible/error/ready, failure-aware tab query/retry, detection-synchronous initialization (no all-off flash/debug dump). DoD: full param/strip/preserve/initial/detectedIds/Enable-all matrix, query/no-CS/nonHTTP/error tests. Verify web tab.url readable via current host permissions **without tabs**; only restore permission if empirically necessary, with rationale/AGENTS.
 - **P8B UI:** depsA/P5. Header “Disable or enable optimizations,” Cache first, native-name grouped switches/unique associated IDs, Enable/Disable-all; sticky Apply/Reset URL; safe Diagnoser releases link. Detected-vs-untouched tick. Stored theme before paint/live read; only panel/options change appearance. Apply awaits explicit target update, closes only success; failure toast stays actionable. DoD: keyboard Tab/Space/Apply, first frame correct, fixed-height scroll/all controls reachable, UI bar §D/budget≤50KiB raw.
-- **P8.1 suites:** depsB/P4.1 (+P4.2/plugin for live contract). ParallelP9 technical work. Real capture→extension-page popup first ready frame/ticks; exact Apply/Reset+one plugin/site round; incompatible/no-context/no-CS retry;320×576 scroll/12 rows/footer/keyboard/axe. DoD: local green with automated/manual annotations, no simulation row reintroduced. Browser-action envelope and exact chrome-page topology distinct from page-state proxy; Firefox popup runtime/manual UX remain.
+- **P8.1 suites:** depsB/P4.1 (+P4.2/plugin for live contract). Real capture→extension-page popup first ready frame/ticks; exact Apply/Reset+one plugin/site round; incompatible/no-context/no-CS retry;320×576 scroll/12 rows/footer/keyboard/axe. DoD: local green with automated/manual annotations, no simulation row reintroduced. Browser-action envelope and exact chrome-page topology distinct from page-state proxy; Firefox popup runtime/manual UX remain.
 
 Final: same-page first-baseline resulting URLs/state match with recorded simplifications; reverify Apply/Reset against rebuilt Diagnoser when P7 unblocks, adapting pure builders/tests if evidenced. Gates/build/budgets and docs for any actual permission change required.

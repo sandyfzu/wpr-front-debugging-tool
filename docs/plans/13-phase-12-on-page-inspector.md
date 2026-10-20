@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**P12A detections/session drag shipped; full P12/P12.1 remain planned.** Extend the existing KC-style pill/card, origin store, single-pass hub and audited drag; do not rebuild the original narrow always-open strip. P11 supplies final hud registry; P8/P9 supply toggle surfaces; P13/P14 supply shared executors. FullP12 depends:P11/P3/P5 (+toggle surfaces); can parallel P13/P14 after shared contracts. No dependencies planned; installed WXT/Solid/tokens/Vitest/Playwright.
+**P12A detections/session drag shipped; full P12/P12.1 remain planned.** Extend the existing KC-style pill/card, origin store, single-pass hub and audited drag; do not rebuild the original narrow always-open strip. P11 supplies final hud registry; P9 supplies the options toggle surface (the popup's Detections row joins additively at deferred P8 — one shared item, no new runtime channel); P13/P14 supply shared executors. FullP12 depends:P11/P3/P5 (+options toggle surface; popup wiring at P8); can parallel P13/P14 after shared contracts. No dependencies planned; installed WXT/Solid/tokens/Vitest/Playwright.
 
 Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file owns explicit deviations/current implementation. Source v4.1.1 inspector template/styles/draggable behavior: groups/status/drag/Alt+H/tool feedback, not its fixed100px CSS, global keydown assignment, page cookies, incognito-only activation or console dumps.
 
@@ -68,7 +68,7 @@ DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-
 
 ### P12B — Final registry/state/toggle integration
 
-Depends:P11/P8/P9 (existing P12A baseline). Parallel:P13/P14 executor work. Size:S–M.
+Depends:P11/P9 (existing P12A baseline; the popup's Detections row lands additively at deferred P8). Parallel:P13/P14 executor work. Size:S–M.
 
 - [ ] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons. No old SHGF/OCI/ALR tool-internal short labels restored.
 - [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global `features.onPageInspector` — the options page's **show the detection chip on pages by default** row — is **true by default** (owner 2026-10-17; the interim `INSPECTOR_DEFAULT_ENABLED` constant already ships that behavior with per-origin entries winning both ways); popup/Detections/options/context menu share one item/toggle, no new runtime channel; the stored option replaces only the constant's role, never the precedence.

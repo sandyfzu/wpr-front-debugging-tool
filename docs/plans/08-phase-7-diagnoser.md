@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Deferred until rebuilt Support Diagnoser JSON is available.** Parser/extraction already ship; adapt them to v2 before rendering. Execute **after P14.6, before P5J/P15**; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P8/P9/parked P10 need not wait. Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
+**Deferred until rebuilt Support Diagnoser JSON is available.** Parser/extraction already ship; adapt them to v2 before rendering. Execute **after P14.6, before P5J/P15**; reserved nav row remains disabled/explained until then. Technical dependencies:P1/P5/P6+rebuilt plugin; independent P9/parked P10 need not wait (P8 deferred pre-release). Installed WXT/Solid/TS, shared UI/JSON tree, Vitest/Playwright; no planned dependency additions.
 
 ## Reference and retained requirements
 
@@ -17,7 +17,7 @@ First-baseline DiagnoserPage, GeneralInfoPage/utility/cards, OptimizationsInfoPa
 ## Small execution slices
 
 - **P7A model/parser:** deps rebuilt plugin+P1; parallel none. Capture v2 JSON, adapt validators/extraction additively, pure field/value/status models. DoD: captured/missing/null/unknown fields, post-meta/server/constants/status/count/truncation tests green, no sensitive-data regression.
-- **P7B pages:** depsA/P5/P6; parallel independent P8/P9. Tabs/cards/not-detected/inactive/persistence and copy above. DoD: render/state/focus/tab/disclosure tests, UI bar §D and bundle gates green.
-- **P7.1 suites:** depsB/P4.1/P4.2+plugin install slot. Parallel independent P8–P10 technical work. Real site capture→panel fields/badges both tabs; unsupported/inactive/plugin-absent/degenerate fixture states; keyboard+axe every state. DoD: repeatable plugin/site preconditions, local suites green, same-page source comparison and manual fine-visual/Firefox outcomes identified, no fake store presented as real capture.
+- **P7B pages:** depsA/P5/P6; parallel independent P9. Tabs/cards/not-detected/inactive/persistence and copy above. DoD: render/state/focus/tab/disclosure tests, UI bar §D and bundle gates green.
+- **P7.1 suites:** depsB/P4.1/P4.2+plugin install slot. Parallel independent P9 technical work / parked P10. Real site capture→panel fields/badges both tabs; unsupported/inactive/plugin-absent/degenerate fixture states; keyboard+axe every state. DoD: repeatable plugin/site preconditions, local suites green, same-page source comparison and manual fine-visual/Firefox outcomes identified, no fake store presented as real capture.
 
 All slices run master gates; parser unknown fields documented in TSDoc. Final acceptance: same meaningful fields/badges as source on same plugin/page, deliberate v2 deltas recorded; rebuild-required gate never bypassed by coding against obsolete shape.

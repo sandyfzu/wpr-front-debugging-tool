@@ -4,7 +4,7 @@
 
 Port both behavioral baselines, improve correctness/speed/safety/UX, never copy structures. [Index](./README.md) owns status/read routing; active plans own tasks and colocated browser suites; completed records own compact decisions/evidence/open verification. Current code/lockfile/budget table—not old receipts—own implementation facts.
 
-Remaining train: **P6G/P6.1 + independent P8/P9 → owner P10 disposition → P11 → P12 → P13/P14 → P14.5 → P14.6 → deferred P7 → P5J → P15**. P5J last implementation; optional P17 SBS panel home decision-gated. Technical dependencies/parallelism below do not override chosen slots or authorize delegation.
+Remaining train: **P6G/P6.1 + independent P9 → owner P10 disposition → P11 → P12 → P13/P14 → P14.5 → P14.6 → deferred P7 → P5J → deferred P8 → P15**. P8 is the last implementation, immediately before release (owner2026-10-19: popup not settled); optional P17 SBS panel home decision-gated. Technical dependencies/parallelism below do not override chosen slots or authorize delegation.
 
 ## 1. Baselines and stack
 
@@ -23,10 +23,10 @@ Detection eager/single-flight at capture (owner2026-10-08), one parse/cache shar
 ## 3. Dependencies and order
 
 - Completed foundation chain:P0→P1→P1.1→P2/P3/P4 parallel. HarnessP4.1 and independent local siteP4.2→real-siteP4.3→P16 comparison→P5A–I/P5.1. [Core](./completed-core.md), [browser](./completed-browser-infrastructure.md), [SBS](./completed-side-by-side.md), [shell](./completed-shell.md).
-- P6 dependsP5/liveP3; remaining G pieces have [local dependencies](./07-phase-6-panel-pages.md#p6g-order-and-ownership). P8 dependsP1/P3/P5; P9 dependsP1/P5; independentP6/P8/P9 work may parallel. P10 technicallyP1/P5, **parked**, not permission to implement.
-- P11 dependsP1/P1.1/P6; chosen after P10 resolution. P12 dependsP11/P3/P5 (+P8/P9 toggle surfaces); earlyP12A shipped without moving fullP12 slot. P13/P14 needP11/P12/P3/P5/P6; **P14 integration additionally requires P13 executor pattern**, although independent pure work may parallel. No contradictory blanket “fully parallel” promise.
+- P6 dependsP5/liveP3; remaining G pieces have [local dependencies](./07-phase-6-panel-pages.md#p6g-order-and-ownership). P8 dependsP1/P3/P5 and is **deferred to the last pre-release slot** (owner2026-10-19: popup not settled); P9 dependsP1/P5; independentP6/P9 work may parallel. P10 technicallyP1/P5, **parked**, not permission to implement.
+- P11 dependsP1/P1.1/P6; chosen after P10 resolution. P12 dependsP11/P3/P5 (+P9 options toggle surface; the popup's Detections row joins additively at deferred P8 — one shared item, no rework); earlyP12A shipped without moving fullP12 slot. P13/P14 needP11/P12/P3/P5/P6; **P14 integration additionally requires P13 executor pattern**, although independent pure work may parallel. No contradictory blanket “fully parallel” promise.
 - Each X.1 suite depends own implementation+P4.1 (+P4.2 if site), runs with/after feature; focused regression ships with change. Suites live in **same phase file**, not separate planning track. Chromium local-only, never CI; Firefox installed-extension smoke explicit/manual unless new verified harness.
-- P14.5 dependsP11–P14, decision gate first. P14.6 dependsP14.5+owner site or explicit scope skip; then rebuilt-plugin-gatedP7, thenP5J, then all-requiredP15. External/Firefox/parked work cannot silently vanish.
+- P14.5 dependsP11–P14, decision gate first. P14.6 dependsP14.5+owner site or explicit scope skip; then rebuilt-plugin-gatedP7, thenP5J, then deferredP8, then all-requiredP15. External/Firefox/parked work cannot silently vanish.
 - Optional **P17 Compare panel home** dependsP5/P6/P16; no doc/implementation until scheduled. Filename17 Firefox workstream is unrelated. Its technical fixes may parallel independent work but strict Chromium nonregression gate applies.
 
 ## 4. Cross-cutting commitments

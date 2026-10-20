@@ -2,7 +2,7 @@
 
 ## TLDR
 
-**Planned, last implementation phase:** after P14.6/P7, immediately before P15; dependencies shippedP5C/D/I. Parallel:—in release slot. Installed stack/shared nav registry/primitives, no new dependency approved. Design first, then small implementation/test slices; don't revive retired top-bar morphology.
+**Planned:** after P14.6/P7, followed by deferred P8 (the popup takes the last pre-release slot); dependencies shippedP5C/D/I. Parallel:—in release slot. Installed stack/shared nav registry/primitives, no new dependency approved. Design first, then small implementation/test slices; don't revive retired top-bar morphology.
 
 Owner2026-10-13 found wide top bar ugly/scrolling, below-row tooltips stealing clicks and white boot. Immediate fixes already shipped: **rail only at every width**, tooltips right/sibling hit-test safe, themed boot canvas/per-icon imports. Background-only System→stored-theme flip before content accepted; content never wrong palette. P5J owns the **deferred final form**, not those completed repairs. [Shell record](./completed-shell.md), [design decisions](./design-decisions.md).
 
@@ -30,4 +30,4 @@ Depends:B. Parallel:—.
 - [ ] Narrow/wide/short, real right/bottom/**undocked**, both palettes/System/reduced motion; final form/overflow, every row reach, active/reserved/menu behavior, tooltip sibling hit-testing, first-paint themed canvas.
 - [ ] Maintain current native docking method/evidence distinction (actual DevTools now reachable; standalone viewport tests not native proof). Full applicable local browser regression; final all-three-frictions visual signoff.
 
-DoD: gates green, final design/actual runtime+size receipts here. This is the last implementation, not permission to skip P15's independent release gate.
+DoD: gates green, final design/actual runtime+size receipts here. No longer the last implementation (deferred P8 follows), and not permission to skip P15's independent release gate.
