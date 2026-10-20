@@ -90,6 +90,19 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
     });
   });
 
+  it('reports an over-deep row as too complex instead of throwing out of prevalidation', () => {
+    const deep = `${'('.repeat(1_875)}a${')'.repeat(1_875)}`;
+    expect(() => new RegExp(deep)).not.toThrow();
+    expect(prevalidateExclusionSet(setWith({ deferJs: [deep] })).invalid).toEqual([
+      {
+        feature: 'defer_all_js',
+        index: 0,
+        row: deep,
+        reason: BACKTRACKING_RISK_REASONS['too-complex']
+      }
+    ]);
+  });
+
   it('guards both pattern features, and never the literal ones', () => {
     const risky = '(a|ab)*';
     const problems = prevalidateExclusionSet(

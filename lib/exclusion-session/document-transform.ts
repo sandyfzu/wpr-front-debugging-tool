@@ -7,8 +7,9 @@
  *
  * The engine is pure and unbounded by design (rows are operator-provided
  * regexes); the budget lives here. Running in-process, the budget is
- * enforced between pipeline steps (a step that overran is reported, its
- * output discarded); a backend that can host a worker plugs in a runner
+ * checked between pipeline steps — it detects, never interrupts: a slow
+ * step runs to completion (blocking the thread) before it is reported and
+ * its output discarded. A backend that can host a worker plugs in a runner
  * that preempts a runaway step (`./transform-worker`). Both name the
  * overrunning feature.
  */
@@ -210,8 +211,12 @@ export interface InterceptedResponseFacts {
   readonly contentType: string | null;
 }
 
-/** Final statuses whose response carries no body to rewrite (RFC 9110 §15.3.5, §15.3.6, §15.4.5). */
-const BODYLESS_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
+/**
+ * Final statuses whose body is not a whole document to rewrite: 204/205/304
+ * carry none (RFC 9110 §15.3.5, §15.3.6, §15.4.5); 206 carries a fragment
+ * whose `Content-Range` a rewrite would break (§15.3.7).
+ */
+const NON_DOCUMENT_STATUSES: ReadonlySet<number> = new Set([204, 205, 206, 304]);
 
 /**
  * Whether an intercepted top-level response is one the engine may rewrite —
@@ -225,7 +230,7 @@ const BODYLESS_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
  *   void tag) turns the whole page into a parse error. A missing or
  *   unparsable type is not rewritten (the browser sniffs it; guessing HTML
  *   could corrupt a non-HTML body).
- * - A final status with a body: 200–599 minus 204/205/304 and every 3xx
+ * - A final status with a whole body: 200–599 minus 204/205/206/304 and every 3xx
  *   (a redirect's body is never rendered). 4xx/5xx HTML is rewritten: it is
  *   the page the site really renders (e.g. a themed 404), with the same
  *   optimized markup a session tests.
@@ -237,7 +242,7 @@ const BODYLESS_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
 export function isRewritableResponse(response: InterceptedResponseFacts): boolean {
   const { status, method, contentType } = response;
   if (!Number.isInteger(status) || status < 200 || status > 599) return false;
-  if ((status >= 300 && status <= 399) || BODYLESS_STATUSES.has(status)) return false;
+  if ((status >= 300 && status <= 399) || NON_DOCUMENT_STATUSES.has(status)) return false;
   if (method.toUpperCase() === 'HEAD') return false;
   return extractMimeType(contentType)?.essence === 'text/html';
 }

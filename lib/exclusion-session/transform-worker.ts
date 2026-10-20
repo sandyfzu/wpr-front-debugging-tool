@@ -137,7 +137,11 @@ export interface WorkerTransformRunnerOptions {
 /** The host: the runner plus a teardown for the live port. */
 export interface WorkerTransformRunner {
   readonly run: DocumentTransformRunner;
-  /** Terminate the live port (an in-flight run answers `engine-failed`). */
+  /**
+   * Retire the runner for good: terminate the live port and answer the
+   * in-flight and every queued run `engine-failed`; later runs answer
+   * `engine-failed` at once (no port is ever spawned again). Idempotent.
+   */
   dispose(): void;
 }
 
@@ -185,6 +189,8 @@ export function createWorkerTransformRunner(
   let nextId = 0;
   const queue: PendingRun[] = [];
   let current: PendingRun | null = null;
+  /** Set by `dispose`: nothing runs or spawns afterwards. */
+  let disposed = false;
 
   /** Kill the live port (the next run respawns one). */
   const kill = (): void => {
@@ -210,7 +216,7 @@ export function createWorkerTransformRunner(
 
   /** Start the next queued run when the port is idle. */
   const pump = (): void => {
-    if (current !== null) return;
+    if (disposed || current !== null) return;
     const run = queue.shift();
     if (run === undefined) return;
     current = run;
@@ -238,9 +244,16 @@ export function createWorkerTransformRunner(
     }
   };
 
-  /** Hand one request over: queue it, arm its deadline from now, pump. */
+  /**
+   * Hand one request over: queue it, then arm its deadline from now (queued
+   * first, so a timer seam firing synchronously finds it to drop), then pump.
+   */
   const run: DocumentTransformRunner = (request) =>
     new Promise((resolve) => {
+      if (disposed) {
+        resolve(engineFailed(new Error('Transform worker disposed')));
+        return;
+      }
       let settled = false;
       let cancelDeadline: () => void = () => undefined;
       const pending: PendingRun = {
@@ -259,6 +272,7 @@ export function createWorkerTransformRunner(
           pump();
         }
       };
+      queue.push(pending);
       cancelDeadline = schedule(() => {
         if (!pending.running) {
           pending.settle(engineFailed(new Error('Transform run queued past its deadline')));
@@ -271,16 +285,18 @@ export function createWorkerTransformRunner(
           outcome: overBudgetOutcome(request.set, feature, request.budgetMs)
         });
       }, request.budgetMs + graceMs);
-      queue.push(pending);
       pump();
     });
 
   return {
     run,
     dispose: () => {
-      const running = current;
+      disposed = true;
       kill();
-      running?.settle(engineFailed(new Error('Transform worker disposed')));
+      const cause = new Error('Transform worker disposed');
+      for (const pending of [...(current === null ? [] : [current]), ...queue]) {
+        pending.settle(engineFailed(cause));
+      }
     }
   };
 }

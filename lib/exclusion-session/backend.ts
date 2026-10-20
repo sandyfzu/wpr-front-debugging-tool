@@ -21,8 +21,10 @@
  * trusts the host with a paused response: it arms its own release deadline
  * above that bound and, when it passes, serves the response unmodified
  * (CDP: continue; stream filter: write the buffered bytes through). An
- * `arm` that settles after its timeout — or after a `disarm` — must not
- * leave interception behind: the latest of arm/disarm per tab wins.
+ * `arm` or `resume` that settles after its timeout — or after a `disarm` —
+ * must not leave interception behind: per tab, the latest of
+ * arm/resume/disarm wins (the controller follows every timed-out arm or
+ * resume with a `disarm`, which a late success must not outlive).
  *
  * **Eligibility.** Before reading or decoding any body, a backend passes
  * only `isRewritableResponse` (`./document-transform`) responses to the host; every other

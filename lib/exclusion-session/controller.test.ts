@@ -823,6 +823,7 @@ describe('response eligibility (rewrite gate)', () => {
     ['XHTML', { contentType: 'application/xhtml+xml' }],
     ['a redirect', { status: 301 }],
     ['304 Not Modified', { status: 304 }],
+    ['206 Partial Content', { status: 206 }],
     ['a HEAD response', { method: 'HEAD' }]
   ])('passes %s through unrecorded, without running the engine', async (_case, override) => {
     const r = rig();
@@ -856,6 +857,68 @@ describe('time bounds', () => {
     expect(logged(r.log, 'warn', /arm timed out/)).toBe(true);
     // The queue is not wedged: the next event of the tab runs.
     await expect(r.controller.stop(page())).resolves.toEqual({ state: 'inactive' });
+  });
+
+  it('disarms after an arm that times out, even when it succeeds late', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    let settleArm: (result: ArmResult) => void = () => undefined;
+    r.backend.arm = () =>
+      new Promise((resolve) => {
+        settleArm = resolve;
+      });
+    const applying = r.controller.apply(page(), { set: SET });
+    await flush();
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.arm);
+    await expect(applying).resolves.toMatchObject({ cause: 'attach-denied' });
+    settleArm({ armed: true }); // the late success
+    await flush();
+    expect(r.backend.calls).toEqual([`disarm:${String(TAB)}`]);
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      state: 'unavailable'
+    });
+  });
+
+  it('clears and disarms after a resume that times out, even when it confirms late', async () => {
+    await seedActive();
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    let settleResume: (live: boolean) => void = () => undefined;
+    r.backend.resume = (tabId) => {
+      r.backend.calls.push(`resume:${String(tabId)}`);
+      return new Promise((resolve) => {
+        settleResume = resolve;
+      });
+    };
+    const revalidation = r.controller.revalidate();
+    await flush();
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.resume);
+    await revalidation;
+    settleResume(true); // the late confirmation
+    await flush();
+    expect(r.backend.calls).toEqual([`resume:${String(TAB)}`, `disarm:${String(TAB)}`]);
+    await expect(getExclusionSessionRecords()).resolves.toEqual({});
+  });
+
+  it('refuses an ask stuck behind its tab’s earlier events past the queue wait', async () => {
+    const timers = manualTimers();
+    const r = rig({ schedule: timers.schedule });
+    r.backend.arm = () => never();
+    const applying = r.controller.apply(page(), { set: SET });
+    await flush();
+    const stopping = r.controller.stop(page());
+    const status = r.controller.status(page());
+    await flush();
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.queueWait);
+    timers.fire(SESSION_STEP_TIMEOUTS_MS.arm);
+    await expect(applying).resolves.toMatchObject({ cause: 'attach-denied' });
+    await expect(stopping).rejects.toThrow(/stopExclusionSession queue wait/);
+    await expect(status).rejects.toThrow(/getExclusionSession queue wait/);
+    expect(logged(r.log, 'warn', /waited too long/)).toBe(true);
+    // Refused asks never ran: the warning the apply stored is still there.
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      state: 'unavailable'
+    });
   });
 
   it('treats a never-settling resume as stale and still answers the asks waiting on the wake', async () => {

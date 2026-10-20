@@ -36,7 +36,7 @@
 import { createLogger, type Logger } from '../logger';
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionSet } from '../exclusion-builder/set';
-import type { ScheduleTimer } from '../messaging/bounded-ask';
+import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import {
   invalidApplyReply,
   parseExclusionSessionRecord,
@@ -238,26 +238,51 @@ export function createExclusionSessionController(
 
   // ── Bounded I/O ────────────────────────────────────────────────────────
 
+  /** One tab's status, bounded; an active record's start feeds the issuer. */
   const readSession = async (tabId: number): Promise<ExclusionSessionStatus> => {
     const status = await bounded('Session read', STEPS.store, () => deps.sessions.read(tabId));
     if (status.state === 'active') seenStart(status.startedAt);
     return status;
   };
 
+  /** Every stored record, bounded; the newest start feeds the issuer. */
   const readAllSessions = async (): Promise<ExclusionSessionRecords> => {
     const records = await bounded('Session read', STEPS.store, () => deps.sessions.readAll());
     seenStart(newestStart(records));
     return records;
   };
 
+  /** Store one tab's record, bounded. */
   const putSession = (tabId: number, record: ExclusionSessionRecord): Promise<PutSessionOutcome> =>
     bounded('Session write', STEPS.store, () => deps.sessions.put(tabId, record));
 
+  /** Remove one tab's record, bounded. */
   const removeSession = (tabId: number): Promise<void> =>
     bounded('Session removal', STEPS.store, () => deps.sessions.remove(tabId));
 
+  /** Save an origin's set, bounded. */
   const saveSet = (origin: string, set: ExclusionSet): Promise<unknown> =>
     bounded('Saved-set write', STEPS.store, () => deps.savedSets.save(origin, set));
+
+  /**
+   * Queue an ask's task behind the tab's earlier events, giving up when it
+   * cannot start within the queue wait (it rejects, never starts late — the
+   * sender's own deadline would already be at risk).
+   */
+  const enqueueAsk = <T>(tabId: number, ask: string, task: () => Promise<T>): Promise<T> => {
+    let late = false;
+    const cancel = (deps.schedule ?? scheduleWithTimeout)(() => {
+      late = true;
+    }, STEPS.queueWait);
+    return enqueue(tabId, () => {
+      cancel();
+      if (late) {
+        log.warn('Session ask waited too long behind its tab’s events — refused', { tabId, ask });
+        throw new DeadlineExceededError(`${ask} queue wait`, STEPS.queueWait);
+      }
+      return task();
+    });
+  };
 
   /** Wait for the wake re-validation, bounded; false when it is still running. */
   const awaitReady = async (what: string): Promise<boolean> => {
@@ -684,7 +709,7 @@ export function createExclusionSessionController(
       if (payload === null) throw new Error('applyExclusionSession: malformed payload refused');
       const problems = prevalidateExclusionSet(payload.set);
       if (!problems.valid) return invalidApplyReply(problems.invalid);
-      const after = await enqueue(page.tabId, () =>
+      const after = await enqueueAsk(page.tabId, 'applyExclusionSession', () =>
         drive(page.tabId, {
           type: 'apply',
           origin: page.origin,
@@ -702,7 +727,9 @@ export function createExclusionSessionController(
       await awaitReady('stop proceeds');
       const page = pageSender(sender, 'stopExclusionSession');
       if (page === null) return INACTIVE;
-      const after = await enqueue(page.tabId, () => drive(page.tabId, { type: 'stop' }));
+      const after = await enqueueAsk(page.tabId, 'stopExclusionSession', () =>
+        drive(page.tabId, { type: 'stop' })
+      );
       return observableStatus(after);
     },
 
@@ -710,7 +737,7 @@ export function createExclusionSessionController(
       await awaitReady('status answered from the stored record');
       const page = pageSender(sender, 'getExclusionSession');
       if (page === null) return INACTIVE;
-      return enqueue(page.tabId, () => readSession(page.tabId));
+      return enqueueAsk(page.tabId, 'getExclusionSession', () => readSession(page.tabId));
     },
 
     async savedSet(sender) {
@@ -742,7 +769,7 @@ export function createExclusionSessionController(
       const query = parseExclusionSessionTabQuery(data);
       if (query === null) throw new Error('getExclusionSessionForTab: malformed query refused');
       await awaitReady('status answered from the stored record');
-      return enqueue(query.tabId, () => readSession(query.tabId));
+      return enqueueAsk(query.tabId, 'getExclusionSessionForTab', () => readSession(query.tabId));
     },
 
     async tabClosed(tabId) {

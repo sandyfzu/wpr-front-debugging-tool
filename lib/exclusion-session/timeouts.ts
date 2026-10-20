@@ -11,24 +11,30 @@ import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
  * Per-step deadlines (ms). Generous against the real latencies (store and
  * push round trips are sub-millisecond to a few ms; a debugger attach is
  * tens of ms) — they exist to end a step that never settles, not to race
- * a slow one. An apply's arm path (read + arm + store + save + push) stays
- * under the overlay's apply ask deadline.
+ * a slow one. Sized so every ask's worst path ({@link SESSION_ASK_WORST_CASE_MS})
+ * stays well under the sender's own ask deadline.
  */
 export const SESSION_STEP_TIMEOUTS_MS = {
   /** `backend.arm` (attach + enable / listener setup). */
-  arm: 6_000,
+  arm: 5_000,
   /** `backend.disarm`. */
-  disarm: 2_000,
+  disarm: 750,
   /** `backend.resume` (wake re-validation). */
-  resume: 2_000,
+  resume: 1_500,
   /** One session-store or saved-set read/write. */
-  store: 1_000,
+  store: 500,
   /** The wake tab probe. */
-  tabProbe: 1_000,
-  /** One status push (tab or panels). */
-  push: 1_000,
+  tabProbe: 500,
+  /** One status push (tab and panels, in parallel). */
+  push: 500,
   /** One wait on the wake re-validation before an ask or document proceeds. */
-  ready: 3_000,
+  ready: 1_000,
+  /**
+   * How long an ask may wait behind earlier events of its tab before it
+   * gives up (rejects — the sender sees a retryable failure) instead of
+   * starting late.
+   */
+  queueWait: 500,
   /** A runner's overhead past the engine budget (messaging, a worker spawn). */
   runnerOverhead: 1_000,
   /** How long a recording host call waits for its record (it still lands after). */
@@ -36,6 +42,32 @@ export const SESSION_STEP_TIMEOUTS_MS = {
 } as const;
 
 const STEPS = SESSION_STEP_TIMEOUTS_MS;
+
+/**
+ * The longest each controller ask can take before it answers (ms), from
+ * the step deadlines along its worst path — the sender's ask deadline
+ * must stay above these with margin.
+ */
+export const SESSION_ASK_WORST_CASE_MS = {
+  /**
+   * Wake wait + queue wait + state read + cap read + arm + active-record
+   * write refused at the cap, then the warning: disarm + write + re-read
+   * (the write failed) + push.
+   */
+  apply:
+    STEPS.ready +
+    STEPS.queueWait +
+    2 * STEPS.store +
+    STEPS.arm +
+    STEPS.store +
+    STEPS.disarm +
+    2 * STEPS.store +
+    STEPS.push,
+  /** Wake wait + queue wait + state read + disarm + removal + re-read (it failed) + push. */
+  stop: STEPS.ready + STEPS.queueWait + STEPS.store + STEPS.disarm + 2 * STEPS.store + STEPS.push,
+  /** Wake wait + queue wait + one read. */
+  status: STEPS.ready + STEPS.queueWait + STEPS.store
+} as const;
 
 /**
  * The bound (ms) within which each {@link InterceptionHost} method

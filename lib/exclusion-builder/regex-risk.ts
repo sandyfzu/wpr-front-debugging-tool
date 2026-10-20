@@ -1,57 +1,79 @@
 /**
  * Catastrophic-backtracking guard for pattern rows: a static analysis of a
  * regex's structure that rejects the shapes known to backtrack
- * exponentially in a backtracking engine (V8's Irregexp, SpiderMonkey's).
- * It is a heuristic — it rejects the known exponential shapes; it is not a
- * proof of linear time (polynomial shapes like `.*a.*a.*a` pass), so the
- * session's wall-time budget stays the backstop.
+ * exponentially (or with a high polynomial degree) in a backtracking
+ * engine (V8's Irregexp, SpiderMonkey's). It is a heuristic — it rejects
+ * the known exponential shapes only; it is not a proof of linear time.
+ * Polynomial shapes are accepted by design (owner decision): e.g. a
+ * leading `.*jquery` against a 100 KiB minified inline script took 4.4 s,
+ * `\s*\s*$` against 4 KiB of spaces 11.6 s (measured, Node 24). Nothing
+ * else bounds such a match on Chromium: one slow match cannot be preempted
+ * there, so it blocks the background (every tab) and the paused navigation
+ * until it returns, and the between-step budget reports `over-budget`
+ * only afterwards. A preempting worker runner (Firefox) can kill it.
  *
  * The source is parsed in the engine's no-flag (Annex B) syntax — the only
- * one rows compile with: escapes, character classes (`[...]`, negated,
- * ranges, escaped `]`), groups (capturing, named, non-capturing, modifier,
- * lookarounds), quantifiers (`* + ? {n} {n,} {n,m}`, lazy forms),
- * back-references. A loop is a quantifier repeating more than
- * {@link LOOP_REPEAT_LIMIT} times (or unboundedly) over a body that consumes
- * text; inside a loop it flags:
+ * one rows compile with: escapes (incl. Annex B octal and `\c` forms),
+ * character classes (`[...]`, negated, ranges, escaped `]`), groups
+ * (capturing, named, non-capturing, `(?i:…)` modifiers, lookarounds — whose
+ * bodies are analyzed as patterns of their own), quantifiers
+ * (`* + ? {n} {n,} {n,m}`, lazy forms), back-references. A loop is a
+ * quantifier that can repeat its body more than once
+ * ({@link LOOP_REPEAT_LIMIT}) over a body that consumes text — a fixed
+ * count is a loop too: an ambiguous body repeated k times costs n^k.
+ * Inside a loop it flags:
  *
  * 1. **nested repetition** — a variable-length quantifier whose characters
  *    can also start what follows it within the iteration (or the next
  *    iteration): the loop can split one run of text across iterations in
- *    exponentially many ways (`(a+)+`, `(a*)*`, `(?:a+b?)*`, `(\w+\s?)+$`).
+ *    exponentially many ways (`(a+)+`, `(a*)*`, `(?:a+b?)*`, `(\w+\s?){8}`).
  *    Unambiguous nesting passes (`(-[a-z]+)*`, `(\d+\.)+`, `(ab+)*`) — the
  *    refinement over plain star height, which flags those too.
- * 2. **overlapping alternation** — a looped alternation with two branches
- *    that can start with the same character (`(a|a)*`, `(a|ab)*`,
- *    `(\w|\d)+`).
+ * 2. **overlapping alternation** — an alternation in a loop where one
+ *    branch can match a prefix of what another branch matches (`(a|a)*`,
+ *    `(a|ab)*`, `(\w|\d)+`). Branches that differ at some fixed position
+ *    pass (`(?:google|gtag)+`, `(?:\.min|\.slim)*`): no text can be split
+ *    between them.
  * 3. **repeated back-reference** — a back-reference inside a looped group
  *    (matching it re-runs a capture whose length varies per attempt).
+ * 4. **too complex** — a row past {@link REGEX_ANALYSIS_LIMITS} is not
+ *    analyzed and is rejected (the analysis stays bounded and never throws).
  *
- * Character facts are exact over UTF-16 code units (no `i` flag; an
- * `(?i:…)` modifier group folds ASCII letters only, which can only add
- * overlaps). Anything the parser does not understand is accepted (never a
- * false rejection of a pattern the engine compiles).
+ * Character facts are exact over UTF-16 code units, including an
+ * `(?i:…)` scope (folded with the engine's own case canonicalization).
+ * Syntax the parser does not model is accepted (never a false rejection of
+ * a pattern the engine compiles).
  */
 
 /** Why a pattern is risky. */
 export type BacktrackingRisk =
-  'nested-repetition' | 'overlapping-alternation' | 'repeated-backreference';
+  'nested-repetition' | 'overlapping-alternation' | 'repeated-backreference' | 'too-complex';
+
+/** Bounds a pattern must stay within to be analyzed at all (declared once). */
+export const REGEX_ANALYSIS_LIMITS = {
+  /** Source characters. */
+  chars: 4096,
+  /** Nested groups (`(` depth, any kind). */
+  groupDepth: 64
+} as const;
 
 /** The inline reason each risk is reported with (one invalid-row reason per risk). */
 export const BACKTRACKING_RISK_REASONS: Readonly<Record<BacktrackingRisk, string>> = {
   'nested-repetition':
     'Risky regular expression: a repeated group repeats something that can match the same text again (like `(a+)+`) — it can take exponential time; make the repetition unambiguous',
   'overlapping-alternation':
-    'Risky regular expression: a repeated alternation has branches that can start with the same character (like `(a|ab)*`) — it can take exponential time',
+    'Risky regular expression: inside a repetition, one alternative can match the start of another (like `(a|ab)*`) — it can take exponential time',
   'repeated-backreference':
-    'Risky regular expression: a back-reference inside a repeated group can take exponential time'
+    'Risky regular expression: a back-reference inside a repeated group can take exponential time',
+  'too-complex': `Risky regular expression: too long or too deeply nested to check (over ${String(REGEX_ANALYSIS_LIMITS.chars)} characters or ${String(REGEX_ANALYSIS_LIMITS.groupDepth)} nested groups) — simplify it`
 };
 
 /**
- * Repeat counts above this make a quantifier a loop: a fixed small repeat
- * of an ambiguous body is polynomial of that degree, beyond it the cost
- * is exponential in practice.
+ * A quantifier whose maximum exceeds this repeats its body: with an
+ * ambiguous body even `{2}` multiplies the ways to match, so any repeat
+ * beyond one is a loop.
  */
-export const LOOP_REPEAT_LIMIT = 10;
+export const LOOP_REPEAT_LIMIT = 1;
 
 // ── Character sets ───────────────────────────────────────────────────────
 
@@ -108,25 +130,63 @@ function intersects(a: CharSet, b: CharSet): boolean {
   return false;
 }
 
+/** Whether a set holds a code unit (binary search). */
+function contains(set: CharSet, code: number): boolean {
+  let low = 0;
+  let high = set.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const [from, to] = set[middle] as readonly [number, number];
+    if (code < from) high = middle - 1;
+    else if (code > to) low = middle + 1;
+    else return true;
+  }
+  return false;
+}
+
 /** One code unit as a set. */
 function unit(code: number): CharSet {
   return [[code, code]];
 }
 
-/** Add the other ASCII case of every ASCII letter in the set (an `i` modifier). */
-function foldAsciiCase(set: CharSet): CharSet {
+/**
+ * The engine's case canonicalization without the `u` flag (ECMA-262
+ * Canonicalize): the single-unit uppercase, unless that maps a non-ASCII
+ * unit into ASCII. Two units match case-insensitively iff they agree.
+ */
+function canonicalize(code: number): number {
+  const upper = String.fromCharCode(code).toUpperCase();
+  if (upper.length !== 1) return code;
+  const mapped = upper.charCodeAt(0);
+  return code >= 0x80 && mapped < 0x80 ? code : mapped;
+}
+
+/** The case classes with more than one member (built on first use). */
+let caseClasses: readonly (readonly number[])[] | null = null;
+
+/** Every multi-member case class (units sharing one canonical form). */
+function multiMemberCaseClasses(): readonly (readonly number[])[] {
+  if (caseClasses !== null) return caseClasses;
+  const byCanon = new Map<number, number[]>();
+  for (let code = 0; code <= MAX_UNIT; code++) {
+    const canon = canonicalize(code);
+    const members = byCanon.get(canon);
+    if (members === undefined) byCanon.set(canon, [code]);
+    else members.push(code);
+  }
+  caseClasses = [...byCanon.values()].filter((members) => members.length > 1);
+  return caseClasses;
+}
+
+/** Close a set under case-insensitive matching (what an `(?i:…)` scope matches). */
+function foldCase(set: CharSet): CharSet {
   const extra: [number, number][] = [];
-  for (const [low, high] of set) {
-    for (const [from, to, shift] of [
-      [0x41, 0x5a, 0x20],
-      [0x61, 0x7a, -0x20]
-    ] as const) {
-      const start = Math.max(low, from);
-      const end = Math.min(high, to);
-      if (start <= end) extra.push([start + shift, end + shift]);
+  for (const members of multiMemberCaseClasses()) {
+    if (members.some((code) => contains(set, code))) {
+      for (const code of members) extra.push([code, code]);
     }
   }
-  return union(set, normalize(extra));
+  return extra.length === 0 ? set : union(set, normalize(extra));
 }
 
 const DIGITS: CharSet = [[0x30, 0x39]];
@@ -205,6 +265,12 @@ type RegexNode =
       readonly body: RegexNode;
     });
 
+/** A quantifier node. */
+type RepeatNode = Extract<RegexNode, { kind: 'repeat' }>;
+
+/** An alternation node. */
+type AltNode = Extract<RegexNode, { kind: 'alt' }>;
+
 /** One code unit from `set`. */
 function charsNode(set: CharSet): RegexNode {
   return { kind: 'chars', nullable: false, first: set, consumed: set, backref: false };
@@ -228,21 +294,28 @@ const BACKREF_NODE: RegexNode = {
   backref: true
 };
 
-/** A sequence (one item collapses to itself). */
+/** A sequence (one item collapses to itself); its sets are normalized once. */
 function seqNode(items: readonly RegexNode[]): RegexNode {
   if (items.length === 0) return EMPTY_NODE;
   if (items.length === 1) return items[0] as RegexNode;
-  let first = NO_CHARS;
+  const first: (readonly [number, number])[] = [];
+  const consumed: (readonly [number, number])[] = [];
   let prefixNullable = true;
-  let consumed = NO_CHARS;
   let backref = false;
   for (const item of items) {
-    if (prefixNullable) first = union(first, item.first);
+    if (prefixNullable) first.push(...item.first);
     prefixNullable &&= item.nullable;
-    consumed = union(consumed, item.consumed);
+    consumed.push(...item.consumed);
     backref ||= item.backref;
   }
-  return { kind: 'seq', items, nullable: prefixNullable, first, consumed, backref };
+  return {
+    kind: 'seq',
+    items,
+    nullable: prefixNullable,
+    first: normalize(first),
+    consumed: normalize(consumed),
+    backref
+  };
 }
 
 /** An alternation (one branch collapses to itself). */
@@ -252,8 +325,8 @@ function altNode(branches: readonly RegexNode[]): RegexNode {
     kind: 'alt',
     branches,
     nullable: branches.some((branch) => branch.nullable),
-    first: branches.reduce<CharSet>((set, branch) => union(set, branch.first), NO_CHARS),
-    consumed: branches.reduce<CharSet>((set, branch) => union(set, branch.consumed), NO_CHARS),
+    first: normalize(branches.flatMap((branch) => branch.first)),
+    consumed: normalize(branches.flatMap((branch) => branch.consumed)),
     backref: branches.some((branch) => branch.backref)
   };
 }
@@ -279,22 +352,42 @@ class UnmodeledSyntax extends Error {
   override readonly name = 'UnmodeledSyntax';
 }
 
+/** Sticky matchers read at the cursor (never slicing the source). */
+const QUANTIFIER_BRACES = /\{(\d+)(?:(,)(\d*))?\}/y;
+const MODIFIER_GROUP = /\(\?([ims]*)(?:-([ims]*))?:/y;
+const LOOKAROUND_OPEN = /\(\?<?[=!]/y;
+const DECIMAL_DIGITS = /\d+/y;
+const OCTAL_DIGITS = /[0-7]{1,3}/y;
 const HEX_DIGITS = /^[0-9A-Fa-f]+$/;
 const ASCII_LETTER = /^[A-Za-z]$/;
-const QUANTIFIER_BRACES = /^\{(\d+)(?:(,)(\d*))?\}/;
-const MODIFIER_GROUP = /^\(\?([ims]*)(?:-([ims]*))?:/;
+/** Annex B ClassControlLetter: a letter, a digit or `_` after `\c` inside a class. */
+const CLASS_CONTROL_LETTER = /^[A-Za-z0-9_]$/;
 
-/** Count the capturing groups and note named ones (decides what `\N`/`\k` mean in Annex B). */
-function scanGroups(source: string): { count: number; named: boolean } {
+/** What the up-front scan learns: capturing groups, named ones, and nesting depth. */
+interface GroupScan {
+  readonly count: number;
+  readonly named: boolean;
+  readonly depth: number;
+}
+
+/**
+ * Scan the source once: count capturing groups and note named ones (that
+ * decides what `\N`/`\k` mean in Annex B), and measure the group depth.
+ */
+function scanGroups(source: string): GroupScan {
   let count = 0;
   let named = false;
+  let depth = 0;
+  let maxDepth = 0;
   let inClass = false;
   for (let i = 0; i < source.length; i++) {
     const char = source[i];
     if (char === '\\') i++;
     else if (inClass) inClass = char !== ']';
     else if (char === '[') inClass = true;
+    else if (char === ')') depth = Math.max(0, depth - 1);
     else if (char === '(') {
+      maxDepth = Math.max(maxDepth, ++depth);
       if (source[i + 1] !== '?') count++;
       else if (source[i + 2] === '<' && source[i + 3] !== '=' && source[i + 3] !== '!') {
         count++;
@@ -302,19 +395,34 @@ function scanGroups(source: string): { count: number; named: boolean } {
       }
     }
   }
-  return { count, named };
+  return { count, named, depth: maxDepth };
+}
+
+/**
+ * Value of an Annex B octal escape's digits: up to three digits when
+ * the first is 0–3, up to two otherwise.
+ */
+function annexBOctal(digits: string): { value: number; length: number } {
+  const length = Math.min(digits.length, /^[0-3]/.test(digits) ? 3 : 2);
+  return { value: parseInt(digits.slice(0, length), 8), length };
 }
 
 /** A recursive-descent parser over one pattern source. */
 class PatternParser {
   private position = 0;
-  /** Depth of active `(?i:…)` modifier groups. */
+  /** Depth of active `(?i:…)` scopes (0 = case-sensitive). */
   private ignoreCase = 0;
-  private readonly groups: { count: number; named: boolean };
+  /** Lookaround bodies met while parsing — analyzed as patterns of their own. */
+  readonly lookarounds: RegexNode[] = [];
 
-  constructor(private readonly source: string) {
-    this.groups = scanGroups(source);
-  }
+  /**
+   * @param source The pattern source.
+   * @param groups The up-front scan of that source.
+   */
+  constructor(
+    private readonly source: string,
+    private readonly groups: GroupScan
+  ) {}
 
   /** Parse the whole pattern. */
   parse(): RegexNode {
@@ -323,19 +431,23 @@ class PatternParser {
     return node;
   }
 
+  /** The source character `offset` past the cursor (undefined past the end). */
   private peek(offset = 0): string | undefined {
     return this.source[this.position + offset];
   }
 
-  private rest(): string {
-    return this.source.slice(this.position);
+  /** Match a sticky matcher at `position` (the cursor by default), without moving. */
+  private matchAt(matcher: RegExp, position = this.position): RegExpExecArray | null {
+    matcher.lastIndex = position;
+    return matcher.exec(this.source);
   }
 
-  /** Characters as matched now (folded inside an `i` modifier group). */
+  /** Characters as matched now (closed under case inside an `i` scope). */
   private chars(set: CharSet): RegexNode {
-    return charsNode(this.ignoreCase > 0 ? foldAsciiCase(set) : set);
+    return charsNode(this.ignoreCase > 0 ? foldCase(set) : set);
   }
 
+  /** `branch | branch | …` up to `)` or the end. */
   private alternation(): RegexNode {
     const branches = [this.sequence()];
     while (this.peek() === '|') {
@@ -345,6 +457,7 @@ class PatternParser {
     return altNode(branches);
   }
 
+  /** One branch: quantified atoms up to `|`, `)` or the end. */
   private sequence(): RegexNode {
     const items: RegexNode[] = [];
     for (let char = this.peek(); char !== undefined && char !== '|' && char !== ')';) {
@@ -364,7 +477,7 @@ class PatternParser {
     if (bounds !== null) {
       this.position++;
     } else if (char === '{') {
-      const braces = QUANTIFIER_BRACES.exec(this.rest());
+      const braces = this.matchAt(QUANTIFIER_BRACES);
       if (braces === null) return atom; // a literal `{` was the atom's neighbour
       const min = Number(braces[1]);
       const max = braces[2] === undefined ? min : braces[3] === '' ? Infinity : Number(braces[3]);
@@ -377,6 +490,7 @@ class PatternParser {
     return repeatNode(atom, bounds[0], bounds[1]);
   }
 
+  /** One atom: an anchor, `.`, a group, a class, an escape, or a literal unit. */
   private atom(): RegexNode {
     const char = this.peek();
     switch (char) {
@@ -399,36 +513,37 @@ class PatternParser {
     }
   }
 
+  /**
+   * A group: its body, transparent. A lookaround matches no text in its
+   * sequence (and JS never backtracks into one), but its body still runs
+   * on every attempt — it is kept for its own analysis.
+   */
   private group(): RegexNode {
-    const rest = this.rest();
-    let lookaround = false;
-    let modifier: { add: string; remove: string } | null = null;
-    if (/^\(\?[=!]/.test(rest) || /^\(\?<[=!]/.test(rest)) {
-      lookaround = true;
-      this.position += rest[2] === '<' ? 4 : 3;
-    } else if (rest.startsWith('(?<')) {
-      const close = rest.indexOf('>');
+    const lookaround = this.matchAt(LOOKAROUND_OPEN);
+    let modifier: RegExpExecArray | null = null;
+    if (lookaround !== null) {
+      this.position += lookaround[0].length;
+    } else if (this.peek(1) === '?' && this.peek(2) === '<') {
+      const close = this.source.indexOf('>', this.position);
       if (close === -1) throw new UnmodeledSyntax('unterminated group name');
-      this.position += close + 1;
-    } else if (rest.startsWith('(?')) {
-      const match = MODIFIER_GROUP.exec(rest);
-      if (match === null) throw new UnmodeledSyntax('unknown group');
-      modifier = { add: match[1] ?? '', remove: match[2] ?? '' };
-      this.position += match[0].length;
+      this.position = close + 1;
+    } else if (this.peek(1) === '?') {
+      modifier = this.matchAt(MODIFIER_GROUP);
+      if (modifier === null) throw new UnmodeledSyntax('unknown group');
+      this.position += modifier[0].length;
     } else {
       this.position++;
     }
-    const folds = modifier?.add.includes('i') === true;
-    const unfolds = modifier?.remove.includes('i') === true;
     const saved = this.ignoreCase;
-    if (folds) this.ignoreCase++;
-    if (unfolds) this.ignoreCase = 0;
+    if (modifier?.[2]?.includes('i') === true) this.ignoreCase = 0;
+    if (modifier?.[1]?.includes('i') === true) this.ignoreCase++;
     const body = this.alternation();
     this.ignoreCase = saved;
     if (this.peek() !== ')') throw new UnmodeledSyntax('unterminated group');
     this.position++;
-    // A lookaround matches no text (and JS never backtracks into one).
-    return lookaround ? EMPTY_NODE : body;
+    if (lookaround === null) return body;
+    this.lookarounds.push(body);
+    return EMPTY_NODE;
   }
 
   /** `\…` outside a class. */
@@ -445,7 +560,7 @@ class PatternParser {
       return EMPTY_NODE;
     }
     if (/^[1-9]$/.test(next)) {
-      const digits = /^\d+/.exec(this.source.slice(this.position + 1))?.[0] ?? next;
+      const digits = this.matchAt(DECIMAL_DIGITS, this.position + 1)?.[0] ?? next;
       if (Number(digits) <= this.groups.count) {
         this.position += 1 + digits.length;
         return BACKREF_NODE;
@@ -461,11 +576,12 @@ class PatternParser {
   }
 
   /**
-   * A character escape (the backslash at the cursor): one code unit, or
-   * all code units where Annex B's octal reading is not modeled exactly
-   * (an octal escape) — a wider set can only add overlaps.
+   * A character escape (the backslash at the cursor) → its one code unit,
+   * per Annex B: control escapes, `\cX`, `\xHH`, `\uHHHH`, Annex B octal,
+   * and identity escapes (`\.`, `\8`, a lone `\x` …).
    *
-   * @param inClass Whether it sits in a class (`\b` is backspace there).
+   * @param inClass Whether it sits in a class (`\b` is backspace there,
+   *   and `\c` also takes a digit or `_`).
    */
   private characterEscape(inClass: boolean): CharSet {
     const next = this.peek(1) as string;
@@ -480,7 +596,7 @@ class PatternParser {
     }
     if (next === 'c') {
       const letter = this.peek(2);
-      if (letter !== undefined && ASCII_LETTER.test(letter)) {
+      if (letter !== undefined && (inClass ? CLASS_CONTROL_LETTER : ASCII_LETTER).test(letter)) {
         this.position += 3;
         return unit(letter.charCodeAt(0) % 32);
       }
@@ -497,10 +613,11 @@ class PatternParser {
       this.position += 2; // Annex B: identity escape of `x` / `u`
       return unit(next.charCodeAt(0));
     }
-    if (/^[0-7]$/.test(next)) {
-      const octal = /^[0-7]{1,3}/.exec(this.source.slice(this.position + 1))?.[0] ?? next;
-      this.position += 1 + octal.length;
-      return ALL_CHARS;
+    const octal = this.matchAt(OCTAL_DIGITS, this.position + 1);
+    if (octal !== null) {
+      const { value, length } = annexBOctal(octal[0]);
+      this.position += 1 + length;
+      return unit(value);
     }
     this.position += 2; // identity escape (`\.`, `\/`, `\]`, `\8` …)
     return unit(next.charCodeAt(0));
@@ -511,23 +628,24 @@ class PatternParser {
     this.position++;
     const negated = this.peek() === '^';
     if (negated) this.position++;
-    let set = NO_CHARS;
+    const members: (readonly [number, number])[] = [];
     while (this.peek() !== ']') {
       if (this.peek() === undefined) throw new UnmodeledSyntax('unterminated class');
       const low = this.classAtom();
       if (this.peek() === '-' && this.peek(1) !== ']' && this.peek(1) !== undefined) {
         this.position++;
         const high = this.classAtom();
-        const range = singleUnit(low) !== null && singleUnit(high) !== null;
+        const from = singleUnit(low);
+        const to = singleUnit(high);
         // Annex B: a class escape at either end makes `-` a literal.
-        set = range
-          ? union(set, [[singleUnit(low) as number, singleUnit(high) as number]])
-          : union(union(set, low), union(high, unit(0x2d)));
+        if (from !== null && to !== null) members.push([from, to]);
+        else members.push(...low, ...high, [0x2d, 0x2d]);
       } else {
-        set = union(set, low);
+        members.push(...low);
       }
     }
     this.position++;
+    const set = normalize(members);
     return negated ? complement(set) : set;
   }
 
@@ -557,60 +675,159 @@ function singleUnit(set: CharSet): number | null {
 
 // ── Analysis ─────────────────────────────────────────────────────────────
 
-/** Whether a repeat is a loop over text (see the module doc). */
-function isLoop(node: RegexNode): node is Extract<RegexNode, { kind: 'repeat' }> {
-  return (
-    node.kind === 'repeat' &&
-    (node.max === Infinity || node.max > LOOP_REPEAT_LIMIT) &&
-    node.body.consumed.length > 0
-  );
+/**
+ * What every string a node matches starts with: `sets[i]` holds the unit
+ * at position i, and every string is at least `sets.length` long. `exact`
+ * when the node matches exactly the fixed-length strings the sets spell.
+ */
+interface Head {
+  readonly sets: readonly CharSet[];
+  readonly exact: boolean;
+}
+
+/** Positions a head tracks (comparing further adds nothing for real rows). */
+const HEAD_LIMIT = 32;
+
+/** Memo: node → its head. */
+const heads = new WeakMap<RegexNode, Head>();
+
+/** A node's head (see {@link Head}), memoized. */
+function headOf(node: RegexNode): Head {
+  const memo = heads.get(node);
+  if (memo !== undefined) return memo;
+  const head = computeHead(node);
+  heads.set(node, head);
+  return head;
+}
+
+/** {@link headOf} without the memo. */
+function computeHead(node: RegexNode): Head {
+  switch (node.kind) {
+    case 'chars':
+      return { sets: [node.first], exact: true };
+    case 'empty':
+      return { sets: [], exact: true };
+    case 'backref':
+      return { sets: [], exact: false };
+    case 'seq': {
+      const sets: CharSet[] = [];
+      for (const item of node.items) {
+        const head = headOf(item);
+        sets.push(...head.sets);
+        if (sets.length > HEAD_LIMIT) return { sets: sets.slice(0, HEAD_LIMIT), exact: false };
+        if (!head.exact) return { sets, exact: false };
+      }
+      return { sets, exact: true };
+    }
+    case 'alt': {
+      const branchHeads = node.branches.map(headOf);
+      const length = Math.min(...branchHeads.map((head) => head.sets.length));
+      const sets = Array.from({ length }, (_, index) =>
+        normalize(branchHeads.flatMap((head) => head.sets[index] ?? NO_CHARS))
+      );
+      return { sets, exact: false };
+    }
+    case 'repeat': {
+      const body = headOf(node.body);
+      const sets: CharSet[] = [];
+      for (let copy = 0; copy < node.min && sets.length <= HEAD_LIMIT; copy++) {
+        sets.push(...body.sets);
+        if (!body.exact) break;
+      }
+      const capped = sets.length > HEAD_LIMIT;
+      return {
+        sets: capped ? sets.slice(0, HEAD_LIMIT) : sets,
+        exact: body.exact && node.min === node.max && !capped
+      };
+    }
+  }
 }
 
 /**
- * Whether, inside one loop iteration, a variable-length quantifier can
- * consume a character that may also come right after it (`follow`: the
- * rest of the iteration, then the next iteration's start).
+ * Whether some string of one head can be a prefix of (or equal to) some
+ * string of the other: false only when a position both heads fix holds
+ * disjoint units (sound — never a missed overlap).
  */
-function hasAmbiguousRepeat(node: RegexNode, follow: CharSet): boolean {
+function mayPrefixOverlap(a: Head, b: Head): boolean {
+  const length = Math.min(a.sets.length, b.sets.length);
+  for (let index = 0; index < length; index++) {
+    if (!intersects(a.sets[index] as CharSet, b.sets[index] as CharSet)) return false;
+  }
+  return true;
+}
+
+/** Memo: alternation → whether two of its branches may prefix-overlap. */
+const altOverlaps = new WeakMap<AltNode, boolean>();
+
+/** Whether two branches of an alternation may prefix-overlap (memoized). */
+function hasPrefixOverlap(node: AltNode): boolean {
+  const memo = altOverlaps.get(node);
+  if (memo !== undefined) return memo;
+  const branchHeads = node.branches.map(headOf);
+  let overlap = false;
+  for (let i = 0; i < branchHeads.length && !overlap; i++) {
+    for (let j = i + 1; j < branchHeads.length && !overlap; j++) {
+      overlap = mayPrefixOverlap(branchHeads[i] as Head, branchHeads[j] as Head);
+    }
+  }
+  altOverlaps.set(node, overlap);
+  return overlap;
+}
+
+/** Whether a repeat is a loop over text (see the module doc). */
+function isLoop(node: RegexNode): node is RepeatNode {
+  return node.kind === 'repeat' && node.max > LOOP_REPEAT_LIMIT && node.body.consumed.length > 0;
+}
+
+/**
+ * The ambiguity inside one loop iteration: an alternation whose branches
+ * may prefix-overlap, or a variable-length quantifier that can consume a
+ * unit that may also come right after it (`follow`: the rest of the
+ * iteration, then the next iteration's start).
+ */
+function iterationRisk(node: RegexNode, follow: CharSet): BacktrackingRisk | null {
   switch (node.kind) {
     case 'seq': {
       let after = follow;
       for (let index = node.items.length - 1; index >= 0; index--) {
         const item = node.items[index] as RegexNode;
-        if (hasAmbiguousRepeat(item, after)) return true;
+        const risk = iterationRisk(item, after);
+        if (risk !== null) return risk;
         after = item.nullable ? union(item.first, after) : item.first;
       }
-      return false;
+      return null;
     }
-    case 'alt':
-      return node.branches.some((branch) => hasAmbiguousRepeat(branch, follow));
+    case 'alt': {
+      if (hasPrefixOverlap(node)) return 'overlapping-alternation';
+      for (const branch of node.branches) {
+        const risk = iterationRisk(branch, follow);
+        if (risk !== null) return risk;
+      }
+      return null;
+    }
     case 'repeat': {
       const variable = node.max > node.min && node.body.consumed.length > 0;
-      if (variable && intersects(node.body.consumed, follow)) return true;
-      return hasAmbiguousRepeat(node.body, node.max > 1 ? union(node.body.first, follow) : follow);
+      if (variable && intersects(node.body.consumed, follow)) return 'nested-repetition';
+      // An inner loop's own next iteration is checked when `treeRisk` analyzes
+      // that loop by itself (the checks distribute over the follow's union).
+      return iterationRisk(node.body, follow);
     }
     default:
-      return false;
+      return null;
   }
-}
-
-/** Whether two branches of an alternation can start with the same code unit. */
-function hasOverlappingBranches(node: RegexNode): boolean {
-  if (node.kind !== 'alt') return false;
-  let seen = NO_CHARS;
-  for (const branch of node.branches) {
-    if (intersects(seen, branch.first)) return true;
-    seen = union(seen, branch.first);
-  }
-  return false;
 }
 
 /** The first risk of one loop, or null. */
-function loopRisk(loop: Extract<RegexNode, { kind: 'repeat' }>): BacktrackingRisk | null {
+function loopRisk(loop: RepeatNode): BacktrackingRisk | null {
   if (loop.body.backref && loop.body.kind !== 'backref') return 'repeated-backreference';
-  if (hasOverlappingBranches(loop.body)) return 'overlapping-alternation';
-  if (hasAmbiguousRepeat(loop.body, loop.body.first)) return 'nested-repetition';
-  return null;
+  return iterationRisk(loop.body, loop.body.first);
+}
+
+/** A node's children. */
+function childrenOf(node: RegexNode): readonly RegexNode[] {
+  if (node.kind === 'seq') return node.items;
+  if (node.kind === 'alt') return node.branches;
+  return node.kind === 'repeat' ? [node.body] : [];
 }
 
 /** The first risk anywhere in the tree (outer loops first), or null. */
@@ -619,19 +836,31 @@ function treeRisk(node: RegexNode): BacktrackingRisk | null {
     const risk = loopRisk(node);
     if (risk !== null) return risk;
   }
-  const children =
-    node.kind === 'seq'
-      ? node.items
-      : node.kind === 'alt'
-        ? node.branches
-        : node.kind === 'repeat'
-          ? [node.body]
-          : [];
-  for (const child of children) {
+  for (const child of childrenOf(node)) {
     const risk = treeRisk(child);
     if (risk !== null) return risk;
   }
   return null;
+}
+
+/** Analyze a source within the limits; never throws. */
+function analyze(source: string): BacktrackingRisk | null {
+  if (source.length > REGEX_ANALYSIS_LIMITS.chars) return 'too-complex';
+  const groups = scanGroups(source);
+  if (groups.depth > REGEX_ANALYSIS_LIMITS.groupDepth) return 'too-complex';
+  try {
+    const parser = new PatternParser(source, groups);
+    const root = parser.parse();
+    for (const node of [root, ...parser.lookarounds]) {
+      const risk = treeRisk(node);
+      if (risk !== null) return risk;
+    }
+    return null;
+  } catch (cause) {
+    // Unmodeled syntax is accepted; anything else (e.g. a stack overflow)
+    // means the row could not be checked — rejected, never thrown.
+    return cause instanceof UnmodeledSyntax ? null : 'too-complex';
+  }
 }
 
 /** Bound of the per-pattern verdict memo (rows are re-validated per document). */
@@ -642,7 +871,7 @@ const riskMemo = new Map<string, BacktrackingRisk | null>();
 
 /**
  * The catastrophic-backtracking risk of a pattern the engine compiles
- * (call it only after `new RegExp(source)` succeeded).
+ * (call it only after `new RegExp(source)` succeeded). Never throws.
  *
  * @param source The pattern row (no flags).
  * @returns The first risk found, or null (no known exponential shape — or
@@ -651,13 +880,7 @@ const riskMemo = new Map<string, BacktrackingRisk | null>();
 export function regexBacktrackingRisk(source: string): BacktrackingRisk | null {
   const memo = riskMemo.get(source);
   if (memo !== undefined) return memo;
-  let risk: BacktrackingRisk | null;
-  try {
-    risk = treeRisk(new PatternParser(source).parse());
-  } catch (cause) {
-    if (!(cause instanceof UnmodeledSyntax)) throw cause;
-    risk = null;
-  }
+  const risk = analyze(source);
   if (riskMemo.size >= RISK_MEMO_LIMIT) {
     const oldest = riskMemo.keys().next();
     if (oldest.done !== true) riskMemo.delete(oldest.value);

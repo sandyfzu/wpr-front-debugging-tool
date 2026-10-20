@@ -49,7 +49,8 @@ function regexErrorDetail(row: string, error: unknown): string {
  * empty `includes` are always-true), so it is rejected as the user mistake
  * it is. A pattern row must compile as a regular expression and carry no
  * known catastrophic-backtracking shape (`./regex-risk` — a heuristic; the
- * session's wall-time budget stays the backstop); a literal row is never
+ * guard rejects exponential shapes only — polynomial ones are accepted and
+ * bounded only where the engine runs preemptibly); a literal row is never
  * compiled — regex-looking text is a fine substring.
  *
  * @param row The row as given.

@@ -324,6 +324,7 @@ describe('isRewritableResponse', () => {
     ['the last 3xx', { ...html, status: 399 }],
     ['204 No Content', { ...html, status: 204 }],
     ['205 Reset Content', { ...html, status: 205 }],
+    ['206 Partial Content (a fragment)', { ...html, status: 206 }],
     ['304 Not Modified', { ...html, status: 304 }],
     ['an informational status', { ...html, status: 199 }],
     ['an out-of-range status', { ...html, status: 600 }],

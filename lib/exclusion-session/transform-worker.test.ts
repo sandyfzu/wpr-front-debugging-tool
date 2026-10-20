@@ -460,6 +460,38 @@ describe('createWorkerTransformRunner', () => {
     host.dispose(); // idempotent
   });
 
+  it('dispose settles every queued run and never spawns again', async () => {
+    const spawn = vi.fn(() => new FakePort(() => undefined));
+    const host = createWorkerTransformRunner({ spawn, schedule: manualTimers().schedule });
+    const running = host.run(REQUEST);
+    const queued = [host.run(REQUEST), host.run(REQUEST)];
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    host.dispose();
+    for (const run of [running, ...queued]) {
+      await expect(run).resolves.toMatchObject({ ok: false, outcome: { reason: 'engine-failed' } });
+    }
+    await expect(host.run(REQUEST)).resolves.toEqual({
+      ok: false,
+      outcome: { outcome: 'failed', reason: 'engine-failed' },
+      cause: new Error('Transform worker disposed')
+    });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('survives a timer seam that fires synchronously (the queue never wedges)', async () => {
+    const schedule: ScheduleTimer = (run, ms) => {
+      if (ms === 1 + WORKER_GRACE_MS) run(); // already past its deadline at hand-over
+      return () => undefined;
+    };
+    const spawn = vi.fn(() => new FakePort(working));
+    const host = createWorkerTransformRunner({ spawn, schedule });
+    await expect(host.run({ ...REQUEST, budgetMs: 1 })).resolves.toMatchObject({
+      outcome: { outcome: 'failed', reason: 'engine-failed' }
+    });
+    await expect(host.run(REQUEST)).resolves.toMatchObject({ ok: true });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the platform timer by default', async () => {
     vi.useFakeTimers();
     try {

@@ -9,6 +9,7 @@ import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
+  SESSION_ASK_WORST_CASE_MS,
   SESSION_STEP_TIMEOUTS_MS,
   withinDeadline
 } from './timeouts';
@@ -123,10 +124,48 @@ describe('declared bounds', () => {
     });
   });
 
-  it('keeps the apply arm path under the overlay’s apply deadline', () => {
-    const steps = SESSION_STEP_TIMEOUTS_MS;
-    // wake wait + state read + cap read + arm + record write + saved-set write + push
-    const armPath = steps.ready + 2 * steps.store + steps.arm + 2 * steps.store + steps.push;
-    expect(armPath).toBeLessThan(EXCLUSION_SESSION_DEADLINES_MS.apply);
+  /** Each ask path, step by step (the worst of them is the declared worst case). */
+  const steps = SESSION_STEP_TIMEOUTS_MS;
+  const before = steps.ready + steps.queueWait;
+  const APPLY_PATHS: Record<string, number> = {
+    // read + cap read + arm + record write + saved-set write + push
+    armed: before + 2 * steps.store + steps.arm + 2 * steps.store + steps.push,
+    // read + cap read + arm (or its timeout) + disarm + warning write + push
+    unavailable: before + 2 * steps.store + steps.arm + steps.disarm + steps.store + steps.push,
+    // … the warning write failed: + re-read
+    'unavailable, write failed':
+      before + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
+    // read + cap read + arm + record write refused at the cap + disarm + warning write + re-read + push
+    'store-side cap':
+      before +
+      2 * steps.store +
+      steps.arm +
+      steps.store +
+      steps.disarm +
+      2 * steps.store +
+      steps.push,
+    // read + cap read + arm throws + disarm + removal + re-read + push
+    'arm-failed':
+      before + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
+    // read + cap read (at the cap) + disarm + warning write + re-read + push
+    'cap pre-check': before + 2 * steps.store + steps.disarm + 2 * steps.store + steps.push
+  };
+  const STOP_PATHS: Record<string, number> = {
+    stopped: before + steps.store + steps.disarm + steps.store + steps.push,
+    'removal failed': before + steps.store + steps.disarm + 2 * steps.store + steps.push
+  };
+
+  it('declares each ask’s worst case as the max of its paths', () => {
+    expect(SESSION_ASK_WORST_CASE_MS.apply).toBe(Math.max(...Object.values(APPLY_PATHS)));
+    expect(SESSION_ASK_WORST_CASE_MS.stop).toBe(Math.max(...Object.values(STOP_PATHS)));
+    expect(SESSION_ASK_WORST_CASE_MS.status).toBe(before + steps.store);
+  });
+
+  it.each([
+    ...Object.entries(APPLY_PATHS).map(([path, ms]) => ['apply', path, ms] as const),
+    ...Object.entries(STOP_PATHS).map(([path, ms]) => ['stop', path, ms] as const),
+    ['status', 'read', SESSION_ASK_WORST_CASE_MS.status] as const
+  ])('keeps the %s path “%s” under 90 %% of the sender’s deadline', (ask, _path, ms) => {
+    expect(ms).toBeLessThan(0.9 * EXCLUSION_SESSION_DEADLINES_MS[ask]);
   });
 });
