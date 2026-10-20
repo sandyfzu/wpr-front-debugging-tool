@@ -105,12 +105,16 @@ Environment: Chromium for Testing 156.0.8078.4 (Playwright 1.64.1, `channel: 'ch
 
 Depends:—. Parallel:P10A/P10C. Goal: the whole transformation vocabulary pure, typed, fully unit-tested.
 
-- [ ] Exclusion-set types per feature (patterns + literal rows + disable toggles), one declaring site; cached compiled matchers; all-at-once prevalidation naming the invalid row/line; typed errors (`@throws`).
-- [ ] The four operations above as pure transforms composing into the pipeline (order declared once; combined per-transform reports feed UI/status); doctype and CSV behaviors pinned. A second fixture transform proves composition mechanics without importing P13.
-- [ ] Full unit matrix: source inventory cases + adversarial fixtures (nested/duplicate tags, minified single-line HTML, charset-neutral byte handling — operate on strings only after decode is owned by the backend, never here), each operation's negative/empty/no-match arms.
-- [ ] **Test-first** per AGENTS; no consumer wiring in this phase.
+- [x] Exclusion-set types per feature (patterns + literal rows + disable toggles), one declaring site; cached compiled matchers; all-at-once prevalidation naming the invalid row/line; typed errors (`@throws`).
+- [x] The four operations above as pure transforms composing into the pipeline (order declared once; combined per-transform reports feed UI/status); doctype and CSV behaviors pinned. A second fixture transform proves composition mechanics without importing P13.
+- [x] Full unit matrix: source inventory cases + adversarial fixtures (nested/duplicate tags, minified single-line HTML, charset-neutral byte handling — operate on strings only after decode is owned by the backend, never here), each operation's negative/empty/no-match arms.
+- [x] **Test-first** per AGENTS; no consumer wiring in this phase.
 
 DoD: engine green with the full matrix; consumers untouched. Effort L · difficulty medium.
+
+#### P10B receipt (2026-10-20)
+
+Implemented `9c93263`, adversarially audited (1 BLOCKER + 6 MAJOR + 10 MINOR + 3 NOTE, all legacy/spec-verified with citations), fixed `30a459f`, merged `814c216`. `lib/exclusion-builder/`: 11 modules (set/errors/validate/compile/html-scan/tag-edit/report/delay-js/defer-js/lazyload/lazy-render + pipeline) + 11 colocated test files. Audit outcome: ALR rows are **literal** (B1), scanner matched to WHATWG §13.2.5 raw-text/comment closers (M1/M2), feature-wide Delay JS removes the three controller scripts (M3), lazyload candidacy/clone per legacy (M4), ALR disable = attributes + inline CSS only — the plan's runner-script premise retracted (M5, correction above), wall-time contract recorded for P10D/P10E (M6), pipeline order Delay→Defer→ALR→Lazyload, CSV `, ` separator, all 10 minors fixed. 3151 tests / 200 files green; module coverage 99.2% stmts; `build`+`check:budgets` green (no consumers, no bundle shift). No consumer wiring — imports of `lib/exclusion-builder/` exist only in tests.
 
 ### P10C — Contracts: storage + messaging
 
