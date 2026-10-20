@@ -4,6 +4,8 @@
 
 Panel/strip-triggered beacon test, LCP breakdown, script runtime and current-visit CWV share validated CS executors. Depends:P11/P12/P3/P5/P6; **P13 executor pattern before integration**. Pure cores can parallel P13; full integration is not independently executable before that seam. Reuse installed stack; only proposed new runtime dependency is exact-pinned latest-compatible **wp-rocket-scripts**, reverified at execution (1.2.2 was latest at2026-10-06 audit, source used1.0.6).
 
+> **NOTE FROM DEV:** P10 replanned (2026-10-20) as an in-page session shell + interception backend. When P10 ships first, the shell's mode registry is these tools' on-page mount surface (the strip keeps its triggers; P14C wires into the registry, no second host), and the beacon/LCP tools gain an owner-gated "run under an applied P10 session" arm (exclusions/RUCSS CSS in effect during the reloaded render). Executors, results, and gates stay owned here.
+
 ## Reference and non-negotiable deltas
 
 v4.1.1 BeaconTester/inspector tools, source/package audited2026-10-06. Source prototype-patches global BeaconManager, sticky mobile singleton, host console dumps, gate-script-mutating finalize, leaked LCP observers/borders, live script expandos, dropped Other group/JSON-LD. Replace all with instance subclass/adapter, fresh config, panel tables, cleaned observers/highlight, plain records/explicit Other/structured-data.
