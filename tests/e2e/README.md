@@ -5,7 +5,7 @@ into CI** (headless runners cannot host extensions — the env contract is in th
 master plan's browser-test track).
 
 ```bash
-pnpm test:e2e            # all suites, headless Chromium, ~10–20 s
+pnpm test:e2e            # all suites, headless Chromium, ~4 min
 E2E_HEADED=1 pnpm test:e2e   # headed windows (the debugging opt-in)
 E2E_BUILD_STRICT=1 pnpm test:e2e   # refuse to auto-rebuild: fail fast with the diff instead
 E2E_WORKERS=5 pnpm test:e2e        # run suites in parallel (five browsers)
@@ -34,7 +34,10 @@ pnpm exec playwright show-report tests/e2e/playwright-report   # inspect the las
   override — the way to keep two concurrent harness users on this machine off
   each other's servers. Fixtures
   are committed under `fixtures/`; every response is `no-store` so each reload
-  is a genuine network round-trip, and the `__E2E_FRAME_TOKEN__` placeholder in
+  is a genuine network round-trip — the one deliberate exception is
+  `/__e2e/cache-evidence`, which serves `max-age=3600` freshness evidence on
+  purpose (it is the fixture exercising the caching verdicts) — and the
+  `__E2E_FRAME_TOKEN__` placeholder in
   any served `.html` is replaced with a fresh per-request random token (a
   fixture page can prove its body is from the latest request).
 - **A second webServer boots the P4.2 dockerized WordPress site**
@@ -130,6 +133,10 @@ service worker. Attached-devtools visuals stay the manual remainder.
 | `theme`                    | The injected-UI palette (every shadow-rooted UI through `mount.ts`): `system` declared on the container resolves dark under a dark OS and follows it in real time; explicit dark wins — see 05e's 2026-10-11 palette fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `site-inspector-strip`     | P12A over the real site: the chip's default-on mount with the per-origin override storage seam (an explicit entry wins both ways; the menu id probed once; no-reload enable/disable), the pill ⇄ report card (the real cached verdict, D-2 chip matrix, keyboard + reduced-motion, KC coexistence) + palettes live-follow; the P12A.5 drag: 1:1 follow, reload returns the resting anchor (no persistence), the card follows the dragged anchor, full viewport containment (mid-drag sampling, no offscreen part, shrink/card-open re-settles incl. the smooth leg and its reduced-motion instant snap) + the scroll-silence pin, Escape/right-press cancels, the keyboard-safe suppression (first-Enter reopens), the width/value chips pin (no-elide over every registry row + the info-pair value chip), and the versionless identity leg (`?fdt-wpr-versionless=1`: `WPR (unknown version)`, the footer dash); the quick-release commit legs — a mid-drag capture loss and a quick far out-of-viewport release both end in the clamp's near-edge commit on both shapes, never a snap back to the resting anchor                                                                                                                                                                                                                                                        |
 
+| `panel-acceptance-source-parity` | P6.1 row 1 (07-phase-6-panel-pages.md receipt): the port and the source extension's own build on the SAME served parity fixture in two separate contexts — Detections cards/verdicts/subtitles, resource chips + one filter result, definitions on one shared stubbed resource table — with the intentional deltas pinned beside the comparison (preloaded-hints feature label, cached card's aged subtitle, critical-images case + preload-count subtitle, plugin-card colon, definitions display form) and the port's rows beyond the source vocabulary; skips naming the reason when the checkout is absent on this machine | Green |
+| `panel-acceptance-fixtures` | P6.1 rows 1–2 (07-phase-6-panel-pages.md receipt), real capture over served fixtures: one cache-evidence response agrees across Detections cards/strip/report; the report byte-exact against the shipped builder (provenance read back out of the copy); planted secrets withheld at display, clipboard and report; headers inventory only on Headers & Cookies; null headers + cookie omission land the empty state strict-axe clean; names-only cookies (values never render, never copy) | Green |
+| `panel-acceptance-large-list` | P6.1 rows 3–5 (07-phase-6-panel-pages.md receipt): the 5,000-row generated-on-demand fixture over the real capture path — route/view/filter/search and the find's single-deep-match landing + 100-match wrap both ways inside the long-task/TBT budget, an exact landing under a variable-height expansion, the live find's route reset, and the find-active state's strict axe | Green |
+
 ## Manual remainder (recorded, never silently dropped)
 
 These need a human, a real site, or a user-visible surface that is not
@@ -189,3 +196,13 @@ auto-passes; a clean full `pnpm test:e2e` run is the gate's evidence.
   the browser and relaunches on the SAME profile — the bundle re-registers over
   persistent extension-owned browser state, asserting the checklist's actual
   question (ids survive extension reload exactly once).
+- **Source-build parity runs a SECOND browser**: the parity suites boot one
+  extra persistent Chromium context per worker loading the source extension's
+  own unpacked build (`helpers/source-build.ts`). `E2E_SOURCE_REPO` overrides
+  the source checkout (default: the sibling `wpr-front-debugging-tool-legacy`
+  next to this repo's main checkout); `E2E_SOURCE_BUILD_DIR` overrides the
+  unpacked build dir (default the checkout's `.output/chrome-mv3`). A missing
+  checkout skips the parity suite naming the reason; a stale build (stamped
+  HEAD or dirty state differs from the checkout) is rebuilt first. Concurrent
+  harness users must set BOTH overrides — `E2E_FIXTURE_PORT` alone only
+  separates the fixture servers; the source build dir is shared otherwise.

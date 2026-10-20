@@ -5,8 +5,8 @@
  * engine can produce.
  */
 import { describe, expect, it } from 'vitest';
-import optionNames from './option-names.json';
-import otherNames from './other-names.json';
+import optionNames from './option-names.json' with { type: 'json' };
+import otherNames from './other-names.json' with { type: 'json' };
 import { getRealOptionName, knownOptionIds } from './get-real-option-name';
 
 describe('option name maps', () => {

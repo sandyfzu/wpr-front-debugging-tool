@@ -32,6 +32,11 @@ import type { Page } from '@playwright/test';
 
 import { openFixturePage, panelPageUrl, type DriverPage, type ExtensionDriver } from './extension';
 
+/** Re-exported for the suites that open fixture pages or resolve the panel
+ * document's URL themselves (the panel-data file is the harness's one
+ * entrypoint for both). */
+export { openFixturePage, panelPageUrl };
+
 /** A panel page and the fixture tab it inspects through the devtools contract. */
 export interface InspectedPanel {
   /** The panel page (boot included; asserts read the resolved shell). */
@@ -49,10 +54,15 @@ export interface InspectedPanel {
  * answers with suite-provided values only; the shipped adapter's shape
  * checks, the definition search and the store flow around it are app code.
  *
+ * Exported for the suites that need the shim and the panel document's own
+ * boot hash in different orders (the report's inspected-URL stub rides one
+ * opening); its shape is the harness's only devtools stand-in.
+ *
  * @param tabId The tab id a real DevTools window would report.
  * @param inspect The suite-provided resource stub, when one is needed.
+ * @returns The init script text for {@link Page.addInitScript}.
  */
-function devtoolsShim(tabId: number, inspect: OpenPanelOptions['inspect']): string {
+export function devtoolsShim(tabId: number, inspect?: OpenPanelOptions['inspect']): string {
   // The whole stub rides as a JSON literal: the init script self-contains it,
   // sharing no state with the suite beyond this call's arguments.
   const stub =
@@ -101,6 +111,27 @@ export interface OpenPanelOptions {
   /** The panel document's boot hash (e.g. `#/lazyload`) for deep-link boots. */
   readonly bootHash?: string;
   /**
+   * Media emulation applied to the panel page BEFORE it navigates. The
+   * palette must exist before the boot: Chromium applies a palette change
+   * against an already-rendered document to its descendants with a ~2-frame
+   * lag, inside which computed colors mix both arms (see the audit runner's
+   * palette rule). Booting into the final palette leaves no flip to lag.
+   */
+  readonly emulation?: {
+    /** The emulated `prefers-color-scheme` arm. */
+    readonly colorScheme: 'dark' | 'light';
+    /** The emulated reduced-motion state. */
+    readonly reducedMotion?: 'reduce' | 'no-preference';
+  };
+  /**
+   * An init script evaluated on the panel page after the devtools stamp
+   * but before its module graph — the smoothest window into a phase the
+   * page's own boot belongs to (the perf suite installs its PerformanceObserver
+   * here, so the cold mount is inside the observation). Nothing injected is
+   * app state: it only listens on the timeline.
+   */
+  readonly panelInit?: string;
+  /**
    * The undefined-references reader's `devtools.inspectedWindow` stub: one
    * fixture origin (what `eval('location.origin')` answers) and the script
    * resources `getResources` enumerates. Without it the seam stamps only the
@@ -137,9 +168,17 @@ export async function openPanelForFixture(
 ): Promise<InspectedPanel> {
   const fixture = await openFixturePage(extension, urlPath, options.origin);
   const panel = await extension.browserContext.newPage();
+  // The emulated media exists before the first document renders, so the
+  // panel boots into its final palette (no post-render flip, no lag window).
+  if (options.emulation !== undefined)
+    await panel.emulateMedia({
+      colorScheme: options.emulation.colorScheme,
+      reducedMotion: options.emulation.reducedMotion ?? 'no-preference'
+    });
   // Before any module script, so the accessor's feature-detection reads the
   // stamped id at its first read (the boot flight's timing).
   await panel.addInitScript(devtoolsShim(fixture.tabId, options.inspect));
+  if (options.panelInit !== undefined) await panel.addInitScript(options.panelInit);
   await panel.goto(`${await panelPageUrl(extension)}${options.bootHash ?? ''}`, {
     waitUntil: 'load'
   });

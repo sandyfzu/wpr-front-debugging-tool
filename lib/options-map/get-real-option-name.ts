@@ -7,8 +7,8 @@
  * needed) so typings flow through the bundler instead of `JSON?raw` parsing.
  */
 
-import optionNames from './option-names.json';
-import otherNames from './other-names.json';
+import optionNames from './option-names.json' with { type: 'json' };
+import otherNames from './other-names.json' with { type: 'json' };
 
 /** Internal option id → user-facing label. */
 const OPTION_NAMES: ReadonlyMap<string, string> = new Map<string, string>([
