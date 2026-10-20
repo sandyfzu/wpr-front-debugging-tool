@@ -4,10 +4,21 @@ name: CI
 # enforced machine-side, not only locally. `build:firefox` joins the matrix later in
 # the port (hardening phase); the speed bench stays local because its ≥30% ratio
 # assertion is machine-relative and would flake on shared runners.
+#
+# `workflow_dispatch` also lets maintainers run the gates on demand — from the Actions
+# tab or `gh workflow run ci.yml --ref <branch>` — without opening a PR. The optional
+# `ref` input tests a different branch, tag, or full commit SHA (`-f ref=...`), while
+# `--ref` still selects which version of this workflow file runs.
 on:
   pull_request:
   push:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or full commit SHA to test (defaults to the dispatch ref)
+        required: false
+        type: string
 
 jobs:
   gates:
@@ -17,7 +28,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout ${{ inputs.ref || github.ref }}
+        uses: actions/checkout@v7
+        with:
+          # Empty on push/PR (and on a dispatch without input), so checkout keeps its
+          # default: the event's `github.ref` pinned to `github.sha` — never a moving tip.
+          ref: ${{ inputs.ref }}
+          # No step pushes; keep the token out of `.git/config`, readable by build code.
+          persist-credentials: false
 
       - name: Install pnpm (version from package.json `packageManager`)
         uses: pnpm/action-setup@v6
