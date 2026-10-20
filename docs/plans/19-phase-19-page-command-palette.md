@@ -16,7 +16,7 @@ Chosen train slot: after P11 (P19 → P12). P19A–C and E have nothing to edit 
 
 ## Decision gates (G-*, phase-local; not the UI bar's §D receipt ids)
 
-- **G-1 (owner, blocks implementation):** approve this plan — palette scope, gate semantics (gate-off kills the palette), options cascade, chord model.
+- **G-1 (owner, resolved 2026-10-20):** plan approved — palette scope, gate semantics (gate-off kills the palette), options cascade and chord model stand as written below.
 - **G-2 (owner, resolved 2026-10-20):** chord mechanism and default — **(a)** the content-script capture chord (rebound from this extension's options page, fully gate-integrated, zero manifest changes; the chosen chord is ours to police — it intercepts the host page for that one combination), default **Alt+K** (⌘K was rejected as the default: GitHub, Notion, Slack, Linear, Gmail and the WordPress 6.4+ editor own it in their own palettes; ⌘K stays selectable).
 - **G-3 (owner, resolved 2026-10-20):** capture validation — **modifiers mandatory**: at least one modifier or an F-key, so a bare letter can never hijack typing into the page.
 
