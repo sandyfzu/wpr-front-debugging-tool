@@ -5,7 +5,14 @@
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cycleAppearanceOption, getOptions, optionsStore, parseStoredOptions } from './options';
+import {
+  cycleAppearanceOption,
+  getOptions,
+  mutateOptions,
+  optionsStore,
+  parseStoredOptions,
+  setAppearanceOption
+} from './options';
 import { getKnownConflicts, knownConflictsStore } from './known-conflicts';
 import { KNOWN_CONFLICTS_SEED_LENGTH, getKnownConflictsSeed } from './known-conflicts-seed';
 import { parseKnownConflicts } from '../messaging/validate';
@@ -132,6 +139,77 @@ describe('cycleAppearanceOption (the keyboard appearance cycle)', () => {
     });
     expect(options.features.toolbarBadge).toBe(false);
     expect(options.features.sbsMobileSim).toBe(true);
+  });
+});
+
+describe("setAppearanceOption (the options page's choice seam)", () => {
+  it('stores the exact choice it is given', async () => {
+    await setAppearanceOption('dark');
+    expect((await getOptions()).appearance).toBe('dark');
+    await setAppearanceOption('light');
+    expect((await getOptions()).appearance).toBe('light');
+  });
+
+  it('preserves every other option slot through the read-modify-write', async () => {
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': true, 'future-flag': false },
+      appearance: 'dark',
+      features: {
+        toolbarBadge: false,
+        sbsScrollSync: false,
+        sbsMobileSim: true,
+        sbsDesktopWidth: true
+      }
+    });
+    await setAppearanceOption('system');
+    const options = await getOptions();
+    expect(options.appearance).toBe('system');
+    expect(options.improvements).toEqual({
+      'wp-dashboard-dbugger-entry': true,
+      'future-flag': false
+    });
+    expect(options.features.toolbarBadge).toBe(false);
+    expect(options.features.sbsScrollSync).toBe(false);
+  });
+});
+
+describe('mutateOptions (the whole-shape RMW queue)', () => {
+  it("a queued mutation reads the previous mutation's write (interleave-safe)", async () => {
+    await optionsStore.setValue({
+      improvements: { 'wp-dashboard-dbugger-entry': true },
+      appearance: 'dark',
+      features: {
+        toolbarBadge: true,
+        sbsScrollSync: true,
+        sbsMobileSim: false,
+        sbsDesktopWidth: true
+      }
+    });
+    // Two mutations enter the queue before either resolves; both closures run
+    // at the same microtask if unsynchronized. Unqueued, the second's read
+    // would race the first's write and revert it; serialized, it applies onto
+    // the first's shape and returns it as its own write.
+    const first = mutateOptions((options) => ({ ...options, appearance: 'light' }));
+    const second = mutateOptions((options) => ({
+      ...options,
+      features: { ...options.features, toolbarBadge: false }
+    }));
+    const [writtenFirst, writtenSecond] = await Promise.all([first, second]);
+    expect(writtenFirst.appearance).toBe('light');
+    expect(writtenSecond.appearance).toBe('light');
+    expect(writtenSecond.features.toolbarBadge).toBe(false);
+    expect((await getOptions()).features.toolbarBadge).toBe(false);
+  });
+
+  it('a rejecting mutation propagates to its own caller without stalling the queue', async () => {
+    const failing = mutateOptions(() => {
+      throw new Error('the write failed');
+    });
+    await expect(failing).rejects.toThrow('the write failed');
+    // The next mutation still runs — and writes through the validator's shape.
+    const next = mutateOptions((options) => ({ ...options, appearance: 'dark' }));
+    await expect(next).resolves.toMatchObject({ appearance: 'dark' });
+    expect((await getOptions()).appearance).toBe('dark');
   });
 });
 

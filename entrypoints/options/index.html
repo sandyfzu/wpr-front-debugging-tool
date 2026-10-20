@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      The options page — a full-tab settings surface (`open_in_tab`).
+      Palette-before-first-paint works exactly like the panel document's:
+      `system` resolves through the token stylesheet's `:root` media query, an
+      explicit stored choice pins `data-theme` before render, and the boot
+      script releases the lock below (see `./main.tsx`).
+    -->
+    <meta name="manifest.open_in_tab" content="true" />
+    <!--
+      Paint lock: the document stays hidden until `data-theme-lock="done"` —
+      set once the stored appearance resolved (or the read failed and the
+      token default stands). While hidden, the root still paints the themed
+      canvas, never a default-white frame; no inline script exists here
+      (extension pages' CSP forbids it — the release is a stylesheet-only arm,
+      the boot claims it).
+    -->
+    <style>
+      html {
+        background-color: var(--surface-0);
+      }
+      html:not([data-theme-lock='done']) {
+        visibility: hidden;
+      }
+    </style>
+    <link rel="stylesheet" href="../../assets/css/theme.css" />
+    <title>WPR FDT — Options</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

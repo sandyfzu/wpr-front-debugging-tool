@@ -19,7 +19,7 @@ import {
 } from '../../../lib/detection/describe';
 import type { FdtData, PageHeader } from '../../../lib/wp-rocket/types';
 import type { DataState } from '../state/fdt-state-machine';
-import { relativeAge } from './relative-age';
+import { relativeAge } from '../../../utils/relative-age';
 
 /**
  * Data older than this is flagged stale (ms) — ten minutes, the

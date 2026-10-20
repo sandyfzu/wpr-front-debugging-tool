@@ -54,6 +54,13 @@ describe('Switch', () => {
     expect(input.getAttribute('type')).toBe('checkbox');
   });
 
+  it('forwards an accessible description to the switch input, not the wrapper', () => {
+    render(() => <Switch label="Show the toolbar badge" aria-describedby="badge-desc" />);
+    const input = screen.getByRole('switch');
+    expect(input.getAttribute('aria-describedby')).toBe('badge-desc');
+    expect(rootOf().getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('toggles on control click and reports the new state', () => {
     const onChange = vi.fn();
     render(() => <Switch label="Delay JavaScript" onChange={onChange} />);

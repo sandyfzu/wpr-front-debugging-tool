@@ -1,0 +1,36 @@
+/*
+ * The options page's own stylesheet — the mount-only motion.
+ * Design tokens and the Tailwind layer arrive through the `theme.css` link in
+ * `index.html`; colors, elevations, spacing and the appearance model all come
+ * from those tokens, page styles use utilities only.
+ */
+
+/* ---- Mount-only page entrance ----------------------------------------------
+ * The M-2 page/view-mount moment: one fade/rise per mount, values from the
+ * motion tokens. This is the page's only frame animation — states swap
+ * instantly; `prefers-reduced-motion` collapses it via the token stylesheet. */
+
+@keyframes options-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fdt-page {
+  /* Keep the entrance's translated pixels inside the page's natural bounds. */
+  overflow: clip;
+}
+
+.fdt-page > [data-fdt='options-body'] {
+  /* `backwards`, never `forwards`/`both`: a fill-after-run value would pin
+   * `translateY(0)` on the wrapper for the page's lifetime, keeping it the
+   * containing block for `position: fixed` descendants. The final keyframe
+   * equals the element's natural state, so nothing needs holding after the
+   * run — `backwards` covers only the pre-run hold the entrance needs. */
+  animation: options-page-enter var(--motion-base) var(--ease-entrance) backwards;
+}

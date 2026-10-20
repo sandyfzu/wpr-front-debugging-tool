@@ -65,7 +65,7 @@ import { useFdtData, useSearch } from '../../state/use-fdt-data';
 import { bindSearchField } from '../../state/search-field';
 import type { SearchStore } from '../../state/search';
 import { createAgingClock, realAgingClockDeps } from '../../status-bar/aging-clock';
-import { relativeAge } from '../../status-bar/relative-age';
+import { relativeAge } from '../../../../utils/relative-age';
 import { CURRENT_MATCH_ROW, createCurrentMatch } from '../current-match';
 import { NoMatches, PAGE_FILL_SCROLLER, PageFrame } from '../page-frame';
 import { createResultsAnnouncement } from '../results-announcement';

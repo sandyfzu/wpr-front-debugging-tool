@@ -19,7 +19,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
-import { relativeAge } from '../../../entrypoints/panel/status-bar/relative-age';
+import { relativeAge } from '../../../utils/relative-age';
 import { formatCacheTimestamp } from '../../../lib/detection/describe';
 
 /** The strip's rendered answers (the full text of the four segments). */
