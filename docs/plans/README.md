@@ -12,7 +12,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **P9 closed** (2026-10-20): [options+9.1](./10-phase-9-options.md). P9A registry/model + P9B page + P9.1 suites shipped (receipts 2026-10-19/20) — options surface complete (persistence/palettes/badge/dbugger/KC/width+motion/a11y receipted); open owner items carried: model-save RMW window, KC `null`-outcome conflation, P15 visual polish, Firefox runtime release matrix.
 - **P8 deferred** (owner2026-10-19: popup not settled): [popup+8.1](./09-phase-8-popup.md) moves to the **last phase beforeP15** — afterP5J, immediately before release; no longer parallel withP6/P9.
 - **P10 parked:** [Builder+10.1](./11-phase-10-exclusion-builder.md); owner requires replan, old design not executable.
-- **P11 planned:** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections.
+- **P11 planned (P11A shipped 2026-10-20):** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections.
 - **P12 partial:** [widget+12.1](./13-phase-12-on-page-inspector.md); early P12A detections/session drag shipped; shared mount cleanup, final registry/persistence/shortcut/controls/tools/conformance pending.
 - **P13/P14 planned:** [RUCSS+13.1](./14-phase-13-rucss-tester.md), [runtime+14.1](./15-phase-14-live-analysis-tools.md). Independent cores parallel; P14 integration follows P13 executor seam.
 - **P14.5 planned/decision-gated:** [coverage audit+tools](./15b-phase-14-5-coverage-and-tooling.md). Candidate approval≠decision gate complete.

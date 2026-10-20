@@ -85,6 +85,8 @@ export interface LazyloadImageRecord {
  */
 export interface OptimizeCriticalImagesDetection extends TruncationMark {
   present: boolean;
+  /** The evidence class that decided the verdict, when one did. */
+  source?: FeatureEvidenceSource;
   /**
    * The `<!-- wpr_oci -->` feature comment survived on the page. Corroboration
    * only: the plugin strips these comments when the meta generator runs (and
@@ -113,6 +115,8 @@ export interface OptimizeCriticalImagesDetection extends TruncationMark {
 export interface AutomaticLazyRenderingDetection {
   /** ≥ 1 element stamped `data-wpr-lazyrender`. */
   present: boolean;
+  /** The evidence class that decided the verdict, when one did. */
+  source?: FeatureEvidenceSource;
   /** Count of stamped elements. */
   lazyRenderElements: number;
   /**
@@ -137,6 +141,8 @@ export interface AutoPreloadFontsDetection extends TruncationMark {
   present: boolean;
   /** Resolved hrefs of attributed font preloads, document order. Present ⇔ non-empty. */
   fonts: string[];
+  /** The evidence class that decided the verdict, when one did. */
+  source?: FeatureEvidenceSource;
 }
 
 /**
@@ -145,6 +151,8 @@ export interface AutoPreloadFontsDetection extends TruncationMark {
  */
 export interface PreconnectExternalDomainsDetection extends TruncationMark {
   present: boolean;
+  /** The evidence class that decided the verdict, when one did. */
+  source?: FeatureEvidenceSource;
   /**
    * Attributed hint hrefs (both variants), first-occurrence order — a bare
    * dns-prefetch hint (e.g. the RocketCDN one) asserts nothing here; the
@@ -210,6 +218,14 @@ export interface PriorityElementsBeaconDetection {
 }
 
 /**
+ * The evidence class that decided a feature row's verdict: the generator
+ * meta declared (or refuted) the feature, or a page footprint proved it.
+ * Only decided rows carry the field — a row with no deciding evidence (no
+ * meta declaration and no footprint) stays honest with no `source`.
+ */
+export type FeatureEvidenceSource = 'meta' | 'footprint';
+
+/**
  * The complete page classification. Structural keys are fixed; extend only
  * additively (new optimizations ship with their own key + validators + tests).
  */
@@ -223,45 +239,67 @@ export interface WprDetections {
   };
   remove_unused_css: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   delay_js: TruncationMark & {
     present: boolean;
     scripts: DelayedScriptRecord[];
     version: string | null;
     delayedScripts: number;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   defer_all_js: TruncationMark & {
     present: boolean;
     /** `data-rocket-src` or `src` of every WP Rocket-deferred script, doc order. */
     scripts: string[];
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   async_css: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   lazyload: TruncationMark & {
     present: boolean;
     /** One record per <img> element, document order. */
     images: LazyloadImageRecord[];
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   lazyload_iframes: {
     present: boolean;
     /** The iframe-to-preview-image replacement script is present too. */
     replaceImage: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   lazyload_css_bg_img: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   minify_css: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   minify_js: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   preload_links: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   rocket_cdn: {
     present: boolean;
+    /** The evidence class that decided the verdict, when one did. */
+    source?: FeatureEvidenceSource;
   };
   rocket_above_the_fold_optimization: OptimizeCriticalImagesDetection;
   automatic_lazy_rendering: AutomaticLazyRenderingDetection;

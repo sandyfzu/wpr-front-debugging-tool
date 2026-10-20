@@ -451,6 +451,54 @@ describe('parseWprDetections', () => {
       })
     ).toBeNull();
   });
+
+  it('tolerates the optional evidence-source field on every feature row and carries it through', () => {
+    const base = minimalDetections();
+    // Every row except the identity and beacon rows may declare which
+    // evidence class decided it; absence stays the old payloads' valid shape.
+    const featureRows = Object.keys(base).filter(
+      (key) => key !== 'wpr' && key !== 'priority_elements_beacon'
+    );
+    for (const key of featureRows) {
+      for (const source of ['meta', 'footprint'] as const) {
+        const row = { ...(base[key] as Record<string, unknown>), source };
+        const parsed = parseWprDetections({ ...base, [key]: row });
+        expect(parsed, `${key}/${source}`).not.toBeNull();
+        expect((parsed as unknown as Record<string, unknown>)[key], `${key}/${source}`).toEqual(
+          row
+        );
+      }
+    }
+  });
+
+  it('rejects anything but the two evidence sources on feature rows', () => {
+    const base = minimalDetections();
+    for (const invalid of ['Meta', 'meta ', 1, true, null, {}]) {
+      expect(
+        parseWprDetections({ ...base, rocket_cdn: { present: false, source: invalid } }),
+        JSON.stringify(invalid)
+      ).toBeNull();
+    }
+  });
+
+  it('keeps the identity and beacon rows source-free', () => {
+    const base = minimalDetections();
+    expect(
+      parseWprDetections({
+        ...base,
+        wpr: { ...(base['wpr'] as Record<string, unknown>), source: 'meta' }
+      })
+    ).toBeNull();
+    expect(
+      parseWprDetections({
+        ...base,
+        priority_elements_beacon: {
+          ...(base['priority_elements_beacon'] as Record<string, unknown>),
+          source: 'footprint'
+        }
+      })
+    ).toBeNull();
+  });
 });
 
 describe('parseFdtData', () => {

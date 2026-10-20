@@ -32,6 +32,8 @@ import {
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
   GENERATOR_META_SELECTOR,
+  WPR_FEATURES_ATTRIBUTE,
+  WPR_FEATURES_META_SELECTOR,
   isDelayJSType,
   KNOWN_PLATFORMS,
   LAZYLOAD_BG_CONTAINER_ID,
@@ -134,6 +136,8 @@ describe('other feature footprints', () => {
     expect(LAZYLOAD_BG_EXCLUSION_ID).toBe('wpr-lazyload-bg-exclusion');
     expect(BEACON_DATA_NAME).toBe('wpr-wpr-beacon');
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
+    expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
+    expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');
     expect(MINIFY_CSS_URL_PATTERN.test('https://x/wp-content/cache/min/1/abc.css?ver=1')).toBe(
       true
     );

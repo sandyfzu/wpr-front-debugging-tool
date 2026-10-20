@@ -22,6 +22,7 @@ import type {
   BeaconFeatureStatus,
   DiagnoserDocData,
   FdtData,
+  FeatureEvidenceSource,
   PageCookies,
   PageHeader,
   PageHeaders,
@@ -479,12 +480,49 @@ function parseWprRow(input: unknown): WprDetections['wpr'] | null {
   return { present, cached, version, timeStamp, ...truncationOf(mark) };
 }
 
+/**
+ * The feature rows' optional evidence-source field (`source`), read at the
+ * boundary: absent (undecided row — the engines omit it when no evidence
+ * class decided the verdict), or one of the two valid sources. Anything else
+ * is not engine output. An own `source: undefined` property rejects via the
+ * key-count rule — deliberate fail-closed semantics (messaging JSON drops
+ * such properties today, so only a hand-built or drifted sender can produce
+ * it), not the tolerant undefined-as-absent shape some header parsers use.
+ *
+ * @param value The raw `source` value of a feature row.
+ * @returns The validated source, `undefined` when absent, or null when invalid.
+ */
+function parseOptionalSource(value: unknown): FeatureEvidenceSource | undefined | null {
+  if (value === undefined) return undefined;
+  return value === 'meta' || value === 'footprint' ? value : null;
+}
+
+/**
+ * The key-count a feature row must present given its base keys and an
+ * optional `source`: the source's presence is itself part of the shape, so
+ * the exact-key checks can stay exact without accepting unknown keys.
+ *
+ * @param baseKeys The row's key count without `source` (truncation excluded).
+ * @param source The row's validated source (undefined when absent).
+ */
+function featureRowKeyCount(baseKeys: number, source: FeatureEvidenceSource | undefined): number {
+  return baseKeys + (source === undefined ? 0 : 1);
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
-function parsePresenceRow(input: unknown): { present: boolean } | null {
+function parsePresenceRow(
+  input: unknown
+): { present: boolean; source?: FeatureEvidenceSource } | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (Object.keys(row).length !== 1) return null;
-  return typeof row['present'] === 'boolean' ? { present: row['present'] } : null;
+  const source = parseOptionalSource(row['source']);
+  if (source === null || Object.keys(row).length !== featureRowKeyCount(1, source)) return null;
+  if (typeof row['present'] !== 'boolean') return null;
+  const parsed: { present: boolean; source?: FeatureEvidenceSource } = {
+    present: row['present']
+  };
+  if (source !== undefined) parsed.source = source;
+  return parsed;
 }
 
 /** Delay JS row: script list plus presence/version/count bookkeeping. */
@@ -493,7 +531,9 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   const row = { ...input };
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
-  if (Object.keys(row).length !== 4 + mark) return reject('keys');
+  const source = parseOptionalSource(row['source']);
+  if (source === null) return reject('source');
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark) return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
   const delayedScripts = row['delayedScripts'];
@@ -550,7 +590,8 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     scripts,
     version: row['version'],
     delayedScripts,
-    ...truncationOf(mark)
+    ...truncationOf(mark),
+    ...(source === undefined ? {} : { source })
   };
 }
 
@@ -560,7 +601,9 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   const row = { ...input };
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
-  if (Object.keys(row).length !== 2 + mark) return reject('keys');
+  const source = parseOptionalSource(row['source']);
+  if (source === null) return reject('source');
+  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark) return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const scripts = row['scripts'];
   if (!Array.isArray(scripts)) return reject('scripts');
@@ -569,7 +612,12 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   for (const [index, src] of scripts.entries()) {
     if (!isBoundedString(src, LIMITS.deferScripts.chars)) return reject('scripts', at(index));
   }
-  return { present: row['present'], scripts: [...(scripts as string[])], ...truncationOf(mark) };
+  return {
+    present: row['present'],
+    scripts: [...(scripts as string[])],
+    ...truncationOf(mark),
+    ...(source === undefined ? {} : { source })
+  };
 }
 
 /** The reason domain is the exclusion list itself; more entries is malformed. */
@@ -581,7 +629,9 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
   const row = { ...input };
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
-  if (Object.keys(row).length !== 2 + mark) return reject('keys');
+  const source = parseOptionalSource(row['source']);
+  if (source === null) return reject('source');
+  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark) return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const rawImages = row['images'];
   if (!Array.isArray(rawImages)) return reject('images');
@@ -604,16 +654,27 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
       excludedReasonsFound: [...reasons]
     });
   }
-  return { present: row['present'], images, ...truncationOf(mark) };
+  return {
+    present: row['present'],
+    images,
+    ...truncationOf(mark),
+    ...(source === undefined ? {} : { source })
+  };
 }
 
 /** Iframes row: presence plus the youtube-replacement script marker. */
 function parseIframesRow(input: unknown): WprDetections['lazyload_iframes'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (Object.keys(row).length !== 2) return null;
+  const source = parseOptionalSource(row['source']);
+  if (source === null || Object.keys(row).length !== featureRowKeyCount(2, source)) return null;
   if (typeof row['present'] !== 'boolean' || typeof row['replaceImage'] !== 'boolean') return null;
-  return { present: row['present'], replaceImage: row['replaceImage'] };
+  const parsed: WprDetections['lazyload_iframes'] = {
+    present: row['present'],
+    replaceImage: row['replaceImage']
+  };
+  if (source !== undefined) parsed.source = source;
+  return parsed;
 }
 
 /**
@@ -631,16 +692,24 @@ function parseOptimizeCriticalImagesRow(
   if (typeof present !== 'boolean' || typeof lcpComment !== 'boolean') return null;
   const keys = new Set(Object.keys(row));
   if (!keys.has('present') || !keys.has('lcpComment')) return null;
+  const source = parseOptionalSource(row['source']);
+  if (source === null) return null;
   if (!present) {
     // The engines emit exactly `{ present: false, lcpComment }` — an image
     // list alongside it is not engine output, so it rejects.
-    if (keys.size !== 2) return reject('keys');
-    return { present: false, lcpComment };
+    if (keys.size !== featureRowKeyCount(2, source)) return reject('keys');
+    const negative: WprDetections['rocket_above_the_fold_optimization'] = {
+      present: false,
+      lcpComment
+    };
+    if (source !== undefined) negative.source = source;
+    return negative;
   }
   // Only a non-empty list can have been cut, so the mark rides this arm only.
   const mark = truncationKeys(row);
   if (mark === null) return reject('truncated');
-  if (!keys.has('preloadedImages') || keys.size !== 3 + mark) return reject('keys');
+  if (!keys.has('preloadedImages') || keys.size !== featureRowKeyCount(3, source) + mark)
+    return reject('keys');
   if (!isStringArray(row['preloadedImages'])) return reject('preloadedImages');
   const images = row['preloadedImages'];
   if (images.length < 1) return reject('preloadedImages', 'length');
@@ -648,7 +717,13 @@ function parseOptimizeCriticalImagesRow(
   for (const [index, url] of images.entries()) {
     if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
   }
-  return { present, lcpComment, preloadedImages: [...images], ...truncationOf(mark) };
+  return {
+    present,
+    lcpComment,
+    preloadedImages: [...images],
+    ...truncationOf(mark),
+    ...(source === undefined ? {} : { source })
+  };
 }
 
 /**
@@ -658,7 +733,8 @@ function parseOptimizeCriticalImagesRow(
 function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rendering'] | null {
   if (!isRecord(input)) return null;
   const row = { ...input };
-  if (Object.keys(row).length !== 4) return null;
+  const source = parseOptionalSource(row['source']);
+  if (source === null || Object.keys(row).length !== featureRowKeyCount(4, source)) return null;
   const present = row['present'];
   const inlineCssPresent = row['inlineCssPresent'];
   if (typeof present !== 'boolean' || typeof inlineCssPresent !== 'boolean') return null;
@@ -666,7 +742,14 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
   const locationHashes = parseElementCount(row['locationHashes']);
   if (lazyRenderElements === null || locationHashes === null) return null;
   if (present !== lazyRenderElements > 0) return null;
-  return { present, lazyRenderElements, inlineCssPresent, locationHashes };
+  const parsed: WprDetections['automatic_lazy_rendering'] = {
+    present,
+    lazyRenderElements,
+    inlineCssPresent,
+    locationHashes
+  };
+  if (source !== undefined) parsed.source = source;
+  return parsed;
 }
 
 /** A non-negative finite integer element count (a scalar — no size cap). */
@@ -680,20 +763,31 @@ function parsePreloadFontsRow(input: unknown): WprDetections['auto_preload_fonts
   if (!isRecord(input)) return null;
   const row = { ...input };
   const mark = truncationKeys(row);
-  if (mark === null || Object.keys(row).length !== 2 + mark) return null;
+  const source = parseOptionalSource(row['source']);
+  if (
+    mark === null ||
+    source === null ||
+    Object.keys(row).length !== featureRowKeyCount(2, source) + mark
+  )
+    return null;
   const present = row['present'];
   if (typeof present !== 'boolean') return null;
   if (present) {
     const fonts = parseCappedStringList(row['fonts'], LIMITS.fonts);
     if (fonts === null) return reject('fonts');
     if (fonts.length < 1) return reject('fonts', 'length');
-    return { present: true, fonts, ...truncationOf(mark) };
+    return {
+      present: true,
+      fonts,
+      ...truncationOf(mark),
+      ...(source === undefined ? {} : { source })
+    };
   }
   // Absent feature: the engines emit an empty list, never a populated one
   // (and an empty list was never cut).
   if (mark === 1) return reject('truncated');
   if (!isStringArray(row['fonts']) || row['fonts'].length !== 0) return reject('fonts');
-  return { present: false, fonts: [] };
+  return { present: false, fonts: [], ...(source === undefined ? {} : { source }) };
 }
 
 /** Preconnect row: present ⇔ the attributed domain list is non-empty. */
@@ -701,7 +795,13 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
   if (!isRecord(input)) return null;
   const row = { ...input };
   const mark = truncationKeys(row);
-  if (mark === null || Object.keys(row).length !== 3 + mark) return null;
+  const source = parseOptionalSource(row['source']);
+  if (
+    mark === null ||
+    source === null ||
+    Object.keys(row).length !== featureRowKeyCount(3, source) + mark
+  )
+    return null;
   const present = row['present'];
   if (typeof present !== 'boolean') return null;
   const preconnectCount = parseElementCount(row['preconnectCount']);
@@ -710,11 +810,22 @@ function parsePreconnectRow(input: unknown): WprDetections['preconnect_external_
     const domains = parseCappedStringList(row['domains'], LIMITS.domains);
     if (domains === null) return reject('domains');
     if (domains.length < 1) return reject('domains', 'length');
-    return { present: true, domains, preconnectCount, ...truncationOf(mark) };
+    return {
+      present: true,
+      domains,
+      preconnectCount,
+      ...truncationOf(mark),
+      ...(source === undefined ? {} : { source })
+    };
   }
   if (mark === 1) return reject('truncated');
   if (!isStringArray(row['domains']) || row['domains'].length !== 0) return reject('domains');
-  return { present: false, domains: [], preconnectCount };
+  return {
+    present: false,
+    domains: [],
+    preconnectCount,
+    ...(source === undefined ? {} : { source })
+  };
 }
 
 /** Row keys beyond the three base ones the beacon row may carry. */

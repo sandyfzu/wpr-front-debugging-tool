@@ -249,6 +249,22 @@ export const OPTIMIZE_CRITICAL_IMAGES_COMMENT = 'wpr_oci';
 /** Generator meta declaring the active optimization plugins. */
 export const GENERATOR_META_SELECTOR = 'meta[name="generator"]';
 
+/**
+ * The feature-declaration attribute on that generator meta: since 3.17.2 the
+ * plugin lists its active features as whitespace-separated tokens (`wpr_cdn
+ * wpr_delay_js …`) on the same tag that names it. Its presence is the
+ * meta-authoritative evidence class for feature verdicts; its absence (tag
+ * with or without the attribute) leaves footprint evidence in charge.
+ */
+export const WPR_FEATURES_ATTRIBUTE = 'data-wpr-features';
+
+/**
+ * Selector for the generator meta that carries {@link WPR_FEATURES_ATTRIBUTE},
+ * derived from its parts so the generator prefix can never drift from
+ * {@link GENERATOR_META_SELECTOR}.
+ */
+export const WPR_FEATURES_META_SELECTOR = `${GENERATOR_META_SELECTOR}[${WPR_FEATURES_ATTRIBUTE}]`;
+
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */
 export const WPR_NAME_PATTERN = /wp\s*-?\s*rocket/i;
 
