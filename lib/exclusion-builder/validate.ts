@@ -20,6 +20,27 @@ export interface ExclusionSetProblems {
   readonly invalid: readonly InvalidExclusionRow[];
 }
 
+/** The lead every invalid-pattern reason carries (V8's own messages start with it too). */
+const REGEX_REASON_LEAD = 'Invalid regular expression: ';
+
+/**
+ * The engine-specific detail of a regex compile error, without any lead or
+ * echoed pattern: V8 reports `Invalid regular expression: /<row>/: <detail>`
+ * (the row repeated verbatim), SpiderMonkey only the detail. The row itself
+ * travels beside the reason, so echoing it would only bloat the reason —
+ * unboundedly with the row's length.
+ *
+ * @param row The pattern that failed to compile.
+ * @param error What `new RegExp(row)` threw.
+ * @returns The bare detail (e.g. `Unterminated group`).
+ */
+function regexErrorDetail(row: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const echoed = `${REGEX_REASON_LEAD}/${row}/: `;
+  if (message.startsWith(echoed)) return message.slice(echoed.length);
+  return message.startsWith(REGEX_REASON_LEAD) ? message.slice(REGEX_REASON_LEAD.length) : message;
+}
+
 /**
  * Why one row cannot work, or `null` when it is valid.
  *
@@ -37,7 +58,7 @@ function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
     try {
       new RegExp(row);
     } catch (error) {
-      return `Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`;
+      return `${REGEX_REASON_LEAD}${regexErrorDetail(row, error)}`;
     }
   }
   return null;

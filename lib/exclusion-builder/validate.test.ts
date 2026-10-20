@@ -3,7 +3,7 @@
  * (index + reason), never first-error-only; literal rows are never compiled;
  * the typed error carries the full problem list.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExclusionValidationError } from './errors';
 import { prevalidateExclusionSet } from './validate';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -65,6 +65,45 @@ describe('prevalidateExclusionSet', () => {
       setWith({ lazyload: ['[a-z]+("webp")'], lazyRender: ['(pagination|[class='] })
     );
     expect(problems).toEqual({ valid: true, invalid: [] });
+  });
+});
+
+describe('prevalidateExclusionSet — invalid-pattern reason wording', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The single reason a one-row Delay JS set yields. */
+  function reasonFor(row: string): string | undefined {
+    return prevalidateExclusionSet(setWith({ delayJs: [row] })).invalid[0]?.reason;
+  }
+
+  it('states the lead once and never echoes the row (V8 messages repeat the pattern)', () => {
+    expect(reasonFor('(')).toBe('Invalid regular expression: Unterminated group');
+    // A row holding the echo's own separators (`/`, `: `) is stripped exactly.
+    expect(reasonFor('a/: b(')).toBe('Invalid regular expression: Unterminated group');
+    expect(reasonFor('[')).toBe('Invalid regular expression: Unterminated character class');
+  });
+
+  it('keeps the reason short however long the broken row is', () => {
+    const row = `(${'a'.repeat(2047)}`;
+    expect(reasonFor(row)).toBe('Invalid regular expression: Unterminated group');
+  });
+
+  it('prefixes a bare engine detail (SpiderMonkey shape) and non-Error throws', () => {
+    vi.stubGlobal('RegExp', function throwsBareDetail(): never {
+      throw new SyntaxError('unterminated parenthetical');
+    });
+    expect(reasonFor('(')).toBe('Invalid regular expression: unterminated parenthetical');
+    vi.stubGlobal('RegExp', function throwsLeadWithoutEcho(): never {
+      throw new SyntaxError('Invalid regular expression: odd shape');
+    });
+    expect(reasonFor('(')).toBe('Invalid regular expression: odd shape');
+    vi.stubGlobal('RegExp', function throwsNonError(): never {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- the non-Error arm under test
+      throw 'odd';
+    });
+    expect(reasonFor('(')).toBe('Invalid regular expression: odd');
   });
 });
 
