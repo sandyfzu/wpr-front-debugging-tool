@@ -12,9 +12,13 @@
 import { storage } from 'wxt/utils/storage';
 import { APPEARANCES, nextAppearance, type Appearance } from '../../utils/theme';
 
-/** Canonical storage keys, declared once and reused by every slot below. */
-const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
-const TOOLBAR_BADGE = 'toolbarBadge';
+/**
+ * Canonical storage keys, declared once and reused by every slot below —
+ * and exported for the option registry, which projects rows over them
+ * (never a second spelling of a key).
+ */
+export const WP_DASHBOARD_DBUGGER_ENTRY = 'wp-dashboard-dbugger-entry';
+export const TOOLBAR_BADGE = 'toolbarBadge';
 const SBS_SCROLL_SYNC = 'sbsScrollSync';
 const SBS_MOBILE_SIM = 'sbsMobileSim';
 const SBS_DESKTOP_WIDTH = 'sbsDesktopWidth';
