@@ -47,13 +47,18 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
 │   │   │                      #    colocated feature modules; see docs/plans for the list)
+│   ├── exclusion-overlay.content/ # runtime content script (`registration: 'runtime'`, never in the
+│   │                          #   manifest): the in-page exclusion builder overlay, injected into a
+│   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
+│   │                          #   costs pages nothing until then
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
 │   └── ua-identity.content.ts # content script — MAIN world, all frames;
 │                              #   `navigator.userAgent` shadowed per the sim state (`ua-identity/`)
 ├── components/                # Solid components shared by ≥2 entrypoints
-│   └── ui/                    # design-system primitives
+│   ├── ui/                    # design-system primitives
+│   └── injected-ui/           # shadow-root mount + live appearance for UIs injected into host pages
 ├── lib/                       # domain modules — logic + types + data, pure and testable
 │   ├── messaging/             # typed message contracts + boundary validation
 │   ├── storage/               # typed storage items (storage.defineItem)
