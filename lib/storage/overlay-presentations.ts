@@ -8,18 +8,25 @@
  */
 import { storage } from 'wxt/utils/storage';
 import type { OverlayPresentation } from '../exclusion-session/overlay-reopen';
-import { isRecord } from '../../utils/is-record';
+import { isRecord, ownValue } from '../../utils/is-record';
 import { createWriteQueue } from './write-queue';
 import { tabKey } from './tab-key';
 
 /** The store key, single-sourced. */
 export const OVERLAY_PRESENTATIONS_KEY = 'session:exclusion-overlay-presentations';
 
-/** Tabs remembered at most (the oldest written go first). */
+/** Tabs remembered at most (the least recently written go first). */
 export const OVERLAY_PRESENTATION_LIMIT = 64;
 
-/** The stored map: decimal tab id → presentation, in write order. */
-export type OverlayPresentations = Record<string, OverlayPresentation>;
+/** One tab's entry: the presentation and its write order. */
+export interface OverlayPresentationEntry {
+  readonly presentation: OverlayPresentation;
+  /** Write order (strictly increasing per write; ms-based). */
+  readonly at: number;
+}
+
+/** The stored map: decimal tab id → entry. */
+export type OverlayPresentations = Record<string, OverlayPresentationEntry>;
 
 /** The raw storage item. */
 const presentationsStore = storage.defineItem<OverlayPresentations>(OVERLAY_PRESENTATIONS_KEY, {
@@ -29,9 +36,28 @@ const presentationsStore = storage.defineItem<OverlayPresentations>(OVERLAY_PRES
 /** The item's write queue (read-modify-write never interleaves). */
 const enqueueWrite = createWriteQueue();
 
+/** Whether a value is a presentation. */
+function isPresentation(value: unknown): value is OverlayPresentation {
+  return value === 'open' || value === 'folded';
+}
+
 /**
- * Validate a stored map: canonical tab keys with a known presentation;
- * everything else dropped.
+ * One stored value as an entry: `{presentation, at}`, or a bare
+ * presentation (an earlier shape — oldest, `at` 0); anything else null.
+ */
+function parseEntry(value: unknown): OverlayPresentationEntry | null {
+  if (isPresentation(value)) return { presentation: value, at: 0 };
+  if (!isRecord(value)) return null;
+  const presentation = ownValue(value, 'presentation');
+  const at = ownValue(value, 'at');
+  return isPresentation(presentation) && typeof at === 'number' && Number.isFinite(at) && at >= 0
+    ? { presentation, at }
+    : null;
+}
+
+/**
+ * Validate a stored map: canonical tab keys with a valid entry; everything
+ * else dropped.
  *
  * @param input Any storage-delivered value.
  */
@@ -40,7 +66,8 @@ export function parseOverlayPresentations(input: unknown): OverlayPresentations 
   if (!isRecord(input)) return valid;
   for (const [key, value] of Object.entries(input)) {
     const canonical = tabKey(key);
-    if (canonical !== null && (value === 'open' || value === 'folded')) valid[canonical] = value;
+    const entry = parseEntry(value);
+    if (canonical !== null && entry !== null) valid[canonical] = entry;
   }
   return valid;
 }
@@ -54,29 +81,35 @@ export function parseOverlayPresentations(input: unknown): OverlayPresentations 
 export async function getOverlayPresentation(tabId: number): Promise<OverlayPresentation | null> {
   const key = tabKey(tabId);
   if (key === null) return null;
-  return parseOverlayPresentations(await presentationsStore.getValue())[key] ?? null;
+  return parseOverlayPresentations(await presentationsStore.getValue())[key]?.presentation ?? null;
 }
 
 /**
- * Remember a tab's presentation (the most recent {@link OVERLAY_PRESENTATION_LIMIT} kept).
+ * Remember a tab's presentation, keeping the {@link OVERLAY_PRESENTATION_LIMIT}
+ * most recently written tabs (by write order — integer-like keys enumerate
+ * in numeric order, so key order is no write order).
  *
  * @param tabId The tab.
  * @param presentation How the user left the overlay.
+ * @param now Epoch ms now (the write order's clock; injectable for tests).
  * @throws {@link RangeError} for a junk tab id (a broken caller).
  */
 export function setOverlayPresentation(
   tabId: number,
-  presentation: OverlayPresentation
+  presentation: OverlayPresentation,
+  now: number = Date.now()
 ): Promise<void> {
   const key = tabKey(tabId);
   if (key === null) return Promise.reject(new RangeError(`Not a tab id: ${String(tabId)}`));
   return enqueueWrite(async () => {
     const current = parseOverlayPresentations(await presentationsStore.getValue());
-    Reflect.deleteProperty(current, key);
-    const entries = [...Object.entries(current), [key, presentation] as const];
-    await presentationsStore.setValue(
-      Object.fromEntries(entries.slice(-OVERLAY_PRESENTATION_LIMIT))
-    );
+    // Strictly after every stored write, even with a clock that stalls.
+    const latest = Math.max(0, ...Object.values(current).map((entry) => entry.at));
+    current[key] = { presentation, at: Math.max(now, latest + 1) };
+    const kept = Object.entries(current)
+      .sort(([, a], [, b]) => b.at - a.at)
+      .slice(0, OVERLAY_PRESENTATION_LIMIT);
+    await presentationsStore.setValue(Object.fromEntries(kept));
   });
 }
 

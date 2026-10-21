@@ -125,6 +125,13 @@ describe('createOverlayReopener', () => {
     expect(reopened[0]?.[1]).toBe('open');
   });
 
+  it('drops a presentation push that lands after its tab closed', async () => {
+    const { reopener, presentations } = rig(() => Promise.resolve(ACTIVE));
+    await reopener.tabClosed(1);
+    await reopener.presented(1, false);
+    expect(presentations.map.has(1)).toBe(false);
+  });
+
   it('coalesces load events of one tab: never two re-opens at once, one follow-up run', async () => {
     let release!: () => void;
     let running = 0;

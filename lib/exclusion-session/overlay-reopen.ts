@@ -83,6 +83,12 @@ export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopene
   const inFlight = new Map<number, Promise<void>>();
   /** The latest URL a coalesced call asked about, per tab (a run follows). */
   const rerun = new Map<number, string | undefined>();
+  /**
+   * Tabs that closed: a presentation push still in flight when its tab
+   * closed must not bring the tab's entry back (browsers do not reuse a
+   * session's tab ids, so this only grows by one id per closed tab).
+   */
+  const closed = new Set<number>();
 
   /** The remembered presentation; a store failure falls back to the open panel. */
   const presentationOf = async (tabId: number): Promise<OverlayPresentation> => {
@@ -136,6 +142,7 @@ export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopene
       return run;
     },
     async presented(tabId, open) {
+      if (closed.has(tabId)) return;
       try {
         await deps.presentations.set(tabId, open ? 'open' : 'folded');
       } catch (cause) {
@@ -143,6 +150,7 @@ export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopene
       }
     },
     async tabClosed(tabId) {
+      closed.add(tabId);
       rerun.delete(tabId);
       try {
         await deps.presentations.remove(tabId);
