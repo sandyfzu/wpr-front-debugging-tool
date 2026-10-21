@@ -29,7 +29,7 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
-import { isRecord } from '../../utils/is-record';
+import { isRecord, ownValue } from '../../utils/is-record';
 import { isHttpOrigin, isHttpUrl, parseUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
 import { numericTabId } from './sender';
@@ -350,11 +350,6 @@ const TOGGLE_KEYS: readonly (keyof ExclusionSetToggles)[] = EXCLUSION_FEATURES.f
   feature.toggleKey === null ? [] : [feature.toggleKey]
 );
 
-/** An own property's value; inherited ones read as absent. */
-function own(record: Record<string, unknown>, key: string): unknown {
-  return Object.hasOwn(record, key) ? record[key] : undefined;
-}
-
 /**
  * Whether a record's keys pass the policy: under `'reject'` every own key
  * must be one of `allowed`; `'ignore'` lets unknown keys through (the
@@ -436,22 +431,22 @@ export function isInterceptionUnavailableCause(
  */
 export function parseExclusionSet(input: unknown, policy: UnknownKeyPolicy): ExclusionSet | null {
   if (!isRecord(input) || !keysAllowed(input, ['rows', 'disable'], policy)) return null;
-  const rowsRaw = own(input, 'rows');
-  const disableRaw = own(input, 'disable');
+  const rowsRaw = ownValue(input, 'rows');
+  const disableRaw = ownValue(input, 'disable');
   if (!isRecord(rowsRaw) || !keysAllowed(rowsRaw, ROWS_KEYS, policy)) return null;
   if (!isRecord(disableRaw) || !keysAllowed(disableRaw, TOGGLE_KEYS, policy)) return null;
   const rows: Partial<Record<keyof ExclusionSetRows, string[]>> = {};
   // The whole-set cap is a running budget: each list gets what is left.
   let charsLeft: number = EXCLUSION_SET_LIMITS.totalChars;
   for (const key of ROWS_KEYS) {
-    const list = parseRowList(own(rowsRaw, key), charsLeft);
+    const list = parseRowList(ownValue(rowsRaw, key), charsLeft);
     if (list === null) return null;
     charsLeft -= list.chars;
     rows[key] = list.rows;
   }
   const disable: Partial<Record<keyof ExclusionSetToggles, boolean>> = {};
   for (const key of TOGGLE_KEYS) {
-    const flag = own(disableRaw, key);
+    const flag = ownValue(disableRaw, key);
     if (typeof flag !== 'boolean') return null;
     disable[key] = flag;
   }
@@ -467,9 +462,9 @@ function parseRowMatch(
   policy: UnknownKeyPolicy
 ): ExclusionRowMatch | null {
   if (!isRecord(input) || !keysAllowed(input, ['row', 'rowKind', 'matches'], policy)) return null;
-  const row = own(input, 'row');
-  const rowKind = own(input, 'rowKind');
-  const matches = own(input, 'matches');
+  const row = ownValue(input, 'row');
+  const rowKind = ownValue(input, 'rowKind');
+  const matches = ownValue(input, 'matches');
   const spec = EXCLUSION_FEATURES.find((entry) => entry.id === feature);
   if (spec === undefined || spec.rowKind !== rowKind) return null;
   if (!isWireRowText(row) || !isCount(matches) || matches < 1) return null;
@@ -522,15 +517,15 @@ function parseTransformReport(
   policy: UnknownKeyPolicy
 ): TransformReport | null {
   if (!isRecord(input) || !keysAllowed(input, REPORT_KEYS, policy)) return null;
-  const feature = own(input, 'feature');
-  const featureWide = own(input, 'featureWide');
-  const candidates = own(input, 'candidates');
-  const rewritten = own(input, 'rewritten');
-  const regionRemovals = own(input, 'regionRemovals');
+  const feature = ownValue(input, 'feature');
+  const featureWide = ownValue(input, 'featureWide');
+  const candidates = ownValue(input, 'candidates');
+  const rewritten = ownValue(input, 'rewritten');
+  const regionRemovals = ownValue(input, 'regionRemovals');
   if (!isFeatureId(feature) || typeof featureWide !== 'boolean') return null;
   if (!isCount(candidates) || !isCount(rewritten) || !isCount(regionRemovals)) return null;
   if (rewritten > candidates) return null;
-  const matchedRaw = own(input, 'matchedRows');
+  const matchedRaw = ownValue(input, 'matchedRows');
   if (!Array.isArray(matchedRaw) || matchedRaw.length > EXCLUSION_SET_LIMITS.rowsPerFeature) {
     return null;
   }
@@ -543,7 +538,7 @@ function parseTransformReport(
     if (matchedTotal > candidates) return null;
     matchedRows.push(match);
   }
-  const unmatched = parseRowList(own(input, 'unmatchedRows'), EXCLUSION_SET_LIMITS.totalChars);
+  const unmatched = parseRowList(ownValue(input, 'unmatchedRows'), EXCLUSION_SET_LIMITS.totalChars);
   if (unmatched === null) return null;
   const unmatchedRows = unmatched.rows;
   if (featureWide && (matchedRows.length > 0 || unmatchedRows.length > 0)) return null;
@@ -589,9 +584,9 @@ function parseSpeculationRules(
   policy: UnknownKeyPolicy
 ): ExclusionServedSpeculationRules | null {
   if (!isRecord(input) || !keysAllowed(input, SPECULATION_KEYS, policy)) return null;
-  const removed = own(input, 'removedFromDocument');
-  const headerRemoved = own(input, 'headerRemoved');
-  const guarded = own(input, 'guarded');
+  const removed = ownValue(input, 'removedFromDocument');
+  const headerRemoved = ownValue(input, 'headerRemoved');
+  const guarded = ownValue(input, 'guarded');
   if (!isCount(removed) || removed > SERVED_DOCUMENT_LIMITS.speculationRules) return null;
   if (typeof headerRemoved !== 'boolean' || typeof guarded !== 'boolean') return null;
   return { removedFromDocument: removed, headerRemoved, guarded };
@@ -609,20 +604,20 @@ export function parseServedDocument(
   policy: UnknownKeyPolicy
 ): ExclusionServedDocument | null {
   if (!isRecord(input) || !keysAllowed(input, SERVED_KEYS, policy)) return null;
-  const urlPath = own(input, 'urlPath');
-  const urlDigest = own(input, 'urlDigest');
-  const token = own(input, 'token');
-  const order = own(input, 'order');
-  const receivedAt = own(input, 'receivedAt');
-  const copy = own(input, 'copy');
-  const bypassed = own(input, 'serviceWorkersBypassed');
+  const urlPath = ownValue(input, 'urlPath');
+  const urlDigest = ownValue(input, 'urlDigest');
+  const token = ownValue(input, 'token');
+  const order = ownValue(input, 'order');
+  const receivedAt = ownValue(input, 'receivedAt');
+  const copy = ownValue(input, 'copy');
+  const bypassed = ownValue(input, 'serviceWorkersBypassed');
   if (!isUrlPath(urlPath)) return null;
   if (typeof urlDigest !== 'string' || !/^[0-9a-f]{64}$/.test(urlDigest)) return null;
   if (typeof token !== 'string' || token.length === 0) return null;
   if (token.length > SERVED_DOCUMENT_LIMITS.tokenChars || !isPrintable(token)) return null;
   if (!isCount(order) || !isCount(receivedAt)) return null;
   if (typeof copy !== 'boolean' || typeof bypassed !== 'boolean') return null;
-  const speculationRules = parseSpeculationRules(own(input, 'speculationRules'), policy);
+  const speculationRules = parseSpeculationRules(ownValue(input, 'speculationRules'), policy);
   if (speculationRules === null) return null;
   return {
     urlPath,
@@ -645,7 +640,7 @@ function withServed(
   input: Record<string, unknown>,
   policy: UnknownKeyPolicy
 ): ExclusionDocumentOutcome | null {
-  const raw = own(input, 'served');
+  const raw = ownValue(input, 'served');
   if (raw === undefined) return outcome;
   const served = parseServedDocument(raw, policy);
   return served === null ? null : { ...outcome, served };
@@ -661,10 +656,10 @@ function parseDocumentOutcome(
   policy: UnknownKeyPolicy
 ): ExclusionDocumentOutcome | null {
   if (!isRecord(input)) return null;
-  switch (own(input, 'outcome')) {
+  switch (ownValue(input, 'outcome')) {
     case 'rewritten': {
       if (!keysAllowed(input, ['outcome', 'reports', 'served'], policy)) return null;
-      const raw = own(input, 'reports');
+      const raw = ownValue(input, 'reports');
       if (!Array.isArray(raw) || raw.length > EXCLUSION_FEATURES.length) return null;
       const reports: TransformReport[] = [];
       for (const entry of raw) {
@@ -681,9 +676,9 @@ function parseDocumentOutcome(
       if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs', 'served'], policy)) {
         return null;
       }
-      const feature = own(input, 'feature');
-      const row = own(input, 'row');
-      const budgetMs = own(input, 'budgetMs');
+      const feature = ownValue(input, 'feature');
+      const row = ownValue(input, 'row');
+      const budgetMs = ownValue(input, 'budgetMs');
       if (!isFeatureId(feature)) return null;
       if (row !== null && (!isWireRowText(row) || !featureRows(set, feature).includes(row))) {
         return null;
@@ -693,7 +688,7 @@ function parseDocumentOutcome(
     }
     case 'failed': {
       if (!keysAllowed(input, ['outcome', 'reason', 'served'], policy)) return null;
-      const reason = own(input, 'reason');
+      const reason = ownValue(input, 'reason');
       const known = EXCLUSION_DOCUMENT_FAILURES.find((failure) => failure === reason);
       return known === undefined
         ? null
@@ -718,11 +713,11 @@ export function parseExclusionSessionRecord(
   policy: UnknownKeyPolicy
 ): ExclusionSessionRecord | null {
   if (!isRecord(input)) return null;
-  const state = own(input, 'state');
+  const state = ownValue(input, 'state');
   if (state === 'unavailable') {
     if (!keysAllowed(input, ['state', 'cause', 'at'], policy)) return null;
-    const cause = own(input, 'cause');
-    const at = own(input, 'at');
+    const cause = ownValue(input, 'cause');
+    const at = ownValue(input, 'at');
     if (!isInterceptionUnavailableCause(cause) || !isCount(at)) return null;
     return { state: 'unavailable', cause, at };
   }
@@ -730,14 +725,14 @@ export function parseExclusionSessionRecord(
   if (!keysAllowed(input, ['state', 'origin', 'set', 'startedAt', 'document'], policy)) {
     return null;
   }
-  const origin = own(input, 'origin');
-  const startedAt = own(input, 'startedAt');
+  const origin = ownValue(input, 'origin');
+  const startedAt = ownValue(input, 'startedAt');
   if (typeof origin !== 'string' || origin.length > EXCLUSION_SET_LIMITS.originChars) return null;
   if (!isHttpOrigin(origin)) return null;
   if (!isCount(startedAt)) return null;
-  const set = parseExclusionSet(own(input, 'set'), policy);
+  const set = parseExclusionSet(ownValue(input, 'set'), policy);
   if (set === null) return null;
-  const documentRaw = own(input, 'document');
+  const documentRaw = ownValue(input, 'document');
   const document = documentRaw === null ? null : parseDocumentOutcome(documentRaw, set, policy);
   if (documentRaw !== null && document === null) return null;
   return { state: 'active', origin, set, startedAt, document };
@@ -750,7 +745,7 @@ export function parseExclusionSessionRecord(
  * @returns A fresh status, or null on any violation (exact keys).
  */
 export function parseExclusionSessionStatus(input: unknown): ExclusionSessionStatus | null {
-  if (isRecord(input) && own(input, 'state') === 'inactive') {
+  if (isRecord(input) && ownValue(input, 'state') === 'inactive') {
     return Object.keys(input).length === 1 ? { state: 'inactive' } : null;
   }
   return parseExclusionSessionRecord(input, 'reject');
@@ -764,7 +759,7 @@ export function parseExclusionSessionStatus(input: unknown): ExclusionSessionSta
  */
 export function parseExclusionSetPayload(input: unknown): ExclusionSetPayload | null {
   if (!isRecord(input) || !keysAllowed(input, ['set'], 'reject')) return null;
-  const set = parseExclusionSet(own(input, 'set'), 'reject');
+  const set = parseExclusionSet(ownValue(input, 'set'), 'reject');
   return set === null ? null : { set };
 }
 
@@ -777,7 +772,7 @@ export function parseExclusionSetPayload(input: unknown): ExclusionSetPayload | 
  */
 export function parseSavedExclusionSetReply(input: unknown): SavedExclusionSetReply | null {
   if (!isRecord(input) || !keysAllowed(input, ['set'], 'reject')) return null;
-  const raw = own(input, 'set');
+  const raw = ownValue(input, 'set');
   if (raw === null) return { set: null };
   const set = parseExclusionSet(raw, 'reject');
   return set === null ? null : { set };
@@ -791,10 +786,10 @@ export function parseSavedExclusionSetReply(input: unknown): SavedExclusionSetRe
  */
 export function parseExclusionSaveReply(input: unknown): ExclusionSaveReply | null {
   if (!isRecord(input)) return null;
-  const outcome = own(input, 'outcome');
+  const outcome = ownValue(input, 'outcome');
   if (outcome === 'saved') return Object.keys(input).length === 1 ? { outcome: 'saved' } : null;
   if (outcome !== 'not-saved' || !keysAllowed(input, ['outcome', 'reason'], 'reject')) return null;
-  const reason = own(input, 'reason');
+  const reason = ownValue(input, 'reason');
   const known = EXCLUSION_SAVE_FAILURES.find((failure) => failure === reason);
   return known === undefined ? null : { outcome: 'not-saved', reason: known };
 }
@@ -804,10 +799,10 @@ function parseInvalidRow(input: unknown): InvalidExclusionRow | null {
   if (!isRecord(input) || !keysAllowed(input, ['feature', 'index', 'row', 'reason'], 'reject')) {
     return null;
   }
-  const feature = own(input, 'feature');
-  const index = own(input, 'index');
-  const row = own(input, 'row');
-  const reason = own(input, 'reason');
+  const feature = ownValue(input, 'feature');
+  const index = ownValue(input, 'index');
+  const row = ownValue(input, 'row');
+  const reason = ownValue(input, 'reason');
   if (!isFeatureId(feature) || !isCount(index) || !isWireRowText(row)) return null;
   if (index >= EXCLUSION_SET_LIMITS.rowsPerFeature) return null;
   if (typeof reason !== 'string' || reason.length < 1) return null;
@@ -824,17 +819,17 @@ function parseInvalidRow(input: unknown): InvalidExclusionRow | null {
  */
 export function parseExclusionApplyReply(input: unknown): ExclusionApplyReply | null {
   if (!isRecord(input)) return null;
-  switch (own(input, 'outcome')) {
+  switch (ownValue(input, 'outcome')) {
     case 'applying':
       return Object.keys(input).length === 1 ? { outcome: 'applying' } : null;
     case 'unavailable': {
       if (!keysAllowed(input, ['outcome', 'cause'], 'reject')) return null;
-      const cause = own(input, 'cause');
+      const cause = ownValue(input, 'cause');
       return isInterceptionUnavailableCause(cause) ? { outcome: 'unavailable', cause } : null;
     }
     case 'invalid': {
       if (!keysAllowed(input, ['outcome', 'invalid'], 'reject')) return null;
-      const raw = own(input, 'invalid');
+      const raw = ownValue(input, 'invalid');
       const cap = EXCLUSION_SET_LIMITS.rowsPerFeature * EXCLUSION_FEATURES.length;
       if (!Array.isArray(raw) || raw.length < 1 || raw.length > cap) return null;
       const invalid: InvalidExclusionRow[] = [];
@@ -890,7 +885,7 @@ export function invalidApplyReply(
  */
 export function parseExclusionSessionTabQuery(input: unknown): ExclusionSessionTabQuery | null {
   if (!isRecord(input) || !keysAllowed(input, ['tabId'], 'reject')) return null;
-  const tabId = numericTabId(own(input, 'tabId'));
+  const tabId = numericTabId(ownValue(input, 'tabId'));
   return tabId === null ? null : { tabId };
 }
 
@@ -904,8 +899,8 @@ export function parseExclusionSessionTabQuery(input: unknown): ExclusionSessionT
  */
 export function parseExclusionSessionTabStatus(input: unknown): ExclusionSessionTabStatus | null {
   if (!isRecord(input) || !keysAllowed(input, ['tabId', 'status'], 'reject')) return null;
-  const tabId = numericTabId(own(input, 'tabId'));
-  const status = parseExclusionSessionStatus(own(input, 'status'));
+  const tabId = numericTabId(ownValue(input, 'tabId'));
+  const status = parseExclusionSessionStatus(ownValue(input, 'status'));
   return tabId === null || status === null ? null : { tabId, status };
 }
 
@@ -920,6 +915,6 @@ export function parseExclusionOverlayPresentation(
   input: unknown
 ): ExclusionOverlayPresentation | null {
   if (!isRecord(input) || !keysAllowed(input, ['open'], 'reject')) return null;
-  const open = own(input, 'open');
+  const open = ownValue(input, 'open');
   return typeof open === 'boolean' ? { open } : null;
 }
