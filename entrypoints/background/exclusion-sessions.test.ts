@@ -13,7 +13,11 @@ import {
   getExclusionSessionRecords,
   putExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
-import { answerOverlayOpen, initExclusionSessions } from './exclusion-sessions';
+import {
+  answerOverlayOpen,
+  answerOverlayPresented,
+  initExclusionSessions
+} from './exclusion-sessions';
 import { EXCLUSION_OVERLAY_SCRIPT } from './exclusion-overlay';
 import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
@@ -127,6 +131,24 @@ describe('exclusion-session wiring', () => {
     }
   });
 
+  it('records a top-frame page’s presentation push for its tab, and drops a frame’s', () => {
+    const presented = vi.fn(() => Promise.resolve());
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const page = { tab: { id: 6 }, frameId: 0, url: 'https://example.com/a' };
+      expect(answerOverlayPresented(page, { open: false }, { presented })).toBe(true);
+      expect(presented).toHaveBeenCalledWith(6, false);
+      expect(answerOverlayPresented({ ...page, frameId: 3 }, { open: true }, { presented })).toBe(
+        false
+      );
+      expect(answerOverlayPresented(page, { open: 'yes' }, { presented })).toBe(false);
+      expect(answerOverlayPresented(undefined, { open: true }, { presented })).toBe(false);
+      expect(presented).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('re-opens the overlay when a session tab’s page of its origin finishes loading', async () => {
     const origin = 'http://127.0.0.1:8493';
     await putExclusionSessionRecord(11, {
@@ -141,8 +163,8 @@ describe('exclusion-session wiring', () => {
       .spyOn(browser.scripting, 'executeScript')
       .mockImplementation((injection: unknown) => {
         calls.push(injection);
-        // The probe answers "no overlay here"; the file injection, nothing.
-        return Promise.resolve([{ frameId: 0, documentId: 'd', result: true }]) as never;
+        // The slot probe answers "claimed: inject"; the file injection, nothing.
+        return Promise.resolve([{ frameId: 0, documentId: 'd', result: 'inject' }]) as never;
       });
     try {
       const tab = { id: 11, url: `${origin}/fdt/` } as never;
@@ -160,7 +182,7 @@ describe('exclusion-session wiring', () => {
       expect(calls).toHaveLength(2);
       expect(calls[0]).toMatchObject({
         target: { tabId: 11, frameIds: [0] },
-        args: [expect.any(String), expect.any(String), 'open']
+        args: [expect.any(String), { mode: 'reopen', presentation: 'open', origin }]
       });
       expect(calls[1]).toEqual({
         target: { tabId: 11, frameIds: [0] },

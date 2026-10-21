@@ -3,10 +3,9 @@
  * it is not in the manifest and never loads with a page; the background
  * injects it into a tab's top frame when the builder is opened, so its
  * code (editor, picker, engine validation) costs pages nothing until then.
- * Injecting it again replaces the running instance (its context is
- * invalidated by the newer one), so opening is idempotent. A re-open on a
- * session tab's next page leaves its presentation in the isolated world
- * first (see `lib/exclusion-session/overlay-reopen`).
+ * Every open claims the page's overlay slot
+ * first (`lib/exclusion-session/overlay-slot`), so a document gets one
+ * overlay: a live instance is revealed, never replaced.
  *
  * Page-safety: one shadow root with its own stylesheet, rendered in the
  * top layer; key events stop at the shadow root; the page is only read
@@ -29,13 +28,14 @@ import { createPageTools } from './page-tools';
 import { mountOverlay } from './mount-overlay';
 import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
-import {
-  takeOverlayPresentation,
-  type OverlayPresentation
-} from '../../lib/exclusion-session/overlay-reopen';
+import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
+import { claimedPresentation, holdOverlaySlot } from '../../lib/exclusion-session/overlay-slot';
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
+
+/** The extension's isolated world (where the overlay's slot lives). */
+const ISOLATED_WORLD = globalThis as unknown as Record<string, unknown>;
 
 /**
  * Events stopped at the shadow root, so the page never sees the overlay's
@@ -137,10 +137,29 @@ function renderOverlay(
       },
       log
     });
+    // This instance holds the page's overlay slot while it runs: a later
+    // open reveals it instead of injecting another one.
+    let reveal: (() => void) | null = null;
+    const release = holdOverlaySlot(ISOLATED_WORLD, {
+      state: 'live',
+      alive: () => !ctx.isInvalid && host.isConnected,
+      reveal: () => {
+        if (ctx.isInvalid || reveal === null) return false;
+        reveal();
+        return true;
+      }
+    });
+    ctx.onInvalidated(release);
+    // Back from the back/forward cache: the session went on without this
+    // document (its pushes went elsewhere) — read where it stands now.
+    listen(window, 'pageshow', (event) => {
+      if ((event as PageTransitionEvent).persisted) controller.resync();
+    });
     onMount(() => {
       controller.start();
     });
     onCleanup(() => {
+      release();
       controller.dispose();
       page.dispose();
     });
@@ -154,6 +173,9 @@ function renderOverlay(
         origin={window.location.origin}
         presentation={presentation}
         onPresented={reportPresentation}
+        onRevealReady={(registered) => {
+          reveal = registered;
+        }}
         requestFrame={requestFrame}
         listen={(target, type, handler) => {
           listen(target, type, handler, true);
@@ -188,10 +210,10 @@ export default defineContentScript({
   matches: [...URL_PATTERNS],
   cssInjectionMode: 'ui',
   main(ctx: ContentScriptContext) {
-    // Taken first, even in a frame: a left presentation is read once.
-    const presentation = takeOverlayPresentation(globalThis);
     // The builder edits the page's own document: never inside a frame.
     if (window.top !== window) return;
+    // How the open that claimed the page's slot wants it to start.
+    const presentation = claimedPresentation(ISOLATED_WORLD);
     // An explicit open shows the panel: the session's next pages follow it
     // (a fold or close before it no longer applies).
     if (presentation === null) reportPresentation(true);

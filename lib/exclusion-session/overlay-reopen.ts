@@ -7,10 +7,13 @@
  * read by the overlay from the persisted session record (never inferred
  * here). It comes back the way the user left it: the open panel, or folded
  * to its pill (closing folds too — while a session rewrites pages, its
- * indicator stays visible until Stop).
+ * indicator stays visible until Stop), remembered per tab in `session:`
+ * so a restarted background keeps it. The page side (one overlay per
+ * document, origin and HTML checks) is the slot's (`./overlay-slot`).
  *
  * Pure over injected I/O; the background binds it to `tabs.onUpdated`,
- * the scripting opener and the overlay's presentation push.
+ * the scripting opener, the presentation store and the overlay's
+ * presentation push.
  */
 import type { Logger } from '../logger';
 import type { ExclusionSessionStatus } from '../messaging/exclusion-session';
@@ -18,34 +21,6 @@ import { parseUrl } from '../../utils/urls';
 
 /** How a re-opened overlay starts: the open panel, or folded to its pill. */
 export type OverlayPresentation = 'open' | 'folded';
-
-/**
- * The isolated-world global a re-open leaves for the overlay script it
- * injects next: content scripts of one extension share a frame's isolated
- * world, so the page never sees it. Read and removed by the overlay at
- * start; absent means an explicit open (the panel shows open).
- */
-export const OVERLAY_PRESENTATION_GLOBAL = '__wprFdtOverlayPresentation';
-
-/** Whether a value is a presentation. */
-function isOverlayPresentation(value: unknown): value is OverlayPresentation {
-  return value === 'open' || value === 'folded';
-}
-
-/**
- * Take the presentation a re-open left (read once, then removed, so a
- * later explicit open is never mistaken for a re-open).
- *
- * @param scope The isolated world's global object.
- * @returns The presentation, or null when none (or junk) was left.
- */
-export function takeOverlayPresentation(
-  scope: Record<string, unknown>
-): OverlayPresentation | null {
-  const value = scope[OVERLAY_PRESENTATION_GLOBAL];
-  Reflect.deleteProperty(scope, OVERLAY_PRESENTATION_GLOBAL);
-  return isOverlayPresentation(value) ? value : null;
-}
 
 /**
  * Whether a loaded page gets the overlay back: the tab's session is active
@@ -63,54 +38,117 @@ export function shouldReopenOverlay(
   return parseUrl(pageUrl)?.origin === status.origin;
 }
 
+/** Where the per-tab presentation is remembered (the `session:` store in production). */
+export interface PresentationMemory {
+  get(tabId: number): Promise<OverlayPresentation | null>;
+  set(tabId: number, presentation: OverlayPresentation): Promise<void>;
+  remove(tabId: number): Promise<void>;
+}
+
 /** What the re-opener needs. */
 export interface OverlayReopenerDeps {
   /** The tab's session status (the controller's own read); may reject. */
   status(tabId: number): Promise<ExclusionSessionStatus>;
-  /** Re-open the overlay in that presentation; never rejects. */
-  reopen(tabId: number, presentation: OverlayPresentation): Promise<unknown>;
+  /**
+   * Re-open the overlay in that presentation on a page of `origin` (the
+   * page checks its own origin again: the tab may have moved on); never
+   * rejects.
+   */
+  reopen(tabId: number, presentation: OverlayPresentation, origin: string): Promise<unknown>;
+  readonly presentations: PresentationMemory;
   readonly log: Pick<Logger, 'warn'>;
 }
 
-/** The re-opener: one hook per event it follows. */
+/** The re-opener: one hook per event it follows; none rejects. */
 export interface OverlayReopener {
-  /** A tab's top-level page finished loading. Never rejects. */
+  /**
+   * A tab's top-level page finished loading. Calls for a tab already being
+   * handled coalesce: they share the run in flight, which runs once more
+   * after it (the page may have changed meanwhile).
+   */
   pageLoaded(tabId: number, pageUrl: string | undefined): Promise<void>;
   /** The user left the tab's overlay open or folded (closing = folded). */
-  presented(tabId: number, open: boolean): void;
+  presented(tabId: number, open: boolean): Promise<void>;
   /** The tab closed: forget it. */
-  tabClosed(tabId: number): void;
+  tabClosed(tabId: number): Promise<void>;
 }
 
 /**
- * Build the re-opener. The presentation per tab is memory only: a
- * background that restarts re-opens with the panel open.
+ * Build the re-opener.
  *
  * @param deps The injected I/O.
  */
 export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopener {
-  const presentations = new Map<number, OverlayPresentation>();
+  /** The run in flight per tab. */
+  const inFlight = new Map<number, Promise<void>>();
+  /** The latest URL a coalesced call asked about, per tab (a run follows). */
+  const rerun = new Map<number, string | undefined>();
+
+  /** The remembered presentation; a store failure falls back to the open panel. */
+  const presentationOf = async (tabId: number): Promise<OverlayPresentation> => {
+    try {
+      return (await deps.presentations.get(tabId)) ?? 'open';
+    } catch (cause) {
+      deps.log.warn('Overlay presentation unreadable — re-opening open', { tabId, cause });
+      return 'open';
+    }
+  };
+
+  /** One re-open decision for a loaded page. */
+  const handle = async (tabId: number, pageUrl: string | undefined): Promise<void> => {
+    let status: ExclusionSessionStatus;
+    try {
+      status = await deps.status(tabId);
+    } catch (cause) {
+      // Unknown session ⇒ no overlay: never open on a guess.
+      deps.log.warn('Overlay re-open skipped: the tab’s session could not be read', {
+        tabId,
+        cause
+      });
+      return;
+    }
+    if (status.state !== 'active' || !shouldReopenOverlay(status, pageUrl)) return;
+    await deps.reopen(tabId, await presentationOf(tabId), status.origin);
+  };
+
+  /** Run for the tab, then once more per coalesced call. */
+  const drain = async (tabId: number, pageUrl: string | undefined): Promise<void> => {
+    let next: string | undefined = pageUrl;
+    for (;;) {
+      await handle(tabId, next);
+      if (!rerun.has(tabId)) return;
+      next = rerun.get(tabId);
+      rerun.delete(tabId);
+    }
+  };
+
   return {
-    async pageLoaded(tabId, pageUrl) {
-      let status: ExclusionSessionStatus;
-      try {
-        status = await deps.status(tabId);
-      } catch (cause) {
-        // Unknown session ⇒ no overlay: never open on a guess.
-        deps.log.warn('Overlay re-open skipped: the tab’s session could not be read', {
-          tabId,
-          cause
-        });
-        return;
+    pageLoaded(tabId, pageUrl) {
+      const running = inFlight.get(tabId);
+      if (running !== undefined) {
+        rerun.set(tabId, pageUrl);
+        return running;
       }
-      if (!shouldReopenOverlay(status, pageUrl)) return;
-      await deps.reopen(tabId, presentations.get(tabId) ?? 'open');
+      const run = drain(tabId, pageUrl).finally(() => {
+        inFlight.delete(tabId);
+      });
+      inFlight.set(tabId, run);
+      return run;
     },
-    presented(tabId, open) {
-      presentations.set(tabId, open ? 'open' : 'folded');
+    async presented(tabId, open) {
+      try {
+        await deps.presentations.set(tabId, open ? 'open' : 'folded');
+      } catch (cause) {
+        deps.log.warn('Overlay presentation not remembered', { tabId, cause });
+      }
     },
-    tabClosed(tabId) {
-      presentations.delete(tabId);
+    async tabClosed(tabId) {
+      rerun.delete(tabId);
+      try {
+        await deps.presentations.remove(tabId);
+      } catch (cause) {
+        deps.log.warn('Closed tab’s overlay presentation not forgotten', { tabId, cause });
+      }
     }
   };
 }

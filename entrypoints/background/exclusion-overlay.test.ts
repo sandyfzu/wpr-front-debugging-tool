@@ -1,40 +1,68 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
-import { OVERLAY_PRESENTATION_GLOBAL } from '../../lib/exclusion-session/overlay-reopen';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  OVERLAY_CLAIM_TTL_MS,
+  type OverlaySlotRequest
+} from '../../lib/exclusion-session/overlay-slot';
 import {
   EXCLUSION_OVERLAY_SCRIPT,
   classifyInjectionFailure,
   openExclusionOverlay,
-  prepareOverlayReopen,
   reopenExclusionOverlay,
   type ScriptInjector
 } from './exclusion-overlay';
 
-/** An injector whose file injection settles with `files` and whose probe answers `probe`. */
+/** An injector whose slot probe answers `probe` and whose file injection settles with `files`. */
 function injector(
-  files: () => Promise<void>,
-  probe: () => Promise<unknown> = () => Promise.resolve(true)
+  probe: () => Promise<unknown> = () => Promise.resolve('inject'),
+  files: () => Promise<void> = () => Promise.resolve()
 ) {
   const injected = vi.fn<ScriptInjector['injectFiles']>(() => files());
-  const ran = vi.fn<ScriptInjector['run']>(() => probe());
-  const api: ScriptInjector = { injectFiles: injected, run: ran };
-  return { api, injected, ran };
+  const claimed = vi.fn<ScriptInjector['claim']>(() => probe());
+  const api: ScriptInjector = { injectFiles: injected, claim: claimed };
+  return { api, injected, claimed };
 }
 
-const scope = globalThis as unknown as Record<string, unknown>;
+const ORIGIN = 'http://127.0.0.1:8493';
 
-afterEach(() => {
-  document.documentElement.querySelector(`:scope > ${OVERLAY_HOST_NAME}`)?.remove();
-  Reflect.deleteProperty(scope, OVERLAY_PRESENTATION_GLOBAL);
-});
-
-describe('openExclusionOverlay', () => {
-  it('injects the overlay script into the tab', async () => {
-    const { api, injected, ran } = injector(() => Promise.resolve());
+describe('openExclusionOverlay (explicit)', () => {
+  it('claims the slot as an explicit open, then injects the overlay script', async () => {
+    const { api, injected, claimed } = injector();
     expect(await openExclusionOverlay(7, api)).toBe('injected');
+    expect(claimed).toHaveBeenCalledWith(7, {
+      mode: 'open',
+      presentation: null,
+      origin: null,
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+    } satisfies OverlaySlotRequest);
     expect(injected).toHaveBeenCalledWith(7, [EXCLUSION_OVERLAY_SCRIPT]);
-    // An explicit open never probes: it replaces a running overlay.
-    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('never replaces a live or pending overlay: it was revealed', async () => {
+    for (const verdict of ['revealed', 'pending']) {
+      const { api, injected } = injector(() => Promise.resolve(verdict));
+      expect(await openExclusionOverlay(7, api)).toBe('revealed');
+      expect(injected).not.toHaveBeenCalled();
+    }
+  });
+
+  it('answers unsupported-page for a document that is not HTML', async () => {
+    const { api, injected } = injector(() => Promise.resolve('not-html'));
+    expect(await openExclusionOverlay(7, api)).toBe('unsupported-page');
+    expect(injected).not.toHaveBeenCalled();
+  });
+
+  it('fails, logged, on a probe answer that is no verdict (thrown probe, engine error object)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      for (const answer of [undefined, { error: 'boom' }, true]) {
+        const { api, injected } = injector(() => Promise.resolve(answer));
+        expect(await openExclusionOverlay(7, api)).toBe('failed');
+        expect(injected).not.toHaveBeenCalled();
+      }
+      expect(warn).toHaveBeenCalledTimes(3);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('never rejects: a refusal is an outcome', async () => {
@@ -45,7 +73,7 @@ describe('openExclusionOverlay', () => {
   it('logs an unexpected failure as an error', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
-      const { api } = injector(() => Promise.reject(new Error('boom')));
+      const { api } = injector(undefined, () => Promise.reject(new Error('boom')));
       expect(await openExclusionOverlay(7, api)).toBe('failed');
       expect(error).toHaveBeenCalled();
     } finally {
@@ -54,73 +82,53 @@ describe('openExclusionOverlay', () => {
   });
 });
 
-describe('prepareOverlayReopen (the probe, run in the page’s isolated world)', () => {
-  it('leaves the presentation and asks for the overlay when the document has none', () => {
-    expect(prepareOverlayReopen(OVERLAY_HOST_NAME, OVERLAY_PRESENTATION_GLOBAL, 'folded')).toBe(
-      true
-    );
-    expect(scope[OVERLAY_PRESENTATION_GLOBAL]).toBe('folded');
-  });
-
-  it('keeps a live overlay: no presentation left, nothing to inject', () => {
-    document.documentElement.append(document.createElement(OVERLAY_HOST_NAME));
-    expect(prepareOverlayReopen(OVERLAY_HOST_NAME, OVERLAY_PRESENTATION_GLOBAL, 'open')).toBe(
-      false
-    );
-    expect(OVERLAY_PRESENTATION_GLOBAL in scope).toBe(false);
-  });
-
-  it('only counts the overlay’s own mount point (a direct child of <html>)', () => {
-    // The same tag name deeper in the page is the page's, not a live overlay.
-    document.body.append(document.createElement(OVERLAY_HOST_NAME));
-    try {
-      expect(prepareOverlayReopen(OVERLAY_HOST_NAME, OVERLAY_PRESENTATION_GLOBAL, 'open')).toBe(
-        true
-      );
-    } finally {
-      document.body.querySelector(OVERLAY_HOST_NAME)?.remove();
-    }
-  });
-
-  it('is self-contained (the browser serializes it without its module)', () => {
-    expect(prepareOverlayReopen.toString()).not.toMatch(/OVERLAY_|import|require\(/);
-  });
-});
-
 describe('reopenExclusionOverlay', () => {
-  it('probes with the host, the global and the presentation, then injects', async () => {
-    const { api, injected, ran } = injector(() => Promise.resolve());
-    expect(await reopenExclusionOverlay(3, 'folded', api)).toBe('reopened');
-    expect(ran).toHaveBeenCalledWith(3, prepareOverlayReopen, [
-      OVERLAY_HOST_NAME,
-      OVERLAY_PRESENTATION_GLOBAL,
-      'folded'
-    ]);
+  it('claims with the presentation and the session origin, then injects', async () => {
+    const { api, injected, claimed } = injector();
+    expect(await reopenExclusionOverlay(3, 'folded', ORIGIN, api)).toBe('reopened');
+    expect(claimed).toHaveBeenCalledWith(3, {
+      mode: 'reopen',
+      presentation: 'folded',
+      origin: ORIGIN,
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+    } satisfies OverlaySlotRequest);
     expect(injected).toHaveBeenCalledWith(3, [EXCLUSION_OVERLAY_SCRIPT]);
   });
 
-  it('injects nothing unless the probe answers exactly true (idempotent)', async () => {
-    for (const answer of [false, undefined, 'yes']) {
-      const { api, injected } = injector(
-        () => Promise.resolve(),
-        () => Promise.resolve(answer)
-      );
-      expect(await reopenExclusionOverlay(3, 'open', api)).toBe('already-open');
+  it('injects nothing into a document that has (or is getting) its overlay', async () => {
+    for (const verdict of ['live', 'pending']) {
+      const { api, injected } = injector(() => Promise.resolve(verdict));
+      expect(await reopenExclusionOverlay(3, 'open', ORIGIN, api)).toBe('already-open');
       expect(injected).not.toHaveBeenCalled();
     }
   });
 
-  it('classifies a refused probe or injection, never rejecting', async () => {
-    const refusedProbe = injector(
-      () => Promise.resolve(),
-      () => Promise.reject(new Error('No tab with id: 3.'))
-    );
-    expect(await reopenExclusionOverlay(3, 'open', refusedProbe.api)).toBe('tab-gone');
+  it('skips a page that moved to another origin or is not HTML', async () => {
+    for (const verdict of ['other-origin', 'not-html']) {
+      const { api, injected } = injector(() => Promise.resolve(verdict));
+      expect(await reopenExclusionOverlay(3, 'open', ORIGIN, api)).toBe('skipped');
+      expect(injected).not.toHaveBeenCalled();
+    }
+  });
+
+  it('fails on an unusable probe answer and classifies refusals, never rejecting', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(
+        await reopenExclusionOverlay(3, 'open', ORIGIN, injector(() => Promise.resolve()).api)
+      ).toBe('failed');
+    } finally {
+      warn.mockRestore();
+    }
+    const refusedProbe = injector(() => Promise.reject(new Error('No tab with id: 3.')));
+    expect(await reopenExclusionOverlay(3, 'open', ORIGIN, refusedProbe.api)).toBe('tab-gone');
     expect(refusedProbe.injected).not.toHaveBeenCalled();
-    const refusedFiles = injector(() =>
+    const refusedFiles = injector(undefined, () =>
       Promise.reject(new Error('Cannot access contents of the page.'))
     );
-    expect(await reopenExclusionOverlay(3, 'open', refusedFiles.api)).toBe('unsupported-page');
+    expect(await reopenExclusionOverlay(3, 'open', ORIGIN, refusedFiles.api)).toBe(
+      'unsupported-page'
+    );
   });
 });
 

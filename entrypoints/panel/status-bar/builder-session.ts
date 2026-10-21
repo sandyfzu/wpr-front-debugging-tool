@@ -30,7 +30,8 @@ export type BuilderSessionState =
 export const BUILDER_SESSION_CHECKING: BuilderSessionState = { kind: 'checking' };
 
 /**
- * Fold the mount ask's answer in. A push that landed first is newer than
+ * Fold the mount ask's answer in (the one ask the entry makes). Only a
+ * still-checking state takes it: a push that landed first is newer than
  * the answer (which was read before it), so it stands.
  *
  * @param state The current state.
@@ -40,7 +41,7 @@ export function withAnswer(
   state: BuilderSessionState,
   outcome: AskOutcome<ExclusionSessionSummary>
 ): BuilderSessionState {
-  if (state.kind === 'known') return state;
+  if (state.kind !== 'checking') return state;
   return outcome.kind === 'reply' ? { kind: 'known', summary: outcome.reply } : { kind: 'unknown' };
 }
 
@@ -137,6 +138,8 @@ export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): 
   switch (outcome.reply) {
     case 'injected':
       return { tone: 'success', title: 'Exclusion builder opened on the page' };
+    case 'revealed':
+      return { tone: 'success', title: 'Exclusion builder shown on the page' };
     case 'unsupported-page':
       return {
         tone: 'error',

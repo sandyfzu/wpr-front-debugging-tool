@@ -119,6 +119,11 @@ export interface OverlayAppProps {
   readonly presentation?: OverlayPresentation | null;
   /** The user folded (`false`, also on close) or unfolded (`true`) the overlay. */
   readonly onPresented?: (open: boolean) => void;
+  /**
+   * Receives the overlay's reveal (unfold + focus the heading; an explicit
+   * open of a live overlay calls it instead of replacing the overlay).
+   */
+  readonly onRevealReady?: (reveal: () => void) => void;
   /** Start picking on the page; returns the stop. */
   readonly startPicking: (events: PickerEvents<PointedPick>) => () => void;
   /** Whether the extension context is gone (reading it tears a dead overlay down). */
@@ -239,9 +244,17 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     props.onPresented?.(false);
     focusSoon(() => pill);
   };
+  /**
+   * Whether the overlay may move focus when it comes back from under a page
+   * modal: an explicit open or the user's own unfold took it; a re-open on
+   * page load never does.
+   */
+  // eslint-disable-next-line solid/reactivity -- the presentation is fixed for the mount
+  let ownsFocus = props.presentation == null;
   const expand = (): void => {
     // A modal the page removed without closing it fires nothing: re-read.
     props.page.refreshModal();
+    ownsFocus = true;
     if (paused()) return;
     setOpen(true);
     props.onPresented?.(true);
@@ -346,8 +359,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   };
 
   // A page modal dialog makes everything outside it inert, the overlay too:
-  // fold into the pill (marked paused) until it closes, then come back.
-  let openBeforeModal = startsOpen;
+  // fold into the pill (marked paused) until it closes, then come back —
+  // also when it opened under the modal (unless it was meant to start folded).
+  // eslint-disable-next-line solid/reactivity -- the presentation is fixed for the mount
+  let openBeforeModal = props.presentation !== 'folded';
   createEffect(
     on(
       paused,
@@ -358,7 +373,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           setOpen(false);
         } else if (openBeforeModal) {
           setOpen(true);
-          focusSoon(() => heading);
+          if (ownsFocus) focusSoon(() => heading);
         }
       },
       { defer: true }
@@ -407,6 +422,12 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     if (layer !== undefined) showInTopLayer(layer);
     // A re-open follows a page load: the page keeps its focus.
     if (props.presentation == null) focusSoon(() => heading);
+    // An event-time call (an explicit open of this live overlay), never tracked.
+    // eslint-disable-next-line solid/reactivity -- read at call time, like an event handler
+    props.onRevealReady?.(() => {
+      if (picking()) endPicking();
+      expand();
+    });
   });
   onCleanup(() => {
     setHighlight(null);

@@ -73,16 +73,16 @@ document.body.append(frame);
 frame.getBoundingClientRect = () => ({ left: 10, top: 20, width: 300, height: 150 }) as DOMRect;
 
 /** Page tools with controllable signals. */
-function pageTools() {
+function pageTools(modalAtStart = false) {
   const [candidates] = createSignal(pageCandidates());
   const [pageFacts] = createSignal({
     href: 'https://example.com/',
     documentUrl: 'https://example.com/',
     timeOrigin: 0
   });
-  const [pageModal, setPageModal] = createSignal(false);
+  const [pageModal, setPageModal] = createSignal(modalAtStart);
   // What a fresh `:modal` read would answer (lets a test go stale).
-  let modalNow = false;
+  let modalNow = modalAtStart;
   const [pageTopLayerOpened] = createSignal(0);
   const [zoom] = createSignal(1);
   const [candidatesCapped] = createSignal(false);
@@ -116,8 +116,12 @@ function pageTools() {
 function mount(
   sessionPort: ExclusionSessionPort,
   presentation: OverlayPresentation | null = null,
-  mode?: OverlayMode
+  mode?: OverlayMode,
+  modalAtStart = false,
+  /** Run frame requests on a later task, like a browser (default: at once). */
+  laterFrames = false
 ) {
+  let reveal: (() => void) | null = null;
   const onClose = vi.fn();
   const onPresented = vi.fn();
   const reload = vi.fn();
@@ -127,7 +131,7 @@ function mount(
   let setPageModal: (value: boolean) => void = () => undefined;
   let setModalNow: (value: boolean) => void = () => undefined;
   const result = render(() => {
-    const page = pageTools();
+    const page = pageTools(modalAtStart);
     setPageModal = page.setPageModal;
     setModalNow = page.setModalNow;
     const controller = createOverlayController({
@@ -148,13 +152,17 @@ function mount(
         page={page.tools}
         origin="https://example.com"
         requestFrame={(run) => {
-          run();
+          if (laterFrames) setTimeout(run, 0);
+          else run();
         }}
         listen={() => undefined}
         onClose={onClose}
         presentation={presentation}
         onPresented={onPresented}
         mode={mode}
+        onRevealReady={(registered) => {
+          reveal = registered;
+        }}
         startPicking={(events) => {
           picker = events;
           return stopPicker;
@@ -166,6 +174,10 @@ function mount(
   });
   return {
     ...result,
+    reveal: () => {
+      if (reveal === null) throw new Error('the overlay registered no reveal');
+      reveal();
+    },
     onClose,
     onPresented,
     reload,
@@ -451,6 +463,68 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('an explicit open under a page modal comes back open, focused, when the modal closes', async () => {
+    const { container, setPageModal, setModalNow } = mount(
+      port({ state: 'inactive' }),
+      null,
+      undefined,
+      true,
+      true
+    );
+    expect(await screen.findByText('Paused: page dialog open')).toBeTruthy();
+    expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+    setModalNow(false);
+    setPageModal(false);
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    });
+  });
+
+  it('a re-open under a page modal comes back as it was meant to, never taking focus', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const open = mount(port(activeRecord()), 'open', undefined, true, true);
+      await open.findByText('Paused: page dialog open');
+      open.setModalNow(false);
+      open.setPageModal(false);
+      await waitFor(() => {
+        expect(open.container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+      });
+      // Past every frame a focus move would take.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(document.activeElement).toBe(outside);
+      cleanup();
+      const folded = mount(port(activeRecord()), 'folded', undefined, true, true);
+      await folded.findByText('Paused: page dialog open');
+      folded.setModalNow(false);
+      folded.setPageModal(false);
+      await folded.findByRole('button', { name: /open the exclusion builder/i });
+      expect(folded.container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('reveals itself on request: unfolds, ends picking, focuses the heading, reports open', async () => {
+    const { container, reveal, onPresented } = mount(port({ state: 'inactive' }), 'folded');
+    await screen.findByRole('button', { name: /open the exclusion builder/i });
+    reveal();
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+    expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    expect(onPresented).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick on page' }));
+    expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
+    reveal();
+    expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
   });
 
   it('dismisses a notice from its corner control, focus landing on the heading', async () => {

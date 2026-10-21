@@ -14,12 +14,15 @@ import { isRecord, ownValue } from '../../utils/is-record';
  * How opening the builder overlay on a tab ended (the background injects
  * it into the tab's top frame):
  * - `injected` — the overlay script was injected (it owns its states from there),
+ * - `revealed` — an overlay already on the page was unfolded and focused
+ *   (never replaced: that would drop its unsaved draft),
  * - `unsupported-page` — the browser does not let extensions script the page,
  * - `tab-gone` — the tab closed first,
  * - `failed` — anything else (logged by the background).
  */
 export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
   'injected',
+  'revealed',
   'unsupported-page',
   'tab-gone',
   'failed'

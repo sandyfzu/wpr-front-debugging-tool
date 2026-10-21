@@ -3,22 +3,26 @@
  * content script into the tab's top frame. The overlay is not in the
  * manifest, so its code loads only when opened.
  *
- * Two ways in:
- * - an explicit open (context menu, panel) — a second injection replaces
- *   the running instance (the newer context invalidates the older), so
- *   opening twice is safe;
- * - a re-open on a session tab's newly loaded page — idempotent: a probe in
- *   the tab's isolated world first checks for a live overlay in that
- *   document (none is replaced), then leaves the presentation for the
- *   script injected next.
+ * Every open first claims the overlay's slot in the page
+ * (`lib/exclusion-session/overlay-slot`: one synchronous step in the
+ * extension's isolated world), so one document never gets two overlays:
+ * - an explicit open (context menu, panel) reveals a live overlay (never
+ *   replaces it) and injects only when there is none;
+ * - a re-open on a session tab's newly loaded page leaves a live or pending
+ *   overlay be, and skips a page that moved to another origin or is not
+ *   HTML.
  */
-import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { createLogger } from '../../lib/logger';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
+import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 import {
-  OVERLAY_PRESENTATION_GLOBAL,
-  type OverlayPresentation
-} from '../../lib/exclusion-session/overlay-reopen';
+  OVERLAY_CLAIM_TTL_MS,
+  OVERLAY_SLOT_GLOBAL,
+  claimOverlaySlot,
+  parseOverlaySlotVerdict,
+  type OverlaySlotRequest,
+  type OverlaySlotVerdict
+} from '../../lib/exclusion-session/overlay-slot';
 
 const log = createLogger('exclusion-overlay');
 
@@ -29,11 +33,8 @@ export const EXCLUSION_OVERLAY_SCRIPT = '/content-scripts/exclusion-overlay.js';
 export interface ScriptInjector {
   /** Inject script files. */
   injectFiles(tabId: number, files: readonly string[]): Promise<void>;
-  /**
-   * Run a self-contained function with JSON arguments in the isolated
-   * world; resolves with its result.
-   */
-  run(tabId: number, func: (...args: string[]) => boolean, args: string[]): Promise<unknown>;
+  /** Claim the overlay's slot in the page; resolves with what the page answered. */
+  claim(tabId: number, request: OverlaySlotRequest): Promise<unknown>;
 }
 
 /**
@@ -48,11 +49,11 @@ export function browserScriptInjector(): ScriptInjector {
         files: [...files]
       });
     },
-    run: async (tabId, func, args) => {
+    claim: async (tabId, request) => {
       const results = await browser.scripting.executeScript({
         target: { tabId, frameIds: [0] },
-        func,
-        args
+        func: claimOverlaySlot,
+        args: [OVERLAY_SLOT_GLOBAL, request]
       });
       return results[0]?.result;
     }
@@ -68,14 +69,15 @@ const UNSUPPORTED_PAGE_ERRORS = [
   'about:'
 ] as const;
 
+/** An open that did not reach the page. */
+type OpenFailure = 'unsupported-page' | 'tab-gone' | 'failed';
+
 /**
  * Classify an injection failure.
  *
  * @param cause What `executeScript` rejected with.
  */
-export function classifyInjectionFailure(
-  cause: unknown
-): Exclude<ExclusionOverlayOpenOutcome, 'injected'> {
+export function classifyInjectionFailure(cause: unknown): OpenFailure {
   // Case-insensitive: the engines word the same failures differently.
   const message = (cause instanceof Error ? cause.message : String(cause)).toLowerCase();
   if (/no tab with id|invalid tab id/.test(message)) return 'tab-gone';
@@ -84,20 +86,15 @@ export function classifyInjectionFailure(
 }
 
 /**
- * Log a failed injection: unexpected ones as errors, the expected (page
- * not scriptable, tab gone) as info.
+ * Log a failed open: unexpected ones as errors, the expected (page not
+ * scriptable, tab gone) as info.
  *
  * @param what The operation, for the line.
  * @param tabId The tab.
  * @param outcome The classified failure.
  * @param cause The rejection.
  */
-function logFailure(
-  what: string,
-  tabId: number,
-  outcome: Exclude<ExclusionOverlayOpenOutcome, 'injected'>,
-  cause: unknown
-): void {
+function logFailure(what: string, tabId: number, outcome: OpenFailure, cause: unknown): void {
   if (outcome === 'failed') {
     log.error(`${what} failed`, { tabId, cause: cause instanceof Error ? cause.message : cause });
   } else {
@@ -106,7 +103,29 @@ function logFailure(
 }
 
 /**
- * Open the overlay in a tab's top frame (replacing a running one).
+ * Claim the slot and narrow the answer; an answer that is no verdict (a
+ * probe that threw, an engine's error object) is a failure, logged.
+ *
+ * @param injector The scripting seam.
+ * @param tabId The tab.
+ * @param request The open.
+ * @returns The verdict, or null for an unusable answer.
+ */
+async function claimSlot(
+  injector: ScriptInjector,
+  tabId: number,
+  request: OverlaySlotRequest
+): Promise<OverlaySlotVerdict | null> {
+  const answer = await injector.claim(tabId, request);
+  const verdict = parseOverlaySlotVerdict(answer);
+  if (verdict === null) {
+    log.warn('The overlay slot probe gave no usable answer', { tabId, answer });
+  }
+  return verdict;
+}
+
+/**
+ * Open the overlay in a tab's top frame: reveal a live one, else inject.
  *
  * @param tabId The tab.
  * @param injector The scripting seam (the real `browser.scripting` by default).
@@ -117,8 +136,28 @@ export async function openExclusionOverlay(
   injector: ScriptInjector = browserScriptInjector()
 ): Promise<ExclusionOverlayOpenOutcome> {
   try {
-    await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
-    return 'injected';
+    const verdict = await claimSlot(injector, tabId, {
+      mode: 'open',
+      presentation: null,
+      origin: null,
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+    });
+    switch (verdict) {
+      case 'inject':
+        await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
+        return 'injected';
+      // An explicit open never answers `live` (it reveals); counted as shown.
+      case 'revealed':
+      case 'pending':
+      case 'live':
+        return 'revealed';
+      case 'not-html':
+      case 'other-origin':
+        log.info('Exclusion builder not opened: the page is not an HTML page', { tabId });
+        return 'unsupported-page';
+      case null:
+        return 'failed';
+    }
   } catch (cause) {
     const outcome = classifyInjectionFailure(cause);
     logFailure('Opening the exclusion builder', tabId, outcome, cause);
@@ -127,52 +166,49 @@ export async function openExclusionOverlay(
 }
 
 /**
- * The re-open probe, run in the tab's isolated world (serialized by the
- * browser: it must stay self-contained). A live overlay of this document
- * keeps its place; otherwise the presentation is left for the overlay
- * script injected next.
- *
- * @param hostName The overlay's shadow host tag name.
- * @param key The presentation global's name.
- * @param presentation The presentation to leave.
- * @returns Whether the document needs the overlay injected.
+ * How a re-open ended: `reopened` (injected), `already-open` (the
+ * document has its overlay, or one on its way), `skipped` (the page moved
+ * to another origin, or is not HTML), or an open failure.
  */
-export function prepareOverlayReopen(hostName: string, key: string, presentation: string): boolean {
-  if (document.documentElement.querySelector(`:scope > ${hostName}`) !== null) return false;
-  (globalThis as unknown as Record<string, unknown>)[key] = presentation;
-  return true;
-}
-
-/**
- * How a re-open ended: `reopened` (injected), `already-open` (this
- * document still has its overlay), or an open failure.
- */
-export type OverlayReopenOutcome =
-  'reopened' | 'already-open' | Exclude<ExclusionOverlayOpenOutcome, 'injected'>;
+export type OverlayReopenOutcome = 'reopened' | 'already-open' | 'skipped' | OpenFailure;
 
 /**
  * Re-open the overlay on a session tab's newly loaded page, unless that
- * document already shows it.
+ * document already shows it (or will).
  *
  * @param tabId The tab.
  * @param presentation How the overlay starts.
+ * @param origin The session's origin (the page must still be of it).
  * @param injector The scripting seam (the real `browser.scripting` by default).
  * @returns How it ended (never rejects).
  */
 export async function reopenExclusionOverlay(
   tabId: number,
   presentation: OverlayPresentation,
+  origin: string,
   injector: ScriptInjector = browserScriptInjector()
 ): Promise<OverlayReopenOutcome> {
   try {
-    const needed = await injector.run(tabId, prepareOverlayReopen, [
-      OVERLAY_HOST_NAME,
-      OVERLAY_PRESENTATION_GLOBAL,
-      presentation
-    ]);
-    if (needed !== true) return 'already-open';
-    await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
-    return 'reopened';
+    const verdict = await claimSlot(injector, tabId, {
+      mode: 'reopen',
+      presentation,
+      origin,
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+    });
+    switch (verdict) {
+      case 'inject':
+        await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
+        return 'reopened';
+      case 'live':
+      case 'pending':
+      case 'revealed':
+        return 'already-open';
+      case 'other-origin':
+      case 'not-html':
+        return 'skipped';
+      case null:
+        return 'failed';
+    }
   } catch (cause) {
     const outcome = classifyInjectionFailure(cause);
     logFailure('Re-opening the exclusion builder', tabId, outcome, cause);

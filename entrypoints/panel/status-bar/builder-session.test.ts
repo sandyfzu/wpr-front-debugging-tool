@@ -35,11 +35,9 @@ describe('withAnswer', () => {
     expect(withAnswer(pushed, { kind: 'timeout' })).toBe(pushed);
   });
 
-  it('lets an answer replace an earlier unknown (a retried ask)', () => {
-    expect(withAnswer({ kind: 'unknown' }, { kind: 'reply', reply: INACTIVE })).toEqual({
-      kind: 'known',
-      summary: INACTIVE
-    });
+  it('takes only the first answer (the entry asks once)', () => {
+    const unknown: BuilderSessionState = { kind: 'unknown' };
+    expect(withAnswer(unknown, { kind: 'reply', reply: INACTIVE })).toBe(unknown);
   });
 });
 
@@ -92,6 +90,10 @@ describe('openFeedback', () => {
     expect(openFeedback({ kind: 'reply', reply: 'injected' })).toEqual({
       tone: 'success',
       title: 'Exclusion builder opened on the page'
+    });
+    expect(openFeedback({ kind: 'reply', reply: 'revealed' })).toEqual({
+      tone: 'success',
+      title: 'Exclusion builder shown on the page'
     });
     expect(openFeedback({ kind: 'reply', reply: 'unsupported-page' })).toMatchObject({
       tone: 'error',
