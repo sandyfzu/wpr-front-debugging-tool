@@ -5,6 +5,7 @@
  * inline in one pass. Pure: no compilation state is kept.
  */
 import type { InvalidExclusionRow } from './errors';
+import { BACKTRACKING_RISK_REASONS, regexBacktrackingRisk } from './regex-risk';
 import {
   EXCLUSION_FEATURES,
   type ExclusionRowKind,
@@ -46,8 +47,11 @@ function regexErrorDetail(row: string, error: unknown): string {
  *
  * A whitespace-only row would match every element (an empty regex and an
  * empty `includes` are always-true), so it is rejected as the user mistake
- * it is. A pattern row must compile as a regular expression; a literal row
- * is never compiled — regex-looking text is a fine substring.
+ * it is. A pattern row must compile as a regular expression and carry no
+ * known catastrophic-backtracking shape (`./regex-risk` — a heuristic; the
+ * guard rejects exponential shapes only — polynomial ones are accepted and
+ * bounded only where the engine runs preemptibly); a literal row is never
+ * compiled — regex-looking text is a fine substring.
  *
  * @param row The row as given.
  * @param rowKind How the row will be matched.
@@ -60,6 +64,8 @@ function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
     } catch (error) {
       return `${REGEX_REASON_LEAD}${regexErrorDetail(row, error)}`;
     }
+    const risk = regexBacktrackingRisk(row);
+    if (risk !== null) return BACKTRACKING_RISK_REASONS[risk];
   }
   return null;
 }

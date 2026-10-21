@@ -5,7 +5,13 @@
  * this module.
  */
 import { describe, expect, it } from 'vitest';
-import { applyPipeline, composeSteps, EXCLUSION_PIPELINE_IDS, type PipelineStep } from './pipeline';
+import {
+  applyPipeline,
+  composeSteps,
+  EXCLUSION_PIPELINE_IDS,
+  exclusionPipelineSteps,
+  type PipelineStep
+} from './pipeline';
 import { delayJsTransform } from './delay-js';
 import { deferJsTransform } from './defer-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -222,5 +228,31 @@ describe('direct single-feature use', () => {
     const deferResult = deferJsTransform(html, setWith({ deferJs: ['a\\.js'] }));
     // The delayed script carries no defer marker — the defer transform is a no-op on it.
     expect(deferResult.report.candidates).toBe(0);
+  });
+});
+
+describe('exclusionPipelineSteps', () => {
+  const RELATIVE = '<script src="js/a.js" data-rocket-defer defer></script>';
+
+  it('yields one step per feature, in the declared order', () => {
+    expect(exclusionPipelineSteps(EMPTY_EXCLUSION_SET).map((step) => step.id)).toEqual(
+      EXCLUSION_PIPELINE_IDS
+    );
+  });
+
+  it('composes to exactly what applyPipeline returns', () => {
+    const html = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>';
+    const set = setWith({ delayJs: ['a\\.js'] });
+    expect(composeSteps(html, exclusionPipelineSteps(set))).toEqual(applyPipeline(html, set));
+  });
+
+  it('threads the document URL into the steps that resolve URLs (Defer JS)', () => {
+    const set = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
+    const steps = exclusionPipelineSteps(set, 'https://s.tld/page');
+    const resolved = composeSteps(RELATIVE, steps).reports[1];
+    expect(resolved?.rewritten).toBe(1);
+    expect(applyPipeline(RELATIVE, set, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
+    // Without a document URL only the raw attribute is matched.
+    expect(applyPipeline(RELATIVE, set).reports[1]?.rewritten).toBe(0);
   });
 });

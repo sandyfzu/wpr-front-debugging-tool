@@ -6,6 +6,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExclusionValidationError } from './errors';
 import { prevalidateExclusionSet } from './validate';
+import { compilePatternRows } from './compile';
+import { BACKTRACKING_RISK_REASONS } from './regex-risk';
+import { applyPipeline } from './pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
 /** A set with one feature's rows replaced (spread keeps the others empty). */
@@ -65,6 +68,59 @@ describe('prevalidateExclusionSet', () => {
       setWith({ lazyload: ['[a-z]+("webp")'], lazyRender: ['(pagination|[class='] })
     );
     expect(problems).toEqual({ valid: true, invalid: [] });
+  });
+});
+
+describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
+  /** A hostile subject: 27 `a`s that `(a+)+b` cannot finish matching. */
+  const PROBE = `<script type="rocketlazyloadscript" data-rocket-src="${'a'.repeat(27)}"></script>`;
+
+  it('rejects the exponential probe row at prevalidation, named like an invalid pattern', () => {
+    const problems = prevalidateExclusionSet(setWith({ delayJs: ['ok\\.js', '(a+)+b'] }));
+    expect(problems).toEqual({
+      valid: false,
+      invalid: [
+        {
+          feature: 'delay_js',
+          index: 1,
+          row: '(a+)+b',
+          reason: BACKTRACKING_RISK_REASONS['nested-repetition']
+        }
+      ]
+    });
+  });
+
+  it('reports an over-deep row as too complex instead of throwing out of prevalidation', () => {
+    const deep = `${'('.repeat(1_875)}a${')'.repeat(1_875)}`;
+    expect(() => new RegExp(deep)).not.toThrow();
+    expect(prevalidateExclusionSet(setWith({ deferJs: [deep] })).invalid).toEqual([
+      {
+        feature: 'defer_all_js',
+        index: 0,
+        row: deep,
+        reason: BACKTRACKING_RISK_REASONS['too-complex']
+      }
+    ]);
+  });
+
+  it('guards both pattern features, and never the literal ones', () => {
+    const risky = '(a|ab)*';
+    const problems = prevalidateExclusionSet(
+      setWith({ delayJs: [risky], deferJs: [risky], lazyload: [risky], lazyRender: [risky] })
+    );
+    expect(problems.invalid.map((problem) => problem.feature)).toEqual([
+      'delay_js',
+      'defer_all_js'
+    ]);
+  });
+
+  it('refuses the probe on the compile path too, so the engine never runs it', () => {
+    expect(() => compilePatternRows(['(a+)+b'], 'delay_js')).toThrow(ExclusionValidationError);
+    const started = performance.now();
+    expect(() => applyPipeline(PROBE, setWith({ delayJs: ['(a+)+b'] }))).toThrow(
+      ExclusionValidationError
+    );
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });
 

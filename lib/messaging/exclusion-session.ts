@@ -98,11 +98,15 @@ export type InterceptionUnavailableCause = keyof typeof INTERCEPTION_UNAVAILABLE
 /**
  * Why one intercepted document was served unmodified (the session itself
  * stays active): its body could not be read, it could not be decoded with
- * its declared charset, or the engine failed unexpectedly.
+ * its declared charset, the rewritten text could not be encoded back into
+ * that charset, or the engine failed unexpectedly. Additive: a newer
+ * build's reason fails an older build's guard (its read-back drops that
+ * record — never a fabricated one).
  */
 export const EXCLUSION_DOCUMENT_FAILURES = [
   'body-unavailable',
   'decode-failed',
+  'encode-failed',
   'engine-failed'
 ] as const;
 
@@ -269,13 +273,13 @@ function keysAllowed(
   return policy === 'ignore' || Object.keys(record).every((key) => allowed.includes(key));
 }
 
-/** A non-negative safe integer (counts, indices, epoch ms). */
-function isCount(value: unknown): value is number {
+/** A non-negative safe integer (counts, indices, epoch ms, run ids). */
+export function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 /** Whether a value is one of the engine's feature ids (registry-derived). */
-function isFeatureId(value: unknown): value is ExclusionFeatureId {
+export function isFeatureId(value: unknown): value is ExclusionFeatureId {
   return EXCLUSION_FEATURES.some((feature) => feature.id === value);
 }
 

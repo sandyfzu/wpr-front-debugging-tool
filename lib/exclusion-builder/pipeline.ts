@@ -22,8 +22,8 @@ import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from '
 import type { TransformReport, TransformResult } from './report';
 
 /** One composition step: a named transform over the html so far. */
-export interface PipelineStep<R> {
-  readonly id: string;
+export interface PipelineStep<R, Id extends string = string> {
+  readonly id: Id;
   apply: (html: string) => { readonly html: string; readonly report: R };
 }
 
@@ -55,10 +55,20 @@ export function composeSteps<R>(
   return { html: current, reports };
 }
 
+/**
+ * One feature's transform: the served html + the set (+ the document's URL,
+ * which only transforms that resolve URLs read) → its result.
+ */
+type FeatureTransform = (
+  servedHtml: string,
+  set: ExclusionSet,
+  documentUrl?: string
+) => TransformResult;
+
 /** One feature's slice of the pipeline: its transform, keyed by id. */
 interface FeatureEntry {
   readonly id: ExclusionFeatureId;
-  readonly transform: (servedHtml: string, set: ExclusionSet) => TransformResult;
+  readonly transform: FeatureTransform;
 }
 
 /**
@@ -66,10 +76,7 @@ interface FeatureEntry {
  * (`EXCLUSION_FEATURES` — the one declaring site); this table only binds
  * each feature to its operation, so adding a feature cannot fork the order.
  */
-const FEATURE_TRANSFORMS: Record<
-  ExclusionFeatureId,
-  (servedHtml: string, set: ExclusionSet) => TransformResult
-> = {
+const FEATURE_TRANSFORMS: Record<ExclusionFeatureId, FeatureTransform> = {
   delay_js: delayJsTransform,
   defer_all_js: deferJsTransform,
   lazyload: lazyloadTransform,
@@ -87,6 +94,34 @@ export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIP
   (entry) => entry.id
 );
 
+/** One exclusion-pipeline step: a feature's transform, keyed by its feature id. */
+export type ExclusionPipelineStep = PipelineStep<TransformReport, ExclusionFeatureId>;
+
+/**
+ * The exclusion pipeline's steps for one set, in the declared execution
+ * order — what {@link applyPipeline} composes. Exposed for consumers that
+ * must observe the run step by step (e.g. to bound its wall time between
+ * steps); they must prevalidate the set first, exactly as `applyPipeline`
+ * does, or a step throws its feature's validation error mid-run.
+ *
+ * @param set The exclusion set every step reads.
+ * @param documentUrl The served document's absolute URL, when known
+ *   (Defer JS then also matches relative `src` values in resolved form).
+ * @returns One step per feature, in pipeline order.
+ */
+export function exclusionPipelineSteps(
+  set: ExclusionSet,
+  documentUrl?: string
+): readonly ExclusionPipelineStep[] {
+  return FEATURE_PIPELINE.map((entry) => ({
+    id: entry.id,
+    apply: (stepHtml: string) => {
+      const result = entry.transform(stepHtml, set, documentUrl);
+      return { html: result.html, report: result.report };
+    }
+  }));
+}
+
 /**
  * The exclusion pipeline: validate the whole set up front (every invalid
  * row named at once, before anything runs), then apply the four transforms
@@ -99,19 +134,18 @@ export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIP
  * @param html The served document (decoded text — byte handling is the
  *   session backends' job, never the engine's).
  * @param set The exclusion set (rows + feature-wide disables).
+ * @param documentUrl The served document's absolute URL, when known (see
+ *   {@link exclusionPipelineSteps}).
  * @returns The rewritten html and one report per transform, in pipeline order.
  * @throws {@link ExclusionValidationError} naming every invalid row across
  *   every feature, before any transform runs.
  */
-export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
+export function applyPipeline(
+  html: string,
+  set: ExclusionSet,
+  documentUrl?: string
+): CompositionOutput<TransformReport> {
   const problems = prevalidateExclusionSet(set);
   if (!problems.valid) throw new ExclusionValidationError(problems.invalid);
-  const steps: PipelineStep<TransformReport>[] = FEATURE_PIPELINE.map((entry) => ({
-    id: entry.id,
-    apply: (stepHtml: string) => {
-      const result = entry.transform(stepHtml, set);
-      return { html: result.html, report: result.report };
-    }
-  }));
-  return composeSteps(html, steps);
+  return composeSteps(html, exclusionPipelineSteps(set, documentUrl));
 }

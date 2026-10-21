@@ -26,8 +26,8 @@ export type AskOutcome<T> =
 /** Arms a one-shot timer; returns its cancel. */
 export type ScheduleTimer = (run: () => void, ms: number) => () => void;
 
-/** The platform timer behind {@link ScheduleTimer}. */
-const scheduleWithTimeout: ScheduleTimer = (run, ms) => {
+/** The platform timer behind {@link ScheduleTimer} (the default every timer seam falls back to). */
+export const scheduleWithTimeout: ScheduleTimer = (run, ms) => {
   const handle = setTimeout(run, ms);
   return () => {
     clearTimeout(handle);
