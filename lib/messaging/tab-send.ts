@@ -14,6 +14,7 @@
  */
 
 import { createLogger } from '../logger';
+import { lastErrorMessage } from '../../utils/last-error';
 
 const log = createLogger('messaging');
 
@@ -52,9 +53,9 @@ function acknowledgeAndForward(callback: ForwardedCallback): ForwardedCallback {
     // send's resolution may change here — callers branch on the transport's
     // failure surface (see `no-receiver.ts`), and any handling beyond "not
     // noise" belongs there.
-    const acknowledged = chrome.runtime.lastError;
-    if (acknowledged !== undefined) {
-      log.debug('Tab send failure acknowledged', { message: acknowledged.message });
+    const acknowledged = lastErrorMessage(chrome.runtime.lastError);
+    if (acknowledged !== null) {
+      log.debug('Tab send failure acknowledged', { message: acknowledged });
     }
     callback(response);
   };

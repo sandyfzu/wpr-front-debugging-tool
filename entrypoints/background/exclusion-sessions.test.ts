@@ -32,8 +32,26 @@ beforeAll(() => {
 });
 
 describe('exclusion-session wiring', () => {
-  it('registers the Chromium debugger backend row', () => {
+  it('registers the Chromium debugger backend row in a Chromium build (run-time detected)', () => {
     expect(INTERCEPTION_BACKENDS).toContain(CHROMIUM_INTERCEPTION_ROW);
+  });
+
+  it('keeps the Firefox-only streaming-filter row out of a Chromium build', () => {
+    // The test runner builds for Chromium.
+    expect(INTERCEPTION_BACKENDS.map((row) => row.id)).not.toContain('stream-filter');
+  });
+
+  it('registers the streaming-filter row in a Firefox build', async () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    vi.resetModules();
+    try {
+      const firefox = await import('./interception-backends');
+      // …and only it: the debugger-protocol row stays out of the Firefox bundle.
+      expect(firefox.INTERCEPTION_BACKENDS.map((row) => row.id)).toEqual(['stream-filter']);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 
   it('answers the overlay channels (a tab-less sender is no page)', async () => {

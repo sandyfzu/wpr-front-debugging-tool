@@ -50,7 +50,12 @@ export default defineConfig({
       // while attached, Chrome shows its "started debugging this browser"
       // infobar. Accepted by the owner 2026-10-20, on the condition that store
       // review does not block it.
-      ...(browser === 'firefox' ? [] : ['debugger'])
+      ...(browser === 'firefox' ? [] : ['debugger']),
+      // Exclusion-builder sessions on Firefox: `webRequest.filterResponseData`
+      // (the streaming rewrite of an applied tab's top-level documents) needs a
+      // blocking `webRequest` listener, which MV2 gates behind this permission
+      // (MDN). Firefox build only — Chromium's MV3 build has no body filter.
+      ...(browser === 'firefox' ? ['webRequestBlocking'] : [])
     ],
     // Required for `webRequest` main-frame header capture (the source omitted these,
     // putting that feature at risk) and lets the popup read the active web tab's URL

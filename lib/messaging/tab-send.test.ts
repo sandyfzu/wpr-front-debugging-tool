@@ -11,7 +11,7 @@ import { preventUncheckedLastError } from './tab-send';
 let lastErrorReads: number;
 
 /** Install a `chrome.runtime.lastError` getter stub over the real global. */
-function stubLastError(value: { message: string } | undefined): void {
+function stubLastError(value: { message: string } | null | undefined): void {
   Object.defineProperty(chrome.runtime, 'lastError', {
     configurable: true,
     get: () => {
@@ -107,5 +107,25 @@ describe('preventUncheckedLastError', () => {
     const originalCallback = vi.fn();
     send(9, { type: 'x' }, undefined, originalCallback);
     expect(originalCallback).toHaveBeenCalledWith(undefined);
+  });
+
+  it('forwards a successful send when the platform sets lastError to null (Firefox)', () => {
+    // Firefox leaves `runtime.lastError` null (not undefined) after a
+    // successful send; the guard must neither throw nor swallow the response.
+    lastErrorReads = 0;
+    stubLastError(null);
+    const response = { res: 'ok' };
+    const send = preventUncheckedLastError(((
+      _tabId: number,
+      _message: unknown,
+      _options: unknown,
+      callback: (r: unknown) => void
+    ) => {
+      callback(response);
+    }) as unknown as typeof chrome.tabs.sendMessage);
+    const originalCallback = vi.fn();
+    send(4, { type: 'x' }, undefined, originalCallback);
+    expect(lastErrorReads).toBe(1);
+    expect(originalCallback).toHaveBeenCalledWith(response);
   });
 });

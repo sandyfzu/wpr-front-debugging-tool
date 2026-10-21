@@ -1052,6 +1052,49 @@ describe('host safety nets', () => {
     expect(logged(r.log, 'warn', /past its bound/)).toBe(true);
   });
 
+  it('records nothing and answers null for a document the backend abandoned mid-rewrite', async () => {
+    const r = rig();
+    await seedActive();
+    let abandoned = false;
+    let release: () => void = () => undefined;
+    r.backend.runner = (request) =>
+      new Promise((resolve) => {
+        release = () => {
+          resolve({
+            ok: true,
+            html: `${request.html}x`,
+            outcome: { outcome: 'rewritten', reports: [] }
+          });
+        };
+      });
+    const rewrite = r.host.rewriteDocument(htmlDoc(), () => abandoned);
+    await flush();
+    // The backend ended the stream unmodified (its deadline, a failure)
+    // while the engine ran: the late result must not be recorded.
+    abandoned = true;
+    release();
+    await expect(rewrite).resolves.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ document: null });
+  });
+
+  it('still records when the backend has not abandoned the document', async () => {
+    const r = rig();
+    await seedActive();
+    r.backend.runner = (request) =>
+      Promise.resolve({
+        ok: true,
+        html: `${request.html}x`,
+        outcome: { outcome: 'rewritten', reports: [] }
+      });
+    const body = await r.host.rewriteDocument(htmlDoc(), () => false);
+    expect(body).not.toBeNull();
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten' }
+    });
+  });
+
   it('answers the safe default when a backend hands over a malformed document', async () => {
     const r = rig();
     await seedActive();

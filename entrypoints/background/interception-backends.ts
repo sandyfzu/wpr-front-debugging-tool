@@ -7,6 +7,13 @@
  */
 import type { InterceptionBackendRow } from '../../lib/exclusion-session/backend';
 import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
+import { STREAM_FILTER_BACKEND } from './stream-filter-backend';
 
-/** The registry. */
-export const INTERCEPTION_BACKENDS: readonly InterceptionBackendRow[] = [CHROMIUM_INTERCEPTION_ROW];
+/**
+ * The registry. Each row exists only in its browser's build (a build-time
+ * constant, so neither background bundle carries the other's code): the
+ * debugger-protocol row outside Firefox, the streaming-filter row in
+ * Firefox; each row's feature detection still decides at run time.
+ */
+export const INTERCEPTION_BACKENDS: readonly InterceptionBackendRow[] =
+  import.meta.env.BROWSER === 'firefox' ? [STREAM_FILTER_BACKEND] : [CHROMIUM_INTERCEPTION_ROW];

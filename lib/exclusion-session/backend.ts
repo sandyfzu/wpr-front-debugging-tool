@@ -104,6 +104,13 @@ export interface InterceptionHost {
   /**
    * Rewrite one intercepted top-level document and record its outcome.
    *
+   * @param document The document and its response facts.
+   * @param abandoned Optional: whether the backend has stopped waiting for
+   *   this answer (it already served the original — its own deadline passed,
+   *   the stream failed or was withdrawn). Checked right before the outcome
+   *   is recorded: an abandoned document records nothing and answers null,
+   *   so the record never claims a rewrite that was not served.
+   *
    * @returns The bytes to serve, or null to serve the original response
    *   untouched (no active session for the tab, another origin, an
    *   ineligible response — those unrecorded — nothing changed and no
@@ -118,7 +125,10 @@ export interface InterceptionHost {
    *   `Content-Encoding` the backend already removed) needs fixing, and
    *   `Speculation-Rules` dropped.
    */
-  rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null>;
+  rewriteDocument(
+    document: InterceptedDocument,
+    abandoned?: () => boolean
+  ): Promise<Uint8Array | null>;
   /**
    * An eligible top-level document's body could not be read (or exceeds
    * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded, with the

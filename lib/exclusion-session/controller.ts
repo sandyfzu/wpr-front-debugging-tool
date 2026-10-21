@@ -583,7 +583,8 @@ export function createExclusionSessionController(
   /** Rewrite one eligible document of the tab's live session (see the seam). */
   const rewriteForSession = async (
     document: InterceptedDocument,
-    expired: () => boolean
+    expired: () => boolean,
+    abandoned: () => boolean
   ): Promise<Uint8Array | null> => {
     if (!isRewritableResponse(document)) return null;
     const session = await activeFor(document.tabId, document.documentUrl);
@@ -615,9 +616,12 @@ export function createExclusionSessionController(
         servedIdentity(document, headerRules ? 1 : 0, body !== null)
       );
     }
-    // Stop or a re-apply may have landed while the engine ran: serve (and
-    // record) only for the session that is still live.
-    if (!(await stillLive(document.tabId, session.startedAt)) || expired()) return null;
+    // Stop or a re-apply may have landed while the engine ran, or the
+    // backend may have served the original already: serve (and record) only
+    // for the session that is still live and a backend still waiting.
+    if (!(await stillLive(document.tabId, session.startedAt)) || expired() || abandoned()) {
+      return null;
+    }
     void driveQuietly(
       document.tabId,
       { type: 'document', startedAt: session.startedAt, outcome },
@@ -634,12 +638,12 @@ export function createExclusionSessionController(
         async () => (await activeFor(tabId, documentUrl)) !== null
       ),
 
-    rewriteDocument: (document) => {
+    rewriteDocument: (document, abandoned = () => false) => {
       let expired = false;
       return hostCall(
         'rewriteDocument',
         null,
-        () => rewriteForSession(document, () => expired),
+        () => rewriteForSession(document, () => expired, abandoned),
         () => {
           expired = true;
         }

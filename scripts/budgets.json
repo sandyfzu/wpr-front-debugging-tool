@@ -92,6 +92,23 @@
     }
   },
   {
+    "surface": "background page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["background.js"],
+    "maxKb": {
+      "raw": 107
+    }
+  },
+  {
+    "surface": "exclusion engine worker (Firefox only)",
+    "build": "firefox-mv2",
+    "globs": ["exclusion-transform-worker.js"],
+    "maxKb": {
+      "raw": 28,
+      "gzip": 11
+    }
+  },
+  {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
