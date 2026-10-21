@@ -51,6 +51,14 @@ services:
       # bind mount when its phase lands:
       # - ../docker/vendor/wpr-diagnoser:/var/www/html/wp-content/plugins/wpr-diagnoser:ro
       - ./fixtures:/var/www/html/wp-content/mu-plugins:ro
+      # The bootstrap's readiness marker, served read-only (the browser tier's readiness
+      # URL): up.sh deletes it before every boot and the bootstrap writes it last, so it
+      # answers only once THIS boot converged — never from a warm volume mid-bootstrap.
+      - ./state:/var/www/html/fdt-state:ro
+      # Apache accepts connections immediately (no TCP_DEFER_ACCEPT): an idle
+      # preconnected browser socket otherwise stalls behind the port forwarder — the
+      # why and the measurements live in the file.
+      - ./apache/accept-filter.conf:/etc/apache2/conf-enabled/fdt-accept-filter.conf:ro
     depends_on:
       db:
         condition: service_healthy
@@ -89,6 +97,8 @@ services:
       # Same read-only fixture mount the site gets: wp-cli runs load the must-use
       # plugins exactly as the serving container does, so no hook set is half-present.
       - ./fixtures:/var/www/html/wp-content/mu-plugins:ro
+      # Writable side of the readiness marker (see the wordpress service).
+      - ./state:/mnt/state
     depends_on:
       db:
         condition: service_healthy

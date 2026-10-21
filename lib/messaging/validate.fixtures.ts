@@ -7,14 +7,22 @@
 /** An all-absent minimal detections payload (every row absent). */
 export function minimalDetections(): Record<string, unknown> {
   return {
-    wpr: { present: true, cached: false, version: '3.20.0.2', timeStamp: null },
+    wpr: {
+      present: true,
+      cacheMarkerFound: false,
+      cached: false,
+      version: '3.20.0.2',
+      timeStamp: null
+    },
     remove_unused_css: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     async_css: { present: false },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },
@@ -47,7 +55,13 @@ export function validFdt(): Record<string, unknown> {
 /** A detections payload populated with real values (rejection arms mutate it). */
 export function validDetections(): Record<string, unknown> {
   return {
-    wpr: { present: true, cached: false, version: '3.20.0.2', timeStamp: 1791342241 },
+    wpr: {
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      version: '3.20.0.2',
+      timeStamp: 1791342241
+    },
     remove_unused_css: { present: false },
     delay_js: {
       present: true,
@@ -64,7 +78,7 @@ export function validDetections(): Record<string, unknown> {
       version: '2.0.4',
       delayedScripts: 1
     },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     async_css: { present: false },
     lazyload: {
       present: false,
@@ -72,6 +86,8 @@ export function validDetections(): Record<string, unknown> {
     },
     lazyload_iframes: { present: false, replaceImage: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },

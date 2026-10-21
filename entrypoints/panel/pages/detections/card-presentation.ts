@@ -21,10 +21,13 @@ export const CARD_PAGE_LINKS: ReadonlyMap<StatusItemId, RouteId> = new Map<Statu
 
 /**
  * The vocabulary tone of a verdict. An optional feature being off is not a
- * failure, so "not active" is `neutral` — never the error red.
+ * failure, so "not active" is `neutral` — never the error red; the two
+ * unsure verdicts are the amber `warn` pair (present but unproven).
  */
 export const STATUS_TONES: Readonly<Record<StatusKind, Tone>> = {
   active: 'ok',
+  collecting: 'warn',
+  unknown: 'warn',
   'not-active': 'neutral'
 };
 

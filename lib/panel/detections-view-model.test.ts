@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import type { FdtData, WprDetections } from '../wp-rocket/types';
+import { HUD_FEATURES } from '../detection/hud';
 
 /**
  * The record exactly as the payload validator rebuilds it (its literal
@@ -16,16 +17,18 @@ import type { FdtData, WprDetections } from '../wp-rocket/types';
  */
 function fullDetections(overrides?: Partial<WprDetections>): WprDetections {
   return {
-    wpr: { present: false, cached: false, version: null, timeStamp: null },
+    wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
     remove_unused_css: { present: false },
     async_css: { present: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },
     rocket_cdn: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     rocket_above_the_fold_optimization: { present: false, lcpComment: false },
@@ -196,7 +199,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: '3.20.0.2', timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: '3.20.0.2',
+            timeStamp: null
+          }
         })
       })
     );
@@ -213,7 +222,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: null, timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null
+          }
         })
       })
     );
@@ -229,7 +244,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: '3.20.0.2', timeStamp: 1_767_225_600 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.20.0.2',
+            timeStamp: 1_767_225_600
+          }
         })
       })
     );
@@ -247,7 +268,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: null, timeStamp: 9.99e99 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: 9.99e99
+          }
         })
       })
     );
@@ -263,7 +290,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: true, version: null, timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: null
+          }
         })
       })
     );
@@ -274,7 +307,13 @@ describe('buildStatusItems — the wpr row and the cached card', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          wpr: { present: true, cached: false, version: null, timeStamp: 1_767_225_600 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: 1_767_225_600
+          }
         })
       })
     );
@@ -296,7 +335,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
       id: 'remove_unused_css',
       name: 'Remove Unused CSS',
       status: 'active',
-      subtitle: 'Optimize CSS Delivery'
+      subtitle: 'Optimize CSS delivery'
     });
   });
 
@@ -313,7 +352,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
       id: 'remove_unused_css',
       name: 'Load CSS asynchronously',
       status: 'active',
-      subtitle: 'Optimize CSS Delivery'
+      subtitle: 'Optimize CSS delivery'
     });
   });
 
@@ -322,7 +361,7 @@ describe('buildStatusItems — the RUCSS/async-CSS merge (three branches)', () =
     const card = items.find((item) => item.id === 'remove_unused_css');
     expect(card).toEqual({
       id: 'remove_unused_css',
-      name: 'Optimize CSS Delivery',
+      name: 'Optimize CSS delivery',
       status: 'not-active'
     });
     expect(card?.subtitle).toBeUndefined();
@@ -392,7 +431,7 @@ describe('buildStatusItems — per-feature subtitles', () => {
   });
 });
 
-describe('buildStatusItems — the Optimize critical images lifecycle subtitle', () => {
+describe('buildStatusItems — the Optimize Critical Images lifecycle subtitle', () => {
   it('applied features count their evidence coarsely (9+ past nine)', () => {
     const twelve = buildStatusItems(
       makeData({
@@ -407,7 +446,7 @@ describe('buildStatusItems — the Optimize critical images lifecycle subtitle',
     );
     expect(twelve.find((item) => item.id === 'rocket_above_the_fold_optimization')).toEqual({
       id: 'rocket_above_the_fold_optimization',
-      name: 'Optimize critical images',
+      name: 'Optimize Critical Images',
       status: 'active',
       subtitle: 'Preloaded images detected: 9+',
       detail: { kind: 'preloaded-images', count: 12 }
@@ -428,17 +467,61 @@ describe('buildStatusItems — the Optimize critical images lifecycle subtitle',
     );
   });
 
-  it('collecting phase: the beacon row reads as the family signal, never a verdict', () => {
+  /** The critical-images card for one beacon row. */
+  const ociCard = (beacon: WprDetections['priority_elements_beacon']) =>
+    buildStatusItems(
+      makeData({ wprDetections: fullDetections({ priority_elements_beacon: beacon }) })
+    ).find((item) => item.id === 'rocket_above_the_fold_optimization');
+
+  it('collecting phase: the verdict + why speak, the beacon lends no subtitle', () => {
+    // The config allows the feature, nothing is applied yet: the report's
+    // family composition says "collecting"; the why is the one explanation.
+    const card = ociCard({ present: true, status: { atf: true }, isMobile: null });
+    expect(card).toEqual({
+      id: 'rocket_above_the_fold_optimization',
+      name: 'Optimize Critical Images',
+      status: 'collecting',
+      why: 'Enabled, not yet applied on this page.'
+    });
+  });
+
+  it('a beacon config without the feature reads not active with nothing contradicting it', () => {
+    // Another family feature is collecting; this one's context was withheld.
+    const card = ociCard({ present: true, status: { lrc: true }, isMobile: null });
+    expect(card).toEqual({
+      id: 'rocket_above_the_fold_optimization',
+      name: 'Optimize Critical Images',
+      status: 'not-active'
+    });
+  });
+
+  it('beacon present without a readable config: not active, no collecting claim', () => {
+    const card = ociCard({ present: true, status: null, isMobile: null });
+    expect(card).toEqual({
+      id: 'rocket_above_the_fold_optimization',
+      name: 'Optimize Critical Images',
+      status: 'not-active'
+    });
+  });
+
+  it('a meta-refuted render with remnant preloads states no count (nothing asserted)', () => {
     const items = buildStatusItems(
       makeData({
         wprDetections: fullDetections({
-          priority_elements_beacon: { present: true, status: { atf: true }, isMobile: null }
+          rocket_above_the_fold_optimization: {
+            present: false,
+            source: 'meta',
+            lcpComment: false,
+            preloadedImages: ['/a.webp']
+          }
         })
       })
     );
-    expect(items.find((item) => item.id === 'rocket_above_the_fold_optimization')).toMatchObject({
+    expect(items.find((item) => item.id === 'rocket_above_the_fold_optimization')).toEqual({
+      id: 'rocket_above_the_fold_optimization',
+      name: 'Optimize Critical Images',
       status: 'not-active',
-      subtitle: 'Beacon present, data being collected'
+      source: 'meta'
     });
   });
 
@@ -453,19 +536,22 @@ describe('buildStatusItems — the Optimize critical images lifecycle subtitle',
 describe('buildStatusItems — keying and coverage', () => {
   it('cards are keyed by detection id / derived ids — no indexes, no magic numbers', () => {
     const items = buildStatusItems(makeData({ pageHeaders: [{ name: 'Server', value: 'nginx' }] }));
+    // HUD order after the identity row; the beacon (not a feature) last.
     expect(items.map((item) => item.id)).toEqual([
       'server',
       'wpr',
       'remove_unused_css',
-      'lazyload_css_bg_img',
-      'minify_css',
-      'minify_js',
-      'preload_links',
-      'rocket_cdn',
       'delay_js',
       'defer_all_js',
+      'minify_css',
+      'minify_js',
       'lazyload',
       'lazyload_iframes',
+      'lazyload_css_bg_img',
+      'image_dimensions',
+      'self_hosted_fonts',
+      'preload_links',
+      'rocket_cdn',
       'rocket_above_the_fold_optimization',
       'automatic_lazy_rendering',
       'auto_preload_fonts',
@@ -474,17 +560,25 @@ describe('buildStatusItems — keying and coverage', () => {
     ]);
   });
 
+  it('feature cards are named by the HUD registry, one name per feature everywhere', () => {
+    const items = buildStatusItems(makeData());
+    for (const feature of HUD_FEATURES) {
+      if (feature.row === 'async_css' || feature.row === 'remove_unused_css') continue;
+      expect(items.find((item) => item.id === feature.row)?.name).toBe(feature.label);
+    }
+  });
+
   it('the plugin-native label fall-back covers the family rows (never a raw id)', () => {
     const items = buildStatusItems(makeData());
     const byId = new Map(items.map((item) => [item.id, item]));
-    expect(byId.get('automatic_lazy_rendering')?.name).toBe('Automatic lazy rendering');
-    expect(byId.get('preconnect_external_domains')?.name).toBe('Preconnect to external domains');
+    expect(byId.get('automatic_lazy_rendering')?.name).toBe('Automatic Lazy Rendering');
+    expect(byId.get('preconnect_external_domains')?.name).toBe('Preconnect to External Domains');
     expect(byId.get('priority_elements_beacon')?.name).toBe('Priority Elements beacon');
   });
 
   it('an out-of-contract extra row is carded via the raw-id fallback (futures tolerance)', () => {
     // A payload the boundary validator would reject (it rebuilds the exact
-    // 17-row record) is still admitted by the view model's own contract: the
+    // 19-row record) is still admitted by the view model's own contract: the
     // card set enumerates the record's OWN keys, so a row the name vocabulary
     // does not know yet joins the set — named by its raw id, at its declaring
     // position — instead of being dropped. Pinned here so the fallback reads
@@ -499,5 +593,117 @@ describe('buildStatusItems — keying and coverage', () => {
       name: 'future_feature',
       status: 'active'
     });
+  });
+});
+
+describe('buildStatusItems — evidence source and unsure-state why (HUD readings)', () => {
+  const present = (source?: 'meta' | 'footprint') =>
+    makeData({
+      wprDetections: fullDetections({
+        wpr: {
+          present: true,
+          cacheMarkerFound: true,
+          cached: false,
+          version: '3.23',
+          timeStamp: null
+        },
+        minify_css: { present: true, ...(source === undefined ? {} : { source }) }
+      })
+    });
+
+  it.each([
+    ['meta', 'meta'],
+    ['footprint', 'footprint']
+  ] as const)('a %s-decided row carries source %s', (source, expected) => {
+    expect(buildStatusItems(present(source)).find((item) => item.id === 'minify_css')).toEqual({
+      id: 'minify_css',
+      name: 'Minify CSS files',
+      status: 'active',
+      source: expected
+    });
+  });
+
+  it('an undecided row carries no source field (never an own undefined)', () => {
+    const card = buildStatusItems(present()).find((item) => item.id === 'minify_css');
+    expect(card).toBeDefined();
+    expect(Object.hasOwn(card ?? {}, 'source')).toBe(false);
+    expect(Object.hasOwn(card ?? {}, 'why')).toBe(false);
+  });
+
+  it.each(['image_dimensions', 'self_hosted_fonts'] as const)(
+    'undecided %s on a WP Rocket page reads unknown with its why',
+    (row) => {
+      const card = buildStatusItems(present()).find((item) => item.id === row);
+      expect(card?.status).toBe('unknown');
+      expect(card?.why).toMatch(/^No generator meta declaration decided it/);
+      expect(card?.why).toMatch(/so its state is unknown\.$/);
+    }
+  );
+
+  it.each(['image_dimensions', 'self_hosted_fonts'] as const)(
+    'meta-refuted %s reads not active (a declaration decided it)',
+    (row) => {
+      const data = present();
+      const detections = { ...data.wprDetections, [row]: { present: false, source: 'meta' } };
+      const card = buildStatusItems({ ...data, wprDetections: detections }).find(
+        (item) => item.id === row
+      );
+      expect(card).toMatchObject({ status: 'not-active', source: 'meta' });
+      expect(card?.why).toBeUndefined();
+    }
+  );
+
+  it('undecided rows on a plugin-absent page stay not active (no unknown claim)', () => {
+    const items = buildStatusItems(makeData());
+    expect(items.find((item) => item.id === 'image_dimensions')?.status).toBe('not-active');
+    expect(items.find((item) => item.id === 'self_hosted_fonts')?.status).toBe('not-active');
+  });
+
+  it('the merged card carries the Meta chip when the meta refuted both rows', () => {
+    const items = buildStatusItems(
+      makeData({
+        wprDetections: fullDetections({
+          remove_unused_css: { present: false, source: 'meta' },
+          async_css: { present: false, source: 'meta' }
+        })
+      })
+    );
+    expect(items.find((item) => item.id === 'remove_unused_css')).toEqual({
+      id: 'remove_unused_css',
+      name: 'Optimize CSS delivery',
+      status: 'not-active',
+      source: 'meta'
+    });
+  });
+
+  it("the RUCSS/async merge card carries the shown row's source", () => {
+    const items = buildStatusItems(
+      makeData({
+        wprDetections: fullDetections({
+          remove_unused_css: { present: false, source: 'meta' },
+          async_css: { present: true, source: 'footprint' }
+        })
+      })
+    );
+    expect(items.find((item) => item.id === 'remove_unused_css')).toMatchObject({
+      name: 'Load CSS asynchronously',
+      source: 'footprint'
+    });
+  });
+
+  it('a collecting family card stays out of the active count (status is not active)', () => {
+    const items = buildStatusItems(
+      makeData({
+        wprDetections: fullDetections({
+          automatic_lazy_rendering: {
+            present: false,
+            lazyRenderElements: 0,
+            inlineCssPresent: false,
+            locationHashes: 3
+          }
+        })
+      })
+    );
+    expect(items.find((item) => item.id === 'automatic_lazy_rendering')?.status).toBe('collecting');
   });
 });

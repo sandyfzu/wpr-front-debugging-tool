@@ -12,11 +12,9 @@
  * plugin is not even present, a platform when no headers were captured)
  * renders honest silence instead of an invented answer.
  */
-import {
-  absoluteStampFromMs,
-  formatCacheTimestamp,
-  isRepresentableCacheStamp
-} from '../../../lib/detection/describe';
+import { absoluteStampFromMs, isRepresentableCacheStamp } from '../../../lib/detection/describe';
+import { cacheCopy, cacheStateFromFdtData } from '../../../lib/detection/cache-context';
+import type { CacheCopy } from '../../../lib/detection/cache-context';
 import type { FdtData, PageHeader } from '../../../lib/wp-rocket/types';
 import type { DataState } from '../state/fdt-state-machine';
 import { relativeAge } from '../../../utils/relative-age';
@@ -68,18 +66,23 @@ export type CacheSegmentView =
   | { readonly kind: 'unavailable' }
   /**
    * The plugin is absent: caching is not its question here — render honest
-   * silence, never a "Not cached" verdict about a plugin that isn't there.
+   * silence, never a cache verdict about a plugin that isn't there.
    */
   | { readonly kind: 'not-applicable' }
   /** Cached. `age` when the cache stamp exists (null = cached, unstamped). */
   | {
       readonly kind: 'cached';
       readonly age: string | null;
-      /** The stamp's absolute UTC form for the segment's hover detail; null without a stamp. */
-      readonly capturedAt: string | null;
+      readonly copy: CacheCopy;
     }
-  /** Plugin present, page not served from cache. */
-  | { readonly kind: 'not-cached' };
+  /** Signature present, no debug stamp: the plugin handled it, cache unproven. */
+  | { readonly kind: 'uncertain-signature'; readonly copy: CacheCopy }
+  /** No signature, but a verified hosting cache-layer marker was captured. */
+  | { readonly kind: 'possibly-cached'; readonly copy: CacheCopy }
+  /** No signature and no known host marker (headers may be unavailable). */
+  | { readonly kind: 'not-detected'; readonly copy: CacheCopy }
+  /** The captured URL requests a WP Rocket cache bypass: intent, cache state not proven. */
+  | { readonly kind: 'bypass-requested'; readonly copy: CacheCopy };
 
 /** The platform/server answer's states. */
 export type PlatformSegmentView =
@@ -161,17 +164,28 @@ export function wprSegment(data: FdtData | null): WprSegmentView {
  */
 export function cacheSegment(data: FdtData | null, nowMs: number): CacheSegmentView {
   if (data === null) return { kind: 'loading' };
-  const { present, cached, timeStamp } = data.wprDetections.wpr;
-  if (!present) return { kind: 'not-applicable' };
-  if (!cached) return { kind: 'not-cached' };
-  if (!isRepresentableCacheStamp(timeStamp)) {
-    return { kind: 'cached', age: null, capturedAt: null };
+  const state = cacheStateFromFdtData(data);
+  if (state === null) return { kind: 'not-applicable' };
+  const copy = cacheCopy(state);
+  switch (state.kind) {
+    case 'cached':
+      if (!isRepresentableCacheStamp(state.seconds)) {
+        return { kind: 'cached', age: null, copy };
+      }
+      return {
+        kind: 'cached',
+        age: relativeAge(nowMs - state.seconds * 1000),
+        copy
+      };
+    case 'uncertain-signature':
+      return { kind: 'uncertain-signature', copy };
+    case 'possibly-cached':
+      return { kind: 'possibly-cached', copy };
+    case 'not-detected':
+      return { kind: 'not-detected', copy };
+    case 'bypass-requested':
+      return { kind: 'bypass-requested', copy };
   }
-  return {
-    kind: 'cached',
-    age: relativeAge(nowMs - timeStamp * 1000),
-    capturedAt: formatCacheTimestamp(timeStamp)
-  };
 }
 
 /**

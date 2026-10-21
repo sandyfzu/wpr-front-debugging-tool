@@ -7,8 +7,13 @@
  * of re-typed copies so the vocabulary can never drift between surfaces.
  */
 
+import type { FeatureMetaRow } from './types';
+
 /** Attribute WP Rocket uses on delayed scripts to carry the original `src`. */
 export const DELAY_JS_SRC = 'data-rocket-src';
+
+/** Attribute the Delay JS runtime stamps on scripts it has processed. */
+export const DATA_ROCKET_STATUS = 'data-rocket-status';
 
 /** Attribute marking resources excluded from local tooling processing. */
 export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
@@ -66,7 +71,11 @@ export function delayJSScriptSelector(): string {
 /** The inline Delay JS controller announces itself in its source. */
 export const DELAY_JS_CONTROLLER = 'RocketLazyLoadScripts';
 
-/** Delay JS version marker inside the controller. */
+/**
+ * Delay JS version marker inside the controller. The served minified bundle
+ * carries the same `this.v="…"` assignment, so this one pattern covers both
+ * readable and minified controller shapes.
+ */
 export const DELAY_JS_VERSION_PATTERN = /this\.v\s*=\s*"([^"]+)"/;
 
 /** The image's pre-lazyload source attribute candidates (match-by-substring). */
@@ -152,6 +161,24 @@ export const MINIFY_JS_URL_PATTERN = new RegExp(`${MINIFIED_CACHE_URL_SOURCE}js(
 
 /** Preload links: the options blob script WP Rocket prints for the feature. */
 export const PRELOAD_LINKS_SCRIPT_ID = 'rocket-preload-links-js-extra';
+
+/**
+ * Preload links' inline config identifier. The options blob repeats it within
+ * its own script, so a page whose script id was stripped or rewritten still
+ * carries the feature when the identifier occurs more than once across the
+ * page's scripts.
+ */
+export const PRELOAD_LINKS_CONFIG_MARK = 'RocketPreloadLinksConfig';
+
+/**
+ * Self-host Google Fonts: the attribution attribute on the stylesheet link
+ * the feature emits (and, since later plugin releases, on its inline style —
+ * the footprint upgrade belongs to the media coverage pass, not here).
+ */
+export const SELF_HOSTED_FONTS_ATTRIBUTE = 'data-wpr-hosted-gf-parameters';
+
+/** Self-host Google Fonts: the local cache path of the rewritten stylesheet. */
+export const SELF_HOSTED_FONTS_CACHE_PATH = '/cache/fonts/1/google-fonts/';
 
 /** RocketCDN: the domain anchor a `dns-prefetch` hint points at. */
 export const ROCKET_CDN_DOMAIN = '.rocketcdn.me';
@@ -249,6 +276,66 @@ export const OPTIMIZE_CRITICAL_IMAGES_COMMENT = 'wpr_oci';
 /** Generator meta declaring the active optimization plugins. */
 export const GENERATOR_META_SELECTOR = 'meta[name="generator"]';
 
+/**
+ * The feature-declaration attribute on that generator meta: since 3.17.2 the
+ * plugin lists its active features as whitespace-separated tokens (`wpr_cdn
+ * wpr_delay_js …`) on the same tag that names it. Its presence is the
+ * meta-authoritative evidence class for feature verdicts; its absence (tag
+ * with or without the attribute) leaves footprint evidence in charge.
+ */
+export const WPR_FEATURES_ATTRIBUTE = 'data-wpr-features';
+
+/**
+ * Selector for the generator meta that carries {@link WPR_FEATURES_ATTRIBUTE},
+ * derived from its parts so the generator prefix can never drift from
+ * {@link GENERATOR_META_SELECTOR}.
+ */
+export const WPR_FEATURES_META_SELECTOR = `${GENERATOR_META_SELECTOR}[${WPR_FEATURES_ATTRIBUTE}]`;
+
+/**
+ * Size caps for the untrusted feature declaration: real declarations carry
+ * ≤ ~20 short tokens. A violation degrades the whole declaration (never a
+ * clipped token list, whose cut could read as a refutation of a feature that
+ * is actually on) — hostile input can only lose meta authority, never
+ * manufacture a verdict.
+ */
+export const FEATURE_META_LIMITS = {
+  /** Tokens per attribute. */
+  count: 64,
+  /** Characters per token. */
+  tokenChars: 128,
+  /** Characters of the whole attribute. */
+  totalChars: 8_192
+} as const;
+
+/**
+ * The row↔token registry: each detection row and the exact token the plugin
+ * declares for it. Verified against the plugin's emitters (each feature's
+ * `add_meta_comment` argument prefixed with `wpr_`, plus the option-driven
+ * tokens the meta builder appends itself). Tokens the plugin emits for rows
+ * this port does not carry yet are deliberately absent — mapping them to
+ * nothing would invite a wrong fallback.
+ */
+export const FEATURE_META_TOKENS: Readonly<Record<FeatureMetaRow, string>> = {
+  remove_unused_css: 'wpr_remove_unused_css',
+  async_css: 'wpr_async_css',
+  delay_js: 'wpr_delay_js',
+  defer_all_js: 'wpr_defer_js',
+  lazyload: 'wpr_lazyload_images',
+  lazyload_iframes: 'wpr_lazyload_iframes',
+  lazyload_css_bg_img: 'wpr_lazyload_css_bg_img',
+  self_hosted_fonts: 'wpr_host_fonts_locally',
+  image_dimensions: 'wpr_image_dimensions',
+  rocket_above_the_fold_optimization: 'wpr_oci',
+  automatic_lazy_rendering: 'wpr_automatic_lazy_rendering',
+  auto_preload_fonts: 'wpr_auto_preload_fonts',
+  preconnect_external_domains: 'wpr_preconnect_external_domains',
+  minify_css: 'wpr_minify_css',
+  minify_js: 'wpr_minify_js',
+  preload_links: 'wpr_preload_links',
+  rocket_cdn: 'wpr_cdn'
+};
+
 /** WP Rocket's name as it formats the generator content (`WP Rocket`, `WP-Rocket`…). */
 export const WPR_NAME_PATTERN = /wp\s*-?\s*rocket/i;
 
@@ -293,14 +380,92 @@ export function extractWordPressVersion(metaContent: string): string | null {
   return metaContent.match(WORDPRESS_VERSION_PATTERN)?.[1] ?? null;
 }
 
-/** Slug of the cache marker comment WP Rocket writes. */
-export const CACHE_COMMENT_MARKER = 'This website is like a Rocket';
+/**
+ * The cache comment markers WP Rocket writes after the document element.
+ * The normal footer starts with the full slogan; white-label builds drop the
+ * slogan and feature comments but keep one of these two footprint lines, so
+ * they are the only signature a white-label page carries.
+ */
+export const CACHE_COMMENT_MARKERS = [
+  "This website is like a Rocket, isn't it?",
+  'Cached for great performance',
+  'Optimized for great performance'
+] as const;
 
 /** Debug marker that marks a served cached page. */
 export const CACHE_DEBUG_MARKER = 'Debug: cached';
 
-/** Timestamp suffix of the debug marker (`cached@<seconds>`). */
-export const CACHE_TIMESTAMP_PATTERN = /cached@(.*)/;
+/**
+ * The debug marker's value token. The captured token is validated as a
+ * strict decimal digit run by {@link parseCacheTimestampToken}; the pattern
+ * only separates the token from the rest of the comment.
+ */
+export const CACHE_TIMESTAMP_PATTERN = /cached@(\S+)/;
+
+/**
+ * The largest cache stamp the display contract admits: 9999-12-31 23:59:59
+ * UTC. A page-derived stamp outside it is not rendered as a time (expanded
+ * ISO years and the platform's full range are machine concepts, not cache
+ * evidence a support conversation can read).
+ */
+export const MAX_CACHE_STAMP_SECONDS = 253_402_300_799;
+
+/**
+ * Parse the debug comment's timestamp token. Only a complete decimal digit
+ * run within {@link MAX_CACHE_STAMP_SECONDS} is accepted: `0x10`, negative,
+ * fractional and overlong runs (`Infinity`) all answer null, so a crafted
+ * page cannot make the panel display a made-up instant.
+ *
+ * @param data The matched comment's text.
+ * @returns Epoch seconds, or null when the token is absent or out of domain.
+ */
+export function parseCacheTimestampToken(data: string): number | null {
+  const token = data.match(CACHE_TIMESTAMP_PATTERN)?.[1];
+  if (token === undefined || !/^\d+$/.test(token)) return null;
+  const seconds = Number(token);
+  if (!Number.isSafeInteger(seconds) || seconds > MAX_CACHE_STAMP_SECONDS) return null;
+  return seconds;
+}
+
+/**
+ * Query parameter that makes WP Rocket's `rocket_bypass()` answer true for
+ * one request (`?nowprocket`). The plugin treats the parameter's presence as
+ * the bypass — its PHP check compares the string value against integer 0, so
+ * even `nowprocket=0` does not disable it.
+ */
+export const CACHE_BYPASS_QUERY_PARAM = 'nowprocket';
+
+/**
+ * Whether a URL attests a WP Rocket cache bypass. The capture knows the URL
+ * it loaded; that is the only bypass evidence a served page carries by
+ * itself, and it is deliberately narrow — the server-side constant cannot be
+ * observed from the page.
+ *
+ * PHP's `parse_str` folds array-shaped keys (`nowprocket[]`, `nowprocket[x]`)
+ * into a set parameter, so those forms bypass too; a malformed URL cannot
+ * attest anything and answers false (the content-script boot path must not
+ * throw on a hostile `location.href`).
+ *
+ * @param url The captured page URL (absolute).
+ * @returns True when the bypass parameter is present.
+ */
+export function isCacheBypassUrl(url: string | URL): boolean {
+  let parsed: URL;
+  try {
+    parsed = typeof url === 'string' ? new URL(url) : url;
+  } catch {
+    return false;
+  }
+  // `forEach`, not `for…of keys()`: some content-script sandboxes hand out
+  // URLSearchParams iterators without `Symbol.iterator` (iteration throws,
+  // `Array.from` answers empty), and this runs on the content-script boot path.
+  let bypass = false;
+  parsed.searchParams.forEach((_value, key) => {
+    if (key === CACHE_BYPASS_QUERY_PARAM) bypass = true;
+    else if (key.startsWith(`${CACHE_BYPASS_QUERY_PARAM}[`) && key.includes(']')) bypass = true;
+  });
+  return bypass;
+}
 
 /** One platform distinguishable by response headers. */
 export interface KnownPlatformHeader {
