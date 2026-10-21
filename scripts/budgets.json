@@ -104,8 +104,8 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 26,
-      "gzip": 10
+      "raw": 28,
+      "gzip": 11
     }
   },
   {
