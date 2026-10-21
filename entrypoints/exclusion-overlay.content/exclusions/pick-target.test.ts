@@ -458,11 +458,20 @@ describe('rows hold against served markup (verification round)', () => {
     ).toEqual([{ row: 'uniq.jpg', lane: 'lazyload', matches: 1 }]);
   });
 
+  it('names an `&` image shown twice by a stretch matching both copies', () => {
+    const img = '<img src="data:x" data-lazy-src="https://example.com/up/a&amp;bcde.jpg">';
+    expect(served(`${img}${img}`, 'img')).toEqual([
+      { row: 'bcde.jpg', lane: 'lazyload', matches: 2 }
+    ]);
+  });
+
   it("reads the lazy images' tags once, on first need", () => {
     const element = first('<img src="data:x" data-lazy-src="/a.jpg"><img src="/b.jpg">');
     const context = pickContextOf(element.ownerDocument, PAGE);
     const peers = context.lazyImagePeers();
-    expect(peers).toEqual(['<img src="data:x" data-lazy-src="/a.jpg">']);
+    expect(peers).toEqual([
+      { lazySrc: '/a.jpg', tag: '<img src="data:x" data-lazy-src="/a.jpg">' }
+    ]);
     expect(context.lazyImagePeers()).toBe(peers);
   });
 

@@ -20,6 +20,7 @@ import {
   candidatesFor,
   lazyRenderPeerText,
   type ElementSnapshot,
+  type LazyImagePeer,
   type PickCandidate,
   type PickContext
 } from './pick-target';
@@ -203,23 +204,19 @@ export function scanPageInSlices(
 }
 
 /**
- * The match texts of the elements `selector` finds (bounded like the scan).
+ * What `read` takes from each element `selector` finds (bounded like the scan).
  *
  * @param root Where to look.
  * @param selector Which elements.
- * @param text An element's match text.
+ * @param read What to take from one element.
  */
-function peerTexts(
-  root: ParentNode,
-  selector: string,
-  text: (el: ElementSnapshot) => string
-): string[] {
+function peersOf<T>(root: ParentNode, selector: string, read: (el: ElementSnapshot) => T): T[] {
   const found = root.querySelectorAll(selector);
-  const peers: string[] = [];
+  const peers: T[] = [];
   const count = Math.min(found.length, PAGE_SCAN_LIMIT);
   for (let index = 0; index < count; index += 1) {
     const element = found[index];
-    if (element !== undefined) peers.push(text(elementSnapshot(element)));
+    if (element !== undefined) peers.push(read(elementSnapshot(element)));
   }
   return peers;
 }
@@ -234,12 +231,15 @@ function peerTexts(
  */
 export function pickContextOf(root: ParentNode, pageUrl: string): PickContext {
   // Read on first need only: few pages have an image path with an `&`.
-  let images: readonly string[] | null = null;
+  let images: readonly LazyImagePeer[] | null = null;
   return {
     pageUrl,
-    lazyRenderPeers: peerTexts(root, `[${LAZY_RENDER_ATTRIBUTE}]`, lazyRenderPeerText),
+    lazyRenderPeers: peersOf(root, `[${LAZY_RENDER_ATTRIBUTE}]`, lazyRenderPeerText),
     lazyImagePeers: () =>
-      (images ??= peerTexts(root, `img[${DATA_LAZY_SRC}]`, (el) => el.openingTag))
+      (images ??= peersOf(root, `img[${DATA_LAZY_SRC}]`, (el) => ({
+        lazySrc: el.attribute(DATA_LAZY_SRC) ?? '',
+        tag: el.openingTag
+      })))
   };
 }
 

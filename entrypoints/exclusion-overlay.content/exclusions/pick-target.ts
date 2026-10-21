@@ -74,7 +74,15 @@ export interface PickContext {
   readonly pageUrl: string;
   readonly lazyRenderPeers: readonly string[];
   /** Read on demand (only a path with an `&` needs them). */
-  readonly lazyImagePeers: () => readonly string[];
+  readonly lazyImagePeers: () => readonly LazyImagePeer[];
+}
+
+/** A lazy image as a shortened row name is checked against. */
+export interface LazyImagePeer {
+  /** Its `data-lazy-src` value (copies of one image share it). */
+  readonly lazySrc: string;
+  /** Its opening tag. */
+  readonly tag: string;
 }
 
 /**
@@ -128,20 +136,27 @@ const MIN_STRETCH_CHARS = 4;
 /**
  * A literal that is in the served form of `text` whatever the markup's `&`
  * encoding: the text itself, or its longest `&`-free stretch that is long
- * enough to name a file and in no other lazy image's tag (a part of a name
- * may well be in another's: `a&b.jpg` → `b.jpg`, in `thumb.jpg`).
+ * enough to name a file and in no other image's tag (a part of a name may
+ * well be in another's: `a&b.jpg` → `b.jpg`, in `thumb.jpg`). Copies of the
+ * same image (same `data-lazy-src`) are not others: the row names them all.
  *
  * @param text The decoded text.
- * @param peers Every lazy image's opening tag (the picked one's included), on demand.
+ * @param lazySrc The picked image's `data-lazy-src` value.
+ * @param peers Every lazy image of the page, on demand.
  * @returns The literal, or null when no stretch names only this image.
  */
-function servedLiteral(text: string, peers: () => readonly string[]): string | null {
+function servedLiteral(
+  text: string,
+  lazySrc: string,
+  peers: () => readonly LazyImagePeer[]
+): string | null {
   if (!text.includes('&')) return text;
+  const others = peers().filter((peer) => peer.lazySrc !== lazySrc);
   const stretches = text
     .split('&')
     .filter((part) => part.length >= MIN_STRETCH_CHARS)
     .sort((a, b) => b.length - a.length);
-  return stretches.find((part) => unique(part, peers())) ?? null;
+  return stretches.find((part) => !others.some((peer) => peer.tag.includes(part))) ?? null;
 }
 
 /** How a URL is named in a row. */
@@ -323,7 +338,7 @@ function lazyloadCandidate(el: ElementSnapshot, context: PickContext): PickCandi
   const raw = el.attribute(DATA_LAZY_SRC);
   if (raw === null || raw.trim() === '') return null;
   const name = nameUrl(raw, context.pageUrl);
-  const literal = name === null ? null : servedLiteral(name.text, context.lazyImagePeers);
+  const literal = name === null ? null : servedLiteral(name.text, raw, context.lazyImagePeers);
   return name === null || literal === null
     ? null
     : { lane: 'lazyload', row: literal, subject: name.file };
