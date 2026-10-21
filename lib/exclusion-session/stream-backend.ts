@@ -143,6 +143,8 @@ export interface StreamBackendDeps {
   readonly schedule?: ScheduleTimer;
   /** A request's start stamp (monotonic epoch ms, strictly increasing); defaults to the platform's. */
   readonly stamp?: () => number;
+  /** Wall-clock epoch ms (the request start's wall time); defaults to `Date.now`. */
+  readonly wallNow?: () => number;
 }
 
 /** The backend plus the two request hooks the background registers. */
@@ -221,6 +223,7 @@ export function createStreamInterceptionBackend(
   const { host, log } = deps;
   const schedule = deps.schedule ?? scheduleWithTimeout;
   const stamp = deps.stamp ?? createMonotonicStamp();
+  const wallNow = deps.wallNow ?? (() => Date.now());
   /** Armed tabs → the generation they were armed or resumed with. */
   const armed = new Map<number, number>();
   /** Filtered responses in flight, by request id. */
@@ -455,6 +458,7 @@ export function createStreamInterceptionBackend(
         identity: {
           token: details.requestId,
           receivedAt: stamp(),
+          wallAt: wallNow(),
           speculationRulesHeader: false,
           servedAsCopy: false,
           speculationGuard: false,

@@ -168,6 +168,14 @@ export interface ChromiumBackendDeps {
   readonly clock?: () => number;
   /** A response's arrival stamp (monotonic epoch ms, strictly increasing); defaults to the platform's. */
   readonly stamp?: () => number;
+  /** Wall-clock epoch ms (the arrival's wall time); defaults to `Date.now`. */
+  readonly wallNow?: () => number;
+}
+
+/** When a paused response arrived: its monotonic order stamp and its wall time. */
+interface Arrival {
+  readonly receivedAt: number;
+  readonly wallAt: number;
 }
 
 /** A debugger event's source, validated: the tab (and child session) it came from. */
@@ -203,6 +211,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const serialize = createKeyedQueue();
   const clock = deps.clock ?? (() => performance.now());
   const stamp = deps.stamp ?? createMonotonicStamp();
+  const wallNow = deps.wallNow ?? (() => Date.now());
   const attachments = new Map<number, Attachment>();
   /** Per tab, the cause of an arm whose attachment the browser ended mid-arm (held only during an operation). */
   const aborts = new Map<number, Promise<ArmUnavailableCause>>();
@@ -556,7 +565,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     target: DebuggerTarget,
     pause: PausedRequest,
     release: PauseRelease,
-    receivedAt: number
+    arrival: Arrival
   ): Promise<void> => {
     const disposition = classifyPause(pause);
     if (disposition.kind === 'pass') {
@@ -574,7 +583,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     // Another origin in the session tab (or no session): its body is none
     // of the session's business — never read, passed through.
     if (!(await host.shouldIntercept(target.tabId, pause.url))) return release.pass('no-session');
-    const identity = identityOf(target.tabId, pause, receivedAt);
+    const identity = identityOf(target.tabId, pause, arrival);
     const body = await readBody(target, pause);
     if (body === null) {
       await release.passWithoutRulesHeader('body-unavailable', pause);
@@ -594,10 +603,11 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const identityOf = (
     tabId: number,
     pause: PausedRequest,
-    receivedAt: number
+    arrival: Arrival
   ): InterceptedResponseIdentity => ({
     token: pause.requestId,
-    receivedAt,
+    receivedAt: arrival.receivedAt,
+    wallAt: arrival.wallAt,
     speculationRulesHeader: headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null,
     servedAsCopy: true,
     speculationGuard: guards.get(tabId)?.origin === parseUrl(pause.url)?.origin,
@@ -617,7 +627,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
 
   /** A `Fetch.requestPaused` event: validate, handle, and always release. */
   const onPaused = async (target: DebuggerTarget, params: unknown): Promise<void> => {
-    const receivedAt = stamp();
+    // Both clocks read on arrival (records may be written after the release).
+    const arrival: Arrival = { receivedAt: stamp(), wallAt: wallNow() };
     const pause = parsePausedRequest(params);
     const requestId = pause?.requestId ?? pausedRequestId(params);
     if (requestId === null) {
@@ -631,7 +642,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
         await release.pass('malformed');
         return;
       }
-      await handlePause(target, pause, release, receivedAt);
+      await handlePause(target, pause, release, arrival);
     } catch (cause) {
       log.error('Paused request handling failed — served unmodified', { cause });
       await release.pass('fault');

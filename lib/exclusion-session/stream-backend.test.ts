@@ -192,6 +192,7 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
     log,
     schedule: timers.schedule,
     stamp: () => STARTED_AT,
+    wallNow: () => WALL_AT,
     openFilter:
       options.openFilter ??
       (() => {
@@ -288,11 +289,14 @@ describe('stream backend — the armed-tab gate', () => {
 
 /** The request start the fake clock answers. */
 const STARTED_AT = 1_800_000_000_000;
+/** The wall clock at the request start (a different clock domain than STARTED_AT's). */
+const WALL_AT = STARTED_AT + 7;
 
 describe('stream backend — response identity', () => {
   const IDENTITY = {
     token: 'r1',
     receivedAt: STARTED_AT,
+    wallAt: WALL_AT,
     speculationRulesHeader: false,
     servedAsCopy: false,
     speculationGuard: false,

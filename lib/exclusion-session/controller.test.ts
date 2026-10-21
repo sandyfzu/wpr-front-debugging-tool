@@ -1380,6 +1380,33 @@ describe('served identity and session effects', () => {
     });
   });
 
+  it('records the backend’s arrival wall time when it has one (a record written later keeps it)', async () => {
+    let now = NOW;
+    const r = rig({ now: () => now });
+    await seedActive();
+    // The record is written well after the arrival (a release, then a busy
+    // background): its wall time must still be the arrival's.
+    now = NOW + 30_000;
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, {
+      ...copyIdentity(NOW - 60_000),
+      wallAt: NOW - 5
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 5 });
+    await r.host.documentNotServed(TAB, `${ORIGIN}/b`, {
+      ...copyIdentity(NOW - 50_000),
+      wallAt: NOW - 3
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 3 });
+    await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/c`),
+      identity: { ...copyIdentity(NOW - 40_000), wallAt: NOW - 1 }
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 1 });
+  });
+
   it('copy-serving backend: serves the original when only the rules would change (the guard removes them)', async () => {
     const r = rig();
     await seedActive();

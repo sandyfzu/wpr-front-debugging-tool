@@ -613,10 +613,13 @@ export function createExclusionSessionController(
               ...url,
               token: identity.token,
               order: orderOf(identity.receivedAt),
-              // Wall clock, for surfaces comparing with a page's time origin:
-              // the monotonic arrival stamp orders documents, but it lags
-              // the wall clock after a sleep in a long-lived background.
-              receivedAt: deps.now(),
+              // Wall clock, for surfaces comparing with a page's
+              // (wall-anchored) navigation window: the monotonic arrival
+              // stamp orders documents, but it lags the wall clock after a
+              // sleep in a long-lived background. The backend's arrival wall
+              // time when it has one — a record written after the release
+              // (served unmodified, not served) must not read later.
+              receivedAt: identity.wallAt ?? deps.now(),
               speculationRules: {
                 removedFromDocument,
                 headerRemoved: identity.speculationRulesHeader,
