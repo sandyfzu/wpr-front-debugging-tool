@@ -79,6 +79,8 @@ function pageTools() {
     timeOrigin: 0
   });
   const [pageModal, setPageModal] = createSignal(false);
+  // What a fresh `:modal` read would answer (lets a test go stale).
+  let modalNow = false;
   const [pageTopLayerOpened] = createSignal(0);
   const [zoom] = createSignal(1);
   const [candidatesCapped] = createSignal(false);
@@ -92,11 +94,20 @@ function pageTools() {
     zoom,
     pageFacts,
     pointPick: () => null,
+    refreshModal: () => {
+      setPageModal(modalNow);
+    },
     frames: () => [frame],
     rescan: vi.fn(),
     dispose: vi.fn()
   };
-  return { tools, setPageModal };
+  return {
+    tools,
+    setPageModal,
+    setModalNow: (value: boolean) => {
+      modalNow = value;
+    }
+  };
 }
 
 /** Render the overlay over a port, started. */
@@ -107,9 +118,11 @@ function mount(sessionPort: ExclusionSessionPort) {
   let picker: PickerEvents<PointedPick> | null = null;
   const stopPicker = vi.fn();
   let setPageModal: (value: boolean) => void = () => undefined;
+  let setModalNow: (value: boolean) => void = () => undefined;
   const result = render(() => {
     const page = pageTools();
     setPageModal = page.setPageModal;
+    setModalNow = page.setModalNow;
     const controller = createOverlayController({
       port: sessionPort,
       pageFacts: page.tools.pageFacts,
@@ -149,6 +162,9 @@ function mount(sessionPort: ExclusionSessionPort) {
     picker: () => picker,
     setPageModal: (value: boolean) => {
       setPageModal(value);
+    },
+    setModalNow: (value: boolean) => {
+      setModalNow(value);
     },
     fireTimers: () => {
       timers.splice(0).forEach((run) => {
@@ -339,5 +355,42 @@ describe('OverlayApp', () => {
     if (guard === null) throw new Error('no guard');
     fireEvent.click(guard);
     expect(screen.getByText(/Frames can’t be picked/)).toBeTruthy();
+  });
+
+  it('moves focus to the heading when Stop removes the focused button', async () => {
+    mount(port(activeRecord()));
+    const stop = await screen.findByRole('button', { name: /Stop/ });
+    stop.focus();
+    fireEvent.click(stop);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement?.tagName).toBe('H1');
+    });
+  });
+
+  it('moves focus to the heading when an accepted apply removes the footer', async () => {
+    mount(port({ state: 'inactive' }));
+    const apply = await screen.findByRole('button', { name: /^Apply$/ });
+    apply.focus();
+    fireEvent.click(apply);
+    await screen.findByText('Reloading with your exclusions');
+    await waitFor(() => {
+      expect(document.activeElement?.tagName).toBe('H1');
+    });
+  });
+
+  it('re-checks the page modal on reopen, and focuses the panel when a modal goes away', async () => {
+    const { container, setPageModal, setModalNow } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    setPageModal(true);
+    // The dialog is gone, but nothing told the tools (stale signal).
+    setModalNow(false);
+    fireEvent.click(await screen.findByRole('button', { name: /open the exclusion builder/i }));
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+    expect(document.activeElement?.tagName).toBe('H1');
   });
 });

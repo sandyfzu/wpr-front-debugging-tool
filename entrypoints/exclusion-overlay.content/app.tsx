@@ -42,7 +42,12 @@ import RotateCcw from 'lucide-solid/icons/rotate-ccw';
 import Square from 'lucide-solid/icons/square';
 import X from 'lucide-solid/icons/x';
 import { BannerView } from './banner';
-import { noticeBanner, stateBanner, type BannerAction } from './banner-model';
+import {
+  noticeBanner,
+  stateBanner,
+  withoutRepeatedActions,
+  type BannerAction
+} from './banner-model';
 import { LANE_COPY, TOOL_TITLE, saveStateWords, sessionIndicator, viewCopy } from './copy';
 import type { OverlayController } from './controller';
 import { Candidates } from './exclusions/candidates';
@@ -232,6 +237,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     focusSoon(() => pill);
   };
   const expand = (): void => {
+    // A modal the page removed without closing it fires nothing: re-read.
+    props.page.refreshModal();
     if (paused()) return;
     setOpen(true);
     focusSoon(() => heading);
@@ -357,6 +364,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           setListOpen(false);
         } else if (openBeforeModal) {
           setOpen(true);
+          focusSoon(() => heading);
         }
       },
       { defer: true }
@@ -369,6 +377,31 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       () => props.page.pageTopLayerOpened(),
       () => {
         if (layer !== undefined && !paused()) showInTopLayer(layer);
+      },
+      { defer: true }
+    )
+  );
+
+  // A state change can unmount the focused control (Stop once stopped, the
+  // footer while reloading, a notice's button): focus then falls out of the
+  // overlay to the page. Land it on the heading instead — only when the
+  // last focused control is gone, never when the user moved elsewhere.
+  let lastFocused: Element | null = null;
+  const onFocusIn = (event: FocusEvent): void => {
+    lastFocused = event.target instanceof Element ? event.target : null;
+  };
+  createEffect(
+    on(
+      () => [state(), c.view(), notice()],
+      () => {
+        props.requestFrame(() => {
+          if (lastFocused === null || lastFocused.isConnected || layer === undefined) return;
+          const root = layer.getRootNode();
+          const active =
+            'activeElement' in root ? (root as Document | ShadowRoot).activeElement : null;
+          if (active === null || active === layer.ownerDocument.body)
+            heading?.focus({ preventScroll: true });
+        });
       },
       { defer: true }
     )
@@ -419,6 +452,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       // The page's CSS zoom reaches the overlay through its host: undo it.
       style={props.page.zoom() === 1 ? undefined : { zoom: String(1 / props.page.zoom()) }}
       on:keydown={onKeyDown}
+      on:focusin={onFocusIn}
       // Any interaction first checks the extension is still there: a
       // reloaded extension's overlay leaves instead of failing every ask.
       on:pointerdown={() => {
@@ -540,7 +574,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
             <Show when={banner()}>
               {(current) => (
                 <BannerView
-                  banner={current()}
+                  banner={withoutRepeatedActions(current(), notice())}
                   onAction={onBannerAction}
                   held={pending() !== null}
                   live

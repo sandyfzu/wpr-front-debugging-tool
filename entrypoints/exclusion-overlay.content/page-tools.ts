@@ -89,6 +89,8 @@ export interface PageTools {
   readonly zoom: Accessor<number>;
   /** The page's embedded frames (their content is another document: not pickable). */
   readonly frames: () => readonly Element[];
+  /** Re-read whether a page modal dialog is shown (e.g. before reopening). */
+  readonly refreshModal: () => void;
   /** Rescan now (e.g. when the candidate list opens). */
   readonly rescan: () => void;
   /** Disconnect the observer and cancel pending work. */
@@ -224,9 +226,18 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   const observer = new MutationObserver(() => {
     if (deps.isInvalid()) {
       observer.disconnect();
+      rootObserver.disconnect();
       return;
     }
+    // A framework can unmount a modal dialog without closing it (no
+    // `toggle`): any DOM change re-reads whether one is still shown.
+    setPageModal(hasModal(doc));
     rescanSoon();
+  });
+  // The root's and body's own style/class changes can change the zoom (a
+  // cheap read, kept off the subtree observer's attribute list).
+  const rootObserver = new MutationObserver(() => {
+    if (!deps.isInvalid()) setZoom(cssZoom(host));
   });
   observer.observe(doc.documentElement, {
     subtree: true,
@@ -234,6 +245,9 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
     attributes: true,
     attributeFilter: WATCHED_ATTRIBUTES
   });
+  for (const root of [doc.documentElement, doc.body]) {
+    rootObserver.observe(root, { attributes: true, attributeFilter: ['style', 'class'] });
+  }
   // History-API navigations (SPAs) change the address without a reload:
   // the facts and the candidates follow.
   // Returning to the tab (e.g. after reloading the extension elsewhere)
@@ -282,9 +296,13 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
       return null;
     },
     frames: () => Array.from(doc.querySelectorAll(FRAME_SELECTOR)).slice(0, MAX_FRAMES),
+    refreshModal: () => {
+      setPageModal(hasModal(doc));
+    },
     rescan,
     dispose: () => {
       observer.disconnect();
+      rootObserver.disconnect();
       rescanSoon.cancel();
       cancelScan?.();
     }

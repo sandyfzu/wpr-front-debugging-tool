@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExclusionServedDocument } from '../../lib/messaging/exclusion-session';
-import { noticeBanner, servedNotes, stateBanner } from './banner-model';
+import { noticeBanner, servedNotes, stateBanner, withoutRepeatedActions } from './banner-model';
 import type { OverlayState } from './session/machine';
 import type { SessionView } from './session/session-view';
 
@@ -109,5 +109,15 @@ describe('noticeBanner', () => {
       noticeBanner({ kind: 'action-failed', action: 'apply', problem: 'context-invalidated' })
         .actions
     ).toEqual(['dismiss']);
+  });
+});
+
+describe('withoutRepeatedActions', () => {
+  it('drops a forward action the notice already offers (one Reload, not two)', () => {
+    const armed = stateBanner(READY, { kind: 'armed' });
+    if (armed === null) throw new Error('armed banner');
+    const stalled = noticeBanner({ kind: 'reload-stalled' });
+    expect(withoutRepeatedActions(armed, stalled).actions).toEqual([]);
+    expect(withoutRepeatedActions(armed, null)).toBe(armed);
   });
 });

@@ -146,6 +146,35 @@ describe('createPageTools', () => {
     expect(tools?.pointPick(1, 1)).toBeNull();
   });
 
+  it('notices a modal dialog removed without closing it (framework unmount)', async () => {
+    let modal = true;
+    // The prototype's own method (the instance one is replaced below).
+    const real = (selector: string): Element | null =>
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- the generic-string overload is the one a stand-in must forward to
+      Document.prototype.querySelector.call(document, selector);
+    Object.defineProperty(document, 'querySelector', {
+      configurable: true,
+      value: (selector: string) =>
+        selector === ':modal' ? (modal ? document.body : null) : real(selector)
+    });
+    document.body.append(document.createElement('p'));
+    await microtasks();
+    expect(tools?.pageModal()).toBe(true);
+    modal = false;
+    document.body.lastElementChild?.remove();
+    await microtasks();
+    expect(tools?.pageModal()).toBe(false);
+    Reflect.deleteProperty(document, 'querySelector');
+  });
+
+  it('re-reads the zoom when the page restyles its root at run time', async () => {
+    Object.defineProperty(host, 'currentCSSZoom', { value: 2, configurable: true });
+    document.documentElement.setAttribute('style', 'zoom: 2');
+    await microtasks();
+    expect(tools?.zoom()).toBe(2);
+    document.documentElement.removeAttribute('style');
+  });
+
   it('lists the page frames', () => {
     document.body.append(document.createElement('iframe'));
     expect(tools?.frames()).toHaveLength(1);

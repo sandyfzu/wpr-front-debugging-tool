@@ -187,3 +187,21 @@ export function noticeBanner(notice: ActionNotice): Banner {
       };
   }
 }
+
+/**
+ * The main banner without the forward actions the notice below it already
+ * offers (an overdue reload's notice and the armed banner both offer
+ * Reload: one is enough).
+ *
+ * @param main The state banner.
+ * @param notice The notice banner, if any.
+ */
+export function withoutRepeatedActions(main: Banner, notice: Banner | null): Banner {
+  if (notice === null) return main;
+  const repeated = main.actions.filter(
+    (action) => action !== 'dismiss' && notice.actions.includes(action)
+  );
+  return repeated.length === 0
+    ? main
+    : { ...main, actions: main.actions.filter((action) => !repeated.includes(action)) };
+}
