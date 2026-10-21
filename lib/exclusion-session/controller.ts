@@ -607,7 +607,10 @@ export function createExclusionSessionController(
               ...url,
               token: identity.token,
               order: orderOf(identity.receivedAt),
-              receivedAt: identity.receivedAt,
+              // Wall clock, for surfaces comparing with a page's time origin:
+              // the monotonic arrival stamp orders documents, but it lags
+              // the wall clock after a sleep in a long-lived background.
+              receivedAt: deps.now(),
               speculationRules: {
                 removedFromDocument,
                 headerRemoved: identity.speculationRulesHeader,

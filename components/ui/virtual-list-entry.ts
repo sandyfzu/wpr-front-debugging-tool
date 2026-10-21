@@ -17,6 +17,7 @@
  * pointerdown, or after one animation frame, restoring full pointer
  * interaction and arrow-key focus.
  */
+import { focusedElementOf } from './virtual-list-focus';
 
 /**
  * What sequential navigation can land on inside a row. Element-derived:
@@ -128,7 +129,9 @@ export function attachEntryMask(scroller: HTMLElement): EntryMaskHandle {
     // is the interior Tab walk — it must keep reaching the rows beyond the
     // visible band (each step is revealed and the rendered window follows),
     // so the mask stays out of its way entirely.
-    const active = doc?.activeElement;
+    // Focus is read from the scroller's own tree: inside a shadow root the
+    // document reports only the host.
+    const active = focusedElementOf(scroller);
     if (active instanceof Element && scroller.contains(active)) return;
     const spacer = scroller.querySelector<HTMLElement>(':scope > [data-fdt-virtual-spacer]');
     if (!spacer) return;
@@ -147,6 +150,9 @@ export function attachEntryMask(scroller: HTMLElement): EntryMaskHandle {
       const r = el.getBoundingClientRect();
       return { el, top: r.top, bottom: r.bottom };
     });
+    // A press landing before the previous pop restores the previous plan
+    // first: rows it masked and this plan does not must not stay inert.
+    pop();
     const planned = planEntryMask(
       geometry,
       box.top + borderTop,

@@ -1341,6 +1341,21 @@ describe('served identity and session effects', () => {
     expect(JSON.stringify(document)).not.toContain('email');
   });
 
+  it('records receivedAt by the wall clock, not the backend stamp (which orders only)', async () => {
+    const r = rig();
+    await seedActive();
+    // A monotonic stamp lagging the wall clock (a long-lived background after a sleep).
+    await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/a`),
+      identity: copyIdentity(NOW - 60_000)
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({
+      receivedAt: NOW,
+      token: `req-${String(NOW - 60_000)}`
+    });
+  });
+
   it('copy-serving backend: serves the original when only the rules would change (the guard removes them)', async () => {
     const r = rig();
     await seedActive();

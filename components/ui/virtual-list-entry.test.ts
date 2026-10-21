@@ -337,6 +337,40 @@ describe('attachEntryMask', () => {
     }
   });
 
+  it('a second press replans from clean rows: no row of the first plan stays inert', () => {
+    const wiring = buildWiring();
+    const release = attachEntryMask(wiring.scroller);
+    vi.useFakeTimers();
+    try {
+      press('Tab');
+      expect(idOf(wiring.rows, '0').inert).toBe(true);
+      // The rows moved between the presses (a scroll without its event):
+      // row 0 is now in the band, so the second plan leaves it out.
+      for (const [index, el] of wiring.rows.entries())
+        stubRect(el, 100 + index * 10, 108 + index * 10);
+      press('Tab');
+      vi.advanceTimersByTime(16);
+      for (const el of wiring.rows) expect(el.inert, `row ${String(el.dataset.index)}`).toBe(false);
+    } finally {
+      release();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads focus through a shadow root: an interior press inside a shadow list never masks', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = host.attachShadow({ mode: 'open' });
+    const wiring = buildWiring();
+    root.append(wiring.scroller);
+    const release = attachEntryMask(wiring.scroller);
+    idOf(wiring.rows, '2').querySelector('button')?.focus();
+    expect(root.activeElement).not.toBeNull();
+    press('Tab');
+    for (const el of wiring.rows) expect(el.inert, `row ${String(el.dataset.index)}`).toBe(false);
+    release();
+  });
+
   it('ignores non-Tab presses and modifier Tab presses', () => {
     const wiring = buildWiring();
     const release = attachEntryMask(wiring.scroller);

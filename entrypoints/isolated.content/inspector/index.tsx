@@ -48,7 +48,7 @@ import {
   isInspectorOriginEnabled,
   inspectorOriginsStore
 } from '../../../lib/storage/inspector-origins';
-import { mountShadowUi } from '../ui/mount';
+import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
