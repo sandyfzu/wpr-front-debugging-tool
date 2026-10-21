@@ -34,13 +34,18 @@ export interface PageFacts {
 }
 
 /**
- * How much earlier than this document's navigation start a matching record
- * may have been received and still be trusted as this document's: the
- * background's and the page's clocks are separate monotonic clocks anchored
- * to the wall clock, so a small skew is expected. A record received further
- * back is a previous load of the same URL.
+ * How much earlier than this document's navigation start its own record may
+ * read (the background and the page read the same wall clock, a few ms
+ * apart): a response for this navigation is recorded after it started.
  */
-export const RECORD_CLOCK_SKEW_MS = 2_000;
+export const RECORD_SAME_LOAD_SKEW_MS = 100;
+
+/**
+ * Beyond this, a record older than the navigation start belongs to a
+ * previous load: this one was not intercepted. Between the two bounds the
+ * clocks cannot settle it honestly.
+ */
+export const RECORD_STALE_MS = 2_000;
 
 /**
  * The record digest of a URL: lowercase hex SHA-256 of its UTF-8
@@ -69,13 +74,14 @@ export function matchServedDocument(
   page: PageFacts
 ): PageMatch {
   if (served === undefined) return 'cant-tell';
-  const documentAddress = page.documentUrl === null ? null : documentDigest(page.documentUrl);
-  const matches =
-    served.urlDigest === documentDigest(page.href) || served.urlDigest === documentAddress;
-  if (matches) {
-    return served.receivedAt < page.timeOrigin - RECORD_CLOCK_SKEW_MS ? 'cant-tell' : 'this-page';
+  // The document's own URL, when the Performance API knows it, is the only
+  // identity: the current address may have been moved by the page.
+  const address = page.documentUrl ?? page.href;
+  if (served.urlDigest !== documentDigest(address)) {
+    // Unknown document URL + mismatch may only be a history-API move.
+    return page.documentUrl === null ? 'cant-tell' : 'other-page';
   }
-  // The document's own address is known and differs: the record is another
-  // document's. Unknown, the mismatch may only be a history-API move.
-  return documentAddress === null ? 'cant-tell' : 'other-page';
+  const age = page.timeOrigin - served.receivedAt;
+  if (age <= RECORD_SAME_LOAD_SKEW_MS) return 'this-page';
+  return age > RECORD_STALE_MS ? 'other-page' : 'cant-tell';
 }

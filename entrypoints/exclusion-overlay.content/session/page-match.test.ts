@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { ExclusionServedDocument } from '../../../lib/messaging/exclusion-session';
 import { servedUrl } from '../../../lib/exclusion-session/served-url';
 import {
-  RECORD_CLOCK_SKEW_MS,
+  RECORD_SAME_LOAD_SKEW_MS,
+  RECORD_STALE_MS,
   documentDigest,
   matchServedDocument,
   type PageFacts
@@ -72,11 +73,21 @@ describe('matchServedDocument', () => {
     expect(matchServedDocument(undefined, facts())).toBe('cant-tell');
   });
 
-  it('distrusts a matching record received before this navigation (a previous load)', () => {
-    const old = served(PAGE, -(RECORD_CLOCK_SKEW_MS + 1));
-    expect(matchServedDocument(old, facts())).toBe('cant-tell');
-    const skewed = served(PAGE, -RECORD_CLOCK_SKEW_MS);
-    expect(matchServedDocument(skewed, facts())).toBe('this-page');
+  it('tells a previous load of the same URL apart by when the record was made', () => {
+    // Changed in audit round 1: one 2 s window used to read a quick
+    // unintercepted reload as this page; now the windows are explicit.
+    expect(matchServedDocument(served(PAGE, -RECORD_SAME_LOAD_SKEW_MS), facts())).toBe('this-page');
+    expect(matchServedDocument(served(PAGE, -(RECORD_SAME_LOAD_SKEW_MS + 1)), facts())).toBe(
+      'cant-tell'
+    );
+    expect(matchServedDocument(served(PAGE, -RECORD_STALE_MS), facts())).toBe('cant-tell');
+    expect(matchServedDocument(served(PAGE, -(RECORD_STALE_MS + 1)), facts())).toBe('other-page');
+  });
+
+  it("compares the document's own URL only, when known (the current address cannot override it)", () => {
+    // The page moved itself (history API) onto the recorded URL: still not that document.
+    const moved = facts({ href: 'https://example.com/cart', documentUrl: PAGE });
+    expect(matchServedDocument(served('https://example.com/cart'), moved)).toBe('other-page');
   });
 
   it('differs on the query: the digest covers the whole URL', () => {
