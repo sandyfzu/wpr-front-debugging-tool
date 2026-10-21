@@ -72,6 +72,13 @@ export interface PageToolsDeps {
   readonly host: Element;
   /** Listen on a page target, released with the context. */
   readonly listen: (target: EventTarget, type: string, handler: () => void) => void;
+  /**
+   * Whether the extension context is gone (reading it also tears the
+   * overlay down when it is): checked on page activity, so a reloaded
+   * extension's overlay stops instead of observing a page it can no
+   * longer serve.
+   */
+  readonly isInvalid: () => boolean;
 }
 
 /**
@@ -112,6 +119,10 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   const rescanSoon = debounce(rescan, RESCAN_DEBOUNCE_MS);
 
   const observer = new MutationObserver(() => {
+    if (deps.isInvalid()) {
+      observer.disconnect();
+      return;
+    }
     rescanSoon();
   });
   observer.observe(doc.documentElement, {
@@ -122,6 +133,11 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   });
   // History-API navigations (SPAs) change the address without a reload:
   // the facts and the candidates follow.
+  // Returning to the tab (e.g. after reloading the extension elsewhere)
+  // re-checks the context.
+  deps.listen(doc, 'visibilitychange', () => {
+    deps.isInvalid();
+  });
   deps.listen(win, 'wxt:locationchange', () => {
     setPageFacts(readFacts());
     rescanSoon();

@@ -22,6 +22,16 @@ const H0 = [
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
 ];
 
+/**
+ * One word of a fixed-size table. Every index used below is inside its
+ * table by construction (0–63 for the schedule and constants, 0–7 for the
+ * state), so the read is total; the assertion only narrows the
+ * unchecked-index type.
+ */
+function word(table: Uint32Array | readonly number[], index: number): number {
+  return table[index] as number;
+}
+
 /** 32-bit right rotation. */
 function rotr(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
@@ -59,11 +69,11 @@ export function sha256Hex(text: string): string {
   for (let offset = 0; offset < view.byteLength; offset += 64) {
     for (let t = 0; t < 16; t += 1) w[t] = view.getUint32(offset + t * 4);
     for (let t = 16; t < 64; t += 1) {
-      const w15 = w[t - 15] ?? 0;
-      const w2 = w[t - 2] ?? 0;
+      const w15 = word(w, t - 15);
+      const w2 = word(w, t - 2);
       const s0 = rotr(w15, 7) ^ rotr(w15, 18) ^ (w15 >>> 3);
       const s1 = rotr(w2, 17) ^ rotr(w2, 19) ^ (w2 >>> 10);
-      w[t] = ((w[t - 16] ?? 0) + s0 + (w[t - 7] ?? 0) + s1) >>> 0;
+      w[t] = (word(w, t - 16) + s0 + word(w, t - 7) + s1) >>> 0;
     }
     let [a, b, c, d, e, f, g, h] = hash as [
       number,
@@ -78,7 +88,7 @@ export function sha256Hex(text: string): string {
     for (let t = 0; t < 64; t += 1) {
       const sum1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const choice = (e & f) ^ (~e & g);
-      const temp1 = (h + sum1 + choice + (K[t] ?? 0) + (w[t] ?? 0)) >>> 0;
+      const temp1 = (h + sum1 + choice + word(K, t) + word(w, t)) >>> 0;
       const sum0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const majority = (a & b) ^ (a & c) ^ (b & c);
       const temp2 = (sum0 + majority) >>> 0;
@@ -92,7 +102,7 @@ export function sha256Hex(text: string): string {
       a = (temp1 + temp2) >>> 0;
     }
     [a, b, c, d, e, f, g, h].forEach((value, index) => {
-      hash[index] = ((hash[index] ?? 0) + value) >>> 0;
+      hash[index] = (word(hash, index) + value) >>> 0;
     });
   }
   return hash.map((word) => word.toString(16).padStart(8, '0')).join('');

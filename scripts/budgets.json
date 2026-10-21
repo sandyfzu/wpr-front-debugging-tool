@@ -43,6 +43,14 @@
     }
   },
   {
+    "surface": "exclusion builder overlay (runtime content script, loaded on open)",
+    "globs": ["content-scripts/exclusion-overlay.js"],
+    "maxKb": {
+      "raw": 190,
+      "gzip": 65
+    }
+  },
+  {
     "surface": "main-world content script",
     "globs": ["content-scripts/main-world*.js"],
     "maxKb": {
@@ -109,10 +117,10 @@
     }
   },
   {
-    "surface": "whole build (all JS output — ungameable backstop)",
+    "surface": "whole build (all JS output \u2014 ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1225
+      "raw": 1265
     }
   }
 ]

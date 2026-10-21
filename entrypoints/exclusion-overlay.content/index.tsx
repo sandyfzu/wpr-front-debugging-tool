@@ -64,7 +64,8 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<void> {
           host,
           listen: (target, type, handler) => {
             ctx.addEventListener(target, type as keyof WindowEventMap, handler);
-          }
+          },
+          isInvalid: () => ctx.isInvalid
         });
         const controller = createOverlayController({
           port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
@@ -101,6 +102,7 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<void> {
                 passive: true
               });
             }}
+            isInvalid={() => ctx.isInvalid}
             scrollPage={(dx, dy) => {
               window.scrollBy(dx, dy);
             }}

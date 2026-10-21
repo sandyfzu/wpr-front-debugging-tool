@@ -89,6 +89,8 @@ export interface OverlayAppProps {
   readonly onClose: () => void;
   /** Scroll the page by a wheel delta while the pick glass covers it. */
   readonly scrollPage: (dx: number, dy: number) => void;
+  /** Whether the extension context is gone (reading it tears a dead overlay down). */
+  readonly isInvalid: () => boolean;
 }
 
 /** What the highlight shows. */
@@ -314,7 +316,16 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   };
 
   return (
-    <div class="xo-layer" ref={layer} on:keydown={onKeyDown}>
+    <div
+      class="xo-layer"
+      ref={layer}
+      on:keydown={onKeyDown}
+      // Any interaction first checks the extension is still there: a
+      // reloaded extension's overlay leaves instead of failing every ask.
+      on:pointerdown={() => {
+        props.isInvalid();
+      }}
+    >
       {/* The highlight paints under the panel: the panel is never covered. */}
       <Show when={highlightRect()}>
         {(rect) => (
@@ -428,7 +439,15 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           >
             <Show when={banner()}>
               {(current) => (
-                <BannerView banner={current()} onAction={onBannerAction} locked={locked()} live />
+                // Only an action in flight locks the banner's own actions:
+                // Retry after a failed load and the overdue manual reload
+                // must stay usable outside the ready state.
+                <BannerView
+                  banner={current()}
+                  onAction={onBannerAction}
+                  locked={pending() !== null}
+                  live
+                />
               )}
             </Show>
             <Show when={notice()}>
