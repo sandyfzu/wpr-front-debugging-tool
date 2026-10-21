@@ -76,6 +76,8 @@ const log = createLogger('exclusion-overlay');
 const LABEL_GAP_PX = 4;
 /** The highlight label's height (px) — decides whether it fits above the box. */
 const LABEL_HEIGHT_PX = 22;
+/** Frames a focus move is attempted on before it gives up (see `focusSoon`). */
+const FOCUS_TRIES = 3;
 
 /**
  * Put the layer in the browser's top layer (a manual popover: no light
@@ -218,8 +220,17 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   });
 
   /** Move focus once the target is visible (next frame: visibility flips first). */
-  const focusSoon = (element: () => HTMLElement | undefined): void => {
-    props.requestFrame(() => element()?.focus({ preventScroll: true }));
+  const focusSoon = (element: () => HTMLElement | undefined, tries = FOCUS_TRIES): void => {
+    props.requestFrame(() => {
+      const target = element();
+      if (target === undefined) return;
+      target.focus({ preventScroll: true });
+      // A just-revealed panel can stay hidden for a frame (reduced motion
+      // turns its instant visibility switch into a 0.01 ms transition), so
+      // the focus does not take: try again on the next frame.
+      const root = target.getRootNode() as Document | ShadowRoot;
+      if (root.activeElement !== target && tries > 1) focusSoon(element, tries - 1);
+    });
   };
 
   const collapse = (): void => {

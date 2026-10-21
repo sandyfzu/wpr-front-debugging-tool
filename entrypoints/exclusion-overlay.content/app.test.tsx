@@ -270,6 +270,33 @@ describe('OverlayApp', () => {
     expect(onPresented.mock.calls).toEqual([[false], [true], [false]]);
   });
 
+  it('re-tries a focus move that does not take (a panel still hidden for a frame)', async () => {
+    const { container } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
+    const heading = screen.getByRole('heading', { level: 1 });
+    // The first focus call is refused, the way a still-hidden element refuses it.
+    const realFocus = heading.focus.bind(heading);
+    let refused = 0;
+    const spy = vi.spyOn(heading, 'focus').mockImplementation((options?: FocusOptions) => {
+      if (refused === 0) {
+        refused += 1;
+        return;
+      }
+      realFocus(options);
+    });
+    try {
+      fireEvent.click(pill);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(heading);
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('an explicit open lands focus on the heading', async () => {
     mount(port({ state: 'inactive' }));
     await waitFor(() => {
