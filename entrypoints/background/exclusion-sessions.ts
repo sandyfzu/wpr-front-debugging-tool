@@ -27,9 +27,9 @@ import { getSavedExclusionSet, saveExclusionSet } from '../../lib/storage/exclus
 import { createOverlayReopener } from '../../lib/exclusion-session/overlay-reopen';
 import {
   parseExclusionOverlayPresentation,
-  parseExclusionSessionTabQuery,
-  type ExclusionOverlayOpenOutcome
+  parseExclusionSessionTabQuery
 } from '../../lib/messaging/exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import {
   isExtensionPageSender,
   resolveTopFrameSender,

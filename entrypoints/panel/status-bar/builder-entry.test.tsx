@@ -4,10 +4,9 @@ import { toast, toastItems } from '../../../components/ui/toast-store';
 import type { AskOutcome } from '../../../lib/messaging/bounded-ask';
 import type {
   ExclusionOverlayOpenOutcome,
-  ExclusionSessionStatus,
-  ExclusionSessionTabStatus
-} from '../../../lib/messaging/exclusion-session';
-import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
+  ExclusionSessionSummary,
+  ExclusionSessionTabSummary
+} from '../../../lib/messaging/exclusion-panel';
 import { BuilderEntry, type BuilderEntryDeps } from './builder-entry';
 
 const TAB = 7;
@@ -16,11 +15,11 @@ const TAB = 7;
 function deps(
   options: {
     tabId?: number | null;
-    status?: Promise<AskOutcome<ExclusionSessionStatus>>;
+    status?: Promise<AskOutcome<ExclusionSessionSummary>>;
     open?: () => Promise<AskOutcome<ExclusionOverlayOpenOutcome>>;
   } = {}
 ) {
-  let handler: ((push: ExclusionSessionTabStatus, fromTab: boolean) => void) | null = null;
+  let handler: ((push: ExclusionSessionTabSummary, fromTab: boolean) => void) | null = null;
   const stop = vi.fn();
   const open = vi.fn(
     options.open ?? (() => Promise.resolve({ kind: 'reply', reply: 'injected' } as const))
@@ -43,7 +42,7 @@ function deps(
     open,
     askStatus,
     stop,
-    push: (push: ExclusionSessionTabStatus, fromTab = false) => {
+    push: (push: ExclusionSessionTabSummary, fromTab = false) => {
       handler?.(push, fromTab);
     }
   };
@@ -59,23 +58,28 @@ afterEach(() => {
 
 describe('BuilderEntry', () => {
   it('asks the inspected tab’s status, then follows the background’s pushes for that tab only', async () => {
-    const d = deps({ status: Promise.resolve({ kind: 'reply', reply: activeRecord() }) });
+    const d = deps({
+      status: Promise.resolve({
+        kind: 'reply',
+        reply: { state: 'active', origin: 'https://example.com' }
+      } as const)
+    });
     render(() => <BuilderEntry deps={d.api} />);
     expect(d.askStatus).toHaveBeenCalledWith(TAB);
     await screen.findByText('On');
     expect(entry().getAttribute('title')).toMatch(/until Stop or the tab closes/);
-    d.push({ tabId: TAB, status: { state: 'unavailable', cause: 'attach-denied', at: 1 } });
+    d.push({ tabId: TAB, summary: { state: 'unavailable' } });
     await screen.findByText('Unavailable');
     // Another tab's push, or one from a page context, changes nothing.
-    d.push({ tabId: 8, status: { state: 'inactive' } });
-    d.push({ tabId: TAB, status: { state: 'inactive' } }, true);
+    d.push({ tabId: 8, summary: { state: 'inactive' } });
+    d.push({ tabId: TAB, summary: { state: 'inactive' } }, true);
     expect(screen.getByText('Unavailable')).toBeTruthy();
-    d.push({ tabId: TAB, status: { state: 'inactive' } });
+    d.push({ tabId: TAB, summary: { state: 'inactive' } });
     await screen.findByText('Off');
   });
 
   it('shows no badge while checking, and none when the ask got no answer', async () => {
-    let answer!: (outcome: AskOutcome<ExclusionSessionStatus>) => void;
+    let answer!: (outcome: AskOutcome<ExclusionSessionSummary>) => void;
     const d = deps({ status: new Promise((resolve) => (answer = resolve)) });
     render(() => <BuilderEntry deps={d.api} />);
     expect(entry().getAttribute('title')).toBe('Checking the exclusion session of this tab.');

@@ -14,7 +14,7 @@
  */
 import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { createLogger } from '../../lib/logger';
-import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import {
   OVERLAY_PRESENTATION_GLOBAL,
   type OverlayPresentation

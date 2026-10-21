@@ -318,24 +318,6 @@ export interface ExclusionSessionTabStatus {
 }
 
 /**
- * How opening the builder overlay on a tab ended (the background injects
- * it into the tab's top frame):
- * - `injected` — the overlay script was injected (it owns its states from there),
- * - `unsupported-page` — the browser does not let extensions script the page,
- * - `tab-gone` — the tab closed first,
- * - `failed` — anything else (logged by the background).
- */
-export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
-  'injected',
-  'unsupported-page',
-  'tab-gone',
-  'failed'
-] as const;
-
-/** One open outcome (see {@link EXCLUSION_OVERLAY_OPEN_OUTCOMES}). */
-export type ExclusionOverlayOpenOutcome = (typeof EXCLUSION_OVERLAY_OPEN_OUTCOMES)[number];
-
-/**
  * Overlay → background: how the user left the overlay (`open` panel, or
  * folded to its pill — closing counts as folded). The session tab's next
  * pages bring the overlay back the same way.
@@ -925,18 +907,6 @@ export function parseExclusionSessionTabStatus(input: unknown): ExclusionSession
   const tabId = numericTabId(own(input, 'tabId'));
   const status = parseExclusionSessionStatus(own(input, 'status'));
   return tabId === null || status === null ? null : { tabId, status };
-}
-
-/**
- * Parse the background's answer to an overlay open.
- *
- * @param input The untrusted answer.
- * @returns The outcome, or null when it is not one.
- */
-export function parseExclusionOverlayOpenOutcome(
-  input: unknown
-): ExclusionOverlayOpenOutcome | null {
-  return EXCLUSION_OVERLAY_OPEN_OUTCOMES.find((outcome) => outcome === input) ?? null;
 }
 
 /**

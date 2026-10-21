@@ -28,7 +28,7 @@ import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { lastErrorMessage } from '../../utils/last-error';
-import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import { openExclusionOverlay } from './exclusion-overlay';
 
 const log = createLogger('context-menus');

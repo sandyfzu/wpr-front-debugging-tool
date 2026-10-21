@@ -18,15 +18,15 @@ import { cn } from '../../../utils/cn';
 import { createLogger } from '../../../lib/logger';
 import { onMessage, sendMessage } from '../../../lib/messaging';
 import { boundedAsk, type AskOutcome } from '../../../lib/messaging/bounded-ask';
+import { EXCLUSION_SESSION_DEADLINES_MS } from '../../../lib/messaging/exclusion-session';
 import {
-  EXCLUSION_SESSION_DEADLINES_MS,
   parseExclusionOverlayOpenOutcome,
-  parseExclusionSessionStatus,
-  parseExclusionSessionTabStatus,
+  parseExclusionSessionSummary,
+  parseExclusionSessionTabSummary,
   type ExclusionOverlayOpenOutcome,
-  type ExclusionSessionStatus,
-  type ExclusionSessionTabStatus
-} from '../../../lib/messaging/exclusion-session';
+  type ExclusionSessionSummary,
+  type ExclusionSessionTabSummary
+} from '../../../lib/messaging/exclusion-panel';
 import { resolveSenderTabId } from '../../../lib/messaging/sender';
 import {
   BUILDER_SESSION_CHECKING,
@@ -44,15 +44,15 @@ const log = createLogger('panel');
 export interface BuilderEntryDeps {
   /** The DevTools-inspected tab, or null outside a DevTools window. */
   inspectedTabId(): number | null;
-  /** Ask the tab's session status. */
-  askStatus(tabId: number): Promise<AskOutcome<ExclusionSessionStatus>>;
+  /** Ask the tab's session (its summary). */
+  askStatus(tabId: number): Promise<AskOutcome<ExclusionSessionSummary>>;
   /** Ask the background to open the overlay on the tab's page. */
   open(tabId: number): Promise<AskOutcome<ExclusionOverlayOpenOutcome>>;
   /**
    * Listen to the session pushes (validated; `fromTab` = the sender had a
    * tab, i.e. not the background); returns the stop.
    */
-  listen(handler: (push: ExclusionSessionTabStatus, fromTab: boolean) => void): () => void;
+  listen(handler: (push: ExclusionSessionTabSummary, fromTab: boolean) => void): () => void;
 }
 
 /** The entry's transport over the extension messenger. */
@@ -62,7 +62,7 @@ export function realBuilderEntryDeps(inspectedTabId: () => number | null): Build
     askStatus: (tabId) =>
       boundedAsk({
         send: () => sendMessage('getExclusionSessionForTab', { tabId }),
-        parse: parseExclusionSessionStatus,
+        parse: parseExclusionSessionSummary,
         timeoutMs: EXCLUSION_SESSION_DEADLINES_MS.status
       }),
     open: (tabId) =>
@@ -73,7 +73,7 @@ export function realBuilderEntryDeps(inspectedTabId: () => number | null): Build
       }),
     listen: (handler) =>
       onMessage('exclusionSessionUpdated', ({ data, sender }) => {
-        const push = parseExclusionSessionTabStatus(data);
+        const push = parseExclusionSessionTabSummary(data);
         if (push === null) log.warn('Dropped an invalid exclusionSessionUpdated message');
         else handler(push, resolveSenderTabId(sender) !== null);
         return true;

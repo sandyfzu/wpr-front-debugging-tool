@@ -52,7 +52,6 @@ import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 import type {
   ExclusionApplyReply,
-  ExclusionOverlayOpenOutcome,
   ExclusionOverlayPresentation,
   ExclusionSaveReply,
   ExclusionSessionStatus,
@@ -61,6 +60,7 @@ import type {
   ExclusionSetPayload,
   SavedExclusionSetReply
 } from './exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
 
 export interface ProtocolMap {
   /**

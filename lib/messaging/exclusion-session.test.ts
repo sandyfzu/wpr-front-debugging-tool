@@ -24,9 +24,7 @@ import {
   parseExclusionSessionStatus,
   parseExclusionSessionTabQuery,
   parseExclusionSessionTabStatus,
-  parseExclusionOverlayOpenOutcome,
   parseExclusionOverlayPresentation,
-  EXCLUSION_OVERLAY_OPEN_OUTCOMES,
   parseExclusionSet,
   parseServedDocument,
   SERVED_DOCUMENT_LIMITS
@@ -828,16 +826,7 @@ describe('panel rows', () => {
   });
 });
 
-describe('overlay rows', () => {
-  it('parses every open outcome and nothing else', () => {
-    for (const outcome of EXCLUSION_OVERLAY_OPEN_OUTCOMES) {
-      expect(parseExclusionOverlayOpenOutcome(outcome)).toBe(outcome);
-    }
-    for (const input of ['opened', 'INJECTED', '', null, undefined, 1, { outcome: 'injected' }]) {
-      expect(parseExclusionOverlayOpenOutcome(input)).toBeNull();
-    }
-  });
-
+describe('overlay presentation row', () => {
   it('parses the presentation push: exactly a boolean `open`', () => {
     expect(parseExclusionOverlayPresentation({ open: true })).toEqual({ open: true });
     expect(parseExclusionOverlayPresentation({ open: false })).toEqual({ open: false });

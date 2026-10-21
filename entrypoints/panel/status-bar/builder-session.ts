@@ -11,19 +11,19 @@
 import type { AskOutcome } from '../../../lib/messaging/bounded-ask';
 import type {
   ExclusionOverlayOpenOutcome,
-  ExclusionSessionStatus,
-  ExclusionSessionTabStatus
-} from '../../../lib/messaging/exclusion-session';
+  ExclusionSessionSummary,
+  ExclusionSessionTabSummary
+} from '../../../lib/messaging/exclusion-panel';
 import type { StatusKind } from '../../../components/ui/status-badge';
 
 /**
  * - `checking` — the first answer has not arrived.
- * - `known` — the tab's session status (from the ask or a later push).
+ * - `known` — the tab's session summary (from the ask or a later push).
  * - `unknown` — the ask got no answer (no background, timeout, bad reply).
  */
 export type BuilderSessionState =
   | { readonly kind: 'checking' }
-  | { readonly kind: 'known'; readonly status: ExclusionSessionStatus }
+  | { readonly kind: 'known'; readonly summary: ExclusionSessionSummary }
   | { readonly kind: 'unknown' };
 
 /** The state before any answer. */
@@ -38,10 +38,10 @@ export const BUILDER_SESSION_CHECKING: BuilderSessionState = { kind: 'checking' 
  */
 export function withAnswer(
   state: BuilderSessionState,
-  outcome: AskOutcome<ExclusionSessionStatus>
+  outcome: AskOutcome<ExclusionSessionSummary>
 ): BuilderSessionState {
   if (state.kind === 'known') return state;
-  return outcome.kind === 'reply' ? { kind: 'known', status: outcome.reply } : { kind: 'unknown' };
+  return outcome.kind === 'reply' ? { kind: 'known', summary: outcome.reply } : { kind: 'unknown' };
 }
 
 /**
@@ -55,12 +55,12 @@ export function withAnswer(
  */
 export function withPush(
   state: BuilderSessionState,
-  push: ExclusionSessionTabStatus,
+  push: ExclusionSessionTabSummary,
   inspectedTabId: number | null,
   fromTab: boolean
 ): BuilderSessionState {
   if (fromTab || push.tabId !== inspectedTabId) return state;
-  return { kind: 'known', status: push.status };
+  return { kind: 'known', summary: push.summary };
 }
 
 /** The entry's words: a status badge (never color alone) and its explanation. */
@@ -94,8 +94,8 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
         'The exclusion session of this tab could not be read. Open the builder to see it.'
     };
   }
-  const status = state.status;
-  switch (status.state) {
+  const summary = state.summary;
+  switch (summary.state) {
     case 'inactive':
       return {
         badge: { kind: 'neutral', label: 'Off' },
@@ -104,7 +104,7 @@ export function builderEntryView(state: BuilderSessionState): BuilderEntryView {
     case 'active':
       return {
         badge: { kind: 'ok', label: 'On' },
-        description: `Exclusions are applied in this tab: pages of ${hostOf(status.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
+        description: `Exclusions are applied in this tab: pages of ${hostOf(summary.origin)} load rewritten until Stop or the tab closes. Open the builder to see this page’s result.`
       };
     case 'unavailable':
       return {
