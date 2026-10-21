@@ -64,31 +64,6 @@ describe('preventUncheckedLastError', () => {
     expect(originalCallback).toHaveBeenCalledWith(response);
   });
 
-  it("forwards the response when lastError is Firefox's null success value", () => {
-    lastErrorReads = 0;
-    Object.defineProperty(chrome.runtime, 'lastError', {
-      configurable: true,
-      get: () => {
-        lastErrorReads += 1;
-        return null;
-      }
-    });
-    const response = { res: 'ok' };
-    const send = preventUncheckedLastError(((
-      _tabId: number,
-      _message: unknown,
-      _options: unknown,
-      callback: (r: unknown) => void
-    ) => {
-      callback(response);
-    }) as unknown as typeof chrome.tabs.sendMessage);
-    const originalCallback = vi.fn();
-    // A throwing read would surface here and leave the callback uncalled.
-    send(4, { type: 'x' }, undefined, originalCallback);
-    expect(lastErrorReads).toBe(1);
-    expect(originalCallback).toHaveBeenCalledWith(response);
-  });
-
   it('handles the 3-arity call (callback in the options slot)', () => {
     lastErrorReads = 0;
     stubLastError(undefined);
@@ -149,6 +124,7 @@ describe('preventUncheckedLastError', () => {
       callback(response);
     }) as unknown as typeof chrome.tabs.sendMessage);
     const originalCallback = vi.fn();
+    // A throwing read would surface here and leave the callback uncalled.
     send(4, { type: 'x' }, undefined, originalCallback);
     expect(lastErrorReads).toBe(1);
     expect(originalCallback).toHaveBeenCalledWith(response);
