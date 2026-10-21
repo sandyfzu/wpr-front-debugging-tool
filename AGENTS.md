@@ -49,7 +49,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── exclusion-overlay.content/ # runtime content script (`registration: 'runtime'`, never in the
 │   │                          #   manifest): the in-page exclusion builder overlay, injected into a
 │   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
-│   │                          #   costs pages nothing until then
+│   │                          #   costs pages nothing until then; the background re-opens it on a
+│   │                          #   session tab's loaded pages (`lib/exclusion-session/overlay-reopen`)
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
