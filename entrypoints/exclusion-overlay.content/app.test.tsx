@@ -403,5 +403,7 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
     });
+    // Only the picking ends: the panel stays open.
+    expect(document.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
   });
 });

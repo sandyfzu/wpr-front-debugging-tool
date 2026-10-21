@@ -764,6 +764,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           on:keydown={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault();
+              // Handled: the overlay's own Escape (collapse) must not run too.
+              event.stopPropagation();
               cancelPicking();
             } else if (event.key === 'Tab') {
               event.preventDefault();
