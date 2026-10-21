@@ -62,7 +62,7 @@ Validation: the unit tier green with the origin-store suite retargeted to the ne
 
 Depends: P3/P5H/shared mount. Parallel: P11 pure detection work; serialize injected-UI edits. Size: S. Goal: removal during the awaited appearance read cannot leave detached render work or a live watcher.
 
-- [ ] Harden `ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
+- [ ] Harden `components/injected-ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
 
 DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-theme tests; no leaked tree/watch or remount, UI bar/gates/browser regression green. This is the open P5H lifecycle requirement, not a new feature.
 
