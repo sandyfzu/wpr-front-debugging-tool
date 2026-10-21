@@ -142,11 +142,12 @@ export function unmodifiedCopy(reason: UnmodifiedReason): string {
 
 /** An ask that produced nothing, per problem. */
 export const PROBLEM_COPY: Readonly<Record<SessionProblem, string>> = {
-  'no-receiver': 'The extension is not answering. Reload the page, then try again.',
-  timeout: 'The extension took too long to answer.',
-  'invalid-reply': 'The extension sent an unexpected answer.',
-  'context-invalidated': 'The extension was reloaded or updated. Reload the page to reconnect.',
-  failed: 'The request failed.'
+  'no-receiver': 'The extension is not answering. Try again in a moment.',
+  timeout: 'The extension took too long to answer. Try again.',
+  'invalid-reply': 'The extension sent an unexpected answer. Try again.',
+  'context-invalidated':
+    'The extension was reloaded or updated. Open the exclusion builder again from the extension.',
+  failed: 'The request to the extension failed. Try again.'
 };
 
 /** The title of a failed action's notice. */
@@ -201,7 +202,7 @@ export interface Indicator {
   readonly tone: IndicatorTone;
   readonly label: string;
   /** Glyph name (the overlay's icon set). */
-  readonly glyph: 'dot' | 'check' | 'alert' | 'blocked' | 'spinner' | 'question';
+  readonly glyph: 'idle' | 'waiting' | 'check' | 'alert' | 'blocked' | 'spinner' | 'question';
 }
 
 /**
@@ -228,7 +229,7 @@ export function sessionIndicator(state: OverlayState, view: SessionView | null):
         ? { tone: 'ok', label: 'Applied', glyph: 'check' }
         : { tone: 'warn', label: 'Applied · no-match rows', glyph: 'alert' };
     case 'armed':
-      return { tone: 'info', label: 'Applied · waiting', glyph: 'dot' };
+      return { tone: 'info', label: 'Applied · waiting', glyph: 'waiting' };
     case 'unavailable':
       return { tone: 'error', label: 'Unavailable', glyph: 'blocked' };
     case 'unmodified':
@@ -238,15 +239,24 @@ export function sessionIndicator(state: OverlayState, view: SessionView | null):
     case 'cant-tell':
       return { tone: 'warn', label: 'Can’t verify', glyph: 'question' };
     default:
-      return { tone: 'neutral', label: 'Not applied', glyph: 'dot' };
+      return { tone: 'neutral', label: 'Not applied', glyph: 'idle' };
   }
 }
 
 /** Why a draft save stored nothing, per save failure. */
 export const SAVE_FAILURE_COPY: Readonly<Record<ExclusionSaveFailure, string>> = {
   'unsupported-page': 'this page can’t hold a draft',
-  'invalid-request': 'the draft was refused',
+  'invalid-request': 'a row is too long or has control characters, or the draft is too large',
   'storage-failed': 'storage failed'
+};
+
+/** Why a draft save got no answer, per ask problem (a footer clause). */
+const SAVE_PROBLEM_COPY: Readonly<Record<SessionProblem, string>> = {
+  'no-receiver': 'the extension is not answering',
+  timeout: 'the extension took too long to answer',
+  'invalid-reply': 'the extension sent an unexpected answer',
+  'context-invalidated': 'the extension was reloaded or updated',
+  failed: 'the request to the extension failed'
 };
 
 /**
@@ -264,9 +274,7 @@ export function saveStateWords(save: SaveState): string | null {
       return 'Draft saved';
     case 'not-saved':
       return `Draft not saved: ${
-        isSaveFailure(save.reason)
-          ? SAVE_FAILURE_COPY[save.reason]
-          : PROBLEM_COPY[save.reason].toLowerCase()
+        isSaveFailure(save.reason) ? SAVE_FAILURE_COPY[save.reason] : SAVE_PROBLEM_COPY[save.reason]
       }`;
   }
 }

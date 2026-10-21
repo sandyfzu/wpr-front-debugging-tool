@@ -11,9 +11,10 @@
  * - `ready` — the status is known; at most one action (`pending`) is in
  *   flight, and the last action's outcome may be on show (`notice`).
  * - `reloading` — an apply was accepted: the background reloads the tab
- *   next, which replaces this page (and the overlay). `stalled` once the
- *   reload is overdue, so the view offers to reload by hand — never a
- *   wait without an exit.
+ *   next, which replaces this page (and the overlay). If the reload is
+ *   overdue, the overlay returns to `ready` with the then-current status and
+ *   a `reload-stalled` notice (Reload / Stop / edit again) — a stalled wait
+ *   never locks the editor.
  */
 import type {
   ExclusionApplyReply,
@@ -33,7 +34,8 @@ export type ActionNotice =
     }
   | { readonly kind: 'invalid'; readonly rows: number }
   | { readonly kind: 'too-large' }
-  | { readonly kind: 'stopped' };
+  | { readonly kind: 'stopped' }
+  | { readonly kind: 'reload-stalled' };
 
 /** Why an apply was refused before asking (the draft itself is not applicable). */
 export type ApplyBlock =
@@ -49,7 +51,7 @@ export type OverlayState =
       readonly pending: SessionAction | null;
       readonly notice: ActionNotice | null;
     }
-  | { readonly phase: 'reloading'; readonly stalled: boolean };
+  | { readonly phase: 'reloading' };
 
 /** What can happen to the overlay. */
 export type OverlayEvent =
@@ -62,7 +64,7 @@ export type OverlayEvent =
   | { readonly type: 'stop-answered'; readonly status: ExclusionSessionStatus }
   | { readonly type: 'action-failed'; readonly problem: SessionProblem }
   | { readonly type: 'status-pushed'; readonly status: ExclusionSessionStatus }
-  | { readonly type: 'reload-stalled' }
+  | { readonly type: 'reload-stalled'; readonly status: ExclusionSessionStatus }
   | { readonly type: 'dismiss-notice' };
 
 /** The machine's start. */
@@ -94,7 +96,7 @@ export function canStart(state: OverlayState, action: SessionAction): boolean {
 function applyAnswered(state: Ready, reply: ExclusionApplyReply, at: number): OverlayState {
   switch (reply.outcome) {
     case 'applying':
-      return { phase: 'reloading', stalled: false };
+      return { phase: 'reloading' };
     case 'invalid':
       return { ...state, pending: null, notice: { kind: 'invalid', rows: reply.invalid.length } };
     case 'unavailable':
@@ -170,8 +172,14 @@ export function overlayTransition(state: OverlayState, event: OverlayEvent): Ove
     case 'ready':
       return fromReady(state, event);
     case 'reloading':
-      if (event.type === 'reload-stalled' && !state.stalled)
-        return { phase: 'reloading', stalled: true };
+      if (event.type === 'reload-stalled') {
+        return {
+          phase: 'ready',
+          status: event.status,
+          pending: null,
+          notice: { kind: 'reload-stalled' }
+        };
+      }
       // The session went unavailable instead of reloading (the arm ended
       // right after answering): the page stays, so the warning must show.
       if (event.type === 'status-pushed' && event.status.state === 'unavailable') {

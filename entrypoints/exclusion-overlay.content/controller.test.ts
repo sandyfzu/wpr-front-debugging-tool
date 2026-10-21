@@ -90,12 +90,14 @@ describe('loading', () => {
     expect(controller.view()).toEqual({ kind: 'off' });
   });
 
-  it('prefers the active session set over the saved draft', async () => {
+  it('starts from the active session set when no draft is saved', async () => {
+    // Changed in audit round 1: a saved draft that differs from the active
+    // set now wins (it holds the edits made since the apply) — pinned below.
     const active = {
       ...activeRecord(),
       set: { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: ['only.png'] } }
     };
-    const { controller } = await started(fakePort(active, validSet()).port);
+    const { controller } = await started(fakePort(active, null).port);
     expect(controller.draft().rows.lazyload.map((row) => row.text)).toEqual(['only.png']);
     expect(controller.dirty()).toBe(false);
   });
@@ -200,9 +202,17 @@ describe('apply / reset / stop', () => {
       ...EMPTY_EXCLUSION_SET,
       rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['gtag'] }
     });
-    expect(controller.state()).toEqual({ phase: 'reloading', stalled: false });
+    expect(controller.state()).toEqual({ phase: 'reloading' });
+    // Changed in audit round 1: an overdue reload re-reads the status and
+    // returns to an editable ready state with a notice (was a locked state).
+    port.status.mockResolvedValueOnce({ kind: 'reply', reply: activeRecord() } as never);
     clock.fire(RELOAD_STALL_MS);
-    expect(controller.state()).toEqual({ phase: 'reloading', stalled: true });
+    await settle();
+    expect(controller.state()).toMatchObject({
+      phase: 'ready',
+      status: { state: 'active' },
+      notice: { kind: 'reload-stalled' }
+    });
     controller.reloadPage();
     expect(reload).toHaveBeenCalledTimes(1);
   });
@@ -339,5 +349,105 @@ describe('invalidRowsById', () => {
     ]);
     expect([...byId.values()]).toEqual(['R']);
     expect(byId.has(draft.rows.deferJs[2]?.id ?? '')).toBe(true);
+  });
+});
+
+describe('audit round 1', () => {
+  it('reopening an active session restores unapplied saved edits instead of discarding them', async () => {
+    const edited = { ...validSet(), rows: { ...validSet().rows, lazyload: ['edited.png'] } };
+    const { port } = fakePort(activeRecord(), edited);
+    const { controller, clock } = await started(port);
+    expect(controller.draft().rows.lazyload.map((row) => row.text)).toEqual(['edited.png']);
+    expect(controller.dirty()).toBe(true);
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the status when a push lands while loading', async () => {
+    const fake = fakePort({ state: 'inactive' });
+    let releaseStatus: (value: PortOutcome<ExclusionSessionStatus>) => void = () => undefined;
+    fake.port.status.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStatus = resolve;
+        })
+    );
+    const clock = timers();
+    let controller: OverlayController | undefined;
+    createRoot(() => {
+      controller = createOverlayController({
+        port: fake.port,
+        pageFacts: () => ({ href: 'https://example.com/', documentUrl: null, timeOrigin: 0 }),
+        now: () => 1,
+        schedule: clock.schedule,
+        reload: vi.fn(),
+        log: { warn: vi.fn() }
+      });
+    });
+    controller?.start();
+    fake.push({ state: 'unavailable', cause: 'detached', at: 3 });
+    fake.port.status.mockResolvedValueOnce({
+      kind: 'reply',
+      reply: { state: 'unavailable', cause: 'detached', at: 3 }
+    } as never);
+    releaseStatus({ kind: 'reply', reply: { state: 'inactive' } });
+    await settle();
+    await settle();
+    expect(controller?.view()).toEqual({ kind: 'unavailable', cause: 'detached', retryable: true });
+  });
+
+  it('ignores edits while an action is in flight', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    let finish: (value: PortOutcome<never>) => void = () => undefined;
+    port.apply.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const { controller } = await started(port);
+    const [id] = controller.insertRows('delayJs', ['gtag'], null);
+    controller.apply();
+    controller.editRow('delayJs', id ?? '', 'changed');
+    controller.insertRows('delayJs', ['more'], null);
+    controller.removeRow('delayJs', id ?? '');
+    controller.setDisable('delayJs', true);
+    controller.pasteRows('delayJs', id ?? '', 'a\nb');
+    expect(controller.addCandidate('delayJs', 'x', false)).toBe(false);
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
+    expect(controller.draft().disable.delayJs).toBe(false);
+    finish({ kind: 'problem', problem: 'timeout' });
+  });
+
+  it('does not ask to save a draft the session cannot carry, and says why', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    controller.insertRows('lazyload', ['x'.repeat(3000)], null);
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).not.toHaveBeenCalled();
+    expect(controller.saveState()).toEqual({ kind: 'not-saved', reason: 'invalid-request' });
+  });
+
+  it('clears the fix-rows notice once no row has a problem', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    const [bad] = controller.insertRows('deferJs', ['('], null);
+    controller.apply();
+    expect(controller.state()).toMatchObject({ notice: { kind: 'invalid', rows: 1 } });
+    controller.editRow('deferJs', bad ?? '', '\\(');
+    expect(controller.state()).toMatchObject({ notice: null });
+  });
+
+  it('retries the failed action', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    port.apply.mockResolvedValueOnce({ kind: 'problem', problem: 'timeout' });
+    const { controller } = await started(port);
+    controller.apply();
+    await settle();
+    controller.retryFailedAction();
+    await settle();
+    expect(port.apply).toHaveBeenCalledTimes(2);
+    expect(controller.state()).toEqual({ phase: 'reloading' });
   });
 });

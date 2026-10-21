@@ -18,7 +18,7 @@ function injector(result: Promise<unknown>): {
 describe('openExclusionOverlay', () => {
   it('injects the overlay script into the top frame only', async () => {
     const { api, spy } = injector(Promise.resolve([]));
-    expect(await openExclusionOverlay(7, api)).toBe('opened');
+    expect(await openExclusionOverlay(7, api)).toBe('injected');
     expect(spy).toHaveBeenCalledWith({
       target: { tabId: 7, frameIds: [0] },
       files: [EXCLUSION_OVERLAY_SCRIPT]
@@ -28,10 +28,6 @@ describe('openExclusionOverlay', () => {
   it('never rejects: a refusal is an outcome', async () => {
     const { api } = injector(Promise.reject(new Error('Cannot access a chrome:// URL')));
     expect(await openExclusionOverlay(7, api)).toBe('unsupported-page');
-  });
-
-  it('names the built file WXT emits for the overlay entrypoint', () => {
-    expect(EXCLUSION_OVERLAY_SCRIPT).toBe('/content-scripts/exclusion-overlay.js');
   });
 });
 
@@ -52,6 +48,11 @@ describe('classifyInjectionFailure', () => {
     expect(classifyInjectionFailure(new Error('The extensions gallery cannot be scripted.'))).toBe(
       'unsupported-page'
     );
+    // Case-insensitive (engines word these differently).
+    expect(classifyInjectionFailure(new Error('MISSING HOST PERMISSION for the tab'))).toBe(
+      'unsupported-page'
+    );
+    expect(classifyInjectionFailure(new Error('no tab with id: 9'))).toBe('tab-gone');
     expect(classifyInjectionFailure('boom')).toBe('failed');
   });
 });

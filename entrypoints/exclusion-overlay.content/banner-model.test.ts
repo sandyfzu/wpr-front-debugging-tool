@@ -27,26 +27,25 @@ describe('stateBanner — the state matrix', () => {
     expect(stateBanner({ phase: 'loading' }, null)).toBeNull();
   });
 
-  it('offers Retry on a failed load, Reload for a dead context', () => {
+  it('offers Retry on a failed load; a dead context names the way back instead', () => {
     expect(stateBanner({ phase: 'load-failed', problem: 'timeout' }, null)?.actions).toEqual([
       'retry-load'
     ]);
     expect(
       stateBanner({ phase: 'load-failed', problem: 'context-invalidated' }, null)?.actions
-    ).toEqual(['reload']);
+    ).toEqual([]);
   });
 
-  it('waits on a reload, then offers a manual one once overdue', () => {
-    expect(stateBanner({ phase: 'reloading', stalled: false }, null)).toMatchObject({
+  it('waits on a reload with a spinner (an overdue one becomes a notice)', () => {
+    expect(stateBanner({ phase: 'reloading' }, null)).toMatchObject({
       glyph: 'spinner',
       actions: []
     });
-    expect(stateBanner({ phase: 'reloading', stalled: true }, null)?.actions).toEqual(['reload']);
+    expect(noticeBanner({ kind: 'reload-stalled' }).actions).toEqual(['reload', 'dismiss']);
   });
 
   it('maps every session view to a tone, a glyph and a way forward', () => {
     const cases: readonly [SessionView, string, readonly string[]][] = [
-      [{ kind: 'off' }, 'neutral', []],
       [{ kind: 'unavailable', cause: 'attach-denied', retryable: true }, 'error', ['retry-apply']],
       [{ kind: 'unavailable', cause: 'debugging-policy', retryable: false }, 'error', []],
       [{ kind: 'armed' }, 'info', ['reload']],
@@ -64,6 +63,9 @@ describe('stateBanner — the state matrix', () => {
       [{ kind: 'not-intercepted' }, 'warn', ['reload']],
       [{ kind: 'cant-tell' }, 'warn', ['reload']]
     ];
+    // Changed in audit round 1: nothing applied shows no banner (the header
+    // indicator says it; the empty editor carries the guidance).
+    expect(stateBanner(READY, { kind: 'off' })).toBeNull();
     for (const [view, tone, actions] of cases) {
       const banner = stateBanner(READY, view);
       expect(banner?.tone, view.kind).toBe(tone);
@@ -101,11 +103,11 @@ describe('noticeBanner', () => {
       noticeBanner({ kind: 'action-failed', action: 'stop', problem: 'timeout' })
     ).toMatchObject({
       title: 'Couldn’t stop',
-      actions: ['dismiss']
+      actions: ['retry-action', 'dismiss']
     });
     expect(
       noticeBanner({ kind: 'action-failed', action: 'apply', problem: 'context-invalidated' })
         .actions
-    ).toEqual(['reload']);
+    ).toEqual(['dismiss']);
   });
 });

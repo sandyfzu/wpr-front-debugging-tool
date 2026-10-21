@@ -19,7 +19,7 @@ import type { ActionNotice, OverlayState } from './session/machine';
 import type { SessionView } from './session/session-view';
 
 /** A banner's forward action. */
-export type BannerAction = 'retry-load' | 'retry-apply' | 'reload' | 'dismiss';
+export type BannerAction = 'retry-load' | 'retry-apply' | 'retry-action' | 'reload' | 'dismiss';
 
 /** One banner. */
 export interface Banner {
@@ -54,13 +54,15 @@ export function servedNotes(served: ExclusionServedDocument | undefined): string
   return notes;
 }
 
-/** The session banner of a loaded overlay. */
-function viewBanner(view: SessionView): Banner {
+/** The session banner of a loaded overlay (none when nothing is applied). */
+function viewBanner(view: SessionView): Banner | null {
   const { title, body } = viewCopy(view);
   const base = { title, body, notes: [] as string[] };
   switch (view.kind) {
     case 'off':
-      return { ...base, tone: 'neutral', glyph: 'dot', actions: [] };
+      // Nothing to report: the header's indicator already says "Not
+      // applied"; the empty editor carries its own guidance.
+      return null;
     case 'unavailable':
       return {
         ...base,
@@ -69,7 +71,7 @@ function viewBanner(view: SessionView): Banner {
         actions: view.retryable ? ['retry-apply'] : []
       };
     case 'armed':
-      return { ...base, tone: 'info', glyph: 'dot', actions: ['reload'] };
+      return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
     case 'applied':
       return {
         ...base,
@@ -111,26 +113,19 @@ export function stateBanner(state: OverlayState, view: SessionView | null): Bann
         title: 'Couldn’t load the session',
         body: PROBLEM_COPY[state.problem],
         notes: [],
-        actions: state.problem === 'context-invalidated' ? ['reload'] : ['retry-load']
+        // A dead context cannot be retried from here: the words name the
+        // way back (reopen the builder).
+        actions: state.problem === 'context-invalidated' ? [] : ['retry-load']
       };
     case 'reloading':
-      return state.stalled
-        ? {
-            tone: 'warn',
-            glyph: 'alert',
-            title: 'The page didn’t reload',
-            body: 'The session is armed. Reload to render the page with your exclusions.',
-            notes: [],
-            actions: ['reload']
-          }
-        : {
-            tone: 'info',
-            glyph: 'spinner',
-            title: 'Reloading with your exclusions',
-            body: 'The page reloads now; the builder comes back with the result.',
-            notes: [],
-            actions: []
-          };
+      return {
+        tone: 'info',
+        glyph: 'spinner',
+        title: 'Reloading with your exclusions',
+        body: 'The page reloads now; the builder comes back with the result.',
+        notes: [],
+        actions: []
+      };
     case 'ready':
       return view === null ? null : viewBanner(view);
   }
@@ -150,7 +145,9 @@ export function noticeBanner(notice: ActionNotice): Banner {
         title: ACTION_FAILED_TITLE[notice.action],
         body: PROBLEM_COPY[notice.problem],
         notes: [],
-        actions: notice.problem === 'context-invalidated' ? ['reload'] : ['dismiss']
+        // Transient problems can be retried; a dead context cannot.
+        actions:
+          notice.problem === 'context-invalidated' ? ['dismiss'] : ['retry-action', 'dismiss']
       };
     case 'invalid':
       return {
@@ -169,6 +166,15 @@ export function noticeBanner(notice: ActionNotice): Banner {
         body: `All rows together must stay under ${EXCLUSION_SET_LIMITS.totalChars.toLocaleString('en-US')} characters. Remove some rows, then apply.`,
         notes: [],
         actions: ['dismiss']
+      };
+    case 'reload-stalled':
+      return {
+        tone: 'warn',
+        glyph: 'alert',
+        title: 'The page didn’t reload',
+        body: 'Reload to render the page with your exclusions, or keep editing.',
+        notes: [],
+        actions: ['reload', 'dismiss']
       };
     case 'stopped':
       return {

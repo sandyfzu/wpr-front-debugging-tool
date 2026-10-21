@@ -87,7 +87,7 @@ describe('sessionIndicator', () => {
     const states: OverlayState[] = [
       { phase: 'loading' },
       { phase: 'load-failed', problem: 'timeout' },
-      { phase: 'reloading', stalled: false },
+      { phase: 'reloading' },
       ready('apply'),
       ready('stop')
     ];
@@ -127,7 +127,8 @@ describe('saveStateWords', () => {
       'Draft not saved: storage failed'
     );
     expect(saveStateWords({ kind: 'not-saved', reason: 'timeout' })).toBe(
-      'Draft not saved: the extension took too long to answer.'
+      // Changed in audit round 1: its own clause, no longer a lower-cased sentence.
+      'Draft not saved: the extension took too long to answer'
     );
   });
 });

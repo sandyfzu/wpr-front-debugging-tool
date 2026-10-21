@@ -6,11 +6,12 @@
  * Solid signals (created inside the caller's reactive root), with every
  * outside effect injected so the whole flow is unit-tested.
  */
-import { batch, createMemo, createSignal, type Accessor } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, type Accessor } from 'solid-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../lib/exclusion-builder/set';
 import type { InvalidExclusionRow } from '../../lib/exclusion-builder/errors';
 import {
   EXCLUSION_SET_LIMITS,
+  parseExclusionSet,
   type ExclusionSaveFailure,
   type ExclusionSessionStatus
 } from '../../lib/messaging/exclusion-session';
@@ -105,7 +106,11 @@ export interface OverlayController {
   reset(): void;
   stop(): void;
   dismissNotice(): void;
+  /** Re-run the action whose failure the notice shows. */
+  retryFailedAction(): void;
   reloadPage(): void;
+  /** Whether the draft can be edited now (loaded, no action in flight). */
+  readonly editable: Accessor<boolean>;
   editRow(lane: LaneKey, id: string, text: string): void;
   /**
    * Insert rows after a row (`null` = append), focusing the first one.
@@ -170,6 +175,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   let cancelStall: (() => void) | null = null;
   let disposed = false;
   let unsubscribe: (() => void) | null = null;
+  /** A status push landed while the first asks were in flight (their answer may be older). */
+  let pushedWhileLoading = false;
+  /** The status before the last accepted apply (the stall fallback when a re-read fails). */
+  let statusBeforeApply: ExclusionSessionStatus = { state: 'inactive' };
 
   const dispatch = (event: OverlayEvent): void => {
     setState((current) => overlayTransition(current, event));
@@ -193,6 +202,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return current?.state === 'active' && !sameSet(draftSet(), current.set);
   });
 
+  const editable = createMemo(() => {
+    const current = state();
+    return current.phase === 'ready' && current.pending === null;
+  });
+
   const rowProblem = (lane: LaneKey, id: string, text: string): string | null =>
     serverInvalid().get(id) ?? validate(lane, text);
 
@@ -206,10 +220,25 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return count;
   });
 
+  // The fix-rows notice is true only while a row has a problem: it leaves
+  // with the last one.
+  createEffect(() => {
+    const current = state();
+    if (current.phase === 'ready' && current.notice?.kind === 'invalid' && invalidCount() === 0) {
+      dispatch({ type: 'dismiss-notice' });
+    }
+  });
+
   /** Save the draft unless it equals what is stored. */
   const saveNow = async (set: ExclusionSet): Promise<void> => {
     if (sameSet(set, lastSaved)) {
       setSaveState({ kind: 'idle' });
+      return;
+    }
+    // A draft the session's contract refuses would be refused anyway: say
+    // so without asking (the marked rows say which).
+    if (parseExclusionSet(set, 'reject') === null) {
+      setSaveState({ kind: 'not-saved', reason: 'invalid-request' });
       return;
     }
     setSaveState({ kind: 'saving' });
@@ -253,23 +282,36 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
 
   /** Load status + saved set; the draft starts from the active set, else the saved one. */
   const load = async (): Promise<void> => {
-    const [current, saved] = await Promise.all([deps.port.status(), deps.port.savedSet()]);
+    const [current, savedReply] = await Promise.all([deps.port.status(), deps.port.savedSet()]);
     if (disposed) return;
-    const problem = firstProblem(current, saved);
+    const problem = firstProblem(current, savedReply);
     if (problem !== null) {
       dispatch({ type: 'load-failed', problem });
       return;
     }
-    if (current.kind !== 'reply' || saved.kind !== 'reply') return;
+    if (current.kind !== 'reply' || savedReply.kind !== 'reply') return;
+    // An active session's set is authoritative for the page, but the saved
+    // draft holds edits made since the apply (an apply saves its set, so the
+    // two differ only by those edits): reopen on the edits, marked dirty.
+    const saved = savedReply.reply.set;
     const set =
-      current.reply.state === 'active'
-        ? current.reply.set
-        : (saved.reply.set ?? EMPTY_EXCLUSION_SET);
-    lastSaved = saved.reply.set ?? EMPTY_EXCLUSION_SET;
+      saved ?? (current.reply.state === 'active' ? current.reply.set : EMPTY_EXCLUSION_SET);
+    lastSaved = saved ?? EMPTY_EXCLUSION_SET;
     batch(() => {
       setDraftSignal(draftFromSet(set, nextId));
       dispatch({ type: 'loaded', status: current.reply });
     });
+    if (pushedWhileLoading) {
+      pushedWhileLoading = false;
+      void refreshStatus();
+    }
+  };
+
+  /** Re-read the status (a push may have outrun the load's answer). */
+  const refreshStatus = async (): Promise<void> => {
+    const outcome = await deps.port.status();
+    if (!disposed && outcome.kind === 'reply')
+      dispatch({ type: 'status-pushed', status: outcome.reply });
   };
 
   /** Arm the overdue-reload exit once an apply is accepted. */
@@ -278,12 +320,21 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     cancelStall?.();
     cancelStall = deps.schedule(() => {
       cancelStall = null;
-      dispatch({ type: 'reload-stalled' });
+      // The page is still here: read where the session stands and hand
+      // the editor back (Reload / Stop / edit again).
+      void deps.port.status().then((outcome) => {
+        if (disposed) return;
+        dispatch({
+          type: 'reload-stalled',
+          status: outcome.kind === 'reply' ? outcome.reply : statusBeforeApply
+        });
+      });
     }, RELOAD_STALL_MS);
   };
 
   /** Ask for an apply of `set`, already requested as `action`. */
   const runApply = async (action: SessionAction, applied: Draft): Promise<void> => {
+    statusBeforeApply = status() ?? statusBeforeApply;
     dispatch({ type: 'request', action });
     const outcome = await deps.port.apply(draftToSet(applied));
     if (disposed) return;
@@ -313,7 +364,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
   };
 
-  return {
+  const controller: OverlayController = {
     state,
     draft,
     view,
@@ -323,7 +374,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     focusRequest,
     rowProblem,
     start: () => {
+      // eslint-disable-next-line solid/reactivity -- a push callback: reads the phase untracked, when a push lands
       unsubscribe = deps.port.onStatus((pushed) => {
+        if (state().phase === 'loading') pushedWhileLoading = true;
         dispatch({ type: 'status-pushed', status: pushed });
       });
       void load();
@@ -371,14 +424,25 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dismissNotice: () => {
       dispatch({ type: 'dismiss-notice' });
     },
+    retryFailedAction: () => {
+      const current = state();
+      if (current.phase !== 'ready' || current.notice?.kind !== 'action-failed') return;
+      const action = current.notice.action;
+      if (action === 'apply') controller.apply();
+      else if (action === 'reset') controller.reset();
+      else controller.stop();
+    },
+    editable,
     reloadPage: () => {
       deps.reload();
     },
     editRow: (lane, id, text) => {
+      if (!editable()) return;
       clearServerReason(id);
       setDraft(updateRow(draft(), lane, id, text));
     },
     insertRows: (lane, texts, afterId) => {
+      if (!editable()) return [];
       const inserted = insertRows(draft(), lane, texts, afterId, nextId);
       setDraft(inserted.draft);
       const first = inserted.ids[0];
@@ -386,6 +450,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       return inserted.ids;
     },
     pasteRows: (lane, id, text) => {
+      if (!editable()) return;
       const [head, ...rest] = splitLines(text);
       if (head === undefined) return;
       clearServerReason(id);
@@ -396,15 +461,18 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (last !== undefined) setFocusRequest({ lane, id: last });
     },
     removeRow: (lane, id) => {
+      if (!editable()) return;
       clearServerReason(id);
       const removed = removeRow(draft(), lane, id);
       setDraft(removed.draft);
       if (removed.focusId !== null) setFocusRequest({ lane, id: removed.focusId });
     },
     setDisable: (key, value) => {
+      if (!editable()) return;
       setDraft(setDisable(draft(), key, value));
     },
     addCandidate: (lane, row, focus) => {
+      if (!editable()) return false;
       const added = addCandidate(draft(), lane, row, nextId);
       setDraft(added.draft);
       if (focus && added.id !== null) setFocusRequest({ lane, id: added.id });
@@ -417,6 +485,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       unsubscribe?.();
     }
   };
+  return controller;
 }
 
 /** The first ask problem among the load's two answers. */

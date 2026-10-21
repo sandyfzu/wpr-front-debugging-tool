@@ -35,8 +35,7 @@ const STATES: Record<string, OverlayState> = {
   resetting: ready({ status: ACTIVE, pending: 'reset' }),
   stopping: ready({ status: ACTIVE, pending: 'stop' }),
   noticed: ready({ notice: { kind: 'invalid', rows: 2 } }),
-  reloading: { phase: 'reloading', stalled: false },
-  stalled: { phase: 'reloading', stalled: true }
+  reloading: { phase: 'reloading' }
 };
 
 /** Every event type, one representative each (several for `request`). */
@@ -52,7 +51,7 @@ const EVENTS: Record<string, OverlayEvent> = {
   stopAnswered: { type: 'stop-answered', status: INACTIVE },
   actionFailed: { type: 'action-failed', problem: 'timeout' },
   statusPushed: { type: 'status-pushed', status: UNAVAILABLE },
-  reloadStalled: { type: 'reload-stalled' },
+  reloadStalled: { type: 'reload-stalled', status: ACTIVE },
   dismissNotice: { type: 'dismiss-notice' }
 };
 
@@ -85,14 +84,14 @@ const ACCEPTED: Record<string, Record<string, OverlayState>> = {
     statusPushed: ready({ status: UNAVAILABLE })
   },
   applying: {
-    applyAnswered: { phase: 'reloading', stalled: false },
+    applyAnswered: { phase: 'reloading' },
     actionFailed: ready({
       notice: { kind: 'action-failed', action: 'apply', problem: 'timeout' }
     }),
     statusPushed: ready({ status: UNAVAILABLE, pending: 'apply' })
   },
   resetting: {
-    applyAnswered: { phase: 'reloading', stalled: false },
+    applyAnswered: { phase: 'reloading' },
     actionFailed: ready({
       status: ACTIVE,
       notice: { kind: 'action-failed', action: 'reset', problem: 'timeout' }
@@ -113,10 +112,11 @@ const ACCEPTED: Record<string, Record<string, OverlayState>> = {
     dismissNotice: ready()
   },
   reloading: {
-    reloadStalled: { phase: 'reloading', stalled: true },
+    // Changed in audit round 1: an overdue reload returns to an editable
+    // ready state (was a locked `stalled` reloading state).
+    reloadStalled: ready({ status: ACTIVE, notice: { kind: 'reload-stalled' } }),
     statusPushed: ready({ status: UNAVAILABLE })
-  },
-  stalled: { statusPushed: ready({ status: UNAVAILABLE }) }
+  }
 };
 
 describe('overlayTransition — full matrix', () => {

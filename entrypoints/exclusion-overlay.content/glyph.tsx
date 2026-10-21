@@ -7,7 +7,8 @@ import type { JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import Ban from 'lucide-solid/icons/ban';
 import Check from 'lucide-solid/icons/check';
-import Circle from 'lucide-solid/icons/circle';
+import CircleDashed from 'lucide-solid/icons/circle-dashed';
+import Clock from 'lucide-solid/icons/clock';
 import CircleHelp from 'lucide-solid/icons/circle-question-mark';
 import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
@@ -15,7 +16,8 @@ import type { Indicator } from './copy';
 
 /** Glyph name → icon component. */
 const GLYPHS = {
-  dot: Circle,
+  idle: CircleDashed,
+  waiting: Clock,
   check: Check,
   alert: TriangleAlert,
   blocked: Ban,

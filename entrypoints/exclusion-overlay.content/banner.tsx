@@ -13,6 +13,7 @@ import { Glyph } from './glyph';
 const ACTION_LABEL: Record<BannerAction, string> = {
   'retry-load': 'Retry',
   'retry-apply': 'Retry',
+  'retry-action': 'Retry',
   reload: 'Reload page',
   dismiss: 'Dismiss'
 };

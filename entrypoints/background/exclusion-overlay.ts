@@ -23,19 +23,21 @@ export interface ScriptInjector {
 /**
  * How an open ended.
  *
- * - `opened` — the overlay script was injected.
+ * - `injected` — the overlay script was injected (whether it then mounts
+ *   is the page's business: a mount failure is logged in the page, and the
+ *   overlay owns its own states from there).
  * - `unsupported-page` — the browser does not let extensions script this
  *   page (browser pages, the web store, a page outside the host
  *   permissions).
  * - `tab-gone` — the tab closed first.
  * - `failed` — anything else (logged).
  */
-export type OverlayOpenOutcome = 'opened' | 'unsupported-page' | 'tab-gone' | 'failed';
+export type OverlayOpenOutcome = 'injected' | 'unsupported-page' | 'tab-gone' | 'failed';
 
 /** Error words of a page the browser refuses to script (Chromium and Firefox wording). */
 const UNSUPPORTED_PAGE_ERRORS = [
-  'Cannot access',
-  'Missing host permission',
+  'cannot access',
+  'missing host permission',
   'cannot be scripted',
   'chrome://',
   'about:'
@@ -46,9 +48,10 @@ const UNSUPPORTED_PAGE_ERRORS = [
  *
  * @param cause What `executeScript` rejected with.
  */
-export function classifyInjectionFailure(cause: unknown): Exclude<OverlayOpenOutcome, 'opened'> {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  if (/No tab with id|Invalid tab ID/i.test(message)) return 'tab-gone';
+export function classifyInjectionFailure(cause: unknown): Exclude<OverlayOpenOutcome, 'injected'> {
+  // Case-insensitive: the engines word the same failures differently.
+  const message = (cause instanceof Error ? cause.message : String(cause)).toLowerCase();
+  if (/no tab with id|invalid tab id/.test(message)) return 'tab-gone';
   if (UNSUPPORTED_PAGE_ERRORS.some((words) => message.includes(words))) return 'unsupported-page';
   return 'failed';
 }
@@ -69,7 +72,7 @@ export async function openExclusionOverlay(
       target: { tabId, frameIds: [0] },
       files: [EXCLUSION_OVERLAY_SCRIPT]
     });
-    return 'opened';
+    return 'injected';
   } catch (cause) {
     const outcome = classifyInjectionFailure(cause);
     if (outcome === 'failed') {

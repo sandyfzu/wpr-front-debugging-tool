@@ -41,7 +41,7 @@ import Square from 'lucide-solid/icons/square';
 import X from 'lucide-solid/icons/x';
 import { BannerView } from './banner';
 import { noticeBanner, stateBanner, type BannerAction } from './banner-model';
-import { LANE_COPY, TOOL_TITLE, saveStateWords, sessionIndicator } from './copy';
+import { LANE_COPY, TOOL_TITLE, saveStateWords, sessionIndicator, viewCopy } from './copy';
 import type { OverlayController } from './controller';
 import { Candidates } from './exclusions/candidates';
 import { laneReport } from './exclusions/counts';
@@ -134,6 +134,15 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     return current.phase === 'ready' && current.notice !== null
       ? noticeBanner(current.notice)
       : null;
+  });
+  const draftEmpty = createMemo(() => {
+    const draft = c.draft();
+    return (
+      LANE_ORDER.every((lane) => draft.rows[lane].length === 0) &&
+      !draft.disable.delayJs &&
+      !draft.disable.deferJs &&
+      !draft.disable.lazyRender
+    );
   });
   const reports = createMemo(() => {
     const view = c.view();
@@ -477,6 +486,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   On this page <span class="xo-count">{props.page.candidates().length}</span>
                 </button>
               </div>
+              <Show when={ready() && draftEmpty() && c.view()?.kind === 'off'}>
+                <p class="xo-empty">{viewCopy({ kind: 'off' }).body}</p>
+              </Show>
               <Show when={listOpen()}>
                 <div id="xo-candidates">
                   <Candidates
