@@ -12,7 +12,11 @@
  * class): the glanceability rule — all four segments on one line from 480 px
  * of strip width, wrapping below, never a horizontal scroll — is owned by
  * {@link statusBarLayout}, mirrored by the row's `@min-[480px]:` class
- * literal, and pinned by the sync-guard test.
+ * literal, and pinned by the sync-guard test. A trailing control (the
+ * exclusion builder entry) takes its own width at the strip's end; the
+ * four answers share the rest — still one line from 480 px (long values
+ * elide inside their segments), wrapping below (measured with the entry:
+ * one 32 px line at 480/600/768 px, three lines at 320 px, no overflow).
  *
  * Data honesty: boot renders placeholder slots until real data arrives; an
  * errored state renders quiet slots (the error view above carries the

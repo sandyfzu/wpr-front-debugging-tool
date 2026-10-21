@@ -101,6 +101,14 @@ describe('claimOverlaySlot (run in the page)', () => {
     expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
   });
 
+  it('takes a request as Chromium delivers it: null-valued keys dropped', () => {
+    // `{ presentation: null, origin: null }` arrives without both keys.
+    const delivered = { mode: 'open', claimTtlMs: OVERLAY_CLAIM_TTL_MS } as OverlaySlotRequest;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, delivered)).toBe('inject');
+    expect(claimedPresentation(scope)).toBeNull();
+    expect((scope[OVERLAY_SLOT_GLOBAL] as { presentation: unknown }).presentation).toBeNull();
+  });
+
   it('refuses a page of another origin than the session’s (the tab moved on)', () => {
     expect(
       claimOverlaySlot(OVERLAY_SLOT_GLOBAL, { ...reopen(), origin: 'https://other.test' })

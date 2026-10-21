@@ -94,7 +94,11 @@ export const OVERLAY_SLOT_VERDICTS: readonly OverlaySlotVerdict[] = [
  */
 export function claimOverlaySlot(key: string, request: OverlaySlotRequest): OverlaySlotVerdict {
   if (document.contentType !== 'text/html') return 'not-html';
-  if (request.origin !== null && location.origin !== request.origin) return 'other-origin';
+  // Loose on purpose: Chromium's argument serialization drops null-valued
+  // keys (verified on CFT 156), so "any origin" arrives as an absent key.
+  if (typeof request.origin === 'string' && location.origin !== request.origin) {
+    return 'other-origin';
+  }
   const scope = globalThis as unknown as Record<string, unknown>;
   const slot = scope[key] as
     | { state?: unknown; at?: unknown; presentation?: unknown; alive?: unknown; reveal?: unknown }
@@ -125,7 +129,7 @@ export function claimOverlaySlot(key: string, request: OverlaySlotRequest): Over
     if (request.mode === 'open') slot.presentation = null;
     return 'pending';
   }
-  scope[key] = { state: 'claimed', presentation: request.presentation, at: Date.now() };
+  scope[key] = { state: 'claimed', presentation: request.presentation ?? null, at: Date.now() };
   return 'inject';
 }
 
