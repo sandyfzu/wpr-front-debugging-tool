@@ -180,6 +180,36 @@ describe('PanelApp boot states', () => {
     });
   });
 
+  it('ends the status strip with the exclusion builder entry, even before page data', async () => {
+    const shell = makeShell();
+    const askStatus = vi.fn(() =>
+      Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
+    );
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        builderEntry={{
+          inspectedTabId: () => 77,
+          askStatus,
+          open: () => Promise.resolve({ kind: 'reply', reply: 'injected' } as const),
+          listen: () => () => undefined
+        }}
+      />
+    ));
+    const strip = screen.getByRole('contentinfo', { name: 'Page status' });
+    const control = await waitFor(() => {
+      const found = strip.querySelector('[data-fdt="builder-entry"]');
+      if (found === null) throw new Error('no builder entry');
+      return found;
+    });
+    expect(strip.lastElementChild).toBe(control);
+    expect(askStatus).toHaveBeenCalledWith(77);
+    await waitFor(() => {
+      expect(control.textContent).toContain('Off');
+    });
+  });
+
   it('keeps exactly one h1 in the document per page body', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
