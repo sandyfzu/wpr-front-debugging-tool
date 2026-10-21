@@ -198,7 +198,11 @@ export interface ExclusionServedDocument {
    * replaces it.
    */
   readonly order: number;
-  /** Epoch ms the response reached the backend (by the background's monotonic clock). */
+  /**
+   * Epoch ms (wall clock) the session recorded the response — after it
+   * reached the backend; compared with a page's time origin. `order`, not
+   * this, orders documents.
+   */
   readonly receivedAt: number;
   readonly speculationRules: ExclusionServedSpeculationRules;
   /**
@@ -365,7 +369,7 @@ export function isFeatureId(value: unknown): value is ExclusionFeatureId {
 }
 
 /** A printable row within the per-row cap (empty allowed — the engine names it invalid). */
-function isRowText(value: unknown): value is string {
+export function isWireRowText(value: unknown): value is string {
   return (
     typeof value === 'string' && value.length <= EXCLUSION_SET_LIMITS.rowChars && isPrintable(value)
   );
@@ -394,7 +398,7 @@ function parseRowList(value: unknown, charBudget: number): ParsedRowList | null 
   for (const row of value) {
     if (typeof row !== 'string') return null;
     chars += row.length;
-    if (chars > charBudget || !isRowText(row)) return null;
+    if (chars > charBudget || !isWireRowText(row)) return null;
     rows.push(row);
   }
   return { rows, chars };
@@ -458,7 +462,7 @@ function parseRowMatch(
   const matches = own(input, 'matches');
   const spec = EXCLUSION_FEATURES.find((entry) => entry.id === feature);
   if (spec === undefined || spec.rowKind !== rowKind) return null;
-  if (!isRowText(row) || !isCount(matches) || matches < 1) return null;
+  if (!isWireRowText(row) || !isCount(matches) || matches < 1) return null;
   return { row, rowKind: spec.rowKind, matches };
 }
 
@@ -671,7 +675,7 @@ function parseDocumentOutcome(
       const row = own(input, 'row');
       const budgetMs = own(input, 'budgetMs');
       if (!isFeatureId(feature)) return null;
-      if (row !== null && (!isRowText(row) || !featureRows(set, feature).includes(row))) {
+      if (row !== null && (!isWireRowText(row) || !featureRows(set, feature).includes(row))) {
         return null;
       }
       if (!isCount(budgetMs) || budgetMs < 1 || budgetMs > MAX_BUDGET_MS) return null;
@@ -794,7 +798,7 @@ function parseInvalidRow(input: unknown): InvalidExclusionRow | null {
   const index = own(input, 'index');
   const row = own(input, 'row');
   const reason = own(input, 'reason');
-  if (!isFeatureId(feature) || !isCount(index) || !isRowText(row)) return null;
+  if (!isFeatureId(feature) || !isCount(index) || !isWireRowText(row)) return null;
   if (index >= EXCLUSION_SET_LIMITS.rowsPerFeature) return null;
   if (typeof reason !== 'string' || reason.length < 1) return null;
   if (reason.length > EXCLUSION_SET_LIMITS.reasonChars || !isPrintable(reason)) return null;

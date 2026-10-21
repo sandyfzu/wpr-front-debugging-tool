@@ -11,6 +11,7 @@ import { resolvePointerPick, type PickCandidate } from './exclusions/pick-target
 import {
   createElementKeys,
   elementSnapshot,
+  pickContextOf,
   scanPage,
   type PageCandidate
 } from './exclusions/page-scan';
@@ -157,7 +158,10 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
       ) {
         chain.push(element);
       }
-      const resolved = resolvePointerPick(chain.map(elementSnapshot), win.location.href);
+      const resolved = resolvePointerPick(
+        chain.map(elementSnapshot),
+        pickContextOf(doc, win.location.href)
+      );
       const element = resolved === null ? undefined : chain[resolved.depth];
       return resolved === null || element === undefined
         ? null

@@ -157,6 +157,16 @@ describe('createRowValidator', () => {
     expect(validate('delayJs', 'gtag')).toBeNull();
   });
 
+  it('names rows the session cannot store: over the row cap or with control characters', () => {
+    const validate = createRowValidator();
+    expect(validate('lazyload', 'x'.repeat(EXCLUSION_SET_LIMITS.rowChars + 1))).toMatch(
+      /longer than 2048/
+    );
+    expect(validate('lazyload', 'a\u0007b')).toMatch(/control character/);
+    expect(validate('delayJs', `x${String.fromCharCode(0xd83c)}`)).toMatch(/control character/);
+    expect(validate('lazyload', 'x'.repeat(EXCLUSION_SET_LIMITS.rowChars))).toBeNull();
+  });
+
   it('treats blank rows as unfinished, never as errors', () => {
     expect(createRowValidator()('delayJs', '   ')).toBeNull();
   });

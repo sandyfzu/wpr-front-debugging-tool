@@ -24,8 +24,10 @@ import {
   DELAY_JS_SRC,
   DELAY_JS_TYPE_OLD,
   LAZY_RENDER_ATTRIBUTE,
+  MINIFY_CACHE_DIR_SOURCE,
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
+import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 import {
   DELAY_STATUS_ATTRIBUTE,
   DELAY_TYPE_ATTRIBUTE
@@ -54,12 +56,57 @@ export interface PickCandidate {
   readonly subject: string;
 }
 
-/** Longest inline-script excerpt used as a row. */
-const INLINE_EXCERPT_CHARS = 48;
+/** Longest inline-script excerpt used as a row, in code points. */
+const INLINE_EXCERPT_CODE_POINTS = 48;
+
+/**
+ * What the classifier knows about the page beyond one element: its URL and
+ * the match texts of every lazily rendered element (see
+ * {@link lazyRenderPeerText}) — a row naming one of them must not be a
+ * substring of another's.
+ */
+export interface PickContext {
+  readonly pageUrl: string;
+  readonly lazyRenderPeers: readonly string[];
+}
+
+/**
+ * The attributes a lazily rendered element's row may name, as they read in
+ * its opening tag (`␠id="…"␠class="…"`).
+ *
+ * @param el A lazily rendered element.
+ */
+export function lazyRenderPeerText(el: ElementSnapshot): string {
+  const id = el.attribute('id');
+  const classes = el.attribute('class');
+  return `${id === null ? '' : ` id="${id}"`}${classes === null ? '' : ` class="${classes}"`}`;
+}
+
+/** The leading part of a served URL up to its path: scheme + host, or `//host`. */
+const URL_AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?\/\/[^/?#]*/i;
+
+/** The minify-cache prefix of a served path (everything up to the mirrored original). */
+const MINIFY_PREFIX = new RegExp(`^.*?${MINIFY_CACHE_DIR_SOURCE}`);
+
+/**
+ * The URL's path exactly as the served attribute writes it — raw UTF-8 or
+ * percent-encoded, whichever the page used (a parsed URL would always
+ * percent-encode, and the engine matches the served text). A relative
+ * value (`../x.js`) has no such text: its resolved path is used.
+ *
+ * @param raw The attribute value.
+ * @param resolved The value resolved against the page.
+ */
+function servedPath(raw: string, resolved: URL): string {
+  const text = raw.trim().split(/[?#]/)[0] ?? '';
+  const authority = URL_AUTHORITY.exec(text);
+  if (authority !== null) return text.slice(authority[0].length);
+  return text.startsWith('/') ? text : resolved.pathname;
+}
 
 /** How a URL is named in a row. */
 interface UrlName {
-  /** Path (same origin) or host + path (other origins), as served (percent-encoding kept). */
+  /** Path (same origin) or host + path (other origins), as the served attribute writes it. */
   readonly text: string;
   /** The URL's last path segment, for people. */
   readonly file: string;
@@ -97,14 +144,23 @@ export function nameUrl(raw: string, pageUrl: string): UrlName | null {
     return null;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  const recovered = recoverOriginalScript(url.href);
+  const served = servedPath(raw, url).replace(/^\/+/, '');
   // A minified asset's mirrored original path names the source file on
   // whichever host served it — the cache URL's own host is not its origin.
-  const path =
-    recovered.kind === 'original' ? recovered.originalPath : url.pathname.replace(/^\/+/, '');
-  const sameOrigin = recovered.kind === 'original' || (base !== null && base.origin === url.origin);
+  const minified = recoverOriginalScript(url.href).kind === 'original';
+  const path = minified ? served.replace(MINIFY_PREFIX, '') : served;
+  const sameOrigin = minified || (base !== null && base.origin === url.origin);
   const text = sameOrigin && path !== '' ? path : `${url.host}${path === '' ? '' : `/${path}`}`;
+  if (text.length > EXCLUSION_SET_LIMITS.rowChars) return null;
   return { text, file: fileName(path, sameOrigin ? null : url.host) };
+}
+
+/**
+ * A candidate only when its row can be stored and sent (within the row cap,
+ * printable) — a picked element never produces a row the session refuses.
+ */
+function storable(candidate: PickCandidate): PickCandidate | null {
+  return isWireRowText(candidate.row) ? candidate : null;
 }
 
 /** Whether a script is delayed by WP Rocket (type vocabulary or the delay runtime's attributes). */
@@ -128,7 +184,9 @@ function firstLine(text: string): string | null {
     .split(/\r?\n/)
     .map((part) => part.trim())
     .find((part) => part !== '');
-  return line === undefined ? null : line.slice(0, INLINE_EXCERPT_CHARS);
+  // Cut on code points: a cut inside a surrogate pair leaves a lone half,
+  // which no row may carry.
+  return line === undefined ? null : Array.from(line).slice(0, INLINE_EXCERPT_CODE_POINTS).join('');
 }
 
 /** The Delay JS candidate of a delayed script. */
@@ -142,7 +200,8 @@ function delayCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | n
   }
   const id = el.attribute('id');
   if (id !== null && id !== '') {
-    return { lane: 'delayJs', row: escapeRegex(`id="${id}"`), subject: `#${id}` };
+    // `\s` bounds the attribute name: `id="x"` alone also matches `data-id="x"`.
+    return { lane: 'delayJs', row: `\\sid="${escapeRegex(id)}"`, subject: `#${id}` };
   }
   const line = el.text === null ? null : firstLine(el.text);
   return line === null ? null : { lane: 'delayJs', row: escapeRegex(line), subject: line };
@@ -159,25 +218,40 @@ function deferCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | n
 }
 
 /**
- * The most specific class token: one carrying a digit (builders stamp
- * per-element ids into classes), else the longest.
+ * Class tokens, most specific first: those carrying a digit (builders stamp
+ * per-element ids into classes), then longer ones.
  */
-function distinctClass(classes: string): string | null {
-  const tokens = classes.split(/\s+/).filter((token) => token !== '');
-  const ranked = [...tokens].sort(
-    (a, b) => Number(/\d/.test(b)) - Number(/\d/.test(a)) || b.length - a.length
-  );
-  return ranked[0] ?? null;
+function rankedClasses(classes: string): string[] {
+  return classes
+    .split(/\s+/)
+    .filter((token) => token !== '')
+    .sort((a, b) => Number(/\d/.test(b)) - Number(/\d/.test(a)) || b.length - a.length);
 }
 
-/** The Automatic Lazy Rendering candidate of a stamped element. */
-function lazyRenderCandidate(el: ElementSnapshot): PickCandidate | null {
+/** Whether a literal names at most one lazily rendered element (itself). */
+function unique(literal: string, peers: readonly string[]): boolean {
+  return peers.filter((peer) => peer.includes(literal)).length <= 1;
+}
+
+/**
+ * The Automatic Lazy Rendering candidate of a stamped element: its id
+ * (bounded by the preceding space), else the most specific class token no
+ * other stamped element's attributes contain, else its whole quoted class
+ * value; none when no literal names only it.
+ */
+function lazyRenderCandidate(el: ElementSnapshot, peers: readonly string[]): PickCandidate | null {
   if (el.attribute(LAZY_RENDER_ATTRIBUTE) === null) return null;
   const id = el.attribute('id');
-  if (id !== null && id !== '') return { lane: 'lazyRender', row: `id="${id}"`, subject: `#${id}` };
-  const token = distinctClass(el.attribute('class') ?? '');
-  if (token !== null) return { lane: 'lazyRender', row: token, subject: `${el.tag}.${token}` };
-  return { lane: 'lazyRender', row: `<${el.tag}`, subject: `<${el.tag}>` };
+  if (id !== null && id !== '' && unique(` id="${id}"`, peers)) {
+    return { lane: 'lazyRender', row: ` id="${id}"`, subject: `#${id}` };
+  }
+  const classes = el.attribute('class') ?? '';
+  const token = rankedClasses(classes).find((candidate) => unique(candidate, peers));
+  if (token !== undefined) return { lane: 'lazyRender', row: token, subject: `${el.tag}.${token}` };
+  const whole = `class="${classes}"`;
+  return classes.trim() !== '' && unique(whole, peers)
+    ? { lane: 'lazyRender', row: whole, subject: `${el.tag}.${rankedClasses(classes)[0] ?? ''}` }
+    : null;
 }
 
 /** The Image Lazyload candidate of a lazy image. */
@@ -195,14 +269,17 @@ function lazyloadCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate 
  * runs before the defer and is the one that keeps it from loading).
  *
  * @param el The element.
- * @param pageUrl The page's URL.
+ * @param context The page's URL and lazily rendered peers.
  */
-export function candidatesFor(el: ElementSnapshot, pageUrl: string): readonly PickCandidate[] {
+export function candidatesFor(el: ElementSnapshot, context: PickContext): readonly PickCandidate[] {
+  const { pageUrl } = context;
   const found: (PickCandidate | null)[] =
     el.tag === 'script'
       ? [isDelayedScript(el) ? delayCandidate(el, pageUrl) : null, deferCandidate(el, pageUrl)]
-      : [lazyloadCandidate(el, pageUrl), lazyRenderCandidate(el)];
-  return found.filter((candidate): candidate is PickCandidate => candidate !== null);
+      : [lazyloadCandidate(el, pageUrl), lazyRenderCandidate(el, context.lazyRenderPeers)];
+  return found
+    .map((candidate) => (candidate === null ? null : storable(candidate)))
+    .filter((candidate): candidate is PickCandidate => candidate !== null);
 }
 
 /** A pointer pick's resolution. */
@@ -219,14 +296,14 @@ export interface ResolvedPick {
  * scripts are picked from the page's candidate list.
  *
  * @param chain The pointed element followed by its ancestors (outermost last).
- * @param pageUrl The page's URL.
+ * @param context The page's URL and lazily rendered peers.
  */
 export function resolvePointerPick(
   chain: readonly ElementSnapshot[],
-  pageUrl: string
+  context: PickContext
 ): ResolvedPick | null {
   for (const [depth, el] of chain.entries()) {
-    const candidate = candidatesFor(el, pageUrl)[0];
+    const candidate = candidatesFor(el, context)[0];
     if (candidate !== undefined) return { candidate, depth };
   }
   return null;

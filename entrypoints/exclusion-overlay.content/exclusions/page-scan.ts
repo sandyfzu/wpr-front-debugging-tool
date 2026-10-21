@@ -16,7 +16,13 @@ import {
   DELAY_STATUS_ATTRIBUTE,
   DELAY_TYPE_ATTRIBUTE
 } from '../../../lib/exclusion-builder/delay-js';
-import { candidatesFor, type ElementSnapshot, type PickCandidate } from './pick-target';
+import {
+  candidatesFor,
+  lazyRenderPeerText,
+  type ElementSnapshot,
+  type PickCandidate,
+  type PickContext
+} from './pick-target';
 
 /** Elements examined per scan at most. */
 export const PAGE_SCAN_LIMIT = 5_000;
@@ -48,11 +54,30 @@ export function elementSnapshot(element: Element): ElementSnapshot {
   return {
     tag,
     attribute: (name) => element.getAttribute(name),
-    text:
-      tag === 'script' && !element.hasAttribute('src')
-        ? element.textContent.slice(0, SCRIPT_TEXT_CHARS)
-        : null
+    // Read only when the classifier asks (an inline delayed script without
+    // an id), and only its head: a page's inline bundles can be megabytes.
+    get text() {
+      return tag === 'script' && !element.hasAttribute('src') ? scriptHead(element) : null;
+    }
   };
+}
+
+/**
+ * The first {@link SCRIPT_TEXT_CHARS} characters of a script's text, copied
+ * from its text nodes without materializing the whole source.
+ *
+ * @param script The script element.
+ */
+export function scriptHead(script: Element): string {
+  let head = '';
+  for (
+    let node = script.firstChild;
+    node !== null && head.length < SCRIPT_TEXT_CHARS;
+    node = node.nextSibling
+  ) {
+    if (node instanceof Text) head += node.substringData(0, SCRIPT_TEXT_CHARS - head.length);
+  }
+  return head;
 }
 
 /** One pickable element of the page with one of its candidates. */
@@ -77,16 +102,35 @@ export function scanPage(
   keyOf: (element: Element) => string
 ): PageCandidate[] {
   const found: PageCandidate[] = [];
+  const context = pickContextOf(root, pageUrl);
   const elements = root.querySelectorAll(PICKABLE_SELECTOR);
   const count = Math.min(elements.length, PAGE_SCAN_LIMIT);
   for (let index = 0; index < count; index += 1) {
     const element = elements[index];
     if (element === undefined) continue;
-    for (const candidate of candidatesFor(elementSnapshot(element), pageUrl)) {
+    for (const candidate of candidatesFor(elementSnapshot(element), context)) {
       found.push({ ...candidate, key: `${keyOf(element)}:${candidate.lane}`, element });
     }
   }
   return found;
+}
+
+/**
+ * The pick context of a document: its URL and the peer texts of its lazily
+ * rendered elements (bounded like the scan).
+ *
+ * @param root Where to look.
+ * @param pageUrl The page's URL.
+ */
+export function pickContextOf(root: ParentNode, pageUrl: string): PickContext {
+  const stamped = root.querySelectorAll(`[${LAZY_RENDER_ATTRIBUTE}]`);
+  const peers: string[] = [];
+  const count = Math.min(stamped.length, PAGE_SCAN_LIMIT);
+  for (let index = 0; index < count; index += 1) {
+    const element = stamped[index];
+    if (element !== undefined) peers.push(lazyRenderPeerText(elementSnapshot(element)));
+  }
+  return { pageUrl, lazyRenderPeers: peers };
 }
 
 /**

@@ -13,7 +13,7 @@ import {
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
 import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
-import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
+import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 
 /** One editor lane = one feature's row list. */
 export type LaneKey = keyof ExclusionSetRows;
@@ -275,7 +275,22 @@ export function draftChars(draft: Draft): number {
 }
 
 /**
- * A memoizing row validator: the engine's own prevalidation per row, cached
+ * Why the session would refuse to carry a row at all (the wire contract,
+ * checked before the engine), or null.
+ *
+ * @param text The row as typed (non-blank).
+ */
+export function wireRowProblem(text: string): string | null {
+  const tooLong = text.length > EXCLUSION_SET_LIMITS.rowChars;
+  if (isWireRowText(text)) return null;
+  return tooLong
+    ? `Row is longer than ${String(EXCLUSION_SET_LIMITS.rowChars)} characters — shorten it`
+    : 'Row contains a control character or a broken (half) character — retype it';
+}
+
+/**
+ * A memoizing row validator: the wire contract's row check, then the
+ * engine's own prevalidation per row, cached
  * by lane + text, so an edit re-validates only the row that changed (the
  * regex guard is the costly part). Blank rows have no problem (unfinished).
  *
@@ -292,7 +307,10 @@ export function createRowValidator(
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
     const feature = laneFeature(lane);
-    const reason = featureRowProblems(feature.id, feature.rowKind, [text])[0]?.reason ?? null;
+    const reason =
+      wireRowProblem(text) ??
+      featureRowProblems(feature.id, feature.rowKind, [text])[0]?.reason ??
+      null;
     if (cache.size >= capacity) cache.clear();
     cache.set(key, reason);
     return reason;
