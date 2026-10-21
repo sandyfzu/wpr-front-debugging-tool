@@ -44,8 +44,11 @@ export interface LiveOverlay {
   readonly state: 'live';
   /** Whether the instance still runs (its context valid, its host in the page). */
   alive(): boolean;
-  /** Unfold and focus it; false when it cannot (it is dead). */
-  reveal(): boolean;
+  /**
+   * Unfold and focus it: `revealed` (on screen now), `pending` (still
+   * mounting — it unfolds once mounted), or `false` (it is dead).
+   */
+  reveal(): 'revealed' | 'pending' | false;
 }
 
 /** What the slot holds. */
@@ -118,9 +121,10 @@ export function claimOverlaySlot(key: string, request: OverlaySlotRequest): Over
     if (alive) {
       if (request.mode === 'reopen') return 'live';
       try {
-        if (typeof slot.reveal === 'function' && (slot.reveal as () => unknown)() === true) {
-          return 'revealed';
-        }
+        const revealed =
+          typeof slot.reveal === 'function' ? (slot.reveal as () => unknown)() : false;
+        // Only an instance on screen counts as shown; a mounting one is on its way.
+        if (revealed === 'revealed' || revealed === 'pending') return revealed;
       } catch {
         // A reveal that throws is a dead instance: claim below and replace it.
       }
@@ -254,9 +258,12 @@ export function holdStartingOverlay(
         !isInvalid() && (host === null ? now() - startedAt < mountWindowMs : host.isConnected),
       reveal: () => {
         if (isInvalid()) return false;
-        if (reveal === null) revealAsked = true;
-        else reveal();
-        return true;
+        if (reveal === null) {
+          revealAsked = true;
+          return 'pending';
+        }
+        reveal();
+        return 'revealed';
       }
     },
     key

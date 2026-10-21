@@ -32,13 +32,14 @@ const open: OverlaySlotRequest = {
 
 /** A live instance whose liveness and reveal are controllable. */
 function live(alive = true, reveal = true): LiveOverlay & { reveals: number } {
+  const answer = reveal ? ('revealed' as const) : false;
   const handle = {
     state: 'live' as const,
     reveals: 0,
     alive: () => alive,
     reveal: () => {
       handle.reveals += 1;
-      return reveal;
+      return answer;
     }
   };
   return handle;
@@ -92,7 +93,7 @@ describe('claimOverlaySlot (run in the page)', () => {
       alive: () => {
         throw new Error('dead context');
       },
-      reveal: () => true
+      reveal: () => 'revealed'
     });
     expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
     holdOverlaySlot(scope, {
@@ -211,7 +212,7 @@ describe('claimedPresentation / parseOverlaySlotVerdict', () => {
 });
 
 describe('holdStartingOverlay', () => {
-  it('holds the slot before the mount: an explicit open then is a reveal, run once mounted', () => {
+  it('holds the slot before the mount: an explicit open then is pending (never "shown"), revealed once mounted', () => {
     let now = 1_000;
     const starting = holdStartingOverlay(
       scope,
@@ -219,7 +220,8 @@ describe('holdStartingOverlay', () => {
       () => now
     );
     expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen())).toBe('live');
-    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('revealed');
+    // Nothing is on screen yet: the open is on its way, not shown.
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('pending');
     const reveal = vi.fn();
     starting.attach({ isConnected: true }, reveal);
     expect(reveal).toHaveBeenCalledTimes(1);
