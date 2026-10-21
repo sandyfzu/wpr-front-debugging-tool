@@ -51,7 +51,7 @@ import {
   type PresentationStateIO
 } from '../../../lib/side-by-side/presentation-state';
 import { isHttpUrl } from '../../../utils/urls';
-import { mountShadowUi } from '../ui/mount';
+import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
 import type { CompareUrls } from './urls';
 import { isPsiHost } from '../../../lib/side-by-side/analysis-host';

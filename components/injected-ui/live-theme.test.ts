@@ -11,7 +11,7 @@ import {
   nextContainerTheme,
   type AppearanceSource
 } from './live-theme';
-import { FALLBACK, type StoredOptions } from '../../../lib/storage/options';
+import { FALLBACK, type StoredOptions } from '../../lib/storage/options';
 
 /**
  * Whole-shape options with one appearance; the other slots seed from the

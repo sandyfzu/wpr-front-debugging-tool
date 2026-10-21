@@ -1,5 +1,5 @@
 /**
- * The live palette leg of every injected UI this content script mounts.
+ * The live palette leg of every injected UI a content script mounts.
  *
  * The shared mount applies the stored appearance to the shadow-root
  * container before its first paint; this module keeps that declaration on
@@ -11,9 +11,9 @@
  * itself; only a change of the stored choice re-applies here.
  */
 
-import { optionsStore, storedOptionsOrFallback } from '../../../lib/storage/options';
-import type { StoredOptions } from '../../../lib/storage/options';
-import { applyTheme, type Appearance, type Theme } from '../../../utils/theme';
+import { optionsStore, storedOptionsOrFallback } from '../../lib/storage/options';
+import type { StoredOptions } from '../../lib/storage/options';
+import { applyTheme, type Appearance, type Theme } from '../../utils/theme';
 
 /** The options seam the leg follows (the real item satisfies it; fakes in tests). */
 export interface AppearanceSource {

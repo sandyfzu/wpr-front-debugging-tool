@@ -9,7 +9,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSX } from 'solid-js';
 import { mountShadowUi } from './mount';
-import { optionsStore, FALLBACK, type StoredOptions } from '../../../lib/storage/options';
+import { optionsStore, FALLBACK, type StoredOptions } from '../../lib/storage/options';
 
 /**
  * The renderer is mocked at the exact boundary the mount composes over: a

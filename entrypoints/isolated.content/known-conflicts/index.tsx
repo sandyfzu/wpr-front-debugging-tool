@@ -26,7 +26,7 @@ import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { isHttpUrl } from '../../../utils/urls';
 import { debounce } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
-import { mountShadowUi } from '../ui/mount';
+import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';

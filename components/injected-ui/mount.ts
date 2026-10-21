@@ -1,5 +1,5 @@
 /**
- * Mounting shared by every UI this content script injects into a host page:
+ * Mounting shared by every UI a content script injects into a host page:
  * a Solid root inside a WXT shadow-root UI container, palette resolved and
  * applied to the container before the first paint — and kept on the stored
  * appearance while mounted (the live-theme leg), so an appearance change in
@@ -14,10 +14,10 @@
 
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
-import { createLogger } from '../../../lib/logger';
+import { createLogger } from '../../lib/logger';
 import { followStoredAppearance } from './live-theme';
 
-const log = createLogger('isolated-content');
+const log = createLogger('injected-ui');
 
 /**
  * Mount a Solid component tree into a shadow-root UI container once the
