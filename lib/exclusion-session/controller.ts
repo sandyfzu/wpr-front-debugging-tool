@@ -154,6 +154,12 @@ export interface ExclusionSessionController {
     sender: LooseMessageSender | undefined,
     data: unknown
   ): Promise<ExclusionSessionStatus>;
+  /**
+   * One tab's status for the background's own use (no sender gate; queued
+   * behind the tab's events like an ask, after the wake re-validation).
+   * Rejects when it cannot start within the ask queue wait or the read fails.
+   */
+  tabStatus(tabId: number): Promise<ExclusionSessionStatus>;
   /** `tabs.onRemoved`. Never rejects. */
   tabClosed(tabId: number): Promise<void>;
   /** Wake re-validation of stored records; asks and documents wait for it. Never rejects. */
@@ -607,10 +613,13 @@ export function createExclusionSessionController(
               ...url,
               token: identity.token,
               order: orderOf(identity.receivedAt),
-              // Wall clock, for surfaces comparing with a page's time origin:
-              // the monotonic arrival stamp orders documents, but it lags
-              // the wall clock after a sleep in a long-lived background.
-              receivedAt: deps.now(),
+              // Wall clock, for surfaces comparing with a page's
+              // (wall-anchored) navigation window: the monotonic arrival
+              // stamp orders documents, but it lags the wall clock after a
+              // sleep in a long-lived background. The backend's arrival wall
+              // time when it has one — a record written after the release
+              // (served unmodified, not served) must not read later.
+              receivedAt: identity.wallAt ?? deps.now(),
               speculationRules: {
                 removedFromDocument,
                 headerRemoved: identity.speculationRulesHeader,
@@ -817,6 +826,12 @@ export function createExclusionSessionController(
     }
   };
 
+  /** One tab's status once the wake re-validation ran, queued behind its events. */
+  const tabStatus = async (tabId: number, ask: string): Promise<ExclusionSessionStatus> => {
+    await awaitReady('status answered from the stored record');
+    return enqueueAsk(tabId, ask, () => readSession(tabId));
+  };
+
   // ── Channels ───────────────────────────────────────────────────────────
 
   return {
@@ -889,8 +904,11 @@ export function createExclusionSessionController(
       }
       const query = parseExclusionSessionTabQuery(data);
       if (query === null) throw new Error('getExclusionSessionForTab: malformed query refused');
-      await awaitReady('status answered from the stored record');
-      return enqueueAsk(query.tabId, 'getExclusionSessionForTab', () => readSession(query.tabId));
+      return tabStatus(query.tabId, 'getExclusionSessionForTab');
+    },
+
+    tabStatus(tabId) {
+      return tabStatus(tabId, 'tabStatus');
     },
 
     async tabClosed(tabId) {

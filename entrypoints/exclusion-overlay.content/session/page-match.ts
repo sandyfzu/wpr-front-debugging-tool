@@ -29,8 +29,35 @@ export interface PageFacts {
    * history-API address changes do not touch; `null` when unavailable.
    */
   readonly documentUrl: string | null;
-  /** `performance.timeOrigin`: epoch ms the navigation to this document started. */
-  readonly timeOrigin: number;
+  /**
+   * Wall-clock epoch ms the navigation to this document started, anchored
+   * when the facts were read (`Date.now() − performance.now()` in one
+   * instant) — the clock domain session records are stamped in. Not
+   * `performance.timeOrigin`: the monotonic timeline it rides may not
+   * tick while the system sleeps (and wall time is adjusted), so it can
+   * sit minutes away from `Date.now()`.
+   */
+  readonly navigationStart: number;
+  /**
+   * Whether {@link navigationStart} was taken at `document_start` (no sleep
+   * can have shifted it). Otherwise it was read later (a page loaded before
+   * the extension started): a sleep since the load would have moved it
+   * later, so a record that only looks too old proves nothing.
+   */
+  readonly anchoredAtStart?: boolean;
+  /**
+   * When this document's response ended, in ms after {@link navigationStart}
+   * (the navigation timing entry's `responseEnd`); `null` while unknown.
+   * Its own record is stamped while its response was held, so it falls
+   * before this — a later record is another load's.
+   */
+  readonly responseEnd: number | null;
+  /**
+   * The document came back from the back/forward cache: the session went on
+   * without it (other documents were recorded meanwhile), so a record of
+   * another document no longer says this one was not intercepted.
+   */
+  readonly restored?: boolean;
 }
 
 /**
@@ -79,9 +106,18 @@ export function matchServedDocument(
   const address = page.documentUrl ?? page.href;
   if (served.urlDigest !== documentDigest(address)) {
     // Unknown document URL + mismatch may only be a history-API move.
-    return page.documentUrl === null ? 'cant-tell' : 'other-page';
+    return page.documentUrl === null || page.restored === true ? 'cant-tell' : 'other-page';
   }
-  const age = page.timeOrigin - served.receivedAt;
-  if (age <= RECORD_SAME_LOAD_SKEW_MS) return 'this-page';
-  return age > RECORD_STALE_MS ? 'other-page' : 'cant-tell';
+  const age = page.navigationStart - served.receivedAt;
+  if (age <= RECORD_SAME_LOAD_SKEW_MS) {
+    // Recorded after this document's own response: a later load of the same
+    // URL (e.g. this page came back from the back/forward cache after it).
+    // Its outcome says nothing about this document.
+    if (page.responseEnd === null) return page.restored === true ? 'cant-tell' : 'this-page';
+    const lateBy = served.receivedAt - (page.navigationStart + page.responseEnd);
+    return lateBy <= RECORD_SAME_LOAD_SKEW_MS ? 'this-page' : 'cant-tell';
+  }
+  return age > RECORD_STALE_MS && page.restored !== true && page.anchoredAtStart === true
+    ? 'other-page'
+    : 'cant-tell';
 }

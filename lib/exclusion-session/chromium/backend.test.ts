@@ -45,6 +45,8 @@ const BODY = new TextEncoder().encode('<p>served</p>');
 const REWRITTEN = new TextEncoder().encode('<p>rewritten</p>');
 /** The epoch the fake `now` answers. */
 const EPOCH = 1_800_000_000_000;
+/** The wall clock at a response's arrival (a different clock domain than EPOCH's). */
+const WALL_AT = EPOCH + 7;
 
 /** A settable monotonic clock. */
 function fakeClock(): {
@@ -271,7 +273,8 @@ beforeEach(() => {
     log,
     schedule: timers.schedule,
     clock: clock.now,
-    stamp: () => EPOCH
+    stamp: () => EPOCH,
+    wallNow: () => WALL_AT
   });
   rig = {
     port,
@@ -721,6 +724,7 @@ describe('paused requests', () => {
         identity: {
           token: 'req-1',
           receivedAt: EPOCH,
+          wallAt: WALL_AT,
           speculationRulesHeader: false,
           servedAsCopy: true,
           // Armed without an origin: no guard.
@@ -837,6 +841,7 @@ describe('paused requests', () => {
         {
           token: 'req-1',
           receivedAt: EPOCH,
+          wallAt: WALL_AT,
           speculationRulesHeader: false,
           servedAsCopy: true,
           speculationGuard: false,

@@ -4,7 +4,7 @@ Operating guide for AI agents (and humans) working in this repository. Keep it a
 
 ## Project Overview
 
-Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder`, `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
+Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder` (re-planned as the in-page overlay `exclusion-overlay.content/`), `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
 
 A **second behavioral baseline** is also being integrated: the features of [wpr-inspector](https://github.com/wp-media/wpr-inspector) (you might find it at `../wpr-inspector`, check) — WP Rocket feature detection via the `data-wpr-features` generator meta, an on-page detection strip, the RUCSS live tester, and the runtime analysis tools (beacon/LCP/script views). Same rules apply: port behavior, improve and enhance, never copy; that baseline is planned as phases P11–P14 in `docs/plans/`.
 
@@ -42,7 +42,6 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── popup/                 # browser-action popup
 │   ├── devtools/              # registers the devtools panel (points at panel.html)
 │   ├── panel/                 # main debugging UI, shown as the devtools panel (panel.html)
-│   ├── exclusion-builder/     # unlisted page (exclusion-builder.html)
 │   ├── options/               # options page
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
@@ -50,7 +49,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── exclusion-overlay.content/ # runtime content script (`registration: 'runtime'`, never in the
 │   │                          #   manifest): the in-page exclusion builder overlay, injected into a
 │   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
-│   │                          #   costs pages nothing until then
+│   │                          #   costs pages nothing until then; the background re-opens it on a
+│   │                          #   session tab's loaded pages (`lib/exclusion-session/overlay-reopen`)
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
@@ -156,7 +156,7 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 
 ### UI themes: light & dark
 
-- **Every user-facing surface supports both palettes** — panel, popup, options, exclusion-builder, and every injected UI (strips, badges, overlays): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
+- **Every user-facing surface supports both palettes** — panel, popup, options, and every injected UI (strips, badges, overlays — the exclusion builder included): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
 - **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
 - **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs and the popup only read it.
 

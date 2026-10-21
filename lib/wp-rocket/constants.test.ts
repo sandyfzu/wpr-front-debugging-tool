@@ -247,7 +247,7 @@ describe('platforms and ids', () => {
     expect(ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB).toBe('update-known-conflicts-db');
     expect(Object.values(CONTEXT_MENU_IDS).sort()).toEqual(
       [
-        'exclusionBuilderPage',
+        'exclusionBuilder',
         'psiSideBySide',
         'toggleDetectionWidget',
         'updateKnownConflictsDB',

@@ -24,6 +24,7 @@ import {
   parseExclusionSessionStatus,
   parseExclusionSessionTabQuery,
   parseExclusionSessionTabStatus,
+  parseExclusionOverlayPresentation,
   parseExclusionSet,
   parseServedDocument,
   SERVED_DOCUMENT_LIMITS
@@ -821,6 +822,24 @@ describe('panel rows', () => {
       null
     ]) {
       expect(parseExclusionSessionTabStatus(input)).toBeNull();
+    }
+  });
+});
+
+describe('overlay presentation row', () => {
+  it('parses the presentation push: exactly a boolean `open`', () => {
+    expect(parseExclusionOverlayPresentation({ open: true })).toEqual({ open: true });
+    expect(parseExclusionOverlayPresentation({ open: false })).toEqual({ open: false });
+    for (const input of [
+      { open: 'true' },
+      { open: 1 },
+      { open: true, x: 1 },
+      {},
+      Object.create({ open: true }),
+      null,
+      true
+    ]) {
+      expect(parseExclusionOverlayPresentation(input)).toBeNull();
     }
   });
 });

@@ -25,6 +25,7 @@ import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import { OVERLAY_HOST_NAME, installKeyGuard } from '../../components/injected-ui/key-guard';
+import { recordNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
 import './styles.css';
 
 const log = createLogger('isolated');
@@ -47,7 +48,20 @@ interface IsolatedWorldModule {
  * row with its folder.
  */
 const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
-  // First, at document_start: its window-capture listeners must precede the
+  // At document_start, before anything else: the navigation's wall-clock
+  // start, kept in this isolated world for the builder overlay (a later
+  // reading would move by any system sleep since).
+  {
+    name: 'navigation-anchor',
+    setup: () => {
+      recordNavigationAnchor(
+        globalThis,
+        () => Date.now(),
+        () => performance.now()
+      );
+    }
+  },
+  // Then at document_start: its window-capture listeners must precede the
   // page's own to keep keys typed in the exclusion builder overlay from it.
   {
     name: 'overlay-key-guard',

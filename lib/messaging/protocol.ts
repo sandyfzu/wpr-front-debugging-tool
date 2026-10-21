@@ -52,6 +52,7 @@ import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
 import type {
   ExclusionApplyReply,
+  ExclusionOverlayPresentation,
   ExclusionSaveReply,
   ExclusionSessionStatus,
   ExclusionSessionTabQuery,
@@ -59,6 +60,7 @@ import type {
   ExclusionSetPayload,
   SavedExclusionSetReply
 } from './exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
 
 export interface ProtocolMap {
   /**
@@ -150,4 +152,16 @@ export interface ProtocolMap {
    * it from senders with a runtime tab and acts only for its inspected tab.
    */
   exclusionSessionUpdated(data: ExclusionSessionTabStatus): true;
+  /**
+   * Panel → background: open the builder overlay on the inspected tab's
+   * page. Carries the inspected tab id like `getExclusionSessionForTab`
+   * (answered only for `isExtensionPageSender` senders).
+   */
+  openExclusionOverlay(data: ExclusionSessionTabQuery): ExclusionOverlayOpenOutcome;
+  /**
+   * Builder overlay → background (push, sender-resolved top frame): how the
+   * user left the overlay, so the session tab's next pages bring it back
+   * the same way.
+   */
+  exclusionOverlayPresented(data: ExclusionOverlayPresentation): true;
 }

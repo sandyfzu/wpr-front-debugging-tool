@@ -6,6 +6,7 @@ import {
   createPageTools,
   cssZoom,
   hasModal,
+  readPageFacts,
   viewportRect,
   type PageTools
 } from './page-tools';
@@ -19,6 +20,8 @@ const microtasks = () =>
 describe('createPageTools', () => {
   let tools: PageTools | undefined;
   let disposeRoot: (() => void) | undefined;
+  /** The wall clock the tools read (a test moves it). */
+  let wall = 1_800_000_000_000;
   let invalid = false;
   /** The listeners the tools registered, by event type. */
   let listeners: Map<string, (event: Event) => void>;
@@ -43,7 +46,8 @@ describe('createPageTools', () => {
         isInvalid: () => invalid,
         later: (run) => {
           setTimeout(run, 0);
-        }
+        },
+        wallNow: () => wall
       });
     });
   });
@@ -107,6 +111,18 @@ describe('createPageTools', () => {
     listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
     expect(tools?.pageFacts().href).toContain('/spa-route');
     history.pushState({}, '', '/');
+  });
+
+  it('marks a back/forward cache restore, and keeps the mark through SPA moves', () => {
+    // A page-transition event carrying `persisted` (the test DOM has no constructor for it).
+    const pageshow = (persisted: boolean): Event =>
+      Object.assign(new Event('pageshow'), { persisted });
+    listeners.get('pageshow')?.(pageshow(false));
+    expect(tools?.pageFacts().restored).toBeUndefined();
+    listeners.get('pageshow')?.(pageshow(true));
+    expect(tools?.pageFacts().restored).toBe(true);
+    listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+    expect(tools?.pageFacts().restored).toBe(true);
   });
 
   it('notices page dialogs and popovers, ignoring its own host', () => {
@@ -186,7 +202,32 @@ describe('createPageTools', () => {
 
   it('reads the page facts', () => {
     expect(tools?.pageFacts().href).toBe(window.location.href);
-    expect(typeof tools?.pageFacts().timeOrigin).toBe('number');
+    expect(typeof tools?.pageFacts().navigationStart).toBe('number');
+  });
+
+  it('keeps the navigation start anchored at the first read (a later re-read after a sleep would shift it)', () => {
+    const anchored = tools?.pageFacts().navigationStart;
+    // An hour of system sleep: the wall clock jumps, the monotonic timeline does not.
+    wall += 3_600_000;
+    listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+    expect(tools?.pageFacts().navigationStart).toBe(anchored);
+  });
+
+  it('reads the response end from the navigation entry (unknown while 0 or absent)', () => {
+    const entries = vi.spyOn(window.performance, 'getEntriesByType');
+    try {
+      entries.mockReturnValue([{ name: window.location.href, responseEnd: 120 } as never]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBe(120);
+      entries.mockReturnValue([{ name: window.location.href, responseEnd: 0 } as never]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBeNull();
+      entries.mockReturnValue([]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBeNull();
+    } finally {
+      entries.mockRestore();
+    }
   });
 });
 
@@ -221,5 +262,29 @@ describe('hasModal / cssZoom', () => {
     const junk = document.createElement('div');
     Object.defineProperty(junk, 'currentCSSZoom', { value: 0 });
     expect(cssZoom(junk)).toBe(1);
+  });
+});
+
+describe('readPageFacts (wall-anchored navigation start)', () => {
+  /** A window whose monotonic timeline is `timelineOffsetMs` away from the wall clock. */
+  const source = (sinceStart: number, responseEnd: number) => ({
+    location: { href: 'https://example.com/' },
+    performance: {
+      now: () => sinceStart,
+      getEntriesByType: () => [{ name: 'https://example.com/', responseEnd } as never]
+    }
+  });
+
+  it('anchors the navigation start to the wall clock, whatever the timeline’s offset', () => {
+    const facts = readPageFacts(source(1_500, 120), () => 1_800_000_000_000);
+    expect(facts.navigationStart).toBe(1_800_000_000_000 - 1_500);
+    expect(facts.responseEnd).toBe(120);
+  });
+
+  it('prefers the document_start anchor when one was recorded', () => {
+    const facts = readPageFacts(source(1_500, 120), () => 1_800_000_000_000, 1_700_000_000_000);
+    expect(facts.navigationStart).toBe(1_700_000_000_000);
+    expect(facts.anchoredAtStart).toBe(true);
+    expect(readPageFacts(source(1_500, 120), () => 1).anchoredAtStart).toBe(false);
   });
 });

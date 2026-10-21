@@ -13,7 +13,6 @@
  */
 import ClipboardCopy from 'lucide-solid/icons/clipboard-copy';
 import Download from 'lucide-solid/icons/download';
-import ExternalLink from 'lucide-solid/icons/external-link';
 import Keyboard from 'lucide-solid/icons/keyboard';
 import RefreshCw from 'lucide-solid/icons/refresh-cw';
 import SunMoon from 'lucide-solid/icons/sun-moon';
@@ -22,7 +21,6 @@ import type { FdtData } from '../../../lib/wp-rocket/types';
 import { createLogger } from '../../../lib/logger';
 import { toast } from '../../../components/ui/toast-store';
 import { copySupportReport, type CopyReportOutcome } from '../report/copy-report';
-import type { ExclusionBuilderOutcome } from './exclusion-builder';
 import type { JsonExportResult } from './export-json';
 import { SHORTCUTS_OVERLAY_BINDING } from './shortcuts';
 import { NAV_ROUTES, type RouteId } from '../routes';
@@ -57,10 +55,6 @@ export interface PanelActionDeps {
   loadedData(): FdtData | null;
   /** Advance the stored appearance one cycle step; rejects on a failed write. */
   cycleAppearance(): Promise<void>;
-  /** Open the builder tab (the mechanism module owns its toast feedback). */
-  openExclusionBuilder(): Promise<ExclusionBuilderOutcome>;
-  /** Whether this context can open the builder tab at all (the row's gate). */
-  exclusionBuilderAvailable(): boolean;
   /** Open the shortcuts overlay (the palette's own row path). */
   openShortcuts(): void;
   /** Run the whole JSON export (the mechanism module owns its toast feedback). */
@@ -107,7 +101,7 @@ const APPEARANCE_CYCLE_NOTE = 'system → dark → light';
 const APPEARANCE_SAVE_NOTE = 'The choice did not save; the panel keeps its current palette.';
 
 /**
- * The six shell actions, in row order. Each run routes through its
+ * The five shell actions, in row order. Each run routes through its
  * mechanism and reports there — a mechanism that rejects despite its own
  * guarding is a wiring bug, so the runs hand their promises to the overlay's
  * guard (which logs an escape) instead of re-catching here; only the
@@ -178,20 +172,6 @@ export function createPanelActions(deps: PanelActionDeps): PanelCommand[] {
               description: APPEARANCE_SAVE_NOTE
             });
           });
-      }
-    },
-    {
-      id: 'action-open-exclusion-builder',
-      label: 'Open Exclusion Builder',
-      icon: ExternalLink,
-      keywords: ['exclusions', 'delay', 'builder'],
-      disabled: !deps.exclusionBuilderAvailable(),
-      disabledNote: 'Opening a tab is unavailable here — use the toolbar context menu',
-      run: () => {
-        // A stale dispatch on a disabled row is the no-op, never a silent
-        // failed attempt to open a tab.
-        if (!deps.exclusionBuilderAvailable()) return;
-        return deps.openExclusionBuilder().then(() => undefined);
       }
     },
     {

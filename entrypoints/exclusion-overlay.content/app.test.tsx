@@ -11,6 +11,8 @@ import type { PageTools, PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
+import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
+import type { OverlayMode, OverlayModeContext } from './modes';
 
 /**
  * A virtualizer that renders every row (happy-dom lays nothing out, so the
@@ -71,16 +73,17 @@ document.body.append(frame);
 frame.getBoundingClientRect = () => ({ left: 10, top: 20, width: 300, height: 150 }) as DOMRect;
 
 /** Page tools with controllable signals. */
-function pageTools() {
+function pageTools(modalAtStart = false) {
   const [candidates] = createSignal(pageCandidates());
   const [pageFacts] = createSignal({
     href: 'https://example.com/',
     documentUrl: 'https://example.com/',
-    timeOrigin: 0
+    navigationStart: 0,
+    responseEnd: null
   });
-  const [pageModal, setPageModal] = createSignal(false);
+  const [pageModal, setPageModal] = createSignal(modalAtStart);
   // What a fresh `:modal` read would answer (lets a test go stale).
-  let modalNow = false;
+  let modalNow = modalAtStart;
   const [pageTopLayerOpened] = createSignal(0);
   const [zoom] = createSignal(1);
   const [candidatesCapped] = createSignal(false);
@@ -110,9 +113,18 @@ function pageTools() {
   };
 }
 
-/** Render the overlay over a port, started. */
-function mount(sessionPort: ExclusionSessionPort) {
+/** Render the overlay over a port, started (a re-open when `presentation` is given). */
+function mount(
+  sessionPort: ExclusionSessionPort,
+  presentation: OverlayPresentation | null = null,
+  mode?: OverlayMode,
+  modalAtStart = false,
+  /** Run frame requests on a later task, like a browser (default: at once). */
+  laterFrames = false
+) {
+  let reveal: (() => void) | null = null;
   const onClose = vi.fn();
+  const onPresented = vi.fn();
   const reload = vi.fn();
   const timers: (() => void)[] = [];
   let picker: PickerEvents<PointedPick> | null = null;
@@ -120,7 +132,7 @@ function mount(sessionPort: ExclusionSessionPort) {
   let setPageModal: (value: boolean) => void = () => undefined;
   let setModalNow: (value: boolean) => void = () => undefined;
   const result = render(() => {
-    const page = pageTools();
+    const page = pageTools(modalAtStart);
     setPageModal = page.setPageModal;
     setModalNow = page.setModalNow;
     const controller = createOverlayController({
@@ -141,10 +153,17 @@ function mount(sessionPort: ExclusionSessionPort) {
         page={page.tools}
         origin="https://example.com"
         requestFrame={(run) => {
-          run();
+          if (laterFrames) setTimeout(run, 0);
+          else run();
         }}
         listen={() => undefined}
         onClose={onClose}
+        presentation={presentation}
+        onPresented={onPresented}
+        mode={mode}
+        onRevealReady={(registered) => {
+          reveal = registered;
+        }}
         startPicking={(events) => {
           picker = events;
           return stopPicker;
@@ -156,7 +175,12 @@ function mount(sessionPort: ExclusionSessionPort) {
   });
   return {
     ...result,
+    reveal: () => {
+      if (reveal === null) throw new Error('the overlay registered no reveal');
+      reveal();
+    },
     onClose,
+    onPresented,
     reload,
     stopPicker,
     picker: () => picker,
@@ -249,6 +273,132 @@ describe('OverlayApp', () => {
     });
   });
 
+  it('reports folding, unfolding and closing (the next page follows suit)', async () => {
+    const { container, onPresented } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
+    expect(onPresented).not.toHaveBeenCalled();
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    fireEvent.click(await screen.findByRole('button', { name: /open the exclusion builder/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close the exclusion builder' }));
+    expect(onPresented.mock.calls).toEqual([[false], [true], [false]]);
+  });
+
+  it('re-tries a focus move that does not take (a panel still hidden for a frame)', async () => {
+    const { container } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
+    const heading = screen.getByRole('heading', { level: 1 });
+    // The first focus call is refused, the way a still-hidden element refuses it.
+    const realFocus = heading.focus.bind(heading);
+    let refused = 0;
+    const spy = vi.spyOn(heading, 'focus').mockImplementation((options?: FocusOptions) => {
+      if (refused === 0) {
+        refused += 1;
+        return;
+      }
+      realFocus(options);
+    });
+    try {
+      fireEvent.click(pill);
+      await waitFor(() => {
+        expect(document.activeElement).toBe(heading);
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('an explicit open lands focus on the heading', async () => {
+    mount(port({ state: 'inactive' }));
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    });
+  });
+
+  it('a folded re-open starts as the pill and leaves the page’s focus alone', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const { container, onPresented } = mount(port(activeRecord()), 'folded');
+      await screen.findByRole('button', { name: /open the exclusion builder/i });
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+      expect(document.activeElement).toBe(outside);
+      expect(onPresented).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('an open re-open shows the panel without taking focus', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const { container } = mount(port(activeRecord()), 'open');
+      await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('renders a plugged-in mode’s config and results panels through the shell services', async () => {
+    let captured: OverlayModeContext | null = null;
+    const shell = (): OverlayModeContext => {
+      if (captured === null) throw new Error('the mode was not rendered');
+      return captured;
+    };
+    const picked: string[] = [];
+    const mode: OverlayMode = {
+      id: 'probe',
+      label: 'Probe tool',
+      Config: (props) => {
+        // eslint-disable-next-line solid/reactivity -- capturing the fixed context object
+        captured = props.context;
+        return <p>Probe config</p>;
+      },
+      Results: () => <p>Probe results</p>
+    };
+    const { container, picker } = mount(port({ state: 'inactive' }), null, mode);
+    await screen.findByText('Probe config');
+    expect(screen.getByText('Probe results')).toBeTruthy();
+    // No Exclusions panel: the shell renders only the active mode.
+    expect(screen.queryByRole('button', { name: 'Pick on page' })).toBeNull();
+    // The shell services: highlight, announce, pick.
+    const element = document.createElement('div');
+    document.body.append(element);
+    element.getBoundingClientRect = () =>
+      ({ left: 5, top: 50, width: 40, height: 30, x: 5, y: 50 }) as DOMRect;
+    shell().highlight({ element, label: 'Probe lane', subject: 'probe subject' });
+    await screen.findByText('Probe lane');
+    shell().highlight(null);
+    element.remove();
+    shell().announce('Probe announced');
+    await screen.findByText('Probe announced');
+    shell().pick(undefined, {
+      label: () => 'Probe lane',
+      onPick: (pick) => {
+        picked.push(pick.candidate.subject);
+      }
+    });
+    expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
+    const img = document.createElement('img');
+    picker()?.pick(
+      { element: img, candidate: { lane: 'lazyload', row: 'x.jpg', subject: 'x.jpg' } },
+      img
+    );
+    expect(picked).toEqual(['x.jpg']);
+    expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
+    // The pill carries the mode's name.
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
+    expect(pill.textContent).toMatch(/^Probe tool/);
+  });
+
   it('picks through the picker: a miss explains itself, a hit adds the row and ends picking', async () => {
     const { picker, stopPicker } = mount(port({ state: 'inactive' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Pick on page' }));
@@ -314,6 +464,68 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('an explicit open under a page modal comes back open, focused, when the modal closes', async () => {
+    const { container, setPageModal, setModalNow } = mount(
+      port({ state: 'inactive' }),
+      null,
+      undefined,
+      true,
+      true
+    );
+    expect(await screen.findByText('Paused: page dialog open')).toBeTruthy();
+    expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+    setModalNow(false);
+    setPageModal(false);
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    });
+  });
+
+  it('a re-open under a page modal comes back as it was meant to, never taking focus', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const open = mount(port(activeRecord()), 'open', undefined, true, true);
+      await open.findByText('Paused: page dialog open');
+      open.setModalNow(false);
+      open.setPageModal(false);
+      await waitFor(() => {
+        expect(open.container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+      });
+      // Past every frame a focus move would take.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(document.activeElement).toBe(outside);
+      cleanup();
+      const folded = mount(port(activeRecord()), 'folded', undefined, true, true);
+      await folded.findByText('Paused: page dialog open');
+      folded.setModalNow(false);
+      folded.setPageModal(false);
+      await folded.findByRole('button', { name: /open the exclusion builder/i });
+      expect(folded.container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('reveals itself on request: unfolds, ends picking, focuses the heading, reports open', async () => {
+    const { container, reveal, onPresented } = mount(port({ state: 'inactive' }), 'folded');
+    await screen.findByRole('button', { name: /open the exclusion builder/i });
+    reveal();
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+    expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    expect(onPresented).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick on page' }));
+    expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
+    reveal();
+    expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
   });
 
   it('dismisses a notice from its corner control, focus landing on the heading', async () => {

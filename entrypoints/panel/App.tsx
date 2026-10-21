@@ -38,6 +38,12 @@ import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
 import { StatusBar } from './status-bar/status-bar';
+import {
+  BuilderEntry,
+  builderEntryOffered,
+  realBuilderEntryDeps,
+  type BuilderEntryDeps
+} from './status-bar/builder-entry';
 import { PAGES } from './pages';
 import { focusRouteHeading } from './palette/focus';
 import { PaletteTrigger } from './palette/palette-trigger';
@@ -74,6 +80,11 @@ export type AppProps = {
    * document itself reloads — the DevTools window re-attaches it.
    */
   readonly reload?: () => void;
+  /**
+   * The exclusion builder entry's transport (tests inject doubles); absent,
+   * the real messenger over the DevTools-inspected tab.
+   */
+  readonly builderEntry?: BuilderEntryDeps;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -128,7 +139,7 @@ const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
 const STACK_ROW = 'flex min-h-0 flex-1';
 
 export function PanelApp(props: AppProps): JSX.Element {
-  // All three store injections below are deliberate once-per-mount builds
+  // All the store injections below are deliberate once-per-mount builds
   // (the component body runs once; a store is never reactively rebuilt), so
   // the `solid/reactivity` warning's concern does not apply to any of them —
   // silenced uniformly rather than by exception.
@@ -162,6 +173,8 @@ export function PanelApp(props: AppProps): JSX.Element {
     })();
   // eslint-disable-next-line solid/reactivity
   const overlays = props.overlays ?? createOverlayStore();
+  // eslint-disable-next-line solid/reactivity
+  const builderEntryDeps = props.builderEntry ?? realBuilderEntryDeps(devtoolsInspectedTabId);
   const router = createHashRoute();
 
   // The shell — and only the shell — owns the mount lifecycle: every
@@ -331,7 +344,13 @@ export function PanelApp(props: AppProps): JSX.Element {
                 </ErrorBoundary>
               </main>
             </div>
-            <StatusBar />
+            <StatusBar
+              trailing={
+                builderEntryOffered(import.meta.env.BROWSER) ? (
+                  <BuilderEntry deps={builderEntryDeps} />
+                ) : undefined
+              }
+            />
           </div>
           <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
             {statusLine()}

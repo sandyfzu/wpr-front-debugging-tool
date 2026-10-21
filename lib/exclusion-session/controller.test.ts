@@ -457,6 +457,30 @@ describe('status asks', () => {
   });
 });
 
+describe('tabStatus (the background’s own read)', () => {
+  it('answers any tab’s stored status, with no sender gate', async () => {
+    const r = rig();
+    await seedActive();
+    await expect(r.controller.tabStatus(TAB)).resolves.toMatchObject({
+      state: 'active',
+      origin: ORIGIN
+    });
+    await expect(r.controller.tabStatus(4)).resolves.toEqual({ state: 'inactive' });
+  });
+
+  it('rejects when the store read fails', async () => {
+    const r = rig({
+      sessions: {
+        read: () => Promise.reject(new Error('store down')),
+        readAll: getExclusionSessionRecords,
+        put: putExclusionSessionRecord,
+        remove: removeExclusionSessionRecord
+      }
+    });
+    await expect(r.controller.tabStatus(TAB)).rejects.toThrow('store down');
+  });
+});
+
 describe('saved sets', () => {
   it('reads the sender origin’s saved set (null when none, or for non-pages)', async () => {
     const r = rig();
@@ -1354,6 +1378,33 @@ describe('served identity and session effects', () => {
       receivedAt: NOW,
       token: `req-${String(NOW - 60_000)}`
     });
+  });
+
+  it('records the backend’s arrival wall time when it has one (a record written later keeps it)', async () => {
+    let now = NOW;
+    const r = rig({ now: () => now });
+    await seedActive();
+    // The record is written well after the arrival (a release, then a busy
+    // background): its wall time must still be the arrival's.
+    now = NOW + 30_000;
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, {
+      ...copyIdentity(NOW - 60_000),
+      wallAt: NOW - 5
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 5 });
+    await r.host.documentNotServed(TAB, `${ORIGIN}/b`, {
+      ...copyIdentity(NOW - 50_000),
+      wallAt: NOW - 3
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 3 });
+    await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/c`),
+      identity: { ...copyIdentity(NOW - 40_000), wallAt: NOW - 1 }
+    });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({ receivedAt: NOW - 1 });
   });
 
   it('copy-serving backend: serves the original when only the rules would change (the guard removes them)', async () => {

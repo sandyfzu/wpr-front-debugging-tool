@@ -12,7 +12,11 @@
  * class): the glanceability rule — all four segments on one line from 480 px
  * of strip width, wrapping below, never a horizontal scroll — is owned by
  * {@link statusBarLayout}, mirrored by the row's `@min-[480px]:` class
- * literal, and pinned by the sync-guard test.
+ * literal, and pinned by the sync-guard test. A trailing control (the
+ * exclusion builder entry) takes its own width at the strip's end; the
+ * four answers share the rest — still one line from 480 px (long values
+ * elide inside their segments), wrapping below (measured with the entry:
+ * one 32 px line at 480/600/768 px, three lines at 320 px, no overflow).
  *
  * Data honesty: boot renders placeholder slots until real data arrives; an
  * errored state renders quiet slots (the error view above carries the
@@ -93,11 +97,11 @@ const ROW =
  * text); the link variants add their own hover ring classes, so a hover
  * affordance never decorates text that is not a control.
  */
-const SEGMENT =
+export const SEGMENT =
   'flex min-h-6 min-w-0 items-center gap-1.5 rounded-sm text-2xs text-fg-primary no-underline';
 
 /** The interactive segment's hover surface (links only). */
-const SEGMENT_HOVER = 'hover:bg-surface-3';
+export const SEGMENT_HOVER = 'hover:bg-surface-3';
 
 /** A segment's secondary text (ages, capture stamps, captured values): first to elide. */
 const SEGMENT_DETAIL = 'min-w-0 truncate text-fg-secondary';
@@ -438,6 +442,15 @@ function FreshnessSegment(props: { segments: () => StatusBarSegments }): JSX.Ele
   );
 }
 
+/** Props of {@link StatusBar}. */
+export interface StatusBarProps {
+  /**
+   * A control after the answers (the exclusion builder entry): outside the
+   * answers' row and its crash containment, at the strip's end.
+   */
+  readonly trailing?: JSX.Element;
+}
+
 /**
  * Render the status bar.
  *
@@ -447,7 +460,7 @@ function FreshnessSegment(props: { segments: () => StatusBarSegments }): JSX.Ele
  * document's visibility. One rendering failure of a selector is contained:
  * the strip degrades to its downtime line instead of taking the shell down.
  */
-export function StatusBar(): JSX.Element {
+export function StatusBar(props: StatusBarProps = {}): JSX.Element {
   const data = useFdtData();
   const clock = createAgingClock(realAgingClockDeps());
 
@@ -498,6 +511,7 @@ export function StatusBar(): JSX.Element {
           <FreshnessSegment segments={segments} />
         </div>
       </ErrorBoundary>
+      {props.trailing}
     </footer>
   );
 }

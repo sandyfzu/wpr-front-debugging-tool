@@ -70,6 +70,14 @@ export interface InterceptedResponseIdentity {
    */
   readonly receivedAt: number;
   /**
+   * Wall-clock epoch ms (`Date.now()`) at the same instant as
+   * {@link receivedAt}: the time a page's own (wall-anchored) navigation
+   * window is compared with. Taken when the response arrives, so a record
+   * written later (after a release, under load) still carries the arrival.
+   * Absent: the host stamps the record when it writes it.
+   */
+  readonly wallAt?: number;
+  /**
    * Whether the response carries a `Speculation-Rules` header the backend
    * drops from the document whatever the host answers (fulfilled or
    * continued) — false when the backend cannot drop headers.

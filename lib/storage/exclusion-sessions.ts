@@ -33,9 +33,9 @@ import {
   type ExclusionSessionRecord,
   type ExclusionSessionStatus
 } from '../messaging/exclusion-session';
-import { numericTabId } from '../messaging/sender';
 import { isRecord } from '../../utils/is-record';
 import { createWriteQueue } from './write-queue';
+import { tabKey } from './tab-key';
 
 /** The `session:exclusion-sessions` store key, single-sourced. */
 export const EXCLUSION_SESSIONS_KEY = 'session:exclusion-sessions';
@@ -76,20 +76,6 @@ const enqueueWrite = createWriteQueue();
 /** When a record last changed (start of an active one, observation of an unavailable one). */
 function recordTime(record: ExclusionSessionRecord): number {
   return record.state === 'active' ? record.startedAt : record.at;
-}
-
-/** A canonical decimal tab key: no sign, exponent, fraction or leading zero. */
-const CANONICAL_TAB_KEY = /^(?:0|[1-9]\d*)$/;
-
-/**
- * The canonical map key of a tab id, or null for anything not tab shaped.
- *
- * @param key A stored key (decimal string) or a numeric tab id.
- */
-function tabKey(key: string | number): string | null {
-  if (typeof key === 'string' && !CANONICAL_TAB_KEY.test(key)) return null;
-  const tabId = numericTabId(typeof key === 'number' ? key : Number(key));
-  return tabId === null ? null : String(tabId);
 }
 
 /**

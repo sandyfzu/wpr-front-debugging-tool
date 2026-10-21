@@ -100,6 +100,11 @@ export interface OverlayController {
   rowProblem(lane: LaneKey, id: string, text: string): string | null;
   /** Start loading (call once, after mount). */
   start(): void;
+  /**
+   * Re-read the session status (the page came back from the back/forward
+   * cache: pushes meant for it went to other documents meanwhile).
+   */
+  resync(): void;
   retryLoad(): void;
   /** Apply the draft (also the Retry of a retryable warning). */
   apply(): void;
@@ -384,6 +389,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         dispatch({ type: 'status-pushed', status: pushed });
       });
       void load();
+    },
+    resync: () => {
+      if (state().phase === 'loading') pushedWhileLoading = true;
+      else void refreshStatus();
     },
     retryLoad: () => {
       if (state().phase !== 'load-failed') return;
