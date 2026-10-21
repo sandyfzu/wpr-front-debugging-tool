@@ -11,6 +11,7 @@ import {
 import {
   ACTION_FAILED_TITLE,
   PROBLEM_COPY,
+  SESSION_PERSISTS_NOTE,
   viewCopy,
   type Indicator,
   type IndicatorTone
@@ -54,10 +55,13 @@ export function servedNotes(served: ExclusionServedDocument | undefined): string
   return notes;
 }
 
-/** The session banner of a loaded overlay (none when nothing is applied). */
+/**
+ * The session banner of a loaded overlay (none when nothing is applied).
+ * Every active session's banner says the session outlives the page.
+ */
 function viewBanner(view: SessionView): Banner | null {
   const { title, body } = viewCopy(view);
-  const base = { title, body, notes: [] as string[] };
+  const base = { title, body, notes: [SESSION_PERSISTS_NOTE] };
   switch (view.kind) {
     case 'off':
       // Nothing to report: the header's indicator already says "Not
@@ -66,6 +70,8 @@ function viewBanner(view: SessionView): Banner | null {
     case 'unavailable':
       return {
         ...base,
+        // Nothing runs: no session to outlive the page.
+        notes: [],
         tone: 'error',
         glyph: 'blocked',
         actions: view.retryable ? ['retry-apply'] : []
@@ -77,7 +83,7 @@ function viewBanner(view: SessionView): Banner | null {
         ...base,
         tone: view.unmatched === 0 ? 'ok' : 'warn',
         glyph: view.unmatched === 0 ? 'check' : 'alert',
-        notes: servedNotes(view.served),
+        notes: [...base.notes, ...servedNotes(view.served)],
         actions: []
       };
     case 'unmodified':
@@ -85,7 +91,7 @@ function viewBanner(view: SessionView): Banner | null {
         ...base,
         tone: 'warn',
         glyph: 'alert',
-        notes: servedNotes(view.served),
+        notes: [...base.notes, ...servedNotes(view.served)],
         actions: ['reload']
       };
     case 'not-intercepted':

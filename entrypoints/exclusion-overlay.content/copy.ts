@@ -157,6 +157,14 @@ export const ACTION_FAILED_TITLE: Readonly<Record<SessionAction, string>> = {
   stop: 'Couldn’t stop'
 };
 
+/**
+ * How long a session lasts, said on every banner of an active session: it
+ * outlives the page (the next pages of the site in this tab load
+ * rewritten) until it is stopped or the tab closes.
+ */
+export const SESSION_PERSISTS_NOTE =
+  'The session stays on in this tab until you stop it or close the tab: each page of this site you open here loads with these exclusions.';
+
 /** The session view's banner words. */
 export function viewCopy(view: SessionView): StateCopy {
   switch (view.kind) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExclusionServedDocument } from '../../lib/messaging/exclusion-session';
 import { noticeBanner, servedNotes, stateBanner, withoutRepeatedActions } from './banner-model';
+import { SESSION_PERSISTS_NOTE } from './copy';
 import type { OverlayState } from './session/machine';
 import type { SessionView } from './session/session-view';
 
@@ -72,6 +73,43 @@ describe('stateBanner — the state matrix', () => {
       expect(banner?.actions, view.kind).toEqual(actions);
       expect(banner?.glyph.length, view.kind).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('the session’s persistence (it outlives the page)', () => {
+  it('is said first on every active session’s banner, before the served notes', () => {
+    const active: readonly SessionView[] = [
+      { kind: 'armed' },
+      { kind: 'applied', reports: [], unmatched: 0, served: undefined },
+      {
+        kind: 'unmodified',
+        reason: { kind: 'failed', reason: 'engine-failed' },
+        served: undefined
+      },
+      { kind: 'not-intercepted' },
+      { kind: 'cant-tell' }
+    ];
+    for (const view of active) {
+      expect(stateBanner(READY, view)?.notes[0], view.kind).toBe(SESSION_PERSISTS_NOTE);
+    }
+    expect(
+      stateBanner(READY, {
+        kind: 'applied',
+        reports: [],
+        unmatched: 0,
+        served: { ...SERVED, copy: true }
+      })?.notes
+    ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
+  });
+
+  it('is never said when nothing runs (interception unavailable)', () => {
+    expect(
+      stateBanner(READY, { kind: 'unavailable', cause: 'attach-denied', retryable: true })?.notes
+    ).toEqual([]);
+  });
+
+  it('names Stop and tab close as the only ends', () => {
+    expect(SESSION_PERSISTS_NOTE).toMatch(/until you stop it or close the tab/);
   });
 });
 
