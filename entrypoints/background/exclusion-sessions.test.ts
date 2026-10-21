@@ -1,11 +1,11 @@
 /**
  * The background wiring over the fake browser: every session channel is
- * registered and answers through the real messenger, an empty registry
- * selects no backend, and the tab-close and update hooks reach the stores.
+ * registered and answers through the real messenger, the registry holds
+ * the Chromium row, and the tab-close and update hooks reach the stores.
  * The lifecycle itself is pinned in `lib/exclusion-session/controller.test.ts`.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { sendMessage } from '../../lib/messaging';
 import { EMPTY_EXCLUSION_SET } from '../../lib/exclusion-builder/set';
 import {
@@ -13,6 +13,7 @@ import {
   putExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
 import { initExclusionSessions } from './exclusion-sessions';
+import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
 
 const WARNING = { state: 'unavailable', cause: 'detached', at: 1 } as const;
@@ -23,12 +24,16 @@ async function flush(): Promise<void> {
 }
 
 beforeAll(() => {
+  // The fake browser leaves the debugger events unimplemented; the Chromium
+  // row's backend registers its listeners on them at creation.
+  vi.spyOn(browser.debugger.onEvent, 'addListener').mockImplementation(() => {});
+  vi.spyOn(browser.debugger.onDetach, 'addListener').mockImplementation(() => {});
   initExclusionSessions();
 });
 
 describe('exclusion-session wiring', () => {
-  it('ships an empty backend registry (no interception backend yet)', () => {
-    expect(INTERCEPTION_BACKENDS).toEqual([]);
+  it('registers the Chromium debugger backend row', () => {
+    expect(INTERCEPTION_BACKENDS).toContain(CHROMIUM_INTERCEPTION_ROW);
   });
 
   it('answers the overlay channels (a tab-less sender is no page)', async () => {

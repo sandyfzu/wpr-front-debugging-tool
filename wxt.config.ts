@@ -40,7 +40,17 @@ export default defineConfig({
       // modifyHeaders 86/113); Firefox's MV2 build folds those host permissions
       // into `permissions` itself, and an older Firefox without the namespace
       // degrades through the runtime's feature detection.
-      'declarativeNetRequestWithHostAccess'
+      'declarativeNetRequestWithHostAccess',
+      // Exclusion-builder sessions, Chromium builds only: the debugger
+      // protocol's `Fetch` domain rewrites a tab's top-level documents before
+      // parse — the only Chromium mechanism that can (Firefox uses its
+      // response stream filter, so its manifest never carries this). Install
+      // warnings (Chrome permissions list, read 2026-10-20): "Access the page
+      // debugger backend" + "Read and change all your data on all websites";
+      // while attached, Chrome shows its "started debugging this browser"
+      // infobar. Accepted by the owner 2026-10-20, on the condition that store
+      // review does not block it.
+      ...(browser === 'firefox' ? [] : ['debugger'])
     ],
     // Required for `webRequest` main-frame header capture (the source omitted these,
     // putting that feature at risk) and lets the popup read the active web tab's URL

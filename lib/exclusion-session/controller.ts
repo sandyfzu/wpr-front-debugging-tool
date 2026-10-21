@@ -62,6 +62,7 @@ import {
   type ExclusionSessionRecords,
   type PutSessionOutcome
 } from '../storage/exclusion-sessions';
+import { createKeyedQueue } from '../../utils/keyed-queue';
 import { parseUrl } from '../../utils/urls';
 import type {
   ArmResult,
@@ -175,23 +176,6 @@ function newestStart(records: ExclusionSessionRecords): number {
     if (record.state === 'active') newest = Math.max(newest, record.startedAt);
   }
   return newest;
-}
-
-/**
- * A per-key serial queue: tasks for one key run one after another; keys
- * are independent; an idle key holds no memory.
- */
-function createKeyedQueue(): <T>(key: number, task: () => Promise<T>) => Promise<T> {
-  const tails = new Map<number, Promise<unknown>>();
-  return <T>(key: number, task: () => Promise<T>): Promise<T> => {
-    const run = (tails.get(key) ?? Promise.resolve()).then(task);
-    const tail = run.catch(() => undefined);
-    tails.set(key, tail);
-    void tail.then(() => {
-      if (tails.get(key) === tail) tails.delete(key);
-    });
-    return run;
-  };
 }
 
 /** The canonical origin of a URL, or null. */

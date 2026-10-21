@@ -6,6 +6,7 @@
  * every apply answers `unsupported-browser` and the build stays honest.
  */
 import type { InterceptionBackendRow } from '../../lib/exclusion-session/backend';
+import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
 
-/** The registry (empty until a backend lands). */
-export const INTERCEPTION_BACKENDS: readonly InterceptionBackendRow[] = [];
+/** The registry. */
+export const INTERCEPTION_BACKENDS: readonly InterceptionBackendRow[] = [CHROMIUM_INTERCEPTION_ROW];
