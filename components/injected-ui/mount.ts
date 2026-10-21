@@ -29,11 +29,10 @@ const log = createLogger('injected-ui');
  * @returns The disposer — removes the render tree and stops the appearance
  *   follow; the caller invokes it exactly once, when the whole shadow host
  *   leaves the page (WXT's `onRemove` wiring owns that moment).
- * @throws {@link Error} when the options read fails or the render itself
- *   fails — the appearance follow is unwound before the error rethrows, so a
- *   failed mount never leaves a storage subscription behind. Reads go
- *   through the validated wrapper, so a rejection is broken wiring, not bad
- *   page input; the callers log it as the mount failure it is.
+ * @throws {@link Error} when the render itself fails — the appearance
+ *   follow is unwound before the error rethrows, so a failed mount never
+ *   leaves a storage subscription behind. A refused options read does not
+ *   throw: the follow degrades to the system palette (see `./live-theme`).
  */
 export async function mountShadowUi(
   container: HTMLElement,

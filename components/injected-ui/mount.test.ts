@@ -88,4 +88,20 @@ describe('mountShadowUi', () => {
     await mountShadowUi(container, () => probeView('mount-probe'));
     expect(container.dataset.theme).toBe(FALLBACK.appearance);
   });
+
+  it('still renders, in the system palette, when the appearance read is refused (one warning)', async () => {
+    // Firefox refuses storage.sync for a temporary add-on without an id.
+    vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(
+      new Error('The storage API will not work with a temporary addon ID.')
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const container = document.createElement('div');
+    const dispose = await mountShadowUi(container, () => probeView('refused'));
+    expect(container.querySelector('.refused')).not.toBeNull();
+    expect(container.getAttribute('data-theme')).toBe('system');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('[WPR FDT]');
+    dispose();
+    warn.mockRestore();
+  });
 });

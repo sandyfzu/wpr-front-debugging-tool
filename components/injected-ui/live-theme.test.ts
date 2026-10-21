@@ -154,11 +154,15 @@ describe('followStoredAppearance', () => {
     expect(container.dataset.theme).toBe('light');
   });
 
-  it('unwinds the armed watch when the read fails — no subscription left behind', async () => {
+  it('degrades a refused read to the system palette, keeps following writes, warns once', async () => {
+    // Changed: a refused read used to reject (and unwind the watch), which
+    // left every injected UI unrendered — e.g. Firefox refuses storage.sync
+    // for a temporary add-on without an id. It now degrades, honestly logged.
     const container = document.createElement('div');
     const watchers = new Set<(raw: StoredOptions) => void>();
     const source: AppearanceSource = {
-      getValue: () => Promise.reject(new Error('Extension context invalidated')),
+      getValue: () =>
+        Promise.reject(new Error('The storage API will not work with a temporary addon ID.')),
       watch(onWrite) {
         watchers.add(onWrite);
         return () => {
@@ -166,9 +170,15 @@ describe('followStoredAppearance', () => {
         };
       }
     };
-    await expect(followStoredAppearance(container, source)).rejects.toThrow(
-      'Extension context invalidated'
-    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const stop = await followStoredAppearance(container, source);
+    expect(container.dataset.theme).toBe('system');
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(watchers.size).toBe(1);
+    for (const watcher of watchers) watcher(optionsWith('dark'));
+    expect(container.dataset.theme).toBe('dark');
+    stop();
     expect(watchers.size).toBe(0);
+    warn.mockRestore();
   });
 });

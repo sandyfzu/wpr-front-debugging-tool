@@ -14,6 +14,9 @@
 import { optionsStore, storedOptionsOrFallback } from '../../lib/storage/options';
 import type { StoredOptions } from '../../lib/storage/options';
 import { applyTheme, type Appearance, type Theme } from '../../utils/theme';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('injected-ui');
 
 /** The options seam the leg follows (the real item satisfies it; fakes in tests). */
 export interface AppearanceSource {
@@ -66,35 +69,38 @@ export function nextContainerTheme(current: string | null, raw: unknown): Theme 
  * renders, so no wrong-palette frame paints; every options write re-applies
  * the appearance until the returned handle runs.
  *
+ * A refused read (e.g. Firefox refuses `storage.sync` to a temporary add-on
+ * without an id) degrades to `system` — the OS palette — with one logged
+ * warning, and the follow stays armed: a UI that renders in the default
+ * palette beats one that never renders.
+ *
  * @param container The UI container inside the shadow root.
  * @param source The options seam (the real storage item by default).
  * @returns The stop handle — unsubscribes the write channel; the mount's
  *   disposer folds it in, so the follow lives exactly as long as the view.
- * @throws {@link Error} when the options read fails — the watch is
- *   unsubscribed first, so a failed follow never leaves a subscription
- *   behind; the callers log it as the mount failure it is.
  */
 export async function followStoredAppearance(
   container: HTMLElement,
   source: AppearanceSource = optionsStore
 ): Promise<() => void> {
   const follow = createFollow(container, source);
+  // Track the writes the watch saw during the read: a change between arming
+  // and the read resolving means the callback already applied the newer
+  // value, and re-applying the (older) read result would regress the palette
+  // by one stale write.
+  const writesBeforeRead = follow.writesSeen();
+  let appearance: Appearance;
   try {
-    // Track the writes the watch saw during the read: a change between
-    // arming and the read resolving means the callback already applied the
-    // newer value, and re-applying the (older) read result would regress
-    // the palette by one stale write.
-    const writesBeforeRead = follow.writesSeen();
-    const appearance = storedOptionsOrFallback(await source.getValue()).appearance;
-    if (follow.writesSeen() === writesBeforeRead) {
-      applyTheme(container, containerTheme(appearance));
-    }
+    appearance = storedOptionsOrFallback(await source.getValue()).appearance;
   } catch (cause) {
-    // Read failed with the channel armed: unwind the subscription before
-    // the error propagates (the mount treats a read rejection as broken
-    // wiring, not bad page input).
-    follow();
-    throw cause;
+    log.warn(
+      'Reading the stored appearance failed; showing the system palette',
+      cause instanceof Error ? cause.message : cause
+    );
+    appearance = 'system';
+  }
+  if (follow.writesSeen() === writesBeforeRead) {
+    applyTheme(container, containerTheme(appearance));
   }
   return follow;
 }
