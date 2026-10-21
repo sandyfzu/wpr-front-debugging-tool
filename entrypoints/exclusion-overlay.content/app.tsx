@@ -232,7 +232,9 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       target.focus({ preventScroll: true });
       // A just-revealed panel can stay hidden for a frame (reduced motion
       // turns its instant visibility switch into a 0.01 ms transition), so
-      // the focus does not take: try again on the next frame.
+      // the focus does not take: try again on the next frame. Not keyed on
+      // `transitionend`: without reduced motion the switch is no transition
+      // at all (no event would come), and the frames bound the wait either way.
       const root = target.getRootNode() as Document | ShadowRoot;
       if (root.activeElement !== target && tries > 1) focusSoon(element, tries - 1);
     });

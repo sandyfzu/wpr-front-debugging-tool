@@ -53,7 +53,8 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
     );
   });
 
-  // The page list closes with the panel (fold, page dialog, picking).
+  // The page list closes with the panel (folded by the user or by a page
+  // dialog); picking keeps it, so the list is still there after a pick.
   createEffect(
     on(shell.panelOpen, (isOpen) => {
       if (!isOpen) setListOpen(false);

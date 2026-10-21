@@ -158,12 +158,19 @@ export const ACTION_FAILED_TITLE: Readonly<Record<SessionAction, string>> = {
 };
 
 /**
- * How long a session lasts, said on every banner of an active session: it
- * outlives the page (the next pages of the site in this tab load
- * rewritten) until it is stopped or the tab closes.
+ * How long a session lasts, said on every banner of an active session
+ * (it outlives the page until it is stopped or the tab closes).
  */
-export const SESSION_PERSISTS_NOTE =
-  'The session stays on in this tab until you stop it or close the tab: each page of this site you open here loads with these exclusions.';
+export const SESSION_ON_NOTE =
+  'The session stays on in this tab until you stop it or close the tab.';
+
+/**
+ * The same, plus what it does to the next pages — said only where this
+ * page shows it working (applied, or armed for the next load); on a page
+ * the session did not (or may not have) rewritten, that promise would not
+ * be honest.
+ */
+export const SESSION_PERSISTS_NOTE = `${SESSION_ON_NOTE.slice(0, -1)}: each page of this site you open here loads with these exclusions.`;
 
 /** The session view's banner words. */
 export function viewCopy(view: SessionView): StateCopy {

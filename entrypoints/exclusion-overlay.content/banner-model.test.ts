@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExclusionServedDocument } from '../../lib/messaging/exclusion-session';
 import { noticeBanner, servedNotes, stateBanner, withoutRepeatedActions } from './banner-model';
-import { SESSION_PERSISTS_NOTE } from './copy';
+import { SESSION_ON_NOTE, SESSION_PERSISTS_NOTE } from './copy';
 import type { OverlayState } from './session/machine';
 import type { SessionView } from './session/session-view';
 
@@ -77,19 +77,11 @@ describe('stateBanner — the state matrix', () => {
 });
 
 describe('the session’s persistence (it outlives the page)', () => {
-  it('is said first on every active session’s banner, before the served notes', () => {
-    const active: readonly SessionView[] = [
+  it('promises the next pages only where this page shows the session working', () => {
+    for (const view of [
       { kind: 'armed' },
-      { kind: 'applied', reports: [], unmatched: 0, served: undefined },
-      {
-        kind: 'unmodified',
-        reason: { kind: 'failed', reason: 'engine-failed' },
-        served: undefined
-      },
-      { kind: 'not-intercepted' },
-      { kind: 'cant-tell' }
-    ];
-    for (const view of active) {
+      { kind: 'applied', reports: [], unmatched: 0, served: undefined }
+    ] as const) {
       expect(stateBanner(READY, view)?.notes[0], view.kind).toBe(SESSION_PERSISTS_NOTE);
     }
     expect(
@@ -102,6 +94,23 @@ describe('the session’s persistence (it outlives the page)', () => {
     ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
   });
 
+  it('says only that the session stays on where this page was not (or may not be) rewritten', () => {
+    const unproven: readonly SessionView[] = [
+      {
+        kind: 'unmodified',
+        reason: { kind: 'failed', reason: 'engine-failed' },
+        served: undefined
+      },
+      { kind: 'not-intercepted' },
+      { kind: 'cant-tell' }
+    ];
+    for (const view of unproven) {
+      const notes = stateBanner(READY, view)?.notes ?? [];
+      expect(notes[0], view.kind).toBe(SESSION_ON_NOTE);
+      expect(notes.join(' '), view.kind).not.toMatch(/loads with these exclusions/);
+    }
+  });
+
   it('is never said when nothing runs (interception unavailable)', () => {
     expect(
       stateBanner(READY, { kind: 'unavailable', cause: 'attach-denied', retryable: true })?.notes
@@ -109,7 +118,8 @@ describe('the session’s persistence (it outlives the page)', () => {
   });
 
   it('names Stop and tab close as the only ends', () => {
-    expect(SESSION_PERSISTS_NOTE).toMatch(/until you stop it or close the tab/);
+    expect(SESSION_ON_NOTE).toMatch(/until you stop it or close the tab\.$/);
+    expect(SESSION_PERSISTS_NOTE).toMatch(/until you stop it or close the tab: each page/);
   });
 });
 

@@ -11,6 +11,7 @@ import {
 import {
   ACTION_FAILED_TITLE,
   PROBLEM_COPY,
+  SESSION_ON_NOTE,
   SESSION_PERSISTS_NOTE,
   viewCopy,
   type Indicator,
@@ -91,13 +92,25 @@ function viewBanner(view: SessionView): Banner | null {
         ...base,
         tone: 'warn',
         glyph: 'alert',
-        notes: [...base.notes, ...servedNotes(view.served)],
+        notes: [SESSION_ON_NOTE, ...servedNotes(view.served)],
         actions: ['reload']
       };
     case 'not-intercepted':
-      return { ...base, tone: 'warn', glyph: 'alert', actions: ['reload'] };
+      return {
+        ...base,
+        notes: [SESSION_ON_NOTE],
+        tone: 'warn',
+        glyph: 'alert',
+        actions: ['reload']
+      };
     case 'cant-tell':
-      return { ...base, tone: 'warn', glyph: 'question', actions: ['reload'] };
+      return {
+        ...base,
+        notes: [SESSION_ON_NOTE],
+        tone: 'warn',
+        glyph: 'question',
+        actions: ['reload']
+      };
   }
 }
 
