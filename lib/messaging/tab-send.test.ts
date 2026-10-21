@@ -124,6 +124,7 @@ describe('preventUncheckedLastError', () => {
       callback(response);
     }) as unknown as typeof chrome.tabs.sendMessage);
     const originalCallback = vi.fn();
+    // A throwing read would surface here and leave the callback uncalled.
     send(4, { type: 'x' }, undefined, originalCallback);
     expect(lastErrorReads).toBe(1);
     expect(originalCallback).toHaveBeenCalledWith(response);

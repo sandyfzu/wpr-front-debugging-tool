@@ -84,13 +84,20 @@ test.describe('panel ready boot (the devtools-contract data path)', () => {
       // WP Rocket–served pages, not on this fixture).
       const served = await extension.sendToTab<{
         wprDetections: {
-          wpr: { present: boolean; version: string | null; cached: boolean };
+          wpr: {
+            present: boolean;
+            version: string | null;
+            cacheMarkerFound: boolean;
+            cached: boolean;
+            timeStamp: number | null;
+          };
         };
         allScriptsLoaded: boolean;
       } | null>(fixture.tabId, 'getFdtData');
       expect(served?.wprDetections.wpr).toEqual({
         present: true,
         version: '3.20.1',
+        cacheMarkerFound: true,
         cached: true,
         timeStamp: 1791342253
       });

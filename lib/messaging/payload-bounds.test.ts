@@ -14,7 +14,8 @@ import {
   boundPageHeaders,
   boundPreloadedResources,
   boundWprDetections,
-  clipString
+  clipString,
+  servableWordPressVersion
 } from './payload-bounds';
 import { parsePageHeaders, parsePreloadedResources, parseWprDetections } from './validate';
 import { validDetections } from './validate.fixtures';
@@ -61,7 +62,10 @@ const LIST_CASES: readonly ListCase[] = [
   {
     name: 'defer_all_js.scripts',
     cap: PAYLOAD_LIMITS.deferScripts.count,
-    fill: (d, n) => ({ ...d, defer_all_js: { present: true, scripts: strings(n) } }),
+    fill: (d, n) => ({
+      ...d,
+      defer_all_js: { present: true, scripts: strings(n), deferredScripts: n }
+    }),
     read: (d) => ({
       length: d.defer_all_js.scripts.length,
       truncated: d.defer_all_js.truncated === true
@@ -192,7 +196,10 @@ const STRING_CASES: readonly StringCase[] = [
   {
     name: 'defer_all_js.scripts[]',
     cap: PAYLOAD_LIMITS.deferScripts.chars,
-    fill: (d, value) => ({ ...d, defer_all_js: { present: true, scripts: [value] } }),
+    fill: (d, value) => ({
+      ...d,
+      defer_all_js: { present: true, scripts: [value], deferredScripts: 1 }
+    }),
     read: (d) => ({
       value: d.defer_all_js.scripts[0],
       truncated: d.defer_all_js.truncated === true
@@ -435,5 +442,17 @@ describe('clipString', () => {
     const tracker = { cut: false };
     expect(clipString('abc', 3, tracker)).toBe('abc');
     expect(tracker.cut).toBe(false);
+  });
+});
+
+describe('servableWordPressVersion', () => {
+  it.each([
+    ['6.8.1', '6.8.1'],
+    ['x'.repeat(PAYLOAD_LIMITS.versions), 'x'.repeat(PAYLOAD_LIMITS.versions)],
+    ['x'.repeat(PAYLOAD_LIMITS.versions + 1), null],
+    ['', null],
+    [null, null]
+  ])('%s → %s (over-cap is dropped, never clipped)', (input, expected) => {
+    expect(servableWordPressVersion(input)).toBe(expected);
   });
 });

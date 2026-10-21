@@ -9,7 +9,7 @@
 
 import { createLogger } from '../../lib/logger';
 import { LAZYLOAD_SIDEBAR_EXPRESSION, sidebarEvalOutcome } from './sidebar-eval';
-import { lastErrorMessage } from '../../utils/last-error';
+import { readLastError } from '../../utils/last-error';
 
 const log = createLogger('devtools');
 
@@ -33,7 +33,7 @@ export function registerLazyloadSidebar(): void {
   // the manifest's Chrome floor) — so any creation failure must be read from
   // `runtime.lastError` inside the callback, never left unread.
   browser.devtools.panels.elements.createSidebarPane(PANE_TITLE, (pane) => {
-    const creationFailure = lastErrorMessage(browser.runtime.lastError);
+    const creationFailure = readLastError(browser.runtime);
     if (creationFailure !== null) {
       log.error('Lazyload sidebar pane creation failed', {
         title: PANE_TITLE,
@@ -59,11 +59,9 @@ export function registerLazyloadSidebar(): void {
               }
               // Callback form, same Chrome-floor reasoning as above.
               pane.setObject(outcome.object, ROOT_TITLE, () => {
-                const setFailure = lastErrorMessage(browser.runtime.lastError);
+                const setFailure = readLastError(browser.runtime);
                 if (setFailure !== null) {
-                  log.error('Setting the lazyload sidebar object failed', {
-                    message: setFailure
-                  });
+                  log.error('Setting the lazyload sidebar object failed', { message: setFailure });
                 }
               });
             } catch (cause) {

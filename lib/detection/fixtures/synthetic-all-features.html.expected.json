@@ -2,15 +2,18 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": true,
       "cached": true,
       "version": "3.20.6.1",
       "timeStamp": 1699999999
     },
     "remove_unused_css": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "async_css": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "delay_js": {
       "present": true,
@@ -137,11 +140,14 @@
         }
       ],
       "version": "3.20.6",
-      "delayedScripts": 3
+      "delayedScripts": 3,
+      "source": "meta"
     },
     "defer_all_js": {
       "present": true,
-      "scripts": ["https://all.example/late.js"]
+      "scripts": ["https://all.example/late.js"],
+      "deferredScripts": 2,
+      "source": "meta"
     },
     "lazyload": {
       "present": true,
@@ -156,34 +162,49 @@
           "lazyloadDetected": false,
           "excludedReasonsFound": ["data-src", "data-skip-lazy", "skip-lazy"]
         }
-      ]
+      ],
+      "source": "meta"
     },
     "lazyload_iframes": {
       "present": true,
-      "replaceImage": true
+      "replaceImage": true,
+      "source": "meta"
     },
     "lazyload_css_bg_img": {
-      "present": true
+      "present": true,
+      "source": "meta"
+    },
+    "self_hosted_fonts": {
+      "present": true,
+      "source": "meta"
+    },
+    "image_dimensions": {
+      "present": true,
+      "source": "meta"
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
       "lcpComment": false,
-      "preloadedImages": ["https://all.example/hero.webp", "https://all.example/logo.png"]
+      "preloadedImages": ["https://all.example/hero.webp", "https://all.example/logo.png"],
+      "source": "meta"
     },
     "automatic_lazy_rendering": {
-      "present": false,
+      "present": true,
       "lazyRenderElements": 0,
       "inlineCssPresent": false,
-      "locationHashes": 0
+      "locationHashes": 0,
+      "source": "meta"
     },
     "auto_preload_fonts": {
-      "present": false,
-      "fonts": []
+      "present": true,
+      "fonts": [],
+      "source": "meta"
     },
     "preconnect_external_domains": {
-      "present": false,
+      "present": true,
       "domains": [],
-      "preconnectCount": 0
+      "preconnectCount": 0,
+      "source": "meta"
     },
     "priority_elements_beacon": {
       "present": true,
@@ -191,16 +212,20 @@
       "isMobile": null
     },
     "minify_css": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "minify_js": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "preload_links": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "rocket_cdn": {
-      "present": true
+      "present": true,
+      "source": "meta"
     }
   },
   "preloadedResources": {

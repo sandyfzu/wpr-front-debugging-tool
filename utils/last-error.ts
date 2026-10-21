@@ -1,23 +1,34 @@
 /**
- * Reading `runtime.lastError` inside an extension API callback. Unset is
- * spelled differently per engine — `undefined` on Chromium, `null` on
- * Firefox (observed after every successful callback) — so a check against
- * one spelling breaks on the other; every reader goes through here.
+ * One reader for the extension runtime's `lastError` slot, read inside an API
+ * callback. Reading the getter is what acknowledges the error (Chromium logs
+ * an unread one as "Unchecked runtime.lastError"), so the read happens exactly
+ * once, here. "No error" has two platform spellings: Chromium leaves the slot
+ * `undefined`, Firefox sets it to `null` on every successful call — so a
+ * `!== undefined` check alone dereferences `null` and throws inside the
+ * callback, before it can deliver its result.
  */
 
-/** The shape of a set `runtime.lastError`. */
-export interface LastErrorLike {
-  readonly message?: string | undefined;
+/** The platform's error value as either browser reports it. */
+export type LastErrorValue = { readonly message?: string } | null | undefined;
+
+/** A `runtime`-shaped holder of the `lastError` slot (the real one, or a test stub). */
+export interface LastErrorSlot {
+  readonly lastError?: LastErrorValue;
 }
 
+/** The message reported for an error that carries none. */
+export const UNKNOWN_LAST_ERROR = 'Unknown error';
+
 /**
- * The error message of a `runtime.lastError` value, or null when unset.
+ * Read (and so acknowledge) `runtime.lastError` once.
  *
- * @param error The value read (inside the callback) from `runtime.lastError`.
- * @returns The message (a stable fallback when the error carries none), or
- *   null when no error is set (`undefined` or `null`).
+ * @param runtime The runtime whose slot is read — pass the object, not the
+ *   value, so the getter read happens here.
+ * @returns The error's message ({@link UNKNOWN_LAST_ERROR} when it has none),
+ *   or `null` when the call succeeded (`undefined` or `null` slot).
  */
-export function lastErrorMessage(error: LastErrorLike | null | undefined): string | null {
-  if (error === undefined || error === null) return null;
-  return error.message ?? 'Unknown error';
+export function readLastError(runtime: LastErrorSlot): string | null {
+  const value = runtime.lastError;
+  if (value === undefined || value === null) return null;
+  return typeof value.message === 'string' ? value.message : UNKNOWN_LAST_ERROR;
 }

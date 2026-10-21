@@ -2,15 +2,18 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": true,
       "cached": true,
       "version": "3.20.0.2",
       "timeStamp": 1791342253
     },
     "remove_unused_css": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "async_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "delay_js": {
       "present": true,
@@ -329,7 +332,8 @@
         }
       ],
       "version": "2.0.4",
-      "delayedScripts": 15
+      "delayedScripts": 15,
+      "source": "meta"
     },
     "defer_all_js": {
       "present": true,
@@ -346,7 +350,9 @@
         "https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147",
         "https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150",
         "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=1791299187"
-      ]
+      ],
+      "deferredScripts": 12,
+      "source": "meta"
     },
     "lazyload": {
       "present": false,
@@ -461,36 +467,50 @@
           "lazyloadDetected": false,
           "excludedReasonsFound": []
         }
-      ]
+      ],
+      "source": "meta"
     },
     "lazyload_iframes": {
       "present": true,
-      "replaceImage": true
+      "replaceImage": true,
+      "source": "meta"
     },
     "lazyload_css_bg_img": {
-      "present": false
+      "present": false,
+      "source": "meta"
+    },
+    "self_hosted_fonts": {
+      "present": false,
+      "source": "meta"
+    },
+    "image_dimensions": {
+      "present": false,
+      "source": "meta"
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
       "lcpComment": false,
       "preloadedImages": [
         "https://wp-rocket.me/wp-content/uploads/fly-images/9713411/How-GruffyGoat-Keeps-Hundreds-of-WordPress-Sites-Fast-with-WP-Rocket-388x198-c.png"
-      ]
+      ],
+      "source": "meta"
     },
     "automatic_lazy_rendering": {
       "present": true,
       "lazyRenderElements": 1,
       "inlineCssPresent": true,
-      "locationHashes": 0
+      "locationHashes": 0,
+      "source": "meta"
     },
     "auto_preload_fonts": {
-      "present": true,
+      "present": false,
       "fonts": [
         "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-regular.woff2",
         "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v20-latin-700.woff2",
         "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/roboto-v51-latin-600.woff2",
         "https://wp-rocket.me/wp-content/themes/V4/assets/fonts/Gotham-Medium.woff2"
-      ]
+      ],
+      "source": "meta"
     },
     "preconnect_external_domains": {
       "present": true,
@@ -502,7 +522,8 @@
         "https://www.dwin1.com/",
         "https://lantern.roeyecdn.com/"
       ],
-      "preconnectCount": 6
+      "preconnectCount": 6,
+      "source": "meta"
     },
     "priority_elements_beacon": {
       "present": false,
@@ -510,16 +531,20 @@
       "isMobile": null
     },
     "minify_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "minify_js": {
-      "present": false
+      "present": true,
+      "source": "meta"
     },
     "preload_links": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "rocket_cdn": {
-      "present": false
+      "present": false,
+      "source": "meta"
     }
   },
   "preloadedResources": {

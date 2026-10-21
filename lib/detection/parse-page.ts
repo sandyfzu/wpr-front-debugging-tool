@@ -11,6 +11,8 @@
  */
 
 import { FEATURE_COMMENT_PATTERN } from '../wp-rocket/constants';
+import { parseFeatureMeta } from './feature-meta';
+import type { FeatureMetaEvidence } from './feature-meta';
 
 /** Classified page content shared by every detection check. */
 export interface ParsedPage {
@@ -26,6 +28,12 @@ export interface ParsedPage {
    * get them), so their absence proves nothing.
    */
   comments: string[];
+  /**
+   * The generator meta's feature declaration (`data-wpr-features`), parsed
+   * once here — the meta-authoritative evidence class checks consult before
+   * their own footprint reads.
+   */
+  featureMeta: FeatureMetaEvidence;
 }
 
 /**
@@ -70,6 +78,7 @@ export function parsePage(html: string): ParsedPage {
     document,
     scripts: [...document.querySelectorAll('script')],
     links: [...document.querySelectorAll('link')],
-    comments
+    comments,
+    featureMeta: parseFeatureMeta(document)
   };
 }

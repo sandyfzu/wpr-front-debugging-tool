@@ -21,6 +21,7 @@ import {
   CPCSS_MARK,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
+  DATA_ROCKET_STATUS,
   DATA_SRC,
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
@@ -35,9 +36,12 @@ import {
   LAZYLOAD_YOUTUBE_PATTERN,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
+  PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
   RUCSS_STYLE_SELECTOR,
+  SELF_HOSTED_FONTS_ATTRIBUTE,
+  SELF_HOSTED_FONTS_CACHE_PATH,
   WPR_DEFER_ATTRIBUTE,
   WPR_PRELOAD_ATTRIBUTE,
   isDelayJSType
@@ -79,6 +83,7 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
   for (const script of page.scripts) {
     // The controller's version is only read while presence is not yet set
     // (reference order); a delayed script earlier in the document hides it.
+    // The same `this.v` assignment appears in the served minified bundle.
     if (!delayJs.present && !script.hasAttribute('src')) {
       const text = script.textContent;
       if (text.includes(DELAY_JS_CONTROLLER)) {
@@ -86,6 +91,9 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
         delayJs.version = text.match(DELAY_JS_VERSION_PATTERN)?.[1] ?? null;
       }
     }
+    // The runtime stamps every script it processed; presence is footprint
+    // evidence even when the controller itself was inlined/rewritten away.
+    if (script.hasAttribute(DATA_ROCKET_STATUS)) delayJs.present = true;
     // Field insertion order matches the reference record exactly (delayed,
     // inline, then src/content, then defer markers) so serialized payloads
     // compare key-for-key.
@@ -108,13 +116,19 @@ export function detectDelayJs(page: ParsedPage): WprDetections['delay_js'] {
   return delayJs;
 }
 
-/** Load JavaScript deferred: sources of scripts WP Rocket deferred. */
+/**
+ * Load JavaScript deferred: every script WP Rocket attributed. Presence
+ * includes inline/no-src scripts — a delayed script rewritten with
+ * `data-rocket-src` keeps the attribute — while the `scripts` list carries
+ * only the URLs it can name, so an inline-only page still reports `present`
+ * with an empty list and `deferredScripts` counts every attributed script.
+ */
 export function detectDeferAllJs(page: ParsedPage): WprDetections['defer_all_js'] {
-  const scripts = page.scripts
-    .filter((script) => script.hasAttribute(WPR_DEFER_ATTRIBUTE))
+  const attributed = page.scripts.filter((script) => script.hasAttribute(WPR_DEFER_ATTRIBUTE));
+  const scripts = attributed
     .map((script) => script.getAttribute(DELAY_JS_SRC) ?? script.getAttribute('src') ?? '')
     .filter((src) => src !== '');
-  return { present: scripts.length > 0, scripts };
+  return { present: attributed.length > 0, scripts, deferredScripts: attributed.length };
 }
 
 /**
@@ -219,9 +233,20 @@ export function detectMinifyJs(page: ParsedPage): WprDetections['minify_js'] {
   return { present };
 }
 
-/** Preload links: the options blob script WP Rocket prints for the feature. */
+/**
+ * Preload links: the options blob's id, or its inline config identifier
+ * repeated across the page's scripts (the blob names itself more than once,
+ * so a stripped/renamed id still leaves the config behind). A single
+ * incidental mention never asserts the feature.
+ */
 export function detectPreloadLinks(page: ParsedPage): WprDetections['preload_links'] {
-  return { present: page.document.getElementById(PRELOAD_LINKS_SCRIPT_ID) !== null };
+  if (page.document.getElementById(PRELOAD_LINKS_SCRIPT_ID) !== null) return { present: true };
+  let mentions = 0;
+  for (const script of page.scripts) {
+    mentions += script.textContent.split(PRELOAD_LINKS_CONFIG_MARK).length - 1;
+    if (mentions > 1) return { present: true };
+  }
+  return { present: false };
 }
 
 /** RocketCDN: a `dns-prefetch` hint pointing at the CDN domain. */
@@ -255,4 +280,29 @@ export function detectLazyloadCssBgImg(page: ParsedPage): WprDetections['lazyloa
     page.document.getElementById(LAZYLOAD_BG_CONTAINER_ID) ??
     page.document.getElementById(LAZYLOAD_BG_EXCLUSION_ID);
   return { present: container !== null };
+}
+
+/**
+ * Self-host Google Fonts: the attributed stylesheet link or the local font
+ * cache path. Only a `link` is read — the inline-`style` emitter belongs to
+ * the later media-coverage upgrade, and an unattributed font URL proves
+ * nothing (any plugin can host a font).
+ */
+export function detectSelfHostedFonts(page: ParsedPage): WprDetections['self_hosted_fonts'] {
+  const present = page.links.some(
+    (link) =>
+      link.hasAttribute(SELF_HOSTED_FONTS_ATTRIBUTE) ||
+      link.href.includes(SELF_HOSTED_FONTS_CACHE_PATH)
+  );
+  return { present };
+}
+
+/**
+ * Add missing image dimensions: declaration-only. Ordinary `width`/`height`
+ * attributes are standard markup any theme/plugin emits, so they never
+ * attribute the feature; with no declaration the honest answer is "no known
+ * footprint", not a guess.
+ */
+export function detectImageDimensions(): WprDetections['image_dimensions'] {
+  return { present: false };
 }

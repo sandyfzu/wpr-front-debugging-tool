@@ -1,0 +1,131 @@
+{
+  "wprDetections": {
+    "wpr": {
+      "present": true,
+      "cacheMarkerFound": true,
+      "cached": true,
+      "version": "3.23.5.1",
+      "timeStamp": 1791342241
+    },
+    "remove_unused_css": {
+      "present": false
+    },
+    "async_css": {
+      "present": false
+    },
+    "delay_js": {
+      "present": true,
+      "scripts": [
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "/app.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      /* inline-only deferred */\n    ",
+          "deferred": false,
+          "deferredByWPR": true,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": false,
+          "src": "https://branches.example/wp-content/cache/min/7/app.js",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      var RocketPreloadLinksConfig = { a: 1 };\n    ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        },
+        {
+          "delayed": false,
+          "inline": true,
+          "content": "\n      var b = RocketPreloadLinksConfig;\n    ",
+          "deferred": false,
+          "deferredByWPR": false,
+          "fdtExcluded": null
+        }
+      ],
+      "version": null,
+      "delayedScripts": 0,
+      "source": "footprint"
+    },
+    "defer_all_js": {
+      "present": true,
+      "scripts": [],
+      "deferredScripts": 1,
+      "source": "footprint"
+    },
+    "lazyload": {
+      "present": false,
+      "images": []
+    },
+    "lazyload_iframes": {
+      "present": false,
+      "replaceImage": false
+    },
+    "lazyload_css_bg_img": {
+      "present": false
+    },
+    "self_hosted_fonts": {
+      "present": true,
+      "source": "footprint"
+    },
+    "image_dimensions": {
+      "present": false
+    },
+    "rocket_above_the_fold_optimization": {
+      "present": false,
+      "lcpComment": false
+    },
+    "automatic_lazy_rendering": {
+      "present": false,
+      "lazyRenderElements": 0,
+      "inlineCssPresent": false,
+      "locationHashes": 0
+    },
+    "auto_preload_fonts": {
+      "present": false,
+      "fonts": []
+    },
+    "preconnect_external_domains": {
+      "present": false,
+      "domains": [],
+      "preconnectCount": 0
+    },
+    "priority_elements_beacon": {
+      "present": false,
+      "status": null,
+      "isMobile": null
+    },
+    "minify_css": {
+      "present": true,
+      "source": "footprint"
+    },
+    "minify_js": {
+      "present": true,
+      "source": "footprint"
+    },
+    "preload_links": {
+      "present": true,
+      "source": "footprint"
+    },
+    "rocket_cdn": {
+      "present": false
+    }
+  },
+  "preloadedResources": {
+    "present": false
+  }
+}

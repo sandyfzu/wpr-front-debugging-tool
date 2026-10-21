@@ -9,6 +9,7 @@
  * the pill's presence marker pair.
  */
 
+import type { HudGroupId } from '../../../lib/detection/hud';
 import type { IconCircle, IconEllipse } from '../ui/icons';
 
 /** One glyph's stroke geometry exactly as the factory consumes it. */
@@ -72,6 +73,15 @@ export const FEATURES_GROUP_ICON: StripIconGlyph = {
   paths: [
     'M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z'
   ]
+};
+
+/** Each HUD group's glyph (the strip's group-heading scent). */
+export const GROUP_ICONS: Readonly<Record<HudGroupId, StripIconGlyph>> = {
+  'file-optimization': FILE_OPTIMIZATION_GROUP_ICON,
+  media: MEDIA_GROUP_ICON,
+  preload: PRELOAD_GROUP_ICON,
+  cdn: CDN_GROUP_ICON,
+  features: FEATURES_GROUP_ICON
 };
 
 /** Tools group glyph (lucide `wrench`) — declared for the tool phases' landing. */

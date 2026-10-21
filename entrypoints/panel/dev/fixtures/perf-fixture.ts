@@ -175,10 +175,18 @@ export function generatePerfFixture(seed = 6_003): FdtData {
     type: index % 4 === 0 ? 'font' : 'image'
   }));
   const detections: WprDetections = {
-    wpr: { present: true, cached: true, version: '3.20.1', timeStamp: 1_760_000_000 },
+    wpr: {
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      version: '3.20.1',
+      timeStamp: 1_760_000_000
+    },
     remove_unused_css: { present: true },
     async_css: { present: false },
     lazyload_css_bg_img: { present: true },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: true },
     minify_js: { present: true },
     preload_links: { present: true },
@@ -193,7 +201,8 @@ export function generatePerfFixture(seed = 6_003): FdtData {
       present: true,
       scripts: scripts.flatMap((script) =>
         script.deferredByWPR && script.src !== undefined ? [script.src] : []
-      )
+      ),
+      deferredScripts: scripts.filter((script) => script.deferredByWPR).length
     },
     lazyload: { present: true, images },
     lazyload_iframes: { present: true, replaceImage: false },

@@ -2,15 +2,18 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": true,
       "cached": true,
       "version": "3.20.0.2",
       "timeStamp": 1791342241
     },
     "remove_unused_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "async_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "delay_js": {
       "present": true,
@@ -345,7 +348,8 @@
         }
       ],
       "version": "2.0.4",
-      "delayedScripts": 17
+      "delayedScripts": 17,
+      "source": "meta"
     },
     "defer_all_js": {
       "present": true,
@@ -364,7 +368,9 @@
         "https://wp-rocket.me/wp-content/themes/V4/assets/js/obf.min.js?ver=1791299147",
         "https://wp-rocket.me/wp-content/themes/V4/assets/js/wpr-bundle-currency-cache.min.js?ver=1791299150",
         "https://wp-rocket.me/wp-content/cache/min/1/wp-content/plugins/klaviyo/inc/js/kl-identify-browser.js?ver=1791299187"
-      ]
+      ],
+      "deferredScripts": 14,
+      "source": "meta"
     },
     "lazyload": {
       "present": false,
@@ -639,29 +645,43 @@
           "lazyloadDetected": false,
           "excludedReasonsFound": []
         }
-      ]
+      ],
+      "source": "meta"
     },
     "lazyload_iframes": {
       "present": true,
-      "replaceImage": true
+      "replaceImage": true,
+      "source": "meta"
     },
     "lazyload_css_bg_img": {
-      "present": false
+      "present": false,
+      "source": "meta"
+    },
+    "self_hosted_fonts": {
+      "present": false,
+      "source": "meta"
+    },
+    "image_dimensions": {
+      "present": false,
+      "source": "meta"
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
       "lcpComment": false,
-      "preloadedImages": ["https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg"]
+      "preloadedImages": ["https://wp-rocket.me/wp-content/uploads/2022/02/Img.svg"],
+      "source": "meta"
     },
     "automatic_lazy_rendering": {
       "present": false,
       "lazyRenderElements": 0,
       "inlineCssPresent": false,
-      "locationHashes": 0
+      "locationHashes": 0,
+      "source": "meta"
     },
     "auto_preload_fonts": {
       "present": false,
-      "fonts": []
+      "fonts": [],
+      "source": "meta"
     },
     "preconnect_external_domains": {
       "present": true,
@@ -677,7 +697,8 @@
         "https://www.dwin1.com/",
         "https://lantern.roeyecdn.com/"
       ],
-      "preconnectCount": 10
+      "preconnectCount": 10,
+      "source": "meta"
     },
     "priority_elements_beacon": {
       "present": false,
@@ -685,16 +706,20 @@
       "isMobile": null
     },
     "minify_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "minify_js": {
-      "present": false
+      "present": true,
+      "source": "meta"
     },
     "preload_links": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "rocket_cdn": {
-      "present": false
+      "present": false,
+      "source": "meta"
     }
   },
   "preloadedResources": {

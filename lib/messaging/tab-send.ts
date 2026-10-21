@@ -13,8 +13,8 @@
  * keeps working exactly as the protocol doc describes.
  */
 
+import { readLastError } from '../../utils/last-error';
 import { createLogger } from '../logger';
-import { lastErrorMessage } from '../../utils/last-error';
 
 const log = createLogger('messaging');
 
@@ -53,9 +53,11 @@ function acknowledgeAndForward(callback: ForwardedCallback): ForwardedCallback {
     // send's resolution may change here — callers branch on the transport's
     // failure surface (see `no-receiver.ts`), and any handling beyond "not
     // noise" belongs there.
-    const acknowledged = lastErrorMessage(chrome.runtime.lastError);
-    if (acknowledged !== null) {
-      log.debug('Tab send failure acknowledged', { message: acknowledged });
+    // `readLastError` also folds Firefox's `null` success value: a throw
+    // here would strand the send before `callback` ever runs.
+    const failure = readLastError(chrome.runtime);
+    if (failure !== null) {
+      log.debug('Tab send failure acknowledged', { message: failure });
     }
     callback(response);
   };

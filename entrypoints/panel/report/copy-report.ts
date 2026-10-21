@@ -75,7 +75,7 @@ export function realCopyReportDeps(): CopyReportDeps {
     clipboard: defaultClipboard,
     now: () => Date.now(),
     extensionVersion: manifestVersion,
-    pageUrl: () => readInspectedPageUrl(realInspectedEvalApi(), () => browser.runtime.lastError)
+    pageUrl: () => readInspectedPageUrl(realInspectedEvalApi(), browser.runtime)
   };
 }
 

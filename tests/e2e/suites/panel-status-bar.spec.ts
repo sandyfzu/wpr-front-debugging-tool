@@ -68,15 +68,15 @@ test.describe('panel status bar (the 0-interaction answers)', () => {
         throw new Error(`the served stamp is not representable: ${String(stamp)}`);
       }
       expect(served?.wprDetections.wpr.cached).toBe(true);
-      const cacheLink = panel.getByRole('link', { name: /^Cached/ });
+      const cacheLink = panel.getByRole('link', { name: /^✓ Cached/ });
       await expect(cacheLink).toBeVisible();
       const expectedAge = relativeAge(Date.now() - stamp * 1000);
-      await expect(cacheLink).toHaveText(new RegExp(`^Cached${expectedAge}$`));
+      await expect(cacheLink).toHaveText(new RegExp(`^✓ Cached${expectedAge}$`));
       // The stamp's absolute form rides the segment's hover detail — the
       // shared tooltip's content, not a title attribute (the strip's segment
       // is a tooltip trigger wrapping the link).
       await cacheLink.focus();
-      await expect(panel.getByRole('tooltip')).toContainText(`Cache generated at ${stampText}`);
+      await expect(panel.getByRole('tooltip')).toContainText(`generated ${stampText}`);
       await panel.keyboard.press('Escape');
       await expect(panel.getByRole('tooltip')).toHaveCount(0);
 
@@ -164,7 +164,7 @@ test.describe('panel status bar (the 0-interaction answers)', () => {
       for (const href of hrefs) expect(href).toBe('#/detections');
 
       // A segment click navigates: the rail's active row follows.
-      await panel.getByRole('link', { name: /^Cached/ }).click();
+      await panel.getByRole('link', { name: /^✓ Cached/ }).click();
       await panel.waitForURL(/#\/detections$/);
       const current = await panel.evaluate(
         (): string | null =>
