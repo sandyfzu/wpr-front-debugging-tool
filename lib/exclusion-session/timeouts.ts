@@ -133,6 +133,43 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
   interceptionEnded: STEPS.ready + STEPS.record
 } as const;
 
+/**
+ * Streaming backends: how long a complete body waits for a final status in
+ * the response facts (ms) before it is written through — the facts hook
+ * normally runs before the body starts (verified in Firefox with a blocking
+ * headers listener).
+ */
+export const STREAM_FACTS_WAIT_MS = 1_000;
+
+/**
+ * Streaming backends: how long a complete body waits for its request's
+ * network completion (or failure) before it is trusted anyway (ms). The
+ * completion normally lands within milliseconds of the body's end (or
+ * before it); late arrivals were observed at a cold start (completion
+ * 238 ms after) and under load (a truncation's failure 60 ms after) — the
+ * wait costs latency only when the signal is late.
+ */
+export const STREAM_SETTLE_WAIT_MS = 1_000;
+
+/**
+ * Streaming backends: how far a stream's own release deadline sits past
+ * the host's rewrite bound (ms) — past it the original bytes are served
+ * whatever the host still does.
+ */
+export const STREAM_RELEASE_MARGIN_MS = 500;
+
+/**
+ * Streaming backends: the longest a top-level document is held (ms) —
+ * settle wait, then the late-facts wait, then the release deadline (armed
+ * only once the body is settled, so settling never eats into the host's
+ * rewrite bound).
+ */
+export const STREAM_HOLD_WORST_CASE_MS =
+  STREAM_SETTLE_WAIT_MS +
+  STREAM_FACTS_WAIT_MS +
+  INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument +
+  STREAM_RELEASE_MARGIN_MS;
+
 /** A step that did not settle within its deadline. */
 export class DeadlineExceededError extends Error {
   override readonly name = 'DeadlineExceededError';

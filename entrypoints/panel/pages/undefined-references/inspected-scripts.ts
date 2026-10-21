@@ -20,6 +20,7 @@ import {
   type ScriptAsset
 } from '../../../../lib/panel/undefined-refs';
 import { isHttpUrl } from '../../../../utils/urls';
+import { lastErrorMessage } from '../../../../utils/last-error';
 
 const log = createLogger('panel');
 
@@ -374,11 +375,7 @@ export function realInspectedScripts(): InspectedScripts | null {
         onResources
       );
     },
-    readLastError: () => {
-      const lastError = api.runtime?.lastError;
-      if (lastError === undefined || lastError === null) return null;
-      return lastError.message ?? 'Unknown error';
-    },
+    readLastError: () => lastErrorMessage(api.runtime?.lastError),
     evaluate: (expression, onResult) => {
       if (typeof evaluate !== 'function') {
         onResult(undefined, { isError: true });

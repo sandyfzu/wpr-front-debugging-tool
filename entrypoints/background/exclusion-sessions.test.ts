@@ -5,7 +5,7 @@
  * The lifecycle itself is pinned in `lib/exclusion-session/controller.test.ts`.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { sendMessage } from '../../lib/messaging';
 import { EMPTY_EXCLUSION_SET } from '../../lib/exclusion-builder/set';
 import {
@@ -27,8 +27,21 @@ beforeAll(() => {
 });
 
 describe('exclusion-session wiring', () => {
-  it('ships an empty backend registry (no interception backend yet)', () => {
-    expect(INTERCEPTION_BACKENDS).toEqual([]);
+  it('keeps the Firefox-only streaming-filter row out of a Chromium build', () => {
+    // The test runner builds for Chromium.
+    expect(INTERCEPTION_BACKENDS.map((row) => row.id)).not.toContain('stream-filter');
+  });
+
+  it('registers the streaming-filter row in a Firefox build', async () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    vi.resetModules();
+    try {
+      const firefox = await import('./interception-backends');
+      expect(firefox.INTERCEPTION_BACKENDS.map((row) => row.id)).toEqual(['stream-filter']);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 
   it('answers the overlay channels (a tab-less sender is no page)', async () => {

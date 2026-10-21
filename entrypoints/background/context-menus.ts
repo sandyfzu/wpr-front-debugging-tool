@@ -31,6 +31,7 @@ import {
 } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
+import { lastErrorMessage } from '../../utils/last-error';
 
 const log = createLogger('context-menus');
 
@@ -300,11 +301,9 @@ async function createMenuEntries(): Promise<void> {
     browser.contextMenus.create(params, () => {
       // The create callback is the only place the browser reports a failed
       // or duplicate create; reading lastError here clears it and logs it.
-      if (browser.runtime.lastError !== undefined) {
-        log.warn('Menu entry creation skipped', {
-          id: params.id,
-          message: browser.runtime.lastError.message
-        });
+      const failure = lastErrorMessage(browser.runtime.lastError);
+      if (failure !== null) {
+        log.warn('Menu entry creation skipped', { id: params.id, message: failure });
       }
     });
   }

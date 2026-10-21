@@ -64,5 +64,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # The Firefox build: compiles its manifest/bundles and feeds the
+      # `build: "firefox-mv2"` budget rows (skipped when absent).
+      - name: Build (Firefox)
+        run: pnpm build:firefox
+
       - name: Size budgets
         run: pnpm check:budgets
