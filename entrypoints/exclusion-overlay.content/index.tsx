@@ -192,6 +192,9 @@ export default defineContentScript({
     const presentation = takeOverlayPresentation(globalThis);
     // The builder edits the page's own document: never inside a frame.
     if (window.top !== window) return;
+    // An explicit open shows the panel: the session's next pages follow it
+    // (a fold or close before it no longer applies).
+    if (presentation === null) reportPresentation(true);
     const reportFailure = (cause: unknown): void => {
       log.error(
         'Opening the exclusion builder failed',
