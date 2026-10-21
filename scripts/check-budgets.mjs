@@ -125,6 +125,32 @@ export function measureSurface(files, globs, readFile = defaultReadFile) {
   return { rawBytes, gzipBytes, files: matched };
 }
 
+/**
+ * Measure one bytes row against its own build: skipped while that build is
+ * absent (only an optional build can be — the Chromium root is checked
+ * first), absent when no file matches, else its totals and breaches.
+ *
+ * @param {{globs: string[], maxKb: {raw?: number, gzip?: number}, build?: string}} row A validated bytes row.
+ * @param {(build: string) => string[] | null} filesOf A build's file list, or null when it is not built.
+ * @param {(build: string) => (path: string) => Buffer} readerFor A build's file reader.
+ * @returns {{status: 'skipped', build: string} | {status: 'absent'} | {status: 'measured', rawBytes: number, gzipBytes: number, rawOver: boolean, gzipOver: boolean}}
+ *   The row's outcome.
+ */
+export function measureRow(row, filesOf, readerFor) {
+  const build = buildDirectory(row);
+  const files = filesOf(build);
+  if (files === null) return { status: 'skipped', build };
+  const { rawBytes, gzipBytes, files: hit } = measureSurface(files, row.globs, readerFor(build));
+  if (hit.length === 0) return { status: 'absent' };
+  return {
+    status: 'measured',
+    rawBytes,
+    gzipBytes,
+    rawOver: row.maxKb.raw !== undefined && rawBytes > row.maxKb.raw * 1024,
+    gzipOver: row.maxKb.gzip !== undefined && gzipBytes > row.maxKb.gzip * 1024
+  };
+}
+
 /** Resolve a relative path and read it from the current build output. */
 function defaultReadFile(relativePath) {
   return readFileSync(join(outputRoot(), relativePath));
@@ -299,29 +325,25 @@ async function main() {
   }
   console.log(`  ${padded('SURFACE')}  RAW (KB)    BUDGET   GZIP (KB)  BUDGET`);
   for (const row of byteRows) {
-    const { globs, maxKb } = row;
+    const { maxKb } = row;
     const build = buildDirectory(row);
     const surface = build === DEFAULT_BUILD ? row.surface : `${row.surface} [${build}]`;
-    const files = filesOf(build);
-    if (files === null) {
+    const result = measureRow(
+      row,
+      filesOf,
+      (rowBuild) => (relativePath) => readFileSync(join(outputRoot(rowBuild), relativePath))
+    );
+    if (result.status === 'skipped') {
       console.log(
         `  ${padded(surface)}  skipped — .output/${build} not built (pnpm build:firefox)`
       );
       continue;
     }
-    const {
-      rawBytes,
-      gzipBytes,
-      files: hit
-    } = measureSurface(files, globs, (relativePath) =>
-      readFileSync(join(outputRoot(build), relativePath))
-    );
-    if (hit.length === 0) {
+    if (result.status === 'absent') {
       console.log(`  ${padded(surface)}  absent — surface not built yet, or update row globs`);
       continue;
     }
-    const rawOver = maxKb.raw !== undefined && rawBytes > maxKb.raw * 1024;
-    const gzipOver = maxKb.gzip !== undefined && gzipBytes > maxKb.gzip * 1024;
+    const { rawBytes, gzipBytes, rawOver, gzipOver } = result;
     breached ||= rawOver || gzipOver;
     console.log(
       `  ${padded(surface)}  ${formatKb(rawBytes, maxKb.raw !== undefined)} ${

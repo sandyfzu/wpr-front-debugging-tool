@@ -24,7 +24,14 @@
  *   in Firefox before the filter is closed, often before the body's end),
  *   and a failure (the error hook) serves it unmodified. Without either
  *   within the settle wait the body is trusted (bounded fallback: the
- *   ordering is observed, not specified).
+ *   ordering is observed, not specified). Known residual: a compressed body
+ *   cut short reports completion with no error and its decoded bytes cannot
+ *   be checked against `Content-Length` — it is rewritten as received.
+ * - **Not intercepted:** `view-source:` loads of an armed tab (they reach the
+ *   hooks as plain document requests — indistinguishable without the `tabs`
+ *   permission) are rewritten like the page; service-worker-served
+ *   navigations fail the filter (`Invalid request ID`) and pass unmodified,
+ *   unrecorded.
  * - **No browser-initiated end.** A table entry lives as long as the
  *   background that holds it; a restarted background has an empty table,
  *   so `resume` reports every stored session stale (served unmodified).

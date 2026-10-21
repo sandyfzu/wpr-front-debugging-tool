@@ -1,8 +1,14 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { buildDirectory, matchesGlob, measureSurface, parseBudgetRows } from './check-budgets.mjs';
+import {
+  buildDirectory,
+  matchesGlob,
+  measureRow,
+  measureSurface,
+  parseBudgetRows
+} from './check-budgets.mjs';
 
-/* Pure pieces of the budget gate; the CLI `main()` (output discovery + table
+/* Pure pieces of the budget gate (incl. the per-row outcome `measureRow`); the CLI `main()` (output discovery + table
  * printing) is thin glue and stays untested. */
 
 describe('matchesGlob', () => {
@@ -178,5 +184,50 @@ describe('parseBudgetRows', () => {
     expect(() => parseBudgetRows([{ ...bytesRow, measuredBy: 'a runner' }])).toThrow(
       /bytes row.*measuredBy/
     );
+  });
+});
+
+describe('measureRow', () => {
+  const row = { kind: 'bytes', surface: 'worker', globs: ['w.js'], maxKb: { raw: 1 } };
+  const reader = () => Buffer.alloc(100);
+
+  it('skips a row whose (optional) build is absent instead of failing it', () => {
+    const filesOf = (build) => (build === 'chrome-mv3' ? ['w.js'] : null);
+    expect(measureRow({ ...row, build: 'firefox-mv2' }, filesOf, () => reader)).toEqual({
+      status: 'skipped',
+      build: 'firefox-mv2'
+    });
+  });
+
+  it('reports a surface absent from a present build', () => {
+    expect(
+      measureRow(
+        row,
+        () => ['other.js'],
+        () => reader
+      )
+    ).toEqual({ status: 'absent' });
+  });
+
+  it('measures a row in its own build and flags a breach', () => {
+    const builds = [];
+    const measured = measureRow(
+      { ...row, build: 'firefox-mv2', maxKb: { raw: 0.05, gzip: 1 } },
+      (build) => {
+        builds.push(build);
+        return ['w.js'];
+      },
+      (build) => {
+        builds.push(`read:${build}`);
+        return reader;
+      }
+    );
+    expect(builds).toEqual(['firefox-mv2', 'read:firefox-mv2']);
+    expect(measured).toMatchObject({
+      status: 'measured',
+      rawBytes: 100,
+      rawOver: true,
+      gzipOver: false
+    });
   });
 });

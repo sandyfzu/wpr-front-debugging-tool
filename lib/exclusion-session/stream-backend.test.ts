@@ -20,6 +20,7 @@ import {
 import {
   INTERCEPTION_HOST_BOUNDS_MS,
   STREAM_FACTS_WAIT_MS,
+  STREAM_HOLD_WORST_CASE_MS,
   STREAM_SETTLE_WAIT_MS
 } from './timeouts';
 
@@ -337,6 +338,21 @@ describe('stream backend — the rewrite path', () => {
     expect(RELEASE_MS).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
     expect(streamTimerMs('facts')).toBe(STREAM_FACTS_WAIT_MS);
     expect(streamTimerMs('settle')).toBe(STREAM_SETTLE_WAIT_MS);
+  });
+
+  it('waits up to 1 s for the completion signal (a cold or busy background delivers it late)', () => {
+    // Observed: completion 238 ms after the body's end at a cold start; a
+    // failure 60 ms after it under load — 1 s keeps both inside the wait.
+    expect(STREAM_SETTLE_WAIT_MS).toBe(1_000);
+  });
+
+  it('declares the longest hold of a navigation: settle + late facts + release', () => {
+    expect(STREAM_HOLD_WORST_CASE_MS).toBe(
+      streamTimerMs('settle') + streamTimerMs('facts') + streamTimerMs('release')
+    );
+    // The release timer starts only once the body is settled: settling never
+    // eats into the host's rewrite bound.
+    expect(streamTimerMs('release')).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
   });
 
   it('serves the original when the host rejects (it never should)', async () => {
