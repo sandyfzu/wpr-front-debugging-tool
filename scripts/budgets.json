@@ -92,8 +92,17 @@
     }
   },
   {
-    "surface": "exclusion engine worker (Firefox background; same bytes in both builds)",
-    "globs": ["assets/exclusion-transform.worker-*.js"],
+    "surface": "background page (Firefox)",
+    "build": "firefox-mv2",
+    "globs": ["background.js"],
+    "maxKb": {
+      "raw": 106
+    }
+  },
+  {
+    "surface": "exclusion engine worker (Firefox only)",
+    "build": "firefox-mv2",
+    "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
       "raw": 26,
       "gzip": 10

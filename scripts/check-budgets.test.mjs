@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { matchesGlob, measureSurface, parseBudgetRows } from './check-budgets.mjs';
+import { buildDirectory, matchesGlob, measureSurface, parseBudgetRows } from './check-budgets.mjs';
 
 /* Pure pieces of the budget gate; the CLI `main()` (output discovery + table
  * printing) is thin glue and stays untested. */
@@ -115,6 +115,26 @@ describe('parseBudgetRows', () => {
       { ...bytesRow, kind: 'bytes' },
       timingRow
     ]);
+  });
+
+  it('accepts a bytes row measured on the Firefox build', () => {
+    const firefoxRow = { ...bytesRow, build: 'firefox-mv2' };
+    expect(parseBudgetRows([firefoxRow])).toEqual([{ ...firefoxRow, kind: 'bytes' }]);
+    expect(parseBudgetRows([{ ...bytesRow, build: 'chrome-mv3' }])[0].build).toBe('chrome-mv3');
+  });
+
+  it('rejects an unknown build, and a build on a timing row, naming the row', () => {
+    expect(() => parseBudgetRows([{ ...bytesRow, build: 'safari' }])).toThrow(
+      /#0 \(popup JS\) build must be one of chrome-mv3, firefox-mv2/
+    );
+    expect(() => parseBudgetRows([{ ...timingRow, build: 'firefox-mv2' }])).toThrow(
+      /timing row .* cannot carry build/
+    );
+  });
+
+  it('names the build directory each row is measured in (Chromium by default)', () => {
+    expect(buildDirectory({ build: 'firefox-mv2' })).toBe('firefox-mv2');
+    expect(buildDirectory({})).toBe('chrome-mv3');
   });
 
   it('still rejects the old bytes-row malformations', () => {

@@ -13,15 +13,19 @@ import {
   createStreamInterceptionBackend,
   responseContentType,
   responseFacts,
-  STREAM_FACTS_WAIT_MS,
-  streamDeadlineMs,
+  streamTimerMs,
   type ResponseStreamFilter,
   type StreamResponseDetails
 } from './stream-backend';
-import { INTERCEPTION_HOST_BOUNDS_MS } from './timeouts';
+import {
+  INTERCEPTION_HOST_BOUNDS_MS,
+  STREAM_FACTS_WAIT_MS,
+  STREAM_SETTLE_WAIT_MS
+} from './timeouts';
 
 const TAB = 4;
-const RELEASE_MS = streamDeadlineMs('release');
+const RELEASE_MS = streamTimerMs('release');
+const SETTLE_MS = STREAM_SETTLE_WAIT_MS;
 const URL = 'https://site.test/page';
 const enc = (text: string): Uint8Array => new TextEncoder().encode(text);
 
@@ -76,6 +80,7 @@ function manualTimers(): {
   schedule: ScheduleTimer;
   fire: (ms?: number) => void;
   delays: number[];
+  pending: () => number[];
 } {
   const pending = new Map<() => void, number>();
   const delays: number[] = [];
@@ -92,7 +97,8 @@ function manualTimers(): {
         run();
       }
     },
-    delays
+    delays,
+    pending: () => [...pending.values()]
   };
 }
 
@@ -124,6 +130,7 @@ interface Harness {
   filters: FakeFilter[];
   host: InterceptionHost & {
     rewrites: InterceptedDocument[];
+    abandons: (() => boolean)[];
     gates: string[];
     unavailable: string[];
   };
@@ -139,18 +146,21 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
   const answer = { next: Promise.resolve<Uint8Array | null>(null) };
   const gateAnswer = { next: Promise.resolve(true) };
   const rewrites: InterceptedDocument[] = [];
+  const abandons: (() => boolean)[] = [];
   const gates: string[] = [];
   const unavailable: string[] = [];
   const host = {
     rewrites,
+    abandons,
     gates,
     unavailable,
     shouldIntercept: (_tabId: number, url: string) => {
       gates.push(url);
       return gateAnswer.next;
     },
-    rewriteDocument: (document: InterceptedDocument) => {
+    rewriteDocument: (document: InterceptedDocument, abandoned?: () => boolean) => {
       rewrites.push(document);
+      if (abandoned !== undefined) abandons.push(abandoned);
       return answer.next;
     },
     documentBodyUnavailable: (_tabId: number, url: string) => {
@@ -183,6 +193,12 @@ const HTML_HEADERS: StreamResponseDetails = {
   method: 'GET',
   responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }]
 };
+
+/** End the body, then report the request completed on the network. */
+function stopAndSettle(h: Harness, filter: FakeFilter | undefined, requestId = 'r1'): void {
+  filter?.stop();
+  h.backend.requestCompleted({ requestId, tabId: TAB });
+}
 
 /** Open an armed request r1 on TAB and return its filter. */
 async function openArmed(h: Harness, requestId = 'r1'): Promise<FakeFilter> {
@@ -263,7 +279,7 @@ describe('stream backend — the rewrite path', () => {
     filter.data('<html>');
     filter.data('</html>');
     expect(filter.calls).toEqual([]);
-    filter.stop();
+    stopAndSettle(h, filter);
     await settle();
     expect(h.host.gates).toEqual([URL]);
     expect(h.host.rewrites).toHaveLength(1);
@@ -278,7 +294,9 @@ describe('stream backend — the rewrite path', () => {
     expect(new TextDecoder().decode(document?.body)).toBe('<html></html>');
     expect(filter.written).toEqual(['REWRITTEN']);
     expect(filter.calls).toEqual(['write', 'close']);
-    expect(h.timers.delays).toEqual([RELEASE_MS]);
+    expect(h.timers.delays).toEqual([SETTLE_MS, RELEASE_MS]);
+    // Answered: no timer is left behind.
+    expect(h.timers.pending()).toEqual([]);
   });
 
   it('writes the original chunks through when the host answers null', async () => {
@@ -288,7 +306,7 @@ describe('stream backend — the rewrite path', () => {
     filter.start();
     filter.data('a');
     filter.data('b');
-    filter.stop();
+    stopAndSettle(h, filter);
     await settle();
     expect(filter.written).toEqual(['a', 'b']);
     expect(filter.calls.at(-1)).toBe('close');
@@ -303,7 +321,7 @@ describe('stream backend — the rewrite path', () => {
     h.backend.responseStarted(HTML_HEADERS);
     filter.start();
     filter.data('orig');
-    filter.stop();
+    stopAndSettle(h, filter);
     h.timers.fire(RELEASE_MS);
     expect(filter.written).toEqual(['orig']);
     late.resolve(enc('late'));
@@ -317,7 +335,8 @@ describe('stream backend — the rewrite path', () => {
 
   it('keeps its release deadline above the host rewrite bound', () => {
     expect(RELEASE_MS).toBeGreaterThan(INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument);
-    expect(streamDeadlineMs('facts')).toBe(STREAM_FACTS_WAIT_MS);
+    expect(streamTimerMs('facts')).toBe(STREAM_FACTS_WAIT_MS);
+    expect(streamTimerMs('settle')).toBe(STREAM_SETTLE_WAIT_MS);
   });
 
   it('serves the original when the host rejects (it never should)', async () => {
@@ -327,7 +346,7 @@ describe('stream backend — the rewrite path', () => {
     h.backend.responseStarted(HTML_HEADERS);
     filter.start();
     filter.data('x');
-    filter.stop();
+    stopAndSettle(h, filter);
     await settle();
     expect(filter.written).toEqual(['x']);
     expect(filter.ends).toBe(1);
@@ -339,12 +358,15 @@ describe('stream backend — the rewrite path', () => {
     const filter = await openArmed(h);
     filter.start();
     filter.data('x');
-    filter.stop();
-    expect(h.timers.delays).toEqual([STREAM_FACTS_WAIT_MS]);
+    stopAndSettle(h, filter);
+    expect(h.timers.delays).toEqual([SETTLE_MS, STREAM_FACTS_WAIT_MS]);
+    h.answer.next = new Promise(() => undefined);
     h.backend.responseStarted(HTML_HEADERS);
     await settle();
     expect(h.host.rewrites).toHaveLength(1);
-    expect(h.timers.delays).toEqual([STREAM_FACTS_WAIT_MS, RELEASE_MS]);
+    expect(h.timers.delays).toEqual([SETTLE_MS, STREAM_FACTS_WAIT_MS, RELEASE_MS]);
+    // The late-facts timer was cancelled: a rewrite longer than it is not cut off.
+    expect(h.timers.pending()).toEqual([RELEASE_MS]);
   });
 
   it('writes through when the facts never arrive', () => {
@@ -353,7 +375,7 @@ describe('stream backend — the rewrite path', () => {
       const filter = await openArmed(h);
       filter.start();
       filter.data('x');
-      filter.stop();
+      stopAndSettle(h, filter);
       h.timers.fire(STREAM_FACTS_WAIT_MS);
       expect(filter.written).toEqual(['x']);
       expect(filter.calls.at(-1)).toBe('close');
@@ -422,7 +444,7 @@ describe('stream backend — pass-through and failure arms', () => {
     filter.start();
     filter.data('a');
     filter.fail('Channel redirected');
-    filter.stop();
+    stopAndSettle(h, filter);
     await settle();
     expect(filter.calls).toEqual([]);
     expect(h.host.unavailable).toEqual([URL]);
@@ -468,7 +490,7 @@ describe('stream backend — pass-through and failure arms', () => {
     h.backend.responseStarted(HTML_HEADERS);
     filter.start();
     filter.data('a');
-    filter.stop();
+    stopAndSettle(h, filter);
     expect(h.log.lines).toContain('Stream effect failed');
     h.timers.fire(RELEASE_MS);
     expect(filter.written).toEqual(['a']);
@@ -508,7 +530,7 @@ describe('stream backend — withdrawals', () => {
     h.backend.responseStarted(HTML_HEADERS);
     filter.start();
     filter.data('a');
-    filter.stop();
+    stopAndSettle(h, filter);
     await h.backend.disarm(TAB);
     late.resolve(enc('late'));
     await settle();
@@ -574,7 +596,7 @@ describe('stream backend — withdrawals', () => {
     h.backend.responseStarted(HTML_HEADERS);
     second?.start();
     second?.data('final');
-    second?.stop();
+    stopAndSettle(h, second);
     await settle();
     expect(first.calls).toEqual([]);
     expect(h.host.unavailable).toEqual([]);
@@ -591,7 +613,7 @@ describe('stream backend — withdrawals', () => {
     filter.start();
     await h.backend.disarm(TAB);
     filter.data('after');
-    filter.stop();
+    stopAndSettle(h, filter);
     h.backend.responseStarted(HTML_HEADERS);
     await settle();
     expect(filter.ends).toBe(1);
@@ -619,5 +641,152 @@ describe('stream backend — response facts', () => {
       method: 'GET',
       contentType: 'text/html; charset=utf-8'
     });
+  });
+});
+
+describe('stream backend — revalidation, failures, abandonment', () => {
+  const NOT_MODIFIED: StreamResponseDetails = {
+    ...HTML_HEADERS,
+    statusCode: 304,
+    responseHeaders: []
+  };
+
+  it('rewrites a revalidated document (304, then the cached 200, before the body)', async () => {
+    const h = harness();
+    h.answer.next = Promise.resolve(enc('REWRITTEN'));
+    const filter = await openArmed(h);
+    h.backend.responseStarted(NOT_MODIFIED);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('orig');
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.rewrites).toHaveLength(1);
+    expect(filter.written).toEqual(['REWRITTEN']);
+    expect(filter.calls).toEqual(['write', 'close']);
+  });
+
+  it('serves a truncated body unmodified and reports it (failure in the settle tick)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('partial');
+    filter.stop();
+    h.backend.requestFailed({
+      requestId: 'r1',
+      tabId: TAB,
+      error: 'NS_ERROR_NET_PARTIAL_TRANSFER'
+    });
+    await settle();
+    expect(h.host.rewrites).toEqual([]);
+    expect(filter.written).toEqual(['partial']);
+    expect(filter.calls).toEqual(['write', 'close']);
+    expect(h.host.unavailable).toEqual([URL]);
+    expect(h.timers.pending()).toEqual([]);
+    expect(h.backend.inFlight()).toEqual([]);
+  });
+
+  it('trusts the body when no completion arrives within the settle wait (bounded fallback)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('x');
+    filter.stop();
+    expect(h.host.rewrites).toEqual([]);
+    h.timers.fire(SETTLE_MS);
+    await settle();
+    expect(h.host.rewrites).toHaveLength(1);
+  });
+
+  it('rewrites at once when the completion came before the body’s end', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('x');
+    h.backend.requestCompleted({ requestId: 'r1', tabId: TAB });
+    h.backend.requestCompleted({ requestId: 'r1', tabId: TAB + 1 });
+    h.backend.requestCompleted({ requestId: 'other', tabId: TAB });
+    filter.stop();
+    expect(h.host.rewrites).toHaveLength(1);
+    expect(h.timers.delays).toEqual([RELEASE_MS]);
+  });
+
+  it('a failure while the host rewrites serves the original, reports it, and abandons the ask', async () => {
+    const h = harness();
+    const late = deferred<Uint8Array | null>();
+    h.answer.next = late.promise;
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('orig');
+    stopAndSettle(h, filter);
+    const abandoned = h.host.abandons[0];
+    expect(abandoned?.()).toBe(false);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_BINDING_ABORTED' });
+    expect(abandoned?.()).toBe(true);
+    late.resolve(enc('late'));
+    await settle();
+    expect(filter.written).toEqual(['orig']);
+    expect(filter.calls).toEqual(['write', 'close']);
+    expect(h.host.unavailable).toEqual([URL]);
+  });
+
+  it('a filter error while the host rewrites reports it and abandons the ask', async () => {
+    const h = harness();
+    h.answer.next = new Promise(() => undefined);
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('orig');
+    stopAndSettle(h, filter);
+    filter.fail('Channel closed');
+    await settle();
+    expect(h.host.abandons[0]?.()).toBe(true);
+    expect(h.host.unavailable).toEqual([URL]);
+    expect(filter.calls).toEqual([]);
+    expect(h.timers.pending()).toEqual([]);
+  });
+
+  it('a failure before the start withdraws the stream (reported, disconnected at start)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    await settle();
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB, error: 'NS_BINDING_ABORTED' });
+    expect(h.backend.inFlight()).toEqual([]);
+    expect(h.host.unavailable).toEqual([URL]);
+    filter.start();
+    expect(filter.calls).toEqual(['disconnect']);
+  });
+
+  it('ignores failures of an unknown request or another tab', async () => {
+    const h = harness();
+    h.backend.requestFailed({ requestId: 'nope', tabId: TAB, error: 'x' });
+    const filter = await openArmed(h);
+    h.backend.requestFailed({ requestId: 'r1', tabId: TAB + 1, error: 'x' });
+    expect(h.backend.inFlight()).toEqual(['r1']);
+    filter.start();
+    expect(filter.calls).toEqual([]);
+  });
+
+  it('a withdrawn (not yet started) stream leaves the routing table at once', async () => {
+    const h = harness();
+    await openArmed(h);
+    expect(h.backend.inFlight()).toEqual(['r1']);
+    await h.backend.disarm(TAB);
+    expect(h.backend.inFlight()).toEqual([]);
+  });
+
+  it('a superseded (redirected) filter is withdrawn: passed through if it ever starts', async () => {
+    const h = harness();
+    const first = await openArmed(h);
+    h.backend.responseStarted({ ...HTML_HEADERS, statusCode: 302, responseHeaders: [] });
+    h.backend.requestStarted({ requestId: 'r1', tabId: TAB, url: `${URL}/next` });
+    first.start();
+    expect(first.calls).toEqual(['disconnect']);
+    expect(h.backend.inFlight()).toEqual(['r1']);
   });
 });

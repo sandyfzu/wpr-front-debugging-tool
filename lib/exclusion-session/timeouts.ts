@@ -101,6 +101,30 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
   interceptionEnded: STEPS.ready + STEPS.record
 } as const;
 
+/**
+ * Streaming backends: how long a complete body waits for a final status in
+ * the response facts (ms) before it is written through — the facts hook
+ * normally runs before the body starts (verified in Firefox with a blocking
+ * headers listener).
+ */
+export const STREAM_FACTS_WAIT_MS = 1_000;
+
+/**
+ * Streaming backends: how long a complete body waits for its request's
+ * network completion (or failure) before it is trusted anyway (ms). The
+ * completion normally lands within milliseconds of the body's end (or
+ * before it); a truncated transfer's failure was observed up to ~25 ms
+ * after it — so a failure inside this wait is never rewritten.
+ */
+export const STREAM_SETTLE_WAIT_MS = 250;
+
+/**
+ * Streaming backends: how far a stream's own release deadline sits past
+ * the host's rewrite bound (ms) — past it the original bytes are served
+ * whatever the host still does.
+ */
+export const STREAM_RELEASE_MARGIN_MS = 500;
+
 /** A step that did not settle within its deadline. */
 export class DeadlineExceededError extends Error {
   override readonly name = 'DeadlineExceededError';

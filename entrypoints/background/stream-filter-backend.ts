@@ -2,7 +2,8 @@
  * The streaming-filter interception row: binds the streaming backend
  * (`lib/exclusion-session/stream-backend`) to `webRequest` — a blocking
  * top-level request hook that attaches the body filter, a blocking
- * response-headers hook for the response facts, and a worker-hosted engine
+ * response-headers hook for the response facts, completion and error hooks
+ * telling whether a body is whole, and a worker-hosted engine
  * runner that preempts a runaway row. Selected by feature detection of
  * `webRequest.filterResponseData`.
  */
@@ -40,16 +41,22 @@ function supportsStreamFilters(): boolean {
 }
 
 /**
- * Spawn the engine worker (bundled as its own file from this exact
- * `new Worker(new URL(…, import.meta.url))` form).
+ * The engine worker's packaged path (the Firefox-only unlisted script
+ * `entrypoints/exclusion-transform-worker.ts`).
+ */
+const TRANSFORM_WORKER_PATH = '/exclusion-transform-worker.js';
+
+/**
+ * Spawn the engine worker (a classic worker from the extension's own
+ * origin).
  *
  * @throws {@link Error} when the platform has no `Worker`.
  */
 function spawnTransformWorker(): TransformWorkerPort {
   if (typeof Worker !== 'function') throw new Error('Worker is not available here.');
-  return new Worker(new URL('./exclusion-transform.worker.ts', import.meta.url), {
-    type: 'module'
-  }) as unknown as TransformWorkerPort;
+  return new Worker(
+    browser.runtime.getURL(TRANSFORM_WORKER_PATH)
+  ) as unknown as TransformWorkerPort;
 }
 
 /**
@@ -101,6 +108,22 @@ function registerHooks(backend: StreamInterceptionBackend, log: Logger): void {
     // (a non-blocking hook was observed to fire after the body ended).
     ['blocking', 'responseHeaders']
   );
+  // Non-blocking: a truncated or aborted transfer still ends its filter
+  // normally — these tell the stream whether its body is whole.
+  browser.webRequest.onErrorOccurred.addListener((details) => {
+    try {
+      backend.requestFailed(details);
+    } catch (cause) {
+      log.error('Stream error hook failed', cause);
+    }
+  }, topLevelDocuments());
+  browser.webRequest.onCompleted.addListener((details) => {
+    try {
+      backend.requestCompleted(details);
+    } catch (cause) {
+      log.error('Stream completion hook failed', cause);
+    }
+  }, topLevelDocuments());
 }
 
 /** The registry row. */

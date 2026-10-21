@@ -14,11 +14,21 @@
  * - **One machine per response** (`./stream-machine`): this module only
  *   performs its effects; every filter is ended exactly once on every path.
  * - **Response facts** (status, method, content type) come from the
- *   response-headers hook, correlated by request id; a redirect re-enters
- *   the request hook with the same id, superseding the earlier filter.
+ *   response-headers hook, correlated by request id (several per request:
+ *   a revalidation reports `304`, then the cached `200`); a redirect
+ *   re-enters the request hook with the same id, superseding the earlier
+ *   filter. Network failures come from the request-error hook, by id.
+ * - **Truncated bodies are not rewritten.** A transfer cut short still
+ *   ends the filter normally; only the request hooks tell: a body is
+ *   rewritten once its request completed (the completion hook — observed
+ *   in Firefox before the filter is closed, often before the body's end),
+ *   and a failure (the error hook) serves it unmodified. Without either
+ *   within the settle wait the body is trusted (bounded fallback: the
+ *   ordering is observed, not specified).
  * - **No browser-initiated end.** A table entry lives as long as the
  *   background that holds it; a restarted background has an empty table,
  *   so `resume` reports every stored session stale (served unmodified).
+ *   A tab leaving http(s) keeps its session (nothing ends it).
  */
 import type { Logger } from '../logger';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
@@ -27,35 +37,36 @@ import type { DocumentTransformRunner, InterceptedResponseFacts } from './docume
 import {
   OPENING_STREAM,
   streamTransition,
-  type StreamDeadline,
   type StreamEffect,
   type StreamEvent,
-  type StreamState
+  type StreamState,
+  type StreamWait
 } from './stream-machine';
-import { INTERCEPTION_HOST_BOUNDS_MS } from './timeouts';
+import {
+  INTERCEPTION_HOST_BOUNDS_MS,
+  STREAM_FACTS_WAIT_MS,
+  STREAM_RELEASE_MARGIN_MS,
+  STREAM_SETTLE_WAIT_MS
+} from './timeouts';
 
 /**
- * How long a stream waits past its body's end for the response facts (ms)
- * before writing it through — the facts hook normally runs before the body
- * starts (verified in Firefox with a blocking headers listener).
- */
-export const STREAM_FACTS_WAIT_MS = 1_000;
-
-/** How far the stream's own release deadline sits past the host's rewrite bound (ms). */
-export const STREAM_RELEASE_MARGIN_MS = 500;
-
-/**
- * The deadline of a stream's wait (ms). `release` — the stream's own
- * release deadline: past the host's rewrite bound (plus a margin), the
- * original bytes are written through whatever the host still does.
- * (A function, not a constant: nothing of this module runs at load.)
+ * The delay of a stream's timer (ms): `settle` — the bounded wait for the
+ * request's network completion after the body's end; `facts` — the late-facts
+ * wait; `release` — the stream's own release deadline, past the host's
+ * rewrite bound. (A function, not a constant: nothing of this module runs
+ * at load.)
  *
  * @param wait Which wait.
  */
-export function streamDeadlineMs(wait: StreamDeadline): number {
-  return wait === 'facts'
-    ? STREAM_FACTS_WAIT_MS
-    : INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + STREAM_RELEASE_MARGIN_MS;
+export function streamTimerMs(wait: StreamWait): number {
+  switch (wait) {
+    case 'settle':
+      return STREAM_SETTLE_WAIT_MS;
+    case 'facts':
+      return STREAM_FACTS_WAIT_MS;
+    case 'release':
+      return INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + STREAM_RELEASE_MARGIN_MS;
+  }
 }
 
 /** The filter surface the backend drives (a `StreamFilter`, or a test shim). */
@@ -93,6 +104,20 @@ export interface StreamResponseDetails {
   readonly responseHeaders?: readonly StreamResponseHeader[] | undefined;
 }
 
+/** A top-level request, by id (the completion hook's details). */
+export interface StreamRequestRef {
+  readonly requestId: string;
+  readonly tabId: number;
+}
+
+/** A top-level request failed on the network (the request-error hook's details). */
+export interface StreamFailureDetails {
+  readonly requestId: string;
+  readonly tabId: number;
+  /** The platform's error name (e.g. `NS_ERROR_NET_PARTIAL_TRANSFER`), for the log. */
+  readonly error: string;
+}
+
 /** What the streaming backend is built from. */
 export interface StreamBackendDeps {
   readonly host: InterceptionHost;
@@ -111,6 +136,12 @@ export interface StreamInterceptionBackend extends InterceptionBackend {
   requestStarted(details: StreamRequestDetails): void;
   /** A top-level response's headers arrived. */
   responseStarted(details: StreamResponseDetails): void;
+  /** A top-level request failed on the network. */
+  requestFailed(details: StreamFailureDetails): void;
+  /** A top-level request completed on the network. */
+  requestCompleted(details: StreamRequestRef): void;
+  /** The request ids still routed (diagnostics: withdrawn and ended streams leave). */
+  inFlight(): string[];
 }
 
 /** One filtered response in flight. */
@@ -120,7 +151,8 @@ interface LiveStream {
   readonly url: string;
   readonly filter: ResponseStreamFilter;
   state: StreamState;
-  cancelDeadline: (() => void) | null;
+  /** Cancels the stream's one armed timer, or null. */
+  cancelTimer: (() => void) | null;
 }
 
 /**
@@ -207,32 +239,37 @@ export function createStreamInterceptionBackend(
     body: Uint8Array,
     facts: InterceptedResponseFacts
   ): void => {
-    host.rewriteDocument({ tabId: stream.tabId, documentUrl: stream.url, body, ...facts }).then(
-      (rewritten) => {
-        dispatch(stream, { type: 'rewritten', body: rewritten });
-      },
-      (cause: unknown) => {
-        log.error('Stream rewrite failed — document served unmodified', {
-          requestId: stream.requestId,
-          cause
-        });
-        dispatch(stream, { type: 'rewritten', body: null });
-      }
-    );
+    // Abandoned once the stream left `rewriting` (deadline, failure,
+    // withdrawal): the host then records nothing for it.
+    const abandoned = (): boolean => stream.state.phase !== 'rewriting';
+    host
+      .rewriteDocument({ tabId: stream.tabId, documentUrl: stream.url, body, ...facts }, abandoned)
+      .then(
+        (rewritten) => {
+          dispatch(stream, { type: 'rewritten', body: rewritten });
+        },
+        (cause: unknown) => {
+          log.error('Stream rewrite failed — document served unmodified', {
+            requestId: stream.requestId,
+            cause
+          });
+          dispatch(stream, { type: 'rewritten', body: null });
+        }
+      );
   };
 
-  /** (Re)arm the stream's deadline. */
-  const armDeadline = (stream: LiveStream, wait: StreamDeadline): void => {
-    stream.cancelDeadline?.();
-    stream.cancelDeadline = schedule(() => {
-      stream.cancelDeadline = null;
+  /** (Re)arm the stream's one timer (an armed one is cancelled first). */
+  const armTimer = (stream: LiveStream, wait: StreamWait): void => {
+    stream.cancelTimer?.();
+    stream.cancelTimer = schedule(() => {
+      stream.cancelTimer = null;
       if (wait === 'release') {
         log.warn('Stream rewrite missed its deadline — document served unmodified', {
           requestId: stream.requestId
         });
       }
-      dispatch(stream, { type: 'deadline' });
-    }, streamDeadlineMs(wait));
+      dispatch(stream, { type: 'timer', wait });
+    }, streamTimerMs(wait));
   };
 
   /** Perform one machine effect. */
@@ -255,8 +292,8 @@ export function createStreamInterceptionBackend(
           log.error('Stream unavailable report failed', { requestId: stream.requestId, cause });
         });
         return;
-      case 'arm-deadline':
-        armDeadline(stream, effect.wait);
+      case 'arm-timer':
+        armTimer(stream, effect.wait);
         return;
     }
   };
@@ -278,15 +315,16 @@ export function createStreamInterceptionBackend(
         });
       }
     }
-    // A withdrawn stream leaves the table at once (one not started yet ends
-    // at its start — its callbacks hold it; no facts are needed any more).
+    // A withdrawn or failed stream leaves the table at once (one not started
+    // yet ends at its start — its callbacks hold it; it needs no more facts).
     const finished = next.state.phase === 'done';
-    if ((finished || event.type === 'abort') && streams.get(stream.requestId) === stream) {
+    const withdrawn = event.type === 'abort' || event.type === 'failed';
+    if ((finished || withdrawn) && streams.get(stream.requestId) === stream) {
       streams.delete(stream.requestId);
     }
     if (!finished) return;
-    stream.cancelDeadline?.();
-    stream.cancelDeadline = null;
+    stream.cancelTimer?.();
+    stream.cancelTimer = null;
   }
 
   /** Run a filter callback isolated: one failing handler never breaks the stream's others. */
@@ -372,7 +410,7 @@ export function createStreamInterceptionBackend(
         url: details.url,
         filter,
         state: OPENING_STREAM,
-        cancelDeadline: null
+        cancelTimer: null
       };
       streams.set(details.requestId, stream);
       wire(stream);
@@ -382,6 +420,24 @@ export function createStreamInterceptionBackend(
       const stream = streams.get(details.requestId);
       if (stream === undefined || stream.tabId !== details.tabId) return;
       dispatch(stream, { type: 'facts', facts: responseFacts(details) });
-    }
+    },
+
+    requestFailed(details) {
+      const stream = streams.get(details.requestId);
+      if (stream === undefined || stream.tabId !== details.tabId) return;
+      log.debug('Stream request failed — served unmodified', {
+        requestId: details.requestId,
+        error: details.error
+      });
+      dispatch(stream, { type: 'failed' });
+    },
+
+    requestCompleted(details) {
+      const stream = streams.get(details.requestId);
+      if (stream === undefined || stream.tabId !== details.tabId) return;
+      dispatch(stream, { type: 'completed' });
+    },
+
+    inFlight: () => [...streams.keys()]
   };
 }
