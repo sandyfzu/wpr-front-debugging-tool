@@ -1,14 +1,36 @@
 /** Retain keyboard focus when a keyed list moves, rather than replaces, a control. */
 
 /**
+ * The focused element of the tree a node lives in: its shadow root's when it
+ * renders inside one (the document only knows the shadow host there), else
+ * its document's.
+ *
+ * @param node Any node of the list.
+ * @returns The focused element of that tree, or null when none is focused.
+ */
+export function focusedElementOf(node: Node): Element | null {
+  // A document or a shadow root carries `activeElement`; a detached subtree's root does not.
+  const root = node.getRootNode();
+  return 'activeElement' in root && root.activeElement instanceof Element
+    ? root.activeElement
+    : null;
+}
+
+/**
  * Restore focus after an observed DOM move only if it fell back to the body.
  * Removed controls and deliberate focus changes are never followed.
  * @param container The list about to update its rendered keys.
  * @returns Cancel pending restoration when the owner updates again or disposes.
  */
+/** Whether focus fell out of the list's tree (to nothing, or to the body). */
+function focusLost(container: HTMLElement): boolean {
+  const focused = focusedElementOf(container);
+  return focused === null || focused === container.ownerDocument.body;
+}
+
 export function preserveMovedFocus(container: HTMLElement): () => void {
   const document = container.ownerDocument;
-  let active = document.activeElement;
+  let active = focusedElementOf(container);
   let cancelled = false;
   let moved = false;
   let observer: MutationObserver | undefined;
@@ -52,7 +74,7 @@ export function preserveMovedFocus(container: HTMLElement): () => void {
         active instanceof HTMLElement &&
         active.isConnected &&
         container.contains(active) &&
-        document.activeElement === document.body
+        focusLost(container)
           ? active
           : undefined;
       // The owner may keep the cancellation handle until its next update;

@@ -131,4 +131,22 @@ describe('preserveMovedFocus', () => {
     await Promise.resolve();
     expect(document.activeElement).toBe(document.body);
   });
+
+  it('restores a moved control inside a shadow root (focus read from the root, not the document)', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    const button = document.createElement('button');
+    container.append(button);
+    root.append(container);
+    button.focus();
+    expect(root.activeElement).toBe(button);
+    preserveMovedFocus(container);
+    button.blur();
+    button.remove();
+    container.append(button);
+    await Promise.resolve();
+    expect(root.activeElement).toBe(button);
+  });
 });
