@@ -442,6 +442,30 @@ describe('rows hold against served markup (verification round)', () => {
     ]);
   });
 
+  it('names an `&` path by an `&`-free stretch only when no other lazy image has it', () => {
+    const thumb = '<img src="data:x" data-lazy-src="https://example.com/uploads/thumb.jpg">';
+    // `b.jpg` is in `thumb.jpg` too: no row rather than one matching both.
+    expect(
+      served(`<img src="data:x" data-lazy-src="https://example.com/a&amp;b.jpg">${thumb}`, 'img')
+    ).toEqual([]);
+    // The longest stretch is shared; the next one names the image alone.
+    const shared = '<img src="data:x" data-lazy-src="https://example.com/uploads/a-long-name.jpg">';
+    expect(
+      served(
+        `<img src="data:x" data-lazy-src="https://example.com/uploads/a-long-name&amp;uniq.jpg">${shared}`,
+        'img'
+      )
+    ).toEqual([{ row: 'uniq.jpg', lane: 'lazyload', matches: 1 }]);
+  });
+
+  it("reads the lazy images' tags once, on first need", () => {
+    const element = first('<img src="data:x" data-lazy-src="/a.jpg"><img src="/b.jpg">');
+    const context = pickContextOf(element.ownerDocument, PAGE);
+    const peers = context.lazyImagePeers();
+    expect(peers).toEqual(['<img src="data:x" data-lazy-src="/a.jpg">']);
+    expect(context.lazyImagePeers()).toBe(peers);
+  });
+
   it('never offers a row the session would refuse (C1 control, over-cap id)', () => {
     expect(served('<script type="rocketlazyloadscript">\u0085abc</script>', 'script')).toEqual([]);
     const longId = 'i'.repeat(2100);

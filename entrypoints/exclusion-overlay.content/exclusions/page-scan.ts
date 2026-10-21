@@ -203,21 +203,44 @@ export function scanPageInSlices(
 }
 
 /**
- * The pick context of a document: its URL and the peer texts of its lazily
- * rendered elements (bounded like the scan).
+ * The match texts of the elements `selector` finds (bounded like the scan).
+ *
+ * @param root Where to look.
+ * @param selector Which elements.
+ * @param text An element's match text.
+ */
+function peerTexts(
+  root: ParentNode,
+  selector: string,
+  text: (el: ElementSnapshot) => string
+): string[] {
+  const found = root.querySelectorAll(selector);
+  const peers: string[] = [];
+  const count = Math.min(found.length, PAGE_SCAN_LIMIT);
+  for (let index = 0; index < count; index += 1) {
+    const element = found[index];
+    if (element !== undefined) peers.push(text(elementSnapshot(element)));
+  }
+  return peers;
+}
+
+/**
+ * The pick context of a document: its URL and the match texts of its lazily
+ * rendered elements and, read once on first need, of its lazy images
+ * (bounded like the scan).
  *
  * @param root Where to look.
  * @param pageUrl The page's URL.
  */
 export function pickContextOf(root: ParentNode, pageUrl: string): PickContext {
-  const stamped = root.querySelectorAll(`[${LAZY_RENDER_ATTRIBUTE}]`);
-  const peers: string[] = [];
-  const count = Math.min(stamped.length, PAGE_SCAN_LIMIT);
-  for (let index = 0; index < count; index += 1) {
-    const element = stamped[index];
-    if (element !== undefined) peers.push(lazyRenderPeerText(elementSnapshot(element)));
-  }
-  return { pageUrl, lazyRenderPeers: peers };
+  // Read on first need only: few pages have an image path with an `&`.
+  let images: readonly string[] | null = null;
+  return {
+    pageUrl,
+    lazyRenderPeers: peerTexts(root, `[${LAZY_RENDER_ATTRIBUTE}]`, lazyRenderPeerText),
+    lazyImagePeers: () =>
+      (images ??= peerTexts(root, `img[${DATA_LAZY_SRC}]`, (el) => el.openingTag))
+  };
 }
 
 /**

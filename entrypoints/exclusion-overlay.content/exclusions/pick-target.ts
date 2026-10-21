@@ -66,13 +66,15 @@ const INLINE_EXCERPT_CODE_POINTS = 48;
 
 /**
  * What the classifier knows about the page beyond one element: its URL and
- * the match texts of every lazily rendered element (see
- * {@link lazyRenderPeerText}) — a row naming one of them must be a
- * substring of no other's.
+ * the match texts of its lazily rendered elements (see
+ * {@link lazyRenderPeerText}) and lazy images (their opening tags) — a row
+ * naming one of them by a shortened name must be a substring of no other's.
  */
 export interface PickContext {
   readonly pageUrl: string;
   readonly lazyRenderPeers: readonly string[];
+  /** Read on demand (only a path with an `&` needs them). */
+  readonly lazyImagePeers: () => readonly string[];
 }
 
 /**
@@ -120,18 +122,26 @@ function servedPattern(text: string): string {
   return escapeRegex(text).replaceAll('&', '(?:&|&amp;)');
 }
 
+/** Shortest `&`-free stretch worth naming a file by. */
+const MIN_STRETCH_CHARS = 4;
+
 /**
  * A literal that is in the served form of `text` whatever the markup's `&`
- * encoding: the longest `&`-free stretch, when long enough to name a file.
+ * encoding: the text itself, or its longest `&`-free stretch that is long
+ * enough to name a file and in no other lazy image's tag (a part of a name
+ * may well be in another's: `a&b.jpg` → `b.jpg`, in `thumb.jpg`).
  *
  * @param text The decoded text.
+ * @param peers Every lazy image's opening tag (the picked one's included), on demand.
+ * @returns The literal, or null when no stretch names only this image.
  */
-function servedLiteral(text: string): string | null {
+function servedLiteral(text: string, peers: () => readonly string[]): string | null {
   if (!text.includes('&')) return text;
-  const longest = text
+  const stretches = text
     .split('&')
-    .reduce((best, part) => (part.length > best.length ? part : best), '');
-  return longest.length >= 4 ? longest : null;
+    .filter((part) => part.length >= MIN_STRETCH_CHARS)
+    .sort((a, b) => b.length - a.length);
+  return stretches.find((part) => unique(part, peers())) ?? null;
 }
 
 /** How a URL is named in a row. */
@@ -263,7 +273,7 @@ function rankedClasses(classes: string): string[] {
     .sort((a, b) => Number(/\d/.test(b)) - Number(/\d/.test(a)) || b.length - a.length);
 }
 
-/** Whether a literal is in at most one lazily rendered element's match text (its own). */
+/** Whether a literal is in at most one peer's match text (its own). */
 function unique(literal: string, peers: readonly string[]): boolean {
   return peers.filter((peer) => peer.includes(literal)).length <= 1;
 }
@@ -308,12 +318,12 @@ function lazyRenderCandidate(el: ElementSnapshot, peers: readonly string[]): Pic
 }
 
 /** The Image Lazyload candidate of a lazy image. */
-function lazyloadCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | null {
+function lazyloadCandidate(el: ElementSnapshot, context: PickContext): PickCandidate | null {
   if (el.tag !== 'img') return null;
   const raw = el.attribute(DATA_LAZY_SRC);
   if (raw === null || raw.trim() === '') return null;
-  const name = nameUrl(raw, pageUrl);
-  const literal = name === null ? null : servedLiteral(name.text);
+  const name = nameUrl(raw, context.pageUrl);
+  const literal = name === null ? null : servedLiteral(name.text, context.lazyImagePeers);
   return name === null || literal === null
     ? null
     : { lane: 'lazyload', row: literal, subject: name.file };
@@ -332,7 +342,7 @@ export function candidatesFor(el: ElementSnapshot, context: PickContext): readon
   const found: (PickCandidate | null)[] =
     el.tag === 'script'
       ? [isDelayedScript(el) ? delayCandidate(el, pageUrl) : null, deferCandidate(el, pageUrl)]
-      : [lazyloadCandidate(el, pageUrl), lazyRenderCandidate(el, context.lazyRenderPeers)];
+      : [lazyloadCandidate(el, context), lazyRenderCandidate(el, context.lazyRenderPeers)];
   return found
     .map((candidate) => (candidate === null ? null : storable(candidate)))
     .filter((candidate): candidate is PickCandidate => candidate !== null);
