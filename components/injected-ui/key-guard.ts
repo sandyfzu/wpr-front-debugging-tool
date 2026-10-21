@@ -9,7 +9,8 @@
  * For a key, input or clipboard event whose path runs through the overlay's
  * shadow host, the guard stops the event at the window (no page listener
  * sees it) and re-dispatches a non-composed copy at its target, so the
- * overlay's own handlers still run and never leak back out; a
+ * overlay's own handlers still run and never leak back out (a copy the
+ * engine would compose is never sent: the original goes on instead); a
  * `preventDefault` on the copy is handed to the original (whose default —
  * typing, focus moves — still happens). Anything unexpected fails open: the
  * event goes on untouched, and nothing ever throws into the page.
@@ -33,51 +34,47 @@ const GUARDED_EVENTS = [
   'cut'
 ] as const;
 
-/** Fields every copy shares: bubbles inside the shadow tree, never out of it. */
-function base(event: Event): EventInit {
-  return { bubbles: event.bubbles, cancelable: event.cancelable, composed: false };
-}
+/**
+ * The fields the overlay's handlers read, carried over from the original when
+ * it has them (key, input and clipboard events alike).
+ */
+const COPIED_FIELDS = [
+  'key',
+  'code',
+  'location',
+  'repeat',
+  'isComposing',
+  'ctrlKey',
+  'shiftKey',
+  'altKey',
+  'metaKey',
+  'data',
+  'inputType',
+  'clipboardData'
+] as const;
 
 /**
- * A non-composed copy of an event, built with the window's own constructors,
- * or null for a kind the guard does not know (then it is left alone).
+ * A non-composed copy of an event: a plain `Event` carrying the original's
+ * fields as own read-only properties. Plain, because Firefox ignores
+ * `composed: false` for constructed `KeyboardEvent`s — a typed copy would
+ * escape the shadow root (and loop back into the guard).
  *
- * @param win The window whose event constructors build the copy.
+ * @param win The window whose `Event` constructor builds the copy.
  * @param event The original.
+ * @returns The copy, or null when the engine would compose it anyway.
  */
 function copyOf(win: Window & typeof globalThis, event: Event): Event | null {
-  if (event instanceof win.KeyboardEvent) {
-    return new win.KeyboardEvent(event.type, {
-      ...base(event),
-      key: event.key,
-      code: event.code,
-      location: event.location,
-      repeat: event.repeat,
-      isComposing: event.isComposing,
-      ctrlKey: event.ctrlKey,
-      shiftKey: event.shiftKey,
-      altKey: event.altKey,
-      metaKey: event.metaKey
-    });
+  const copy = new win.Event(event.type, {
+    bubbles: event.bubbles,
+    cancelable: event.cancelable,
+    composed: false
+  });
+  if (copy.composed) return null;
+  const fields = event as unknown as Record<string, unknown>;
+  for (const name of COPIED_FIELDS) {
+    if (name in event) Object.defineProperty(copy, name, { value: fields[name] });
   }
-  if (event instanceof win.InputEvent) {
-    return new win.InputEvent(event.type, {
-      ...base(event),
-      data: event.data,
-      inputType: event.inputType,
-      isComposing: event.isComposing
-    });
-  }
-  if (event instanceof win.CompositionEvent) {
-    return new win.CompositionEvent(event.type, { ...base(event), data: event.data });
-  }
-  if (typeof win.ClipboardEvent === 'function' && event instanceof win.ClipboardEvent) {
-    return new win.ClipboardEvent(event.type, {
-      ...base(event),
-      clipboardData: event.clipboardData
-    });
-  }
-  return null;
+  return copy;
 }
 
 /**
@@ -92,8 +89,11 @@ export function installKeyGuard(
   hostName: string,
   signal: AbortSignal
 ): void {
+  /** The copies in flight: if one escapes after all, it is let through, never copied again. */
+  const copies = new WeakSet<Event>();
   const guard = (event: Event): void => {
     try {
+      if (copies.has(event)) return;
       const path = event.composedPath();
       const host = path.find((node) => node instanceof win.Element && node.localName === hostName);
       const target = path[0];
@@ -101,6 +101,7 @@ export function installKeyGuard(
       if (host === undefined || !(target instanceof win.Node) || target === host) return;
       const copy = copyOf(win, event);
       if (copy === null) return;
+      copies.add(copy);
       event.stopImmediatePropagation();
       target.dispatchEvent(copy);
       if (copy.defaultPrevented) event.preventDefault();

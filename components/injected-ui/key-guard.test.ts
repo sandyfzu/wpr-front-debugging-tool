@@ -5,6 +5,7 @@ import { OVERLAY_HOST_NAME, installKeyGuard } from './key-guard';
 const guards: AbortController[] = [];
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const guard of guards.splice(0)) guard.abort();
   document.body.replaceChildren();
 });
@@ -26,6 +27,40 @@ function setup() {
   window.addEventListener('input', page, { capture: true, signal: pageListeners.signal });
   guards.push(pageListeners);
   return { guard, host, shadow, input, outside, page };
+}
+
+const NativeEvent = Event;
+const NativeKeyboardEvent = KeyboardEvent;
+
+/**
+ * Stub `Event` and `KeyboardEvent` so every constructed one escapes its shadow
+ * root, whatever its init says.
+ *
+ * @param reported What their `composed` getter claims (false: an engine that lies).
+ */
+function composeEveryEvent(reported: boolean): void {
+  vi.stubGlobal(
+    'Event',
+    class extends NativeEvent {
+      constructor(type: string, init?: EventInit) {
+        super(type, { ...init, composed: true });
+      }
+      override get composed(): boolean {
+        return reported;
+      }
+    }
+  );
+  vi.stubGlobal(
+    'KeyboardEvent',
+    class extends NativeKeyboardEvent {
+      constructor(type: string, init?: KeyboardEventInit) {
+        super(type, { ...init, composed: true });
+      }
+      override get composed(): boolean {
+        return reported;
+      }
+    }
+  );
 }
 
 /** A trusted-like composed keydown from `target`. */
@@ -57,17 +92,66 @@ describe('installKeyGuard', () => {
     const { input, shadow, page } = setup();
     const atRoot = vi.fn((event: InputEvent) => event.data);
     shadow.addEventListener('input', (event) => {
-      if (event instanceof InputEvent) atRoot(event);
+      atRoot(event as InputEvent);
     });
     input.dispatchEvent(new InputEvent('input', { data: 'a', bubbles: true, composed: true }));
     expect(page).not.toHaveBeenCalled();
     expect(atRoot.mock.results[0]?.value).toBe('a');
   });
 
+  it('delivers keys inside where the engine composes every KeyboardEvent (Firefox)', () => {
+    // Firefox ignores `composed: false` for constructed keyboard events.
+    vi.stubGlobal(
+      'KeyboardEvent',
+      class extends NativeKeyboardEvent {
+        constructor(type: string, init?: KeyboardEventInit) {
+          super(type, { ...init, composed: true });
+        }
+      }
+    );
+    const { input, page } = setup();
+    const inside = vi.fn((event: KeyboardEvent) => event.key);
+    input.addEventListener('keydown', inside);
+    input.dispatchEvent(keydown('Enter'));
+    expect(page).not.toHaveBeenCalled();
+    expect(inside).toHaveBeenCalledTimes(1);
+    expect(inside.mock.results[0]?.value).toBe('Enter');
+  });
+
+  it('never dispatches a copy that would compose: the original goes on untouched', () => {
+    composeEveryEvent(true);
+    const { input, page } = setup();
+    const inside = vi.fn((event: KeyboardEvent) => event);
+    input.addEventListener('keydown', inside);
+    const original = keydown('/');
+    input.dispatchEvent(original);
+    expect(inside).toHaveBeenCalledTimes(1);
+    expect(inside.mock.results[0]?.value).toBe(original);
+    expect(page).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets its own copy pass if it escapes anyway, instead of copying it again', () => {
+    composeEveryEvent(false);
+    const { input } = setup();
+    const inside = vi.fn((event: KeyboardEvent) => event.key);
+    input.addEventListener('keydown', inside);
+    input.dispatchEvent(keydown('ArrowUp'));
+    expect(inside).toHaveBeenCalledTimes(1);
+    expect(inside.mock.results[0]?.value).toBe('ArrowUp');
+  });
+
   it("leaves the page's own keys alone", () => {
     const { outside, page } = setup();
     outside.dispatchEvent(keydown('/'));
     expect(page).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves keys aimed at the host itself alone (they are not from inside)', () => {
+    const { host, page } = setup();
+    const original = keydown('/');
+    host.dispatchEvent(original);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page.mock.calls[0]?.[0]).toBe(original);
   });
 
   it('never throws into the page, and fails open', () => {
