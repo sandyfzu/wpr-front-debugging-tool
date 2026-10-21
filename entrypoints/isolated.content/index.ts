@@ -24,6 +24,7 @@ import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
+import { OVERLAY_HOST_NAME, installKeyGuard } from '../../components/injected-ui/key-guard';
 import './styles.css';
 
 const log = createLogger('isolated');
@@ -46,6 +47,14 @@ interface IsolatedWorldModule {
  * row with its folder.
  */
 const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
+  // First, at document_start: its window-capture listeners must precede the
+  // page's own to keep keys typed in the exclusion builder overlay from it.
+  {
+    name: 'overlay-key-guard',
+    setup: (ctx) => {
+      installKeyGuard(window, OVERLAY_HOST_NAME, ctx.signal);
+    }
+  },
   { name: 'data-hub', setup: setupDataHub },
   { name: 'improvements', setup: setupImprovements },
   { name: 'known-conflicts', setup: setupKnownConflicts },

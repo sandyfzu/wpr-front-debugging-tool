@@ -393,4 +393,15 @@ describe('OverlayApp', () => {
     });
     expect(document.activeElement?.tagName).toBe('H1');
   });
+
+  it('cancels picking with Escape pressed on the picking bar itself', async () => {
+    mount(port({ state: 'inactive' }));
+    const pick = await screen.findByRole('button', { name: 'Pick on page' });
+    fireEvent.click(pick);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    fireEvent.keyDown(cancel, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
+    });
+  });
 });

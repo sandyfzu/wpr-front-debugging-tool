@@ -20,6 +20,7 @@ import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { createLogger } from '../../lib/logger';
 import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
+import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
 import { createPageTools } from './page-tools';
@@ -29,9 +30,6 @@ import { createMessagingSessionPort, type SessionTransport } from './session/por
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
-
-/** The shadow host's tag name (feature-scoped, kebab-case). */
-const UI_NAME = 'wpr-fdt-exclusion-builder';
 
 /**
  * Events stopped at the shadow root, so the page never sees the overlay's
@@ -179,7 +177,7 @@ export default defineContentScript({
       isInvalid: () => ctx.isInvalid,
       createUi: (hooks) =>
         createShadowRootUi(ctx, {
-          name: UI_NAME,
+          name: OVERLAY_HOST_NAME,
           position: 'inline',
           // The documentElement, not the body: a page transform on <body>
           // must not become the overlay's containing block (the top layer

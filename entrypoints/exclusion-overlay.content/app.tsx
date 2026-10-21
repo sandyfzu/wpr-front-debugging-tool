@@ -755,7 +755,22 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       </For>
 
       <Show when={picking()}>
-        <div class="xo-pickbar" role="group" aria-label="Picking on the page">
+        <div
+          class="xo-pickbar"
+          role="group"
+          aria-label="Picking on the page"
+          // Keys typed with focus on the bar reach only the overlay (the
+          // page-key guard keeps them from the window): handle them here.
+          on:keydown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              cancelPicking();
+            } else if (event.key === 'Tab') {
+              event.preventDefault();
+              cancelPick?.focus({ preventScroll: true });
+            }
+          }}
+        >
           <span class="xo-pickbar-text" aria-live="polite">
             {pickMessage() ??
               'Point at an image or a lazily rendered section, then click. Scripts are listed in On this page.'}
