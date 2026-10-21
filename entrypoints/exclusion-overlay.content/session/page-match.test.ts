@@ -38,6 +38,7 @@ function facts(over: Partial<PageFacts> = {}): PageFacts {
     href: PAGE,
     documentUrl: PAGE,
     navigationStart: START,
+    anchoredAtStart: true,
     responseEnd: RESPONSE_END,
     ...over
   };
@@ -177,4 +178,34 @@ describe('clock domains: wall-stamped records vs a page timeline that drifts', (
       expect(matchServedDocument(later, pageAt(500_000, drift))).toBe('cant-tell');
     });
   }
+});
+
+describe('an explicit open after a system sleep (the monotonic timeline stood still)', () => {
+  const LOADED = 1_800_000_000_000;
+  const SLEEP = 3_600_000;
+  /** The page as the overlay reads it an hour of sleep after its load (performance.now() at 1.5 s). */
+  const readAfterSleep = (recorded: number | null): PageFacts => {
+    const performance = {
+      now: () => 1_500,
+      getEntriesByType: () => [{ name: PAGE, responseEnd: 120 } as never]
+    };
+    return readPageFacts(
+      { location: { href: PAGE }, performance },
+      () => LOADED + SLEEP + 1_500,
+      recorded
+    );
+  };
+  const own = { ...served(PAGE), receivedAt: LOADED + 60 };
+
+  it('keeps "Applied" with the document_start anchor', () => {
+    expect(matchServedDocument(own, readAfterSleep(LOADED))).toBe('this-page');
+  });
+
+  it('without it, reads "can’t verify" — never "not intercepted" from timing alone', () => {
+    const facts = readAfterSleep(null);
+    expect(facts.anchoredAtStart).toBe(false);
+    expect(matchServedDocument(own, facts)).toBe('cant-tell');
+    // A different document's record still says so (no clock involved).
+    expect(matchServedDocument(served('https://example.com/other'), facts)).toBe('other-page');
+  });
 });

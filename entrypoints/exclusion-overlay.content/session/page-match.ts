@@ -39,6 +39,13 @@ export interface PageFacts {
    */
   readonly navigationStart: number;
   /**
+   * Whether {@link navigationStart} was taken at `document_start` (no sleep
+   * can have shifted it). Otherwise it was read later (a page loaded before
+   * the extension started): a sleep since the load would have moved it
+   * later, so a record that only looks too old proves nothing.
+   */
+  readonly anchoredAtStart?: boolean;
+  /**
    * When this document's response ended, in ms after {@link navigationStart}
    * (the navigation timing entry's `responseEnd`); `null` while unknown.
    * Its own record is stamped while its response was held, so it falls
@@ -110,5 +117,7 @@ export function matchServedDocument(
     const lateBy = served.receivedAt - (page.navigationStart + page.responseEnd);
     return lateBy <= RECORD_SAME_LOAD_SKEW_MS ? 'this-page' : 'cant-tell';
   }
-  return age > RECORD_STALE_MS && page.restored !== true ? 'other-page' : 'cant-tell';
+  return age > RECORD_STALE_MS && page.restored !== true && page.anchoredAtStart === true
+    ? 'other-page'
+    : 'cant-tell';
 }

@@ -280,4 +280,11 @@ describe('readPageFacts (wall-anchored navigation start)', () => {
     expect(facts.navigationStart).toBe(1_800_000_000_000 - 1_500);
     expect(facts.responseEnd).toBe(120);
   });
+
+  it('prefers the document_start anchor when one was recorded', () => {
+    const facts = readPageFacts(source(1_500, 120), () => 1_800_000_000_000, 1_700_000_000_000);
+    expect(facts.navigationStart).toBe(1_700_000_000_000);
+    expect(facts.anchoredAtStart).toBe(true);
+    expect(readPageFacts(source(1_500, 120), () => 1).anchoredAtStart).toBe(false);
+  });
 });

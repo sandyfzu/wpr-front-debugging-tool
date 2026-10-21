@@ -116,6 +116,8 @@ export interface PageToolsDeps {
   readonly later: (run: () => void) => void;
   /** Wall-clock epoch ms (the session records' clock); defaults to `Date.now`. */
   readonly wallNow?: () => number;
+  /** The navigation's wall start taken at `document_start`, or null (none recorded). */
+  readonly navigationAnchor?: () => number | null;
 }
 
 /** The part of the page's window the facts are read from. */
@@ -134,7 +136,11 @@ export interface FactsSource {
  * @param source The window (location + performance).
  * @param wallNow Wall-clock epoch ms.
  */
-export function readPageFacts(source: FactsSource, wallNow: () => number): PageFacts {
+export function readPageFacts(
+  source: FactsSource,
+  wallNow: () => number,
+  recorded: number | null = null
+): PageFacts {
   const navigation = source.performance.getEntriesByType('navigation')[0];
   const timing = navigation as PerformanceNavigationTiming | undefined;
   // Read in one instant: the two clocks' difference is the anchor.
@@ -143,7 +149,9 @@ export function readPageFacts(source: FactsSource, wallNow: () => number): PageF
   return {
     href: source.location.href,
     documentUrl: navigation?.name ?? null,
-    navigationStart: wall - sinceStart,
+    // The document_start reading when there is one (no sleep moved it).
+    navigationStart: recorded ?? wall - sinceStart,
+    anchoredAtStart: recorded !== null,
     // 0 until the response ended (an overlay mounts after it): unknown then.
     responseEnd: timing !== undefined && timing.responseEnd > 0 ? timing.responseEnd : null
   };
@@ -197,15 +205,15 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   const keyOf = createElementKeys();
   const wallNow = deps.wallNow ?? (() => Date.now());
   /**
-   * The navigation start anchored at the first read (the mount, right after
-   * the load for a re-open) and kept for the document: a later re-read
-   * (SPA move, back/forward restore) after a system sleep would shift it by
-   * the sleep (the monotonic timeline may not tick then). Residual: a sleep
-   * between the load and an explicit open's first read shifts it too.
+   * The navigation start: the `document_start` reading when the isolated
+   * script recorded one, else anchored at the first read and kept for the
+   * document (a later re-read after a system sleep would shift it by the
+   * sleep — the monotonic timeline may not tick then; the page match then
+   * never reads a record as too old to be this page's).
    */
   let anchor: number | null = null;
   const readFacts = (): PageFacts => {
-    const facts = readPageFacts(win, wallNow);
+    const facts = readPageFacts(win, wallNow, deps.navigationAnchor?.() ?? null);
     anchor ??= facts.navigationStart;
     return { ...facts, navigationStart: anchor };
   };

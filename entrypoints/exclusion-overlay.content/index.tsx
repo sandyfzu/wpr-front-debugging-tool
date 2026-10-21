@@ -29,6 +29,7 @@ import { mountOverlay } from './mount-overlay';
 import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
+import { readNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
 import {
   claimedPresentation,
   holdStartingOverlay,
@@ -126,7 +127,9 @@ function renderOverlay(
       isInvalid: () => ctx.isInvalid,
       later: (run) => {
         ctx.setTimeout(run, 0);
-      }
+      },
+      // Recorded at document_start by the isolated script (same world).
+      navigationAnchor: () => readNavigationAnchor(ISOLATED_WORLD)
     });
     const controller = createOverlayController({
       port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
