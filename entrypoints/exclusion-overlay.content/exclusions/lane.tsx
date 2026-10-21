@@ -6,11 +6,15 @@
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
  * between rows, a multi-line paste splits into rows.
  */
-import { createEffect, createMemo, createSignal, on, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
-import { VirtualList, type VirtualScrollRequest } from '../../../components/ui/virtual-list';
+import {
+  VirtualList,
+  type VirtualizerFactory,
+  type VirtualScrollRequest
+} from '../../../components/ui/virtual-list';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { LANE_COPY } from '../copy';
@@ -21,8 +25,14 @@ import { laneFeature, type DraftRow, type LaneKey } from './draft';
 /** Seed row height (px) before measurement: one input line plus padding. */
 const ROW_ESTIMATE_PX = 37;
 
-/** Frames a focus request may wait for its row to render (scrolled into the window first). */
-const FOCUS_FRAMES = 3;
+/**
+ * Frames a focus request may wait for its row to render (scrolled into the
+ * window first; a far jump re-measures for a few frames).
+ */
+const FOCUS_FRAMES = 12;
+
+/** Rows a lane shows without its own scroller (one page scroller holds them). */
+const INLINE_ROWS = 8;
 
 /** Props of {@link Lane}. */
 export interface LaneProps {
@@ -30,12 +40,14 @@ export interface LaneProps {
   readonly controller: OverlayController;
   /** The rewritten page's report for this lane (undefined when not applied here). */
   readonly report: TransformReport | undefined;
-  /** Elements on the page this lane can act on (from the page scan). */
-  readonly pageCount: number;
+  /** Elements on the page this lane can act on (null until the page scan finished). */
+  readonly pageCount: number | null;
   /** One animation-frame request (context-owned). */
   readonly requestFrame: (run: () => void) => void;
   /** Whether controls are locked (an action is in flight). */
   readonly locked: boolean;
+  /** The virtualizer seam (tests). */
+  readonly createVirtualizer?: VirtualizerFactory | undefined;
 }
 
 /** The lane's count line, e.g. "3 of 9 delayed scripts restored". */
@@ -66,15 +78,20 @@ export function Lane(props: LaneProps): JSX.Element {
   let root: HTMLElement | undefined;
 
   /** Focus a row's input once it is rendered (scrolling it into the window first). */
+  /** The row a focus move is heading to (arrow presses accumulate on it, never on a stale focus). */
+  let focusTarget: string | null = null;
   const focusRow = (id: string): void => {
     const index = rows().findIndex((row) => row.id === id);
     if (index === -1) return;
+    focusTarget = id;
     setScrollTo({ index });
     let frames = 0;
     const attempt = (): void => {
+      if (focusTarget !== id) return;
       const input = root?.querySelector<HTMLInputElement>(`[data-row-id="${id}"] input`);
       if (input) {
         input.focus({ preventScroll: false });
+        focusTarget = null;
         return;
       }
       frames += 1;
@@ -98,26 +115,33 @@ export function Lane(props: LaneProps): JSX.Element {
   /** Arrow-key move to the neighbor row. */
   const moveFocus = (id: string, step: -1 | 1): void => {
     const list = rows();
-    const index = list.findIndex((row) => row.id === id);
+    const index = list.findIndex((row) => row.id === (focusTarget ?? id));
     const target = list[index + step];
     if (target !== undefined) focusRow(target.id);
   };
 
   const onRowKeyDown = (row: DraftRow, event: KeyboardEvent): void => {
     if (event.isComposing) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      moveFocus(row.id, event.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (props.locked) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       props.controller.insertRows(props.lane, [''], row.id);
     } else if (event.key === 'Backspace' && row.text === '' && rows().length > 1) {
       event.preventDefault();
       props.controller.removeRow(props.lane, row.id);
-    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      moveFocus(row.id, event.key === 'ArrowDown' ? 1 : -1);
     }
   };
 
   const onRowPaste = (row: DraftRow, event: ClipboardEvent): void => {
+    if (props.locked) {
+      event.preventDefault();
+      return;
+    }
     const text = event.clipboardData?.getData('text/plain') ?? '';
     if (!/\r?\n/.test(text.trim())) return;
     event.preventDefault();
@@ -145,8 +169,8 @@ export function Lane(props: LaneProps): JSX.Element {
               role="switch"
               class="xo-switch"
               aria-checked={disabled()}
-              aria-label={`Disable ${copy().label} on this page`}
-              disabled={props.locked}
+              aria-label={`Disable feature: ${copy().label} on this page`}
+              aria-disabled={props.locked ? 'true' : undefined}
               onClick={() => {
                 props.controller.setDisable(key(), !disabled());
               }}
@@ -168,7 +192,7 @@ export function Lane(props: LaneProps): JSX.Element {
         <p class="xo-lane-note">{copy().absent}</p>
       </Show>
       <Show when={rows().length > 0}>
-        <div class="xo-rows">
+        <div class="xo-rows" data-scroll={rows().length > INLINE_ROWS ? 'own' : undefined}>
           <VirtualList
             scrollerRole="list"
             aria-label={`${copy().label} rows`}
@@ -177,6 +201,7 @@ export function Lane(props: LaneProps): JSX.Element {
             getItemKey={(index) => rows()[index]?.id ?? `missing-${String(index)}`}
             overscan={8}
             scrollTo={scrollTo}
+            createVirtualizer={props.createVirtualizer}
             class="xo-scroller"
           >
             {(item) => (
@@ -191,6 +216,7 @@ export function Lane(props: LaneProps): JSX.Element {
                     total={rows().length}
                     controller={props.controller}
                     report={props.report}
+                    showMatches={props.report !== undefined && !props.report.featureWide}
                     locked={props.locked}
                     onKeyDown={(event) => {
                       onRowKeyDown(row(), event);
@@ -210,7 +236,7 @@ export function Lane(props: LaneProps): JSX.Element {
           type="button"
           class="xo-button"
           data-variant="ghost"
-          disabled={full() || props.locked}
+          aria-disabled={full() || props.locked ? 'true' : undefined}
           onClick={() => {
             props.controller.insertRows(props.lane, [''], null);
           }}
@@ -228,6 +254,24 @@ export function Lane(props: LaneProps): JSX.Element {
   );
 }
 
+/**
+ * A reason's text with its backtick-quoted parts (patterns) rendered as
+ * code rather than as raw backticks.
+ *
+ * @param text The engine's reason.
+ */
+function withCode(text: string): JSX.Element {
+  return (
+    <For each={text.split('`')}>
+      {(part, index) => (
+        <Show when={index() % 2 === 1} fallback={part}>
+          <code class="xo-code">{part}</code>
+        </Show>
+      )}
+    </For>
+  );
+}
+
 /** A row's match badge words. */
 function matchLabel(count: number): string {
   if (count === 0) return 'No match';
@@ -242,6 +286,8 @@ interface LaneRowProps {
   readonly total: number;
   readonly controller: OverlayController;
   readonly report: TransformReport | undefined;
+  /** The lane has match counts (keeps the badge column aligned on every row). */
+  readonly showMatches: boolean;
   readonly locked: boolean;
   readonly onKeyDown: (event: KeyboardEvent) => void;
   readonly onPaste: (event: ClipboardEvent) => void;
@@ -275,6 +321,8 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           autocomplete="off"
           maxLength={EXCLUSION_SET_LIMITS.rowChars}
           value={props.row.text}
+          // The full row, for rows wider than the input.
+          title={props.row.text.length > 40 ? props.row.text : undefined}
           placeholder={LANE_COPY[props.lane].placeholder}
           aria-label={label()}
           aria-invalid={problem() !== null}
@@ -283,9 +331,8 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           onInput={(event) => {
             props.controller.editRow(props.lane, props.row.id, event.currentTarget.value);
           }}
-          // Native (non-delegated) listener: key events are stopped at the
-          // shadow root so they never reach the page, which also keeps them
-          // from Solid's document-level delegation.
+          // Native listener: runs at the input, before the overlay's own
+          // Escape handling further up.
           on:keydown={(event) => {
             props.onKeyDown(event);
           }}
@@ -293,10 +340,15 @@ function LaneRow(props: LaneRowProps): JSX.Element {
             props.onPaste(event);
           }}
         />
-        <Show when={matches() !== null}>
-          <span class="xo-match" data-tone={(matches() ?? 0) > 0 ? 'ok' : 'warn'}>
-            {matchLabel(matches() ?? 0)}
-          </span>
+        <Show when={props.showMatches}>
+          <Show
+            when={matches() !== null}
+            fallback={<span class="xo-match" data-tone="none" aria-hidden="true" />}
+          >
+            <span class="xo-match" data-tone={(matches() ?? 0) > 0 ? 'ok' : 'warn'}>
+              {matchLabel(matches() ?? 0)}
+            </span>
+          </Show>
         </Show>
         <button
           type="button"
@@ -304,7 +356,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           data-size="small"
           aria-label={`Remove ${label()}`}
           title="Remove row"
-          disabled={props.locked}
+          aria-disabled={props.locked ? 'true' : undefined}
           onClick={() => {
             props.controller.removeRow(props.lane, props.row.id);
           }}
@@ -316,7 +368,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
         {(reason) => (
           <p class="xo-row-error" id={errorId()}>
             <CircleAlert size={12} aria-hidden="true" />
-            <span>{reason()}</span>
+            <span>{withCode(reason())}</span>
           </p>
         )}
       </Show>

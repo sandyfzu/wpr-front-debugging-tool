@@ -23,6 +23,8 @@ import { mountShadowUi } from '../../components/injected-ui/mount';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
 import { createPageTools } from './page-tools';
+import { mountOverlay } from './mount-overlay';
+import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
 import './styles.css';
 
@@ -45,9 +47,13 @@ const ISOLATED_EVENTS = [
   'wheel',
   'touchcancel',
   'pointercancel',
+  'auxclick',
   'paste',
   'copy',
-  'cut'
+  'cut',
+  'compositionstart',
+  'compositionupdate',
+  'compositionend'
 ];
 
 /** The extension messenger as the session port's transport. */
@@ -61,96 +67,98 @@ const MESSAGING_TRANSPORT: SessionTransport = {
 };
 
 /**
- * Mount the overlay into this page.
+ * Render the overlay's view into the mounted shadow root.
  *
- * @param ctx The content script's context.
+ * @param ctx The content script's context (listeners, timers, abort on close).
+ * @param container The UI container inside the shadow root.
+ * @param shadow The shadow root (Solid delegates events there).
+ * @param host The shadow host (the overlay's own input passes the picker).
+ * @returns The view's disposer.
  */
-async function mountOverlay(ctx: ContentScriptContext): Promise<void> {
-  let disposeView: (() => void) | null = null;
-  const ui = await createShadowRootUi(ctx, {
-    name: UI_NAME,
-    position: 'inline',
-    // The documentElement, not the body: a page transform on <body> must
-    // not become the overlay's containing block (the top layer escapes it
-    // anyway; this covers browsers without popovers).
-    anchor: 'html',
-    append: 'last',
-    isolateEvents: ISOLATED_EVENTS,
-    onMount: (container, shadow, host) => {
-      // Isolated events never reach the document, where Solid delegates
-      // by default: delegate them at the shadow root instead.
-      delegateEvents([...DelegatedEvents], shadow as unknown as Document);
-      void mountShadowUi(container, () => {
-        const page = createPageTools({
-          doc: document,
-          win: window,
-          host,
-          listen: (target, type, handler) => {
-            ctx.addEventListener(target, type as keyof WindowEventMap, handler);
-          },
-          isInvalid: () => ctx.isInvalid
-        });
-        const controller = createOverlayController({
-          port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
-          pageFacts: page.pageFacts,
-          now: () => Date.now(),
-          schedule: (run, ms) => {
-            const id = ctx.setTimeout(run, ms);
-            return () => {
-              clearTimeout(id);
-            };
-          },
-          reload: () => {
-            window.location.reload();
-          },
-          log
-        });
-        onMount(() => {
-          controller.start();
-        });
-        onCleanup(() => {
-          controller.dispose();
-          page.dispose();
-        });
-        return (
-          <OverlayApp
-            controller={controller}
-            page={page}
-            origin={window.location.origin}
-            requestFrame={(run) => {
-              ctx.requestAnimationFrame(run);
-            }}
-            listen={(target, type, handler) => {
-              ctx.addEventListener(target, type as keyof WindowEventMap, handler, {
-                passive: true
-              });
-            }}
-            isInvalid={() => ctx.isInvalid}
-            scrollPage={(dx, dy) => {
-              window.scrollBy(dx, dy);
-            }}
-            onClose={() => {
-              ui.remove();
-            }}
-          />
-        );
-      })
-        .then((dispose) => {
-          disposeView = dispose;
-        })
-        .catch((cause: unknown) => {
-          log.error(
-            'Mounting the exclusion builder failed',
-            cause instanceof Error ? cause.message : cause
-          );
-        });
-    },
-    onRemove: () => {
-      disposeView?.();
-      disposeView = null;
-    }
+function renderOverlay(
+  ctx: ContentScriptContext,
+  container: HTMLElement,
+  shadow: ShadowRoot,
+  host: HTMLElement
+): Promise<() => void> {
+  // Isolated events never reach the document, where Solid delegates by
+  // default: delegate them at the shadow root instead.
+  delegateEvents([...DelegatedEvents], shadow as unknown as Document);
+  const listen = (
+    target: EventTarget,
+    type: string,
+    handler: (event: Event) => void,
+    passive = false
+  ): void => {
+    ctx.addEventListener(target, type as keyof WindowEventMap, handler, { passive, capture: true });
+  };
+  return mountShadowUi(container, () => {
+    const page = createPageTools({
+      doc: document,
+      win: window,
+      host,
+      listen,
+      isInvalid: () => ctx.isInvalid,
+      later: (run) => {
+        ctx.setTimeout(run, 0);
+      }
+    });
+    const controller = createOverlayController({
+      port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
+      pageFacts: page.pageFacts,
+      now: () => Date.now(),
+      schedule: (run, ms) => {
+        const id = ctx.setTimeout(run, ms);
+        return () => {
+          clearTimeout(id);
+        };
+      },
+      reload: () => {
+        window.location.reload();
+      },
+      log
+    });
+    onMount(() => {
+      controller.start();
+    });
+    onCleanup(() => {
+      controller.dispose();
+      page.dispose();
+    });
+    const requestFrame = (run: () => void): void => {
+      ctx.requestAnimationFrame(run);
+    };
+    return (
+      <OverlayApp
+        controller={controller}
+        page={page}
+        origin={window.location.origin}
+        requestFrame={requestFrame}
+        listen={(target, type, handler) => {
+          listen(target, type, handler, true);
+        }}
+        isInvalid={() => ctx.isInvalid}
+        startPicking={(events) =>
+          startPicking(
+            {
+              win: window,
+              host,
+              resolve: (x, y) => page.pointPick(x, y),
+              pointed: (x, y) => document.elementFromPoint(x, y),
+              requestFrame,
+              signal: ctx.signal
+            },
+            events
+          )
+        }
+        // Close ends this instance's context: WXT removes the UI and every
+        // listener, timer and observer registered through it goes too.
+        onClose={() => {
+          ctx.abort('Exclusion builder closed');
+        }}
+      />
+    );
   });
-  ui.mount();
 }
 
 export default defineContentScript({
@@ -161,11 +169,28 @@ export default defineContentScript({
   main(ctx: ContentScriptContext) {
     // The builder edits the page's own document: never inside a frame.
     if (window.top !== window) return;
-    mountOverlay(ctx).catch((cause: unknown) => {
+    const reportFailure = (cause: unknown): void => {
       log.error(
         'Opening the exclusion builder failed',
         cause instanceof Error ? cause.message : cause
       );
-    });
+    };
+    mountOverlay({
+      isInvalid: () => ctx.isInvalid,
+      createUi: (hooks) =>
+        createShadowRootUi(ctx, {
+          name: UI_NAME,
+          position: 'inline',
+          // The documentElement, not the body: a page transform on <body>
+          // must not become the overlay's containing block (the top layer
+          // escapes it anyway; this covers browsers without popovers).
+          anchor: 'html',
+          append: 'last',
+          isolateEvents: ISOLATED_EVENTS,
+          ...hooks
+        }),
+      render: (container, shadow, host) => renderOverlay(ctx, container, shadow, host),
+      onError: reportFailure
+    }).catch(reportFailure);
   }
 });

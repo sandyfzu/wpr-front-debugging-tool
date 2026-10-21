@@ -5,20 +5,35 @@
  * writes to the page; every observer and listener is released by `dispose`
  * (and the listeners also ride the content-script context).
  */
-import { createSignal, type Accessor } from 'solid-js';
+import { batch, createSignal, type Accessor } from 'solid-js';
 import type { PageFacts } from './session/page-match';
-import { resolvePointerPick, type PickCandidate } from './exclusions/pick-target';
+import { resolvePointerPick, type PickCandidate, type PickContext } from './exclusions/pick-target';
 import {
   createElementKeys,
   elementSnapshot,
   pickContextOf,
-  scanPage,
+  scanPageInSlices,
   type PageCandidate
 } from './exclusions/page-scan';
 import { debounce } from '../../utils/debounce';
 
 /** Quiet time after DOM churn before the page is rescanned. */
 export const RESCAN_DEBOUNCE_MS = 500;
+
+/** Longest one scan slice runs before yielding the main thread. */
+export const SCAN_SLICE_MS = 8;
+
+/** Longest a rescan may wait under churn that never goes quiet (carousels, tickers). */
+export const RESCAN_MAX_WAIT_MS = 2_000;
+
+/** Embedded documents: pointer input over them never reaches this document. */
+const FRAME_SELECTOR = 'iframe, frame, embed, object';
+
+/** Frames guarded while picking at most. */
+const MAX_FRAMES = 50;
+
+/** Page layers under a point a pointer pick looks through (a caption or link over an image). */
+const POINTER_LAYERS = 8;
 
 /** Ancestors a pointer pick climbs at most (deep builder trees stay bounded). */
 const POINTER_CHAIN_DEPTH = 24;
@@ -58,11 +73,26 @@ export interface PageTools {
   /** This page's address facts (reactive to SPA address changes). */
   readonly pageFacts: Accessor<PageFacts>;
   /** What a pointer pick at a viewport point targets, if anything. */
-  pointPick(x: number, y: number): PointedPick | null;
+  readonly pointPick: (x: number, y: number) => PointedPick | null;
+  /** Whether the first scan has finished (absence is only true after it). */
+  readonly scanned: Accessor<boolean>;
+  /** Whether the last scan stopped at the scan limit (the list is partial). */
+  readonly candidatesCapped: Accessor<boolean>;
+  /**
+   * Whether the page shows a modal dialog: everything outside it — the
+   * overlay included — is inert until it closes.
+   */
+  readonly pageModal: Accessor<boolean>;
+  /** Bumps each time the page opens something in its own top layer (a popover, a dialog). */
+  readonly pageTopLayerOpened: Accessor<number>;
+  /** The CSS zoom the page applies to the overlay's host (1 = none). */
+  readonly zoom: Accessor<number>;
+  /** The page's embedded frames (their content is another document: not pickable). */
+  readonly frames: () => readonly Element[];
   /** Rescan now (e.g. when the candidate list opens). */
-  rescan(): void;
+  readonly rescan: () => void;
   /** Disconnect the observer and cancel pending work. */
-  dispose(): void;
+  readonly dispose: () => void;
 }
 
 /** The page seams the tools need. */
@@ -71,8 +101,8 @@ export interface PageToolsDeps {
   readonly win: Window;
   /** The overlay's own shadow host (never picked). */
   readonly host: Element;
-  /** Listen on a page target, released with the context. */
-  readonly listen: (target: EventTarget, type: string, handler: () => void) => void;
+  /** Listen on a page target (capture phase), released with the context. */
+  readonly listen: (target: EventTarget, type: string, handler: (event: Event) => void) => void;
   /**
    * Whether the extension context is gone (reading it also tears the
    * overlay down when it is): checked on page activity, so a reloaded
@@ -80,6 +110,33 @@ export interface PageToolsDeps {
    * longer serve.
    */
   readonly isInvalid: () => boolean;
+  /** Continue work in a later task (scan slices). */
+  readonly later: (run: () => void) => void;
+}
+
+/**
+ * Whether a document shows a modal dialog (`:modal`; an engine without the
+ * selector reads as none).
+ *
+ * @param doc The document.
+ */
+export function hasModal(doc: Document): boolean {
+  try {
+    return doc.querySelector(':modal') !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The effective CSS zoom on an element (`currentCSSZoom`; 1 where the
+ * engine does not report it).
+ *
+ * @param element The element.
+ */
+export function cssZoom(element: Element): number {
+  const zoom = (element as Element & { currentCSSZoom?: unknown }).currentCSSZoom;
+  return typeof zoom === 'number' && Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
 }
 
 /**
@@ -112,12 +169,57 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
     };
   };
   const [pageFacts, setPageFacts] = createSignal<PageFacts>(readFacts());
-  const scan = (): readonly PageCandidate[] => scanPage(doc, win.location.href, keyOf);
-  const [candidates, setCandidates] = createSignal<readonly PageCandidate[]>(scan());
+  /** The last scan's pick context (pointer picks read it every frame). */
+  let context: PickContext = pickContextOf(doc, win.location.href);
+  const [candidates, setCandidates] = createSignal<readonly PageCandidate[]>([]);
+  const [candidatesCapped, setCandidatesCapped] = createSignal(false);
+  const [scanned, setScanned] = createSignal(false);
+  let cancelScan: (() => void) | null = null;
+  /** Scan in slices (a big page never blocks for one long task); a newer scan cancels an older one. */
   const rescan = (): void => {
-    setCandidates(scan());
+    cancelScan?.();
+    cancelScan = scanPageInSlices(
+      doc,
+      win.location.href,
+      keyOf,
+      { now: () => win.performance.now(), later: deps.later, sliceMs: SCAN_SLICE_MS },
+      (scan) => {
+        cancelScan = null;
+        context = scan.context;
+        batch(() => {
+          setCandidates(scan.candidates);
+          setCandidatesCapped(scan.capped);
+          setScanned(true);
+        });
+      }
+    );
   };
-  const rescanSoon = debounce(rescan, RESCAN_DEBOUNCE_MS);
+  const rescanSoon = debounce(rescan, RESCAN_DEBOUNCE_MS, { maxWaitMs: RESCAN_MAX_WAIT_MS });
+  rescan();
+  const [pageModal, setPageModal] = createSignal(hasModal(doc));
+  const [pageTopLayerOpened, setPageTopLayerOpened] = createSignal(0);
+  const [zoom, setZoom] = createSignal(cssZoom(host));
+
+  /**
+   * Resolve one pointed layer: its nearest pickable ancestor-or-self.
+   *
+   * @param pointed An element under the point.
+   */
+  const resolveLayer = (pointed: Element): PointedPick | null => {
+    const chain: Element[] = [];
+    for (
+      let element: Element | null = pointed;
+      element !== null && element !== doc.body && chain.length < POINTER_CHAIN_DEPTH;
+      element = element.parentElement
+    ) {
+      chain.push(element);
+    }
+    const resolved = resolvePointerPick(chain.map(elementSnapshot), context);
+    const element = resolved === null ? undefined : chain[resolved.depth];
+    return resolved === null || element === undefined
+      ? null
+      : { candidate: resolved.candidate, element };
+  };
 
   const observer = new MutationObserver(() => {
     if (deps.isInvalid()) {
@@ -139,6 +241,18 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   deps.listen(doc, 'visibilitychange', () => {
     deps.isInvalid();
   });
+  // Dialogs and popovers announce opening and closing with `toggle` (it
+  // does not bubble: listened in the capture phase).
+  deps.listen(doc, 'toggle', (event) => {
+    if (event.target === host) return;
+    setPageModal(hasModal(doc));
+    if ((event as Event & { newState?: unknown }).newState === 'open') {
+      setPageTopLayerOpened((count) => count + 1);
+    }
+  });
+  deps.listen(win, 'resize', () => {
+    setZoom(cssZoom(host));
+  });
   deps.listen(win, 'wxt:locationchange', () => {
     setPageFacts(readFacts());
     rescanSoon();
@@ -146,31 +260,33 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
 
   return {
     candidates,
+    candidatesCapped,
+    scanned,
+    pageModal,
+    pageTopLayerOpened,
+    zoom,
     pageFacts,
     pointPick: (x, y) => {
-      const pointed = doc.elementsFromPoint(x, y).find((element) => element !== host);
-      if (pointed === undefined) return null;
-      const chain: Element[] = [];
-      for (
-        let element: Element | null = pointed;
-        element !== null && element !== doc.body && chain.length < POINTER_CHAIN_DEPTH;
-        element = element.parentElement
-      ) {
-        chain.push(element);
+      // Every layer under the point, topmost first: an overlay caption or a
+      // link wrapper above an image must not hide the image.
+      const layers = doc
+        .elementsFromPoint(x, y)
+        .filter(
+          (element) => element !== host && element !== doc.documentElement && element !== doc.body
+        )
+        .slice(0, POINTER_LAYERS);
+      for (const layer of layers) {
+        const pick = resolveLayer(layer);
+        if (pick !== null) return pick;
       }
-      const resolved = resolvePointerPick(
-        chain.map(elementSnapshot),
-        pickContextOf(doc, win.location.href)
-      );
-      const element = resolved === null ? undefined : chain[resolved.depth];
-      return resolved === null || element === undefined
-        ? null
-        : { candidate: resolved.candidate, element };
+      return null;
     },
+    frames: () => Array.from(doc.querySelectorAll(FRAME_SELECTOR)).slice(0, MAX_FRAMES),
     rescan,
     dispose: () => {
       observer.disconnect();
       rescanSoon.cancel();
+      cancelScan?.();
     }
   };
 }

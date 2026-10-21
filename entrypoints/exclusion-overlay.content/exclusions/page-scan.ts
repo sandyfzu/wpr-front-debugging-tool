@@ -107,12 +107,81 @@ export function scanPage(
   const count = Math.min(elements.length, PAGE_SCAN_LIMIT);
   for (let index = 0; index < count; index += 1) {
     const element = elements[index];
-    if (element === undefined) continue;
-    for (const candidate of candidatesFor(elementSnapshot(element), context)) {
-      found.push({ ...candidate, key: `${keyOf(element)}:${candidate.lane}`, element });
-    }
+    if (element !== undefined) classifyInto(found, element, context, keyOf);
   }
   return found;
+}
+
+/** Append one element's candidates. */
+function classifyInto(
+  found: PageCandidate[],
+  element: Element,
+  context: PickContext,
+  keyOf: (element: Element) => string
+): void {
+  for (const candidate of candidatesFor(elementSnapshot(element), context)) {
+    found.push({ ...candidate, key: `${keyOf(element)}:${candidate.lane}`, element });
+  }
+}
+
+/** A finished sliced scan. */
+export interface SlicedScan {
+  readonly candidates: readonly PageCandidate[];
+  readonly context: PickContext;
+  /** More pickable elements exist than the scan limit (the list is partial). */
+  readonly capped: boolean;
+}
+
+/** The clock and task seams of a sliced scan. */
+export interface SliceDeps {
+  /** A monotonic ms clock. */
+  readonly now: () => number;
+  /** Continue in a later task. */
+  readonly later: (run: () => void) => void;
+  /** Longest one slice may run. */
+  readonly sliceMs: number;
+}
+
+/**
+ * Scan like {@link scanPage}, but in slices of at most `sliceMs` each, one
+ * per task — a big page's scan never becomes one long task.
+ *
+ * @param root Where to look.
+ * @param pageUrl The page's URL.
+ * @param keyOf Stable per-element key issuer.
+ * @param deps Clock and task seams.
+ * @param done Receives the finished scan (never called once cancelled).
+ * @returns The cancel.
+ */
+export function scanPageInSlices(
+  root: ParentNode,
+  pageUrl: string,
+  keyOf: (element: Element) => string,
+  deps: SliceDeps,
+  done: (scan: SlicedScan) => void
+): () => void {
+  let cancelled = false;
+  const context = pickContextOf(root, pageUrl);
+  const elements = root.querySelectorAll(PICKABLE_SELECTOR);
+  const total = Math.min(elements.length, PAGE_SCAN_LIMIT);
+  const found: PageCandidate[] = [];
+  let index = 0;
+  const step = (): void => {
+    if (cancelled) return;
+    const start = deps.now();
+    do {
+      const element = elements[index];
+      if (element !== undefined) classifyInto(found, element, context, keyOf);
+      index += 1;
+    } while (index < total && deps.now() - start < deps.sliceMs);
+    if (index < total) deps.later(step);
+    else done({ candidates: found, context, capped: elements.length > PAGE_SCAN_LIMIT });
+  };
+  if (total === 0) done({ candidates: found, context, capped: false });
+  else step();
+  return () => {
+    cancelled = true;
+  };
 }
 
 /**

@@ -7,7 +7,7 @@
 import { createMemo, createSignal, For, Show, type JSX } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import Plus from 'lucide-solid/icons/plus';
-import { VirtualList } from '../../../components/ui/virtual-list';
+import { VirtualList, type VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { LANE_COPY } from '../copy';
 import type { PageCandidate } from './page-scan';
 import { LANE_ORDER, type Draft, type LaneKey } from './draft';
@@ -20,6 +20,8 @@ export interface CandidatesProps {
   readonly candidates: readonly PageCandidate[];
   readonly draft: Draft;
   readonly locked: boolean;
+  /** The virtualizer seam (tests). */
+  readonly createVirtualizer?: VirtualizerFactory | undefined;
   /** Add one candidate's row to its lane (or show the row when it is already there). */
   readonly onAdd: (candidate: PageCandidate, alreadyAdded: boolean) => void;
   /** The entry under the pointer or focus (null when none). */
@@ -94,7 +96,8 @@ export function Candidates(props: CandidatesProps): JSX.Element {
           estimateSize={() => ENTRY_ESTIMATE_PX}
           getItemKey={(index) => visible()[index]?.key ?? `missing-${String(index)}`}
           overscan={8}
-          class="xo-scroller"
+          createVirtualizer={props.createVirtualizer}
+          class={visible().length > 6 ? 'xo-scroller xo-scroller-own' : 'xo-scroller'}
         >
           {(item) => (
             <Show when={visible()[item.index]}>
@@ -121,10 +124,11 @@ export function Candidates(props: CandidatesProps): JSX.Element {
                     type="button"
                     class="xo-candidate-add"
                     data-added={added(candidate())}
-                    disabled={props.locked}
+                    aria-disabled={props.locked ? 'true' : undefined}
+                    // Names start with the visible words ("Add" / "Added").
                     aria-label={
                       added(candidate())
-                        ? `${candidate().subject} is in ${LANE_COPY[candidate().lane].label} — show its row`
+                        ? `Added: ${candidate().subject} is in ${LANE_COPY[candidate().lane].label} — show its row`
                         : `Add ${candidate().subject} to ${LANE_COPY[candidate().lane].label}`
                     }
                     onFocus={() => {
@@ -134,7 +138,7 @@ export function Candidates(props: CandidatesProps): JSX.Element {
                       props.onHover(null);
                     }}
                     onClick={() => {
-                      props.onAdd(candidate(), added(candidate()));
+                      if (!props.locked) props.onAdd(candidate(), added(candidate()));
                     }}
                   >
                     <Show

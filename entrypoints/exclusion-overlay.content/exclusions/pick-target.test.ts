@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../../lib/exclusion-builder/set';
 import { delayJsTransform } from '../../../lib/exclusion-builder/delay-js';
 import { deferJsTransform } from '../../../lib/exclusion-builder/defer-js';
@@ -12,7 +12,15 @@ import {
   type PickCandidate,
   type PickContext
 } from './pick-target';
-import { createElementKeys, elementSnapshot, pickContextOf, scanPage } from './page-scan';
+import {
+  createElementKeys,
+  elementSnapshot,
+  pickContextOf,
+  scanPage,
+  scanPageInSlices,
+  scriptHead,
+  type SlicedScan
+} from './page-scan';
 import { createRowValidator, type LaneKey } from './draft';
 import { parseExclusionSetPayload } from '../../../lib/messaging/exclusion-session';
 
@@ -295,5 +303,69 @@ describe('candidate rows target exactly their element (audit round 1)', () => {
     const [innerCandidate] = candidatesOf(html, '.e-con-inner');
     expect(innerCandidate?.row).toBe('e-con-inner');
     expect(innerCandidate && matchesServed(html, innerCandidate)).toBe(1);
+  });
+});
+
+describe('scanPageInSlices', () => {
+  /** A document with `count` lazy images. */
+  const docWith = (count: number): Document =>
+    new DOMParser().parseFromString(
+      `<!doctype html><body>${'<img data-lazy-src="/a.png">'.repeat(count)}</body>`,
+      'text/html'
+    );
+
+  it('yields between slices and finishes with the same result as one scan', () => {
+    const doc = docWith(10);
+    let clock = 0;
+    const later: (() => void)[] = [];
+    const done = vi.fn<(scan: SlicedScan) => void>();
+    scanPageInSlices(
+      doc,
+      PAGE,
+      createElementKeys(),
+      // Every element costs 5 ms: a 8 ms slice takes two.
+      { now: () => (clock += 5) - 5, later: (run) => later.push(run), sliceMs: 8 },
+      done
+    );
+    expect(done).not.toHaveBeenCalled();
+    expect(later).toHaveLength(1);
+    while (later.length > 0) later.shift()?.();
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(done.mock.calls[0]?.[0].candidates).toHaveLength(10);
+    expect(done.mock.calls[0]?.[0].capped).toBe(false);
+  });
+
+  it('stops when cancelled, and finishes at once on an empty page', () => {
+    const later: (() => void)[] = [];
+    const done = vi.fn();
+    let clock = 0;
+    const cancel = scanPageInSlices(
+      docWith(10),
+      PAGE,
+      createElementKeys(),
+      { now: () => (clock += 5) - 5, later: (run) => later.push(run), sliceMs: 8 },
+      done
+    );
+    cancel();
+    while (later.length > 0) later.shift()?.();
+    expect(done).not.toHaveBeenCalled();
+    const empty = vi.fn();
+    scanPageInSlices(
+      docWith(0),
+      PAGE,
+      createElementKeys(),
+      { now: () => 0, later: vi.fn(), sliceMs: 8 },
+      empty
+    );
+    expect(empty).toHaveBeenCalledWith(expect.objectContaining({ candidates: [], capped: false }));
+  });
+
+  it('reads a script head across text nodes without the rest', () => {
+    const script = document.createElement('script');
+    script.append(
+      document.createTextNode('a'.repeat(300)),
+      document.createTextNode('b'.repeat(300))
+    );
+    expect(scriptHead(script)).toBe(`${'a'.repeat(300)}${'b'.repeat(212)}`);
   });
 });

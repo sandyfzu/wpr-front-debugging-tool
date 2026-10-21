@@ -21,8 +21,10 @@
   /* Override the UA popover box: a transparent, full-viewport, inert frame. */
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  /* Stretch by the insets, not by viewport-width units: those include the
+   * page's scrollbar, which would put the panel's edge under it. */
+  width: auto;
+  height: auto;
   max-width: none;
   max-height: none;
   margin: 0;
@@ -76,10 +78,6 @@
   white-space: nowrap;
 }
 
-.xo-mono {
-  font-family: var(--font-mono);
-}
-
 /* ---- Panel ------------------------------------------------------------------ */
 
 .xo-panel {
@@ -88,7 +86,7 @@
   top: var(--xo-gutter);
   bottom: var(--xo-gutter);
   right: var(--xo-gutter);
-  width: min(432px, calc(100vw - 2 * var(--xo-gutter)));
+  width: min(432px, calc(100% - 2 * var(--xo-gutter)));
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -173,8 +171,8 @@
 .xo-title {
   align-self: flex-start;
   max-width: 100%;
-  font-size: 14px;
-  line-height: 18px;
+  font-size: 16px;
+  line-height: 20px;
   font-weight: 600;
   color: var(--fg-primary);
   white-space: nowrap;
@@ -271,8 +269,7 @@
 .xo-switch:focus-visible,
 .xo-pill:focus-visible,
 .xo-row-input:focus-visible,
-.xo-candidate-add:focus-visible,
-.xo-heading-target:focus-visible {
+.xo-candidate-add:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -306,8 +303,8 @@
 }
 
 .xo-button[data-variant='primary']:hover {
-  background: var(--accent-strong);
-  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
 }
 
 .xo-button[data-variant='ghost'] {
@@ -321,9 +318,8 @@
   color: var(--fg-primary);
 }
 
-.xo-button:disabled,
-.xo-icon-button:disabled,
-.xo-switch:disabled {
+/* Held controls stay focusable (aria-disabled), so focus never drops out. */
+.xo-layer [aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -363,13 +359,16 @@
   padding: 12px;
 }
 
-.xo-heading-target {
-  border-radius: 2px;
+/* The heading takes focus only programmatically (open, view returns): it is
+ * not a control, so it shows no ring. */
+.xo-title:focus {
+  outline: none;
 }
 
 /* ---- Banner (session state) --------------------------------------------------- */
 
 .xo-banner {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 2px 8px;
@@ -387,7 +386,6 @@
 }
 
 .xo-banner-glyph {
-  grid-row: span 2;
   padding-top: 1px;
 }
 
@@ -421,6 +419,19 @@
 }
 .xo-banner[data-tone='neutral'] .xo-banner-glyph {
   color: var(--fg-muted);
+}
+
+.xo-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 24px;
+}
+
+.xo-banner-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 
 .xo-banner-title {
@@ -462,9 +473,8 @@
   align-items: center;
 }
 
-.xo-toolbar-hint {
-  color: var(--fg-muted);
-  font-size: 11px;
+.xo-empty {
+  color: var(--fg-secondary);
 }
 
 .xo-candidates {
@@ -523,20 +533,22 @@
   overscroll-behavior: contain;
 }
 
-.xo-candidates .xo-scroller {
-  max-height: 224px;
+/* A list scrolls on its own only past a few rows; shorter lists ride the
+ * body's single scroller. */
+.xo-candidates .xo-scroller-own {
+  max-height: 232px;
 }
 
 .xo-candidate {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 0 8px;
+  min-height: 36px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--line-1);
 }
 
-.xo-candidate[data-hover='true'] {
+.xo-candidate:hover {
   background: var(--surface-3);
 }
 
@@ -658,7 +670,7 @@
   height: 14px;
   padding: 2px;
   border-radius: 999px;
-  border: 1px solid var(--line-2);
+  border: 1px solid var(--fg-muted);
   background: var(--surface-3);
 }
 
@@ -689,16 +701,12 @@
   font-size: 11px;
 }
 
-.xo-lane-note[data-tone='warn'] {
-  color: var(--status-warn);
-}
-
 .xo-rows {
   border-top: 1px solid var(--line-1);
 }
 
-.xo-rows .xo-scroller {
-  max-height: 264px;
+.xo-rows[data-scroll='own'] .xo-scroller {
+  max-height: 296px;
 }
 
 .xo-row {
@@ -722,7 +730,9 @@
   height: 26px;
   padding: 0 8px;
   border-radius: 5px;
-  border: 1px solid var(--line-2);
+  /* Component boundary at >= 3:1 (WCAG 1.4.11): the muted text token, the
+   * line tokens being decoration-strength. */
+  border: 1px solid var(--fg-muted);
   background: var(--surface-1);
   color: var(--fg-primary);
   font-family: var(--font-mono);
@@ -734,7 +744,7 @@
 }
 
 .xo-row-input:hover {
-  border-color: var(--line-3);
+  border-color: var(--fg-secondary);
 }
 
 .xo-row-input[aria-invalid='true'] {
@@ -742,6 +752,9 @@
 }
 
 .xo-match {
+  flex: none;
+  min-width: 68px;
+  justify-content: center;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -762,6 +775,14 @@
 .xo-match[data-tone='warn'] {
   color: var(--status-warn);
   background: var(--status-warn-soft);
+}
+
+.xo-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--status-error-soft);
 }
 
 .xo-row-error {
@@ -844,7 +865,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100% - 24px);
   min-height: 32px;
   padding: 0 12px 0 6px;
   border-radius: 999px;
@@ -881,13 +902,14 @@
 
 /* ---- Pick layer ----------------------------------------------------------------- */
 
-.xo-glass {
+.xo-frame-guard {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   pointer-events: auto;
-  cursor: crosshair;
-  background: transparent;
-  outline: none;
+  cursor: not-allowed;
+  border: 2px dashed var(--fg-muted);
+  border-radius: 3px;
 }
 
 .xo-pickbar {
@@ -898,7 +920,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100% - 24px);
   padding: 6px 6px 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--line-2);
@@ -949,7 +971,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: min(360px, calc(100vw - 16px));
+  max-width: min(360px, calc(100% - 16px));
   padding: 3px 8px;
   border-radius: 6px;
   background: var(--surface-1);

@@ -2,18 +2,44 @@ import { createSignal } from 'solid-js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
-import { activeRecord } from '../../lib/messaging/exclusion-session.fixtures';
+import type { ExclusionSet } from '../../lib/exclusion-builder/set';
+import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
-import type { PageTools } from './page-tools';
+import { createElementKeys, scanPage, type PageCandidate } from './exclusions/page-scan';
+import type { PageTools, PointedPick } from './page-tools';
+import type { PickerEvents } from './picker';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
+import type { VirtualizerFactory } from '../../components/ui/virtual-list';
+
+/**
+ * A virtualizer that renders every row (happy-dom lays nothing out, so the
+ * library's window would be empty).
+ */
+const everyRow: VirtualizerFactory = (options) => ({
+  getVirtualItems: () =>
+    Array.from({ length: options.count }, (_, index) => ({
+      key: options.getItemKey?.(index) ?? index,
+      index,
+      start: index * 37,
+      end: (index + 1) * 37,
+      size: 37,
+      lane: 0
+    })),
+  getTotalSize: () => options.count * 37,
+  measureElement: () => undefined,
+  scrollToIndex: () => undefined
+});
 
 const reply = <T,>(value: T): Promise<PortOutcome<T>> =>
   Promise.resolve({ kind: 'reply', reply: value });
 
-/** A port answering one status; `savedSet` may fail once. */
-function port(status: ExclusionSessionStatus, failFirstLoad = false): ExclusionSessionPort {
-  let failed = !failFirstLoad;
+/** A port answering one status and saved set; `savedSet` may fail once. */
+function port(
+  status: ExclusionSessionStatus,
+  options: { failFirstLoad?: boolean; saved?: ExclusionSet | null } = {}
+): ExclusionSessionPort {
+  let failed = options.failFirstLoad !== true;
   return {
     status: vi.fn(() => reply(status)),
     savedSet: vi.fn(() => {
@@ -21,7 +47,7 @@ function port(status: ExclusionSessionStatus, failFirstLoad = false): ExclusionS
         failed = true;
         return Promise.resolve({ kind: 'problem', problem: 'timeout' } as const);
       }
-      return reply({ set: null });
+      return reply({ set: options.saved ?? null });
     }),
     apply: vi.fn(() => reply({ outcome: 'applying' as const })),
     stop: vi.fn(() => reply<ExclusionSessionStatus>({ state: 'inactive' })),
@@ -30,15 +56,47 @@ function port(status: ExclusionSessionStatus, failFirstLoad = false): ExclusionS
   };
 }
 
-/** Page tools over an empty page. */
-function pageTools(): PageTools {
-  const [candidates] = createSignal([]);
+/** Candidates of a small WP Rocket-shaped page. */
+function pageCandidates(): readonly PageCandidate[] {
+  const doc = new DOMParser().parseFromString(
+    '<!doctype html><body><script type="rocketlazyloadscript" data-rocket-src="/wp-content/a.js"></script><img data-lazy-src="/wp-content/hero.jpg"></body>',
+    'text/html'
+  );
+  return scanPage(doc, 'https://example.com/', createElementKeys());
+}
+
+/** A page frame with a box (happy-dom lays nothing out). */
+const frame = document.createElement('iframe');
+document.body.append(frame);
+frame.getBoundingClientRect = () => ({ left: 10, top: 20, width: 300, height: 150 }) as DOMRect;
+
+/** Page tools with controllable signals. */
+function pageTools() {
+  const [candidates] = createSignal(pageCandidates());
   const [pageFacts] = createSignal({
     href: 'https://example.com/',
     documentUrl: 'https://example.com/',
     timeOrigin: 0
   });
-  return { candidates, pageFacts, pointPick: () => null, rescan: vi.fn(), dispose: vi.fn() };
+  const [pageModal, setPageModal] = createSignal(false);
+  const [pageTopLayerOpened] = createSignal(0);
+  const [zoom] = createSignal(1);
+  const [candidatesCapped] = createSignal(false);
+  const [scanned] = createSignal(true);
+  const tools: PageTools = {
+    candidates,
+    candidatesCapped,
+    scanned,
+    pageModal,
+    pageTopLayerOpened,
+    zoom,
+    pageFacts,
+    pointPick: () => null,
+    frames: () => [frame],
+    rescan: vi.fn(),
+    dispose: vi.fn()
+  };
+  return { tools, setPageModal };
 }
 
 /** Render the overlay over a port, started. */
@@ -46,11 +104,15 @@ function mount(sessionPort: ExclusionSessionPort) {
   const onClose = vi.fn();
   const reload = vi.fn();
   const timers: (() => void)[] = [];
+  let picker: PickerEvents<PointedPick> | null = null;
+  const stopPicker = vi.fn();
+  let setPageModal: (value: boolean) => void = () => undefined;
   const result = render(() => {
     const page = pageTools();
+    setPageModal = page.setPageModal;
     const controller = createOverlayController({
       port: sessionPort,
-      pageFacts: page.pageFacts,
+      pageFacts: page.tools.pageFacts,
       now: () => 1,
       schedule: (run) => {
         timers.push(run);
@@ -63,15 +125,19 @@ function mount(sessionPort: ExclusionSessionPort) {
     return (
       <OverlayApp
         controller={controller}
-        page={page}
+        page={page.tools}
         origin="https://example.com"
         requestFrame={(run) => {
           run();
         }}
         listen={() => undefined}
         onClose={onClose}
-        scrollPage={vi.fn()}
+        startPicking={(events) => {
+          picker = events;
+          return stopPicker;
+        }}
         isInvalid={() => false}
+        createVirtualizer={everyRow}
       />
     );
   });
@@ -79,6 +145,11 @@ function mount(sessionPort: ExclusionSessionPort) {
     ...result,
     onClose,
     reload,
+    stopPicker,
+    picker: () => picker,
+    setPageModal: (value: boolean) => {
+      setPageModal(value);
+    },
     fireTimers: () => {
       timers.splice(0).forEach((run) => {
         run();
@@ -87,12 +158,21 @@ function mount(sessionPort: ExclusionSessionPort) {
   };
 }
 
+/** The overlay's root layer. */
+function layerOf(container: HTMLElement): Element {
+  const layer = container.querySelector('.xo-layer');
+  if (layer === null) throw new Error('no layer');
+  return layer;
+}
+
 describe('OverlayApp', () => {
   afterEach(cleanup);
 
-  it('shows the loading skeleton, then the empty editor with every lane', async () => {
+  it('shows the loading status, then the empty editor with its guidance and every lane', async () => {
     mount(port({ state: 'inactive' }));
-    expect(screen.getByLabelText('Loading the session')).toBeTruthy();
+    // Changed in audit round 1: a status region with words (was aria-busy +
+    // aria-label on a plain div, which axe flags).
+    expect(screen.getByText('Loading the session').closest('[role="status"]')).not.toBeNull();
     await screen.findByText(
       'Pick elements or write rows, then apply: the page reloads with the exclusions rendered for real.'
     );
@@ -105,32 +185,47 @@ describe('OverlayApp', () => {
       expect(screen.getByRole('heading', { level: 2, name: lane })).toBeTruthy();
     }
     expect(screen.getByRole('heading', { level: 1, name: 'Exclusion builder' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Apply/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull();
   });
 
-  it('names a failed load and retries it', async () => {
-    const sessionPort = port({ state: 'inactive' }, true);
+  it('names a failed load and retries it, focus landing on the heading', async () => {
+    const sessionPort = port({ state: 'inactive' }, { failFirstLoad: true });
     const savedSet = vi.spyOn(sessionPort, 'savedSet');
     mount(sessionPort);
     fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
     await screen.findByRole('heading', { level: 2, name: 'Delay JavaScript execution' });
     expect(savedSet).toHaveBeenCalledTimes(2);
+    expect(document.activeElement?.tagName).toBe('H1');
   });
 
-  it('offers Stop and Reset for an active session', async () => {
+  it('offers Stop for an active session; Reset only once the draft differs', async () => {
     mount(port(activeRecord()));
     await screen.findByRole('button', { name: /Stop/ });
-    expect(screen.getByRole('button', { name: /Reset/ })).toBeTruthy();
+    const reset = screen.getByRole('button', { name: /Reset/ });
+    expect(reset.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(screen.getByRole('switch', { name: /Disable feature: Delay JavaScript/ }));
+    expect(reset.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('holds Apply with aria-disabled while applying, so focus stays on it', async () => {
+    const sessionPort = port({ state: 'inactive' });
+    vi.spyOn(sessionPort, 'apply').mockImplementation(() => new Promise(() => undefined));
+    mount(sessionPort);
+    const apply = await screen.findByRole('button', { name: /^Apply$/ });
+    apply.focus();
+    fireEvent.click(apply);
+    await screen.findByRole('button', { name: /Applying/ });
+    expect(apply.hasAttribute('disabled')).toBe(false);
+    expect(apply.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(apply);
   });
 
   it('collapses to the pill on Escape and reopens from it', async () => {
     const { container } = mount(port({ state: 'inactive' }));
     await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
-    const layer = container.querySelector('.xo-layer');
-    if (layer === null) throw new Error('no layer');
-    fireEvent.keyDown(layer, { key: 'Escape' });
-    const pill = await screen.findByRole('button', { name: /Open the exclusion builder/ });
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
+    expect(pill.textContent).toMatch(/^Exclusions/);
     expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
     fireEvent.click(pill);
     await waitFor(() => {
@@ -138,16 +233,80 @@ describe('OverlayApp', () => {
     });
   });
 
-  it('enters picking, and Escape leaves it', async () => {
-    const { container } = mount(port({ state: 'inactive' }));
+  it('picks through the picker: a miss explains itself, a hit adds the row and ends picking', async () => {
+    const { picker, stopPicker } = mount(port({ state: 'inactive' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Pick on page' }));
-    expect(screen.getByRole('application')).toBeTruthy();
-    const layer = container.querySelector('.xo-layer');
-    if (layer === null) throw new Error('no layer');
-    fireEvent.keyDown(layer, { key: 'Escape' });
-    await waitFor(() => {
-      expect(screen.queryByRole('application')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
+    picker()?.pick(null, document.createElement('iframe'));
+    expect(screen.getByText(/Frames can’t be picked/)).toBeTruthy();
+    picker()?.pick(null, document.createElement('p'));
+    expect(screen.getByText(/Nothing to exclude there/)).toBeTruthy();
+    const img = document.createElement('img');
+    picker()?.hover({
+      element: img,
+      candidate: { lane: 'lazyload', row: 'wp-content/hero.jpg', subject: 'hero.jpg' }
     });
+    picker()?.pick(
+      {
+        element: img,
+        candidate: { lane: 'lazyload', row: 'wp-content/hero.jpg', subject: 'hero.jpg' }
+      },
+      img
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
+    });
+    expect(stopPicker).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('textbox', { name: 'Image LazyLoad row 1' })).toBeTruthy();
+  });
+
+  it('keeps Tab on the picking bar and cancels back to Pick on page', async () => {
+    const { picker } = mount(port({ state: 'inactive' }));
+    const pick = await screen.findByRole('button', { name: 'Pick on page' });
+    fireEvent.click(pick);
+    picker()?.tab(false);
+    expect(document.activeElement?.textContent).toBe('Cancel');
+    picker()?.cancel();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pick);
+    });
+  });
+
+  it('adds from the page list without moving focus, then shows the row on a second press', async () => {
+    mount(port({ state: 'inactive' }));
+    fireEvent.click(await screen.findByRole('button', { name: /On this page/ }));
+    const add = screen.getByRole('button', { name: 'Add hero.jpg to Image LazyLoad' });
+    add.focus();
+    fireEvent.click(add);
+    expect(screen.getByRole('textbox', { name: 'Image LazyLoad row 1' })).toBeTruthy();
+    const added = screen.getByRole('button', { name: /^Added: hero\.jpg is in Image LazyLoad/ });
+    expect(added.textContent).toContain('Added');
+    fireEvent.click(added);
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Image LazyLoad row 1');
+    });
+  });
+
+  it('folds into a paused pill while the page shows a modal dialog, and comes back', async () => {
+    const { container, setPageModal } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    setPageModal(true);
+    expect(await screen.findByText('Paused: page dialog open')).toBeTruthy();
+    setPageModal(false);
+    await waitFor(() => {
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+    });
+  });
+
+  it('dismisses a notice from its corner control, focus landing on the heading', async () => {
+    const saved = { ...validSet(), rows: { ...validSet().rows, deferJs: ['('] } };
+    mount(port({ state: 'inactive' }, { saved }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Apply$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Dismiss: Fix 1 row/ }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Fix 1 row/)).toBeNull();
+    });
+    expect(document.activeElement?.tagName).toBe('H1');
   });
 
   it('closes on request', async () => {
@@ -156,14 +315,29 @@ describe('OverlayApp', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('waits on the reload after an accepted apply, then offers a working manual reload', async () => {
-    const { reload, fireTimers } = mount(port({ state: 'inactive' }));
+  it('after an overdue reload, hands the editor back with Reload and Stop', async () => {
+    const sessionPort = port({ state: 'inactive' });
+    const { reload, fireTimers } = mount(sessionPort);
     fireEvent.click(await screen.findByRole('button', { name: /^Apply$/ }));
     await screen.findByText('Reloading with your exclusions');
+    vi.spyOn(sessionPort, 'status').mockResolvedValueOnce({ kind: 'reply', reply: activeRecord() });
     fireTimers();
-    const button = await screen.findByRole('button', { name: 'Reload page' });
-    expect(button.hasAttribute('disabled')).toBe(false);
+    await screen.findByText('The page didn’t reload');
+    // The notice's Reload (the armed banner offers one too).
+    const button = screen.getAllByRole('button', { name: 'Reload page' }).at(-1);
+    if (button === undefined) throw new Error('no reload');
+    expect(screen.getByRole('button', { name: /Stop/ })).toBeTruthy();
     fireEvent.click(button);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('guards page frames while picking: input there is explained, never sent into the frame', async () => {
+    const { container } = mount(port({ state: 'inactive' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick on page' }));
+    const guard = container.querySelector<HTMLElement>('.xo-frame-guard');
+    expect(guard?.style.width).toBe('300px');
+    if (guard === null) throw new Error('no guard');
+    fireEvent.click(guard);
+    expect(screen.getByText(/Frames can’t be picked/)).toBeTruthy();
   });
 });

@@ -1,23 +1,25 @@
 /**
  * The overlay's view: a tool shell (header with the session indicator,
  * dock/collapse/close; body; footer actions) hosting the Exclusions mode,
- * plus its collapsed pill, the pick layer and the page highlight — all in
+ * plus its collapsed pill, the picking bar and the page highlight — all in
  * one top-layer element. Reads the controller and the page tools; owns
  * only view state (open, dock side, picking, the candidate list, the
  * highlight).
  *
  * State matrix (each arm renders its own words and a way forward):
- * loading (skeleton) · load failed (error + Retry) · not applied (empty
- * draft guidance) · populated draft · applying/stopping (controls locked)
- * · reloading (then a manual reload once overdue) · applied (counts per
- * lane and row) · applied with no-match rows (warned per row) · served
- * unmodified · interception unavailable (cause + remedy, Retry when
+ * loading (skeleton) · load failed (error + Retry) · nothing applied
+ * (empty-draft guidance) · populated draft · applying/stopping (controls
+ * held) · reloading · reload overdue (notice: Reload, Stop, keep editing) ·
+ * applied (counts per lane and row) · applied with no-match rows ·
+ * served unmodified · interception unavailable (cause + remedy, Retry when
  * transient) · not intercepted · can't verify · a feature absent from the
- * page (per lane) · the last action's notice.
+ * page (per lane) · the last action's notice · paused under a page modal
+ * dialog.
  *
- * Keyboard: Escape cancels picking, else collapses to the pill (focus goes
- * to it); the pill reopens to the heading; every control is a native
- * button or input in reading order.
+ * Keyboard: Escape cancels picking (wherever focus is), else collapses to
+ * the pill; the pill reopens to the heading; while picking, Tab stays on
+ * the picking bar. Buttons that an action holds are `aria-disabled`, never
+ * `disabled`, so focus never falls out of the overlay.
  */
 import {
   createEffect,
@@ -47,9 +49,14 @@ import { Candidates } from './exclusions/candidates';
 import { laneReport } from './exclusions/counts';
 import { LANE_ORDER, type LaneKey } from './exclusions/draft';
 import { Lane } from './exclusions/lane';
-import type { PageCandidate } from './exclusions/page-scan';
+import { PAGE_SCAN_LIMIT, type PageCandidate } from './exclusions/page-scan';
 import { Glyph } from './glyph';
 import { viewportRect, type PageTools, type PointedPick } from './page-tools';
+import type { PickerEvents } from './picker';
+import type { VirtualizerFactory } from '../../components/ui/virtual-list';
+import { createLogger } from '../../lib/logger';
+
+const log = createLogger('exclusion-overlay');
 
 /** Space kept between the highlight label and the box (px). */
 const LABEL_GAP_PX = 4;
@@ -58,7 +65,8 @@ const LABEL_HEIGHT_PX = 22;
 
 /**
  * Put the layer in the browser's top layer (a manual popover: no light
- * dismiss, no focus move), above every page stacking context. Without
+ * dismiss, no focus move), above every page stacking context — again on
+ * each call, which moves it above whatever the page opened since. Without
  * popover support the layer stays a fixed element on the highest z-index.
  *
  * @param layer The overlay's root element.
@@ -67,10 +75,11 @@ function showInTopLayer(layer: HTMLElement): void {
   if (typeof layer.showPopover !== 'function') return;
   layer.setAttribute('popover', 'manual');
   try {
+    if (layer.matches(':popover-open')) layer.hidePopover();
     layer.showPopover();
-  } catch {
-    // Already shown, or the host document refused (detached): the fixed
-    // fallback below still renders it.
+  } catch (cause) {
+    // The host document refused (e.g. detached): the fixed fallback renders it.
+    log.warn('Showing the overlay in the top layer failed; using the fixed fallback', cause);
     layer.removeAttribute('popover');
   }
 }
@@ -85,12 +94,14 @@ export interface OverlayAppProps {
   readonly listen: (target: EventTarget, type: string, handler: () => void) => void;
   /** The page's origin, shown under the title. */
   readonly origin: string;
-  /** Remove the overlay. */
+  /** Close the overlay (ends its content-script context). */
   readonly onClose: () => void;
-  /** Scroll the page by a wheel delta while the pick glass covers it. */
-  readonly scrollPage: (dx: number, dy: number) => void;
+  /** Start picking on the page; returns the stop. */
+  readonly startPicking: (events: PickerEvents<PointedPick>) => () => void;
   /** Whether the extension context is gone (reading it tears a dead overlay down). */
   readonly isInvalid: () => boolean;
+  /** The lists' virtualizer seam (tests render every row; default: the library). */
+  readonly createVirtualizer?: VirtualizerFactory;
 }
 
 /** What the highlight shows. */
@@ -98,6 +109,15 @@ interface HighlightTarget {
   readonly element: Element;
   readonly lane: LaneKey;
   readonly subject: string;
+}
+
+/** The host part of an origin (the scheme only costs width). */
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return origin;
+  }
 }
 
 /**
@@ -108,25 +128,27 @@ interface HighlightTarget {
 export function OverlayApp(props: OverlayAppProps): JSX.Element {
   // eslint-disable-next-line solid/reactivity -- the controller is one object for the mount's lifetime; its members are the reactive parts
   const c = props.controller;
-  const [open, setOpen] = createSignal(true);
+  // Opened under a page modal dialog: start folded (the panel would be inert).
+  // eslint-disable-next-line solid/reactivity -- the initial state only; the effect below follows changes
+  const [open, setOpen] = createSignal(!props.page.pageModal());
   const [dock, setDock] = createSignal<'right' | 'left'>('right');
   const [picking, setPicking] = createSignal(false);
+  const [pickMessage, setPickMessage] = createSignal<string | null>(null);
   const [listOpen, setListOpen] = createSignal(false);
   const [highlight, setHighlight] = createSignal<HighlightTarget | null>(null);
   const [announcement, setAnnouncement] = createSignal('');
   const [geometryTick, setGeometryTick] = createSignal(0);
   let heading: HTMLHeadingElement | undefined;
   let pill: HTMLButtonElement | undefined;
-  let glass: HTMLDivElement | undefined;
+  let cancelPick: HTMLButtonElement | undefined;
   let pickButton: HTMLButtonElement | undefined;
   let layer: HTMLDivElement | undefined;
+  let stopPicker: (() => void) | null = null;
 
   const state = c.state;
   const ready = (): boolean => state().phase === 'ready';
-  const locked = (): boolean => {
-    const current = state();
-    return current.phase !== 'ready' || current.pending !== null;
-  };
+  const held = (): boolean => !c.editable();
+  const paused = (): boolean => props.page.pageModal();
   const indicator = createMemo(() => sessionIndicator(state(), c.view()));
   const banner = createMemo(() => stateBanner(state(), c.view()));
   const notice = createMemo(() => {
@@ -134,15 +156,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     return current.phase === 'ready' && current.notice !== null
       ? noticeBanner(current.notice)
       : null;
-  });
-  const draftEmpty = createMemo(() => {
-    const draft = c.draft();
-    return (
-      LANE_ORDER.every((lane) => draft.rows[lane].length === 0) &&
-      !draft.disable.delayJs &&
-      !draft.disable.deferJs &&
-      !draft.disable.lazyRender
-    );
   });
   const reports = createMemo(() => {
     const view = c.view();
@@ -154,6 +167,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       counts.set(candidate.lane, (counts.get(candidate.lane) ?? 0) + 1);
     return counts;
   });
+  const candidateCount = (): string =>
+    props.page.candidatesCapped()
+      ? `${String(PAGE_SCAN_LIMIT)}+`
+      : String(props.page.candidates().length);
   const sessionState = (): 'inactive' | 'active' | 'unavailable' | null => {
     const current = state();
     return current.phase === 'ready' ? current.status.state : null;
@@ -162,22 +179,41 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     const current = state();
     return current.phase === 'ready' ? current.pending : null;
   };
+  const draftEmpty = createMemo(() => {
+    const draft = c.draft();
+    return (
+      LANE_ORDER.every((lane) => draft.rows[lane].length === 0) &&
+      !draft.disable.delayJs &&
+      !draft.disable.deferJs &&
+      !draft.disable.lazyRender
+    );
+  });
 
-  // The highlight follows its element through page scroll and resize:
-  // one geometry read per frame at most, only while a highlight shows.
+  // The highlight follows its element through page and inner scrolling
+  // and resizes: one geometry read per frame at most, only while it shows.
   let geometryQueued = false;
   const queueGeometry = (): void => {
-    if (highlight() === null || geometryQueued) return;
+    if ((highlight() === null && !picking()) || geometryQueued) return;
     geometryQueued = true;
     props.requestFrame(() => {
       geometryQueued = false;
       setGeometryTick((tick) => tick + 1);
     });
   };
-  onMount(() => {
-    props.listen(window, 'scroll', queueGeometry);
-    props.listen(window, 'resize', queueGeometry);
+  /**
+   * Guards over the page's frames while picking: pointer input over a frame
+   * goes to that frame's own document (never to the picker), so a click
+   * there would act on the frame. The guard takes it and says why.
+   */
+  const frameRects = createMemo(() => {
+    geometryTick();
+    if (!picking()) return [];
+    return props.page
+      .frames()
+      .map((frame) => viewportRect(frame))
+      .filter((rect): rect is NonNullable<typeof rect> => rect !== null);
   });
+  const framesMessage = 'Frames can’t be picked: their content is another page.';
   const highlightRect = createMemo(() => {
     geometryTick();
     const target = highlight();
@@ -196,32 +232,66 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     focusSoon(() => pill);
   };
   const expand = (): void => {
+    if (paused()) return;
     setOpen(true);
     focusSoon(() => heading);
   };
 
-  const startPicking = (): void => {
-    setPicking(true);
-    setHighlight(null);
-    focusSoon(() => glass);
-  };
-  const stopPicking = (): void => {
+  const endPicking = (): void => {
+    stopPicker?.();
+    stopPicker = null;
     setPicking(false);
+    setPickMessage(null);
     setHighlight(null);
+  };
+  const cancelPicking = (): void => {
+    endPicking();
     focusSoon(() => pickButton);
   };
-
   /** Commit a pointer pick: the row lands in its lane, focused. */
   const commitPick = (pick: PointedPick): void => {
+    endPicking();
     const added = c.addCandidate(pick.candidate.lane, pick.candidate.row, true);
-    setPicking(false);
-    setHighlight(null);
     setAnnouncement(
       added
         ? `Added ${pick.candidate.subject} to ${LANE_COPY[pick.candidate.lane].label}`
         : `${pick.candidate.subject} is already in ${LANE_COPY[pick.candidate.lane].label}`
     );
   };
+  const beginPicking = (): void => {
+    if (!c.editable()) return;
+    setPicking(true);
+    setHighlight(null);
+    stopPicker = props.startPicking({
+      hover: (pick) => {
+        setHighlight(
+          pick === null
+            ? null
+            : { element: pick.element, lane: pick.candidate.lane, subject: pick.candidate.subject }
+        );
+      },
+      pick: (pick, pointed) => {
+        if (pick !== null) {
+          commitPick(pick);
+          return;
+        }
+        // A miss keeps picking and says why, visibly.
+        setPickMessage(
+          pointed?.localName === 'iframe'
+            ? framesMessage
+            : 'Nothing to exclude there. Point at an image or a lazily rendered section.'
+        );
+      },
+      cancel: cancelPicking,
+      tab: () => {
+        cancelPick?.focus({ preventScroll: true });
+      }
+    });
+    focusSoon(() => cancelPick);
+  };
+  onCleanup(() => {
+    stopPicker?.();
+  });
 
   /** Add from the page list (focus stays on the list). */
   const addFromList = (candidate: PageCandidate, alreadyAdded: boolean): void => {
@@ -229,44 +299,15 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       c.addCandidate(candidate.lane, candidate.row, true);
       return;
     }
-    c.addCandidate(candidate.lane, candidate.row, false);
-    setAnnouncement(`Added ${candidate.subject} to ${LANE_COPY[candidate.lane].label}`);
-  };
-
-  let pointerQueued = false;
-  let lastPoint = { x: 0, y: 0 };
-  const onGlassMove = (event: PointerEvent): void => {
-    lastPoint = { x: event.clientX, y: event.clientY };
-    if (pointerQueued) return;
-    pointerQueued = true;
-    // eslint-disable-next-line solid/reactivity -- a frame callback scheduled by a pointer event: read untracked on purpose
-    props.requestFrame(() => {
-      pointerQueued = false;
-      if (!picking()) return;
-      const pick = props.page.pointPick(lastPoint.x, lastPoint.y);
-      setHighlight(
-        pick === null
-          ? null
-          : { element: pick.element, lane: pick.candidate.lane, subject: pick.candidate.subject }
-      );
-    });
-  };
-  const onGlassClick = (event: MouseEvent): void => {
-    event.preventDefault();
-    event.stopPropagation();
-    const pick = props.page.pointPick(event.clientX, event.clientY);
-    if (pick === null) {
-      setAnnouncement('Nothing to exclude there. Point at an image or a lazily rendered section.');
-      return;
+    if (c.addCandidate(candidate.lane, candidate.row, false)) {
+      setAnnouncement(`Added ${candidate.subject} to ${LANE_COPY[candidate.lane].label}`);
     }
-    commitPick(pick);
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || event.isComposing) return;
+    if (event.key !== 'Escape' || event.isComposing || picking()) return;
     event.preventDefault();
-    if (picking()) stopPicking();
-    else if (open()) collapse();
+    if (open()) collapse();
   };
 
   const onBannerAction = (action: BannerAction): void => {
@@ -277,13 +318,19 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       case 'retry-apply':
         c.apply();
         break;
+      case 'retry-action':
+        c.retryFailedAction();
+        break;
       case 'reload':
         c.reloadPage();
-        break;
+        return;
       case 'dismiss':
         c.dismissNotice();
         break;
     }
+    // The banner that held focus is gone or changing: land on the heading,
+    // never on the page's body.
+    focusSoon(() => heading);
   };
 
   createEffect(
@@ -296,7 +343,40 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     )
   );
 
+  // A page modal dialog makes everything outside it inert, the overlay too:
+  // fold into the pill (marked paused) until it closes, then come back.
+  let openBeforeModal = true;
+  createEffect(
+    on(
+      paused,
+      (isPaused) => {
+        if (isPaused) {
+          openBeforeModal = open();
+          endPicking();
+          setOpen(false);
+          setListOpen(false);
+        } else if (openBeforeModal) {
+          setOpen(true);
+        }
+      },
+      { defer: true }
+    )
+  );
+  // Something the page opened in the top layer paints over the overlay:
+  // move back on top (not over a modal — the user must answer it first).
+  createEffect(
+    on(
+      () => props.page.pageTopLayerOpened(),
+      () => {
+        if (layer !== undefined && !paused()) showInTopLayer(layer);
+      },
+      { defer: true }
+    )
+  );
+
   onMount(() => {
+    props.listen(window, 'scroll', queueGeometry);
+    props.listen(window, 'resize', queueGeometry);
     if (layer !== undefined) showInTopLayer(layer);
     focusSoon(() => heading);
   });
@@ -311,6 +391,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
         text: `${String(invalid)} ${invalid === 1 ? 'row needs' : 'rows need'} fixing`,
         tone: 'error'
       };
+    const view = c.view();
+    if (view?.kind === 'unavailable' && !view.retryable) {
+      return { text: 'Applying again won’t help until the cause above is fixed', tone: 'muted' };
+    }
     if (c.dirty()) return { text: 'Edits not applied yet', tone: 'muted' };
     const words = saveStateWords(c.saveState());
     return words === null
@@ -323,11 +407,17 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     if (sessionState() !== 'active') return 'Apply';
     return c.dirty() ? 'Apply changes' : 'Re-apply';
   };
+  const resetHeld = (): boolean => held() || !c.dirty();
 
   return (
     <div
       class="xo-layer"
+      // Tokens re-declared inside the shadow tree: page `*` rules setting
+      // custom properties reach the host, never this element.
+      data-fdt-tokens
       ref={layer}
+      // The page's CSS zoom reaches the overlay through its host: undo it.
+      style={props.page.zoom() === 1 ? undefined : { zoom: String(1 / props.page.zoom()) }}
       on:keydown={onKeyDown}
       // Any interaction first checks the extension is still there: a
       // reloaded extension's overlay leaves instead of failing every ask.
@@ -378,7 +468,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
             <Crosshair size={14} strokeWidth={2.5} />
           </span>
           <div class="xo-heading">
-            <h1 class="xo-title xo-heading-target" id="xo-title" tabIndex={-1} ref={heading}>
+            <h1 class="xo-title" id="xo-title" tabIndex={-1} ref={heading}>
               {TOOL_TITLE}
             </h1>
             <div class="xo-meta">
@@ -390,7 +480,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 </span>
               </span>
               <span class="xo-origin" title={props.origin}>
-                {props.origin}
+                {hostOf(props.origin)}
               </span>
             </div>
           </div>
@@ -437,7 +527,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           <Show
             when={state().phase !== 'loading'}
             fallback={
-              <div class="xo-skeleton" aria-busy="true" aria-label="Loading the session">
+              <div class="xo-skeleton" role="status">
+                <span class="xo-sr-only">Loading the session</span>
                 <div class="xo-skeleton-block" style={{ height: '64px' }} />
                 <div class="xo-skeleton-block" style={{ height: '28px', width: '60%' }} />
                 <For each={LANE_ORDER}>
@@ -448,13 +539,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           >
             <Show when={banner()}>
               {(current) => (
-                // Only an action in flight locks the banner's own actions:
-                // Retry after a failed load and the overdue manual reload
-                // must stay usable outside the ready state.
                 <BannerView
                   banner={current()}
                   onAction={onBannerAction}
-                  locked={pending() !== null}
+                  held={pending() !== null}
                   live
                 />
               )}
@@ -468,8 +556,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   type="button"
                   class="xo-button"
                   ref={pickButton}
-                  disabled={!ready()}
-                  onClick={startPicking}
+                  aria-disabled={held() ? 'true' : undefined}
+                  onClick={beginPicking}
                 >
                   <Crosshair size={14} aria-hidden="true" />
                   Pick on page
@@ -479,11 +567,13 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   class="xo-button"
                   aria-expanded={listOpen()}
                   aria-controls="xo-candidates"
-                  disabled={!ready()}
-                  onClick={() => setListOpen((isOpen) => !isOpen)}
+                  aria-disabled={ready() ? undefined : 'true'}
+                  onClick={() => {
+                    if (ready()) setListOpen((isOpen) => !isOpen);
+                  }}
                 >
                   <List size={14} aria-hidden="true" />
-                  On this page <span class="xo-count">{props.page.candidates().length}</span>
+                  On this page <span class="xo-count">{candidateCount()}</span>
                 </button>
               </div>
               <Show when={ready() && draftEmpty() && c.view()?.kind === 'off'}>
@@ -494,7 +584,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                   <Candidates
                     candidates={props.page.candidates()}
                     draft={c.draft()}
-                    locked={locked()}
+                    locked={held()}
+                    createVirtualizer={props.createVirtualizer}
                     onAdd={addFromList}
                     onHover={(candidate) => {
                       setHighlight(
@@ -516,9 +607,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                     lane={lane}
                     controller={c}
                     report={laneReport(reports(), lane)}
-                    pageCount={pageCounts().get(lane) ?? 0}
+                    pageCount={props.page.scanned() ? (pageCounts().get(lane) ?? 0) : null}
                     requestFrame={props.requestFrame}
-                    locked={locked()}
+                    locked={held()}
+                    createVirtualizer={props.createVirtualizer}
                   />
                 )}
               </For>
@@ -528,7 +620,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
 
         <Show when={ready()}>
           <footer class="xo-footer">
-            <p class="xo-footer-status" data-tone={footerLine()?.tone ?? 'muted'} role="status">
+            <p class="xo-footer-status" data-tone={footerLine()?.tone ?? 'muted'}>
               {footerLine()?.text ?? ''}
             </p>
             <div class="xo-footer-actions">
@@ -536,7 +628,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 <button
                   type="button"
                   class="xo-button"
-                  disabled={locked()}
+                  aria-disabled={held() ? 'true' : undefined}
                   onClick={() => {
                     c.stop();
                   }}
@@ -549,10 +641,14 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 <button
                   type="button"
                   class="xo-button"
-                  disabled={locked()}
-                  title="Discard edits and re-apply the applied exclusions"
+                  aria-disabled={resetHeld() ? 'true' : undefined}
+                  title={
+                    c.dirty()
+                      ? 'Discard edits and re-apply the applied exclusions'
+                      : 'Nothing to reset: the draft is the applied set'
+                  }
                   onClick={() => {
-                    c.reset();
+                    if (!resetHeld()) c.reset();
                   }}
                 >
                   <RotateCcw size={13} aria-hidden="true" />
@@ -563,7 +659,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 type="button"
                 class="xo-button"
                 data-variant="primary"
-                disabled={locked()}
+                aria-disabled={held() ? 'true' : undefined}
                 aria-busy={pending() === 'apply' || pending() === 'reset'}
                 onClick={() => {
                   c.apply();
@@ -589,43 +685,51 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           data-dock={dock()}
           ref={pill}
           onClick={expand}
-          aria-label={`Open the exclusion builder — session: ${indicator().label}`}
+          aria-disabled={paused() ? 'true' : undefined}
         >
           <span class="xo-brand" aria-hidden="true">
             <Crosshair size={12} strokeWidth={2.5} />
           </span>
           <span>Exclusions</span>
-          <span class="xo-indicator" data-tone={indicator().tone} aria-hidden="true">
-            <Glyph name={indicator().glyph} size={12} />
-            {indicator().label}
+          <span class="xo-indicator" data-tone={paused() ? 'neutral' : indicator().tone}>
+            <Glyph name={paused() ? 'idle' : indicator().glyph} size={12} />
+            {paused() ? 'Paused: page dialog open' : indicator().label}
           </span>
+          <span class="xo-sr-only"> — open the exclusion builder</span>
         </button>
       </Show>
 
+      <For each={frameRects()}>
+        {(rect) => (
+          <div
+            class="xo-frame-guard"
+            aria-hidden="true"
+            style={{
+              transform: `translate(${String(rect.x)}px, ${String(rect.y)}px)`,
+              width: `${String(rect.width)}px`,
+              height: `${String(rect.height)}px`
+            }}
+            onPointerEnter={() => {
+              setHighlight(null);
+              setPickMessage(framesMessage);
+            }}
+            onClick={() => {
+              setPickMessage(framesMessage);
+            }}
+          />
+        )}
+      </For>
+
       <Show when={picking()}>
-        <div
-          class="xo-glass"
-          ref={glass}
-          tabIndex={-1}
-          role="application"
-          aria-label="Pick an element: point at it and click; Escape cancels"
-          onPointerMove={onGlassMove}
-          onPointerLeave={() => setHighlight(null)}
-          onClick={onGlassClick}
-          onWheel={(event) => {
-            props.scrollPage(event.deltaX, event.deltaY);
-            queueGeometry();
-          }}
-        />
-        <div class="xo-pickbar" role="group" aria-label="Picking">
-          <span class="xo-pickbar-text">
-            Point at an image or a lazily rendered section, then click. Scripts are listed in On
-            this page.
+        <div class="xo-pickbar" role="group" aria-label="Picking on the page">
+          <span class="xo-pickbar-text" aria-live="polite">
+            {pickMessage() ??
+              'Point at an image or a lazily rendered section, then click. Scripts are listed in On this page.'}
           </span>
           <span class="xo-kbd" aria-hidden="true">
             Esc
           </span>
-          <button type="button" class="xo-button" onClick={stopPicking}>
+          <button type="button" class="xo-button" ref={cancelPick} onClick={cancelPicking}>
             Cancel
           </button>
         </div>

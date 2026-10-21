@@ -66,10 +66,15 @@
 /* ---- Palette-agnostic tokens --------------------------------------------- */
 /* Values switch with the color scheme above; names never mention a palette.
  * NOTE on ordering: `light-dark(lightValue, darkValue)` — the light palette is
- * always the first argument per the CSS Color 5 spec. */
+ * always the first argument per the CSS Color 5 spec.
+ * `[data-fdt-tokens]` re-declares the same values on an element inside an
+ * injected UI's shadow root: a page rule such as `* { --surface-1: … }`
+ * reaches the shadow host (and beats `:host`), but never an element inside
+ * the shadow tree. */
 
 :root,
-:host {
+:host,
+[data-fdt-tokens] {
   /* Surfaces: 5-level elevation scale (darkest at the bottom in the dark palette,
    * light gray base with white panels in the light palette). */
   --surface-0: light-dark(#f4f5f8, #0b0d10);
