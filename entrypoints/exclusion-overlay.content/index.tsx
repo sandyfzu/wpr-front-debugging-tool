@@ -13,6 +13,7 @@
  * invalidated context (extension reload) removes the whole overlay.
  */
 import { onCleanup, onMount } from 'solid-js';
+import { DelegatedEvents, delegateEvents } from 'solid-js/web';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
@@ -29,6 +30,25 @@ const log = createLogger('exclusion-overlay');
 
 /** The shadow host's tag name (feature-scoped, kebab-case). */
 const UI_NAME = 'wpr-fdt-exclusion-builder';
+
+/**
+ * Events stopped at the shadow root, so the page never sees the overlay's
+ * input: every event Solid delegates, plus the other input events pages
+ * hook. Pages do act on them — WP Rocket's delay runtime, for one, saves
+ * a page's first interactions at the window and replays them on their
+ * targets once its scripts load, which would replay a click on an overlay
+ * button a second time.
+ */
+const ISOLATED_EVENTS = [
+  ...DelegatedEvents,
+  'keypress',
+  'wheel',
+  'touchcancel',
+  'pointercancel',
+  'paste',
+  'copy',
+  'cut'
+];
 
 /** The extension messenger as the session port's transport. */
 const MESSAGING_TRANSPORT: SessionTransport = {
@@ -55,8 +75,11 @@ async function mountOverlay(ctx: ContentScriptContext): Promise<void> {
     // anyway; this covers browsers without popovers).
     anchor: 'html',
     append: 'last',
-    isolateEvents: true,
-    onMount: (container, _shadow, host) => {
+    isolateEvents: ISOLATED_EVENTS,
+    onMount: (container, shadow, host) => {
+      // Isolated events never reach the document, where Solid delegates
+      // by default: delegate them at the shadow root instead.
+      delegateEvents([...DelegatedEvents], shadow as unknown as Document);
       void mountShadowUi(container, () => {
         const page = createPageTools({
           doc: document,
