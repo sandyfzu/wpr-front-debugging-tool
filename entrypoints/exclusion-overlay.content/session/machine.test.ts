@@ -47,6 +47,7 @@ const EVENTS: Record<string, OverlayEvent> = {
   requestApply: { type: 'request', action: 'apply' },
   requestReset: { type: 'request', action: 'reset' },
   requestStop: { type: 'request', action: 'stop' },
+  applyBlocked: { type: 'apply-blocked', block: { kind: 'too-large' } },
   applyAnswered: { type: 'apply-answered', reply: { outcome: 'applying' }, at: 99 },
   stopAnswered: { type: 'stop-answered', status: INACTIVE },
   actionFailed: { type: 'action-failed', problem: 'timeout' },
@@ -67,16 +68,19 @@ const ACCEPTED: Record<string, Record<string, OverlayState>> = {
   loadFailed: { retryLoad: INITIAL_OVERLAY_STATE },
   readyInactive: {
     requestApply: ready({ pending: 'apply' }),
+    applyBlocked: ready({ notice: { kind: 'too-large' } }),
     statusPushed: ready({ status: UNAVAILABLE })
   },
   readyActive: {
     requestApply: ready({ status: ACTIVE, pending: 'apply' }),
+    applyBlocked: ready({ status: ACTIVE, notice: { kind: 'too-large' } }),
     requestReset: ready({ status: ACTIVE, pending: 'reset' }),
     requestStop: ready({ status: ACTIVE, pending: 'stop' }),
     statusPushed: ready({ status: UNAVAILABLE })
   },
   readyUnavailable: {
     requestApply: ready({ status: UNAVAILABLE, pending: 'apply' }),
+    applyBlocked: ready({ status: UNAVAILABLE, notice: { kind: 'too-large' } }),
     requestStop: ready({ status: UNAVAILABLE, pending: 'stop' }),
     statusPushed: ready({ status: UNAVAILABLE })
   },
@@ -100,11 +104,11 @@ const ACCEPTED: Record<string, Record<string, OverlayState>> = {
     actionFailed: ready({
       status: ACTIVE,
       notice: { kind: 'action-failed', action: 'stop', problem: 'timeout' }
-    }),
-    statusPushed: ready({ status: UNAVAILABLE, pending: 'stop' })
+    })
   },
   noticed: {
     requestApply: ready({ pending: 'apply' }),
+    applyBlocked: ready({ notice: { kind: 'too-large' } }),
     statusPushed: ready({ status: UNAVAILABLE, notice: { kind: 'invalid', rows: 2 } }),
     dismissNotice: ready()
   },

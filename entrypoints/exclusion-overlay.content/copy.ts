@@ -6,6 +6,7 @@
  */
 import type {
   ExclusionDocumentFailure,
+  ExclusionSaveFailure,
   InterceptionUnavailableCause
 } from '../../lib/messaging/exclusion-session';
 import type { ExclusionFeatureId } from '../../lib/exclusion-builder/set';
@@ -19,6 +20,7 @@ import type { LaneKey } from './exclusions/draft';
 import type { SessionProblem } from './session/port';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { SessionView, UnmodifiedReason } from './session/session-view';
+import type { SaveState } from './controller';
 
 /** The tool's name (the overlay's heading). */
 export const TOOL_TITLE = 'Exclusion builder';
@@ -238,4 +240,40 @@ export function sessionIndicator(state: OverlayState, view: SessionView | null):
     default:
       return { tone: 'neutral', label: 'Not applied', glyph: 'dot' };
   }
+}
+
+/** Why a draft save stored nothing, per save failure. */
+export const SAVE_FAILURE_COPY: Readonly<Record<ExclusionSaveFailure, string>> = {
+  'unsupported-page': 'this page can’t hold a draft',
+  'invalid-request': 'the draft was refused',
+  'storage-failed': 'storage failed'
+};
+
+/**
+ * The footer's draft line, or null when there is nothing to say.
+ *
+ * @param save The draft's save state.
+ */
+export function saveStateWords(save: SaveState): string | null {
+  switch (save.kind) {
+    case 'idle':
+      return null;
+    case 'saving':
+      return 'Saving draft…';
+    case 'saved':
+      return 'Draft saved';
+    case 'not-saved':
+      return `Draft not saved: ${
+        isSaveFailure(save.reason)
+          ? SAVE_FAILURE_COPY[save.reason]
+          : PROBLEM_COPY[save.reason].toLowerCase()
+      }`;
+  }
+}
+
+/** Whether a not-saved reason is the background's answer (not an ask problem). */
+function isSaveFailure(
+  reason: ExclusionSaveFailure | SessionProblem
+): reason is ExclusionSaveFailure {
+  return Object.hasOwn(SAVE_FAILURE_COPY, reason);
 }

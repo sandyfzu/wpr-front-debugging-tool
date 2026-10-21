@@ -103,7 +103,11 @@ describe('candidatesFor — rows the engine actually matches', () => {
   it('keeps the host of another origin', () => {
     const html =
       '<script src="https://www.googletagmanager.com/gtag/js?id=G-1" data-rocket-defer defer></script>';
-    expect(candidates(html)[0]?.row).toBe('www\\.googletagmanager\\.com/gtag/js');
+    expect(candidates(html)[0]).toEqual({
+      lane: 'deferJs',
+      row: 'www\\.googletagmanager\\.com/gtag/js',
+      subject: 'www.googletagmanager.com › gtag/js'
+    });
   });
 
   it('names a minified asset by its original path', () => {
@@ -160,6 +164,7 @@ describe('nameUrl', () => {
       text: 'cdn.example.net',
       file: 'cdn.example.net'
     });
+    expect(nameUrl('/', PAGE)).toEqual({ text: 'example.com', file: '/' });
   });
 });
 

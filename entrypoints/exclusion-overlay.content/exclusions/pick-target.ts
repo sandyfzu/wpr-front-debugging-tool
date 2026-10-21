@@ -66,6 +66,22 @@ interface UrlName {
 }
 
 /**
+ * A URL's name for people: its last path segment — with the one before it
+ * when the last carries no extension (`gtag/js`) — prefixed by the host for
+ * another origin's URL.
+ *
+ * @param path The URL path (no leading slash).
+ * @param host The host to show, or null for a same-origin URL.
+ */
+function fileName(path: string, host: string | null): string {
+  const parts = path.split('/').filter((part) => part !== '');
+  const last = parts.at(-1);
+  if (last === undefined) return host ?? '/';
+  const tail = last.includes('.') || parts.length < 2 ? last : parts.slice(-2).join('/');
+  return host === null ? tail : `${host} › ${tail}`;
+}
+
+/**
  * Name a script or image URL for a row.
  *
  * @param raw The attribute value (absolute or relative).
@@ -88,12 +104,7 @@ export function nameUrl(raw: string, pageUrl: string): UrlName | null {
     recovered.kind === 'original' ? recovered.originalPath : url.pathname.replace(/^\/+/, '');
   const sameOrigin = recovered.kind === 'original' || (base !== null && base.origin === url.origin);
   const text = sameOrigin && path !== '' ? path : `${url.host}${path === '' ? '' : `/${path}`}`;
-  const file =
-    path
-      .split('/')
-      .filter((part) => part !== '')
-      .at(-1) ?? url.host;
-  return { text, file };
+  return { text, file: fileName(path, sameOrigin ? null : url.host) };
 }
 
 /** Whether a script is delayed by WP Rocket (type vocabulary or the delay runtime's attributes). */

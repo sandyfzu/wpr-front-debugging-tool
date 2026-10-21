@@ -5,6 +5,7 @@ import {
   LANE_COPY,
   PROBLEM_COPY,
   UNAVAILABLE_COPY,
+  saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
   viewCopy
@@ -114,5 +115,19 @@ describe('sessionIndicator', () => {
       'Not intercepted',
       'Can’t verify'
     ]);
+  });
+});
+
+describe('saveStateWords', () => {
+  it('words each save state', () => {
+    expect(saveStateWords({ kind: 'idle' })).toBeNull();
+    expect(saveStateWords({ kind: 'saving' })).toBe('Saving draft…');
+    expect(saveStateWords({ kind: 'saved' })).toBe('Draft saved');
+    expect(saveStateWords({ kind: 'not-saved', reason: 'storage-failed' })).toBe(
+      'Draft not saved: storage failed'
+    );
+    expect(saveStateWords({ kind: 'not-saved', reason: 'timeout' })).toBe(
+      'Draft not saved: the extension took too long to answer.'
+    );
   });
 });

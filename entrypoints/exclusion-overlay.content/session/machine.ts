@@ -32,7 +32,12 @@ export type ActionNotice =
       readonly problem: SessionProblem;
     }
   | { readonly kind: 'invalid'; readonly rows: number }
+  | { readonly kind: 'too-large' }
   | { readonly kind: 'stopped' };
+
+/** Why an apply was refused before asking (the draft itself is not applicable). */
+export type ApplyBlock =
+  { readonly kind: 'invalid'; readonly rows: number } | { readonly kind: 'too-large' };
 
 /** The overlay's state (see the module doc). */
 export type OverlayState =
@@ -52,6 +57,7 @@ export type OverlayEvent =
   | { readonly type: 'load-failed'; readonly problem: SessionProblem }
   | { readonly type: 'retry-load' }
   | { readonly type: 'request'; readonly action: SessionAction }
+  | { readonly type: 'apply-blocked'; readonly block: ApplyBlock }
   | { readonly type: 'apply-answered'; readonly reply: ExclusionApplyReply; readonly at: number }
   | { readonly type: 'stop-answered'; readonly status: ExclusionSessionStatus }
   | { readonly type: 'action-failed'; readonly problem: SessionProblem }
@@ -108,6 +114,8 @@ function fromReady(state: Ready, event: OverlayEvent): OverlayState {
       return canStart(state, event.action)
         ? { ...state, pending: event.action, notice: null }
         : state;
+    case 'apply-blocked':
+      return state.pending === null ? { ...state, notice: event.block } : state;
     case 'apply-answered':
       return state.pending === 'apply' || state.pending === 'reset'
         ? applyAnswered(state, event.reply, event.at)
@@ -131,7 +139,10 @@ function fromReady(state: Ready, event: OverlayEvent): OverlayState {
             notice: { kind: 'action-failed', action: state.pending, problem: event.problem }
           };
     case 'status-pushed':
-      return { ...state, status: event.status };
+      // A Stop's own answer is authoritative: the background pushes the
+      // cleared status first, and taking it would lose what was stopped
+      // (whether the page still shows a rewritten document).
+      return state.pending === 'stop' ? state : { ...state, status: event.status };
     case 'dismiss-notice':
       return state.notice === null ? state : { ...state, notice: null };
     default:

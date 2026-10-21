@@ -9,6 +9,7 @@
 import type {
   ExclusionApplyReply,
   ExclusionSaveReply,
+  ExclusionSetPayload,
   ExclusionSessionStatus,
   SavedExclusionSetReply
 } from '../../../lib/messaging/exclusion-session';
@@ -108,7 +109,7 @@ export type SessionAskRow =
 /** The transport the messaging port rides (the extension messenger in production). */
 export interface SessionTransport {
   /** Send one session row from this content script to the background. */
-  send(row: SessionAskRow, data?: unknown): Promise<unknown>;
+  send(row: SessionAskRow, data: ExclusionSetPayload | undefined): Promise<unknown>;
   /**
    * Listen for the background's status pushes to this tab.
    *
@@ -135,7 +136,7 @@ export function createMessagingSessionPort(
     row: SessionAskRow,
     parse: (answer: unknown) => T | null,
     timeoutMs: number,
-    data?: unknown
+    data?: ExclusionSetPayload
   ): Promise<PortOutcome<T>> =>
     portOutcome(
       row,
