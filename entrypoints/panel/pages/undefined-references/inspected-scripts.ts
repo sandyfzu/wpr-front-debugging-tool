@@ -19,8 +19,11 @@ import {
   type InspectedScriptResource,
   type ScriptAsset
 } from '../../../../lib/panel/undefined-refs';
+import {
+  readLastError as readRuntimeLastError,
+  type LastErrorSlot
+} from '../../../../utils/last-error';
 import { isHttpUrl } from '../../../../utils/urls';
-import { lastErrorMessage } from '../../../../utils/last-error';
 
 const log = createLogger('panel');
 
@@ -351,7 +354,7 @@ interface DevtoolsShape {
       readonly onResourceAdded?: EventShape;
     };
   };
-  readonly runtime?: { readonly lastError?: { readonly message?: string } | null };
+  readonly runtime?: LastErrorSlot;
 }
 
 /**
@@ -375,7 +378,7 @@ export function realInspectedScripts(): InspectedScripts | null {
         onResources
       );
     },
-    readLastError: () => lastErrorMessage(api.runtime?.lastError),
+    readLastError: () => (api.runtime === undefined ? null : readRuntimeLastError(api.runtime)),
     evaluate: (expression, onResult) => {
       if (typeof evaluate !== 'function') {
         onResult(undefined, { isError: true });

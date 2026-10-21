@@ -20,6 +20,7 @@
  * http(s) URL before use.
  */
 import { createLogger } from '../../../lib/logger';
+import type { LastErrorValue } from '../../../utils/last-error';
 import { isHttpUrl } from '../../../utils/urls';
 
 const log = createLogger('panel');
@@ -90,7 +91,7 @@ function unpackPromiseAnswer(value: unknown): { result: unknown; exceptionInfo: 
 }
 
 /** The runtime's `lastError` reader (read inside the callback, as the API requires). */
-export type LastErrorReader = () => { readonly message?: string } | undefined;
+export type LastErrorReader = () => LastErrorValue;
 
 /**
  * Read the inspected page's URL.

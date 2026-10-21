@@ -71,7 +71,7 @@ describe('unmodifiedCopy', () => {
     );
     expect(
       unmodifiedCopy({ kind: 'over-budget', feature: 'lazyload', row: null, budgetMs: 5 })
-    ).toMatch(/^Image LazyLoad took longer/);
+    ).toMatch(/^LazyLoad for images took longer/);
   });
 });
 

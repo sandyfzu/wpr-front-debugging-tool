@@ -12,16 +12,18 @@ import {
 
 /** The detection payload exactly as the engine's "nothing found" rowset. */
 const EMPTY_DETECTIONS: WprDetections = {
-  wpr: { present: false, cached: false, version: null, timeStamp: null },
+  wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
   remove_unused_css: { present: false },
   async_css: { present: false },
   lazyload_css_bg_img: { present: false },
+  self_hosted_fonts: { present: false },
+  image_dimensions: { present: false },
   minify_css: { present: false },
   minify_js: { present: false },
   preload_links: { present: false },
   rocket_cdn: { present: false },
   delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-  defer_all_js: { present: false, scripts: [] },
+  defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
   lazyload: { present: false, images: [] },
   lazyload_iframes: { present: false, replaceImage: false },
   rocket_above_the_fold_optimization: { present: false, lcpComment: false },

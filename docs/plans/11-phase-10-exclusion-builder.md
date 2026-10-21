@@ -316,6 +316,10 @@ Commits on `feat/p10f-overlay` (from `feat/p10` @ `7310f78`): `6710298` promote 
   - **Not fixed: NIT-1** — the lazy-render fallback ` id="x"` matches 0 when the page serves `id='x'` (or unquoted). Lazy-render rows are literal substrings of the served tag, and the DOM always serializes double quotes, so no single literal holds for both quotings and the served one is unknowable from the page. Offered only when the bare value is shared with a stamped peer; the post-Apply per-row count shows "No match". P10H/P10G option: the background knows the served text — a served-tag lookup could pick the right quoting.
   - **Gates/budgets:** compile/lint/format green; `pnpm test` 249 files, 4 766 passed (+1 skipped), coverage 98.49/96.81/100/99.11; `build` + `build:firefox` + `check:budgets` green. Isolated 123.0 → 122.7 KiB raw (the plain copy is smaller), row 123.1 → 122.8; overlay 172.1 → 172.7 raw / 58.5 gzip (rows 173/59 kept); whole build 1 248.4 / 1 248.5. Evidence: session scratchpad `r3/` (`ffkg3.mjs` + outputs, `fforder-ctrl.mjs`, `final-kg*.out`) and the verifier's `p10f-verify2/` harnesses.
 
+#### develop reconcile (2026-10-21)
+
+`origin/develop` (20bd3e4, P11 + Firefox fixes) merged into `feat/p10`. Overlapping work unified: `utils/last-error` → develop's `readLastError(runtime)` (reads the slot once; `lastErrorMessage` removed, its cases covered by develop's tests); `parseOptimizeCriticalImagesRow` keeps develop's meta-authority shape (optional list, `source`) with P10C.1's count-before-scan + hole rejection. Overlay lane names follow develop's plugin-verified labels (`LazyLoad for images`, `Automatic Lazy Rendering`); the overlay tests' literals updated to match. Budgets (KiB raw, measured): isolated feat/p10 122.7 / develop 129.8 → 131.1 (134 241 B), row 131.2 (gzip 44.9 / 45 kept); whole build 1 248.5 / 1 025.8 → 1 272.8 (1 303 321 B), row 1 272.9 (+0.1 headroom, as the P10F rows). Every other row unchanged and green.
+
 ### P10G — Chromium apply wiring + surfaces integration
 
 Depends:P10D+F. Parallel:—. Goal: the agreed flow live end-to-end.

@@ -27,7 +27,11 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { onMessage, sendMessage } from '../../lib/messaging/index';
 import { windowMessenger } from '../../lib/messaging/window-bridge';
 import { ERROR_WORD_LIMIT, parseErrorWords } from '../../lib/messaging/validate';
-import { boundPreloadedResources, boundWprDetections } from '../../lib/messaging/payload-bounds';
+import {
+  boundPreloadedResources,
+  boundWprDetections,
+  servableWordPressVersion
+} from '../../lib/messaging/payload-bounds';
 import type {
   DiagnoserDocData,
   FdtData,
@@ -40,6 +44,9 @@ import { sampleCookieNames } from '../../lib/wp-rocket/cookies';
 import { parsePage } from '../../lib/detection/parse-page';
 import { applyPresencePropagation, runChecks } from '../../lib/detection/run-detection';
 import { describeDetections } from '../../lib/detection/describe';
+import { cacheStateFromCapture } from '../../lib/detection/cache-context';
+import type { CacheState } from '../../lib/detection/cache-context';
+import { isCacheBypassUrl } from '../../lib/wp-rocket/constants';
 import { detectPreloadedResources } from '../../lib/detection/detect-optimizations';
 import { detectWordPressVersion } from '../../lib/detection/wordpress-version';
 import { extractDiagnoserData } from '../../lib/diagnostics/extract';
@@ -125,12 +132,23 @@ export interface PageData {
   detections: WprDetections;
   preloadedResources: PreloadedResources;
   diagnoserData: DiagnoserDocData | null;
-  /** The WordPress core version the generator meta declared, or null. */
+  /** The WordPress core version the generator meta declared (within the version cap), or null. */
   wordpressVersion: string | null;
 }
 
+/**
+ * The same-context read: the pass result plus the cache answer, which needs
+ * the captured headers (panel-side facts) as well as the detections. The hub
+ * awaits its own header fetch before answering, so a same-context consumer
+ * never reads "headers unavailable" just because it raced the capture.
+ */
+export interface PageDataSnapshot {
+  data: PageData;
+  cacheState: CacheState;
+}
+
 /** The same-context read the hub hands out (null when the pass failed). */
-export type PageDataRead = () => Promise<PageData | null>;
+export type PageDataRead = () => Promise<PageDataSnapshot | null>;
 
 /** Same-context readers, keyed by the context they belong to. */
 const pageDataReaders = new WeakMap<ContentScriptContext, PageDataRead>();
@@ -166,7 +184,9 @@ export async function processSerializedPage(pageHTML: string): Promise<PageData>
   const detections = runChecks(page);
   const preloadedResources = detectPreloadedResources(page);
   applyPresencePropagation(detections);
-  const wordpressVersion = detectWordPressVersion(page.document);
+  // Bounded once at collection: the strip (same-context read) and the panel
+  // payload carry the same value — an over-cap version is dropped, not clipped.
+  const wordpressVersion = servableWordPressVersion(detectWordPressVersion(page.document));
   const diagnoserData = await extractDiagnoserData(page.document);
   return { detections, preloadedResources, diagnoserData, wordpressVersion };
 }
@@ -189,6 +209,8 @@ export interface LivePageFacts {
   undefinedReferences: string[];
   /** Null only if the capture invariant failed (the field is then omitted). */
   cookies: PageCookies | null;
+  /** The captured URL carried WP Rocket's bypass parameter. */
+  bypassAttested: boolean;
 }
 
 /**
@@ -203,6 +225,9 @@ export interface LivePageFacts {
  * @returns The payload `getFdtData` serves.
  */
 export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
+  // Idempotent re-bound: a hand-built pass result can never make the guard
+  // reject the whole payload over one envelope string.
+  const wordpressVersion = servableWordPressVersion(data.wordpressVersion);
   const payload = {
     allScriptsLoaded: live.allScriptsLoaded,
     pageHeaders: live.headerCapture?.headers ?? null,
@@ -210,7 +235,9 @@ export function composeFdtData(data: PageData, live: LivePageFacts): FdtData {
     wprDetections: servedDetections(data),
     preloadedResources: boundPreloadedResources(data.preloadedResources),
     diagnoserData: data.diagnoserData,
-    ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {})
+    ...(live.headerCapture?.truncated === true ? { pageHeadersTruncated: true as const } : {}),
+    ...(live.bypassAttested ? { bypassAttested: true as const } : {}),
+    ...(wordpressVersion === null ? {} : { wordpressVersion })
   };
   // The capture (which redacts the values at the read) always runs before
   // processing can produce data, so the list is expected here; should that
@@ -247,6 +274,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   let headerCapture: PageHeaderCapture | null = null;
   let undefinedReferences: string[] = [];
   let allScriptsLoaded = false;
+  // The URL the page was loaded with is the only bypass evidence the capture
+  // can attest; it never changes for this document's capture moment.
+  const bypassAttested = isCacheBypassUrl(window.location.href);
   let pageHTML: string | null = null;
   /** The page's cookie names (values redacted), captured with the snapshot. */
   let pageCookies: PageCookies | null = null;
@@ -297,10 +327,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
 
   /**
    * Ensure the page's (already captured) main-frame headers are fetched,
-   * exactly once per page. The ask is idempotent against the background's
-   * per-tab cache (a read never consumes the rows), so a late ensure simply
-   * re-asks and receives the same set — without it, a panel request racing
-   * the fetch would serve null and lose the Server card for the page.
+   * exactly once per page. A late caller joins the same one-shot fetch
+   * promise; without it, a panel request racing the fetch would serve null
+   * and lose the Server card for the page.
    *
    * @returns The fetch's settlement (errors caught inside).
    */
@@ -351,6 +380,9 @@ export function setupDataHub(ctx: ContentScriptContext): void {
     onParserReady();
   }
 
+  /** The live context's invalidation, read without control-flow narrowing. */
+  const invalidated = (): boolean => ctx.isInvalid;
+
   /**
    * Process the serialized page exactly once, single-flight. On failure the
    * cached result stays null (logged; the panel shows its error state) and no
@@ -381,6 +413,7 @@ export function setupDataHub(ctx: ContentScriptContext): void {
         processing = null;
       }
       if (data !== null) {
+        const result = data;
         log.info(`Page data processed in ${(performance.now() - started).toFixed(1)} ms`);
         // The badge push first: the at-a-glance surface answers before any
         // presentation can fail. The organized analysis print (owner
@@ -388,8 +421,18 @@ export function setupDataHub(ctx: ContentScriptContext): void {
         // kill neither the badge nor the panel responses, so it rides its own
         // guard and reports itself.
         pushDetectionSummary();
+        // The analysis reads the same capture the panel does: join the
+        // one-shot header fetch before building the cache answer.
+        await ensureHeaders();
+        if (invalidated()) return;
         try {
-          log.info('Page analysis', describeDetections(data.detections));
+          log.info(
+            'Page analysis',
+            describeDetections(
+              result.detections,
+              cacheStateFromCapture(result.detections.wpr, headerCapture, bypassAttested)
+            )
+          );
         } catch (error) {
           log.error(
             'Building the page analysis report failed',
@@ -429,7 +472,8 @@ export function setupDataHub(ctx: ContentScriptContext): void {
         allScriptsLoaded,
         headerCapture,
         undefinedReferences,
-        cookies: pageCookies
+        cookies: pageCookies,
+        bypassAttested
       })
     };
   };
@@ -469,10 +513,18 @@ export function setupDataHub(ctx: ContentScriptContext): void {
   // yet" (the pass's honest null is a failure, not a pending page). An
   // invalidated-before-capture world resolves through the machine's teardown
   // trigger and answers null — never a hang.
-  const readPageData = async (): Promise<PageData | null> => {
+  const readPageData = async (): Promise<PageDataSnapshot | null> => {
     await captureWatchPoint.settled;
     await processData();
-    return data;
+    if (data === null) return null;
+    // The cache vocabulary reads the headers too: await the same once-fetch
+    // the panel's serve path awaits, so the strip's answer is never a race
+    // artifact. A failed fetch degrades to null (headers unavailable).
+    await ensureHeaders();
+    return {
+      data,
+      cacheState: cacheStateFromCapture(data.detections.wpr, headerCapture, bypassAttested)
+    };
   };
   pageDataReaders.set(ctx, readPageData);
 

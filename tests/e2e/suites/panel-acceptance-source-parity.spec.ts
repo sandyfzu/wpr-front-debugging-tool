@@ -418,8 +418,16 @@ const SKIP_REASON = 'the source checkout is not on this machine — set E2E_SOUR
 
 /** The source name → the port's name, where the port's differs on purpose. */
 const PORT_NAME_DELTAS: Readonly<Record<string, string>> = {
-  // The feature's native label, sentence case (the naming decision's own case).
-  'Optimize Critical Images': 'Optimize critical images'
+  // The source re-typed these three in its own casing/wording; the port names
+  // them with the plugin's standalone metabox strings (WP Rocket 3.23.5.1
+  // Media/Lazyload admin subscribers) — the settings field itself reads only
+  // "Enable for …" under the LazyLoad section.
+  'Lazyload for images': 'LazyLoad for images',
+  'Lazyload for iframes and videos': 'LazyLoad for iframes/videos',
+  'Lazyload for CSS background images': 'LazyLoad CSS backgrounds',
+  // The merged CSS-delivery card: the settings field's own casing
+  // (WP Rocket 3.23.5.1 settings page, "Optimize CSS delivery").
+  'Optimize CSS Delivery': 'Optimize CSS delivery'
 };
 
 sourceTest.describe('source-build parity over one served fixture', () => {
@@ -492,9 +500,11 @@ sourceTest.describe('source-build parity over one served fixture', () => {
         ).toEqual([
           'Server',
           'Known Platform',
-          'Automatic lazy rendering',
+          'Add missing image dimensions',
+          'Self-host Google Fonts',
+          'Automatic Lazy Rendering',
           'Preload fonts',
-          'Preconnect to external domains',
+          'Preconnect to External Domains',
           'Priority Elements beacon'
         ]);
         // The two header-derived cards the fixture's headers create, with

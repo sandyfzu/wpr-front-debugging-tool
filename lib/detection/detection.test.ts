@@ -49,6 +49,7 @@ describe('detectWpr', () => {
       detectWpr(page('<meta name="generator" content="WP Rocket 3.20.0.2">').document)
     ).toEqual({
       present: true,
+      cacheMarkerFound: false,
       cached: false,
       version: '3.20.0.2',
       timeStamp: null
@@ -67,6 +68,7 @@ describe('detectWpr', () => {
     // extracted version only, so it stays false here too.
     expect(detectWpr(page('<meta name="generator" content="rocket power">').document)).toEqual({
       present: false,
+      cacheMarkerFound: false,
       cached: false,
       version: null,
       timeStamp: null
@@ -76,66 +78,123 @@ describe('detectWpr', () => {
   it('reads the cache debug comment after the document element', () => {
     const result = detectWpr(
       page(
-        '<html><body>t</body></html><!-- This website is like a Rocket, optimized by WP Rocket - Debug: cached@1699999999 -->'
+        "<html><body>t</body></html><!-- This website is like a Rocket, isn't it? Performance optimized by WP Rocket - Debug: cached@1699999999 -->"
       ).document
     );
-    expect(result).toEqual({ present: true, cached: true, version: null, timeStamp: 1699999999 });
-    // Comment present in body-content position is NOT the cache marker
-    // (the marker lives as a sibling *after* the document element).
+    expect(result).toEqual({
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      version: null,
+      timeStamp: 1699999999
+    });
+  });
+
+  it('the marker must be a comment after the document element', () => {
+    // A marker inside <body> is page content, not the plugin's footer.
     expect(
       detectWpr(
         page(
-          '<html><body><!-- not here --></body></html><!-- This website is like a Rocket, optimized -->'
+          "<html><body><!-- This website is like a Rocket, isn't it? - Debug: cached@1 --></body></html>"
         ).document
       )
-    ).toEqual({ present: true, cached: false, version: null, timeStamp: null });
+    ).toEqual({
+      present: false,
+      cacheMarkerFound: false,
+      cached: false,
+      version: null,
+      timeStamp: null
+    });
+  });
+
+  it('a prefixed comment or the bare slogan is not the marker', () => {
+    for (const comment of [
+      'a note: This website is like a Rocket',
+      'This website is like a Rocket',
+      'Copied: Cached for great performance'
+    ]) {
+      const result = detectWpr(page(`<html><body>x</body></html><!-- ${comment} -->`).document);
+      expect(result.cacheMarkerFound, comment).toBe(false);
+      expect(result.present, comment).toBe(false);
+    }
+  });
+
+  it('tolerates leading whitespace in the footer comment', () => {
+    const result = detectWpr(
+      page(
+        "<html><body>x</body></html><!--   This website is like a Rocket, isn't it? - Debug: cached@7 -->"
+      ).document
+    );
+    expect(result.cacheMarkerFound).toBe(true);
+    expect(result.timeStamp).toBe(7);
+  });
+
+  it('recognises the white-label footers', () => {
+    const cached = detectWpr(
+      page(
+        '<html><body>x</body></html><!-- Cached for great performance - Debug: cached@1791342241 -->'
+      ).document
+    );
+    expect(cached).toMatchObject({
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      timeStamp: 1791342241
+    });
+    const optimized = detectWpr(
+      page('<html><body>x</body></html><!-- Optimized for great performance -->').document
+    );
+    expect(optimized).toMatchObject({
+      present: true,
+      cacheMarkerFound: true,
+      cached: false,
+      timeStamp: null
+    });
   });
 
   it('walks past element/text siblings until the comment', () => {
     const result = detectWpr(
-      page('<html><body>a</body></html><span>noise</span><!-- This website is like a Rocket -->')
-        .document
+      page(
+        "<html><body>a</body></html><span>noise</span><!-- This website is like a Rocket, isn't it? -->"
+      ).document
     );
     expect(result.present).toBe(true);
   });
 
-  it('parses truncated timestamps by digits (endsWith is not required)', () => {
+  it('parses only a strict decimal timestamp token', () => {
+    for (const suffix of ['999abc', '0x1F', '-5', '1.5', 'abc', '']) {
+      expect(
+        detectWpr(
+          page(
+            `<html><body>x</body></html><!-- This website is like a Rocket, isn't it? - Debug: cached@${suffix} -->`
+          ).document
+        ).timeStamp,
+        suffix
+      ).toBeNull();
+    }
     expect(
       detectWpr(
         page(
-          '<html><body>x</body></html><!-- This website is like a Rocket - Debug: cached@999abc -->'
-        ).document
-      ).timeStamp
-    ).toBe(999);
-  });
-
-  it('non-numeric suffixes keep the timestamp null (never NaN)', () => {
-    expect(
-      detectWpr(
-        page(
-          '<html><body>x</body></html><!-- This website is like a Rocket - Debug: cached@abc -->'
+          `<html><body>x</body></html><!-- This website is like a Rocket, isn't it? - Debug: cached@${'9'.repeat(400)} -->`
         ).document
       ).timeStamp
     ).toBeNull();
   });
 
-  it('the documented radix delta: 0x-prefixed suffixes parse as 0 (reference would read 31)', () => {
-    expect(
-      detectWpr(
-        page(
-          '<html><body>x</body></html><!-- This website is like a Rocket - Debug: cached@0x1F -->'
-        ).document
-      ).timeStamp
-    ).toBe(0);
-  });
-
   it('a Debug marker without a timestamp keeps the page present but not stamped', () => {
     expect(
       detectWpr(
-        page('<html><body>x</body></html><!-- This website is like a Rocket - Debug: cached -->')
-          .document
+        page(
+          "<html><body>x</body></html><!-- This website is like a Rocket, isn't it? - Debug: cached -->"
+        ).document
       )
-    ).toEqual({ present: true, cached: true, version: null, timeStamp: null });
+    ).toEqual({
+      present: true,
+      cacheMarkerFound: true,
+      cached: true,
+      version: null,
+      timeStamp: null
+    });
   });
 });
 
@@ -152,11 +211,24 @@ describe('detectRemoveUnusedCss / detectPreloadLinks / ids', () => {
     expect(detectPreloadLinks(parsed)).toEqual({ present: true });
     expect(detectPreloadLinks(page('<span></span>'))).toEqual({ present: false });
   });
+
+  it('the inline config identifier is a second signal only when it repeats', () => {
+    expect(
+      detectPreloadLinks(
+        page('<script>var RocketPreloadLinksConfig={a:1};x(RocketPreloadLinksConfig)</script>')
+      )
+    ).toEqual({ present: true });
+    // One incidental mention is not the feature.
+    expect(
+      detectPreloadLinks(page('<script>var note="RocketPreloadLinksConfig"</script>'))
+    ).toEqual({ present: false });
+  });
   it('finds either lazyload-css-background container id', () => {
     expect(
       runDetection('<div id="wpr-lazyload-bg-exclusion"></div>').detections.lazyload_css_bg_img
     ).toEqual({
-      present: true
+      present: true,
+      source: 'footprint'
     });
   });
 });
@@ -170,6 +242,8 @@ describe('detectAsyncCss', () => {
     expect(detectAsyncCss(page('<script src="/c.js">wprRemoveCPCSS()</script>'))).toEqual({
       present: false
     });
+    // Arbitrary page text is not the fallback script.
+    expect(detectAsyncCss(page('<p>wprRemoveCPCSS</p>'))).toEqual({ present: false });
   });
 });
 
@@ -228,6 +302,23 @@ describe('detectDelayJs', () => {
     expect(result.present).toBe(true);
     expect(result.version).toBeNull();
   });
+
+  it('reads the version from the minified class shape too (one this.v pattern)', () => {
+    const result = detectDelayJs(
+      page('<script>class RocketLazyLoadScripts{constructor(){this.v="2.0.5"}}</script>')
+    );
+    expect(result.present).toBe(true);
+    expect(result.version).toBe('2.0.5');
+  });
+
+  it('a runtime status attribute proves presence without a controller', () => {
+    const result = detectDelayJs(
+      page('<script src="/app.js" data-rocket-status="executed"></script>')
+    );
+    expect(result.present).toBe(true);
+    // The inventory still carries the script.
+    expect(result.scripts).toHaveLength(1);
+  });
 });
 
 describe('detectDeferAllJs', () => {
@@ -241,11 +332,16 @@ describe('detectDeferAllJs', () => {
         </body></html>`
       )
     );
-    expect(result).toEqual({ present: true, scripts: ['/real.js', '/moved.js'] });
-    // Deferral markers alone do not count as present.
+    expect(result).toEqual({
+      present: true,
+      scripts: ['/real.js', '/moved.js'],
+      deferredScripts: 3
+    });
+    // Inline attributed scripts prove presence without a URL.
     expect(detectDeferAllJs(page('<script data-rocket-defer="defer"></script>'))).toEqual({
-      present: false,
-      scripts: []
+      present: true,
+      scripts: [],
+      deferredScripts: 1
     });
   });
 });
@@ -417,6 +513,17 @@ describe('detectMinifyCss / detectMinifyJs', () => {
     expect(detectMinifyJs(parsed)).toEqual({ present: true });
     expect(detectMinifyJs(page('<script>app.min.js</script>'))).toEqual({ present: false });
   });
+
+  it('accepts any numeric cache site folder (not a hard-coded 1)', () => {
+    expect(
+      detectMinifyCss(
+        page('<link rel="stylesheet" href="https://s.com/wp-content/cache/min/7/a.css">')
+      )
+    ).toEqual({ present: true });
+    expect(
+      detectMinifyJs(page('<script src="https://s.com/wp-content/cache/min/42/a.js"></script>'))
+    ).toEqual({ present: true });
+  });
 });
 
 describe('detectRocketCdn', () => {
@@ -441,6 +548,10 @@ describe('detectRocketCdn', () => {
     expect(detectRocketCdn(page('<link href="https://cdn.rocketcdn.me/x.js">'))).toEqual({
       present: false
     });
+  });
+
+  it('arbitrary page text is not the CDN footprint', () => {
+    expect(detectRocketCdn(page('<p>rocketcdn.me</p>'))).toEqual({ present: false });
   });
 
   it('chromium semantics: dns-prefetch matches case-insensitively (runner variance documented)', () => {
@@ -524,6 +635,8 @@ describe('run-detection — propagation and timing', () => {
       'lazyload',
       'lazyload_iframes',
       'lazyload_css_bg_img',
+      'self_hosted_fonts',
+      'image_dimensions',
       'rocket_above_the_fold_optimization',
       'automatic_lazy_rendering',
       'auto_preload_fonts',

@@ -10,6 +10,25 @@
 import type { WprDetections } from '../wp-rocket/types';
 import { BEACON_STATUS_KEYS } from '../wp-rocket/constants';
 import {
+  absoluteStampFromMs,
+  formatCacheTimestamp,
+  isRepresentableCacheStamp,
+  isRepresentableStampMs,
+  MAX_REPRESENTABLE_MS
+} from './cache-time';
+import type { CacheState } from './cache-context';
+import { CACHE_NOT_APPLICABLE_REPORT, cacheReportText, cacheStateForPage } from './cache-context';
+
+/** Re-exported so existing consumers keep the report module as their one path. */
+export {
+  absoluteStampFromMs,
+  formatCacheTimestamp,
+  isRepresentableCacheStamp,
+  isRepresentableStampMs,
+  MAX_REPRESENTABLE_MS
+};
+import {
+  LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
   LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD,
   LABEL_DELAY_JAVASCRIPT_EXECUTION,
@@ -26,23 +45,12 @@ import {
   LABEL_PRIORITY_ELEMENTS_BEACON,
   LABEL_REMOVE_UNUSED_CSS,
   LABEL_ROCKETCDN,
+  LABEL_SELF_HOST_GOOGLE_FONTS,
   LABEL_WP_ROCKET
 } from './labels';
 
 /** One feature's page state: the evidence-true states the checks defer to views. */
 export type FeatureState = 'applied' | 'collecting' | 'not enabled' | 'not applied';
-
-/**
- * The largest instant `new Date`/`toISOString` can represent (ECMA-262's
- * ± 100,000,000 days from the epoch, in ms). A page-derived stamp beyond it
- * is not a time, only a crash waiting for `toISOString` — callers see null.
- *
- * This is the platform ceiling's one declaring site, shared by both
- * page-derived-stamp defenses that need it: the cache-stamp predicate below
- * (epoch seconds × 1000) and the messaging boundary's capture stamps
- * (`parsePageCookies`' `capturedAt`, used as ms directly).
- */
-export const MAX_REPRESENTABLE_MS = 8.64e15;
 
 /**
  * The report object: one row per detected surface, keyed by the real feature
@@ -53,7 +61,8 @@ export const MAX_REPRESENTABLE_MS = 8.64e15;
 export interface PageAnalysisReport {
   [LABEL_WP_ROCKET]: {
     'plugin detected': boolean;
-    'page served from cache': boolean;
+    /** The explicit cache vocabulary's report line (never an absence-born verdict). */
+    'page cache': string;
     version: string | null;
     /** UTC-stamped cache time (the debug comment's seconds → readable form). */
     'cache generated at': string | null;
@@ -72,6 +81,8 @@ export interface PageAnalysisReport {
     'YouTube preview image replacement': boolean;
   };
   [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: { state: FeatureState };
+  [LABEL_SELF_HOST_GOOGLE_FONTS]: { state: FeatureState };
+  [LABEL_ADD_MISSING_IMAGE_DIMENSIONS]: { state: FeatureState };
   [LABEL_MINIFY_CSS]: { state: FeatureState };
   [LABEL_MINIFY_JAVASCRIPT]: { state: FeatureState };
   [LABEL_PRELOAD_LINKS]: { state: FeatureState };
@@ -106,26 +117,27 @@ function simpleState(present: boolean): FeatureState {
 }
 
 /**
- * A Priority Elements feature's state: applied evidence wins, collecting-
- * phase markup (or an allowed context in the parsed config without one yet)
- * reads "collecting", a readable config that withholds the context reads
- * "not enabled", and an unreadable/absent config (`status` null) degrades to
- * "not applied" — silence proves nothing (white-label strips configs).
+ * A Priority Elements feature's state: the row's verdict (`present` — meta
+ * declaration or applied evidence) wins; without it, collecting-phase markup
+ * (or an allowed context in the parsed config) reads "collecting", a readable
+ * config that withholds the context reads "not enabled", and an
+ * unreadable/absent config (`status` null) degrades to "not applied" —
+ * silence proves nothing (white-label strips configs).
  *
  * @param key The feature's own beacon-config id.
- * @param applied Evidence count of the transform already on the page.
+ * @param present The row's decided verdict.
  * @param collecting Extra in-markup collecting-phase evidence (e.g. ALR's
- *   render hashes), composed as collecting without applied rows.
+ *   render hashes), composed as collecting without a present verdict.
  * @param config The beacon row (its `status` may be null).
  * @returns The honest composed state.
  */
 function familyState(
   key: (typeof BEACON_STATUS_KEYS)[number],
-  applied: number,
+  present: boolean,
   collecting: boolean,
   config: WprDetections['priority_elements_beacon']
 ): FeatureState {
-  if (applied > 0) return 'applied';
+  if (present) return 'applied';
   if (collecting) return 'collecting';
   const { status } = config;
   if (status !== null && status[key] === true) return 'collecting';
@@ -158,86 +170,24 @@ function familyAppliedCounts(
 }
 
 /**
- * Whether a page-derived epoch-seconds stamp names a real, representable
- * instant (finite, within the platform date range). The concept's one home:
- * the timestamp formatter consumes this answer, and callers that matter-
- * gate on the stamp (a relative age beside it) gate on it too, so a wild
- * page-crafted digit run renders as an unstamped cache — never as a made-up
- * countdown beside a missing stamp.
- *
- * @param seconds The stamp to judge (null is simply absent).
- */
-export function isRepresentableCacheStamp(seconds: number | null): seconds is number {
-  return (
-    seconds !== null && Number.isFinite(seconds) && Math.abs(seconds * 1000) <= MAX_REPRESENTABLE_MS
-  );
-}
-
-/**
- * Format the cache timestamp: UTC-stamped and locale-independent, so the same
- * support conversation reads identically on every contributor's console.
- *
- * The stamp is page-derived text through and through (the debug comment the
- * engine parses), so a hand-crafted or mangled `cached@<digits>` can carry a
- * value far past the platform's representable time range — where `new Date`
- * constructs a garbage date and `toISOString` throws `RangeError`. Any stamp
- * that does not resolve to a real instant therefore renders as its absence
- * (null): callers answer "unstamped" instead of losing the whole report —
- * or the whole strip — to one hostile integer.
- *
- * @param seconds The debug comment's epoch seconds, or null when absent.
- * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null for null, non-finite, or
- *   outside-the-platform-range stamps.
- */
-export function formatCacheTimestamp(seconds: number | null): string | null {
-  if (!isRepresentableCacheStamp(seconds)) return null;
-  return `${new Date(seconds * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC`;
-}
-
-/**
- * Whether a wall-clock millisecond stamp names a real, representable instant
- * (finite, within the platform date range). The millisecond twin of
- * {@link isRepresentableCacheStamp}: the machine's own stamps (a fetch's
- * settle time, a cookie sample's capture time) arrive in milliseconds, and a
- * caller that shows one must degrade to "no stamp" for a wild value — never
- * construct a garbage `Date`.
- *
- * @param ms The stamp to judge.
- */
-export function isRepresentableStampMs(ms: number): boolean {
-  return Number.isFinite(ms) && Math.abs(ms) <= MAX_REPRESENTABLE_MS;
-}
-
-/**
- * Format a wall-clock millisecond stamp in the panel's absolute UTC form —
- * the one spelling the status bar's freshness detail and the header
- * inventory's Fetched/Captured stamps share, so two surfaces never disagree
- * about one instant. Same guard family as {@link formatCacheTimestamp}: a
- * stamp that names no representable instant renders as its absence (null) —
- * never a made-up time beside a missing one — and the whole-second rounding
- * is declared here, not re-derived per consumer.
- *
- * @param ms The stamp (epoch milliseconds).
- * @returns `YYYY-MM-DD HH:MM:SS UTC`, or null for a stamp that names no
- *   representable instant.
- */
-export function absoluteStampFromMs(ms: number): string | null {
-  if (!isRepresentableStampMs(ms)) return null;
-  return formatCacheTimestamp(Math.round(ms / 1000));
-}
-
-/**
  * Build the organized page-analysis report. Pure: same detections in, same
  * object out; prints expandably (`log.info('Page analysis', report)`), never
  * page content.
  *
  * @param detections The complete page classification from the engine.
+ * @param cacheState The explicit cache answer when the caller has the
+ *   headers/bypass capture; omitted, the report derives the signature-only
+ *   answer and states that the headers were unavailable.
  * @returns The report object keyed by real feature names.
  */
-export function describeDetections(detections: WprDetections): PageAnalysisReport {
+export function describeDetections(
+  detections: WprDetections,
+  cacheState?: CacheState
+): PageAnalysisReport {
   const { wpr, priority_elements_beacon: beacon } = detections;
   const applied = familyAppliedCounts(detections);
   const status = beacon.status;
+  const cache = cacheState ?? cacheStateForPage({ wpr, headers: null, bypassAttested: false });
   const enabledFeatures =
     status === null
       ? []
@@ -247,7 +197,9 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
   return {
     [LABEL_WP_ROCKET]: {
       'plugin detected': wpr.present,
-      'page served from cache': wpr.cached,
+      // A page the plugin did not handle has no cache question: the explicit
+      // state (when one was passed) is not a page verdict either.
+      'page cache': wpr.present ? cacheReportText(cache) : CACHE_NOT_APPLICABLE_REPORT,
       version: wpr.version,
       'cache generated at': formatCacheTimestamp(wpr.timeStamp)
     },
@@ -259,7 +211,7 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
     },
     [LABEL_LOAD_JAVASCRIPT_DEFERRED]: {
       state: simpleState(detections.defer_all_js.present),
-      'deferred scripts': detections.defer_all_js.scripts.length
+      'deferred scripts': detections.defer_all_js.deferredScripts
     },
     [LABEL_LOAD_CSS_ASYNCHRONOUSLY]: { state: simpleState(detections.async_css.present) },
     [LABEL_IMAGE_LAZYLOAD]: {
@@ -273,18 +225,27 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
     [LABEL_CSS_BACKGROUND_IMAGES_LAZYLOAD]: {
       state: simpleState(detections.lazyload_css_bg_img.present)
     },
+    [LABEL_SELF_HOST_GOOGLE_FONTS]: { state: simpleState(detections.self_hosted_fonts.present) },
+    [LABEL_ADD_MISSING_IMAGE_DIMENSIONS]: {
+      state: simpleState(detections.image_dimensions.present)
+    },
     [LABEL_MINIFY_CSS]: { state: simpleState(detections.minify_css.present) },
     [LABEL_MINIFY_JAVASCRIPT]: { state: simpleState(detections.minify_js.present) },
     [LABEL_PRELOAD_LINKS]: { state: simpleState(detections.preload_links.present) },
     [LABEL_ROCKETCDN]: { state: simpleState(detections.rocket_cdn.present) },
     [LABEL_OPTIMIZE_CRITICAL_IMAGES]: {
-      state: familyState('atf', applied.atf, false, beacon),
+      state: familyState(
+        'atf',
+        detections.rocket_above_the_fold_optimization.present,
+        false,
+        beacon
+      ),
       'preloaded images': applied.atf
     },
     [LABEL_AUTOMATIC_LAZY_RENDERING]: {
       state: familyState(
         'lrc',
-        applied.lrc,
+        detections.automatic_lazy_rendering.present,
         detections.automatic_lazy_rendering.locationHashes > 0,
         beacon
       ),
@@ -292,13 +253,13 @@ export function describeDetections(detections: WprDetections): PageAnalysisRepor
       'render hashes on page': detections.automatic_lazy_rendering.locationHashes
     },
     [LABEL_PRELOAD_FONTS]: {
-      state: familyState('preload_fonts', applied.preload_fonts, false, beacon),
+      state: familyState('preload_fonts', detections.auto_preload_fonts.present, false, beacon),
       'preloaded fonts': applied.preload_fonts
     },
     [LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]: {
       state: familyState(
         'preconnect_external_domain',
-        applied.preconnect_external_domain,
+        detections.preconnect_external_domains.present,
         false,
         beacon
       ),

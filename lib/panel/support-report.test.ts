@@ -16,6 +16,8 @@ import {
   type SupportReportContext
 } from './support-report';
 import { emptyDetections, makeReportData } from './support-report.fixtures';
+import { cacheCopy } from '../detection/cache-context';
+import { HUD_FEATURES } from '../detection/hud';
 import { redactPageHeaders } from '../redaction/headers';
 import { PLANTED, PLANTED_RAW_HEADERS } from '../redaction/planted-secrets.fixtures';
 
@@ -42,15 +44,27 @@ function fullData(): FdtData {
       { name: 'Cache-Control', value: 'max-age=3600' },
       { name: 'Set-Cookie', value: 'wordpress_sess=abc123; path=/' },
       { name: 'X-Weird', value: 'a|b `c`' },
-      { name: 'age', value: '120' }
+      { name: 'age', value: '120' },
+      { name: 'cf-cache-status', value: 'HIT' }
     ],
+    wordpressVersion: '6.8.1',
     undefinedReferencesOnPage: ['jQuery', UNDEFINED_REFERENCE_EXTERNAL_ERROR],
     wprDetections: {
       ...emptyDetections(),
-      wpr: { present: true, cached: true, version: '3.20.1', timeStamp: 1791342253 },
-      async_css: { present: true },
-      delay_js: { present: true, scripts: [], version: '2.0', delayedScripts: 3 },
-      lazyload: { present: true, images: [] },
+      wpr: {
+        present: true,
+        cacheMarkerFound: true,
+        cached: true,
+        version: '3.20.1',
+        timeStamp: 1791342253
+      },
+      async_css: { present: true, source: 'footprint' },
+      delay_js: { present: true, scripts: [], version: '2.0', delayedScripts: 3, source: 'meta' },
+      lazyload: { present: true, images: [], source: 'footprint' },
+      // Declared by the meta: the honest-unknown copy must not appear.
+      image_dimensions: { present: true, source: 'meta' },
+      // An enabled family feature not yet applied reads "collecting".
+      priority_elements_beacon: { present: true, status: { lrc: true }, isMobile: false },
       lazyload_iframes: { present: true, replaceImage: true },
       rocket_above_the_fold_optimization: {
         present: true,
@@ -70,40 +84,44 @@ const FULL_GOLDEN = [
   '- **Extension version:** `1.4.0`',
   '- **WP Rocket:** Detected, version `3.20.1`',
   '- **Page cache:** Cached, generated 2026-10-07 03:04:13 UTC',
+  '- **WordPress version:** `6.8.1`',
   '- **Platform:** WP Engine (matched by `X-Powered-By`)',
   '- **Server:** `nginx`',
-  '- **Optimizations:** 5 of 14 active',
+  '- **Optimizations:** 6 of 16 active',
   '',
   '### Detections',
   '',
-  '| Feature | Status | Details |',
-  '| --- | --- | --- |',
-  '| Server | Active | `nginx` |',
-  '| Known Platform | Active | WP Engine (matched by `X-Powered-By`) |',
-  '| WP Rocket | Active | Version `3.20.1` |',
-  '| Cached | Active | Generated 2026-10-07 03:04:13 UTC |',
-  '| Load CSS asynchronously | Active | Optimize CSS Delivery |',
-  '| Lazyload for CSS background images | Not active | — |',
-  '| Minify CSS files | Not active | — |',
-  '| Minify JavaScript files | Not active | — |',
-  '| Preload Links | Not active | — |',
-  '| RocketCDN | Not active | — |',
-  '| Delay JavaScript execution | Active | Version `2.0` |',
-  '| Load JavaScript deferred | Not active | — |',
-  '| Lazyload for images | Active | — |',
-  '| Lazyload for iframes and videos | Active | Replace iframe with preview image |',
-  '| Optimize critical images | Active | Preloaded images detected: 2 |',
-  '| Automatic lazy rendering | Not active | — |',
-  '| Preload fonts | Not active | — |',
-  '| Preconnect to external domains | Not active | — |',
-  '| Priority Elements beacon | Not active | — |',
+  '| Feature | Status | Source | Details |',
+  '| --- | --- | --- | --- |',
+  '| Server | Active | — | `nginx` |',
+  '| Known Platform | Active | — | WP Engine (matched by `X-Powered-By`) |',
+  '| WP Rocket | Active | — | Version `3.20.1` |',
+  '| Cached | Active | — | Generated 2026-10-07 03:04:13 UTC |',
+  '| Load CSS asynchronously | Active | Page footprint | Optimize CSS delivery |',
+  '| Delay JavaScript execution | Active | Generator meta | Version `2.0` |',
+  '| Load JavaScript deferred | Not active | — | — |',
+  '| Minify CSS files | Not active | — | — |',
+  '| Minify JavaScript files | Not active | — | — |',
+  '| LazyLoad for images | Active | Page footprint | — |',
+  '| LazyLoad for iframes/videos | Active | — | Replace iframe with preview image |',
+  '| LazyLoad CSS backgrounds | Not active | — | — |',
+  '| Add missing image dimensions | Active | Generator meta | — |',
+  '| Self-host Google Fonts | Unknown | — | No generator meta declaration decided it and no self-hosted font link was found; fonts self-hosted through other markup are not detected, so its state is unknown. |',
+  '| Preload Links | Not active | — | — |',
+  '| RocketCDN | Not active | — | — |',
+  '| Optimize Critical Images | Active | — | Preloaded images detected: 2 |',
+  '| Automatic Lazy Rendering | Collecting | — | Enabled, not yet applied on this page. |',
+  '| Preload fonts | Not active | — | — |',
+  '| Preconnect to External Domains | Not active | — | — |',
+  '| Priority Elements beacon | Active | — | — |',
   '',
-  '### Response headers (6)',
+  '### Response headers (7)',
   '',
   '| Header | Value |',
   '| --- | --- |',
   '| `Cache-Control` | `max-age=3600` |',
   '| `age` | `120` |',
+  '| `cf-cache-status` | `HIT` |',
   '| `Server` | `nginx` |',
   '| `X-Powered-By` | `WP Engine/7.3` |',
   '| `Set-Cookie` | `wordpress_sess` (value redacted) |',
@@ -123,28 +141,31 @@ const ABSENT_GOLDEN = [
   '- **Generated:** 2026-10-14 12:00:00 UTC',
   '- **Extension version:** Not available',
   '- **WP Rocket:** Not detected',
-  '- **Optimizations:** 0 of 14 active',
+  '- **WordPress version:** Not declared by the page',
+  '- **Optimizations:** 0 of 16 active',
   '',
   '### Detections',
   '',
-  '| Feature | Status | Details |',
-  '| --- | --- | --- |',
-  '| WP Rocket | Not active | — |',
-  '| Optimize CSS Delivery | Not active | — |',
-  '| Lazyload for CSS background images | Not active | — |',
-  '| Minify CSS files | Not active | — |',
-  '| Minify JavaScript files | Not active | — |',
-  '| Preload Links | Not active | — |',
-  '| RocketCDN | Not active | — |',
-  '| Delay JavaScript execution | Not active | — |',
-  '| Load JavaScript deferred | Not active | — |',
-  '| Lazyload for images | Not active | — |',
-  '| Lazyload for iframes and videos | Not active | — |',
-  '| Optimize critical images | Not active | — |',
-  '| Automatic lazy rendering | Not active | — |',
-  '| Preload fonts | Not active | — |',
-  '| Preconnect to external domains | Not active | — |',
-  '| Priority Elements beacon | Not active | — |',
+  '| Feature | Status | Source | Details |',
+  '| --- | --- | --- | --- |',
+  '| WP Rocket | Not active | — | — |',
+  '| Optimize CSS delivery | Not active | — | — |',
+  '| Delay JavaScript execution | Not active | — | — |',
+  '| Load JavaScript deferred | Not active | — | — |',
+  '| Minify CSS files | Not active | — | — |',
+  '| Minify JavaScript files | Not active | — | — |',
+  '| LazyLoad for images | Not active | — | — |',
+  '| LazyLoad for iframes/videos | Not active | — | — |',
+  '| LazyLoad CSS backgrounds | Not active | — | — |',
+  '| Add missing image dimensions | Not active | — | — |',
+  '| Self-host Google Fonts | Not active | — | — |',
+  '| Preload Links | Not active | — | — |',
+  '| RocketCDN | Not active | — | — |',
+  '| Optimize Critical Images | Not active | — | — |',
+  '| Automatic Lazy Rendering | Not active | — | — |',
+  '| Preload fonts | Not active | — | — |',
+  '| Preconnect to External Domains | Not active | — | — |',
+  '| Priority Elements beacon | Not active | — | — |',
   '',
   '### Response headers',
   '',
@@ -180,7 +201,7 @@ describe('buildSupportReport — branches', () => {
     expect(report).toContain('None were captured for this page.');
     // An empty capture still yields the server card (not active) but no server fact.
     expect(report.some((line) => line.startsWith('- **Server:**'))).toBe(false);
-    expect(report).toContain('| Server | Not active | — |');
+    expect(report).toContain('| Server | Not active | — | — |');
   });
 
   it('adds the truncation note under the headers heading only for a marked capture', () => {
@@ -198,26 +219,145 @@ describe('buildSupportReport — branches', () => {
       makeReportData({
         wprDetections: {
           ...emptyDetections(),
-          wpr: { present: true, cached: true, version: null, timeStamp: 9e20 }
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: null,
+            timeStamp: 9e20
+          }
         }
       })
     );
     expect(report).toContain('- **WP Rocket:** Detected (version not available)');
     expect(report).toContain('- **Page cache:** Cached (generation time not available)');
-    expect(report).toContain('| WP Rocket | Active | Version not available |');
-    expect(report).toContain('| Cached | Active | Time not available |');
+    expect(report).toContain('| WP Rocket | Active | — | Version not available |');
+    expect(report).toContain('| Cached | Active | — | Time not available |');
   });
 
-  it('reports a present-but-uncached plugin as not cached', () => {
+  it('spells the cache vocabulary per evidence class', () => {
+    const present = (overrides: Record<string, unknown>) =>
+      makeReportData({
+        wprDetections: {
+          ...makeReportData().wprDetections,
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null,
+            ...overrides
+          }
+        }
+      });
+
+    const signature = buildSupportReport(present({ cacheMarkerFound: true }), BARE_CONTEXT);
+    expect(signature).toContain(
+      '- **Page cache:** Plugin fingerprint found, cache not proven for this visit'
+    );
+
+    const possibly = buildSupportReport(
+      { ...present({}), pageHeaders: [{ name: 'sg-f-cache', value: 'HIT' }] },
+      BARE_CONTEXT
+    );
+    expect(possibly).toContain('- **Page cache:** Possibly cached (SiteGround');
+
+    const bypass = buildSupportReport({ ...present({}), bypassAttested: true }, BARE_CONTEXT);
+    expect(bypass).toContain(
+      '- **Page cache:** Cache bypass requested (nowprocket; no WP Rocket signature; cache state not proven)'
+    );
+
+    // A captured host serve outranks the bypass and keeps its qualification.
+    const bypassedHost = buildSupportReport(
+      {
+        ...present({}),
+        pageHeaders: [{ name: 'cf-cache-status', value: 'HIT' }],
+        bypassAttested: true
+      },
+      BARE_CONTEXT
+    );
+    expect(bypassedHost).toContain(
+      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature; cache bypass requested)'
+    );
+  });
+
+  it('uses the copy module for the cached line (single declaring site)', () => {
+    const report = buildSupportReport(
+      makeReportData({
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: true,
+            version: '3.1',
+            timeStamp: 1791342253
+          }
+        }
+      }),
+      BARE_CONTEXT
+    );
+    expect(report).toContain(
+      `- **Page cache:** ${
+        cacheCopy({
+          kind: 'cached',
+          seconds: 1791342253,
+          formatted: '2026-10-07 03:04:13 UTC'
+        }).report
+      }`
+    );
+  });
+
+  it('spells the header-capture edge states', () => {
+    const captured = (data: Partial<Parameters<typeof buildSupportReport>[0]>) =>
+      buildSupportReport(
+        {
+          ...makeReportData({
+            wprDetections: {
+              ...emptyDetections(),
+              wpr: {
+                present: true,
+                cacheMarkerFound: false,
+                cached: false,
+                version: null,
+                timeStamp: null
+              }
+            }
+          }),
+          ...data
+        },
+        BARE_CONTEXT
+      );
+    expect(captured({ pageHeaders: [] })).toContain(
+      '- **Page cache:** Cache not detected (response headers unavailable)'
+    );
+    expect(
+      captured({
+        pageHeaders: [{ name: 'server', value: 'nginx' }],
+        pageHeadersTruncated: true
+      })
+    ).toContain('- **Page cache:** Cache not detected (header capture truncated)');
+    expect(captured({ pageHeaders: [{ name: 'cf-cache-status', redacted: true }] })).toContain(
+      '- **Page cache:** Cache not detected (cache header value withheld)'
+    );
+  });
+
+  it('reports a present page without a signature as cache not detected', () => {
     const report = lines(
       makeReportData({
         wprDetections: {
           ...emptyDetections(),
-          wpr: { present: true, cached: false, version: '3.1', timeStamp: null }
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: '3.1',
+            timeStamp: null
+          }
         }
       })
     );
-    expect(report).toContain('- **Page cache:** Not cached');
+    expect(report).toContain('- **Page cache:** Cache not detected (response headers unavailable)');
     expect(report.some((line) => line.startsWith('| Cached |'))).toBe(false);
   });
 
@@ -385,3 +525,141 @@ describe('codeSpan', () => {
     expect(codeSpan(value, inTable)).toBe(expected);
   });
 });
+
+describe('buildSupportReport — the HUD registry feeds the detections table', () => {
+  it('names every feature row exactly as the registry and the cards do', () => {
+    const data = makeReportData();
+    const report = buildSupportReport(data, CONTEXT).split('\n');
+    // The RUCSS/async pair shares the merged "Optimize CSS delivery" card.
+    for (const feature of HUD_FEATURES) {
+      if (feature.row === 'remove_unused_css' || feature.row === 'async_css') continue;
+      expect(
+        report.filter((line) => line.startsWith(`| ${feature.label} |`)),
+        feature.label
+      ).toHaveLength(1);
+    }
+  });
+
+  it('reports the evidence source and the why of an unsure verdict in their cells', () => {
+    const report = lines(
+      makeReportData({
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: false,
+            version: null,
+            timeStamp: null
+          },
+          minify_css: { present: true, source: 'meta' }
+        }
+      })
+    );
+    expect(report).toContain('| Minify CSS files | Active | Generator meta | — |');
+    expect(report.find((line) => line.startsWith('| Add missing image dimensions |'))).toBe(
+      '| Add missing image dimensions | Unknown | — | No generator meta declaration decided it, and this feature leaves no other footprint, so its state is unknown. |'
+    );
+  });
+
+  it('names the hosting cache layer beside a signature without the debug stamp', () => {
+    const report = lines(
+      makeReportData({
+        pageHeaders: [{ name: 'sg-f-cache', value: 'HIT' }],
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: false,
+            version: null,
+            timeStamp: null
+          }
+        }
+      })
+    );
+    expect(report).toContain(
+      '- **Page cache:** Plugin fingerprint found, cache not proven for this visit'
+    );
+    expect(report).toContain(
+      "- **Hosting cache layer:** SiteGround cache-layer marker captured (that layer served this response, so this visit may not have reached WP Rocket's cache)"
+    );
+  });
+
+  it('never repeats the layer on a cached page (stamp) or a possibly-cached one (already named)', () => {
+    const headers = [{ name: 'cf-cache-status', value: 'HIT' }];
+    const cached = lines(
+      makeReportData({
+        pageHeaders: headers,
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: { present: true, cacheMarkerFound: true, cached: true, version: null, timeStamp: 1 }
+        }
+      })
+    );
+    expect(cached.some((line) => line.startsWith('- **Hosting cache layer:**'))).toBe(false);
+    const possibly = lines(
+      makeReportData({
+        pageHeaders: headers,
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: false,
+            cached: false,
+            version: null,
+            timeStamp: null
+          },
+          remove_unused_css: { present: true }
+        }
+      })
+    );
+    expect(possibly.filter((line) => line.includes('Cloudflare'))).toEqual([
+      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature)'
+    ]);
+  });
+
+  it('a collecting family row states its why once — no beacon subtitle beside it', () => {
+    const report = lines(
+      makeReportData({
+        wprDetections: {
+          ...emptyDetections(),
+          priority_elements_beacon: { present: true, status: { atf: true }, isMobile: null }
+        }
+      })
+    );
+    expect(report).toContain(
+      '| Optimize Critical Images | Collecting | — | Enabled, not yet applied on this page. |'
+    );
+    expect(report.join('\n')).not.toContain('Beacon present');
+  });
+
+  it('omits the hosting cache-layer line without a served marker', () => {
+    const report = lines(
+      makeReportData({
+        pageHeaders: [{ name: 'cf-cache-status', value: 'MISS' }],
+        wprDetections: {
+          ...emptyDetections(),
+          wpr: {
+            present: true,
+            cacheMarkerFound: true,
+            cached: false,
+            version: null,
+            timeStamp: null
+          }
+        }
+      })
+    );
+    expect(report.some((line) => line.startsWith('- **Hosting cache layer:**'))).toBe(false);
+  });
+
+  it('code-spans a hostile WordPress version (page-derived text)', () => {
+    const report = lines(makeReportData({ wordpressVersion: '6.8`|x' }));
+    expect(report).toContain('- **WordPress version:** ``6.8`|x``');
+  });
+});
+
+/** The report's lines for one payload (the default provenance). */
+function lines(data: FdtData): string[] {
+  return buildSupportReport(data, CONTEXT).split('\n');
+}

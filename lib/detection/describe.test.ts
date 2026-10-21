@@ -10,6 +10,7 @@ import {
   absoluteStampFromMs,
   describeDetections,
   formatCacheTimestamp,
+  type FeatureState,
   type PageAnalysisReport,
   MAX_REPRESENTABLE_MS
 } from './describe';
@@ -20,14 +21,16 @@ import type { WprDetections } from '../wp-rocket/types';
 /** The engine's zero page: every feature absent, beacon absent, no config. */
 function zeroDetections(): WprDetections {
   return {
-    wpr: { present: false, cached: false, version: null, timeStamp: null },
+    wpr: { present: false, cacheMarkerFound: false, cached: false, version: null, timeStamp: null },
     remove_unused_css: { present: false },
     delay_js: { present: false, scripts: [], version: null, delayedScripts: 0 },
-    defer_all_js: { present: false, scripts: [] },
+    defer_all_js: { present: false, scripts: [], deferredScripts: 0 },
     async_css: { present: false },
     lazyload: { present: false, images: [] },
     lazyload_iframes: { present: false, replaceImage: false },
     lazyload_css_bg_img: { present: false },
+    self_hosted_fonts: { present: false },
+    image_dimensions: { present: false },
     minify_css: { present: false },
     minify_js: { present: false },
     preload_links: { present: false },
@@ -50,7 +53,7 @@ describe('describeDetections', () => {
     const report = describeDetections(zeroDetections());
     expect(report['WP Rocket']).toEqual({
       'plugin detected': false,
-      'page served from cache': false,
+      'page cache': 'Not applicable (WP Rocket not detected)',
       version: null,
       'cache generated at': null
     });
@@ -65,30 +68,60 @@ describe('describeDetections', () => {
       'configured device': 'unknown',
       'enabled features': []
     });
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'not applied',
       'preloaded images': 0
     });
+  });
+
+  it('reads the explicit cache state instead of inventing one from absence', () => {
+    const page = zeroDetections();
+    page.wpr = {
+      present: true,
+      cacheMarkerFound: true,
+      cached: false,
+      version: null,
+      timeStamp: null
+    };
+    expect(
+      describeDetections(page, { kind: 'uncertain-signature' })['WP Rocket']['page cache']
+    ).toBe('Plugin fingerprint found, cache not proven for this visit');
+    expect(
+      describeDetections(page, { kind: 'possibly-cached', evidence: 'Cloudflare' })['WP Rocket'][
+        'page cache'
+      ]
+    ).toContain('Cloudflare');
+    // Without an explicit state the report derives the signature-only answer
+    // and says the headers were unavailable — never a cache verdict.
+    expect(describeDetections(page)['WP Rocket']['page cache']).toBe(
+      'Plugin fingerprint found, cache not proven for this visit'
+    );
+    // An absent plugin has no cache question, even if a caller passes a state.
+    const absent = zeroDetections();
+    expect(
+      describeDetections(absent, { kind: 'bypass-requested' })['WP Rocket']['page cache']
+    ).toBe('Not applicable (WP Rocket not detected)');
   });
 
   it('names and counts a fully applied cached page, with the UTC cache time', () => {
     const page = zeroDetections();
     page.wpr = {
       present: true,
+      cacheMarkerFound: true,
       cached: true,
       version: '3.19.0.3',
       timeStamp: 1730000000
     };
     page.remove_unused_css = { present: true };
     page.delay_js = { present: true, scripts: [{} as never], version: '1.2.3', delayedScripts: 4 };
-    page.defer_all_js = { present: true, scripts: ['a', 'b', 'c'] };
+    page.defer_all_js = { present: true, scripts: ['a', 'b', 'c'], deferredScripts: 3 };
     page.lazyload = { present: true, images: [{} as never, {} as never] };
     page.minify_css = { present: true };
     page.rocket_cdn = { present: true };
     const report: PageAnalysisReport = describeDetections(page);
     expect(report['WP Rocket']).toEqual({
       'plugin detected': true,
-      'page served from cache': true,
+      'page cache': 'Cached, generated 2024-10-27 03:33:20 UTC',
       version: '3.19.0.3',
       'cache generated at': '2024-10-27 03:33:20 UTC'
     });
@@ -101,7 +134,7 @@ describe('describeDetections', () => {
       state: 'applied',
       'deferred scripts': 3
     });
-    expect(report['Image LazyLoad']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
+    expect(report['LazyLoad for images']).toEqual({ state: 'applied', 'lazy-loaded images': 2 });
     expect(report.RocketCDN).toEqual({ state: 'applied' });
   });
 
@@ -118,11 +151,11 @@ describe('describeDetections', () => {
     const report = describeDetections(page);
     // Applied beats config truth; withheld or false context reads "not
     //  enabled".
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'not enabled',
       'converted elements': 0,
       'render hashes on page': 0
@@ -131,7 +164,7 @@ describe('describeDetections', () => {
     expect(report['Priority Elements beacon']).toEqual({
       detected: true,
       'configured device': 'desktop',
-      'enabled features': ['Optimize critical images', 'Preconnect to external domains']
+      'enabled features': ['Optimize Critical Images', 'Preconnect to External Domains']
     });
   });
 
@@ -144,7 +177,7 @@ describe('describeDetections', () => {
       locationHashes: 6
     };
     const report = describeDetections(page);
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 6
@@ -162,15 +195,177 @@ describe('describeDetections', () => {
     page.preconnect_external_domains = { present: true, domains: ['x'], preconnectCount: 1 };
     const report = describeDetections(page);
     expect(report['Preload fonts']).toEqual({ state: 'applied', 'preloaded fonts': 2 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'applied',
       'domains hinted': 1
     });
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
     expect(report['Priority Elements beacon']['configured device']).toBe('unknown');
+  });
+
+  it('meta refutation is an applied-marker fact: collecting states stay collecting', () => {
+    const status = { atf: true, lrc: true, preload_fonts: true, preconnect_external_domain: true };
+    const cases: Array<{
+      name: string;
+      row: WprDetections['automatic_lazy_rendering'];
+      beacon: WprDetections['priority_elements_beacon'];
+      expected: FeatureState;
+    }> = [
+      {
+        name: 'refuted + location hash',
+        row: {
+          present: false,
+          source: 'meta',
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 1
+        },
+        beacon: { present: false, status: null, isMobile: null },
+        expected: 'collecting'
+      },
+      {
+        name: 'refuted + beacon config true',
+        row: {
+          present: false,
+          source: 'meta',
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: true, status, isMobile: false },
+        expected: 'collecting'
+      },
+      {
+        name: 'refuted + no lower evidence',
+        row: {
+          present: false,
+          source: 'meta',
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: false, status: null, isMobile: null },
+        expected: 'not applied'
+      },
+      {
+        name: 'refuted + beacon config false',
+        row: {
+          present: false,
+          source: 'meta',
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: true, status: { ...status, lrc: false }, isMobile: false },
+        expected: 'not enabled'
+      },
+      {
+        name: 'declared + no markup',
+        row: {
+          present: true,
+          source: 'meta',
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: false, status: null, isMobile: null },
+        expected: 'applied'
+      },
+      {
+        name: 'absent + location hash',
+        row: {
+          present: false,
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 2
+        },
+        beacon: { present: false, status: null, isMobile: null },
+        expected: 'collecting'
+      },
+      {
+        name: 'absent + beacon config true',
+        row: {
+          present: false,
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: true, status, isMobile: false },
+        expected: 'collecting'
+      },
+      {
+        name: 'absent + beacon config false',
+        row: {
+          present: false,
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: true, status: { ...status, lrc: false }, isMobile: false },
+        expected: 'not enabled'
+      },
+      {
+        name: 'absent + nothing',
+        row: {
+          present: false,
+          lazyRenderElements: 0,
+          inlineCssPresent: false,
+          locationHashes: 0
+        },
+        beacon: { present: false, status: null, isMobile: null },
+        expected: 'not applied'
+      }
+    ];
+    for (const testCase of cases) {
+      const page = zeroDetections();
+      page.automatic_lazy_rendering = testCase.row;
+      page.priority_elements_beacon = testCase.beacon;
+      expect(describeDetections(page)['Automatic Lazy Rendering'].state, testCase.name).toBe(
+        testCase.expected
+      );
+    }
+  });
+
+  it('a meta-refuted family keeps the beacon config as a config fact', () => {
+    const page = zeroDetections();
+    page.priority_elements_beacon = {
+      present: true,
+      status: { atf: true, lrc: true, preload_fonts: true, preconnect_external_domain: true },
+      isMobile: false
+    };
+    page.rocket_above_the_fold_optimization = { present: false, source: 'meta', lcpComment: false };
+    page.automatic_lazy_rendering = {
+      present: false,
+      source: 'meta',
+      lazyRenderElements: 0,
+      inlineCssPresent: false,
+      locationHashes: 0
+    };
+    page.auto_preload_fonts = { present: false, source: 'meta', fonts: [] };
+    page.preconnect_external_domains = {
+      present: false,
+      source: 'meta',
+      domains: [],
+      preconnectCount: 0
+    };
+    const report = describeDetections(page);
+    for (const label of [
+      'Optimize Critical Images',
+      'Automatic Lazy Rendering',
+      'Preload fonts',
+      'Preconnect to External Domains'
+    ] as const) {
+      expect(report[label].state, label).toBe('collecting');
+    }
+    expect(report['Priority Elements beacon']['enabled features']).toEqual([
+      'Optimize Critical Images',
+      'Automatic Lazy Rendering',
+      'Preload fonts',
+      'Preconnect to External Domains'
+    ]);
   });
 });
 
@@ -179,17 +374,17 @@ describe('formatCacheTimestamp', () => {
     expect(formatCacheTimestamp(null)).toBeNull();
     expect(formatCacheTimestamp(0)).toBe('1970-01-01 00:00:00 UTC');
     expect(formatCacheTimestamp(1730000000)).toBe('2024-10-27 03:33:20 UTC');
+    expect(formatCacheTimestamp(253_402_300_799)).toBe('9999-12-31 23:59:59 UTC');
   });
 
-  it('answers null instead of crashing on a page-derived stamp outside the platform date range', () => {
-    // The stamp is page-controlled text (the debug comment's digits); a value
-    // this large is not a time — `new Date(...*1000).toISOString()` would
-    // throw `RangeError` unguarded, and the caller's whole answer would die.
-    const boundarySeconds = 8.64e12; // 8.64e15 ms — the exact platform maximum.
-    expect(formatCacheTimestamp(boundarySeconds)).not.toBeNull();
-    expect(formatCacheTimestamp(boundarySeconds + 1)).toBeNull();
+  it('answers null outside the non-negative four-digit-year display domain', () => {
+    expect(formatCacheTimestamp(253_402_300_800)).toBeNull();
+    expect(formatCacheTimestamp(8.64e12)).toBeNull();
     expect(formatCacheTimestamp(9_999_999_999_999)).toBeNull();
+    expect(formatCacheTimestamp(1e26)).toBeNull();
+    expect(formatCacheTimestamp(-1)).toBeNull();
     expect(formatCacheTimestamp(-9_999_999_999_999)).toBeNull();
+    expect(formatCacheTimestamp(1.5)).toBeNull();
     expect(formatCacheTimestamp(Number.NaN)).toBeNull();
   });
 });
@@ -204,21 +399,19 @@ describe('absoluteStampFromMs', () => {
     );
   });
 
-  it('answers null for a stamp that names no representable instant (never a throw)', () => {
+  it('answers null for a stamp that names no displayable instant (never a throw)', () => {
     expect(absoluteStampFromMs(Number.NaN)).toBeNull();
     expect(absoluteStampFromMs(Number.POSITIVE_INFINITY)).toBeNull();
     expect(absoluteStampFromMs(Number.NEGATIVE_INFINITY)).toBeNull();
-    // Just past the ceiling: rounding to seconds must not resurrect a stamp
-    // that names no instant (the ceiling itself is the last real one).
     expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS + 1)).toBeNull();
     expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS + 499)).toBeNull();
     expect(absoluteStampFromMs(-MAX_REPRESENTABLE_MS - 1)).toBeNull();
   });
 
-  it('accepts the representable edge exactly', () => {
-    // The platform maximum instant is the one overflow-shaped stamp that is
-    // real; its text rides the shared formatter (year-overlong slice).
-    expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS)).toMatch(/^\+275760-09-13 .* UTC$/);
+  it('applies the cache display ceiling to machine stamps too', () => {
+    expect(absoluteStampFromMs(Date.UTC(9999, 11, 31, 23, 59, 59))).toBe('9999-12-31 23:59:59 UTC');
+    // The platform's expanded-year edge is not a displayable cache instant.
+    expect(absoluteStampFromMs(MAX_REPRESENTABLE_MS)).toBeNull();
   });
 });
 
@@ -230,17 +423,19 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     'Delay JavaScript execution',
     'Load JavaScript deferred',
     'Load CSS asynchronously',
-    'Image LazyLoad',
-    'Iframes and videos LazyLoad',
-    'CSS background images LazyLoad',
-    'Minify CSS',
-    'Minify JavaScript',
-    'Preload links',
+    'LazyLoad for images',
+    'LazyLoad for iframes/videos',
+    'LazyLoad CSS backgrounds',
+    'Self-host Google Fonts',
+    'Add missing image dimensions',
+    'Minify CSS files',
+    'Minify JavaScript files',
+    'Preload Links',
     'RocketCDN',
-    'Optimize critical images',
-    'Automatic lazy rendering',
+    'Optimize Critical Images',
+    'Automatic Lazy Rendering',
     'Preload fonts',
-    'Preconnect to external domains',
+    'Preconnect to External Domains',
     'Priority Elements beacon'
   ];
 
@@ -260,7 +455,7 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     const report = analyze('me-home-cached.html');
     expect(report['WP Rocket']).toEqual({
       'plugin detected': true,
-      'page served from cache': true,
+      'page cache': 'Cached, generated 2026-10-07 03:04:01 UTC',
       version: '3.20.0.2',
       'cache generated at': '2026-10-07 03:04:01 UTC'
     });
@@ -268,17 +463,17 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
 
   it('reads the pending page: every family feature composing to "collecting"', () => {
     const report = analyze('priority-elements-pending.html');
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'collecting',
       'preloaded images': 0
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 0
     });
     expect(report['Preload fonts']).toEqual({ state: 'collecting', 'preloaded fonts': 0 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'collecting',
       'domains hinted': 0
     });
@@ -286,21 +481,21 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
       detected: true,
       'configured device': 'desktop',
       'enabled features': [
-        'Optimize critical images',
-        'Automatic lazy rendering',
+        'Optimize Critical Images',
+        'Automatic Lazy Rendering',
         'Preload fonts',
-        'Preconnect to external domains'
+        'Preconnect to External Domains'
       ]
     });
   });
 
   it('reads the mixed page: per-feature assembly over one config', () => {
     const report = analyze('mixed-partial-applied.html');
-    expect(report['Optimize critical images']).toEqual({
+    expect(report['Optimize Critical Images']).toEqual({
       state: 'applied',
       'preloaded images': 1
     });
-    expect(report['Automatic lazy rendering']).toEqual({
+    expect(report['Automatic Lazy Rendering']).toEqual({
       state: 'collecting',
       'converted elements': 0,
       'render hashes on page': 2
@@ -308,14 +503,14 @@ describe('describeDetections over the real engine (fixture corpus)', () => {
     // The corpus's real config: fonts omitted, preconnect false — both the
     // plugin's own ways of saying "not enabled here".
     expect(report['Preload fonts']).toEqual({ state: 'not enabled', 'preloaded fonts': 0 });
-    expect(report['Preconnect to external domains']).toEqual({
+    expect(report['Preconnect to External Domains']).toEqual({
       state: 'not enabled',
       'domains hinted': 0
     });
     expect(report['Priority Elements beacon']).toEqual({
       detected: true,
       'configured device': 'mobile',
-      'enabled features': ['Optimize critical images', 'Automatic lazy rendering']
+      'enabled features': ['Optimize Critical Images', 'Automatic Lazy Rendering']
     });
   });
 });

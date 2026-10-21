@@ -7,20 +7,35 @@
  *   green = present + cached, amber = present + uncached, gray = presence
  *   not established, pulse = the pass is still running, red = the pass
  *   failed.
- * - The D-2 mapping folds the report's `FeatureState` into the chip
- *   vocabulary; red is reserved for real failures, so a feature the plugin
- *   had not yet applied reads neutral, never erroring.
+ * - The D-2 mapping folds the HUD verdict (the report's state, plus the
+ *   honest `unknown`) into the chip vocabulary; red is reserved for real
+ *   failures, so a feature the plugin had not yet applied reads neutral,
+ *   never erroring.
+ * - Rows come from the HUD registry (`lib/detection/hud`): the chip shows the
+ *   plugin's compact wording, the tooltip the full name, state, evidence
+ *   source and why — the same names and readings the panel cards and the
+ *   support report carry.
  * - The card model (identity, cache chip, grouped rows, footer) is one pure
  *   builder the view renders verbatim; every unsure state explains itself in
  *   its tooltip copy and no chip claims more certainty than the scan has.
  */
 
-import type { FeatureState, PageAnalysisReport } from '../../../lib/detection/describe';
-import { describeDetections, formatCacheTimestamp } from '../../../lib/detection/describe';
-import type { WprDetections } from '../../../lib/wp-rocket/types';
-import { stripGroupedRows } from './strip-items';
-import type { StripGroupId, StripItemId } from './strip-items';
-import type { StripIconGlyph } from './icons';
+import type { PageAnalysisReport } from '../../../lib/detection/describe';
+import { describeDetections } from '../../../lib/detection/describe';
+import { cacheCopy } from '../../../lib/detection/cache-context';
+import type { CacheState } from '../../../lib/detection/cache-context';
+import {
+  hudGroupedFeatures,
+  hudStateLine,
+  readHudFeature,
+  SOURCE_COPY,
+  type HudFeature,
+  type HudGroupId,
+  type HudReading,
+  type HudVerdict
+} from '../../../lib/detection/hud';
+import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
+import { GROUP_ICONS, type StripIconGlyph } from './icons';
 
 /** The widget's five chrome moods (`ins-*`; the KC vocabulary generalized). */
 export type InspectorMood = 'green' | 'amber' | 'gray' | 'pulse' | 'red';
@@ -35,6 +50,8 @@ export type InspectorPhase = 'running' | 'ready' | 'failed';
 export interface StripDataSnapshot {
   phase: InspectorPhase;
   detections: WprDetections | null;
+  /** The hub's explicit cache answer (null while running/failed). */
+  cacheState: CacheState | null;
 }
 
 /**
@@ -43,10 +60,10 @@ export interface StripDataSnapshot {
  */
 export type StripChipState = 'ok' | 'warn' | 'attention' | 'error' | 'neutral';
 
-/** The cache chip, one of the four conversion-table shapes. */
+/** The cache chip: one of the five explicit cache states. */
 export interface StripCacheChip {
   state: StripChipState;
-  /** The chip's short label (`✓ Cached` · `Not cached` · `…` · `—`). */
+  /** The chip's short label (`✓ Cached` · `Cache not proven` · `Possibly cached` · `Cache not detected` · `Bypass requested` · `…` · `—`). */
   text: string;
   /** The cache stamp suffix when a served stamp formatted. */
   stamp: string | null;
@@ -54,8 +71,9 @@ export interface StripCacheChip {
 
 /** One card row rendered verbatim by the view. */
 export interface StripCardRow {
-  id: StripItemId;
-  /** The full verified feature name (chip text). */
+  /** The feature's detection row (stable identity, never rendered). */
+  id: FeatureMetaRow;
+  /** The plugin's compact wording (chip text; the full name heads the tooltip). */
   label: string;
   /** The chip's state, folded from the report's evidence state. */
   chipState: StripChipState;
@@ -63,13 +81,13 @@ export interface StripCardRow {
   count: number | null;
   /** The count's unit word (rendered after the count). */
   unit: string | null;
-  /** The row's full name + one-line why (the chip's title tooltip). */
+  /** The row's full name + state line + evidence source (the chip's title tooltip). */
   tooltip: string;
 }
 
 /** One rendered group heading + its rows. */
 export interface StripCardGroup {
-  id: StripGroupId;
+  id: HudGroupId;
   heading: string;
   icon: StripIconGlyph;
   rows: readonly StripCardRow[];
@@ -93,9 +111,7 @@ export interface StripCardModel {
   cacheTooltip: string | null;
 }
 
-/** The cache chip's short labels, exactly as the conversion table lists them. */
-export const CACHE_CHIP_CACHED_TEXT = '✓ Cached';
-export const CACHE_CHIP_NOT_CACHED_TEXT = 'Not cached';
+/** The cache chip's phase placeholders (the state labels live in `cache-context`). */
 export const CACHE_CHIP_PENDING_TEXT = '…';
 export const CACHE_CHIP_IDLE_TEXT = '—';
 
@@ -114,25 +130,27 @@ export const CARD_ERROR_HINT = 'Reload the page and re-open the report to scan a
 export function insMood(snapshot: StripDataSnapshot): InspectorMood {
   if (snapshot.phase === 'running') return 'pulse';
   if (snapshot.phase === 'failed' || snapshot.detections === null) return 'red';
-  const { present, cached } = snapshot.detections.wpr;
+  const { present } = snapshot.detections.wpr;
   if (!present) return 'gray';
-  return cached ? 'green' : 'amber';
+  return snapshot.cacheState?.kind === 'cached' ? 'green' : 'amber';
 }
 
 /**
- * The D-2 matrix: the report's evidence states fold into chip states.
- * `collecting` (enabled, not yet applied) is the attention pair — the amber
- * "present but unsure" reading. Both neutral states (not applied / not
- * enabled) stay neutral: a page served before the plugin's work, or a
- * feature with a withheld context, is not an error.
+ * The D-2 matrix: the HUD verdicts fold into chip states. `collecting`
+ * (enabled, not yet applied) and `unknown` (undecided, absence unprovable)
+ * are the attention pair — the amber "present but unsure" reading. Both
+ * neutral states (not applied / not enabled) stay neutral: a page served
+ * before the plugin's work, or a feature with a withheld context, is not an
+ * error.
  *
- * @param state The evidence state one report row composed.
+ * @param verdict The verdict one HUD reading composed.
  */
-export function chipStateForFeature(state: FeatureState): StripChipState {
-  switch (state) {
+export function chipStateForFeature(verdict: HudVerdict): StripChipState {
+  switch (verdict) {
     case 'applied':
       return 'ok';
     case 'collecting':
+    case 'unknown':
       return 'attention';
     case 'not enabled':
     case 'not applied':
@@ -141,33 +159,16 @@ export function chipStateForFeature(state: FeatureState): StripChipState {
 }
 
 /**
- * The row's tooltip: the full name, the honest state line, and the count's
- * wording. The unsure states explain themselves (what was looked for); no
- * chip state a support engineer cannot resolve on the page is left unspoken.
+ * The row's tooltip: the full name, the honest state line (the unsure
+ * verdicts explain themselves — what was looked for) and the evidence class
+ * that decided it, when one did.
  *
- * @param label The row's full feature name.
- * @param state The row's evidence state.
- * @param count The row's evidence count, when the engine measures one.
- * @param unit The count's unit word, when there is a count.
+ * @param feature The HUD row.
+ * @param reading The row's reading.
  */
-function rowTooltip(
-  label: string,
-  state: FeatureState,
-  count: number | null,
-  unit: string | null
-): string {
-  switch (state) {
-    case 'applied':
-      return count !== null && unit !== null
-        ? `${label} — applied on this page: ${String(count)} ${unit}.`
-        : `${label} — applied on this page.`;
-    case 'collecting':
-      return `${label} — the feature is enabled, not yet applied on this page.`;
-    case 'not enabled':
-      return `${label} — not enabled in the site's current configuration.`;
-    case 'not applied':
-      return `${label} — nothing matched on this page (the page may predate the plugin's work).`;
-  }
+function rowTooltip(feature: HudFeature, reading: HudReading): string {
+  const line = `${feature.label} — ${hudStateLine(feature, reading)}`;
+  return reading.source === null ? line : `${line} ${SOURCE_COPY[reading.source].tooltip}`;
 }
 
 /**
@@ -191,20 +192,27 @@ function cacheChip(snapshot: StripDataSnapshot): StripCacheChip | null {
   if (snapshot.phase === 'running') {
     return { state: 'neutral', text: CACHE_CHIP_PENDING_TEXT, stamp: null };
   }
-  if (snapshot.phase === 'failed' || snapshot.detections === null) {
+  if (snapshot.phase === 'failed' || snapshot.detections === null || snapshot.cacheState === null) {
     return { state: 'neutral', text: CACHE_CHIP_IDLE_TEXT, stamp: null };
   }
-  const { present, cached, timeStamp } = snapshot.detections.wpr;
-  if (!present) {
+  if (!snapshot.detections.wpr.present) {
     return { state: 'neutral', text: CACHE_CHIP_IDLE_TEXT, stamp: null };
   }
-  if (!cached) {
-    return { state: 'warn', text: CACHE_CHIP_NOT_CACHED_TEXT, stamp: null };
-  }
+  const copy = cacheCopy(snapshot.cacheState);
+  // Neutral for both no-verdict arms: a bypass request is the visit's own
+  // intent, not evidence of a problem (warn is for conflicting evidence:
+  // signature without stamp, host marker without signature).
+  const state: StripChipState =
+    snapshot.cacheState.kind === 'cached'
+      ? 'ok'
+      : snapshot.cacheState.kind === 'not-detected' ||
+          snapshot.cacheState.kind === 'bypass-requested'
+        ? 'neutral'
+        : 'warn';
   return {
-    state: 'ok',
-    text: CACHE_CHIP_CACHED_TEXT,
-    stamp: formatCacheTimestamp(timeStamp)
+    state,
+    text: copy.chip,
+    stamp: snapshot.cacheState.kind === 'cached' ? snapshot.cacheState.formatted : null
   };
 }
 
@@ -214,15 +222,12 @@ function cacheChip(snapshot: StripDataSnapshot): StripCacheChip | null {
  * @param snapshot The hub read to render.
  */
 function cacheTooltip(snapshot: StripDataSnapshot): string | null {
-  const chip = cacheChip(snapshot);
-  if (chip === null) return null;
-  if (chip.stamp !== null) return `Cache generated ${chip.stamp}`;
   if (snapshot.phase === 'running') return 'The page scan has not answered yet.';
   if (snapshot.phase === 'failed') return 'The page scan failed — no cache verdict.';
   if (snapshot.detections === null) return 'No page answer yet.';
-  const { present, cached } = snapshot.detections.wpr;
-  if (!present) return 'WP Rocket did not handle this page.';
-  return cached ? 'The page is served from cache.' : 'The page is not served from cache.';
+  if (snapshot.cacheState === null) return 'No page answer yet.';
+  if (!snapshot.detections.wpr.present) return 'WP Rocket did not handle this page.';
+  return cacheCopy(snapshot.cacheState).tooltip;
 }
 
 /**
@@ -246,7 +251,7 @@ export function footerStamp(
  * @param input The current snapshot, the WordPress version the pass read,
  *   and this extension's manifest version for the footer.
  * @returns The whole card: identity, cache chip, grouped rows (per the
- *   registry's grouping), state copy (pending/failed) and footer stamp.
+ *   HUD registry's grouping), state copy (pending/failed) and footer stamp.
  */
 export function buildStripCardModel(input: {
   snapshot: StripDataSnapshot;
@@ -262,25 +267,26 @@ export function buildStripCardModel(input: {
   // and handed to the registry's row readers.
   const report: PageAnalysisReport | null =
     snapshot.phase === 'ready' && snapshot.detections !== null
-      ? describeDetections(snapshot.detections)
+      ? describeDetections(snapshot.detections, snapshot.cacheState ?? undefined)
       : null;
 
+  const detections = snapshot.detections;
   const groups =
-    report === null
+    report === null || detections === null
       ? []
-      : stripGroupedRows().map((group) => ({
+      : hudGroupedFeatures().map((group) => ({
           id: group.id,
           heading: group.heading,
-          icon: group.icon,
-          rows: group.rows.map((row) => {
-            const reading = row.read(report);
+          icon: GROUP_ICONS[group.id],
+          rows: group.features.map((feature) => {
+            const reading = readHudFeature(feature, report, detections);
             return {
-              id: row.id,
-              label: row.label,
-              chipState: chipStateForFeature(reading.state),
+              id: feature.row,
+              label: feature.shortLabel,
+              chipState: chipStateForFeature(reading.verdict),
               count: reading.count,
-              unit: row.unit,
-              tooltip: rowTooltip(row.label, reading.state, reading.count, row.unit)
+              unit: feature.unit,
+              tooltip: rowTooltip(feature, reading)
             };
           })
         }));

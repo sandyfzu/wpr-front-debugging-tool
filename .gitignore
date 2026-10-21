@@ -43,6 +43,7 @@ web-ext.config.ts
 # git-ignored WP Rocket build artifact (proved uninstallable from git, boot-built only)
 docker/wpr/
 docker/certs/
+docker/state/
 
 # Machine-local spike harness/evidence (untracked scratch tooling; referenced by phase docs' manual steps)
 .scratch/

@@ -490,10 +490,11 @@ describe('detectPreconnectExternalDomains', () => {
     );
     expect(result.detections.preconnect_external_domains).toEqual({
       present: true,
+      source: 'footprint',
       domains: ['https://cdn.rocketcdn.me/'],
       preconnectCount: 0
     });
-    expect(result.detections.rocket_cdn).toEqual({ present: true });
+    expect(result.detections.rocket_cdn).toEqual({ present: true, source: 'footprint' });
   });
 
   it('an empty href proves no domain but still counts the variant', () => {

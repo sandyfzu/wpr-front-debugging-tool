@@ -2,6 +2,7 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": false,
       "cached": false,
       "version": "3.20",
       "timeStamp": null
@@ -20,7 +21,8 @@
     },
     "defer_all_js": {
       "present": false,
-      "scripts": []
+      "scripts": [],
+      "deferredScripts": 0
     },
     "lazyload": {
       "present": false,
@@ -31,6 +33,12 @@
       "replaceImage": false
     },
     "lazyload_css_bg_img": {
+      "present": false
+    },
+    "self_hosted_fonts": {
+      "present": false
+    },
+    "image_dimensions": {
       "present": false
     },
     "rocket_above_the_fold_optimization": {
@@ -55,7 +63,8 @@
         "https://fonts.gstatic.com/",
         "https://cdn.example-cdn.net/"
       ],
-      "preconnectCount": 2
+      "preconnectCount": 2,
+      "source": "footprint"
     },
     "priority_elements_beacon": {
       "present": false,

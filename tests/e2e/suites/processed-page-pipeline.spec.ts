@@ -73,11 +73,16 @@ test.describe('processed-page pipeline', () => {
       `one "[WPR FDT] Page data processed in X ms" line (got: ${consoleInfo.map((l) => l.text).join(' | ')})`
     ).toHaveLength(1);
 
-    // The organized page-analysis print rides the same pass (info level).
-    expect(
-      consoleInfo.some((line) => line.text.startsWith(`${LOG_PREFIX} Page analysis`)),
-      'the page-analysis console print follows the timing line'
-    ).toBe(true);
+    // The organized page-analysis print rides the same pass but follows the
+    // one-shot header fetch (its cache answer reads the capture), so poll for
+    // it instead of assuming it landed with the timing line.
+    await expect
+      .poll(
+        () =>
+          consoleInfo.filter((line) => line.text.startsWith(`${LOG_PREFIX} Page analysis`)).length,
+        { timeout: 8_000 }
+      )
+      .toBe(1);
   });
 
   test('the summary push lands at the SW badge seam with per-page state', async ({ extension }) => {

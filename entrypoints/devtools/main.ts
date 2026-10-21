@@ -16,7 +16,7 @@ import { createLogger } from '../../lib/logger';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
 import { registerLazyloadSidebar } from './lazyload-sidebar';
 import { registerSearchRelay } from './search-relay';
-import { lastErrorMessage } from '../../utils/last-error';
+import { readLastError } from '../../utils/last-error';
 
 const log = createLogger('devtools');
 
@@ -39,12 +39,9 @@ try {
   // manifest's Chrome floor) — any creation failure must be read from
   // `runtime.lastError` inside the callback.
   browser.devtools.panels.create(PANEL_TITLE, PANEL_ICON, PANEL_PAGE, (panel) => {
-    const creationFailure = lastErrorMessage(browser.runtime.lastError);
+    const creationFailure = readLastError(browser.runtime);
     if (creationFailure !== null) {
-      log.error('Panel creation failed', {
-        title: PANEL_TITLE,
-        message: creationFailure
-      });
+      log.error('Panel creation failed', { title: PANEL_TITLE, message: creationFailure });
       return;
     }
     registerSearchRelay(panel);

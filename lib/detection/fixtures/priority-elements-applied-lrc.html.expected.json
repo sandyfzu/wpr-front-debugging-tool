@@ -2,6 +2,7 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": false,
       "cached": false,
       "version": "3.20",
       "timeStamp": null
@@ -20,7 +21,8 @@
     },
     "defer_all_js": {
       "present": false,
-      "scripts": []
+      "scripts": [],
+      "deferredScripts": 0
     },
     "lazyload": {
       "present": false,
@@ -33,6 +35,12 @@
     "lazyload_css_bg_img": {
       "present": false
     },
+    "self_hosted_fonts": {
+      "present": false
+    },
+    "image_dimensions": {
+      "present": false
+    },
     "rocket_above_the_fold_optimization": {
       "present": false,
       "lcpComment": false
@@ -41,7 +49,8 @@
       "present": true,
       "lazyRenderElements": 2,
       "inlineCssPresent": true,
-      "locationHashes": 0
+      "locationHashes": 0,
+      "source": "footprint"
     },
     "auto_preload_fonts": {
       "present": false,
