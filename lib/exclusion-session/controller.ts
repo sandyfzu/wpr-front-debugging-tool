@@ -88,6 +88,7 @@ import {
   type SessionEvent,
   type SessionMachineState
 } from './machine';
+import { servedUrl } from './served-url';
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
@@ -180,6 +181,15 @@ function newestStart(records: ExclusionSessionRecords): number {
   return newest;
 }
 
+/** The latest document order among records (0 when none) — seeds the document order. */
+function newestOrder(records: ExclusionSessionRecords): number {
+  let newest = 0;
+  for (const record of Object.values(records)) {
+    if (record.state === 'active') newest = Math.max(newest, record.document?.served?.order ?? 0);
+  }
+  return newest;
+}
+
 /** The canonical origin of a URL, or null. */
 function originOf(url: string): string | null {
   return parseUrl(url)?.origin ?? null;
@@ -214,6 +224,15 @@ export function createExclusionSessionController(
   let backend: InterceptionBackend | null = null;
   /** The last session start issued or seen — the floor of the next one. */
   let lastStart = 0;
+  /** The latest document order issued or seen in storage. */
+  let lastOrder = 0;
+  /**
+   * What this background lifetime adds to a backend's monotonic stamps so
+   * the document order continues past every stored one (a restarted
+   * background's clock may read behind what an earlier one stored); fixed
+   * at the first document, so stamps keep their relative order.
+   */
+  let orderOffset: number | null = null;
 
   /** Run one step under its deadline. */
   const bounded = <T>(step: string, ms: number, work: () => Promise<T>): Promise<T> =>
@@ -222,6 +241,19 @@ export function createExclusionSessionController(
   /** Remember the newest start seen in storage (a woken background issues past it). */
   const seenStart = (startedAt: number): void => {
     lastStart = Math.max(lastStart, startedAt);
+  };
+
+  /** Remember the latest document order seen in storage. */
+  const seenOrder = (order: number): void => {
+    lastOrder = Math.max(lastOrder, order);
+  };
+
+  /** A document's order from its backend stamp: continuous across background lifetimes. */
+  const orderOf = (receivedAt: number): number => {
+    orderOffset ??= Math.max(0, lastOrder + 1 - receivedAt);
+    const order = receivedAt + orderOffset;
+    seenOrder(order);
+    return order;
   };
 
   /** Issue a session start: now, but strictly after every start issued or seen. */
@@ -235,7 +267,10 @@ export function createExclusionSessionController(
   /** One tab's status, bounded; an active record's start feeds the issuer. */
   const readSession = async (tabId: number): Promise<ExclusionSessionStatus> => {
     const status = await bounded('Session read', STEPS.store, () => deps.sessions.read(tabId));
-    if (status.state === 'active') seenStart(status.startedAt);
+    if (status.state === 'active') {
+      seenStart(status.startedAt);
+      seenOrder(status.document?.served?.order ?? 0);
+    }
     return status;
   };
 
@@ -243,6 +278,7 @@ export function createExclusionSessionController(
   const readAllSessions = async (): Promise<ExclusionSessionRecords> => {
     const records = await bounded('Session read', STEPS.store, () => deps.sessions.readAll());
     seenStart(newestStart(records));
+    seenOrder(newestOrder(records));
     return records;
   };
 
@@ -326,10 +362,11 @@ export function createExclusionSessionController(
   const armBackend = async (
     armer: InterceptionBackend,
     tabId: number,
-    generation: number
+    generation: number,
+    origin: string
   ): Promise<ArmResult> => {
     try {
-      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation));
+      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation, origin));
     } catch (cause) {
       if (!timedOut(cause)) throw cause;
       log.warn('Backend arm timed out — interception unavailable', { tabId, cause });
@@ -354,7 +391,7 @@ export function createExclusionSessionController(
       // Checked before attaching anything; the store re-checks on write (another tab may race).
       if (othersActive >= EXCLUSION_SESSION_LIMIT)
         return { type: 'arm-unavailable', cause: 'session-limit', at: deps.now() };
-      const armed = await armBackend(armer, tabId, state.startedAt);
+      const armed = await armBackend(armer, tabId, state.startedAt, state.origin);
       if (!armed.armed) return { type: 'arm-unavailable', cause: armed.cause, at: deps.now() };
       const record: ActiveExclusionSession = {
         state: 'active',
@@ -548,28 +585,38 @@ export function createExclusionSessionController(
 
   /**
    * The served identity of a document, or null when the backend gave no
-   * identity or it cannot cross the contract (e.g. an over-long URL).
+   * identity or it cannot cross the contract (logged).
    *
-   * @param removed Speculation rules removed from the served bytes.
-   * @param bytesServed Whether bytes are served (a copy, where the backend serves copies).
+   * @param removedFromDocument Rule scripts removed from the served bytes.
+   * @param copy Whether bytes are served by a copy-serving backend.
    */
-  const servedIdentity = (
+  const servedIdentity = async (
     document: Pick<InterceptedDocument, 'documentUrl' | 'identity'>,
-    removed: number,
-    bytesServed: boolean
-  ): ExclusionServedDocument | null => {
+    removedFromDocument: number,
+    copy: boolean
+  ): Promise<ExclusionServedDocument | null> => {
     const identity = document.identity;
     if (identity === undefined) return null;
-    const served = parseServedDocument(
-      {
-        url: document.documentUrl,
-        token: identity.token,
-        receivedAt: identity.receivedAt,
-        speculationRulesRemoved: removed,
-        copy: bytesServed && identity.servedAsCopy
-      },
-      'reject'
-    );
+    const url = await servedUrl(document.documentUrl);
+    const served =
+      url === null
+        ? null
+        : parseServedDocument(
+            {
+              ...url,
+              token: identity.token,
+              order: orderOf(identity.receivedAt),
+              receivedAt: identity.receivedAt,
+              speculationRules: {
+                removedFromDocument,
+                headerRemoved: identity.speculationRulesHeader,
+                guarded: identity.speculationGuard
+              },
+              copy,
+              serviceWorkersBypassed: identity.serviceWorkersBypassed
+            },
+            'reject'
+          );
     if (served === null) log.debug('Document identity not recordable — recorded without it');
     return served;
   };
@@ -596,24 +643,30 @@ export function createExclusionSessionController(
         cause: result.cause
       });
     }
-    // A `Speculation-Rules` header only goes when bytes are served: serve
-    // the original ones when nothing else changed.
-    const headerRules = document.identity?.speculationRulesHeader === true;
-    let body = result.body ?? (headerRules ? document.body : null);
-    const removed =
-      body === null ? 0 : (result.speculationRulesRemoved ?? 0) + (headerRules ? 1 : 0);
+    // A copy-serving backend serves the original unless the exclusions
+    // changed the document (a copy costs the page its real security state
+    // and timing); its page guard removes the rules instead.
+    const copies = document.identity?.servedAsCopy === true;
+    let body = copies && result.rulesOnly === true ? null : result.body;
     let outcome = checkedOutcome(
       session,
-      withServed(result.outcome, servedIdentity(document, removed, body !== null))
+      withServed(
+        result.outcome,
+        await servedIdentity(
+          document,
+          body === null ? 0 : (result.speculationRulesRemoved ?? 0),
+          copies && body !== null
+        )
+      )
     );
     if (outcome === null) {
       log.error('Engine outcome failed validation — document served unmodified', {
         tabId: document.tabId
       });
-      body = headerRules ? document.body : null;
+      body = null;
       outcome = withServed(
         { outcome: 'failed', reason: 'engine-failed' },
-        servedIdentity(document, headerRules ? 1 : 0, body !== null)
+        await servedIdentity(document, 0, false)
       );
     }
     // Stop or a re-apply may have landed while the engine ran, or the
@@ -654,7 +707,7 @@ export function createExclusionSessionController(
       hostCall('documentBodyUnavailable', undefined, async () => {
         const session = await activeFor(tabId, documentUrl);
         if (session === null) return;
-        const served = servedIdentity({ documentUrl, identity }, 0, false);
+        const served = await servedIdentity({ documentUrl, identity }, 0, false);
         await driveQuietly(
           tabId,
           {
@@ -710,11 +763,17 @@ export function createExclusionSessionController(
   };
 
   /** Whether the backend confirms the tab's interception (false on any failure or timeout). */
-  const resumeLive = async (tabId: number, generation: number): Promise<boolean> => {
+  const resumeLive = async (
+    tabId: number,
+    generation: number,
+    origin: string
+  ): Promise<boolean> => {
     const resumer = backend;
     if (resumer === null) return false;
     try {
-      return await bounded('Backend resume', STEPS.resume, () => resumer.resume(tabId, generation));
+      return await bounded('Backend resume', STEPS.resume, () =>
+        resumer.resume(tabId, generation, origin)
+      );
     } catch (cause) {
       log.error('Wake resume failed — session treated as stale', { tabId, cause });
       return false;
@@ -728,7 +787,7 @@ export function createExclusionSessionController(
       return;
     }
     if (record.state !== 'active') return;
-    if (!(await resumeLive(tabId, record.startedAt))) {
+    if (!(await resumeLive(tabId, record.startedAt, record.origin))) {
       log.info('Stale session cleared at wake — tab served unmodified', { tabId });
       await driveQuietly(tabId, { type: 'stale' }, 'stale cleanup');
     }

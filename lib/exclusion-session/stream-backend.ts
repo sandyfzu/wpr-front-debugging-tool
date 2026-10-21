@@ -38,6 +38,7 @@
  *   A tab leaving http(s) keeps its session (nothing ends it).
  */
 import type { Logger } from '../logger';
+import { createMonotonicStamp } from '../../utils/monotonic-stamp';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import type {
   ArmResult,
@@ -140,8 +141,8 @@ export interface StreamBackendDeps {
   readonly runner?: DocumentTransformRunner | undefined;
   /** Timer seam; defaults to `setTimeout`. */
   readonly schedule?: ScheduleTimer;
-  /** Epoch ms (a request's start, its identity's time); defaults to `Date.now`. */
-  readonly now?: () => number;
+  /** A request's start stamp (monotonic epoch ms, strictly increasing); defaults to the platform's. */
+  readonly stamp?: () => number;
 }
 
 /** The backend plus the two request hooks the background registers. */
@@ -166,10 +167,12 @@ interface LiveStream {
   readonly filter: ResponseStreamFilter;
   /**
    * The response's identity for the host: the request id, the request's
-   * start time, no `Speculation-Rules` header handling (Firefox does not
-   * implement the header, and a stream filter cannot drop one), and never a
+   * start stamp, no `Speculation-Rules` header handling (Firefox does not
+   * implement the header, and a stream filter cannot drop one), never a
    * substituted copy (the filter rewrites the real response in place — its
-   * security state and timing stay the network's).
+   * security state and timing stay the network's), no page guard and no
+   * service-worker bypass (the rule scripts are removed from the text —
+   * Firefox implements inline rules only, in preview builds).
    */
   readonly identity: InterceptedResponseIdentity;
   state: StreamState;
@@ -215,7 +218,7 @@ export function createStreamInterceptionBackend(
 ): StreamInterceptionBackend {
   const { host, log } = deps;
   const schedule = deps.schedule ?? scheduleWithTimeout;
-  const now = deps.now ?? (() => Date.now());
+  const stamp = deps.stamp ?? createMonotonicStamp();
   /** Armed tabs → the generation they were armed or resumed with. */
   const armed = new Map<number, number>();
   /** Filtered responses in flight, by request id. */
@@ -439,9 +442,11 @@ export function createStreamInterceptionBackend(
         filter,
         identity: {
           token: details.requestId,
-          receivedAt: now(),
+          receivedAt: stamp(),
           speculationRulesHeader: false,
-          servedAsCopy: false
+          servedAsCopy: false,
+          speculationGuard: false,
+          serviceWorkersBypassed: false
         },
         state: OPENING_STREAM,
         cancelTimer: null

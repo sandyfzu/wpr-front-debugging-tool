@@ -1,6 +1,8 @@
 /** Speculation-rule script removal: live and delayed forms, HTML type matching, no false hits. */
+import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
-import { removeSpeculationRules, SPECULATION_RULES_GUARD_SOURCE } from './speculation-rules';
+import { HAPPY_DOM_SETTINGS } from '../../vitest.shared';
+import { removeSpeculationRules, speculationRulesGuardSource } from './speculation-rules';
 
 const RULES = '{"prefetch":[{"source":"document","eagerness":"conservative"}]}';
 
@@ -48,13 +50,44 @@ describe('removeSpeculationRules', () => {
  * script, no module scope) — the source text is what ships, so the text
  * itself is what must be evaluated.
  */
-function runGuard(): void {
+function runGuard(origin = location.origin, page: PageGlobals = globalThis): void {
   // eslint-disable-next-line @typescript-eslint/no-implied-eval -- evaluating the shipped page-script text is the test
-  const run = new Function(SPECULATION_RULES_GUARD_SOURCE) as () => void;
-  run();
+  const run = new Function(
+    'location',
+    'Element',
+    'MutationObserver',
+    'document',
+    speculationRulesGuardSource(origin)
+  ) as (...globals: unknown[]) => void;
+  run(page.location, page.Element, page.MutationObserver, page.document);
 }
 
-describe('SPECULATION_RULES_GUARD_SOURCE', () => {
+/** The page globals the guard reads. */
+interface PageGlobals {
+  location: Location;
+  Element: typeof Element;
+  MutationObserver: typeof MutationObserver | undefined;
+  document: Document;
+}
+
+/** A fresh page (its own document and DOM classes) at `url`, so guards never share a document. */
+function freshPage(url = 'https://site.test/'): PageGlobals & { close: () => void } {
+  const page = new Window({ url, settings: HAPPY_DOM_SETTINGS });
+  return {
+    location: page.location as unknown as Location,
+    Element: page.Element as unknown as typeof Element,
+    MutationObserver: page.MutationObserver as unknown as typeof MutationObserver,
+    document: page.document as unknown as Document,
+    close: () => {
+      void page.happyDOM.close();
+    }
+  };
+}
+
+/** Let the observer's callbacks run. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('speculationRulesGuardSource', () => {
   it('removes rule scripts inserted later, alone or inside a subtree, and nothing else', async () => {
     document.head.innerHTML = '';
     document.body.innerHTML = '';
@@ -79,9 +112,74 @@ describe('SPECULATION_RULES_GUARD_SOURCE', () => {
     try {
       // @ts-expect-error — simulating a page without the observer.
       globalThis.MutationObserver = undefined;
-      expect(runGuard).not.toThrow();
+      expect(() => {
+        runGuard();
+      }).not.toThrow();
     } finally {
       globalThis.MutationObserver = original;
     }
+  });
+
+  it('does nothing in a document of another origin', async () => {
+    const page = freshPage('https://site.test/');
+    runGuard('https://another.test', page);
+    const rule = page.document.createElement('script');
+    rule.setAttribute('type', 'speculationrules');
+    page.document.body.append(rule);
+    await tick();
+    expect(rule.isConnected).toBe(true);
+    page.close();
+  });
+
+  it('keeps working, silently, when the page monkey-patches the DOM methods afterwards', async () => {
+    const page = freshPage();
+    runGuard(page.location.origin, page);
+    const proto = page.Element.prototype as unknown as Record<string, unknown>;
+    // The page breaks the methods for rule scripts (its own calls elsewhere keep working).
+    const names = ['querySelectorAll', 'remove'];
+    const originals = names.map((name) => proto[name]);
+    names.forEach((name, index) => {
+      const original = originals[index] as (this: Element, ...args: unknown[]) => unknown;
+      proto[name] = function (this: Element, ...args: unknown[]) {
+        if (this.localName === 'script' || this.localName === 'div') {
+          throw new Error(`page broke ${name}`);
+        }
+        return original.apply(this, args);
+      };
+    });
+    const restore = () => {
+      names.forEach((name, index) => {
+        proto[name] = originals[index];
+      });
+    };
+    const errors: unknown[] = [];
+    page.document.defaultView?.addEventListener('error', (event) => errors.push(event));
+    const holder = page.document.createElement('div');
+    holder.innerHTML = '<script type="speculationrules"></script>';
+    page.document.body.append(holder);
+    await tick();
+    restore();
+    expect(holder.childNodes).toHaveLength(0);
+    expect(errors).toEqual([]);
+    page.close();
+  });
+
+  it('swallows a fault inside the observer callback (nothing reaches the page)', async () => {
+    document.body.innerHTML = '';
+    runGuard();
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => errors.push(event.error);
+    window.addEventListener('error', onError);
+    const weird = document.createElement('div');
+    // A node whose type read throws when the guard inspects it.
+    Object.defineProperty(weird, 'nodeType', {
+      get() {
+        throw new Error('hostile node');
+      }
+    });
+    document.body.append(weird);
+    await tick();
+    window.removeEventListener('error', onError);
+    expect(errors).toEqual([]);
   });
 });

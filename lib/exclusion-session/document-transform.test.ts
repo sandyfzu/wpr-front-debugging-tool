@@ -285,6 +285,8 @@ describe('rewriteDocument', () => {
       expect(rewrite.outcome.outcome).toBe('rewritten');
       expect(rewrite.body).toEqual(encoder.encode('<p>é</p>'));
       expect(rewrite.speculationRulesRemoved).toBe(1);
+      // Only the rules changed: a copy-serving backend serves the original instead.
+      expect(rewrite.rulesOnly).toBe(true);
     });
 
     it('removes them alongside the exclusions, in a single-byte charset', async () => {
@@ -296,6 +298,7 @@ describe('rewriteDocument', () => {
       const expected = applyPipeline(`<p>é</p>${DELAYED}`, DELAY_SET).html;
       expect(rewrite.body).toEqual(latin1(expected));
       expect(rewrite.speculationRulesRemoved).toBe(1);
+      expect(rewrite).not.toHaveProperty('rulesOnly');
     });
 
     it('removes them from the original when the engine overran or failed', async () => {
@@ -324,6 +327,7 @@ describe('rewriteDocument', () => {
         outcome: { outcome: 'failed', reason: 'engine-failed' },
         body: encoder.encode(DELAYED),
         speculationRulesRemoved: 1,
+        rulesOnly: true,
         cause: boom
       });
     });
@@ -343,7 +347,8 @@ describe('rewriteDocument', () => {
       expect(rewrite).toEqual({
         outcome: { outcome: 'failed', reason: 'encode-failed' },
         body: latin1('<p>x</p>'),
-        speculationRulesRemoved: 1
+        speculationRulesRemoved: 1,
+        rulesOnly: true
       });
     });
 

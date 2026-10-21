@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 109
+      "raw": 113
     }
   },
   {
@@ -96,7 +96,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 107
+      "raw": 109
     }
   },
   {

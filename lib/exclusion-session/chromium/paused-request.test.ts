@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { bytesToBase64 } from '../../../utils/base64';
 import {
   classifyPause,
+  continueWithoutRulesHeaderParams,
   fulfillHeaders,
   fulfillParams,
   headerValue,
@@ -224,5 +225,38 @@ describe('fulfillParams', () => {
     const params = fulfillParams(paused({ responseStatusText: '' }), new Uint8Array());
     expect(params).not.toHaveProperty('responsePhrase');
     expect(params.body).toBe('');
+  });
+});
+
+describe('continueWithoutRulesHeaderParams', () => {
+  const withHeader = [
+    { name: 'Content-Type', value: 'text/html' },
+    { name: 'speculation-rules', value: '"/r.json"' }
+  ];
+
+  it('keeps code, phrase and every other header line', () => {
+    expect(continueWithoutRulesHeaderParams(paused({ responseHeaders: withHeader }))).toEqual({
+      requestId: 'interception-job-1.0',
+      responseCode: 200,
+      responseHeaders: [{ name: 'Content-Type', value: 'text/html' }],
+      responsePhrase: 'OK'
+    });
+  });
+
+  it('omits an empty phrase', () => {
+    expect(
+      continueWithoutRulesHeaderParams(
+        paused({ responseHeaders: withHeader, responseStatusText: '' })
+      )
+    ).not.toHaveProperty('responsePhrase');
+  });
+
+  it('answers null without the header or before a response', () => {
+    expect(continueWithoutRulesHeaderParams(paused())).toBeNull();
+    expect(
+      continueWithoutRulesHeaderParams(
+        paused({ responseStatusCode: undefined, responseHeaders: withHeader })
+      )
+    ).toBeNull();
   });
 });

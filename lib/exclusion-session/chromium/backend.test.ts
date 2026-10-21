@@ -17,7 +17,7 @@ import type {
   InterceptionHost
 } from '../backend';
 import { DOCUMENT_BODY_BYTE_LIMIT } from '../document-transform';
-import { SPECULATION_RULES_GUARD_SOURCE } from '../speculation-rules';
+import { speculationRulesGuardSource } from '../speculation-rules';
 import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from '../timeouts';
 import {
   CHROMIUM_OPERATION_BUDGETS_MS,
@@ -29,8 +29,12 @@ import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence }
 const TAB = 4;
 /** The commands that enable a session after attaching, in order. */
 const SESSION = ['Fetch.enable', 'Network.enable', 'Network.setBypassServiceWorker', 'Page.enable'];
-/** A fresh attachment: attach, the session, the guard, the page target. */
-const FRESH = [
+/** A fresh attachment with no session origin: attach, the session, the page target. */
+const FRESH = [`attach:${String(TAB)}`, ...SESSION, 'pageTargetId'];
+/** The session origin of the guard tests. */
+const ORIGIN = 'https://site.test';
+/** A fresh attachment for {@link ORIGIN}: the guard installed before the page target. */
+const GUARDED = [
   `attach:${String(TAB)}`,
   ...SESSION,
   'Page.addScriptToEvaluateOnNewDocument',
@@ -161,8 +165,9 @@ class FakePort implements DebuggerPort {
     return this.sent
       .filter(
         (call) =>
-          (call.method === 'Fetch.continueRequest' || call.method === 'Fetch.fulfillRequest') &&
-          call.params?.requestId === requestId
+          ['Fetch.continueRequest', 'Fetch.continueResponse', 'Fetch.fulfillRequest'].includes(
+            call.method
+          ) && call.params?.requestId === requestId
       )
       .map((call) => call.method);
   }
@@ -244,6 +249,10 @@ beforeEach(() => {
   port.commands.set('Fetch.getResponseBody', () =>
     Promise.resolve({ body: bytesToBase64(BODY), base64Encoded: true })
   );
+  let guardIds = 0;
+  port.commands.set('Page.addScriptToEvaluateOnNewDocument', () =>
+    Promise.resolve({ identifier: `guard-${String(++guardIds)}` })
+  );
   const clock = fakeClock();
   const backend = createChromiumInterceptionBackend({
     port,
@@ -251,7 +260,7 @@ beforeEach(() => {
     log,
     schedule: timers.schedule,
     clock: clock.now,
-    now: () => EPOCH
+    stamp: () => EPOCH
   });
   rig = {
     port,
@@ -298,13 +307,53 @@ describe('arm', () => {
         method: 'Network.setBypassServiceWorker',
         params: { bypass: true }
       },
-      { target: { tabId: TAB }, method: 'Page.enable', params: {} },
-      {
-        target: { tabId: TAB },
-        method: 'Page.addScriptToEvaluateOnNewDocument',
-        params: { source: SPECULATION_RULES_GUARD_SOURCE }
-      }
+      { target: { tabId: TAB }, method: 'Page.enable', params: {} }
     ]);
+  });
+
+  it('installs the speculation-rules guard for the session origin', async () => {
+    await expect(rig.backend.arm(TAB, 10, ORIGIN)).resolves.toEqual({ armed: true });
+    expect(rig.port.calls).toEqual(GUARDED);
+    expect(rig.port.sent.at(-1)).toEqual({
+      target: { tabId: TAB },
+      method: 'Page.addScriptToEvaluateOnNewDocument',
+      params: { source: speculationRulesGuardSource(ORIGIN) }
+    });
+  });
+
+  it('keeps the guard on a re-arm for the same origin, replaces it for another', async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    rig.port.calls.length = 0;
+    await rig.backend.arm(TAB, 20, ORIGIN);
+    expect(rig.port.calls).toEqual(SESSION);
+    rig.port.calls.length = 0;
+    rig.port.sent.length = 0;
+    await rig.backend.arm(TAB, 30, 'https://other.test');
+    expect(rig.port.calls).toEqual([
+      ...SESSION,
+      'Page.removeScriptToEvaluateOnNewDocument',
+      'Page.addScriptToEvaluateOnNewDocument'
+    ]);
+    expect(rig.port.sent.at(-2)?.params).toEqual({ identifier: 'guard-1' });
+    expect(rig.port.sent.at(-1)?.params).toEqual({
+      source: speculationRulesGuardSource('https://other.test')
+    });
+  });
+
+  it('installs a new guard after a re-attach (the old one ended with its session)', async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    await rig.detach('target_closed');
+    rig.port.calls.length = 0;
+    await rig.backend.arm(TAB, 20, ORIGIN);
+    expect(rig.port.calls).toEqual(GUARDED);
+  });
+
+  it('fails like an enable failure when the guard install answers no identifier', async () => {
+    rig.port.commands.set('Page.addScriptToEvaluateOnNewDocument', () => Promise.resolve({}));
+    await expect(rig.backend.arm(TAB, 10, ORIGIN)).resolves.toEqual({
+      armed: false,
+      cause: 'attach-denied'
+    });
   });
 
   it('fails like any enable failure when the service-worker bypass is refused', async () => {
@@ -353,12 +402,30 @@ describe('arm', () => {
     await expect(armed).resolves.toEqual({ armed: false, cause: 'attach-denied' });
   });
 
-  it('adopts this extension’s existing session ("already attached")', async () => {
+  it('replaces this extension’s earlier session ("already attached"): detach, attach afresh', async () => {
+    let attaches = 0;
+    rig.port.attachImpl = () =>
+      attaches++ === 0
+        ? Promise.reject(new Error('Another debugger is already attached to the tab with id: 4.'))
+        : Promise.resolve();
+    await expect(rig.backend.arm(TAB, 10, ORIGIN)).resolves.toEqual({ armed: true });
+    // A clean session: one guard, never stacked on the earlier session's.
+    expect(rig.port.calls).toEqual([`attach:${String(TAB)}`, `detach:${String(TAB)}`, ...GUARDED]);
+    expect(logged('info', /Replacing/)).toBe(true);
+  });
+
+  it('answers attach-denied when the earlier session survives its detach', async () => {
     rig.port.attachImpl = () =>
       Promise.reject(new Error('Another debugger is already attached to the tab with id: 4.'));
-    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
-    expect(rig.port.calls).toEqual(FRESH);
-    expect(logged('info', /Adopting/)).toBe(true);
+    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({
+      armed: false,
+      cause: 'attach-denied'
+    });
+    expect(rig.port.calls).toEqual([
+      `attach:${String(TAB)}`,
+      `detach:${String(TAB)}`,
+      `attach:${String(TAB)}`
+    ]);
   });
 
   it('detaches and answers attach-denied when enabling fails', async () => {
@@ -400,7 +467,7 @@ describe('arm', () => {
     rig.port.commands.set('Page.addScriptToEvaluateOnNewDocument', () =>
       Promise.reject(new Error('Page domain not enabled'))
     );
-    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({
+    await expect(rig.backend.arm(TAB, 10, ORIGIN)).resolves.toEqual({
       armed: false,
       cause: 'attach-denied'
     });
@@ -643,7 +710,10 @@ describe('paused requests', () => {
           token: 'req-1',
           receivedAt: EPOCH,
           speculationRulesHeader: false,
-          servedAsCopy: true
+          servedAsCopy: true,
+          // Armed without an origin: no guard.
+          speculationGuard: false,
+          serviceWorkersBypassed: true
         }
       }
     ]);
@@ -724,15 +794,13 @@ describe('paused requests', () => {
     ]);
   });
 
-  it('demotes a release of an abandoned navigation to debug', async () => {
+  it('demotes a release of an abandoned navigation to debug (nothing left to release)', async () => {
     rig.port.commands.set('Fetch.fulfillRequest', () =>
       Promise.reject(new Error('Invalid InterceptionId.'))
     );
-    rig.port.commands.set('Fetch.continueRequest', () =>
-      Promise.reject(new Error('Invalid InterceptionId.'))
-    );
     await rig.pause();
-    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
+    // The request is gone: no second release is attempted.
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
     expect(rig.log.lines.some((line) => line.level === 'warn')).toBe(false);
     expect(logged('debug', /gone/)).toBe(true);
   });
@@ -750,7 +818,14 @@ describe('paused requests', () => {
       [
         TAB,
         'https://site.test/page',
-        { token: 'req-1', receivedAt: EPOCH, speculationRulesHeader: false, servedAsCopy: true }
+        {
+          token: 'req-1',
+          receivedAt: EPOCH,
+          speculationRulesHeader: false,
+          servedAsCopy: true,
+          speculationGuard: false,
+          serviceWorkersBypassed: true
+        }
       ]
     ]);
   });
@@ -896,5 +971,75 @@ describe('defaults', () => {
     port.handlers.event({ tabId: TAB }, 'Fetch.requestPaused', pauseEvent());
     await flush();
     expect(host.documents[0]?.identity?.receivedAt).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe('Speculation-Rules header on continued session documents', () => {
+  const HEADERS = [
+    { name: 'Content-Type', value: 'text/html' },
+    { name: 'Speculation-Rules', value: '"/rules.json"' },
+    { name: 'Link', value: '<a>' }
+  ];
+  const WITHOUT = [
+    { name: 'Content-Type', value: 'text/html' },
+    { name: 'Link', value: '<a>' }
+  ];
+
+  beforeEach(async () => {
+    await rig.backend.arm(TAB, 10, ORIGIN);
+    rig.port.sent.length = 0;
+    rig.port.calls.length = 0;
+  });
+
+  it('continues an unchanged document with the header dropped (no copy)', async () => {
+    rig.host.rewrite = () => Promise.resolve(null);
+    await rig.pause({ responseHeaders: HEADERS });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueResponse']);
+    expect(rig.port.sent.at(-1)?.params).toEqual({
+      requestId: 'req-1',
+      responseCode: 200,
+      responseHeaders: WITHOUT,
+      responsePhrase: 'OK'
+    });
+  });
+
+  it('falls back to a plain continue when the browser refuses the header-dropping continue', async () => {
+    rig.host.rewrite = () => Promise.resolve(null);
+    rig.port.commands.set('Fetch.continueResponse', () => Promise.reject(new Error('nope')));
+    await rig.pause({ responseHeaders: HEADERS });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueResponse', 'Fetch.continueRequest']);
+  });
+
+  it('drops it on an unreadable body too', async () => {
+    rig.port.commands.set('Fetch.getResponseBody', () => Promise.reject(new Error('no body')));
+    await rig.pause({ responseHeaders: HEADERS });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueResponse']);
+  });
+
+  it('drops it on an ineligible session document (e.g. XHTML), only for the session', async () => {
+    const xhtml = [{ name: 'Content-Type', value: 'application/xhtml+xml' }, ...HEADERS.slice(1)];
+    await rig.pause({ responseHeaders: xhtml });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueResponse']);
+    rig.host.intercept = false;
+    await rig.pause({ requestId: 'req-2', responseHeaders: xhtml });
+    expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('continues plainly a document without the header', async () => {
+    rig.host.rewrite = () => Promise.resolve(null);
+    await rig.pause();
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('flags the guard in documents of the guarded origin only', async () => {
+    await rig.pause();
+    await rig.pause({
+      requestId: 'req-2',
+      request: { url: 'https://other.test/x', method: 'GET' }
+    });
+    expect(rig.host.documents.map((document) => document.identity?.speculationGuard)).toEqual([
+      true,
+      false
+    ]);
   });
 });

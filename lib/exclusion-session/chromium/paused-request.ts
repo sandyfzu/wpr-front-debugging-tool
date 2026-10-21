@@ -248,3 +248,25 @@ export function fulfillParams(pause: PausedRequest, body: Uint8Array): Record<st
     ...(pause.statusText.length > 0 && { responsePhrase: pause.statusText })
   };
 }
+
+/**
+ * The `Fetch.continueResponse` parameters that serve the paused response
+ * as it is but for its `Speculation-Rules` header (all of code, phrase and
+ * headers must be given once one is), or null when it has no such header.
+ *
+ * @param pause The paused (response-stage) request.
+ */
+export function continueWithoutRulesHeaderParams(
+  pause: PausedRequest
+): Record<string, unknown> | null {
+  if (pause.status === null || headerValue(pause.headers, SPECULATION_RULES_HEADER) === null)
+    return null;
+  return {
+    requestId: pause.requestId,
+    responseCode: pause.status,
+    responseHeaders: pause.headers.filter(
+      (header) => header.name.toLowerCase() !== SPECULATION_RULES_HEADER
+    ),
+    ...(pause.statusText.length > 0 && { responsePhrase: pause.statusText })
+  };
+}

@@ -30,7 +30,7 @@ import {
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
 import { isRecord } from '../../utils/is-record';
-import { isHttpOrigin, isHttpUrl } from '../../utils/urls';
+import { isHttpOrigin, isHttpUrl, parseUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
 import { numericTabId } from './sender';
 
@@ -141,39 +141,54 @@ export type ExclusionDocumentOutcome = (
 
 /** Size caps of a {@link ExclusionServedDocument}. */
 export const SERVED_DOCUMENT_LIMITS = {
-  /** Characters of the document URL. */
-  urlChars: 8 * 1024,
+  /** Characters of the document's origin + path (longer paths are cut — the digest stays exact). */
+  urlPathChars: 2048,
   /** Characters of the backend's response token. */
   tokenChars: 128,
-  /** Speculation rules counted as removed from one document. */
+  /** Rule scripts counted as removed from one document. */
   speculationRules: 10_000
 } as const;
+
+/** What the session did about one document's speculation rules (prefetch / prerender). */
+export interface ExclusionServedSpeculationRules {
+  /** Rule scripts removed from the served bytes (0 when the document was served as received). */
+  readonly removedFromDocument: number;
+  /** Whether the response's `Speculation-Rules` header was dropped. */
+  readonly headerRemoved: boolean;
+  /**
+   * Whether the session's page guard ran in the document: it removes every
+   * rule script — inline or inserted by the page's scripts — as it appears,
+   * so the document's links are never prefetched or prerendered.
+   */
+  readonly guarded: boolean;
+}
 
 /**
  * The identity of the response a document outcome is for, and the
  * session's own effects on it — so a surface can tell whether the page it
- * shows is the one recorded (compare `url` with `location`, `receivedAt`
- * with the page's time origin; a navigation served without interception,
- * e.g. from a prefetch or a service worker, leaves an older record) and
- * say what the session changed besides the exclusions.
+ * shows is the one recorded (compare `urlDigest` with the SHA-256 of
+ * `location.href` without its fragment, `receivedAt` with the page's time
+ * origin; a navigation served without interception leaves an older
+ * record) and say what the session changed besides the exclusions. Never
+ * holds the URL's query (it may carry personal data): the origin + path,
+ * and a digest of the whole URL.
  */
 export interface ExclusionServedDocument {
-  /** The document's absolute http(s) URL, as requested. */
-  readonly url: string;
+  /** The document's origin + path (no query, no fragment; cut at `SERVED_DOCUMENT_LIMITS.urlPathChars`). */
+  readonly urlPath: string;
+  /** SHA-256 (lowercase hex) of the document's whole URL as requested (no fragment). */
+  readonly urlDigest: string;
   /** The backend's opaque token of the response (unique per intercepted response). */
   readonly token: string;
   /**
-   * Epoch ms the response reached the backend — orders a tab's documents:
-   * an outcome older than the recorded one never replaces it.
+   * The tab's document order: strictly increasing with arrival, across
+   * background restarts — an outcome ordered before the recorded one never
+   * replaces it.
    */
+  readonly order: number;
+  /** Epoch ms the response reached the backend (by the background's monotonic clock). */
   readonly receivedAt: number;
-  /**
-   * Speculation rules the session removed from the served document
-   * (inline rule scripts, the `Speculation-Rules` header): prefetching and
-   * prerendering are off for its links during the session, so every
-   * navigation reaches the network and is intercepted.
-   */
-  readonly speculationRulesRemoved: number;
+  readonly speculationRules: ExclusionServedSpeculationRules;
   /**
    * Whether the browser rendered a substituted copy of the response: its
    * security indicator, certificate, connection info and resource timing
@@ -181,6 +196,12 @@ export interface ExclusionServedDocument {
    * and request timings read zero), not the network response.
    */
   readonly copy: boolean;
+  /**
+   * Whether the tab's service workers were bypassed (the session sends
+   * every request of the tab — any origin — to the network: offline and
+   * service-worker caches are off while it lasts).
+   */
+  readonly serviceWorkersBypassed: boolean;
 }
 
 /** A session that intercepts its tab's top-level documents until Stop or tab close. */
@@ -514,7 +535,41 @@ function parseTransformReport(
 }
 
 /** The keys of a served-document identity. */
-const SERVED_KEYS = ['url', 'token', 'receivedAt', 'speculationRulesRemoved', 'copy'] as const;
+const SERVED_KEYS = [
+  'urlPath',
+  'urlDigest',
+  'token',
+  'order',
+  'receivedAt',
+  'speculationRules',
+  'copy',
+  'serviceWorkersBypassed'
+] as const;
+
+/** The keys of a served document's speculation-rules summary. */
+const SPECULATION_KEYS = ['removedFromDocument', 'headerRemoved', 'guarded'] as const;
+
+/** Whether a value is an http(s) origin + path within the cap (no query, no fragment). */
+function isUrlPath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > SERVED_DOCUMENT_LIMITS.urlPathChars) return false;
+  if (!isHttpUrl(value)) return false;
+  const url = parseUrl(value);
+  return url !== null && url.search === '' && url.hash === '' && !value.includes('?');
+}
+
+/** Parse a speculation-rules summary. */
+function parseSpeculationRules(
+  input: unknown,
+  policy: UnknownKeyPolicy
+): ExclusionServedSpeculationRules | null {
+  if (!isRecord(input) || !keysAllowed(input, SPECULATION_KEYS, policy)) return null;
+  const removed = own(input, 'removedFromDocument');
+  const headerRemoved = own(input, 'headerRemoved');
+  const guarded = own(input, 'guarded');
+  if (!isCount(removed) || removed > SERVED_DOCUMENT_LIMITS.speculationRules) return null;
+  if (typeof headerRemoved !== 'boolean' || typeof guarded !== 'boolean') return null;
+  return { removedFromDocument: removed, headerRemoved, guarded };
+}
 
 /**
  * Parse a served-document identity (see {@link ExclusionServedDocument}).
@@ -528,23 +583,31 @@ export function parseServedDocument(
   policy: UnknownKeyPolicy
 ): ExclusionServedDocument | null {
   if (!isRecord(input) || !keysAllowed(input, SERVED_KEYS, policy)) return null;
-  const url = own(input, 'url');
+  const urlPath = own(input, 'urlPath');
+  const urlDigest = own(input, 'urlDigest');
   const token = own(input, 'token');
+  const order = own(input, 'order');
   const receivedAt = own(input, 'receivedAt');
-  const removed = own(input, 'speculationRulesRemoved');
   const copy = own(input, 'copy');
-  if (typeof url !== 'string' || url.length > SERVED_DOCUMENT_LIMITS.urlChars || !isHttpUrl(url))
-    return null;
+  const bypassed = own(input, 'serviceWorkersBypassed');
+  if (!isUrlPath(urlPath)) return null;
+  if (typeof urlDigest !== 'string' || !/^[0-9a-f]{64}$/.test(urlDigest)) return null;
   if (typeof token !== 'string' || token.length === 0) return null;
   if (token.length > SERVED_DOCUMENT_LIMITS.tokenChars || !isPrintable(token)) return null;
-  if (
-    !isCount(receivedAt) ||
-    !isCount(removed) ||
-    removed > SERVED_DOCUMENT_LIMITS.speculationRules
-  )
-    return null;
-  if (typeof copy !== 'boolean') return null;
-  return { url, token, receivedAt, speculationRulesRemoved: removed, copy };
+  if (!isCount(order) || !isCount(receivedAt)) return null;
+  if (typeof copy !== 'boolean' || typeof bypassed !== 'boolean') return null;
+  const speculationRules = parseSpeculationRules(own(input, 'speculationRules'), policy);
+  if (speculationRules === null) return null;
+  return {
+    urlPath,
+    urlDigest,
+    token,
+    order,
+    receivedAt,
+    speculationRules,
+    copy,
+    serviceWorkersBypassed: bypassed
+  };
 }
 
 /**

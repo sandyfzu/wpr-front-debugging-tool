@@ -189,6 +189,12 @@ export interface DocumentRewrite {
   readonly body: Uint8Array | null;
   /** Speculation-rule scripts removed from the served bytes (absent when none). */
   readonly speculationRulesRemoved?: number;
+  /**
+   * Present (true) when the bytes differ from the original only by the
+   * removed rule scripts — the exclusions changed nothing (a backend that
+   * serves a substituted copy then serves the original instead).
+   */
+  readonly rulesOnly?: true;
   /** The unexpected cause behind an `engine-failed` outcome, for the caller's log. */
   readonly cause?: unknown;
 }
@@ -304,17 +310,22 @@ export async function rewriteDocument(
     result = engineFailed(cause);
   }
   let outcome: ExclusionDocumentOutcome = result.outcome;
-  let served = servedBytes(result.ok ? result.html : decoded.text, decoded.text, decoded.codec);
+  let served = {
+    ...servedBytes(result.ok ? result.html : decoded.text, decoded.text, decoded.codec),
+    fellBack: false
+  };
   if (served.unencodable) {
     // The engine's text holds what the charset cannot encode: serve the
     // original (every char of it round-trips) without its rules.
     outcome = ENCODE_FAILED.outcome;
-    served = servedBytes(decoded.text, decoded.text, decoded.codec);
+    served = { ...servedBytes(decoded.text, decoded.text, decoded.codec), fellBack: true };
   }
+  const exclusionsChanged = result.ok && !served.fellBack && result.html !== decoded.text;
   return {
     outcome,
     body: served.body,
     ...(served.removed > 0 && { speculationRulesRemoved: served.removed }),
+    ...(served.body !== null && !exclusionsChanged && { rulesOnly: true as const }),
     ...(!result.ok && result.cause !== undefined && { cause: result.cause })
   };
 }

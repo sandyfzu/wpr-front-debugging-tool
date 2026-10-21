@@ -184,7 +184,7 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
     host,
     log,
     schedule: timers.schedule,
-    now: () => STARTED_AT,
+    stamp: () => STARTED_AT,
     openFilter:
       options.openFilter ??
       (() => {
@@ -287,7 +287,9 @@ describe('stream backend — response identity', () => {
     token: 'r1',
     receivedAt: STARTED_AT,
     speculationRulesHeader: false,
-    servedAsCopy: false
+    servedAsCopy: false,
+    speculationGuard: false,
+    serviceWorkersBypassed: false
   };
 
   it('hands the host the request id and start, never a copy nor a header to drop', async () => {

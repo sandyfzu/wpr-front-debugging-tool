@@ -224,12 +224,16 @@ describe('document', () => {
   });
 
   describe('ordering by served identity', () => {
-    const served = (receivedAt: number) => ({
-      url: 'https://site.test/a',
-      token: `t${String(receivedAt)}`,
-      receivedAt,
-      speculationRulesRemoved: 0,
-      copy: true
+    const served = (order: number) => ({
+      urlPath: 'https://site.test/a',
+      urlDigest: 'a'.repeat(64),
+      token: `t${String(order)}`,
+      order,
+      // Wall-clock-like times deliberately out of step with the order: only `order` decides.
+      receivedAt: 1_000 - order,
+      speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+      copy: true,
+      serviceWorkersBypassed: true
     });
     const recorded = { ...ACTIVE, document: { ...OUTCOME, served: served(50) } };
     const documentAt = (receivedAt: number): SessionEvent =>
@@ -238,13 +242,13 @@ describe('document', () => {
         outcome: { ...OUTCOME, served: served(receivedAt) }
       }) as SessionEvent;
 
-    it('drops an outcome of a response older than the recorded one (an abandoned navigation)', () => {
+    it('drops an outcome ordered before the recorded one (an abandoned navigation), whatever its clock time', () => {
       expect(transition(recorded, documentAt(49))).toBeNull();
     });
 
     it('records a newer or same-time response', () => {
       expect(transition(recorded, documentAt(51))?.next).toMatchObject({
-        document: { served: { receivedAt: 51 } }
+        document: { served: { order: 51 } }
       });
       expect(transition(recorded, documentAt(50))).not.toBeNull();
     });

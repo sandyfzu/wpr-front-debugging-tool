@@ -10,7 +10,7 @@
  * same scripts held back by a delayed-execution rewrite
  * (`data-rocket-type="speculationrules"`: the delay runner would insert
  * them live on first interaction). Rules a page's own scripts insert at
- * runtime are outside the document text: {@link SPECULATION_RULES_GUARD_SOURCE}
+ * runtime are outside the document text: {@link speculationRulesGuardSource}
  * is the page-world script a backend runs in each new document of a
  * session tab to remove them as they are inserted (removing a rule script
  * withdraws its rules, cancelling their pending prefetches). The
@@ -66,25 +66,40 @@ export function removeSpeculationRules(html: string): SpeculationRulesRemoval {
 
 /**
  * The page-world guard a backend evaluates at the start of every new
- * document of a session tab: a `MutationObserver` that removes each
- * speculation-rule script (same type test as above) as soon as it is
- * inserted, anywhere in the document. Self-contained (no closure over this
- * module), silent (any fault is swallowed — it must never break or log
- * into the host page), and idempotent (a second copy only removes
- * nothing).
+ * document of a session tab: in documents of the session's origin only, a
+ * `MutationObserver` removes each speculation-rule script (same type test
+ * as above) as soon as it is inserted, anywhere in the document.
+ *
+ * Self-contained (no closure over this module); silent — the setup and
+ * every callback run are guarded, and the DOM methods it uses are captured
+ * from the prototypes before any page script runs, so a page that
+ * monkey-patches them neither breaks it nor sees an error from it;
+ * idempotent (a second copy only removes nothing).
+ *
+ * @param origin The session's origin (other origins in the tab are left alone).
+ * @returns The script source.
  */
-export const SPECULATION_RULES_GUARD_SOURCE = `(() => {
+export function speculationRulesGuardSource(origin: string): string {
+  return `(() => {
   try {
+    if (location.origin !== ${JSON.stringify(origin)}) return;
+    const getAttribute = Element.prototype.getAttribute;
+    const querySelectorAll = Element.prototype.querySelectorAll;
+    const remove = Element.prototype.remove;
     const isRule = (node) =>
       node.nodeType === 1 &&
       node.localName === 'script' &&
-      /^[\\t\\n\\f\\r ]*speculationrules[\\t\\n\\f\\r ]*$/i.test(node.getAttribute('type') || '');
+      /^[\\t\\n\\f\\r ]*speculationrules[\\t\\n\\f\\r ]*$/i.test(getAttribute.call(node, 'type') || '');
     const sweep = (node) => {
-      if (isRule(node)) node.remove();
-      else if (node.nodeType === 1) for (const script of node.querySelectorAll('script')) if (isRule(script)) script.remove();
+      if (isRule(node)) remove.call(node);
+      else if (node.nodeType === 1)
+        for (const script of querySelectorAll.call(node, 'script')) if (isRule(script)) remove.call(script);
     };
     new MutationObserver((records) => {
-      for (const record of records) for (const node of record.addedNodes) sweep(node);
+      try {
+        for (const record of records) for (const node of record.addedNodes) sweep(node);
+      } catch {}
     }).observe(document, { childList: true, subtree: true });
   } catch {}
 })();`;
+}

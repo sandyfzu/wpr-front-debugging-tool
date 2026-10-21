@@ -443,18 +443,28 @@ describe('document reports are tied to the session set', () => {
           outcome: 'rewritten',
           reports,
           served: {
-            url: `https://a.example/${'€'.repeat(SERVED_DOCUMENT_LIMITS.urlChars - 18)}`,
+            // A serialized URL is ASCII: one byte per character at the cap.
+            urlPath: `https://a.example/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars - 18)}`,
+            urlDigest: 'f'.repeat(64),
             token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars),
+            order: Number.MAX_SAFE_INTEGER,
             receivedAt: Number.MAX_SAFE_INTEGER,
-            speculationRulesRemoved: SERVED_DOCUMENT_LIMITS.speculationRules,
-            copy: true
+            speculationRules: {
+              removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules,
+              headerRemoved: true,
+              guarded: true
+            },
+            copy: true,
+            serviceWorkersBypassed: true
           }
         }
       },
       'reject'
     );
     expect(record).not.toBeNull();
-    // Measured 513,080 bytes (≈ 501 KiB) with the widest served identity (488,307 without).
+    // Measured 490,779 bytes (≈ 479 KiB) with the widest served identity — 33 KiB under
+    // the bound (488,307 without; the query-free path keeps the identity small).
+    console.log('SIZE', new TextEncoder().encode(JSON.stringify(record)).length);
     expect(new TextEncoder().encode(JSON.stringify(record)).length).toBeLessThan(512 * 1024);
   });
 });
@@ -504,13 +514,21 @@ describe('whole-set character budget', () => {
 /** A valid served identity. */
 function served(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    url: 'https://example.com/page?q=1',
+    urlPath: 'https://example.com/page',
+    urlDigest: '0123456789abcdef'.repeat(4),
     token: 'interception-job-7.0',
+    order: 1_800_000_000_123,
     receivedAt: 1_800_000_000_000,
-    speculationRulesRemoved: 2,
+    speculationRules: { removedFromDocument: 2, headerRemoved: true, guarded: false },
     copy: true,
+    serviceWorkersBypassed: true,
     ...overrides
   };
+}
+
+/** A speculation summary with one field replaced. */
+function rules(overrides: Record<string, unknown>): Record<string, unknown> {
+  return { removedFromDocument: 0, headerRemoved: false, guarded: true, ...overrides };
 }
 
 describe('parseServedDocument', () => {
@@ -520,9 +538,9 @@ describe('parseServedDocument', () => {
 
   it('accepts the caps at their exact edges', () => {
     const edge = served({
-      url: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlChars - 12)}`,
+      urlPath: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars - 12)}`,
       token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars),
-      speculationRulesRemoved: SERVED_DOCUMENT_LIMITS.speculationRules
+      speculationRules: rules({ removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules })
     });
     expect(parseServedDocument(edge, 'reject')).toEqual(edge);
   });
@@ -530,28 +548,48 @@ describe('parseServedDocument', () => {
   it.each([
     ['not a record', 'x'],
     ['an unknown key (reject)', served({ extra: 1 })],
-    ['a non-http url', served({ url: 'chrome://version' })],
-    ['a relative url', served({ url: '/page' })],
+    ['a non-http path', served({ urlPath: 'chrome://version' })],
+    ['a relative path', served({ urlPath: '/page' })],
+    ['a URL with its query (never stored)', served({ urlPath: 'https://e.x/a?email=x' })],
+    ['an empty query mark', served({ urlPath: 'https://e.x/a?' })],
+    ['a URL with a fragment', served({ urlPath: 'https://e.x/a#top' })],
     [
-      'an over-long url',
-      served({ url: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlChars)}` })
+      'an over-long path',
+      served({ urlPath: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars)}` })
     ],
+    ['a short digest', served({ urlDigest: 'ab' })],
+    ['an uppercase digest', served({ urlDigest: 'A'.repeat(64) })],
     ['an empty token', served({ token: '' })],
     ['an over-long token', served({ token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars + 1) })],
     ['an unprintable token', served({ token: 'a\u0000b' })],
+    ['a negative order', served({ order: -1 })],
     ['a negative time', served({ receivedAt: -1 })],
-    ['a fractional count', served({ speculationRulesRemoved: 1.5 })],
+    ['a fractional count', served({ speculationRules: rules({ removedFromDocument: 1.5 }) })],
     [
       'an over-cap count',
-      served({ speculationRulesRemoved: SERVED_DOCUMENT_LIMITS.speculationRules + 1 })
+      served({
+        speculationRules: rules({
+          removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules + 1
+        })
+      })
     ],
-    ['a non-boolean copy flag', served({ copy: 'yes' })]
+    ['a non-boolean header flag', served({ speculationRules: rules({ headerRemoved: 1 }) })],
+    ['a non-boolean guard flag', served({ speculationRules: rules({ guarded: 'yes' }) })],
+    ['an unknown speculation key (reject)', served({ speculationRules: rules({ x: 1 }) })],
+    ['a missing speculation summary', served({ speculationRules: undefined })],
+    ['a non-boolean copy flag', served({ copy: 'yes' })],
+    ['a non-boolean bypass flag', served({ serviceWorkersBypassed: 0 })]
   ])('refuses %s', (_label, input) => {
     expect(parseServedDocument(input, 'reject')).toBeNull();
   });
 
-  it('drops unknown keys under ignore', () => {
-    expect(parseServedDocument(served({ extra: 1 }), 'ignore')).toEqual(served());
+  it('drops unknown keys under ignore, at both levels', () => {
+    expect(
+      parseServedDocument(
+        served({ extra: 1, speculationRules: { ...rules({}), later: true } }),
+        'ignore'
+      )
+    ).toEqual(served({ speculationRules: rules({}) }));
   });
 });
 

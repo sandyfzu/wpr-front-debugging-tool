@@ -119,15 +119,16 @@ function endSession(state: ExclusionSessionStatus, notify: boolean): SessionTran
 }
 
 /**
- * Whether an outcome is for a response older than the recorded one (both
- * carrying a served identity — without one there is nothing to order by).
+ * Whether an outcome is for a response ordered before the recorded one
+ * (both carrying a served identity — without one there is nothing to
+ * order by).
  */
 function isOlderDocument(
   outcome: ExclusionDocumentOutcome,
   recorded: ExclusionDocumentOutcome | null
 ): boolean {
-  const incoming = outcome.served?.receivedAt;
-  const current = recorded?.served?.receivedAt;
+  const incoming = outcome.served?.order;
+  const current = recorded?.served?.order;
   return incoming !== undefined && current !== undefined && incoming < current;
 }
 
