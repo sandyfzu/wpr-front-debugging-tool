@@ -1,12 +1,13 @@
 /**
  * Catastrophic-backtracking guard for pattern rows: a static analysis of a
  * regex's structure that rejects the shapes known to backtrack
- * exponentially (or with a high polynomial degree) in a backtracking
- * engine (V8's Irregexp, SpiderMonkey's). It is a heuristic — it rejects
- * the known exponential shapes only; it is not a proof of linear time.
- * Polynomial shapes are accepted by design (owner decision): e.g. a
- * leading `.*jquery` against a 100 KiB minified inline script took 4.4 s,
- * `\s*\s*$` against 4 KiB of spaces 11.6 s (measured, Node 24). Nothing
+ * exponentially in a backtracking engine (V8's Irregexp, SpiderMonkey's),
+ * and fixed-count loops over ambiguous bodies (`(a+){5}`, whose cost grows
+ * as n^k). It is a heuristic — it rejects those shapes only; it is not a
+ * proof of linear time. Polynomial shapes written out as sequences are
+ * accepted by design (owner decision): e.g. a leading `.*jquery` against a
+ * 100 KiB minified inline script took 4.4 s, `\s*\s*$` against 4 KiB of
+ * spaces 11.6 s, `.*.*.*.*x` against 200 chars 5.4 s (measured, Node 24). Nothing
  * else bounds such a match on Chromium: one slow match cannot be preempted
  * there, so it blocks the background (every tab) and the paused navigation
  * until it returns, and the between-step budget reports `over-budget`
@@ -39,8 +40,14 @@
  * 4. **too complex** — a row past {@link REGEX_ANALYSIS_LIMITS} is not
  *    analyzed and is rejected (the analysis stays bounded and never throws).
  *
- * Character facts are exact over UTF-16 code units, including an
- * `(?i:…)` scope (folded with the engine's own case canonicalization).
+ * Character facts are exact over UTF-16 code units for every flag a row
+ * can carry: rows compile without flags, and the modifier groups' flags
+ * are modeled — `(?i:…)` folds with the engine's own case
+ * canonicalization, `(?s:…)` widens `.` to every unit, and `(?m:…)` only
+ * changes what `^`/`$` assert (zero-width: no character facts). Where the
+ * analysis approximates — a back-reference (any text), alternation heads
+ * past 32 positions or across variable-length parts — it over-approximates
+ * (a possible false rejection, never a missed overlap).
  * Syntax the parser does not model is accepted (never a false rejection of
  * a pattern the engine compiles).
  */
@@ -130,20 +137,6 @@ function intersects(a: CharSet, b: CharSet): boolean {
   return false;
 }
 
-/** Whether a set holds a code unit (binary search). */
-function contains(set: CharSet, code: number): boolean {
-  let low = 0;
-  let high = set.length - 1;
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    const [from, to] = set[middle] as readonly [number, number];
-    if (code < from) high = middle - 1;
-    else if (code > to) low = middle + 1;
-    else return true;
-  }
-  return false;
-}
-
 /** One code unit as a set. */
 function unit(code: number): CharSet {
   return [[code, code]];
@@ -178,15 +171,99 @@ function multiMemberCaseClasses(): readonly (readonly number[])[] {
   return caseClasses;
 }
 
+/** The case-folding tables, built on first use. */
+interface CaseTables {
+  /** Every multi-member case class (units sharing one canonical form). */
+  readonly classes: readonly (readonly number[])[];
+  /** Unit → index of its class, or -1. */
+  readonly classOf: Int32Array;
+  /** Every unit of every class, ascending. */
+  readonly units: Int32Array;
+  /** The same units as a set. */
+  readonly unitSet: CharSet;
+}
+
+let caseTables: CaseTables | null = null;
+
+/** The case-folding tables (65 536 canonicalizations, once). */
+function getCaseTables(): CaseTables {
+  if (caseTables !== null) return caseTables;
+  const classes = multiMemberCaseClasses();
+  const classOf = new Int32Array(MAX_UNIT + 1).fill(-1);
+  classes.forEach((members, index) => {
+    for (const code of members) classOf[code] = index;
+  });
+  const units = Int32Array.from(classes.flat()).sort();
+  caseTables = { classes, classOf, units, unitSet: normalize([...units].map((c) => [c, c])) };
+  return caseTables;
+}
+
+/** The first index of `sorted` holding a value ≥ `value`. */
+function lowerBound(sorted: Int32Array, value: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((sorted[middle] as number) < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/** `a` without the units of `b`. */
+function difference(a: CharSet, b: CharSet): CharSet {
+  return b.length === 0 ? a : complement(union(complement(a), b));
+}
+
+/** Bound of the fold memo (keyed by the set's ranges). */
+const FOLD_MEMO_LIMIT = 256;
+
+/** Memo: a set's ranges → its fold (class escapes and repeated classes hit it). */
+const foldMemo = new Map<string, CharSet>();
+
 /** Close a set under case-insensitive matching (what an `(?i:…)` scope matches). */
 function foldCase(set: CharSet): CharSet {
-  const extra: [number, number][] = [];
-  for (const members of multiMemberCaseClasses()) {
-    if (members.some((code) => contains(set, code))) {
-      for (const code of members) extra.push([code, code]);
+  const key = set.map(([low, high]) => `${String(low)}-${String(high)}`).join(',');
+  const memo = foldMemo.get(key);
+  if (memo !== undefined) return memo;
+  const folded = computeFold(set);
+  if (foldMemo.size >= FOLD_MEMO_LIMIT) {
+    const oldest = foldMemo.keys().next();
+    if (oldest.done !== true) foldMemo.delete(oldest.value);
+  }
+  foldMemo.set(key, folded);
+  return folded;
+}
+
+/**
+ * {@link foldCase} without the memo: find the classes the set touches by
+ * walking only the class units inside its ranges (≤ a few thousand), then
+ * add those classes — as the whole class-unit set minus the untouched
+ * classes when most are touched (a negated class), keeping it near-linear.
+ */
+function computeFold(set: CharSet): CharSet {
+  const { classes, classOf, units, unitSet } = getCaseTables();
+  const touched = new Uint8Array(classes.length);
+  let count = 0;
+  for (const [low, high] of set) {
+    for (let k = lowerBound(units, low); k < units.length && (units[k] as number) <= high; k++) {
+      const index = classOf[units[k] as number] as number;
+      if (touched[index] === 0) {
+        touched[index] = 1;
+        count++;
+      }
     }
   }
-  return extra.length === 0 ? set : union(set, normalize(extra));
+  if (count === 0) return set;
+  const pick = (wanted: number): [number, number][] =>
+    classes.flatMap((members, index) =>
+      touched[index] === wanted ? members.map((code): [number, number] => [code, code]) : []
+    );
+  if (count * 2 > classes.length) {
+    // Untouched classes have no unit in the set: removing them is exact.
+    return difference(union(set, unitSet), normalize(pick(0)));
+  }
+  return union(set, normalize(pick(1)));
 }
 
 const DIGITS: CharSet = [[0x30, 0x39]];
@@ -410,8 +487,10 @@ function annexBOctal(digits: string): { value: number; length: number } {
 /** A recursive-descent parser over one pattern source. */
 class PatternParser {
   private position = 0;
-  /** Depth of active `(?i:…)` scopes (0 = case-sensitive). */
-  private ignoreCase = 0;
+  /** Whether an `(?i:…)` scope is active (case-insensitive). */
+  private ignoreCase = false;
+  /** Whether an `(?s:…)` scope is active (`.` matches every unit). */
+  private dotAll = false;
   /** Lookaround bodies met while parsing — analyzed as patterns of their own. */
   readonly lookarounds: RegexNode[] = [];
 
@@ -444,7 +523,7 @@ class PatternParser {
 
   /** Characters as matched now (closed under case inside an `i` scope). */
   private chars(set: CharSet): RegexNode {
-    return charsNode(this.ignoreCase > 0 ? foldCase(set) : set);
+    return charsNode(this.ignoreCase ? foldCase(set) : set);
   }
 
   /** `branch | branch | …` up to `)` or the end. */
@@ -500,7 +579,7 @@ class PatternParser {
         return EMPTY_NODE;
       case '.':
         this.position++;
-        return charsNode(DOT);
+        return charsNode(this.dotAll ? ALL_CHARS : DOT);
       case '(':
         return this.group();
       case '[':
@@ -534,16 +613,31 @@ class PatternParser {
     } else {
       this.position++;
     }
-    const saved = this.ignoreCase;
-    if (modifier?.[2]?.includes('i') === true) this.ignoreCase = 0;
-    if (modifier?.[1]?.includes('i') === true) this.ignoreCase++;
+    const saved = { ignoreCase: this.ignoreCase, dotAll: this.dotAll };
+    if (modifier !== null) this.applyModifiers(modifier[1] ?? '', modifier[2] ?? '');
     const body = this.alternation();
-    this.ignoreCase = saved;
+    this.ignoreCase = saved.ignoreCase;
+    this.dotAll = saved.dotAll;
     if (this.peek() !== ')') throw new UnmodeledSyntax('unterminated group');
     this.position++;
     if (lookaround === null) return body;
     this.lookarounds.push(body);
     return EMPTY_NODE;
+  }
+
+  /**
+   * Apply a modifier group's flags for its body (`(?is-m:…)`: add `i`, `s`;
+   * remove `m`). The engine guarantees each flag appears once at most.
+   * `m` only changes what `^`/`$` assert — zero-width, no character facts.
+   *
+   * @param add Flags turned on.
+   * @param remove Flags turned off.
+   */
+  private applyModifiers(add: string, remove: string): void {
+    if (add.includes('i')) this.ignoreCase = true;
+    if (remove.includes('i')) this.ignoreCase = false;
+    if (add.includes('s')) this.dotAll = true;
+    if (remove.includes('s')) this.dotAll = false;
   }
 
   /** `\…` outside a class. */
@@ -676,13 +770,14 @@ function singleUnit(set: CharSet): number | null {
 // ── Analysis ─────────────────────────────────────────────────────────────
 
 /**
- * What every string a node matches starts with: `sets[i]` holds the unit
- * at position i, and every string is at least `sets.length` long. `exact`
- * when the node matches exactly the fixed-length strings the sets spell.
+ * What every string a node matches starts with: `sets[i]` holds (at least)
+ * every unit a string can have at position i, and every string is at
+ * least `sets.length` long. `fixed` when every string is exactly that long
+ * — so a sequence can keep reading positions past the node.
  */
 interface Head {
   readonly sets: readonly CharSet[];
-  readonly exact: boolean;
+  readonly fixed: boolean;
 }
 
 /** Positions a head tracks (comparing further adds nothing for real rows). */
@@ -704,40 +799,43 @@ function headOf(node: RegexNode): Head {
 function computeHead(node: RegexNode): Head {
   switch (node.kind) {
     case 'chars':
-      return { sets: [node.first], exact: true };
+      return { sets: [node.first], fixed: true };
     case 'empty':
-      return { sets: [], exact: true };
+      return { sets: [], fixed: true };
     case 'backref':
-      return { sets: [], exact: false };
+      return { sets: [], fixed: false };
     case 'seq': {
       const sets: CharSet[] = [];
       for (const item of node.items) {
         const head = headOf(item);
         sets.push(...head.sets);
-        if (sets.length > HEAD_LIMIT) return { sets: sets.slice(0, HEAD_LIMIT), exact: false };
-        if (!head.exact) return { sets, exact: false };
+        if (sets.length > HEAD_LIMIT) return { sets: sets.slice(0, HEAD_LIMIT), fixed: false };
+        if (!head.fixed) return { sets, fixed: false };
       }
-      return { sets, exact: true };
+      return { sets, fixed: true };
     }
     case 'alt': {
+      // Position-wise unions over-approximate each position; the branches
+      // stay aligned only when all of them have one fixed length.
       const branchHeads = node.branches.map(headOf);
       const length = Math.min(...branchHeads.map((head) => head.sets.length));
       const sets = Array.from({ length }, (_, index) =>
         normalize(branchHeads.flatMap((head) => head.sets[index] ?? NO_CHARS))
       );
-      return { sets, exact: false };
+      const fixed = branchHeads.every((head) => head.fixed && head.sets.length === length);
+      return { sets, fixed };
     }
     case 'repeat': {
       const body = headOf(node.body);
       const sets: CharSet[] = [];
       for (let copy = 0; copy < node.min && sets.length <= HEAD_LIMIT; copy++) {
         sets.push(...body.sets);
-        if (!body.exact) break;
+        if (!body.fixed) break;
       }
       const capped = sets.length > HEAD_LIMIT;
       return {
         sets: capped ? sets.slice(0, HEAD_LIMIT) : sets,
-        exact: body.exact && node.min === node.max && !capped
+        fixed: body.fixed && node.min === node.max && !capped
       };
     }
   }
@@ -863,8 +961,12 @@ function analyze(source: string): BacktrackingRisk | null {
   }
 }
 
-/** Bound of the per-pattern verdict memo (rows are re-validated per document). */
-const RISK_MEMO_LIMIT = 512;
+/**
+ * Bound of the per-pattern verdict memo: rows are re-validated per
+ * document, so it holds a whole worst-case set (two pattern features of up
+ * to 500 rows each) with room to spare.
+ */
+const RISK_MEMO_LIMIT = 1024;
 
 /** Pattern source → verdict (oldest-inserted evicted first). */
 const riskMemo = new Map<string, BacktrackingRisk | null>();

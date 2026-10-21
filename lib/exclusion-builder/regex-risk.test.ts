@@ -89,6 +89,15 @@ const RISKY: readonly (readonly [string, BacktrackingRisk])[] = [
   ['(?:ab|a)+', 'overlapping-alternation'],
   ['(?:google|goo)+', 'overlapping-alternation'],
   ['(?:a|)+b', 'overlapping-alternation'],
+  // `(?s:…)` widens `.` to the line terminators (measured exponential before).
+  ['(?s:(?:.|\\r)*)x', 'overlapping-alternation'],
+  ['(?:(?s:.)|\\n)*x', 'overlapping-alternation'],
+  ['(?s:(?:.|\\n)+)x', 'overlapping-alternation'],
+  ['(?:(?s:.)|\\u2028)*y', 'overlapping-alternation'],
+  ['(?is:(?:.|\\n)+)x', 'overlapping-alternation'],
+  ['(?s:(?i:.)|\\n)+', 'overlapping-alternation'],
+  // Alignment is kept only for fixed-length alternations (`a|ab` is not).
+  ['(?:(?:a|bd)c|bdc)+', 'overlapping-alternation'],
   ['(?:a{1,2}b|aa)+', 'overlapping-alternation'],
   ['(?:a?b|ab)+', 'overlapping-alternation'],
   ['(?:(?:ab|ac)d|ab)+', 'overlapping-alternation'],
@@ -150,6 +159,16 @@ const SAFE_CORPUS: readonly string[] = [
   '(?:\\x41|B)+',
   '(?:[a-c]|d)+',
   '(?:[\\d-z]|y)+',
+  '(?s:.)+',
+  '(?s:(?-s:(?:.|\\n)+))',
+  '(?s-i:(?:.|\\n))?',
+  '(?m:^(?:a|b)+$)',
+  '(?:(?-s:.)|\\n)+',
+  // A modifier scope ends at its group.
+  '(?s:a)(?:.|\\n)+',
+  '(?i:(?-i:(?:a|A)+))',
+  // Aligned fixed-length alternations compare past their first position.
+  '(?:(?:a|b)(?:c|d)|ae)+',
   '(?:(?:ab|ac)d|aa)+',
   `(?:${'p'.repeat(31)}a|${'p'.repeat(31)}b)+`,
   '(?:[\\c1]|1)+',

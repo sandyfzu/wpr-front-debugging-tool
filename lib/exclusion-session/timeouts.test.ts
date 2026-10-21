@@ -4,11 +4,17 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
-import { EXCLUSION_SESSION_DEADLINES_MS } from '../messaging/exclusion-session';
+import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
+import { prevalidateExclusionSet } from '../exclusion-builder/validate';
+import {
+  EXCLUSION_SESSION_DEADLINES_MS,
+  EXCLUSION_SET_LIMITS
+} from '../messaging/exclusion-session';
 import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
+  PREVALIDATION_CPU_BOUND_MS,
   SESSION_ASK_WORST_CASE_MS,
   SESSION_STEP_TIMEOUTS_MS,
   withinDeadline
@@ -127,17 +133,19 @@ describe('declared bounds', () => {
   /** Each ask path, step by step (the worst of them is the declared worst case). */
   const steps = SESSION_STEP_TIMEOUTS_MS;
   const before = steps.ready + steps.queueWait;
+  const prevalidated = before + PREVALIDATION_CPU_BOUND_MS;
   const APPLY_PATHS: Record<string, number> = {
     // read + cap read + arm + record write + saved-set write + push
-    armed: before + 2 * steps.store + steps.arm + 2 * steps.store + steps.push,
+    armed: prevalidated + 2 * steps.store + steps.arm + 2 * steps.store + steps.push,
     // read + cap read + arm (or its timeout) + disarm + warning write + push
-    unavailable: before + 2 * steps.store + steps.arm + steps.disarm + steps.store + steps.push,
+    unavailable:
+      prevalidated + 2 * steps.store + steps.arm + steps.disarm + steps.store + steps.push,
     // … the warning write failed: + re-read
     'unavailable, write failed':
-      before + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
+      prevalidated + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
     // read + cap read + arm + record write refused at the cap + disarm + warning write + re-read + push
     'store-side cap':
-      before +
+      prevalidated +
       2 * steps.store +
       steps.arm +
       steps.store +
@@ -146,9 +154,9 @@ describe('declared bounds', () => {
       steps.push,
     // read + cap read + arm throws + disarm + removal + re-read + push
     'arm-failed':
-      before + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
+      prevalidated + 2 * steps.store + steps.arm + steps.disarm + 2 * steps.store + steps.push,
     // read + cap read (at the cap) + disarm + warning write + re-read + push
-    'cap pre-check': before + 2 * steps.store + steps.disarm + 2 * steps.store + steps.push
+    'cap pre-check': prevalidated + 2 * steps.store + steps.disarm + 2 * steps.store + steps.push
   };
   const STOP_PATHS: Record<string, number> = {
     stopped: before + steps.store + steps.disarm + steps.store + steps.push,
@@ -167,5 +175,48 @@ describe('declared bounds', () => {
     ['status', 'read', SESSION_ASK_WORST_CASE_MS.status] as const
   ])('keeps the %s path “%s” under 90 %% of the sender’s deadline', (ask, _path, ms) => {
     expect(ms).toBeLessThan(0.9 * EXCLUSION_SESSION_DEADLINES_MS[ask]);
+  });
+});
+
+describe('prevalidation CPU', () => {
+  /** A cap-sized adversarial set: distinct rows filling the whole char budget. */
+  function capSizedSet(unitFor: (row: number, index: number) => string): ExclusionSet {
+    const rowChars = EXCLUSION_SET_LIMITS.rowChars - 4;
+    const rowCount = Math.floor(EXCLUSION_SET_LIMITS.totalChars / EXCLUSION_SET_LIMITS.rowChars);
+    const rows = Array.from({ length: rowCount }, (_, row) => {
+      let body = '';
+      for (let index = 0; body.length + 16 <= rowChars - 6; index++) body += unitFor(row, index);
+      return `(?i:${body})`;
+    });
+    return {
+      rows: {
+        ...EMPTY_EXCLUSION_SET.rows,
+        delayJs: rows.slice(0, rowCount / 2),
+        deferJs: rows.slice(rowCount / 2)
+      },
+      disable: EMPTY_EXCLUSION_SET.disable
+    };
+  }
+
+  /** A `\uXXXX` escape for a code unit. */
+  const escape = (code: number): string => `\\u${code.toString(16).padStart(4, '0')}`;
+
+  it.each([
+    [
+      'distinct negated classes',
+      (row: number, index: number) => `[^${escape(((row * 400 + index) % 0xfffe) + 1)}]`
+    ],
+    [
+      'distinct mid-size ranges',
+      (row: number, index: number) => `[A-${escape(0x2000 + row * 400 + index)}]`
+    ]
+  ])('stays under its declared bound for a cap-sized set of %s', (_case, unitFor) => {
+    const set = capSizedSet(unitFor);
+    const chars = [...set.rows.delayJs, ...set.rows.deferJs].join('').length;
+    expect(chars).toBeLessThanOrEqual(EXCLUSION_SET_LIMITS.totalChars);
+    expect(chars).toBeGreaterThan(EXCLUSION_SET_LIMITS.totalChars * 0.95);
+    const started = performance.now();
+    expect(prevalidateExclusionSet(set).valid).toBe(true);
+    expect(performance.now() - started).toBeLessThan(PREVALIDATION_CPU_BOUND_MS);
   });
 });

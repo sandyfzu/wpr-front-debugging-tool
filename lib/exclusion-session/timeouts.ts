@@ -44,18 +44,29 @@ export const SESSION_STEP_TIMEOUTS_MS = {
 const STEPS = SESSION_STEP_TIMEOUTS_MS;
 
 /**
+ * The CPU an apply spends prevalidating its set before anything is queued
+ * (ms) — synchronous, so a bound, not a timeout. Measured 2026-10-20 on
+ * cap-sized adversarial sets (32 distinct rows × ~2 040 chars, the whole
+ * 64 Ki-char budget, e.g. `(?i:…)` scopes of distinct negated classes):
+ * ≤ 112 ms cold, ~0.1 ms memoized; this keeps ~9× headroom for a slower
+ * machine (the measurement is pinned by a test).
+ */
+export const PREVALIDATION_CPU_BOUND_MS = 1_000;
+
+/**
  * The longest each controller ask can take before it answers (ms), from
  * the step deadlines along its worst path — the sender's ask deadline
  * must stay above these with margin.
  */
 export const SESSION_ASK_WORST_CASE_MS = {
   /**
-   * Wake wait + queue wait + state read + cap read + arm + active-record
-   * write refused at the cap, then the warning: disarm + write + re-read
-   * (the write failed) + push.
+   * Wake wait + prevalidation CPU + queue wait + state read + cap read +
+   * arm + active-record write refused at the cap, then the warning: disarm
+   * + write + re-read (the write failed) + push.
    */
   apply:
     STEPS.ready +
+    PREVALIDATION_CPU_BOUND_MS +
     STEPS.queueWait +
     2 * STEPS.store +
     STEPS.arm +
