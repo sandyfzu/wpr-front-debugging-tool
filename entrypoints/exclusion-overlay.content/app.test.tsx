@@ -12,6 +12,7 @@ import type { PickerEvents } from './picker';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
+import type { OverlayMode, OverlayModeContext } from './modes';
 
 /**
  * A virtualizer that renders every row (happy-dom lays nothing out, so the
@@ -112,7 +113,11 @@ function pageTools() {
 }
 
 /** Render the overlay over a port, started (a re-open when `presentation` is given). */
-function mount(sessionPort: ExclusionSessionPort, presentation: OverlayPresentation | null = null) {
+function mount(
+  sessionPort: ExclusionSessionPort,
+  presentation: OverlayPresentation | null = null,
+  mode?: OverlayMode
+) {
   const onClose = vi.fn();
   const onPresented = vi.fn();
   const reload = vi.fn();
@@ -149,6 +154,7 @@ function mount(sessionPort: ExclusionSessionPort, presentation: OverlayPresentat
         onClose={onClose}
         presentation={presentation}
         onPresented={onPresented}
+        mode={mode}
         startPicking={(events) => {
           picker = events;
           return stopPicker;
@@ -298,6 +304,59 @@ describe('OverlayApp', () => {
     } finally {
       outside.remove();
     }
+  });
+
+  it('renders a plugged-in mode’s config and results panels through the shell services', async () => {
+    let captured: OverlayModeContext | null = null;
+    const shell = (): OverlayModeContext => {
+      if (captured === null) throw new Error('the mode was not rendered');
+      return captured;
+    };
+    const picked: string[] = [];
+    const mode: OverlayMode = {
+      id: 'probe',
+      label: 'Probe tool',
+      Config: (props) => {
+        // eslint-disable-next-line solid/reactivity -- capturing the fixed context object
+        captured = props.context;
+        return <p>Probe config</p>;
+      },
+      Results: () => <p>Probe results</p>
+    };
+    const { container, picker } = mount(port({ state: 'inactive' }), null, mode);
+    await screen.findByText('Probe config');
+    expect(screen.getByText('Probe results')).toBeTruthy();
+    // No Exclusions panel: the shell renders only the active mode.
+    expect(screen.queryByRole('button', { name: 'Pick on page' })).toBeNull();
+    // The shell services: highlight, announce, pick.
+    const element = document.createElement('div');
+    document.body.append(element);
+    element.getBoundingClientRect = () =>
+      ({ left: 5, top: 50, width: 40, height: 30, x: 5, y: 50 }) as DOMRect;
+    shell().highlight({ element, label: 'Probe lane', subject: 'probe subject' });
+    await screen.findByText('Probe lane');
+    shell().highlight(null);
+    element.remove();
+    shell().announce('Probe announced');
+    await screen.findByText('Probe announced');
+    shell().pick(undefined, {
+      label: () => 'Probe lane',
+      onPick: (pick) => {
+        picked.push(pick.candidate.subject);
+      }
+    });
+    expect(screen.getByRole('group', { name: 'Picking on the page' })).toBeTruthy();
+    const img = document.createElement('img');
+    picker()?.pick(
+      { element: img, candidate: { lane: 'lazyload', row: 'x.jpg', subject: 'x.jpg' } },
+      img
+    );
+    expect(picked).toEqual(['x.jpg']);
+    expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
+    // The pill carries the mode's name.
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
+    expect(pill.textContent).toMatch(/^Probe tool/);
   });
 
   it('picks through the picker: a miss explains itself, a hit adds the row and ends picking', async () => {

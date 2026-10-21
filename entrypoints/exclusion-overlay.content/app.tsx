@@ -1,10 +1,10 @@
 /**
  * The overlay's view: a tool shell (header with the session indicator,
- * dock/collapse/close; body; footer actions) hosting the Exclusions mode,
- * plus its collapsed pill, the picking bar and the page highlight — all in
- * one top-layer element. Reads the controller and the page tools; owns
- * only view state (open, dock side, picking, the candidate list, the
- * highlight).
+ * dock/collapse/close; the session banners; the active mode's panels from
+ * the mode registry (`./modes`); footer session actions), plus its
+ * collapsed pill, the picking bar and the page highlight — all in one
+ * top-layer element. Reads the controller and the page tools; owns only
+ * view state (open, dock side, picking, the highlight).
  *
  * State matrix (each arm renders its own words and a way forward):
  * loading (skeleton) · load failed (error + Retry) · nothing applied
@@ -39,7 +39,6 @@ import {
   type JSX
 } from 'solid-js';
 import Crosshair from 'lucide-solid/icons/crosshair';
-import List from 'lucide-solid/icons/list';
 import Minus from 'lucide-solid/icons/minus';
 import PanelLeft from 'lucide-solid/icons/panel-left';
 import PanelRight from 'lucide-solid/icons/panel-right';
@@ -54,14 +53,17 @@ import {
   withoutRepeatedActions,
   type BannerAction
 } from './banner-model';
-import { LANE_COPY, TOOL_TITLE, saveStateWords, sessionIndicator, viewCopy } from './copy';
+import { TOOL_TITLE, saveStateWords, sessionIndicator } from './copy';
 import type { OverlayController } from './controller';
-import { Candidates } from './exclusions/candidates';
-import { laneReport } from './exclusions/counts';
-import { LANE_ORDER, type LaneKey } from './exclusions/draft';
-import { Lane } from './exclusions/lane';
-import { PAGE_SCAN_LIMIT, type PageCandidate } from './exclusions/page-scan';
+import { LANE_ORDER } from './exclusions/draft';
 import { Glyph } from './glyph';
+import {
+  OVERLAY_MODES,
+  type HighlightTarget,
+  type OverlayMode,
+  type OverlayModeContext,
+  type PickEvents
+} from './modes';
 import { viewportRect, type PageTools, type PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
@@ -121,13 +123,8 @@ export interface OverlayAppProps {
   readonly isInvalid: () => boolean;
   /** The lists' virtualizer seam (tests render every row; default: the library). */
   readonly createVirtualizer?: VirtualizerFactory;
-}
-
-/** What the highlight shows. */
-interface HighlightTarget {
-  readonly element: Element;
-  readonly lane: LaneKey;
-  readonly subject: string;
+  /** The tool mode shown (default: the registry's first). */
+  readonly mode?: OverlayMode;
 }
 
 /** The host part of an origin (the scheme only costs width). */
@@ -154,17 +151,21 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const [dock, setDock] = createSignal<'right' | 'left'>('right');
   const [picking, setPicking] = createSignal(false);
   const [pickMessage, setPickMessage] = createSignal<string | null>(null);
-  const [listOpen, setListOpen] = createSignal(false);
   const [highlight, setHighlight] = createSignal<HighlightTarget | null>(null);
   const [announcement, setAnnouncement] = createSignal('');
   const [geometryTick, setGeometryTick] = createSignal(0);
   let heading: HTMLHeadingElement | undefined;
   let pill: HTMLButtonElement | undefined;
   let cancelPick: HTMLButtonElement | undefined;
-  let pickButton: HTMLButtonElement | undefined;
+  /** Where focus goes back when picking is cancelled. */
+  let pickReturn: HTMLElement | undefined;
   let layer: HTMLDivElement | undefined;
   let stopPicker: (() => void) | null = null;
 
+  // eslint-disable-next-line solid/reactivity -- the mode is fixed for the mount (a switch remounts its panels)
+  const mode = props.mode ?? OVERLAY_MODES[0];
+  const ModeConfig = mode.Config;
+  const ModeResults = mode.Results;
   const state = c.state;
   const ready = (): boolean => state().phase === 'ready';
   const held = (): boolean => !c.editable();
@@ -177,20 +178,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
       ? noticeBanner(current.notice)
       : null;
   });
-  const reports = createMemo(() => {
-    const view = c.view();
-    return view?.kind === 'applied' ? view.reports : [];
-  });
-  const pageCounts = createMemo(() => {
-    const counts = new Map<LaneKey, number>();
-    for (const candidate of props.page.candidates())
-      counts.set(candidate.lane, (counts.get(candidate.lane) ?? 0) + 1);
-    return counts;
-  });
-  const candidateCount = (): string =>
-    props.page.candidatesCapped()
-      ? `${String(PAGE_SCAN_LIMIT)}+`
-      : String(props.page.candidates().length);
   const sessionState = (): 'inactive' | 'active' | 'unavailable' | null => {
     const current = state();
     return current.phase === 'ready' ? current.status.state : null;
@@ -199,16 +186,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     const current = state();
     return current.phase === 'ready' ? current.pending : null;
   };
-  const draftEmpty = createMemo(() => {
-    const draft = c.draft();
-    return (
-      LANE_ORDER.every((lane) => draft.rows[lane].length === 0) &&
-      !draft.disable.delayJs &&
-      !draft.disable.deferJs &&
-      !draft.disable.lazyRender
-    );
-  });
-
   // The highlight follows its element through page and inner scrolling
   // and resizes: one geometry read per frame at most, only while it shows.
   let geometryQueued = false;
@@ -247,7 +224,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
 
   const collapse = (): void => {
     setOpen(false);
-    setListOpen(false);
     setHighlight(null);
     props.onPresented?.(false);
     focusSoon(() => pill);
@@ -270,20 +246,11 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   };
   const cancelPicking = (): void => {
     endPicking();
-    focusSoon(() => pickButton);
+    focusSoon(() => pickReturn);
   };
-  /** Commit a pointer pick: the row lands in its lane, focused. */
-  const commitPick = (pick: PointedPick): void => {
-    endPicking();
-    const added = c.addCandidate(pick.candidate.lane, pick.candidate.row, true);
-    setAnnouncement(
-      added
-        ? `Added ${pick.candidate.subject} to ${LANE_COPY[pick.candidate.lane].label}`
-        : `${pick.candidate.subject} is already in ${LANE_COPY[pick.candidate.lane].label}`
-    );
-  };
-  const beginPicking = (): void => {
-    if (!c.editable()) return;
+  /** The shell's picking service (a mode starts it; a hit goes to the mode). */
+  const beginPicking = (returnTo: HTMLElement | undefined, events: PickEvents): void => {
+    pickReturn = returnTo;
     setPicking(true);
     setHighlight(null);
     stopPicker = props.startPicking({
@@ -291,12 +258,17 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
         setHighlight(
           pick === null
             ? null
-            : { element: pick.element, lane: pick.candidate.lane, subject: pick.candidate.subject }
+            : {
+                element: pick.element,
+                label: events.label(pick),
+                subject: pick.candidate.subject
+              }
         );
       },
       pick: (pick, pointed) => {
         if (pick !== null) {
-          commitPick(pick);
+          endPicking();
+          events.onPick(pick);
           return;
         }
         // A miss keeps picking and says why, visibly.
@@ -317,15 +289,20 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     stopPicker?.();
   });
 
-  /** Add from the page list (focus stays on the list). */
-  const addFromList = (candidate: PageCandidate, alreadyAdded: boolean): void => {
-    if (alreadyAdded) {
-      c.addCandidate(candidate.lane, candidate.row, true);
-      return;
-    }
-    if (c.addCandidate(candidate.lane, candidate.row, false)) {
-      setAnnouncement(`Added ${candidate.subject} to ${LANE_COPY[candidate.lane].label}`);
-    }
+  /** What the active mode's panels use from the shell (fixed seams for the mount's lifetime). */
+  const modeContext: OverlayModeContext = {
+    controller: c,
+    // eslint-disable-next-line solid/reactivity -- one page-tools object per mount; its members are the reactive parts
+    page: props.page,
+    panelOpen: open,
+    requestFrame: (run) => {
+      props.requestFrame(run);
+    },
+    // eslint-disable-next-line solid/reactivity -- a fixed seam for the mount's lifetime
+    createVirtualizer: props.createVirtualizer,
+    pick: beginPicking,
+    highlight: setHighlight,
+    announce: setAnnouncement
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -357,16 +334,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     focusSoon(() => heading);
   };
 
-  createEffect(
-    on(
-      listOpen,
-      (isOpen) => {
-        if (isOpen) props.page.rescan();
-      },
-      { defer: true }
-    )
-  );
-
   // A page modal dialog makes everything outside it inert, the overlay too:
   // fold into the pill (marked paused) until it closes, then come back.
   let openBeforeModal = startsOpen;
@@ -378,7 +345,6 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           openBeforeModal = open();
           endPicking();
           setOpen(false);
-          setListOpen(false);
         } else if (openBeforeModal) {
           setOpen(true);
           focusSoon(() => heading);
@@ -499,9 +465,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 )}px)`
               }}
             >
-              <span class="xo-highlight-lane">
-                {LANE_COPY[highlight()?.lane ?? 'delayJs'].label}
-              </span>
+              <span class="xo-highlight-lane">{highlight()?.label}</span>
               <span class="xo-highlight-subject">{highlight()?.subject}</span>
             </div>
           </>
@@ -604,69 +568,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
               {(current) => <BannerView banner={current()} onAction={onBannerAction} />}
             </Show>
             <Show when={state().phase !== 'load-failed'}>
-              <div class="xo-toolbar">
-                <button
-                  type="button"
-                  class="xo-button"
-                  ref={pickButton}
-                  aria-disabled={held() ? 'true' : undefined}
-                  onClick={beginPicking}
-                >
-                  <Crosshair size={14} aria-hidden="true" />
-                  Pick on page
-                </button>
-                <button
-                  type="button"
-                  class="xo-button"
-                  aria-expanded={listOpen()}
-                  aria-controls="xo-candidates"
-                  aria-disabled={ready() ? undefined : 'true'}
-                  onClick={() => {
-                    if (ready()) setListOpen((isOpen) => !isOpen);
-                  }}
-                >
-                  <List size={14} aria-hidden="true" />
-                  On this page <span class="xo-count">{candidateCount()}</span>
-                </button>
-              </div>
-              <Show when={ready() && draftEmpty() && c.view()?.kind === 'off'}>
-                <p class="xo-empty">{viewCopy({ kind: 'off' }).body}</p>
-              </Show>
-              <Show when={listOpen()}>
-                <div id="xo-candidates">
-                  <Candidates
-                    candidates={props.page.candidates()}
-                    draft={c.draft()}
-                    locked={held()}
-                    createVirtualizer={props.createVirtualizer}
-                    onAdd={addFromList}
-                    onHover={(candidate) => {
-                      setHighlight(
-                        candidate === null
-                          ? null
-                          : {
-                              element: candidate.element,
-                              lane: candidate.lane,
-                              subject: candidate.subject
-                            }
-                      );
-                    }}
-                  />
-                </div>
-              </Show>
-              <For each={LANE_ORDER}>
-                {(lane) => (
-                  <Lane
-                    lane={lane}
-                    controller={c}
-                    report={laneReport(reports(), lane)}
-                    pageCount={props.page.scanned() ? (pageCounts().get(lane) ?? 0) : null}
-                    requestFrame={props.requestFrame}
-                    locked={held()}
-                    createVirtualizer={props.createVirtualizer}
-                  />
-                )}
-              </For>
+              <ModeConfig context={modeContext} />
+              {ModeResults === null ? null : <ModeResults context={modeContext} />}
             </Show>
           </Show>
         </div>
@@ -743,7 +646,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
           <span class="xo-brand" aria-hidden="true">
             <Crosshair size={12} strokeWidth={2.5} />
           </span>
-          <span>Exclusions</span>
+          <span>{mode.label}</span>
           <span class="xo-indicator" data-tone={paused() ? 'neutral' : indicator().tone}>
             <Glyph name={paused() ? 'idle' : indicator().glyph} size={12} />
             {paused() ? 'Paused: page dialog open' : indicator().label}
