@@ -35,6 +35,8 @@ export interface OverlayClaim {
   presentation: OverlayPresentation | null;
   /** Epoch ms of the claim. */
   readonly at: number;
+  /** The claiming open's token (its injection failing releases only its own claim). */
+  readonly token: string;
 }
 
 /** The live instance's handle. */
@@ -58,6 +60,8 @@ export interface OverlaySlotRequest {
   /** The origin the page must have (a re-open's session origin), or null for any. */
   readonly origin: string | null;
   readonly claimTtlMs: number;
+  /** This open's token, unique per open (see {@link releaseOverlayClaim}). */
+  readonly token: string;
 }
 
 /**
@@ -93,7 +97,8 @@ export const OVERLAY_SLOT_VERDICTS: readonly OverlaySlotVerdict[] = [
  * @returns The verdict.
  */
 export function claimOverlaySlot(key: string, request: OverlaySlotRequest): OverlaySlotVerdict {
-  if (document.contentType !== 'text/html') return 'not-html';
+  const type = document.contentType;
+  if (type !== 'text/html' && type !== 'application/xhtml+xml') return 'not-html';
   // Loose on purpose: Chromium's argument serialization drops null-valued
   // keys (verified on CFT 156), so "any origin" arrives as an absent key.
   if (typeof request.origin === 'string' && location.origin !== request.origin) {
@@ -129,8 +134,30 @@ export function claimOverlaySlot(key: string, request: OverlaySlotRequest): Over
     if (request.mode === 'open') slot.presentation = null;
     return 'pending';
   }
-  scope[key] = { state: 'claimed', presentation: request.presentation ?? null, at: Date.now() };
+  scope[key] = {
+    state: 'claimed',
+    presentation: request.presentation ?? null,
+    at: Date.now(),
+    token: request.token
+  };
   return 'inject';
+}
+
+/**
+ * Release a claim whose injection failed (run in the page, serialized like
+ * {@link claimOverlaySlot}): only while the slot still holds that very
+ * claim — a newer claim or a live instance stays.
+ *
+ * @param key The slot's global name.
+ * @param token The failed open's token.
+ * @returns Whether the claim was released.
+ */
+export function releaseOverlayClaim(key: string, token: string): boolean {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  const slot = scope[key] as { state?: unknown; token?: unknown } | undefined;
+  if (slot?.state !== 'claimed' || slot.token !== token) return false;
+  Reflect.deleteProperty(scope, key);
+  return true;
 }
 
 /** Whether a value is a presentation. */
@@ -155,8 +182,10 @@ export function claimedPresentation(
 }
 
 /**
- * Take the slot for a mounted instance; returns its release, which clears
- * the slot only while it still holds this instance (a newer claim stays).
+ * Take the slot for a starting instance (at once, before it mounts, so an
+ * explicit open in between reveals it rather than replacing it); returns
+ * its release, which clears the slot only while it still holds this
+ * instance (a newer claim stays).
  *
  * @param scope The isolated world's global object.
  * @param live The instance's handle.
@@ -181,4 +210,66 @@ export function holdOverlaySlot(
  */
 export function parseOverlaySlotVerdict(value: unknown): OverlaySlotVerdict | null {
   return OVERLAY_SLOT_VERDICTS.find((verdict) => verdict === value) ?? null;
+}
+
+/** A starting overlay's hold on the slot (taken before it mounts). */
+export interface StartingOverlay {
+  /**
+   * The view mounted: its host (liveness) and its reveal (runs at once if
+   * an open asked for a reveal while it was mounting).
+   */
+  attach(host: { readonly isConnected: boolean }, reveal: () => void): void;
+  /** Leave the slot (closed, superseded, invalidated, or the mount failed). */
+  release(): void;
+}
+
+/**
+ * Hold the slot for an overlay from the moment its script starts, so an
+ * explicit open while it mounts reveals it instead of replacing it. Until
+ * it mounts it counts as alive for `mountWindowMs` (a mount that never
+ * finishes stops blocking opens then).
+ *
+ * @param scope The isolated world's global object.
+ * @param isInvalid Whether the instance's context is dead.
+ * @param now Epoch ms now.
+ * @param mountWindowMs How long a mount may take before the hold lapses.
+ * @param key The slot's global name.
+ */
+export function holdStartingOverlay(
+  scope: Record<string, unknown>,
+  isInvalid: () => boolean,
+  now: () => number,
+  mountWindowMs: number = OVERLAY_CLAIM_TTL_MS,
+  key: string = OVERLAY_SLOT_GLOBAL
+): StartingOverlay {
+  const startedAt = now();
+  let host: { readonly isConnected: boolean } | null = null;
+  let reveal: (() => void) | null = null;
+  let revealAsked = false;
+  const release = holdOverlaySlot(
+    scope,
+    {
+      state: 'live',
+      alive: () =>
+        !isInvalid() && (host === null ? now() - startedAt < mountWindowMs : host.isConnected),
+      reveal: () => {
+        if (isInvalid()) return false;
+        if (reveal === null) revealAsked = true;
+        else reveal();
+        return true;
+      }
+    },
+    key
+  );
+  return {
+    attach(mountedHost, mountedReveal) {
+      host = mountedHost;
+      reveal = mountedReveal;
+      if (revealAsked) {
+        revealAsked = false;
+        mountedReveal();
+      }
+    },
+    release
+  };
 }

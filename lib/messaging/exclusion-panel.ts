@@ -17,6 +17,7 @@ import { isRecord, ownValue } from '../../utils/is-record';
  * - `revealed` — an overlay already on the page was unfolded and focused
  *   (never replaced: that would drop its unsaved draft),
  * - `unsupported-page` — the browser does not let extensions script the page,
+ * - `not-html` — the page is not an HTML page (an image, a feed, a file),
  * - `tab-gone` — the tab closed first,
  * - `failed` — anything else (logged by the background).
  */
@@ -24,6 +25,7 @@ export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
   'injected',
   'revealed',
   'unsupported-page',
+  'not-html',
   'tab-gone',
   'failed'
 ] as const;

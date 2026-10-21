@@ -99,6 +99,10 @@ describe('openFeedback', () => {
       tone: 'error',
       description: 'Open a regular http or https page in this tab.'
     });
+    expect(openFeedback({ kind: 'reply', reply: 'not-html' })).toMatchObject({
+      tone: 'error',
+      description: 'The exclusion builder works on HTML pages, not on images, feeds or other files.'
+    });
     expect(openFeedback({ kind: 'reply', reply: 'tab-gone' }).description).toBe(
       'The inspected tab is gone.'
     );

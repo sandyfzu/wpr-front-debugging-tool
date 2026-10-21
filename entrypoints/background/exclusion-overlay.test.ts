@@ -18,8 +18,14 @@ function injector(
 ) {
   const injected = vi.fn<ScriptInjector['injectFiles']>(() => files());
   const claimed = vi.fn<ScriptInjector['claim']>(() => probe());
-  const api: ScriptInjector = { injectFiles: injected, claim: claimed };
-  return { api, injected, claimed };
+  const released = vi.fn<ScriptInjector['release']>(() => Promise.resolve(true));
+  const api: ScriptInjector = {
+    injectFiles: injected,
+    claim: claimed,
+    release: released,
+    newToken: () => 'token-1'
+  };
+  return { api, injected, claimed, released };
 }
 
 const ORIGIN = 'http://127.0.0.1:8493';
@@ -32,23 +38,52 @@ describe('openExclusionOverlay (explicit)', () => {
       mode: 'open',
       presentation: null,
       origin: null,
-      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+      token: 'token-1'
     } satisfies OverlaySlotRequest);
     expect(injected).toHaveBeenCalledWith(7, [EXCLUSION_OVERLAY_SCRIPT]);
   });
 
-  it('never replaces a live or pending overlay: it was revealed', async () => {
-    for (const verdict of ['revealed', 'pending']) {
-      const { api, injected } = injector(() => Promise.resolve(verdict));
-      expect(await openExclusionOverlay(7, api)).toBe('revealed');
-      expect(injected).not.toHaveBeenCalled();
+  it('never replaces an overlay: shown only when a live one revealed itself', async () => {
+    const live = injector(() => Promise.resolve('revealed'));
+    expect(await openExclusionOverlay(7, live.api)).toBe('revealed');
+    expect(live.injected).not.toHaveBeenCalled();
+    // An injection already on its way (now starting open) is not "shown" yet.
+    const pending = injector(() => Promise.resolve('pending'));
+    expect(await openExclusionOverlay(7, pending.api)).toBe('injected');
+    expect(pending.injected).not.toHaveBeenCalled();
+  });
+
+  it('distrusts answers an explicit open never gets', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      for (const verdict of ['live', 'other-origin']) {
+        const { api, injected } = injector(() => Promise.resolve(verdict));
+        expect(await openExclusionOverlay(7, api)).toBe('failed');
+        expect(injected).not.toHaveBeenCalled();
+      }
+    } finally {
+      warn.mockRestore();
     }
   });
 
-  it('answers unsupported-page for a document that is not HTML', async () => {
+  it('answers not-html for a document that is not an HTML page', async () => {
     const { api, injected } = injector(() => Promise.resolve('not-html'));
-    expect(await openExclusionOverlay(7, api)).toBe('unsupported-page');
+    expect(await openExclusionOverlay(7, api)).toBe('not-html');
     expect(injected).not.toHaveBeenCalled();
+  });
+
+  it('releases its own claim when the injection fails (the next open is not held up)', async () => {
+    const refused = injector(undefined, () => Promise.reject(new Error('Cannot access contents')));
+    expect(await openExclusionOverlay(7, refused.api)).toBe('unsupported-page');
+    expect(refused.released).toHaveBeenCalledWith(7, 'token-1');
+    const gone = injector(undefined, () => Promise.reject(new Error('No tab with id: 7.')));
+    gone.released.mockRejectedValueOnce(new Error('No tab with id: 7.'));
+    expect(await openExclusionOverlay(7, gone.api)).toBe('tab-gone');
+    // A refused claim never injected: nothing to release.
+    const noClaim = injector(() => Promise.reject(new Error('No tab with id: 7.')));
+    await openExclusionOverlay(7, noClaim.api);
+    expect(noClaim.released).not.toHaveBeenCalled();
   });
 
   it('fails, logged, on a probe answer that is no verdict (thrown probe, engine error object)', async () => {
@@ -90,7 +125,8 @@ describe('reopenExclusionOverlay', () => {
       mode: 'reopen',
       presentation: 'folded',
       origin: ORIGIN,
-      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+      token: 'token-1'
     } satisfies OverlaySlotRequest);
     expect(injected).toHaveBeenCalledWith(3, [EXCLUSION_OVERLAY_SCRIPT]);
   });
@@ -129,6 +165,7 @@ describe('reopenExclusionOverlay', () => {
     expect(await reopenExclusionOverlay(3, 'open', ORIGIN, refusedFiles.api)).toBe(
       'unsupported-page'
     );
+    expect(refusedFiles.released).toHaveBeenCalledWith(3, 'token-1');
   });
 });
 

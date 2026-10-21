@@ -20,6 +20,7 @@ import {
   OVERLAY_SLOT_GLOBAL,
   claimOverlaySlot,
   parseOverlaySlotVerdict,
+  releaseOverlayClaim,
   type OverlaySlotRequest,
   type OverlaySlotVerdict
 } from '../../lib/exclusion-session/overlay-slot';
@@ -35,6 +36,10 @@ export interface ScriptInjector {
   injectFiles(tabId: number, files: readonly string[]): Promise<void>;
   /** Claim the overlay's slot in the page; resolves with what the page answered. */
   claim(tabId: number, request: OverlaySlotRequest): Promise<unknown>;
+  /** Release this open's claim in the page (its injection failed). */
+  release(tabId: number, token: string): Promise<unknown>;
+  /** A fresh token per open. */
+  newToken(): string;
 }
 
 /**
@@ -56,7 +61,16 @@ export function browserScriptInjector(): ScriptInjector {
         args: [OVERLAY_SLOT_GLOBAL, request]
       });
       return results[0]?.result;
-    }
+    },
+    release: async (tabId, token) => {
+      const results = await browser.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
+        func: releaseOverlayClaim,
+        args: [OVERLAY_SLOT_GLOBAL, token]
+      });
+      return results[0]?.result;
+    },
+    newToken: () => crypto.randomUUID()
   };
 }
 
@@ -125,6 +139,30 @@ async function claimSlot(
 }
 
 /**
+ * Inject the overlay for a claimed slot; when the injection fails, release
+ * the claim (best effort — the page may be gone) so the next open is not
+ * held up for the claim's time-to-live, then rethrow.
+ *
+ * @param injector The scripting seam.
+ * @param tabId The tab.
+ * @param token The claim's token.
+ */
+async function injectClaimed(
+  injector: ScriptInjector,
+  tabId: number,
+  token: string
+): Promise<void> {
+  try {
+    await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
+  } catch (cause) {
+    await injector.release(tabId, token).catch((releaseCause: unknown) => {
+      log.debug('Overlay claim not released (the page is gone)', { tabId, releaseCause });
+    });
+    throw cause;
+  }
+}
+
+/**
  * Open the overlay in a tab's top frame: reveal a live one, else inject.
  *
  * @param tabId The tab.
@@ -136,25 +174,33 @@ export async function openExclusionOverlay(
   injector: ScriptInjector = browserScriptInjector()
 ): Promise<ExclusionOverlayOpenOutcome> {
   try {
+    const token = injector.newToken();
     const verdict = await claimSlot(injector, tabId, {
       mode: 'open',
       presentation: null,
       origin: null,
-      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+      token
     });
     switch (verdict) {
       case 'inject':
-        await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
+        await injectClaimed(injector, tabId, token);
         return 'injected';
-      // An explicit open never answers `live` (it reveals); counted as shown.
+      // Only a live instance that unfolded counts as shown.
       case 'revealed':
-      case 'pending':
-      case 'live':
         return 'revealed';
-      case 'not-html':
+      // An injection is on its way (now starting open and focused).
+      case 'pending':
+        return 'injected';
+      // An explicit open never gets `live` (it reveals) nor `other-origin`
+      // (it names no origin): a page answering so is not trusted.
+      case 'live':
       case 'other-origin':
+        log.warn('The overlay slot probe answered out of turn', { tabId, verdict });
+        return 'failed';
+      case 'not-html':
         log.info('Exclusion builder not opened: the page is not an HTML page', { tabId });
-        return 'unsupported-page';
+        return 'not-html';
       case null:
         return 'failed';
     }
@@ -189,15 +235,17 @@ export async function reopenExclusionOverlay(
   injector: ScriptInjector = browserScriptInjector()
 ): Promise<OverlayReopenOutcome> {
   try {
+    const token = injector.newToken();
     const verdict = await claimSlot(injector, tabId, {
       mode: 'reopen',
       presentation,
       origin,
-      claimTtlMs: OVERLAY_CLAIM_TTL_MS
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+      token
     });
     switch (verdict) {
       case 'inject':
-        await injector.injectFiles(tabId, [EXCLUSION_OVERLAY_SCRIPT]);
+        await injectClaimed(injector, tabId, token);
         return 'reopened';
       case 'live':
       case 'pending':

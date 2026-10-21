@@ -146,6 +146,13 @@ export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): 
         title: 'This page can’t host the exclusion builder',
         description: 'Open a regular http or https page in this tab.'
       };
+    case 'not-html':
+      return {
+        tone: 'error',
+        title: 'This page isn’t a web page the builder can open on',
+        description:
+          'The exclusion builder works on HTML pages, not on images, feeds or other files.'
+      };
     case 'tab-gone':
       return {
         tone: 'error',

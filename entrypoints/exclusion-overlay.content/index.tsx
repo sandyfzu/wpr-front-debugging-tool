@@ -29,7 +29,11 @@ import { mountOverlay } from './mount-overlay';
 import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
-import { claimedPresentation, holdOverlaySlot } from '../../lib/exclusion-session/overlay-slot';
+import {
+  claimedPresentation,
+  holdStartingOverlay,
+  type StartingOverlay
+} from '../../lib/exclusion-session/overlay-slot';
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
@@ -91,6 +95,7 @@ function reportPresentation(open: boolean): void {
  * @param shadow The shadow root (Solid delegates events there).
  * @param host The shadow host (the overlay's own input passes the picker).
  * @param presentation How a re-open starts (null: an explicit open).
+ * @param slot This instance's hold on the page's overlay slot.
  * @returns The view's disposer.
  */
 function renderOverlay(
@@ -98,7 +103,8 @@ function renderOverlay(
   container: HTMLElement,
   shadow: ShadowRoot,
   host: HTMLElement,
-  presentation: OverlayPresentation | null
+  presentation: OverlayPresentation | null,
+  slot: StartingOverlay
 ): Promise<() => void> {
   // Isolated events never reach the document, where Solid delegates by
   // default: delegate them at the shadow root instead.
@@ -137,19 +143,6 @@ function renderOverlay(
       },
       log
     });
-    // This instance holds the page's overlay slot while it runs: a later
-    // open reveals it instead of injecting another one.
-    let reveal: (() => void) | null = null;
-    const release = holdOverlaySlot(ISOLATED_WORLD, {
-      state: 'live',
-      alive: () => !ctx.isInvalid && host.isConnected,
-      reveal: () => {
-        if (ctx.isInvalid || reveal === null) return false;
-        reveal();
-        return true;
-      }
-    });
-    ctx.onInvalidated(release);
     // Back from the back/forward cache: the session went on without this
     // document (its pushes went elsewhere) — read where it stands now.
     listen(window, 'pageshow', (event) => {
@@ -159,7 +152,7 @@ function renderOverlay(
       controller.start();
     });
     onCleanup(() => {
-      release();
+      slot.release();
       controller.dispose();
       page.dispose();
     });
@@ -173,8 +166,8 @@ function renderOverlay(
         origin={window.location.origin}
         presentation={presentation}
         onPresented={reportPresentation}
-        onRevealReady={(registered) => {
-          reveal = registered;
+        onRevealReady={(reveal) => {
+          slot.attach(host, reveal);
         }}
         requestFrame={requestFrame}
         listen={(target, type, handler) => {
@@ -217,7 +210,19 @@ export default defineContentScript({
     // An explicit open shows the panel: the session's next pages follow it
     // (a fold or close before it no longer applies).
     if (presentation === null) reportPresentation(true);
+    // Hold the page's overlay slot from now on (also while mounting): a
+    // later open reveals this instance instead of injecting another one.
+    const slot = holdStartingOverlay(
+      ISOLATED_WORLD,
+      () => ctx.isInvalid,
+      () => Date.now()
+    );
+    ctx.onInvalidated(() => {
+      slot.release();
+    });
     const reportFailure = (cause: unknown): void => {
+      // A failed mount must not hold opens up: leave the slot.
+      slot.release();
       log.error(
         'Opening the exclusion builder failed',
         cause instanceof Error ? cause.message : cause
@@ -238,7 +243,7 @@ export default defineContentScript({
           ...hooks
         }),
       render: (container, shadow, host) =>
-        renderOverlay(ctx, container, shadow, host, presentation),
+        renderOverlay(ctx, container, shadow, host, presentation, slot),
       onError: reportFailure
     }).catch(reportFailure);
   }

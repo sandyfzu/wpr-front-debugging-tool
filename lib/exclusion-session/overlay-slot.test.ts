@@ -5,7 +5,9 @@ import {
   claimOverlaySlot,
   claimedPresentation,
   holdOverlaySlot,
+  holdStartingOverlay,
   parseOverlaySlotVerdict,
+  releaseOverlayClaim,
   type LiveOverlay,
   type OverlaySlotRequest
 } from './overlay-slot';
@@ -17,13 +19,15 @@ const reopen = (presentation: 'open' | 'folded' = 'folded'): OverlaySlotRequest 
   mode: 'reopen',
   presentation,
   origin: ORIGIN,
-  claimTtlMs: OVERLAY_CLAIM_TTL_MS
+  claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+  token: 'reopen-token'
 });
 const open: OverlaySlotRequest = {
   mode: 'open',
   presentation: null,
   origin: null,
-  claimTtlMs: OVERLAY_CLAIM_TTL_MS
+  claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+  token: 'open-token'
 };
 
 /** A live instance whose liveness and reveal are controllable. */
@@ -103,7 +107,11 @@ describe('claimOverlaySlot (run in the page)', () => {
 
   it('takes a request as Chromium delivers it: null-valued keys dropped', () => {
     // `{ presentation: null, origin: null }` arrives without both keys.
-    const delivered = { mode: 'open', claimTtlMs: OVERLAY_CLAIM_TTL_MS } as OverlaySlotRequest;
+    const delivered = {
+      mode: 'open',
+      claimTtlMs: OVERLAY_CLAIM_TTL_MS,
+      token: 't'
+    } as OverlaySlotRequest;
     expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, delivered)).toBe('inject');
     expect(claimedPresentation(scope)).toBeNull();
     expect((scope[OVERLAY_SLOT_GLOBAL] as { presentation: unknown }).presentation).toBeNull();
@@ -114,6 +122,17 @@ describe('claimOverlaySlot (run in the page)', () => {
       claimOverlaySlot(OVERLAY_SLOT_GLOBAL, { ...reopen(), origin: 'https://other.test' })
     ).toBe('other-origin');
     expect(OVERLAY_SLOT_GLOBAL in scope).toBe(false);
+  });
+
+  it('takes XHTML pages too', () => {
+    const contentType = vi
+      .spyOn(document, 'contentType', 'get')
+      .mockReturnValue('application/xhtml+xml');
+    try {
+      expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
+    } finally {
+      contentType.mockRestore();
+    }
   });
 
   it('refuses a document that is not an HTML page', () => {
@@ -138,6 +157,24 @@ describe('claimOverlaySlot (run in the page)', () => {
 
   it('is self-contained (the browser serializes it without its module)', () => {
     expect(claimOverlaySlot.toString()).not.toMatch(/OVERLAY_|isOverlay|import|require\(/);
+  });
+});
+
+describe('releaseOverlayClaim (run in the page)', () => {
+  it('releases only its own claim, never a newer claim or a live instance', () => {
+    claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen());
+    expect(releaseOverlayClaim(OVERLAY_SLOT_GLOBAL, 'other')).toBe(false);
+    expect(releaseOverlayClaim(OVERLAY_SLOT_GLOBAL, 'reopen-token')).toBe(true);
+    expect(OVERLAY_SLOT_GLOBAL in scope).toBe(false);
+    // Freed at once: the next open claims without waiting for the time-to-live.
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
+    holdOverlaySlot(scope, live());
+    expect(releaseOverlayClaim(OVERLAY_SLOT_GLOBAL, 'open-token')).toBe(false);
+    expect(releaseOverlayClaim(OVERLAY_SLOT_GLOBAL, 'x')).toBe(false);
+  });
+
+  it('is self-contained', () => {
+    expect(releaseOverlayClaim.toString()).not.toMatch(/OVERLAY_|import|require\(/);
   });
 });
 
@@ -170,5 +207,68 @@ describe('claimedPresentation / parseOverlaySlotVerdict', () => {
     for (const junk of [undefined, null, true, { error: 'x' }, 'INJECT']) {
       expect(parseOverlaySlotVerdict(junk)).toBeNull();
     }
+  });
+});
+
+describe('holdStartingOverlay', () => {
+  it('holds the slot before the mount: an explicit open then is a reveal, run once mounted', () => {
+    let now = 1_000;
+    const starting = holdStartingOverlay(
+      scope,
+      () => false,
+      () => now
+    );
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen())).toBe('live');
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('revealed');
+    const reveal = vi.fn();
+    starting.attach({ isConnected: true }, reveal);
+    expect(reveal).toHaveBeenCalledTimes(1);
+    // Mounted: liveness follows the host, a reveal runs at once.
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('revealed');
+    expect(reveal).toHaveBeenCalledTimes(2);
+    now += OVERLAY_CLAIM_TTL_MS * 10;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen())).toBe('live');
+  });
+
+  it('lapses when the mount never finishes, and when the host leaves the page', () => {
+    let now = 0;
+    holdStartingOverlay(
+      scope,
+      () => false,
+      () => now,
+      500
+    );
+    now = 499;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen())).toBe('live');
+    now = 500;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, reopen())).toBe('inject');
+    Reflect.deleteProperty(scope, OVERLAY_SLOT_GLOBAL);
+    const host = { isConnected: true };
+    holdStartingOverlay(
+      scope,
+      () => false,
+      () => 0
+    ).attach(host, () => undefined);
+    host.isConnected = false;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
+  });
+
+  it('refuses a reveal once dead, and a failed mount releases the slot', () => {
+    let dead = false;
+    holdStartingOverlay(
+      scope,
+      () => dead,
+      () => 0
+    );
+    dead = true;
+    expect(claimOverlaySlot(OVERLAY_SLOT_GLOBAL, open)).toBe('inject');
+    Reflect.deleteProperty(scope, OVERLAY_SLOT_GLOBAL);
+    const failed = holdStartingOverlay(
+      scope,
+      () => false,
+      () => 0
+    );
+    failed.release();
+    expect(OVERLAY_SLOT_GLOBAL in scope).toBe(false);
   });
 });
