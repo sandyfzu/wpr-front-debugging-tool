@@ -161,7 +161,7 @@ describe('editing and autosave', () => {
   it('splits a multi-line paste into rows and focuses the last', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }).port);
     const [id] = controller.insertRows('lazyload', [''], null);
-    controller.pasteRows('lazyload', id ?? '', 'a.png\nb.png\r\n\nc.png');
+    controller.pasteRows('lazyload', id ?? '', 'a.png\nb.png\r\n\nc.png', { start: 0, end: 0 });
     const rows = controller.draft().rows.lazyload;
     expect(rows.map((row) => row.text)).toEqual(['a.png', 'b.png', 'c.png']);
     expect(controller.focusRequest()).toEqual({ lane: 'lazyload', id: rows[2]?.id });
@@ -413,7 +413,7 @@ describe('audit round 1', () => {
     controller.insertRows('delayJs', ['more'], null);
     controller.removeRow('delayJs', id ?? '');
     controller.setDisable('delayJs', true);
-    controller.pasteRows('delayJs', id ?? '', 'a\nb');
+    controller.pasteRows('delayJs', id ?? '', 'a\nb', { start: 0, end: 0 });
     expect(controller.addCandidate('delayJs', 'x', false)).toBe(false);
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
     expect(controller.draft().disable.delayJs).toBe(false);

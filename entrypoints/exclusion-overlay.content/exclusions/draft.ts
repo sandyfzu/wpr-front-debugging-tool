@@ -168,6 +168,51 @@ export function insertRows(
   };
 }
 
+/** The part of a row's text a paste replaces (a caret is an empty one). */
+export interface RowSelection {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Paste lines into a row the way a text editor splits it: the row keeps its
+ * text before the selection, then the first pasted line; each further line
+ * becomes a row after it, the last followed by the row's text after the
+ * selection. Blank pasted lines are dropped, and lines past the lane cap too
+ * — never the row's own text.
+ *
+ * @param draft The draft.
+ * @param lane The row's lane.
+ * @param id The row pasted into.
+ * @param pasted The pasted text.
+ * @param selection Where in the row's text the paste lands.
+ * @param nextId Mints the new rows' ids.
+ * @returns The draft and the rows the paste filled, the edited one first
+ *   (none, draft unchanged: a blank paste or an unknown row).
+ */
+export function pasteIntoRow(
+  draft: Draft,
+  lane: LaneKey,
+  id: string,
+  pasted: string,
+  selection: RowSelection,
+  nextId: IdSource
+): Inserted {
+  const row = draft.rows[lane].find((candidate) => candidate.id === id);
+  const room = EXCLUSION_SET_LIMITS.rowsPerFeature - draft.rows[lane].length;
+  const lines = splitLines(pasted).slice(0, Math.max(0, room) + 1);
+  if (row === undefined || lines.length === 0) return { draft, ids: [] };
+  const last = lines.length - 1;
+  const [head = '', ...rest] = lines.map(
+    (line, index) =>
+      (index === 0 ? row.text.slice(0, selection.start) : '') +
+      line +
+      (index === last ? row.text.slice(selection.end) : '')
+  );
+  const inserted = insertRows(updateRow(draft, lane, id, head), lane, rest, id, nextId);
+  return { draft: inserted.draft, ids: [id, ...inserted.ids] };
+}
+
 /**
  * Change one row's text (an unknown id changes nothing).
  *

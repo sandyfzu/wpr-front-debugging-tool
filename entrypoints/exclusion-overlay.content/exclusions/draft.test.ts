@@ -12,6 +12,7 @@ import {
   draftToSet,
   insertRows,
   laneFeature,
+  pasteIntoRow,
   removeRow,
   sameSet,
   setDisable,
@@ -139,6 +140,86 @@ describe('row edits', () => {
         9 +
         '<section class="footer">'.length
     );
+  });
+});
+
+describe('pasteIntoRow', () => {
+  const nextId = createIdSource('p');
+  const start = draftFromSet(validSet(), nextId);
+  const first = start.rows.delayJs[0];
+  const texts = (draft: ReturnType<typeof draftFromSet>): string[] =>
+    draft.rows.delayJs.map((row) => row.text);
+
+  it('splits the row at the caret, keeping its text on both sides', () => {
+    // 'jquery\\.min\\.js' with the caret after 'jquery'.
+    const pasted = pasteIntoRow(
+      start,
+      'delayJs',
+      first?.id ?? '',
+      'a\n\nb',
+      { start: 6, end: 6 },
+      nextId
+    );
+    expect(texts(pasted.draft)).toEqual(['jquerya', 'b\\.min\\.js', 'gtag']);
+    expect(pasted.ids[0]).toBe(first?.id);
+    expect(pasted.ids).toHaveLength(2);
+  });
+
+  it('keeps the row and adds the lines after it from a caret at the end', () => {
+    const end = first?.text.length ?? 0;
+    const pasted = pasteIntoRow(
+      start,
+      'delayJs',
+      first?.id ?? '',
+      'a\r\nb',
+      { start: end, end },
+      nextId
+    );
+    expect(texts(pasted.draft)).toEqual(['jquery\\.min\\.jsa', 'b', 'gtag']);
+  });
+
+  it('replaces the selected text only', () => {
+    const pasted = pasteIntoRow(
+      start,
+      'delayJs',
+      first?.id ?? '',
+      'x\ny',
+      { start: 0, end: 6 },
+      nextId
+    );
+    expect(texts(pasted.draft)).toEqual(['x', 'y\\.min\\.js', 'gtag']);
+  });
+
+  it("drops lines past the lane cap, never the row's own text", () => {
+    const filled = insertRows(
+      start,
+      'delayJs',
+      Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature - 3 }, () => 'f'),
+      null,
+      nextId
+    ).draft;
+    const pasted = pasteIntoRow(
+      filled,
+      'delayJs',
+      first?.id ?? '',
+      'a\nb\nc',
+      { start: 0, end: 0 },
+      nextId
+    );
+    expect(pasted.draft.rows.delayJs).toHaveLength(EXCLUSION_SET_LIMITS.rowsPerFeature);
+    expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'bjquery\\.min\\.js']);
+  });
+
+  it('changes nothing for a blank paste or an unknown row', () => {
+    expect(
+      pasteIntoRow(start, 'delayJs', first?.id ?? '', '\n  \n', { start: 0, end: 0 }, nextId)
+    ).toEqual({
+      draft: start,
+      ids: []
+    });
+    expect(
+      pasteIntoRow(start, 'delayJs', 'missing', 'a\nb', { start: 0, end: 0 }, nextId).draft
+    ).toBe(start);
   });
 });
 

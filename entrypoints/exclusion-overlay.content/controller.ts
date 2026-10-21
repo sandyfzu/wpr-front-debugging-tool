@@ -27,13 +27,14 @@ import {
   insertRows,
   isBlankRow,
   laneFeature,
+  pasteIntoRow,
   removeRow,
   sameSet,
   setDisable,
-  splitLines,
   updateRow,
   type Draft,
   type LaneKey,
+  type RowSelection,
   type ToggleKey
 } from './exclusions/draft';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
@@ -118,8 +119,11 @@ export interface OverlayController {
    * @returns The new rows' ids (none at the lane cap).
    */
   insertRows(lane: LaneKey, texts: readonly string[], afterId: string | null): readonly string[];
-  /** Replace a row's text with the first pasted line and insert the rest after it. */
-  pasteRows(lane: LaneKey, id: string, text: string): void;
+  /**
+   * Paste lines into a row at `selection` (its text before and after it is
+   * kept), focusing the last row filled.
+   */
+  pasteRows(lane: LaneKey, id: string, text: string, selection: RowSelection): void;
   removeRow(lane: LaneKey, id: string): void;
   setDisable(key: ToggleKey, value: boolean): void;
   /**
@@ -449,16 +453,14 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (first !== undefined) setFocusRequest({ lane, id: first });
       return inserted.ids;
     },
-    pasteRows: (lane, id, text) => {
+    pasteRows: (lane, id, text, selection) => {
       if (!editable()) return;
-      const [head, ...rest] = splitLines(text);
-      if (head === undefined) return;
+      const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
+      const last = pasted.ids.at(-1);
+      if (last === undefined) return;
       clearServerReason(id);
-      const edited = updateRow(draft(), lane, id, head);
-      const inserted = insertRows(edited, lane, rest, id, nextId);
-      setDraft(inserted.draft);
-      const last = inserted.ids.at(-1);
-      if (last !== undefined) setFocusRequest({ lane, id: last });
+      setDraft(pasted.draft);
+      setFocusRequest({ lane, id: last });
     },
     removeRow: (lane, id) => {
       if (!editable()) return;

@@ -20,7 +20,7 @@ import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { LANE_COPY } from '../copy';
 import type { OverlayController } from '../controller';
 import { laneCounts, rowMatches } from './counts';
-import { laneFeature, type DraftRow, type LaneKey } from './draft';
+import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 
 /** Seed row height (px) before measurement: one input line plus padding. */
 const ROW_ESTIMATE_PX = 37;
@@ -57,6 +57,19 @@ function countLine(report: TransformReport | undefined, noun: string): string | 
   if (counts.featureWide)
     return `All ${String(counts.rewritten)} ${noun} restored (feature disabled)`;
   return `${String(counts.rewritten)} of ${String(counts.candidates)} ${noun} restored`;
+}
+
+/**
+ * Where a paste lands in a row: its input's selection, or the end of its text
+ * when the input has none.
+ *
+ * @param field The row's input (the paste's current target).
+ * @param row The row.
+ */
+function selectionOf(field: EventTarget | null, row: DraftRow): RowSelection {
+  const caret = row.text.length;
+  if (!(field instanceof HTMLInputElement)) return { start: caret, end: caret };
+  return { start: field.selectionStart ?? caret, end: field.selectionEnd ?? caret };
 }
 
 /**
@@ -147,7 +160,7 @@ export function Lane(props: LaneProps): JSX.Element {
     const text = event.clipboardData?.getData('text/plain') ?? '';
     if (!/\r?\n/.test(text.trim())) return;
     event.preventDefault();
-    props.controller.pasteRows(props.lane, row.id, text);
+    props.controller.pasteRows(props.lane, row.id, text, selectionOf(event.currentTarget, row));
   };
 
   const full = (): boolean => rows().length >= EXCLUSION_SET_LIMITS.rowsPerFeature;

@@ -119,6 +119,18 @@ describe('Lane', () => {
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['a', 'b', 'c']);
   });
 
+  it("pastes lines at the caret, keeping the row's text", async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag'], null);
+    mountLane(controller);
+    input(1).setSelectionRange(1, 3);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'a\nb' } });
+    input(1).dispatchEvent(event);
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['ga', 'bg']);
+    expect(document.activeElement).toBe(input(2));
+  });
+
   it('ignores editing keys and pastes while locked', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', [''], null);
