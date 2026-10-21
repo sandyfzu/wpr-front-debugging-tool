@@ -261,7 +261,7 @@ describe('the keyboard overlays in the shell', () => {
     // so adding a page or an action row keeps this pin true in any merge order.
     const expectedRows =
       NAV_ROUTES.length +
-      createPanelActions(productionActionDeps(() => data, createOverlayStore, null)).length;
+      createPanelActions(productionActionDeps(() => data, createOverlayStore)).length;
     expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(expectedRows);
     expect(document.body.contains(exportRow)).toBe(true);
 

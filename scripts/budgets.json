@@ -28,13 +28,6 @@
     }
   },
   {
-    "surface": "exclusion builder JS",
-    "globs": ["chunks/exclusion-builder-*.js", "exclusion-builder.js"],
-    "maxKb": {
-      "raw": 50
-    }
-  },
-  {
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {

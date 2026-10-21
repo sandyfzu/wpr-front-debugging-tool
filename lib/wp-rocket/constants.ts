@@ -345,17 +345,11 @@ export const CONTEXT_MENU_IDS = {
   wprSideBySide: 'wprSideBySide',
   psiSideBySide: 'psiSideBySide',
   updateKnownConflictsDB: 'updateKnownConflictsDB',
-  exclusionBuilderPage: 'exclusionBuilderPage',
+  /** Opens the exclusion builder overlay on the tab's page. */
+  exclusionBuilder: 'exclusionBuilder',
   /** Toggles the on-page detection widget for the clicked page's origin. */
   toggleDetectionWidget: 'toggleDetectionWidget'
 } as const;
-
-/**
- * The exclusion builder's packaged page path — the tab both its openers
- * (the background's context-menu entry and the panel's palette action)
- * resolve; a second caller re-typing it would be the re-typed-value defect.
- */
-export const EXCLUSION_BUILDER_PAGE = 'exclusion-builder.html';
 
 /**
  * URL patterns the header capture listeners and content-script declarations

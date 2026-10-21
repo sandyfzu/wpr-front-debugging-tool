@@ -6,16 +6,15 @@
  * the other), each is mount-gated by its store signal, and the palette's
  * content is registry-driven: the nav pages plus the action rows, matched by
  * the pure matcher. The action rows' production seams wire here — the stores
- * and the browser-feature-detected tabs mechanism stay one hop from this
- * component, keeping the whole layer swappable in tests. The rows assemble
- * per palette open (the store signal is the assembly's reactive key), so the
- * action gates hold the store's state at the moment of use.
+ * stay one hop from this component, keeping the whole layer swappable in
+ * tests. The rows assemble per palette open (the store signal is the
+ * assembly's reactive key), so the action gates hold the store's state at
+ * the moment of use.
  */
 import { Show, createMemo, untrack, type JSX } from 'solid-js';
 import { CommandPalette, type PaletteCommand } from '../../../components/ui/command-palette';
 import { defaultClipboard } from '../../../components/ui/copy-button';
 import { cycleAppearanceOption } from '../../../lib/storage/options';
-import { EXCLUSION_BUILDER_PAGE } from '../../../lib/wp-rocket/constants';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import type { FdtDataStore } from '../state/use-fdt-data';
 import {
@@ -24,12 +23,6 @@ import {
   type PanelActionDeps,
   type PanelCommand
 } from './actions';
-import {
-  openExclusionBuilder,
-  realExclusionBuilderDeps,
-  type ExclusionBuilderDeps,
-  type ExclusionBuilderOutcome
-} from './exclusion-builder';
 import { exportPageDataJson, type JsonExportResult } from './export-json';
 import type { OverlayStore } from './overlays';
 import { rankCommands } from './matcher';
@@ -76,12 +69,10 @@ function anchorDownload(payload: string, filename: string): void {
  *
  * @param data The panel's data store, behind the caller's accessor.
  * @param overlays The overlay store, behind the caller's accessor.
- * @param tabs The feature-detected tab opener (null = unavailable context).
  */
 export function productionActionDeps(
   data: () => FdtDataStore,
-  overlays: () => OverlayStore,
-  tabs: ExclusionBuilderDeps | null
+  overlays: () => OverlayStore
 ): PanelActionDeps {
   return {
     reload: () => {
@@ -92,11 +83,6 @@ export function productionActionDeps(
       return state.status === 'ready' || state.status === 'refreshing' ? state.data : null;
     },
     cycleAppearance: cycleAppearanceOption,
-    openExclusionBuilder: (): Promise<ExclusionBuilderOutcome> => {
-      if (tabs === null) return Promise.resolve('unavailable');
-      return openExclusionBuilder(tabs, EXCLUSION_BUILDER_PAGE);
-    },
-    exclusionBuilderAvailable: () => tabs !== null,
     openShortcuts: () => {
       overlays().openShortcuts();
     },
@@ -114,13 +100,9 @@ export function productionActionDeps(
  * in that order, the palette's empty-query order.
  *
  * @param props The shell seams (the runs read them through the closures).
- * @param tabs The feature-detected tab opener.
  * @returns The palette rows with their run closures attached.
  */
-export function assembleCommands(
-  props: PanelOverlaysProps,
-  tabs: ExclusionBuilderDeps | null
-): readonly PanelCommand[] {
+export function assembleCommands(props: PanelOverlaysProps): readonly PanelCommand[] {
   const pages = createPageCommands({
     navigate: (route) => {
       props.navigate(route);
@@ -133,8 +115,7 @@ export function assembleCommands(
   const actions = createPanelActions(
     productionActionDeps(
       () => props.data,
-      () => props.overlays,
-      tabs
+      () => props.overlays
     )
   );
   return [...pages, ...actions];
@@ -153,10 +134,9 @@ export function PanelOverlays(props: PanelOverlaysProps): JSX.Element {
   // combobox collection (and never yanks the user's arrow position); the
   // current open keeps the state it opened with and the next open
   // re-assembles fresh.
-  const tabs = realExclusionBuilderDeps();
   const commands = createMemo(() => {
     if (!props.overlays.paletteOpen()) return [];
-    return untrack(() => assembleCommands(props, tabs));
+    return untrack(() => assembleCommands(props));
   });
 
   return (

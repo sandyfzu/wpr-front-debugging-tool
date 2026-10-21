@@ -75,7 +75,7 @@ export const MENU_PARITY_IDS = [
   'wprSideBySide',
   'psiSideBySide',
   'updateKnownConflictsDB',
-  'exclusionBuilderPage',
+  'exclusionBuilder',
   'toggleDetectionWidget'
 ] as const;
 

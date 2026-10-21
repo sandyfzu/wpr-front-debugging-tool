@@ -1,7 +1,6 @@
 /**
- * The action registry's shape and dispatch: the six rows in order with
- * honest disabled states (export and copy-report require loaded data, the builder tab
- * requires the browser surface), the runs delegating to the seams exactly
+ * The action registry's shape and dispatch: the five rows in order with
+ * honest disabled states (export and copy-report require loaded data), the runs delegating to the seams exactly
  * once, the appearance cycle's rejection toasting its own stable remedy, and
  * the page rows mirroring the nav registry walk by navigate (same-route runs
  * land the heading focus instead).
@@ -28,26 +27,23 @@ function latestToast(): ToastItem | undefined {
 interface ActionCalls {
   reload: ReturnType<typeof vi.fn>;
   cycle: ReturnType<typeof vi.fn>;
-  builder: ReturnType<typeof vi.fn>;
   shortcuts: ReturnType<typeof vi.fn>;
   export: ReturnType<typeof vi.fn>;
   copyReport: ReturnType<typeof vi.fn>;
 }
 
 /** The action seams, per call — no cross-test shared state. */
-function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }): {
+function actionDeps(options?: { data: FdtData | null }): {
   deps: PanelActionDeps;
   calls: ActionCalls;
   /** The last export dispatch's data (the dep consumed it). */
   seenExportData: () => FdtData | null;
 } {
-  const tabsAvailable = options?.tabsAvailable ?? true;
   /** The export dispatch's data, scoped to this deps round (never shared). */
   let seenExport: FdtData | null = null;
   const calls = {
     reload: vi.fn(),
     cycle: vi.fn((): Promise<void> => Promise.resolve(undefined)),
-    builder: vi.fn((): Promise<'opened'> => Promise.resolve('opened')),
     shortcuts: vi.fn(),
     export: vi.fn((data: FdtData): 'downloaded' => {
       seenExport = data;
@@ -59,8 +55,6 @@ function actionDeps(options?: { data: FdtData | null; tabsAvailable: boolean }):
     reload: calls.reload,
     loadedData: () => (options ? options.data : makeFdtData()),
     cycleAppearance: calls.cycle,
-    openExclusionBuilder: calls.builder,
-    exclusionBuilderAvailable: () => tabsAvailable,
     openShortcuts: calls.shortcuts,
     exportData: (data: FdtData) =>
       Promise.resolve(calls.export(data)).then(() => 'downloaded' as const),
@@ -112,7 +106,7 @@ describe('createPageCommands (the pages half)', () => {
 });
 
 describe('createPanelActions (the actions half)', () => {
-  it('ships the six committed rows, in order, with their vocabulary', () => {
+  it('ships the five committed rows, in order, with their vocabulary', () => {
     const { deps } = actionDeps();
     const ids = createPanelActions(deps).map((row) => row.id);
     expect(ids).toEqual([
@@ -120,7 +114,6 @@ describe('createPanelActions (the actions half)', () => {
       'action-export-json',
       'action-copy-report',
       'action-toggle-appearance',
-      'action-open-exclusion-builder',
       'action-show-shortcuts'
     ]);
     const labels = createPanelActions(deps).map((row) => row.label);
@@ -129,7 +122,6 @@ describe('createPanelActions (the actions half)', () => {
       'Export JSON',
       'Copy report',
       'Toggle appearance',
-      'Open Exclusion Builder',
       'Show keyboard shortcuts'
     ]);
     // The shortcuts row's hint is the overlay binding's advertised key — the
@@ -140,7 +132,7 @@ describe('createPanelActions (the actions half)', () => {
   });
 
   it('disables export honestly while nothing is loaded, and runs the export when it is', async () => {
-    const unloaded = actionDeps({ data: null, tabsAvailable: true });
+    const unloaded = actionDeps({ data: null });
     const exportRow = createPanelActions(unloaded.deps).find(
       (row) => row.id === 'action-export-json'
     );
@@ -150,27 +142,15 @@ describe('createPanelActions (the actions half)', () => {
     await exportRow?.run();
     expect(unloaded.calls.export).not.toHaveBeenCalled();
 
-    const loaded = actionDeps({ data: makeFdtData(), tabsAvailable: true });
+    const loaded = actionDeps({ data: makeFdtData() });
     const readyRow = createPanelActions(loaded.deps).find((row) => row.id === 'action-export-json');
     expect(readyRow?.disabled).toBe(false);
     await readyRow?.run();
     expect(loaded.seenExportData()).toEqual(makeFdtData());
   });
 
-  it('disables the builder tab row when the browser surface is missing', async () => {
-    const unavailable = actionDeps({ data: makeFdtData(), tabsAvailable: false });
-    const row = createPanelActions(unavailable.deps).find(
-      (row) => row.id === 'action-open-exclusion-builder'
-    );
-    expect(row?.disabled).toBe(true);
-    expect(row?.disabledNote).toContain('unavailable');
-    // The row still explains itself even though it cannot run.
-    await row?.run();
-    expect(unavailable.calls.builder).not.toHaveBeenCalled();
-  });
-
   it('dispatches every enabled run seam exactly once', async () => {
-    const { deps, calls } = actionDeps({ data: makeFdtData(), tabsAvailable: true });
+    const { deps, calls } = actionDeps({ data: makeFdtData() });
     const rows = createPanelActions(deps);
     for (const row of rows) {
       await row.run();
@@ -178,13 +158,12 @@ describe('createPanelActions (the actions half)', () => {
     expect(calls.reload).toHaveBeenCalledTimes(1);
     expect(calls.export).toHaveBeenCalledTimes(1);
     expect(calls.cycle).toHaveBeenCalledTimes(1);
-    expect(calls.builder).toHaveBeenCalledTimes(1);
     expect(calls.shortcuts).toHaveBeenCalledTimes(1);
     expect(calls.copyReport).toHaveBeenCalledTimes(1);
   });
 
   it('gates the Copy report row on loaded data and hands it the loaded payload', async () => {
-    const unloaded = actionDeps({ data: null, tabsAvailable: true });
+    const unloaded = actionDeps({ data: null });
     const disabledRow = createPanelActions(unloaded.deps).find(
       (row) => row.id === 'action-copy-report'
     );
@@ -194,7 +173,7 @@ describe('createPanelActions (the actions half)', () => {
     expect(unloaded.calls.copyReport).not.toHaveBeenCalled();
 
     const data = makeFdtData({ undefinedReferencesOnPage: ['jQuery'] });
-    const loaded = actionDeps({ data, tabsAvailable: true });
+    const loaded = actionDeps({ data });
     const row = createPanelActions(loaded.deps).find((row) => row.id === 'action-copy-report');
     expect(row?.disabled).toBe(false);
     expect(row?.hint).toBe('Detections');
@@ -211,7 +190,7 @@ describe('createPanelActions (the actions half)', () => {
     });
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     try {
-      const { deps } = actionDeps({ data: makeFdtData(), tabsAvailable: true });
+      const { deps } = actionDeps({ data: makeFdtData() });
       const row = createPanelActions({ ...deps, copyReport: undefined }).find(
         (row) => row.id === 'action-copy-report'
       );

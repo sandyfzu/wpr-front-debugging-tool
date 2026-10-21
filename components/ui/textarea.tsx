@@ -1,6 +1,5 @@
 /**
- * The shared multi-line text field — the Exclusion Builder's Delay-JS source
- * field and any free notes field. A native `<textarea>` wearing the same chip
+ * The shared multi-line text field (free-text notes and the like). A native `<textarea>` wearing the same chip
  * density as `Input` so a page mixing fields and buttons composes without
  * seams.
  */

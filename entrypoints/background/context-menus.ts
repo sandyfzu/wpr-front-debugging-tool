@@ -24,14 +24,11 @@
 import { createLogger } from '../../lib/logger';
 import { sendMessage } from '../../lib/messaging';
 import { numericTabId } from '../../lib/messaging/sender';
-import {
-  CONTEXT_MENU_IDS,
-  EXCLUSION_BUILDER_PAGE,
-  URL_PATTERNS
-} from '../../lib/wp-rocket/constants';
+import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { lastErrorMessage } from '../../utils/last-error';
+import { openExclusionOverlay, type OverlayOpenOutcome } from './exclusion-overlay';
 
 const log = createLogger('context-menus');
 
@@ -75,10 +72,10 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   },
   {
     action: 'exclusion-builder',
-    id: CONTEXT_MENU_IDS.exclusionBuilderPage,
+    id: CONTEXT_MENU_IDS.exclusionBuilder,
     title: 'Exclusion Builder',
-    // Only from the action's own menu: the builder page is standalone, it
-    // does not belong on arbitrary right-clicks.
+    // Only from the action's own menu: it opens the builder overlay on the
+    // tab's page (a tool for the page as a whole, not for what was clicked).
     contexts: ['action'],
     documentUrlPatterns: URL_PATTERNS
   },
@@ -155,8 +152,11 @@ export interface MenuClickDeps {
     data: undefined,
     target: { tabId: number }
   ): Promise<unknown>;
-  /** Open one of this extension's standalone pages, by its packaged path. */
-  openTab(pagePath: typeof EXCLUSION_BUILDER_PAGE): Promise<unknown>;
+  /**
+   * Open the exclusion builder overlay on a tab's page; never rejects (the
+   * opener logs its own failures).
+   */
+  openExclusionBuilder(tabId: number): Promise<OverlayOpenOutcome>;
   /** The database service's manual-refresh hook (the refresh entry routes here). */
   refreshDatabase(): Promise<DbUpdateResult | null>;
   /**
@@ -225,13 +225,9 @@ async function dispatchMenuClick(
       return;
     }
     case 'exclusion-builder': {
-      try {
-        // `tabs.create` requires no permission — opening a tab is a shared
-        // browser affordance; failures are runtime defects and get logged.
-        await deps.openTab(EXCLUSION_BUILDER_PAGE);
-      } catch (cause) {
-        log.error('Opening the exclusion builder failed', { tabId, cause });
-      }
+      // The opener answers every outcome (and logs the unexpected ones):
+      // a page the browser refuses to script simply gets no overlay.
+      await deps.openExclusionBuilder(tabId);
       return;
     }
     case 'refresh-database': {
@@ -327,9 +323,7 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
 
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => sendMessage(type, data, target),
-    openTab: async (pagePath) => {
-      await browser.tabs.create({ url: browser.runtime.getURL(pagePath) });
-    },
+    openExclusionBuilder: (tabId) => openExclusionOverlay(tabId),
     refreshDatabase,
     // The on-page widget's per-origin override writes through the storage
     // module's one toggle — the menu row is the page-context writer; the
