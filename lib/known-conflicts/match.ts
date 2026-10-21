@@ -13,14 +13,10 @@
  */
 
 import type { KnownConflict } from '../storage/known-conflicts';
+import { escapeRegex } from '../../utils/regex';
 
 /** Text-collection strategy the caller has already applied. */
 export type KnownConflictsMode = 'helpscout' | 'wp-admin';
-
-/** Regex metacharacters, escaped for literal interpolation into the pattern. */
-function escapeRegex(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** Small scan text; every query runs below this size per call anyway. */
 const MAX_TEXT_LENGTH = 2_000_000;
