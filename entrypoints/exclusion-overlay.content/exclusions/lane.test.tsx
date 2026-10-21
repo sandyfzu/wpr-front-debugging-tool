@@ -41,7 +41,7 @@ async function readyController(): Promise<OverlayController> {
     pageFacts: () => ({
       href: 'https://example.com/',
       documentUrl: null,
-      timeOrigin: 0,
+      navigationStart: 0,
       responseEnd: null
     }),
     now: () => 1,

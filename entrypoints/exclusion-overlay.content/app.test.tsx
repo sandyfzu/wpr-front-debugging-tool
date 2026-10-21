@@ -78,7 +78,7 @@ function pageTools(modalAtStart = false) {
   const [pageFacts] = createSignal({
     href: 'https://example.com/',
     documentUrl: 'https://example.com/',
-    timeOrigin: 0,
+    navigationStart: 0,
     responseEnd: null
   });
   const [pageModal, setPageModal] = createSignal(modalAtStart);

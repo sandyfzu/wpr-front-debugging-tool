@@ -29,10 +29,17 @@ export interface PageFacts {
    * history-API address changes do not touch; `null` when unavailable.
    */
   readonly documentUrl: string | null;
-  /** `performance.timeOrigin`: epoch ms the navigation to this document started. */
-  readonly timeOrigin: number;
   /**
-   * When this document's response ended, in ms after {@link timeOrigin}
+   * Wall-clock epoch ms the navigation to this document started, anchored
+   * when the facts were read (`Date.now() − performance.now()` in one
+   * instant) — the clock domain session records are stamped in. Not
+   * `performance.timeOrigin`: the monotonic timeline it rides may not
+   * tick while the system sleeps (and wall time is adjusted), so it can
+   * sit minutes away from `Date.now()`.
+   */
+  readonly navigationStart: number;
+  /**
+   * When this document's response ended, in ms after {@link navigationStart}
    * (the navigation timing entry's `responseEnd`); `null` while unknown.
    * Its own record is stamped while its response was held, so it falls
    * before this — a later record is another load's.
@@ -94,13 +101,13 @@ export function matchServedDocument(
     // Unknown document URL + mismatch may only be a history-API move.
     return page.documentUrl === null || page.restored === true ? 'cant-tell' : 'other-page';
   }
-  const age = page.timeOrigin - served.receivedAt;
+  const age = page.navigationStart - served.receivedAt;
   if (age <= RECORD_SAME_LOAD_SKEW_MS) {
     // Recorded after this document's own response: a later load of the same
     // URL (e.g. this page came back from the back/forward cache after it).
     // Its outcome says nothing about this document.
     if (page.responseEnd === null) return page.restored === true ? 'cant-tell' : 'this-page';
-    const lateBy = served.receivedAt - (page.timeOrigin + page.responseEnd);
+    const lateBy = served.receivedAt - (page.navigationStart + page.responseEnd);
     return lateBy <= RECORD_SAME_LOAD_SKEW_MS ? 'this-page' : 'cant-tell';
   }
   return age > RECORD_STALE_MS && page.restored !== true ? 'other-page' : 'cant-tell';

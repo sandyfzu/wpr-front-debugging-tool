@@ -114,6 +114,39 @@ export interface PageToolsDeps {
   readonly isInvalid: () => boolean;
   /** Continue work in a later task (scan slices). */
   readonly later: (run: () => void) => void;
+  /** Wall-clock epoch ms (the session records' clock); defaults to `Date.now`. */
+  readonly wallNow?: () => number;
+}
+
+/** The part of the page's window the facts are read from. */
+export interface FactsSource {
+  readonly location: { readonly href: string };
+  readonly performance: Pick<Performance, 'now' | 'getEntriesByType'>;
+}
+
+/**
+ * Read this page's facts, its navigation start anchored to the wall clock
+ * at read time: `Date.now()` and `performance.now()` read together give
+ * the wall time the navigation started, whatever offset the monotonic
+ * timeline (and so `performance.timeOrigin`) has from the wall clock
+ * after a system sleep or a clock adjustment.
+ *
+ * @param source The window (location + performance).
+ * @param wallNow Wall-clock epoch ms.
+ */
+export function readPageFacts(source: FactsSource, wallNow: () => number): PageFacts {
+  const navigation = source.performance.getEntriesByType('navigation')[0];
+  const timing = navigation as PerformanceNavigationTiming | undefined;
+  // Read in one instant: the two clocks' difference is the anchor.
+  const sinceStart = source.performance.now();
+  const wall = wallNow();
+  return {
+    href: source.location.href,
+    documentUrl: navigation?.name ?? null,
+    navigationStart: wall - sinceStart,
+    // 0 until the response ended (an overlay mounts after it): unknown then.
+    responseEnd: timing !== undefined && timing.responseEnd > 0 ? timing.responseEnd : null
+  };
 }
 
 /**
@@ -162,16 +195,19 @@ export function viewportRect(element: Element): ViewportRect | null {
 export function createPageTools(deps: PageToolsDeps): PageTools {
   const { doc, win, host } = deps;
   const keyOf = createElementKeys();
+  const wallNow = deps.wallNow ?? (() => Date.now());
+  /**
+   * The navigation start anchored at the first read (the mount, right after
+   * the load for a re-open) and kept for the document: a later re-read
+   * (SPA move, back/forward restore) after a system sleep would shift it by
+   * the sleep (the monotonic timeline may not tick then). Residual: a sleep
+   * between the load and an explicit open's first read shifts it too.
+   */
+  let anchor: number | null = null;
   const readFacts = (): PageFacts => {
-    const navigation = win.performance.getEntriesByType('navigation')[0];
-    const timing = navigation as PerformanceNavigationTiming | undefined;
-    return {
-      href: win.location.href,
-      documentUrl: navigation?.name ?? null,
-      timeOrigin: win.performance.timeOrigin,
-      // 0 until the response ended (an overlay mounts after it): unknown then.
-      responseEnd: timing !== undefined && timing.responseEnd > 0 ? timing.responseEnd : null
-    };
+    const facts = readPageFacts(win, wallNow);
+    anchor ??= facts.navigationStart;
+    return { ...facts, navigationStart: anchor };
   };
   const [pageFacts, setPageFacts] = createSignal<PageFacts>(readFacts());
   /** The last scan's pick context (pointer picks read it every frame). */

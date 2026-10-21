@@ -67,7 +67,7 @@ async function started(port: ExclusionSessionPort) {
       pageFacts: () => ({
         href: 'https://example.com/',
         documentUrl: 'https://example.com/',
-        timeOrigin: 0,
+        navigationStart: 0,
         responseEnd: null
       }),
       now: () => 4242,
@@ -154,7 +154,7 @@ describe('back/forward cache restore (resync)', () => {
         pageFacts: () => ({
           href: 'https://example.com/',
           documentUrl: null,
-          timeOrigin: 0,
+          navigationStart: 0,
           responseEnd: null
         }),
         now: () => 1,
@@ -425,7 +425,7 @@ describe('audit round 1', () => {
         pageFacts: () => ({
           href: 'https://example.com/',
           documentUrl: null,
-          timeOrigin: 0,
+          navigationStart: 0,
           responseEnd: null
         }),
         now: () => 1,

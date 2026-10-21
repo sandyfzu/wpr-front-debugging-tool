@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ExclusionServedDocument } from '../../../lib/messaging/exclusion-session';
 import { servedUrl } from '../../../lib/exclusion-session/served-url';
+import { readPageFacts } from '../page-tools';
 import {
   RECORD_SAME_LOAD_SKEW_MS,
   RECORD_STALE_MS,
@@ -33,7 +34,13 @@ function served(url: string, afterStart = 40): ExclusionServedDocument {
 
 /** Page facts for an unmoved document. */
 function facts(over: Partial<PageFacts> = {}): PageFacts {
-  return { href: PAGE, documentUrl: PAGE, timeOrigin: START, responseEnd: RESPONSE_END, ...over };
+  return {
+    href: PAGE,
+    documentUrl: PAGE,
+    navigationStart: START,
+    responseEnd: RESPONSE_END,
+    ...over
+  };
 }
 
 describe('documentDigest', () => {
@@ -114,8 +121,8 @@ describe('a document back from the back/forward cache', () => {
 
 describe('a record newer than this document’s own response (a later load of the same URL)', () => {
   it('is never this page’s (restored or not), whatever its age sign says', () => {
-    // The audit repro: restored, timeOrigin 500 000, record at 1 000 000, same URL.
-    const facts500 = facts({ timeOrigin: 500_000, restored: true });
+    // The audit repro: restored, navigation start 500 000, record at 1 000 000, same URL.
+    const facts500 = facts({ navigationStart: 500_000, restored: true });
     const later = { ...served(PAGE), receivedAt: 1_000_000 };
     expect(matchServedDocument(later, facts500)).toBe('cant-tell');
     expect(matchServedDocument(later, { ...facts500, restored: undefined })).toBe('cant-tell');
@@ -135,4 +142,39 @@ describe('a record newer than this document’s own response (a later load of th
       'cant-tell'
     );
   });
+});
+
+describe('clock domains: wall-stamped records vs a page timeline that drifts', () => {
+  const WALL = 1_800_000_000_000;
+  /**
+   * A page read `sinceStart` ms after its navigation, its monotonic timeline
+   * `drift` ms off the wall clock: `performance.timeOrigin` would be off by
+   * `drift`, `performance.now()` is not — the facts read the latter only.
+   */
+  const pageAt = (sinceStart: number, drift: number, restored = false): PageFacts => {
+    const performance = {
+      timeOrigin: WALL - sinceStart + drift,
+      now: () => sinceStart,
+      getEntriesByType: () => [{ name: PAGE, responseEnd: 120 } as never]
+    };
+    return { ...readPageFacts({ location: { href: PAGE }, performance }, () => WALL), restored };
+  };
+  /** This load's own record: stamped by the wall clock while its response was held. */
+  const ownRecord = (sinceStart: number) => ({
+    ...served(PAGE),
+    receivedAt: WALL - sinceStart + 60
+  });
+
+  for (const drift of [-10 * 60_000, 0, 10 * 60_000]) {
+    it(`keeps an honest "Applied" with the timeline ${String(drift / 60_000)} min off`, () => {
+      expect(matchServedDocument(ownRecord(1_500), pageAt(1_500, drift))).toBe('this-page');
+    });
+
+    it(`still reads a later same-URL load's record as "can't verify" (${String(drift / 60_000)} min off)`, () => {
+      // The N1 repro in wall time: a restored page loaded 500 s ago, a record from 10 s ago.
+      const later = { ...served(PAGE), receivedAt: WALL - 10_000 };
+      expect(matchServedDocument(later, pageAt(500_000, drift, true))).toBe('cant-tell');
+      expect(matchServedDocument(later, pageAt(500_000, drift))).toBe('cant-tell');
+    });
+  }
 });
