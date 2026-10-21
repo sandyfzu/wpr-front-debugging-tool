@@ -128,6 +128,44 @@ describe('loading', () => {
   });
 });
 
+describe('back/forward cache restore (resync)', () => {
+  it('re-reads the status, keeping the draft (pushes went to other documents meanwhile)', async () => {
+    const fake = fakePort({ state: 'inactive' }, validSet());
+    const { controller } = await started(fake.port);
+    controller.editRow('lazyload', controller.draft().rows.lazyload[0]?.id ?? '', 'kept.png');
+    const draft = controller.draft();
+    fake.port.status.mockResolvedValueOnce({ kind: 'reply', reply: activeRecord() });
+    controller.resync();
+    await settle();
+    expect(controller.state()).toMatchObject({ phase: 'ready', status: { state: 'active' } });
+    expect(controller.draft()).toBe(draft);
+    expect(fake.port.savedSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers to the load still in flight (it re-reads once it lands)', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    let answer!: (outcome: PortOutcome<ExclusionSessionStatus>) => void;
+    port.status.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const clock = timers();
+    const controller = createRoot(() =>
+      createOverlayController({
+        port,
+        pageFacts: () => ({ href: 'https://example.com/', documentUrl: null, timeOrigin: 0 }),
+        now: () => 1,
+        schedule: clock.schedule,
+        reload: vi.fn(),
+        log: { warn: vi.fn() }
+      })
+    );
+    controller.start();
+    controller.resync();
+    expect(port.status).toHaveBeenCalledTimes(1);
+    answer({ kind: 'reply', reply: { state: 'inactive' } });
+    await settle();
+    expect(port.status).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('editing and autosave', () => {
   it('saves a typing pause once, and nothing when the draft equals the stored set', async () => {
     const { port } = fakePort({ state: 'inactive' }, validSet());

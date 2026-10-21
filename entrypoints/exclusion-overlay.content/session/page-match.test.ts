@@ -94,3 +94,18 @@ describe('matchServedDocument', () => {
     expect(matchServedDocument(served(`${PAGE}&b=1`), facts())).toBe('other-page');
   });
 });
+
+describe('a document back from the back/forward cache', () => {
+  it('cannot be ruled out by another document’s record (the session went on without it)', () => {
+    expect(
+      matchServedDocument(served('https://example.com/other'), facts({ restored: true }))
+    ).toBe('cant-tell');
+    expect(
+      matchServedDocument(served(PAGE, -(RECORD_STALE_MS + 1)), facts({ restored: true }))
+    ).toBe('cant-tell');
+  });
+
+  it('still matches its own record (nothing else was recorded meanwhile)', () => {
+    expect(matchServedDocument(served(PAGE), facts({ restored: true }))).toBe('this-page');
+  });
+});

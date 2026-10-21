@@ -109,6 +109,18 @@ describe('createPageTools', () => {
     history.pushState({}, '', '/');
   });
 
+  it('marks a back/forward cache restore, and keeps the mark through SPA moves', () => {
+    // A page-transition event carrying `persisted` (the test DOM has no constructor for it).
+    const pageshow = (persisted: boolean): Event =>
+      Object.assign(new Event('pageshow'), { persisted });
+    listeners.get('pageshow')?.(pageshow(false));
+    expect(tools?.pageFacts().restored).toBeUndefined();
+    listeners.get('pageshow')?.(pageshow(true));
+    expect(tools?.pageFacts().restored).toBe(true);
+    listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+    expect(tools?.pageFacts().restored).toBe(true);
+  });
+
   it('notices page dialogs and popovers, ignoring its own host', () => {
     const toggle = (target: EventTarget, newState: string): Event => {
       const event = new Event('toggle');

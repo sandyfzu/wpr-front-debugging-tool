@@ -31,6 +31,12 @@ export interface PageFacts {
   readonly documentUrl: string | null;
   /** `performance.timeOrigin`: epoch ms the navigation to this document started. */
   readonly timeOrigin: number;
+  /**
+   * The document came back from the back/forward cache: the session went on
+   * without it (other documents were recorded meanwhile), so a record of
+   * another document no longer says this one was not intercepted.
+   */
+  readonly restored?: boolean;
 }
 
 /**
@@ -79,9 +85,9 @@ export function matchServedDocument(
   const address = page.documentUrl ?? page.href;
   if (served.urlDigest !== documentDigest(address)) {
     // Unknown document URL + mismatch may only be a history-API move.
-    return page.documentUrl === null ? 'cant-tell' : 'other-page';
+    return page.documentUrl === null || page.restored === true ? 'cant-tell' : 'other-page';
   }
   const age = page.timeOrigin - served.receivedAt;
   if (age <= RECORD_SAME_LOAD_SKEW_MS) return 'this-page';
-  return age > RECORD_STALE_MS ? 'other-page' : 'cant-tell';
+  return age > RECORD_STALE_MS && page.restored !== true ? 'other-page' : 'cant-tell';
 }

@@ -268,8 +268,13 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
     setZoom(cssZoom(host));
   });
   deps.listen(win, 'wxt:locationchange', () => {
-    setPageFacts(readFacts());
+    setPageFacts((facts) => ({ ...readFacts(), restored: facts.restored }));
     rescanSoon();
+  });
+  // Back from the back/forward cache: the session went on without this
+  // document, so its record can no longer vouch against it.
+  deps.listen(win, 'pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) setPageFacts({ ...readFacts(), restored: true });
   });
 
   return {
