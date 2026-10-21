@@ -120,7 +120,9 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
     expect(() => applyPipeline(PROBE, setWith({ delayJs: ['(a+)+b'] }))).toThrow(
       ExclusionValidationError
     );
-    expect(performance.now() - started).toBeLessThan(100);
+    // Smoke ceiling: running the probe would take seconds (3.6 s measured);
+    // refusing it takes about a millisecond — 1 s stays robust under CI coverage.
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
 
