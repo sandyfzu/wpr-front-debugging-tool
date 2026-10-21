@@ -1,7 +1,7 @@
 /**
  * The background wiring over the fake browser: every session channel is
- * registered and answers through the real messenger, an empty registry
- * selects no backend, and the tab-close and update hooks reach the stores.
+ * registered and answers through the real messenger, the registry holds
+ * the Chromium row, and the tab-close and update hooks reach the stores.
  * The lifecycle itself is pinned in `lib/exclusion-session/controller.test.ts`.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -13,6 +13,7 @@ import {
   putExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
 import { initExclusionSessions } from './exclusion-sessions';
+import { CHROMIUM_INTERCEPTION_ROW } from './chromium-interception';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
 
 const WARNING = { state: 'unavailable', cause: 'detached', at: 1 } as const;
@@ -23,10 +24,18 @@ async function flush(): Promise<void> {
 }
 
 beforeAll(() => {
+  // The fake browser leaves the debugger events unimplemented; the Chromium
+  // row's backend registers its listeners on them at creation.
+  vi.spyOn(browser.debugger.onEvent, 'addListener').mockImplementation(() => {});
+  vi.spyOn(browser.debugger.onDetach, 'addListener').mockImplementation(() => {});
   initExclusionSessions();
 });
 
 describe('exclusion-session wiring', () => {
+  it('registers the Chromium debugger backend row in a Chromium build (run-time detected)', () => {
+    expect(INTERCEPTION_BACKENDS).toContain(CHROMIUM_INTERCEPTION_ROW);
+  });
+
   it('keeps the Firefox-only streaming-filter row out of a Chromium build', () => {
     // The test runner builds for Chromium.
     expect(INTERCEPTION_BACKENDS.map((row) => row.id)).not.toContain('stream-filter');
@@ -37,6 +46,7 @@ describe('exclusion-session wiring', () => {
     vi.resetModules();
     try {
       const firefox = await import('./interception-backends');
+      // …and only it: the debugger-protocol row stays out of the Firefox bundle.
       expect(firefox.INTERCEPTION_BACKENDS.map((row) => row.id)).toEqual(['stream-filter']);
     } finally {
       vi.unstubAllEnvs();

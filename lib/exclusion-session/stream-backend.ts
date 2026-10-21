@@ -38,8 +38,14 @@
  *   A tab leaving http(s) keeps its session (nothing ends it).
  */
 import type { Logger } from '../logger';
+import { createMonotonicStamp } from '../../utils/monotonic-stamp';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
-import type { ArmResult, InterceptionBackend, InterceptionHost } from './backend';
+import type {
+  ArmResult,
+  InterceptedResponseIdentity,
+  InterceptionBackend,
+  InterceptionHost
+} from './backend';
 import type { DocumentTransformRunner, InterceptedResponseFacts } from './document-transform';
 import {
   OPENING_STREAM,
@@ -135,6 +141,8 @@ export interface StreamBackendDeps {
   readonly runner?: DocumentTransformRunner | undefined;
   /** Timer seam; defaults to `setTimeout`. */
   readonly schedule?: ScheduleTimer;
+  /** A request's start stamp (monotonic epoch ms, strictly increasing); defaults to the platform's. */
+  readonly stamp?: () => number;
 }
 
 /** The backend plus the two request hooks the background registers. */
@@ -157,6 +165,18 @@ interface LiveStream {
   readonly tabId: number;
   readonly url: string;
   readonly filter: ResponseStreamFilter;
+  /**
+   * The response's identity for the host: the request id, the request's
+   * start stamp, no `Speculation-Rules` header handling (Firefox does not
+   * implement the header, and a stream filter cannot drop one), never a
+   * substituted copy (the filter rewrites the real response in place — its
+   * security state and timing stay the network's), no page guard and no
+   * service-worker bypass (the rule scripts are removed from the text —
+   * Firefox implements inline rules only, in preview builds).
+   */
+  readonly identity: InterceptedResponseIdentity;
+  /** Whether the bytes being written are the host's rewrite (its record then claims them). */
+  servingRewrite: boolean;
   state: StreamState;
   /** Cancels the stream's one armed timer, or null. */
   cancelTimer: (() => void) | null;
@@ -200,6 +220,7 @@ export function createStreamInterceptionBackend(
 ): StreamInterceptionBackend {
   const { host, log } = deps;
   const schedule = deps.schedule ?? scheduleWithTimeout;
+  const stamp = deps.stamp ?? createMonotonicStamp();
   /** Armed tabs → the generation they were armed or resumed with. */
   const armed = new Map<number, number>();
   /** Filtered responses in flight, by request id. */
@@ -212,6 +233,15 @@ export function createStreamInterceptionBackend(
         stream.filter.write(chunk);
       } catch (cause) {
         log.warn('Stream write failed', { requestId: stream.requestId, cause });
+        // The record claims a rewrite the page did not get whole: correct it.
+        if (stream.servingRewrite) {
+          stream.servingRewrite = false;
+          void host
+            .documentNotServed(stream.tabId, stream.url, stream.identity)
+            .catch((fault: unknown) => {
+              log.error('Stream not-served report failed', { requestId: stream.requestId, fault });
+            });
+        }
         return;
       }
     }
@@ -250,9 +280,13 @@ export function createStreamInterceptionBackend(
     // withdrawal): the host then records nothing for it.
     const abandoned = (): boolean => stream.state.phase !== 'rewriting';
     host
-      .rewriteDocument({ tabId: stream.tabId, documentUrl: stream.url, body, ...facts }, abandoned)
+      .rewriteDocument(
+        { tabId: stream.tabId, documentUrl: stream.url, body, ...facts, identity: stream.identity },
+        abandoned
+      )
       .then(
         (rewritten) => {
+          stream.servingRewrite = rewritten !== null && stream.state.phase === 'rewriting';
           dispatch(stream, { type: 'rewritten', body: rewritten });
         },
         (cause: unknown) => {
@@ -295,9 +329,11 @@ export function createStreamInterceptionBackend(
         askRewrite(stream, effect.body, effect.facts);
         return;
       case 'report-unavailable':
-        void host.documentBodyUnavailable(stream.tabId, stream.url).catch((cause: unknown) => {
-          log.error('Stream unavailable report failed', { requestId: stream.requestId, cause });
-        });
+        void host
+          .documentBodyUnavailable(stream.tabId, stream.url, stream.identity)
+          .catch((cause: unknown) => {
+            log.error('Stream unavailable report failed', { requestId: stream.requestId, cause });
+          });
         return;
       case 'arm-timer':
         armTimer(stream, effect.wait);
@@ -416,6 +452,15 @@ export function createStreamInterceptionBackend(
         tabId: details.tabId,
         url: details.url,
         filter,
+        identity: {
+          token: details.requestId,
+          receivedAt: stamp(),
+          speculationRulesHeader: false,
+          servedAsCopy: false,
+          speculationGuard: false,
+          serviceWorkersBypassed: false
+        },
+        servingRewrite: false,
         state: OPENING_STREAM,
         cancelTimer: null
       };

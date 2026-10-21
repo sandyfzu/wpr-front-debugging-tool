@@ -1119,14 +1119,14 @@ describe('generations', () => {
     await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({ state: 'unavailable' });
   });
 
-  it('hands the session start to arm and the stored start to resume', async () => {
+  it('hands the session start (and origin) to arm and the stored ones to resume', async () => {
     const r = rig();
     const arm = vi.spyOn(r.backend, 'arm');
     await r.controller.apply(page(), { set: SET });
-    expect(arm).toHaveBeenCalledWith(TAB, NOW);
+    expect(arm).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
     const resume = vi.spyOn(r.backend, 'resume');
     await r.controller.revalidate();
-    expect(resume).toHaveBeenCalledWith(TAB, NOW);
+    expect(resume).toHaveBeenCalledWith(TAB, NOW, ORIGIN);
   });
 
   it('issues a fresh start after stop → apply on a fixed clock: the old document never lands', async () => {
@@ -1290,5 +1290,264 @@ describe('defaults', () => {
         method: 'GET'
       })
     ).resolves.not.toBeNull();
+  });
+});
+
+describe('served identity and session effects', () => {
+  const RULES = '<script type="speculationrules">{"prefetch":[]}</script>';
+  /** A copy-serving (Chromium-like) backend's identity. */
+  const copyIdentity = (receivedAt: number, header = false) => ({
+    token: `req-${String(receivedAt)}`,
+    receivedAt,
+    speculationRulesHeader: header,
+    servedAsCopy: true,
+    speculationGuard: true,
+    serviceWorkersBypassed: true
+  });
+  /** An in-place (Firefox-like) backend's identity. */
+  const inPlaceIdentity = (receivedAt: number) => ({
+    ...copyIdentity(receivedAt),
+    servedAsCopy: false,
+    speculationGuard: false,
+    serviceWorkersBypassed: false
+  });
+  const sha256 = async (text: string) =>
+    Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(text))),
+      (byte) => byte.toString(16).padStart(2, '0')
+    ).join('');
+  const recorded = async () => {
+    const status = await getExclusionSessionStatus(TAB);
+    return status.state === 'active' ? status.document : undefined;
+  };
+
+  it('records the identity without the query: origin + path, digest of the whole URL', async () => {
+    const r = rig();
+    await seedActive();
+    const url = `${ORIGIN}/a?email=someone%40example.com#frag`;
+    await r.host.rewriteDocument({ ...htmlDoc(url), identity: copyIdentity(NOW) });
+    await flush();
+    const document = await recorded();
+    expect(document?.served).toEqual({
+      urlPath: `${ORIGIN}/a`,
+      urlDigest: await sha256(`${ORIGIN}/a?email=someone%40example.com`),
+      token: `req-${String(NOW)}`,
+      order: NOW,
+      receivedAt: NOW,
+      speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+      copy: true,
+      serviceWorkersBypassed: true
+    });
+    expect(JSON.stringify(document)).not.toContain('email');
+  });
+
+  it('copy-serving backend: serves the original when only the rules would change (the guard removes them)', async () => {
+    const r = rig();
+    await seedActive();
+    const document = {
+      ...htmlDoc(`${ORIGIN}/a`, `<p>plain</p>${RULES}`),
+      identity: copyIdentity(NOW, true)
+    };
+    await expect(r.host.rewriteDocument(document)).resolves.toBeNull();
+    await flush();
+    expect((await recorded())?.served).toMatchObject({
+      speculationRules: { removedFromDocument: 0, headerRemoved: true, guarded: true },
+      copy: false
+    });
+  });
+
+  it('copy-serving backend: a document the exclusions changed is a copy, rules removed from its bytes', async () => {
+    const r = rig();
+    await seedActive();
+    const body = await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/a`, `${RULES}${DELAYED}`),
+      identity: copyIdentity(NOW)
+    });
+    expect(body).toEqual(encoder.encode(applyPipeline(DELAYED, SET).html));
+    await flush();
+    expect((await recorded())?.served).toMatchObject({
+      speculationRules: { removedFromDocument: 1 },
+      copy: true
+    });
+  });
+
+  it('in-place backend: serves the text without its rules even when the exclusions changed nothing', async () => {
+    const r = rig();
+    await seedActive();
+    const body = await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/a`, `<p>plain</p>${RULES}`),
+      identity: inPlaceIdentity(NOW)
+    });
+    expect(body).toEqual(encoder.encode('<p>plain</p>'));
+    await flush();
+    expect((await recorded())?.served).toMatchObject({
+      speculationRules: { removedFromDocument: 1, headerRemoved: false, guarded: false },
+      copy: false,
+      serviceWorkersBypassed: false
+    });
+  });
+
+  it('never lets an abandoned navigation’s late outcome replace the visible page’s record', async () => {
+    const r = rig();
+    await seedActive();
+    // B (stamped later) records first; A (stamped earlier) finishes after.
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/b`), identity: copyIdentity(NOW + 10) });
+    await flush();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/a`), identity: copyIdentity(NOW) });
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, copyIdentity(NOW + 1));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'rewritten',
+      served: { urlPath: `${ORIGIN}/b` }
+    });
+  });
+
+  it('keeps the order increasing across a background restart whose clock reads behind', async () => {
+    // A record stored by an earlier background lifetime, far ahead of this one's clock.
+    await putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      startedAt: NOW - 1000,
+      document: {
+        outcome: 'failed',
+        reason: 'decode-failed',
+        served: {
+          urlPath: `${ORIGIN}/old`,
+          urlDigest: 'a'.repeat(64),
+          token: 'old',
+          order: NOW + 1_000_000,
+          receivedAt: NOW + 1_000_000,
+          speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+          copy: false,
+          serviceWorkersBypassed: true
+        }
+      }
+    });
+    const r = rig();
+    await r.controller.revalidate();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/new`), identity: copyIdentity(NOW) });
+    await flush();
+    const first = await recorded();
+    expect(first?.served).toMatchObject({ urlPath: `${ORIGIN}/new`, order: NOW + 1_000_001 });
+    // Later stamps keep their relative order: an earlier stamp still loses.
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/late`), identity: copyIdentity(NOW - 5) });
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/next`), identity: copyIdentity(NOW + 3) });
+    await flush();
+    expect((await recorded())?.served).toMatchObject({
+      urlPath: `${ORIGIN}/next`,
+      order: NOW + 1_000_004
+    });
+  });
+
+  it('records an unreadable body with its identity', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, copyIdentity(NOW, true));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'failed',
+      reason: 'body-unavailable',
+      served: {
+        urlPath: `${ORIGIN}/a`,
+        speculationRules: { removedFromDocument: 0, headerRemoved: true, guarded: true },
+        copy: false
+      }
+    });
+  });
+
+  it('records without an identity it cannot carry (an unparsable token), logged', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/a`),
+      identity: { ...copyIdentity(NOW), token: 't'.repeat(500) }
+    });
+    await flush();
+    const document = await recorded();
+    expect(document).toMatchObject({ outcome: 'rewritten' });
+    expect(document).not.toHaveProperty('served');
+    expect(logged(r.log, 'debug', /not recordable/)).toBe(true);
+  });
+
+  it('serves the original when the engine outcome fails validation', async () => {
+    const lying: DocumentTransformRunner = () =>
+      Promise.resolve({
+        ok: true,
+        html: '<p>x</p>',
+        outcome: { outcome: 'rewritten', reports: [{ feature: 'nope' } as never] }
+      });
+    const r = rig({ runner: lying });
+    await seedActive();
+    const document = {
+      ...htmlDoc(`${ORIGIN}/a`, '<p>plain</p>'),
+      identity: copyIdentity(NOW, true)
+    };
+    await expect(r.host.rewriteDocument(document)).resolves.toBeNull();
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'failed',
+      reason: 'engine-failed',
+      served: { speculationRules: { headerRemoved: true }, copy: false }
+    });
+  });
+
+  it('corrects a recorded rewrite the backend could not deliver (same response: same order)', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/a`), identity: copyIdentity(NOW) });
+    await flush();
+    expect(await recorded()).toMatchObject({ outcome: 'rewritten' });
+    await r.host.documentNotServed(TAB, `${ORIGIN}/a`, copyIdentity(NOW));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'failed',
+      reason: 'not-served',
+      served: { urlPath: `${ORIGIN}/a`, token: `req-${String(NOW)}`, copy: false }
+    });
+  });
+
+  it('never lets a correction of an earlier response replace a later page’s record', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/b`), identity: copyIdentity(NOW + 10) });
+    await flush();
+    await r.host.documentNotServed(TAB, `${ORIGIN}/a`, copyIdentity(NOW));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'rewritten',
+      served: { urlPath: `${ORIGIN}/b` }
+    });
+  });
+
+  it('seeds the order at wake from every tab’s records, not only the document’s own tab', async () => {
+    // Another tab's record from an earlier background lifetime, far ahead of this clock;
+    // this tab's own record holds no document (its read alone would seed nothing).
+    await seedActive();
+    await putExclusionSessionRecord(4, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      startedAt: NOW - 2000,
+      document: {
+        outcome: 'failed',
+        reason: 'decode-failed',
+        served: {
+          urlPath: `${ORIGIN}/elsewhere`,
+          urlDigest: 'b'.repeat(64),
+          token: 'other-tab',
+          order: NOW + 5_000_000,
+          receivedAt: NOW + 5_000_000,
+          speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+          copy: false,
+          serviceWorkersBypassed: true
+        }
+      }
+    });
+    const r = rig();
+    await r.controller.revalidate();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/new`), identity: copyIdentity(NOW) });
+    await flush();
+    expect((await recorded())?.served?.order).toBe(NOW + 5_000_001);
   });
 });

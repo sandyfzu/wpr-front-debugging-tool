@@ -24,6 +24,7 @@ import {
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
+import { removeSpeculationRules } from './speculation-rules';
 
 /**
  * The engine's wall-time budget per document (ms). Measured 2026-10-20 on
@@ -179,12 +180,21 @@ export interface InterceptedDocumentBody {
 
 /**
  * The document step's result: what to record, and the bytes to serve —
- * `body: null` means serve the original bytes exactly as received (a
- * failure, or a run that changed nothing).
+ * `body: null` means serve the original bytes exactly as received (nothing
+ * changed: no exclusion applied and no speculation rule to remove, or the
+ * body could not be decoded).
  */
 export interface DocumentRewrite {
   readonly outcome: ExclusionDocumentOutcome;
   readonly body: Uint8Array | null;
+  /** Speculation-rule scripts removed from the served bytes (absent when none). */
+  readonly speculationRulesRemoved?: number;
+  /**
+   * Present (true) when the bytes differ from the original only by the
+   * removed rule scripts — the exclusions changed nothing (a backend that
+   * serves a substituted copy then serves the original instead).
+   */
+  readonly rulesOnly?: true;
   /** The unexpected cause behind an `engine-failed` outcome, for the caller's log. */
   readonly cause?: unknown;
 }
@@ -247,21 +257,39 @@ export function isRewritableResponse(response: InterceptedResponseFacts): boolea
   return extractMimeType(contentType)?.essence === 'text/html';
 }
 
+/** The text served for a run, its rules removed, encoded — or null when it equals the original. */
+function servedBytes(
+  text: string,
+  original: string,
+  codec: Parameters<typeof encodeDocument>[1]
+): { readonly body: Uint8Array | null; readonly removed: number; readonly unencodable: boolean } {
+  const rules = removeSpeculationRules(text);
+  if (rules.html === original) return { body: null, removed: 0, unencodable: false };
+  const body = encodeDocument(rules.html, codec);
+  return body === null
+    ? { body: null, removed: 0, unencodable: true }
+    : { body, removed: rules.removed, unencodable: false };
+}
+
 /**
  * Rewrite one intercepted document: guard the size, decode in its charset,
- * run the engine through `runner`, re-encode in the same charset.
+ * run the engine through `runner`, remove the document's speculation rules
+ * (a session effect, applied whatever the engine did — see
+ * `./speculation-rules`), re-encode in the same charset.
  *
  * @param document The intercepted body, its content type and URL.
  * @param set The session's exclusion set.
  * @param runner The engine runner (in-process or preempting).
  * @param budgetMs The engine budget; defaults to {@link DOCUMENT_TRANSFORM_BUDGET_MS}.
  * @returns The outcome and the bytes to serve. Never rejects: an oversized
- *   body is `body-unavailable`, a body that cannot be decoded in its
- *   charset (unsupported encoding, malformed bytes) `decode-failed`, a
- *   rewrite that cannot be encoded back into it `encode-failed`, an engine
- *   overrun `over-budget`, anything else the engine or runner throws
- *   `engine-failed` — all served unmodified. Eligibility
- *   ({@link isRewritableResponse}) is the caller's, checked before.
+ *   body is `body-unavailable` and a body that cannot be decoded in its
+ *   charset (unsupported encoding, malformed bytes) `decode-failed` — both
+ *   served exactly as received; an engine overrun is `over-budget`,
+ *   anything else the engine or runner throws `engine-failed`, and a
+ *   rewrite that cannot be encoded back into the charset `encode-failed` —
+ *   each served without exclusions (the original text, minus its
+ *   speculation rules). Eligibility ({@link isRewritableResponse}) is the
+ *   caller's, checked before.
  */
 export async function rewriteDocument(
   document: InterceptedDocumentBody,
@@ -281,12 +309,23 @@ export async function rewriteDocument(
     // A runner must never reject; one that does is an engine failure.
     result = engineFailed(cause);
   }
-  if (!result.ok) {
-    return result.cause === undefined
-      ? { outcome: result.outcome, body: null }
-      : { outcome: result.outcome, body: null, cause: result.cause };
+  let outcome: ExclusionDocumentOutcome = result.outcome;
+  let served = {
+    ...servedBytes(result.ok ? result.html : decoded.text, decoded.text, decoded.codec),
+    fellBack: false
+  };
+  if (served.unencodable) {
+    // The engine's text holds what the charset cannot encode: serve the
+    // original (every char of it round-trips) without its rules.
+    outcome = ENCODE_FAILED.outcome;
+    served = { ...servedBytes(decoded.text, decoded.text, decoded.codec), fellBack: true };
   }
-  if (result.html === decoded.text) return { outcome: result.outcome, body: null };
-  const encoded = encodeDocument(result.html, decoded.codec);
-  return encoded === null ? ENCODE_FAILED : { outcome: result.outcome, body: encoded };
+  const exclusionsChanged = result.ok && !served.fellBack && result.html !== decoded.text;
+  return {
+    outcome,
+    body: served.body,
+    ...(served.removed > 0 && { speculationRulesRemoved: served.removed }),
+    ...(served.body !== null && !exclusionsChanged && { rulesOnly: true as const }),
+    ...(!result.ok && result.cause !== undefined && { cause: result.cause })
+  };
 }

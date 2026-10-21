@@ -14,6 +14,7 @@
  * active ───┼─ apply ▶ arming ┼─ arm-unavailable ─────▶ unavailable           │
  * unavail. ─┘                 └─ arm-failed ──────────▶ inactive              │
  * active ── interception-ended (same start) ────────▶ unavailable            │
+ *   (a document older than the recorded one — by served identity — is dropped)
  * active ── stale ───────────────────────────────────▶ inactive               │
  * any settled ── stop | tab-closed ──────────────────▶ inactive ◀─────────────┘
  * ```
@@ -117,6 +118,20 @@ function endSession(state: ExclusionSessionStatus, notify: boolean): SessionTran
   return { next: INACTIVE, effects };
 }
 
+/**
+ * Whether an outcome is for a response ordered before the recorded one
+ * (both carrying a served identity — without one there is nothing to
+ * order by).
+ */
+function isOlderDocument(
+  outcome: ExclusionDocumentOutcome,
+  recorded: ExclusionDocumentOutcome | null
+): boolean {
+  const incoming = outcome.served?.order;
+  const current = recorded?.served?.order;
+  return incoming !== undefined && current !== undefined && incoming < current;
+}
+
 /** Start arming from a settled state. */
 function startArming(
   state: ExclusionSessionStatus,
@@ -198,6 +213,9 @@ export function transition(
       return endSession(state, false);
     case 'document': {
       if (state.state !== 'active' || state.startedAt !== event.startedAt) return null;
+      // Only the latest document of the tab may stand: an abandoned
+      // navigation's late outcome never replaces the visible page's record.
+      if (isOlderDocument(event.outcome, state.document)) return null;
       const next: ActiveExclusionSession = { ...state, document: event.outcome };
       return {
         next,

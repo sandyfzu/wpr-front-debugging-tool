@@ -42,10 +42,12 @@ import {
   parseExclusionSessionRecord,
   parseExclusionSessionTabQuery,
   parseExclusionSetPayload,
+  parseServedDocument,
   type ActiveExclusionSession,
   type ExclusionApplyReply,
   type ExclusionDocumentOutcome,
   type ExclusionSaveReply,
+  type ExclusionServedDocument,
   type ExclusionSessionRecord,
   type ExclusionSessionStatus,
   type SavedExclusionSetReply
@@ -62,11 +64,13 @@ import {
   type ExclusionSessionRecords,
   type PutSessionOutcome
 } from '../storage/exclusion-sessions';
+import { createKeyedQueue } from '../../utils/keyed-queue';
 import { parseUrl } from '../../utils/urls';
 import type {
   ArmResult,
   ArmUnavailableCause,
   InterceptedDocument,
+  InterceptedResponseIdentity,
   InterceptionBackend,
   InterceptionEndCause,
   InterceptionHost
@@ -85,6 +89,7 @@ import {
   type SessionEvent,
   type SessionMachineState
 } from './machine';
+import { servedUrl } from './served-url';
 import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
@@ -177,26 +182,26 @@ function newestStart(records: ExclusionSessionRecords): number {
   return newest;
 }
 
-/**
- * A per-key serial queue: tasks for one key run one after another; keys
- * are independent; an idle key holds no memory.
- */
-function createKeyedQueue(): <T>(key: number, task: () => Promise<T>) => Promise<T> {
-  const tails = new Map<number, Promise<unknown>>();
-  return <T>(key: number, task: () => Promise<T>): Promise<T> => {
-    const run = (tails.get(key) ?? Promise.resolve()).then(task);
-    const tail = run.catch(() => undefined);
-    tails.set(key, tail);
-    void tail.then(() => {
-      if (tails.get(key) === tail) tails.delete(key);
-    });
-    return run;
-  };
+/** The latest document order among records (0 when none) — seeds the document order. */
+function newestOrder(records: ExclusionSessionRecords): number {
+  let newest = 0;
+  for (const record of Object.values(records)) {
+    if (record.state === 'active') newest = Math.max(newest, record.document?.served?.order ?? 0);
+  }
+  return newest;
 }
 
 /** The canonical origin of a URL, or null. */
 function originOf(url: string): string | null {
   return parseUrl(url)?.origin ?? null;
+}
+
+/** An outcome with its served identity attached (when there is one). */
+function withServed(
+  outcome: ExclusionDocumentOutcome,
+  served: ExclusionServedDocument | null
+): ExclusionDocumentOutcome {
+  return served === null ? outcome : { ...outcome, served };
 }
 
 /** Whether a failure is a missed deadline. */
@@ -220,6 +225,15 @@ export function createExclusionSessionController(
   let backend: InterceptionBackend | null = null;
   /** The last session start issued or seen — the floor of the next one. */
   let lastStart = 0;
+  /** The latest document order issued or seen in storage. */
+  let lastOrder = 0;
+  /**
+   * What this background lifetime adds to a backend's monotonic stamps so
+   * the document order continues past every stored one (a restarted
+   * background's clock may read behind what an earlier one stored); fixed
+   * at the first document, so stamps keep their relative order.
+   */
+  let orderOffset: number | null = null;
 
   /** Run one step under its deadline. */
   const bounded = <T>(step: string, ms: number, work: () => Promise<T>): Promise<T> =>
@@ -228,6 +242,19 @@ export function createExclusionSessionController(
   /** Remember the newest start seen in storage (a woken background issues past it). */
   const seenStart = (startedAt: number): void => {
     lastStart = Math.max(lastStart, startedAt);
+  };
+
+  /** Remember the latest document order seen in storage. */
+  const seenOrder = (order: number): void => {
+    lastOrder = Math.max(lastOrder, order);
+  };
+
+  /** A document's order from its backend stamp: continuous across background lifetimes. */
+  const orderOf = (receivedAt: number): number => {
+    orderOffset ??= Math.max(0, lastOrder + 1 - receivedAt);
+    const order = receivedAt + orderOffset;
+    seenOrder(order);
+    return order;
   };
 
   /** Issue a session start: now, but strictly after every start issued or seen. */
@@ -241,7 +268,10 @@ export function createExclusionSessionController(
   /** One tab's status, bounded; an active record's start feeds the issuer. */
   const readSession = async (tabId: number): Promise<ExclusionSessionStatus> => {
     const status = await bounded('Session read', STEPS.store, () => deps.sessions.read(tabId));
-    if (status.state === 'active') seenStart(status.startedAt);
+    if (status.state === 'active') {
+      seenStart(status.startedAt);
+      seenOrder(status.document?.served?.order ?? 0);
+    }
     return status;
   };
 
@@ -249,6 +279,7 @@ export function createExclusionSessionController(
   const readAllSessions = async (): Promise<ExclusionSessionRecords> => {
     const records = await bounded('Session read', STEPS.store, () => deps.sessions.readAll());
     seenStart(newestStart(records));
+    seenOrder(newestOrder(records));
     return records;
   };
 
@@ -332,10 +363,11 @@ export function createExclusionSessionController(
   const armBackend = async (
     armer: InterceptionBackend,
     tabId: number,
-    generation: number
+    generation: number,
+    origin: string
   ): Promise<ArmResult> => {
     try {
-      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation));
+      return await bounded('Backend arm', STEPS.arm, () => armer.arm(tabId, generation, origin));
     } catch (cause) {
       if (!timedOut(cause)) throw cause;
       log.warn('Backend arm timed out — interception unavailable', { tabId, cause });
@@ -360,7 +392,7 @@ export function createExclusionSessionController(
       // Checked before attaching anything; the store re-checks on write (another tab may race).
       if (othersActive >= EXCLUSION_SESSION_LIMIT)
         return { type: 'arm-unavailable', cause: 'session-limit', at: deps.now() };
-      const armed = await armBackend(armer, tabId, state.startedAt);
+      const armed = await armBackend(armer, tabId, state.startedAt, state.origin);
       if (!armed.armed) return { type: 'arm-unavailable', cause: armed.cause, at: deps.now() };
       const record: ActiveExclusionSession = {
         state: 'active',
@@ -552,6 +584,44 @@ export function createExclusionSessionController(
     return record?.state === 'active' ? record.document : null;
   };
 
+  /**
+   * The served identity of a document, or null when the backend gave no
+   * identity or it cannot cross the contract (logged).
+   *
+   * @param removedFromDocument Rule scripts removed from the served bytes.
+   * @param copy Whether bytes are served by a copy-serving backend.
+   */
+  const servedIdentity = async (
+    document: Pick<InterceptedDocument, 'documentUrl' | 'identity'>,
+    removedFromDocument: number,
+    copy: boolean
+  ): Promise<ExclusionServedDocument | null> => {
+    const identity = document.identity;
+    if (identity === undefined) return null;
+    const url = await servedUrl(document.documentUrl);
+    const served =
+      url === null
+        ? null
+        : parseServedDocument(
+            {
+              ...url,
+              token: identity.token,
+              order: orderOf(identity.receivedAt),
+              receivedAt: identity.receivedAt,
+              speculationRules: {
+                removedFromDocument,
+                headerRemoved: identity.speculationRulesHeader,
+                guarded: identity.speculationGuard
+              },
+              copy,
+              serviceWorkersBypassed: identity.serviceWorkersBypassed
+            },
+            'reject'
+          );
+    if (served === null) log.debug('Document identity not recordable — recorded without it');
+    return served;
+  };
+
   /** The engine runner in use, bounded past the budget (a runner that never answers is a failure). */
   const boundedRunner: DocumentTransformRunner = (request) =>
     bounded('Engine run', request.budgetMs + STEPS.runnerOverhead, () =>
@@ -574,14 +644,31 @@ export function createExclusionSessionController(
         cause: result.cause
       });
     }
-    let outcome = checkedOutcome(session, result.outcome);
-    let body = result.body;
+    // A copy-serving backend serves the original unless the exclusions
+    // changed the document (a copy costs the page its real security state
+    // and timing); its page guard removes the rules instead.
+    const copies = document.identity?.servedAsCopy === true;
+    let body = copies && result.rulesOnly === true ? null : result.body;
+    let outcome = checkedOutcome(
+      session,
+      withServed(
+        result.outcome,
+        await servedIdentity(
+          document,
+          body === null ? 0 : (result.speculationRulesRemoved ?? 0),
+          copies && body !== null
+        )
+      )
+    );
     if (outcome === null) {
       log.error('Engine outcome failed validation — document served unmodified', {
         tabId: document.tabId
       });
-      outcome = { outcome: 'failed', reason: 'engine-failed' };
       body = null;
+      outcome = withServed(
+        { outcome: 'failed', reason: 'engine-failed' },
+        await servedIdentity(document, 0, false)
+      );
     }
     // Stop or a re-apply may have landed while the engine ran, or the
     // backend may have served the original already: serve (and record) only
@@ -595,6 +682,32 @@ export function createExclusionSessionController(
       'document record'
     );
     return body;
+  };
+
+  /**
+   * Record that a session document was served as received (`reason`), with
+   * its identity — ordered like any document, so a later page's record is
+   * never replaced by it (a correction of the same response replaces its
+   * own record: same order).
+   */
+  const recordUnserved = async (
+    tabId: number,
+    documentUrl: string,
+    identity: InterceptedResponseIdentity | undefined,
+    reason: 'body-unavailable' | 'not-served'
+  ): Promise<void> => {
+    const session = await activeFor(tabId, documentUrl);
+    if (session === null) return;
+    const served = await servedIdentity({ documentUrl, identity }, 0, false);
+    await driveQuietly(
+      tabId,
+      {
+        type: 'document',
+        startedAt: session.startedAt,
+        outcome: withServed({ outcome: 'failed', reason }, served)
+      },
+      'document record'
+    );
   };
 
   const host: InterceptionHost = {
@@ -617,20 +730,15 @@ export function createExclusionSessionController(
       );
     },
 
-    documentBodyUnavailable: (tabId, documentUrl) =>
-      hostCall('documentBodyUnavailable', undefined, async () => {
-        const session = await activeFor(tabId, documentUrl);
-        if (session === null) return;
-        await driveQuietly(
-          tabId,
-          {
-            type: 'document',
-            startedAt: session.startedAt,
-            outcome: { outcome: 'failed', reason: 'body-unavailable' }
-          },
-          'document record'
-        );
-      }),
+    documentBodyUnavailable: (tabId, documentUrl, identity) =>
+      hostCall('documentBodyUnavailable', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, 'body-unavailable')
+      ),
+
+    documentNotServed: (tabId, documentUrl, identity) =>
+      hostCall('documentNotServed', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, 'not-served')
+      ),
 
     interceptionEnded: (tabId: number, cause: InterceptionEndCause, generation: number) =>
       hostCall('interceptionEnded', undefined, async () => {
@@ -676,11 +784,17 @@ export function createExclusionSessionController(
   };
 
   /** Whether the backend confirms the tab's interception (false on any failure or timeout). */
-  const resumeLive = async (tabId: number, generation: number): Promise<boolean> => {
+  const resumeLive = async (
+    tabId: number,
+    generation: number,
+    origin: string
+  ): Promise<boolean> => {
     const resumer = backend;
     if (resumer === null) return false;
     try {
-      return await bounded('Backend resume', STEPS.resume, () => resumer.resume(tabId, generation));
+      return await bounded('Backend resume', STEPS.resume, () =>
+        resumer.resume(tabId, generation, origin)
+      );
     } catch (cause) {
       log.error('Wake resume failed — session treated as stale', { tabId, cause });
       return false;
@@ -694,7 +808,7 @@ export function createExclusionSessionController(
       return;
     }
     if (record.state !== 'active') return;
-    if (!(await resumeLive(tabId, record.startedAt))) {
+    if (!(await resumeLive(tabId, record.startedAt, record.origin))) {
       log.info('Stale session cleared at wake — tab served unmodified', { tabId });
       await driveQuietly(tabId, { type: 'stale' }, 'stale cleanup');
     }

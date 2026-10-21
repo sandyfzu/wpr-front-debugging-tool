@@ -24,7 +24,9 @@ import {
   parseExclusionSessionStatus,
   parseExclusionSessionTabQuery,
   parseExclusionSessionTabStatus,
-  parseExclusionSet
+  parseExclusionSet,
+  parseServedDocument,
+  SERVED_DOCUMENT_LIMITS
 } from './exclusion-session';
 import { activeRecord, validSet } from './exclusion-session.fixtures';
 import { onMessage, sendMessage } from './index';
@@ -205,7 +207,8 @@ describe('parseExclusionSessionStatus', () => {
       'body-unavailable',
       'decode-failed',
       'encode-failed',
-      'engine-failed'
+      'engine-failed',
+      'not-served'
     ]);
     const encodeFailed = {
       ...activeRecord(),
@@ -437,12 +440,32 @@ describe('document reports are tied to the session set', () => {
         origin: `https://${'a'.repeat(63)}.${'b'.repeat(63)}.example:65535`,
         set,
         startedAt: Number.MAX_SAFE_INTEGER,
-        document: { outcome: 'rewritten', reports }
+        document: {
+          outcome: 'rewritten',
+          reports,
+          served: {
+            // A serialized URL is ASCII: one byte per character at the cap.
+            urlPath: `https://a.example/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars - 18)}`,
+            urlDigest: 'f'.repeat(64),
+            token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars),
+            order: Number.MAX_SAFE_INTEGER,
+            receivedAt: Number.MAX_SAFE_INTEGER,
+            speculationRules: {
+              removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules,
+              headerRemoved: true,
+              guarded: true
+            },
+            copy: true,
+            serviceWorkersBypassed: true
+          }
+        }
       },
       'reject'
     );
     expect(record).not.toBeNull();
-    // Measured 488,307 bytes (≈ 477 KiB).
+    // Measured 490,779 bytes (≈ 479 KiB) with the widest served identity — 33 KiB under
+    // the bound (488,307 without; the query-free path keeps the identity small).
+    console.log('SIZE', new TextEncoder().encode(JSON.stringify(record)).length);
     expect(new TextEncoder().encode(JSON.stringify(record)).length).toBeLessThan(512 * 1024);
   });
 });
@@ -486,6 +509,116 @@ describe('whole-set character budget', () => {
     };
     expect(parseExclusionSet(set, 'reject')).toBeNull();
     expect(reads).toBe(1);
+  });
+});
+
+/** A valid served identity. */
+function served(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    urlPath: 'https://example.com/page',
+    urlDigest: '0123456789abcdef'.repeat(4),
+    token: 'interception-job-7.0',
+    order: 1_800_000_000_123,
+    receivedAt: 1_800_000_000_000,
+    speculationRules: { removedFromDocument: 2, headerRemoved: true, guarded: false },
+    copy: true,
+    serviceWorkersBypassed: true,
+    ...overrides
+  };
+}
+
+/** A speculation summary with one field replaced. */
+function rules(overrides: Record<string, unknown>): Record<string, unknown> {
+  return { removedFromDocument: 0, headerRemoved: false, guarded: true, ...overrides };
+}
+
+describe('parseServedDocument', () => {
+  it('accepts a valid identity and rebuilds it', () => {
+    expect(parseServedDocument(served(), 'reject')).toEqual(served());
+  });
+
+  it('accepts the caps at their exact edges', () => {
+    const edge = served({
+      urlPath: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars - 12)}`,
+      token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars),
+      speculationRules: rules({ removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules })
+    });
+    expect(parseServedDocument(edge, 'reject')).toEqual(edge);
+  });
+
+  it.each([
+    ['not a record', 'x'],
+    ['an unknown key (reject)', served({ extra: 1 })],
+    ['a non-http path', served({ urlPath: 'chrome://version' })],
+    ['a relative path', served({ urlPath: '/page' })],
+    ['a URL with its query (never stored)', served({ urlPath: 'https://e.x/a?email=x' })],
+    ['an empty query mark', served({ urlPath: 'https://e.x/a?' })],
+    ['a URL with a fragment', served({ urlPath: 'https://e.x/a#top' })],
+    [
+      'an over-long path',
+      served({ urlPath: `https://e.x/${'a'.repeat(SERVED_DOCUMENT_LIMITS.urlPathChars)}` })
+    ],
+    ['a short digest', served({ urlDigest: 'ab' })],
+    ['an uppercase digest', served({ urlDigest: 'A'.repeat(64) })],
+    ['an empty token', served({ token: '' })],
+    ['an over-long token', served({ token: 't'.repeat(SERVED_DOCUMENT_LIMITS.tokenChars + 1) })],
+    ['an unprintable token', served({ token: 'a\u0000b' })],
+    ['a negative order', served({ order: -1 })],
+    ['a negative time', served({ receivedAt: -1 })],
+    ['a fractional count', served({ speculationRules: rules({ removedFromDocument: 1.5 }) })],
+    [
+      'an over-cap count',
+      served({
+        speculationRules: rules({
+          removedFromDocument: SERVED_DOCUMENT_LIMITS.speculationRules + 1
+        })
+      })
+    ],
+    ['a non-boolean header flag', served({ speculationRules: rules({ headerRemoved: 1 }) })],
+    ['a non-boolean guard flag', served({ speculationRules: rules({ guarded: 'yes' }) })],
+    ['an unknown speculation key (reject)', served({ speculationRules: rules({ x: 1 }) })],
+    ['a missing speculation summary', served({ speculationRules: undefined })],
+    ['a non-boolean copy flag', served({ copy: 'yes' })],
+    ['a non-boolean bypass flag', served({ serviceWorkersBypassed: 0 })]
+  ])('refuses %s', (_label, input) => {
+    expect(parseServedDocument(input, 'reject')).toBeNull();
+  });
+
+  it('drops unknown keys under ignore, at both levels', () => {
+    expect(
+      parseServedDocument(
+        served({ extra: 1, speculationRules: { ...rules({}), later: true } }),
+        'ignore'
+      )
+    ).toEqual(served({ speculationRules: rules({}) }));
+  });
+});
+
+describe('document outcomes carry an optional served identity', () => {
+  const outcomes = [
+    { outcome: 'failed', reason: 'decode-failed' },
+    { outcome: 'over-budget', feature: 'lazyload', row: null, budgetMs: 5 }
+  ];
+
+  it('keeps it on every outcome kind, and absence stays absent', () => {
+    const rewritten = clone(activeRecord()['document']);
+    for (const outcome of [rewritten, ...outcomes]) {
+      const record = { ...activeRecord(), document: { ...outcome, served: served() } };
+      expect(documentOf(parseExclusionSessionRecord(record, 'reject'))).toEqual({
+        ...outcome,
+        served: served()
+      });
+      const bare = { ...activeRecord(), document: outcome };
+      expect(documentOf(parseExclusionSessionRecord(bare, 'reject'))).not.toHaveProperty('served');
+    }
+  });
+
+  it('refuses the whole record for a malformed identity', () => {
+    for (const outcome of outcomes) {
+      const record = { ...activeRecord(), document: { ...outcome, served: served({ copy: 1 }) } };
+      expect(parseExclusionSessionRecord(record, 'reject')).toBeNull();
+      expect(parseExclusionSessionRecord(record, 'ignore')).toBeNull();
+    }
   });
 });
 

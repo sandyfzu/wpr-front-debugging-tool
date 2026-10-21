@@ -56,11 +56,46 @@ export type InterceptionEndCause = Exclude<
   'session-limit' | 'unsupported-browser'
 >;
 
+/**
+ * A backend's identity of one intercepted response — optional: without it
+ * the host records no served identity (and no ordering) for the document.
+ */
+export interface InterceptedResponseIdentity {
+  /** Opaque, unique per intercepted response (printable, ≤ `SERVED_DOCUMENT_LIMITS.tokenChars`). */
+  readonly token: string;
+  /**
+   * Epoch ms the response reached the backend, by a monotonic clock
+   * (strictly increasing per backend — it orders the tab's documents; the
+   * host keeps the order increasing across background restarts).
+   */
+  readonly receivedAt: number;
+  /**
+   * Whether the response carries a `Speculation-Rules` header the backend
+   * drops from the document whatever the host answers (fulfilled or
+   * continued) — false when the backend cannot drop headers.
+   */
+  readonly speculationRulesHeader: boolean;
+  /**
+   * Whether bytes the host returns reach the page as a substituted copy
+   * (its security indicator and timing then describe the copy). The host
+   * then returns bytes only when the exclusions changed the document;
+   * otherwise (an in-place rewrite) also when only the session's
+   * speculation-rule removal did.
+   */
+  readonly servedAsCopy: boolean;
+  /** Whether the session's speculation-rules page guard runs in this document. */
+  readonly speculationGuard: boolean;
+  /** Whether the tab's service workers are bypassed while the session lasts. */
+  readonly serviceWorkersBypassed: boolean;
+}
+
 /** One intercepted top-level document of a tab, with its response facts. */
 export interface InterceptedDocument extends InterceptedDocumentBody, InterceptedResponseFacts {
   readonly tabId: number;
   /** The document's absolute URL (the session's origin gate reads it). */
   readonly documentUrl: string;
+  /** The response's identity, when the backend has one. */
+  readonly identity?: InterceptedResponseIdentity;
 }
 
 /**
@@ -88,13 +123,19 @@ export interface InterceptionHost {
    *   so the record never claims a rewrite that was not served.
    *
    * @returns The bytes to serve, or null to serve the original bytes
-   *   unmodified (no active session for the tab, another origin, an
-   *   ineligible response — those unrecorded — nothing changed, a session
-   *   stopped or replaced while the engine ran, or any failure — recorded
-   *   where a session exists).
+   *   (no active session for the tab, another origin, an ineligible
+   *   response — those unrecorded — the exclusions changed nothing (and,
+   *   for an in-place backend, no rule script to remove), an undecodable
+   *   body, a session stopped or replaced while the engine ran — recorded
+   *   where a session exists, unless a later document of the tab is
+   *   already recorded). Bytes are the rewrite (without its speculation
+   *   rules), or — for an in-place backend only — the document without
+   *   its rules when that is the session's only change.
    *   Headers are the backend's: the body is in the response's own
    *   charset (never transcoded), so only `Content-Length` (and any
-   *   `Content-Encoding` the backend already removed) needs fixing.
+   *   `Content-Encoding` the backend already removed) needs fixing, and a
+   *   session document's `Speculation-Rules` header is dropped whether
+   *   bytes are served or not.
    */
   rewriteDocument(
     document: InterceptedDocument,
@@ -102,9 +143,26 @@ export interface InterceptionHost {
   ): Promise<Uint8Array | null>;
   /**
    * An eligible top-level document's body could not be read (or exceeds
-   * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded.
+   * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded, with the
+   * response's identity when given.
    */
-  documentBodyUnavailable(tabId: number, documentUrl: string): Promise<void>;
+  documentBodyUnavailable(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
+  /**
+   * The rewrite the host answered for this response could not be delivered
+   * — the browser had already dropped the response (its navigation
+   * abandoned, the session ended first) — so the outcome recorded for it
+   * is corrected to `not-served` (with the same identity, so a later
+   * document's record is never touched).
+   */
+  documentNotServed(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
   /**
    * The browser ended the tab's interception tagged `generation` (the
    * value the backend was armed or resumed with). An end whose generation
@@ -124,8 +182,11 @@ export interface InterceptionBackend {
    * decided by attempting (never assumed): armed, or why not. Idempotent:
    * arming an armed tab confirms it (re-establishing a dead attachment)
    * and re-tags it with `generation` (see the module doc).
+   *
+   * @param origin Optional: the session's origin — scopes the backend's
+   *   per-origin session effects (e.g. a page guard) to its documents.
    */
-  arm(tabId: number, generation: number): Promise<ArmResult>;
+  arm(tabId: number, generation: number, origin?: string): Promise<ArmResult>;
   /** Drop the tab's interception and any bookkeeping; a no-op when unarmed. */
   disarm(tabId: number): Promise<void>;
   /**
@@ -134,8 +195,10 @@ export interface InterceptionBackend {
    * the stored session's `generation`. False = stale (the session is
    * cleared and the tab served unmodified). Must not await host calls
    * (the host waits for the re-validation `resume` is part of).
+   *
+   * @param origin Optional: the stored session's origin (see {@link arm}).
    */
-  resume(tabId: number, generation: number): Promise<boolean>;
+  resume(tabId: number, generation: number, origin?: string): Promise<boolean>;
   /** A preempting engine runner (e.g. worker-hosted); absent → in-process. */
   readonly runner?: DocumentTransformRunner;
 }

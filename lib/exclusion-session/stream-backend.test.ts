@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
-import type { InterceptedDocument, InterceptionHost } from './backend';
+import type { InterceptedDocument, InterceptedResponseIdentity, InterceptionHost } from './backend';
 import {
   createStreamInterceptionBackend,
   responseContentType,
@@ -134,6 +134,8 @@ interface Harness {
     abandons: (() => boolean)[];
     gates: string[];
     unavailable: string[];
+    unavailableIdentities: (InterceptedResponseIdentity | undefined)[];
+    notServed: string[];
   };
   timers: ReturnType<typeof manualTimers>;
   log: ReturnType<typeof quietLog>;
@@ -150,11 +152,19 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
   const abandons: (() => boolean)[] = [];
   const gates: string[] = [];
   const unavailable: string[] = [];
+  const unavailableIdentities: (InterceptedResponseIdentity | undefined)[] = [];
+  const notServed: string[] = [];
   const host = {
+    notServed,
+    documentNotServed: (_tabId: number, url: string) => {
+      notServed.push(url);
+      return Promise.resolve();
+    },
     rewrites,
     abandons,
     gates,
     unavailable,
+    unavailableIdentities,
     shouldIntercept: (_tabId: number, url: string) => {
       gates.push(url);
       return gateAnswer.next;
@@ -164,8 +174,13 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
       if (abandoned !== undefined) abandons.push(abandoned);
       return answer.next;
     },
-    documentBodyUnavailable: (_tabId: number, url: string) => {
+    documentBodyUnavailable: (
+      _tabId: number,
+      url: string,
+      identity?: InterceptedResponseIdentity
+    ) => {
       unavailable.push(url);
+      unavailableIdentities.push(identity);
       return Promise.resolve();
     },
     interceptionEnded: () => Promise.resolve()
@@ -176,6 +191,7 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
     host,
     log,
     schedule: timers.schedule,
+    stamp: () => STARTED_AT,
     openFilter:
       options.openFilter ??
       (() => {
@@ -267,6 +283,43 @@ describe('stream backend — the armed-tab gate', () => {
     await settle();
     expect(h.log.lines).toContain('Stream filter unavailable — document served unmodified');
     expect(h.host.gates).toEqual([]);
+  });
+});
+
+/** The request start the fake clock answers. */
+const STARTED_AT = 1_800_000_000_000;
+
+describe('stream backend — response identity', () => {
+  const IDENTITY = {
+    token: 'r1',
+    receivedAt: STARTED_AT,
+    speculationRulesHeader: false,
+    servedAsCopy: false,
+    speculationGuard: false,
+    serviceWorkersBypassed: false
+  };
+
+  it('hands the host the request id and start, never a copy nor a header to drop', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.rewrites[0]?.identity).toEqual(IDENTITY);
+  });
+
+  it('reports an unreadable body with the same identity', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('a');
+    filter.fail('Channel redirected');
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.unavailableIdentities).toEqual([IDENTITY]);
   });
 });
 
@@ -804,5 +857,48 @@ describe('stream backend — revalidation, failures, abandonment', () => {
     first.start();
     expect(first.calls).toEqual(['disconnect']);
     expect(h.backend.inFlight()).toEqual(['r1']);
+  });
+});
+
+describe('stream backend — a rewrite that cannot be written', () => {
+  it('corrects the record when writing the host’s rewrite fails', async () => {
+    const h = harness();
+    h.answer.next = Promise.resolve(enc('REWRITTEN'));
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.notServed).toEqual([URL]);
+  });
+
+  it('reports nothing when writing the original through fails (no rewrite was claimed)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.notServed).toEqual([]);
+  });
+});
+
+describe('stream backend — a failing not-served report', () => {
+  it('is logged, never thrown', async () => {
+    const h = harness();
+    h.host.documentNotServed = () => Promise.reject(new Error('record'));
+    h.answer.next = Promise.resolve(enc('REWRITTEN'));
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.log.lines).toContain('Stream not-served report failed');
   });
 });

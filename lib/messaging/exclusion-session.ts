@@ -30,7 +30,7 @@ import {
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
 import { isRecord } from '../../utils/is-record';
-import { isHttpOrigin } from '../../utils/urls';
+import { isHttpOrigin, isHttpUrl, parseUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
 import { numericTabId } from './sender';
 
@@ -99,7 +99,10 @@ export type InterceptionUnavailableCause = keyof typeof INTERCEPTION_UNAVAILABLE
  * Why one intercepted document was served unmodified (the session itself
  * stays active): its body could not be read, it could not be decoded with
  * its declared charset, the rewritten text could not be encoded back into
- * that charset, or the engine failed unexpectedly. Additive: a newer
+ * that charset, the engine failed unexpectedly, or the rewrite could not be
+ * delivered (`not-served`: the browser had already dropped the response —
+ * its navigation abandoned or the session ended first — so whatever the
+ * page shows was not served by the session). Additive: a newer
  * build's reason fails an older build's guard (its read-back drops that
  * record — never a fabricated one).
  */
@@ -107,7 +110,8 @@ export const EXCLUSION_DOCUMENT_FAILURES = [
   'body-unavailable',
   'decode-failed',
   'encode-failed',
-  'engine-failed'
+  'engine-failed',
+  'not-served'
 ] as const;
 
 /** One unmodified-document reason (see {@link EXCLUSION_DOCUMENT_FAILURES}). */
@@ -125,7 +129,7 @@ const MAX_BUDGET_MS = 600_000;
  *   overrun is attributable to one; `null` for a feature-wide run).
  * - `failed` — served unmodified for a {@link ExclusionDocumentFailure}.
  */
-export type ExclusionDocumentOutcome =
+export type ExclusionDocumentOutcome = (
   | { readonly outcome: 'rewritten'; readonly reports: readonly TransformReport[] }
   | {
       readonly outcome: 'over-budget';
@@ -133,7 +137,84 @@ export type ExclusionDocumentOutcome =
       readonly row: string | null;
       readonly budgetMs: number;
     }
-  | { readonly outcome: 'failed'; readonly reason: ExclusionDocumentFailure };
+  | { readonly outcome: 'failed'; readonly reason: ExclusionDocumentFailure }
+) & {
+  /** Which response the outcome is for and what the session did to it (absent when the backend gives no identity). */
+  readonly served?: ExclusionServedDocument;
+};
+
+/** Size caps of a {@link ExclusionServedDocument}. */
+export const SERVED_DOCUMENT_LIMITS = {
+  /** Characters of the document's origin + path (longer paths are cut — the digest stays exact). */
+  urlPathChars: 2048,
+  /** Characters of the backend's response token. */
+  tokenChars: 128,
+  /** Rule scripts counted as removed from one document. */
+  speculationRules: 10_000
+} as const;
+
+/** What the session did about one document's speculation rules (prefetch / prerender). */
+export interface ExclusionServedSpeculationRules {
+  /** Rule scripts removed from the served bytes (0 when the document was served as received). */
+  readonly removedFromDocument: number;
+  /** Whether the response's `Speculation-Rules` header was dropped. */
+  readonly headerRemoved: boolean;
+  /**
+   * Whether the session's page guard ran in the document: it removes every
+   * rule script — inline or inserted by the page's scripts — as it appears,
+   * so the document's links are never prefetched or prerendered.
+   */
+  readonly guarded: boolean;
+}
+
+/**
+ * The identity of the response a document outcome is for, and the
+ * session's own effects on it — so a surface can tell whether the page it
+ * shows is the one recorded (compare `urlDigest` with the SHA-256 of
+ * `location.href` without its fragment, `receivedAt` with the page's time
+ * origin; a navigation served without interception leaves an older
+ * record) and say what the session changed besides the exclusions. Never
+ * holds the URL's raw query (it may carry personal data): the origin +
+ * path, and a digest of the whole URL — "no raw query stored", not "query
+ * private": a low-entropy query's digest can be guessed.
+ *
+ * Digest contract (what a surface computes to compare): `u = new
+ * URL(location.href); u.hash = ''; hex = lowercase hex of SHA-256 over the
+ * UTF-8 bytes of u.href` — equal to `urlDigest` for the recorded page. After
+ * `history.pushState`/`replaceState` the page's URL no longer is the
+ * served one, so a mismatch then means "cannot tell", not "not
+ * intercepted". URLs with embedded credentials are unverified.
+ */
+export interface ExclusionServedDocument {
+  /** The document's origin + path (no query, no fragment; cut at `SERVED_DOCUMENT_LIMITS.urlPathChars`). */
+  readonly urlPath: string;
+  /** SHA-256 (lowercase hex) of the document's whole URL as requested (no fragment). */
+  readonly urlDigest: string;
+  /** The backend's opaque token of the response (unique per intercepted response). */
+  readonly token: string;
+  /**
+   * The tab's document order: strictly increasing with arrival, across
+   * background restarts — an outcome ordered before the recorded one never
+   * replaces it.
+   */
+  readonly order: number;
+  /** Epoch ms the response reached the backend (by the background's monotonic clock). */
+  readonly receivedAt: number;
+  readonly speculationRules: ExclusionServedSpeculationRules;
+  /**
+   * Whether the browser rendered a substituted copy of the response: its
+   * security indicator, certificate, connection info and resource timing
+   * then describe the copy (e.g. an https page shows as not secure, connect
+   * and request timings read zero), not the network response.
+   */
+  readonly copy: boolean;
+  /**
+   * Whether the tab's service workers were bypassed (the session sends
+   * every request of the tab — any origin — to the network: offline and
+   * service-worker caches are off while it lasts).
+   */
+  readonly serviceWorkersBypassed: boolean;
+}
 
 /** A session that intercepts its tab's top-level documents until Stop or tab close. */
 export interface ActiveExclusionSession {
@@ -465,6 +546,97 @@ function parseTransformReport(
   };
 }
 
+/** The keys of a served-document identity. */
+const SERVED_KEYS = [
+  'urlPath',
+  'urlDigest',
+  'token',
+  'order',
+  'receivedAt',
+  'speculationRules',
+  'copy',
+  'serviceWorkersBypassed'
+] as const;
+
+/** The keys of a served document's speculation-rules summary. */
+const SPECULATION_KEYS = ['removedFromDocument', 'headerRemoved', 'guarded'] as const;
+
+/** Whether a value is an http(s) origin + path within the cap (no query, no fragment). */
+function isUrlPath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > SERVED_DOCUMENT_LIMITS.urlPathChars) return false;
+  if (!isHttpUrl(value)) return false;
+  const url = parseUrl(value);
+  return url !== null && url.search === '' && url.hash === '' && !value.includes('?');
+}
+
+/** Parse a speculation-rules summary. */
+function parseSpeculationRules(
+  input: unknown,
+  policy: UnknownKeyPolicy
+): ExclusionServedSpeculationRules | null {
+  if (!isRecord(input) || !keysAllowed(input, SPECULATION_KEYS, policy)) return null;
+  const removed = own(input, 'removedFromDocument');
+  const headerRemoved = own(input, 'headerRemoved');
+  const guarded = own(input, 'guarded');
+  if (!isCount(removed) || removed > SERVED_DOCUMENT_LIMITS.speculationRules) return null;
+  if (typeof headerRemoved !== 'boolean' || typeof guarded !== 'boolean') return null;
+  return { removedFromDocument: removed, headerRemoved, guarded };
+}
+
+/**
+ * Parse a served-document identity (see {@link ExclusionServedDocument}).
+ *
+ * @param input The untrusted value.
+ * @param policy Unknown-key policy (see the module doc).
+ * @returns A fresh identity, or null on any violation.
+ */
+export function parseServedDocument(
+  input: unknown,
+  policy: UnknownKeyPolicy
+): ExclusionServedDocument | null {
+  if (!isRecord(input) || !keysAllowed(input, SERVED_KEYS, policy)) return null;
+  const urlPath = own(input, 'urlPath');
+  const urlDigest = own(input, 'urlDigest');
+  const token = own(input, 'token');
+  const order = own(input, 'order');
+  const receivedAt = own(input, 'receivedAt');
+  const copy = own(input, 'copy');
+  const bypassed = own(input, 'serviceWorkersBypassed');
+  if (!isUrlPath(urlPath)) return null;
+  if (typeof urlDigest !== 'string' || !/^[0-9a-f]{64}$/.test(urlDigest)) return null;
+  if (typeof token !== 'string' || token.length === 0) return null;
+  if (token.length > SERVED_DOCUMENT_LIMITS.tokenChars || !isPrintable(token)) return null;
+  if (!isCount(order) || !isCount(receivedAt)) return null;
+  if (typeof copy !== 'boolean' || typeof bypassed !== 'boolean') return null;
+  const speculationRules = parseSpeculationRules(own(input, 'speculationRules'), policy);
+  if (speculationRules === null) return null;
+  return {
+    urlPath,
+    urlDigest,
+    token,
+    order,
+    receivedAt,
+    speculationRules,
+    copy,
+    serviceWorkersBypassed: bypassed
+  };
+}
+
+/**
+ * Attach an outcome's optional served identity (absent stays absent; a
+ * malformed one fails the whole outcome).
+ */
+function withServed(
+  outcome: ExclusionDocumentOutcome,
+  input: Record<string, unknown>,
+  policy: UnknownKeyPolicy
+): ExclusionDocumentOutcome | null {
+  const raw = own(input, 'served');
+  if (raw === undefined) return outcome;
+  const served = parseServedDocument(raw, policy);
+  return served === null ? null : { ...outcome, served };
+}
+
 /**
  * Parse a document outcome (see {@link ExclusionDocumentOutcome}) against
  * the session's set: reports and an over-budget row must come from it.
@@ -477,7 +649,7 @@ function parseDocumentOutcome(
   if (!isRecord(input)) return null;
   switch (own(input, 'outcome')) {
     case 'rewritten': {
-      if (!keysAllowed(input, ['outcome', 'reports'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'reports', 'served'], policy)) return null;
       const raw = own(input, 'reports');
       if (!Array.isArray(raw) || raw.length > EXCLUSION_FEATURES.length) return null;
       const reports: TransformReport[] = [];
@@ -489,10 +661,12 @@ function parseDocumentOutcome(
         }
         reports.push(report);
       }
-      return { outcome: 'rewritten', reports };
+      return withServed({ outcome: 'rewritten', reports }, input, policy);
     }
     case 'over-budget': {
-      if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs', 'served'], policy)) {
+        return null;
+      }
       const feature = own(input, 'feature');
       const row = own(input, 'row');
       const budgetMs = own(input, 'budgetMs');
@@ -501,13 +675,15 @@ function parseDocumentOutcome(
         return null;
       }
       if (!isCount(budgetMs) || budgetMs < 1 || budgetMs > MAX_BUDGET_MS) return null;
-      return { outcome: 'over-budget', feature, row, budgetMs };
+      return withServed({ outcome: 'over-budget', feature, row, budgetMs }, input, policy);
     }
     case 'failed': {
-      if (!keysAllowed(input, ['outcome', 'reason'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'reason', 'served'], policy)) return null;
       const reason = own(input, 'reason');
       const known = EXCLUSION_DOCUMENT_FAILURES.find((failure) => failure === reason);
-      return known === undefined ? null : { outcome: 'failed', reason: known };
+      return known === undefined
+        ? null
+        : withServed({ outcome: 'failed', reason: known }, input, policy);
     }
     default:
       return null;

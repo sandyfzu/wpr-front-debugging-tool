@@ -17,6 +17,7 @@ const HOST: InterceptionHost = {
   shouldIntercept: () => Promise.resolve(true),
   rewriteDocument: () => Promise.resolve(null),
   documentBodyUnavailable: () => Promise.resolve(),
+  documentNotServed: () => Promise.resolve(),
   interceptionEnded: () => Promise.resolve()
 };
 
