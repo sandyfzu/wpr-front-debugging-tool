@@ -47,9 +47,11 @@ const STEPS = SESSION_STEP_TIMEOUTS_MS;
  * The CPU an apply spends prevalidating its set before anything is queued
  * (ms) — synchronous, so a bound, not a timeout. Measured 2026-10-20 on
  * cap-sized adversarial sets (32 distinct rows × ~2 040 chars, the whole
- * 64 Ki-char budget, e.g. `(?i:…)` scopes of distinct negated classes):
- * ≤ 112 ms cold, ~0.1 ms memoized; this keeps ~9× headroom for a slower
- * machine (the measurement is pinned by a test).
+ * 64 Ki-char budget: `(?i:…)` scopes of distinct negated / mid-size /
+ * half-range classes, looped nullable sequences, looped alternations of
+ * huge zero-width repeats): ≤ 160 ms cold on the development machine,
+ * 287–319 ms in an independent verification run, ~0.1 ms memoized. The
+ * bound keeps ≥ 3× headroom over the worst observed (pinned by tests).
  */
 export const PREVALIDATION_CPU_BOUND_MS = 1_000;
 

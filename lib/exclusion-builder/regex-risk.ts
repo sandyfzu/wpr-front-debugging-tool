@@ -827,15 +827,22 @@ function computeHead(node: RegexNode): Head {
     }
     case 'repeat': {
       const body = headOf(node.body);
+      // A zero-width body (`(?:)`, `\b`, a lookaround) adds no positions; a
+      // non-fixed one only its first copy's; otherwise copies stop past the
+      // limit — never work proportional to the repeat count.
+      const zeroWidth = body.fixed && body.sets.length === 0;
+      const copies = zeroWidth
+        ? 0
+        : body.fixed
+          ? Math.min(node.min, HEAD_LIMIT + 1)
+          : Math.min(node.min, 1);
       const sets: CharSet[] = [];
-      for (let copy = 0; copy < node.min && sets.length <= HEAD_LIMIT; copy++) {
-        sets.push(...body.sets);
-        if (!body.fixed) break;
-      }
+      for (let copy = 0; copy < copies; copy++) sets.push(...body.sets);
       const capped = sets.length > HEAD_LIMIT;
       return {
         sets: capped ? sets.slice(0, HEAD_LIMIT) : sets,
-        fixed: body.fixed && node.min === node.max && !capped
+        // Every string of a zero-width body is empty, whatever the count.
+        fixed: zeroWidth || (body.fixed && node.min === node.max && !capped)
       };
     }
   }

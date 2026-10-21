@@ -264,6 +264,23 @@ describe('reasons', () => {
 });
 
 describe('robustness', () => {
+  it.each([
+    ['(?:(?:\\b){2000000000}a|b)+', null],
+    ['(?:(?:){100000000}a|ab)+', 'overlapping-alternation'],
+    ['(?:(?:^){2000000000}|a)+', 'overlapping-alternation'], // an empty branch prefixes any other
+    ['(?:(?=a){2000000000}a|ab)+', 'overlapping-alternation'],
+    ['(?:(?:\\b){0,2000000000}a|b)+', null],
+    ['(?:(?:a){2000000000}|b)+', null],
+    ['(?:(?:ab){1000000000}|ac)+', null],
+    ['(?:(?:ab){1000000000}|aba)+', 'overlapping-alternation'],
+    ['(?:a{2000000000}b|a{1999999999}c)+', 'overlapping-alternation']
+  ] as const)('analyzes %j without work proportional to its repeat count', (row, risk) => {
+    expect(() => new RegExp(row)).not.toThrow();
+    const started = performance.now();
+    expect(regexBacktrackingRisk(row)).toBe(risk);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
+
   it('never throws on any compilable pattern built from the syntax alphabet', () => {
     const alphabet = [
       'a',

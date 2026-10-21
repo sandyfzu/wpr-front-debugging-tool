@@ -179,14 +179,24 @@ describe('declared bounds', () => {
 });
 
 describe('prevalidation CPU', () => {
-  /** A cap-sized adversarial set: distinct rows filling the whole char budget. */
-  function capSizedSet(unitFor: (row: number, index: number) => string): ExclusionSet {
+  /**
+   * A cap-sized adversarial set: distinct rows filling the whole char
+   * budget, each `prefix` + as many units as fit + `suffix`.
+   */
+  function capSizedSet(
+    unitFor: (row: number, index: number) => string,
+    [prefix, suffix]: readonly [string, string]
+  ): ExclusionSet {
     const rowChars = EXCLUSION_SET_LIMITS.rowChars - 4;
     const rowCount = Math.floor(EXCLUSION_SET_LIMITS.totalChars / EXCLUSION_SET_LIMITS.rowChars);
     const rows = Array.from({ length: rowCount }, (_, row) => {
       let body = '';
-      for (let index = 0; body.length + 16 <= rowChars - 6; index++) body += unitFor(row, index);
-      return `(?i:${body})`;
+      for (let index = 0; ; index++) {
+        const unit = unitFor(row, index);
+        if (prefix.length + body.length + unit.length + suffix.length > rowChars) break;
+        body += unit;
+      }
+      return `${prefix}${body}${suffix}`;
     });
     return {
       rows: {
@@ -201,22 +211,48 @@ describe('prevalidation CPU', () => {
   /** A `\uXXXX` escape for a code unit. */
   const escape = (code: number): string => `\\u${code.toString(16).padStart(4, '0')}`;
 
+  const CASE_SCOPE = ['(?i:', ')'] as const;
   it.each([
     [
       'distinct negated classes',
-      (row: number, index: number) => `[^${escape(((row * 400 + index) % 0xfffe) + 1)}]`
+      (row: number, index: number) => `[^${escape(((row * 400 + index) % 0xfffe) + 1)}]`,
+      CASE_SCOPE
     ],
     [
       'distinct mid-size ranges',
-      (row: number, index: number) => `[A-${escape(0x2000 + row * 400 + index)}]`
+      (row: number, index: number) => `[A-${escape(0x2000 + row * 400 + index)}]`,
+      CASE_SCOPE
+    ],
+    [
+      'distinct half-range classes',
+      (row: number, index: number) => `[\\u0000-${escape(0x7000 + row * 400 + index)}]`,
+      CASE_SCOPE
+    ],
+    [
+      'looped nullable sequences of scattered units',
+      (row: number, index: number) => `${escape(0x3000 + 2 * (row * 400 + index))}?`,
+      ['(?i:(?:\\u00ff', ')*)']
+    ],
+    [
+      'looped alternations of huge zero-width repeats',
+      (row: number, index: number) => `(?:\\b){2000000000}${escape(0x100 + row * 400 + index)}|`,
+      ['(?:', 'q)+']
+    ],
+    [
+      'looped alternations of huge empty repeats',
+      (row: number, index: number) => `(?:){100000000}${escape(0x100 + row * 400 + index)}|`,
+      ['(?:', 'q)+']
     ]
-  ])('stays under its declared bound for a cap-sized set of %s', (_case, unitFor) => {
-    const set = capSizedSet(unitFor);
-    const chars = [...set.rows.delayJs, ...set.rows.deferJs].join('').length;
-    expect(chars).toBeLessThanOrEqual(EXCLUSION_SET_LIMITS.totalChars);
-    expect(chars).toBeGreaterThan(EXCLUSION_SET_LIMITS.totalChars * 0.95);
-    const started = performance.now();
-    expect(prevalidateExclusionSet(set).valid).toBe(true);
-    expect(performance.now() - started).toBeLessThan(PREVALIDATION_CPU_BOUND_MS);
-  });
+  ] as const)(
+    'stays under its declared bound for a cap-sized set of %s',
+    (_case, unitFor, wrap) => {
+      const set = capSizedSet(unitFor, wrap);
+      const chars = [...set.rows.delayJs, ...set.rows.deferJs].join('').length;
+      expect(chars).toBeLessThanOrEqual(EXCLUSION_SET_LIMITS.totalChars);
+      expect(chars).toBeGreaterThan(EXCLUSION_SET_LIMITS.totalChars * 0.95);
+      const started = performance.now();
+      expect(prevalidateExclusionSet(set).valid).toBe(true);
+      expect(performance.now() - started).toBeLessThan(PREVALIDATION_CPU_BOUND_MS);
+    }
+  );
 });
