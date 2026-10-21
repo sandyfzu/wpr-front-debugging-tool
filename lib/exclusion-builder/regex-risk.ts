@@ -37,8 +37,12 @@
  *    between them.
  * 3. **repeated back-reference** — a back-reference inside a looped group
  *    (matching it re-runs a capture whose length varies per attempt).
- * 4. **too complex** — a row past {@link REGEX_ANALYSIS_LIMITS} is not
- *    analyzed and is rejected (the analysis stays bounded and never throws).
+ * 4. **too complex** — a row past {@link REGEX_ANALYSIS_LIMITS} (length,
+ *    nesting) is not analyzed, and an analysis that would spend more than
+ *    its work budget (`workBase + workPerChar × length` units, counted per
+ *    inner step) stops: both are rejected. So the analysis' cost is linear
+ *    in the row's length by construction, whatever its shape or the
+ *    machine, deterministic, and it never throws.
  *
  * Character facts are exact over UTF-16 code units for every flag a row
  * can carry: rows compile without flags, and the modifier groups' flags
@@ -61,7 +65,11 @@ export const REGEX_ANALYSIS_LIMITS = {
   /** Source characters. */
   chars: 4096,
   /** Nested groups (`(` depth, any kind). */
-  groupDepth: 64
+  groupDepth: 64,
+  /** Work units every analysis may spend, plus… */
+  workBase: 2_500,
+  /** …work units per source character (see `analysisWorkBudget`). */
+  workPerChar: 50
 } as const;
 
 /** The inline reason each risk is reported with (one invalid-row reason per risk). */
@@ -72,7 +80,7 @@ export const BACKTRACKING_RISK_REASONS: Readonly<Record<BacktrackingRisk, string
     'Risky regular expression: inside a repetition, one alternative can match the start of another (like `(a|ab)*`) — it can take exponential time',
   'repeated-backreference':
     'Risky regular expression: a back-reference inside a repeated group can take exponential time',
-  'too-complex': `Risky regular expression: too long or too deeply nested to check (over ${String(REGEX_ANALYSIS_LIMITS.chars)} characters or ${String(REGEX_ANALYSIS_LIMITS.groupDepth)} nested groups) — simplify it`
+  'too-complex': `Risky regular expression: too long, too deeply nested or too intricate to check (over ${String(REGEX_ANALYSIS_LIMITS.chars)} characters, ${String(REGEX_ANALYSIS_LIMITS.groupDepth)} nested groups, or its analysis budget) — simplify it`
 };
 
 /**
@@ -81,6 +89,32 @@ export const BACKTRACKING_RISK_REASONS: Readonly<Record<BacktrackingRisk, string
  * beyond one is a loop.
  */
 export const LOOP_REPEAT_LIMIT = 1;
+
+// ── Work accounting ──────────────────────────────────────────────────────
+
+/** An analysis spent its work budget (the row is reported too complex). */
+class WorkBudgetExceeded extends Error {
+  override readonly name = 'WorkBudgetExceeded';
+}
+
+/** Work units left for the running analysis (unbounded outside one). */
+let workLeft = Infinity;
+
+/** Work units spent by the running analysis. */
+let workSpent = 0;
+
+/**
+ * Charge `units` of work (one unit ≈ one inner-loop step: a range merged,
+ * a node visited, a position compared) to the running analysis, before
+ * the step runs — so the work done never exceeds the budget.
+ *
+ * @throws {@link WorkBudgetExceeded} when the step would overspend.
+ */
+function charge(units: number): void {
+  if (units > workLeft) throw new WorkBudgetExceeded('analysis work budget spent');
+  workLeft -= units;
+  workSpent += units;
+}
 
 // ── Character sets ───────────────────────────────────────────────────────
 
@@ -92,8 +126,14 @@ const MAX_UNIT = 0xffff;
 const NO_CHARS: CharSet = [];
 const ALL_CHARS: CharSet = [[0, MAX_UNIT]];
 
+/** Work units of sorting `count` items (n·⌈log₂(n + 1)⌉ comparisons). */
+function sortWork(count: number): number {
+  return count * Math.ceil(Math.log2(count + 1));
+}
+
 /** Normalize ranges: sort, then merge overlapping or adjacent ones. */
 function normalize(ranges: readonly (readonly [number, number])[]): CharSet {
+  charge(sortWork(ranges.length));
   const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
   const merged: [number, number][] = [];
   for (const [low, high] of sorted) {
@@ -104,15 +144,31 @@ function normalize(ranges: readonly (readonly [number, number])[]): CharSet {
   return merged;
 }
 
-/** The union of two sets. */
+/** The union of two sets (a linear merge — both are normalized). */
 function union(a: CharSet, b: CharSet): CharSet {
   if (a.length === 0) return b;
   if (b.length === 0) return a;
-  return normalize([...a, ...b]);
+  charge(a.length + b.length);
+  const merged: [number, number][] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const fromA = a[i];
+    const fromB = b[j];
+    const takeA = fromB === undefined || (fromA !== undefined && fromA[0] <= fromB[0]);
+    const [low, high] = (takeA ? fromA : fromB) as readonly [number, number];
+    if (takeA) i++;
+    else j++;
+    const last = merged.at(-1);
+    if (last !== undefined && low <= last[1] + 1) last[1] = Math.max(last[1], high);
+    else merged.push([low, high]);
+  }
+  return merged;
 }
 
 /** Every code unit not in the set. */
 function complement(set: CharSet): CharSet {
+  charge(set.length);
   const out: [number, number][] = [];
   let next = 0;
   for (const [low, high] of set) {
@@ -125,6 +181,7 @@ function complement(set: CharSet): CharSet {
 
 /** Whether two sets share a code unit. */
 function intersects(a: CharSet, b: CharSet): boolean {
+  charge(a.length + b.length);
   let i = 0;
   let j = 0;
   while (i < a.length && j < b.length) {
@@ -133,6 +190,20 @@ function intersects(a: CharSet, b: CharSet): boolean {
     if (aLow <= bHigh && bLow <= aHigh) return true;
     if (aHigh < bHigh) i++;
     else j++;
+  }
+  return false;
+}
+
+/** Whether a set holds a code unit (binary search; uncharged — callers charge for it). */
+function contains(set: CharSet, code: number): boolean {
+  let low = 0;
+  let high = set.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const [from, to] = set[middle] as readonly [number, number];
+    if (code < from) high = middle - 1;
+    else if (code > to) low = middle + 1;
+    else return true;
   }
   return false;
 }
@@ -171,34 +242,55 @@ function multiMemberCaseClasses(): readonly (readonly number[])[] {
   return caseClasses;
 }
 
-/** The case-folding tables, built on first use. */
-interface CaseTables {
-  /** Every multi-member case class (units sharing one canonical form). */
-  readonly classes: readonly (readonly number[])[];
+/** One multi-member case class. */
+interface CaseClass {
+  /** Its units, ascending. */
+  readonly members: readonly number[];
+  readonly min: number;
+  readonly max: number;
+}
+
+/** Units per block of the stabbing index. */
+const CASE_BLOCK_UNITS = 64;
+
+/**
+ * The case-folding index: for each 64-unit block, the classes whose span
+ * (lowest to highest member) overlaps it — so the classes a range boundary
+ * cuts through are found without scanning every class.
+ */
+interface CaseIndex {
+  readonly classes: readonly CaseClass[];
   /** Unit → index of its class, or -1. */
   readonly classOf: Int32Array;
-  /** Every unit of every class, ascending. */
+  /** Every member of every class, ascending (counts and walks a range's members). */
   readonly units: Int32Array;
-  /** The same units as a set. */
-  readonly unitSet: CharSet;
+  readonly byBlock: readonly (readonly number[])[];
 }
 
-let caseTables: CaseTables | null = null;
+let caseIndex: CaseIndex | null = null;
 
-/** The case-folding tables (65 536 canonicalizations, once). */
-function getCaseTables(): CaseTables {
-  if (caseTables !== null) return caseTables;
-  const classes = multiMemberCaseClasses();
+/** The case-folding index (65 536 canonicalizations, once; not charged). */
+function getCaseIndex(): CaseIndex {
+  if (caseIndex !== null) return caseIndex;
+  const classes: CaseClass[] = multiMemberCaseClasses().map((members) => ({
+    members,
+    min: members[0] as number,
+    max: members.at(-1) as number
+  }));
+  const byBlock: number[][] = Array.from({ length: (MAX_UNIT + 1) / CASE_BLOCK_UNITS }, () => []);
   const classOf = new Int32Array(MAX_UNIT + 1).fill(-1);
-  classes.forEach((members, index) => {
-    for (const code of members) classOf[code] = index;
+  classes.forEach((caseClass, index) => {
+    for (const code of caseClass.members) classOf[code] = index;
+    const first = Math.floor(caseClass.min / CASE_BLOCK_UNITS);
+    const last = Math.floor(caseClass.max / CASE_BLOCK_UNITS);
+    for (let block = first; block <= last; block++) byBlock[block]?.push(index);
   });
-  const units = Int32Array.from(classes.flat()).sort();
-  caseTables = { classes, classOf, units, unitSet: normalize([...units].map((c) => [c, c])) };
-  return caseTables;
+  const units = Int32Array.from(classes.flatMap((caseClass) => caseClass.members)).sort();
+  caseIndex = { classes, classOf, units, byBlock };
+  return caseIndex;
 }
 
-/** The first index of `sorted` holding a value ≥ `value`. */
+/** The first index of `sorted` holding a value ≥ `value` (binary search; callers charge). */
 function lowerBound(sorted: Int32Array, value: number): number {
   let low = 0;
   let high = sorted.length;
@@ -210,60 +302,148 @@ function lowerBound(sorted: Int32Array, value: number): number {
   return low;
 }
 
-/** `a` without the units of `b`. */
-function difference(a: CharSet, b: CharSet): CharSet {
-  return b.length === 0 ? a : complement(union(complement(a), b));
+/** Whether a class has a member inside `[low, high]`. */
+function hasMemberIn(caseClass: CaseClass, low: number, high: number): boolean {
+  return caseClass.members.some((code) => code >= low && code <= high);
 }
 
-/** Bound of the fold memo (keyed by the set's ranges). */
-const FOLD_MEMO_LIMIT = 256;
+/** Units a set's complement may hold for the complement-side fold. */
+const SMALL_COMPLEMENT_UNITS = 64;
 
-/** Memo: a set's ranges → its fold (class escapes and repeated classes hit it). */
-const foldMemo = new Map<string, CharSet>();
+/**
+ * Work units charged per class examined while folding — examining one
+ * costs several plain steps (its span, its members), so the budget keeps
+ * tracking time.
+ */
+const FOLD_CANDIDATE_WORK = 4;
 
-/** Close a set under case-insensitive matching (what an `(?i:…)` scope matches). */
+/** Units a set may hold for the unit-by-unit fold (literals, small classes). */
+const SMALL_SET_UNITS = 64;
+
+/**
+ * Fold a small set (a literal, `[abc]`) unit by unit through the class
+ * table: one lookup per unit.
+ *
+ * @returns The fold, or null when the set is not small.
+ */
+function foldUnitByUnit(set: CharSet): CharSet | null {
+  charge(set.length);
+  const size = set.reduce((total, [low, high]) => total + high - low + 1, 0);
+  if (size > SMALL_SET_UNITS) return null;
+  const { classes, classOf } = getCaseIndex();
+  const extra: [number, number][] = [];
+  for (const [low, high] of set) {
+    for (let code = low; code <= high; code++) {
+      charge(1);
+      const index = classOf[code] as number;
+      if (index >= 0)
+        for (const member of (classes[index] as CaseClass).members) extra.push([member, member]);
+    }
+  }
+  return extra.length === 0 ? set : union(set, normalize(extra));
+}
+
+/**
+ * Fold a set whose complement holds at most {@link SMALL_COMPLEMENT_UNITS}
+ * units (a negated class): a missing unit stays missing only when every
+ * member of its case class is missing too.
+ *
+ * @returns The fold, or null when the complement is not small.
+ */
+function foldFromComplement(set: CharSet): CharSet | null {
+  const missing = complement(set);
+  charge(missing.length);
+  const size = missing.reduce((total, [low, high]) => total + high - low + 1, 0);
+  if (size > SMALL_COMPLEMENT_UNITS) return null;
+  const { classes, classOf } = getCaseIndex();
+  const stillMissing: [number, number][] = [];
+  for (const [low, high] of missing) {
+    for (let code = low; code <= high; code++) {
+      const index = classOf[code] as number;
+      const members = index < 0 ? [code] : (classes[index] as CaseClass).members;
+      charge(FOLD_CANDIDATE_WORK);
+      if (members.every((member) => contains(missing, member))) stillMissing.push([code, code]);
+    }
+  }
+  return complement(normalize(stillMissing));
+}
+
+/**
+ * Close a set under case-insensitive matching (what an `(?i:…)` scope
+ * matches): the set plus every member of each class it touches. A class
+ * touching a range adds something new only if it also has a member outside
+ * it — then its span crosses one of the range's two boundaries — so only
+ * the classes indexed at those two boundary blocks are examined. A set
+ * missing only a few units (a negated class) folds from its complement.
+ * Memoized within one analysis.
+ */
 function foldCase(set: CharSet): CharSet {
+  // The memo key alone costs a few steps per range.
+  charge(FOLD_CANDIDATE_WORK * (1 + set.length));
   const key = set.map(([low, high]) => `${String(low)}-${String(high)}`).join(',');
-  const memo = foldMemo.get(key);
+  const memo = analysisFolds.get(key);
   if (memo !== undefined) return memo;
   const folded = computeFold(set);
-  if (foldMemo.size >= FOLD_MEMO_LIMIT) {
-    const oldest = foldMemo.keys().next();
-    if (oldest.done !== true) foldMemo.delete(oldest.value);
-  }
-  foldMemo.set(key, folded);
+  analysisFolds.set(key, folded);
   return folded;
 }
 
 /**
- * {@link foldCase} without the memo: find the classes the set touches by
- * walking only the class units inside its ranges (≤ a few thousand), then
- * add those classes — as the whole class-unit set minus the untouched
- * classes when most are touched (a negated class), keeping it near-linear.
+ * Folds computed by the running analysis (cleared per analysis, so a
+ * row's work — and verdict — never depends on rows analyzed before it).
  */
+const analysisFolds = new Map<string, CharSet>();
+
+/** {@link foldCase} without the memo. */
 function computeFold(set: CharSet): CharSet {
-  const { classes, classOf, units, unitSet } = getCaseTables();
-  const touched = new Uint8Array(classes.length);
-  let count = 0;
-  for (const [low, high] of set) {
-    for (let k = lowerBound(units, low); k < units.length && (units[k] as number) <= high; k++) {
-      const index = classOf[units[k] as number] as number;
-      if (touched[index] === 0) {
-        touched[index] = 1;
-        count++;
-      }
+  const fromUnits = foldUnitByUnit(set);
+  if (fromUnits !== null) return fromUnits;
+  const fromComplement = foldFromComplement(set);
+  if (fromComplement !== null) return fromComplement;
+  const extra: [number, number][] = [];
+  for (const [low, high] of set) foldRange(low, high, extra);
+  return extra.length === 0 ? set : union(set, normalize(extra));
+}
+
+/**
+ * Collect into `extra` the members outside `[low, high]` of every case
+ * class with a member inside it, by whichever is cheaper: walking the class
+ * members inside the range, or examining the classes indexed at the
+ * range's two boundary blocks (a class with members on both sides spans a
+ * boundary).
+ */
+function foldRange(low: number, high: number, extra: [number, number][]): void {
+  const { classes, classOf, units, byBlock } = getCaseIndex();
+  charge(2);
+  const from = lowerBound(units, low);
+  const to = lowerBound(units, high + 1);
+  const atBoundaries = [
+    ...(byBlock[Math.floor(low / CASE_BLOCK_UNITS)] ?? []),
+    ...(byBlock[Math.floor(high / CASE_BLOCK_UNITS)] ?? [])
+  ];
+  const added = new Set<CaseClass>();
+  // Each class once, and only its members outside the range (the rest are in the set).
+  const addOutside = (caseClass: CaseClass): void => {
+    if (added.has(caseClass)) return;
+    added.add(caseClass);
+    for (const code of caseClass.members) if (code < low || code > high) extra.push([code, code]);
+  };
+  if (to - from <= FOLD_CANDIDATE_WORK * atBoundaries.length) {
+    charge(to - from);
+    for (let k = from; k < to; k++) {
+      const caseClass = classes[classOf[units[k] as number] as number] as CaseClass;
+      if (caseClass.min < low || caseClass.max > high) addOutside(caseClass);
     }
+    return;
   }
-  if (count === 0) return set;
-  const pick = (wanted: number): [number, number][] =>
-    classes.flatMap((members, index) =>
-      touched[index] === wanted ? members.map((code): [number, number] => [code, code]) : []
-    );
-  if (count * 2 > classes.length) {
-    // Untouched classes have no unit in the set: removing them is exact.
-    return difference(union(set, unitSet), normalize(pick(0)));
+  charge(FOLD_CANDIDATE_WORK * atBoundaries.length);
+  for (const index of atBoundaries) {
+    const caseClass = classes[index] as CaseClass;
+    const cutsRange =
+      (caseClass.min < low && caseClass.max >= low) ||
+      (caseClass.min <= high && caseClass.max > high);
+    if (cutsRange && hasMemberIn(caseClass, low, high)) addOutside(caseClass);
   }
-  return union(set, normalize(pick(1)));
 }
 
 const DIGITS: CharSet = [[0x30, 0x39]];
@@ -373,6 +553,7 @@ const BACKREF_NODE: RegexNode = {
 
 /** A sequence (one item collapses to itself); its sets are normalized once. */
 function seqNode(items: readonly RegexNode[]): RegexNode {
+  charge(items.length);
   if (items.length === 0) return EMPTY_NODE;
   if (items.length === 1) return items[0] as RegexNode;
   const first: (readonly [number, number])[] = [];
@@ -397,6 +578,7 @@ function seqNode(items: readonly RegexNode[]): RegexNode {
 
 /** An alternation (one branch collapses to itself). */
 function altNode(branches: readonly RegexNode[]): RegexNode {
+  charge(branches.length);
   if (branches.length === 1) return branches[0] as RegexNode;
   return {
     kind: 'alt',
@@ -429,6 +611,9 @@ class UnmodeledSyntax extends Error {
   override readonly name = 'UnmodeledSyntax';
 }
 
+/** Work units of one sticky-matcher read (a native regex exec). */
+const QUANTIFIER_BRACES_WORK = 4;
+
 /** Sticky matchers read at the cursor (never slicing the source). */
 const QUANTIFIER_BRACES = /\{(\d+)(?:(,)(\d*))?\}/y;
 const MODIFIER_GROUP = /\(\?([ims]*)(?:-([ims]*))?:/y;
@@ -452,6 +637,7 @@ interface GroupScan {
  * decides what `\N`/`\k` mean in Annex B), and measure the group depth.
  */
 function scanGroups(source: string): GroupScan {
+  charge(source.length);
   let count = 0;
   let named = false;
   let depth = 0;
@@ -540,6 +726,7 @@ class PatternParser {
   private sequence(): RegexNode {
     const items: RegexNode[] = [];
     for (let char = this.peek(); char !== undefined && char !== '|' && char !== ')';) {
+      charge(1);
       items.push(this.quantified(this.atom()));
       char = this.peek();
     }
@@ -556,6 +743,7 @@ class PatternParser {
     if (bounds !== null) {
       this.position++;
     } else if (char === '{') {
+      charge(QUANTIFIER_BRACES_WORK);
       const braces = this.matchAt(QUANTIFIER_BRACES);
       if (braces === null) return atom; // a literal `{` was the atom's neighbour
       const min = Number(braces[1]);
@@ -725,6 +913,7 @@ class PatternParser {
     const members: (readonly [number, number])[] = [];
     while (this.peek() !== ']') {
       if (this.peek() === undefined) throw new UnmodeledSyntax('unterminated class');
+      charge(1);
       const low = this.classAtom();
       if (this.peek() === '-' && this.peek(1) !== ']' && this.peek(1) !== undefined) {
         this.position++;
@@ -797,6 +986,7 @@ function headOf(node: RegexNode): Head {
 
 /** {@link headOf} without the memo. */
 function computeHead(node: RegexNode): Head {
+  charge(1);
   switch (node.kind) {
     case 'chars':
       return { sets: [node.first], fixed: true };
@@ -808,6 +998,7 @@ function computeHead(node: RegexNode): Head {
       const sets: CharSet[] = [];
       for (const item of node.items) {
         const head = headOf(item);
+        charge(head.sets.length);
         sets.push(...head.sets);
         if (sets.length > HEAD_LIMIT) return { sets: sets.slice(0, HEAD_LIMIT), fixed: false };
         if (!head.fixed) return { sets, fixed: false };
@@ -819,6 +1010,7 @@ function computeHead(node: RegexNode): Head {
       // stay aligned only when all of them have one fixed length.
       const branchHeads = node.branches.map(headOf);
       const length = Math.min(...branchHeads.map((head) => head.sets.length));
+      charge(branchHeads.length * (1 + length));
       const sets = Array.from({ length }, (_, index) =>
         normalize(branchHeads.flatMap((head) => head.sets[index] ?? NO_CHARS))
       );
@@ -837,6 +1029,7 @@ function computeHead(node: RegexNode): Head {
           ? Math.min(node.min, HEAD_LIMIT + 1)
           : Math.min(node.min, 1);
       const sets: CharSet[] = [];
+      charge(copies * body.sets.length);
       for (let copy = 0; copy < copies; copy++) sets.push(...body.sets);
       const capped = sets.length > HEAD_LIMIT;
       return {
@@ -854,9 +1047,34 @@ function computeHead(node: RegexNode): Head {
  * disjoint units (sound — never a missed overlap).
  */
 function mayPrefixOverlap(a: Head, b: Head): boolean {
+  charge(1);
   const length = Math.min(a.sets.length, b.sets.length);
   for (let index = 0; index < length; index++) {
     if (!intersects(a.sets[index] as CharSet, b.sets[index] as CharSet)) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether every head fixes its first unit and no two share one — then no
+ * branch can prefix another (one linear pass instead of every pair).
+ */
+function firstUnitsDisjoint(branchHeads: readonly Head[]): boolean {
+  const ranges: (readonly [number, number])[] = [];
+  for (const head of branchHeads) {
+    const first = head.sets[0];
+    if (first === undefined) return false;
+    ranges.push(...first);
+  }
+  charge(sortWork(ranges.length));
+  // Ranges of one set never overlap, so any overlap after sorting is two heads sharing a unit.
+  ranges.sort((a, b) => a[0] - b[0]);
+  for (let index = 1; index < ranges.length; index++) {
+    if (
+      (ranges[index] as readonly [number, number])[0] <=
+      (ranges[index - 1] as readonly [number, number])[1]
+    )
+      return false;
   }
   return true;
 }
@@ -869,7 +1087,13 @@ function hasPrefixOverlap(node: AltNode): boolean {
   const memo = altOverlaps.get(node);
   if (memo !== undefined) return memo;
   const branchHeads = node.branches.map(headOf);
+  // Pairwise-disjoint first units settle it in one pass; only otherwise do
+  // pairs need comparing further.
   let overlap = false;
+  if (firstUnitsDisjoint(branchHeads)) {
+    altOverlaps.set(node, false);
+    return false;
+  }
   for (let i = 0; i < branchHeads.length && !overlap; i++) {
     for (let j = i + 1; j < branchHeads.length && !overlap; j++) {
       overlap = mayPrefixOverlap(branchHeads[i] as Head, branchHeads[j] as Head);
@@ -891,6 +1115,7 @@ function isLoop(node: RegexNode): node is RepeatNode {
  * iteration, then the next iteration's start).
  */
 function iterationRisk(node: RegexNode, follow: CharSet): BacktrackingRisk | null {
+  charge(1);
   switch (node.kind) {
     case 'seq': {
       let after = follow;
@@ -937,6 +1162,7 @@ function childrenOf(node: RegexNode): readonly RegexNode[] {
 
 /** The first risk anywhere in the tree (outer loops first), or null. */
 function treeRisk(node: RegexNode): BacktrackingRisk | null {
+  charge(1);
   if (isLoop(node)) {
     const risk = loopRisk(node);
     if (risk !== null) return risk;
@@ -948,24 +1174,61 @@ function treeRisk(node: RegexNode): BacktrackingRisk | null {
   return null;
 }
 
-/** Analyze a source within the limits; never throws. */
-function analyze(source: string): BacktrackingRisk | null {
+/** One uncached analysis: the verdict and the work it spent. */
+export interface RegexRiskAnalysis {
+  readonly risk: BacktrackingRisk | null;
+  /** Work units spent — never more than the source's {@link analysisWorkBudget}. */
+  readonly work: number;
+}
+
+/**
+ * The work an analysis of `source` may spend — linear in its length, so a
+ * whole set's prevalidation is bounded by its character budget, whatever
+ * shapes its rows take.
+ *
+ * @param source The pattern row.
+ */
+export function analysisWorkBudget(source: string): number {
+  return REGEX_ANALYSIS_LIMITS.workBase + REGEX_ANALYSIS_LIMITS.workPerChar * source.length;
+}
+
+/** The analysis proper (limits checked first); throws only past the budget. */
+function analyzeWithinLimits(source: string): BacktrackingRisk | null {
   if (source.length > REGEX_ANALYSIS_LIMITS.chars) return 'too-complex';
   const groups = scanGroups(source);
   if (groups.depth > REGEX_ANALYSIS_LIMITS.groupDepth) return 'too-complex';
-  try {
-    const parser = new PatternParser(source, groups);
-    const root = parser.parse();
-    for (const node of [root, ...parser.lookarounds]) {
-      const risk = treeRisk(node);
-      if (risk !== null) return risk;
-    }
-    return null;
-  } catch (cause) {
-    // Unmodeled syntax is accepted; anything else (e.g. a stack overflow)
-    // means the row could not be checked — rejected, never thrown.
-    return cause instanceof UnmodeledSyntax ? null : 'too-complex';
+  const parser = new PatternParser(source, groups);
+  const root = parser.parse();
+  for (const node of [root, ...parser.lookarounds]) {
+    const risk = treeRisk(node);
+    if (risk !== null) return risk;
   }
+  return null;
+}
+
+/**
+ * Analyze a source under its work budget, uncached; never throws.
+ * Deterministic: the same source spends the same work and gets the same
+ * verdict, whatever ran before it.
+ *
+ * @param source The pattern row (no flags).
+ */
+export function analyzeRegexRisk(source: string): RegexRiskAnalysis {
+  workLeft = analysisWorkBudget(source);
+  workSpent = 0;
+  analysisFolds.clear();
+  let risk: BacktrackingRisk | null;
+  try {
+    risk = analyzeWithinLimits(source);
+  } catch (cause) {
+    // Unmodeled syntax is accepted; anything else — the budget spent, a
+    // stack overflow — means the row could not be checked: rejected, never thrown.
+    risk = cause instanceof UnmodeledSyntax ? null : 'too-complex';
+  } finally {
+    workLeft = Infinity;
+    analysisFolds.clear();
+  }
+  return { risk, work: workSpent };
 }
 
 /**
@@ -989,7 +1252,7 @@ const riskMemo = new Map<string, BacktrackingRisk | null>();
 export function regexBacktrackingRisk(source: string): BacktrackingRisk | null {
   const memo = riskMemo.get(source);
   if (memo !== undefined) return memo;
-  const risk = analyze(source);
+  const { risk } = analyzeRegexRisk(source);
   if (riskMemo.size >= RISK_MEMO_LIMIT) {
     const oldest = riskMemo.keys().next();
     if (oldest.done !== true) riskMemo.delete(oldest.value);
