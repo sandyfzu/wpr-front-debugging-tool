@@ -14,6 +14,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **P10 replanned (2026-10-20, owner approval pending for G-1..G-5):** [Builder+10.1](./11-phase-10-exclusion-builder.md). Parked file/page design superseded: in-page session shell + response-interception apply (Chromium CDP `Fetch`, Firefox `filterResponseData`); shell/pipeline is the shared seam P13/P14 testers mount into (owner mandate: improve them all). **P10A spike closed 2026-10-20** (arms verified; two design findings: DevTools-open attach succeeded on CFT 156 — re-verify on stable Chrome before P10D; Firefox port-in-pattern silence widened to tabs/permissions — strip ports for builder-composed patterns; infobar/2b manual remainder). **P10B engine closed 2026-10-20** (audited + fixed, 3151 green, no consumers). Next: P10C contracts ∥ P10D/E backends — implementation still gated on owner G-1..G-5.
 - **P11 shipped (P11A/P11B/P11C + P11.1 site matrix, 2026-10-20):** [detection+11.1](./12-phase-11-detection-coverage.md); P14.5 still owns its later corrections (P11.1 inputs M1–M4 recorded there; M5 resolved 2026-10-21).
 - **P19 planned (owner 2026-10-20):** [on-page command palette + UI gate](./19-phase-19-page-command-palette.md) — after P10/P11; **G-1 resolved 2026-10-20** (plan approved); chord decisions resolved (in-page capture, default Alt+K); P19D serializes with P12M's mount edits.
+- **P20 planned (owner 2026-10-21):** [nowprocket context-menu entry](./20-phase-20-nowprocket-context-menu.md) — independent small slice (shipped P2 menu registry), parallel P6G.12–.13/P10/P19; P19C must carry the menu-only row unchanged.
 - **P12 partial:** [widget+12.1](./13-phase-12-on-page-inspector.md); early P12A detections/session drag shipped; shared mount cleanup, final registry/persistence/shortcut/controls/tools/conformance pending.
 - **P13/P14 planned:** [RUCSS+13.1](./14-phase-13-rucss-tester.md), [runtime+14.1](./15-phase-14-live-analysis-tools.md). Independent cores parallel; P14 integration follows P13 executor seam.
 - **P14.5 planned/decision-gated:** [coverage audit+tools](./15b-phase-14-5-coverage-and-tooling.md). Candidate approval≠decision gate complete.
@@ -23,7 +24,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships. 2026-10-21 Firefox158 run: F0 answered, panel hang (null `lastError`) + content-script iterator crash fixed; add-on ID (F1), badge/menus (F2/F2.1), palette (F3), header race (F6) open.
 - **Optional P17** panel home remains unscheduled/decision-gated, scope only in master.
 
-Chosen train: ~~P6/P9~~ done (P6G.12–.13 independent, may run any time; P6G.13 after P6G.12)→**P10 owner disposition**→P11→**P19 planned, after P11**→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.
+Chosen train: ~~P6/P9~~ done (P6G.12–.13 independent, may run any time; P6G.13 after P6G.12; P20 independent, any time)→**P10 owner disposition**→P11→**P19 planned, after P11**→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.
 
 ## Completed references (read on demand)
 
