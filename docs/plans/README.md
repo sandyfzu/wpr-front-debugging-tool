@@ -20,7 +20,7 @@ Consolidated2026-10-16: implementation plans and their X.1 suites now share file
 - **P14.6 planned:** [external track](./16-phase-15-hardening-release.md#p146-external-site-track), owner site or explicit scoped skip.
 - **P7 deferred:** [Diagnoser+7.1](./08-phase-7-diagnoser.md), afterP14.6 and rebuilt plugin JSON; then **P5J planned** [final header/nav](./06d-phase-5j-panel-topbar-redesign.md); then **P8** in the last pre-release slot (above); then **P15 planned** [release gate](./16-phase-15-hardening-release.md#p15-hardeningrelease).
 - **P18 closed** (2026-10-19): [exclusion original-path](./18-exclusion-original-path.md). P18.0–P18.4 implemented, gated, and the owner's live-check received — cross-origin mirror row copies the hostless original path, no pending/notice; `?nowprocket` host map retracted on live+source evidence (see the phase doc).
-- **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships; add-on ID/badge/mount/panel runtime fixes not receipted.
+- **Firefox open:** [diagnosis/fixes](./17-firefox-runtime-parity.md), not optionalP17 SBS panel home. Floor150 ships. 2026-10-21 Firefox158 run: F0 answered, panel hang (null `lastError`) + content-script iterator crash fixed; add-on ID (F1), badge/menus (F2/F2.1), palette (F3), header race (F6) open.
 - **Optional P17** panel home remains unscheduled/decision-gated, scope only in master.
 
 Chosen train: ~~P6/P9~~ done→**P10 owner disposition**→P11→**P19 planned, after P11**→P12→P13/P14→P14.5→P14.6→P7→P5J→P8→P15. Technical dependency nuance in master, not repeated as competing order.

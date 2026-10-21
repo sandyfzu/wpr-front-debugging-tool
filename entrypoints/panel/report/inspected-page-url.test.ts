@@ -83,6 +83,12 @@ describe('readInspectedPageUrl — callback form', () => {
     expect(lastError).toHaveBeenCalledTimes(1);
   });
 
+  it("treats Firefox's null lastError as success", async () => {
+    expect(await readInspectedPageUrl(callbackForm('https://a.test/'), () => null)).toBe(
+      'https://a.test/'
+    );
+  });
+
   it('answers null when the eval cannot start', async () => {
     const api: InspectedEvalApi = {
       eval: () => {

@@ -273,6 +273,23 @@ describe('platforms and ids', () => {
     expect(isCacheBypassUrl('not a url')).toBe(false);
   });
 
+  it('reads the bypass where URLSearchParams method iterators are not iterable', () => {
+    // A content-script sandbox shape: `keys()`/`values()`/`entries()` answer
+    // iterator objects lacking `Symbol.iterator` — `for…of` over them throws
+    // and `Array.from` silently answers empty.
+    const sandboxed = (href: string): URL => {
+      const url = new URL(href);
+      const bareIterator = (): object => ({ next: () => ({ done: true, value: undefined }) });
+      for (const method of ['keys', 'values', 'entries'] as const) {
+        Object.defineProperty(url.searchParams, method, { value: bareIterator });
+      }
+      return url;
+    };
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?a=1&nowprocket=1'))).toBe(true);
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocket[x]=1'))).toBe(true);
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocketx=1'))).toBe(false);
+  });
+
   it('single-sources the url patterns and search action ids', () => {
     expect(URL_PATTERNS).toEqual(['https://*/*', 'http://*/*']);
     expect(DELAY_JS_SRC).toBe('data-rocket-src');

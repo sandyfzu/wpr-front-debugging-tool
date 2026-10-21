@@ -456,11 +456,15 @@ export function isCacheBypassUrl(url: string | URL): boolean {
   } catch {
     return false;
   }
-  for (const key of parsed.searchParams.keys()) {
-    if (key === CACHE_BYPASS_QUERY_PARAM) return true;
-    if (key.startsWith(`${CACHE_BYPASS_QUERY_PARAM}[`) && key.includes(']')) return true;
-  }
-  return false;
+  // `forEach`, not `for…of keys()`: some content-script sandboxes hand out
+  // URLSearchParams iterators without `Symbol.iterator` (iteration throws,
+  // `Array.from` answers empty), and this runs on the content-script boot path.
+  let bypass = false;
+  parsed.searchParams.forEach((_value, key) => {
+    if (key === CACHE_BYPASS_QUERY_PARAM) bypass = true;
+    else if (key.startsWith(`${CACHE_BYPASS_QUERY_PARAM}[`) && key.includes(']')) bypass = true;
+  });
+  return bypass;
 }
 
 /** One platform distinguishable by response headers. */
