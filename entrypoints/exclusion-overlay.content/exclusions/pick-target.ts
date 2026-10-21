@@ -35,6 +35,7 @@ import {
 import { recoverOriginalScript } from '../../../lib/wp-rocket/minify-url-recovery';
 import { parseUrl } from '../../../utils/urls';
 import { escapeRegex } from '../../../utils/regex';
+import { HTML_VOID_ELEMENTS } from '../../../lib/exclusion-builder/html-scan';
 import type { LaneKey } from './draft';
 
 /** What the classifier reads from one element. */
@@ -45,6 +46,10 @@ export interface ElementSnapshot {
   attribute(name: string): string | null;
   /** A script's source text (inline scripts), `null` otherwise. */
   readonly text: string | null;
+  /** The element's opening tag as the DOM serializes it (lazily rendered elements' rows test it). */
+  readonly openingTag: string;
+  /** Every attribute name, in order. */
+  attributeNames(): readonly string[];
 }
 
 /** One candidate exclusion for a picked element. */
@@ -62,8 +67,8 @@ const INLINE_EXCERPT_CODE_POINTS = 48;
 /**
  * What the classifier knows about the page beyond one element: its URL and
  * the match texts of every lazily rendered element (see
- * {@link lazyRenderPeerText}) — a row naming one of them must not be a
- * substring of another's.
+ * {@link lazyRenderPeerText}) — a row naming one of them must be a
+ * substring of no other's.
  */
 export interface PickContext {
   readonly pageUrl: string;
@@ -71,15 +76,14 @@ export interface PickContext {
 }
 
 /**
- * The attributes a lazily rendered element's row may name, as they read in
- * its opening tag (`␠id="…"␠class="…"`).
+ * What the engine tests a lazily rendered element's rows against: its
+ * child-cleared markup — the opening tag plus its end tag (none for void
+ * elements).
  *
  * @param el A lazily rendered element.
  */
 export function lazyRenderPeerText(el: ElementSnapshot): string {
-  const id = el.attribute('id');
-  const classes = el.attribute('class');
-  return `${id === null ? '' : ` id="${id}"`}${classes === null ? '' : ` class="${classes}"`}`;
+  return HTML_VOID_ELEMENTS.has(el.tag) ? el.openingTag : `${el.openingTag}</${el.tag}>`;
 }
 
 /** The leading part of a served URL up to its path: scheme + host, or `//host`. */
@@ -101,7 +105,33 @@ function servedPath(raw: string, resolved: URL): string {
   const text = raw.trim().split(/[?#]/)[0] ?? '';
   const authority = URL_AUTHORITY.exec(text);
   if (authority !== null) return text.slice(authority[0].length);
-  return text.startsWith('/') ? text : resolved.pathname;
+  // Root-relative and relative paths are written as served (a relative
+  // `uploads/x.jpg` resolves elsewhere, but its served text is this).
+  return text === '' ? resolved.pathname : text.replace(/^\.\//, '');
+}
+
+/**
+ * A pattern matching `text` as served: `&` may be written `&amp;` in the
+ * markup (the DOM decodes it).
+ *
+ * @param text The literal text.
+ */
+function servedPattern(text: string): string {
+  return escapeRegex(text).replaceAll('&', '(?:&|&amp;)');
+}
+
+/**
+ * A literal that is in the served form of `text` whatever the markup's `&`
+ * encoding: the longest `&`-free stretch, when long enough to name a file.
+ *
+ * @param text The decoded text.
+ */
+function servedLiteral(text: string): string | null {
+  if (!text.includes('&')) return text;
+  const longest = text
+    .split('&')
+    .reduce((best, part) => (part.length > best.length ? part : best), '');
+  return longest.length >= 4 ? longest : null;
 }
 
 /** How a URL is named in a row. */
@@ -196,12 +226,17 @@ function delayCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | n
     const name = nameUrl(raw, pageUrl);
     return name === null
       ? null
-      : { lane: 'delayJs', row: escapeRegex(name.text), subject: name.file };
+      : { lane: 'delayJs', row: servedPattern(name.text), subject: name.file };
   }
   const id = el.attribute('id');
   if (id !== null && id !== '') {
-    // `\s` bounds the attribute name: `id="x"` alone also matches `data-id="x"`.
-    return { lane: 'delayJs', row: `\\sid="${escapeRegex(id)}"`, subject: `#${id}` };
+    // `\s` bounds the attribute name (`data-id` must not match); either
+    // quote, or none, and the value bounded on both sides.
+    return {
+      lane: 'delayJs',
+      row: `\\sid=["']?${servedPattern(id)}(?=["'\\s/>])`,
+      subject: `#${id}`
+    };
   }
   const line = el.text === null ? null : firstLine(el.text);
   return line === null ? null : { lane: 'delayJs', row: escapeRegex(line), subject: line };
@@ -214,7 +249,7 @@ function deferCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | n
   const name = raw === null ? null : nameUrl(raw, pageUrl);
   return name === null
     ? null
-    : { lane: 'deferJs', row: escapeRegex(name.text), subject: name.file };
+    : { lane: 'deferJs', row: servedPattern(name.text), subject: name.file };
 }
 
 /**
@@ -228,30 +263,48 @@ function rankedClasses(classes: string): string[] {
     .sort((a, b) => Number(/\d/.test(b)) - Number(/\d/.test(a)) || b.length - a.length);
 }
 
-/** Whether a literal names at most one lazily rendered element (itself). */
+/** Whether a literal is in at most one lazily rendered element's match text (its own). */
 function unique(literal: string, peers: readonly string[]): boolean {
   return peers.filter((peer) => peer.includes(literal)).length <= 1;
 }
 
+/** Attributes whose values never name an element (shared by design, or styling). */
+const UNNAMING_ATTRIBUTES = new Set(['id', 'class', 'style', LAZY_RENDER_ATTRIBUTE]);
+
+/** Shortest value worth naming an element by. */
+const MIN_NAME_CHARS = 2;
+
 /**
- * The Automatic Lazy Rendering candidate of a stamped element: its id
- * (bounded by the preceding space), else the most specific class token no
- * other stamped element's attributes contain, else its whole quoted class
- * value; none when no literal names only it.
+ * The Automatic Lazy Rendering candidate of a stamped element: the first
+ * of its id, its class tokens (most specific first), then its other
+ * attribute values, that is in its own match text and in no other stamped
+ * element's — checked against whole opening and end tags, so a value
+ * inside another element's attribute or tag name is never offered. Bare
+ * values hold whatever the served quoting or attribute separators are.
+ * None when nothing names only this element.
  */
 function lazyRenderCandidate(el: ElementSnapshot, peers: readonly string[]): PickCandidate | null {
   if (el.attribute(LAZY_RENDER_ATTRIBUTE) === null) return null;
+  const own = el.openingTag;
+  const named = (value: string | null): boolean =>
+    value !== null && value.length >= MIN_NAME_CHARS && own.includes(value) && unique(value, peers);
   const id = el.attribute('id');
-  if (id !== null && id !== '' && unique(` id="${id}"`, peers)) {
-    return { lane: 'lazyRender', row: ` id="${id}"`, subject: `#${id}` };
-  }
-  const classes = el.attribute('class') ?? '';
-  const token = rankedClasses(classes).find((candidate) => unique(candidate, peers));
+  if (id !== null && named(id)) return { lane: 'lazyRender', row: id, subject: `#${id}` };
+  const token = rankedClasses(el.attribute('class') ?? '').find(named);
   if (token !== undefined) return { lane: 'lazyRender', row: token, subject: `${el.tag}.${token}` };
-  const whole = `class="${classes}"`;
-  return classes.trim() !== '' && unique(whole, peers)
-    ? { lane: 'lazyRender', row: whole, subject: `${el.tag}.${rankedClasses(classes)[0] ?? ''}` }
-    : null;
+  const names = el.attributeNames().filter((name) => !UNNAMING_ATTRIBUTES.has(name));
+  for (const name of names) {
+    const value = el.attribute(name);
+    if (value !== null && named(value))
+      return { lane: 'lazyRender', row: value, subject: `${el.tag}[${name}]` };
+  }
+  // Bare values are shared: fall back to the attribute as the DOM writes it
+  // (` name="value"`), which holds for markup written the same way.
+  for (const name of id === null ? names : ['id', ...names]) {
+    const bounded = ` ${name}="${el.attribute(name) ?? ''}"`;
+    if (named(bounded)) return { lane: 'lazyRender', row: bounded, subject: `${el.tag}[${name}]` };
+  }
+  return null;
 }
 
 /** The Image Lazyload candidate of a lazy image. */
@@ -260,7 +313,10 @@ function lazyloadCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate 
   const raw = el.attribute(DATA_LAZY_SRC);
   if (raw === null || raw.trim() === '') return null;
   const name = nameUrl(raw, pageUrl);
-  return name === null ? null : { lane: 'lazyload', row: name.text, subject: name.file };
+  const literal = name === null ? null : servedLiteral(name.text);
+  return name === null || literal === null
+    ? null
+    : { lane: 'lazyload', row: literal, subject: name.file };
 }
 
 /**

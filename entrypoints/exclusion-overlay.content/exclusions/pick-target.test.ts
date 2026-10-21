@@ -90,8 +90,9 @@ describe('candidatesFor — rows the engine actually matches', () => {
     const html =
       '<script type="text/rocketlazyloadscript" id="foo-js">a()</script><script type="text/rocketlazyloadscript" id="foo-js-after">b()</script>';
     const [candidate] = candidates(html);
-    // Changed in audit round 1: `\s` bounds the name (data-id="foo-js" must not match).
-    expect(candidate?.row).toBe('\\sid="foo-js"');
+    // Changed in audit round 1 and the verification round: `\s` bounds the
+    // name (data-id must not match), either quote or none, value bounded.
+    expect(candidate?.row).toBe('\\sid=["\']?foo-js(?=["\'\\s/>])');
     expect(candidate && matchesServed(html, candidate)).toBe(1);
   });
 
@@ -160,8 +161,9 @@ describe('candidatesFor — rows the engine actually matches', () => {
   it('names a lazily rendered element by id, else its most specific class', () => {
     const byId = '<div id="footer" class="x" data-wpr-lazyrender="1"><p>a</p></div>';
     const [idCandidate] = candidates(byId);
-    // Changed in audit round 1: the leading space bounds the name.
-    expect(idCandidate).toEqual({ lane: 'lazyRender', row: ' id="footer"', subject: '#footer' });
+    // Changed in the verification round: the bare id (quote-agnostic),
+    // checked unique against every stamped element's whole tag.
+    expect(idCandidate).toEqual({ lane: 'lazyRender', row: 'footer', subject: '#footer' });
     expect(idCandidate && matchesServed(byId, idCandidate)).toBe(1);
     const byClass =
       '<section class="elementor-section elementor-element-3f2a1b" data-wpr-lazyrender="1"></section>';
@@ -294,12 +296,13 @@ describe('candidate rows target exactly their element (audit round 1)', () => {
     expect(delayCandidate && matchesServed(delay, delayCandidate)).toBe(1);
   });
 
-  it('picks a class token no other lazily rendered element contains, else the whole class value', () => {
+  it('picks a class token no other lazily rendered element contains, else no row', () => {
     const html =
       '<div data-wpr-lazyrender="1" class="e-con">a</div><div data-wpr-lazyrender="1" class="e-con-inner">b</div>';
-    const [shortCandidate] = candidates(html);
-    expect(shortCandidate?.row).toBe('class="e-con"');
-    expect(shortCandidate && matchesServed(html, shortCandidate)).toBe(1);
+    // Changed in the verification round: the whole-class fallback is gone (a
+    // class list the page's scripts extended is not the served one), so an
+    // element named only by a shared token offers no row.
+    expect(candidates(html)).toEqual([]);
     const [innerCandidate] = candidatesOf(html, '.e-con-inner');
     expect(innerCandidate?.row).toBe('e-con-inner');
     expect(innerCandidate && matchesServed(html, innerCandidate)).toBe(1);
@@ -367,5 +370,83 @@ describe('scanPageInSlices', () => {
       document.createTextNode('b'.repeat(300))
     );
     expect(scriptHead(script)).toBe(`${'a'.repeat(300)}${'b'.repeat(212)}`);
+  });
+});
+
+describe('rows hold against served markup (verification round)', () => {
+  /** Candidates of the element `selector` picks in served `html`, each with its engine match count. */
+  function served(
+    html: string,
+    selector: string
+  ): { row: string; lane: LaneKey; matches: number }[] {
+    const element = first(html).ownerDocument.querySelector(selector);
+    if (element === null) throw new Error(`no ${selector}`);
+    return candidatesFor(elementSnapshot(element), contextOf(element)).map((candidate) => ({
+      row: candidate.row,
+      lane: candidate.lane,
+      matches: matchesServed(html, candidate)
+    }));
+  }
+
+  it('lazy-render rows are unique against the whole opening tags (and end tags) of stamped peers', () => {
+    const otherAttribute =
+      '<div data-wpr-lazyrender="1" class="container hero">a</div><div data-wpr-lazyrender="1" data-element_type="container" class="other">b</div>';
+    expect(served(otherAttribute, '.hero')).toEqual([
+      { row: 'hero', lane: 'lazyRender', matches: 1 }
+    ]);
+    const stampWord =
+      '<div data-wpr-lazyrender="1" class="lazyrender x1">a</div><div data-wpr-lazyrender="1" class="b">b</div>';
+    expect(served(stampWord, '.x1')).toEqual([{ row: 'x1', lane: 'lazyRender', matches: 1 }]);
+    const tagName =
+      '<section data-wpr-lazyrender="1" class="sect ion">a</section><div data-wpr-lazyrender="1" class="x"><section>q</section></div>';
+    for (const candidate of served(tagName, 'section.sect')) expect(candidate.matches).toBe(1);
+  });
+
+  it('offers no lazy-render row when nothing names only the element', () => {
+    expect(
+      served(
+        '<div data-wpr-lazyrender="1">a</div><div data-wpr-lazyrender="1" class="other">b</div>',
+        'div'
+      )
+    ).toEqual([]);
+  });
+
+  it('names a lazy-render element by an attribute value when its id and classes are shared', () => {
+    const html =
+      '<div data-wpr-lazyrender="1" class="card" data-id="7f3a2c">a</div><div data-wpr-lazyrender="1" class="card" data-id="9b1e4d">b</div>';
+    expect(served(html, '[data-id="7f3a2c"]')).toEqual([
+      { row: '7f3a2c', lane: 'lazyRender', matches: 1 }
+    ]);
+  });
+
+  it('id rows match single-quoted and newline-separated served attributes', () => {
+    for (const html of [
+      `<script type="rocketlazyloadscript" id='x-js'>a()</script><script type="rocketlazyloadscript" data-id='x-js'>b()</script>`,
+      '<script type="rocketlazyloadscript"\nid="x-js">a()</script>'
+    ]) {
+      expect(served(html, '#x-js').map((candidate) => candidate.matches)).toEqual([1]);
+    }
+    const alr = `<div data-wpr-lazyrender='1' id='hero'>a</div><div data-wpr-lazyrender="1" class="y">b</div>`;
+    expect(served(alr, '#hero')).toEqual([{ row: 'hero', lane: 'lazyRender', matches: 1 }]);
+  });
+
+  it('matches entity-encoded and relative served paths', () => {
+    const script =
+      '<script type="rocketlazyloadscript" data-rocket-src="https://example.com/wp-content/a&amp;b.js"></script>';
+    expect(served(script, 'script').map((candidate) => candidate.matches)).toEqual([1]);
+    const img = '<img src="data:x" data-lazy-src="https://example.com/up/a&amp;bcde.jpg">';
+    expect(served(img, 'img').map((candidate) => candidate.matches)).toEqual([1]);
+    const relative = '<img src="data:x" data-lazy-src="uploads/niño.jpg">';
+    expect(served(relative, 'img')).toEqual([
+      { row: 'uploads/niño.jpg', lane: 'lazyload', matches: 1 }
+    ]);
+  });
+
+  it('never offers a row the session would refuse (C1 control, over-cap id)', () => {
+    expect(served('<script type="rocketlazyloadscript">\u0085abc</script>', 'script')).toEqual([]);
+    const longId = 'i'.repeat(2100);
+    expect(
+      served(`<script type="rocketlazyloadscript" id="${longId}">a()</script>`, 'script')
+    ).toEqual([]);
   });
 });

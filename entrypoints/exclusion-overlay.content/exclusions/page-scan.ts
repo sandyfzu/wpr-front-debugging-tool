@@ -54,12 +54,30 @@ export function elementSnapshot(element: Element): ElementSnapshot {
   return {
     tag,
     attribute: (name) => element.getAttribute(name),
+    attributeNames: () => element.getAttributeNames(),
+    // Serialized on demand (lazily rendered elements only): the shallow
+    // clone's markup minus its end tag.
+    get openingTag() {
+      return openingTagOf(element);
+    },
     // Read only when the classifier asks (an inline delayed script without
     // an id), and only its head: a page's inline bundles can be megabytes.
     get text() {
       return tag === 'script' && !element.hasAttribute('src') ? scriptHead(element) : null;
     }
   };
+}
+
+/**
+ * An element's opening tag as the DOM serializes it (attribute order kept,
+ * values double-quoted, `&` and quotes encoded).
+ *
+ * @param element The element.
+ */
+export function openingTagOf(element: Element): string {
+  const markup = (element.cloneNode(false) as Element).outerHTML;
+  const end = `</${element.localName}>`;
+  return markup.endsWith(end) ? markup.slice(0, -end.length) : markup;
 }
 
 /**
