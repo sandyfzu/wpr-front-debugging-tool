@@ -30,7 +30,7 @@ import {
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
 import { isRecord } from '../../utils/is-record';
-import { isHttpOrigin } from '../../utils/urls';
+import { isHttpOrigin, isHttpUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
 import { numericTabId } from './sender';
 
@@ -125,7 +125,7 @@ const MAX_BUDGET_MS = 600_000;
  *   overrun is attributable to one; `null` for a feature-wide run).
  * - `failed` — served unmodified for a {@link ExclusionDocumentFailure}.
  */
-export type ExclusionDocumentOutcome =
+export type ExclusionDocumentOutcome = (
   | { readonly outcome: 'rewritten'; readonly reports: readonly TransformReport[] }
   | {
       readonly outcome: 'over-budget';
@@ -133,7 +133,55 @@ export type ExclusionDocumentOutcome =
       readonly row: string | null;
       readonly budgetMs: number;
     }
-  | { readonly outcome: 'failed'; readonly reason: ExclusionDocumentFailure };
+  | { readonly outcome: 'failed'; readonly reason: ExclusionDocumentFailure }
+) & {
+  /** Which response the outcome is for and what the session did to it (absent when the backend gives no identity). */
+  readonly served?: ExclusionServedDocument;
+};
+
+/** Size caps of a {@link ExclusionServedDocument}. */
+export const SERVED_DOCUMENT_LIMITS = {
+  /** Characters of the document URL. */
+  urlChars: 8 * 1024,
+  /** Characters of the backend's response token. */
+  tokenChars: 128,
+  /** Speculation rules counted as removed from one document. */
+  speculationRules: 10_000
+} as const;
+
+/**
+ * The identity of the response a document outcome is for, and the
+ * session's own effects on it — so a surface can tell whether the page it
+ * shows is the one recorded (compare `url` with `location`, `receivedAt`
+ * with the page's time origin; a navigation served without interception,
+ * e.g. from a prefetch or a service worker, leaves an older record) and
+ * say what the session changed besides the exclusions.
+ */
+export interface ExclusionServedDocument {
+  /** The document's absolute http(s) URL, as requested. */
+  readonly url: string;
+  /** The backend's opaque token of the response (unique per intercepted response). */
+  readonly token: string;
+  /**
+   * Epoch ms the response reached the backend — orders a tab's documents:
+   * an outcome older than the recorded one never replaces it.
+   */
+  readonly receivedAt: number;
+  /**
+   * Speculation rules the session removed from the served document
+   * (inline rule scripts, the `Speculation-Rules` header): prefetching and
+   * prerendering are off for its links during the session, so every
+   * navigation reaches the network and is intercepted.
+   */
+  readonly speculationRulesRemoved: number;
+  /**
+   * Whether the browser rendered a substituted copy of the response: its
+   * security indicator, certificate, connection info and resource timing
+   * then describe the copy (e.g. an https page shows as not secure, connect
+   * and request timings read zero), not the network response.
+   */
+  readonly copy: boolean;
+}
 
 /** A session that intercepts its tab's top-level documents until Stop or tab close. */
 export interface ActiveExclusionSession {
@@ -465,6 +513,55 @@ function parseTransformReport(
   };
 }
 
+/** The keys of a served-document identity. */
+const SERVED_KEYS = ['url', 'token', 'receivedAt', 'speculationRulesRemoved', 'copy'] as const;
+
+/**
+ * Parse a served-document identity (see {@link ExclusionServedDocument}).
+ *
+ * @param input The untrusted value.
+ * @param policy Unknown-key policy (see the module doc).
+ * @returns A fresh identity, or null on any violation.
+ */
+export function parseServedDocument(
+  input: unknown,
+  policy: UnknownKeyPolicy
+): ExclusionServedDocument | null {
+  if (!isRecord(input) || !keysAllowed(input, SERVED_KEYS, policy)) return null;
+  const url = own(input, 'url');
+  const token = own(input, 'token');
+  const receivedAt = own(input, 'receivedAt');
+  const removed = own(input, 'speculationRulesRemoved');
+  const copy = own(input, 'copy');
+  if (typeof url !== 'string' || url.length > SERVED_DOCUMENT_LIMITS.urlChars || !isHttpUrl(url))
+    return null;
+  if (typeof token !== 'string' || token.length === 0) return null;
+  if (token.length > SERVED_DOCUMENT_LIMITS.tokenChars || !isPrintable(token)) return null;
+  if (
+    !isCount(receivedAt) ||
+    !isCount(removed) ||
+    removed > SERVED_DOCUMENT_LIMITS.speculationRules
+  )
+    return null;
+  if (typeof copy !== 'boolean') return null;
+  return { url, token, receivedAt, speculationRulesRemoved: removed, copy };
+}
+
+/**
+ * Attach an outcome's optional served identity (absent stays absent; a
+ * malformed one fails the whole outcome).
+ */
+function withServed(
+  outcome: ExclusionDocumentOutcome,
+  input: Record<string, unknown>,
+  policy: UnknownKeyPolicy
+): ExclusionDocumentOutcome | null {
+  const raw = own(input, 'served');
+  if (raw === undefined) return outcome;
+  const served = parseServedDocument(raw, policy);
+  return served === null ? null : { ...outcome, served };
+}
+
 /**
  * Parse a document outcome (see {@link ExclusionDocumentOutcome}) against
  * the session's set: reports and an over-budget row must come from it.
@@ -477,7 +574,7 @@ function parseDocumentOutcome(
   if (!isRecord(input)) return null;
   switch (own(input, 'outcome')) {
     case 'rewritten': {
-      if (!keysAllowed(input, ['outcome', 'reports'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'reports', 'served'], policy)) return null;
       const raw = own(input, 'reports');
       if (!Array.isArray(raw) || raw.length > EXCLUSION_FEATURES.length) return null;
       const reports: TransformReport[] = [];
@@ -489,10 +586,12 @@ function parseDocumentOutcome(
         }
         reports.push(report);
       }
-      return { outcome: 'rewritten', reports };
+      return withServed({ outcome: 'rewritten', reports }, input, policy);
     }
     case 'over-budget': {
-      if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'feature', 'row', 'budgetMs', 'served'], policy)) {
+        return null;
+      }
       const feature = own(input, 'feature');
       const row = own(input, 'row');
       const budgetMs = own(input, 'budgetMs');
@@ -501,13 +600,15 @@ function parseDocumentOutcome(
         return null;
       }
       if (!isCount(budgetMs) || budgetMs < 1 || budgetMs > MAX_BUDGET_MS) return null;
-      return { outcome: 'over-budget', feature, row, budgetMs };
+      return withServed({ outcome: 'over-budget', feature, row, budgetMs }, input, policy);
     }
     case 'failed': {
-      if (!keysAllowed(input, ['outcome', 'reason'], policy)) return null;
+      if (!keysAllowed(input, ['outcome', 'reason', 'served'], policy)) return null;
       const reason = own(input, 'reason');
       const known = EXCLUSION_DOCUMENT_FAILURES.find((failure) => failure === reason);
-      return known === undefined ? null : { outcome: 'failed', reason: known };
+      return known === undefined
+        ? null
+        : withServed({ outcome: 'failed', reason: known }, input, policy);
     }
     default:
       return null;

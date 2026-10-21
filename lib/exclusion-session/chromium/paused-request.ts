@@ -62,18 +62,26 @@ export type PauseDisposition =
   | { readonly kind: 'candidate'; readonly facts: InterceptedResponseFacts };
 
 /**
+ * The response header that adds speculation rules to a document (lowercase
+ * name) — a session drops it (see `../speculation-rules`).
+ */
+export const SPECULATION_RULES_HEADER = 'speculation-rules';
+
+/**
  * Response headers dropped from a fulfilled document, by lowercase name:
  * the fulfilled body is the decoded, unframed, rewritten bytes —
  * `Content-Encoding`, `Content-Length` and `Transfer-Encoding` described
  * the original wire form and would misframe it; `Set-Cookie` is already
  * processed by the network layer (fulfilling it again would store each
- * cookie a second time).
+ * cookie a second time); `Speculation-Rules` would let the browser serve
+ * the document's links from a prefetch, past interception.
  */
 const DROPPED_FULFILL_HEADERS: ReadonlySet<string> = new Set([
   'content-encoding',
   'content-length',
   'transfer-encoding',
-  'set-cookie'
+  'set-cookie',
+  SPECULATION_RULES_HEADER
 ]);
 
 /** A non-empty string field, or null. */

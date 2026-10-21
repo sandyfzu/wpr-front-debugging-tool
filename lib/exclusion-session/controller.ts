@@ -42,10 +42,12 @@ import {
   parseExclusionSessionRecord,
   parseExclusionSessionTabQuery,
   parseExclusionSetPayload,
+  parseServedDocument,
   type ActiveExclusionSession,
   type ExclusionApplyReply,
   type ExclusionDocumentOutcome,
   type ExclusionSaveReply,
+  type ExclusionServedDocument,
   type ExclusionSessionRecord,
   type ExclusionSessionStatus,
   type SavedExclusionSetReply
@@ -181,6 +183,14 @@ function newestStart(records: ExclusionSessionRecords): number {
 /** The canonical origin of a URL, or null. */
 function originOf(url: string): string | null {
   return parseUrl(url)?.origin ?? null;
+}
+
+/** An outcome with its served identity attached (when there is one). */
+function withServed(
+  outcome: ExclusionDocumentOutcome,
+  served: ExclusionServedDocument | null
+): ExclusionDocumentOutcome {
+  return served === null ? outcome : { ...outcome, served };
 }
 
 /** Whether a failure is a missed deadline. */
@@ -536,6 +546,34 @@ export function createExclusionSessionController(
     return record?.state === 'active' ? record.document : null;
   };
 
+  /**
+   * The served identity of a document, or null when the backend gave no
+   * identity or it cannot cross the contract (e.g. an over-long URL).
+   *
+   * @param removed Speculation rules removed from the served bytes.
+   * @param bytesServed Whether bytes are served (a copy, where the backend serves copies).
+   */
+  const servedIdentity = (
+    document: Pick<InterceptedDocument, 'documentUrl' | 'identity'>,
+    removed: number,
+    bytesServed: boolean
+  ): ExclusionServedDocument | null => {
+    const identity = document.identity;
+    if (identity === undefined) return null;
+    const served = parseServedDocument(
+      {
+        url: document.documentUrl,
+        token: identity.token,
+        receivedAt: identity.receivedAt,
+        speculationRulesRemoved: removed,
+        copy: bytesServed && identity.servedAsCopy
+      },
+      'reject'
+    );
+    if (served === null) log.debug('Document identity not recordable — recorded without it');
+    return served;
+  };
+
   /** The engine runner in use, bounded past the budget (a runner that never answers is a failure). */
   const boundedRunner: DocumentTransformRunner = (request) =>
     bounded('Engine run', request.budgetMs + STEPS.runnerOverhead, () =>
@@ -557,14 +595,25 @@ export function createExclusionSessionController(
         cause: result.cause
       });
     }
-    let outcome = checkedOutcome(session, result.outcome);
-    let body = result.body;
+    // A `Speculation-Rules` header only goes when bytes are served: serve
+    // the original ones when nothing else changed.
+    const headerRules = document.identity?.speculationRulesHeader === true;
+    let body = result.body ?? (headerRules ? document.body : null);
+    const removed =
+      body === null ? 0 : (result.speculationRulesRemoved ?? 0) + (headerRules ? 1 : 0);
+    let outcome = checkedOutcome(
+      session,
+      withServed(result.outcome, servedIdentity(document, removed, body !== null))
+    );
     if (outcome === null) {
       log.error('Engine outcome failed validation — document served unmodified', {
         tabId: document.tabId
       });
-      outcome = { outcome: 'failed', reason: 'engine-failed' };
-      body = null;
+      body = headerRules ? document.body : null;
+      outcome = withServed(
+        { outcome: 'failed', reason: 'engine-failed' },
+        servedIdentity(document, headerRules ? 1 : 0, body !== null)
+      );
     }
     // Stop or a re-apply may have landed while the engine ran: serve (and
     // record) only for the session that is still live.
@@ -597,16 +646,17 @@ export function createExclusionSessionController(
       );
     },
 
-    documentBodyUnavailable: (tabId, documentUrl) =>
+    documentBodyUnavailable: (tabId, documentUrl, identity) =>
       hostCall('documentBodyUnavailable', undefined, async () => {
         const session = await activeFor(tabId, documentUrl);
         if (session === null) return;
+        const served = servedIdentity({ documentUrl, identity }, 0, false);
         await driveQuietly(
           tabId,
           {
             type: 'document',
             startedAt: session.startedAt,
-            outcome: { outcome: 'failed', reason: 'body-unavailable' }
+            outcome: withServed({ outcome: 'failed', reason: 'body-unavailable' }, served)
           },
           'document record'
         );

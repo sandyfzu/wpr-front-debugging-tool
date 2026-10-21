@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
+import { analysisWorkBudget, analyzeRegexRisk } from '../exclusion-builder/regex-risk';
 import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import {
   EXCLUSION_SESSION_DEADLINES_MS,
@@ -15,6 +16,9 @@ import {
   DeadlineExceededError,
   INTERCEPTION_HOST_BOUNDS_MS,
   PREVALIDATION_CPU_BOUND_MS,
+  PREVALIDATION_FIXED_MS,
+  PREVALIDATION_NS_PER_WORK_UNIT,
+  PREVALIDATION_WORK_BOUND,
   SESSION_ASK_WORST_CASE_MS,
   SESSION_STEP_TIMEOUTS_MS,
   withinDeadline
@@ -216,43 +220,114 @@ describe('prevalidation CPU', () => {
     [
       'distinct negated classes',
       (row: number, index: number) => `[^${escape(((row * 400 + index) % 0xfffe) + 1)}]`,
-      CASE_SCOPE
+      CASE_SCOPE,
+      null
     ],
     [
       'distinct mid-size ranges',
       (row: number, index: number) => `[A-${escape(0x2000 + row * 400 + index)}]`,
-      CASE_SCOPE
+      CASE_SCOPE,
+      'too-complex'
     ],
     [
       'distinct half-range classes',
       (row: number, index: number) => `[\\u0000-${escape(0x7000 + row * 400 + index)}]`,
-      CASE_SCOPE
+      CASE_SCOPE,
+      'too-complex'
     ],
     [
       'looped nullable sequences of scattered units',
       (row: number, index: number) => `${escape(0x3000 + 2 * (row * 400 + index))}?`,
-      ['(?i:(?:\\u00ff', ')*)']
+      ['(?i:(?:\\u00ff', ')*)'],
+      null
     ],
     [
       'looped alternations of huge zero-width repeats',
       (row: number, index: number) => `(?:\\b){2000000000}${escape(0x100 + row * 400 + index)}|`,
-      ['(?:', 'q)+']
+      ['(?:', 'q)+'],
+      null
     ],
     [
       'looped alternations of huge empty repeats',
       (row: number, index: number) => `(?:){100000000}${escape(0x100 + row * 400 + index)}|`,
-      ['(?:', 'q)+']
-    ]
+      ['(?:', 'q)+'],
+      null
+    ],
+    [
+      'looped alternations sharing a prefix',
+      (row: number, index: number) => `p${escape(0x100 + row * 400 + index)}|`,
+      ['(?:', 'q)+'],
+      'too-complex'
+    ],
+    [
+      'looped single-unit alternations',
+      (row: number, index: number) => `${escape(0x100 + row * 400 + index)}|`,
+      ['(?:', 'q)+'],
+      null
+    ],
+    ['case-folded `\\W` runs', () => '\\W', CASE_SCOPE, null]
   ] as const)(
-    'stays under its declared bound for a cap-sized set of %s',
-    (_case, unitFor, wrap) => {
+    'answers %s per row, within the work bound (deterministic)',
+    (_case, unitFor, wrap, verdict) => {
       const set = capSizedSet(unitFor, wrap);
-      const chars = [...set.rows.delayJs, ...set.rows.deferJs].join('').length;
+      const rows = [...set.rows.delayJs, ...set.rows.deferJs];
+      const chars = rows.join('').length;
       expect(chars).toBeLessThanOrEqual(EXCLUSION_SET_LIMITS.totalChars);
       expect(chars).toBeGreaterThan(EXCLUSION_SET_LIMITS.totalChars * 0.95);
-      const started = performance.now();
-      expect(prevalidateExclusionSet(set).valid).toBe(true);
-      expect(performance.now() - started).toBeLessThan(PREVALIDATION_CPU_BOUND_MS);
+      let work = 0;
+      for (const row of rows) {
+        const analysis = analyzeRegexRisk(row);
+        expect(analysis.work).toBeLessThanOrEqual(analysisWorkBudget(row));
+        // The shape's own verdict: accepted, or honestly too complex for its budget.
+        expect(analysis.risk).toBe(verdict);
+        work += analysis.work;
+      }
+      expect(work).toBeLessThanOrEqual(PREVALIDATION_WORK_BOUND);
     }
   );
+
+  it('bounds the most rows a set can hold by the same work bound', () => {
+    const rows = Array.from(
+      { length: EXCLUSION_SET_LIMITS.rowsPerFeature },
+      (_, i) => `(?i:\\W${String(i)})`
+    );
+    const work = [...rows, ...rows].reduce((total, row) => total + analyzeRegexRisk(row).work, 0);
+    expect(work).toBeLessThanOrEqual(PREVALIDATION_WORK_BOUND);
+  });
+
+  it('derives the CPU bound from the work bound with ≥ 10× machine headroom', () => {
+    const measuredWorstMs =
+      (PREVALIDATION_WORK_BOUND * PREVALIDATION_NS_PER_WORK_UNIT) / 1e6 + PREVALIDATION_FIXED_MS;
+    expect(PREVALIDATION_CPU_BOUND_MS).toBeGreaterThanOrEqual(10 * measuredWorstMs);
+  });
+
+  it('links work to time: the heaviest shape costs a bounded number of ns per unit', () => {
+    // Work is the gate; this pins its exchange rate. 15× the declared rate
+    // absorbs v8 coverage on a shared CI runner (~8–11× slower than the
+    // development machine) — a step left uncharged would blow through it.
+    const set = capSizedSet(
+      (row, index) => `${escape(0x3000 + 2 * (row * 400 + index))}?`,
+      ['(?i:(?:\\u00ff', ')*)']
+    );
+    const rows = [...set.rows.delayJs, ...set.rows.deferJs];
+    analyzeRegexRisk('(?i:a)'); // build the one-time case index outside the timing
+    const started = performance.now();
+    const work = rows.reduce((total, row) => total + analyzeRegexRisk(row).work, 0);
+    const nsPerUnit = ((performance.now() - started) * 1e6) / work;
+    expect(work).toBeGreaterThan(PREVALIDATION_WORK_BOUND / 3);
+    expect(nsPerUnit).toBeLessThan(15 * PREVALIDATION_NS_PER_WORK_UNIT);
+  });
+
+  it('smoke: a cap-sized adversarial set prevalidates far inside a generous ceiling', () => {
+    // Wall clock is not the gate (the work bound above is): this only catches
+    // a gross regression. 5× the declared bound absorbs v8 coverage plus a
+    // shared CI runner (measured ~11× slower than the development machine).
+    const set = capSizedSet(
+      (row, index) => `[^${escape(((row * 400 + index + 7) % 0xfffe) + 1)}]`,
+      CASE_SCOPE
+    );
+    const started = performance.now();
+    prevalidateExclusionSet(set);
+    expect(performance.now() - started).toBeLessThan(5 * PREVALIDATION_CPU_BOUND_MS);
+  });
 });

@@ -30,7 +30,7 @@ function stubEvent<L>() {
 }
 
 /** Stub debugger + tabs APIs. */
-function stubs(tab: { url?: string } | Error = { url: 'https://site.test/' }) {
+function stubs(tab: { url?: string; pendingUrl?: string } | Error = { url: 'https://site.test/' }) {
   const onEvent = stubEvent<(source: unknown, method: string, params?: object) => void>();
   const onDetach = stubEvent<(source: unknown, reason: string) => void>();
   const api = {
@@ -54,7 +54,7 @@ function stubs(tab: { url?: string } | Error = { url: 'https://site.test/' }) {
 }
 
 /** Bind a port over stubs. */
-function bind(tab?: { url?: string } | Error) {
+function bind(tab?: { url?: string; pendingUrl?: string } | Error) {
   const s = stubs(tab);
   const log = fakeLog();
   const port = createBrowserDebuggerPort(
@@ -90,6 +90,19 @@ describe('createBrowserDebuggerPort', () => {
     await expect(bind({ url: 'http://site.test/x' }).port.tabPresence(1)).resolves.toBe('web');
     await expect(bind({}).port.tabPresence(1)).resolves.toBe('elsewhere');
     await expect(bind({ url: 'about:blank' }).port.tabPresence(1)).resolves.toBe('elsewhere');
+    await expect(
+      bind({ url: 'https://chromewebstore.google.com/detail/x' }).port.tabPresence(1)
+    ).resolves.toBe('elsewhere');
+    // A navigation not committed yet: the page it is going to decides.
+    await expect(
+      bind({
+        url: 'https://site.test/',
+        pendingUrl: 'https://chromewebstore.google.com/'
+      }).port.tabPresence(1)
+    ).resolves.toBe('elsewhere');
+    await expect(
+      bind({ url: 'https://site.test/', pendingUrl: 'https://other.test/' }).port.tabPresence(1)
+    ).resolves.toBe('web');
     await expect(bind(new Error('No tab with id: 1')).port.tabPresence(1)).resolves.toBe('gone');
   });
 

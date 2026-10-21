@@ -13,15 +13,29 @@
  *   (the browser continues it), so a release after one is a no-op.
  * - **Every debugger call is time-boxed** ({@link CHROMIUM_TIMEOUTS_MS}),
  *   and the host gets {@link CHROMIUM_TIMEOUTS_MS.release} — above its own
- *   bound — before the response is served unmodified.
+ *   bound — before the response is served unmodified. Each arm/resume/
+ *   disarm runs inside one budget ({@link CHROMIUM_OPERATION_BUDGETS_MS},
+ *   from the moment it is called, queue wait included) below the
+ *   controller's deadline for it, so it always answers first.
  * - **Per tab, arm/resume/disarm run serialized**: the latest call wins by
  *   construction (a late arm is followed by the disarm queued after it).
- * - **Arming is attempted**: attach, then enable interception; the
- *   browser's refusal is mapped to a cause (`./debugger-errors`). An attach
- *   the browser answers "already attached" is this extension's own
- *   session (e.g. kept across a background restart) and is adopted.
+ * - **Arming is attempted**: attach, then enable the session — `Fetch`
+ *   interception, plus `Network` with service workers bypassed (a page a
+ *   service worker controls would otherwise be served by it, never
+ *   reaching interception; the domain is enabled with no payload buffers,
+ *   its events ignored on arrival). The browser's refusal is mapped to a
+ *   cause (`./debugger-errors`). An attach the browser answers "already
+ *   attached" is this extension's own session (e.g. kept across a
+ *   background restart) and is adopted. A fresh attachment also installs
+ *   the speculation-rules guard (`../speculation-rules`) for every new
+ *   document of the tab — rules a page's scripts insert at runtime.
  * - **Top frame only**: a document response is a candidate only when its
- *   frame is the tab's page target (iframes are documents too).
+ *   frame is the tab's page target (iframes are documents too); the page
+ *   target id is cached per tab and re-read on any mismatch.
+ * - **Identity**: each candidate is handed to the host with its request id
+ *   and arrival time (the host orders a tab's documents by it) and whether
+ *   it carries a `Speculation-Rules` header — dropped from every fulfilled
+ *   response — and is served as a fulfilled copy.
  * - **Ends are reported with the ended attachment's generation**; a closed
  *   tab reports nothing (its own cleanup ends the session); self-detach
  *   fires no browser signal.
@@ -35,11 +49,18 @@ import { createKeyedQueue } from '../../../utils/keyed-queue';
 import type {
   ArmResult,
   ArmUnavailableCause,
+  InterceptedResponseIdentity,
   InterceptionBackend,
   InterceptionHost
 } from '../backend';
 import { DOCUMENT_BODY_BYTE_LIMIT, type InterceptedResponseFacts } from '../document-transform';
-import { INTERCEPTION_HOST_BOUNDS_MS, withinDeadline } from '../timeouts';
+import { SPECULATION_RULES_GUARD_SOURCE } from '../speculation-rules';
+import {
+  DeadlineExceededError,
+  INTERCEPTION_HOST_BOUNDS_MS,
+  SESSION_STEP_TIMEOUTS_MS,
+  withinDeadline
+} from '../timeouts';
 import {
   DETACHED,
   mayRewrite,
@@ -48,7 +69,12 @@ import {
   type AttachmentEvent,
   type AttachmentTransition
 } from './attachment';
-import { classifyAttachError, errorMessage, isNotAttachedError } from './debugger-errors';
+import {
+  classifyAttachError,
+  errorMessage,
+  isAbandonedRequestError,
+  isNotAttachedError
+} from './debugger-errors';
 import { endCauseOfDetach, needsTabPresence } from './detach-causes';
 import {
   classifyPause,
@@ -57,6 +83,7 @@ import {
   parsePausedRequest,
   pausedRequestId,
   responseBodyBytes,
+  SPECULATION_RULES_HEADER,
   type PausedRequest
 } from './paused-request';
 import type { DebuggerPort, DebuggerTarget, TabPresence } from './port';
@@ -80,8 +107,54 @@ export const CHROMIUM_TIMEOUTS_MS = {
   release: INTERCEPTION_HOST_BOUNDS_MS.rewriteDocument + 1_000
 } as const;
 
+/** What each operation keeps free below the controller's deadline for it (ms). */
+const OPERATION_MARGIN_MS = 100;
+
+/**
+ * Each operation's whole budget (ms), every call of it included: the
+ * controller's deadline for the operation minus a margin — so a worst
+ * case (e.g. a dead armed session: three enables, then attach and three
+ * enables again) answers within it instead of outliving it.
+ */
+export const CHROMIUM_OPERATION_BUDGETS_MS = {
+  arm: SESSION_STEP_TIMEOUTS_MS.arm - OPERATION_MARGIN_MS,
+  resume: SESSION_STEP_TIMEOUTS_MS.resume - OPERATION_MARGIN_MS,
+  disarm: SESSION_STEP_TIMEOUTS_MS.disarm - OPERATION_MARGIN_MS
+} as const;
+
 /** The interception patterns: every document response, paused once its headers arrive. */
 const FETCH_PATTERNS = [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }];
+
+/**
+ * The session's commands after attaching, in order, each idempotent:
+ * interception; the `Network` domain (only to bypass service workers — it
+ * must be enabled for the bypass to hold, verified on Chromium 156) with
+ * every payload buffer off; the `Page` domain (its new-document scripts
+ * run only while it is enabled, verified on Chromium 156).
+ */
+const SESSION_COMMANDS: readonly (readonly [string, Record<string, unknown>])[] = [
+  ['Fetch.enable', { patterns: FETCH_PATTERNS }],
+  ['Network.enable', { maxTotalBufferSize: 0, maxResourceBufferSize: 0, maxPostDataSize: 0 }],
+  ['Network.setBypassServiceWorker', { bypass: true }],
+  ['Page.enable', {}]
+];
+
+/**
+ * Installs the speculation-rules guard in every new document of the tab
+ * (once per attachment — it lives as long as the session; a re-enable
+ * must not stack copies).
+ */
+const GUARD_COMMAND = [
+  'Page.addScriptToEvaluateOnNewDocument',
+  { source: SPECULATION_RULES_GUARD_SOURCE }
+] as const;
+
+/** One operation's shared deadline: every call gets what is left (capped per call). */
+interface OperationBudget {
+  /** Clock reading when the operation was called (before any queue wait). */
+  readonly calledAt: number;
+  call<T>(step: string, work: () => Promise<T>): Promise<T>;
+}
 
 /** The pause event this backend handles (others are ignored). */
 const REQUEST_PAUSED = 'Fetch.requestPaused';
@@ -94,6 +167,10 @@ export interface ChromiumBackendDeps {
   readonly log?: Logger;
   /** Timer seam for every deadline; defaults to `setTimeout`. */
   readonly schedule?: ScheduleTimer;
+  /** Monotonic clock (ms) for operation budgets; defaults to `performance.now`. */
+  readonly clock?: () => number;
+  /** Epoch ms (a response's arrival time); defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 /** A debugger event's source, validated: the tab (and child session) it came from. */
@@ -133,9 +210,15 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const { port, host } = deps;
   const log = deps.log ?? createLogger('interception');
   const serialize = createKeyedQueue();
+  const clock = deps.clock ?? (() => performance.now());
+  const now = deps.now ?? (() => Date.now());
   const attachments = new Map<number, Attachment>();
-  /** Per tab, the cause of an arm whose attachment the browser ended mid-arm. */
+  /** Per tab, the cause of an arm whose attachment the browser ended mid-arm (held only during an operation). */
   const aborts = new Map<number, Promise<ArmUnavailableCause>>();
+  /** Per tab, the last known page target id (its main frame's protocol frame id). */
+  const pageTargets = new Map<number, string>();
+  /** Per tab, the clock reading when its armed session was last established or confirmed. */
+  const confirmedAt = new Map<number, number>();
 
   /** Run one debugger step under a deadline. */
   const bounded = <T>(step: string, ms: number, work: () => Promise<T>): Promise<T> =>
@@ -145,12 +228,48 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const call = <T>(step: string, work: () => Promise<T>): Promise<T> =>
     bounded(step, CHROMIUM_TIMEOUTS_MS.command, work);
 
+  /** A budget of `totalMs` from now, shared by one operation's calls. */
+  const budget = (totalMs: number): OperationBudget => {
+    const calledAt = clock();
+    const end = calledAt + totalMs;
+    return {
+      calledAt,
+      call: (step, work) => {
+        const left = Math.min(CHROMIUM_TIMEOUTS_MS.command, end - clock());
+        return left > 0
+          ? bounded(step, left, work)
+          : Promise.reject(new DeadlineExceededError(step, totalMs));
+      }
+    };
+  };
+
+  /**
+   * Run one operation of a tab serialized, its budget started at the call
+   * (queue wait included); the tab's mid-arm abort record never outlives it.
+   */
+  const operation = <T>(
+    tabId: number,
+    totalMs: number,
+    work: (ops: OperationBudget) => Promise<T>
+  ): Promise<T> => {
+    const ops = budget(totalMs);
+    return serialize(tabId, async () => {
+      aborts.delete(tabId);
+      try {
+        return await work(ops);
+      } finally {
+        aborts.delete(tabId);
+      }
+    });
+  };
+
   const attachmentOf = (tabId: number): Attachment => attachments.get(tabId) ?? DETACHED;
 
   /** Apply an event to the tab's attachment; null (nothing changed) when it is not accepted. */
   const apply = (tabId: number, event: AttachmentEvent): AttachmentTransition | null => {
     const step = transitionAttachment(attachmentOf(tabId), event);
     if (step === null) return null;
+    if (step.next.phase !== 'armed') confirmedAt.delete(tabId);
     if (step.next.phase === 'detached') attachments.delete(tabId);
     else attachments.set(tabId, step.next);
     return step;
@@ -172,9 +291,23 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
 
   // ── Arming ─────────────────────────────────────────────────────────────
 
-  /** Enable interception on the tab's session. */
-  const enableInterception = (tabId: number): Promise<unknown> =>
-    call('Fetch.enable', () => port.send({ tabId }, 'Fetch.enable', { patterns: FETCH_PATTERNS }));
+  /** Enable the session's domains (see {@link SESSION_COMMANDS}) — idempotent. */
+  const enableSession = async (ops: OperationBudget, tabId: number): Promise<void> => {
+    for (const [method, params] of SESSION_COMMANDS) {
+      await ops.call(method, () => port.send({ tabId }, method, params));
+    }
+  };
+
+  /** Learn the tab's page target id (best-effort: a miss is re-read on the first pause). */
+  const learnPageTarget = async (ops: OperationBudget, tabId: number): Promise<void> => {
+    try {
+      const id = await ops.call('Page target', () => port.pageTargetId(tabId));
+      if (id === null) pageTargets.delete(tabId);
+      else pageTargets.set(tabId, id);
+    } catch (cause) {
+      log.debug('Page target not learned at arm — read on first pause', { tabId, cause });
+    }
+  };
 
   /**
    * Detach best-effort. A missing session is expected; so is any refusal
@@ -184,9 +317,14 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
    *
    * @param held Whether an attachment is on record for the tab.
    */
-  const detachQuietly = async (tabId: number, held: boolean): Promise<void> => {
+  const detachQuietly = async (
+    ops: OperationBudget,
+    tabId: number,
+    held: boolean
+  ): Promise<void> => {
+    pageTargets.delete(tabId);
     try {
-      await call('Debugger detach', () => port.detach(tabId));
+      await ops.call('Debugger detach', () => port.detach(tabId));
     } catch (cause) {
       const details = { tabId, cause: errorMessage(cause) };
       if (!held || isNotAttachedError(cause))
@@ -202,23 +340,33 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     return pending === undefined ? 'detached' : pending;
   };
 
-  /** Confirm a live armed attachment (re-sending the patterns); false when it is gone. */
-  const confirmArmed = async (tabId: number, generation: number): Promise<boolean> => {
+  /** Confirm a live armed attachment (re-enabling the session); false when it is gone. */
+  const confirmArmed = async (
+    ops: OperationBudget,
+    tabId: number,
+    generation: number
+  ): Promise<boolean> => {
     try {
-      await enableInterception(tabId);
+      await enableSession(ops, tabId);
     } catch (cause) {
       log.info('Armed tab’s session is gone — re-attaching', { tabId, cause: errorMessage(cause) });
       apply(tabId, { type: 'lost' });
       return false;
     }
-    return apply(tabId, { type: 'confirm', generation }) !== null;
+    if (apply(tabId, { type: 'confirm', generation }) === null) return false;
+    confirmedAt.set(tabId, clock());
+    return true;
   };
 
   /** Attach (or adopt this extension's existing session) and enable interception. */
-  const attachFresh = async (tabId: number, generation: number): Promise<ArmResult> => {
+  const attachFresh = async (
+    ops: OperationBudget,
+    tabId: number,
+    generation: number
+  ): Promise<ArmResult> => {
     apply(tabId, { type: 'attach', generation });
     try {
-      await call('Debugger attach', () => port.attach(tabId));
+      await ops.call('Debugger attach', () => port.attach(tabId));
     } catch (cause) {
       const failure = classifyAttachError(cause);
       if (failure.kind === 'unavailable') {
@@ -231,11 +379,14 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
       log.info('Adopting this extension’s existing debugger session', { tabId });
     }
     try {
-      await enableInterception(tabId);
+      await enableSession(ops, tabId);
+      const [method, params] = GUARD_COMMAND;
+      await ops.call(method, () => port.send({ tabId }, method, params));
     } catch (cause) {
       const aborted = attachmentOf(tabId).phase !== 'attaching';
       apply(tabId, { type: 'lost' });
-      if (!aborted) await detachQuietly(tabId, true);
+      // Detach left to the controller's follow-up disarm when the budget is spent.
+      if (!aborted) await detachQuietly(ops, tabId, true);
       const reason = aborted ? await abortCause(tabId) : 'attach-denied';
       log.warn('Interception could not be enabled', { tabId, cause: errorMessage(cause), reason });
       return { armed: false, cause: reason };
@@ -243,16 +394,31 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     if (apply(tabId, { type: 'enabled' }) === null) {
       return { armed: false, cause: await abortCause(tabId) };
     }
+    confirmedAt.set(tabId, clock());
+    await learnPageTarget(ops, tabId);
     return { armed: true };
   };
 
   /** Establish interception for the tab, tagged `generation` (arm and resume share it). */
-  const establish = async (tabId: number, generation: number): Promise<ArmResult> => {
-    aborts.delete(tabId);
-    if (attachmentOf(tabId).phase === 'armed' && (await confirmArmed(tabId, generation))) {
+  const establish = async (
+    ops: OperationBudget,
+    tabId: number,
+    generation: number
+  ): Promise<ArmResult> => {
+    const current = attachmentOf(tabId);
+    // Armed for this very generation by an operation that finished while
+    // this one waited in the queue: nothing to confirm (it just was).
+    if (
+      current.phase === 'armed' &&
+      current.generation === generation &&
+      (confirmedAt.get(tabId) ?? -Infinity) >= ops.calledAt
+    ) {
       return { armed: true };
     }
-    return attachFresh(tabId, generation);
+    if (current.phase === 'armed' && (await confirmArmed(ops, tabId, generation))) {
+      return { armed: true };
+    }
+    return attachFresh(ops, tabId, generation);
   };
 
   // ── Paused requests ────────────────────────────────────────────────────
@@ -269,8 +435,13 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
             port.send(target, 'Fetch.continueRequest', { requestId })
           );
         } catch (cause) {
-          // Detached meanwhile: the browser already continued it.
-          if (isNotAttachedError(cause)) log.debug('Continue after detach (released)', { why });
+          // Detached meanwhile (the browser already continued it), or the
+          // navigation was abandoned (nothing left to serve): expected.
+          if (isNotAttachedError(cause) || isAbandonedRequestError(cause))
+            log.debug('Paused request already gone (released)', {
+              why,
+              cause: errorMessage(cause)
+            });
           else
             log.warn('Paused request could not be continued', { why, cause: errorMessage(cause) });
         }
@@ -285,22 +456,29 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
           return true;
         } catch (cause) {
           held = true;
-          log.warn('Rewritten document refused — served unmodified', {
-            tabId: target.tabId,
-            cause: errorMessage(cause)
-          });
+          const details = { tabId: target.tabId, cause: errorMessage(cause) };
+          if (isNotAttachedError(cause) || isAbandonedRequestError(cause))
+            log.debug('Paused request gone before its fulfill', details);
+          else log.warn('Rewritten document refused — served unmodified', details);
           return false;
         }
       }
     };
   };
 
-  /** Whether a paused document is the tab's top-level one. */
+  /**
+   * Whether a paused document is the tab's top-level one: the cached page
+   * target id first; on a mismatch (an iframe, or the tab's page target
+   * changed) it is re-read once.
+   */
   const isTopFrame = async (target: DebuggerTarget, frameId: string): Promise<boolean> => {
     // A child session is never the tab's page.
     if (target.sessionId !== undefined) return false;
+    if (pageTargets.get(target.tabId) === frameId) return true;
     try {
-      return (await call('Page target', () => port.pageTargetId(target.tabId))) === frameId;
+      const id = await call('Page target', () => port.pageTargetId(target.tabId));
+      if (id !== null) pageTargets.set(target.tabId, id);
+      return id === frameId;
     } catch (cause) {
       log.warn('Page target unknown — document served unmodified', { cause });
       return false;
@@ -326,7 +504,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     target: DebuggerTarget,
     pause: PausedRequest,
     facts: InterceptedResponseFacts,
-    body: Uint8Array
+    body: Uint8Array,
+    identity: InterceptedResponseIdentity
   ): Promise<Uint8Array | null> => {
     try {
       return await bounded('Host rewrite', CHROMIUM_TIMEOUTS_MS.release, () =>
@@ -334,7 +513,8 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
           tabId: target.tabId,
           documentUrl: pause.url,
           body,
-          ...facts
+          ...facts,
+          identity
         })
       );
     } catch (cause) {
@@ -347,25 +527,36 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   const handlePause = async (
     target: DebuggerTarget,
     pause: PausedRequest,
-    release: PauseRelease
+    release: PauseRelease,
+    receivedAt: number
   ): Promise<void> => {
     const disposition = classifyPause(pause);
     if (disposition.kind === 'pass') return release.pass(disposition.reason);
     if (!mayRewrite(attachmentOf(target.tabId))) return release.pass('stopping');
     if (!(await isTopFrame(target, pause.frameId))) return release.pass('sub-frame');
+    const identity: InterceptedResponseIdentity = {
+      token: pause.requestId,
+      receivedAt,
+      speculationRulesHeader: headerValue(pause.headers, SPECULATION_RULES_HEADER) !== null,
+      servedAsCopy: true
+    };
+    // Another origin in the session tab (or no session): its body is none
+    // of the session's business — never read, passed through.
+    if (!(await host.shouldIntercept(target.tabId, pause.url))) return release.pass('no-session');
     const body = await readBody(target, pause);
     if (body === null) {
       await release.pass('body-unavailable');
-      await host.documentBodyUnavailable(target.tabId, pause.url);
+      await host.documentBodyUnavailable(target.tabId, pause.url, identity);
       return;
     }
-    const rewritten = await hostRewrite(target, pause, disposition.facts, body);
+    const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity);
     if (rewritten === null) return release.pass('unmodified');
     if (!(await release.fulfill(fulfillParams(pause, rewritten)))) await release.pass('refused');
   };
 
   /** A `Fetch.requestPaused` event: validate, handle, and always release. */
   const onPaused = async (target: DebuggerTarget, params: unknown): Promise<void> => {
+    const receivedAt = now();
     const pause = parsePausedRequest(params);
     const requestId = pause?.requestId ?? pausedRequestId(params);
     if (requestId === null) {
@@ -379,7 +570,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
         await release.pass('malformed');
         return;
       }
-      await handlePause(target, pause, release);
+      await handlePause(target, pause, release, receivedAt);
     } catch (cause) {
       log.error('Paused request handling failed — served unmodified', { cause });
       await release.pass('fault');
@@ -390,6 +581,7 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
 
   /** `onDetach`: move synchronously, then work out the cause and report or abort. */
   const onDetached = (tabId: number, reason: unknown): void => {
+    pageTargets.delete(tabId);
     const step = apply(tabId, { type: 'browser-detached' });
     const effect = step?.effect ?? null;
     if (effect === null) return;
@@ -433,18 +625,24 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
   });
 
   return {
-    arm: (tabId, generation) => serialize(tabId, () => establish(tabId, generation)),
+    arm: (tabId, generation) =>
+      operation(tabId, CHROMIUM_OPERATION_BUDGETS_MS.arm, (ops) =>
+        establish(ops, tabId, generation)
+      ),
 
     resume: (tabId, generation) =>
-      serialize(tabId, async () => (await establish(tabId, generation)).armed),
+      operation(
+        tabId,
+        CHROMIUM_OPERATION_BUDGETS_MS.resume,
+        async (ops) => (await establish(ops, tabId, generation)).armed
+      ),
 
     disarm: (tabId) =>
-      serialize(tabId, async () => {
-        aborts.delete(tabId);
+      operation(tabId, CHROMIUM_OPERATION_BUDGETS_MS.disarm, async (ops) => {
         const held = apply(tabId, { type: 'detach' }) !== null;
         // Detached even without a record: a session kept across a background
         // restart is still this extension's to end.
-        await detachQuietly(tabId, held);
+        await detachQuietly(ops, tabId, held);
         apply(tabId, { type: 'detached' });
       })
   };

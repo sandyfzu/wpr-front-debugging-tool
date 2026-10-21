@@ -1249,3 +1249,120 @@ describe('defaults', () => {
     ).resolves.not.toBeNull();
   });
 });
+
+describe('served identity and session effects', () => {
+  const RULES = '<script type="speculationrules">{"prefetch":[]}</script>';
+  const identity = (receivedAt: number, header = false) => ({
+    token: `req-${String(receivedAt)}`,
+    receivedAt,
+    speculationRulesHeader: header,
+    servedAsCopy: true
+  });
+  const recorded = async () => {
+    const status = await getExclusionSessionStatus(TAB);
+    return status.state === 'active' ? status.document : undefined;
+  };
+
+  it('records the response identity and the rules removed with the outcome', async () => {
+    const r = rig();
+    await seedActive();
+    const body = await r.host.rewriteDocument({
+      ...htmlDoc(`${ORIGIN}/a`, `${RULES}${DELAYED}`),
+      identity: identity(NOW)
+    });
+    expect(body).toEqual(encoder.encode(applyPipeline(DELAYED, SET).html));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'rewritten',
+      served: {
+        url: `${ORIGIN}/a`,
+        token: `req-${String(NOW)}`,
+        receivedAt: NOW,
+        speculationRulesRemoved: 1,
+        copy: true
+      }
+    });
+  });
+
+  it('serves the original bytes to drop a rules header when nothing else changed', async () => {
+    const r = rig();
+    await seedActive();
+    const document = { ...htmlDoc(`${ORIGIN}/a`, '<p>plain</p>'), identity: identity(NOW, true) };
+    await expect(r.host.rewriteDocument(document)).resolves.toEqual(document.body);
+    await flush();
+    expect(await recorded()).toMatchObject({ served: { speculationRulesRemoved: 1, copy: true } });
+  });
+
+  it('records an untouched document as no copy, nothing removed', async () => {
+    const r = rig();
+    await seedActive();
+    const document = { ...htmlDoc(`${ORIGIN}/a`, '<p>plain</p>'), identity: identity(NOW) };
+    await expect(r.host.rewriteDocument(document)).resolves.toBeNull();
+    await flush();
+    expect(await recorded()).toMatchObject({ served: { speculationRulesRemoved: 0, copy: false } });
+  });
+
+  it('never lets an abandoned navigation’s late outcome replace the visible page’s record', async () => {
+    const r = rig();
+    await seedActive();
+    // B (received later) records first; A (received earlier) finishes after.
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/b`), identity: identity(NOW + 10) });
+    await flush();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/a`), identity: identity(NOW) });
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, identity(NOW + 1));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'rewritten',
+      served: { url: `${ORIGIN}/b` }
+    });
+  });
+
+  it('records an unreadable body with its identity', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.documentBodyUnavailable(TAB, `${ORIGIN}/a`, identity(NOW));
+    await flush();
+    expect(await recorded()).toEqual({
+      outcome: 'failed',
+      reason: 'body-unavailable',
+      served: {
+        url: `${ORIGIN}/a`,
+        token: `req-${String(NOW)}`,
+        receivedAt: NOW,
+        speculationRulesRemoved: 0,
+        copy: false
+      }
+    });
+  });
+
+  it('records without an identity it cannot carry (over-long URL), logged', async () => {
+    const r = rig();
+    await seedActive();
+    const url = `${ORIGIN}/${'a'.repeat(9000)}`;
+    await r.host.rewriteDocument({ ...htmlDoc(url), identity: identity(NOW) });
+    await flush();
+    const document = await recorded();
+    expect(document).toMatchObject({ outcome: 'rewritten' });
+    expect(document).not.toHaveProperty('served');
+    expect(logged(r.log, 'debug', /not recordable/)).toBe(true);
+  });
+
+  it('keeps dropping the rules header when the engine outcome fails validation', async () => {
+    const lying: DocumentTransformRunner = () =>
+      Promise.resolve({
+        ok: true,
+        html: '<p>x</p>',
+        outcome: { outcome: 'rewritten', reports: [{ feature: 'nope' } as never] }
+      });
+    const r = rig({ runner: lying });
+    await seedActive();
+    const document = { ...htmlDoc(`${ORIGIN}/a`, '<p>plain</p>'), identity: identity(NOW, true) };
+    await expect(r.host.rewriteDocument(document)).resolves.toEqual(document.body);
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'failed',
+      reason: 'engine-failed',
+      served: { speculationRulesRemoved: 1, copy: true }
+    });
+  });
+});

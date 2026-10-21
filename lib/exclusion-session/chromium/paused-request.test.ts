@@ -186,7 +186,7 @@ describe('responseBodyBytes', () => {
 });
 
 describe('fulfillHeaders', () => {
-  it('drops framing and cookie lines, keeping every other line in order (repeats too)', () => {
+  it('drops framing, cookie and speculation-rules lines, keeping every other line in order (repeats too)', () => {
     expect(
       fulfillHeaders([
         { name: 'Content-Type', value: 'text/html' },
@@ -194,6 +194,7 @@ describe('fulfillHeaders', () => {
         { name: 'Content-Encoding', value: 'br' },
         { name: 'Transfer-Encoding', value: 'chunked' },
         { name: 'Set-Cookie', value: 'a=1' },
+        { name: 'Speculation-Rules', value: '"/rules.json"' },
         { name: 'Link', value: '<a>' },
         { name: 'link', value: '<b>' }
       ])

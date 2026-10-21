@@ -17,9 +17,9 @@ export interface DebuggerTarget {
 export type TabPresence =
   /** The tab no longer exists. */
   | 'gone'
-  /** The tab shows an http(s) page (its URL is readable through the host permissions). */
+  /** The tab shows an http(s) page the debugger may touch (its URL is readable through the host permissions). */
   | 'web'
-  /** The tab exists but shows something else (its URL is unreadable or not http(s)). */
+  /** The tab exists but shows something else (its URL is unreadable, not http(s), or the web store). */
   | 'elsewhere';
 
 /** The handlers the backend registers once, synchronously, when it is created. */

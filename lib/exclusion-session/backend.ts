@@ -56,11 +56,35 @@ export type InterceptionEndCause = Exclude<
   'session-limit' | 'unsupported-browser'
 >;
 
+/**
+ * A backend's identity of one intercepted response — optional: without it
+ * the host records no served identity (and no ordering) for the document.
+ */
+export interface InterceptedResponseIdentity {
+  /** Opaque, unique per intercepted response (printable, ≤ `SERVED_DOCUMENT_LIMITS.tokenChars`). */
+  readonly token: string;
+  /** Epoch ms the response reached the backend (orders the tab's documents). */
+  readonly receivedAt: number;
+  /**
+   * Whether the response carries a `Speculation-Rules` header — the backend
+   * drops it from every response it serves bytes for, so the host then
+   * always returns bytes (the original ones when nothing else changed).
+   */
+  readonly speculationRulesHeader: boolean;
+  /**
+   * Whether bytes the host returns reach the page as a substituted copy
+   * (its security indicator and timing then describe the copy).
+   */
+  readonly servedAsCopy: boolean;
+}
+
 /** One intercepted top-level document of a tab, with its response facts. */
 export interface InterceptedDocument extends InterceptedDocumentBody, InterceptedResponseFacts {
   readonly tabId: number;
   /** The document's absolute URL (the session's origin gate reads it). */
   readonly documentUrl: string;
+  /** The response's identity, when the backend has one. */
+  readonly identity?: InterceptedResponseIdentity;
 }
 
 /**
@@ -80,21 +104,31 @@ export interface InterceptionHost {
   /**
    * Rewrite one intercepted top-level document and record its outcome.
    *
-   * @returns The bytes to serve, or null to serve the original bytes
-   *   unmodified (no active session for the tab, another origin, an
-   *   ineligible response — those unrecorded — nothing changed, a session
-   *   stopped or replaced while the engine ran, or any failure — recorded
-   *   where a session exists).
+   * @returns The bytes to serve, or null to serve the original response
+   *   untouched (no active session for the tab, another origin, an
+   *   ineligible response — those unrecorded — nothing changed and no
+   *   speculation-rules header to drop, an undecodable body, a session
+   *   stopped or replaced while the engine ran — recorded where a session
+   *   exists, unless a newer document of the tab is already recorded). Bytes are
+   *   the rewrite, or the document without exclusions when the engine
+   *   failed (still without its speculation rules — a session effect), or
+   *   the original bytes when only the header must go.
    *   Headers are the backend's: the body is in the response's own
    *   charset (never transcoded), so only `Content-Length` (and any
-   *   `Content-Encoding` the backend already removed) needs fixing.
+   *   `Content-Encoding` the backend already removed) needs fixing, and
+   *   `Speculation-Rules` dropped.
    */
   rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null>;
   /**
    * An eligible top-level document's body could not be read (or exceeds
-   * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded.
+   * `DOCUMENT_BODY_BYTE_LIMIT`; served unmodified) — recorded, with the
+   * response's identity when given.
    */
-  documentBodyUnavailable(tabId: number, documentUrl: string): Promise<void>;
+  documentBodyUnavailable(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
   /**
    * The browser ended the tab's interception tagged `generation` (the
    * value the backend was armed or resumed with). An end whose generation

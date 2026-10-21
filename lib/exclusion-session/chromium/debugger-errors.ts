@@ -98,3 +98,14 @@ export function isNotAttachedError(error: unknown): boolean {
     message.startsWith('Debugger is not attached') || message.startsWith('No tab with given id')
   );
 }
+
+/**
+ * Whether a release failed because the paused request no longer exists —
+ * its navigation was abandoned or replaced (Chromium answers "Invalid
+ * InterceptionId." for a request it has dropped).
+ *
+ * @param error What `continueRequest` / `fulfillRequest` rejected with.
+ */
+export function isAbandonedRequestError(error: unknown): boolean {
+  return errorMessage(error).startsWith('Invalid InterceptionId');
+}

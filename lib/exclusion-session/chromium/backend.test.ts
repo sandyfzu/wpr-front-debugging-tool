@@ -10,16 +10,55 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../../logger';
 import type { ScheduleTimer } from '../../messaging/bounded-ask';
 import { bytesToBase64 } from '../../../utils/base64';
-import type { InterceptedDocument, InterceptionBackend, InterceptionHost } from '../backend';
+import type {
+  InterceptedDocument,
+  InterceptedResponseIdentity,
+  InterceptionBackend,
+  InterceptionHost
+} from '../backend';
 import { DOCUMENT_BODY_BYTE_LIMIT } from '../document-transform';
-import { INTERCEPTION_HOST_BOUNDS_MS } from '../timeouts';
-import { CHROMIUM_TIMEOUTS_MS, createChromiumInterceptionBackend } from './backend';
+import { SPECULATION_RULES_GUARD_SOURCE } from '../speculation-rules';
+import { INTERCEPTION_HOST_BOUNDS_MS, SESSION_STEP_TIMEOUTS_MS } from '../timeouts';
+import {
+  CHROMIUM_OPERATION_BUDGETS_MS,
+  CHROMIUM_TIMEOUTS_MS,
+  createChromiumInterceptionBackend
+} from './backend';
 import type { DebuggerEventHandlers, DebuggerPort, DebuggerTarget, TabPresence } from './port';
 
 const TAB = 4;
+/** The commands that enable a session after attaching, in order. */
+const SESSION = ['Fetch.enable', 'Network.enable', 'Network.setBypassServiceWorker', 'Page.enable'];
+/** A fresh attachment: attach, the session, the guard, the page target. */
+const FRESH = [
+  `attach:${String(TAB)}`,
+  ...SESSION,
+  'Page.addScriptToEvaluateOnNewDocument',
+  'pageTargetId'
+];
 const MAIN = 'MAIN-FRAME';
 const BODY = new TextEncoder().encode('<p>served</p>');
 const REWRITTEN = new TextEncoder().encode('<p>rewritten</p>');
+/** The epoch the fake `now` answers. */
+const EPOCH = 1_800_000_000_000;
+
+/** A settable monotonic clock. */
+function fakeClock(): {
+  now: () => number;
+  set: (ms: number) => void;
+  advance: (ms: number) => void;
+} {
+  let at = 0;
+  return {
+    now: () => at,
+    set: (ms) => {
+      at = ms;
+    },
+    advance: (ms) => {
+      at += ms;
+    }
+  };
+}
 
 /** A logger recording its lines. */
 function fakeLog(): Logger & { lines: { level: string; message: string }[] } {
@@ -134,11 +173,15 @@ class FakeHost implements InterceptionHost {
   rewrite: (document: InterceptedDocument) => Promise<Uint8Array | null> = () =>
     Promise.resolve(REWRITTEN);
   readonly documents: InterceptedDocument[] = [];
-  readonly unavailable: [number, string][] = [];
+  readonly unavailable: [number, string, InterceptedResponseIdentity | undefined][] = [];
   readonly ended: [number, string, number][] = [];
 
-  shouldIntercept(): Promise<boolean> {
-    return Promise.resolve(true);
+  intercept = true;
+  readonly gated: [number, string][] = [];
+
+  shouldIntercept(tabId: number, documentUrl: string): Promise<boolean> {
+    this.gated.push([tabId, documentUrl]);
+    return Promise.resolve(this.intercept);
   }
 
   rewriteDocument(document: InterceptedDocument): Promise<Uint8Array | null> {
@@ -146,8 +189,12 @@ class FakeHost implements InterceptionHost {
     return this.rewrite(document);
   }
 
-  documentBodyUnavailable(tabId: number, documentUrl: string): Promise<void> {
-    this.unavailable.push([tabId, documentUrl]);
+  documentBodyUnavailable(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void> {
+    this.unavailable.push([tabId, documentUrl, identity]);
     return Promise.resolve();
   }
 
@@ -179,6 +226,7 @@ interface Rig {
   host: FakeHost;
   log: ReturnType<typeof fakeLog>;
   timers: ReturnType<typeof manualTimers>;
+  clock: ReturnType<typeof fakeClock>;
   backend: InterceptionBackend;
   /** Deliver a pause event and let it settle. */
   pause(overrides?: Record<string, unknown>, source?: unknown): Promise<void>;
@@ -196,12 +244,21 @@ beforeEach(() => {
   port.commands.set('Fetch.getResponseBody', () =>
     Promise.resolve({ body: bytesToBase64(BODY), base64Encoded: true })
   );
-  const backend = createChromiumInterceptionBackend({ port, host, log, schedule: timers.schedule });
+  const clock = fakeClock();
+  const backend = createChromiumInterceptionBackend({
+    port,
+    host,
+    log,
+    schedule: timers.schedule,
+    clock: clock.now,
+    now: () => EPOCH
+  });
   rig = {
     port,
     host,
     log,
     timers,
+    clock,
     backend,
     async pause(overrides = {}, source = { tabId: TAB }) {
       port.handlers.event(source, 'Fetch.requestPaused', pauseEvent(overrides));
@@ -220,16 +277,53 @@ function logged(level: string, pattern: RegExp): boolean {
 }
 
 describe('arm', () => {
-  it('attaches, then enables response-stage document interception', async () => {
+  it('attaches, enables interception and the service-worker bypass, then learns the page target', async () => {
     await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
-    expect(rig.port.calls).toEqual([`attach:${String(TAB)}`, 'Fetch.enable']);
-    expect(rig.port.sent[0]).toEqual({
-      target: { tabId: TAB },
-      method: 'Fetch.enable',
-      params: {
-        patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }]
+    expect(rig.port.calls).toEqual(FRESH);
+    expect(rig.port.sent).toEqual([
+      {
+        target: { tabId: TAB },
+        method: 'Fetch.enable',
+        params: {
+          patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Response' }]
+        }
+      },
+      {
+        target: { tabId: TAB },
+        method: 'Network.enable',
+        params: { maxTotalBufferSize: 0, maxResourceBufferSize: 0, maxPostDataSize: 0 }
+      },
+      {
+        target: { tabId: TAB },
+        method: 'Network.setBypassServiceWorker',
+        params: { bypass: true }
+      },
+      { target: { tabId: TAB }, method: 'Page.enable', params: {} },
+      {
+        target: { tabId: TAB },
+        method: 'Page.addScriptToEvaluateOnNewDocument',
+        params: { source: SPECULATION_RULES_GUARD_SOURCE }
       }
+    ]);
+  });
+
+  it('fails like any enable failure when the service-worker bypass is refused', async () => {
+    rig.port.commands.set('Network.setBypassServiceWorker', () =>
+      Promise.reject(new Error('Network domain not enabled'))
+    );
+    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({
+      armed: false,
+      cause: 'attach-denied'
     });
+    expect(rig.port.calls.at(-1)).toBe(`detach:${String(TAB)}`);
+  });
+
+  it('arms even when the page target cannot be learned (read on the first pause)', async () => {
+    rig.port.pageTarget = () => Promise.reject(new Error('targets failed'));
+    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
+    rig.port.pageTarget = () => Promise.resolve(MAIN);
+    await rig.pause();
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
   });
 
   it('maps a refused attach to its cause without enabling', async () => {
@@ -263,7 +357,7 @@ describe('arm', () => {
     rig.port.attachImpl = () =>
       Promise.reject(new Error('Another debugger is already attached to the tab with id: 4.'));
     await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: true });
-    expect(rig.port.calls).toEqual([`attach:${String(TAB)}`, 'Fetch.enable']);
+    expect(rig.port.calls).toEqual(FRESH);
     expect(logged('info', /Adopting/)).toBe(true);
   });
 
@@ -302,11 +396,21 @@ describe('arm', () => {
     await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({ armed: false, cause: 'detached' });
   });
 
-  it('confirms an armed tab with the patterns only, re-tagging it', async () => {
+  it('fails like any enable failure when the guard cannot be installed', async () => {
+    rig.port.commands.set('Page.addScriptToEvaluateOnNewDocument', () =>
+      Promise.reject(new Error('Page domain not enabled'))
+    );
+    await expect(rig.backend.arm(TAB, 10)).resolves.toEqual({
+      armed: false,
+      cause: 'attach-denied'
+    });
+  });
+
+  it('confirms an armed tab by re-enabling its session only (no second guard), re-tagging it', async () => {
     await rig.backend.arm(TAB, 10);
     rig.port.calls.length = 0;
     await expect(rig.backend.arm(TAB, 20)).resolves.toEqual({ armed: true });
-    expect(rig.port.calls).toEqual(['Fetch.enable']);
+    expect(rig.port.calls).toEqual(SESSION);
     await rig.detach('target_closed');
     expect(rig.host.ended).toEqual([[TAB, 'detached', 20]]);
   });
@@ -321,7 +425,92 @@ describe('arm', () => {
     });
     rig.port.calls.length = 0;
     await expect(rig.backend.arm(TAB, 20)).resolves.toEqual({ armed: true });
+    expect(rig.port.calls).toEqual(['Fetch.enable', ...FRESH]);
+  });
+});
+
+describe('operation budgets (each answers before the controller’s deadline for it)', () => {
+  it('derives every budget from the controller’s step deadline minus a margin', () => {
+    expect(CHROMIUM_OPERATION_BUDGETS_MS.arm).toBeLessThan(SESSION_STEP_TIMEOUTS_MS.arm);
+    expect(CHROMIUM_OPERATION_BUDGETS_MS.resume).toBeLessThan(SESSION_STEP_TIMEOUTS_MS.resume);
+    expect(CHROMIUM_OPERATION_BUDGETS_MS.disarm).toBeLessThan(SESSION_STEP_TIMEOUTS_MS.disarm);
+  });
+
+  it('never starts a call once a slow re-arm has spent the arm budget', async () => {
+    await rig.backend.arm(TAB, 10);
+    rig.port.calls.length = 0;
+    rig.clock.set(0);
+    // Each call takes 1.7 s of clock: enable (dead) → attach → enable (fails at 5.1 s).
+    rig.port.commands.set('Fetch.enable', () => {
+      rig.clock.advance(1_700);
+      return Promise.reject(new Error('Debugger is not attached to the tab with id: 4.'));
+    });
+    rig.port.attachImpl = () => {
+      rig.clock.advance(1_700);
+      return Promise.resolve();
+    };
+    await expect(rig.backend.arm(TAB, 20)).resolves.toEqual({
+      armed: false,
+      cause: 'attach-denied'
+    });
+    // The detach left once the budget ran out was never started (the
+    // controller's follow-up disarm ends the session).
     expect(rig.port.calls).toEqual(['Fetch.enable', `attach:${String(TAB)}`, 'Fetch.enable']);
+  });
+
+  it('counts the queue wait: a resume queued behind a slow arm of its generation answers armed at once', async () => {
+    const attach = deferred();
+    rig.port.attachImpl = () => attach.promise;
+    rig.clock.set(0);
+    const armed = rig.backend.arm(TAB, 10);
+    const resumed = rig.backend.resume(TAB, 10);
+    await flush();
+    rig.clock.advance(CHROMIUM_OPERATION_BUDGETS_MS.resume + 1);
+    attach.resolve();
+    await expect(armed).resolves.toEqual({ armed: true });
+    rig.port.calls.length = 0;
+    // Armed by the arm ahead of it, after the resume was called: confirmed, no calls.
+    await expect(resumed).resolves.toBe(true);
+    expect(rig.port.calls).toEqual([]);
+  });
+
+  it('answers within its budget when queued behind a slow arm of another generation', async () => {
+    const attach = deferred();
+    rig.port.attachImpl = () => attach.promise;
+    rig.clock.set(0);
+    const armed = rig.backend.arm(TAB, 10);
+    const resumed = rig.backend.resume(TAB, 9);
+    await flush();
+    rig.clock.advance(CHROMIUM_OPERATION_BUDGETS_MS.resume + 1);
+    attach.resolve();
+    await expect(armed).resolves.toEqual({ armed: true });
+    // Its own re-enable found no time left: not confirmed (no call started).
+    await expect(resumed).resolves.toBe(false);
+  });
+
+  it('re-confirms an armed tab whose confirmation predates the call', async () => {
+    await rig.backend.arm(TAB, 10);
+    rig.clock.advance(5);
+    rig.port.calls.length = 0;
+    await expect(rig.backend.resume(TAB, 10)).resolves.toBe(true);
+    expect(rig.port.calls).toEqual(SESSION);
+  });
+
+  it('caps a single call at the per-call deadline inside a larger budget', async () => {
+    rig.port.attachImpl = () => new Promise(() => undefined);
+    const armed = rig.backend.arm(TAB, 10);
+    await flush();
+    rig.timers.fire(CHROMIUM_TIMEOUTS_MS.command);
+    await expect(armed).resolves.toEqual({ armed: false, cause: 'attach-denied' });
+  });
+
+  it('bounds a disarm’s detach by the disarm budget', async () => {
+    await rig.backend.arm(TAB, 10);
+    rig.port.detachImpl = () => new Promise(() => undefined);
+    const disarmed = rig.backend.disarm(TAB);
+    await flush();
+    rig.timers.fire(CHROMIUM_OPERATION_BUDGETS_MS.disarm);
+    await expect(disarmed).resolves.toBeUndefined();
   });
 });
 
@@ -380,11 +569,7 @@ describe('disarm', () => {
     attach.resolve();
     await expect(armed).resolves.toEqual({ armed: true });
     await disarmed;
-    expect(rig.port.calls).toEqual([
-      `attach:${String(TAB)}`,
-      'Fetch.enable',
-      `detach:${String(TAB)}`
-    ]);
+    expect(rig.port.calls).toEqual([...FRESH, `detach:${String(TAB)}`]);
     // Disarmed: a browser signal for the tab reports nothing.
     await rig.detach('target_closed');
     expect(rig.host.ended).toEqual([]);
@@ -453,10 +638,18 @@ describe('paused requests', () => {
         body: BODY,
         status: 200,
         method: 'GET',
-        contentType: 'text/html; charset=utf-8'
+        contentType: 'text/html; charset=utf-8',
+        identity: {
+          token: 'req-1',
+          receivedAt: EPOCH,
+          speculationRulesHeader: false,
+          servedAsCopy: true
+        }
       }
     ]);
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
+    // The page target id is cached at arm: no lookup per pause.
+    expect(rig.port.calls).not.toContain('pageTargetId');
     expect(rig.port.sent.at(-1)?.params).toEqual({
       requestId: 'req-1',
       responseCode: 200,
@@ -490,13 +683,58 @@ describe('paused requests', () => {
     ]);
   });
 
-  it('continues when the page target is unknown', async () => {
+  it('continues a document of another frame when the page target cannot be re-read', async () => {
     rig.port.pageTarget = () => Promise.reject(new Error('targets failed'));
-    await rig.pause();
+    await rig.pause({ frameId: 'OTHER' });
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
     rig.port.pageTarget = () => Promise.resolve(null);
-    await rig.pause({ requestId: 'req-2' });
+    await rig.pause({ frameId: 'OTHER', requestId: 'req-2' });
     expect(rig.port.releases('req-2')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('re-reads the page target on a mismatch and follows a changed one', async () => {
+    rig.port.pageTarget = () => Promise.resolve('SWAPPED');
+    await rig.pause({ frameId: 'SWAPPED' });
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
+    rig.port.calls.length = 0;
+    await rig.pause({ frameId: 'SWAPPED', requestId: 'req-2' });
+    expect(rig.port.calls).not.toContain('pageTargetId');
+    // The old id is no longer the page.
+    await rig.pause({ frameId: MAIN, requestId: 'req-3' });
+    expect(rig.port.releases('req-3')).toEqual(['Fetch.continueRequest']);
+  });
+
+  it('forgets the page target when the session ends', async () => {
+    await rig.detach('target_closed');
+    rig.port.calls.length = 0;
+    await rig.pause();
+    expect(rig.port.calls).toContain('pageTargetId');
+  });
+
+  it('flags a Speculation-Rules header and drops it from the fulfilled response', async () => {
+    await rig.pause({
+      responseHeaders: [
+        { name: 'Content-Type', value: 'text/html' },
+        { name: 'Speculation-Rules', value: '"/rules.json"' }
+      ]
+    });
+    expect(rig.host.documents[0]?.identity?.speculationRulesHeader).toBe(true);
+    expect(rig.port.sent.at(-1)?.params?.responseHeaders).toEqual([
+      { name: 'Content-Type', value: 'text/html' }
+    ]);
+  });
+
+  it('demotes a release of an abandoned navigation to debug', async () => {
+    rig.port.commands.set('Fetch.fulfillRequest', () =>
+      Promise.reject(new Error('Invalid InterceptionId.'))
+    );
+    rig.port.commands.set('Fetch.continueRequest', () =>
+      Promise.reject(new Error('Invalid InterceptionId.'))
+    );
+    await rig.pause();
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
+    expect(rig.log.lines.some((line) => line.level === 'warn')).toBe(false);
+    expect(logged('debug', /gone/)).toBe(true);
   });
 
   it('continues a redirect hop without a frame check', async () => {
@@ -504,11 +742,17 @@ describe('paused requests', () => {
     expect(rig.port.calls).toEqual(['Fetch.continueRequest']);
   });
 
-  it('continues and records an unreadable body', async () => {
+  it('continues and records an unreadable body with its identity', async () => {
     rig.port.commands.set('Fetch.getResponseBody', () => Promise.reject(new Error('no body')));
     await rig.pause();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
-    expect(rig.host.unavailable).toEqual([[TAB, 'https://site.test/page']]);
+    expect(rig.host.unavailable).toEqual([
+      [
+        TAB,
+        'https://site.test/page',
+        { token: 'req-1', receivedAt: EPOCH, speculationRulesHeader: false, servedAsCopy: true }
+      ]
+    ]);
   });
 
   it('never reads a body announced larger than the limit', async () => {
@@ -589,6 +833,15 @@ describe('paused requests', () => {
     await disarmed;
   });
 
+  it('never reads the body of a document the host does not intercept (another origin, no session)', async () => {
+    rig.host.intercept = false;
+    await rig.pause();
+    expect(rig.host.gated).toEqual([[TAB, 'https://site.test/page']]);
+    expect(rig.port.calls).not.toContain('Fetch.getResponseBody');
+    expect(rig.host.documents).toEqual([]);
+    expect(rig.port.releases('req-1')).toEqual(['Fetch.continueRequest']);
+  });
+
   it('considers a pause of a tab it holds no record of (the host gates it)', async () => {
     await rig.pause({}, { tabId: 77 });
     expect(rig.host.documents).toHaveLength(1);
@@ -599,7 +852,7 @@ describe('paused requests', () => {
       Promise.reject(new Error('Debugger is not attached to the tab with id: 4.'))
     );
     await rig.pause({ frameId: 'IFRAME' });
-    expect(logged('debug', /after detach/)).toBe(true);
+    expect(logged('debug', /already gone/)).toBe(true);
     rig.port.commands.set('Fetch.continueRequest', () => Promise.reject(new Error('odd')));
     await rig.pause({ frameId: 'IFRAME', requestId: 'req-2' });
     expect(logged('warn', /could not be continued/)).toBe(true);
@@ -627,5 +880,21 @@ describe('paused requests', () => {
     await flush();
     expect(rig.port.sent).toEqual([]);
     expect(logged('error', /unknown source/)).toBe(true);
+  });
+});
+
+describe('defaults', () => {
+  it('runs on the real clocks and logger when none are injected', async () => {
+    const port = new FakePort();
+    const host = new FakeHost();
+    port.commands.set('Fetch.getResponseBody', () =>
+      Promise.resolve({ body: bytesToBase64(BODY), base64Encoded: true })
+    );
+    const backend = createChromiumInterceptionBackend({ port, host });
+    await expect(backend.arm(TAB, 1)).resolves.toEqual({ armed: true });
+    const before = Date.now();
+    port.handlers.event({ tabId: TAB }, 'Fetch.requestPaused', pauseEvent());
+    await flush();
+    expect(host.documents[0]?.identity?.receivedAt).toBeGreaterThanOrEqual(before);
   });
 });

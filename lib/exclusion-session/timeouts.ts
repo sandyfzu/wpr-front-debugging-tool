@@ -4,7 +4,10 @@
  * store or push can wedge a tab's event queue or hold a navigation, and
  * every host call a backend makes resolves within a declared bound.
  */
+import { REGEX_ANALYSIS_LIMITS } from '../exclusion-builder/regex-risk';
+import { EXCLUSION_FEATURES } from '../exclusion-builder/set';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
+import { EXCLUSION_SET_LIMITS } from '../messaging/exclusion-session';
 import { DOCUMENT_TRANSFORM_BUDGET_MS } from './document-transform';
 
 /**
@@ -44,16 +47,45 @@ export const SESSION_STEP_TIMEOUTS_MS = {
 const STEPS = SESSION_STEP_TIMEOUTS_MS;
 
 /**
- * The CPU an apply spends prevalidating its set before anything is queued
- * (ms) — synchronous, so a bound, not a timeout. Measured 2026-10-20 on
- * cap-sized adversarial sets (32 distinct rows × ~2 040 chars, the whole
- * 64 Ki-char budget: `(?i:…)` scopes of distinct negated / mid-size /
- * half-range classes, looped nullable sequences, looped alternations of
- * huge zero-width repeats): ≤ 160 ms cold on the development machine,
- * 287–319 ms in an independent verification run, ~0.1 ms memoized. The
- * bound keeps ≥ 3× headroom over the worst observed (pinned by tests).
+ * The most analysis work a whole set's prevalidation can spend (work
+ * units), by construction: each pattern row's analysis is capped at
+ * `workBase + workPerChar × length` (`analysisWorkBudget` — past it the
+ * row is `too-complex`), and a wire-valid set holds at most
+ * `totalChars` characters over at most `rowsPerFeature` rows per pattern
+ * feature. Machine speed plays no part in this number.
  */
-export const PREVALIDATION_CPU_BOUND_MS = 1_000;
+export const PREVALIDATION_WORK_BOUND =
+  REGEX_ANALYSIS_LIMITS.workPerChar * EXCLUSION_SET_LIMITS.totalChars +
+  REGEX_ANALYSIS_LIMITS.workBase *
+    EXCLUSION_SET_LIMITS.rowsPerFeature *
+    EXCLUSION_FEATURES.filter((feature) => feature.rowKind === 'pattern').length;
+
+/**
+ * Cost of one work unit (ns), declared from measurement: every inner step
+ * the analysis takes is charged (sorts at n·log n, head copies, class
+ * walks, matcher reads), so the cost per unit is near-uniform across
+ * shapes. Measured 2026-10-20 over 23 cap-sized adversarial shapes (warm,
+ * Node 24, development machine, no coverage, repeated runs): 3.8–8 ns on
+ * the shapes that reach millions of units, up to 24 ns on light ones
+ * (≤ 0.5 M units, ~3 ms runs); declared at the highest seen.
+ */
+export const PREVALIDATION_NS_PER_WORK_UNIT = 25;
+
+/**
+ * Work-independent prevalidation cost (ms): the one-time case-folding
+ * index (~5 ms measured) plus constructing every row's `RegExp` for a
+ * cap-sized set (< 1 ms measured), rounded up.
+ */
+export const PREVALIDATION_FIXED_MS = 10;
+
+/**
+ * The CPU an apply spends prevalidating its set before anything is queued
+ * (ms) — synchronous, so a bound, not a timeout. The worst case on the
+ * development machine is `PREVALIDATION_WORK_BOUND × NS_PER_WORK_UNIT +
+ * FIXED` ≈ 155 ms (5.78 M units); this bound keeps ≥ 10× headroom for
+ * slower machines (low-end laptops, a busy browser), pinned by a test.
+ */
+export const PREVALIDATION_CPU_BOUND_MS = 1_600;
 
 /**
  * The longest each controller ask can take before it answers (ms), from

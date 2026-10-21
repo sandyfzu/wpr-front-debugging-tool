@@ -223,6 +223,38 @@ describe('document', () => {
     });
   });
 
+  describe('ordering by served identity', () => {
+    const served = (receivedAt: number) => ({
+      url: 'https://site.test/a',
+      token: `t${String(receivedAt)}`,
+      receivedAt,
+      speculationRulesRemoved: 0,
+      copy: true
+    });
+    const recorded = { ...ACTIVE, document: { ...OUTCOME, served: served(50) } };
+    const documentAt = (receivedAt: number): SessionEvent =>
+      ({
+        ...EVENTS.document,
+        outcome: { ...OUTCOME, served: served(receivedAt) }
+      }) as SessionEvent;
+
+    it('drops an outcome of a response older than the recorded one (an abandoned navigation)', () => {
+      expect(transition(recorded, documentAt(49))).toBeNull();
+    });
+
+    it('records a newer or same-time response', () => {
+      expect(transition(recorded, documentAt(51))?.next).toMatchObject({
+        document: { served: { receivedAt: 51 } }
+      });
+      expect(transition(recorded, documentAt(50))).not.toBeNull();
+    });
+
+    it('cannot order without an identity on either side', () => {
+      expect(transition(recorded, EVENTS.document)).not.toBeNull();
+      expect(transition({ ...ACTIVE, document: OUTCOME }, documentAt(1))).not.toBeNull();
+    });
+  });
+
   it("ignores a replaced session's late document", () => {
     expect(
       transition(ACTIVE, { ...EVENTS.document, startedAt: ACTIVE.startedAt - 1 } as SessionEvent)

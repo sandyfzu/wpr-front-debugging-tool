@@ -7,6 +7,7 @@
  */
 import type { InterceptionBackendRow } from '../../lib/exclusion-session/backend';
 import { createChromiumInterceptionBackend } from '../../lib/exclusion-session/chromium/backend';
+import { isDebuggerRestrictedUrl } from '../../lib/exclusion-session/chromium/detach-causes';
 import type { DebuggerPort, TabPresence } from '../../lib/exclusion-session/chromium/port';
 import { createLogger, type Logger } from '../../lib/logger';
 import { isHttpUrl } from '../../utils/urls';
@@ -54,8 +55,14 @@ export function createBrowserDebuggerPort(
     async tabPresence(tabId): Promise<TabPresence> {
       try {
         const tab = await tabs.get(tabId);
-        // Without the `tabs` permission a URL is readable only on host-permitted (http(s)) pages.
-        return tab.url !== undefined && isHttpUrl(tab.url) ? 'web' : 'elsewhere';
+        // Without the `tabs` permission a URL is readable only on host-permitted
+        // (http(s)) pages; the web store is http(s) but closed to the debugger.
+        // A detach caused by a navigation lands before it commits: the page
+        // the tab is going to is the pending URL.
+        const url = tab.pendingUrl ?? tab.url;
+        return url !== undefined && isHttpUrl(url) && !isDebuggerRestrictedUrl(url)
+          ? 'web'
+          : 'elsewhere';
       } catch (cause) {
         log.debug('Tab probe found no tab', { tabId, cause });
         return 'gone';

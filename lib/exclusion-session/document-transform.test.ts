@@ -272,6 +272,94 @@ describe('rewriteDocument', () => {
     });
   });
 
+  describe('speculation rules (a session effect, whatever the engine did)', () => {
+    const RULES = '<script type="speculationrules">{"prefetch":[]}</script>';
+    const latin1 = (text: string) => Uint8Array.from(text, (char) => char.charCodeAt(0));
+
+    it('removes them even when the exclusions changed nothing', async () => {
+      const rewrite = await rewriteDocument(
+        doc(encoder.encode(`<p>é</p>${RULES}`)),
+        DELAY_SET,
+        runner
+      );
+      expect(rewrite.outcome.outcome).toBe('rewritten');
+      expect(rewrite.body).toEqual(encoder.encode('<p>é</p>'));
+      expect(rewrite.speculationRulesRemoved).toBe(1);
+    });
+
+    it('removes them alongside the exclusions, in a single-byte charset', async () => {
+      const rewrite = await rewriteDocument(
+        doc(latin1(`<p>\xe9</p>${RULES}${DELAYED}`), 'text/html; charset=windows-1252'),
+        DELAY_SET,
+        runner
+      );
+      const expected = applyPipeline(`<p>é</p>${DELAYED}`, DELAY_SET).html;
+      expect(rewrite.body).toEqual(latin1(expected));
+      expect(rewrite.speculationRulesRemoved).toBe(1);
+    });
+
+    it('removes them from the original when the engine overran or failed', async () => {
+      const overrun = createInProcessTransformRunner(clock(0, 10_000));
+      const over = await rewriteDocument(
+        doc(encoder.encode(`${RULES}${DELAYED}`)),
+        DELAY_SET,
+        overrun,
+        50
+      );
+      expect(over.outcome.outcome).toBe('over-budget');
+      expect(over.body).toEqual(encoder.encode(DELAYED));
+      const boom = new Error('boom');
+      const failing: DocumentTransformRunner = () =>
+        Promise.resolve({
+          ok: false,
+          outcome: { outcome: 'failed', reason: 'engine-failed' },
+          cause: boom
+        });
+      const failed = await rewriteDocument(
+        doc(encoder.encode(`${RULES}${DELAYED}`)),
+        DELAY_SET,
+        failing
+      );
+      expect(failed).toEqual({
+        outcome: { outcome: 'failed', reason: 'engine-failed' },
+        body: encoder.encode(DELAYED),
+        speculationRulesRemoved: 1,
+        cause: boom
+      });
+    });
+
+    it('serves the original without its rules when the rewrite cannot be re-encoded', async () => {
+      const injecting: DocumentTransformRunner = (req) =>
+        Promise.resolve({
+          ok: true,
+          html: `${req.html}日本`,
+          outcome: { outcome: 'rewritten', reports: [] }
+        });
+      const rewrite = await rewriteDocument(
+        doc(latin1(`<p>x</p>${RULES}`), 'text/html; charset=windows-1252'),
+        DELAY_SET,
+        injecting
+      );
+      expect(rewrite).toEqual({
+        outcome: { outcome: 'failed', reason: 'encode-failed' },
+        body: latin1('<p>x</p>'),
+        speculationRulesRemoved: 1
+      });
+    });
+
+    it('never touches a body it cannot decode', async () => {
+      const rewrite = await rewriteDocument(
+        doc(encoder.encode(RULES), 'text/html; charset=shift_jis'),
+        DELAY_SET,
+        runner
+      );
+      expect(rewrite).toEqual({
+        outcome: { outcome: 'failed', reason: 'decode-failed' },
+        body: null
+      });
+    });
+  });
+
   it('hands the runner the decoded text, set, URL and default budget', async () => {
     const seen: DocumentTransformRequest[] = [];
     const recording: DocumentTransformRunner = (req) => {
