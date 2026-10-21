@@ -77,9 +77,9 @@ export function Lane(props: LaneProps): JSX.Element {
   const [scrollTo, setScrollTo] = createSignal<VirtualScrollRequest | null>(null);
   let root: HTMLElement | undefined;
 
-  /** Focus a row's input once it is rendered (scrolling it into the window first). */
   /** The row a focus move is heading to (arrow presses accumulate on it, never on a stale focus). */
   let focusTarget: string | null = null;
+  /** Focus a row's input once it is rendered (scrolling it into the window first). */
   const focusRow = (id: string): void => {
     const index = rows().findIndex((row) => row.id === id);
     if (index === -1) return;
@@ -96,6 +96,8 @@ export function Lane(props: LaneProps): JSX.Element {
       }
       frames += 1;
       if (frames < FOCUS_FRAMES) props.requestFrame(attempt);
+      // Gave up: forget the target, so the next move starts from focus.
+      else if (focusTarget === id) focusTarget = null;
     };
     // Usually rendered already (the list updates synchronously): focus now,
     // so typing right after "Add row" lands in the row; else retry per frame.
@@ -151,7 +153,16 @@ export function Lane(props: LaneProps): JSX.Element {
   const full = (): boolean => rows().length >= EXCLUSION_SET_LIMITS.rowsPerFeature;
 
   return (
-    <section class="xo-lane" aria-labelledby={headingId()} ref={root}>
+    <section
+      class="xo-lane"
+      aria-labelledby={headingId()}
+      ref={root}
+      // Focus that landed on a row by any other way (click, Tab) ends a
+      // pending arrow move.
+      on:focusin={() => {
+        focusTarget = null;
+      }}
+    >
       <div class="xo-lane-head">
         <div class="xo-lane-titles">
           <h2 class="xo-lane-title" id={headingId()}>

@@ -105,4 +105,22 @@ describe('startPicking', () => {
     second.link.dispatchEvent(at(new MouseEvent('click', { bubbles: true, cancelable: true }), 20));
     expect(second.events.pick).not.toHaveBeenCalled();
   });
+
+  it('keeps the context menu and touches from the page; a tap picks', () => {
+    const { link, events } = setup();
+    const pageMenu = vi.fn();
+    const pageTouch = vi.fn();
+    link.addEventListener('contextmenu', pageMenu);
+    link.addEventListener('touchstart', pageTouch);
+    link.addEventListener('touchend', pageTouch);
+    link.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(pageMenu).not.toHaveBeenCalled();
+    link.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    const end = new Event('touchend', { bubbles: true, cancelable: true });
+    Object.defineProperty(end, 'changedTouches', { value: [{ clientX: 20, clientY: 5 }] });
+    link.dispatchEvent(end);
+    expect(pageTouch).not.toHaveBeenCalled();
+    expect(end.defaultPrevented).toBe(true);
+    expect(events.pick).toHaveBeenCalledWith('target', link);
+  });
 });

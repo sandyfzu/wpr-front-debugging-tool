@@ -16,18 +16,18 @@ export function focusedElementOf(node: Node): Element | null {
     : null;
 }
 
-/**
- * Restore focus after an observed DOM move only if it fell back to the body.
- * Removed controls and deliberate focus changes are never followed.
- * @param container The list about to update its rendered keys.
- * @returns Cancel pending restoration when the owner updates again or disposes.
- */
 /** Whether focus fell out of the list's tree (to nothing, or to the body). */
 function focusLost(container: HTMLElement): boolean {
   const focused = focusedElementOf(container);
   return focused === null || focused === container.ownerDocument.body;
 }
 
+/**
+ * Restore focus after an observed DOM move only if it fell back to the body.
+ * Removed controls and deliberate focus changes are never followed.
+ * @param container The list about to update its rendered keys.
+ * @returns Cancel pending restoration when the owner updates again or disposes.
+ */
 export function preserveMovedFocus(container: HTMLElement): () => void {
   const document = container.ownerDocument;
   let active = focusedElementOf(container);

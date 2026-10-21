@@ -36,7 +36,15 @@ export interface PickerDeps<T> {
 }
 
 /** Pointer/mouse events a pick must keep from the page (the whole click gesture). */
-const SWALLOWED = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'auxclick', 'dblclick'];
+const SWALLOWED = [
+  'pointerdown',
+  'mousedown',
+  'pointerup',
+  'mouseup',
+  'auxclick',
+  'dblclick',
+  'contextmenu'
+];
 
 /**
  * Start picking; returns the stop (idempotent).
@@ -76,6 +84,31 @@ export function startPicking<T>(deps: PickerDeps<T>, events: PickerEvents<T>): (
       options
     );
   }
+  // Touch: the page never sees the gesture; touchstart stays passive (so
+  // touch scrolling stays native), and a tap is picked on touchend, whose
+  // default (the compatibility click) is cancelled.
+  deps.win.addEventListener(
+    'touchstart',
+    (event) => {
+      if (!ours(event)) event.stopImmediatePropagation();
+    },
+    { ...options, passive: true }
+  );
+  deps.win.addEventListener(
+    'touchend',
+    (event) => {
+      if (ours(event)) return;
+      event.stopImmediatePropagation();
+      const touch = event.changedTouches[0];
+      if (touch === undefined) return;
+      event.preventDefault();
+      events.pick(
+        deps.resolve(touch.clientX, touch.clientY),
+        deps.pointed(touch.clientX, touch.clientY)
+      );
+    },
+    { ...options, passive: false }
+  );
   deps.win.addEventListener(
     'click',
     (event) => {

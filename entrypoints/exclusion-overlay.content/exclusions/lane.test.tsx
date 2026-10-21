@@ -171,4 +171,34 @@ describe('Lane', () => {
     expect(controller.draft().disable.delayJs).toBe(true);
     expect(screen.getByText(/rows are not used/)).toBeTruthy();
   });
+
+  it('forgets an arrow target it never reached, so the next move starts from the focused row', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['a', 'b', 'c', 'd'], null);
+    // Renders rows 1-2 only: row 3 never appears (a far jump that never lands).
+    const twoRows: VirtualizerFactory = (options) => ({
+      ...everyRow(options),
+      getVirtualItems: () => everyRow(options).getVirtualItems().slice(0, 2)
+    });
+    render(() => (
+      <Lane
+        lane="delayJs"
+        controller={controller}
+        report={undefined}
+        pageCount={0}
+        requestFrame={(run) => {
+          run();
+        }}
+        locked={false}
+        createVirtualizer={twoRows}
+      />
+    ));
+    input(2).focus();
+    fireEvent.keyDown(input(2), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(input(2));
+    input(1).focus();
+    fireEvent.focusIn(input(1));
+    fireEvent.keyDown(input(1), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(input(2));
+  });
 });
