@@ -7,7 +7,7 @@ import type {
   ExclusionSessionSummary,
   ExclusionSessionTabSummary
 } from '../../../lib/messaging/exclusion-panel';
-import { BuilderEntry, type BuilderEntryDeps } from './builder-entry';
+import { BuilderEntry, builderEntryOffered, type BuilderEntryDeps } from './builder-entry';
 
 const TAB = 7;
 
@@ -96,9 +96,13 @@ describe('BuilderEntry', () => {
     render(() => <BuilderEntry deps={d.api} />);
     fireEvent.click(entry());
     expect(d.open).toHaveBeenCalledWith(TAB);
-    expect(entry().getAttribute('aria-busy')).toBe('true');
-    expect(entry().getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(entry());
+    const busy = screen.getByRole('button', { name: /^Opening…/ });
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.getAttribute('aria-disabled')).toBe('true');
+    // Held: no hover surface, muted words.
+    expect(busy.className).not.toMatch(/hover:/);
+    expect(busy.className).toMatch(/text-fg-muted/);
+    fireEvent.click(busy);
     expect(d.open).toHaveBeenCalledTimes(1);
     answer({ kind: 'reply', reply: 'injected' });
     await waitFor(() => {
@@ -108,6 +112,7 @@ describe('BuilderEntry', () => {
     });
     expect(entry().getAttribute('aria-busy')).toBe('false');
     expect(entry().getAttribute('aria-disabled')).toBeNull();
+    expect(entry().className).toMatch(/hover:bg-surface-3/);
   });
 
   it('names the remedy when the page cannot host the builder', async () => {
@@ -123,6 +128,22 @@ describe('BuilderEntry', () => {
         description: 'Open a regular http or https page in this tab.'
       });
     });
+  });
+
+  it('reads its words once: name = words + action, description = the title only', async () => {
+    const d = deps({
+      status: Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
+    });
+    render(() => <BuilderEntry deps={d.api} />);
+    await screen.findByText('Off');
+    expect(entry().textContent).toBe('ExclusionsOff — open the exclusion builder on the page');
+    expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
+  });
+
+  it('is offered on every build but Firefox (its panel sender is unverified there)', () => {
+    expect(builderEntryOffered('chrome')).toBe(true);
+    expect(builderEntryOffered('edge')).toBe(true);
+    expect(builderEntryOffered('firefox')).toBe(false);
   });
 
   it('is held and explained outside a DevTools window (no tab to act on)', () => {

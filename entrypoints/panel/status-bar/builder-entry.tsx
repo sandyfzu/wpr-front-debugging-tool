@@ -5,9 +5,15 @@
  * builder surface (the editor itself lives on the page).
  *
  * State matrix: checking (no badge, words say so) · off · on · unavailable
- * · unknown (the ask got no answer) · no inspected tab (held, explained) ·
- * opening (held, busy). Every open ends in a toast naming the result or
- * the remedy.
+ * · unknown (the ask got no answer) · no inspected tab (held: muted, no
+ * hover surface, explained in its description) · opening (held, its words
+ * read "Opening…"). Every open ends in a toast naming the
+ * result or the remedy. Name = the visible words + "open the exclusion
+ * builder on the page"; description = the `title` (one reading each).
+ *
+ * Not offered on Firefox until the Firefox wiring phase verifies what a
+ * Firefox devtools panel's messages carry as sender (the background answers
+ * only senders without a tab).
  */
 import { ErrorBoundary, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import Crosshair from 'lucide-solid/icons/crosshair';
@@ -81,6 +87,16 @@ export function realBuilderEntryDeps(inspectedTabId: () => number | null): Build
   };
 }
 
+/**
+ * Whether the entry is offered in a build: not on Firefox yet (an explicit
+ * degrade — the panel's tab-less sender is unverified there).
+ *
+ * @param build The build's browser (`import.meta.env.BROWSER`).
+ */
+export function builderEntryOffered(build: string): boolean {
+  return build !== 'firefox';
+}
+
 /** Props of {@link BuilderEntry}. */
 export interface BuilderEntryProps {
   readonly deps: BuilderEntryDeps;
@@ -149,7 +165,13 @@ function BuilderEntryControl(props: BuilderEntryProps): JSX.Element {
     <button
       type="button"
       data-fdt="builder-entry"
-      class={cn(SEGMENT, SEGMENT_HOVER, FOCUS_RING, 'shrink-0 px-1')}
+      class={cn(
+        SEGMENT,
+        FOCUS_RING,
+        'shrink-0 px-1',
+        // Held: muted words, no hover surface (it is not actionable now).
+        held() ? 'cursor-not-allowed text-fg-muted' : SEGMENT_HOVER
+      )}
       title={description()}
       aria-disabled={held() ? 'true' : undefined}
       aria-busy={opening()}
@@ -157,8 +179,9 @@ function BuilderEntryControl(props: BuilderEntryProps): JSX.Element {
         void open();
       }}
     >
-      <Crosshair size={12} aria-hidden="true" class="text-fg-secondary" />
-      <span>Exclusions</span>
+      <Crosshair size={12} aria-hidden="true" class="shrink-0 text-fg-secondary" />
+      {/* The open takes a few ms: words, not motion (a spinner would only flash). */}
+      <span>{opening() ? 'Opening…' : 'Exclusions'}</span>
       <Show when={view().badge}>
         {(badge) => (
           <StatusBadge kind={badge().kind} icon>
@@ -166,7 +189,7 @@ function BuilderEntryControl(props: BuilderEntryProps): JSX.Element {
           </StatusBadge>
         )}
       </Show>
-      <span class="sr-only"> — open the exclusion builder on the page. {description()}</span>
+      <span class="sr-only"> — open the exclusion builder on the page</span>
     </button>
   );
 }
