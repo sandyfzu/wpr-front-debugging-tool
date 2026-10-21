@@ -92,6 +92,14 @@
     }
   },
   {
+    "surface": "exclusion engine worker (Firefox background; same bytes in both builds)",
+    "globs": ["assets/exclusion-transform.worker-*.js"],
+    "maxKb": {
+      "raw": 26,
+      "gzip": 10
+    }
+  },
+  {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {

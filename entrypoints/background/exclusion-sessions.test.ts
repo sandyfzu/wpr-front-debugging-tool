@@ -27,8 +27,9 @@ beforeAll(() => {
 });
 
 describe('exclusion-session wiring', () => {
-  it('ships an empty backend registry (no interception backend yet)', () => {
-    expect(INTERCEPTION_BACKENDS).toEqual([]);
+  it('keeps the Firefox-only streaming-filter row out of a Chromium build', () => {
+    // The test runner builds for Chromium.
+    expect(INTERCEPTION_BACKENDS.map((row) => row.id)).not.toContain('stream-filter');
   });
 
   it('answers the overlay channels (a tab-less sender is no page)', async () => {

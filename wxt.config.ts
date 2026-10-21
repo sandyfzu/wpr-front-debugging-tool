@@ -40,7 +40,12 @@ export default defineConfig({
       // modifyHeaders 86/113); Firefox's MV2 build folds those host permissions
       // into `permissions` itself, and an older Firefox without the namespace
       // degrades through the runtime's feature detection.
-      'declarativeNetRequestWithHostAccess'
+      'declarativeNetRequestWithHostAccess',
+      // Exclusion-builder sessions on Firefox: `webRequest.filterResponseData`
+      // (the streaming rewrite of an applied tab's top-level documents) needs a
+      // blocking `webRequest` listener, which MV2 gates behind this permission
+      // (MDN). Firefox build only — Chromium's MV3 build has no body filter.
+      ...(browser === 'firefox' ? ['webRequestBlocking'] : [])
     ],
     // Required for `webRequest` main-frame header capture (the source omitted these,
     // putting that feature at risk) and lets the popup read the active web tab's URL
