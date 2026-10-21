@@ -38,7 +38,12 @@ async function readyController(): Promise<OverlayController> {
   };
   const controller = createOverlayController({
     port,
-    pageFacts: () => ({ href: 'https://example.com/', documentUrl: null, timeOrigin: 0 }),
+    pageFacts: () => ({
+      href: 'https://example.com/',
+      documentUrl: null,
+      timeOrigin: 0,
+      responseEnd: null
+    }),
     now: () => 1,
     schedule: () => () => undefined,
     reload: vi.fn(),

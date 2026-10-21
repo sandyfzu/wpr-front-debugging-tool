@@ -12,6 +12,8 @@ import {
 
 const PAGE = 'https://example.com/shop/item?id=7';
 const START = 1_700_000_000_000;
+/** When this document's response ended, ms after its navigation start. */
+const RESPONSE_END = 200;
 
 /** A recorded identity for `url`, received `afterStart` ms after the page's navigation start. */
 function served(url: string, afterStart = 40): ExclusionServedDocument {
@@ -31,7 +33,7 @@ function served(url: string, afterStart = 40): ExclusionServedDocument {
 
 /** Page facts for an unmoved document. */
 function facts(over: Partial<PageFacts> = {}): PageFacts {
-  return { href: PAGE, documentUrl: PAGE, timeOrigin: START, ...over };
+  return { href: PAGE, documentUrl: PAGE, timeOrigin: START, responseEnd: RESPONSE_END, ...over };
 }
 
 describe('documentDigest', () => {
@@ -107,5 +109,30 @@ describe('a document back from the back/forward cache', () => {
 
   it('still matches its own record (nothing else was recorded meanwhile)', () => {
     expect(matchServedDocument(served(PAGE), facts({ restored: true }))).toBe('this-page');
+  });
+});
+
+describe('a record newer than this document’s own response (a later load of the same URL)', () => {
+  it('is never this page’s (restored or not), whatever its age sign says', () => {
+    // The audit repro: restored, timeOrigin 500 000, record at 1 000 000, same URL.
+    const facts500 = facts({ timeOrigin: 500_000, restored: true });
+    const later = { ...served(PAGE), receivedAt: 1_000_000 };
+    expect(matchServedDocument(later, facts500)).toBe('cant-tell');
+    expect(matchServedDocument(later, { ...facts500, restored: undefined })).toBe('cant-tell');
+  });
+
+  it('bounds this page’s own record by its response end (+ the clock skew), inclusive', () => {
+    const edge = RESPONSE_END + RECORD_SAME_LOAD_SKEW_MS;
+    expect(matchServedDocument(served(PAGE, edge), facts())).toBe('this-page');
+    expect(matchServedDocument(served(PAGE, edge + 1), facts())).toBe('cant-tell');
+    expect(matchServedDocument(served(PAGE, 0), facts())).toBe('this-page');
+  });
+
+  it('without a known response end: unbounded for a fresh page, can’t verify for a restored one', () => {
+    const far = served(PAGE, 60_000);
+    expect(matchServedDocument(far, facts({ responseEnd: null }))).toBe('this-page');
+    expect(matchServedDocument(far, facts({ responseEnd: null, restored: true }))).toBe(
+      'cant-tell'
+    );
   });
 });

@@ -32,6 +32,13 @@ export interface PageFacts {
   /** `performance.timeOrigin`: epoch ms the navigation to this document started. */
   readonly timeOrigin: number;
   /**
+   * When this document's response ended, in ms after {@link timeOrigin}
+   * (the navigation timing entry's `responseEnd`); `null` while unknown.
+   * Its own record is stamped while its response was held, so it falls
+   * before this — a later record is another load's.
+   */
+  readonly responseEnd: number | null;
+  /**
    * The document came back from the back/forward cache: the session went on
    * without it (other documents were recorded meanwhile), so a record of
    * another document no longer says this one was not intercepted.
@@ -88,6 +95,13 @@ export function matchServedDocument(
     return page.documentUrl === null || page.restored === true ? 'cant-tell' : 'other-page';
   }
   const age = page.timeOrigin - served.receivedAt;
-  if (age <= RECORD_SAME_LOAD_SKEW_MS) return 'this-page';
+  if (age <= RECORD_SAME_LOAD_SKEW_MS) {
+    // Recorded after this document's own response: a later load of the same
+    // URL (e.g. this page came back from the back/forward cache after it).
+    // Its outcome says nothing about this document.
+    if (page.responseEnd === null) return page.restored === true ? 'cant-tell' : 'this-page';
+    const lateBy = served.receivedAt - (page.timeOrigin + page.responseEnd);
+    return lateBy <= RECORD_SAME_LOAD_SKEW_MS ? 'this-page' : 'cant-tell';
+  }
   return age > RECORD_STALE_MS && page.restored !== true ? 'other-page' : 'cant-tell';
 }

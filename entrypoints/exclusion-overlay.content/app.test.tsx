@@ -78,7 +78,8 @@ function pageTools(modalAtStart = false) {
   const [pageFacts] = createSignal({
     href: 'https://example.com/',
     documentUrl: 'https://example.com/',
-    timeOrigin: 0
+    timeOrigin: 0,
+    responseEnd: null
   });
   const [pageModal, setPageModal] = createSignal(modalAtStart);
   // What a fresh `:modal` read would answer (lets a test go stale).

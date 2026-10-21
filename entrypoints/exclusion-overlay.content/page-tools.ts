@@ -164,10 +164,13 @@ export function createPageTools(deps: PageToolsDeps): PageTools {
   const keyOf = createElementKeys();
   const readFacts = (): PageFacts => {
     const navigation = win.performance.getEntriesByType('navigation')[0];
+    const timing = navigation as PerformanceNavigationTiming | undefined;
     return {
       href: win.location.href,
       documentUrl: navigation?.name ?? null,
-      timeOrigin: win.performance.timeOrigin
+      timeOrigin: win.performance.timeOrigin,
+      // 0 until the response ended (an overlay mounts after it): unknown then.
+      responseEnd: timing !== undefined && timing.responseEnd > 0 ? timing.responseEnd : null
     };
   };
   const [pageFacts, setPageFacts] = createSignal<PageFacts>(readFacts());

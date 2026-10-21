@@ -67,7 +67,8 @@ async function started(port: ExclusionSessionPort) {
       pageFacts: () => ({
         href: 'https://example.com/',
         documentUrl: 'https://example.com/',
-        timeOrigin: 0
+        timeOrigin: 0,
+        responseEnd: null
       }),
       now: () => 4242,
       schedule: clock.schedule,
@@ -150,7 +151,12 @@ describe('back/forward cache restore (resync)', () => {
     const controller = createRoot(() =>
       createOverlayController({
         port,
-        pageFacts: () => ({ href: 'https://example.com/', documentUrl: null, timeOrigin: 0 }),
+        pageFacts: () => ({
+          href: 'https://example.com/',
+          documentUrl: null,
+          timeOrigin: 0,
+          responseEnd: null
+        }),
         now: () => 1,
         schedule: clock.schedule,
         reload: vi.fn(),
@@ -416,7 +422,12 @@ describe('audit round 1', () => {
     createRoot(() => {
       controller = createOverlayController({
         port: fake.port,
-        pageFacts: () => ({ href: 'https://example.com/', documentUrl: null, timeOrigin: 0 }),
+        pageFacts: () => ({
+          href: 'https://example.com/',
+          documentUrl: null,
+          timeOrigin: 0,
+          responseEnd: null
+        }),
         now: () => 1,
         schedule: clock.schedule,
         reload: vi.fn(),

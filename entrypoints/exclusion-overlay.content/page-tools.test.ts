@@ -200,6 +200,23 @@ describe('createPageTools', () => {
     expect(tools?.pageFacts().href).toBe(window.location.href);
     expect(typeof tools?.pageFacts().timeOrigin).toBe('number');
   });
+
+  it('reads the response end from the navigation entry (unknown while 0 or absent)', () => {
+    const entries = vi.spyOn(window.performance, 'getEntriesByType');
+    try {
+      entries.mockReturnValue([{ name: window.location.href, responseEnd: 120 } as never]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBe(120);
+      entries.mockReturnValue([{ name: window.location.href, responseEnd: 0 } as never]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBeNull();
+      entries.mockReturnValue([]);
+      listeners.get('wxt:locationchange')?.(new Event('wxt:locationchange'));
+      expect(tools?.pageFacts().responseEnd).toBeNull();
+    } finally {
+      entries.mockRestore();
+    }
+  });
 });
 
 describe('viewportRect', () => {
