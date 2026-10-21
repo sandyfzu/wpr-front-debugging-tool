@@ -457,6 +457,30 @@ describe('status asks', () => {
   });
 });
 
+describe('tabStatus (the background’s own read)', () => {
+  it('answers any tab’s stored status, with no sender gate', async () => {
+    const r = rig();
+    await seedActive();
+    await expect(r.controller.tabStatus(TAB)).resolves.toMatchObject({
+      state: 'active',
+      origin: ORIGIN
+    });
+    await expect(r.controller.tabStatus(4)).resolves.toEqual({ state: 'inactive' });
+  });
+
+  it('rejects when the store read fails', async () => {
+    const r = rig({
+      sessions: {
+        read: () => Promise.reject(new Error('store down')),
+        readAll: getExclusionSessionRecords,
+        put: putExclusionSessionRecord,
+        remove: removeExclusionSessionRecord
+      }
+    });
+    await expect(r.controller.tabStatus(TAB)).rejects.toThrow('store down');
+  });
+});
+
 describe('saved sets', () => {
   it('reads the sender origin’s saved set (null when none, or for non-pages)', async () => {
     const r = rig();

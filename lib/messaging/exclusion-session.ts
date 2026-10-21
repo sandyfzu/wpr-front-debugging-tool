@@ -318,6 +318,33 @@ export interface ExclusionSessionTabStatus {
 }
 
 /**
+ * How opening the builder overlay on a tab ended (the background injects
+ * it into the tab's top frame):
+ * - `injected` — the overlay script was injected (it owns its states from there),
+ * - `unsupported-page` — the browser does not let extensions script the page,
+ * - `tab-gone` — the tab closed first,
+ * - `failed` — anything else (logged by the background).
+ */
+export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
+  'injected',
+  'unsupported-page',
+  'tab-gone',
+  'failed'
+] as const;
+
+/** One open outcome (see {@link EXCLUSION_OVERLAY_OPEN_OUTCOMES}). */
+export type ExclusionOverlayOpenOutcome = (typeof EXCLUSION_OVERLAY_OPEN_OUTCOMES)[number];
+
+/**
+ * Overlay → background: how the user left the overlay (`open` panel, or
+ * folded to its pill — closing counts as folded). The session tab's next
+ * pages bring the overlay back the same way.
+ */
+export interface ExclusionOverlayPresentation {
+  readonly open: boolean;
+}
+
+/**
  * Answer deadlines of the session asks, for the sender's bounded ask: an
  * apply includes the debugger attach; the others may wake a suspended
  * background first.
@@ -327,7 +354,8 @@ export const EXCLUSION_SESSION_DEADLINES_MS = {
   stop: 5_000,
   status: 5_000,
   savedSet: 5_000,
-  save: 5_000
+  save: 5_000,
+  openOverlay: 5_000
 } as const;
 
 /** The set's row-list keys, in registry order (registry-derived, never re-typed). */
@@ -897,4 +925,31 @@ export function parseExclusionSessionTabStatus(input: unknown): ExclusionSession
   const tabId = numericTabId(own(input, 'tabId'));
   const status = parseExclusionSessionStatus(own(input, 'status'));
   return tabId === null || status === null ? null : { tabId, status };
+}
+
+/**
+ * Parse the background's answer to an overlay open.
+ *
+ * @param input The untrusted answer.
+ * @returns The outcome, or null when it is not one.
+ */
+export function parseExclusionOverlayOpenOutcome(
+  input: unknown
+): ExclusionOverlayOpenOutcome | null {
+  return EXCLUSION_OVERLAY_OPEN_OUTCOMES.find((outcome) => outcome === input) ?? null;
+}
+
+/**
+ * Parse the overlay's presentation push (sender-resolved: the receiver
+ * also requires a top-frame page sender).
+ *
+ * @param input The untrusted payload.
+ * @returns The presentation, or null on any violation (exact keys).
+ */
+export function parseExclusionOverlayPresentation(
+  input: unknown
+): ExclusionOverlayPresentation | null {
+  if (!isRecord(input) || !keysAllowed(input, ['open'], 'reject')) return null;
+  const open = own(input, 'open');
+  return typeof open === 'boolean' ? { open } : null;
 }
