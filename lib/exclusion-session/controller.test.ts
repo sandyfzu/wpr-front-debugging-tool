@@ -1491,4 +1491,63 @@ describe('served identity and session effects', () => {
       served: { speculationRules: { headerRemoved: true }, copy: false }
     });
   });
+
+  it('corrects a recorded rewrite the backend could not deliver (same response: same order)', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/a`), identity: copyIdentity(NOW) });
+    await flush();
+    expect(await recorded()).toMatchObject({ outcome: 'rewritten' });
+    await r.host.documentNotServed(TAB, `${ORIGIN}/a`, copyIdentity(NOW));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'failed',
+      reason: 'not-served',
+      served: { urlPath: `${ORIGIN}/a`, token: `req-${String(NOW)}`, copy: false }
+    });
+  });
+
+  it('never lets a correction of an earlier response replace a later page’s record', async () => {
+    const r = rig();
+    await seedActive();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/b`), identity: copyIdentity(NOW + 10) });
+    await flush();
+    await r.host.documentNotServed(TAB, `${ORIGIN}/a`, copyIdentity(NOW));
+    await flush();
+    expect(await recorded()).toMatchObject({
+      outcome: 'rewritten',
+      served: { urlPath: `${ORIGIN}/b` }
+    });
+  });
+
+  it('seeds the order at wake from every tab’s records, not only the document’s own tab', async () => {
+    // Another tab's record from an earlier background lifetime, far ahead of this clock;
+    // this tab's own record holds no document (its read alone would seed nothing).
+    await seedActive();
+    await putExclusionSessionRecord(4, {
+      state: 'active',
+      origin: ORIGIN,
+      set: SET,
+      startedAt: NOW - 2000,
+      document: {
+        outcome: 'failed',
+        reason: 'decode-failed',
+        served: {
+          urlPath: `${ORIGIN}/elsewhere`,
+          urlDigest: 'b'.repeat(64),
+          token: 'other-tab',
+          order: NOW + 5_000_000,
+          receivedAt: NOW + 5_000_000,
+          speculationRules: { removedFromDocument: 0, headerRemoved: false, guarded: true },
+          copy: false,
+          serviceWorkersBypassed: true
+        }
+      }
+    });
+    const r = rig();
+    await r.controller.revalidate();
+    await r.host.rewriteDocument({ ...htmlDoc(`${ORIGIN}/new`), identity: copyIdentity(NOW) });
+    await flush();
+    expect((await recorded())?.served?.order).toBe(NOW + 5_000_001);
+  });
 });

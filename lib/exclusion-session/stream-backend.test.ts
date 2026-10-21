@@ -135,6 +135,7 @@ interface Harness {
     gates: string[];
     unavailable: string[];
     unavailableIdentities: (InterceptedResponseIdentity | undefined)[];
+    notServed: string[];
   };
   timers: ReturnType<typeof manualTimers>;
   log: ReturnType<typeof quietLog>;
@@ -152,7 +153,13 @@ function harness(options: { openFilter?: (id: string) => ResponseStreamFilter } 
   const gates: string[] = [];
   const unavailable: string[] = [];
   const unavailableIdentities: (InterceptedResponseIdentity | undefined)[] = [];
+  const notServed: string[] = [];
   const host = {
+    notServed,
+    documentNotServed: (_tabId: number, url: string) => {
+      notServed.push(url);
+      return Promise.resolve();
+    },
     rewrites,
     abandons,
     gates,
@@ -850,5 +857,48 @@ describe('stream backend — revalidation, failures, abandonment', () => {
     first.start();
     expect(first.calls).toEqual(['disconnect']);
     expect(h.backend.inFlight()).toEqual(['r1']);
+  });
+});
+
+describe('stream backend — a rewrite that cannot be written', () => {
+  it('corrects the record when writing the host’s rewrite fails', async () => {
+    const h = harness();
+    h.answer.next = Promise.resolve(enc('REWRITTEN'));
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.notServed).toEqual([URL]);
+  });
+
+  it('reports nothing when writing the original through fails (no rewrite was claimed)', async () => {
+    const h = harness();
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.host.notServed).toEqual([]);
+  });
+});
+
+describe('stream backend — a failing not-served report', () => {
+  it('is logged, never thrown', async () => {
+    const h = harness();
+    h.host.documentNotServed = () => Promise.reject(new Error('record'));
+    h.answer.next = Promise.resolve(enc('REWRITTEN'));
+    const filter = await openArmed(h);
+    h.backend.responseStarted(HTML_HEADERS);
+    filter.start();
+    filter.data('<p>x</p>');
+    filter.failWrite = true;
+    stopAndSettle(h, filter);
+    await settle();
+    expect(h.log.lines).toContain('Stream not-served report failed');
   });
 });

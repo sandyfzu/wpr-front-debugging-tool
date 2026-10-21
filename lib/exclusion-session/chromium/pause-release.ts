@@ -20,9 +20,16 @@ export interface PauseRelease {
    * a plain {@link pass} when it has none or the browser refuses.
    */
   passWithoutRulesHeader(why: string, pause: PausedRequest): Promise<void>;
-  /** Serve a rewritten body; false when refused (still held). */
-  fulfill(params: Record<string, unknown>): Promise<boolean>;
+  /**
+   * Serve a rewritten body: `fulfilled`, `refused` (still held — continue
+   * it), or `gone` (the browser had already dropped the request: nothing
+   * was served by this release).
+   */
+  fulfill(params: Record<string, unknown>): Promise<FulfillResult>;
 }
+
+/** What a fulfill attempt came to (see {@link PauseRelease.fulfill}). */
+export type FulfillResult = 'fulfilled' | 'refused' | 'gone';
 
 /** What a release needs. */
 export interface PauseReleaseDeps {
@@ -48,23 +55,26 @@ export function createPauseRelease(deps: PauseReleaseDeps): PauseRelease {
   const { requestId, log } = deps;
   let held = true;
 
-  /** Try one releasing command; false (still held) when it was refused. */
-  const attempt = async (method: string, params: Record<string, unknown>): Promise<boolean> => {
-    if (!held) return true;
+  /** Try one releasing command (a no-op once released). */
+  const attempt = async (
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<FulfillResult | 'released'> => {
+    if (!held) return 'released';
     held = false;
     try {
       await deps.send(method, params);
-      return true;
+      return 'fulfilled';
     } catch (cause) {
       const details = { tabId: deps.tabId, method, cause: errorMessage(cause) };
       if (alreadyGone(cause)) {
         // Nothing left to serve (the browser released or dropped it): done.
         log.debug('Paused request already gone (released)', details);
-        return true;
+        return 'gone';
       }
       held = true;
       log.warn('Paused-request release refused', details);
-      return false;
+      return 'refused';
     }
   };
 
@@ -84,9 +94,14 @@ export function createPauseRelease(deps: PauseReleaseDeps): PauseRelease {
     pass,
     async passWithoutRulesHeader(why, pause) {
       const params = continueWithoutRulesHeaderParams(pause);
-      if (params !== null && (await attempt('Fetch.continueResponse', params))) return;
+      if (params !== null && (await attempt('Fetch.continueResponse', params)) !== 'refused')
+        return;
       await pass(why);
     },
-    fulfill: (params) => attempt('Fetch.fulfillRequest', params)
+    async fulfill(params) {
+      const result = await attempt('Fetch.fulfillRequest', params);
+      // Released earlier (e.g. past the deadline): this fulfill served nothing.
+      return result === 'released' ? 'gone' : result;
+    }
   };
 }

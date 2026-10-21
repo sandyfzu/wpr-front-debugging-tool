@@ -152,6 +152,18 @@ export interface InterceptionHost {
     identity?: InterceptedResponseIdentity
   ): Promise<void>;
   /**
+   * The rewrite the host answered for this response could not be delivered
+   * — the browser had already dropped the response (its navigation
+   * abandoned, the session ended first) — so the outcome recorded for it
+   * is corrected to `not-served` (with the same identity, so a later
+   * document's record is never touched).
+   */
+  documentNotServed(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void>;
+  /**
    * The browser ended the tab's interception tagged `generation` (the
    * value the backend was armed or resumed with). An end whose generation
    * is not the live session's is dropped.

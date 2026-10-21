@@ -70,6 +70,7 @@ import type {
   ArmResult,
   ArmUnavailableCause,
   InterceptedDocument,
+  InterceptedResponseIdentity,
   InterceptionBackend,
   InterceptionEndCause,
   InterceptionHost
@@ -683,6 +684,32 @@ export function createExclusionSessionController(
     return body;
   };
 
+  /**
+   * Record that a session document was served as received (`reason`), with
+   * its identity — ordered like any document, so a later page's record is
+   * never replaced by it (a correction of the same response replaces its
+   * own record: same order).
+   */
+  const recordUnserved = async (
+    tabId: number,
+    documentUrl: string,
+    identity: InterceptedResponseIdentity | undefined,
+    reason: 'body-unavailable' | 'not-served'
+  ): Promise<void> => {
+    const session = await activeFor(tabId, documentUrl);
+    if (session === null) return;
+    const served = await servedIdentity({ documentUrl, identity }, 0, false);
+    await driveQuietly(
+      tabId,
+      {
+        type: 'document',
+        startedAt: session.startedAt,
+        outcome: withServed({ outcome: 'failed', reason }, served)
+      },
+      'document record'
+    );
+  };
+
   const host: InterceptionHost = {
     shouldIntercept: (tabId, documentUrl) =>
       hostCall(
@@ -704,20 +731,14 @@ export function createExclusionSessionController(
     },
 
     documentBodyUnavailable: (tabId, documentUrl, identity) =>
-      hostCall('documentBodyUnavailable', undefined, async () => {
-        const session = await activeFor(tabId, documentUrl);
-        if (session === null) return;
-        const served = await servedIdentity({ documentUrl, identity }, 0, false);
-        await driveQuietly(
-          tabId,
-          {
-            type: 'document',
-            startedAt: session.startedAt,
-            outcome: withServed({ outcome: 'failed', reason: 'body-unavailable' }, served)
-          },
-          'document record'
-        );
-      }),
+      hostCall('documentBodyUnavailable', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, 'body-unavailable')
+      ),
+
+    documentNotServed: (tabId, documentUrl, identity) =>
+      hostCall('documentNotServed', undefined, () =>
+        recordUnserved(tabId, documentUrl, identity, 'not-served')
+      ),
 
     interceptionEnded: (tabId: number, cause: InterceptionEndCause, generation: number) =>
       hostCall('interceptionEnded', undefined, async () => {

@@ -175,6 +175,8 @@ interface LiveStream {
    * Firefox implements inline rules only, in preview builds).
    */
   readonly identity: InterceptedResponseIdentity;
+  /** Whether the bytes being written are the host's rewrite (its record then claims them). */
+  servingRewrite: boolean;
   state: StreamState;
   /** Cancels the stream's one armed timer, or null. */
   cancelTimer: (() => void) | null;
@@ -231,6 +233,15 @@ export function createStreamInterceptionBackend(
         stream.filter.write(chunk);
       } catch (cause) {
         log.warn('Stream write failed', { requestId: stream.requestId, cause });
+        // The record claims a rewrite the page did not get whole: correct it.
+        if (stream.servingRewrite) {
+          stream.servingRewrite = false;
+          void host
+            .documentNotServed(stream.tabId, stream.url, stream.identity)
+            .catch((fault: unknown) => {
+              log.error('Stream not-served report failed', { requestId: stream.requestId, fault });
+            });
+        }
         return;
       }
     }
@@ -275,6 +286,7 @@ export function createStreamInterceptionBackend(
       )
       .then(
         (rewritten) => {
+          stream.servingRewrite = rewritten !== null && stream.state.phase === 'rewriting';
           dispatch(stream, { type: 'rewritten', body: rewritten });
         },
         (cause: unknown) => {
@@ -448,6 +460,7 @@ export function createStreamInterceptionBackend(
           speculationGuard: false,
           serviceWorkersBypassed: false
         },
+        servingRewrite: false,
         state: OPENING_STREAM,
         cancelTimer: null
       };

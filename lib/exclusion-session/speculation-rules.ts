@@ -71,10 +71,14 @@ export function removeSpeculationRules(html: string): SpeculationRulesRemoval {
  * as above) as soon as it is inserted, anywhere in the document.
  *
  * Self-contained (no closure over this module); silent — the setup and
- * every callback run are guarded, and the DOM methods it uses are captured
+ * each inserted node's sweep are guarded (a node that throws never stops
+ * the others), and the DOM methods it uses are captured
  * from the prototypes before any page script runs, so a page that
  * monkey-patches them neither breaks it nor sees an error from it;
- * idempotent (a second copy only removes nothing).
+ * idempotent (a second copy only removes nothing). Not tamper-proof: a
+ * hostile page can disable it for itself (e.g. by patching
+ * `RegExp.prototype.test` or NodeList iteration) — which only re-enables
+ * its own prefetches.
  *
  * @param origin The session's origin (other origins in the tab are left alone).
  * @returns The script source.
@@ -96,9 +100,13 @@ export function speculationRulesGuardSource(origin: string): string {
         for (const script of querySelectorAll.call(node, 'script')) if (isRule(script)) remove.call(script);
     };
     new MutationObserver((records) => {
-      try {
-        for (const record of records) for (const node of record.addedNodes) sweep(node);
-      } catch {}
+      for (const record of records)
+        for (const node of record.addedNodes) {
+          // One hostile node never stops the sweep of the others.
+          try {
+            sweep(node);
+          } catch {}
+        }
     }).observe(document, { childList: true, subtree: true });
   } catch {}
 })();`;

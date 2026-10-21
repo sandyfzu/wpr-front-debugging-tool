@@ -45,9 +45,11 @@ function rig(answers: Record<string, () => Promise<unknown>> = {}) {
 describe('createPauseRelease', () => {
   it('releases once: later attempts are no-ops', async () => {
     const { release, sent } = rig();
-    await expect(release.fulfill({ requestId: 'r1' })).resolves.toBe(true);
+    await expect(release.fulfill({ requestId: 'r1' })).resolves.toBe('fulfilled');
     await release.pass('again');
     await release.passWithoutRulesHeader('again', PAUSE);
+    // A fulfill after the release served nothing.
+    await expect(release.fulfill({})).resolves.toBe('gone');
     expect(sent).toEqual(['Fetch.fulfillRequest']);
   });
 
@@ -55,17 +57,17 @@ describe('createPauseRelease', () => {
     const { release, sent, log } = rig({
       'Fetch.fulfillRequest': () => Promise.reject(new Error('Invalid http status code or phrase'))
     });
-    await expect(release.fulfill({})).resolves.toBe(false);
+    await expect(release.fulfill({})).resolves.toBe('refused');
     await release.pass('refused');
     expect(sent).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
     expect(log.levels).toContain('warn');
   });
 
-  it('counts a gone request as released (debug only)', async () => {
+  it('reports a gone request as gone, released (debug only)', async () => {
     const { release, sent, log } = rig({
       'Fetch.fulfillRequest': () => Promise.reject(new Error('Invalid InterceptionId.'))
     });
-    await expect(release.fulfill({})).resolves.toBe(true);
+    await expect(release.fulfill({})).resolves.toBe('gone');
     await release.pass('x');
     expect(sent).toEqual(['Fetch.fulfillRequest']);
     expect(log.levels).toEqual(['debug']);

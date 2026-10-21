@@ -164,22 +164,25 @@ describe('speculationRulesGuardSource', () => {
     page.close();
   });
 
-  it('swallows a fault inside the observer callback (nothing reaches the page)', async () => {
-    document.body.innerHTML = '';
-    runGuard();
+  it('swallows a node that throws in the callback and still sweeps the nodes after it', async () => {
+    const page = freshPage();
+    runGuard(page.location.origin, page);
     const errors: unknown[] = [];
-    const onError = (event: ErrorEvent) => errors.push(event.error);
-    window.addEventListener('error', onError);
-    const weird = document.createElement('div');
-    // A node whose type read throws when the guard inspects it.
-    Object.defineProperty(weird, 'nodeType', {
+    page.document.defaultView?.addEventListener('error', (event) => errors.push(event));
+    const hostile = page.document.createElement('div');
+    // Its type test throws when the guard inspects it.
+    Object.defineProperty(hostile, 'nodeType', {
       get() {
         throw new Error('hostile node');
       }
     });
-    document.body.append(weird);
+    const rule = page.document.createElement('script');
+    rule.setAttribute('type', 'speculationrules');
+    // One mutation record holding both nodes, the hostile one first.
+    page.document.body.append(hostile, rule);
     await tick();
-    window.removeEventListener('error', onError);
+    expect(rule.isConnected).toBe(false);
     expect(errors).toEqual([]);
+    page.close();
   });
 });

@@ -99,7 +99,10 @@ export type InterceptionUnavailableCause = keyof typeof INTERCEPTION_UNAVAILABLE
  * Why one intercepted document was served unmodified (the session itself
  * stays active): its body could not be read, it could not be decoded with
  * its declared charset, the rewritten text could not be encoded back into
- * that charset, or the engine failed unexpectedly. Additive: a newer
+ * that charset, the engine failed unexpectedly, or the rewrite could not be
+ * delivered (`not-served`: the browser had already dropped the response —
+ * its navigation abandoned or the session ended first — so whatever the
+ * page shows was not served by the session). Additive: a newer
  * build's reason fails an older build's guard (its read-back drops that
  * record — never a fabricated one).
  */
@@ -107,7 +110,8 @@ export const EXCLUSION_DOCUMENT_FAILURES = [
   'body-unavailable',
   'decode-failed',
   'encode-failed',
-  'engine-failed'
+  'engine-failed',
+  'not-served'
 ] as const;
 
 /** One unmodified-document reason (see {@link EXCLUSION_DOCUMENT_FAILURES}). */
@@ -170,8 +174,16 @@ export interface ExclusionServedSpeculationRules {
  * `location.href` without its fragment, `receivedAt` with the page's time
  * origin; a navigation served without interception leaves an older
  * record) and say what the session changed besides the exclusions. Never
- * holds the URL's query (it may carry personal data): the origin + path,
- * and a digest of the whole URL.
+ * holds the URL's raw query (it may carry personal data): the origin +
+ * path, and a digest of the whole URL — "no raw query stored", not "query
+ * private": a low-entropy query's digest can be guessed.
+ *
+ * Digest contract (what a surface computes to compare): `u = new
+ * URL(location.href); u.hash = ''; hex = lowercase hex of SHA-256 over the
+ * UTF-8 bytes of u.href` — equal to `urlDigest` for the recorded page. After
+ * `history.pushState`/`replaceState` the page's URL no longer is the
+ * served one, so a mismatch then means "cannot tell", not "not
+ * intercepted". URLs with embedded credentials are unverified.
  */
 export interface ExclusionServedDocument {
   /** The document's origin + path (no query, no fragment; cut at `SERVED_DOCUMENT_LIMITS.urlPathChars`). */

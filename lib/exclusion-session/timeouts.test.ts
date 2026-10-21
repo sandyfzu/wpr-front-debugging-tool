@@ -130,6 +130,7 @@ describe('declared bounds', () => {
       rewriteDocument:
         steps.ready + 2 * steps.store + DOCUMENT_TRANSFORM_BUDGET_MS + steps.runnerOverhead,
       documentBodyUnavailable: steps.ready + steps.store + steps.record,
+      documentNotServed: steps.ready + steps.store + steps.record,
       interceptionEnded: steps.ready + steps.record
     });
   });

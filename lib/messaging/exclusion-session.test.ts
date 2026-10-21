@@ -207,7 +207,8 @@ describe('parseExclusionSessionStatus', () => {
       'body-unavailable',
       'decode-failed',
       'encode-failed',
-      'engine-failed'
+      'engine-failed',
+      'not-served'
     ]);
     const encodeFailed = {
       ...activeRecord(),

@@ -203,6 +203,17 @@ class FakeHost implements InterceptionHost {
     return Promise.resolve();
   }
 
+  readonly notServed: [number, string, InterceptedResponseIdentity | undefined][] = [];
+
+  documentNotServed(
+    tabId: number,
+    documentUrl: string,
+    identity?: InterceptedResponseIdentity
+  ): Promise<void> {
+    this.notServed.push([tabId, documentUrl, identity]);
+    return Promise.resolve();
+  }
+
   interceptionEnded(tabId: number, cause: string, generation: number): Promise<void> {
     this.ended.push([tabId, cause, generation]);
     return Promise.resolve();
@@ -698,6 +709,7 @@ describe('paused requests', () => {
 
   it('rewrites a top-frame document and fulfills it once', async () => {
     await rig.pause();
+    expect(rig.host.notServed).toEqual([]);
     expect(rig.host.documents).toEqual([
       {
         tabId: TAB,
@@ -794,13 +806,17 @@ describe('paused requests', () => {
     ]);
   });
 
-  it('demotes a release of an abandoned navigation to debug (nothing left to release)', async () => {
+  it('demotes a release of an abandoned navigation to debug and corrects its record', async () => {
     rig.port.commands.set('Fetch.fulfillRequest', () =>
       Promise.reject(new Error('Invalid InterceptionId.'))
     );
     await rig.pause();
-    // The request is gone: no second release is attempted.
+    // The request is gone: no second release is attempted…
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest']);
+    // …and the host's `rewritten` record for it is corrected (nothing was served).
+    expect(
+      rig.host.notServed.map(([tabId, url, identity]) => [tabId, url, identity?.token])
+    ).toEqual([[TAB, 'https://site.test/page', 'req-1']]);
     expect(rig.log.lines.some((line) => line.level === 'warn')).toBe(false);
     expect(logged('debug', /gone/)).toBe(true);
   });
@@ -883,6 +899,8 @@ describe('paused requests', () => {
     await rig.pause();
     expect(rig.port.releases('req-1')).toEqual(['Fetch.fulfillRequest', 'Fetch.continueRequest']);
     expect(logged('warn', /refused/)).toBe(true);
+    // Served unmodified after all: the record of the rewrite is corrected.
+    expect(rig.host.notServed).toHaveLength(1);
   });
 
   it('continues a malformed pause by its id, and logs one it cannot release', async () => {

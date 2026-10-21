@@ -129,6 +129,8 @@ export const INTERCEPTION_HOST_BOUNDS_MS = {
     STEPS.ready + 2 * STEPS.store + DOCUMENT_TRANSFORM_BUDGET_MS + STEPS.runnerOverhead,
   /** Wake wait + session read + the record wait. */
   documentBodyUnavailable: STEPS.ready + STEPS.store + STEPS.record,
+  /** Wake wait + session read + the record wait. */
+  documentNotServed: STEPS.ready + STEPS.store + STEPS.record,
   /** Wake wait + the record wait. */
   interceptionEnded: STEPS.ready + STEPS.record
 } as const;

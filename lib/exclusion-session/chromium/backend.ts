@@ -583,8 +583,11 @@ export function createChromiumInterceptionBackend(deps: ChromiumBackendDeps): In
     }
     const rewritten = await hostRewrite(target, pause, disposition.facts, body, identity);
     if (rewritten === null) return release.passWithoutRulesHeader('unmodified', pause);
-    if (!(await release.fulfill(fulfillParams(pause, rewritten))))
-      await release.passWithoutRulesHeader('refused', pause);
+    const fulfilled = await release.fulfill(fulfillParams(pause, rewritten));
+    if (fulfilled === 'fulfilled') return;
+    // The host recorded a rewrite the page never got: correct the record.
+    if (fulfilled === 'refused') await release.passWithoutRulesHeader('refused', pause);
+    await host.documentNotServed(target.tabId, pause.url, identity);
   };
 
   /** The identity handed to the host for a session document of the tab. */
