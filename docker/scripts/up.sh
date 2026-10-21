@@ -45,6 +45,21 @@ compose() {
 	docker compose -f docker-compose.yml --env-file .env "$@"
 }
 
+# Readiness marker (docker/state, bind-mounted): removed before anything boots, written
+# by the bootstrap's last step — so the browser tier's readiness URL can never answer
+# from a previous boot while this one is still converging.
+# The bootstrap writes as uid 33 (the site's www-data), which on a Linux bind mount
+# cannot write a host-user 755 dir; 1777 (the /tmp mode) lets it create the marker
+# while the sticky bit keeps others from deleting files they don't own — this dir
+# owner (up.sh's user) still can, which the `rm` below needs. Only the marker lives here.
+mkdir -p state
+if ! chmod 1777 state; then
+	# e.g. docker auto-created the bind source as root before up.sh ever ran.
+	printf 'up: cannot set the mode of docker/state (owned by another user?) — remove it (sudo rm -rf docker/state) and re-run\n' >&2
+	exit 1
+fi
+rm -f state/bootstrap-ready.txt
+
 compose up -d db wordpress
 
 # The bootstrap is a profiled one-shot: up.sh alone drives it (a plain `up -d` never

@@ -92,15 +92,15 @@ describe('describeDetections', () => {
       ]
     ).toContain('Cloudflare');
     // Without an explicit state the report derives the signature-only answer
-    // and says the headers were unavailable — never "not cached".
+    // and says the headers were unavailable — never a cache verdict.
     expect(describeDetections(page)['WP Rocket']['page cache']).toBe(
       'Plugin fingerprint found, cache not proven for this visit'
     );
     // An absent plugin has no cache question, even if a caller passes a state.
     const absent = zeroDetections();
-    expect(describeDetections(absent, { kind: 'not-cached' })['WP Rocket']['page cache']).toBe(
-      'Not applicable (WP Rocket not detected)'
-    );
+    expect(
+      describeDetections(absent, { kind: 'bypass-requested' })['WP Rocket']['page cache']
+    ).toBe('Not applicable (WP Rocket not detected)');
   });
 
   it('names and counts a fully applied cached page, with the UTC cache time', () => {

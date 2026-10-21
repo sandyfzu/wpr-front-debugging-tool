@@ -222,15 +222,15 @@ describe('cacheStateForPage — bypass precedence', () => {
     }
     // An explicit non-serve does not outrank the bypass.
     expect(state({ headers: headers('cf-cache-status', 'EXPIRED'), bypassAttested: true })).toEqual(
-      { kind: 'not-cached' }
+      { kind: 'bypass-requested' }
     );
   });
 
-  it('the bypass is the one counter-evidence that earns "not cached"', () => {
-    expect(state({ bypassAttested: true })).toEqual({ kind: 'not-cached' });
-    expect(state({ headers: [], bypassAttested: true })).toEqual({ kind: 'not-cached' });
+  it('the bypass is named as a request, never a cache verdict', () => {
+    expect(state({ bypassAttested: true })).toEqual({ kind: 'bypass-requested' });
+    expect(state({ headers: [], bypassAttested: true })).toEqual({ kind: 'bypass-requested' });
     expect(state({ headers: headers('server', 'nginx'), bypassAttested: true })).toEqual({
-      kind: 'not-cached'
+      kind: 'bypass-requested'
     });
     // A signature still outranks it: a bypassed URL cannot carry a served stamp.
     expect(
@@ -259,7 +259,7 @@ describe('cacheStateFromCapture', () => {
         false
       )
     ).toEqual({ kind: 'not-detected', headers: 'truncated' });
-    expect(cacheStateFromCapture(wpr(), null, true)).toEqual({ kind: 'not-cached' });
+    expect(cacheStateFromCapture(wpr(), null, true)).toEqual({ kind: 'bypass-requested' });
     expect(
       cacheStateFromCapture(wpr(), { headers: [{ name: 'cf-cache-status', value: 'HIT' }] }, true)
     ).toEqual({ kind: 'possibly-cached', evidence: 'Cloudflare', bypassAttested: true });
@@ -281,7 +281,7 @@ describe('cacheStateFromFdtData', () => {
       bypassAttested: true,
       wprDetections: { wpr: wpr() }
     } as unknown as FdtData;
-    expect(cacheStateFromFdtData(data)).toEqual({ kind: 'not-cached' });
+    expect(cacheStateFromFdtData(data)).toEqual({ kind: 'bypass-requested' });
     const noBypass = { ...data, bypassAttested: undefined } as unknown as FdtData;
     expect(cacheStateFromFdtData(noBypass)).toEqual({
       kind: 'not-detected',
@@ -324,8 +324,8 @@ describe('cacheCopy — one copy source', () => {
       'possibly + bypass',
       { kind: 'possibly-cached', evidence: 'SiteGround', bypassAttested: true },
       'Possibly cached',
-      "A SiteGround cache-layer marker was captured, but WP Rocket's cache signature was not found on the served HTML. The page may be served from that cache. WP Rocket's cache was bypassed for this request.",
-      'Possibly cached (SiteGround cache-layer marker; no WP Rocket signature; WP Rocket cache bypassed)'
+      "A SiteGround cache-layer marker was captured, but WP Rocket's cache signature was not found on the served HTML. The page may be served from that cache. A WP Rocket cache bypass was requested for this visit.",
+      'Possibly cached (SiteGround cache-layer marker; no WP Rocket signature; cache bypass requested)'
     ],
     [
       'not detected (unavailable)',
@@ -356,11 +356,11 @@ describe('cacheCopy — one copy source', () => {
       'Cache not detected (cache header value withheld)'
     ],
     [
-      'not cached',
-      { kind: 'not-cached' },
-      'Not cached',
-      "The captured URL carries WP Rocket's cache-bypass parameter, so WP Rocket's cache did not serve this visit. Host and CDN caches are separate layers; this capture does not attest them.",
-      'Not cached by WP Rocket (cache bypass requested)'
+      'bypass requested',
+      { kind: 'bypass-requested' },
+      'Bypass requested',
+      "The URL carries WP Rocket's cache-bypass parameter (nowprocket) and no WP Rocket signature was found, so this visit's cache state is not proven: WP Rocket still serves a stored copy when the URL also carries a query string the site caches. Host and CDN caches are separate layers.",
+      'Cache bypass requested (nowprocket; no WP Rocket signature; cache state not proven)'
     ]
   ];
 
@@ -412,7 +412,7 @@ describe('cacheLayerHint — every cache state', () => {
     [{ kind: 'possibly-cached', evidence: 'Cloudflare', bypassAttested: true }, null],
     [{ kind: 'uncertain-signature' }, 'Cloudflare'],
     [{ kind: 'not-detected', headers: 'captured' }, 'Cloudflare'],
-    [{ kind: 'not-cached' }, 'Cloudflare']
+    [{ kind: 'bypass-requested' }, 'Cloudflare']
   ] as [CacheState, string | null][])('%o with a served marker → %s', (state, expected) => {
     expect(cacheLayerHint(state, served)).toBe(expected);
   });

@@ -97,7 +97,7 @@ export function isOptimizationCard(id: StatusItemId): boolean {
  * @param cacheState The explicit cache answer when the caller has the
  *   headers/bypass capture; omitted, the cards' `cached` card is the only
  *   available fact and absence degrades to "cache not detected" — never a
- *   not-cached verdict born from absence.
+ *   cache verdict born from absence.
  * @param facts The non-card page facts (WordPress version, host cache layer).
  * @returns The summary facts.
  */
@@ -212,7 +212,7 @@ function summaryCache(state: CacheState): CacheSummary {
       };
     case 'not-detected':
       return { kind: 'not-detected', headers: state.headers };
-    case 'not-cached':
-      return { kind: 'not-cached' };
+    case 'bypass-requested':
+      return { kind: 'bypass-requested' };
   }
 }

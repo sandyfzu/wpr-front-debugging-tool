@@ -244,8 +244,8 @@ function WprSegment(props: { segments: () => StatusBarSegments }): JSX.Element {
  * page is cached ("Cached" alone when no stamp exists — never an invented
  * age), the other four explicit cache states with their copy-module tooltip,
  * and a quiet slot while there is no answer — including when the plugin is
- * absent (caching is not its question there). A bypass reads "Not cached"
- * about WP Rocket's cache only, never a host/CDN claim.
+ * absent (caching is not its question there). A bypass reads "Bypass
+ * requested" — the visit's intent, never a cache verdict nor a host/CDN claim.
  *
  * @param props The composed segments accessor (see {@link WprSegment}).
  */
@@ -261,7 +261,7 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
     return current.kind === 'uncertain-signature' ||
       current.kind === 'possibly-cached' ||
       current.kind === 'not-detected' ||
-      current.kind === 'not-cached'
+      current.kind === 'bypass-requested'
       ? current
       : undefined;
   });
@@ -284,6 +284,8 @@ function CacheSegment(props: { segments: () => StatusBarSegments }): JSX.Element
             content={state().copy.tooltip}
             class={cn(SEGMENT, SEGMENT_HOVER)}
           >
+            {/* Warn only for conflicting evidence; `not-detected` and the
+                bypass request (intent, not a fault) stay neutral. */}
             <StatusBadge
               kind={
                 state().kind === 'uncertain-signature' || state().kind === 'possibly-cached'

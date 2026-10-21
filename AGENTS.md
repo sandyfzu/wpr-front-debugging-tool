@@ -61,9 +61,9 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
 ├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
-├── docker/                    # local WP site: compose stack (WP+MariaDB+wp-cli bootstrap), lifecycle + smoke
-│   │                          #   + conflict-derivation scripts, mu-plugin fixtures, KC conflict list —
-│   │                          #   machine state (`.env`, the `apvm`-built zip, `docker/certs/`) is git-ignored
+├── docker/                    # local WP site: compose stack (WP+MariaDB+wp-cli bootstrap, `apache/` conf), lifecycle + smoke
+│   │                          #   + conflict-derivation scripts, mu-plugin + edge-layer fixtures, KC conflict list —
+│   │                          #   machine state (`.env`, the `apvm`-built zip, `docker/certs/`, `docker/state/`) is git-ignored
 ├── tests/e2e/                 # the browser-test tier (Playwright, headless Chromium + unpacked extension; `*.spec.ts` suites, fixtures, harness README — local-only, never in CI)
 └── wxt.config.ts              # manifest fields, permissions (each with a why), modules
 ```

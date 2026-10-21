@@ -18,7 +18,7 @@ afterEach(() => {
 function summary(overrides?: Partial<DetectionsSummary>): DetectionsSummary {
   return {
     wpr: { present: true, version: '3.20.1' },
-    cache: { kind: 'not-cached' },
+    cache: { kind: 'bypass-requested' },
     server: 'nginx',
     platform: null,
     optimizations: { active: 3, total: 12 },
@@ -128,7 +128,7 @@ describe('SummaryStrip', () => {
     [{ kind: 'possibly-cached', evidence: 'Cloudflare' }, 'Possibly cached'],
     [{ kind: 'not-detected', headers: 'unavailable' }, 'Cache not detected'],
     [{ kind: 'not-detected', headers: 'captured' }, 'Cache not detected'],
-    [{ kind: 'not-cached' }, 'Not cached']
+    [{ kind: 'bypass-requested' }, 'Bypass requested']
   ] as const)(
     'states the %o cache answer with the shared chip copy as a tooltip trigger',
     (cache, chip) => {
@@ -144,7 +144,9 @@ describe('SummaryStrip', () => {
   it('explains every state except cached (stamp fact) and not-applicable (no question)', () => {
     expect(explainedCacheCopy({ kind: 'not-applicable' })).toBeNull();
     expect(explainedCacheCopy({ kind: 'cached', seconds: null, formatted: null })).toBeNull();
-    expect(explainedCacheCopy({ kind: 'not-cached' })).toEqual(cacheCopy({ kind: 'not-cached' }));
+    expect(explainedCacheCopy({ kind: 'bypass-requested' })).toEqual(
+      cacheCopy({ kind: 'bypass-requested' })
+    );
   });
 
   it('names the WordPress version and the served hosting cache layer', () => {

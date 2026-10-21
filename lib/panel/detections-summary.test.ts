@@ -125,8 +125,8 @@ describe('summarizeDetections', () => {
     expect(
       summarizeDetections(items, { kind: 'not-detected', headers: 'truncated' }).cache
     ).toEqual({ kind: 'not-detected', headers: 'truncated' });
-    expect(summarizeDetections(items, { kind: 'not-cached' }).cache).toEqual({
-      kind: 'not-cached'
+    expect(summarizeDetections(items, { kind: 'bypass-requested' }).cache).toEqual({
+      kind: 'bypass-requested'
     });
   });
 

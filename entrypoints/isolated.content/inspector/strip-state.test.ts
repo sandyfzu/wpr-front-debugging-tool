@@ -248,15 +248,15 @@ describe('the cache chip (the explicit cache vocabulary)', () => {
     });
     expect(possibly.cacheTooltip).toContain('SiteGround');
 
-    // The bypass is the one counter-evidence that earns "Not cached".
+    // The bypass is named as a request (intent, neutral), never a verdict.
     const bypassed = buildStripCardModel({
-      snapshot: ready(unknown, { kind: 'not-cached' }),
+      snapshot: ready(unknown, { kind: 'bypass-requested' }),
       wordpressVersion: null,
       fdtVersion: '0.0.0'
     });
     expect(bypassed.cacheChip).toEqual({
       state: 'neutral',
-      text: 'Not cached',
+      text: 'Bypass requested',
       stamp: null
     });
 

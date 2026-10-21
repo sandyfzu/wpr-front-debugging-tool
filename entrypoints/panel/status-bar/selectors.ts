@@ -66,7 +66,7 @@ export type CacheSegmentView =
   | { readonly kind: 'unavailable' }
   /**
    * The plugin is absent: caching is not its question here — render honest
-   * silence, never a "Not cached" verdict about a plugin that isn't there.
+   * silence, never a cache verdict about a plugin that isn't there.
    */
   | { readonly kind: 'not-applicable' }
   /** Cached. `age` when the cache stamp exists (null = cached, unstamped). */
@@ -81,8 +81,8 @@ export type CacheSegmentView =
   | { readonly kind: 'possibly-cached'; readonly copy: CacheCopy }
   /** No signature and no known host marker (headers may be unavailable). */
   | { readonly kind: 'not-detected'; readonly copy: CacheCopy }
-  /** Counter-evidence: the captured URL attests a WP Rocket cache bypass. */
-  | { readonly kind: 'not-cached'; readonly copy: CacheCopy };
+  /** The captured URL requests a WP Rocket cache bypass: intent, cache state not proven. */
+  | { readonly kind: 'bypass-requested'; readonly copy: CacheCopy };
 
 /** The platform/server answer's states. */
 export type PlatformSegmentView =
@@ -183,8 +183,8 @@ export function cacheSegment(data: FdtData | null, nowMs: number): CacheSegmentV
       return { kind: 'possibly-cached', copy };
     case 'not-detected':
       return { kind: 'not-detected', copy };
-    case 'not-cached':
-      return { kind: 'not-cached', copy };
+    case 'bypass-requested':
+      return { kind: 'bypass-requested', copy };
   }
 }
 

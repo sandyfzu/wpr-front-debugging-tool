@@ -207,7 +207,7 @@ describe('cacheSegment', () => {
     });
   });
 
-  it('renders "Not cached" only with the bypass counter-evidence', () => {
+  it('renders "Bypass requested" only when the URL requests the bypass', () => {
     expect(
       cacheSegment(
         withWpr(
@@ -216,7 +216,7 @@ describe('cacheSegment', () => {
         ),
         NOW_MS
       )
-    ).toMatchObject({ kind: 'not-cached', copy: { chip: 'Not cached' } });
+    ).toMatchObject({ kind: 'bypass-requested', copy: { chip: 'Bypass requested' } });
   });
 });
 

@@ -63,7 +63,7 @@ export type StripChipState = 'ok' | 'warn' | 'attention' | 'error' | 'neutral';
 /** The cache chip: one of the five explicit cache states. */
 export interface StripCacheChip {
   state: StripChipState;
-  /** The chip's short label (`✓ Cached` · `Cache not proven` · `Possibly cached` · `Cache not detected` · `Not cached` · `…` · `—`). */
+  /** The chip's short label (`✓ Cached` · `Cache not proven` · `Possibly cached` · `Cache not detected` · `Bypass requested` · `…` · `—`). */
   text: string;
   /** The cache stamp suffix when a served stamp formatted. */
   stamp: string | null;
@@ -199,10 +199,14 @@ function cacheChip(snapshot: StripDataSnapshot): StripCacheChip | null {
     return { state: 'neutral', text: CACHE_CHIP_IDLE_TEXT, stamp: null };
   }
   const copy = cacheCopy(snapshot.cacheState);
+  // Neutral for both no-verdict arms: a bypass request is the visit's own
+  // intent, not evidence of a problem (warn is for conflicting evidence:
+  // signature without stamp, host marker without signature).
   const state: StripChipState =
     snapshot.cacheState.kind === 'cached'
       ? 'ok'
-      : snapshot.cacheState.kind === 'not-detected' || snapshot.cacheState.kind === 'not-cached'
+      : snapshot.cacheState.kind === 'not-detected' ||
+          snapshot.cacheState.kind === 'bypass-requested'
         ? 'neutral'
         : 'warn';
   return {

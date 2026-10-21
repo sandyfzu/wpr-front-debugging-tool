@@ -56,6 +56,30 @@ Each approved T item gets its own implementation/verification slice; depends:A/o
 - **T8 DEFERRED snapshot:** background phone-UA **snapshot**, distinct from shipped P16 live overlay simulation. Historical permission-cost rationale predates DNR already added; decision remains defer until support demand/new review, not automatic approval because permission now exists.
 - **T9 DROPPED speculation viewer:** no WP Rocket3.23.5.1 emitter; not missing work. Reproposal needs new source evidence.
 
+## Inputs from the P11.1 site matrix (2026-10-20, recorded, not executed)
+
+Observed on the docker site (3.23.5.1, [P11.1 receipt](./12-phase-11-detection-coverage.md#p111--site-matrix--shipped-2026-10-20)); each gets its BUILD/DROP/DEFER at the gate.
+
+- **M1 declared-without-candidates rows.** Two tokens are declared on a page that has no candidates for them:
+  - `wpr_minify_js` on a page with no minified asset — P11B's recorded minify exception.
+  - `wpr_lazyload_iframes` on a page with no iframe — newly observed.
+
+  The HUD's meta-declared "applied on this page" line overclaims for such rows. Decide one fix: per-row exception wording, or a "declared on this render" line for meta-only evidence. Re-check `wpr_lazyload_css_bg_img` and the other CommentTrait emitters for the same shape (D-item wording; registry rows unchanged).
+
+- **M2 bypass-render feature comments.** On `nowprocket` renders, the plugin leaves its `<!-- wpr_<feature> -->` comments after `</html>`: the meta step returns early on bypass, and the comments step does not. These comments are a plugin-attributed declaration on a tag-absent page. Decide whether they count as evidence (and which `source`), or stay ignored (fallback footprints decide today).
+- **M3 → T3 header registry.** These headers are not yet consistent across the panel:
+
+  | Header            | Headers-page hint | Headers-page group | Cache verdict              |
+  | ----------------- | ----------------- | ------------------ | -------------------------- |
+  | `cf-cache-status` | Yes               | —                  | Recognized                 |
+  | `sg-f-cache`      | None              | "Other headers"    | Recognized (cache context) |
+  | `x-proxy-cache`   | None              | —                  | —                          |
+
+  Folds into T3: one header vocabulary for the verdict and the Headers page.
+
+- **M4 live hosts.** The matrix simulates SiteGround/Cloudflare at the edge, with no third-party host. The integration bullet's real-host evidence stays open.
+- **M5 — RESOLVED (owner decision 2026-10-21: option (a), bypass worded as intent).** A `nowprocket` URL is not proof of "not cached": the plugin still stores and serves the copy when the URL also carries a site-listed cached query string (`curl` twice `/fdt/?fdt-delay=<unique>&nowprocket=1` → `Debug: cached@…` + a file under `cache/wp-rocket/…/fdt/`; `/fdt/?nowprocket=1&zz=<unique>` never stored), and a downstream-stripped footer then hid the stamp behind a false **Not cached**. The extension cannot read `cache_query_strings`. Implemented in `lib/detection/cache-context.ts`: state `not-cached` → `bypass-requested` (in-process only; the boundary carries the unchanged `bypassAttested` flag), chip **Bypass requested**, report `Cache bypass requested (nowprocket; no WP Rocket signature; cache state not proven)`, tooltip says the state is not proven and why; the host-marker arm's qualifier `WP Rocket cache bypassed` → `cache bypass requested`. Tone stays neutral (intent, not a fault). Rejected: (b) demote to `not-detected` + note; (c) keep the verdict for `nowprocket`-only URLs (a site listing `nowprocket` itself stays a residual). Receipt: [P11.1](./12-phase-11-detection-coverage.md#p111--site-matrix--shipped-2026-10-20).
+
 ## Integration/acceptance
 
 Depends:all approved slices. Parallel:—.

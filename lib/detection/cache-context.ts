@@ -10,16 +10,18 @@
  *   not proven;
  * - `possibly-cached`: no signature, but a verified hosting cache-layer
  *   marker was captured (the page may be served from that layer); a captured
- *   bypass is carried alongside it because it only disables WP Rocket's own
- *   cache;
+ *   bypass request is carried alongside it (it addresses WP Rocket's own
+ *   cache only);
  * - `not-detected`: no signature and no host marker that served the response.
  *   How complete the capture was is carried explicitly (`captured`,
  *   `unavailable`, `truncated`, `redacted`), because "nothing captured"
  *   proves nothing while a complete capture with no served marker is a real
  *   negative;
- * - `not-cached`: the captured URL carries WP Rocket's bypass parameter and
- *   no captured host marker showed a cache serving the response. This is
- *   WP Rocket's cache only; host and CDN layers are separate.
+ * - `bypass-requested`: the captured URL carries WP Rocket's bypass parameter
+ *   and nothing above matched. That is the visit's intent, not a cache fact:
+ *   the plugin still stores and serves a copy when the URL also carries a
+ *   query string the site caches, and a stripped footer then hides its stamp
+ *   (the site's cached query strings are not observable from the page).
  *
  * The chip label, tooltip and report line live here too: the strip, the
  * status bar, the page-analysis report and the support report all read this
@@ -27,6 +29,7 @@
  */
 
 import type { FdtData, PageHeaderCapture, PageHeaders, WprDetections } from '../wp-rocket/types';
+import { CACHE_BYPASS_QUERY_PARAM } from '../wp-rocket/constants';
 import { formatCacheTimestamp, isRepresentableCacheStamp } from './cache-time';
 
 /** The report line for a page WP Rocket did not handle: no cache question exists. */
@@ -45,7 +48,7 @@ export type CacheState =
   | {
       readonly kind: 'possibly-cached';
       readonly evidence: string;
-      /** The captured URL attested WP Rocket's bypass; host layers may still serve. */
+      /** The captured URL requested WP Rocket's bypass; host layers may still serve. */
       readonly bypassAttested?: true;
     }
   | {
@@ -57,7 +60,7 @@ export type CacheState =
        */
       readonly headers: 'captured' | 'unavailable' | 'truncated' | 'redacted';
     }
-  | { readonly kind: 'not-cached' };
+  | { readonly kind: 'bypass-requested' };
 
 /**
  * A verified hosting cache-layer marker. Only exact headers with a known
@@ -196,9 +199,9 @@ export interface CacheStateInput {
  * Resolve the cache state from the plugin's own evidence and the capture.
  * The precedence is deliberate: the served stamp outranks everything, the
  * signature proves the plugin handled the render, a captured host marker
- * outranks the bypass (it saw a layer serve the response), the bypass is
- * counter-evidence for WP Rocket's own cache, and the header arms describe
- * how complete the capture was.
+ * outranks the bypass (it saw a layer serve the response), the bypass request
+ * is named as intent (never a cache verdict), and the header arms describe how
+ * complete the capture was.
  *
  * @param input The plugin row, captured headers (null when none), bypass mark
  *   and capture-completeness flag.
@@ -223,7 +226,7 @@ export function cacheStateForPage(input: CacheStateInput): CacheState {
       ...(bypassAttested ? { bypassAttested: true as const } : {})
     };
   }
-  if (bypassAttested) return { kind: 'not-cached' };
+  if (bypassAttested) return { kind: 'bypass-requested' };
   if (headers === null || headers.length === 0) {
     return { kind: 'not-detected', headers: 'unavailable' };
   }
@@ -313,8 +316,8 @@ export function cacheCopy(state: CacheState): CacheCopy {
         chip: 'Possibly cached',
         tooltip:
           `A ${state.evidence} cache-layer marker was captured, but WP Rocket's cache signature was not found on the served HTML. The page may be served from that cache.` +
-          (bypass ? " WP Rocket's cache was bypassed for this request." : ''),
-        report: `Possibly cached (${state.evidence} cache-layer marker; no WP Rocket signature${bypass ? '; WP Rocket cache bypassed' : ''})`
+          (bypass ? ' A WP Rocket cache bypass was requested for this visit.' : ''),
+        report: `Possibly cached (${state.evidence} cache-layer marker; no WP Rocket signature${bypass ? '; cache bypass requested' : ''})`
       };
     }
     case 'not-detected':
@@ -337,12 +340,11 @@ export function cacheCopy(state: CacheState): CacheCopy {
                 ? 'Cache not detected (cache header value withheld)'
                 : 'Cache not detected'
       };
-    case 'not-cached':
+    case 'bypass-requested':
       return {
-        chip: 'Not cached',
-        tooltip:
-          "The captured URL carries WP Rocket's cache-bypass parameter, so WP Rocket's cache did not serve this visit. Host and CDN caches are separate layers; this capture does not attest them.",
-        report: 'Not cached by WP Rocket (cache bypass requested)'
+        chip: 'Bypass requested',
+        tooltip: `The URL carries WP Rocket's cache-bypass parameter (${CACHE_BYPASS_QUERY_PARAM}) and no WP Rocket signature was found, so this visit's cache state is not proven: WP Rocket still serves a stored copy when the URL also carries a query string the site caches. Host and CDN caches are separate layers.`,
+        report: `Cache bypass requested (${CACHE_BYPASS_QUERY_PARAM}; no WP Rocket signature; cache state not proven)`
       };
   }
 }

@@ -314,7 +314,7 @@ describe('StatusBar (strip)', () => {
     expect(screen.getByRole('link', { name: 'Possibly cached' })).toBeTruthy();
   });
 
-  it('renders the qualified bypass arm as "Not cached"', async () => {
+  it('renders the bypass arm as "Bypass requested"', async () => {
     const harness = makeHarness();
     renderStrip(harness);
     harness.settle({
@@ -322,7 +322,11 @@ describe('StatusBar (strip)', () => {
       bypassAttested: true
     });
     await flush();
-    expect(screen.getByRole('link', { name: 'Not cached' })).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Bypass requested' });
+    // Intent, not a fault: the neutral tone, never warn.
+    expect(link.querySelector('[data-fdt="status-badge"]')?.className).toContain(
+      'bg-status-neutral-soft'
+    );
   });
 
   it('stays whole with quiet slots while the error view holds the cause', async () => {

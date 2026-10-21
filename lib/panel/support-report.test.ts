@@ -263,7 +263,9 @@ describe('buildSupportReport — branches', () => {
     expect(possibly).toContain('- **Page cache:** Possibly cached (SiteGround');
 
     const bypass = buildSupportReport({ ...present({}), bypassAttested: true }, BARE_CONTEXT);
-    expect(bypass).toContain('- **Page cache:** Not cached by WP Rocket (cache bypass requested)');
+    expect(bypass).toContain(
+      '- **Page cache:** Cache bypass requested (nowprocket; no WP Rocket signature; cache state not proven)'
+    );
 
     // A captured host serve outranks the bypass and keeps its qualification.
     const bypassedHost = buildSupportReport(
@@ -275,7 +277,7 @@ describe('buildSupportReport — branches', () => {
       BARE_CONTEXT
     );
     expect(bypassedHost).toContain(
-      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature; WP Rocket cache bypassed)'
+      '- **Page cache:** Possibly cached (Cloudflare cache-layer marker; no WP Rocket signature; cache bypass requested)'
     );
   });
 
