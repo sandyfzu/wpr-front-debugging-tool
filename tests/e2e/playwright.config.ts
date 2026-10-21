@@ -10,9 +10,10 @@
  *
  * Layout:
  * - `global-setup.ts` refuses stale extension builds (rebuild or fail with
- *   the changed-file diff) before any browser launches.
+ *   the changed-file diff) before any browser launches; `site-baseline-setup.ts`
+ *   refuses a docker site left off its bootstrap settings baseline.
  * - two webServers: `server.mjs` (the fixture origins, `no-store`) and the
- *   P4.2 dockerized WordPress site (`docker/scripts/up.sh`, ready on /fdt/).
+ *   P4.2 dockerized WordPress site (`docker/scripts/up.sh`, ready on its bootstrap marker).
  * - suites live in `./suites/*.spec.ts`; helpers in `./helpers/`.
  *
  * Run with `pnpm test:e2e` (reads this config through the package script).
@@ -32,7 +33,9 @@ import { SITE_URL } from './helpers/site';
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 
 export default defineConfig({
-  globalSetup: './global-setup.ts',
+  // Build first (no browser yet), then the site-baseline probe (the
+  // webServers are up by the time global setups run).
+  globalSetup: ['./global-setup.ts', './site-baseline-setup.ts'],
   testDir: './suites',
   testMatch: '**/*.spec.ts',
   // One at a time: suites assert real browser state (menus-once, extension
@@ -67,12 +70,17 @@ export default defineConfig({
     {
       // The P4.2 dockerized WordPress site: booted for the site suites, its
       // URL read from docker/.env (docker stays the site's single declaring
-      // site). Readiness on /fdt/ — the fixture pages exist only after the
-      // bootstrap ran, unlike the bare WordPress answers. First boot takes
-      // minutes (62 conflict plugins); a converged stack takes ~25 s and an
-      // already-up stack is skipped by the reuse check.
+      // site). Readiness on the bootstrap's marker file — up.sh deletes it
+      // before the boot and the bootstrap writes it last, so a warm volume's
+      // pages (served as soon as Apache starts) can never pass the gate
+      // mid-bootstrap. up.sh exits right after writing it — sooner than the
+      // URL poll may look — so the bootstrap's own done line (printed after
+      // the marker, ~1 s before up.sh exits) also counts as ready. First
+      // boot takes minutes (62 conflict plugins); a converged stack takes
+      // ~25 s and an already-up, converged stack is skipped by the reuse check.
       command: path.join(repoRoot, 'docker', 'scripts', 'up.sh'),
-      url: `${SITE_URL}/fdt/`,
+      url: `${SITE_URL}/fdt-state/bootstrap-ready.txt`,
+      wait: { stdout: /^bootstrap: done$/m },
       reuseExistingServer: true,
       timeout: 420_000
     }

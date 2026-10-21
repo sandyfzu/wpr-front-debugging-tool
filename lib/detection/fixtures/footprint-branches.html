@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Crafted fixture: footprint-only branches with NO `data-wpr-features`
+  declaration (the generator version stays), so the checks decide alone:
+  status-only Delay, inline-only defer, variable numeric minify cache paths,
+  the repeated preload-links config, the path-only self-hosted font link and
+  the white-label cached footer. Snapshots/parity/bench all exercise it.
+  Expected: delay present/version null/delayedScripts 0; defer present/
+  scripts []/deferredScripts 1; minify CSS+JS; self-host; preload links;
+  white-label cache marker + Debug stamp.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="generator" content="WP Rocket 3.23.5.1" />
+    <title>footprint branches</title>
+    <link
+      rel="stylesheet"
+      href="https://branches.example/wp-content/cache/min/7/theme.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://branches.example/wp-content/cache/fonts/1/google-fonts/css/abc.css"
+    />
+  </head>
+  <body>
+    <!-- Runtime status attribute: Delay applied, controller gone. -->
+    <script src="/app.js" data-rocket-status="executed"></script>
+    <!-- Inline-only deferral: present, counted, but no URL to list. -->
+    <script data-rocket-defer="defer">
+      /* inline-only deferred */
+    </script>
+    <script src="https://branches.example/wp-content/cache/min/7/app.js"></script>
+    <!-- Two occurrences of the config mark across two scripts (no blob id). -->
+    <script>
+      var RocketPreloadLinksConfig = { a: 1 };
+    </script>
+    <script>
+      var b = RocketPreloadLinksConfig;
+    </script>
+  </body>
+</html>
+<!-- Cached for great performance - Debug: cached@1791342241 -->

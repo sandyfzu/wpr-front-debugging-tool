@@ -24,22 +24,33 @@
  *    the port's `src: string` contract normalizes it to `''`. The parity
  *    tests therefore compare equal on srcset-only images.
  *
- * One committed semantic deviation, applied to the reference in lockstep with
- * the port so the parity harness keeps comparing like-for-like: the
- * Optimize-critical-images check no longer treats shared-beacon presence as
- * its verdict. The beacon is one signal for four features (the Priority
- * Elements family), so applied evidence (the image preloads, regardless of
- * the beacon) is the row's verdict, the `<!-- wpr_oci -->` comment is
- * corroboration, and the beacon moved to the dedicated
- * `priority_elements_beacon` row. The three further Priority Elements checks
- * (Automatic Lazy Rendering, Preload fonts, Preconnect to external domains)
- * and the beacon row have no original-algorithm counterpart — they are
- * corrected-baseline implementations whose behavior this file pins for
- * parity.
+ * Committed semantic deviations, applied to the reference in lockstep with
+ * the port so the parity harness keeps comparing like-for-like:
+ *
+ * 1. The Optimize-critical-images check no longer treats shared-beacon
+ *    presence as its verdict. The beacon is one signal for four features (the
+ *    Priority Elements family), so applied evidence (the image preloads,
+ *    regardless of the beacon) is the row's verdict, the `<!-- wpr_oci -->`
+ *    comment is corroboration, and the beacon moved to the dedicated
+ *    `priority_elements_beacon` row. The three further Priority Elements
+ *    checks (Automatic Lazy Rendering, Preload fonts, Preconnect to external
+ *    domains) and the beacon row have no original-algorithm counterpart —
+ *    they are corrected-baseline implementations whose behavior this file
+ *    pins for parity.
+ * 2. The generator declaration's authority: a usable `data-wpr-features`
+ *    decides every mapped row's presence (and its `source`) before the
+ *    presence-propagation rule. The port and this reference implement the
+ *    same bounded parse and verdict rule independently; the meta expectations
+ *    are pinned by their own table-driven suite, not claimed as source parity.
+ *
+ * The port's contract additions (the cache-marker flag with its comment-only
+ * white-label registry and strict display-domain timestamp, the defer count
+ * and the two declaration-only rows) are mirrored here so the records stay
+ * key-for-key comparable.
  *
  * Everything else follows the reference algorithm as written, including
- * quirks that matter (radix-less timestamp parsing, reverse lazyload scans,
- * per-check re-queries of the document).
+ * quirks that matter (reverse lazyload scans, per-check re-queries of the
+ * document).
  */
 
 import {
@@ -50,17 +61,19 @@ import {
   BEACON_DATA_NAME,
   BEACON_SRC_PATTERN,
   BEACON_STATUS_KEYS,
-  CACHE_COMMENT_MARKER,
+  CACHE_COMMENT_MARKERS,
   CACHE_DEBUG_MARKER,
-  CACHE_TIMESTAMP_PATTERN,
   CPCSS_MARK,
   DATA_LAZY_SRC,
   DATA_LAZY_SRCSET,
+  DATA_ROCKET_STATUS,
   DATA_SRC,
   DELAY_JS_CONTROLLER,
   DELAY_JS_SRC,
   DELAY_JS_VERSION_PATTERN,
   FEATURE_COMMENT_PATTERN,
+  FEATURE_META_LIMITS,
+  FEATURE_META_TOKENS,
   FDT_EXCLUDED_RESOURCE,
   GENERATOR_META_SELECTOR,
   LAZYLOAD_BG_CONTAINER_ID,
@@ -76,18 +89,29 @@ import {
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
+  PRELOAD_LINKS_CONFIG_MARK,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
   ROCKET_PREFETCH_ATTRIBUTE,
   ROCKET_PRECONNECT_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
+  SELF_HOSTED_FONTS_ATTRIBUTE,
+  SELF_HOSTED_FONTS_CACHE_PATH,
   WPR_DEFER_ATTRIBUTE,
+  WPR_FEATURES_ATTRIBUTE,
+  WPR_FEATURES_META_SELECTOR,
   WPR_NAME_PATTERN,
   WPR_PRELOAD_ATTRIBUTE,
   extractWprVersion,
-  isDelayJSType
+  isDelayJSType,
+  parseCacheTimestampToken
 } from '../../wp-rocket/constants';
-import type { BeaconFeatureStatus, PreloadedResources, WprDetections } from '../../wp-rocket/types';
+import type {
+  BeaconFeatureStatus,
+  FeatureMetaRow,
+  PreloadedResources,
+  WprDetections
+} from '../../wp-rocket/types';
 
 export type CheckOptimizationFunctionPayload = {
   HTMLDocument: Document;
@@ -109,6 +133,8 @@ const CheckOptimizationFunctions: Record<keyof WprDetections, CheckOptimizationF
   lazyload: checkLazyLoad,
   lazyload_iframes: checkLazyLoadIframes,
   lazyload_css_bg_img: checkLLCSSBG,
+  self_hosted_fonts: checkSelfHostedFonts,
+  image_dimensions: checkImageDimensions,
   rocket_above_the_fold_optimization: checkOptimizeCriticalImages,
   automatic_lazy_rendering: checkAutomaticLazyRendering,
   auto_preload_fonts: checkAutoPreloadFonts,
@@ -123,6 +149,7 @@ const CheckOptimizationFunctions: Record<keyof WprDetections, CheckOptimizationF
 function wprCached({ HTMLDocument }: CheckOptimizationFunctionPayload): WprDetections['wpr'] {
   const wpr: WprDetections['wpr'] = {
     present: false,
+    cacheMarkerFound: false,
     cached: false,
     version: null,
     timeStamp: null
@@ -135,20 +162,21 @@ function wprCached({ HTMLDocument }: CheckOptimizationFunctionPayload): WprDetec
   }
   wpr.present = Boolean(wpr.version);
 
-  let documentSibling = HTMLDocument.documentElement.nextSibling as Comment;
+  let documentSibling = HTMLDocument.documentElement.nextSibling;
   while (documentSibling) {
-    if (documentSibling.data && documentSibling.data.includes(CACHE_COMMENT_MARKER)) {
-      wpr.present = true;
-      if (documentSibling.data.includes(CACHE_DEBUG_MARKER)) {
-        wpr.cached = true;
-        const timeStamp = documentSibling.data.match(CACHE_TIMESTAMP_PATTERN)?.[1];
-        if (timeStamp) {
-          wpr.timeStamp = parseInt(timeStamp);
+    if (documentSibling instanceof Comment) {
+      const data = documentSibling.data.trimStart();
+      if (CACHE_COMMENT_MARKERS.some((marker) => data.startsWith(marker))) {
+        wpr.present = true;
+        wpr.cacheMarkerFound = true;
+        if (data.includes(CACHE_DEBUG_MARKER)) {
+          wpr.cached = true;
+          wpr.timeStamp = parseCacheTimestampToken(data);
         }
+        break;
       }
-      break;
     }
-    documentSibling = documentSibling.nextSibling as Comment;
+    documentSibling = documentSibling.nextSibling;
   }
   return wpr;
 }
@@ -160,6 +188,22 @@ function checkLLCSSBG({
     HTMLDocument.getElementById(LAZYLOAD_BG_CONTAINER_ID) ||
     HTMLDocument.getElementById(LAZYLOAD_BG_EXCLUSION_ID);
   return { present: Boolean(llcssbg) };
+}
+
+function checkSelfHostedFonts({
+  pageLinkElements
+}: CheckOptimizationFunctionPayload): WprDetections['self_hosted_fonts'] {
+  return {
+    present: pageLinkElements.some(
+      (link) =>
+        link.hasAttribute(SELF_HOSTED_FONTS_ATTRIBUTE) ||
+        link.href.includes(SELF_HOSTED_FONTS_CACHE_PATH)
+    )
+  };
+}
+
+function checkImageDimensions(): WprDetections['image_dimensions'] {
+  return { present: false };
 }
 
 function checkRUCSS({
@@ -184,8 +228,8 @@ function checkDelayJS({
   const delayjs: WprDetections['delay_js'] = {
     present: false,
     scripts: [],
-    delayedScripts: 0,
-    version: null
+    version: null,
+    delayedScripts: 0
   };
   for (const script of pageScripts) {
     const s: any = {
@@ -198,6 +242,7 @@ function checkDelayJS({
         delayjs.version = script.textContent.match(DELAY_JS_VERSION_PATTERN)?.[1] ?? null;
       }
     }
+    if (script.hasAttribute(DATA_ROCKET_STATUS)) delayjs.present = true;
     if (isDelayJSType(script.getAttribute('type'))) {
       delayjs.present = true;
       s.delayed = true;
@@ -321,13 +366,16 @@ function checkMinifyJS({
 }
 
 function checkPreloadLinks({
-  HTMLDocument
+  HTMLDocument,
+  pageScripts
 }: CheckOptimizationFunctionPayload): WprDetections['preload_links'] {
-  const preloadLinks = { present: false };
-  if (HTMLDocument.querySelector(`#${PRELOAD_LINKS_SCRIPT_ID}`)) {
-    preloadLinks.present = true;
+  if (HTMLDocument.querySelector(`#${PRELOAD_LINKS_SCRIPT_ID}`)) return { present: true };
+  let mentions = 0;
+  for (const script of pageScripts) {
+    mentions += (script.textContent ?? '').split(PRELOAD_LINKS_CONFIG_MARK).length - 1;
+    if (mentions > 1) return { present: true };
   }
-  return preloadLinks;
+  return { present: false };
 }
 
 function checkRocketCDN({
@@ -348,18 +396,16 @@ function checkRocketCDN({
 function checkScriptsDeferred({
   HTMLDocument
 }: CheckOptimizationFunctionPayload): WprDetections['defer_all_js'] {
-  const scripts = Array.from(
+  const attributed = Array.from(
     HTMLDocument.querySelectorAll<HTMLScriptElement>(`script[${WPR_DEFER_ATTRIBUTE}]`)
-  )
+  );
+  const scripts = attributed
     .map(
       (script: HTMLScriptElement) =>
         script.getAttribute(DELAY_JS_SRC) ?? script.getAttribute('src') ?? ''
     )
     .filter((src) => Boolean(src));
-  if (scripts.length > 0) {
-    return { present: true, scripts };
-  }
-  return { present: false, scripts: [] };
+  return { present: attributed.length > 0, scripts, deferredScripts: attributed.length };
 }
 
 function checkOptimizeCriticalImages({
@@ -744,9 +790,67 @@ export function checkPreloadedResources(HTMLDocument: Document): PreloadedResour
 
 export default CheckOptimizationFunctions;
 
+/** The declaration's parsed shape (the same caps the port enforces). */
+interface ReferenceFeatureMeta {
+  attributePresent: boolean;
+  tokens: string[];
+  degraded: boolean;
+}
+
+/** Parse the generator declaration: absent, present, or degraded by a cap. */
+function parseReferenceFeatureMeta(HTMLDocument: Document): ReferenceFeatureMeta {
+  const meta = HTMLDocument.querySelector<HTMLMetaElement>(WPR_FEATURES_META_SELECTOR);
+  if (meta === null) return { attributePresent: false, tokens: [], degraded: false };
+  const raw = meta.getAttribute(WPR_FEATURES_ATTRIBUTE) as string;
+  if (raw.length > FEATURE_META_LIMITS.totalChars) {
+    return { attributePresent: true, tokens: [], degraded: true };
+  }
+  const tokens = raw.split(/\s+/).filter((token) => token !== '');
+  if (
+    tokens.length > FEATURE_META_LIMITS.count ||
+    tokens.some((token) => token.length > FEATURE_META_LIMITS.tokenChars)
+  ) {
+    return { attributePresent: true, tokens: [], degraded: true };
+  }
+  return { attributePresent: true, tokens, degraded: false };
+}
+
+/** `declared` / `refuted` / `absent` for one exact token (mirrors the port). */
+function referenceMetaVerdict(
+  meta: ReferenceFeatureMeta,
+  token: string
+): 'declared' | 'refuted' | 'absent' {
+  if (!meta.attributePresent || meta.degraded) return 'absent';
+  return meta.tokens.includes(token) ? 'declared' : 'refuted';
+}
+
+/** Apply the declaration's authority in the same order as the port. */
+function applyReferenceMeta(wprDetections: WprDetections, meta: ReferenceFeatureMeta): void {
+  if (meta.attributePresent) wprDetections.wpr.present = true;
+  for (const row of Object.keys(FEATURE_META_TOKENS) as FeatureMetaRow[]) {
+    const verdict = referenceMetaVerdict(meta, FEATURE_META_TOKENS[row]);
+    const entry: any = wprDetections[row];
+    if (verdict === 'declared') {
+      entry.present = true;
+      entry.source = 'meta';
+    } else if (verdict === 'refuted') {
+      entry.present = false;
+      entry.source = 'meta';
+    } else if (entry.present) {
+      entry.source = 'footprint';
+    } else {
+      delete entry.source;
+    }
+  }
+  if (!wprDetections.lazyload_iframes.present) {
+    wprDetections.lazyload_iframes.replaceImage = false;
+  }
+}
+
 /**
  * One full detection pass, replicating the reference orchestration exactly:
- * fresh document queries per check, then the presence-propagation rule.
+ * fresh document queries per check, the declaration's authority over the
+ * footprint verdicts, then the presence-propagation rule.
  */
 export function runReferenceDetection(pageHTML: string): {
   wprDetections: WprDetections;
@@ -762,6 +866,7 @@ export function runReferenceDetection(pageHTML: string): {
   ][]) {
     wprDetections[name] = func({ pageHTML, HTMLDocument, pageScripts, pageLinkElements });
   }
+  applyReferenceMeta(wprDetections as WprDetections, parseReferenceFeatureMeta(HTMLDocument));
   const preloadedResources = checkPreloadedResources(HTMLDocument);
   if (wprDetections.wpr) {
     const temp = wprDetections as WprDetections;

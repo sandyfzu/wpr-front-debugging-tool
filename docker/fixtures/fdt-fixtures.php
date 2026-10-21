@@ -4,7 +4,7 @@
  * Description: Query-flag-driven problem injection for the front-end debugging site.
  *              Designed to never require admin-UI state: every scenario is a URL flag on
  *              any page, so runs reproduce identically after every reset.
- * Version:     1.2.0
+ * Version:     1.3.0
  *
  * This must-use plugin injects the deterministic problems the debugging tool exists to
  * catch. It acts only on request data at render time: no options, no database writes, no
@@ -31,6 +31,29 @@
  *                           `rocket_display_meta_generator_content_version` filter
  *                           answered false for the request): other footprints are
  *                           untouched, so the page detects as present-but-versionless
+ *   ?fdt-meta-off=1         WP Rocket's generator meta NOT issued at all (the plugin's
+ *                           own `rocket_disable_meta_generator` filter answered true for
+ *                           the request): an optimized, cached page whose features can
+ *                           only be read from their markup — the tag-absent arm, distinct
+ *                           from both the digits-free meta above and the `nowprocket`
+ *                           bypass (which also skips optimization)
+ *   ?fdt-white-label=1      WP Rocket's white-label build state for the request (the
+ *                           plugin's own `WP_ROCKET_WHITE_LABEL_FOOTPRINT` constant): the
+ *                           cache footer becomes `Cached for great performance` and no
+ *                           generator meta is issued — the white-label tag-absent arm
+ *   ?fdt-decoy=1            inert look-alike markup of five features this site cannot
+ *                           (or does not) run — Remove Unused CSS and Load CSS
+ *                           asynchronously (license-gated here), Preload Links,
+ *                           Self-host Google Fonts and the CSS-background lazyload
+ *                           container: while the meta is issued it must decide those
+ *                           rows alone, and with `fdt-meta-off=1` the same markup is the
+ *                           only evidence left
+ *   ?fdt-no-store=1         WP Rocket processes the page but stores no cache file (the
+ *                           plugin's own `do_rocket_generate_caching_files` filter answered
+ *                           false, as managed hosts do): every response is a live render
+ *                           with the unstamped footer. With `nowprocket` it is the
+ *                           genuinely uncached bypass arm — without it, any `nowprocket`
+ *                           URL carrying a cached query flag is stored and served stamped
  *
  * Two request-truth fixtures the side-by-side device-simulation rounds read (they echo
  * the request's own facts — per-request state, nothing stored, nothing to reset):
@@ -75,6 +98,25 @@ const FIXTURE_FLAG_MOBILE_CACHE = 'fdt-mobile-cache';
 const FIXTURE_FLAG_FONTS_ON = 'fdt-fonts-on';
 const FIXTURE_FLAG_OCI_OFF = 'fdt-oci-off';
 const FIXTURE_FLAG_VERSIONLESS = 'fdt-wpr-versionless';
+const FIXTURE_FLAG_META_OFF = 'fdt-meta-off';
+const FIXTURE_FLAG_DECOY = 'fdt-decoy';
+const FIXTURE_FLAG_WHITE_LABEL = 'fdt-white-label';
+const FIXTURE_FLAG_NO_STORE = 'fdt-no-store';
+
+// The id stem every decoy script carries: the Delay JS exclusion list matches it over the
+// script markup, so the decoys stay plain inline text the detection reads verbatim.
+const FIXTURE_DECOY_STEM = 'fdt-decoy';
+
+// The decoy markup, verbatim (one literal each, so the repo's text-contract test can run
+// the detection engine over exactly these bytes). Every element is inert: an empty
+// used-CSS style, two comment-only inline scripts, a hosted-font link whose unknown `rel`
+// is never fetched (its href has no stylesheet extension, so WP Rocket's Minify CSS skips
+// it too), and an empty hidden lazyload-background container.
+const FIXTURE_HEAD_DECOYS = '<style id="wpr-usedcss"></style>'
+	. '<script id="fdt-decoy-async-css">/* wprRemoveCPCSS */</script>'
+	. '<script id="fdt-decoy-preload-links">/* RocketPreloadLinksConfig RocketPreloadLinksConfig */</script>'
+	. '<link rel="fdt-decoy" data-wpr-hosted-gf-parameters="family=Decoy" href="/wp-content/cache/fonts/1/google-fonts/decoy">';
+const FIXTURE_BODY_DECOYS = '<div id="wpr-lazyload-bg-container" hidden></div>';
 
 // The fixed external-origin hint the beacon-page fixture carries: the Preconnect factory
 // needs at least one non-site hostname on the page (link/script/iframe elements only) for
@@ -164,13 +206,15 @@ add_action( 'wp_enqueue_scripts', 'fixture_enqueue_scenario_scripts' );
  * The exclusion patterns are regex stems (matched over the full script markup by
  * WP Rocket), so both the plain asset URL and any minified/renamed variant that keeps the
  * stem still match. The `?fdt-delay=1` scripts are deliberately absent from this list:
- * the error produced exactly when the delay queue runs them IS their fixture.
+ * the error produced exactly when the delay queue runs them IS their fixture. The decoy
+ * stem rides the same list: a delayed decoy would be rewritten into the delay queue's
+ * markup and stop being the verbatim look-alike it exists to be.
  *
  * @param string[] $excluded Patterns WP Rocket will not delay.
- * @return string[] The list plus this fixture's immediate-error stems.
+ * @return string[] The list plus this fixture's immediate-error and decoy stems.
  */
 function fixture_exclude_immediate_errors_from_delay( array $excluded ): array {
-	return array_merge( $excluded, array_values( fixture_error_assets() ) );
+	return array_merge( $excluded, array_values( fixture_error_assets() ), [ FIXTURE_DECOY_STEM ] );
 }
 add_filter( 'rocket_delay_js_exclusions', 'fixture_exclude_immediate_errors_from_delay' );
 
@@ -400,3 +444,112 @@ function fixture_print_external_origin_hint(): void {
 	echo '<link rel="novelty" href="' . esc_url( FIXTURE_EXTERNAL_ORIGIN . '/wp-includes/empty.txt' ) . '">';
 }
 add_action( 'wp_head', 'fixture_print_external_origin_hint', 5 );
+
+
+/**
+ * Suppress WP Rocket's generator meta for one request.
+ *
+ * `?fdt-meta-off=1` answers the plugin's own `rocket_disable_meta_generator` filter with
+ * true, so the plugin neither appends its per-feature comments nor issues the
+ * `data-wpr-features` meta, while every optimization still runs and the page still
+ * caches with its signature. That is the tag-absent arm: the feature rows can only be
+ * decided by their markup. Read from the request (nothing stored); an absent flag
+ * passes the plugin's decision through untouched.
+ *
+ * @param bool $disable The decision the filter chain would otherwise produce.
+ * @return bool True when the flag asks for the meta-free render, else the passed value.
+ */
+function fixture_disable_wpr_meta_generator( bool $disable ): bool {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_META_OFF ] ) || '1' !== $_GET[ FIXTURE_FLAG_META_OFF ] ) {
+		return $disable;
+	}
+
+	return true;
+}
+add_filter( 'rocket_disable_meta_generator', 'fixture_disable_wpr_meta_generator' );
+
+/**
+ * Whether the current request asks for the decoy footprints.
+ *
+ * @return bool True for `?fdt-decoy=1` exactly.
+ */
+function fixture_decoy_requested(): bool {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	return isset( $_GET[ FIXTURE_FLAG_DECOY ] ) && '1' === $_GET[ FIXTURE_FLAG_DECOY ];
+}
+
+/**
+ * Print the head decoys: inert look-alikes of four feature footprints.
+ *
+ * Each element of {@see FIXTURE_HEAD_DECOYS} matches exactly the markup one feature's
+ * footprint check reads, and none of them does anything. Remove Unused CSS and Load CSS
+ * asynchronously cannot run on this site at all (the synthetic licence masks them), so
+ * this is the explicit fixture for their rows rather than a toggle that would silently do
+ * nothing.
+ *
+ * @return void
+ */
+function fixture_print_head_decoys(): void {
+	if ( fixture_decoy_requested() ) {
+		echo FIXTURE_HEAD_DECOYS; // phpcs:ignore WordPress.Security.EscapeOutput -- fixed fixture literal, no request data.
+	}
+}
+add_action( 'wp_head', 'fixture_print_head_decoys', 5 );
+
+/**
+ * Print the body decoy: the CSS-background lazyload container, empty and hidden.
+ *
+ * @return void
+ */
+function fixture_print_body_decoys(): void {
+	if ( fixture_decoy_requested() ) {
+		echo FIXTURE_BODY_DECOYS; // phpcs:ignore WordPress.Security.EscapeOutput -- fixed fixture literal, no request data.
+	}
+}
+add_action( 'wp_footer', 'fixture_print_body_decoys', 5 );
+
+/**
+ * Put the request in WP Rocket's white-label build state.
+ *
+ * `?fdt-white-label=1` defines the plugin's own `WP_ROCKET_WHITE_LABEL_FOOTPRINT`
+ * constant for this request only. Both readers run at buffer time, after must-use
+ * plugins load: the cache footer switches to `Cached for great performance` (with the
+ * debug stamp on the stored copy) and the generator meta is withheld. Cached copies keep
+ * that shape, since they are stored per flagged URL. A constant cannot be undefined, so
+ * the define is skipped when anything else already defined it.
+ *
+ * @return void
+ */
+function fixture_apply_white_label(): void {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_WHITE_LABEL ] ) || '1' !== $_GET[ FIXTURE_FLAG_WHITE_LABEL ] ) {
+		return;
+	}
+	if ( ! defined( 'WP_ROCKET_WHITE_LABEL_FOOTPRINT' ) ) {
+		define( 'WP_ROCKET_WHITE_LABEL_FOOTPRINT', true );
+	}
+}
+fixture_apply_white_label();
+
+/**
+ * Keep WP Rocket from storing a cache file for one request.
+ *
+ * `?fdt-no-store=1` answers the plugin's own `do_rocket_generate_caching_files` filter
+ * with false (at `PHP_INT_MAX`, the priority managed-host integrations use, so nothing
+ * later re-enables it): the buffer is still optimized and the unstamped footer appended,
+ * but no file is written, so the drop-in can never serve a stored copy of the URL. An
+ * absent flag passes the plugin's decision through untouched.
+ *
+ * @param bool $generate The decision the filter chain would otherwise produce.
+ * @return bool False when the flag asks for the no-store render, else the passed value.
+ */
+function fixture_skip_cache_file( bool $generate ): bool {
+	// phpcs:ignore WordPress.Security.NonceVerification -- flag chooses per-request state only, like every fixture flag here.
+	if ( ! isset( $_GET[ FIXTURE_FLAG_NO_STORE ] ) || '1' !== $_GET[ FIXTURE_FLAG_NO_STORE ] ) {
+		return $generate;
+	}
+
+	return false;
+}
+add_filter( 'do_rocket_generate_caching_files', 'fixture_skip_cache_file', PHP_INT_MAX );

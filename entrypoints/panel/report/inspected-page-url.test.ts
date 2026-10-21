@@ -14,6 +14,7 @@ import {
   realInspectedEvalApi,
   type InspectedEvalApi
 } from './inspected-page-url';
+import type { LastErrorSlot, LastErrorValue } from '../../../utils/last-error';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -46,7 +47,26 @@ function promiseForm(settle: () => Promise<unknown>): {
   };
 }
 
-const noError = (): undefined => undefined;
+/** A runtime whose `lastError` is unset (Chromium's success spelling). */
+const noError: LastErrorSlot = {};
+
+/**
+ * A runtime whose `lastError` getter returns `value` and counts its reads.
+ *
+ * @param value The slot's value.
+ */
+function countingRuntime(value: LastErrorValue): { runtime: LastErrorSlot; reads: () => number } {
+  let reads = 0;
+  return {
+    runtime: {
+      get lastError(): LastErrorValue {
+        reads += 1;
+        return value;
+      }
+    },
+    reads: () => reads
+  };
+}
 
 describe('readInspectedPageUrl — callback form', () => {
   it('returns a valid http(s) URL and evaluates location.href', async () => {
@@ -78,9 +98,28 @@ describe('readInspectedPageUrl — callback form', () => {
   });
 
   it('reads lastError inside the callback and answers null when it is set', async () => {
-    const lastError = vi.fn(() => ({ message: 'No tab with id' }));
-    expect(await readInspectedPageUrl(callbackForm(undefined), lastError)).toBeNull();
-    expect(lastError).toHaveBeenCalledTimes(1);
+    const slot = countingRuntime({ message: 'No tab with id' });
+    expect(await readInspectedPageUrl(callbackForm(undefined), slot.runtime)).toBeNull();
+    expect(slot.reads()).toBe(1);
+  });
+
+  it("treats Firefox's null lastError as success", async () => {
+    expect(await readInspectedPageUrl(callbackForm('https://a.test/'), { lastError: null })).toBe(
+      'https://a.test/'
+    );
+  });
+
+  it('answers null when lastError is set, even beside a valid URL', async () => {
+    const slot = countingRuntime({ message: 'No tab with id' });
+    expect(await readInspectedPageUrl(callbackForm('https://a.test/'), slot.runtime)).toBeNull();
+    expect(slot.reads()).toBe(1);
+  });
+
+  it('answers null when lastError is set without a message', async () => {
+    // A set error is a failure whatever it carries; it must not read as success.
+    const slot = countingRuntime({});
+    expect(await readInspectedPageUrl(callbackForm('https://a.test/'), slot.runtime)).toBeNull();
+    expect(slot.reads()).toBe(1);
   });
 
   it('answers null when the eval cannot start', async () => {

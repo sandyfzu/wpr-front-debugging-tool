@@ -1,24 +1,37 @@
 /**
  * WP Rocket's own footprints: the generator `meta` (version), and the cache
- * debug comment inserted before the document element when a cached page is
- * served (`<!-- This website is like a Rocket… -->`). The vocabulary itself is
- * single-sourced in `../wp-rocket/constants`.
+ * comment after the document element when a cached page is served
+ * (`<!-- This website is like a Rocket, isn't it? … -->`, or a white-label
+ * footer). The vocabulary itself is single-sourced in `../wp-rocket/constants`.
  */
 
 import {
-  CACHE_COMMENT_MARKER,
+  CACHE_COMMENT_MARKERS,
   CACHE_DEBUG_MARKER,
-  CACHE_TIMESTAMP_PATTERN,
   extractWprVersion,
   GENERATOR_META_SELECTOR,
+  parseCacheTimestampToken,
   WPR_NAME_PATTERN
 } from '../wp-rocket/constants';
 import type { WprDetections } from '../wp-rocket/types';
+
+/**
+ * Whether a comment starts with one of WP Rocket's cache markers. Prefix
+ * text before the marker is not the plugin's footer; leading whitespace is
+ * tolerated because the parser preserves it.
+ *
+ * @param data The comment's text.
+ */
+function startsWithCacheMarker(data: string): boolean {
+  const trimmed = data.trimStart();
+  return CACHE_COMMENT_MARKERS.some((marker) => trimmed.startsWith(marker));
+}
 
 /** Full `wpr` detection. Pure in `document`; reads nothing live. */
 export function detectWpr(document: Document): WprDetections['wpr'] {
   const wpr: WprDetections['wpr'] = {
     present: false,
+    cacheMarkerFound: false,
     cached: false,
     version: null,
     timeStamp: null
@@ -34,25 +47,14 @@ export function detectWpr(document: Document): WprDetections['wpr'] {
 
   let sibling: ChildNode | null = document.documentElement.nextSibling;
   while (sibling !== null) {
-    // Comment/text-like nodes carry text in `data`; element siblings (parser
+    // Only comment nodes can be the footer; element/text siblings (parser
     // relocation artifacts) must be skipped, not crashed on.
-    const data = sibling instanceof CharacterData ? sibling.data : undefined;
-    if (data !== undefined && data.includes(CACHE_COMMENT_MARKER)) {
+    if (sibling instanceof Comment && startsWithCacheMarker(sibling.data)) {
       wpr.present = true;
-      if (data.includes(CACHE_DEBUG_MARKER)) {
+      wpr.cacheMarkerFound = true;
+      if (sibling.data.includes(CACHE_DEBUG_MARKER)) {
         wpr.cached = true;
-        // Truthy capture, as the reference engine reads it: an empty
-        // `cached@` suffix keeps the timestamp null. The explicit radix is
-        // the one delta vs the reference `parseInt`: `0x`-prefixed suffixes
-        // parse as 0 instead of hexadecimal. Non-numeric suffixes normalize
-        // to null rather than NaN, and digit runs too long for a number
-        // (parsing to Infinity) to null too: the payload contract admits
-        // finite stamps only.
-        const timestamp = data.match(CACHE_TIMESTAMP_PATTERN)?.[1];
-        if (timestamp) {
-          const parsed = parseInt(timestamp, 10);
-          wpr.timeStamp = Number.isFinite(parsed) ? parsed : null;
-        }
+        wpr.timeStamp = parseCacheTimestampToken(sibling.data);
       }
       break;
     }

@@ -13,6 +13,7 @@ import {
   menuActionFor,
   menuClickOrigin,
   menuCreateParams,
+  reportMenuCreateFailure,
   type MenuClickDeps
 } from './context-menus';
 
@@ -47,6 +48,36 @@ describe('menuActionFor', () => {
   it('leaves foreign or numeric ids unrouted', () => {
     expect(menuActionFor('something-else')).toBeNull();
     expect(menuActionFor(42)).toBeNull();
+  });
+});
+
+describe('reportMenuCreateFailure', () => {
+  it('stays silent on both success spellings (Chromium undefined, Firefox null)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(reportMenuCreateFailure('entry', {})).toBeNull();
+      expect(reportMenuCreateFailure('entry', { lastError: undefined })).toBeNull();
+      // Firefox's success value: a dereference here used to throw.
+      expect(reportMenuCreateFailure('entry', { lastError: null })).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('logs and answers a failed create with its entry id', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(reportMenuCreateFailure('entry', { lastError: { message: 'Duplicate id' } })).toBe(
+        'Duplicate id'
+      );
+      expect(warn).toHaveBeenCalledWith('[WPR FDT] [context-menus] Menu entry creation skipped', {
+        id: 'entry',
+        message: 'Duplicate id'
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

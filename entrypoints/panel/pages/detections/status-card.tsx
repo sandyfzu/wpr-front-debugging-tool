@@ -7,6 +7,11 @@
  * - **link** — the whole card is an anchor to the page that explains the
  *   feature, with the hover lift and the focus ring.
  *
+ * A feature card adds its evidence line under the name: the source chip
+ * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
+ * the native title) and, for an unsure verdict (collecting / unknown), the
+ * amber why sentence — visible text, never hover-only.
+ *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time and the Known Platform card's matching header —
  * with the subtitle text as their (focusable) trigger. A link card never
@@ -16,6 +21,7 @@ import type { JSX } from 'solid-js';
 import { Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
+import { Badge } from '../../../../components/ui/badge';
 import { CARD_LEVEL_CLASSES } from '../../../../components/ui/card';
 import { FOCUS_RING, MOTION_LIFT } from '../../../../components/ui/classes';
 import {
@@ -24,6 +30,7 @@ import {
   StatusBadge
 } from '../../../../components/ui/status-badge';
 import { Tooltip } from '../../../../components/ui/tooltip';
+import { SOURCE_COPY } from '../../../../lib/detection/hud';
 import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
 import type { StatusItem } from '../../../../lib/panel/detections-view-model';
 import { cn } from '../../../../utils/cn';
@@ -115,6 +122,47 @@ function CardHead(props: { item: StatusItem }): JSX.Element {
         {STATUS_LABELS[props.item.status]}
       </StatusBadge>
     </div>
+  );
+}
+
+/**
+ * The evidence line: source chip and/or the unsure verdict's why. Renders
+ * nothing for a card with neither (non-feature cards, undecided rows whose
+ * absence is an honest "not active").
+ *
+ * @param props.item The card.
+ * @returns The evidence line, or nothing.
+ */
+function CardEvidence(props: { item: StatusItem }): JSX.Element {
+  const source = () =>
+    props.item.source === undefined ? undefined : SOURCE_COPY[props.item.source];
+  return (
+    <Show when={source() !== undefined || props.item.why !== undefined}>
+      <div
+        data-fdt-card-evidence
+        class={cn(UNDER_NAME, 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs')}
+      >
+        <Show when={source()}>
+          {(copy) => (
+            <Badge variant="outline" class="shrink-0">
+              <span data-fdt-card-source title={copy().tooltip}>
+                <span class="sr-only">, </span>
+                {copy().chip}
+                <span class="sr-only">: {copy().tooltip}</span>
+              </span>
+            </Badge>
+          )}
+        </Show>
+        <Show when={props.item.why}>
+          {(why) => (
+            <p data-fdt-card-why class="min-w-0 text-status-warn">
+              <span class="sr-only">, </span>
+              {why()}
+            </p>
+          )}
+        </Show>
+      </div>
+    </Show>
   );
 }
 
@@ -223,6 +271,7 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
         <div data-fdt="status-card" data-fdt-card-id={props.item.id} class={STATUS_CARD_SURFACE}>
           <CardHead item={props.item} />
           <StaticSubtitle item={props.item} now={props.now} />
+          <CardEvidence item={props.item} />
         </div>
       }
     >
@@ -247,6 +296,7 @@ export function StatusCard(props: StatusCardProps): JSX.Element {
               </p>
             )}
           </Show>
+          <CardEvidence item={props.item} />
           <span
             class={cn(
               UNDER_NAME,

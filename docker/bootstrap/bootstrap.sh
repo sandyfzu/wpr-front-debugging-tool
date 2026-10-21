@@ -130,6 +130,35 @@ fi
 grep -q "define( 'WP_CACHE', true );" "$WP_PATH/wp-config.php" || die "wp_config" "WP_CACHE define missing after edit — the image template changed; update docker/bootstrap/bootstrap.sh"
 grep -q "define( 'WP_ROCKET_KEY', 'fdtlocal' );" "$WP_PATH/wp-config.php" || die "wp_config" "WP_ROCKET_KEY define missing after edit — the image template changed; update docker/bootstrap/bootstrap.sh"
 
+# The edge-layer fixture (docker/fixtures/edge/fdt-edge.php): what a hosting cache/CDN
+# does to a response — strip the cache signature, send a cache-layer header — driven by
+# per-request URL flags. It must run before WordPress AND before WP Rocket's
+# advanced-cache drop-in (its output buffer has to be the outermost one, and cached
+# copies the drop-in serves must pass through it), so it is required from wp-config,
+# guarded on the file existing. Idempotent insert keyed on its own marker line.
+EDGE_MARKER='// fdt-edge-layer fixture'
+if ! grep -q "$EDGE_MARKER" "$WP_PATH/wp-config.php" 2>/dev/null; then
+	if ! sed -i "s|^require_once ABSPATH . 'wp-settings.php';|$EDGE_MARKER\nif ( is_readable( __DIR__ . '/wp-content/mu-plugins/edge/fdt-edge.php' ) ) {\n\trequire_once __DIR__ . '/wp-content/mu-plugins/edge/fdt-edge.php';\n}\nrequire_once ABSPATH . 'wp-settings.php';|" "$WP_PATH/wp-config.php" 2>/dev/null; then
+		die "wp_config" "could not edit wp-config.php for the edge-layer fixture — is it writable (uid 33)?"
+	fi
+fi
+grep -q "$EDGE_MARKER" "$WP_PATH/wp-config.php" || die "wp_config" "edge-layer include missing after edit — the wp-settings.php require line changed; update docker/bootstrap/bootstrap.sh"
+
+# WP Rocket's hourly debug-log check (WP_ROCKET_DEBUG above) runs in the first settings
+# write after its transient expires — under wp-cli too — and truncates a log of 30 MB or
+# more through WP_Filesystem_Direct without WP_Filesystem(), so FS_CHMOD_FILE is
+# undefined and the call fatals ("Undefined constant FS_CHMOD_FILE"): a wp-cli settings
+# write failed once an hour (browser runs grow the log ~60 MB/h). Defining the two
+# WordPress-documented constants, with core's own derivation (wp-admin/includes/file.php),
+# lets the truncation succeed. Idempotent insert keyed on its own marker line.
+GUARDS_MARKER='// fdt-debug-log-guards'
+if ! grep -q "$GUARDS_MARKER" "$WP_PATH/wp-config.php" 2>/dev/null; then
+	if ! sed -i "s#^require_once ABSPATH . 'wp-settings.php';#$GUARDS_MARKER\nif ( ! defined( 'FS_CHMOD_DIR' ) ) {\n\tdefine( 'FS_CHMOD_DIR', ( fileperms( ABSPATH ) \& 0777 | 0755 ) );\n}\nif ( ! defined( 'FS_CHMOD_FILE' ) ) {\n\tdefine( 'FS_CHMOD_FILE', ( fileperms( ABSPATH . 'index.php' ) \& 0777 | 0644 ) );\n}\nrequire_once ABSPATH . 'wp-settings.php';#" "$WP_PATH/wp-config.php" 2>/dev/null; then
+		die "wp_config" "could not edit wp-config.php for the debug-log guards — is it writable (uid 33)?"
+	fi
+fi
+grep -q "define( 'FS_CHMOD_FILE'," "$WP_PATH/wp-config.php" || die "wp_config" "debug-log guards missing after edit — the wp-settings.php require line changed; update docker/bootstrap/bootstrap.sh"
+
 # Build pin: the installed plugin version must match the environment pin. A zip built
 # from an older/newer tag than the recorded pin means the fixture baselines are no
 # longer those this repo was tuned against — fail boot, name the fix.
@@ -166,7 +195,10 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 #   remove_unused_css                    the RUCSS gate (wpr-usedcss + beacon surface)
 #   cache_query_strings = [fdt-error, fdt-delay,
 #                          fdt-fonts-on, fdt-oci-off,
-#                          fdt-wpr-versionless]
+#                          fdt-wpr-versionless,
+#                          fdt-meta-off, fdt-white-label, fdt-decoy,
+#                          fdt-edge-strip, fdt-edge-header,
+#                          fdt-no-store]
 #                                        the scenario FLAGS themselves become cached
 #                                        URLs: the buffer pipeline only processes
 #                                        parameters from this option (verified in the
@@ -181,7 +213,13 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 #                                        filter arm acts inside the buffer pipeline,
 #                                        so an unprocessed URL would show plain WP
 #                                        output and never answer the versionless
-#                                        question the fixture exists for.
+#                                        question the fixture exists for. The
+#                                        meta-off/white-label/decoy flags and the edge flags
+#                                        ride it too: the detection-matrix rounds need
+#                                        each arm as a real optimized, cached page;
+#                                        the no-store flag needs the pipeline too
+#                                        (optimized, footer appended) while its own
+#                                        filter keeps the file from being written.
 # Everything else keeps the plugin's own defaults — the exclusion lists in particular
 # stay at their untouched defaults so the delay queue mirrors a real site's baseline.
 # NOTE: `cache` is not a settings key: page caching is unconditional in WP Rocket
@@ -191,11 +229,18 @@ php /mnt/seed-settings.php || die "wpr_seed" "settings seeding failed (exit $?) 
 # >15 days" gate hooks the option read at PHP_INT_MAX; a synthetic local key has no
 # expiration, so it always reads as expired). RUCSS/Async-CSS therefore never engage on
 # this site by plugin design — see the runbook's baseline table and 05c's record.
+# The forced list is `key=value`: the 1s above plus a 0 for every other key a browser-
+# tier settings combination turns on (tests/e2e/helpers/detection-matrix.ts; a contract
+# test pins that every combination key is forced here), so a run killed before its
+# restore is undone by the next up.sh. 0 matches the seeded state: those keys are 0 or
+# absent there, and the plugin reads an absent key as off. `patch insert` upserts
+# (`update` fails on an absent key); JSON format stores integers, as the plugin's own
+# saves do.
 step "wp-rocket: applying baseline settings"
-for key in cache_mobile do_caching_mobile_files minify_css minify_js lazyload defer_all_js delay_js remove_unused_css; do
-	run_wp option patch update wp_rocket_settings "$key" 1 >/dev/null
+for pair in cache_mobile=1 do_caching_mobile_files=1 minify_css=1 minify_js=1 lazyload=1 defer_all_js=1 delay_js=1 remove_unused_css=1 lazyload_iframes=0 lazyload_css_bg_img=0 image_dimensions=0 preload_links=0 host_fonts_locally=0; do
+	run_wp option patch insert wp_rocket_settings "${pair%%=*}" "${pair#*=}" --format=json >/dev/null
 done
-run_wp option patch update wp_rocket_settings cache_query_strings '["fdt-error", "fdt-delay", "fdt-fonts-on", "fdt-oci-off", "fdt-wpr-versionless"]' --format=json >/dev/null
+run_wp option patch update wp_rocket_settings cache_query_strings '["fdt-error", "fdt-delay", "fdt-fonts-on", "fdt-oci-off", "fdt-wpr-versionless", "fdt-meta-off", "fdt-white-label", "fdt-decoy", "fdt-edge-strip", "fdt-edge-header", "fdt-no-store"]' --format=json >/dev/null
 
 # Re-publish WP Rocket's per-host config file (the drop-in reads its state from there):
 # permalink + cached-query-string state must land in it before any page is served.
@@ -288,6 +333,10 @@ fi
 # boots; a forthcoming suite resets it explicitly when a scenario needs a cold RUCSS.
 step "wp-rocket: purge all caches"
 run_wp eval 'rocket_clean_domain(); rocket_clean_minify();' >/dev/null 2>&1 || die "wpr_purge" "rocket_clean_domain()/rocket_clean_minify() eval failed — is WP Rocket active and loadable in CLI context?"
+
+# Readiness marker, written last (up.sh deleted it before the boot): served at
+# /fdt-state/bootstrap-ready.txt, it is the browser tier's "this boot converged" URL.
+date -u '+%Y-%m-%dT%H:%M:%SZ' >/mnt/state/bootstrap-ready.txt || die "ready_marker" "could not write /mnt/state/bootstrap-ready.txt — is docker/state writable?"
 
 # Done marker consumed by docker/scripts/up.sh as the "site ready" signal.
 printf 'bootstrap: done\n'

@@ -82,7 +82,7 @@ describe('LazyloadPage — frame and summary', () => {
     expect(root.getAttribute('data-fdt-page')).toBe('lazyload');
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Lazyload');
     const summary = root.querySelector('[data-fdt="resource-summary"]');
-    expect(summary?.textContent).toContain('Lazyload for images');
+    expect(summary?.textContent).toContain('LazyLoad for images');
     expect(summary?.textContent).toContain('detected');
     expect(root.querySelector('[data-fdt="resource-total"]')?.textContent).toBe('5 images');
   });

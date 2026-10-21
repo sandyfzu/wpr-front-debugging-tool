@@ -29,6 +29,7 @@ export const FIXTURES = [
   'psi-shell.html',
   // Crafted integrations/adversarial cases (see the file headers).
   'synthetic-all-features.html',
+  'footprint-branches.html',
   'adversarial-lazyload-classes.html',
   'adversarial-exclusion-tokens.html',
   // Crafted Priority-Elements states: pending (beacon + config), applied,

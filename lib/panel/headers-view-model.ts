@@ -155,12 +155,11 @@ function cloudflareVerdict(value: string): VerdictHint | null {
         tone: 'warn'
       };
     case 'EXPIRED':
-      // The info tone is deliberate: the frozen copy states serving
-      // (stale-then-revalidated), and the words carry that nuance — hedged
-      // evidence, never an ok verdict.
+      // Cloudflare's documented semantics: the cache found the copy expired
+      // and the response came from the origin — a non-serve, like MISS.
       return {
-        text: 'Cloudflare served its cached copy after it aged out and revalidated with origin (EXPIRED).',
-        tone: 'info'
+        text: 'Cloudflare found its cached copy expired and served this response from the origin (EXPIRED).',
+        tone: 'warn'
       };
     default:
       return hitMissVerdict(

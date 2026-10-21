@@ -10,7 +10,7 @@ Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file own
 
 ### Presentation and ownership
 
-- Same-context `pageDataFor` joins capture→cached single-flight detection, **no second pass**. Producer is eager since2026-10-08, not lazy-until-widget. Labels promoted to `lib/detection/labels.ts`; provisional strip-items typed table **delete when P11 hud lands**. WordPress-version parser shared, leading digit required.
+- Same-context `pageDataFor` joins capture→cached single-flight detection, **no second pass**. Producer is eager since2026-10-08, not lazy-until-widget. Labels promoted to `lib/detection/labels.ts`; provisional strip-items typed table deleted by P11C (strip reads `lib/detection/hud.ts`). WordPress-version parser shared, leading digit required.
 - Marker pill default bottom-right16/16, opposite KC; opens grouped static-evidence report card. Width **min(352px,100vw−32px)**, not original224/40vw (7/15 labels elided there, measured need~349). Values separate18px info-pair pills/10px tabular at4px gap. At300px none elide;280px2/264px3 elide, value wraps first—not an unlimited “never elides” promise.
 - Mood cached green/present-uncached amber/absent gray/scanning pulse/real pass failure red. Applied ok, collecting attention, not-applied/not-enabled neutral; cache warning distinct. Identity WPR version or **WPR (unknown version)**/WPR not found; unknown footer WPR—. Failure cache dash+named reason, never fabricated verdict. Static chips no dead clicks; rocket mark identity, not per-state icon.
 - Shadow `wpr-fdt-inspector`, ins-* classes, LTR,z2147483647; shared token/live theme and focus helper. ESC/card/pill focus handoff attempts/verifies/retries next frame, context-owned. Held-visible departing leg/reduced-motion machinery-free card, **no row stagger**. Same-value origin writes don't re-read hub. Trusted-event gating ignores host synthetic reopen clicks; pointer-vs-keyboard distinguished by click.detail, not isTrusted alone.
@@ -62,7 +62,7 @@ Validation: the unit tier green with the origin-store suite retargeted to the ne
 
 Depends: P3/P5H/shared mount. Parallel: P11 pure detection work; serialize injected-UI edits. Size: S. Goal: removal during the awaited appearance read cannot leave detached render work or a live watcher.
 
-- [ ] Harden `ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
+- [ ] Harden `components/injected-ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
 
 DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-theme tests; no leaked tree/watch or remount, UI bar/gates/browser regression green. This is the open P5H lifecycle requirement, not a new feature.
 
@@ -70,7 +70,7 @@ DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-
 
 Depends:P11/P9 (existing P12A baseline; the popup's Detections row lands additively at deferred P8). Parallel:P13/P14 executor work. Size:S–M.
 
-- [ ] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons. No old SHGF/OCI/ALR tool-internal short labels restored.
+- [x] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons (done in P11C). No old SHGF/OCI/ALR tool-internal short labels restored.
 - [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global `features.onPageInspector` — the options page's **show the detection chip on pages by default** row — is **true by default** (owner 2026-10-17; the interim `INSPECTOR_DEFAULT_ENABLED` constant already ships that behavior with per-origin entries winning both ways); popup/Detections/options/context menu share one item/toggle, no new runtime channel; the stored option replaces only the constant's role, never the precedence.
 - [ ] Complete collapse/session visibility and **Alt+H only**, capture:false listener, no document.onkeydown clobber; disabled origin no action, context cleanup. Original text mixed “session-only” and “persisted” shortcut visibility: decide/document that distinction before implementation; persistent activation and persisted position remain required, never silently invent second store.
 

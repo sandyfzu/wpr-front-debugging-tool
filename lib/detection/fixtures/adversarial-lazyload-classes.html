@@ -5,18 +5,15 @@
   should trip substring matches that must not fire (value not at the anchor),
   plus tokens embedded in src values that must fire. Pin: identical outputs
   from the port engine and the reference implementation, every field.
-  Snapshot note: lazyload present is FALSE here on purpose — the options blob
-  below targets youtube-style markup with a SPACE before '=' (never served
-  that way); keep it so the options-regex's exactness stays pinned.
+  No `data-wpr-features` declaration: this page deliberately lets the
+  footprint checks decide, so the options blob below (space before '=', never
+  served that way) keeps the options-regex's exactness pinned — meta authority
+  cannot override the negative.
 -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="generator"
-      content="WP Rocket 3.20.0.2"
-      data-wpr-features="wpr_delay_js wpr_lazyload_images wpr_lazyload_iframes"
-    />
+    <meta name="generator" content="WP Rocket 3.20.0.2" />
     <title>adversarial lazyload classes</title>
   </head>
   <body>

@@ -1,73 +1,85 @@
 /** Refresh reuse through real capture, boundary validation and panel pushes. */
 import { expect, test } from '../helpers/extension';
 import { openPanelForFixture } from '../helpers/panel-data';
-import { preserveMovedFocus } from '../../../components/ui/virtual-list-focus';
+import { bundleModuleForPage } from '../helpers/page-bundle';
 
 test('focus restoration in Chromium requires a real move and respects transfer, removal and disposal', async ({
   extension
 }) => {
   const page = await extension.browserContext.newPage();
   try {
-    // Exercise the exact self-contained helper in a real DOM; no app/store test hook.
+    // Exercise the shipped module (with its own helpers) in a real DOM; no
+    // app/store test hook.
     await page.addScriptTag({
-      content: `window.__preserveMovedFocus = (${preserveMovedFocus.toString()});`
+      content: await bundleModuleForPage('components/ui/virtual-list-focus.ts', '__listFocus')
     });
-    const result = await page.evaluate(async () => {
-      const preserve = (
-        window as unknown as { __preserveMovedFocus: (container: HTMLElement) => () => void }
-      ).__preserveMovedFocus;
-      const results: Record<string, boolean> = {};
-      for (const scenario of [
-        'move',
-        'ancestor',
-        'blur',
-        'unrelated',
-        'transfer',
-        'stopped-transfer',
-        'removed',
-        'replaced',
-        'disposed'
-      ]) {
-        const container = document.createElement('div');
-        const wrapper = document.createElement('div');
-        const button = document.createElement('button');
-        const outside = document.createElement('button');
-        wrapper.append(button);
-        container.append(wrapper);
-        document.body.append(container, outside);
-        button.focus();
-        const cancel = preserve(container);
-        if (scenario === 'blur') button.blur();
-        else if (scenario === 'unrelated') {
-          const sibling = document.createElement('span');
-          container.append(sibling);
-          sibling.remove();
-          button.blur();
-        } else {
-          const moved = scenario === 'ancestor' ? wrapper : button;
-          moved.remove();
-          if (scenario === 'replaced') container.append(document.createElement('button'));
-          else if (scenario !== 'removed') container.append(moved);
-          if (scenario === 'stopped-transfer')
-            outside.addEventListener('focusin', (event) => {
-              event.stopPropagation();
-            });
-          if (scenario === 'transfer' || scenario === 'stopped-transfer') {
-            outside.focus();
-            outside.blur();
+    const run = (mode: 'document' | 'shadow'): Promise<Record<string, boolean>> =>
+      page.evaluate(async (mount) => {
+        const preserve = (
+          window as unknown as {
+            __listFocus: { preserveMovedFocus: (container: HTMLElement) => () => void };
           }
-          if (scenario === 'disposed') cancel();
+        ).__listFocus.preserveMovedFocus;
+        const results: Record<string, boolean> = {};
+        for (const scenario of [
+          'move',
+          'ancestor',
+          'blur',
+          'unrelated',
+          'transfer',
+          'stopped-transfer',
+          'removed',
+          'replaced',
+          'disposed'
+        ]) {
+          const container = document.createElement('div');
+          const wrapper = document.createElement('div');
+          const button = document.createElement('button');
+          const outside = document.createElement('button');
+          wrapper.append(button);
+          container.append(wrapper);
+          // Shadow mode: the list lives in a shadow root (injected UIs), where
+          // the document reports only the host as focused.
+          const host = document.createElement('div');
+          const tree = mount === 'shadow' ? host.attachShadow({ mode: 'open' }) : document;
+          if (mount === 'shadow') {
+            host.shadowRoot?.append(container);
+            document.body.append(host, outside);
+          } else document.body.append(container, outside);
+          button.focus();
+          const cancel = preserve(container);
+          if (scenario === 'blur') button.blur();
+          else if (scenario === 'unrelated') {
+            const sibling = document.createElement('span');
+            container.append(sibling);
+            sibling.remove();
+            button.blur();
+          } else {
+            const moved = scenario === 'ancestor' ? wrapper : button;
+            moved.remove();
+            if (scenario === 'replaced') container.append(document.createElement('button'));
+            else if (scenario !== 'removed') container.append(moved);
+            if (scenario === 'stopped-transfer')
+              outside.addEventListener('focusin', (event) => {
+                event.stopPropagation();
+              });
+            if (scenario === 'transfer' || scenario === 'stopped-transfer') {
+              outside.focus();
+              outside.blur();
+            }
+            if (scenario === 'disposed') cancel();
+          }
+          await new Promise<void>((resolve) => {
+            queueMicrotask(resolve);
+          });
+          results[scenario] = tree.activeElement === button;
+          container.remove();
+          host.remove();
+          outside.remove();
         }
-        await new Promise<void>((resolve) => {
-          queueMicrotask(resolve);
-        });
-        results[scenario] = document.activeElement === button;
-        container.remove();
-        outside.remove();
-      }
-      return results;
-    });
-    expect(result).toEqual({
+        return results;
+      }, mode);
+    const expected = {
       move: true,
       ancestor: true,
       blur: false,
@@ -77,7 +89,9 @@ test('focus restoration in Chromium requires a real move and respects transfer, 
       removed: false,
       replaced: false,
       disposed: false
-    });
+    };
+    expect(await run('document')).toEqual(expected);
+    expect(await run('shadow')).toEqual(expected);
   } finally {
     await page.close();
   }

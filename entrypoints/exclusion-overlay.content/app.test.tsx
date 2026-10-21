@@ -206,8 +206,8 @@ describe('OverlayApp', () => {
     for (const lane of [
       'Delay JavaScript execution',
       'Load JavaScript deferred',
-      'Automatic lazy rendering',
-      'Image LazyLoad'
+      'Automatic Lazy Rendering',
+      'LazyLoad for images'
     ]) {
       expect(screen.getByRole('heading', { level: 2, name: lane })).toBeTruthy();
     }
@@ -249,7 +249,7 @@ describe('OverlayApp', () => {
 
   it('collapses to the pill on Escape and reopens from it', async () => {
     const { container } = mount(port({ state: 'inactive' }));
-    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
     fireEvent.keyDown(layerOf(container), { key: 'Escape' });
     const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
     expect(pill.textContent).toMatch(/^Exclusions/);
@@ -262,7 +262,7 @@ describe('OverlayApp', () => {
 
   it('reports folding, unfolding and closing (the next page follows suit)', async () => {
     const { container, onPresented } = mount(port({ state: 'inactive' }));
-    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
     expect(onPresented).not.toHaveBeenCalled();
     fireEvent.keyDown(layerOf(container), { key: 'Escape' });
     fireEvent.click(await screen.findByRole('button', { name: /open the exclusion builder/i }));
@@ -272,7 +272,7 @@ describe('OverlayApp', () => {
 
   it('re-tries a focus move that does not take (a panel still hidden for a frame)', async () => {
     const { container } = mount(port({ state: 'inactive' }));
-    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
     fireEvent.keyDown(layerOf(container), { key: 'Escape' });
     const pill = await screen.findByRole('button', { name: /open the exclusion builder/i });
     const heading = screen.getByRole('heading', { level: 1 });
@@ -325,7 +325,7 @@ describe('OverlayApp', () => {
     outside.focus();
     try {
       const { container } = mount(port(activeRecord()), 'open');
-      await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+      await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
       expect(document.activeElement).toBe(outside);
     } finally {
@@ -410,7 +410,7 @@ describe('OverlayApp', () => {
       expect(screen.queryByRole('group', { name: 'Picking on the page' })).toBeNull();
     });
     expect(stopPicker).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('textbox', { name: 'Image LazyLoad row 1' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'LazyLoad for images row 1' })).toBeTruthy();
   });
 
   it('keeps Tab on the picking bar and cancels back to Pick on page', async () => {
@@ -428,21 +428,23 @@ describe('OverlayApp', () => {
   it('adds from the page list without moving focus, then shows the row on a second press', async () => {
     mount(port({ state: 'inactive' }));
     fireEvent.click(await screen.findByRole('button', { name: /On this page/ }));
-    const add = screen.getByRole('button', { name: 'Add hero.jpg to Image LazyLoad' });
+    const add = screen.getByRole('button', { name: 'Add hero.jpg to LazyLoad for images' });
     add.focus();
     fireEvent.click(add);
-    expect(screen.getByRole('textbox', { name: 'Image LazyLoad row 1' })).toBeTruthy();
-    const added = screen.getByRole('button', { name: /^Added: hero\.jpg is in Image LazyLoad/ });
+    expect(screen.getByRole('textbox', { name: 'LazyLoad for images row 1' })).toBeTruthy();
+    const added = screen.getByRole('button', {
+      name: /^Added: hero\.jpg is in LazyLoad for images/
+    });
     expect(added.textContent).toContain('Added');
     fireEvent.click(added);
     await waitFor(() => {
-      expect(document.activeElement?.getAttribute('aria-label')).toBe('Image LazyLoad row 1');
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('LazyLoad for images row 1');
     });
   });
 
   it('folds into a paused pill while the page shows a modal dialog, and comes back', async () => {
     const { container, setPageModal } = mount(port({ state: 'inactive' }));
-    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
     setPageModal(true);
     expect(await screen.findByText('Paused: page dialog open')).toBeTruthy();
     setPageModal(false);
@@ -520,7 +522,7 @@ describe('OverlayApp', () => {
 
   it('re-checks the page modal on reopen, and focuses the panel when a modal goes away', async () => {
     const { container, setPageModal, setModalNow } = mount(port({ state: 'inactive' }));
-    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
     setPageModal(true);
     // The dialog is gone, but nothing told the tools (stale signal).
     setModalNow(false);

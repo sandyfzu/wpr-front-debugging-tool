@@ -17,7 +17,7 @@
  * The mapping and dispatch are injected-deps functions: the registry's
  * creation rows (`menuCreateParams`) and a click's branch tree
  * (`dispatchMenuClickEvent`) are testable without the extension runtime,
- * and the real `browser.*` calls (send, `tabs.create`, the `lastError`
+ * and the real `browser.*` calls (send, the overlay opener, the `lastError`
  * acknowledgment) stay a few lines of glue.
  */
 
@@ -27,7 +27,7 @@ import { numericTabId } from '../../lib/messaging/sender';
 import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
-import { lastErrorMessage } from '../../utils/last-error';
+import { readLastError, type LastErrorSlot } from '../../utils/last-error';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import { openExclusionOverlay } from './exclusion-overlay';
 
@@ -282,6 +282,21 @@ export async function dispatchMenuClickEvent(
 }
 
 /**
+ * The create callback's body: the callback is the only place the browser
+ * reports a failed or duplicate create, so reading `lastError` here clears
+ * it and logs it (success — `undefined` or Firefox's `null` — stays silent).
+ *
+ * @param id The entry's creation id (log context).
+ * @param runtime The runtime whose `lastError` is read.
+ * @returns The failure message, or null when the entry was created.
+ */
+export function reportMenuCreateFailure(id: string, runtime: LastErrorSlot): string | null {
+  const failure = readLastError(runtime);
+  if (failure !== null) log.warn('Menu entry creation skipped', { id, message: failure });
+  return failure;
+}
+
+/**
  * Create all registered entries, after clearing whatever exists.
  *
  * Recreating from scratch (instead of upserting) is what keeps extension
@@ -296,12 +311,7 @@ async function createMenuEntries(): Promise<void> {
   }
   for (const params of menuCreateParams()) {
     browser.contextMenus.create(params, () => {
-      // The create callback is the only place the browser reports a failed
-      // or duplicate create; reading lastError here clears it and logs it.
-      const failure = lastErrorMessage(browser.runtime.lastError);
-      if (failure !== null) {
-        log.warn('Menu entry creation skipped', { id: params.id, message: failure });
-      }
+      reportMenuCreateFailure(params.id, browser.runtime);
     });
   }
 }

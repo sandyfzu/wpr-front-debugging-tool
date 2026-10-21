@@ -14,7 +14,7 @@ import {
   BEACON_DATA_NAME,
   BEACON_SRC_PATTERN,
   BEACON_STATUS_KEYS,
-  CACHE_COMMENT_MARKER,
+  CACHE_COMMENT_MARKERS,
   CACHE_DEBUG_MARKER,
   CACHE_TIMESTAMP_PATTERN,
   CONTEXT_MENU_IDS,
@@ -32,6 +32,9 @@ import {
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
   GENERATOR_META_SELECTOR,
+  WPR_FEATURES_ATTRIBUTE,
+  WPR_FEATURES_META_SELECTOR,
+  isCacheBypassUrl,
   isDelayJSType,
   KNOWN_PLATFORMS,
   LAZYLOAD_BG_CONTAINER_ID,
@@ -46,7 +49,9 @@ import {
   LOCATION_HASH_ATTRIBUTE,
   MINIFY_CSS_URL_PATTERN,
   MINIFY_JS_URL_PATTERN,
+  MAX_CACHE_STAMP_SECONDS,
   OPTIMIZE_CRITICAL_IMAGES_COMMENT,
+  parseCacheTimestampToken,
   PRELOAD_LINKS_SCRIPT_ID,
   ROCKET_CDN_DOMAIN,
   ROCKET_PREFETCH_ATTRIBUTE,
@@ -134,6 +139,8 @@ describe('other feature footprints', () => {
     expect(LAZYLOAD_BG_EXCLUSION_ID).toBe('wpr-lazyload-bg-exclusion');
     expect(BEACON_DATA_NAME).toBe('wpr-wpr-beacon');
     expect(GENERATOR_META_SELECTOR).toBe('meta[name="generator"]');
+    expect(WPR_FEATURES_ATTRIBUTE).toBe('data-wpr-features');
+    expect(WPR_FEATURES_META_SELECTOR).toBe('meta[name="generator"][data-wpr-features]');
     expect(MINIFY_CSS_URL_PATTERN.test('https://x/wp-content/cache/min/1/abc.css?ver=1')).toBe(
       true
     );
@@ -188,11 +195,34 @@ describe('other feature footprints', () => {
   });
 
   it('pins the name/version/cache-comment markers', () => {
-    expect(CACHE_COMMENT_MARKER).toBe('This website is like a Rocket');
+    expect(CACHE_COMMENT_MARKERS).toEqual([
+      "This website is like a Rocket, isn't it?",
+      'Cached for great performance',
+      'Optimized for great performance'
+    ]);
     expect(CACHE_DEBUG_MARKER).toBe('Debug: cached');
     expect('Debug: cached@1699999999'.match(CACHE_TIMESTAMP_PATTERN)?.[1]).toBe('1699999999');
     expect(extractWprVersion('WP Rocket 3.20.0.2')).toBe('3.20.0.2');
     expect(extractWprVersion('WPML 4.7.2')).toBeNull();
+  });
+
+  it('parses only a strict decimal cache stamp within the display domain', () => {
+    expect(parseCacheTimestampToken('Debug: cached@1699999999')).toBe(1699999999);
+    expect(parseCacheTimestampToken('Debug: cached@0')).toBe(0);
+    expect(parseCacheTimestampToken(`Debug: cached@${String(MAX_CACHE_STAMP_SECONDS)}`)).toBe(
+      MAX_CACHE_STAMP_SECONDS
+    );
+    for (const data of [
+      'Debug: cached@0x10',
+      'Debug: cached@-5',
+      'Debug: cached@1.5',
+      'Debug: cached@abc',
+      'Debug: cached@',
+      `Debug: cached@${String(MAX_CACHE_STAMP_SECONDS + 1)}`,
+      `Debug: cached@${'9'.repeat(400)}`
+    ]) {
+      expect(parseCacheTimestampToken(data), data).toBeNull();
+    }
   });
 });
 
@@ -224,6 +254,40 @@ describe('platforms and ids', () => {
         'wprSideBySide'
       ].sort()
     );
+  });
+
+  it("reads the cache bypass as the parameter's presence (the plugin's own check)", () => {
+    expect(isCacheBypassUrl('https://example.test/?nowprocket=1')).toBe(true);
+    expect(isCacheBypassUrl('https://example.test/?a=1&nowprocket=0')).toBe(true);
+    expect(isCacheBypassUrl('https://example.test/?nowprocket')).toBe(true);
+    expect(isCacheBypassUrl('https://example.test/?nowprocketx=1')).toBe(false);
+    expect(isCacheBypassUrl('https://example.test/#nowprocket=1')).toBe(false);
+    expect(isCacheBypassUrl(new URL('https://example.test/?nowprocket=1'))).toBe(true);
+    // PHP's parse_str accepts array-shaped keys; the page's own bypass does too.
+    for (const query of ['nowprocket[]=1', 'nowprocket[foo]=1', 'nowprocket%5B%5D=1']) {
+      expect(isCacheBypassUrl(`https://example.test/?${query}`), query).toBe(true);
+    }
+    expect(isCacheBypassUrl('https://example.test/?nowprocket[=1')).toBe(false);
+    // An unparsable URL cannot attest a bypass, and must not throw on boot.
+    expect(isCacheBypassUrl('/relative?nowprocket=1')).toBe(false);
+    expect(isCacheBypassUrl('not a url')).toBe(false);
+  });
+
+  it('reads the bypass where URLSearchParams method iterators are not iterable', () => {
+    // A content-script sandbox shape: `keys()`/`values()`/`entries()` answer
+    // iterator objects lacking `Symbol.iterator` — `for…of` over them throws
+    // and `Array.from` silently answers empty.
+    const sandboxed = (href: string): URL => {
+      const url = new URL(href);
+      const bareIterator = (): object => ({ next: () => ({ done: true, value: undefined }) });
+      for (const method of ['keys', 'values', 'entries'] as const) {
+        Object.defineProperty(url.searchParams, method, { value: bareIterator });
+      }
+      return url;
+    };
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?a=1&nowprocket=1'))).toBe(true);
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocket[x]=1'))).toBe(true);
+    expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocketx=1'))).toBe(false);
   });
 
   it('single-sources the url patterns and search action ids', () => {

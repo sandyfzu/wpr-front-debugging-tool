@@ -24,18 +24,29 @@ import {
 const NOW_MS = 1_727_000_000_000;
 
 /** Loaded data whose `wpr` row is replaced wholesale (the fixtures keep the rest empty). */
-function withWpr(wpr: Partial<WprDetections['wpr']>): FdtData {
+function withWpr(wpr: Partial<WprDetections['wpr']>, extra: Partial<FdtData> = {}): FdtData {
   return makeFdtData({
     wprDetections: {
       ...makeFdtData().wprDetections,
-      wpr: { present: false, cached: false, version: null, timeStamp: null, ...wpr }
-    }
+      wpr: {
+        present: false,
+        cacheMarkerFound: false,
+        cached: false,
+        version: null,
+        timeStamp: null,
+        ...wpr
+      }
+    },
+    ...extra
   });
 }
 
-/** Loaded data whose captured headers are replaced. */
-function withHeaders(pageHeaders: FdtData['pageHeaders']): FdtData {
-  return makeFdtData({ pageHeaders });
+/** Loaded data whose captured headers are replaced (optionally with a wpr row). */
+function withHeaders(
+  pageHeaders: FdtData['pageHeaders'],
+  wpr: Partial<WprDetections['wpr']> = {}
+): FdtData {
+  return withWpr(wpr, { pageHeaders });
 }
 
 describe('wprSegment', () => {
@@ -74,45 +85,138 @@ describe('cacheSegment', () => {
   it('reads a cache stamp seconds-based into the relative age and an absolute hover stamp', () => {
     // Three minutes old, exactly: NOW_MS − 180 s.
     const view = cacheSegment(
-      withWpr({ present: true, cached: true, timeStamp: (NOW_MS - 180_000) / 1000 }),
+      withWpr({
+        present: true,
+        cacheMarkerFound: true,
+        cached: true,
+        timeStamp: (NOW_MS - 180_000) / 1000
+      }),
       NOW_MS
     );
-    expect(view).toEqual({
+    expect(view).toMatchObject({
       kind: 'cached',
       age: '3 min ago',
-      capturedAt: formatCacheTimestamp((NOW_MS - 180_000) / 1000)
+      copy: { chip: '✓ Cached' }
     });
   });
 
   it('renders "Cached" without an invented age when the stamp is absent', () => {
-    expect(cacheSegment(withWpr({ present: true, cached: true }), NOW_MS)).toEqual({
+    expect(
+      cacheSegment(withWpr({ present: true, cacheMarkerFound: true, cached: true }), NOW_MS)
+    ).toMatchObject({
       kind: 'cached',
       age: null,
-      capturedAt: null
+      copy: { chip: '✓ Cached' }
     });
   });
 
-  it('degrades a page-crafted stamp outside the platform date range to "Cached", unstamped', () => {
-    // A validator-genuine payload (any finite number passes the boundary) may
-    // carry a hand-crafted `cached@<huge>` stamp; the timestamp leaf renders
-    // it as its absence — this selector never crashes on hostile digits.
+  it('degrades a page-crafted stamp outside the display domain to "Cached", unstamped', () => {
+    // A validator-genuine payload may carry a hand-crafted `cached@<huge>`
+    // stamp; the timestamp leaf renders it as its absence — this selector
+    // never crashes on hostile digits.
     const view = cacheSegment(
-      withWpr({ present: true, cached: true, timeStamp: 9_999_999_999_999 }),
+      withWpr({
+        present: true,
+        cacheMarkerFound: true,
+        cached: true,
+        timeStamp: 9_999_999_999_999
+      }),
       NOW_MS
     );
-    expect(view).toEqual({ kind: 'cached', age: null, capturedAt: null });
+    expect(view).toMatchObject({ kind: 'cached', age: null });
   });
 
-  it('renders not-cached neutrally when the plugin is present but the visit was uncached', () => {
+  it('renders cache not detected when the plugin is present without a signature or headers', () => {
     // A stray stamp on an uncached payload (reachable only through a broken
     // producer — the validator shapes allow it) says nothing about this
-    // visit's cache state: no age may render.
+    // visit's cache state: no age may render, and absence is not "not cached".
     expect(
       cacheSegment(
-        withWpr({ present: true, cached: false, timeStamp: Math.floor(NOW_MS / 1000) }),
+        withWpr({
+          present: true,
+          cacheMarkerFound: false,
+          cached: false,
+          timeStamp: Math.floor(NOW_MS / 1000)
+        }),
         NOW_MS
       )
-    ).toEqual({ kind: 'not-cached' });
+    ).toMatchObject({ kind: 'not-detected', copy: { chip: 'Cache not detected' } });
+  });
+
+  it('renders the signature without a stamp as "Cache not proven"', () => {
+    expect(
+      cacheSegment(
+        withWpr({ present: true, cacheMarkerFound: true, cached: false, timeStamp: null }),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'uncertain-signature', copy: { chip: 'Cache not proven' } });
+  });
+
+  it('renders a verified hosting marker as "Possibly cached"', () => {
+    expect(
+      cacheSegment(
+        withHeaders([{ name: 'sg-f-cache', value: 'HIT' }], {
+          present: true,
+          cacheMarkerFound: false,
+          cached: false,
+          timeStamp: null
+        }),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'possibly-cached', copy: { chip: 'Possibly cached' } });
+  });
+
+  it('keeps a captured host serve beside the bypass and qualifies it', () => {
+    expect(
+      cacheSegment(
+        withWpr(
+          { present: true, cacheMarkerFound: false, cached: false, timeStamp: null },
+          {
+            pageHeaders: [{ name: 'cf-cache-status', value: 'HIT' }],
+            bypassAttested: true
+          }
+        ),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'possibly-cached' });
+  });
+
+  it('distinguishes unavailable, truncated and redacted header captures', () => {
+    const base = { present: true, cacheMarkerFound: false, cached: false, timeStamp: null };
+    expect(cacheSegment(withHeaders(null, base), NOW_MS)).toMatchObject({
+      kind: 'not-detected',
+      copy: { report: 'Cache not detected (response headers unavailable)' }
+    });
+    expect(
+      cacheSegment(
+        {
+          ...withHeaders([{ name: 'server', value: 'nginx' }], base),
+          pageHeadersTruncated: true
+        },
+        NOW_MS
+      )
+    ).toMatchObject({
+      kind: 'not-detected',
+      copy: { report: 'Cache not detected (header capture truncated)' }
+    });
+    expect(
+      cacheSegment(withHeaders([{ name: 'cf-cache-status', redacted: true }], base), NOW_MS)
+    ).toMatchObject({
+      kind: 'not-detected',
+      copy: { report: 'Cache not detected (cache header value withheld)' }
+    });
+  });
+
+  it('renders "Bypass requested" only when the URL requests the bypass', () => {
+    expect(
+      cacheSegment(
+        withWpr(
+          { present: true, cacheMarkerFound: false, cached: false, timeStamp: null },
+          { bypassAttested: true }
+        ),
+        NOW_MS
+      )
+    ).toMatchObject({ kind: 'bypass-requested', copy: { chip: 'Bypass requested' } });
   });
 });
 

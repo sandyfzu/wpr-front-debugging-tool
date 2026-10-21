@@ -20,6 +20,7 @@
  * http(s) URL before use.
  */
 import { createLogger } from '../../../lib/logger';
+import { readLastError, type LastErrorSlot } from '../../../utils/last-error';
 import { isHttpUrl } from '../../../utils/urls';
 
 const log = createLogger('panel');
@@ -89,20 +90,19 @@ function unpackPromiseAnswer(value: unknown): { result: unknown; exceptionInfo: 
   return { result: value, exceptionInfo: undefined };
 }
 
-/** The runtime's `lastError` reader (read inside the callback, as the API requires). */
-export type LastErrorReader = () => { readonly message?: string } | undefined;
-
 /**
  * Read the inspected page's URL.
  *
  * @param api The eval seam, or null when this context has no DevTools API.
- * @param lastError Reads `runtime.lastError` inside the callback.
+ * @param runtime The runtime whose `lastError` the callback reads (once,
+ *   inside it, as the API requires) — the object, not the value, so the read
+ *   and its interpretation stay in `readLastError`.
  * @param timeoutMs The answer deadline.
  * @returns The validated URL, or null on any failure (see the module doc).
  */
 export function readInspectedPageUrl(
   api: InspectedEvalApi | null,
-  lastError: LastErrorReader,
+  runtime: LastErrorSlot,
   timeoutMs = PAGE_URL_TIMEOUT_MS
 ): Promise<string | null> {
   if (api === null) return Promise.resolve(null);
@@ -160,8 +160,10 @@ export function readInspectedPageUrl(
     try {
       returned = api.eval(EXPRESSION, (result, exceptionInfo) => {
         // Read (and so clear) lastError first: unread, it logs as unchecked.
-        const runtimeError = lastError();
-        answer(result, runtimeError?.message ?? exceptionInfo);
+        // A set error fails the read even with no message (it then reports
+        // the stable unknown-error text).
+        const runtimeError = readLastError(runtime);
+        answer(result, runtimeError ?? exceptionInfo);
       });
     } catch {
       // The callback argument itself was refused: ask the promise-only form.

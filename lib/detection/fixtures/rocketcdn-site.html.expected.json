@@ -2,15 +2,18 @@
   "wprDetections": {
     "wpr": {
       "present": true,
+      "cacheMarkerFound": true,
       "cached": true,
       "version": "3.19.1.1",
       "timeStamp": 1791341822
     },
     "remove_unused_css": {
-      "present": true
+      "present": true,
+      "source": "meta"
     },
     "async_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "delay_js": {
       "present": false,
@@ -89,11 +92,14 @@
         }
       ],
       "version": null,
-      "delayedScripts": 0
+      "delayedScripts": 0,
+      "source": "meta"
     },
     "defer_all_js": {
       "present": false,
-      "scripts": []
+      "scripts": [],
+      "deferredScripts": 0,
+      "source": "meta"
     },
     "lazyload": {
       "present": false,
@@ -213,40 +219,55 @@
           "lazyloadDetected": false,
           "excludedReasonsFound": []
         }
-      ]
+      ],
+      "source": "meta"
     },
     "lazyload_iframes": {
       "present": false,
-      "replaceImage": false
+      "replaceImage": false,
+      "source": "meta"
     },
     "lazyload_css_bg_img": {
-      "present": false
+      "present": false,
+      "source": "meta"
+    },
+    "self_hosted_fonts": {
+      "present": false,
+      "source": "meta"
+    },
+    "image_dimensions": {
+      "present": false,
+      "source": "meta"
     },
     "rocket_above_the_fold_optimization": {
       "present": true,
       "lcpComment": false,
       "preloadedImages": [
         "https://rocketcdn.me/wp-content/themes/v1/assets/images/logo/dark-background.svg"
-      ]
+      ],
+      "source": "meta"
     },
     "automatic_lazy_rendering": {
       "present": true,
       "lazyRenderElements": 4,
       "inlineCssPresent": true,
-      "locationHashes": 0
+      "locationHashes": 0,
+      "source": "meta"
     },
     "auto_preload_fonts": {
-      "present": true,
+      "present": false,
       "fonts": [
         "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/ubuntu-v15-latin-700.woff2",
         "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-regular.woff2",
         "https://rocketcdn.me/wp-content/themes/v1/assets/fonts/fira-sans-v11-latin-500.woff2"
-      ]
+      ],
+      "source": "meta"
     },
     "preconnect_external_domains": {
       "present": true,
       "domains": ["https://www.googletagmanager.com/", "https://app.termly.io/"],
-      "preconnectCount": 2
+      "preconnectCount": 2,
+      "source": "meta"
     },
     "priority_elements_beacon": {
       "present": false,
@@ -254,16 +275,20 @@
       "isMobile": null
     },
     "minify_css": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "minify_js": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "preload_links": {
-      "present": false
+      "present": false,
+      "source": "meta"
     },
     "rocket_cdn": {
-      "present": false
+      "present": false,
+      "source": "meta"
     }
   },
   "preloadedResources": {
