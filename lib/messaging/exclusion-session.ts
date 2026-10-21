@@ -171,9 +171,9 @@ export interface ExclusionServedSpeculationRules {
  * The identity of the response a document outcome is for, and the
  * session's own effects on it — so a surface can tell whether the page it
  * shows is the one recorded (compare `urlDigest` with the SHA-256 of
- * `location.href` without its fragment, `receivedAt` with the page's time
- * origin; a navigation served without interception leaves an older
- * record) and say what the session changed besides the exclusions. Never
+ * `location.href` without its fragment, `receivedAt` with the page's
+ * wall-anchored navigation start and response window; a navigation served
+ * without interception leaves an older record) and say what the session changed besides the exclusions. Never
  * holds the URL's raw query (it may carry personal data): the origin +
  * path, and a digest of the whole URL — "no raw query stored", not "query
  * private": a low-entropy query's digest can be guessed.
@@ -199,9 +199,11 @@ export interface ExclusionServedDocument {
    */
   readonly order: number;
   /**
-   * Epoch ms (wall clock) the session recorded the response — after it
-   * reached the backend; compared with a page's time origin. `order`, not
-   * this, orders documents.
+   * Wall-clock epoch ms (`Date.now()`) the response arrived at the backend
+   * (the host's own clock only when the backend gave no arrival time);
+   * compared with the page's wall-anchored navigation start
+   * (`Date.now() − performance.now()`, never `performance.timeOrigin`) and
+   * response window. `order`, not this, orders documents.
    */
   readonly receivedAt: number;
   readonly speculationRules: ExclusionServedSpeculationRules;
