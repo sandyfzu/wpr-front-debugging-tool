@@ -196,9 +196,8 @@ describe('Lane', () => {
     input(2).focus();
     fireEvent.keyDown(input(2), { key: 'ArrowDown' });
     expect(document.activeElement).toBe(input(2));
-    input(1).focus();
-    fireEvent.focusIn(input(1));
-    fireEvent.keyDown(input(1), { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(input(2));
+    // Up from the row that still has focus (a stale target would aim at row 2).
+    fireEvent.keyDown(input(2), { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(input(1));
   });
 });
