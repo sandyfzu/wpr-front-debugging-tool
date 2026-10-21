@@ -55,8 +55,8 @@ describe('overlay presentations store', () => {
         '11': { presentation: 'x', at: 1 }
       }
     });
-    // A bare presentation is the earlier shape (oldest); entries carry their write order.
-    expect(await getOverlayPresentation(5)).toBe('folded');
+    // Only `{presentation, at}` entries count: a bare value is junk.
+    expect(await getOverlayPresentation(5)).toBeNull();
     expect(await getOverlayPresentation(9)).toBe('open');
     expect(await getOverlayPresentation(10)).toBeNull();
     expect(await getOverlayPresentation(11)).toBeNull();

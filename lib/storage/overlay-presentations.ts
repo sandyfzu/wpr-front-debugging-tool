@@ -41,12 +41,8 @@ function isPresentation(value: unknown): value is OverlayPresentation {
   return value === 'open' || value === 'folded';
 }
 
-/**
- * One stored value as an entry: `{presentation, at}`, or a bare
- * presentation (an earlier shape — oldest, `at` 0); anything else null.
- */
+/** One stored value as an entry (`{presentation, at}`); anything else null. */
 function parseEntry(value: unknown): OverlayPresentationEntry | null {
-  if (isPresentation(value)) return { presentation: value, at: 0 };
   if (!isRecord(value)) return null;
   const presentation = ownValue(value, 'presentation');
   const at = ownValue(value, 'at');
