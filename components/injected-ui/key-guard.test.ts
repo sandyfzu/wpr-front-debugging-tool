@@ -140,6 +140,28 @@ describe('installKeyGuard', () => {
     expect(inside.mock.results[0]?.value).toBe('ArrowUp');
   });
 
+  it('carries isComposing on a keydown copy', () => {
+    const { input } = setup();
+    const inside = vi.fn((event: KeyboardEvent) => event.isComposing);
+    input.addEventListener('keydown', inside);
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'a', isComposing: true, bubbles: true, composed: true })
+    );
+    expect(inside.mock.results[0]?.value).toBe(true);
+  });
+
+  it('carries clipboardData on a paste copy', () => {
+    const { input } = setup();
+    const inside = vi.fn((event: ClipboardEvent) => event.clipboardData?.getData('text/plain'));
+    input.addEventListener('paste', inside);
+    const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, composed: true });
+    const clipboardData = { getData: () => 'a\nb' };
+    Object.defineProperty(paste, 'clipboardData', { value: clipboardData });
+    input.dispatchEvent(paste);
+    expect(inside).toHaveBeenCalledTimes(1);
+    expect(inside.mock.results[0]?.value).toBe('a\nb');
+  });
+
   it("leaves the page's own keys alone", () => {
     const { outside, page } = setup();
     outside.dispatchEvent(keydown('/'));
