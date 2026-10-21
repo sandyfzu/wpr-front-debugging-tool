@@ -11,6 +11,7 @@ import type { PageTools, PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
+import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 /**
  * A virtualizer that renders every row (happy-dom lays nothing out, so the
@@ -110,9 +111,10 @@ function pageTools() {
   };
 }
 
-/** Render the overlay over a port, started. */
-function mount(sessionPort: ExclusionSessionPort) {
+/** Render the overlay over a port, started (a re-open when `presentation` is given). */
+function mount(sessionPort: ExclusionSessionPort, presentation: OverlayPresentation | null = null) {
   const onClose = vi.fn();
+  const onPresented = vi.fn();
   const reload = vi.fn();
   const timers: (() => void)[] = [];
   let picker: PickerEvents<PointedPick> | null = null;
@@ -145,6 +147,8 @@ function mount(sessionPort: ExclusionSessionPort) {
         }}
         listen={() => undefined}
         onClose={onClose}
+        presentation={presentation}
+        onPresented={onPresented}
         startPicking={(events) => {
           picker = events;
           return stopPicker;
@@ -157,6 +161,7 @@ function mount(sessionPort: ExclusionSessionPort) {
   return {
     ...result,
     onClose,
+    onPresented,
     reload,
     stopPicker,
     picker: () => picker,
@@ -247,6 +252,52 @@ describe('OverlayApp', () => {
     await waitFor(() => {
       expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('reports folding, unfolding and closing (the next page follows suit)', async () => {
+    const { container, onPresented } = mount(port({ state: 'inactive' }));
+    await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+    expect(onPresented).not.toHaveBeenCalled();
+    fireEvent.keyDown(layerOf(container), { key: 'Escape' });
+    fireEvent.click(await screen.findByRole('button', { name: /open the exclusion builder/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Close the exclusion builder' }));
+    expect(onPresented.mock.calls).toEqual([[false], [true], [false]]);
+  });
+
+  it('an explicit open lands focus on the heading', async () => {
+    mount(port({ state: 'inactive' }));
+    await waitFor(() => {
+      expect(document.activeElement?.textContent).toBe('Exclusion builder');
+    });
+  });
+
+  it('a folded re-open starts as the pill and leaves the page’s focus alone', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const { container, onPresented } = mount(port(activeRecord()), 'folded');
+      await screen.findByRole('button', { name: /open the exclusion builder/i });
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('false');
+      expect(document.activeElement).toBe(outside);
+      expect(onPresented).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('an open re-open shows the panel without taking focus', async () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    try {
+      const { container } = mount(port(activeRecord()), 'open');
+      await screen.findByRole('heading', { level: 2, name: 'Image LazyLoad' });
+      expect(container.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
   });
 
   it('picks through the picker: a miss explains itself, a hit adds the row and ends picking', async () => {

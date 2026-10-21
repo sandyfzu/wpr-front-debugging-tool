@@ -16,6 +16,12 @@
  * page (per lane) · the last action's notice · paused under a page modal
  * dialog.
  *
+ * Presentation: an explicit open starts on the panel with focus on its
+ * heading; a re-open on a session tab's next page starts the way the user
+ * left the last one (panel or pill) and never takes focus from the page.
+ * Folding, unfolding and closing are reported (`onPresented`) so the next
+ * page follows suit.
+ *
  * Keyboard: Escape cancels picking (wherever focus is), else collapses to
  * the pill; the pill reopens to the heading; while picking, Tab stays on
  * the picking bar. Buttons that an action holds are `aria-disabled`, never
@@ -60,6 +66,7 @@ import { viewportRect, type PageTools, type PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { createLogger } from '../../lib/logger';
+import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 const log = createLogger('exclusion-overlay');
 
@@ -101,6 +108,13 @@ export interface OverlayAppProps {
   readonly origin: string;
   /** Close the overlay (ends its content-script context). */
   readonly onClose: () => void;
+  /**
+   * How a re-open starts (null or absent: an explicit open — the panel,
+   * focused).
+   */
+  readonly presentation?: OverlayPresentation | null;
+  /** The user folded (`false`, also on close) or unfolded (`true`) the overlay. */
+  readonly onPresented?: (open: boolean) => void;
   /** Start picking on the page; returns the stop. */
   readonly startPicking: (events: PickerEvents<PointedPick>) => () => void;
   /** Whether the extension context is gone (reading it tears a dead overlay down). */
@@ -135,7 +149,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const c = props.controller;
   // Opened under a page modal dialog: start folded (the panel would be inert).
   // eslint-disable-next-line solid/reactivity -- the initial state only; the effect below follows changes
-  const [open, setOpen] = createSignal(!props.page.pageModal());
+  const startsOpen = !props.page.pageModal() && props.presentation !== 'folded';
+  const [open, setOpen] = createSignal(startsOpen);
   const [dock, setDock] = createSignal<'right' | 'left'>('right');
   const [picking, setPicking] = createSignal(false);
   const [pickMessage, setPickMessage] = createSignal<string | null>(null);
@@ -234,6 +249,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     setOpen(false);
     setListOpen(false);
     setHighlight(null);
+    props.onPresented?.(false);
     focusSoon(() => pill);
   };
   const expand = (): void => {
@@ -241,6 +257,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     props.page.refreshModal();
     if (paused()) return;
     setOpen(true);
+    props.onPresented?.(true);
     focusSoon(() => heading);
   };
 
@@ -352,7 +369,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
 
   // A page modal dialog makes everything outside it inert, the overlay too:
   // fold into the pill (marked paused) until it closes, then come back.
-  let openBeforeModal = true;
+  let openBeforeModal = startsOpen;
   createEffect(
     on(
       paused,
@@ -411,7 +428,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     props.listen(window, 'scroll', queueGeometry);
     props.listen(window, 'resize', queueGeometry);
     if (layer !== undefined) showInTopLayer(layer);
-    focusSoon(() => heading);
+    // A re-open follows a page load: the page keeps its focus.
+    if (props.presentation == null) focusSoon(() => heading);
   });
   onCleanup(() => {
     setHighlight(null);
@@ -549,6 +567,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
               aria-label="Close the exclusion builder"
               title="Close"
               onClick={() => {
+                props.onPresented?.(false);
                 props.onClose();
               }}
             >

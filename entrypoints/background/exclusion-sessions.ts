@@ -1,9 +1,11 @@
 /**
  * The exclusion-builder sessions' background wiring: the session
  * controller over the real stores, pushes and tabs, the selected
- * interception backend, the six session channels, and the cleanup hooks
- * (tab close, extension update, wake re-validation). Lifecycle logic lives
- * in `lib/exclusion-session/`; this module only binds it to `browser.*`.
+ * interception backend, the six session channels, the overlay's opener
+ * channels (the panel's open, the overlay's presentation) with the overlay
+ * re-open on a session tab's loaded pages, and the cleanup hooks (tab
+ * close, extension update, wake re-validation). Lifecycle logic lives in
+ * `lib/exclusion-session/`; this module only binds it to `browser.*`.
  */
 import { createLogger } from '../../lib/logger';
 import { onMessage, sendMessage } from '../../lib/messaging';
@@ -22,7 +24,19 @@ import {
   removeExclusionSessionRecord
 } from '../../lib/storage/exclusion-sessions';
 import { getSavedExclusionSet, saveExclusionSet } from '../../lib/storage/exclusion-sets';
+import { createOverlayReopener } from '../../lib/exclusion-session/overlay-reopen';
+import {
+  parseExclusionOverlayPresentation,
+  parseExclusionSessionTabQuery,
+  type ExclusionOverlayOpenOutcome
+} from '../../lib/messaging/exclusion-session';
+import {
+  isExtensionPageSender,
+  resolveTopFrameSender,
+  type LooseMessageSender
+} from '../../lib/messaging/sender';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
+import { openExclusionOverlay, reopenExclusionOverlay } from './exclusion-overlay';
 
 const log = createLogger('exclusion-session');
 
@@ -78,6 +92,31 @@ function backendFactory(rows: readonly InterceptionBackendRow[]) {
 }
 
 /**
+ * Answer the panel's open: only this extension's tab-less pages may name a
+ * tab by payload (a content script must never open the overlay elsewhere).
+ *
+ * @param sender The runtime sender.
+ * @param data The untrusted payload.
+ * @param open The opener.
+ * @throws {@link Error} for a refused sender or a malformed payload (the
+ *   sender's ask sees `failed`).
+ */
+export function answerOverlayOpen(
+  sender: LooseMessageSender | undefined,
+  data: unknown,
+  open: (tabId: number) => Promise<ExclusionOverlayOpenOutcome>
+): Promise<ExclusionOverlayOpenOutcome> {
+  if (!isExtensionPageSender(sender, browser.runtime.id)) {
+    return Promise.reject(new Error('openExclusionOverlay: only extension pages may name a tab'));
+  }
+  const query = parseExclusionSessionTabQuery(data);
+  if (query === null) {
+    return Promise.reject(new Error('openExclusionOverlay: malformed query refused'));
+  }
+  return open(query.tabId);
+}
+
+/**
  * Register the sessions. Runs once per background start: the channels and
  * listeners register synchronously (no wake event can be missed), and the
  * wake re-validation starts at once — every ask and document waits for it.
@@ -126,8 +165,38 @@ export function initExclusionSessions(
     answered('getExclusionSessionForTab', controller.statusForTab(sender, data))
   );
 
+  const reopener = createOverlayReopener({
+    status: (tabId) => controller.tabStatus(tabId),
+    reopen: (tabId, presentation) => reopenExclusionOverlay(tabId, presentation),
+    log
+  });
+  onMessage('openExclusionOverlay', ({ sender, data }) =>
+    answered('openExclusionOverlay', answerOverlayOpen(sender, data, openExclusionOverlay))
+  );
+  onMessage('exclusionOverlayPresented', ({ sender, data }) => {
+    const page = resolveTopFrameSender(sender);
+    const presentation = parseExclusionOverlayPresentation(data);
+    if (page === null || presentation === null) {
+      log.warn('Dropped an invalid overlay presentation push');
+    } else {
+      reopener.presented(page.tabId, presentation.open);
+    }
+    return true;
+  });
+
+  // A session tab's page finished loading: bring the overlay back (once
+  // per document — the re-open probes for a live one first).
+  browser.tabs.onUpdated.addListener((tabId, change, tab) => {
+    try {
+      if (change.status === 'complete') void reopener.pageLoaded(tabId, tab.url);
+    } catch (cause) {
+      log.error('Overlay re-open failed', { tabId, cause });
+    }
+  });
+
   browser.tabs.onRemoved.addListener((tabId) => {
     try {
+      reopener.tabClosed(tabId);
       void controller.tabClosed(tabId);
     } catch (cause) {
       log.error('Closed-tab session cleanup failed', { tabId, cause });

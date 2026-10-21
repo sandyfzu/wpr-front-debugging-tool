@@ -4,7 +4,9 @@
  * injects it into a tab's top frame when the builder is opened, so its
  * code (editor, picker, engine validation) costs pages nothing until then.
  * Injecting it again replaces the running instance (its context is
- * invalidated by the newer one), so opening is idempotent.
+ * invalidated by the newer one), so opening is idempotent. A re-open on a
+ * session tab's next page leaves its presentation in the isolated world
+ * first (see `lib/exclusion-session/overlay-reopen`).
  *
  * Page-safety: one shadow root with its own stylesheet, rendered in the
  * top layer; key events stop at the shadow root; the page is only read
@@ -27,6 +29,10 @@ import { createPageTools } from './page-tools';
 import { mountOverlay } from './mount-overlay';
 import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
+import {
+  takeOverlayPresentation,
+  type OverlayPresentation
+} from '../../lib/exclusion-session/overlay-reopen';
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
@@ -65,19 +71,34 @@ const MESSAGING_TRANSPORT: SessionTransport = {
 };
 
 /**
+ * Tell the background how the user left the overlay (the session tab's
+ * next pages follow suit). Best effort: a missing receiver only means the
+ * next page re-opens with the panel.
+ *
+ * @param open Unfolded (`true`) or folded/closed (`false`).
+ */
+function reportPresentation(open: boolean): void {
+  sendMessage('exclusionOverlayPresented', { open }).catch((cause: unknown) => {
+    log.debug('Overlay presentation not reported', cause);
+  });
+}
+
+/**
  * Render the overlay's view into the mounted shadow root.
  *
  * @param ctx The content script's context (listeners, timers, abort on close).
  * @param container The UI container inside the shadow root.
  * @param shadow The shadow root (Solid delegates events there).
  * @param host The shadow host (the overlay's own input passes the picker).
+ * @param presentation How a re-open starts (null: an explicit open).
  * @returns The view's disposer.
  */
 function renderOverlay(
   ctx: ContentScriptContext,
   container: HTMLElement,
   shadow: ShadowRoot,
-  host: HTMLElement
+  host: HTMLElement,
+  presentation: OverlayPresentation | null
 ): Promise<() => void> {
   // Isolated events never reach the document, where Solid delegates by
   // default: delegate them at the shadow root instead.
@@ -131,6 +152,8 @@ function renderOverlay(
         controller={controller}
         page={page}
         origin={window.location.origin}
+        presentation={presentation}
+        onPresented={reportPresentation}
         requestFrame={requestFrame}
         listen={(target, type, handler) => {
           listen(target, type, handler, true);
@@ -165,6 +188,8 @@ export default defineContentScript({
   matches: [...URL_PATTERNS],
   cssInjectionMode: 'ui',
   main(ctx: ContentScriptContext) {
+    // Taken first, even in a frame: a left presentation is read once.
+    const presentation = takeOverlayPresentation(globalThis);
     // The builder edits the page's own document: never inside a frame.
     if (window.top !== window) return;
     const reportFailure = (cause: unknown): void => {
@@ -187,7 +212,8 @@ export default defineContentScript({
           isolateEvents: ISOLATED_EVENTS,
           ...hooks
         }),
-      render: (container, shadow, host) => renderOverlay(ctx, container, shadow, host),
+      render: (container, shadow, host) =>
+        renderOverlay(ctx, container, shadow, host, presentation),
       onError: reportFailure
     }).catch(reportFailure);
   }

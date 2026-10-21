@@ -28,7 +28,8 @@ import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { lastErrorMessage } from '../../utils/last-error';
-import { openExclusionOverlay, type OverlayOpenOutcome } from './exclusion-overlay';
+import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-session';
+import { openExclusionOverlay } from './exclusion-overlay';
 
 const log = createLogger('context-menus');
 
@@ -156,7 +157,7 @@ export interface MenuClickDeps {
    * Open the exclusion builder overlay on a tab's page; never rejects (the
    * opener logs its own failures).
    */
-  openExclusionBuilder(tabId: number): Promise<OverlayOpenOutcome>;
+  openExclusionBuilder(tabId: number): Promise<ExclusionOverlayOpenOutcome>;
   /** The database service's manual-refresh hook (the refresh entry routes here). */
   refreshDatabase(): Promise<DbUpdateResult | null>;
   /**
