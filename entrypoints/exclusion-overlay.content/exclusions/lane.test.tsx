@@ -200,4 +200,32 @@ describe('Lane', () => {
     fireEvent.keyDown(input(2), { key: 'ArrowUp' });
     expect(document.activeElement).toBe(input(1));
   });
+
+  it('drops a pending arrow target when focus lands on a row another way', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['a', 'b', 'c', 'd'], null);
+    const twoRows: VirtualizerFactory = (options) => ({
+      ...everyRow(options),
+      getVirtualItems: () => everyRow(options).getVirtualItems().slice(0, 2)
+    });
+    render(() => (
+      <Lane
+        lane="delayJs"
+        controller={controller}
+        report={undefined}
+        pageCount={0}
+        // Frames never run: the move to row 3 stays pending.
+        requestFrame={() => undefined}
+        locked={false}
+        createVirtualizer={twoRows}
+      />
+    ));
+    input(2).focus();
+    fireEvent.keyDown(input(2), { key: 'ArrowDown' });
+    // A click/Tab onto row 1 ends the pending move...
+    input(1).focus();
+    // ...so Down goes from row 1 (a kept target would aim at row 4).
+    fireEvent.keyDown(input(1), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(input(2));
+  });
 });
