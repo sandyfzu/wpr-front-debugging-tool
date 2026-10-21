@@ -6,6 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  analysisWorkBudget,
+  analyzeRegexRisk,
   BACKTRACKING_RISK_REASONS,
   LOOP_REPEAT_LIMIT,
   REGEX_ANALYSIS_LIMITS,
@@ -96,6 +98,10 @@ const RISKY: readonly (readonly [string, BacktrackingRisk])[] = [
   ['(?:(?s:.)|\\u2028)*y', 'overlapping-alternation'],
   ['(?is:(?:.|\\n)+)x', 'overlapping-alternation'],
   ['(?s:(?i:.)|\\n)+', 'overlapping-alternation'],
+  // Folding a negated class (complement path) and a wide class (boundary index).
+  ['(?:(?i:[^a])|a)+', 'overlapping-alternation'],
+  ['(?:(?i:[a-\\u00ff])|A)+', 'overlapping-alternation'],
+  ['(?:(?i:[a-\\u00ff])|\\u039c)+', 'overlapping-alternation'],
   // Alignment is kept only for fixed-length alternations (`a|ab` is not).
   ['(?:(?:a|bd)c|bdc)+', 'overlapping-alternation'],
   ['(?:a{1,2}b|aa)+', 'overlapping-alternation'],
@@ -189,7 +195,17 @@ const SAFE_CORPUS: readonly string[] = [
   '(?=.*foo)(?=.*bar)',
   '(?:(?=a)a)+',
   '(?-i:x)+',
-  '(?i:abc)'
+  '(?i:abc)',
+  // International case-insensitive rows (case folding beyond ASCII).
+  '(?i:[a-zа-яё0-9_-]+)',
+  '(?i:[Ꭰ-᏿])',
+  '(?i:[Ͱ-ϿЀ-ӿἀ-῿]+)',
+  '(?i:[Ⴀ-ჿ])',
+  '(?i:[à-ÿ]+-?\\.js)',
+  '(?i:straße|größe)\\.js',
+  '(?i:[\\u0600-\\u06ff]+)',
+  '(?i:[一-龥]+)',
+  '(?i:[ա-ֆԱ-Ֆ]+)'
 ];
 
 describe('regexBacktrackingRisk — risky shapes', () => {
@@ -228,6 +244,11 @@ describe('regexBacktrackingRisk — realistic rows pass', () => {
   it('accepts a quantified lookaround and a looped body that consumes nothing', () => {
     expect(regexBacktrackingRisk('(?=a)*b')).toBeNull();
     expect(regexBacktrackingRisk('(?:\\b|^)+x')).toBeNull();
+  });
+
+  it('keeps folded classes exact: nothing outside their case classes is added', () => {
+    expect(regexBacktrackingRisk('(?:(?i:[^aA])|a)+')).toBeNull();
+    expect(regexBacktrackingRisk('(?:(?i:[a-\\u00ff])|\\u0100)+')).toBeNull();
   });
 
   it('reads `\\b` in a class as backspace, not a word boundary', () => {
@@ -276,9 +297,14 @@ describe('robustness', () => {
     ['(?:a{2000000000}b|a{1999999999}c)+', 'overlapping-alternation']
   ] as const)('analyzes %j without work proportional to its repeat count', (row, risk) => {
     expect(() => new RegExp(row)).not.toThrow();
-    const started = performance.now();
     expect(regexBacktrackingRisk(row)).toBe(risk);
-    expect(performance.now() - started).toBeLessThan(50);
+    // Deterministic: the same row with small counts (past the 32 head
+    // positions) spends the same work, up to the extra digits it scans.
+    const small = row.replace(/\d{6,}/g, (count) => String(40 + (Number(count) % 7)));
+    const big = analyzeRegexRisk(row);
+    const reference = analyzeRegexRisk(small);
+    expect(big.risk).toBe(reference.risk);
+    expect(big.work - reference.work).toBeLessThanOrEqual(2 * (row.length - small.length));
   });
 
   it('never throws on any compilable pattern built from the syntax alphabet', () => {
@@ -371,20 +397,48 @@ describe('robustness', () => {
       expect(row.length, row.slice(0, 20)).toBeLessThanOrEqual(chars);
       expect(() => new RegExp(row)).not.toThrow();
     }
-    const started = performance.now();
+    // Deterministic (no wall clock): each analysis stays inside its work budget.
+    for (const row of rows) {
+      expect(analyzeRegexRisk(row).work).toBeLessThanOrEqual(analysisWorkBudget(row));
+    }
     expect(regexBacktrackingRisk(rows[0] as string)).toBeNull();
-    expect(regexBacktrackingRisk(rows[1] as string)).toBeNull();
-    expect(regexBacktrackingRisk(rows[2] as string)).toBeNull();
+    expect(regexBacktrackingRisk(rows[1] as string)).toBeNull(); // first units disjoint: one pass
+    // 120 branches sharing 30 units: the pairwise comparison outgrows the budget.
+    expect(regexBacktrackingRisk(rows[2] as string)).toBe('too-complex');
     expect(regexBacktrackingRisk(rows[3] as string)).toBeNull();
     expect(regexBacktrackingRisk(rows[4] as string)).toBeNull();
     expect(regexBacktrackingRisk(rows[5] as string)).toBe('nested-repetition');
     expect(regexBacktrackingRisk(`(?:${wide}|\u0100y)+`)).toBe('overlapping-alternation');
-    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('rejects an analysis past its work budget as too complex, deterministically', () => {
+    // Branches sharing a long prefix force pairwise comparison (quadratic in branches).
+    const row = `(?:${Array.from({ length: 200 }, (_, i) => `qq${String.fromCharCode(0x100 + i)}`).join('|')})+`;
+    const first = analyzeRegexRisk(row);
+    expect(first.risk).toBe('too-complex');
+    expect(first.work).toBeLessThanOrEqual(analysisWorkBudget(row));
+    // Same work and verdict whatever ran before (no state leaks between rows).
+    analyzeRegexRisk('(?i:[^a][^b]\\W+)');
+    expect(analyzeRegexRisk(row)).toEqual(first);
+    expect(analysisWorkBudget(row)).toBe(
+      REGEX_ANALYSIS_LIMITS.workBase + REGEX_ANALYSIS_LIMITS.workPerChar * row.length
+    );
+  });
+
+  it('keeps every realistic row far below its budget (≥ 3× headroom; ASCII rows ≥ 5×)', () => {
+    for (const row of SAFE_CORPUS) {
+      // Folding non-ASCII classes costs what it takes (their members are
+      // sorted in), so international `(?i:…)` rows get the smaller margin.
+      const headroom = /[^\x00-\x7f]/.test(row) && row.includes('(?i:') ? 3 : 5;
+      expect(analyzeRegexRisk(row).work * headroom, row).toBeLessThanOrEqual(
+        analysisWorkBudget(row)
+      );
+    }
   });
 });
 
 describe('accepted rows stay fast on adversarial input', () => {
-  it('runs every accepted corpus row against hostile subjects in well under a second', () => {
+  it('runs every accepted corpus row against hostile subjects within a smoke ceiling', () => {
     const subjects = [
       'a'.repeat(5_000),
       `${'a'.repeat(5_000)}!`,
@@ -400,6 +454,9 @@ describe('accepted rows stay fast on adversarial input', () => {
       const regex = new RegExp(row);
       for (const subject of subjects) regex.test(subject);
     }
-    expect(performance.now() - started).toBeLessThan(1_000);
+    // Smoke ceiling only: an exponential row would run for minutes on these
+    // 5 000-unit subjects. Local ≈ 0.33 s; 2.3 s under coverage on throttled
+    // (background-QoS) cores — 10 s stays robust on a shared CI runner.
+    expect(performance.now() - started).toBeLessThan(10_000);
   });
 });
