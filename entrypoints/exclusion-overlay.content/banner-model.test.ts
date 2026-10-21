@@ -94,6 +94,13 @@ describe('the session’s persistence (it outlives the page)', () => {
     ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
   });
 
+  it('gives the armed banner exactly the full next-page promise', () => {
+    expect(stateBanner(READY, { kind: 'armed' })?.notes).toEqual([SESSION_PERSISTS_NOTE]);
+    expect(SESSION_PERSISTS_NOTE).toMatch(
+      /each page of this site you open here loads with these exclusions\.$/
+    );
+  });
+
   it('says only that the session stays on where this page was not (or may not be) rewritten', () => {
     const unproven: readonly SessionView[] = [
       {
