@@ -6,7 +6,7 @@
  * quotes, `<` in text, malformed attribute soup) must terminate cleanly.
  */
 import { describe, expect, it } from 'vitest';
-import { scanTags } from './html-scan';
+import { isEndTag, scanTags, scanTokens } from './html-scan';
 
 describe('scanTags — ordinary documents', () => {
   it('tokenizes every opening tag with its spans and lowercased name', () => {
@@ -197,5 +197,34 @@ describe('scanTags — hostile inputs terminate cleanly', () => {
 
   it('handles the empty string', () => {
     expect(scanTags('')).toEqual([]);
+  });
+});
+
+describe('scanTokens — opening and closing tags in document order', () => {
+  /** Each token as `<name` or `</name` for a compact comparison. */
+  const shapes = (html: string): string[] =>
+    scanTokens(html).map((token) => (isEndTag(token) ? `</${token.name}` : `<${token.name}`));
+
+  it('adds closing tags (lowercased, spans through their `>`) to the opening ones', () => {
+    const html = '<div id="a"><P>x</P ></DIV junk>';
+    expect(shapes(html)).toEqual(['<div', '<p', '</p', '</div']);
+    const close = scanTokens(html).at(-1);
+    expect(close !== undefined && isEndTag(close)).toBe(true);
+    expect(html.slice(close?.start ?? 0, close && isEndTag(close) ? close.end : 0)).toBe(
+      '</DIV junk>'
+    );
+  });
+
+  it('skips comments, bogus end tags, and raw-text end tags (they stay inside their region)', () => {
+    expect(shapes('<!-- </div> --></ div></1><script>"</p>"</script></span')).toEqual([
+      '<script',
+      '</span'
+    ]);
+  });
+
+  it('yields exactly the scanTags opening tags', () => {
+    const html = '<html><body><div a="1"><img src=x></div><br/></body></html>';
+    expect(scanTokens(html).filter((token) => !isEndTag(token))).toEqual(scanTags(html));
+    expect(scanTokens('')).toEqual([]);
   });
 });

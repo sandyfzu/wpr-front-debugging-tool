@@ -15,7 +15,7 @@ export interface InvalidExclusionRow {
   readonly row: string;
   /** Why the row cannot work — actionable, naming the offending value. */
   readonly reason: string;
-  /** The typed problem, when the row is checked against WP Rocket's PCRE semantics. */
+  /** The typed kind of problem, where one is named (e.g. a row that matches every element). */
   readonly problem?: ProblemId;
 }
 

@@ -37,6 +37,16 @@ export interface TransformReport {
   readonly matchedRows: readonly ExclusionRowMatch[];
   /** Rows that matched nothing — the honest no-match signal for status. */
   readonly unmatchedRows: readonly string[];
+  /**
+   * Candidates whose outcome the engine cannot determine (left as served);
+   * present only when non-zero.
+   */
+  readonly undetermined?: number;
+  /**
+   * Candidates matched against a rebuilt, approximate subject (WP Rocket's
+   * original could not be read off the page); present only when non-zero.
+   */
+  readonly approximate?: number;
 }
 
 /** One transform's output: the rewritten html plus its report. */
@@ -58,6 +68,24 @@ export interface TransformCounters {
   /** Whole-region removals (see {@link TransformReport.regionRemovals}). */
   readonly regionRemovals: number;
   readonly featureWide: boolean;
+  /** See {@link TransformReport.undetermined} (0 when omitted). */
+  readonly undetermined?: number;
+  /** See {@link TransformReport.approximate} (0 when omitted). */
+  readonly approximate?: number;
+}
+
+/**
+ * The optional counts of a report, each only when non-zero.
+ *
+ * @param counters The transform's counters.
+ */
+function optionalCounts(
+  counters: TransformCounters
+): Pick<TransformReport, 'undetermined' | 'approximate'> {
+  return {
+    ...(counters.undetermined ? { undetermined: counters.undetermined } : {}),
+    ...(counters.approximate ? { approximate: counters.approximate } : {})
+  };
 }
 
 /**
@@ -87,7 +115,8 @@ export function transformReport(counters: TransformCounters): TransformReport {
       rewritten,
       regionRemovals,
       matchedRows: [],
-      unmatchedRows: []
+      unmatchedRows: [],
+      ...optionalCounts(counters)
     };
   }
   const matchedRows: ExclusionRowMatch[] = [];
@@ -104,6 +133,7 @@ export function transformReport(counters: TransformCounters): TransformReport {
     rewritten,
     regionRemovals,
     matchedRows,
-    unmatchedRows
+    unmatchedRows,
+    ...optionalCounts(counters)
   };
 }

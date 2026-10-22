@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExclusionValidationError } from './errors';
-import { prevalidateExclusionSet } from './validate';
+import { featureRowWarnings, prevalidateExclusionSet } from './validate';
 import { compilePatternRows } from './compile';
 import { BACKTRACKING_RISK_REASONS } from './regex-risk';
 import { applyPipeline } from './pipeline';
@@ -53,14 +53,42 @@ describe('prevalidateExclusionSet', () => {
   });
 
   it('rejects empty and whitespace-only rows — they would match every element', () => {
-    const problems = prevalidateExclusionSet(setWith({ delayJs: ['', '   '], lazyload: [''] }));
+    const problems = prevalidateExclusionSet(setWith({ delayJs: ['', '   '], lazyload: [' '] }));
     expect(problems.valid).toBe(false);
     expect(problems.invalid).toEqual([
       expect.objectContaining({ feature: 'delay_js', index: 0, row: '' }),
       expect.objectContaining({ feature: 'delay_js', index: 1, row: '   ' }),
-      expect.objectContaining({ feature: 'lazyload', index: 0, row: '' })
+      expect.objectContaining({ feature: 'lazyload', index: 0, row: ' ' })
     ]);
     for (const problem of problems.invalid) expect(problem.reason).toMatch(/empty/i);
+  });
+
+  it("reads the literal features' empty rows as WP Rocket's runtime does", () => {
+    // Lazyload drops '' and "0" (array_filter); a lone ''/"0" lazy-render set is a no-op.
+    expect(
+      prevalidateExclusionSet(setWith({ lazyload: ['', '0', 'a'], lazyRender: [''] }))
+    ).toEqual({ valid: true, invalid: [] });
+    expect(prevalidateExclusionSet(setWith({ lazyRender: ['0'] })).valid).toBe(true);
+    // Lazy-render rows are any text — whitespace included.
+    expect(prevalidateExclusionSet(setWith({ lazyRender: [' ', 'a'] })).valid).toBe(true);
+    // …but a whitespace-only one gets a non-blocking warning.
+    expect(featureRowWarnings('automatic_lazy_rendering', ['a', ' ', '', '\t'])).toEqual([
+      expect.objectContaining({ index: 1, row: ' ' }),
+      expect.objectContaining({ index: 3, row: '\t' })
+    ]);
+    expect(featureRowWarnings('lazyload', [' '])).toEqual([]);
+    // Next to other rows an empty lazy-render row is an empty alternative: match-all.
+    const problems = prevalidateExclusionSet(setWith({ lazyRender: ['a', '', '0'] }));
+    expect(problems.invalid).toEqual([
+      {
+        feature: 'automatic_lazy_rendering',
+        index: 1,
+        row: '',
+        reason: expect.stringMatching(/every element/) as unknown,
+        problem: 'match-all'
+      }
+    ]);
+    expect(prevalidateExclusionSet(setWith({ lazyRender: ['0', ''] })).invalid).toHaveLength(1);
   });
 
   it('reads emptiness with the settings trim: tab/CR/LF-only rows are empty, a no-break space is text', () => {

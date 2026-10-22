@@ -17,6 +17,7 @@ import { EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { isCount, isFeatureId, parseExclusionSet } from '../messaging/exclusion-session';
 import { isRecord } from '../../utils/is-record';
+import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
 import {
   engineFailed,
   overBudgetOutcome,
@@ -64,11 +65,36 @@ export function parseTransformWorkerRequest(data: unknown): TransformWorkerReque
   if (typeof budgetMs !== 'number' || !Number.isFinite(budgetMs) || budgetMs <= 0) return null;
   const set = parseExclusionSet(raw['set'], 'reject');
   if (set === null) return null;
+  const bytes = parseDocumentBytes(raw['bytes']);
+  if (bytes === null) return null;
   return {
     type: 'transform',
     id: data['id'],
-    request: { html: raw['html'], set, documentUrl, budgetMs }
+    request: {
+      html: raw['html'],
+      set,
+      documentUrl,
+      budgetMs,
+      ...(bytes === undefined ? {} : { bytes })
+    }
   };
+}
+
+/** The longest encoding name a request may carry (WHATWG names are far shorter). */
+const ENCODING_NAME_LIMIT = 64;
+
+/**
+ * Parse a request's optional decoding facts.
+ *
+ * @returns The facts, `undefined` when absent, or `null` when malformed.
+ */
+function parseDocumentBytes(raw: unknown): DocumentBytes | undefined | null {
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw)) return null;
+  const encoding = raw['encoding'];
+  const bom = raw['bom'];
+  if (typeof encoding !== 'string' || encoding.length > ENCODING_NAME_LIMIT) return null;
+  return typeof bom === 'boolean' ? { encoding, bom } : null;
 }
 
 /**

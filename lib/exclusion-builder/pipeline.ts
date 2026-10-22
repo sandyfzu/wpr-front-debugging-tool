@@ -18,6 +18,7 @@ import { lazyloadTransform } from './lazyload';
 import { lazyRenderTransform } from './lazy-render';
 import { ExclusionValidationError } from './errors';
 import { prevalidateExclusionSet } from './validate';
+import type { DocumentBytes } from './libxml/charset';
 import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
 import type { TransformReport, TransformResult } from './report';
 
@@ -57,12 +58,15 @@ export function composeSteps<R>(
 
 /**
  * One feature's transform: the served html + the set (+ the document's URL,
- * which only transforms that resolve URLs read) → its result.
+ * which only transforms that resolve URLs read, and how the session decoded
+ * the page, which only transforms that rebuild WP Rocket's byte-level view
+ * read) → its result.
  */
 type FeatureTransform = (
   servedHtml: string,
   set: ExclusionSet,
-  documentUrl?: string
+  documentUrl?: string,
+  bytes?: DocumentBytes
 ) => TransformResult;
 
 /** One feature's slice of the pipeline: its transform, keyed by id. */
@@ -107,16 +111,19 @@ export type ExclusionPipelineStep = PipelineStep<TransformReport, ExclusionFeatu
  * @param set The exclusion set every step reads.
  * @param documentUrl The served document's absolute URL, when known
  *   (Defer JS then also matches relative `src` values in resolved form).
+ * @param bytes How the session decoded the page, when known (Automatic Lazy
+ *   Rendering rebuilds libxml's reading of the bytes from it).
  * @returns One step per feature, in pipeline order.
  */
 export function exclusionPipelineSteps(
   set: ExclusionSet,
-  documentUrl?: string
+  documentUrl?: string,
+  bytes?: DocumentBytes
 ): readonly ExclusionPipelineStep[] {
   return FEATURE_PIPELINE.map((entry) => ({
     id: entry.id,
     apply: (stepHtml: string) => {
-      const result = entry.transform(stepHtml, set, documentUrl);
+      const result = entry.transform(stepHtml, set, documentUrl, bytes);
       return { html: result.html, report: result.report };
     }
   }));
