@@ -12,7 +12,14 @@
  * Reach: script elements only. WP Rocket's Delay regex also rewrites script
  * text inside HTML comments, so a matching row leaves those copies
  * original there; here they stay as served. A comment never runs, so the
- * page behaves the same.
+ * page behaves the same. The same holds for raw script markup inside an
+ * attribute value (`data-s='<script src=…></script>'`, never written by
+ * WordPress's attribute escaping): it stays delayed here, which differs
+ * only when page code injects that value with a script-running API — or
+ * when the rewrite broke the value's quoting (a double-quoted value
+ * gains `type="…"`), whose break the preview keeps. Mirroring the regex
+ * would mean restoring regex regions of raw text, which can span past
+ * the comment or attribute that holds them.
  */
 import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';

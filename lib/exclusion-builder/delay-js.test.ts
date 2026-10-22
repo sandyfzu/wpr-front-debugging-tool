@@ -244,6 +244,24 @@ describe('delayJsTransform — adversarial markup', () => {
     expect(result.html).toBe(html);
   });
 
+  it('leaves script markup WP Rocket delayed inside attribute values as served (named residual)', () => {
+    // Served by WP Rocket for `data-s='<script src="/a.js"></script>'` and
+    // `data-s="<script>a();</script>"` (parity harness run, PHP 8.1 and 8.4);
+    // with rows `/a\.js` and `a\(\)` WP Rocket serves both values original.
+    // The tokenizer reads them as attribute text: the elements are restored,
+    // the copies stay as served (the double-quoted one stays broken).
+    const served =
+      '<script type="text/rocketlazyloadscript" data-rocket-src="/a.js" id="s1"></script>\n' +
+      `<div id="d1" data-s='<script type="text/rocketlazyloadscript" data-rocket-src="/a.js"></script>'></div>\n` +
+      '<div id="d2" data-s="<script type="text/rocketlazyloadscript">a();</script>"></div>\n' +
+      '<script type="text/rocketlazyloadscript" data-rocket-src="/b.js" id="s2"></script>';
+    const result = delayJsTransform(served, setWithRows(['/a\\.js', 'a\\(\\)']));
+    expect(result.report.rewritten).toBe(1);
+    const [, d1, d2] = result.html.split('\n');
+    expect(d1).toBe(served.split('\n')[1]);
+    expect(d2).toBe(served.split('\n')[2]);
+  });
+
   it('leaves the copies WP Rocket delayed inside comments as served (named residual)', () => {
     // WP Rocket's Delay regex reaches commented copies (the table's served
     // page shows them delayed), so with a matching row it would leave them
