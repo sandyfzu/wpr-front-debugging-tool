@@ -41,7 +41,7 @@ const DELAY_SET = setWith({ delayJs: ['a\\.js'] });
 
 /** A request over `html` with the default budget. */
 function request(html: string, set: ExclusionSet = DELAY_SET): DocumentTransformRequest {
-  return { html, set, documentUrl: null, budgetMs: 100 };
+  return { html, set, budgetMs: 100 };
 }
 
 describe('runDocumentPipeline', () => {
@@ -119,12 +119,11 @@ describe('runDocumentPipeline', () => {
 
   it('matches Defer JS rows against the raw src, never the URL resolved against the document', () => {
     const html = '<script src="js/a.js" data-rocket-defer defer></script>';
-    const documentUrl = 'https://s.tld/page';
     const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const resolved = runDocumentPipeline({ ...request(html, resolvedRow), documentUrl }, clock(0));
+    const resolved = runDocumentPipeline(request(html, resolvedRow), clock(0));
     expect(resolved.ok && resolved.html).toBe(html);
     const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
-    const raw = runDocumentPipeline({ ...request(html, rawRow), documentUrl }, clock(0));
+    const raw = runDocumentPipeline(request(html, rawRow), clock(0));
     expect(raw.ok && raw.html).not.toBe(html);
   });
 });
@@ -171,8 +170,7 @@ describe('rewriteDocument', () => {
   const runner = createInProcessTransformRunner(clock(0));
   const doc = (body: Uint8Array, contentType: string | null = 'text/html; charset=utf-8') => ({
     body,
-    contentType,
-    documentUrl: null
+    contentType
   });
 
   it('serves the re-encoded rewrite with its reports', async () => {
@@ -378,14 +376,14 @@ describe('rewriteDocument', () => {
     });
   });
 
-  it('hands the runner the decoded text, set, URL, default budget and decoding facts', async () => {
+  it('hands the runner the decoded text, set, default budget and decoding facts', async () => {
     const seen: DocumentTransformRequest[] = [];
     const recording: DocumentTransformRunner = (req) => {
       seen.push(req);
       return runner(req);
     };
     await rewriteDocument(
-      { body: encoder.encode('<p>é</p>'), contentType: null, documentUrl: 'https://s.tld/' },
+      { body: encoder.encode('<p>é</p>'), contentType: null },
       DELAY_SET,
       recording
     );
@@ -393,7 +391,6 @@ describe('rewriteDocument', () => {
       {
         html: '<p>é</p>',
         set: DELAY_SET,
-        documentUrl: 'https://s.tld/',
         budgetMs: DOCUMENT_TRANSFORM_BUDGET_MS,
         bytes: { encoding: 'utf-8', bom: false }
       }
@@ -407,16 +404,11 @@ describe('rewriteDocument', () => {
       return runner(req);
     };
     const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...encoder.encode('<p>x</p>')]);
-    await rewriteDocument(
-      { body: bom, contentType: null, documentUrl: null },
-      DELAY_SET,
-      recording
-    );
+    await rewriteDocument({ body: bom, contentType: null }, DELAY_SET, recording);
     await rewriteDocument(
       {
         body: new Uint8Array([0x3c, 0x70, 0x3e, 0xe9]),
-        contentType: 'text/html; charset=windows-1252',
-        documentUrl: null
+        contentType: 'text/html; charset=windows-1252'
       },
       DELAY_SET,
       recording

@@ -246,15 +246,13 @@ describe('exclusionPipelineSteps', () => {
     expect(composeSteps(html, exclusionPipelineSteps(set))).toEqual(applyPipeline(html, set));
   });
 
-  it('matches Defer JS rows against the raw src whatever the document URL (as WP Rocket does)', () => {
+  it('matches Defer JS rows against the raw src, never a resolved URL (as WP Rocket does)', () => {
     const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const steps = exclusionPipelineSteps(resolvedRow, 'https://s.tld/page');
+    const steps = exclusionPipelineSteps(resolvedRow);
     expect(composeSteps(RELATIVE, steps).reports[1]?.rewritten).toBe(0);
-    expect(applyPipeline(RELATIVE, resolvedRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(
-      0
-    );
+    expect(applyPipeline(RELATIVE, resolvedRow).reports[1]?.rewritten).toBe(0);
     const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
-    expect(applyPipeline(RELATIVE, rawRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
+    expect(applyPipeline(RELATIVE, rawRow).reports[1]?.rewritten).toBe(1);
   });
 });
 

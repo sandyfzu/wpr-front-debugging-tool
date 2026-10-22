@@ -27,7 +27,6 @@ const DELAYED = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></sc
 const REQUEST: DocumentTransformRequest = {
   html: DELAYED,
   set: SET,
-  documentUrl: null,
   budgetMs: 100
 };
 
@@ -101,7 +100,6 @@ describe('parseTransformWorkerRequest', () => {
     ['bad id', { ...valid, id: -1 }],
     ['no request', { ...valid, request: null }],
     ['html not a string', { ...valid, request: { ...REQUEST, html: 1 } }],
-    ['bad url', { ...valid, request: { ...REQUEST, documentUrl: 3 } }],
     ['zero budget', { ...valid, request: { ...REQUEST, budgetMs: 0 } }],
     ['infinite budget', { ...valid, request: { ...REQUEST, budgetMs: Infinity } }],
     ['bad set', { ...valid, request: { ...REQUEST, set: {} } }],
@@ -121,9 +119,9 @@ describe('parseTransformWorkerRequest', () => {
     expect(parseTransformWorkerRequest(data)?.request.bytes).toEqual(bytes);
   });
 
-  it('accepts a string document URL', () => {
+  it('ignores fields it does not read (e.g. a document URL)', () => {
     const data = { ...valid, request: { ...REQUEST, documentUrl: 'https://s.tld/' } };
-    expect(parseTransformWorkerRequest(data)?.request.documentUrl).toBe('https://s.tld/');
+    expect(parseTransformWorkerRequest(data)?.request).toEqual(REQUEST);
   });
 });
 

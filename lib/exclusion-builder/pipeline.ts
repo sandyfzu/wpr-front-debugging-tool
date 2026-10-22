@@ -58,15 +58,13 @@ export function composeSteps<R>(
 }
 
 /**
- * One feature's transform: the served html + the set (+ the document's URL,
- * which only transforms that resolve URLs read, and how the session decoded
- * the page, which only transforms that rebuild WP Rocket's byte-level view
- * read) → its result.
+ * One feature's transform: the served html + the set (+ how the session
+ * decoded the page, which only transforms that rebuild WP Rocket's
+ * byte-level view read) → its result.
  */
 type FeatureTransform = (
   servedHtml: string,
   set: ExclusionSet,
-  documentUrl?: string,
   bytes?: DocumentBytes
 ) => TransformResult;
 
@@ -124,16 +122,12 @@ export type ExclusionPipelineStep = PipelineStep<TransformReport, ExclusionFeatu
  * does, or a step throws its feature's validation error mid-run.
  *
  * @param set The exclusion set every step reads.
- * @param documentUrl The served document's absolute URL, when known
- *   (on the shared transform signature; no transform reads it today —
- *   WP Rocket matches Defer JS rows against the raw `src`).
  * @param bytes How the session decoded the page, when known (Automatic Lazy
  *   Rendering rebuilds libxml's reading of the bytes from it).
  * @returns One step per feature, in pipeline order.
  */
 export function exclusionPipelineSteps(
   set: ExclusionSet,
-  documentUrl?: string,
   bytes?: DocumentBytes
 ): readonly ExclusionPipelineStep[] {
   // WP Rocket's Defer JS inline-jQuery pass ran after its deferral and
@@ -152,7 +146,7 @@ export function exclusionPipelineSteps(
       const result =
         afterReplay !== undefined && inline !== null
           ? afterReplay(html, set, inline)
-          : entry.transform(html, set, documentUrl, bytes);
+          : entry.transform(html, set, bytes);
       return { html: result.html, report: result.report };
     }
   }));
@@ -170,18 +164,12 @@ export function exclusionPipelineSteps(
  * @param html The served document (decoded text — byte handling is the
  *   session backends' job, never the engine's).
  * @param set The exclusion set (rows + feature-wide disables).
- * @param documentUrl The served document's absolute URL, when known (see
- *   {@link exclusionPipelineSteps}).
  * @returns The rewritten html and one report per transform, in pipeline order.
  * @throws {@link ExclusionValidationError} naming every invalid row across
  *   every feature, before any transform runs.
  */
-export function applyPipeline(
-  html: string,
-  set: ExclusionSet,
-  documentUrl?: string
-): CompositionOutput<TransformReport> {
+export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
   const problems = prevalidateExclusionSet(set);
   if (!problems.valid) throw new ExclusionValidationError(problems.invalid);
-  return composeSteps(html, exclusionPipelineSteps(set, documentUrl));
+  return composeSteps(html, exclusionPipelineSteps(set));
 }

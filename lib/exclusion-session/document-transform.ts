@@ -53,8 +53,6 @@ export type UnmodifiedDocumentOutcome = Exclude<ExclusionDocumentOutcome, { outc
 export interface DocumentTransformRequest {
   readonly html: string;
   readonly set: ExclusionSet;
-  /** The document’s absolute URL, or null (passed to the pipeline; no transform resolves URLs today). */
-  readonly documentUrl: string | null;
   /** The wall-time budget (ms, positive). */
   readonly budgetMs: number;
   /** How the text was decoded from the served bytes, when known. */
@@ -124,7 +122,7 @@ export function engineFailed(cause: unknown): DocumentTransformResult {
  * time after each step: the step that crosses the budget is the overrun
  * (its output is discarded, nothing is served rewritten).
  *
- * @param request The text, set, document URL and budget.
+ * @param request The text, set, budget and decoding facts.
  * @param now A monotonic clock (ms).
  * @param onStepStart Called with each feature as its step starts (lets a
  *   preempting host know which feature a killed run was in).
@@ -143,11 +141,7 @@ export function runDocumentPipeline(
     if (!problems.valid) return engineFailed(new ExclusionValidationError(problems.invalid));
     let html = request.html;
     const reports: TransformReport[] = [];
-    const steps = exclusionPipelineSteps(
-      request.set,
-      request.documentUrl ?? undefined,
-      request.bytes
-    );
+    const steps = exclusionPipelineSteps(request.set, request.bytes);
     for (const step of steps) {
       onStepStart?.(step.id);
       const result = step.apply(html);
@@ -181,8 +175,6 @@ export interface InterceptedDocumentBody {
   readonly body: Uint8Array;
   /** The response's `Content-Type` value (several headers joined with `, `), or null. */
   readonly contentType: string | null;
-  /** The document's absolute URL, or null. */
-  readonly documentUrl: string | null;
 }
 
 /**
@@ -284,7 +276,7 @@ function servedBytes(
  * (a session effect, applied whatever the engine did — see
  * `./speculation-rules`), re-encode in the same charset.
  *
- * @param document The intercepted body, its content type and URL.
+ * @param document The intercepted body and its content type.
  * @param set The session's exclusion set.
  * @param runner The engine runner (in-process or preempting).
  * @param budgetMs The engine budget; defaults to {@link DOCUMENT_TRANSFORM_BUDGET_MS}.
@@ -315,7 +307,6 @@ export async function rewriteDocument(
     result = await runner({
       html: decoded.text,
       set,
-      documentUrl: document.documentUrl,
       budgetMs,
       bytes
     });
