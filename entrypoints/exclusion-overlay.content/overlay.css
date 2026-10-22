@@ -299,7 +299,9 @@
   cursor: pointer;
 }
 
-.xo-button:hover {
+/* A held (aria-disabled) button keeps its resting look under the pointer;
+ * `:where` keeps the rule's specificity, so the variants still win. */
+.xo-button:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
   border-color: var(--line-3);
 }
@@ -334,7 +336,7 @@
   color: var(--on-accent);
 }
 
-.xo-disclosure[aria-expanded='true']:hover {
+.xo-disclosure[aria-expanded='true']:not([aria-disabled='true']):hover {
   background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
   border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
 }

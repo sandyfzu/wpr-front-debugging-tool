@@ -649,6 +649,49 @@ describe('stored-form announcements', () => {
   });
 });
 
+/**
+ * The declarations a stylesheet's rules give one selector, later rules
+ * overriding earlier ones (selector lists split; comments ignored).
+ *
+ * @param css The stylesheet text.
+ * @param selector The selector, exactly as written in the sheet.
+ * @param within Only rules inside this at-rule prelude (default: any).
+ * @returns Property → value, as the cascade leaves them in source order.
+ */
+function cascaded(css: string, selector: string, within?: string): Map<string, string> {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const declarations = new Map<string, string>();
+  const preludes: string[] = [];
+  let from = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '{') {
+      preludes.push(text.slice(from, index).trim());
+      from = index + 1;
+    } else if (char === '}') {
+      const prelude = preludes.pop() ?? '';
+      const selectors = prelude.split(',').map((part) => part.replace(/\s+/g, ' ').trim());
+      const scoped = within === undefined || preludes.includes(within);
+      if (scoped && selectors.includes(selector)) {
+        for (const line of text.slice(from, index).split(';')) {
+          const colon = line.indexOf(':');
+          if (colon > 0) {
+            declarations.set(
+              line.slice(0, colon).trim(),
+              line
+                .slice(colon + 1)
+                .replace(/\s+/g, ' ')
+                .trim()
+            );
+          }
+        }
+      }
+      from = index + 1;
+    }
+  }
+  return declarations;
+}
+
 describe('the "On this page" toggle', () => {
   afterEach(cleanup);
 
@@ -716,21 +759,38 @@ describe('the "On this page" toggle', () => {
   });
 
   it('styles the open state from aria-expanded: a fill plus a turned chevron, on motion tokens', () => {
-    // happy-dom applies no shadow stylesheet, so the CSS contract is read as text.
+    // happy-dom applies no shadow stylesheet, so the CSS contract is read as
+    // text: each declaration as the cascade leaves it for the selector.
     const css = readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8');
-    const rule = (selector: string): string => {
-      const start = css.indexOf(`${selector} {`);
-      if (start === -1) throw new Error(`no rule for ${selector}`);
-      return css.slice(start, css.indexOf('}', start));
-    };
-    expect(rule(".xo-disclosure[aria-expanded='true']")).toMatch(
-      /background: var\(--accent-strong\);[\s\S]*color: var\(--on-accent\);/
+    const open = cascaded(css, ".xo-disclosure[aria-expanded='true']");
+    expect(open.get('background')).toBe('var(--accent-strong)');
+    expect(open.get('border-color')).toBe('var(--accent-strong)');
+    expect(open.get('color')).toBe('var(--on-accent)');
+    expect(cascaded(css, '.xo-chevron').get('transition')).toBe(
+      'transform var(--motion-fast) var(--ease-standard)'
     );
-    expect(rule('.xo-chevron')).toContain(
-      'transition: transform var(--motion-fast) var(--ease-standard);'
+    expect(cascaded(css, ".xo-disclosure[aria-expanded='true'] .xo-chevron").get('transform')).toBe(
+      'rotate(180deg)'
     );
-    expect(rule(".xo-disclosure[aria-expanded='true'] .xo-chevron")).toContain(
-      'transform: rotate(180deg);'
+    // A held toggle keeps its look under the pointer, open or closed.
+    expect(css).toContain(
+      ".xo-disclosure[aria-expanded='true']:not([aria-disabled='true']):hover {"
+    );
+    expect(css).toContain(".xo-button:not(:where([aria-disabled='true'])):hover {");
+  });
+
+  it('turns the chevron instantly under reduced motion: the token sheet collapses it', () => {
+    const styles = readFileSync(`${import.meta.dirname}/styles.css`, 'utf8');
+    const tokensImport = styles.indexOf("@import '../../assets/css/tokens.css';");
+    // The tokens (with the reduced-motion reset) load into the same shadow root, first.
+    expect(tokensImport).toBeGreaterThanOrEqual(0);
+    expect(tokensImport).toBeLessThan(styles.indexOf("@import './overlay.css';"));
+    const tokens = readFileSync(`${import.meta.dirname}/../../assets/css/tokens.css`, 'utf8');
+    const reset = cascaded(tokens, '*', '@media (prefers-reduced-motion: reduce)');
+    expect(reset.get('transition-duration')).toBe('0.01ms !important');
+    // Nothing in the overlay re-enables motion for reduced-motion users.
+    expect(readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8')).not.toContain(
+      'prefers-reduced-motion'
     );
   });
 });
