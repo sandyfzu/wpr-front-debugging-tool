@@ -8,7 +8,7 @@ import { ExclusionValidationError } from './errors';
 import { featureRowWarnings, prevalidateExclusionSet } from './validate';
 import { deferJsTransform } from './defer-js';
 import { compileDelayRows } from './delay-js-match';
-import { BACKTRACKING_RISK_REASONS } from './regex-risk';
+import { ROW_REASONS } from './row-reasons';
 import { applyPipeline } from './pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
@@ -153,14 +153,15 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
           feature: 'delay_js',
           index: 1,
           row: RISKY_DELAY_ROW,
-          reason: BACKTRACKING_RISK_REASONS['nested-repetition'],
+          // Delay's example is in Delay's own syntax (its `+` is literal).
+          reason: expect.stringContaining('(like `(a{1,}){1,}`)') as unknown,
           problem: 'backtracking-risk'
         },
         {
           feature: 'defer_all_js',
           index: 0,
           row: '(a+)+b',
-          reason: BACKTRACKING_RISK_REASONS['nested-repetition'],
+          reason: ROW_REASONS.backtracking('defer_all_js', 'nested-repetition'),
           problem: 'backtracking-risk'
         }
       ]

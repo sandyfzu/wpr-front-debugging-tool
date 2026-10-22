@@ -73,17 +73,6 @@ export const REGEX_ANALYSIS_LIMITS = {
   workPerChar: 50
 } as const;
 
-/** The inline reason each risk is reported with (one invalid-row reason per risk). */
-export const BACKTRACKING_RISK_REASONS: Readonly<Record<BacktrackingRisk, string>> = {
-  'nested-repetition':
-    'Risky regular expression: a repeated group repeats something that can match the same text again (like `(a+)+`) — it can take exponential time; make the repetition unambiguous',
-  'overlapping-alternation':
-    'Risky regular expression: inside a repetition, one alternative can match the start of another (like `(a|ab)*`) — it can take exponential time',
-  'repeated-backreference':
-    'Risky regular expression: a back-reference inside a repeated group can take exponential time',
-  'too-complex': `Risky regular expression: too long, too deeply nested or too intricate to check (over ${String(REGEX_ANALYSIS_LIMITS.chars)} characters, ${String(REGEX_ANALYSIS_LIMITS.groupDepth)} nested groups, or its analysis budget) — simplify it`
-};
-
 /**
  * A quantifier whose maximum exceeds this repeats its body: with an
  * ambiguous body even `{2}` multiplies the ways to match, so any repeat

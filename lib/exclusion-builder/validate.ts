@@ -10,6 +10,7 @@ import type { InvalidExclusionRow } from './errors';
 import { trimExclusionRow } from './field-text';
 import { isIgnoredLazyloadRow, isMatchAllLazyRenderRow } from './literal-rows';
 import { regexRowProblems } from './pcre/rows';
+import { ROW_REASONS } from './row-reasons';
 import type { RegexFeatureId } from './pcre/translate';
 import {
   EXCLUSION_FEATURES,
@@ -25,13 +26,6 @@ export interface ExclusionSetProblems {
   /** Every problem, feature by feature in registry order, rows in list order. */
   readonly invalid: readonly InvalidExclusionRow[];
 }
-
-/** The reason for a row empty once trimmed. */
-const EMPTY_ROW_REASON = 'Row is empty — it would match every element';
-
-/** The reason for an empty Automatic Lazy Rendering row next to other rows. */
-const MATCH_ALL_LAZY_RENDER_REASON =
-  'Row is empty — next to other rows it matches every element (WP Rocket joins the rows into one pattern)';
 
 /** One row's problem: the reason, plus its typed id where one is named. */
 type RowProblem = Pick<InvalidExclusionRow, 'reason' | 'problem'>;
@@ -56,11 +50,11 @@ function literalRowProblem(
 ): RowProblem | null {
   if (feature === 'automatic_lazy_rendering') {
     return isMatchAllLazyRenderRow(row, rows)
-      ? { reason: MATCH_ALL_LAZY_RENDER_REASON, problem: 'match-all' }
+      ? { reason: ROW_REASONS.emptyJoined, problem: 'match-all' }
       : null;
   }
   if (feature === 'lazyload' && isIgnoredLazyloadRow(row)) return null;
-  return trimExclusionRow(row) === '' ? { reason: EMPTY_ROW_REASON } : null;
+  return trimExclusionRow(row) === '' ? { reason: ROW_REASONS.empty } : null;
 }
 
 /** A pattern feature's row problems, read the way WP Rocket's PCRE reads the rows. */
@@ -125,7 +119,7 @@ export function pcreFeatureProblems(
   return rows.flatMap((row, index): InvalidExclusionRow[] => {
     if (trimExclusionRow(row) === '') {
       const matchAll = row === '' ? { problem: 'match-all' as const } : {};
-      return [{ feature, index, row, reason: EMPTY_ROW_REASON, ...matchAll }];
+      return [{ feature, index, row, reason: ROW_REASONS.empty, ...matchAll }];
     }
     const entry = byIndex.get(index);
     return entry === undefined ? [] : [entry];
@@ -148,10 +142,6 @@ export function prevalidateExclusionSet(set: ExclusionSet): ExclusionSetProblems
   return { valid: invalid.length === 0, invalid };
 }
 
-/** The warning for a whitespace-only Automatic Lazy Rendering row. */
-const WHITESPACE_LAZY_RENDER_REASON =
-  'Row is only whitespace — it matches nearly every element (any opening tag holding it)';
-
 /**
  * Non-blocking row warnings: rows WP Rocket accepts and applies as written
  * that are almost surely mistakes. A whitespace-only Automatic Lazy
@@ -172,7 +162,7 @@ export function featureRowWarnings(
   const warnings: InvalidExclusionRow[] = [];
   rows.forEach((row, index) => {
     if (row !== '' && trimExclusionRow(row) === '') {
-      warnings.push({ feature, index, row, reason: WHITESPACE_LAZY_RENDER_REASON });
+      warnings.push({ feature, index, row, reason: ROW_REASONS.whitespaceOnly });
     }
   });
   return warnings;

@@ -18,7 +18,7 @@
 import { createBoundedMemo } from '../../../utils/bounded-memo';
 import { capText } from '../../../utils/cap-text';
 import type { InvalidExclusionRow } from '../errors';
-import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
+import { ROW_REASONS } from '../row-reasons';
 import type { ProblemId } from './problems';
 import {
   analyzeRow,
@@ -539,21 +539,17 @@ function rowProblem(
 ): RowProblem | null {
   const { save } = analysis;
   if (save.outcome === 'dropped') {
-    const live =
-      feature === 'delay_js'
-        ? 'added through a filter, it never matches'
-        : 'added through a filter, it turns Defer JS off on the page';
     return {
       problem: 'pcre-invalid',
       construct: save.construct,
-      reason: `WP Rocket drops this row when saving: PCRE rejects ${quoted(save)}; ${live}`
+      reason: ROW_REASONS.droppedAtSave(feature, quoted(save))
     };
   }
   if (analysis.unchecked) {
     return {
       problem: 'pcre-only',
       construct: null,
-      reason: `This row is not checked here (${save.outcome === 'kept' ? 'not analyzed' : save.detail})`
+      reason: ROW_REASONS.unchecked(save.outcome === 'kept' ? 'not analyzed' : save.detail)
     };
   }
   // Whether WP Rocket's save keeps the row is not modeled: no claim, and no
@@ -563,15 +559,14 @@ function rowProblem(
     return {
       problem: 'joined-page-off',
       construct: null,
-      reason:
-        'Joined with the other rows, WP Rocket’s Defer JS check fails on this row: it would defer no script on the page'
+      reason: ROW_REASONS.joinedPageOff
     };
   }
   if (analysis.matchesAll) {
     return {
       problem: 'match-all',
       construct: null,
-      reason: 'WP Rocket stores this and it excludes every script'
+      reason: ROW_REASONS.matchAll
     };
   }
   // An option leaking into later rows changes them: that outranks the row's own syntax.
@@ -580,7 +575,7 @@ function rowProblem(
     return {
       problem: 'pcre-only',
       construct: analysis.pcreOnly.construct,
-      reason: `PCRE-only syntax: ${quoted(analysis.pcreOnly)} — not checked here`
+      reason: ROW_REASONS.pcreOnly(quoted(analysis.pcreOnly))
     };
   }
   const shift = feature === 'defer_all_js' ? analysis.absoluteBackreference : null;
@@ -589,17 +584,14 @@ function rowProblem(
     return {
       problem: 'joined-changes-matching',
       construct: changes.construct,
-      reason: `Joined with the other Defer JS rows, ${quoted(changes)} matches differently on WP Rocket`
+      reason: ROW_REASONS.joinedChangesMatching(quoted(changes))
     };
   }
   if (analysis.risk !== null) {
     return {
       problem: 'backtracking-risk',
       construct: null,
-      reason:
-        analysis.risk === 'too-complex'
-          ? 'This row is too long or too deeply nested to check for slow matching — shorten it'
-          : BACKTRACKING_RISK_REASONS[analysis.risk]
+      reason: ROW_REASONS.backtracking(feature, analysis.risk)
     };
   }
   return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
+import { ROW_REASONS } from '../row-reasons';
 import {
   TRANSLATION_CACHE_LIMITS,
   compileByteMatcher,
@@ -80,7 +80,7 @@ describe('translateRegexRows', () => {
     expect(risky?.problem).toEqual({
       problem: 'backtracking-risk',
       construct: null,
-      reason: BACKTRACKING_RISK_REASONS['nested-repetition']
+      reason: ROW_REASONS.backtracking('delay_js', 'nested-repetition')
     });
   });
 

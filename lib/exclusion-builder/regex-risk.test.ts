@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import {
   analysisWorkBudget,
   analyzeRegexRisk,
-  BACKTRACKING_RISK_REASONS,
   LOOP_REPEAT_LIMIT,
   REGEX_ANALYSIS_LIMITS,
   regexBacktrackingRisk,
@@ -272,15 +271,6 @@ describe('regexBacktrackingRisk — realistic rows pass', () => {
   it('keeps its memo bounded while staying correct', () => {
     for (let i = 0; i < 600; i++) expect(regexBacktrackingRisk(`row${String(i)}`)).toBeNull();
     expect(regexBacktrackingRisk('(a|a)*')).toBe('overlapping-alternation');
-  });
-});
-
-describe('reasons', () => {
-  it('has one printable, bounded reason per risk', () => {
-    for (const reason of Object.values(BACKTRACKING_RISK_REASONS)) {
-      expect(reason).toMatch(/^Risky regular expression: /);
-      expect(reason.length).toBeLessThan(300);
-    }
   });
 });
 
