@@ -40,6 +40,25 @@ describe('differenceExcerpts', () => {
     expect(right).toBe('…😀😀!');
   });
 
+  it('never starts on a lone combining accent: decomposed é vs è differ as whole characters', () => {
+    const lead = 'x'.repeat(40);
+    // `e` + U+0301 vs `e` + U+0300: the base letter alone is not a common prefix.
+    const { left, right } = differenceExcerpts(`${lead}é(.*)`, `${lead}è*`, 10, 2);
+    expect(left).toBe('…xxé(.*)');
+    expect(right).toBe('…xxè*');
+    expect(left.charAt(1)).not.toMatch(/\p{M}/u);
+  });
+
+  it('keeps a ZWJ emoji whole at either edge', () => {
+    const family = '👨‍👩‍👧';
+    const base = family.repeat(20);
+    const { left, right } = differenceExcerpts(`${base}a`, `${base}b`, 5, 2);
+    expect(left).toBe(`…${family}${family}a`);
+    expect(right).toBe(`…${family}${family}b`);
+    const tail = differenceExcerpts(`a${base}`, `b${base}`, 3, 1);
+    expect(tail).toEqual({ left: `a${family}…`, right: `b${family}…` });
+  });
+
   it('refuses a bad bound, naming it', () => {
     expect(() => differenceExcerpts('a', 'b', -1)).toThrow(/max must be/);
     expect(() => differenceExcerpts('a', 'b', 1, 1.5)).toThrow(/context must be/);
