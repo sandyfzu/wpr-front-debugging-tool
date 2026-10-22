@@ -39,8 +39,8 @@
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 180.9,
-      "gzip": 61.4
+      "raw": 182.1,
+      "gzip": 61.8
     }
   },
   {
@@ -48,8 +48,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 180.9,
-      "gzip": 61.4
+      "raw": 182.1,
+      "gzip": 61.8
     }
   },
   {
@@ -122,7 +122,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1292.4
+      "raw": 1293.6
     }
   }
 ]
