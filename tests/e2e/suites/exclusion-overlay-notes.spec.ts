@@ -15,7 +15,9 @@
  * message and the counts saying why; a Delay row matching everything
  * (P10K.5c) warns, applies, and excludes every script; and, applied, a
  * Delay row typed in another case matches its script while a picked row
- * whose file name holds `+` excludes its own (both scripts run).
+ * whose file name holds `+` excludes its own (both scripts run). The
+ * "On this page" toggle shows its open state where the shadow CSS applies:
+ * a fill and a turned chevron, instant under reduced motion.
  *
  * The overlay is a shadow-root UI (open root): Playwright's role locators
  * pierce it. Every leg opens its own fixture tab (a session is per tab).
@@ -475,6 +477,42 @@ test.describe('exclusion builder stored-form notes', () => {
       )
       .toEqual(['true', 'true']);
     await page.getByRole('button', { name: 'Stop' }).click();
+    await page.close();
+  });
+
+  test('the "On this page" toggle reads open by its fill and turned chevron, closed again after', async ({
+    extension
+  }) => {
+    const { page } = await openBuilder(extension);
+    const toggle = page.getByRole('button', { name: /^On this page/ });
+    /** The toggle's computed fill and its chevron's computed transform. */
+    const look = (): Promise<{ fill: string; turn: string; turnSeconds: number }> =>
+      toggle.evaluate((button) => {
+        const chevron = button.querySelector('.xo-chevron');
+        if (chevron === null) throw new Error('the toggle has no chevron');
+        const chevronStyle = getComputedStyle(chevron);
+        return {
+          fill: getComputedStyle(button).backgroundColor,
+          turn: chevronStyle.transform,
+          turnSeconds: Number.parseFloat(chevronStyle.transitionDuration)
+        };
+      });
+    // Keyboard only: a pointer resting on the toggle would add its hover fill.
+    await toggle.focus();
+    const closed = await look();
+    expect(closed.turn).toBe('none');
+    expect(closed.turnSeconds).toBeCloseTo(0.12, 3);
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // A half turn once the 120 ms transition ends.
+    await expect.poll(async () => (await look()).turn).toBe('matrix(-1, 0, 0, -1, 0, 0)');
+    expect((await look()).fill).not.toBe(closed.fill);
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect.poll(look).toEqual(closed);
+    // Reduced motion collapses the turn (the token sheet's reset reaches the shadow root).
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect((await look()).turnSeconds).toBeLessThan(0.001);
     await page.close();
   });
 });

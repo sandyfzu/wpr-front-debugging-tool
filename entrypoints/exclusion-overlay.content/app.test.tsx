@@ -1,4 +1,5 @@
 import { createSignal } from 'solid-js';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
@@ -679,5 +680,151 @@ describe('stored-form announcements', () => {
     expect(
       screen.getByText('Delay JavaScript execution row 1: WP Rocket stores it as jquery-(.*).js.')
     ).toBeTruthy();
+  });
+});
+
+/**
+ * The declarations a stylesheet's rules give one selector, later rules
+ * overriding earlier ones (selector lists split; comments ignored).
+ *
+ * @param css The stylesheet text.
+ * @param selector The selector, exactly as written in the sheet.
+ * @param within Only rules inside this at-rule prelude (default: any).
+ * @returns Property → value, as the cascade leaves them in source order.
+ */
+function cascaded(css: string, selector: string, within?: string): Map<string, string> {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const declarations = new Map<string, string>();
+  const preludes: string[] = [];
+  let from = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '{') {
+      preludes.push(text.slice(from, index).trim());
+      from = index + 1;
+    } else if (char === '}') {
+      const prelude = preludes.pop() ?? '';
+      const selectors = prelude.split(',').map((part) => part.replace(/\s+/g, ' ').trim());
+      const scoped = within === undefined || preludes.includes(within);
+      if (scoped && selectors.includes(selector)) {
+        for (const line of text.slice(from, index).split(';')) {
+          const colon = line.indexOf(':');
+          if (colon > 0) {
+            declarations.set(
+              line.slice(0, colon).trim(),
+              line
+                .slice(colon + 1)
+                .replace(/\s+/g, ' ')
+                .trim()
+            );
+          }
+        }
+      }
+      from = index + 1;
+    }
+  }
+  return declarations;
+}
+
+describe('the "On this page" toggle', () => {
+  afterEach(cleanup);
+
+  /** The toolbar toggle, once the session is ready. */
+  const toggle = (): Promise<HTMLElement> => screen.findByRole('button', { name: /^On this page/ });
+
+  /** The toggle's turning chevron. */
+  const chevronOf = (button: HTMLElement): Element | null => button.querySelector('.xo-chevron');
+
+  it('reads closed: not expanded, no dangling aria-controls, a resting chevron, no list', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    expect(button.classList.contains('xo-disclosure')).toBe(true);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    const chevron = chevronOf(button);
+    expect(chevron?.tagName.toLowerCase()).toBe('svg');
+    expect(chevron?.getAttribute('aria-hidden')).toBe('true');
+    // The chevron trails the label and count.
+    expect(button.lastElementChild).toBe(chevron);
+    expect(document.getElementById('xo-candidates')).toBeNull();
+  });
+
+  it('opens and closes in place: aria-controls resolves while open, focus stays on the toggle', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    button.focus();
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const controls = button.getAttribute('aria-controls');
+    expect(controls).toBe('xo-candidates');
+    const list = document.getElementById(controls ?? '');
+    expect(list?.querySelector('[role="list"]')).not.toBeNull();
+    expect(chevronOf(button)).not.toBeNull();
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(document.getElementById('xo-candidates')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('reads disabled while closed and not ready: a press keeps it closed', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    fireEvent.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await screen.findByText('Reloading with your exclusions');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+  });
+
+  it('reads disabled while open and not ready: still expanded, its target still there', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await screen.findByText('Reloading with your exclusions');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById(button.getAttribute('aria-controls') ?? '')).not.toBeNull();
+  });
+
+  it('styles the open state from aria-expanded: a fill plus a turned chevron, on motion tokens', () => {
+    // happy-dom applies no shadow stylesheet, so the CSS contract is read as
+    // text: each declaration as the cascade leaves it for the selector.
+    const css = readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8');
+    const open = cascaded(css, ".xo-disclosure[aria-expanded='true']");
+    expect(open.get('background')).toBe('var(--accent-strong)');
+    expect(open.get('border-color')).toBe('var(--accent-strong)');
+    expect(open.get('color')).toBe('var(--on-accent)');
+    expect(cascaded(css, '.xo-chevron').get('transition')).toBe(
+      'transform var(--motion-fast) var(--ease-standard)'
+    );
+    expect(cascaded(css, ".xo-disclosure[aria-expanded='true'] .xo-chevron").get('transform')).toBe(
+      'rotate(180deg)'
+    );
+    // A held toggle keeps its look under the pointer, open or closed.
+    expect(css).toContain(
+      ".xo-disclosure[aria-expanded='true']:not([aria-disabled='true']):hover {"
+    );
+    expect(css).toContain(".xo-button:not(:where([aria-disabled='true'])):hover {");
+  });
+
+  it('turns the chevron instantly under reduced motion: the token sheet collapses it', () => {
+    const styles = readFileSync(`${import.meta.dirname}/styles.css`, 'utf8');
+    const tokensImport = styles.indexOf("@import '../../assets/css/tokens.css';");
+    // The tokens (with the reduced-motion reset) load into the same shadow root, first.
+    expect(tokensImport).toBeGreaterThanOrEqual(0);
+    expect(tokensImport).toBeLessThan(styles.indexOf("@import './overlay.css';"));
+    const tokens = readFileSync(`${import.meta.dirname}/../../assets/css/tokens.css`, 'utf8');
+    const reset = cascaded(tokens, '*', '@media (prefers-reduced-motion: reduce)');
+    expect(reset.get('transition-duration')).toBe('0.01ms !important');
+    // Nothing in the overlay re-enables motion for reduced-motion users.
+    expect(readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8')).not.toContain(
+      'prefers-reduced-motion'
+    );
   });
 });

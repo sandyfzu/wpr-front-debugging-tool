@@ -5,6 +5,7 @@
  * shell's mode context; owns only its own view state (the page list).
  */
 import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
+import ChevronDown from 'lucide-solid/icons/chevron-down';
 import Crosshair from 'lucide-solid/icons/crosshair';
 import List from 'lucide-solid/icons/list';
 import { LANE_COPY, commitAnnouncement, viewCopy } from '../copy';
@@ -21,6 +22,9 @@ import type { LatestCommits } from './row-notes';
  * never repeats one. Weak, so batches leave with their notes.
  */
 const ANNOUNCED = new WeakSet<LatestCommits>();
+
+/** The page list's id: the toolbar toggle's `aria-controls` target. */
+const CANDIDATES_ID = 'xo-candidates';
 
 /**
  * The Exclusions config panel.
@@ -132,11 +136,14 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
           <Crosshair size={14} aria-hidden="true" />
           Pick on page
         </button>
+        {/* A disclosure: the open state is styled from `aria-expanded` (fill +
+            the turned chevron). The list mounts only while open, so
+            `aria-controls` is set only then — it never names a missing id. */}
         <button
           type="button"
-          class="xo-button"
+          class="xo-button xo-disclosure"
           aria-expanded={listOpen()}
-          aria-controls="xo-candidates"
+          aria-controls={listOpen() ? CANDIDATES_ID : undefined}
           aria-disabled={ready() ? undefined : 'true'}
           onClick={() => {
             if (ready()) setListOpen((isOpen) => !isOpen);
@@ -144,13 +151,14 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
         >
           <List size={14} aria-hidden="true" />
           On this page <span class="xo-count">{candidateCount()}</span>
+          <ChevronDown size={14} class="xo-chevron" aria-hidden="true" />
         </button>
       </div>
       <Show when={ready() && draftEmpty() && c.view()?.kind === 'off'}>
         <p class="xo-empty">{viewCopy({ kind: 'off' }).body}</p>
       </Show>
       <Show when={listOpen()}>
-        <div id="xo-candidates">
+        <div id={CANDIDATES_ID}>
           <Candidates
             candidates={shell.page.candidates()}
             draft={c.draft()}
