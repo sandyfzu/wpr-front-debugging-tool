@@ -56,6 +56,12 @@ export interface TransformReport {
    */
   readonly inlineUnwrapped?: number;
   /**
+   * Defer JS: wrapped inline scripts left as served because whether WP
+   * Rocket's inline-jQuery pass runs depends on rows the page cannot show
+   * (its live exclusions): part of `undetermined`; present only when non-zero.
+   */
+  readonly inlineUndetermined?: number;
+  /**
    * WP Rocket's own run of the feature on this page could not be
    * determined (Defer JS: whether its joined-pattern pre-check passes, which
    * decides whether it defers anything at all): the row matches are
@@ -97,6 +103,8 @@ export interface TransformCounters {
   readonly approximate?: number;
   /** See {@link TransformReport.inlineUnwrapped} (0 when omitted). */
   readonly inlineUnwrapped?: number;
+  /** See {@link TransformReport.inlineUndetermined} (0 when omitted). */
+  readonly inlineUndetermined?: number;
   /** See {@link TransformReport.pageState} (WP Rocket runs the feature when omitted). */
   readonly pageState?: 'unknown';
   /** See {@link TransformReport.rowCountsBestEffort} (exact when omitted). */
@@ -110,11 +118,15 @@ export interface TransformCounters {
  */
 function optionalCounts(
   counters: TransformCounters
-): Pick<TransformReport, 'undetermined' | 'approximate' | 'inlineUnwrapped'> {
+): Pick<
+  TransformReport,
+  'undetermined' | 'approximate' | 'inlineUnwrapped' | 'inlineUndetermined'
+> {
   return {
     ...(counters.undetermined ? { undetermined: counters.undetermined } : {}),
     ...(counters.approximate ? { approximate: counters.approximate } : {}),
-    ...(counters.inlineUnwrapped ? { inlineUnwrapped: counters.inlineUnwrapped } : {})
+    ...(counters.inlineUnwrapped ? { inlineUnwrapped: counters.inlineUnwrapped } : {}),
+    ...(counters.inlineUndetermined ? { inlineUndetermined: counters.inlineUndetermined } : {})
   };
 }
 

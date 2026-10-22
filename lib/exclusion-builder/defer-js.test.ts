@@ -229,6 +229,8 @@ describe('deferJsTransform — the subject: the raw src WP Rocket captured', () 
     const result = deferJsTransform(served, setWithRows(['/n\\.js']));
     expect(result.html).toBe(served);
     expect(result.report).toMatchObject({ candidates: 1, rewritten: 0, undetermined: 1 });
+    // Not an inline script: the inline-jQuery share stays absent.
+    expect(result.report.inlineUndetermined).toBeUndefined();
   });
 
   it('captures nothing from an unquoted src, so no row matches it', () => {
@@ -380,7 +382,12 @@ describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, r
     // Run: with a live `jquery-migrate` row WP Rocket skips the pass; without, it runs.
     const result = deferJsTransform(SERVED, setWithRows(['foo.js', 'jquery-ui']));
     expect(result.html).toBe(SERVED);
-    expect(result.report).toMatchObject({ candidates: 2, rewritten: 0, undetermined: 1 });
+    expect(result.report).toMatchObject({
+      candidates: 2,
+      rewritten: 0,
+      undetermined: 1,
+      inlineUndetermined: 1
+    });
     expect(result.report.inlineUnwrapped).toBeUndefined();
   });
 });

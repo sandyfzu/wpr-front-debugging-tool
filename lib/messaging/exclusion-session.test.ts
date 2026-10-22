@@ -407,6 +407,34 @@ describe('document reports are tied to the session set', () => {
     }
   });
 
+  it('carries the inline-jQuery undetermined share on a Defer JS report, within undetermined', () => {
+    const defer = {
+      feature: 'defer_all_js',
+      featureWide: false,
+      candidates: 7,
+      rewritten: 0,
+      regionRemovals: 0,
+      matchedRows: [],
+      unmatchedRows: [],
+      undetermined: 3
+    };
+    const parsed = parseExclusionSessionStatus(withReport({ ...defer, inlineUndetermined: 3 }));
+    const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+    expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject({
+      undetermined: 3,
+      inlineUndetermined: 3
+    });
+    for (const patch of [
+      { inlineUndetermined: 1 },
+      { ...defer, inlineUndetermined: 0 },
+      { ...defer, inlineUndetermined: 4 },
+      { ...defer, undetermined: undefined, inlineUndetermined: 1 },
+      { ...defer, inlineUndetermined: '1' }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
+  });
+
   it('carries the optional row caveats, each with its one value, never on a feature-wide run', () => {
     const parsed = parseExclusionSessionStatus(
       withReport({ pageState: 'unknown', rowCountsBestEffort: true })

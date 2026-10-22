@@ -486,6 +486,7 @@ const REPORT_KEYS = [
   'undetermined',
   'approximate',
   'inlineUnwrapped',
+  'inlineUndetermined',
   'pageState',
   'rowCountsBestEffort'
 ] as const;
@@ -502,24 +503,23 @@ function optionalCount(value: unknown, candidates: number): number | undefined |
 }
 
 /**
- * A report's count of undone inline-jQuery wraps: absent, or a positive
- * count on a Defer JS report (the only transform that undoes them) no
- * larger than its rewrites (each undone wrap is one).
+ * A report's inline-jQuery count: absent, or a positive count on a Defer JS
+ * report (the only transform that replays WP Rocket's inline pass) within
+ * its bound — undone wraps within the rewrites (each is one), wraps left
+ * undetermined within the undetermined candidates (each is one).
  *
  * @param value The raw count.
  * @param feature The report's feature.
- * @param rewritten The report's rewrite count.
+ * @param bound The count it is part of.
  * @returns The count (`undefined` when absent), or `null` when invalid.
  */
-function inlineUnwrappedCount(
+function inlineCount(
   value: unknown,
   feature: ExclusionFeatureId,
-  rewritten: number
+  bound: number
 ): number | undefined | null {
   if (value === undefined) return undefined;
-  return isCount(value) && value > 0 && value <= rewritten && feature === 'defer_all_js'
-    ? value
-    : null;
+  return isCount(value) && value > 0 && value <= bound && feature === 'defer_all_js' ? value : null;
 }
 
 /**
@@ -610,12 +610,13 @@ function parseTransformReport(
   const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
   const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
   if (undetermined === null || approximate === null) return null;
-  const inlineUnwrapped = inlineUnwrappedCount(
-    ownValue(input, 'inlineUnwrapped'),
+  const inlineUnwrapped = inlineCount(ownValue(input, 'inlineUnwrapped'), feature, rewritten);
+  const inlineUndetermined = inlineCount(
+    ownValue(input, 'inlineUndetermined'),
     feature,
-    rewritten
+    undetermined ?? 0
   );
-  if (inlineUnwrapped === null) return null;
+  if (inlineUnwrapped === null || inlineUndetermined === null) return null;
   const caveats = parseRowCaveats(input, featureWide);
   if (caveats === null) return null;
   return {
@@ -629,6 +630,7 @@ function parseTransformReport(
     ...(undetermined === undefined ? {} : { undetermined }),
     ...(approximate === undefined ? {} : { approximate }),
     ...(inlineUnwrapped === undefined ? {} : { inlineUnwrapped }),
+    ...(inlineUndetermined === undefined ? {} : { inlineUndetermined }),
     ...caveats
   };
 }

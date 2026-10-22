@@ -235,6 +235,7 @@ function deferWithInlinePass(
       featureWide,
       undetermined: undetermined + inline.undetermined,
       inlineUnwrapped: inline.unwrapped,
+      inlineUndetermined: inline.undetermined,
       ...(rowSet.page === 'unknown' ? { pageState: 'unknown' as const } : {}),
       rowCountsBestEffort: rows.length > 1
     })
