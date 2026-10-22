@@ -31,9 +31,13 @@ const SERVED_RENAME = new RegExp(SERVED_RENAMES.map(([served]) => served).join('
 /**
  * Most renames an opening tag may hold and still be rebuilt (each kept or
  * undone, and an undone one checked with and without a line feed: at most
- * 3^n forward checks); past it the script is undetermined.
+ * 3^n forward checks); past it the script is undetermined (left as served,
+ * reported). WP Rocket's own rewrite makes two (`type`, `src`); more come
+ * only from those names inside other values. Four keeps a page of hostile
+ * tags far inside the document budget (2 000 tags in Chromium at 4× CPU
+ * throttle: 4 renames ≈ 0.55 s; 6 renames took ≈ 7 s).
  */
-export const MAX_RENAME_CHOICES = 6;
+export const MAX_RENAME_CHOICES = 4;
 
 /** How Delay JS opens a tag it rewrote: its type, then `>` (no attributes) or a space. */
 const DELAY_OPENING = new RegExp(
@@ -111,15 +115,15 @@ function fittingUndoChoices(served: string): string[] | null {
   const all = 2 ** spots.length;
   for (let mask = all - 1; mask >= 0; mask--) {
     const undone = bits(mask, spots.length);
-    // Line feeds only where a rename is undone; the text itself keeps none.
-    const fits = Array.from({ length: all }, (_, feeds) => feeds)
-      .filter((feeds) => (feeds & ~mask) === 0)
-      .some(
-        (feeds) =>
-          delayAttributeRewrite(
-            ` ${undoChoice(served, spots, undone, bits(feeds, spots.length))}`
-          ) === served
-      );
+    const rewritesBack = (feeds: number): boolean =>
+      delayAttributeRewrite(` ${undoChoice(served, spots, undone, bits(feeds, spots.length))}`) ===
+      served;
+    // The plain choice first; line feeds only where a rename is undone, and
+    // only when it does not fit (every non-empty subset of `mask`).
+    let fits = rewritesBack(0);
+    for (let feeds = mask; !fits && feeds > 0; feeds = (feeds - 1) & mask) {
+      fits = rewritesBack(feeds);
+    }
     if (fits) fitting.push(undoChoice(served, spots, undone, []));
   }
   return fitting;

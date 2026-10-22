@@ -4,7 +4,7 @@
  * rewrite (size guard, charset round trip, unchanged runs, runner faults).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
+import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import {
   createInProcessTransformRunner,
@@ -41,7 +41,7 @@ const DELAY_SET = setWith({ delayJs: ['a\\.js'] });
 
 /** A request over `html` with the default budget. */
 function request(html: string, set: ExclusionSet = DELAY_SET): DocumentTransformRequest {
-  return { html, set, documentUrl: null, budgetMs: 100 };
+  return { html, set, budgetMs: 100 };
 }
 
 describe('runDocumentPipeline', () => {
@@ -55,17 +55,20 @@ describe('runDocumentPipeline', () => {
     });
   });
 
-  it('announces every step in pipeline order', () => {
+  it('announces every step in pipeline order (the inline-pass replay as Defer JS)', () => {
     const started: string[] = [];
     runDocumentPipeline(request(DELAYED), clock(0), (feature) => started.push(feature));
-    expect(started).toEqual(EXCLUSION_PIPELINE_IDS);
+    expect(started).toEqual(EXCLUSION_PIPELINE_STEP_IDS);
   });
 
-  it.each(EXCLUSION_PIPELINE_IDS.map((feature, index) => [feature, index] as const))(
-    'names %s when its step crosses the budget',
+  it.each(EXCLUSION_PIPELINE_STEP_IDS.map((feature, index) => [feature, index] as const))(
+    'names %s when step %i crosses the budget',
     (feature, index) => {
       // Readings: start, then one per finished step; the crossing step reads 101.
-      const readings = [0, ...EXCLUSION_PIPELINE_IDS.map((_, step) => (step < index ? 1 : 101))];
+      const readings = [
+        0,
+        ...EXCLUSION_PIPELINE_STEP_IDS.map((_, step) => (step < index ? 1 : 101))
+      ];
       const result = runDocumentPipeline(request(DELAYED), clock(...readings));
       expect(result).toEqual({
         ok: false,
@@ -89,6 +92,18 @@ describe('runDocumentPipeline', () => {
     if (result.ok) return;
     expect(result.outcome).toEqual({ outcome: 'failed', reason: 'engine-failed' });
     expect(result.cause).toMatchObject({ name: 'ExclusionValidationError' });
+  });
+
+  it("refuses a set outside WP Rocket's stored form as engine-failed, never running it", () => {
+    const set = setWith({ delayJs: ['a\\.js', 'a\\.js'] });
+    const result = runDocumentPipeline(request(DELAYED, set), clock(0));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toEqual({ outcome: 'failed', reason: 'engine-failed' });
+    expect(result.cause).toMatchObject({
+      name: 'ExclusionValidationError',
+      invalid: [{ feature: 'delay_js', index: 1, row: 'a\\.js' }]
+    });
   });
 
   it('rewrites a set whose rows only warn, as WP Rocket applies them', () => {
@@ -119,12 +134,11 @@ describe('runDocumentPipeline', () => {
 
   it('matches Defer JS rows against the raw src, never the URL resolved against the document', () => {
     const html = '<script src="js/a.js" data-rocket-defer defer></script>';
-    const documentUrl = 'https://s.tld/page';
     const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const resolved = runDocumentPipeline({ ...request(html, resolvedRow), documentUrl }, clock(0));
+    const resolved = runDocumentPipeline(request(html, resolvedRow), clock(0));
     expect(resolved.ok && resolved.html).toBe(html);
     const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
-    const raw = runDocumentPipeline({ ...request(html, rawRow), documentUrl }, clock(0));
+    const raw = runDocumentPipeline(request(html, rawRow), clock(0));
     expect(raw.ok && raw.html).not.toBe(html);
   });
 });
@@ -171,8 +185,7 @@ describe('rewriteDocument', () => {
   const runner = createInProcessTransformRunner(clock(0));
   const doc = (body: Uint8Array, contentType: string | null = 'text/html; charset=utf-8') => ({
     body,
-    contentType,
-    documentUrl: null
+    contentType
   });
 
   it('serves the re-encoded rewrite with its reports', async () => {
@@ -250,10 +263,11 @@ describe('rewriteDocument', () => {
   });
 
   it('passes the over-budget outcome through unmodified', async () => {
+    // The first step (the Defer JS inline-pass replay) crosses: Defer JS, no row of its own.
     const overrun = createInProcessTransformRunner(clock(0, 10_000));
     const rewrite = await rewriteDocument(doc(encoder.encode(DELAYED)), DELAY_SET, overrun, 50);
     expect(rewrite).toEqual({
-      outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 50 },
+      outcome: { outcome: 'over-budget', feature: 'defer_all_js', row: null, budgetMs: 50 },
       body: null
     });
   });
@@ -378,14 +392,14 @@ describe('rewriteDocument', () => {
     });
   });
 
-  it('hands the runner the decoded text, set, URL, default budget and decoding facts', async () => {
+  it('hands the runner the decoded text, set, default budget and decoding facts', async () => {
     const seen: DocumentTransformRequest[] = [];
     const recording: DocumentTransformRunner = (req) => {
       seen.push(req);
       return runner(req);
     };
     await rewriteDocument(
-      { body: encoder.encode('<p>é</p>'), contentType: null, documentUrl: 'https://s.tld/' },
+      { body: encoder.encode('<p>é</p>'), contentType: null },
       DELAY_SET,
       recording
     );
@@ -393,7 +407,6 @@ describe('rewriteDocument', () => {
       {
         html: '<p>é</p>',
         set: DELAY_SET,
-        documentUrl: 'https://s.tld/',
         budgetMs: DOCUMENT_TRANSFORM_BUDGET_MS,
         bytes: { encoding: 'utf-8', bom: false }
       }
@@ -407,16 +420,11 @@ describe('rewriteDocument', () => {
       return runner(req);
     };
     const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...encoder.encode('<p>x</p>')]);
-    await rewriteDocument(
-      { body: bom, contentType: null, documentUrl: null },
-      DELAY_SET,
-      recording
-    );
+    await rewriteDocument({ body: bom, contentType: null }, DELAY_SET, recording);
     await rewriteDocument(
       {
         body: new Uint8Array([0x3c, 0x70, 0x3e, 0xe9]),
-        contentType: 'text/html; charset=windows-1252',
-        documentUrl: null
+        contentType: 'text/html; charset=windows-1252'
       },
       DELAY_SET,
       recording

@@ -9,13 +9,17 @@ import {
   applyPipeline,
   composeSteps,
   EXCLUSION_PIPELINE_IDS,
+  EXCLUSION_PIPELINE_STEP_IDS,
   exclusionPipelineSteps,
+  featureReports,
   type PipelineStep
 } from './pipeline';
 import { delayJsTransform } from './delay-js';
 import { deferJsTransform } from './defer-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 import type { TransformReport } from './report';
+import { ExclusionValidationError } from './errors';
+import { ROW_REASONS } from './row-reasons';
 
 /** A set with selected rows/toggles replaced (spread keeps the rest empty). */
 function setWith(
@@ -85,6 +89,32 @@ describe('EXCLUSION_PIPELINE_IDS', () => {
 });
 
 describe('applyPipeline', () => {
+  it("refuses a set outside WP Rocket's stored form, naming every such row", () => {
+    // WP Rocket dedupes before joining Defer rows: undeduped, two identical
+    // named-group rows read as a page-wide failure it never has.
+    const html = '<script src="a.js" data-rocket-defer defer></script>';
+    const set = setWith({ deferJs: ["(?'n'a)", "(?'n'a)"], delayJs: [' a\\.js'] });
+    let thrown: unknown;
+    try {
+      applyPipeline(html, set);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ExclusionValidationError);
+    expect((thrown as ExclusionValidationError).invalid).toEqual([
+      { feature: 'delay_js', index: 0, row: ' a\\.js', reason: ROW_REASONS.notStored },
+      { feature: 'defer_all_js', index: 1, row: "(?'n'a)", reason: ROW_REASONS.notStored }
+    ]);
+  });
+
+  it('reads the stored form of that set as WP Rocket does: one row, judged alone', () => {
+    const html = '<script src="a.js" data-rocket-defer defer></script>';
+    expect(() => applyPipeline(html, setWith({ deferJs: ["(?'n'a)"] }))).toThrow(
+      /PCRE-only syntax/
+    );
+    expect(applyPipeline(html, setWith({ deferJs: ['a\\.js'] })).reports).toHaveLength(4);
+  });
+
   it('is the identity for an empty set on any document, with a zeroed report per transform', () => {
     const html = `<script type="rocketlazyloadscript" data-rocket-src="a.js" data-rocket-defer defer></script>`;
     const result = applyPipeline(html, EMPTY_EXCLUSION_SET);
@@ -234,27 +264,33 @@ describe('direct single-feature use', () => {
 describe('exclusionPipelineSteps', () => {
   const RELATIVE = '<script src="js/a.js" data-rocket-defer defer></script>';
 
-  it('yields one step per feature, in the declared order', () => {
-    expect(exclusionPipelineSteps(EMPTY_EXCLUSION_SET).map((step) => step.id)).toEqual(
-      EXCLUSION_PIPELINE_IDS
-    );
+  it('yields the inline-pass replay as Defer JS, then one step per feature in the declared order', () => {
+    const ids = exclusionPipelineSteps(EMPTY_EXCLUSION_SET).map((step) => step.id);
+    expect(ids).toEqual(['defer_all_js', ...EXCLUSION_PIPELINE_IDS]);
+    expect(ids).toEqual(EXCLUSION_PIPELINE_STEP_IDS);
+  });
+
+  it('gives the replay step no report of its own (Defer JS reports the pass)', () => {
+    const [replay] = exclusionPipelineSteps(EMPTY_EXCLUSION_SET);
+    expect(replay?.apply('<p>x</p>')).toEqual({ html: '<p>x</p>', report: null });
   });
 
   it('composes to exactly what applyPipeline returns', () => {
     const html = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>';
     const set = setWith({ delayJs: ['a\\.js'] });
-    expect(composeSteps(html, exclusionPipelineSteps(set))).toEqual(applyPipeline(html, set));
+    const composed = composeSteps(html, exclusionPipelineSteps(set));
+    expect({ html: composed.html, reports: featureReports(composed.reports) }).toEqual(
+      applyPipeline(html, set)
+    );
   });
 
-  it('matches Defer JS rows against the raw src whatever the document URL (as WP Rocket does)', () => {
+  it('matches Defer JS rows against the raw src, never a resolved URL (as WP Rocket does)', () => {
     const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const steps = exclusionPipelineSteps(resolvedRow, 'https://s.tld/page');
+    const steps = exclusionPipelineSteps(resolvedRow);
     expect(composeSteps(RELATIVE, steps).reports[1]?.rewritten).toBe(0);
-    expect(applyPipeline(RELATIVE, resolvedRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(
-      0
-    );
+    expect(applyPipeline(RELATIVE, resolvedRow).reports[1]?.rewritten).toBe(0);
     const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
-    expect(applyPipeline(RELATIVE, rawRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
+    expect(applyPipeline(RELATIVE, rawRow).reports[1]?.rewritten).toBe(1);
   });
 });
 

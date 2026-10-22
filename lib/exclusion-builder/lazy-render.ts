@@ -40,7 +40,6 @@ const ID_ATTRIBUTE = 'id';
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Automatic Lazy Rendering literal rows + toggle slice).
- * @param _documentUrl Unused (the pipeline's shared transform signature).
  * @param bytes How the session decoded the page (UTF-8 without a BOM when omitted).
  * @returns The rewritten html and the report.
  * An empty row next to other rows matches every element, as on WP Rocket
@@ -51,7 +50,6 @@ const ID_ATTRIBUTE = 'id';
 export function lazyRenderTransform(
   servedHtml: string,
   set: ExclusionSet,
-  _documentUrl?: string,
   bytes?: DocumentBytes
 ): TransformResult {
   const rows = set.rows.lazyRender;

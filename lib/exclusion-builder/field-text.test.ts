@@ -278,6 +278,41 @@ describe('hasInvisibleKeptCharacters', () => {
     }
   });
 
+  it('flags bidi marks, embeddings, isolates and other default-ignorable format characters', () => {
+    // Every one is kept by the save (parity row `save-delay-bidi-format`).
+    const marks = [
+      '\u200e', // LRM
+      '\u200f', // RLM
+      '\u061c', // ALM
+      '\u202a',
+      '\u202b',
+      '\u202c',
+      '\u202d',
+      '\u202e', // embeddings + overrides
+      '\u2066',
+      '\u2067',
+      '\u2068',
+      '\u2069', // isolates
+      '\u034f', // combining grapheme joiner
+      '\u2061', // invisible function application
+      '\u180e', // Mongolian vowel separator
+      '\ufe0f', // variation selector 16
+      '\u{e0041}', // tag letter A
+      '\u3164' // Hangul filler
+    ];
+    for (const mark of marks) {
+      expect(hasInvisibleKeptCharacters(`gt${mark}ag`), mark.codePointAt(0)?.toString(16)).toBe(
+        true
+      );
+    }
+    expect(hasInvisibleKeptCharacters('\u200e')).toBe(true);
+  });
+
+  it('leaves visible format-category characters alone', () => {
+    // Arabic number sign: a format character that renders a visible glyph.
+    expect(hasInvisibleKeptCharacters('a\u0600b')).toBe(false);
+  });
+
   it('flags inner no-break and other Unicode spaces (they never match a typed space)', () => {
     expect(hasInvisibleKeptCharacters('a\u00a0b')).toBe(true);
     expect(hasInvisibleKeptCharacters('a\u202fb')).toBe(true);

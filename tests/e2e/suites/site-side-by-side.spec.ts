@@ -109,6 +109,43 @@ async function readDocumentOrigin(page: Page, sideTitle: string): Promise<number
 }
 
 /**
+ * Wait until one side re-navigated to a NEW document that finished loading
+ * on its real URL. A new `timeOrigin` alone only proves the commit: the
+ * document can still be parsing (`readyState === 'loading'`), and WP Rocket's
+ * footprint comment sits at the very end of the page, so a footprint read
+ * then sees none (observed: the cached side read `loading`, no footprint, no
+ * markers right after its new origin appeared).
+ *
+ * @param page The page the overlay was opened on.
+ * @param sideTitle The frame's title attribute.
+ * @param originBefore The side's document `timeOrigin` before the refresh.
+ * @param href The side's real URL.
+ */
+async function waitForReloadedSide(
+  page: Page,
+  sideTitle: 'Cached' | 'Not cached',
+  originBefore: number | null,
+  href: string
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const origin = await readDocumentOrigin(page, sideTitle);
+        const state = await readOverlay(page);
+        const side = sideTitle === 'Cached' ? state.cached : state.bypassed;
+        return (
+          origin !== null &&
+          origin > (originBefore ?? 0) &&
+          side?.href === href &&
+          side.readyState === 'complete'
+        );
+      },
+      { timeout: 6_000, intervals: [250] }
+    )
+    .toBe(true);
+}
+
+/**
  * Open the overlay on a page through the background's exact message row.
  *
  * @param driver The extension driver.
@@ -225,6 +262,18 @@ siteTest.describe('site side-by-side', () => {
       )
       .toBe(true);
 
+    // The host page must never see a click on the overlay: WP Rocket's
+    // delay runtime saves a page's first interactions at the window and
+    // replays them on their targets once its scripts load — a replayed
+    // refresh click reloaded the cached side a second time.
+    await main.page.evaluate(() => {
+      const counter = window as unknown as { e2ePageClicks: number };
+      counter.e2ePageClicks = 0;
+      window.addEventListener('click', () => {
+        counter.e2ePageClicks += 1;
+      });
+    });
+
     const cachedOriginBefore = await readDocumentOrigin(main.page, 'Cached');
     const bypassOriginBefore = await readDocumentOrigin(main.page, 'Not cached');
     expect(cachedOriginBefore, 'a loaded cached document').toBeTruthy();
@@ -233,12 +282,7 @@ siteTest.describe('site side-by-side', () => {
     // The cached side re-navigates (a real reload, same origin): a new
     // document, still the cache-served page.
     await main.page.getByRole('button', { name: 'Refresh the cached version' }).click();
-    await expect
-      .poll(async () => await readDocumentOrigin(main.page, 'Cached'), {
-        timeout: 6_000,
-        intervals: [250]
-      })
-      .toBeGreaterThan(cachedOriginBefore ?? 0);
+    await waitForReloadedSide(main.page, 'Cached', cachedOriginBefore, CACHED_PAGE_URL);
     const afterCachedRefresh = await readOverlay(main.page);
     expect(
       afterCachedRefresh.cached?.footprint,
@@ -256,12 +300,7 @@ siteTest.describe('site side-by-side', () => {
     // ...and the bypassed side refreshes on its own, leaving the cached side.
     const cachedOriginAfterRefresh = await readDocumentOrigin(main.page, 'Cached');
     await main.page.getByRole('button', { name: 'Refresh the not-cached version' }).click();
-    await expect
-      .poll(async () => await readDocumentOrigin(main.page, 'Not cached'), {
-        timeout: 6_000,
-        intervals: [250]
-      })
-      .toBeGreaterThan(bypassOriginBefore ?? 0);
+    await waitForReloadedSide(main.page, 'Not cached', bypassOriginBefore, bypassUrl);
     const afterBypassedRefresh = await readOverlay(main.page);
     expect(
       afterBypassedRefresh.bypassed?.footprint,
@@ -274,6 +313,12 @@ siteTest.describe('site side-by-side', () => {
       afterBypassedRefresh.cached?.href,
       'the cached side kept its real document URL (no about:blank strip)'
     ).toBe(CACHED_PAGE_URL);
+    expect(
+      await main.page.evaluate(
+        () => (window as unknown as { e2ePageClicks: number }).e2ePageClicks
+      ),
+      'the host page saw none of the overlay clicks'
+    ).toBe(0);
     await main.page.close();
   });
 

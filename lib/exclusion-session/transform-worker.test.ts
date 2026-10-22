@@ -5,7 +5,11 @@
  * runs, respawn after a kill, stale messages, dispose).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
+import {
+  applyPipeline,
+  EXCLUSION_PIPELINE_IDS,
+  EXCLUSION_PIPELINE_STEP_IDS
+} from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
@@ -27,7 +31,6 @@ const DELAYED = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></sc
 const REQUEST: DocumentTransformRequest = {
   html: DELAYED,
   set: SET,
-  documentUrl: null,
   budgetMs: 100
 };
 
@@ -101,7 +104,6 @@ describe('parseTransformWorkerRequest', () => {
     ['bad id', { ...valid, id: -1 }],
     ['no request', { ...valid, request: null }],
     ['html not a string', { ...valid, request: { ...REQUEST, html: 1 } }],
-    ['bad url', { ...valid, request: { ...REQUEST, documentUrl: 3 } }],
     ['zero budget', { ...valid, request: { ...REQUEST, budgetMs: 0 } }],
     ['infinite budget', { ...valid, request: { ...REQUEST, budgetMs: Infinity } }],
     ['bad set', { ...valid, request: { ...REQUEST, set: {} } }],
@@ -121,9 +123,9 @@ describe('parseTransformWorkerRequest', () => {
     expect(parseTransformWorkerRequest(data)?.request.bytes).toEqual(bytes);
   });
 
-  it('accepts a string document URL', () => {
+  it('ignores fields it does not read (e.g. a document URL)', () => {
     const data = { ...valid, request: { ...REQUEST, documentUrl: 'https://s.tld/' } };
-    expect(parseTransformWorkerRequest(data)?.request.documentUrl).toBe('https://s.tld/');
+    expect(parseTransformWorkerRequest(data)?.request).toEqual(REQUEST);
   });
 });
 
@@ -136,7 +138,7 @@ describe('handleTransformWorkerMessage', () => {
       () => 0
     );
     expect(posted.slice(0, -1)).toEqual(
-      EXCLUSION_PIPELINE_IDS.map((feature) => ({ type: 'step', id: 7, feature }))
+      EXCLUSION_PIPELINE_STEP_IDS.map((feature) => ({ type: 'step', id: 7, feature }))
     );
     const expected = applyPipeline(DELAYED, SET);
     expect(posted.at(-1)).toEqual({
@@ -216,7 +218,8 @@ describe('handleTransformWorkerMessage', () => {
       id: 1,
       result: {
         ok: false,
-        outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 100 }
+        // The replay step runs first (Defer JS, no row of its own).
+        outcome: { outcome: 'over-budget', feature: 'defer_all_js', row: null, budgetMs: 100 }
       }
     });
   });

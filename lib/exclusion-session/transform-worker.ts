@@ -59,9 +59,7 @@ export function parseTransformWorkerRequest(data: unknown): TransformWorkerReque
   if (!isRecord(data) || data['type'] !== 'transform' || !isCount(data['id'])) return null;
   const raw = data['request'];
   if (!isRecord(raw) || typeof raw['html'] !== 'string') return null;
-  const documentUrl = raw['documentUrl'];
   const budgetMs = raw['budgetMs'];
-  if (documentUrl !== null && typeof documentUrl !== 'string') return null;
   if (typeof budgetMs !== 'number' || !Number.isFinite(budgetMs) || budgetMs <= 0) return null;
   const set = parseExclusionSet(raw['set'], 'reject');
   if (set === null) return null;
@@ -73,7 +71,6 @@ export function parseTransformWorkerRequest(data: unknown): TransformWorkerReque
     request: {
       html: raw['html'],
       set,
-      documentUrl,
       budgetMs,
       ...(bytes === undefined ? {} : { bytes })
     }
