@@ -1,5 +1,14 @@
 [
   {
+    "id": "3faed22a-22f0-800c-9917-efd20c7331d1",
+    "type": "Theme",
+    "name": "Pro theme",
+    "detection_pattern": null,
+    "summary": "Prevent Caching and\/or Optimizations",
+    "issue_description": "The Pro theme from Themeco, which uses Cornerstone, includes an Output Buffer Mode setting. When this setting is enabled, WP Rocket\u2019s caching and optimization features are not applied.",
+    "url": "https:\/\/app.notion.com\/p\/Pro-theme-3faed22a22f0800c9917efd20c7331d1"
+  },
+  {
     "id": "3f0ed22a-22f0-80ce-b536-c072f36998a1",
     "type": "Plugin",
     "name": "API Manager for WooCommerce",

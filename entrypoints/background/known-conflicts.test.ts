@@ -164,7 +164,7 @@ describe('fetchAndStoreKnownConflicts', () => {
     fetcher.queueJson((): Promise<unknown> => Promise.resolve(SAMPLE_ROWS));
     await fetchAndStoreKnownConflicts(deps);
     expect(fetcher.urls[0]).toBe(DB_ENDPOINT);
-    expect(DB_ENDPOINT).toBe('https://mega.wp-rocket.me/support/kc/known-conflicts.json');
+    expect(DB_ENDPOINT).toBe('https://apps.wpr-support.com/kc/known-conflicts.json');
     expect(fetcher.signals[0]).toBeInstanceOf(AbortSignal);
     expect(DB_FETCH_TIMEOUT_MS).toBe(10_000);
   });
