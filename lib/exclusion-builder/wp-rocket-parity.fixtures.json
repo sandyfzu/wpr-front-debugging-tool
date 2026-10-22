@@ -2663,7 +2663,7 @@
       "feature": "defer_all_js",
       "rows": ["^/\\p{L}\\.js$"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1", "s2"],
         "excluded": []
       },
@@ -3026,7 +3026,7 @@
       "feature": "defer_all_js",
       "rows": ["^/(a(?R)?b)?\\.js$"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1"],
         "excluded": []
       },
@@ -3043,7 +3043,7 @@
       "feature": "defer_all_js",
       "rows": ["(a)(?1)"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1", "s2"],
         "excluded": []
       },
@@ -3060,7 +3060,7 @@
       "feature": "defer_all_js",
       "rows": ["^/(a)?(?(1)b|c)\\.js$"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1", "s2", "s3"],
         "excluded": []
       },
@@ -3090,7 +3090,7 @@
       "feature": "defer_all_js",
       "rows": ["a(*FAIL)|b"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1", "s2"],
         "excluded": []
       },
@@ -3107,7 +3107,7 @@
       "feature": "defer_all_js",
       "rows": ["a(?C1)b"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1"],
         "excluded": []
       },
@@ -3227,7 +3227,7 @@
       "feature": "defer_all_js",
       "rows": ["(?x)a b"],
       "engine": {
-        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "residual": "Whether WP Rocket's save keeps this row is not modeled here: the row stays unverified and matches nothing, so the engine excludes no script with it",
         "candidates": ["s1", "s2"],
         "excluded": []
       },
