@@ -1,2 +1,5 @@
 echo "[Husky] running pre-commit tasks..."
-pnpm exec lint-staged
+# --no-stash: worktrees share one refs/stash and lint-staged drops its backup by
+# stash index, so a concurrent commit elsewhere can make it drop the wrong entry.
+# Partially staged files stay protected via a patch in this worktree's git dir.
+pnpm exec lint-staged --no-stash
