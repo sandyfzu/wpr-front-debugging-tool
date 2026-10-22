@@ -148,16 +148,22 @@
   flex: none;
 }
 
+/* The brand mark's shape only: each placement owns its size and alignment
+ * (the header pins it to the heading's first line, the pill centers it). */
 .xo-brand {
-  align-self: flex-start;
-  margin-top: 1px;
+  flex: none;
   display: grid;
   place-items: center;
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+}
+
+.xo-header .xo-brand {
+  align-self: flex-start;
+  margin-top: 1px;
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  color: var(--on-accent);
-  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
 }
 
 .xo-heading {
@@ -895,6 +901,7 @@
   left: 12px;
 }
 
+/* Centered on the pill's cross axis by the pill's own `align-items`. */
 .xo-pill .xo-brand {
   width: 22px;
   height: 22px;
