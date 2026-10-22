@@ -37,6 +37,13 @@ export interface DeferRowSet {
    */
   readonly page: PageState;
   /**
+   * The rows behind a page `off`, by index in list order: those carrying
+   * `joined-page-off` (unverified rows included). Empty when the page is
+   * not off, or when only rows with an outranking problem (one WP Rocket's
+   * save drops) turn it off — their own problem says so.
+   */
+  readonly pageOffRows: readonly number[];
+  /**
    * The index of the first row, in list order, whose matcher matches the
    * subject; `-1` when none does. Rows without a matcher (each one has a
    * problem) never match.
@@ -72,9 +79,13 @@ const rowSetMemo = createBoundedMemo<DeferRowSet>({
 function translateRowSet(rows: readonly string[]): DeferRowSet {
   const translation = translateRegexRows(FEATURE, rows);
   let firstMatch: ((subject: string) => number) | null = null;
+  const problems = translationRowProblems(FEATURE, translation);
   return {
-    problems: translationRowProblems(FEATURE, translation),
+    problems,
     page: translation.page,
+    pageOffRows: problems
+      .filter(({ problem }) => problem === 'joined-page-off')
+      .map(({ index }) => index),
     sourceChars: translation.rows.reduce(
       (sum, { matcher }) => sum + (matcher?.source.length ?? 0),
       0
