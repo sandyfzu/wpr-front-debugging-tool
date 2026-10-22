@@ -13,6 +13,7 @@ import { LAZY_RENDER_ATTRIBUTE, LAZY_RENDER_INLINE_CSS_ID } from '../wp-rocket/c
 import { isEndTag, parseTagAt, scanTokens, type ScannedTag } from './html-scan';
 import { ExclusionValidationError } from './errors';
 import { analyzeLazyRender, isLazyRenderStamped } from './lazy-render-hashing';
+import type { DocumentBytes } from './libxml/charset';
 import { featureRowProblems } from './validate';
 import { transformReport, type TransformResult } from './report';
 import {
@@ -33,10 +34,14 @@ const ID_ATTRIBUTE = 'id';
  * → the html with matched lazy-render stamps removed, plus the transform's
  * report. The rewrite stamps the exclusion marker as CSV on every
  * de-stamped element; a row's match count is the elements it excludes
- * (the outermost matched element's first matching row).
+ * (the outermost matched element's first matching row). An element whose
+ * outcome cannot be determined is left as served and counted
+ * `undetermined`.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Automatic Lazy Rendering literal rows + toggle slice).
+ * @param _documentUrl Unused (the pipeline's shared transform signature).
+ * @param bytes How the session decoded the page (UTF-8 without a BOM when omitted).
  * @returns The rewritten html and the report.
  * @throws {@link ExclusionValidationError} when an empty row sits next to
  *   other rows (it would match every element; a lone `''`/`"0"` row is
@@ -44,7 +49,12 @@ const ID_ATTRIBUTE = 'id';
  *   row is surfaced, never silently inert. Rows are never compiled as
  *   regexes, so regex-looking text is a fine literal.
  */
-export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): TransformResult {
+export function lazyRenderTransform(
+  servedHtml: string,
+  set: ExclusionSet,
+  _documentUrl?: string,
+  bytes?: DocumentBytes
+): TransformResult {
   const rows = set.rows.lazyRender;
   const problems = featureRowProblems(FEATURE, 'literal', rows);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
@@ -58,6 +68,7 @@ export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): Tran
   const removals: TextPatch[] = [];
   let candidates = 0;
   let rewritten = 0;
+  let undetermined = 0;
   if (featureWide) {
     for (const tag of tags) {
       const isInlineCss =
@@ -77,10 +88,11 @@ export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): Tran
     if (insideRemoval(tag) || !isLazyRenderStamped(tag)) continue;
     candidates++;
     if (!featureWide) {
-      analysis ??= analyzeLazyRender(servedHtml, tokens, rows);
-      const rowIndex = analysis.excludingRow(tag);
-      if (rowIndex === -1) continue;
-      matchCounts[rowIndex] = (matchCounts[rowIndex] ?? 0) + 1;
+      analysis ??= analyzeLazyRender(servedHtml, tokens, rows, bytes);
+      const verdict = analysis.verdict(tag);
+      if (verdict.kind === 'unknown') undetermined++;
+      if (verdict.kind !== 'excluded') continue;
+      matchCounts[verdict.row] = (matchCounts[verdict.row] ?? 0) + 1;
     }
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     const destamped = stampExclusionMarker(
@@ -100,7 +112,8 @@ export function lazyRenderTransform(servedHtml: string, set: ExclusionSet): Tran
       candidates,
       rewritten,
       regionRemovals: removals.length,
-      featureWide
+      featureWide,
+      undetermined
     })
   };
 }

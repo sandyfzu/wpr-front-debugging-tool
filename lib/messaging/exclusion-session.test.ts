@@ -346,6 +346,24 @@ describe('document reports are tied to the session set', () => {
     expect(parseExclusionSessionStatus(withReport({}))).not.toBeNull();
   });
 
+  it('carries the optional undetermined / approximate counts within the candidates', () => {
+    const parsed = parseExclusionSessionStatus(withReport({ undetermined: 2, approximate: 3 }));
+    const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+    expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject({
+      undetermined: 2,
+      approximate: 3
+    });
+    for (const patch of [
+      { undetermined: 0 },
+      { undetermined: 4 },
+      { approximate: -1 },
+      { approximate: 1.5 },
+      { undetermined: 'x' }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
+  });
+
   it('rejects rows the set does not hold for that feature, or more often than it holds them', () => {
     for (const patch of [
       { unmatchedRows: ['not-in-set'] },

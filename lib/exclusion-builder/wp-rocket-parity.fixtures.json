@@ -3655,6 +3655,54 @@
       "excluded": ["i8"]
     },
     {
+      "id": "match-lazyload-dimensions",
+      "kind": "match",
+      "feature": "lazyload",
+      "rows": ["width=\"640\""],
+      "note": "width/height read by the placeholder",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\">\n<img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\">\n<img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\">\n<img id=\"w4\" src=\"/img/self.svg\" />\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E\" width=\"640\" height=\"480\" alt=\"wide\" data-lazy-src=\"/img/wide.jpg\"><noscript><img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\"></noscript>\n<img id=\"w2\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20320%200'%3E%3C/svg%3E\" width=\"320\" data-lazy-src=\"https://cdn.example.com/img/abs.jpg\"><noscript><img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\"></noscript>\n<img id=\"w3\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" alt=\"inline\" data-lazy-src=\"\"><noscript><img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\"></noscript>\n<img id=\"w4\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" data-lazy-src=\"/img/self.svg\" /><noscript><img id=\"w4\" src=\"/img/self.svg\" /></noscript>\n</body></html>",
+      "subjects": ["w1", "w2", "w3", "w4"],
+      "candidates": ["w1", "w2", "w3", "w4"],
+      "excluded": ["w1"]
+    },
+    {
+      "id": "match-lazyload-absolute-src",
+      "kind": "match",
+      "feature": "lazyload",
+      "rows": ["https://cdn.example.com/img/abs.jpg"],
+      "note": "absolute src through esc_url",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\">\n<img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\">\n<img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\">\n<img id=\"w4\" src=\"/img/self.svg\" />\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E\" width=\"640\" height=\"480\" alt=\"wide\" data-lazy-src=\"/img/wide.jpg\"><noscript><img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\"></noscript>\n<img id=\"w2\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20320%200'%3E%3C/svg%3E\" width=\"320\" data-lazy-src=\"https://cdn.example.com/img/abs.jpg\"><noscript><img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\"></noscript>\n<img id=\"w3\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" alt=\"inline\" data-lazy-src=\"\"><noscript><img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\"></noscript>\n<img id=\"w4\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" data-lazy-src=\"/img/self.svg\" /><noscript><img id=\"w4\" src=\"/img/self.svg\" /></noscript>\n</body></html>",
+      "subjects": ["w1", "w2", "w3", "w4"],
+      "candidates": ["w1", "w2", "w3", "w4"],
+      "excluded": ["w2"]
+    },
+    {
+      "id": "match-lazyload-data-src",
+      "kind": "match",
+      "feature": "lazyload",
+      "rows": ["data:image/png"],
+      "note": "data: src",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\">\n<img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\">\n<img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\">\n<img id=\"w4\" src=\"/img/self.svg\" />\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E\" width=\"640\" height=\"480\" alt=\"wide\" data-lazy-src=\"/img/wide.jpg\"><noscript><img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\"></noscript>\n<img id=\"w2\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20320%200'%3E%3C/svg%3E\" width=\"320\" data-lazy-src=\"https://cdn.example.com/img/abs.jpg\"><noscript><img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\"></noscript>\n<img id=\"w3\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" alt=\"inline\" data-lazy-src=\"\"><noscript><img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\"></noscript>\n<img id=\"w4\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" data-lazy-src=\"/img/self.svg\" /><noscript><img id=\"w4\" src=\"/img/self.svg\" /></noscript>\n</body></html>",
+      "subjects": ["w1", "w2", "w3", "w4"],
+      "candidates": ["w1", "w2", "w3", "w4"],
+      "excluded": ["w3"]
+    },
+    {
+      "id": "match-lazyload-self-closing",
+      "kind": "match",
+      "feature": "lazyload",
+      "rows": ["svg\" /"],
+      "note": "the ungreedy \\s?/?> leaves \" /\" outside atts",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\">\n<img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\">\n<img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\">\n<img id=\"w4\" src=\"/img/self.svg\" />\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<img id=\"w1\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20480'%3E%3C/svg%3E\" width=\"640\" height=\"480\" alt=\"wide\" data-lazy-src=\"/img/wide.jpg\"><noscript><img id=\"w1\" src=\"/img/wide.jpg\" width=\"640\" height=\"480\" alt=\"wide\"></noscript>\n<img id=\"w2\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20320%200'%3E%3C/svg%3E\" width=\"320\" data-lazy-src=\"https://cdn.example.com/img/abs.jpg\"><noscript><img id=\"w2\" src=\"https://cdn.example.com/img/abs.jpg\" width=\"320\"></noscript>\n<img id=\"w3\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" alt=\"inline\" data-lazy-src=\"\"><noscript><img id=\"w3\" src=\"data:image/png;base64,iVBORw0KGgo=\" alt=\"inline\"></noscript>\n<img id=\"w4\" src=\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%200%200'%3E%3C/svg%3E\" data-lazy-src=\"/img/self.svg\" /><noscript><img id=\"w4\" src=\"/img/self.svg\" /></noscript>\n</body></html>",
+      "subjects": ["w1", "w2", "w3", "w4"],
+      "candidates": ["w1", "w2", "w3", "w4"],
+      "excluded": []
+    },
+    {
       "id": "match-lazyload-empty-rows",
       "kind": "match",
       "feature": "lazyload",

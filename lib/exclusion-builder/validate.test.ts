@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ExclusionValidationError } from './errors';
-import { prevalidateExclusionSet } from './validate';
+import { featureRowWarnings, prevalidateExclusionSet } from './validate';
 import { compilePatternRows } from './compile';
 import { BACKTRACKING_RISK_REASONS } from './regex-risk';
 import { applyPipeline } from './pipeline';
@@ -71,6 +71,12 @@ describe('prevalidateExclusionSet', () => {
     expect(prevalidateExclusionSet(setWith({ lazyRender: ['0'] })).valid).toBe(true);
     // Lazy-render rows are any text — whitespace included.
     expect(prevalidateExclusionSet(setWith({ lazyRender: [' ', 'a'] })).valid).toBe(true);
+    // …but a whitespace-only one gets a non-blocking warning.
+    expect(featureRowWarnings('automatic_lazy_rendering', ['a', ' ', '', '\t'])).toEqual([
+      expect.objectContaining({ index: 1, row: ' ' }),
+      expect.objectContaining({ index: 3, row: '\t' })
+    ]);
+    expect(featureRowWarnings('lazyload', [' '])).toEqual([]);
     // Next to other rows an empty lazy-render row is an empty alternative: match-all.
     const problems = prevalidateExclusionSet(setWith({ lazyRender: ['a', '', '0'] }));
     expect(problems.invalid).toEqual([

@@ -481,8 +481,21 @@ const REPORT_KEYS = [
   'rewritten',
   'regionRemovals',
   'matchedRows',
-  'unmatchedRows'
+  'unmatchedRows',
+  'undetermined',
+  'approximate'
 ] as const;
+
+/**
+ * A report's optional count: absent, or a positive count no larger than the
+ * candidates.
+ *
+ * @returns The count (`undefined` when absent), or `null` when invalid.
+ */
+function optionalCount(value: unknown, candidates: number): number | undefined | null {
+  if (value === undefined) return undefined;
+  return isCount(value) && value > 0 && value <= candidates ? value : null;
+}
 
 /** A feature's rows within a set (registry-derived lookup). */
 function featureRows(set: ExclusionSet, feature: ExclusionFeatureId): readonly string[] {
@@ -546,6 +559,9 @@ function parseTransformReport(
   if (featureWide && (matchedRows.length > 0 || unmatchedRows.length > 0)) return null;
   const reported = [...matchedRows.map((match) => match.row), ...unmatchedRows];
   if (!isSubMultiset(reported, featureRows(set, feature))) return null;
+  const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
+  const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
+  if (undetermined === null || approximate === null) return null;
   return {
     feature,
     featureWide,
@@ -553,7 +569,9 @@ function parseTransformReport(
     rewritten,
     regionRemovals,
     matchedRows,
-    unmatchedRows
+    unmatchedRows,
+    ...(undetermined === undefined ? {} : { undetermined }),
+    ...(approximate === undefined ? {} : { approximate })
   };
 }
 

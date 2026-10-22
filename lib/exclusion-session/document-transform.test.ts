@@ -365,7 +365,7 @@ describe('rewriteDocument', () => {
     });
   });
 
-  it('hands the runner the decoded text, set, URL and default budget', async () => {
+  it('hands the runner the decoded text, set, URL, default budget and decoding facts', async () => {
     const seen: DocumentTransformRequest[] = [];
     const recording: DocumentTransformRunner = (req) => {
       seen.push(req);
@@ -381,8 +381,36 @@ describe('rewriteDocument', () => {
         html: '<p>é</p>',
         set: DELAY_SET,
         documentUrl: 'https://s.tld/',
-        budgetMs: DOCUMENT_TRANSFORM_BUDGET_MS
+        budgetMs: DOCUMENT_TRANSFORM_BUDGET_MS,
+        bytes: { encoding: 'utf-8', bom: false }
       }
+    ]);
+  });
+
+  it('tells the runner when a BOM led the bytes, and the encoding the text was decoded with', async () => {
+    const seen: DocumentTransformRequest[] = [];
+    const recording: DocumentTransformRunner = (req) => {
+      seen.push(req);
+      return runner(req);
+    };
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...encoder.encode('<p>x</p>')]);
+    await rewriteDocument(
+      { body: bom, contentType: null, documentUrl: null },
+      DELAY_SET,
+      recording
+    );
+    await rewriteDocument(
+      {
+        body: new Uint8Array([0x3c, 0x70, 0x3e, 0xe9]),
+        contentType: 'text/html; charset=windows-1252',
+        documentUrl: null
+      },
+      DELAY_SET,
+      recording
+    );
+    expect(seen.map((req) => req.bytes)).toEqual([
+      { encoding: 'utf-8', bom: true },
+      { encoding: 'windows-1252', bom: false }
     ]);
   });
 });

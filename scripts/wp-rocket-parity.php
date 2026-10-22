@@ -71,6 +71,40 @@ function add_settings_error($setting, $code, $message, $type = 'error') {} // Th
 function wp_next_scheduled($hook) { return false; }
 function create_rocket_uniqid() { return 'parity'; }
 
+// --- WordPress core functions the Lazyload pass reaches, copied verbatim from
+// the pinned core (their files pull in far more than the harness loads):
+// `absint` (wp-includes/load.php; `width`/`height` attributes),
+// `wp_allowed_protocols` (wp-includes/functions.php; `esc_url` on absolute and
+// `data:` sources), `array_any` (the PHP 8.4 polyfill in wp-includes/compat.php,
+// reached by kses on PHP < 8.4).
+function absint( $maybeint ) {
+	return abs( (int) $maybeint );
+}
+function wp_allowed_protocols() {
+	static $protocols = array();
+
+	if ( empty( $protocols ) ) {
+		$protocols = array( 'http', 'https', 'ftp', 'ftps', 'mailto', 'news', 'irc', 'irc6', 'ircs', 'gopher', 'nntp', 'feed', 'telnet', 'mms', 'rtsp', 'sms', 'svn', 'tel', 'fax', 'xmpp', 'webcal', 'urn' );
+	}
+
+	if ( ! did_action( 'wp_loaded' ) ) {
+		$protocols = array_unique( (array) apply_filters( 'kses_allowed_protocols', $protocols ) );
+	}
+
+	return $protocols;
+}
+if ( ! function_exists( 'array_any' ) ) {
+	function array_any( array $array, callable $callback ): bool {
+		foreach ( $array as $key => $value ) {
+			if ( $callback( $value, $key ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 require ABSPATH . WPINC . '/utf8.php';
 if (file_exists(ABSPATH . WPINC . '/compat-utf8.php')) {
 	require_once ABSPATH . WPINC . '/compat-utf8.php';

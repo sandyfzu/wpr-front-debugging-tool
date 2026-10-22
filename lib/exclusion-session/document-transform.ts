@@ -15,6 +15,7 @@
  */
 import { ExclusionValidationError } from '../exclusion-builder/errors';
 import { exclusionPipelineSteps } from '../exclusion-builder/pipeline';
+import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
 import type { TransformReport } from '../exclusion-builder/report';
 import {
   EXCLUSION_FEATURES,
@@ -56,6 +57,8 @@ export interface DocumentTransformRequest {
   readonly documentUrl: string | null;
   /** The wall-time budget (ms, positive). */
   readonly budgetMs: number;
+  /** How the text was decoded from the served bytes, when known. */
+  readonly bytes?: DocumentBytes;
 }
 
 /**
@@ -140,7 +143,11 @@ export function runDocumentPipeline(
     if (!problems.valid) return engineFailed(new ExclusionValidationError(problems.invalid));
     let html = request.html;
     const reports: TransformReport[] = [];
-    const steps = exclusionPipelineSteps(request.set, request.documentUrl ?? undefined);
+    const steps = exclusionPipelineSteps(
+      request.set,
+      request.documentUrl ?? undefined,
+      request.bytes
+    );
     for (const step of steps) {
       onStepStart?.(step.id);
       const result = step.apply(html);
@@ -304,7 +311,14 @@ export async function rewriteDocument(
   if (!decoded.ok) return DECODE_FAILED;
   let result: DocumentTransformResult;
   try {
-    result = await runner({ html: decoded.text, set, documentUrl: document.documentUrl, budgetMs });
+    const bytes = { encoding: decoded.codec.encoding, bom: decoded.codec.bom.length > 0 };
+    result = await runner({
+      html: decoded.text,
+      set,
+      documentUrl: document.documentUrl,
+      budgetMs,
+      bytes
+    });
   } catch (cause) {
     // A runner must never reject; one that does is an engine failure.
     result = engineFailed(cause);

@@ -2,12 +2,11 @@
  * The libxml opening-tag re-serializer. Every expected string below was
  * produced by the real library (PHP 8.1.34 `DOMDocument::loadHTML` +
  * `saveHTML`, libxml 2.9.13, WP Rocket's own flags and cut at the first
- * `>`); `null` marks inputs the module refuses to guess (libxml drops,
- * empties or truncates there).
+ * `>`); `null` marks inputs the module refuses to guess (libxml empties or
+ * truncates the value there).
  */
 import { describe, expect, it } from 'vitest';
-import { scanTags } from './html-scan';
-import { libxmlDocumentCharset, libxmlOpeningTag, utf8AsLatin1 } from './libxml-serialize';
+import { libxmlOpeningTag } from './serialize';
 
 describe('libxmlOpeningTag — UTF-8 pages (measured)', () => {
   const MEASURED: readonly (readonly [string, string])[] = [
@@ -87,7 +86,49 @@ describe('libxmlOpeningTag — UTF-8 pages (measured)', () => {
       `<div title="it's é x &gt; &lt; &quot;q&quot;" data-a='say "hi"'>`
     ],
     ['<MAIN>', '<main>'],
-    ['<div  >', '<div>']
+    ['<div  >', '<div>'],
+    // Bogus attributes: skipped to the next blank, `>` or `/>`, quotes ignored.
+    ['<div =x>', '<div>'],
+    ['<div/id="a">', '<div>'],
+    ['<div id="a"/ class="b">', '<div id="a" class="b">'],
+    ['<div id="a"/x>', '<div id="a">'],
+    ['<div @click="x">', '<div>'],
+    ['<div [a]="1">', '<div>'],
+    ['<div 1a="1">', '<div>'],
+    ['<div -a="1">', '<div>'],
+    ['<div a$b="1">', '<div a>'],
+    ['<div a!="1" b="2">', '<div a b="2">'],
+    ['<div é="1" id="k">', '<div id="k">'],
+    ['<div data-é="1" id="k">', '<div data- id="k">'],
+    ['<div v-bind:[key]="x" id="k">', '<div v-bind: id="k">'],
+    ['<div @click="a b" id="k">', '<div b id="k">'],
+    [
+      '<div x-data="{ open: false }" @click.away="open = false" id="k">',
+      '<div x-data="{ open: false }" false id="k">'
+    ],
+    ['<div a="1"@b="2" c="3">', '<div a="1" c="3">'],
+    ['<div a ="1" @ b="2">', '<div a="1" b="2">'],
+    ['<div a= @b>', '<div a="@b">'],
+    ['<div a=b"c d>', `<div a='b"c' d>`],
+    ['<div @x\tid="k">', '<div id="k">'],
+    // A bogus attribute's `>` ends the tag (the rest is text there).
+    ['<div @click="a>b" id="k">', '<div>'],
+    // `<!--…-->` and `&{…}` spans are copied raw; the first `>` cuts the tag.
+    ['<div title="<!-- c -->" id="k">', '<div title="<!-- c -->'],
+    ['<div title="<!-->x" id="k">', '<div title="<!-->'],
+    ['<div title="<!--->x" id="k">', '<div title="<!--->'],
+    ['<div title="a<!--b" id="k">', '<div title="a&lt;!--b" id="k">'],
+    ['<div title="<!-- a" id="k">', '<div title="&lt;!-- a" id="k">'],
+    ['<div title="&lt;!-- a&amp;b --&gt; &lt;c" id="k">', '<div title="<!-- a&b -->'],
+    ['<div href="<!-- a b -->c d" id="k">', '<div href="<!--%20a%20b%20-->'],
+    [`<div title='<!-- "q" -->' id="k">`, `<div title='<!-- "q" -->`],
+    ['<div title="x" data-c="<!-- c -->" id="k">', '<div title="x" data-c="<!-- c -->'],
+    ['<div title="&{a}">', '<div title="&{a}">'],
+    ['<div title="&amp;{a}">', '<div title="&{a}">'],
+    ['<div title="&#38;{">', '<div title="&amp;{">'],
+    ['<div title="&{&amp;{">', '<div title="&amp;{&amp;{">'],
+    ['<div title="&eacuteé">', '<div title="&amp;eacuteé">'],
+    ['<div title="&é">', '<div title="&amp;é">']
   ];
 
   it.each(MEASURED)('%j → %j', (source, serialized) => {
@@ -101,18 +142,8 @@ describe('libxmlOpeningTag — UTF-8 pages (measured)', () => {
   });
 });
 
-describe('libxmlOpeningTag — fails closed where libxml drops, empties or truncates', () => {
+describe('libxmlOpeningTag — fails closed where libxml empties or truncates', () => {
   const REFUSED: readonly string[] = [
-    '<div =x>',
-    '<div/id="a">',
-    '<div id="a"/ class="b">',
-    '<div id="a"/x>',
-    '<div @click="x">',
-    '<div [a]="1">',
-    '<div 1a="1">',
-    '<div -a="1">',
-    '<div a$b="1">',
-    '<div é="1">',
     '<div title="&#0;">',
     '<div title="&#x;">',
     '<div title="&#;">',
@@ -124,12 +155,11 @@ describe('libxmlOpeningTag — fails closed where libxml drops, empties or trunc
     '<div title="a\u000bb">',
     '<div title="a\fb">',
     '<div title="a\u0000b">',
-    '<div title="&{a}">',
-    '<div title="&amp;{a}">',
-    '<div title="&#38;{">',
+    // No closing `>`, an unclosed quote, a name it does not serialize, markup past libxml's tag end.
     '<div id="a"',
     '<div id="a>',
-    '<custom-el id="a">'
+    '<custom-el id="a">',
+    '<div @x="a>b" <i>'
   ];
 
   it.each(REFUSED)('%j → null', (source) => {
@@ -137,75 +167,34 @@ describe('libxmlOpeningTag — fails closed where libxml drops, empties or trunc
   });
 });
 
-describe('libxmlOpeningTag — Latin-1 and unknown charsets', () => {
-  it('reads raw non-ASCII as Latin-1 bytes, while references still decode to their characters (measured)', () => {
-    expect(libxmlOpeningTag('<div class="été">', 'latin-1')).toBe('<div class="Ã©tÃ©">');
-    expect(libxmlOpeningTag('<div title="😀">', 'latin-1')).toBe(
-      '<div title="ð\u009f\u0098\u0080">'
-    );
-    expect(libxmlOpeningTag('<div title="&#xe9;&#x1F600;&euro;">', 'latin-1')).toBe(
+describe('libxmlOpeningTag — text modes', () => {
+  it('reads UTF-8 bytes as Latin-1 on a page libxml decodes as Latin-1 (measured)', () => {
+    const mode = 'latin-1-of-utf-8';
+    expect(libxmlOpeningTag('<div class="été">', mode)).toBe('<div class="Ã©tÃ©">');
+    expect(libxmlOpeningTag('<div title="😀">', mode)).toBe('<div title="ð\u009f\u0098\u0080">');
+    expect(libxmlOpeningTag('<div title="&#xe9;&#x1F600;&euro;">', mode)).toBe(
       '<div title="é😀€">'
     );
-    expect(libxmlOpeningTag('<div src="é">', 'latin-1')).toBe('<div src="%C3%83%C2%A9">');
-    expect(libxmlOpeningTag('<div id="a">', 'latin-1')).toBe('<div id="a">');
+    expect(libxmlOpeningTag('<div title="&#233é">', mode)).toBe('<div title="éÃ©">');
+    expect(libxmlOpeningTag('<div title="&amp;é">', mode)).toBe('<div title="&amp;Ã©">');
+    expect(libxmlOpeningTag('<div src="é">', mode)).toBe('<div src="%C3%83%C2%A9">');
+    expect(libxmlOpeningTag('<div id="a">', mode)).toBe('<div id="a">');
   });
 
-  it('serializes ASCII tags on an unknown charset, refusing non-ASCII ones', () => {
+  it('refuses a Latin-1 `&name` running into a non-ASCII byte (libxml drops part of the name)', () => {
+    // Measured: `&eacuteé` → `&amp;Ã©`, `&é` → `&amp;©`.
+    expect(libxmlOpeningTag('<div title="&eacuteé">', 'latin-1-of-utf-8')).toBeNull();
+    expect(libxmlOpeningTag('<div title="&é">', 'latin-1-of-utf-8')).toBeNull();
+    expect(libxmlOpeningTag('<div title="&é">', 'latin-1')).toBeNull();
+  });
+
+  it('keeps single-byte text as is, refusing what windows-1252 decoded above U+00FF', () => {
+    expect(libxmlOpeningTag('<div class="été">', 'latin-1')).toBe('<div class="été">');
+    expect(libxmlOpeningTag('<div class="€">', 'latin-1')).toBeNull();
+  });
+
+  it('serializes ASCII tags in an unknown mode, refusing non-ASCII ones', () => {
     expect(libxmlOpeningTag('<div title="&eacute;">', 'unknown')).toBe('<div title="é">');
     expect(libxmlOpeningTag('<div title="é">', 'unknown')).toBeNull();
-  });
-
-  it('maps UTF-8 bytes to Latin-1 characters only when the text has non-ASCII', () => {
-    expect(utf8AsLatin1('abc')).toBe('abc');
-    expect(utf8AsLatin1('aé')).toBe('aÃ©');
-  });
-});
-
-describe('libxmlDocumentCharset (measured)', () => {
-  /** The charset of a page whose head/body prefix is `prefix`. */
-  const charsetOf = (prefix: string): string => {
-    const html = `${prefix}<div class="x">x</div></body></html>`;
-    return libxmlDocumentCharset(html, scanTags(html));
-  };
-
-  it('reads UTF-8 from a charset meta, in any spelling, before any non-ASCII', () => {
-    expect(charsetOf('<html><head><meta charset="utf-8"></head><body>')).toBe('utf-8');
-    expect(charsetOf('<html><head><META CHARSET="UTF-8" /></head><body>')).toBe('utf-8');
-    expect(charsetOf('<html><head><meta charset=utf8></head><body>')).toBe('utf-8');
-    expect(charsetOf('<html><head><meta charset=" utf-8 "></head><body>')).toBe('utf-8');
-    expect(
-      charsetOf(
-        '<html><head><meta content="text/html; charset=utf-8" http-equiv="content-type"></head><body>'
-      )
-    ).toBe('utf-8');
-    expect(charsetOf('<html><head></head><body><div>aaa</div><meta charset="utf-8">')).toBe(
-      'utf-8'
-    );
-  });
-
-  it('falls back to Latin-1 without a declaration, or after non-ASCII text', () => {
-    expect(charsetOf('<html><head></head><body>')).toBe('latin-1');
-    expect(charsetOf('<html><head><!-- <meta charset="utf-8"> --></head><body>')).toBe('latin-1');
-    expect(charsetOf('<html><head><meta content="text/html; charset=utf-8"></head><body>')).toBe(
-      'latin-1'
-    );
-    expect(charsetOf('<html><head><title>é</title><meta charset="utf-8"></head><body>')).toBe(
-      'latin-1'
-    );
-    expect(charsetOf('<html lang="é"><head><meta charset="utf-8"></head><body>')).toBe('latin-1');
-  });
-
-  it('keeps the first declaration, and leaves other charsets unknown', () => {
-    expect(
-      charsetOf('<html><head><meta charset="iso-8859-1"><meta charset="utf-8"></head><body>')
-    ).toBe('unknown');
-    expect(
-      charsetOf('<html><head><meta charset="utf-8"><meta charset="iso-8859-1"></head><body>')
-    ).toBe('utf-8');
-    expect(charsetOf('<html><head><meta charset="windows-1252"></head><body>')).toBe('unknown');
-  });
-
-  it('reads a leading byte-order mark as UTF-8', () => {
-    expect(charsetOf('﻿<html><head></head><body>')).toBe('utf-8');
   });
 });

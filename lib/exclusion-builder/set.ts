@@ -49,11 +49,15 @@ export interface ExclusionSetRows {
   readonly delayJs: readonly PatternRow[];
   /** Defer JS: regex rows matched against the script's effective URL. */
   readonly deferJs: readonly PatternRow[];
-  /** Image Lazyload: literal rows matched against the restored img markup. */
+  /**
+   * Image Lazyload: literal, case-sensitive rows matched against the
+   * original image's attributes (after `<img`) and its `src`; `''`/`"0"` ignored.
+   */
   readonly lazyload: readonly LiteralRow[];
   /**
-   * Automatic Lazy Rendering: literal rows matched against the child-cleared
-   * markup — the opening tag plus its end tag (void elements have none).
+   * Automatic Lazy Rendering: literal, ASCII-case-insensitive rows matched
+   * against the opening tag as libxml re-serializes it (no end tag); a match
+   * excludes the element's subtree.
    */
   readonly lazyRender: readonly LiteralRow[];
 }

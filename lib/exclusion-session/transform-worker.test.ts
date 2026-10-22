@@ -104,9 +104,21 @@ describe('parseTransformWorkerRequest', () => {
     ['bad url', { ...valid, request: { ...REQUEST, documentUrl: 3 } }],
     ['zero budget', { ...valid, request: { ...REQUEST, budgetMs: 0 } }],
     ['infinite budget', { ...valid, request: { ...REQUEST, budgetMs: Infinity } }],
-    ['bad set', { ...valid, request: { ...REQUEST, set: {} } }]
+    ['bad set', { ...valid, request: { ...REQUEST, set: {} } }],
+    ['bytes not a record', { ...valid, request: { ...REQUEST, bytes: 'utf-8' } }],
+    ['bytes without bom', { ...valid, request: { ...REQUEST, bytes: { encoding: 'utf-8' } } }],
+    [
+      'bytes with a huge encoding',
+      { ...valid, request: { ...REQUEST, bytes: { encoding: 'x'.repeat(65), bom: false } } }
+    ]
   ])('rejects %s', (_case, data) => {
     expect(parseTransformWorkerRequest(data)).toBeNull();
+  });
+
+  it('accepts the decoding facts', () => {
+    const bytes = { encoding: 'windows-1252', bom: false };
+    const data = { ...valid, request: { ...REQUEST, bytes } };
+    expect(parseTransformWorkerRequest(data)?.request.bytes).toEqual(bytes);
   });
 
   it('accepts a string document URL', () => {

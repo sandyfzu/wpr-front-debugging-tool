@@ -150,3 +150,33 @@ export function prevalidateExclusionSet(set: ExclusionSet): ExclusionSetProblems
   }
   return { valid: invalid.length === 0, invalid };
 }
+
+/** The warning for a whitespace-only Automatic Lazy Rendering row. */
+const WHITESPACE_LAZY_RENDER_REASON =
+  'Row is only whitespace — it matches nearly every element (any opening tag holding it)';
+
+/**
+ * Non-blocking row warnings: rows WP Rocket accepts and applies as written
+ * that are almost surely mistakes. A whitespace-only Automatic Lazy
+ * Rendering row is a valid literal there (the engine keeps it valid,
+ * faithfully) yet, like the whitespace-only Lazyload row the engine
+ * rejects, it matches nearly every element. The `''` row is not warned
+ * here (a lone one is inert; next to others it is the `match-all` problem).
+ *
+ * @param feature The feature the rows belong to.
+ * @param rows The rows as given.
+ * @returns One warning per such row, in list order (never thrown).
+ */
+export function featureRowWarnings(
+  feature: ExclusionFeatureId,
+  rows: readonly string[]
+): readonly InvalidExclusionRow[] {
+  if (feature !== 'automatic_lazy_rendering') return [];
+  const warnings: InvalidExclusionRow[] = [];
+  rows.forEach((row, index) => {
+    if (row !== '' && trimExclusionRow(row) === '') {
+      warnings.push({ feature, index, row, reason: WHITESPACE_LAZY_RENDER_REASON });
+    }
+  });
+  return warnings;
+}

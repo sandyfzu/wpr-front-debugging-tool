@@ -83,7 +83,9 @@ describe('lazyloadTransform — restoring a matched image', () => {
       rewritten: 1,
       regionRemovals: 0,
       matchedRows: [{ row: 'photo.jpg', rowKind: 'literal', matches: 1 }],
-      unmatchedRows: []
+      unmatchedRows: [],
+      // No `<noscript>` copy follows: matched against the rebuilt original.
+      approximate: 1
     });
   });
 
@@ -251,6 +253,41 @@ describe("lazyloadTransform — WP Rocket's subjects (real WP Rocket outcomes)",
     expect(
       lazyloadTransform(html, setWithRows([' id="i1" src="/a.jpg" class="k"'])).report.rewritten
     ).toBe(1);
+  });
+
+  it('restores an image whose `data:` source `esc_url` emptied, from its `<noscript>` original', () => {
+    // WP Rocket serves `data-lazy-src=""` for a `data:` src (fixture match-lazyload-data-src).
+    const html = served(
+      `<img id="w3" src="${PLACEHOLDER}" alt="inline" data-lazy-src="">`,
+      '<img id="w3" src="data:image/png;base64,iVBORw0KGgo=" alt="inline">'
+    );
+    const result = lazyloadTransform(html, setWithRows(['data:image/png']));
+    expect(result.report.candidates).toBe(1);
+    expect(
+      result.html.startsWith(
+        '<img id="w3" src="data:image/png;base64,iVBORw0KGgo=" alt="inline" data-wpr-fdt-excluded="lazyload">'
+      )
+    ).toBe(true);
+  });
+
+  it('leaves the `/` and one whitespace before `>` to the ungreedy `\\s?/?>` (PHP-measured)', () => {
+    const lazy = `<img id="i0" src="${PLACEHOLDER}" data-lazy-src="/x.svg">`;
+    // preg_match('#<img(?<atts>\s.+)\s?/?>#iUs') atts, per original:
+    const cases: readonly (readonly [string, string, string])[] = [
+      ['<img id="i0" src="/x.svg" />', '" /', '"'],
+      ['<img id="i0" src="/x.svg"/>', 'svg"/', 'svg"'],
+      ['<img id="i0" src="/x.svg"  />', '"  ', '" '],
+      ['<img id="i0" src="/x.svg"\t/ >', '/ ', '\t/'],
+      ['<img id="i0" alt="x/" src="/x.svg">', '"/x.svg">', 'x/'],
+      ['<img id="i0" src="/x.svg"\n>', 'svg"\n', 'svg"']
+    ];
+    for (const [original, missing, kept] of cases) {
+      const html = served(lazy, original);
+      const rewritten = (row: string) =>
+        lazyloadTransform(html, setWithRows([row])).report.rewritten;
+      expect(rewritten(missing), `${original} ∌ ${missing}`).toBe(0);
+      expect(rewritten(kept), `${original} ∋ ${kept}`).toBe(1);
+    }
   });
 
   it('stops at the first `>` even inside a quoted value (rebuilt original)', () => {

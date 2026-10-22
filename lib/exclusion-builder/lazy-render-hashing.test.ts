@@ -128,13 +128,42 @@ describe('lazy-render hash pass — rebuilt-model limits', () => {
     const analysis = analyzeLazyRender(served, scanTokens(served), ['id="a" class="k">']);
     const tag = scanTags(served).find(isLazyRenderStamped);
     expect(tag).toBeDefined();
-    if (tag !== undefined) expect(analysis.excludingRow(tag)).toBe(0);
+    if (tag !== undefined) expect(analysis.verdict(tag)).toEqual({ kind: 'excluded', row: 0 });
   });
 
-  it('keeps a page in an unknown charset from matching its non-ASCII tags', () => {
-    const served = `<html><head><meta charset="windows-1252"></head><body>\n<div id="a" class="é"><div data-wpr-lazyrender="1" id="b">x</div></div>${TAIL}`;
-    expect(outcome(served, ['é']).excluded).toEqual([]);
-    expect(outcome(served, ['class']).excluded).toEqual([]);
+  it('reports an element whose ancestor cannot be re-serialized as undetermined, never kept', () => {
+    // An unknown charset makes the non-ASCII ancestor's serialization unknown.
+    const served = `<html><head><meta charset="windows-1252"></head><body>\n<div id="a" class="é"><div data-wpr-lazyrender="1" id="b">x</div></div><div data-wpr-lazyrender="1" id="c">y</div>${TAIL}`;
+    const set = (rows: string[]) => ({
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, lazyRender: rows }
+    });
+    const unknown = lazyRenderTransform(served, set(['class']));
+    expect(unknown.report.rewritten).toBe(0);
+    expect(unknown.report.undetermined).toBe(1);
+    expect(lazyRenderRekeyed(served, ['class'])).toBeNull();
+    // A known match below the unknown ancestor still decides.
     expect(outcome(served, ['id="b"']).excluded).toEqual(['b']);
+  });
+
+  it('decides with the rows inert even when a tag cannot be re-serialized', () => {
+    const served = `${UTF8_HEAD}<div id="a" title="a&#1;b"><div data-wpr-lazyrender="1" id="b">x</div></div>${TAIL}`;
+    expect(outcome(served, ['0'])).toEqual({ excluded: [], rekeyed: [] });
+    expect(outcome(served, ['zzz'])).toEqual({ excluded: [], rekeyed: null });
+  });
+});
+
+describe('lazy-render hash pass — libxml serialization details (real WP Rocket outcomes)', () => {
+  it('cuts a stamped element at its first `>`, even inside a raw `<!--…-->` value', () => {
+    // WP Rocket matched `<main data-c="<!-- c -->` (strstr at the first `>`).
+    const served = `${UTF8_HEAD}<main data-wpr-lazyrender="1" data-c="<!-- c -->" id="e0"></main>${TAIL}`;
+    expect(outcome(served, ['id="e0', '">']).excluded).toEqual([]);
+    expect(outcome(served, ['<!-- c --']).excluded).toEqual(['e0']);
+  });
+
+  it('matches an Alpine wrapper as libxml reads it (a bogus `@click` dropped)', () => {
+    const served = `${UTF8_HEAD}<div id="w" x-data="{}" @click="go"><div data-wpr-lazyrender="1" id="a">q</div></div><div data-wpr-lazyrender="1" id="c">z</div>${TAIL}`;
+    expect(outcome(served, ['x-data'])).toEqual({ excluded: ['a'], rekeyed: ['c'] });
+    expect(outcome(served, ['@click'])).toEqual({ excluded: [], rekeyed: [] });
   });
 });
