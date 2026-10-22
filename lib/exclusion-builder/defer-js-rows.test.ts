@@ -78,11 +78,10 @@ describe('deferRowSet — memo', () => {
     expect(deferRowSet([`filler-${String(DEFER_ROW_SET_CACHE_LIMITS.entries - 1)}`])).toBe(last);
   });
 
-  it('keeps a set heavier than its character bound alone (the memo never holds two)', () => {
+  it('never keeps a set heavier than its character bound (translated again, same result)', () => {
     const heavy = Array.from({ length: 80 }, (_, i) => `${'h'.repeat(2000)}${String(i)}`);
     const first = deferRowSet(heavy);
-    expect(deferRowSet(heavy)).toBe(first);
-    deferRowSet(['after-heavy']);
     expect(deferRowSet(heavy)).not.toBe(first);
+    expect(deferRowSet(heavy).problems).toEqual(first.problems);
   });
 });

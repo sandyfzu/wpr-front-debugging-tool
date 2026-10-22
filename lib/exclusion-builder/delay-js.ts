@@ -125,6 +125,8 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
   let candidates = 0;
   let rewritten = 0;
   let regionRemovals = 0;
+  let undetermined = 0;
+  let approximate = 0;
   // Each controller script is removed once — the first of its kind (the
   // tool's own disable semantics; duplicates are just scripts after that).
   let redirectScriptRemoved = false;
@@ -157,9 +159,15 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
     if (!featureWide) {
       // The whole script element is the match target, as WP Rocket saw it
       // before delaying it (rows may also match body text).
-      const rowIndex = matchRow(servedHtml.slice(tag.start, tag.end));
-      if (rowIndex === -1) continue;
-      matchCounts[rowIndex] = (matchCounts[rowIndex] ?? 0) + 1;
+      const verdict = matchRow(servedHtml.slice(tag.start, tag.end));
+      // Its possible originals disagree: left as served, counted undetermined.
+      if (verdict === null) {
+        undetermined++;
+        continue;
+      }
+      if (verdict.approximate) approximate++;
+      if (verdict.row === -1) continue;
+      matchCounts[verdict.row] = (matchCounts[verdict.row] ?? 0) + 1;
     }
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     const restored = restoreDelayedScript(tagText);
@@ -181,7 +189,9 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       candidates,
       rewritten,
       regionRemovals,
-      featureWide
+      featureWide,
+      undetermined,
+      approximate
     })
   };
 }

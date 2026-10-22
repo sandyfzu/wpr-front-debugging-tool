@@ -213,6 +213,18 @@ describe('nameUrl', () => {
     expect(nameUrl('/?wc-ajax=1', PAGE)).toBeNull();
     expect(nameUrl('//example.com/?q=1', PAGE)).toEqual({ text: 'example.com', file: '/' });
   });
+
+  it('names the URL exactly as the markup writes it: slashes, `#`, raw host, backslashes', () => {
+    // A doubled slash after the host is served text: dropping one missed live.
+    expect(nameUrl('https://cdn.ex.com//a.js', PAGE)?.text).toBe('cdn.ex.com//a.js');
+    expect(nameUrl('//cdn.ex.com//a.js?ver=1', PAGE)?.text).toBe('cdn.ex.com//a.js');
+    // `#` does not end the served path (only the query is dropped).
+    expect(nameUrl('/js/a#b.js?ver=2', PAGE)?.text).toBe('js/a#b.js');
+    // The host as written, never its punycode.
+    expect(nameUrl('//ä.test/x.js', PAGE)?.text).toBe('ä.test/x.js');
+    // A URL parser reads `/\x` as another host; the markup still writes it here.
+    expect(nameUrl('/\\cdn/x.js', PAGE)?.text).toBe('\\cdn/x.js');
+  });
 });
 
 describe('resolvePointerPick', () => {
@@ -682,6 +694,42 @@ describe('every picked row matches its element after WP Rocket’s save and runt
     const [ver] = candidates(html);
     expect(ver?.row).toBe('\\sid=["\']?\\x76ersion-1(?=["\'\\s/>])');
     expect(ver && matchesServed(html, ver)).toBe(1);
+  });
+
+  it('accepts every entity form WordPress writes for a value the DOM decoded', () => {
+    for (const served of [
+      "/a'b.js",
+      '/a&#039;b.js',
+      '/a&#39;b.js',
+      '/a&#x27;b.js',
+      '/a&apos;b.js'
+    ]) {
+      const html = `<script type="text/rocketlazyloadscript" data-rocket-src="${served}"></script>`;
+      const [candidate] = candidates(html);
+      expect(candidate?.row, served).toBe("a(?:'|&#0{0,2}39;|&#x0{0,2}27;|&apos;)b\\.js");
+      expect(candidate && matchesServed(html, candidate), served).toBe(1);
+    }
+    const id =
+      '<script type="text/rocketlazyloadscript" id="a&quot;b&lt;c&gt;d&#038;e">x()</script>';
+    const [idCandidate] = candidates(id);
+    expect(idCandidate && matchesServed(id, idCandidate)).toBe(1);
+    // A literal row cannot alternate: Lazyload names a stretch without them.
+    expect(
+      candidates('<img src="data:x" data-lazy-src="/up/a&#039;b/hero-1.jpg">').map(
+        (candidate) => candidate.row
+      )
+    ).toEqual(['b/hero-1.jpg']);
+  });
+
+  it('falls back to the id when the URL names nothing, and skips scripts the engine would not restore', () => {
+    const [byId] = candidates(
+      '<script type="text/rocketlazyloadscript" data-rocket-src="/?x=1" id="cart-js"></script>'
+    );
+    expect(byId?.row).toBe('\\sid=["\']?cart-js(?=["\'\\s/>])');
+    // A parked attribute alone is not a delayed script (the engine's candidacy).
+    expect(
+      candidates('<script data-rocket-src="/a.js" data-rocket-type="module"></script>')
+    ).toEqual([]);
   });
 
   it('never writes a row that is just `0` (the save drops it)', () => {

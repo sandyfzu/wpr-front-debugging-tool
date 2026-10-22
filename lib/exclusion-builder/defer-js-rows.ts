@@ -47,17 +47,20 @@ export interface DeferRowSet {
 }
 
 /**
- * The set memo's bounds: entries, and characters retained (the rows' JSON
- * key plus their translated sources), so a few wire-cap sets cannot pin
- * megabytes in the overlay's realm.
+ * The set memo's bounds: entries, and estimated bytes retained (the rows'
+ * JSON key plus their translated sources, one byte per character), so a
+ * few wire-cap sets cannot pin megabytes in the overlay's realm.
  */
-export const DEFER_ROW_SET_CACHE_LIMITS = { entries: 16, chars: 128 * 1024 } as const;
+export const DEFER_ROW_SET_CACHE_LIMITS = { entries: 16, bytes: 128 * 1024 } as const;
+
+/** Estimated fixed bytes of one kept set (its records, problems and closures). */
+const SET_ENTRY_BYTES = 1024;
 
 /** The memo: the rows (as a JSON key) → their translation. */
 const rowSetMemo = createBoundedMemo<DeferRowSet>({
   maxEntries: DEFER_ROW_SET_CACHE_LIMITS.entries,
-  maxWeight: DEFER_ROW_SET_CACHE_LIMITS.chars,
-  weigh: (key, set) => key.length + set.sourceChars
+  maxWeight: DEFER_ROW_SET_CACHE_LIMITS.bytes,
+  weigh: (key, set) => SET_ENTRY_BYTES + key.length + set.sourceChars
 });
 
 /**

@@ -79,28 +79,36 @@ export interface RegexRowsTranslation {
 }
 
 /**
- * The translation memos' bounds, declared once. Weights are the characters
- * an entry retains (key + JS source), so the worst case is bounded in
- * memory, not only in entries: a realm (the overlay inside a host page
- * included) keeps at most ≈ (`analysisChars` + `regexChars`) × 2 bytes of
- * text, plus the compiled regexes' own size (proportional to their source).
+ * The translation memos' bounds, declared once, in estimated retained
+ * bytes (not only entries): every realm that validates keeps them — the
+ * overlay inside host pages included — so the worst case stays well under
+ * 1 MiB whatever rows come. Estimates measured on V8 (Node 24): a kept
+ * analysis ≈ 700 B + 1 B per character of key and JS source; a compiled
+ * regex ≈ 250 B + up to 5 B per source character once it has run.
  */
 export const TRANSLATION_CACHE_LIMITS = {
-  /** Row analyses kept (a set of up to this many rows translates from the memo). */
-  analysisEntries: 512,
-  /** Characters of keys + JS sources the analysis memo keeps. */
-  analysisChars: 128 * 1024,
-  /** Compiled regexes kept. */
-  regexEntries: 512,
-  /** Characters of JS sources the compiled-regex memo keeps. */
-  regexChars: 64 * 1024
+  /** Row analyses kept at most (a set of up to this many short rows translates from the memo). */
+  analysisEntries: 256,
+  /** Estimated bytes the analysis memo keeps. */
+  analysisBytes: 256 * 1024,
+  /** Compiled regexes kept at most. */
+  regexEntries: 256,
+  /** Estimated bytes the compiled-regex memo keeps. */
+  regexBytes: 192 * 1024
 } as const;
+
+/** Estimated fixed bytes of one kept analysis (its record and arrays). */
+const ANALYSIS_ENTRY_BYTES = 768;
+/** Estimated fixed bytes of one kept regex. */
+const REGEX_ENTRY_BYTES = 256;
+/** Estimated compiled bytes per source character of a kept regex. */
+const REGEX_BYTES_PER_CHAR = 5;
 
 /** Compiled sources (a source already carries its feature's escapes, so it is the whole key). */
 const regexMemo = createBoundedMemo<RegExp>({
   maxEntries: TRANSLATION_CACHE_LIMITS.regexEntries,
-  maxWeight: TRANSLATION_CACHE_LIMITS.regexChars,
-  weigh: (source) => source.length
+  maxWeight: TRANSLATION_CACHE_LIMITS.regexBytes,
+  weigh: (source) => REGEX_ENTRY_BYTES + REGEX_BYTES_PER_CHAR * source.length
 });
 
 /**
@@ -119,8 +127,8 @@ export function compileByteMatcher(matcher: PcreMatcher): (bytes: string) => boo
 /** Row analyses by feature + row: the same text translates differently per feature (escapes). */
 const analysisMemo = createBoundedMemo<RowAnalysis>({
   maxEntries: TRANSLATION_CACHE_LIMITS.analysisEntries,
-  maxWeight: TRANSLATION_CACHE_LIMITS.analysisChars,
-  weigh: (key, analysis) => key.length + (analysis.source?.length ?? 0)
+  maxWeight: TRANSLATION_CACHE_LIMITS.analysisBytes,
+  weigh: (key, analysis) => ANALYSIS_ENTRY_BYTES + key.length + (analysis.source?.length ?? 0)
 });
 
 /**

@@ -98,8 +98,10 @@ describe('delayJsTransform — restoring a live script', () => {
   });
 
   it('overwrites a surviving plain `src` with the parked original', () => {
+    // WP Rocket's served form of `src="real.js" src="placeholder.js"`: its
+    // greedy rename parks the first and leaves the second (PHP-observed).
     const html =
-      '<script type="rocketlazyloadscript" src="placeholder.js" data-rocket-src="real.js"></script>';
+      '<script type="rocketlazyloadscript" data-rocket-src="real.js" src="placeholder.js"></script>';
     const result = delayJsTransform(html, setWithRows(['real\\.js']));
     expect(result.html).toBe('<script src="real.js" data-wpr-fdt-excluded="delay_js"></script>');
     expect(result.html).not.toContain('placeholder.js');

@@ -101,11 +101,28 @@ export function featureRowProblems(
     feature
   ];
   if (reading === undefined) throw new Error(`No PCRE reading for pattern rows of ${feature}`);
-  const byIndex = new Map(reading(rows).map((entry) => [entry.index, entry]));
+  return pcreFeatureProblems(feature, rows, reading(rows));
+}
+
+/**
+ * A pattern feature's problems from its PCRE reading, with the one
+ * empty-row policy: a row empty once trimmed stays the editor's own
+ * mistake, ahead of any PCRE reading — the exact `''` also carries
+ * `match-all` (verified for both features: a filter-delivered `''`
+ * excludes every script). For transforms that already hold the reading.
+ *
+ * @param feature The feature (names the problem rows).
+ * @param rows The rows as given.
+ * @param pcreProblems The feature's PCRE reading of `rows` (entries by row index).
+ * @returns Every problem, in list order.
+ */
+export function pcreFeatureProblems(
+  feature: ExclusionFeatureId,
+  rows: readonly string[],
+  pcreProblems: readonly InvalidExclusionRow[]
+): readonly InvalidExclusionRow[] {
+  const byIndex = new Map(pcreProblems.map((entry) => [entry.index, entry]));
   return rows.flatMap((row, index): InvalidExclusionRow[] => {
-    // An empty row stays the editor's own mistake, ahead of any PCRE reading
-    // (the exact `''` is WP Rocket's match-everything row: verified for both
-    // features — a filter-delivered `''` excludes every script).
     if (trimExclusionRow(row) === '') {
       const matchAll = row === '' ? { problem: 'match-all' as const } : {};
       return [{ feature, index, row, reason: EMPTY_ROW_REASON, ...matchAll }];

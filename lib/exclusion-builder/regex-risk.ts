@@ -55,6 +55,7 @@
  * Syntax the parser does not model is accepted (never a false rejection of
  * a pattern the engine compiles).
  */
+import { createBoundedMemo } from '../../utils/bounded-memo';
 
 /** Why a pattern is risky. */
 export type BacktrackingRisk =
@@ -1232,14 +1233,17 @@ export function analyzeRegexRisk(source: string): RegexRiskAnalysis {
 }
 
 /**
- * Bound of the per-pattern verdict memo: rows are re-validated per
- * document, so it holds a whole worst-case set (two pattern features of up
- * to 500 rows each) with room to spare.
+ * The per-pattern verdict memo: rows are re-validated per document. Bounded
+ * by entries and by the bytes of the sources it keys on — translated
+ * sources run to tens of thousands of characters, and the memo lives in
+ * every realm that validates (the overlay inside host pages included).
  */
-const RISK_MEMO_LIMIT = 1024;
-
-/** Pattern source → verdict (oldest-inserted evicted first). */
-const riskMemo = new Map<string, BacktrackingRisk | null>();
+const riskMemo = createBoundedMemo<BacktrackingRisk | null>({
+  maxEntries: 512,
+  // Estimated retained bytes: a one-byte source string plus its entry.
+  maxWeight: 96 * 1024,
+  weigh: (source) => 64 + source.length
+});
 
 /**
  * The catastrophic-backtracking risk of a pattern the engine compiles
@@ -1250,13 +1254,5 @@ const riskMemo = new Map<string, BacktrackingRisk | null>();
  *   syntax the analysis does not model, which is accepted).
  */
 export function regexBacktrackingRisk(source: string): BacktrackingRisk | null {
-  const memo = riskMemo.get(source);
-  if (memo !== undefined) return memo;
-  const { risk } = analyzeRegexRisk(source);
-  if (riskMemo.size >= RISK_MEMO_LIMIT) {
-    const oldest = riskMemo.keys().next();
-    if (oldest.done !== true) riskMemo.delete(oldest.value);
-  }
-  riskMemo.set(source, risk);
-  return risk;
+  return riskMemo.get(source, () => analyzeRegexRisk(source).risk);
 }

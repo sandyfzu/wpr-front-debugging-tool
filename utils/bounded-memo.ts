@@ -57,9 +57,8 @@ export function createBoundedMemo<V>(limits: BoundedMemoLimits<V>): BoundedMemo<
       if (cached !== undefined) return cached.value;
       const value = build();
       const weight = weigh(key, value);
-      while (entries.size > 0 && (entries.size >= maxEntries || total + weight > maxWeight)) {
-        evictOldest();
-      }
+      if (weight > maxWeight) return value;
+      while (entries.size >= maxEntries || total + weight > maxWeight) evictOldest();
       entries.set(key, { value, weight });
       total += weight;
       return value;

@@ -40,7 +40,7 @@ describe('createBoundedMemo', () => {
     expect(memo.weight).toBe(8);
   });
 
-  it('keeps a value heavier than the whole bound alone, evicting everything else', () => {
+  it('returns but never keeps a value heavier than the whole bound', () => {
     const memo = createBoundedMemo<string>({
       maxEntries: 10,
       maxWeight: 3,
@@ -49,14 +49,10 @@ describe('createBoundedMemo', () => {
     memo.get('small', () => 'ab');
     expect(memo.get('huge', () => 'abcdef')).toBe('abcdef');
     expect(memo.size).toBe(1);
-    expect(memo.weight).toBe(6);
-    const again = vi.fn(() => 'other');
-    expect(memo.get('huge', again)).toBe('abcdef');
-    expect(again).not.toHaveBeenCalled();
-    // The next entry evicts it.
-    memo.get('next', () => 'x');
-    expect(memo.size).toBe(1);
-    expect(memo.weight).toBe(1);
+    expect(memo.weight).toBe(2);
+    const again = vi.fn(() => 'abcdef');
+    memo.get('huge', again);
+    expect(again).toHaveBeenCalledTimes(1);
   });
 
   it('refuses impossible bounds', () => {
