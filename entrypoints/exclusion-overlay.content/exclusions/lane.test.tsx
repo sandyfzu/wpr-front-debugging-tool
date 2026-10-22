@@ -208,6 +208,64 @@ describe('Lane', () => {
     });
   });
 
+  /** A multi-line paste event carrying `text`. */
+  const pasteEvent = (text: string): Event => {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
+    return event;
+  };
+  const droppedWords = '1 pasted line was not added: a lane holds 500 rows at most.';
+
+  it('keeps the paste outcome when focus reaches the pasted row a frame later', async () => {
+    const controller = await readyController();
+    const max = EXCLUSION_SET_LIMITS.rowsPerFeature;
+    controller.insertRows(
+      'delayJs',
+      Array.from({ length: max - 1 }, (_, n) => `r${String(n)}`),
+      null
+    );
+    // The pasted row lands off-screen: rendered only once the list scrolls.
+    const [shown, setShown] = createSignal(1);
+    const scrolled: VirtualizerFactory = (options) => ({
+      ...everyRow(options),
+      getVirtualItems: () => everyRow(options).getVirtualItems().slice(0, shown())
+    });
+    const frames: (() => void)[] = [];
+    const announce = vi.fn<(text: string) => void>();
+    render(() => (
+      <Lane
+        lane="delayJs"
+        controller={controller}
+        report={undefined}
+        pageCount={0}
+        requestFrame={(run) => {
+          frames.push(run);
+        }}
+        locked={false}
+        announce={announce}
+        writeClipboard={() => Promise.resolve('copied')}
+        createVirtualizer={scrolled}
+      />
+    ));
+    input(1).focus();
+    input(1).setSelectionRange(2, 2);
+    input(1).dispatchEvent(pasteEvent('x\ny \nz'));
+    expect(screen.getByText(droppedWords)).toBeTruthy();
+    setShown(max);
+    for (const run of frames.splice(0)) run();
+    expect(document.activeElement).toBe(input(2));
+    // Leaving the pasted row commits it (trimmed): not a lane edit either.
+    input(1).focus();
+    expect(controller.draft().rows.delayJs[1]?.text).toBe('y');
+    expect(screen.getByText(droppedWords)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(droppedWords);
+    // The next edit in the lane clears it.
+    fireEvent.input(input(1), { target: { value: 'r0xx' } });
+    await waitFor(() => {
+      expect(screen.queryByText(droppedWords)).toBeNull();
+    });
+  });
+
   it('splits the row on a trailing line feed too (the field would drop it)', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['ab'], null);
