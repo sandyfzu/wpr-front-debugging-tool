@@ -76,12 +76,42 @@ describe('libxmlTextMode — how the session decoded the bytes', () => {
     expect(modeOf('<html><head><title>é</title><meta charset="utf-8"></head><body>', bom)).toBe(
       'utf-8'
     );
-    expect(modeOf('<html><head><meta charset="bogus"></head><body>', bom)).toBe('utf-8');
+    // libxml keeps UTF-8 for a label it does not know (`bogus`) but switches for every
+    // label it knows (`l1`, `iso-8859-15` → Latin-1; `us-ascii` empties the value):
+    // which is which is not modelled, so any other label is unknown.
+    for (const label of ['bogus', 'l1', 'iso-8859-15', 'us-ascii', 'shift_jis', '']) {
+      expect(modeOf(`<html><head><meta charset="${label}"></head><body>`, bom), label).toBe(
+        'unknown'
+      );
+    }
     expect(
       modeOf('<html><head><meta charset="iso-8859-1"><meta charset="utf-8"></head><body>', bom)
     ).toBe('latin-1-of-utf-8');
     // windows-1252 reads UTF-8 continuation bytes 0x80–0x9F differently: not modelled.
     expect(modeOf('<html><head><meta charset="windows-1252"></head><body>', bom)).toBe('unknown');
+  });
+
+  it("fails closed where libxml's look-ahead may switch a page to UTF-8 (measured)", () => {
+    // Measured (no BOM, `é` in <title> before any declaration): a later
+    // `http-equiv … content … charset=` anywhere — a refresh meta, a Content-Type
+    // meta, even body text — makes libxml read the page as UTF-8; `<meta charset>`,
+    // `<meta name content=charset=…>` and a bare `http-equiv` do not.
+    const lead = '<html><head><title>é</title></head><body><div title="é">x</div>';
+    for (const later of [
+      '<meta http-equiv="refresh" content="5; charset=utf-8">',
+      '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+      '<p>HTTP-EQUIV and CONTENT with CHARSET=utf-8</p>',
+      '<p>http-equiv</p>'
+    ]) {
+      expect(modeOf(`${lead}${later}`), later).toBe('unknown');
+    }
+    for (const later of ['<meta charset="utf-8">', '<meta name="x" content="charset=utf-8">']) {
+      expect(modeOf(`${lead}${later}`), later).toBe('latin-1-of-utf-8');
+    }
+    // An `http-equiv` before the first non-ASCII character is not searched.
+    expect(
+      modeOf('<html><head><meta http-equiv="X-UA-Compatible" content="IE=edge"><title>é</title>')
+    ).toBe('latin-1-of-utf-8');
   });
 
   it('keeps the text before the switching declaration in the starting mode (measured)', () => {

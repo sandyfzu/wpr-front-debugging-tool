@@ -6,8 +6,11 @@
  * declaring a charset, for the text after it:
  * - without a BOM, to the declared charset, unless a non-ASCII byte came
  *   before the declaration (it then stays on Latin-1);
- * - after a BOM, to Latin-1 for an ISO-8859-1 / windows-1252 declaration
- *   (non-ASCII before it or not), else it stays on UTF-8.
+ * - after a BOM, to Latin-1 for an ISO-8859-1 declaration (non-ASCII
+ *   before it or not); it stays on UTF-8 for a UTF-8 one; any other label
+ *   is unknown (libxml switches for every label it knows);
+ * - a non-ASCII byte before any declaration plus a later `http-equiv`
+ *   anywhere is unknown (libxml's look-ahead may switch to UTF-8).
  */
 import { parseTagAt, type ScannedTag } from '../html-scan';
 import { findAttribute } from '../tag-edit';
@@ -50,10 +53,9 @@ const ABOVE_LATIN1 = /[\u0100-\uffff]/;
 /** A charset label inside a `<meta>`'s `content` attribute. */
 const CONTENT_CHARSET = /charset\s*=\s*["']?([^\s;"']+)/i;
 
-/** Labels of UTF-8, of ISO-8859-1, and of windows-1252, as libxml reads them. */
+/** Labels of UTF-8 and of ISO-8859-1, as libxml reads them (measured). */
 const UTF8_LABELS: ReadonlySet<string> = new Set(['utf-8', 'utf8']);
 const LATIN1_LABELS: ReadonlySet<string> = new Set(['iso-8859-1', 'latin1', 'iso8859-1']);
-const WINDOWS_1252_LABELS: ReadonlySet<string> = new Set(['windows-1252', 'cp1252']);
 
 /** The single-byte encoding the session decodes Latin-1 labels with (WHATWG). */
 const SINGLE_BYTE_ENCODING = 'windows-1252';
@@ -107,15 +109,36 @@ function declaredMode(label: string, encoding: string): LibxmlTextMode {
 }
 
 /**
- * The mode after a declaration on a UTF-8 BOM page (measured: Latin-1
- * labels switch, UTF-8 and unrecognized ones keep UTF-8).
+ * The mode after a declaration on a UTF-8 BOM page. Measured: UTF-8 labels
+ * keep UTF-8, ISO-8859-1 labels switch to Latin-1, and libxml switches for
+ * every other label it knows (`l1`, `iso-8859-15`, `shift_jis`… — `us-ascii`
+ * empties the value) while an unknown one (`bogus`) keeps UTF-8. Which labels
+ * libxml knows is not modelled: any other label is unknown.
  *
  * @param label The declared label.
  */
 function declaredModeAfterBom(label: string): LibxmlTextMode {
-  if (LATIN1_LABELS.has(label)) return 'latin-1-of-utf-8';
-  // windows-1252 reads UTF-8's 0x80–0x9F continuation bytes differently from Latin-1.
-  return WINDOWS_1252_LABELS.has(label) ? 'unknown' : 'utf-8';
+  if (UTF8_LABELS.has(label)) return 'utf-8';
+  return LATIN1_LABELS.has(label) ? 'latin-1-of-utf-8' : 'unknown';
+}
+
+/** `http-equiv`, anywhere and in any case — what libxml's look-ahead searches for. */
+const HTTP_EQUIV = /http-equiv/gi;
+
+/**
+ * Whether libxml's look-ahead may switch the page's encoding: at the first
+ * non-ASCII byte before any declaration, libxml searches the rest of the raw
+ * text for `HTTP-EQUIV` … `CONTENT` … `CHARSET=` (case-insensitive, anywhere
+ * — a later refresh meta or body text) and, on a hit, reads the page as
+ * UTF-8 (measured). That search is not modelled: any later `http-equiv`
+ * makes the page unknown.
+ *
+ * @param html The page text.
+ * @param from Offset of the first non-ASCII character.
+ */
+function lookAheadMayDeclare(html: string, from: number): boolean {
+  HTTP_EQUIV.lastIndex = from;
+  return HTTP_EQUIV.test(html);
 }
 
 /**
@@ -145,9 +168,13 @@ export function libxmlTextModes(
       : encoding === SINGLE_BYTE_ENCODING
         ? 'latin-1'
         : 'unknown';
-  if (declaration === null || NON_ASCII.test(html.slice(0, declaration.at))) {
-    return { switchAt, before, after: before };
+  const firstNonAscii = html.search(NON_ASCII);
+  const nonAsciiFirst =
+    firstNonAscii !== -1 && (declaration === null || firstNonAscii < declaration.at);
+  if (nonAsciiFirst && lookAheadMayDeclare(html, firstNonAscii)) {
+    return { switchAt, before: 'unknown', after: 'unknown' };
   }
+  if (nonAsciiFirst || declaration === null) return { switchAt, before, after: before };
   return { switchAt, before, after: declaredMode(declaration.label, encoding) };
 }
 
