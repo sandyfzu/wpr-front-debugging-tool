@@ -57,6 +57,7 @@ import { TOOL_TITLE, saveStateWords, sessionIndicator } from './copy';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph } from './glyph';
+import { createAnnouncer } from './announcer';
 import {
   OVERLAY_MODES,
   type HighlightTarget,
@@ -328,7 +329,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     createVirtualizer: props.createVirtualizer,
     pick: beginPicking,
     highlight: setHighlight,
-    announce: setAnnouncement
+    announce: createAnnouncer(setAnnouncement, (run) => {
+      // eslint-disable-next-line solid/reactivity -- a frame callback: reads the seam when it runs, untracked
+      props.requestFrame(run);
+    })
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
