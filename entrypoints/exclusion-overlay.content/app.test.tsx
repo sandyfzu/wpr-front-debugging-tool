@@ -1,4 +1,5 @@
 import { createSignal } from 'solid-js';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
@@ -645,5 +646,91 @@ describe('stored-form announcements', () => {
     expect(
       screen.getByText('Delay JavaScript execution row 1: WP Rocket stores it as jquery-(.*).js.')
     ).toBeTruthy();
+  });
+});
+
+describe('the "On this page" toggle', () => {
+  afterEach(cleanup);
+
+  /** The toolbar toggle, once the session is ready. */
+  const toggle = (): Promise<HTMLElement> => screen.findByRole('button', { name: /^On this page/ });
+
+  /** The toggle's turning chevron. */
+  const chevronOf = (button: HTMLElement): Element | null => button.querySelector('.xo-chevron');
+
+  it('reads closed: not expanded, no dangling aria-controls, a resting chevron, no list', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    expect(button.classList.contains('xo-disclosure')).toBe(true);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    const chevron = chevronOf(button);
+    expect(chevron?.tagName.toLowerCase()).toBe('svg');
+    expect(chevron?.getAttribute('aria-hidden')).toBe('true');
+    // The chevron trails the label and count.
+    expect(button.lastElementChild).toBe(chevron);
+    expect(document.getElementById('xo-candidates')).toBeNull();
+  });
+
+  it('opens and closes in place: aria-controls resolves while open, focus stays on the toggle', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    button.focus();
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const controls = button.getAttribute('aria-controls');
+    expect(controls).toBe('xo-candidates');
+    const list = document.getElementById(controls ?? '');
+    expect(list?.querySelector('[role="list"]')).not.toBeNull();
+    expect(chevronOf(button)).not.toBeNull();
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+    expect(document.getElementById('xo-candidates')).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('reads disabled while closed and not ready: a press keeps it closed', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    fireEvent.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await screen.findByText('Reloading with your exclusions');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+  });
+
+  it('reads disabled while open and not ready: still expanded, its target still there', async () => {
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await screen.findByText('Reloading with your exclusions');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById(button.getAttribute('aria-controls') ?? '')).not.toBeNull();
+  });
+
+  it('styles the open state from aria-expanded: a fill plus a turned chevron, on motion tokens', () => {
+    // happy-dom applies no shadow stylesheet, so the CSS contract is read as text.
+    const css = readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8');
+    const rule = (selector: string): string => {
+      const start = css.indexOf(`${selector} {`);
+      if (start === -1) throw new Error(`no rule for ${selector}`);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(rule(".xo-disclosure[aria-expanded='true']")).toMatch(
+      /background: var\(--accent-strong\);[\s\S]*color: var\(--on-accent\);/
+    );
+    expect(rule('.xo-chevron')).toContain(
+      'transition: transform var(--motion-fast) var(--ease-standard);'
+    );
+    expect(rule(".xo-disclosure[aria-expanded='true'] .xo-chevron")).toContain(
+      'transform: rotate(180deg);'
+    );
   });
 });

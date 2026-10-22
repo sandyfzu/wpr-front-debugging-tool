@@ -11,8 +11,9 @@
  *   panel, the pill and — while picking — the glass take input.
  *
  * Motion: the panel and pill enter/exit class-driven on the motion tokens
- * (state never waits on a transition); everything else is instant; reduced
- * motion is collapsed by the token stylesheet.
+ * (state never waits on a transition), a disclosure chevron turns;
+ * everything else is instant; reduced motion is collapsed by the token
+ * stylesheet.
  */
 
 /* ---- Layer ------------------------------------------------------------------ */
@@ -323,6 +324,30 @@
 .xo-button[data-variant='ghost']:hover {
   background: var(--surface-3);
   color: var(--fg-primary);
+}
+
+/* An open disclosure reads as selected (the pressed chip's fill) and its
+ * chevron points up — two cues, never colour alone. */
+.xo-disclosure[aria-expanded='true'] {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+.xo-disclosure[aria-expanded='true']:hover {
+  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+}
+
+/* The disclosure chevron's turn: the one sanctioned toggle motion
+ * (transform only; reduced motion collapses it with every transition). */
+.xo-chevron {
+  flex: none;
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.xo-disclosure[aria-expanded='true'] .xo-chevron {
+  transform: rotate(180deg);
 }
 
 /* Held controls stay focusable (aria-disabled), so focus never drops out. */
