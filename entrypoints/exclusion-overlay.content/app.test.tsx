@@ -260,6 +260,40 @@ describe('OverlayApp', () => {
     expect(document.activeElement).toBe(apply);
   });
 
+  it('applies a long paste once it lands when the row is left for Apply meanwhile', async () => {
+    const sessionPort = port({ state: 'inactive' }, { saved: validSet() });
+    const applied = vi.spyOn(sessionPort, 'apply');
+    const { fireTimers } = mount(sessionPort);
+    const row = await screen.findByRole('textbox', { name: 'Delay JavaScript execution row 2' });
+    if (!(row instanceof HTMLInputElement)) throw new Error('the row is no input');
+    row.focus();
+    row.setSelectionRange(2, 2);
+    const lines = Array.from({ length: 200 }, (_, n) => `p${String(n)}.js`).join('\n');
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => `\n${lines}` } });
+    row.dispatchEvent(paste);
+    // The paste is landing: Apply waits for it rather than looking unavailable.
+    const apply = screen.getByRole('button', { name: /^Apply$/ });
+    expect(apply.getAttribute('aria-disabled')).toBeNull();
+    row.blur();
+    fireEvent.click(apply);
+    expect(applied).not.toHaveBeenCalled();
+    // The paste's slices (each one schedules the next).
+    for (let slice = 0; slice < 10; slice++) fireTimers();
+    await waitFor(() => {
+      expect(applied).toHaveBeenCalledTimes(1);
+    });
+    const [set] = applied.mock.calls[0] ?? [];
+    const pasted = lines.split('\n');
+    // The row's text around the caret is kept: before it, then after the last line.
+    expect(set?.rows.delayJs).toEqual([
+      'jquery\\.min\\.js',
+      'gt',
+      ...pasted.slice(0, -1),
+      `${pasted.at(-1) ?? ''}ag`
+    ]);
+  });
+
   it('collapses to the pill on Escape and reopens from it', async () => {
     const { container } = mount(port({ state: 'inactive' }));
     await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });

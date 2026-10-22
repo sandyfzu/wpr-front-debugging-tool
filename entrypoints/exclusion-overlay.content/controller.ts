@@ -92,6 +92,8 @@ export interface OverlayControllerDeps {
   /** Reload the page (the user's manual reload). */
   readonly reload: () => void;
   readonly log: Pick<Logger, 'warn'>;
+  /** Rows a paste commits in one task (default {@link PASTE_SLICE_ROWS}; tests compare paths with it). */
+  readonly pasteSliceRows?: number;
 }
 
 /**
@@ -137,6 +139,12 @@ export type PasteOutcome =
  * edits until its rows land in the draft at once.
  */
 export const PASTE_SLICE_ROWS = 64;
+
+/** An action a long paste holds until its rows land (see {@link OverlayController.pasting}). */
+type HeldAction =
+  | { readonly kind: 'commit-row'; readonly lane: LaneKey; readonly id: string }
+  | { readonly kind: 'commit-lane'; readonly lane: LaneKey }
+  | { readonly kind: 'apply' | 'reset' };
 
 /** The controller's surface. */
 export interface OverlayController {
@@ -185,25 +193,33 @@ export interface OverlayController {
    */
   resync(): void;
   retryLoad(): void;
-  /** Apply the draft (also the Retry of a retryable warning). */
+  /** Apply the draft (also the Retry of a retryable warning); after a long paste lands. */
   apply(): void;
-  /** Discard edits and re-apply the active session's set. */
+  /** Discard edits and re-apply the active session's set; after a long paste lands. */
   reset(): void;
   stop(): void;
   dismissNotice(): void;
   /** Re-run the action whose failure the notice shows. */
   retryFailedAction(): void;
   reloadPage(): void;
-  /** Whether the draft can be edited now (loaded, no action in flight). */
+  /** Whether the draft can be edited now (loaded, no action in flight, no long paste landing). */
   readonly editable: Accessor<boolean>;
+  /**
+   * A long paste is committing (see {@link PASTE_SLICE_ROWS}): editing waits;
+   * row and lane commits, Apply and Reset asked meanwhile run, in order, once
+   * its rows land.
+   */
+  readonly pasting: Accessor<boolean>;
   editRow(lane: LaneKey, id: string, text: string): void;
   /**
    * Commit a row the user left: it becomes the form WP Rocket's settings
    * save stores, or leaves the lane when the save drops it (never while
    * typing). Works in any phase (a row left while an action is in flight is
-   * committed at once); it saves the draft only when ready.
+   * committed at once); it saves the draft only when ready. While a long
+   * paste lands it waits for the paste (it commits the rows the paste made).
    *
-   * @returns What the commit did to the row (null: blank or unknown row).
+   * @returns What the commit did to the row (null: blank or unknown row, or
+   *   waiting for a long paste).
    */
   commitRow(lane: LaneKey, id: string): RowCommit | null;
   /**
@@ -218,7 +234,8 @@ export interface OverlayController {
   undoCommit(lane: LaneKey, id: string): boolean;
   /**
    * Commit every row of a lane (before its rows are copied: a row still
-   * being typed must be copied in its stored form). Works in any phase.
+   * being typed must be copied in its stored form). Works in any phase;
+   * waits for a long paste like {@link OverlayController.commitRow}.
    */
   commitLane(lane: LaneKey): void;
   /**
@@ -289,6 +306,13 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [pasteHeld, setPasteHeld] = createSignal(false);
   /** Stops a long paste between its slices (it settles as ignored). */
   let abortPaste: (() => void) | null = null;
+  /**
+   * Actions asked while a long paste holds the draft, run in order once it
+   * lands: the paste lands on the draft and selection it started from, as a
+   * short paste would have before them (dropped if the overlay closes).
+   */
+  const afterPaste: HeldAction[] = [];
+  const sliceRows = deps.pasteSliceRows ?? PASTE_SLICE_ROWS;
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
   let cancelAutosave: (() => void) | null = null;
@@ -490,7 +514,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       });
       const slice = (): void => {
         abortPaste = null;
-        if (commit.step(PASTE_SLICE_ROWS)) {
+        if (commit.step(sliceRows)) {
           resolve(commit.result());
           return;
         }
@@ -502,6 +526,27 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       };
       slice();
     });
+
+  /**
+   * Hold an action until a long paste lands (when one is landing).
+   *
+   * @returns Whether it was held (the caller then does nothing now).
+   */
+  const heldForPaste = (action: HeldAction): boolean => {
+    if (!pasteHeld()) return false;
+    afterPaste.push(action);
+    return true;
+  };
+
+  /** Run the actions held for a paste, in the order asked. */
+  const runAfterPaste = (): void => {
+    for (const action of afterPaste.splice(0)) {
+      if (action.kind === 'commit-row') controller.commitRow(action.lane, action.id);
+      else if (action.kind === 'commit-lane') controller.commitLane(action.lane);
+      else if (action.kind === 'apply') controller.apply();
+      else controller.reset();
+    }
+  };
 
   /** An edit in a lane: its undos end (and the edited row's note leaves). */
   const noteEdit = (lane: LaneKey, id: string | null): void => {
@@ -636,7 +681,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     apply: () => {
       // A long paste lands first: its rows are part of what is applied.
-      if (pasteHeld() || !canStart(state(), 'apply')) return;
+      if (heldForPaste({ kind: 'apply' }) || !canStart(state(), 'apply')) return;
       // The set carries WP Rocket's stored form: a row still being typed is committed first.
       takeCommit(commitAll(draft()), 'apply');
       // One gate, the same one the session's prevalidation applies (rows
@@ -655,8 +700,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       void runApply('apply', draft());
     },
     reset: () => {
+      if (heldForPaste({ kind: 'reset' })) return;
       const current = status();
-      if (pasteHeld() || current?.state !== 'active' || !canStart(state(), 'reset')) return;
+      if (current?.state !== 'active' || !canStart(state(), 'reset')) return;
       const restored = draftFromSet(current.set, nextId);
       uncommitted.clear();
       batch(() => {
@@ -690,6 +736,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       else controller.stop();
     },
     editable,
+    pasting: pasteHeld,
     reloadPage: () => {
       deps.reload();
     },
@@ -705,6 +752,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       });
     },
     commitRow: (lane, id) => {
+      // A long paste lands on the rows it started from (its selection is
+      // theirs): the row is committed after it.
+      if (heldForPaste({ kind: 'commit-row', lane, id })) return null;
       // Safe while an action is in flight (the inputs are read-only then),
       // so a row left meanwhile is committed at once rather than never.
       const committed = commitRows(draft(), lane, [id]);
@@ -712,6 +762,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       return committed.commits[0] ?? null;
     },
     commitLane: (lane) => {
+      if (heldForPaste({ kind: 'commit-lane', lane })) return;
       takeCommit(
         commitRows(
           draft(),
@@ -753,11 +804,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     pasteRows: (lane, id, text, selection) => {
       if (!editable()) return { kind: 'ignored' };
-      const base = draft();
-      const pasted = pasteIntoRow(base, lane, id, text, selection, nextId);
+      const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
       // Every filled row but the one the caret lands in is committed.
       const targets = pasted.ids.slice(0, -1);
-      if (targets.length <= PASTE_SLICE_ROWS) {
+      if (targets.length <= sliceRows) {
         return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
       }
       setPasteHeld(true);
@@ -765,15 +815,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         (committed): SettledPasteOutcome => {
           setPasteHeld(false);
           if (committed === null) return { kind: 'ignored' };
-          // Nothing edits the draft while the paste holds it; a session load
-          // that replaced it meanwhile gets the paste on its own rows.
-          if (draft() !== base) {
-            const again = pasteIntoRow(draft(), lane, id, text, selection, nextId);
-            return landPaste(lane, id, again, () =>
-              commitRows(again.draft, lane, again.ids.slice(0, -1))
-            );
-          }
-          return landPaste(lane, id, pasted, () => committed);
+          // Nothing changed the draft meanwhile: every edit is gated on
+          // `editable`, every commit, Apply and Reset waited in `afterPaste`
+          // (the load is done before a paste can start).
+          const landed = landPaste(lane, id, pasted, () => committed);
+          runAfterPaste();
+          return landed;
         }
       );
       return { kind: 'pending', done };
@@ -816,6 +863,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       // A long paste cut short settles as ignored: nothing lands.
       abortPaste?.();
       abortPaste = null;
+      afterPaste.length = 0;
       cancelAutosave?.();
       cancelStall?.();
       setReadings.dispose();

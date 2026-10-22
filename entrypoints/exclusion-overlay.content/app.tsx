@@ -462,7 +462,10 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     if (sessionState() !== 'active') return 'Apply';
     return c.dirty() ? 'Apply changes' : 'Re-apply';
   };
-  const resetHeld = (): boolean => held() || !c.dirty();
+  /** Apply and Reset wait for a long paste themselves (they run once it lands). */
+  const pasteOnly = (): boolean => c.pasting() && pending() === null;
+  const actionHeld = (): boolean => held() && !pasteOnly();
+  const resetHeld = (): boolean => actionHeld() || (!c.dirty() && !pasteOnly());
 
   return (
     <div
@@ -653,7 +656,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 type="button"
                 class="xo-button"
                 data-variant="primary"
-                aria-disabled={held() ? 'true' : undefined}
+                aria-disabled={actionHeld() ? 'true' : undefined}
                 aria-busy={pending() === 'apply' || pending() === 'reset'}
                 onClick={() => {
                   c.apply();
