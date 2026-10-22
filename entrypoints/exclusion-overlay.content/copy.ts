@@ -68,7 +68,8 @@ const FIELD_COPY_HINT =
 export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   delayJs: {
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
-    rowHint: 'Regular expression, matched against the script element, case-insensitively',
+    rowHint:
+      'Regular expression, matched against the script element (upper and lower case A–Z count as the same)',
     placeholder: 'wp-content/plugins/slider/',
     noun: 'delayed scripts',
     absent: 'No delayed scripts on this page.',
@@ -77,7 +78,8 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   },
   deferJs: {
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
-    rowHint: 'Regular expression, matched against the script’s src value, case-insensitively',
+    rowHint:
+      'Regular expression, matched against the script’s src value (upper and lower case A–Z count as the same)',
     placeholder: 'jquery\\.min\\.js',
     // WP Rocket's inline-jQuery wrapping is Defer JS's work too: counted with them.
     noun: 'deferred and wrapped scripts',
@@ -85,11 +87,12 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
     copyHint: FIELD_COPY_HINT,
     copiedAs: '',
     limitHint:
-      'WP Rocket’s remote exclusion lists aren’t read here, and the rocket_exclude_defer_js, rocket_defer_jquery_patterns and rocket_defer_inline_exclusions filters are assumed unused.'
+      'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here (assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions).'
   },
   lazyRender: {
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
-    rowHint: 'Text, matched case-insensitively against the element’s opening tag',
+    rowHint:
+      'Text, matched against the element’s opening tag (upper and lower case A–Z count as the same)',
     placeholder: 'id="footer"',
     noun: 'lazily rendered elements',
     absent: 'No lazily rendered elements on this page.',
@@ -101,7 +104,7 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   lazyload: {
     label: LABEL_IMAGE_LAZYLOAD,
     rowHint:
-      'Text, matched against the image’s attributes, case-sensitively (images only: pictures, iframes and background images aren’t previewed)',
+      'Text, matched against the image’s attributes; upper and lower case must match (images only: pictures, iframes and background images aren’t previewed)',
     placeholder: 'hero.jpg',
     noun: 'lazy images',
     absent: 'No lazy images on this page.',

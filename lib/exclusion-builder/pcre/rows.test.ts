@@ -109,8 +109,10 @@ describe('translateRegexRows', () => {
     ]).rows;
     expect(long?.problem?.reason).toBe('This row is not checked here (longer than 8192 bytes)');
     // 1 500 letters fit, but their translation (`[Aa]` each) is past the backtracking guard's cap.
-    expect(nested?.problem?.reason).toBe(
-      'This row is too long or too deeply nested to check for slow matching — shorten it'
+    // Reworded (K.5a.2 audit): the reason names every limit, so it is true for this one too.
+    expect(nested?.problem?.reason).toBe(ROW_REASONS.backtracking('delay_js', 'too-complex'));
+    expect(nested?.problem?.reason).toMatch(
+      /^This row is too long, too deeply nested or too intricate/
     );
   });
 

@@ -314,7 +314,7 @@ test.describe('exclusion builder stored-form notes', () => {
     const { page } = await openBuilder(extension);
     const lazyRender = page.getByRole('region', { name: LAZY_RENDER });
     await expect(lazyRender).toContainText(
-      'Text, matched case-insensitively against the element’s opening tag'
+      'Text, matched against the element’s opening tag (upper and lower case A–Z count as the same)'
     );
     await lazyRender.getByRole('button', { name: 'Add row' }).click();
     await page.keyboard.type('id="footer"');
@@ -336,7 +336,7 @@ test.describe('exclusion builder stored-form notes', () => {
     );
     // Defer JS names what this preview cannot read.
     await expect(page.getByRole('region', { name: DEFER })).toContainText(
-      'WP Rocket’s remote exclusion lists aren’t read here'
+      'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here'
     );
     await page.close();
   });

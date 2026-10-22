@@ -259,6 +259,10 @@ describe('deferJsTransform — joined-row semantics', () => {
     expect(deferJsTransform(DEFERRED, setWithRows(['jquery'])).report).not.toHaveProperty(
       'rowCountsBestEffort'
     );
+    // Feature disabled: no row is consulted, so no count is credited at all.
+    const disabled = deferJsTransform(DEFERRED, setWithRows(['zzz', 'jquery', '\\.js'], true));
+    expect(disabled.report.featureWide).toBe(true);
+    expect(disabled.report).not.toHaveProperty('rowCountsBestEffort');
   });
 
   it('refuses a set WP Rocket would turn off page-wide, naming the rows', () => {

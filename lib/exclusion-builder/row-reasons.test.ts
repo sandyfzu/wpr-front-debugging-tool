@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { translateRegexRows } from './pcre/rows';
+import { regexRowProblems } from './pcre/rows';
 import type { RegexFeatureId } from './pcre/translate';
 import type { BacktrackingRisk } from './regex-risk';
 import { ROW_REASONS } from './row-reasons';
@@ -26,18 +26,35 @@ describe('ROW_REASONS', () => {
     }
   });
 
-  it.each([
-    ['delay_js', 'nested-repetition'],
-    ['delay_js', 'overlapping-alternation'],
-    ['defer_all_js', 'nested-repetition'],
-    ['defer_all_js', 'overlapping-alternation']
-  ] as const)('gives %s an example its own reading flags as %s', (feature, risk) => {
-    const quoted = example(ROW_REASONS.backtracking(feature, risk));
-    expect(quoted).not.toBeNull();
-    // The example, as a stored row of that feature, carries that very risk.
-    const [row] = translateRegexRows(feature, [`${quoted ?? ''}b$`]).rows;
-    expect(row?.problem?.problem).toBe('backtracking-risk');
-    expect(row?.problem?.reason).toBe(ROW_REASONS.backtracking(feature, risk));
+  it('gives only the shapes with a clear example one, never the others', () => {
+    for (const feature of FEATURES) {
+      expect(example(ROW_REASONS.backtracking(feature, 'repeated-backreference'))).toBeNull();
+      expect(example(ROW_REASONS.backtracking(feature, 'too-complex'))).toBeNull();
+    }
+  });
+
+  it('gives every example, exactly as written, its own reason through its feature’s reading', () => {
+    let checked = 0;
+    for (const feature of FEATURES) {
+      for (const risk of RISKS) {
+        const quoted = example(ROW_REASONS.backtracking(feature, risk));
+        if (quoted === null) continue;
+        // The example as a stored row of that feature: no suffix, no anchor added.
+        const [problem] = regexRowProblems(feature, [quoted]);
+        expect(problem?.problem, `${feature} ${quoted}`).toBe('backtracking-risk');
+        expect(problem?.reason, `${feature} ${quoted}`).toBe(
+          ROW_REASONS.backtracking(feature, risk)
+        );
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(4);
+  });
+
+  it('names the limits a too-complex row went past', () => {
+    expect(ROW_REASONS.backtracking('delay_js', 'too-complex')).toMatch(
+      /over \d+ characters, \d+ nested groups, or more work than the check allows/
+    );
   });
 
   it('never shows Delay a `+` or `*` example (Delay reads `+` literally and saves `*` as `(.*)`)', () => {

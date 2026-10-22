@@ -237,7 +237,8 @@ function deferWithInlinePass(
       inlineUnwrapped: inline.unwrapped,
       inlineUndetermined: inline.undetermined,
       ...(rowSet.page === 'unknown' ? { pageState: 'unknown' as const } : {}),
-      rowCountsBestEffort: rows.length > 1
+      // A feature-wide run consults no row: nothing to credit.
+      rowCountsBestEffort: rows.length > 1 && !featureWide
     })
   };
 }

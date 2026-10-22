@@ -26,6 +26,7 @@ import type { InvalidExclusionRow } from './errors';
 import { rowSaveOutcome } from './pcre/rows';
 import type { SaveOutcome } from './pcre/translate';
 import { phpTrim } from './php/trim';
+import { ROW_REASONS } from './row-reasons';
 import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
 import type { StoredRowDropReason } from './stored-row-drops';
 import { sanitizeTextField, submittedText } from './wordpress/sanitize-text-field';
@@ -339,10 +340,6 @@ export function storedExclusionRows(
   return saveExclusionRows(feature, typed).rows;
 }
 
-/** The reason for a set row that is not in WP Rocket's stored form. */
-const NOT_STORED_REASON =
-  'Row is not in the form WP Rocket stores — edit it again so it is saved as WP Rocket would';
-
 /**
  * Rows of a set that are not WP Rocket's stored form (saving the field
  * again would change or drop them): every set the editor sends is already
@@ -357,7 +354,7 @@ export function notStoredRows(set: ExclusionSet): readonly InvalidExclusionRow[]
       (diff, index): InvalidExclusionRow[] =>
         storedText(diff) === diff.typed
           ? []
-          : [{ feature: feature.id, index, row: diff.typed, reason: NOT_STORED_REASON }]
+          : [{ feature: feature.id, index, row: diff.typed, reason: ROW_REASONS.notStored }]
     )
   );
 }

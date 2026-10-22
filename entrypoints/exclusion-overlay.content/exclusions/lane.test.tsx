@@ -745,7 +745,9 @@ describe('Lane counts, hints and copy forms (K.5a.2)', () => {
     ).toHaveLength(1);
     expect(screen.getByText(/^Row counts are best effort/)).toBeTruthy();
     expect(
-      screen.getByText(/rocket_defer_inline_exclusions filters are assumed unused\.$/)
+      screen.getByText(
+        /^WP Rocket’s remote exclusion lists and any custom code filters aren’t read here/
+      )
     ).toBeTruthy();
   });
 

@@ -439,19 +439,29 @@ describe('lane counts and hints (K.5a.2)', () => {
   it('counts Defer JS scripts with the wrapped inline ones, and names its limits', () => {
     expect(LANE_COPY.deferJs.noun).toBe('deferred and wrapped scripts');
     expect(LANE_COPY.deferJs.limitHint).toMatch(
-      /remote exclusion lists aren’t read here.*rocket_exclude_defer_js, rocket_defer_jquery_patterns and rocket_defer_inline_exclusions/
+      /^WP Rocket’s remote exclusion lists and any custom code filters aren’t read here \(assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions\)\.$/
     );
     for (const lane of ['delayJs', 'lazyload', 'lazyRender'] as const)
       expect(LANE_COPY[lane].limitHint).toBeUndefined();
   });
 
   it('hints each lane by WP Rocket’s own matching subject and case', () => {
-    expect(LANE_COPY.delayJs.rowHint).toMatch(/script element, case-insensitively$/);
-    expect(LANE_COPY.deferJs.rowHint).toMatch(/src value, case-insensitively$/);
-    expect(LANE_COPY.lazyload.rowHint).toMatch(/image’s attributes, case-sensitively/);
-    expect(LANE_COPY.lazyRender.rowHint).toMatch(
-      /case-insensitively against the element’s opening tag$/
+    // Plain words, ASCII only (WP Rocket folds A–Z, nothing else).
+    const ascii = '(upper and lower case A–Z count as the same)';
+    expect(LANE_COPY.delayJs.rowHint).toBe(
+      `Regular expression, matched against the script element ${ascii}`
     );
+    expect(LANE_COPY.deferJs.rowHint).toBe(
+      `Regular expression, matched against the script’s src value ${ascii}`
+    );
+    expect(LANE_COPY.lazyRender.rowHint).toBe(
+      `Text, matched against the element’s opening tag ${ascii}`
+    );
+    expect(LANE_COPY.lazyload.rowHint).toMatch(
+      /image’s attributes; upper and lower case must match/
+    );
+    for (const lane of ['delayJs', 'deferJs', 'lazyload', 'lazyRender'] as const)
+      expect(LANE_COPY[lane].rowHint).not.toMatch(/case-(in)?sensitively/);
   });
 
   it('copies Automatic Lazy Rendering as a filter, and says so', () => {

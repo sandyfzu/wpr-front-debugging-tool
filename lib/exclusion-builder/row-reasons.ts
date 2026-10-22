@@ -5,7 +5,7 @@
  * sentence. Entries that name a construct take it already quoted (the PCRE
  * reading caps and backticks it).
  */
-import type { BacktrackingRisk } from './regex-risk';
+import { REGEX_ANALYSIS_LIMITS, type BacktrackingRisk } from './regex-risk';
 import type { RegexFeatureId } from './pcre/translate';
 
 /**
@@ -17,7 +17,8 @@ const RISK_EXAMPLES: Readonly<
   Record<RegexFeatureId, Readonly<Record<'nested-repetition' | 'overlapping-alternation', string>>>
 > = {
   delay_js: { 'nested-repetition': '(a{1,}){1,}', 'overlapping-alternation': '(a|ab){1,}' },
-  defer_all_js: { 'nested-repetition': '(a+)+', 'overlapping-alternation': '(a|ab)*' }
+  // `(a|ab)*` alone can match empty text — a match-all row, not this risk.
+  defer_all_js: { 'nested-repetition': '(a+)+', 'overlapping-alternation': '(a|ab)*c' }
 };
 
 /** The row reasons. */
@@ -30,6 +31,9 @@ export const ROW_REASONS = {
   /** A whitespace-only Automatic Lazy Rendering row (a warning: WP Rocket accepts it). */
   whitespaceOnly:
     'Row is only whitespace — it matches nearly every element (any opening tag holding it)',
+  /** A set row that is not WP Rocket's stored form (the session refuses the set). */
+  notStored:
+    'Row is not in the form WP Rocket stores — edit it again so it is saved as WP Rocket would',
   /** `match-all`: stored, and it matches every subject. */
   matchAll: 'WP Rocket stores this and it excludes every script',
   /** `joined-page-off`: Defer JS's joined pre-check fails on this row. */
@@ -82,7 +86,7 @@ export const ROW_REASONS = {
       case 'repeated-backreference':
         return 'Risky regular expression: a back-reference inside a repeated group can take exponential time';
       case 'too-complex':
-        return 'This row is too long or too deeply nested to check for slow matching — shorten it';
+        return `This row is too long, too deeply nested or too intricate to check for slow matching (over ${String(REGEX_ANALYSIS_LIMITS.chars)} characters, ${String(REGEX_ANALYSIS_LIMITS.groupDepth)} nested groups, or more work than the check allows) — simplify it`;
     }
   }
 } as const;
