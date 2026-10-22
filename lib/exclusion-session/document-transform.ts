@@ -53,7 +53,7 @@ export type UnmodifiedDocumentOutcome = Exclude<ExclusionDocumentOutcome, { outc
 export interface DocumentTransformRequest {
   readonly html: string;
   readonly set: ExclusionSet;
-  /** The document's absolute URL (lets URL-resolving rows match), or null. */
+  /** The document’s absolute URL, or null (passed to the pipeline; no transform resolves URLs today). */
   readonly documentUrl: string | null;
   /** The wall-time budget (ms, positive). */
   readonly budgetMs: number;

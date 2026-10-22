@@ -88,6 +88,25 @@ export function compileMatcher(matcher: PcreMatcher): (subject: string) => boole
   return (subject) => regex.test(toByteString(subject));
 }
 
+/**
+ * Compiled matchers tested as one ordered set: the subject is encoded once,
+ * then each row's matcher runs in list order (rows without one are skipped).
+ *
+ * @param matchers The rows' matchers, in list order (`null` = no matcher).
+ * @returns A stateless lookup of the first matching row's index, or `-1`.
+ */
+export function compileFirstMatch(
+  matchers: readonly (PcreMatcher | null)[]
+): (subject: string) => number {
+  const regexes = matchers.map((matcher) =>
+    matcher === null ? null : new RegExp(matcher.source, matcher.flags)
+  );
+  return (subject) => {
+    const bytes = toByteString(subject);
+    return regexes.findIndex((regex) => regex !== null && regex.test(bytes));
+  };
+}
+
 /** The fixed subject of WP Rocket's Defer JS pre-check. */
 const PRECHECK_SUBJECT = 'dummy-string';
 
@@ -560,18 +579,18 @@ export function translateRegexRows(
 }
 
 /**
- * The rows of a regex feature that do not match here as on the live site, as
- * validation entries carrying their problem id.
+ * A translation's row problems as validation entries carrying their problem
+ * id — for callers that already hold the translation.
  *
  * @param feature `delay_js` or `defer_all_js`.
- * @param rows The stored rows, in order.
+ * @param translation The feature's rows, translated.
  * @returns One entry per row with a problem, in row order.
  */
-export function regexRowProblems(
+export function translationRowProblems(
   feature: RegexFeatureId,
-  rows: readonly string[]
+  translation: RegexRowsTranslation
 ): InvalidExclusionRow[] {
-  return translateRegexRows(feature, rows).rows.flatMap((translated, index) =>
+  return translation.rows.flatMap((translated, index) =>
     translated.problem === null
       ? []
       : [
@@ -584,4 +603,19 @@ export function regexRowProblems(
           }
         ]
   );
+}
+
+/**
+ * The rows of a regex feature that do not match here as on the live site, as
+ * validation entries carrying their problem id.
+ *
+ * @param feature `delay_js` or `defer_all_js`.
+ * @param rows The stored rows, in order.
+ * @returns One entry per row with a problem, in row order.
+ */
+export function regexRowProblems(
+  feature: RegexFeatureId,
+  rows: readonly string[]
+): InvalidExclusionRow[] {
+  return translationRowProblems(feature, translateRegexRows(feature, rows));
 }

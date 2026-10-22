@@ -55,7 +55,7 @@ function candidatesOf(html: string, selector: string): readonly PickCandidate[] 
 /** Each lane's engine transform. */
 const TRANSFORMS: Record<LaneKey, (html: string, set: ExclusionSet) => TransformResult> = {
   delayJs: delayJsTransform,
-  deferJs: (html, set) => deferJsTransform(html, set, PAGE),
+  deferJs: deferJsTransform,
   lazyload: lazyloadTransform,
   lazyRender: lazyRenderTransform
 };

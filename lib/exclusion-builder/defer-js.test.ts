@@ -1,12 +1,12 @@
 /**
- * The Defer JS transform: matches the effective URL (`data-rocket-src`, or
- * `src` — raw and, with a document URL given, document-resolved) of WP
- * Rocket-deferred scripts (the served `data-rocket-defer` marker is the
- * candidacy gate) and strips both defer markers; a bare native `defer` the
- * plugin never stamped is not this feature's work.
+ * The Defer JS transform: matches the raw `src` value WP Rocket captured
+ * (before Delay JS parked it in `data-rocket-src`) of WP Rocket-deferred
+ * scripts (the served `data-rocket-defer` marker is the candidacy gate)
+ * with WP Rocket's joined-row semantics, and strips both defer markers; a
+ * bare native `defer` the plugin never stamped is not this feature's work.
  */
 import { describe, expect, it } from 'vitest';
-import { deferJsTransform } from './defer-js';
+import { deferJsTransform, deferSubject } from './defer-js';
 import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
@@ -141,50 +141,114 @@ describe('deferJsTransform — adversarial markup', () => {
   });
 });
 
-describe('deferJsTransform — document URL resolution', () => {
-  const RELATIVE = '<script src="js/jquery.js" id="jquery" data-rocket-defer defer></script>';
-  const DOC_URL = 'https://s.tld/page/index.html';
+describe('deferJsTransform — the subject: the raw src WP Rocket captured', () => {
+  /** The ids of the scripts a run restored. */
+  function restoredIds(html: string, rows: string[]): string[] {
+    const out = deferJsTransform(html, setWithRows(rows)).html;
+    return [...out.matchAll(/id="([^"]+)" data-wpr-fdt-excluded/g)].map((match) => match[1] ?? '');
+  }
 
-  it('matches the document-resolved absolute form of a relative src (what a DOM reads off script.src)', () => {
-    const result = deferJsTransform(
-      RELATIVE,
-      setWithRows(['^https://s\\.tld/page/js/jquery\\.js$']),
-      DOC_URL
+  // Served by the real DeferJS::defer_js; every expectation below was observed there.
+  const SERVED = [
+    `<script src="/it's.js" id="q" data-rocket-defer defer></script>`,
+    `<script src="/a.js" title=" src='/t.js'" id="t" data-rocket-defer defer></script>`,
+    `<script SRC = ' /w.js ' id="w" data-rocket-defer defer></script>`,
+    '<script src="js/jquery.js" id="r" data-rocket-defer defer></script>'
+  ].join('\n');
+
+  it('never resolves a relative src against the document — the raw value only', () => {
+    const absolute = ['^https://s\\.tld/page/js/jquery\\.js$'];
+    expect(restoredIds(SERVED, absolute)).toEqual([]);
+    expect(restoredIds(SERVED, ['^js/jquery\\.js$'])).toEqual(['r']);
+  });
+
+  it('ends the value at its first quote, as WP Rocket captures it', () => {
+    expect(restoredIds(SERVED, ['s\\.js'])).toEqual([]);
+    expect(restoredIds(SERVED, ['^/it$'])).toEqual(['q']);
+  });
+
+  it('takes the last `src=` that fits, even inside another attribute value', () => {
+    expect(restoredIds(SERVED, ['^/t\\.js$'])).toEqual(['t']);
+    expect(restoredIds(SERVED, ['^/a'])).toEqual([]);
+  });
+
+  it('keeps the whitespace around the value and reads any `src` case', () => {
+    expect(restoredIds(SERVED, ['^ /w\\.js $'])).toEqual(['w']);
+    expect(restoredIds(SERVED, ['^/w'])).toEqual([]);
+  });
+
+  it('reads a delayed script as WP Rocket’s Defer JS saw it, before Delay JS renamed `src`', () => {
+    const delayed = [
+      '<script type="text/rocketlazyloadscript" data-data-rocket-src="/q.js" src="/b.js" id="d" data-rocket-defer defer></script>',
+      '<script type="text/rocketlazyloadscript" data-rocket-src="/a.js" id="x" data-rocket-defer defer></script>'
+    ].join('\n');
+    expect(restoredIds(delayed, ['^/q'])).toEqual([]);
+    expect(restoredIds(delayed, ['^/b'])).toEqual(['d']);
+    expect(restoredIds(delayed, ['^/a\\.js$'])).toEqual(['x']);
+  });
+
+  it('captures nothing from an unquoted src, so no row matches it', () => {
+    expect(deferSubject('<script src=/u.js data-rocket-defer defer>')).toBeNull();
+    expect(deferSubject('<script src="" data-rocket-defer defer>')).toBeNull();
+    expect(deferSubject('<scriptx src="/a.js">')).toBeNull();
+  });
+
+  it('uses PCRE whitespace only: a no-break space is not a separator', () => {
+    expect(deferSubject('<script\u00a0src="/a.js">')).toBeNull();
+    expect(deferSubject('<script\vsrc="/a.js">')).toBe('/a.js');
+  });
+});
+
+describe('deferJsTransform — joined-row semantics', () => {
+  it('matches rows caselessly over the subject bytes, as WP Rocket’s `#…#i`', () => {
+    expect(deferJsTransform(DEFERRED, setWithRows(['JQUERY\\.JS'])).report.rewritten).toBe(1);
+  });
+
+  it('credits the first matching row in list order and says the counts are best effort', () => {
+    const report = deferJsTransform(DEFERRED, setWithRows(['zzz', 'jquery', '\\.js'])).report;
+    expect(report.matchedRows).toEqual([{ row: 'jquery', rowKind: 'pattern', matches: 1 }]);
+    expect(report.unmatchedRows).toEqual(['zzz', '\\.js']);
+    expect(report.rowCountsBestEffort).toBe(true);
+    // One row: its count is exact.
+    expect(deferJsTransform(DEFERRED, setWithRows(['jquery'])).report).not.toHaveProperty(
+      'rowCountsBestEffort'
     );
+  });
+
+  it('refuses a set WP Rocket would turn off page-wide, naming the rows', () => {
+    const throws = (): unknown => deferJsTransform(DEFERRED, setWithRows(['(?<n>a)x', '(?<n>b)y']));
+    expect(throws).toThrow(ExclusionValidationError);
+    try {
+      throws();
+    } catch (error) {
+      expect(
+        (error as ExclusionValidationError).invalid.map(({ index, problem }) => [index, problem])
+      ).toEqual([
+        [0, 'joined-page-off'],
+        [1, 'joined-page-off']
+      ]);
+    }
+  });
+
+  it('refuses rows that match differently joined, or match every script', () => {
+    for (const rows of [['(?-i)zzz', 'A.JS'], ['zzz|']]) {
+      expect(() => deferJsTransform(DEFERRED, setWithRows(rows)), JSON.stringify(rows)).toThrow(
+        ExclusionValidationError
+      );
+    }
+  });
+
+  it('reports an unknown page state instead of claiming WP Rocket defers', () => {
+    // Distinct rows that match empty at most positions, yet are not provably
+    // match-all: the pre-check replay passes its execution budget.
+    const rows = Array.from({ length: 16_000 }, (_, index) => `(?:q${String(index)})?(?!x)`);
+    const result = deferJsTransform(DEFERRED, setWithRows(rows));
+    expect(result.report.pageState).toBe('unknown');
     expect(result.report.rewritten).toBe(1);
-  });
-
-  it('still matches the raw attribute form alongside the resolved one', () => {
-    const result = deferJsTransform(RELATIVE, setWithRows(['^js/jquery\\.js$']), DOC_URL);
-    expect(result.report.rewritten).toBe(1);
-  });
-
-  it('resolves nothing without a document URL — the raw attribute is the only target', () => {
-    expect(deferJsTransform(RELATIVE, setWithRows(['^https://'])).report.rewritten).toBe(0);
-  });
-
-  it('keeps an absolute src a single target — no double match counting', () => {
-    const result = deferJsTransform(DEFERRED, setWithRows(['jquery\\.js']), 'https://s.tld/page/');
-    expect(result.report.matchedRows).toEqual([
-      { row: 'jquery\\.js', rowKind: 'pattern', matches: 1 }
-    ]);
-  });
-
-  it('matches the delay-parked carrier raw, never resolved', () => {
-    const html =
-      '<script type="rocketlazyloadscript" data-rocket-src="js/x.js" data-rocket-defer defer></script>';
-    expect(
-      deferJsTransform(html, setWithRows(['^https://s\\.tld/js/x\\.js$']), 'https://s.tld/p/')
-        .report.rewritten
-    ).toBe(0);
-    expect(
-      deferJsTransform(html, setWithRows(['^js/x\\.js$']), 'https://s.tld/p/').report.rewritten
-    ).toBe(1);
-  });
-
-  it('survives an unresolvable document URL — the raw value stays the only target', () => {
-    const result = deferJsTransform(RELATIVE, setWithRows(['^js/jquery\\.js$']), 'not-a-url');
-    expect(result.report.rewritten).toBe(1);
+    // Feature-wide, the rows are not consulted: no page state, no count caveat.
+    const wide = deferJsTransform(DEFERRED, setWithRows(rows, true)).report;
+    expect(wide).not.toHaveProperty('pageState');
+    expect(wide).not.toHaveProperty('rowCountsBestEffort');
   });
 });
 

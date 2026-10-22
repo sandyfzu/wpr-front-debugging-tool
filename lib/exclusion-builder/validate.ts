@@ -2,8 +2,10 @@
  * All-at-once prevalidation of an exclusion set: every row of every
  * feature is checked, and every problem is named (feature, index, row,
  * reason) — never first-error-only, so an editor can render all feedback
- * inline in one pass. Pure: no compilation state is kept.
+ * inline in one pass. Pure: the same rows always yield the same problems
+ * (Defer JS’s reading is memoized by its own module, never kept here).
  */
+import { deferRowProblems } from './defer-js-rows';
 import type { InvalidExclusionRow } from './errors';
 import { trimExclusionRow } from './field-text';
 import { isIgnoredLazyloadRow, isMatchAllLazyRenderRow } from './literal-rows';
@@ -109,6 +111,18 @@ function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
 }
 
 /**
+ * Pattern features WP Rocket matches with PCRE, keyed to their translator's
+ * row problems (whole-set: some only exist joined) — these replace the
+ * generic JS compile + backtracking checks for that feature's rows. One
+ * entry per feature; features absent here keep the generic checks.
+ */
+const PCRE_ROW_PROBLEMS: Partial<
+  Record<ExclusionFeatureId, (rows: readonly string[]) => readonly InvalidExclusionRow[]>
+> = {
+  defer_all_js: deferRowProblems
+};
+
+/**
  * Validate one feature's rows — all of them.
  *
  * @param feature The feature the rows belong to (names the problem rows).
@@ -121,11 +135,22 @@ export function featureRowProblems(
   rowKind: ExclusionRowKind,
   rows: readonly string[]
 ): readonly InvalidExclusionRow[] {
+  const translated = rowKind === 'pattern' ? PCRE_ROW_PROBLEMS[feature] : undefined;
+  const pcreProblems =
+    translated === undefined
+      ? null
+      : new Map(translated(rows).map((problem) => [problem.index, problem]));
   const problems: InvalidExclusionRow[] = [];
   rows.forEach((row, index) => {
     if (rowKind === 'literal') {
       const problem = literalRowProblem(feature, row, rows);
       if (problem !== null) problems.push({ feature, index, row, ...problem });
+      return;
+    }
+    // An empty row stays the editor's own mistake, ahead of any PCRE reading.
+    if (pcreProblems !== null && trimExclusionRow(row) !== '') {
+      const problem = pcreProblems.get(index);
+      if (problem !== undefined) problems.push(problem);
       return;
     }
     const reason = rowProblem(row, rowKind);
@@ -137,9 +162,9 @@ export function featureRowProblems(
 /**
  * Prevalidate a whole exclusion set — the UI's inline-feedback source and
  * the pipeline's gate: every row of every feature is checked, and the
- * result names each invalid one. Compilation itself lives in
- * `compilePattern`/`compilePatternRows`, which re-run these checks on the
- * throwing path.
+ * result names each invalid one. Each transform re-runs its feature's
+ * checks on its throwing path (`compilePatternRows`, or the feature's own
+ * matcher module).
  *
  * @param set The set as given (rows untrusted until validated).
  */

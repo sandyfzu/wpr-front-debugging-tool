@@ -21,6 +21,7 @@
  * `unavailable` save nothing.
  */
 import type { InvalidExclusionRow } from '../exclusion-builder/errors';
+import { PROBLEM_IDS } from '../exclusion-builder/pcre/problems';
 import type { ExclusionRowMatch, TransformReport } from '../exclusion-builder/report';
 import {
   EXCLUSION_FEATURES,
@@ -483,7 +484,9 @@ const REPORT_KEYS = [
   'matchedRows',
   'unmatchedRows',
   'undetermined',
-  'approximate'
+  'approximate',
+  'pageState',
+  'rowCountsBestEffort'
 ] as const;
 
 /**
@@ -495,6 +498,27 @@ const REPORT_KEYS = [
 function optionalCount(value: unknown, candidates: number): number | undefined | null {
   if (value === undefined) return undefined;
   return isCount(value) && value > 0 && value <= candidates ? value : null;
+}
+
+/**
+ * A report's row caveats: each absent or its one value, and never on a
+ * feature-wide run (it consulted no rows).
+ *
+ * @returns The caveats present, or `null` when invalid.
+ */
+function parseRowCaveats(
+  input: Record<string, unknown>,
+  featureWide: boolean
+): Pick<TransformReport, 'pageState' | 'rowCountsBestEffort'> | null {
+  const pageState = ownValue(input, 'pageState');
+  const bestEffort = ownValue(input, 'rowCountsBestEffort');
+  if (pageState !== undefined && pageState !== 'unknown') return null;
+  if (bestEffort !== undefined && bestEffort !== true) return null;
+  if (featureWide && (pageState !== undefined || bestEffort !== undefined)) return null;
+  return {
+    ...(pageState === undefined ? {} : { pageState }),
+    ...(bestEffort === undefined ? {} : { rowCountsBestEffort: bestEffort })
+  };
 }
 
 /** A feature's rows within a set (registry-derived lookup). */
@@ -524,7 +548,8 @@ function isSubMultiset(rows: readonly string[], pool: readonly string[]): boolea
  * `candidates`, the summed row matches ≤ `candidates` — each candidate
  * counts for its first matching row only), a feature-wide run attributes no
  * rows, and the matched + unmatched rows are drawn from that feature's set
- * rows (which also bounds the report's size by the set's).
+ * rows (which also bounds the report's size by the set's), and the row
+ * caveats hold their one value each.
  */
 function parseTransformReport(
   input: unknown,
@@ -562,6 +587,8 @@ function parseTransformReport(
   const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
   const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
   if (undetermined === null || approximate === null) return null;
+  const caveats = parseRowCaveats(input, featureWide);
+  if (caveats === null) return null;
   return {
     feature,
     featureWide,
@@ -571,7 +598,8 @@ function parseTransformReport(
     matchedRows,
     unmatchedRows,
     ...(undetermined === undefined ? {} : { undetermined }),
-    ...(approximate === undefined ? {} : { approximate })
+    ...(approximate === undefined ? {} : { approximate }),
+    ...caveats
   };
 }
 
@@ -814,20 +842,24 @@ export function parseExclusionSaveReply(input: unknown): ExclusionSaveReply | nu
   return known === undefined ? null : { outcome: 'not-saved', reason: known };
 }
 
-/** Parse one engine-named invalid row. */
+/** The keys of an engine-named invalid row. */
+const INVALID_ROW_KEYS = ['feature', 'index', 'row', 'reason', 'problem'] as const;
+
+/** Parse one engine-named invalid row (its typed `problem` id optional). */
 function parseInvalidRow(input: unknown): InvalidExclusionRow | null {
-  if (!isRecord(input) || !keysAllowed(input, ['feature', 'index', 'row', 'reason'], 'reject')) {
-    return null;
-  }
+  if (!isRecord(input) || !keysAllowed(input, INVALID_ROW_KEYS, 'reject')) return null;
   const feature = ownValue(input, 'feature');
   const index = ownValue(input, 'index');
   const row = ownValue(input, 'row');
   const reason = ownValue(input, 'reason');
+  const problem = ownValue(input, 'problem');
   if (!isFeatureId(feature) || !isCount(index) || !isWireRowText(row)) return null;
   if (index >= EXCLUSION_SET_LIMITS.rowsPerFeature) return null;
   if (typeof reason !== 'string' || reason.length < 1) return null;
   if (reason.length > EXCLUSION_SET_LIMITS.reasonChars || !isPrintable(reason)) return null;
-  return { feature, index, row, reason };
+  if (problem === undefined) return { feature, index, row, reason };
+  const known = PROBLEM_IDS.find((id) => id === problem);
+  return known === undefined ? null : { feature, index, row, reason, problem: known };
 }
 
 /**

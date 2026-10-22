@@ -27,6 +27,7 @@ import { exclusionFieldLines } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
 import { lazyRenderRekeyed } from './lazy-render-hashing';
 import { exclusionPipelineSteps } from './pipeline';
+import type { TransformReport } from './report';
 import {
   EMPTY_EXCLUSION_SET,
   EXCLUSION_FEATURES,
@@ -128,11 +129,20 @@ function setFor(
   return { rows: { ...EMPTY_EXCLUSION_SET.rows, [spec.rowsKey]: rows }, disable };
 }
 
-/** The feature's pipeline step over `html`, returning the rewritten page. */
-function runStep(feature: ExclusionFeatureId, html: string, set: ExclusionSet): string {
+/** The feature's pipeline step over `html`: the rewritten page and the step's report. */
+function runStepResult(
+  feature: ExclusionFeatureId,
+  html: string,
+  set: ExclusionSet
+): { readonly html: string; readonly report: TransformReport } {
   const step = exclusionPipelineSteps(set).find((candidate) => candidate.id === feature);
   if (step === undefined) throw new Error(`no pipeline step for ${feature}`);
-  return step.apply(html).html;
+  return step.apply(html);
+}
+
+/** The feature's pipeline step over `html`, returning the rewritten page. */
+function runStep(feature: ExclusionFeatureId, html: string, set: ExclusionSet): string {
+  return runStepResult(feature, html, set).html;
 }
 
 /**
@@ -154,7 +164,7 @@ type MatchOutcome =
   | {
       readonly candidates: readonly string[];
       readonly excluded: readonly string[];
-      readonly featureOff?: boolean;
+      readonly featureOff?: boolean | 'unknown';
       readonly hashed?: readonly string[];
       readonly rekeyed?: readonly string[] | null;
     }
@@ -182,15 +192,15 @@ function engineRekeyed(row: MatchRow): string[] | null {
 
 /**
  * The engine's outcome for a match row. A validation error is an answer
- * (its problem ids); any other throw is a crash and propagates.
- * The engine has no Defer page-off state yet: `featureOff` is false.
+ * (its problem ids); any other throw is a crash and propagates. Defer's
+ * `featureOff`: a set that turns WP Rocket's Defer off is a validation
+ * error, so a run is `false` — or `'unknown'` when the report says the page
+ * state could not be replayed (never equal to WP Rocket's boolean).
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
-    const excluded = markedKeys(
-      runStep(row.feature, row.served, setFor(row.feature, row.rows)),
-      row.feature
-    );
+    const run = runStepResult(row.feature, row.served, setFor(row.feature, row.rows));
+    const excluded = markedKeys(run.html, row.feature);
     const candidates = engineCandidates(row);
     const lazyRender =
       row.feature === 'automatic_lazy_rendering'
@@ -202,7 +212,9 @@ function engineMatch(row: MatchRow): MatchOutcome {
     return {
       candidates,
       excluded,
-      ...(row.feature === 'defer_all_js' ? { featureOff: false } : {}),
+      ...(row.feature === 'defer_all_js'
+        ? { featureOff: run.report.pageState === 'unknown' ? 'unknown' : false }
+        : {}),
       ...lazyRender
     };
   } catch (error) {

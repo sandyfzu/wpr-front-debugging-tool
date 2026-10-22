@@ -49,7 +49,11 @@ describe('prevalidateExclusionSet', () => {
       expect.objectContaining({ feature: 'defer_all_js', index: 0, row: '[a-' }),
       expect.objectContaining({ feature: 'defer_all_js', index: 1, row: '+bad+[' })
     ]);
-    for (const problem of problems.invalid) expect(problem.reason).toMatch(/regular expression/i);
+    for (const problem of problems.invalid) {
+      if (problem.feature === 'delay_js') expect(problem.reason).toMatch(/regular expression/i);
+      // Defer JS rows are read as WP Rocket's PCRE reads them.
+      else expect(problem).toMatchObject({ problem: 'pcre-invalid', reason: /PCRE rejects/ });
+    }
   });
 
   it('rejects empty and whitespace-only rows — they would match every element', () => {
@@ -130,13 +134,17 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
   it('reports an over-deep row as too complex instead of throwing out of prevalidation', () => {
     const deep = `${'('.repeat(1_875)}a${')'.repeat(1_875)}`;
     expect(() => new RegExp(deep)).not.toThrow();
-    expect(prevalidateExclusionSet(setWith({ deferJs: [deep] })).invalid).toEqual([
+    expect(prevalidateExclusionSet(setWith({ delayJs: [deep] })).invalid).toEqual([
       {
-        feature: 'defer_all_js',
+        feature: 'delay_js',
         index: 0,
         row: deep,
         reason: BACKTRACKING_RISK_REASONS['too-complex']
       }
+    ]);
+    // Defer JS reads it as PCRE does: nested past PCRE's limit, not checked here.
+    expect(prevalidateExclusionSet(setWith({ deferJs: [deep] })).invalid).toEqual([
+      expect.objectContaining({ feature: 'defer_all_js', index: 0, problem: 'pcre-only' })
     ]);
   });
 
@@ -160,6 +168,38 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
     // Smoke ceiling: running the probe would take seconds (3.6 s measured);
     // refusing it takes about a millisecond — 1 s stays robust under CI coverage.
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe('prevalidateExclusionSet — Defer JS rows read joined, as WP Rocket runs them', () => {
+  it('names the rows of a set WP Rocket would turn off page-wide', () => {
+    const problems = prevalidateExclusionSet(setWith({ deferJs: ['ok', '(?<n>a)x', '(?<n>b)y'] }));
+    expect(problems.invalid.map(({ index, problem }) => [index, problem])).toEqual([
+      [1, 'joined-page-off'],
+      [2, 'joined-page-off']
+    ]);
+    // Alone, each row is fine.
+    expect(prevalidateExclusionSet(setWith({ deferJs: ['(?<n>a)x'] })).valid).toBe(true);
+  });
+
+  it('keeps an empty row the editor mistake it is, ahead of the PCRE reading', () => {
+    expect(prevalidateExclusionSet(setWith({ deferJs: ['a', ' '] })).invalid).toEqual([
+      {
+        feature: 'defer_all_js',
+        index: 1,
+        row: ' ',
+        reason: expect.stringMatching(/empty/) as unknown
+      }
+    ]);
+  });
+
+  it('accepts PCRE-only syntax WP Rocket matches (a leading `(?i)` only as the last row: it would leak)', () => {
+    expect(
+      prevalidateExclusionSet(setWith({ deferJs: ['\\A/a\\.js\\z', '^/a{,2}\\.js$', '(?i)x'] }))
+        .valid
+    ).toBe(true);
+    // The same rows stay JS-validated on a feature without a PCRE reading.
+    expect(prevalidateExclusionSet(setWith({ delayJs: ['(?i)x'] })).valid).toBe(false);
   });
 });
 
