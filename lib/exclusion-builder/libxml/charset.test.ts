@@ -4,12 +4,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { scanTags } from '../html-scan';
-import { libxmlCharacters, libxmlTextMode, type DocumentBytes } from './charset';
+import { libxmlCharacters, libxmlTextModeAt, libxmlTextModes, type DocumentBytes } from './charset';
 
-/** The mode of a page whose head/body prefix is `prefix`. */
+/** The mode at a `<div>` that follows the head/body prefix `prefix`. */
 const modeOf = (prefix: string, bytes?: DocumentBytes): string => {
   const html = `${prefix}<div class="x">x</div></body></html>`;
-  return libxmlTextMode(html, scanTags(html), bytes);
+  return libxmlTextModeAt(libxmlTextModes(html, scanTags(html), bytes), prefix.length);
 };
 
 describe('libxmlTextMode — UTF-8 bytes (the default)', () => {
@@ -56,6 +56,40 @@ describe('libxmlTextMode — how the session decoded the bytes', () => {
   it('reads a UTF-8 BOM page as UTF-8 even without a declaration (measured)', () => {
     expect(modeOf(NO_META, { encoding: 'utf-8', bom: true })).toBe('utf-8');
     expect(modeOf(NO_META, { encoding: 'UTF-16LE', bom: true })).toBe('unknown');
+  });
+
+  it('switches a UTF-8 BOM page to Latin-1 after a Latin-1 declaration only (measured)', () => {
+    const bom = { encoding: 'utf-8', bom: true };
+    expect(modeOf('<html><head><meta charset="iso-8859-1"></head><body>', bom)).toBe(
+      'latin-1-of-utf-8'
+    );
+    expect(
+      modeOf(
+        '<html><head><meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"></head><body>',
+        bom
+      )
+    ).toBe('latin-1-of-utf-8');
+    // Non-ASCII before the declaration does not stop the switch after a BOM.
+    expect(modeOf('<html><head><title>é</title><meta charset="latin1"></head><body>', bom)).toBe(
+      'latin-1-of-utf-8'
+    );
+    expect(modeOf('<html><head><title>é</title><meta charset="utf-8"></head><body>', bom)).toBe(
+      'utf-8'
+    );
+    expect(modeOf('<html><head><meta charset="bogus"></head><body>', bom)).toBe('utf-8');
+    expect(
+      modeOf('<html><head><meta charset="iso-8859-1"><meta charset="utf-8"></head><body>', bom)
+    ).toBe('latin-1-of-utf-8');
+    // windows-1252 reads UTF-8 continuation bytes 0x80–0x9F differently: not modelled.
+    expect(modeOf('<html><head><meta charset="windows-1252"></head><body>', bom)).toBe('unknown');
+  });
+
+  it('keeps the text before the switching declaration in the starting mode (measured)', () => {
+    const html =
+      '<html><head></head><body><div class="é">x</div><meta charset="iso-8859-1"></body></html>';
+    const modes = libxmlTextModes(html, scanTags(html), { encoding: 'utf-8', bom: true });
+    expect(libxmlTextModeAt(modes, html.indexOf('<div'))).toBe('utf-8');
+    expect(libxmlTextModeAt(modes, html.length)).toBe('latin-1-of-utf-8');
   });
 
   it('reads single-byte bytes as Latin-1 only where libxml decodes Latin-1', () => {

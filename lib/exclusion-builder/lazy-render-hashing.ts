@@ -23,7 +23,12 @@
  */
 import { LAZY_RENDER_ATTRIBUTE } from '../wp-rocket/constants';
 import { isEndTag, scanTokens, type ScannedTag, type ScannedToken } from './html-scan';
-import { libxmlTextMode, type DocumentBytes, type LibxmlTextMode } from './libxml/charset';
+import {
+  libxmlTextModeAt,
+  libxmlTextModes,
+  type DocumentBytes,
+  type LibxmlTextModes
+} from './libxml/charset';
 import { libxmlOpeningTag } from './libxml/serialize';
 import { buildLibxmlTree, type LibxmlTree, type TreeElement } from './libxml/tree';
 import { asciiLowerCase, lazyRenderRowsInert } from './literal-rows';
@@ -180,7 +185,7 @@ export function analyzeLazyRender(
   bytes?: DocumentBytes
 ): LazyRenderAnalysis {
   const tree = buildLibxmlTree(tokens);
-  let mode: LibxmlTextMode | null = null;
+  let modes: LibxmlTextModes | null = null;
   const loweredRows = lazyRenderRowsInert(rows) ? [] : rows.map(asciiLowerCase);
   const rowCache = new Map<TreeElement, RowMatch>();
 
@@ -189,14 +194,14 @@ export function analyzeLazyRender(
     const cached = rowCache.get(element);
     if (cached !== undefined) return cached;
     const tagText = servedHtml.slice(element.tag.start, element.tag.openingEnd);
-    mode ??= libxmlTextMode(
+    modes ??= libxmlTextModes(
       servedHtml,
       tokens.filter((token): token is ScannedTag => !isEndTag(token)),
       bytes
     );
     const subject = isLazyRenderStamped(element.tag)
       ? stampedSubject(tagText, element.tag.name)
-      : libxmlOpeningTag(tagText, mode);
+      : libxmlOpeningTag(tagText, libxmlTextModeAt(modes, element.tag.start));
     const lowered = subject === null ? null : asciiLowerCase(subject);
     const row: RowMatch =
       lowered === null ? 'unknown' : loweredRows.findIndex((r) => lowered.includes(r));

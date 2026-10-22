@@ -166,4 +166,9 @@ describe('lazy-render hash pass — libxml serialization details (real WP Rocket
     expect(outcome(served, ['x-data'])).toEqual({ excluded: ['a'], rekeyed: ['c'] });
     expect(outcome(served, ['@click'])).toEqual({ excluded: [], rekeyed: [] });
   });
+
+  it('keeps a `.prop` binding libxml keeps', () => {
+    const served = `${UTF8_HEAD}<div id='w' .prop="x"><div data-wpr-lazyrender="1" id="a">q</div></div><div data-wpr-lazyrender="1" id="c">z</div>${TAIL}`;
+    expect(outcome(served, ['.prop'])).toEqual({ excluded: ['a'], rekeyed: ['c'] });
+  });
 });

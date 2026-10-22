@@ -67,6 +67,10 @@ describe('libxmlOpeningTag — UTF-8 pages (measured)', () => {
       '<div data-foo="1" xml:lang="x" :class="y" x-on:click.prevent="z">'
     ],
     ['<div a.b="1" _a="1" xmlns:foo="x">', '<div a.b="1" _a="1" xmlns:foo="x">'],
+    // A name may start with a letter, `_`, `:` or `.` (every ASCII start measured).
+    ['<div .a="1" id="k">', '<div .a="1" id="k">'],
+    ['<main\t.a>', '<main .a>'],
+    ['<div :a="1" _b="2">', '<div :a="1" _b="2">'],
     ['<div href="a b">', '<div href="a%20b">'],
     ['<div src=" \t\na">', '<div src="a">'],
     ['<div href="a ">', '<div href="a%20">'],

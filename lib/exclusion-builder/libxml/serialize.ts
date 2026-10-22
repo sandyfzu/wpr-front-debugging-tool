@@ -4,7 +4,8 @@
  * the text WP Rocket's lazy-render pass matches rows against. Measured
  * against the real library (PHP 8.1 / libxml 2.9.13):
  *
- * - start tag: attribute names `[A-Za-z_:][-A-Za-z0-9_:.]*`, lowercased; a
+ * - start tag: attribute names `[A-Za-z_:.][-A-Za-z0-9_:.]*` (measured over
+ *   every ASCII character), lowercased; a
  *   name may be followed by `=` and a value (quoted, or unquoted up to a
  *   blank or `>`); anything else is a bogus attribute, skipped up to the next
  *   blank, `>` or `/>` regardless of quotes (`@click="a b"` leaves `b`); the
@@ -50,7 +51,7 @@ const URI_ATTRIBUTES: ReadonlySet<string> = new Set(['href', 'src', 'action']);
 const TAG_NAME = /^<([A-Za-z][A-Za-z0-9]*)(?=[ \t\n\r/>])/;
 
 /** An attribute name at a given offset. */
-const ATTRIBUTE_NAME = /[A-Za-z_:][-A-Za-z0-9_:.]*/y;
+const ATTRIBUTE_NAME = /[A-Za-z_:.][-A-Za-z0-9_:.]*/y;
 
 /** libxml's blanks (no form feed). */
 const BLANK = /[ \t\n\r]/;
@@ -65,7 +66,7 @@ const NAMED_REFERENCE = /&([A-Za-z0-9]+);/y;
  * On a Latin-1 page, an `&` whose name runs into a non-ASCII byte: libxml
  * drops part of that name — not modelled.
  */
-const LATIN1_NAME_INTO_BYTE = /&[A-Za-z0-9]*[\u0080-￿]/;
+const LATIN1_NAME_INTO_BYTE = /&[A-Za-z0-9]*[\u0080-\uffff]/;
 
 /** URI characters libxml leaves unescaped: unreserved marks + its own list. */
 const URI_KEPT = /[A-Za-z0-9\-_.!~*'()@/:=?;#%&,+<>]/;

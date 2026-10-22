@@ -1,8 +1,9 @@
 /**
  * The Image Lazyload transform: restores real image sources from WP
- * Rocket's lazy markup. Candidate images carry a truthy `data-lazy-src`, or
- * an empty one next to their `<noscript>` original (WP Rocket's `esc_url`
- * empties a `data:` source); srcset/sizes-only images are not candidates.
+ * Rocket's lazy markup. Candidate images carry a `data-lazy-src` with a value
+ * — possibly empty (WP Rocket's `esc_url` empties a `data:` source: restored
+ * from the `<noscript>` original, else undetermined); srcset/sizes-only
+ * images are not candidates.
  * Rows are LITERAL, case-sensitive substrings tested as WP Rocket tests
  * them, against the original image: its `atts` (after `<img` up to the
  * first `>`, even one inside a quoted value, less a trailing `/` and one
@@ -188,7 +189,8 @@ function restoreImage(tagText: string): string {
  * though the served markup still holds the placeholder. The rewrite stamps
  * the exclusion marker as CSV (the detection layer reads it as its
  * "excluded by FDT" reason). Images matched against a rebuilt original (no
- * `<noscript>` copy) are counted `approximate`.
+ * `<noscript>` copy) are counted `approximate`; an emptied carrier without
+ * that copy, `undetermined`.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Lazyload literal rows; no toggle exists).
@@ -206,18 +208,24 @@ export function lazyloadTransform(servedHtml: string, set: ExclusionSet): Transf
   let candidates = 0;
   let rewritten = 0;
   let approximate = 0;
+  let undetermined = 0;
   for (const tag of scanTags(servedHtml)) {
     if (tag.name !== IMG_TAG) continue;
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     const lazySrc = findAttribute(parseTagAt(tagText, 0), DATA_LAZY_SRC);
     if (lazySrc === null) continue;
     const original = originalImage(servedHtml, tag.start, tag.openingEnd);
-    // Candidacy is a truthy `data-lazy-src`, or an empty one WP Rocket wrote
-    // itself (`esc_url` empties a `data:` source) next to its `<noscript>`
-    // original, which still holds the real `src`. Any other empty or
-    // valueless carrier is not the plugin's lazyload work.
-    if (!lazySrc.value && !original.exact) continue;
+    // Candidacy is a `data-lazy-src` with a value — WP Rocket writes an empty
+    // one when `esc_url` empties the source (`data:`, `javascript:`, an
+    // unknown scheme). A valueless carrier is not the plugin's lazyload work.
+    if (lazySrc.value === null) continue;
     candidates++;
+    // An empty carrier without its `<noscript>` original: the real source is
+    // gone, so the image can neither be matched nor restored — undetermined.
+    if (!lazySrc.value && !original.exact) {
+      undetermined++;
+      continue;
+    }
     if (!original.exact) approximate++;
     // First matching row wins.
     const rowIndex = excludingRow(rows, original.text);
@@ -244,7 +252,8 @@ export function lazyloadTransform(servedHtml: string, set: ExclusionSet): Transf
       rewritten,
       regionRemovals: 0,
       featureWide: false,
-      approximate
+      approximate,
+      undetermined
     })
   };
 }

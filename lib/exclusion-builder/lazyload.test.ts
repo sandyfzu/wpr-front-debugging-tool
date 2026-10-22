@@ -56,10 +56,14 @@ describe('lazyloadTransform — candidacy', () => {
     expect(result.html).toBe(html);
   });
 
-  it('is not a candidate on a valueless or empty `data-lazy-src`', () => {
+  it('skips a valueless `data-lazy-src`, and reports an empty one without its original undetermined', () => {
+    // WP Rocket writes `data-lazy-src=""` when `esc_url` empties the source; with no
+    // `<noscript>` original the real source is gone — counted, never silently skipped.
     const html = '<img src="ph" data-lazy-src><img src="ph2" data-lazy-src="">';
     const result = lazyloadTransform(html, setWithRows(['ph']));
-    expect(result.report.candidates).toBe(0);
+    expect(result.report.candidates).toBe(1);
+    expect(result.report.undetermined).toBe(1);
+    expect(result.report.rewritten).toBe(0);
     expect(result.html).toBe(html);
   });
 
