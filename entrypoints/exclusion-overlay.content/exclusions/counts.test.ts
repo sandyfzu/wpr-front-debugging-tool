@@ -36,9 +36,16 @@ describe('laneReport / laneCounts', () => {
       undetermined: 0,
       approximate: 0,
       inlineUnknown: false,
-      bestEffort: false
+      bestEffort: false,
+      pageUnknown: false
     });
     expect(laneCounts(undefined)).toBeNull();
+  });
+
+  it('reads a page state the engine could not check', () => {
+    const defer: TransformReport = { ...DELAY, feature: 'defer_all_js', pageState: 'unknown' };
+    expect(laneCounts(defer)?.pageUnknown).toBe(true);
+    expect(laneCounts({ ...DELAY, feature: 'defer_all_js' })?.pageUnknown).toBe(false);
   });
 
   it('splits the inline-jQuery share out of the undetermined count', () => {

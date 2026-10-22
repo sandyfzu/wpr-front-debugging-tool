@@ -9,6 +9,7 @@ import type { VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { createOverlayController, type OverlayController } from '../controller';
 import type { ExclusionSessionPort, PortOutcome } from '../session/port';
 import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
+import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { Lane } from './lane';
 import type { LaneKey } from './draft';
 
@@ -841,5 +842,118 @@ describe('Lane counts, hints and copy forms (K.5a.2)', () => {
     expect(announce).toHaveBeenCalledWith(
       'Nothing to copy yet: add an exclusion to this lane first.'
     );
+  });
+});
+
+describe('Lane page-wide state (K.5b)', () => {
+  afterEach(cleanup);
+
+  const deferInput = (n: number): HTMLInputElement =>
+    screen.getByRole('textbox', {
+      name: new RegExp(`^Load JavaScript deferred row ${String(n)}$`)
+    });
+  const pageOff = (): HTMLElement | null => document.querySelector('[data-page-off]');
+  const UNKNOWN = 'WP Rocket may defer no script on this page with these rows — not checked here.';
+
+  it('names the row behind a page-off above the rows; Go to focuses it', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ['jquery', '.*'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    const message = pageOff();
+    expect(message).not.toBeNull();
+    // Above the rows, a group named by its lead.
+    expect(
+      message?.compareDocumentPosition(deferInput(1)) === Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBe(true);
+    expect(
+      screen.getByRole('group', { name: /^WP Rocket would stop deferring every script/ })
+    ).toBe(message);
+    expect(message?.textContent).toBe(
+      'WP Rocket would stop deferring every script on this page because of this row:Go to row 2.*Edit or remove it to apply.'
+    );
+    // The row keeps its own words (no repeat of the page-wide consequence).
+    const rowProblem = document.getElementById(
+      deferInput(2).getAttribute('aria-describedby') ?? ''
+    );
+    expect(rowProblem?.textContent).toBe(ROW_REASONS.joinedPageOff);
+    expect(ROW_REASONS.joinedPageOff).not.toMatch(/every script|defer no script/);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to row 2' }));
+    expect(document.activeElement).toBe(deferInput(2));
+  });
+
+  it('names an unverified row behind a page-off, with a blank row counted in its position', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ['a\\.js', '', '\\p{L}\\Qab'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(screen.getByRole('button', { name: 'Go to row 3' })).toBeTruthy();
+    expect(pageOff()?.querySelector('code')?.textContent).toBe('\\p{L}\\Qab');
+    expect(deferInput(3).getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('takes focus when an apply is refused for it, and leaves once the row is fixed', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ['.*'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    controller.apply();
+    expect(document.activeElement).toBe(pageOff());
+    expect(pageOff()?.getAttribute('tabindex')).toBe('-1');
+    fireEvent.input(deferInput(1), { target: { value: 'jquery' } });
+    expect(pageOff()).toBeNull();
+  });
+
+  it('names three rows and counts the rest, plural words', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ["(?'n'a)", "(?'n'b)", "(?'n'c)", "(?'n'd)"], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(pageOff()?.querySelectorAll('li')).toHaveLength(3);
+    expect(screen.getByText(/because of these rows:$/)).toBeTruthy();
+    expect(screen.getByText('And 1 more row.')).toBeTruthy();
+    expect(screen.getByText('Edit or remove them to apply.')).toBeTruthy();
+  });
+
+  it('shows no page message for a joined-only row problem, nor for a page that is on', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ['(?-i)zzz', 'A.JS'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(pageOff()).toBeNull();
+    expect(deferInput(1).getAttribute('aria-invalid')).toBe('true');
+    fireEvent.input(deferInput(1), { target: { value: 'zzz' } });
+    expect(pageOff()).toBeNull();
+    expect(screen.queryByText(UNKNOWN)).toBeNull();
+  });
+
+  it('notes an unchecked page state without blocking, never while the feature is disabled', async () => {
+    const controller = await readyController();
+    controller.insertRows('deferJs', ['\\p{L}'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(screen.getByText(UNKNOWN)).toBeTruthy();
+    expect(controller.invalidCount()).toBe(0);
+    expect(pageOff()).toBeNull();
+    fireEvent.click(
+      screen.getByRole('switch', { name: 'Disable feature: Load JavaScript deferred on this page' })
+    );
+    expect(screen.queryByText(UNKNOWN)).toBeNull();
+  });
+
+  it('qualifies the applied counts when the report could not check the page — once', async () => {
+    const report: TransformReport = {
+      feature: 'defer_all_js',
+      featureWide: false,
+      candidates: 4,
+      rewritten: 1,
+      regionRemovals: 0,
+      matchedRows: [],
+      unmatchedRows: [],
+      pageState: 'unknown'
+    };
+    const caveat = /^These counts assume WP Rocket defers scripts on this page/;
+    const controller = await readyController();
+    const [row = ''] = controller.insertRows('deferJs', ['zzz'], null);
+    mountLane(controller, report, undefined, undefined, 'deferJs');
+    expect(screen.getByText(caveat)).toBeTruthy();
+    // The rows as they are now aren't checked either: the lane note says it, the caveat steps back.
+    controller.editRow('deferJs', row, '\\p{L}');
+    expect(screen.getByText(UNKNOWN)).toBeTruthy();
+    expect(screen.queryByText(caveat)).toBeNull();
   });
 });

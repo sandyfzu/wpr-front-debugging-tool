@@ -53,6 +53,7 @@ import {
   type CommitSource,
   type DraftNotes
 } from './exclusions/row-notes';
+import { lanePage as readLanePage, type LanePage } from './exclusions/lane-page';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
@@ -121,6 +122,18 @@ export interface OverlayController {
   /** The latest focus request (a fresh object per request). */
   readonly focusRequest: Accessor<FocusRequest | null>;
   /**
+   * The latest request to focus a lane's page-wide message (a refused apply
+   * whose rows turn a feature off for the whole page; a fresh object per
+   * request).
+   */
+  readonly pageMessageFocus: Accessor<{ readonly lane: LaneKey } | null>;
+  /**
+   * A lane's rows read as one set, as WP Rocket runs them on the page (its
+   * page state and the rows behind a page-wide failure); `null` for a lane
+   * whose rows act alone.
+   */
+  lanePage(lane: LaneKey): LanePage | null;
+  /**
    * What the editor tells about committed rows — WP Rocket's save applied
    * at commit (stored form, drop and its reason, unverified, safe-mode flag,
    * each with the typed text): row notes, removals and the latest batch to
@@ -129,7 +142,9 @@ export interface OverlayController {
   readonly notes: Accessor<DraftNotes>;
   /**
    * A row's problem: the background's reason from the last refused apply
-   * (until the row changes), else the engine's prevalidation.
+   * (until the row changes), else the engine's prevalidation — the lane's
+   * rows read as one set first (problems that exist only joined), then the
+   * row alone.
    */
   rowProblem(lane: LaneKey, id: string, text: string): string | null;
   /** A row's non-blocking warning (WP Rocket accepts it; it is almost surely a mistake). */
@@ -240,6 +255,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [saveState, setSaveState] = createSignal<SaveState>({ kind: 'idle' });
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
+  const [pageMessageFocus, setPageMessageFocus] = createSignal<{ readonly lane: LaneKey } | null>(
+    null
+  );
   const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
@@ -279,8 +297,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return current.phase === 'ready' && current.pending === null;
   });
 
+  // One memo per lane, fed by that lane's rows only: an edit elsewhere never
+  // re-reads it (a lane's array keeps its identity through other lanes' edits).
+  const lanePages = new Map<LaneKey, Accessor<LanePage | null>>(
+    LANE_ORDER.map((lane) => {
+      const rows = createMemo(() => draft().rows[lane]);
+      const page = createMemo(() => readLanePage(lane, rows()));
+      return [lane, page];
+    })
+  );
+  const lanePage = (lane: LaneKey): LanePage | null => lanePages.get(lane)?.() ?? null;
+
   const rowProblem = (lane: LaneKey, id: string, text: string): string | null =>
-    serverInvalid().get(id) ?? validate(lane, text);
+    serverInvalid().get(id) ?? lanePage(lane)?.problems.get(id) ?? validate(lane, text);
 
   const invalidCount = createMemo(() => {
     let count = 0;
@@ -445,10 +474,20 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
     if (outcome.reply.outcome === 'invalid') {
       setServerInvalid(invalidRowsById(applied, outcome.reply.invalid));
-      focusFirstInvalid();
+      focusBlocker();
     }
     dispatch({ type: 'apply-answered', reply: outcome.reply, at: deps.now() });
     watchReload();
+  };
+
+  /**
+   * Move focus to what blocks the apply: a lane's page-wide message (it
+   * names its rows and leads to them), else the first row with a problem.
+   */
+  const focusBlocker = (): void => {
+    const pageOff = LANE_ORDER.find((lane) => (lanePage(lane)?.offRows.length ?? 0) > 0);
+    if (pageOff === undefined) focusFirstInvalid();
+    else setPageMessageFocus({ lane: pageOff });
   };
 
   /** Move focus to the first row with a problem. */
@@ -473,6 +512,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dirty,
     invalidCount,
     focusRequest,
+    pageMessageFocus,
+    lanePage,
     notes,
     rowProblem,
     rowWarning,
@@ -497,9 +538,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!canStart(state(), 'apply')) return;
       // The set carries WP Rocket's stored form: a row still being typed is committed first.
       takeCommit(commitAll(draft()), 'apply');
+      // A page-wide failure is a row problem too (the rows behind it carry
+      // it): one gate, the same one the session's prevalidation applies.
       if (invalidCount() > 0) {
         dispatch({ type: 'apply-blocked', block: { kind: 'invalid', rows: invalidCount() } });
-        focusFirstInvalid();
+        focusBlocker();
         return;
       }
       if (draftChars(draft()) > EXCLUSION_SET_LIMITS.totalChars) {

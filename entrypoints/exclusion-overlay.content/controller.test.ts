@@ -13,7 +13,9 @@ import {
   invalidRowsById,
   type OverlayController
 } from './controller';
-import { draftFromSet, createIdSource } from './exclusions/draft';
+import { draftFromSet, draftToSet, createIdSource } from './exclusions/draft';
+import { ROW_REASONS } from '../../lib/exclusion-builder/row-reasons';
+import { prevalidateExclusionSet } from '../../lib/exclusion-builder/validate';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
 /** A manual timer queue standing in for the context's timers. */
@@ -964,5 +966,84 @@ describe('commitLane', () => {
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['a(.*)']);
     expect(controller.draft().rows.lazyload.map((row) => row.text)).toEqual([' b.png ']);
     expect(controller.notes().lanes.delayJs.rows.get(delay)?.undoable).toBe(true);
+  });
+});
+
+describe('Defer JS page-wide failure (K.5b)', () => {
+  it('blocks an apply whose rows turn Defer JS off page-wide, focusing the page message', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller } = await started(port);
+    // `.*` consumes all of WP Rocket's pre-check subject: Defer JS turns off page-wide.
+    const [, all = ''] = controller.insertRows('deferJs', ['jquery', '.*', 'gtag'], null);
+    expect(controller.lanePage('deferJs')?.offRows).toEqual([
+      { id: all, position: 2, stored: '.*' }
+    ]);
+    expect(controller.rowProblem('deferJs', all, '.*')).toBe(ROW_REASONS.joinedPageOff);
+    expect(controller.invalidCount()).toBe(1);
+    const rowFocus = controller.focusRequest();
+    controller.apply();
+    expect(port.apply).not.toHaveBeenCalled();
+    expect(controller.state()).toMatchObject({ notice: { kind: 'invalid', rows: 1 } });
+    expect(controller.pageMessageFocus()).toEqual({ lane: 'deferJs' });
+    // Focus goes to the message, not to a row.
+    expect(controller.focusRequest()).toBe(rowFocus);
+    // The fix: the row edited — the page is on, the notice leaves, the apply goes out.
+    controller.editRow('deferJs', all, '\\.js$');
+    expect(controller.lanePage('deferJs')).toEqual({
+      page: 'on',
+      offRows: [],
+      problems: new Map()
+    });
+    expect(controller.invalidCount()).toBe(0);
+    expect(controller.state()).toMatchObject({ notice: null });
+    controller.apply();
+    expect(port.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks on an unverified row behind the page-off, which the session refuses too', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller } = await started(port);
+    const [, unverified = ''] = controller.insertRows('deferJs', ['a\\.js', '\\p{L}\\Qab'], null);
+    expect(controller.rowProblem('deferJs', unverified, '\\p{L}\\Qab')).toBe(
+      ROW_REASONS.joinedPageOff
+    );
+    controller.apply();
+    expect(port.apply).not.toHaveBeenCalled();
+    expect(controller.pageMessageFocus()).toEqual({ lane: 'deferJs' });
+    expect(prevalidateExclusionSet(draftToSet(controller.draft())).valid).toBe(false);
+  });
+
+  it('marks a joined-only row problem before asking (no page message), focusing the row', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller } = await started(port);
+    const [leak = ''] = controller.insertRows('deferJs', ['(?-i)zzz', 'A.JS'], null);
+    expect(controller.rowProblem('deferJs', leak, '(?-i)zzz')).toMatch(
+      /^Joined with the other Defer JS rows/
+    );
+    expect(controller.lanePage('deferJs')?.offRows).toEqual([]);
+    controller.apply();
+    expect(port.apply).not.toHaveBeenCalled();
+    expect(controller.focusRequest()).toEqual({ lane: 'deferJs', id: leak });
+    expect(controller.pageMessageFocus()).toBeNull();
+  });
+
+  it('reads no page for lanes whose rows act alone', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    controller.insertRows('delayJs', ['.*', '.*x'], null);
+    expect(controller.lanePage('delayJs')).toBeNull();
+    expect(controller.lanePage('lazyload')).toBeNull();
+    expect(controller.lanePage('deferJs')).toEqual({
+      page: 'on',
+      offRows: [],
+      problems: new Map()
+    });
+  });
+
+  it('re-reads a lane only when its own rows change', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    controller.insertRows('deferJs', ['a'], null);
+    const before = controller.lanePage('deferJs');
+    controller.insertRows('delayJs', ['b'], null);
+    expect(controller.lanePage('deferJs')).toBe(before);
   });
 });

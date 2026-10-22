@@ -716,6 +716,67 @@
   font-size: 11px;
 }
 
+/* A lane's page-wide failure: blocks Apply, names its rows (icon + words, never color alone). */
+.xo-page-off {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 10px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--status-error);
+  border-radius: 6px;
+  background: var(--status-error-soft);
+  color: var(--fg-primary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* A focus target, not a control: focused only by a refused apply — always shown. */
+.xo-page-off:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.xo-page-off-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--status-error);
+  font-weight: 600;
+}
+
+.xo-page-off-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xo-page-off-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Compact, still a >= 24 px target. */
+.xo-page-off .xo-page-off-go {
+  flex: none;
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.xo-page-off .xo-code {
+  min-width: 0;
+  background: var(--surface-1);
+  color: var(--fg-primary);
+}
+
 .xo-rows {
   border-top: 1px solid var(--line-1);
 }
