@@ -25,6 +25,7 @@ import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import { ExclusionValidationError } from './errors';
 import { exclusionFieldLines } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
+import { lazyRenderRekeyed } from './lazy-render-hashing';
 import { exclusionPipelineSteps } from './pipeline';
 import {
   EMPTY_EXCLUSION_SET,
@@ -168,10 +169,21 @@ function problemIds(error: ExclusionValidationError): (string | null)[] {
 }
 
 /**
+ * The lazy-render elements the engine reports re-keyed, by id (`null` when
+ * it cannot rebuild the hash order).
+ */
+function engineRekeyed(row: MatchRow): string[] | null {
+  return (
+    lazyRenderRekeyed(row.served, row.rows)?.map(
+      (tag) => findAttribute(tag, 'id')?.value ?? `@${String(tag.start)}`
+    ) ?? null
+  );
+}
+
+/**
  * The engine's outcome for a match row. A validation error is an answer
  * (its problem ids); any other throw is a crash and propagates.
- * The engine has no Defer page-off state and no lazy-render re-keying report
- * yet: `featureOff` is false and `rekeyed` is `null`.
+ * The engine has no Defer page-off state yet: `featureOff` is false.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
@@ -182,7 +194,10 @@ function engineMatch(row: MatchRow): MatchOutcome {
     const candidates = engineCandidates(row);
     const lazyRender =
       row.feature === 'automatic_lazy_rendering'
-        ? { hashed: candidates.filter((key) => !excluded.includes(key)), rekeyed: null }
+        ? {
+            hashed: candidates.filter((key) => !excluded.includes(key)),
+            rekeyed: engineRekeyed(row)
+          }
         : {};
     return {
       candidates,

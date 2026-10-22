@@ -1,11 +1,14 @@
 /**
  * The Image Lazyload transform: candidate images carry a truthy
- * `data-lazy-src` (the plugin's own runtime candidacy); rows are LITERAL
- * substrings tested against the clone with only `src` restored (the other
- * lazy carriers still parked — the image's real identity); a matched image
- * then moves `src`/`srcset`/`sizes` back from their carriers.
+ * `data-lazy-src` (the plugin's own runtime candidacy); rows are LITERAL,
+ * case-sensitive substrings of WP Rocket's subjects — the original image's
+ * `atts` and trimmed `src` — read from the `<noscript>` copy WP Rocket
+ * serves, else from the clone with only `src` restored (the other lazy
+ * carriers still parked); a matched image then moves `src`/`srcset`/`sizes`
+ * back from their carriers.
  */
 import { describe, expect, it } from 'vitest';
+import { ExclusionValidationError } from './errors';
 import { lazyloadTransform } from './lazyload';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
@@ -203,5 +206,84 @@ describe('lazyloadTransform — marker accumulation', () => {
     const html = '<img src="ph" data-lazy-src="real.jpg" data-wpr-fdt-excluded="delay_js">';
     const result = lazyloadTransform(html, setWithRows(['real.jpg']));
     expect(result.html).toContain('data-wpr-fdt-excluded="delay_js, lazyload"');
+  });
+});
+
+describe("lazyloadTransform — WP Rocket's subjects (real WP Rocket outcomes)", () => {
+  /** A lazy image as WP Rocket serves it: placeholder tag + `<noscript>` original. */
+  const served = (lazy: string, original: string): string =>
+    `${lazy}<noscript>${original}</noscript>`;
+  const PLACEHOLDER = 'data:image/svg+xml,%3Csvg%3E%3C/svg%3E';
+
+  it('reads attributes WP Rocket removed from the served tag off the `<noscript>` original', () => {
+    const html = served(
+      `<img id="i8" src="${PLACEHOLDER}" data-lazy-src="/img/plain.jpg">`,
+      '<img id="i8" src="/img/plain.jpg" loading="lazy">'
+    );
+    const result = lazyloadTransform(html, setWithRows(['loading="lazy"']));
+    expect(result.report.rewritten).toBe(1);
+    // The rewrite still restores the served tag; the original stays in its noscript.
+    expect(result.html).toBe(
+      served(
+        '<img id="i8" src="/img/plain.jpg" data-wpr-fdt-excluded="lazyload">',
+        '<img id="i8" src="/img/plain.jpg" loading="lazy">'
+      )
+    );
+  });
+
+  it('matches the original `src` as written, untrimmed, and the trimmed value too', () => {
+    const html = served(
+      '<img id="i2" src=" /img/space.jpg " data-lazy-src="/img/space.jpg">',
+      '<IMG id="i2" src=" /img/space.jpg ">'
+    );
+    expect(lazyloadTransform(html, setWithRows([' /img/space.jpg '])).report.rewritten).toBe(1);
+    expect(lazyloadTransform(html, setWithRows(['/img/space.jpg'])).report.rewritten).toBe(1);
+    expect(lazyloadTransform(html, setWithRows(['/img/space.jpg"'])).report.rewritten).toBe(0);
+  });
+
+  it('starts after `<img` and stops before the closing `>`', () => {
+    const html = served(
+      `<img id="i1" src="${PLACEHOLDER}" data-lazy-src="/a.jpg">`,
+      '<img id="i1" src="/a.jpg" class="k">'
+    );
+    expect(lazyloadTransform(html, setWithRows(['<img'])).report.rewritten).toBe(0);
+    expect(lazyloadTransform(html, setWithRows(['>'])).report.rewritten).toBe(0);
+    expect(
+      lazyloadTransform(html, setWithRows([' id="i1" src="/a.jpg" class="k"'])).report.rewritten
+    ).toBe(1);
+  });
+
+  it('stops at the first `>` even inside a quoted value (rebuilt original)', () => {
+    // WP Rocket's own markup breaks on such an image; without a noscript copy
+    // the rebuilt original is cut the same way.
+    const html = '<img id="i1" src="ph" data-lazy-src="/a.jpg" alt="a>b" class="k">';
+    expect(lazyloadTransform(html, setWithRows(['class="k"'])).report.rewritten).toBe(0);
+    expect(lazyloadTransform(html, setWithRows(['alt="a'])).report.rewritten).toBe(1);
+  });
+
+  it('ignores `""` and `"0"` rows and rejects a whitespace-only one', () => {
+    const html = served(
+      `<img id="i1" src="${PLACEHOLDER}" data-lazy-src="/0.jpg">`,
+      '<img id="i1" src="/0.jpg">'
+    );
+    const ignored = lazyloadTransform(html, setWithRows(['', '0', 'zzz']));
+    expect(ignored.report.rewritten).toBe(0);
+    expect(ignored.report.unmatchedRows).toEqual(['', '0', 'zzz']);
+    expect(lazyloadTransform(html, setWithRows(['00', '0.jpg'])).report.matchedRows).toEqual([
+      { row: '0.jpg', rowKind: 'literal', matches: 1 }
+    ]);
+    expect(() => lazyloadTransform(html, setWithRows([' ']))).toThrow(ExclusionValidationError);
+  });
+
+  it('falls back to the served tag when the next markup is not its `<noscript>` original', () => {
+    const lazy = `<img id="i1" src="${PLACEHOLDER}" data-lazy-src="/a.jpg">`;
+    // A noscript that does not open with an image, or never closes after it.
+    for (const html of [
+      `${lazy}<noscript><p>x</p></noscript>`,
+      `${lazy}<noscript><img id="i1" src="/a.jpg" loading="lazy">`
+    ]) {
+      expect(lazyloadTransform(html, setWithRows(['loading'])).report.rewritten).toBe(0);
+      expect(lazyloadTransform(html, setWithRows(['src="/a.jpg"'])).report.rewritten).toBe(1);
+    }
   });
 });

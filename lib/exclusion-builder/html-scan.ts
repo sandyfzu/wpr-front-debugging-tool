@@ -288,6 +288,42 @@ function rawTextEnd(
   return { contentEnd: match.index, end: skipToTagEnd(text, match.index) };
 }
 
+/** One closing tag (`</name …>`); spans are offsets into the string scanned. */
+export interface ScannedEndTag {
+  /** Lowercased tag name. */
+  readonly name: string;
+  /** Offset of the `<`. */
+  readonly start: number;
+  /** Offset just past the `>` (or the end of input). */
+  readonly end: number;
+}
+
+/** One markup token: an opening tag, or a closing tag (`kind: 'end'`). */
+export type ScannedToken = ScannedTag | (ScannedEndTag & { readonly kind: 'end' });
+
+/**
+ * Whether a token is a closing tag.
+ *
+ * @param token A token from {@link scanTokens}.
+ */
+export function isEndTag(token: ScannedToken): token is ScannedEndTag & { readonly kind: 'end' } {
+  return 'kind' in token;
+}
+
+/**
+ * Parse the closing tag whose `</` starts at `lt`: its name runs from the
+ * letter after `</` to whitespace, `/` or `>`; the tag ends at the next `>`.
+ *
+ * @param html The string scanned.
+ * @param lt Offset of the `<`.
+ */
+function parseEndTagAt(html: string, lt: number): ScannedEndTag {
+  let pos = lt + 2;
+  while (pos < html.length && !isWhitespaceAt(html, pos) && html[pos] !== '/' && html[pos] !== '>')
+    pos++;
+  return { name: html.slice(lt + 2, pos).toLowerCase(), start: lt, end: skipToTagEnd(html, pos) };
+}
+
 /**
  * Scan a document's opening tags in one linear pass — the engine's only
  * look at the markup. Comments, doctypes, processing instructions and
@@ -298,7 +334,30 @@ function rawTextEnd(
  * @returns Every opening tag in document order.
  */
 export function scanTags(html: string): readonly ScannedTag[] {
-  const tags: ScannedTag[] = [];
+  return scanMarkup(html, false) as readonly ScannedTag[];
+}
+
+/**
+ * {@link scanTags} plus the closing tags, in document order — for callers
+ * that rebuild the element tree. A closing tag counts only when a letter
+ * follows its `</` (anything else is a bogus comment, as in the tokenizer);
+ * raw-text elements' own end tags stay inside their region and emit none.
+ *
+ * @param html The served HTML (decoded text).
+ * @returns Every opening and closing tag in document order.
+ */
+export function scanTokens(html: string): readonly ScannedToken[] {
+  return scanMarkup(html, true);
+}
+
+/**
+ * The shared scan loop of {@link scanTags} and {@link scanTokens}.
+ *
+ * @param html The string scanned.
+ * @param withEndTags Whether closing tags become tokens.
+ */
+function scanMarkup(html: string, withEndTags: boolean): readonly ScannedToken[] {
+  const tags: ScannedToken[] = [];
   const length = html.length;
   let pos = 0;
   while (pos < length) {
@@ -308,6 +367,12 @@ export function scanTags(html: string): readonly ScannedTag[] {
     const next = html.charAt(lt + 1);
     if (html.startsWith('<!--', lt)) {
       pos = skipComment(html, lt);
+      continue;
+    }
+    if (withEndTags && next === '/' && TAG_NAME_START.test(html.charAt(lt + 2))) {
+      const endTag = parseEndTagAt(html, lt);
+      tags.push({ kind: 'end', ...endTag });
+      pos = endTag.end;
       continue;
     }
     if (next === '!' || next === '?' || next === '/') {

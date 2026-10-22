@@ -4,6 +4,7 @@
  * carries every problem at once so a UI can render them all inline.
  */
 import type { ExclusionFeatureId } from './set';
+import type { ProblemId } from './wp-rocket-parity-table';
 
 /** One invalid exclusion row, named for inline feedback in the editor. */
 export interface InvalidExclusionRow {
@@ -14,6 +15,8 @@ export interface InvalidExclusionRow {
   readonly row: string;
   /** Why the row cannot work — actionable, naming the offending value. */
   readonly reason: string;
+  /** The typed kind of problem, where one is named (e.g. a row that matches every element). */
+  readonly problem?: ProblemId;
 }
 
 /**
