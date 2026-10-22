@@ -109,6 +109,7 @@ use WP_Rocket\Engine\Optimization\DeferJS\DeferJS;
 use WP_Rocket\Engine\Optimization\DelayJS\Admin\Settings as DelaySettings;
 use WP_Rocket\Engine\Optimization\DelayJS\HTML as DelayHtml;
 use WP_Rocket\Engine\Optimization\DynamicLists\DefaultLists\DataManager;
+use WP_Rocket\Engine\Optimization\IEConditionalSubscriber;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Controller as LazyRenderController;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Processor\Dom as LazyRenderDom;
 use WP_Rocket\Engine\Optimization\LazyRenderContent\Frontend\Processor\Processor as LazyRenderProcessor;
@@ -238,57 +239,107 @@ function save_case(array $case): array {
 // Match: the feature's real buffer pass, baseline vs rows.
 // ---------------------------------------------------------------------------
 
-/** Opening tags of one element name, quote-aware: [[tag text, offset], …]. */
-function opening_tags(string $html, string $name): array {
-	preg_match_all('#<' . $name . '\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>#i', $html, $m, PREG_OFFSET_CAPTURE);
-	return $m[0];
+/** HTML comments (incl. IE conditionals): never subjects, on both scanning sides. */
+const HTML_COMMENT = '#<!--.*?-->#s';
+
+/**
+ * Subject keys of one element name outside comments, in document order: the
+ * `id` attribute, else `#n` for the n-th (0-based) id-less tag of that name.
+ *
+ * @return array<int,array{0:string,1:string}> [[key, opening tag], …]
+ */
+function subject_tags(string $caseId, string $html, string $name): array {
+	preg_match_all('#<' . $name . '\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>#i', preg_replace(HTML_COMMENT, '', $html), $m);
+	$keys      = [];
+	$anonymous = 0;
+	foreach ($m[0] as $tag) {
+		$key = tag_id($tag) ?? '#' . $anonymous++;
+		if (in_array($key, array_column($keys, 0), true)) {
+			throw new RuntimeException("match $caseId: duplicate <$name> id \"$key\"");
+		}
+		$keys[] = [$key, $tag];
+	}
+	return $keys;
 }
 
 /** An opening tag's `id` value, or null. */
 function tag_id(string $tag): ?string {
-	return preg_match('#\sid\s*=\s*(?:"([^"]*)"|\'([^\']*)\')#i', $tag, $m) ? ($m[1] !== '' ? $m[1] : ($m[2] ?? '')) : null;
+	if (!preg_match('#\sid\s*=\s*(?:"([^"]*)"|\'([^\']*)\')#i', $tag, $m)) {
+		return null;
+	}
+	return $m[1] !== '' ? $m[1] : ($m[2] ?? '');
 }
 
 /**
- * Ids of the subject elements the plugin optimized in an output, keyed by
- * their `optimized` predicate; every subject must carry a unique id.
+ * Keys of the subjects the plugin optimized in an output.
  *
- * @param callable(string):bool $optimized
+ * @param callable(string):bool $optimized Whether an opening tag carries the feature's optimization.
  * @return string[]
  */
-function optimized_ids(string $id, string $html, string $name, callable $optimized): array {
-	$ids = [];
-	$all = [];
-	foreach (opening_tags($html, $name) as [$tag]) {
-		$tagId = tag_id($tag);
-		if ($tagId === null || in_array($tagId, $all, true)) {
-			throw new RuntimeException("match $id: every <$name> needs a unique id: $tag");
-		}
-		$all[] = $tagId;
+function optimized_keys(string $caseId, string $html, string $name, callable $optimized): array {
+	$keys = [];
+	foreach (subject_tags($caseId, $html, $name) as [$key, $tag]) {
 		if ($optimized($tag)) {
-			$ids[] = $tagId;
+			$keys[] = $key;
 		}
 	}
-	return $ids;
+	return $keys;
 }
 
-/** Delay JS: the real DelayJS\HTML::delay_js with the rows as the stored option. */
+/**
+ * Run one rocket_buffer pass the way the plugin's buffer does: IE conditional
+ * comments are extracted first (IEConditionalSubscriber, priority 1) and
+ * re-injected last (priority 34), so the pass never sees their content.
+ *
+ * @param callable(string):string $pass
+ */
+function buffer_pass(callable $pass, string $html): string {
+	$ie = new IEConditionalSubscriber();
+	return $ie->inject_ie_conditionals($pass($ie->extract_ie_conditionals($html)));
+}
+
+/**
+ * Delay JS: the real DelayJS\HTML::delay_js with the rows as the stored
+ * option. A row PCRE rejects makes the plugin's own preg_match warn once per
+ * script, as live; only that warning, raised in DelayJS/HTML.php, is tolerated.
+ */
 function delay_pass(array $rows, string $html): string {
 	$options = new Options_Data(['delay_js' => 1, 'delay_js_exclusions' => $rows]);
 	$pass    = new DelayHtml($options, lists(['delay_js_exclusions' => []]), new Logger());
-	return @$pass->delay_js($html); // A row PCRE rejects warns per script, as live.
+	set_error_handler(static function (int $no, string $message, string $file, int $line): bool {
+		if ($no === E_WARNING && str_starts_with($message, 'preg_match(): ') && str_ends_with($file, '/DelayJS/HTML.php')) {
+			return true;
+		}
+		throw new ErrorException("$message ($file:$line)", 0, $no, $file, $line);
+	});
+	try {
+		return buffer_pass([$pass, 'delay_js'], $html);
+	} finally {
+		restore_error_handler();
+	}
 }
 
-/** Defer JS: the real DeferJS::defer_js with the rows as the stored option. */
-function defer_pass(array $rows, string $html): string {
+/**
+ * Defer JS: the real DeferJS::defer_js with the rows as the stored option.
+ *
+ * @param bool $off Set to whether defer_js returned its input untouched (its joined-pattern pre-check failed).
+ */
+function defer_pass(array $rows, string $html, ?bool &$off = null): string {
 	$options = new Options_Data(['defer_all_js' => 1, 'exclude_defer_js' => $rows]);
 	$pass    = new DeferJS($options, lists(['defer_js_external_exclusions' => DEFER_LIST, 'defer_js_inline_exclusions' => []]));
-	return $pass->defer_js($html);
+	return buffer_pass(static function (string $page) use ($pass, &$off): string {
+		$result = $pass->defer_js($page);
+		$off    = $result === $page;
+		return $result;
+	}, $html);
 }
 
 /**
  * Image Lazyload: the real Image::lazyloadImages, with the rows merged into
- * the exclusion filters by the real Subscriber::add_exclusions.
+ * the exclusion filters by the real Subscriber::add_exclusions. The buffer
+ * is the page itself — fixtures carry no <script>, <noscript> or <picture>,
+ * so the Subscriber's hide_scripts/hide_noscripts/lazyloadPictures steps
+ * would not change it.
  */
 function lazyload_pass(array $rows, string $html): string {
 	$image      = new Image();
@@ -296,7 +347,7 @@ function lazyload_pass(array $rows, string $html): string {
 	add_filter('rocket_lazyload_excluded_attributes', [$subscriber, 'add_exclusions']);
 	add_filter('rocket_lazyload_excluded_src', [$subscriber, 'add_exclusions']);
 	try {
-		return $image->lazyloadImages($html, $html, false);
+		return buffer_pass(static fn(string $page): string => $image->lazyloadImages($page, $page, false), $html);
 	} finally {
 		remove_all_filters('rocket_lazyload_excluded_attributes');
 		remove_all_filters('rocket_lazyload_excluded_src');
@@ -307,7 +358,7 @@ function lazyload_pass(array $rows, string $html): string {
 function lazy_render_hashes(array $rows, string $html): string {
 	$dom = new LazyRenderDom();
 	$dom->set_exclusions($rows);
-	return $dom->add_hashes($html);
+	return buffer_pass([$dom, 'add_hashes'], $html);
 }
 
 /** Id => location hash of every element the hash pass stamped. */
@@ -340,13 +391,24 @@ function lazy_render_serve(string $hashedHtml, array $belowTheFold): string {
 	return (new LazyRenderController(new LazyRenderProcessor(), $context))->optimize($hashedHtml, $row);
 }
 
+/** Reject fixture markup the harness's Lazyload pass does not model. */
+function check_lazyload_fixture(string $id, string $html): void {
+	foreach (['<noscript', '<script', '<picture'] as $tag) {
+		if (stripos($html, $tag) !== false) {
+			throw new RuntimeException("match $id: Lazyload fixture html must not contain $tag (the harness skips the Subscriber's hide/picture steps)");
+		}
+	}
+}
+
 /**
  * One match case. `served` = the page served with no user rows (the
- * engine's input); `candidates` = subject ids optimized there; `excluded` =
- * candidates the rows leave un-optimized. Defer adds `featureOff` (the
- * pre-check returned the page untouched); lazy rendering adds `hashed` (ids
- * hashed under the rows) and `rekeyed` (ids hashed in both runs whose hash
- * changed — stored below-the-fold data no longer matches them).
+ * engine's input); `subjects` = every subject key of the served page in
+ * document order (comments skipped); `candidates` = subjects optimized there;
+ * `excluded` = candidates the rows leave un-optimized. Defer adds
+ * `featureOff` (the pre-check returned the page untouched); lazy rendering
+ * keys by id only and adds `hashed` (ids hashed under the rows) and `rekeyed`
+ * (ids hashed in both runs whose hash changed — stored below-the-fold data
+ * no longer matches them).
  */
 function match_case(array $case): array {
 	$id   = $case['id'];
@@ -357,51 +419,59 @@ function match_case(array $case): array {
 		case 'delay_js':
 			$isDelayed = static fn(string $tag): bool => (bool) preg_match('#\stype="(?:text/)?rocketlazyloadscript"#', $tag);
 			$served    = delay_pass([], $html);
-			$base      = optimized_ids($id, $served, 'script', $isDelayed);
-			$after     = optimized_ids($id, delay_pass($rows, $html), 'script', $isDelayed);
+			$subjects  = array_column(subject_tags($id, $served, 'script'), 0);
+			$base      = optimized_keys($id, $served, 'script', $isDelayed);
+			$after     = optimized_keys($id, delay_pass($rows, $html), 'script', $isDelayed);
 			break;
 		case 'defer_all_js':
 			$isDeferred = static fn(string $tag): bool => strpos($tag, 'data-rocket-defer') !== false;
 			$served     = defer_pass([], $html);
-			$result     = defer_pass($rows, $html);
-			$base       = optimized_ids($id, $served, 'script', $isDeferred);
-			$after      = optimized_ids($id, $result, 'script', $isDeferred);
-			$featureOff = $result === $html;
+			$subjects   = array_column(subject_tags($id, $served, 'script'), 0);
+			$base       = optimized_keys($id, $served, 'script', $isDeferred);
+			if ($base === []) {
+				throw new RuntimeException("match $id: a Defer fixture needs at least one deferred script (featureOff would be meaningless)");
+			}
+			$after      = optimized_keys($id, defer_pass($rows, $html, $featureOff), 'script', $isDeferred);
 			break;
 		case 'lazyload':
-			if (stripos($html, '<noscript') !== false) {
-				throw new RuntimeException("match $id: fixture html must not contain <noscript> (the pass adds its own)");
+			check_lazyload_fixture($id, $html);
+			$isLazy   = static fn(string $tag): bool => strpos($tag, 'data-lazy-src') !== false;
+			$visible  = static fn(string $page): string => preg_replace('#<noscript\b.*?</noscript>#is', '', $page);
+			$served   = lazyload_pass([], $html);
+			$subjects = array_column(subject_tags($id, $visible($served), 'img'), 0);
+			if (array_filter($subjects, static fn(string $key): bool => $key[0] === '#') !== []) {
+				throw new RuntimeException("match $id: every Lazyload <img> needs an id (the served page repeats it in <noscript>)");
 			}
-			$isLazy  = static fn(string $tag): bool => strpos($tag, 'data-lazy-src') !== false;
-			$visible = static fn(string $page): string => preg_replace('#<noscript\b.*?</noscript>#is', '', $page);
-			$served  = lazyload_pass([], $html);
-			$base    = optimized_ids($id, $visible($served), 'img', $isLazy);
-			$after   = optimized_ids($id, $visible(lazyload_pass($rows, $html)), 'img', $isLazy);
+			$base     = optimized_keys($id, $visible($served), 'img', $isLazy);
+			$after    = optimized_keys($id, $visible(lazyload_pass($rows, $html)), 'img', $isLazy);
 			break;
 		case 'automatic_lazy_rendering':
 			$baseHashes  = location_hashes($id, lazy_render_hashes([], $html));
 			$afterHashes = location_hashes($id, lazy_render_hashes($rows, $html));
 			$served      = lazy_render_serve(lazy_render_hashes([], $html), $baseHashes);
-			$base        = array_keys($baseHashes);
-			$after       = array_keys($afterHashes);
-			$rekeyed     = array_keys(array_filter(
+			$base        = array_map('strval', array_keys($baseHashes));
+			$after       = array_map('strval', array_keys($afterHashes));
+			$rekeyed     = array_map('strval', array_keys(array_filter(
 				$afterHashes,
-				static fn(string $hash, string $key): bool => isset($baseHashes[$key]) && $baseHashes[$key] !== $hash,
+				static fn(string $hash, $key): bool => isset($baseHashes[$key]) && $baseHashes[$key] !== $hash,
 				ARRAY_FILTER_USE_BOTH
-			));
+			)));
 			break;
 		default:
 			throw new RuntimeException("match $id: unknown feature {$case['feature']}");
 	}
-	$out['served']     = $served;
+	$out['served'] = $served;
+	if (isset($subjects)) {
+		$out['subjects'] = $subjects;
+	}
 	$out['candidates'] = $base;
 	$out['excluded']   = array_values(array_diff($base, $after));
 	if (isset($featureOff)) {
 		$out['featureOff'] = $featureOff;
 	}
 	if (isset($rekeyed)) {
-		$out['hashed']  = array_map('strval', $after);
-		$out['rekeyed'] = array_map('strval', $rekeyed);
+		$out['hashed']  = $after;
+		$out['rekeyed'] = $rekeyed;
 	}
 	return $out;
 }

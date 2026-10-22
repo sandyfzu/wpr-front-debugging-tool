@@ -29,7 +29,15 @@ const INPUTS: ParityInput[] = [
   },
   { id: 'save-b', kind: 'save', feature: 'lazyload', typed: ['b'] },
   { id: 'match-a', kind: 'match', feature: 'delay_js', from: 'save-a', html: 'h' },
-  { id: 'match-b', kind: 'match', feature: 'defer_all_js', rows: ['x'], note: 'n', html: 'h' },
+  {
+    id: 'match-b',
+    kind: 'match',
+    feature: 'defer_all_js',
+    rows: ['x'],
+    note: 'n',
+    engine: { problem: 'match-all' },
+    html: 'h'
+  },
   { id: 'match-c', kind: 'match', feature: 'lazyload', rows: [' y'], filterOnly: true, html: 'h' },
   { id: 'match-d', kind: 'match', feature: 'automatic_lazy_rendering', rows: [''], html: 'h' }
 ];
@@ -178,6 +186,7 @@ describe('assembleRow', () => {
       featureOff: false,
       excluded: [],
       candidates: [],
+      subjects: [],
       served: 's'
     });
     expect(Object.keys(deferRow)).toEqual([
@@ -186,8 +195,10 @@ describe('assembleRow', () => {
       'feature',
       'rows',
       'note',
+      'engine',
       'html',
       'served',
+      'subjects',
       'candidates',
       'excluded',
       'featureOff'

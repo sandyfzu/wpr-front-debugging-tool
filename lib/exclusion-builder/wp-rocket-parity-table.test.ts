@@ -48,6 +48,7 @@ function validTable(): { header: Json; rows: Json[] } {
         pending: 'K.4b',
         html: '<p>',
         served: '<p>',
+        subjects: ['s1', '#0', 's2'],
         candidates: ['s1', 's2'],
         excluded: ['s1']
       },
@@ -57,8 +58,10 @@ function validTable(): { header: Json; rows: Json[] } {
         feature: 'defer_all_js',
         rows: ['('],
         filterOnly: true,
+        engine: { problem: 'pcre-invalid' },
         html: 'h',
         served: 's',
+        subjects: [],
         candidates: [],
         excluded: [],
         featureOff: true
@@ -68,6 +71,7 @@ function validTable(): { header: Json; rows: Json[] } {
         kind: 'match',
         feature: 'automatic_lazy_rendering',
         rows: [''],
+        engine: { residual: 'why', candidates: ['a'], excluded: [] },
         html: 'h',
         served: 's',
         candidates: ['a', 'b'],
@@ -109,8 +113,17 @@ describe('parseParityTable', () => {
       'match-c'
     ]);
     expect(table.rows[1]).toMatchObject({ from: 'save-a', rows: ['a'], pending: 'K.4b' });
-    expect(table.rows[2]).toMatchObject({ filterOnly: true, featureOff: true });
-    expect(table.rows[3]).toMatchObject({ hashed: ['b'], rekeyed: ['b'] });
+    expect(table.rows[1]).toMatchObject({ subjects: ['s1', '#0', 's2'] });
+    expect(table.rows[2]).toMatchObject({
+      filterOnly: true,
+      featureOff: true,
+      engine: { problem: 'pcre-invalid' }
+    });
+    expect(table.rows[3]).toMatchObject({
+      hashed: ['b'],
+      rekeyed: ['b'],
+      engine: { residual: 'why', candidates: ['a'], excluded: [] }
+    });
   });
 
   it('rejects malformed tables and headers', () => {
@@ -218,6 +231,49 @@ describe('parseParityTable', () => {
     rejects(
       (table) => (row(table, 'match-a').excluded = ['s3']),
       'excluded "s3" is not a candidate'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').candidates = ['s9']),
+      'candidate "s9" is not a subject'
+    );
+    rejects((table) => delete row(table, 'match-a').subjects, '"subjects" is present exactly');
+    rejects((table) => (row(table, 'match-c').subjects = []), '"subjects" is present exactly');
+    rejects(
+      (table) =>
+        Object.assign(row(table, 'match-c'), {
+          candidates: ['#0'],
+          excluded: [],
+          hashed: [],
+          rekeyed: []
+        }),
+      'lazy rendering subjects are keyed by id'
+    );
+    rejects((table) => (row(table, 'match-b').engine = 'x'), '"engine" must be an object');
+    rejects(
+      (table) => (row(table, 'match-b').engine = { problem: 'nope' }),
+      'engine problem "nope" is unknown'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { problem: 'match-all', extra: 1 }),
+      'unknown key "extra"'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { residual: '', candidates: [], excluded: [] }),
+      'engine residual must say why'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { residual: 'r', candidates: 'a', excluded: [] }),
+      '"engine.candidates" must be an array of strings'
+    );
+    rejects(
+      (table) =>
+        (row(table, 'match-b').engine = { residual: 'r', candidates: ['a', 'a'], excluded: [] }),
+      '"engine.candidates" repeats an id'
+    );
+    rejects(
+      (table) =>
+        (row(table, 'match-b').engine = { residual: 'r', candidates: ['a'], excluded: ['b'] }),
+      'engine excluded "b" is not an engine candidate'
     );
     rejects(
       (table) => delete row(table, 'match-b').featureOff,

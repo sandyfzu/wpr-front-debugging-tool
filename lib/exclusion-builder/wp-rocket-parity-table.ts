@@ -9,25 +9,48 @@
  * - **save** — lines typed into a settings field → the rows the settings form
  *   stores, plus each dropped line with its reason;
  * - **match** — stored rows + a page → the page WP Rocket serves without user
- *   rows (`served`, the engine's input), the subject ids it optimizes there
- *   (`candidates`) and the ones the rows leave un-optimized (`excluded`).
- *   Subjects are identified by their `id` attribute (every `<script>` /
- *   `<img>` / processed lazy-render element in a fixture carries one).
+ *   rows (`served`, the engine's input), every subject of that page in
+ *   document order (`subjects`), the ones it optimizes there (`candidates`)
+ *   and the ones the rows leave un-optimized (`excluded`). A subject's key is
+ *   its `id` attribute, else `#n` for the n-th id-less subject tag (0-based,
+ *   comments skipped); lazy-render subjects are always keyed by id.
+ *
+ * A match row may carry an authored `engine` disposition: the engine is not
+ * meant to reproduce WP Rocket's outcome there (it reports a row problem, or
+ * a documented residual applies); the PHP-derived outputs stay as the record
+ * of the live outcome.
  *
  * Inputs are authored by hand; outputs are written by the dev script only.
+ * Imports are type-only so the dev script can load this module under Node's
+ * native TypeScript (no extensionless runtime import to resolve).
  */
-// `.ts` specifier: the dev script imports this module under Node's native
-// TypeScript, which resolves no extensionless relative import.
-import { EXCLUSION_FEATURES, type ExclusionFeatureId } from './set.ts';
+import type { ExclusionFeatureId } from './set';
+
+/** The work item expected to turn a pending row green (the row's `pending` value). */
+export type PendingPhase = 'K.3' | 'K.4b' | 'K.4c' | 'K.4d';
+
+/**
+ * Feature → the work item owning its pending match rows. Typed as a full
+ * record, so it is also the compiler-checked list of feature ids a row may name.
+ */
+const MATCH_OWNER: Readonly<Record<ExclusionFeatureId, PendingPhase>> = {
+  delay_js: 'K.4b',
+  defer_all_js: 'K.4c',
+  lazyload: 'K.4d',
+  automatic_lazy_rendering: 'K.4d'
+};
+
+/** The work item owning every pending save row. */
+const SAVE_OWNER: PendingPhase = 'K.3';
 
 /** The feature without a settings field: its rows come only from a PHP filter. */
-const FILTER_ONLY_FEATURE = 'automatic_lazy_rendering';
+const FILTER_ONLY_FEATURE = 'automatic_lazy_rendering' satisfies ExclusionFeatureId;
 
 /** Features with a settings field. */
 export type SaveFeature = Exclude<ExclusionFeatureId, typeof FILTER_ONLY_FEATURE>;
 
 /** Every feature id a match row may name. */
-const FEATURE_IDS: readonly ExclusionFeatureId[] = EXCLUSION_FEATURES.map((spec) => spec.id);
+const FEATURE_IDS = Object.keys(MATCH_OWNER) as ExclusionFeatureId[];
 
 /** Every feature id a save row may name. */
 const SAVE_FEATURE_IDS = FEATURE_IDS.filter((id) => id !== FILTER_ONLY_FEATURE);
@@ -35,8 +58,43 @@ const SAVE_FEATURE_IDS = FEATURE_IDS.filter((id) => id !== FILTER_ONLY_FEATURE);
 /** Why the settings form does not store a typed line. */
 export type DropReason = 'empty' | 'zero' | 'duplicate' | 'invalid-pattern' | 'safe-mode';
 
-/** The sub-phase whose implementation is expected to turn a pending row green. */
-export type PendingPhase = 'K.3' | 'K.4b' | 'K.4c' | 'K.4d';
+/**
+ * A row problem the engine reports instead of matching like WP Rocket:
+ * PCRE-only syntax not checked here, a row PCRE rejects, a row that matches
+ * every subject, a Defer set WP Rocket turns off page-wide, a Defer set
+ * whose joined rows change each other's matching, a catastrophic-backtracking
+ * shape.
+ */
+export type ProblemId =
+  | 'pcre-only'
+  | 'pcre-invalid'
+  | 'match-all'
+  | 'joined-page-off'
+  | 'joined-changes-matching'
+  | 'backtracking-risk';
+
+/** Every problem id, for validation. */
+const PROBLEM_IDS: readonly ProblemId[] = [
+  'pcre-only',
+  'pcre-invalid',
+  'match-all',
+  'joined-page-off',
+  'joined-changes-matching',
+  'backtracking-risk'
+];
+
+/**
+ * How the engine is meant to answer a match row instead of WP Rocket's
+ * outcome: report `problem`, or — for a documented `residual` the engine
+ * cannot rebuild — produce exactly the authored `candidates`/`excluded`.
+ */
+export type EngineDisposition =
+  | { readonly problem: ProblemId }
+  | {
+      readonly residual: string;
+      readonly candidates: readonly string[];
+      readonly excluded: readonly string[];
+    };
 
 /** A typed line: text, or base64 bytes for a line that is not valid UTF-8. */
 export type TypedLine = string | { readonly b64: string };
@@ -95,6 +153,8 @@ export interface MatchInput extends RowBase {
   readonly from?: string;
   /** The rows only reach WP Rocket through a PHP filter — the settings form would change them. */
   readonly filterOnly?: true;
+  /** What the engine answers instead of WP Rocket's outcome, when it is not meant to match it. */
+  readonly engine?: EngineDisposition;
   readonly html: string;
 }
 
@@ -102,6 +162,8 @@ export interface MatchInput extends RowBase {
 export interface MatchRow extends MatchInput {
   readonly rows: readonly string[];
   readonly served: string;
+  /** Every subject key of `served`, in document order (absent for lazy rendering). */
+  readonly subjects?: readonly string[];
   readonly candidates: readonly string[];
   readonly excluded: readonly string[];
   /** Defer JS only: the joined-pattern pre-check failed and nothing was deferred. */
@@ -112,7 +174,10 @@ export interface MatchRow extends MatchInput {
   readonly rekeyed?: readonly string[];
 }
 
+/** The authored part of any row (what the dev script feeds the harness). */
 export type ParityInput = SaveInput | MatchInput;
+
+/** A complete row: authored inputs plus the harness-derived outputs. */
 export type ParityRow = SaveRow | MatchRow;
 
 /** The whole table. */
@@ -143,6 +208,7 @@ export const SAVE_INPUT_KEYS = [
   'note',
   'pending'
 ] as const;
+/** Save-row output keys (harness-derived), in file order. */
 export const SAVE_OUTPUT_KEYS = ['stored', 'dropped'] as const;
 
 /** Match-row keys in file order: inputs, then outputs (`rows` is an output when `from` is set). */
@@ -155,10 +221,14 @@ export const MATCH_INPUT_KEYS = [
   'filterOnly',
   'note',
   'pending',
+  'engine',
   'html'
 ] as const;
+
+/** Match-row output keys (harness-derived), in file order. */
 export const MATCH_OUTPUT_KEYS = [
   'served',
+  'subjects',
   'candidates',
   'excluded',
   'featureOff',
@@ -166,6 +236,7 @@ export const MATCH_OUTPUT_KEYS = [
   'rekeyed'
 ] as const;
 
+/** Every drop reason, for validation. */
 const DROP_REASONS: readonly DropReason[] = [
   'empty',
   'zero',
@@ -180,18 +251,18 @@ const ROW_ID = /^(?:save|match)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Canonical base64 (padded). */
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
+/** A subject key: an `id` value, or `#n` for the n-th id-less subject. */
+const ANONYMOUS_SUBJECT = /^#(?:0|[1-9][0-9]*)$/;
+
 /**
- * The sub-phase that owns a row's pending flip: save rows → K.3 (save
- * normalization), Delay → K.4b, Defer → K.4c, Lazyload and lazy rendering → K.4d.
+ * The work item owning a row's pending flip: one for every save row, one per
+ * feature for match rows.
  *
  * @param kind The row kind.
  * @param feature The row's feature.
  */
 export function pendingOwner(kind: ParityRow['kind'], feature: ExclusionFeatureId): PendingPhase {
-  if (kind === 'save') return 'K.3';
-  if (feature === 'delay_js') return 'K.4b';
-  if (feature === 'defer_all_js') return 'K.4c';
-  return 'K.4d';
+  return kind === 'save' ? SAVE_OWNER : MATCH_OWNER[feature];
 }
 
 /** A parse failure naming the table and, when known, the offending row. */
@@ -232,14 +303,56 @@ function stringList(id: string, record: Record<string, unknown>, key: string): s
   return value;
 }
 
-/** A required list of distinct strings (subject ids). */
-function idList(id: string, record: Record<string, unknown>, key: string): string[] {
-  const list = stringList(id, record, key);
-  if (new Set(list).size !== list.length) fail(id, `"${key}" repeats an id`);
-  return list;
+/** A list of distinct strings (subject keys), from any value. */
+function keyList(id: string, value: unknown, key: string): string[] {
+  if (!Array.isArray(value) || !value.every((item): item is string => typeof item === 'string')) {
+    return fail(id, `"${key}" must be an array of strings`);
+  }
+  if (new Set(value).size !== value.length) fail(id, `"${key}" repeats an id`);
+  return value;
 }
 
-/** An optional field that, when present, must be `true`/a boolean/a string. */
+/** A required list of distinct strings (subject keys). */
+function idList(id: string, record: Record<string, unknown>, key: string): string[] {
+  return keyList(id, record[key], key);
+}
+
+/** Fail unless every key of `subset` is in `set`, naming the first stray key as "<what> is not <where>". */
+function checkSubset(
+  id: string,
+  subset: readonly string[],
+  set: readonly string[],
+  what: string,
+  where: string
+): void {
+  for (const key of subset) {
+    if (!set.includes(key)) fail(id, `${what} "${key}" is not ${where}`);
+  }
+}
+
+/**
+ * Parse an `engine` disposition: exactly `{problem}` with a known id, or
+ * `{residual, candidates, excluded}` with `excluded` ⊆ `candidates`.
+ */
+function engineDisposition(id: string, value: unknown): EngineDisposition {
+  if (!isRecord(value)) return fail(id, '"engine" must be an object');
+  if ('problem' in value) {
+    checkKeys(id, value, ['problem']);
+    const problem = PROBLEM_IDS.find((candidate) => candidate === value.problem);
+    if (problem === undefined)
+      fail(id, `engine problem ${JSON.stringify(value.problem)} is unknown`);
+    return { problem };
+  }
+  checkKeys(id, value, ['residual', 'candidates', 'excluded']);
+  const residual = stringField(id, value, 'residual');
+  if (residual === '') fail(id, 'engine residual must say why');
+  const candidates = keyList(id, value.candidates, 'engine.candidates');
+  const excluded = keyList(id, value.excluded, 'engine.excluded');
+  checkSubset(id, excluded, candidates, 'engine excluded', 'an engine candidate');
+  return { residual, candidates, excluded };
+}
+
+/** An optional boolean field: `undefined` when absent, else it must be a boolean. */
 function optionalBoolean(
   id: string,
   record: Record<string, unknown>,
@@ -336,6 +449,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
     fail(id, '"filterOnly" applies to authored rows of a feature with a settings field');
   }
   const rows = from === undefined ? stringList(id, record, 'rows') : undefined;
+  const engine = record.engine === undefined ? undefined : engineDisposition(id, record.engine);
   const html = stringField(id, record, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   return {
@@ -345,6 +459,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
     ...(from === undefined ? {} : { from }),
     ...(rows === undefined ? {} : { rows }),
     ...(filterOnly === true ? { filterOnly } : {}),
+    ...(engine === undefined ? {} : { engine }),
     html
   };
 }
@@ -453,8 +568,17 @@ function matchRow(input: MatchInput, record: Record<string, unknown>): MatchRow 
   const { id, feature } = input;
   const rows = stringList(id, record, 'rows');
   const served = stringField(id, record, 'served');
+  const isLazyRender = feature === FILTER_ONLY_FEATURE;
+  if ((record.subjects !== undefined) === isLazyRender) {
+    fail(id, '"subjects" is present exactly on rows other than lazy rendering');
+  }
+  const subjects = isLazyRender ? undefined : idList(id, record, 'subjects');
   const candidates = idList(id, record, 'candidates');
   const excluded = idList(id, record, 'excluded');
+  if (isLazyRender && candidates.some((key) => ANONYMOUS_SUBJECT.test(key))) {
+    fail(id, 'lazy rendering subjects are keyed by id');
+  }
+  if (subjects !== undefined) checkSubset(id, candidates, subjects, 'candidate', 'a subject');
   for (const subject of excluded) {
     if (!candidates.includes(subject)) fail(id, `excluded "${subject}" is not a candidate`);
   }
@@ -462,7 +586,6 @@ function matchRow(input: MatchInput, record: Record<string, unknown>): MatchRow 
   if ((featureOff !== undefined) !== (feature === 'defer_all_js')) {
     fail(id, '"featureOff" is present exactly on Defer JS rows');
   }
-  const isLazyRender = feature === FILTER_ONLY_FEATURE;
   const hasHashed = record.hashed !== undefined;
   if (hasHashed !== isLazyRender || (record.rekeyed !== undefined) !== isLazyRender) {
     fail(id, '"hashed"/"rekeyed" are present exactly on lazy rendering rows');
@@ -476,6 +599,7 @@ function matchRow(input: MatchInput, record: Record<string, unknown>): MatchRow 
     ...input,
     rows,
     served,
+    ...(subjects === undefined ? {} : { subjects }),
     candidates,
     excluded,
     ...(featureOff === undefined ? {} : { featureOff }),

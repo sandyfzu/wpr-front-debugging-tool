@@ -69,6 +69,9 @@ export const WP_CORE = {
   sha1: '13eb1d042b1ca39224e44906cd84fe203112210c'
 } as const;
 
+/** How long the one-time WordPress zip download (~30 MB) may take before it fails. */
+const DOWNLOAD_TIMEOUT_MS = 300_000;
+
 /** Where the WordPress zip is cached (git-ignored). */
 const CACHE_DIR = '.cache/wp-rocket-parity';
 
@@ -395,7 +398,7 @@ async function wordpressZip(): Promise<string> {
   console.log(`[parity] downloading ${url}`);
   let data: Uint8Array;
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
     data = new Uint8Array(await response.arrayBuffer());
   } catch (cause) {

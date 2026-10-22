@@ -3,30 +3,37 @@
  * (expected outputs derived from the real plugin by `pnpm parity:wp-rocket`)
  * against this engine — no PHP here.
  *
- * - save rows: typed lines → the stored rows + dropped lines the engine's
- *   field normalization yields;
- * - match rows: the page WP Rocket serves without user rows, run through
- *   the feature's transform with the stored rows → the subject ids the
- *   engine restores (its exclusion marker) and its candidate count.
+ * - save rows: typed lines → the stored rows and the dropped lines (with
+ *   reasons) the engine's field normalization yields;
+ * - match rows: the page WP Rocket serves without user rows, run through the
+ *   feature's pipeline step with the stored rows → the engine's candidates,
+ *   the subjects it restores (its exclusion marker) and, per feature, the
+ *   Defer page state and the lazy-render hashing; or, for a row with an
+ *   `engine` disposition, the row problem / documented residual it names.
  *
- * A row marked `pending` is behavior the engine does not mirror yet: it runs
- * as `it.fails`, so it stays green only while it still fails — the sub-phase
- * named by `pending` removes the mark when its change turns the row green.
+ * A `pending` row is behavior the engine does not mirror yet. It still runs:
+ * a crash (anything but the engine's validation error) fails it, and so does
+ * an outcome that now equals the expected one — the signal to drop the mark.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
-import { exclusionFieldLines, trimExclusionRow } from './field-text';
+import { ExclusionValidationError } from './errors';
+import { exclusionFieldLines } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
 import { exclusionPipelineSteps } from './pipeline';
-import { EMPTY_EXCLUSION_SET, EXCLUSION_FEATURES, type ExclusionSet } from './set';
+import {
+  EMPTY_EXCLUSION_SET,
+  EXCLUSION_FEATURES,
+  type ExclusionFeatureId,
+  type ExclusionSet
+} from './set';
 import { findAttribute } from './tag-edit';
 import {
   parseParityTable,
   typedLineBytes,
-  type DroppedLine,
   type MatchRow,
   type ParityRow,
   type SaveRow,
@@ -43,79 +50,190 @@ const table = parseParityTable(
   )
 );
 
+/** The element a feature's subjects are (lazy rendering: any element with an id). */
+const SUBJECT_TAG: Readonly<Record<ExclusionFeatureId, string | null>> = {
+  delay_js: 'script',
+  defer_all_js: 'script',
+  lazyload: 'img',
+  automatic_lazy_rendering: null
+};
+
+/** One keyed subject tag of a page. */
+interface KeyedTag {
+  readonly key: string;
+  readonly tagText: string;
+}
+
+/**
+ * A page's subjects in document order, keyed as the table keys them: the
+ * `id`, else `#n` for the n-th id-less subject tag (comments skipped, as the
+ * engine's scanner skips them). A repeated id (Lazyload's `<noscript>` copy
+ * of an image) is listed once, at its first occurrence.
+ *
+ * @param html The page.
+ * @param feature The feature whose subjects to list.
+ */
+function subjectTags(html: string, feature: ExclusionFeatureId): KeyedTag[] {
+  const name = SUBJECT_TAG[feature];
+  const keyed: KeyedTag[] = [];
+  let anonymous = 0;
+  for (const tag of scanTags(html)) {
+    if (name !== null && tag.name !== name) continue;
+    const tagText = html.slice(tag.start, tag.openingEnd);
+    const id = findAttribute(parseTagAt(tagText, 0), 'id')?.value ?? null;
+    if (id === null && name === null) continue;
+    const key = id ?? `#${String(anonymous++)}`;
+    if (!keyed.some((entry) => entry.key === key)) keyed.push({ key, tagText });
+  }
+  return keyed;
+}
+
+/** Keys of the subjects carrying the engine's exclusion marker. */
+function markedKeys(html: string, feature: ExclusionFeatureId): string[] {
+  return subjectTags(html, feature)
+    .filter(({ tagText }) => findAttribute(parseTagAt(tagText, 0), FDT_EXCLUDED_RESOURCE) !== null)
+    .map(({ key }) => key);
+}
+
 /** A typed line as editor text (bytes that are not UTF-8 decode to U+FFFD). */
 function editorText(line: TypedLine): string {
   return typeof line === 'string' ? line : new TextDecoder().decode(typedLineBytes(line));
 }
 
 /**
- * What the engine stores for a save row today: `exclusionFieldLines`
- * (trim + drop whitespace-only lines), whose only drop is an empty line.
+ * What the engine stores for a save row: `exclusionFieldLines` gives the
+ * stored rows; the engine has no per-line drop report yet, so `dropped` is
+ * `null` (every save row stays pending until one exists).
  */
-function engineSave(row: SaveRow): Pick<SaveRow, 'stored' | 'dropped'> {
-  const lines = row.typed.map(editorText);
-  const dropped: DroppedLine[] = [];
-  lines.forEach((line, index) => {
-    const typed = row.typed[index];
-    if (trimExclusionRow(line) === '' && typed !== undefined) {
-      dropped.push({ index, row: typed, reason: 'empty' });
-    }
-  });
-  return { stored: exclusionFieldLines(lines), dropped };
+function engineSave(row: SaveRow): { stored: readonly string[]; dropped: null } {
+  return { stored: exclusionFieldLines(row.typed.map(editorText)), dropped: null };
 }
 
-/** The set carrying a match row's stored rows on its feature. */
-function setFor(row: MatchRow): ExclusionSet {
-  const spec = EXCLUSION_FEATURES.find((candidate) => candidate.id === row.feature);
-  if (spec === undefined) throw new Error(`no feature ${row.feature}`);
-  return {
-    ...EMPTY_EXCLUSION_SET,
-    rows: { ...EMPTY_EXCLUSION_SET.rows, [spec.rowsKey]: row.rows }
-  };
+/** A set carrying `rows` on `feature` (and, optionally, its feature-wide disable). */
+function setFor(
+  feature: ExclusionFeatureId,
+  rows: readonly string[],
+  featureWide = false
+): ExclusionSet {
+  const spec = EXCLUSION_FEATURES.find((candidate) => candidate.id === feature);
+  if (spec === undefined) throw new Error(`no feature ${feature}`);
+  const disable =
+    featureWide && spec.toggleKey !== null
+      ? { ...EMPTY_EXCLUSION_SET.disable, [spec.toggleKey]: true }
+      : EMPTY_EXCLUSION_SET.disable;
+  return { rows: { ...EMPTY_EXCLUSION_SET.rows, [spec.rowsKey]: rows }, disable };
 }
 
-/** Ids of the elements carrying the engine's exclusion marker, in document order. */
-function markedIds(html: string): string[] {
-  const ids: string[] = [];
-  for (const tag of scanTags(html)) {
-    const parsed = parseTagAt(html.slice(tag.start, tag.openingEnd), 0);
-    const id = findAttribute(parsed, 'id')?.value;
-    if (id != null && findAttribute(parsed, FDT_EXCLUDED_RESOURCE) !== null) ids.push(id);
-  }
-  return ids;
-}
-
-/** The comparable outcome of a match row: candidate count, excluded ids, Defer page state. */
-interface MatchOutcome {
-  readonly candidates: number;
-  readonly excluded: readonly string[];
-  readonly featureOff?: boolean;
-}
-
-/** The expected outcome, from the table. */
-function expectedMatch(row: MatchRow): MatchOutcome {
-  return {
-    candidates: row.candidates.length,
-    excluded: [...row.excluded].sort(),
-    ...(row.featureOff === undefined ? {} : { featureOff: row.featureOff })
-  };
+/** The feature's pipeline step over `html`, returning the rewritten page. */
+function runStep(feature: ExclusionFeatureId, html: string, set: ExclusionSet): string {
+  const step = exclusionPipelineSteps(set).find((candidate) => candidate.id === feature);
+  if (step === undefined) throw new Error(`no pipeline step for ${feature}`);
+  return step.apply(html).html;
 }
 
 /**
- * The engine's outcome: the feature's pipeline step over the served page.
- * The engine has no page-wide Defer failure yet, so `featureOff` is false.
+ * The engine's candidate keys on the served page: every subject it restores
+ * when told to restore all — the feature-wide disable where the feature has
+ * one; Lazyload (no toggle) gets the literal `=`, which every candidate's
+ * subject holds (each candidate carries a `src` value to restore).
+ */
+function engineCandidates(row: MatchRow): string[] {
+  const hasToggle = EXCLUSION_FEATURES.some(
+    (spec) => spec.id === row.feature && spec.toggleKey !== null
+  );
+  const set = hasToggle ? setFor(row.feature, [], true) : setFor(row.feature, ['=']);
+  return markedKeys(runStep(row.feature, row.served, set), row.feature);
+}
+
+/** A match row's comparable outcome. */
+type MatchOutcome =
+  | {
+      readonly candidates: readonly string[];
+      readonly excluded: readonly string[];
+      readonly featureOff?: boolean;
+      readonly hashed?: readonly string[];
+      readonly rekeyed?: readonly string[] | null;
+    }
+  | { readonly problems: readonly (string | null)[] };
+
+/** The problem ids a validation error carries (`null` where an entry has none). */
+function problemIds(error: ExclusionValidationError): (string | null)[] {
+  const ids = error.invalid.map((entry) =>
+    'problem' in entry && typeof entry.problem === 'string' ? entry.problem : null
+  );
+  return [...new Set(ids)].sort();
+}
+
+/**
+ * The engine's outcome for a match row. A validation error is an answer
+ * (its problem ids); any other throw is a crash and propagates.
+ * The engine has no Defer page-off state and no lazy-render re-keying report
+ * yet: `featureOff` is false and `rekeyed` is `null`.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
-  const step = exclusionPipelineSteps(setFor(row)).find(
-    (candidate) => candidate.id === row.feature
-  );
-  if (step === undefined) throw new Error(`no pipeline step for ${row.feature}`);
-  const result = step.apply(row.served);
+  try {
+    const excluded = markedKeys(
+      runStep(row.feature, row.served, setFor(row.feature, row.rows)),
+      row.feature
+    );
+    const candidates = engineCandidates(row);
+    const lazyRender =
+      row.feature === 'automatic_lazy_rendering'
+        ? { hashed: candidates.filter((key) => !excluded.includes(key)), rekeyed: null }
+        : {};
+    return {
+      candidates,
+      excluded,
+      ...(row.feature === 'defer_all_js' ? { featureOff: false } : {}),
+      ...lazyRender
+    };
+  } catch (error) {
+    if (error instanceof ExclusionValidationError) return { problems: problemIds(error) };
+    throw error;
+  }
+}
+
+/** The outcome a match row expects from the engine: its disposition, else WP Rocket's. */
+function expectedMatch(row: MatchRow): MatchOutcome {
+  const engine = row.engine;
+  if (engine !== undefined && 'problem' in engine) return { problems: [engine.problem] };
+  if (engine !== undefined) return { candidates: engine.candidates, excluded: engine.excluded };
   return {
-    candidates: result.report.candidates,
-    excluded: [...new Set(markedIds(result.html))].sort(),
-    ...(row.feature === 'defer_all_js' ? { featureOff: false } : {})
+    candidates: row.candidates,
+    excluded: row.excluded,
+    ...(row.featureOff === undefined ? {} : { featureOff: row.featureOff }),
+    ...(row.hashed === undefined ? {} : { hashed: row.hashed, rekeyed: row.rekeyed })
   };
+}
+
+/** Whether a value is a list of keys / problem ids (strings, or `null` for an unnamed problem). */
+function isKeyList(value: unknown): value is (string | null)[] {
+  return Array.isArray(value) && value.every((item) => item === null || typeof item === 'string');
+}
+
+/** Order-free comparison form: key lists sorted, everything else as is. */
+function normalized(outcome: object): unknown {
+  return Object.fromEntries(
+    Object.entries(outcome).map(([key, value]) => [
+      key,
+      isKeyList(value) ? [...value].sort((a, b) => String(a).localeCompare(String(b))) : value
+    ])
+  );
+}
+
+/**
+ * Assert a row: equal to expected, or — while pending — still different
+ * (a pending row that now matches fails, asking for its mark to be dropped).
+ */
+function assertRow(row: ParityRow, actual: object, expected: object): void {
+  if (row.pending === undefined) {
+    expect(normalized(actual)).toEqual(normalized(expected));
+    return;
+  }
+  expect(
+    normalized(actual),
+    `${row.id} now matches WP Rocket — drop its "pending": "${row.pending}" mark`
+  ).not.toEqual(normalized(expected));
 }
 
 /** The test title: id, the note, and the pending mark. */
@@ -124,42 +242,33 @@ function title(row: ParityRow): string {
   return `${pending}${row.id}${row.note === undefined ? '' : ` — ${row.note}`}`;
 }
 
-/** `it`, or `it.fails` for a pending row. */
-function testFor(row: ParityRow): typeof it | typeof it.fails {
-  return row.pending === undefined ? it : it.fails;
-}
-
 describe('WP Rocket parity table', () => {
-  // The harness finds subjects with its own tag scan; this one must see the
-  // same ids, or a replay would compare different elements.
-  it('identifies every candidate subject in the served page by its id', () => {
+  // The harness keys subjects with its own tag scan; this replay must see the
+  // same keys in the same order, or it would compare different elements.
+  it('keys the served page subjects exactly as the harness did', () => {
     for (const row of table.rows) {
       if (row.kind !== 'match') continue;
-      const ids = scanTags(row.served).flatMap((tag) => {
-        const id = findAttribute(parseTagAt(row.served.slice(tag.start, tag.openingEnd), 0), 'id');
-        return id?.value == null ? [] : [id.value];
-      });
-      expect({ row: row.id, missing: row.candidates.filter((id) => !ids.includes(id)) }).toEqual({
-        row: row.id,
-        missing: []
-      });
+      const keys = subjectTags(row.served, row.feature).map(({ key }) => key);
+      const expected = row.subjects ?? row.candidates;
+      const seen = row.subjects === undefined ? keys.filter((key) => expected.includes(key)) : keys;
+      expect({ row: row.id, keys: seen }).toEqual({ row: row.id, keys: expected });
     }
   });
 
-  describe('save rows (typed → stored)', () => {
+  describe('save rows (typed → stored + dropped)', () => {
     for (const row of table.rows) {
       if (row.kind !== 'save') continue;
-      testFor(row)(title(row), () => {
-        expect(engineSave(row)).toEqual({ stored: row.stored, dropped: row.dropped });
+      it(title(row), () => {
+        assertRow(row, engineSave(row), { stored: row.stored, dropped: row.dropped });
       });
     }
   });
 
-  describe('match rows (stored rows + served page → excluded subjects)', () => {
+  describe('match rows (stored rows + served page → engine outcome)', () => {
     for (const row of table.rows) {
       if (row.kind !== 'match') continue;
-      testFor(row)(title(row), () => {
-        expect(engineMatch(row)).toEqual(expectedMatch(row));
+      it(title(row), () => {
+        assertRow(row, engineMatch(row), expectedMatch(row));
       });
     }
   });
