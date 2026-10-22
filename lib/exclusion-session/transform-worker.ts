@@ -13,7 +13,7 @@
  * is replaced lazily on the next run.
  */
 import type { ExclusionFeatureId } from '../exclusion-builder/set';
-import { EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
+import { EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import { isCount, isFeatureId, parseExclusionSet } from '../messaging/exclusion-session';
 import { isRecord } from '../../utils/is-record';
@@ -24,7 +24,8 @@ import {
   runDocumentPipeline,
   type DocumentTransformRequest,
   type DocumentTransformResult,
-  type DocumentTransformRunner
+  type DocumentTransformRunner,
+  type UnmodifiedDocumentOutcome
 } from './document-transform';
 
 /** Extra time (ms) past the budget before a silent worker is killed (messaging latency). */
@@ -169,15 +170,18 @@ export interface WorkerTransformRunner {
 }
 
 /**
- * The first pipeline feature — blamed when a run is killed before the
- * worker announced any step.
+ * The over-budget outcome of a run killed before the worker announced any
+ * step: it was still starting up or validating the set, so no row had run —
+ * billed to the first step's feature (the in-process runner bills that
+ * setup time to the first step too), naming no row.
  *
- * @throws {@link Error} when the pipeline declares no feature (a broken build).
+ * @param budgetMs The budget the run overran.
+ * @throws {@link Error} when the pipeline declares no step (a broken build).
  */
-function firstPipelineFeature(): ExclusionFeatureId {
-  const first = EXCLUSION_PIPELINE_IDS[0];
-  if (first === undefined) throw new Error('The exclusion pipeline declares no feature');
-  return first;
+function overBudgetBeforeAnyStep(budgetMs: number): UnmodifiedDocumentOutcome {
+  const first = EXCLUSION_PIPELINE_STEP_IDS[0];
+  if (first === undefined) throw new Error('The exclusion pipeline declares no step');
+  return { outcome: 'over-budget', feature: first, row: null, budgetMs };
 }
 
 /** One handed-over run: its request, its answer, and where it stands. */
@@ -197,7 +201,7 @@ interface PendingRun {
  * run's deadline — `budgetMs` + grace — starts at hand-over. At the
  * deadline a running run's port is terminated and the run answers
  * `over-budget` for the feature the worker last announced (the first
- * pipeline feature when none was); a run still queued then is dropped as
+ * step's feature, naming no row, when none was); a run still queued then is dropped as
  * `engine-failed` (it never got to run). A port error or a spawn failure
  * answers `engine-failed`.
  *
@@ -302,10 +306,12 @@ export function createWorkerTransformRunner(
           return;
         }
         kill();
-        const feature = pending.lastFeature ?? firstPipelineFeature();
         pending.settle({
           ok: false,
-          outcome: overBudgetOutcome(request.set, feature, request.budgetMs)
+          outcome:
+            pending.lastFeature === null
+              ? overBudgetBeforeAnyStep(request.budgetMs)
+              : overBudgetOutcome(request.set, pending.lastFeature, request.budgetMs)
         });
       }, request.budgetMs + graceMs);
       pump();

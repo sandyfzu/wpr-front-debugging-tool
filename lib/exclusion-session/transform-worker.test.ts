@@ -5,11 +5,7 @@
  * runs, respawn after a kill, stale messages, dispose).
  */
 import { describe, expect, it, vi } from 'vitest';
-import {
-  applyPipeline,
-  EXCLUSION_PIPELINE_IDS,
-  EXCLUSION_PIPELINE_STEP_IDS
-} from '../exclusion-builder/pipeline';
+import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
@@ -266,7 +262,7 @@ describe('createWorkerTransformRunner', () => {
     expect(timers.delays).toEqual([105]);
   });
 
-  it('blames the first pipeline feature when nothing was announced, then respawns', async () => {
+  it('bills the first step, naming no row, when nothing was announced, then respawns', async () => {
     const timers = manualTimers();
     const spawn = vi
       .fn<() => TransformWorkerPort>()
@@ -276,10 +272,12 @@ describe('createWorkerTransformRunner', () => {
     const killed = host.run(REQUEST);
     await new Promise((resolve) => setTimeout(resolve, 0));
     timers.fire();
-    await expect(killed).resolves.toMatchObject({
+    // The set's one Delay JS row never ran (no step started): it must not be blamed.
+    await expect(killed).resolves.toEqual({
       ok: false,
-      outcome: { outcome: 'over-budget', feature: EXCLUSION_PIPELINE_IDS[0] }
+      outcome: { outcome: 'over-budget', feature: 'defer_all_js', row: null, budgetMs: 100 }
     });
+    expect(EXCLUSION_PIPELINE_STEP_IDS[0]).toBe('defer_all_js');
     await expect(host.run(REQUEST)).resolves.toMatchObject({ ok: true });
     expect(spawn).toHaveBeenCalledTimes(2);
   });
