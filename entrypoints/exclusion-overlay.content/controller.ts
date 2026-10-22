@@ -31,6 +31,7 @@ import {
   isBlankRow,
   laneFeature,
   pasteIntoRow,
+  reinsertRow,
   removeRow,
   sameSet,
   setDisable,
@@ -42,6 +43,16 @@ import {
   type RowSelection,
   type ToggleKey
 } from './exclusions/draft';
+import {
+  EMPTY_DRAFT_NOTES,
+  forgetRow,
+  isNews,
+  recordCommits,
+  retireLane,
+  takeUndo,
+  type CommitSource,
+  type DraftNotes
+} from './exclusions/row-notes';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
@@ -116,6 +127,11 @@ export interface OverlayController {
    */
   readonly commits: Accessor<readonly RowCommit[]>;
   /**
+   * What the editor tells about committed rows (row notes, removals, the
+   * latest batch to announce), with their undo state.
+   */
+  readonly notes: Accessor<DraftNotes>;
+  /**
    * A row's problem: the background's reason from the last refused apply
    * (until the row changes), else the engine's prevalidation.
    */
@@ -145,8 +161,20 @@ export interface OverlayController {
    * save stores, or leaves the lane when the save drops it (never while
    * typing). Works in any phase (a row left while an action is in flight is
    * committed at once); it saves the draft only when ready.
+   *
+   * @returns What the commit did to the row (null: blank or unknown row).
    */
-  commitRow(lane: LaneKey, id: string): void;
+  commitRow(lane: LaneKey, id: string): RowCommit | null;
+  /**
+   * Undo a commit's change from its note (kept row: its typed text back;
+   * removed row: back at its place, typed), focusing the row for editing.
+   * Leaving the row commits it again, with the same note.
+   *
+   * @param id The row, or the removed row's former id.
+   * @returns Whether anything was put back (false: not editable now, no
+   *   undo for that note any more, or no room in the lane).
+   */
+  undoCommit(lane: LaneKey, id: string): boolean;
   /**
    * Insert rows after a row (`null` = append), focusing the first one.
    *
@@ -210,6 +238,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
   const [commits, setCommits] = createSignal<readonly RowCommit[]>([]);
+  const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
   let cancelAutosave: (() => void) | null = null;
@@ -314,16 +343,31 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   };
 
   /**
-   * Take a commit: store its draft and publish what it changed (rows left
-   * as they were are not news).
+   * Take a commit: store its draft, publish what it changed (rows stored as
+   * typed are not news) and record its notes.
    *
+   * @param source What made the commit (the announcement's wording).
    * @returns The committed draft.
    */
-  const takeCommit = (committed: Committed): Draft => {
-    setDraft(committed.draft);
-    const changed = committed.commits.filter(({ diff }) => diff.state !== 'unchanged');
-    if (changed.length > 0) setCommits(changed);
+  const takeCommit = (committed: Committed, source: CommitSource): Draft => {
+    batch(() => {
+      setDraft(committed.draft);
+      publishCommits(committed, source);
+    });
     return committed.draft;
+  };
+
+  /** Publish a commit's news and record its notes. */
+  const publishCommits = (committed: Committed, source: CommitSource): void => {
+    const changed = committed.commits.filter(({ diff }) => isNews(diff));
+    if (changed.length > 0) setCommits(changed);
+    if (committed.commits.length > 0)
+      setNotes((current) => recordCommits(current, committed.commits, source, committed.draft));
+  };
+
+  /** An edit in a lane: its undos end (and the edited row's note leaves). */
+  const noteEdit = (lane: LaneKey, id: string | null): void => {
+    setNotes((current) => (id === null ? retireLane(current, lane) : forgetRow(current, lane, id)));
   };
 
   /** Clear a row's background reason once it is edited. */
@@ -355,8 +399,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     const restored = restoreDraft(set, nextId);
     batch(() => {
       setDraftSignal(restored.draft);
-      const changed = restored.commits.filter(({ diff }) => diff.state !== 'unchanged');
-      if (changed.length > 0) setCommits(changed);
+      setNotes(EMPTY_DRAFT_NOTES);
+      publishCommits(restored, 'restore');
       dispatch({ type: 'loaded', status: current.reply });
     });
     if (pushedWhileLoading) {
@@ -431,6 +475,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     invalidCount,
     focusRequest,
     commits,
+    notes,
     rowProblem,
     start: () => {
       // eslint-disable-next-line solid/reactivity -- a push callback: reads the phase untracked, when a push lands
@@ -452,7 +497,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     apply: () => {
       if (!canStart(state(), 'apply')) return;
       // The set carries WP Rocket's stored form: a row still being typed is committed first.
-      takeCommit(commitAll(draft()));
+      takeCommit(commitAll(draft()), 'apply');
       if (invalidCount() > 0) {
         dispatch({ type: 'apply-blocked', block: { kind: 'invalid', rows: invalidCount() } });
         focusFirstInvalid();
@@ -471,6 +516,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       batch(() => {
         setDraftSignal(restored);
         setServerInvalid(new Map());
+        setNotes(EMPTY_DRAFT_NOTES);
       });
       void runApply('reset', restored);
     },
@@ -503,19 +549,44 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     editRow: (lane, id, text) => {
       if (!editable()) return;
+      const next = updateRow(draft(), lane, id, text);
+      if (next === draft()) return;
       clearServerReason(id);
-      setDraft(updateRow(draft(), lane, id, text));
+      batch(() => {
+        noteEdit(lane, id);
+        setDraft(next);
+      });
     },
     commitRow: (lane, id) => {
       // Safe while an action is in flight (the inputs are read-only then),
       // so a row left meanwhile is committed at once rather than never.
-      takeCommit(commitRows(draft(), lane, [id]));
+      const committed = commitRows(draft(), lane, [id]);
+      takeCommit(committed, 'row');
+      return committed.commits[0] ?? null;
+    },
+    undoCommit: (lane, id) => {
+      if (!editable()) return false;
+      const taken = takeUndo(notes(), lane, id);
+      if (taken === null) return false;
+      const { target } = taken;
+      const next =
+        target.kind === 'row'
+          ? updateRow(draft(), lane, id, target.typed)
+          : reinsertRow(draft(), lane, { id, text: target.typed }, target.at);
+      if (next === null) return false;
+      batch(() => {
+        setNotes(taken.notes);
+        setDraft(next);
+      });
+      setFocusRequest({ lane, id, caret: target.typed.length });
+      return true;
     },
     insertRows: (lane, texts, afterId) => {
       if (!editable()) return [];
       const inserted = insertRows(draft(), lane, texts, afterId, nextId);
+      if (inserted.ids.length > 0) noteEdit(lane, null);
       // Inserted text was not typed here: it is committed at once.
-      const committed = takeCommit(commitRows(inserted.draft, lane, inserted.ids));
+      const committed = takeCommit(commitRows(inserted.draft, lane, inserted.ids), 'insert');
       const kept = inserted.ids.filter((id) => committed.rows[lane].some((row) => row.id === id));
       const first = kept[0];
       if (first !== undefined) setFocusRequest({ lane, id: first });
@@ -527,8 +598,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const last = pasted.ids.at(-1);
       if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
       clearServerReason(id);
+      noteEdit(lane, id);
       // Every filled row but the one the caret lands in is committed.
-      takeCommit(commitRows(pasted.draft, lane, pasted.ids.slice(0, -1)));
+      takeCommit(commitRows(pasted.draft, lane, pasted.ids.slice(0, -1)), 'paste');
       setFocusRequest({
         lane,
         id: last,
@@ -540,7 +612,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!editable()) return;
       clearServerReason(id);
       const removed = removeRow(draft(), lane, id);
-      setDraft(removed.draft);
+      if (removed.draft === draft()) return;
+      batch(() => {
+        noteEdit(lane, id);
+        setDraft(removed.draft);
+      });
       if (removed.focusId !== null) setFocusRequest({ lane, id: removed.focusId });
     },
     setDisable: (key, value) => {
@@ -550,9 +626,17 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     addCandidate: (lane, row, focus) => {
       if (!editable()) return false;
       const added = addCandidate(draft(), lane, row, nextId);
-      setDraft(added.draft);
-      const at = added.draft.rows[lane].findIndex((candidate) => candidate.id === added.id);
-      if (added.id !== null) setCommits([{ lane, id: added.id, index: at, diff: added.diff }]);
+      const id = added.id;
+      if (added.added && id !== null) {
+        const at = added.draft.rows[lane].findIndex((candidate) => candidate.id === id);
+        batch(() => {
+          noteEdit(lane, null);
+          takeCommit(
+            { draft: added.draft, commits: [{ lane, id, index: at, diff: added.diff }] },
+            'candidate'
+          );
+        });
+      }
       if (focus && added.id !== null) setFocusRequest({ lane, id: added.id });
       return added.added;
     },

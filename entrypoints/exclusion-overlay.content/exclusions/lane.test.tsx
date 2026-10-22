@@ -214,7 +214,8 @@ describe('Lane', () => {
     controller.insertRows('delayJs', ['\u00a0', 'gtag'], null);
     mountLane(controller);
     const note = screen.getByText(/^This row has invisible characters WP Rocket keeps/);
-    expect(input(1).getAttribute('aria-describedby')).toBe(note.parentElement?.id);
+    // The note's text element carries the id (the merged slot's Undo stays out of the description).
+    expect(input(1).getAttribute('aria-describedby')).toBe(note.id);
     expect(input(1).getAttribute('aria-invalid')).toBe('false');
     expect(input(2).getAttribute('aria-describedby')).toBeNull();
   });
@@ -513,5 +514,142 @@ describe('Lane copy-all', () => {
     await waitFor(() => {
       expect(write).toHaveBeenCalledWith('gtag', expect.any(HTMLElement));
     });
+  });
+});
+
+describe('Lane stored-form notes', () => {
+  afterEach(cleanup);
+
+  /** Type into a row, then leave it for the copy-all control. */
+  function typeAndLeave(row: HTMLInputElement, text: string): void {
+    row.focus();
+    fireEvent.input(row, { target: { value: text } });
+    copyAll().focus();
+  }
+
+  const undo = (n: number): HTMLButtonElement =>
+    screen.getByRole('button', {
+      name: `Undo change to Delay JavaScript execution row ${String(n)}`
+    });
+
+  it('notes the stored form on leaving a row; Undo restores the typed text, focused', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    typeAndLeave(input(1), 'jquery-*.js');
+    expect(input(1).value).toBe('jquery-(.*).js');
+    const note = document.getElementById(input(1).getAttribute('aria-describedby') ?? '');
+    expect(note?.textContent).toBe(
+      'WP Rocket stores this as jquery-(.*).js (you typed jquery-*.js).'
+    );
+    expect([...(note?.querySelectorAll('code') ?? [])].map((code) => code.textContent)).toEqual([
+      'jquery-(.*).js',
+      'jquery-*.js'
+    ]);
+    // Never color alone: the note is words; Undo comes right after the row's own controls.
+    const row = input(1).closest('[data-row-id]');
+    const controls = [...(row?.querySelectorAll('input, button') ?? [])];
+    expect(controls.at(-1)).toBe(undo(1));
+    expect(undo(1).textContent).toBe('Undo');
+    fireEvent.click(undo(1));
+    expect(input(1).value).toBe('jquery-*.js');
+    expect(document.activeElement).toBe(input(1));
+    expect(input(1).selectionStart).toBe('jquery-*.js'.length);
+    expect(input(1).getAttribute('aria-describedby')).toBeNull();
+    // Leaving again converts again, with the same note.
+    copyAll().focus();
+    expect(input(1).value).toBe('jquery-(.*).js');
+    expect(undo(1)).toBeTruthy();
+  });
+
+  it('merges the commit note with the invisible-characters note into one slot', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    typeAndLeave(input(1), ' a* ');
+    const row = input(1).closest('[data-row-id]');
+    expect(row?.querySelectorAll('.xo-row-note')).toHaveLength(1);
+    const note = document.getElementById(input(1).getAttribute('aria-describedby') ?? '');
+    expect(note?.textContent).toMatch(
+      /^WP Rocket stores this as .*\. This row has invisible characters/
+    );
+  });
+
+  it('keeps notes across a remount (virtual rows unmount on scroll)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    const first = mountLane(controller);
+    typeAndLeave(input(1), 'a*');
+    first.unmount();
+    mountLane(controller);
+    expect(undo(1)).toBeTruthy();
+  });
+
+  it('lists a removed duplicate with its reason; Restore puts it back for editing', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag', ''], null);
+    const { announce } = mountLane(controller);
+    typeAndLeave(input(2), 'gtag ');
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
+    const removed = screen.getByRole('list', { name: 'Delay JavaScript execution rows removed' });
+    expect(removed.textContent).toContain('Removed gtag : WP Rocket drops a copy of row 1.');
+    // The lane itself announces nothing about commits (the mode does, once).
+    expect(announce).not.toHaveBeenCalled();
+    const restore = screen.getByRole('button', {
+      name: 'Restore removed Delay JavaScript execution row 2'
+    });
+    // Label in name (WCAG 2.5.3): the visible word starts the accessible name.
+    expect(restore.textContent).toBe('Restore');
+    fireEvent.click(restore);
+    expect(input(2).value).toBe('gtag ');
+    expect(document.activeElement).toBe(input(2));
+    expect(screen.queryByRole('list', { name: /rows removed$/ })).toBeNull();
+  });
+
+  it("lands focus on Restore when it was heading to the removed row's own control", async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag', 'gtag'], null);
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    fireEvent.input(input(2), { target: { value: '0' } });
+    const removeButton = screen.getByRole('button', {
+      name: 'Remove Delay JavaScript execution row 2'
+    });
+    fireEvent.blur(input(2), { relatedTarget: removeButton });
+    expect(controller.draft().rows.delayJs.some((row) => row.id === id)).toBe(false);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(
+      'Restore removed Delay JavaScript execution row 2'
+    );
+  });
+
+  it('lists three removals and counts the rest; a paste batch gets its summary', async () => {
+    const controller = await readyController();
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    controller.pasteRows('delayJs', id, '0\n0\n<b></b>\n0\n0\nx*', { start: 0, end: 0 });
+    copyAll().focus();
+    // The caret row (`x*`) commits on its own afterwards: the paste's summary stays.
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['x(.*)']);
+    expect(
+      screen.getByText('5 pasted rows removed: WP Rocket drops them when saving.')
+    ).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /^Restore removed/ })).toHaveLength(3);
+    expect(screen.getByText('2 more rows removed.')).toBeTruthy();
+  });
+
+  it('holds Undo while the editor is locked, and drops it on the next edit in the lane', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['', 'other'], null);
+    const { setLocked } = mountLane(controller);
+    typeAndLeave(input(1), 'a*');
+    setLocked(true);
+    expect(undo(1).getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(undo(1));
+    expect(input(1).value).toBe('a(.*)');
+    setLocked(false);
+    fireEvent.input(input(2), { target: { value: 'other2' } });
+    expect(screen.queryByRole('button', { name: /^Undo change/ })).toBeNull();
+    // The note itself stays (it is still true).
+    expect(input(1).getAttribute('aria-describedby')).not.toBeNull();
   });
 });

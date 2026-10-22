@@ -810,6 +810,43 @@
   overflow-wrap: anywhere;
 }
 
+/* A note quotes rows as code on a neutral ground (the error tint is for problems). */
+.xo-row-note .xo-code {
+  background: var(--surface-3);
+  color: var(--fg-primary);
+}
+
+.xo-note-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A note's Undo: compact, still a >= 24 px target. */
+.xo-row-note .xo-note-undo {
+  flex: none;
+  min-height: 24px;
+  margin-top: -4px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.xo-lane-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 6px 0 10px;
+}
+
+.xo-removed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .xo-lane-foot {
   display: flex;
   flex-wrap: wrap;

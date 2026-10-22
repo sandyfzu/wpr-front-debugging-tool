@@ -7,13 +7,20 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import Crosshair from 'lucide-solid/icons/crosshair';
 import List from 'lucide-solid/icons/list';
-import { LANE_COPY, viewCopy } from '../copy';
+import { LANE_COPY, commitAnnouncement, viewCopy } from '../copy';
 import type { OverlayModePanelProps } from '../modes';
 import { Candidates } from './candidates';
 import { laneReport } from './counts';
 import { LANE_ORDER, type LaneKey } from './draft';
 import { Lane } from './lane';
 import { PAGE_SCAN_LIMIT, type PageCandidate } from './page-scan';
+import type { LatestCommits } from './row-notes';
+
+/**
+ * Commit batches already announced: a panel remount (mode switch, reopen)
+ * never repeats one. Weak, so batches leave with their notes.
+ */
+const ANNOUNCED = new WeakSet<LatestCommits>();
 
 /**
  * The Exclusions config panel.
@@ -52,6 +59,21 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
       !draft.disable.lazyRender
     );
   });
+
+  // Every commit that changed or removed rows is said once (newest wins),
+  // including the restore that ran before this panel mounted. A pick says
+  // "Added …" itself, after this, so its own words win.
+  createEffect(
+    on(
+      () => c.notes().latest,
+      (latest) => {
+        if (latest === null || ANNOUNCED.has(latest)) return;
+        ANNOUNCED.add(latest);
+        const text = commitAnnouncement(latest);
+        if (text !== null) shell.announce(text);
+      }
+    )
+  );
 
   // The page list closes with the panel (folded by the user or by a page
   // dialog); picking keeps it, so the list is still there after a pick.

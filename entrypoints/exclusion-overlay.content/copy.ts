@@ -16,7 +16,17 @@ import {
   LABEL_IMAGE_LAZYLOAD,
   LABEL_LOAD_JAVASCRIPT_DEFERRED
 } from '../../lib/detection/labels';
+import { storedText } from '../../lib/exclusion-builder/field-text';
+import { capText } from '../../utils/cap-text';
 import type { LaneKey } from './exclusions/draft';
+import {
+  isConversion,
+  type BatchSummary,
+  type CommitSource,
+  type DroppedRowDiff,
+  type KeptRowDiff,
+  type LatestCommits
+} from './exclusions/row-notes';
 import type { SessionProblem } from './session/port';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { SessionView, UnmodifiedReason } from './session/session-view';
@@ -85,6 +95,175 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
 /** A row with invisible characters WP Rocket keeps (non-blocking). */
 export const INVISIBLE_ROW_NOTE =
   'This row has invisible characters WP Rocket keeps (non-breaking, zero-width or soft-hyphen characters): they must match too.';
+
+/** A text run of a note: plain words, or a row's text shown as code. */
+export type NoteSegment = string | { readonly code: string };
+
+/** A note as runs (row texts stay code whatever characters they hold). */
+export type NoteText = readonly NoteSegment[];
+
+/** Code points of a row's text a note quotes before it is cut (`…`). */
+export const NOTE_ROW_MAX = 64;
+
+/**
+ * A row's text as a note quotes it.
+ *
+ * @param text The row's text.
+ */
+function quotedRow(text: string): NoteSegment {
+  return { code: capText(text, NOTE_ROW_MAX) };
+}
+
+/**
+ * A note's plain text (the announcement's form).
+ *
+ * @param note The note.
+ */
+export function noteToText(note: NoteText): string {
+  return note.map((segment) => (typeof segment === 'string' ? segment : segment.code)).join('');
+}
+
+/** Why WP Rocket's save removed a row, after "WP Rocket drops ". */
+function dropPhrase(diff: DroppedRowDiff, copyOf: number | null): NoteText {
+  switch (diff.reason) {
+    case 'empty':
+      return ['rows left empty once saved'];
+    case 'zero':
+      return ['rows that read ', { code: '0' }];
+    case 'duplicate':
+      return [copyOf === null ? 'a copy of another row' : `a copy of row ${String(copyOf)}`];
+    case 'invalid-pattern':
+      return diff.construct === undefined
+        ? ['patterns PCRE rejects']
+        : ['patterns PCRE rejects: ', quotedRow(diff.construct), ` (${diff.detail ?? 'invalid'})`];
+    case 'safe-mode':
+      return ['this row while Safe Mode for jQuery is on'];
+  }
+}
+
+/** The word a batch's rows get in its count ("3 pasted rows"). */
+const BATCH_NOUNS: Readonly<Record<CommitSource, string>> = {
+  row: '',
+  insert: '',
+  candidate: '',
+  paste: 'pasted ',
+  restore: 'saved ',
+  apply: ''
+};
+
+/** The stored-rows notes, removals, undo controls and announcements. */
+export const ROW_NOTE_COPY = {
+  /**
+   * The note under a kept row (stored form, unverified, safe mode — merged
+   * into one).
+   *
+   * @param diff The row's commit diff.
+   */
+  row: (diff: KeptRowDiff): NoteText => {
+    const stored = storedText(diff) ?? diff.typed;
+    const parts: NoteSegment[] =
+      stored === diff.typed
+        ? []
+        : [
+            'WP Rocket stores this as ',
+            quotedRow(stored),
+            ' (you typed ',
+            quotedRow(diff.typed),
+            ').'
+          ];
+    if (diff.state === 'unverified') {
+      parts.push(
+        parts.length === 0
+          ? 'WP Rocket’s handling of this row isn’t checked here, so the preview doesn’t apply it; kept as typed.'
+          : ' Whether WP Rocket keeps it isn’t checked here, so the preview doesn’t apply it.'
+      );
+    }
+    if (diff.dropsInSafeMode === true) {
+      parts.push(
+        `${parts.length === 0 ? '' : ' '}WP Rocket drops this row when Safe Mode for jQuery is on (that setting can’t be read from the page).`
+      );
+    }
+    return parts;
+  },
+  /**
+   * A removed row's line.
+   *
+   * @param diff The removed row's diff.
+   * @param copyOf For a duplicate, the row it copies.
+   */
+  removed: (diff: DroppedRowDiff, copyOf: number | null): NoteText => [
+    'Removed ',
+    quotedRow(diff.typed),
+    ': WP Rocket drops ',
+    ...dropPhrase(diff, copyOf),
+    '.'
+  ],
+  /** The undo control's visible label on a kept row (its name starts with it). */
+  undo: 'Undo',
+  /** The undo control's visible label on a removed row (its name starts with it). */
+  restore: 'Restore',
+  /**
+   * Undo's accessible name on a kept row.
+   *
+   * @param lane The lane's label.
+   * @param row The 1-based row.
+   */
+  undoName: (lane: string, row: number): string => `Undo change to ${lane} row ${String(row)}`,
+  /**
+   * Undo's accessible name on a removed row.
+   *
+   * @param lane The lane's label.
+   * @param row The row's former 1-based position.
+   */
+  restoreName: (lane: string, row: number): string => `Restore removed ${lane} row ${String(row)}`,
+  /**
+   * Removed rows past the ones listed.
+   *
+   * @param count Rows not listed (≥ 1).
+   */
+  moreRemoved: (count: number): string =>
+    `${String(count)} more ${count === 1 ? 'row' : 'rows'} removed.`,
+  /**
+   * A batch's count (paste, restored draft, apply).
+   *
+   * @param summary The batch's count.
+   */
+  summary: (summary: BatchSummary): string => {
+    const noun = BATCH_NOUNS[summary.source];
+    const rows = (count: number): string =>
+      `${String(count)} ${noun}${count === 1 ? 'row' : 'rows'}`;
+    if (summary.changed === 0)
+      return `${rows(summary.removed)} removed: WP Rocket drops them when saving.`;
+    const removed = summary.removed === 0 ? '' : `, ${String(summary.removed)} removed`;
+    return `${rows(summary.changed)} changed to WP Rocket’s stored form${removed}.`;
+  }
+} as const;
+
+/**
+ * What to announce for a commit batch, or null: a single changed or removed
+ * row by its number; several by count. Rows kept as typed (flagged only)
+ * are not news to announce.
+ *
+ * @param latest The batch.
+ */
+export function commitAnnouncement(latest: LatestCommits): string | null {
+  const changed = latest.news.filter((item) => isConversion(item.diff));
+  const [only] = changed;
+  if (only === undefined) return null;
+  if (changed.length === 1) {
+    const row = `${LANE_COPY[only.lane].label} row ${String(only.position)}`;
+    if (only.diff.state === 'dropped') {
+      return `${row} removed: WP Rocket drops ${noteToText(dropPhrase(only.diff, only.copyOf))}.`;
+    }
+    return `${row}: WP Rocket stores it as ${storedText(only.diff) ?? ''}.`;
+  }
+  const removed = changed.filter((item) => item.diff.state === 'dropped').length;
+  return ROW_NOTE_COPY.summary({
+    source: latest.source,
+    changed: changed.length - removed,
+    removed
+  });
+}
 
 /** A paste the lane cap cut short. */
 export const PASTE_COPY = {

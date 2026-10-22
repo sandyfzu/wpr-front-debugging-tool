@@ -126,12 +126,28 @@ export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]):
     const diff = saveExclusionRow(feature, row.text, ahead);
     commits.push({ lane, id: row.id, index, diff });
     const stored = storedText(diff);
+    // WP Rocket dedupes before its pattern check: a row that check drops
+    // still makes a later copy of it a duplicate.
+    const key = stored ?? (isDuplicateKeyDrop(diff) ? storedRowKey(feature, row.text) : null);
+    if (key !== null) ahead.add(key);
     if (stored === null) return [];
-    ahead.add(stored);
     return [stored === row.text ? row : { id: row.id, text: stored }];
   });
   const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
   return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+}
+
+/**
+ * Whether a dropped row still had a form the dedupe saw (its later copies
+ * are duplicates): dropped after the dedupe step, by the pattern check or
+ * safe mode — not emptied before it.
+ *
+ * @param diff A committed row's diff.
+ */
+function isDuplicateKeyDrop(diff: StoredRowDiff): boolean {
+  return (
+    diff.state === 'dropped' && (diff.reason === 'invalid-pattern' || diff.reason === 'safe-mode')
+  );
 }
 
 /**
@@ -290,6 +306,24 @@ export function insertRows(
     draft: withLane(draft, lane, [...current.slice(0, index), ...fresh, ...current.slice(index)]),
     ids: fresh.map((row) => row.id)
   };
+}
+
+/**
+ * Put a row back into a lane at `at` (clamped to the lane), keeping its id —
+ * an undo of a commit that removed it. Refused (`null`) when the lane is
+ * full or already holds the id.
+ *
+ * @param draft The draft.
+ * @param lane The lane.
+ * @param row The row to put back (its former id, its typed text).
+ * @param at Where it goes (an index into the lane as it is now).
+ */
+export function reinsertRow(draft: Draft, lane: LaneKey, row: DraftRow, at: number): Draft | null {
+  const current = draft.rows[lane];
+  if (current.length >= EXCLUSION_SET_LIMITS.rowsPerFeature) return null;
+  if (current.some((candidate) => candidate.id === row.id)) return null;
+  const index = Math.min(Math.max(0, at), current.length);
+  return withLane(draft, lane, [...current.slice(0, index), row, ...current.slice(index)]);
 }
 
 /** The part of a row's text a paste replaces (a caret is an empty one). */

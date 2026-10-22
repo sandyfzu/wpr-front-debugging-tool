@@ -20,6 +20,7 @@ import {
   laneFeature,
   laneRowSet,
   pasteIntoRow,
+  reinsertRow,
   removeRow,
   restoreDraft,
   sameSet,
@@ -270,6 +271,57 @@ describe('row edits', () => {
     const committed = commitRows(draft, 'delayJs', ids);
     expect(committed.draft.rows.delayJs).toEqual(start.rows.delayJs);
     expect(committed.commits[0]?.diff).toMatchObject({ state: 'dropped', reason: 'duplicate' });
+  });
+
+  it('names a second copy of a row the pattern check drops a duplicate, as WP Rocket does', () => {
+    // WP Rocket dedupes before its pattern check: the second `(` is a copy.
+    const { draft, ids } = insertRows(start, 'deferJs', ['(', ' ( '], null, nextId);
+    const committed = commitRows(draft, 'deferJs', ids);
+    expect(committed.commits.map(({ diff }) => diff)).toEqual([
+      expect.objectContaining({ state: 'dropped', reason: 'invalid-pattern', typed: '(' }),
+      { state: 'dropped', reason: 'duplicate', typed: ' ( ' }
+    ]);
+    // Same verdicts as the one save function over the whole field.
+    expect(
+      restoreDraft(
+        { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, deferJs: ['(', ' ( '] } },
+        createIdSource('r')
+      ).commits.map(({ diff }) => diff.state === 'dropped' && diff.reason)
+    ).toEqual(['invalid-pattern', 'duplicate']);
+    // An emptied row has no form: a later empty row is empty, not a copy.
+    const empties = insertRows(start, 'deferJs', ['<b></b>', '<i></i>'], null, nextId);
+    expect(
+      commitRows(empties.draft, 'deferJs', empties.ids).commits.map(
+        ({ diff }) => diff.state === 'dropped' && diff.reason
+      )
+    ).toEqual(['empty', 'empty']);
+  });
+
+  it('reinserts a removed row at its place, keeping its id; refuses a full lane or a held id', () => {
+    const lane = start.rows.lazyload;
+    const back = reinsertRow(start, 'lazyload', { id: 'gone', text: ' typed ' }, 1);
+    expect(back?.rows.lazyload.map((row) => row.id)).toEqual([
+      ...lane.slice(0, 1).map((row) => row.id),
+      'gone',
+      ...lane.slice(1).map((row) => row.id)
+    ]);
+    expect(back?.rows.lazyload[1]?.text).toBe(' typed ');
+    // Clamped to the lane.
+    expect(
+      reinsertRow(start, 'lazyload', { id: 'z', text: 'z' }, 99)?.rows.lazyload.at(-1)?.id
+    ).toBe('z');
+    expect(reinsertRow(start, 'lazyload', { id: 'z', text: 'z' }, -3)?.rows.lazyload[0]?.id).toBe(
+      'z'
+    );
+    expect(reinsertRow(start, 'lazyload', { id: lane[0]?.id ?? '', text: 'x' }, 0)).toBeNull();
+    const full = insertRows(
+      start,
+      'lazyload',
+      Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature }, (_, n) => `r${String(n)}`),
+      null,
+      nextId
+    ).draft;
+    expect(reinsertRow(full, 'lazyload', { id: 'z', text: 'z' }, 0)).toBeNull();
   });
 
   it('keeps unverified and safe-mode rows on commit, flagged', () => {
