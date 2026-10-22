@@ -47,3 +47,6 @@ docker/state/
 
 # Machine-local spike harness/evidence (untracked scratch tooling; referenced by phase docs' manual steps)
 .scratch/
+
+# Local agent worktrees — machine state, never part of the repo
+.claude/worktrees/
