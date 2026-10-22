@@ -1951,6 +1951,18 @@
       "excluded": ["r9"]
     },
     {
+      "id": "match-delay-rebuild-four-renames",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["four\\.js", "plain"],
+      "note": "a multi-line tag WP Rocket renames four times (one rename per line): rebuilt at the bound",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/javascript\" src=\"/four.js\"\n data-a=\"src='b'\"\n data-b=\"type='c'\"\n id=\"m1\"></script>\n<script src=\"/other.js\"\n data-a=\"src='b'\"\n data-b=\"type='c'\"\n id=\"m2\"></script>\n<script src=\"/plain.js\" id=\"m3\"></script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" data-rocket-type=\"text/javascript\" data-rocket-src=\"/four.js\"\n data-a=\"data-rocket-src='b'\"\n data-b=\"data-rocket-type='c'\"\n id=\"m1\"></script>\n<script src=\"/other.js\"\n data-a=\"src='b'\"\n data-b=\"type='c'\"\n id=\"m2\"></script>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/plain.js\" id=\"m3\"></script>\n</body></html><!-- wpr_delay_js -->",
+      "subjects": ["m1", "m2", "m3"],
+      "candidates": ["m1", "m3"],
+      "excluded": ["m1", "m3"]
+    },
+    {
       "id": "match-delay-rebuild-nowprocket",
       "kind": "match",
       "feature": "delay_js",

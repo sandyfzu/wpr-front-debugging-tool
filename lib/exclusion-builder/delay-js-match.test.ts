@@ -101,6 +101,17 @@ describe('undoDelayRenames', () => {
     expect(texts('<script type="text/rocketlazyloadscript" data-rocket-src="/a')).toEqual([]);
   });
 
+  it('rebuilds a tag holding exactly the bound of four renames', () => {
+    expect(MAX_RENAME_CHOICES).toBe(4);
+    const values = Array.from(
+      { length: MAX_RENAME_CHOICES - 1 },
+      (_, i) => `data-x${String(i)}="data-rocket-src=1"`
+    ).join(' ');
+    expect(
+      texts(`<script type="text/rocketlazyloadscript" data-rocket-src="/a.js" ${values}></script>`)
+    ).toEqual([`<script src="/a.js" ${values}></script>`]);
+  });
+
   it('gives up past the rename-choice bound', () => {
     const many = Array.from(
       { length: MAX_RENAME_CHOICES + 1 },
