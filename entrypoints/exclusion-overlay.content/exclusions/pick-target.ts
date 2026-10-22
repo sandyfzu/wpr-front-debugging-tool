@@ -17,7 +17,8 @@
  * Same-origin URLs are named by path (stable across hosts and cache
  * stamps — the query is never part of a row); other origins keep the host.
  * Minified per-file assets are named by their original path, so the row
- * also matches with Minify off.
+ * also matches with Minify off. A URL row is bounded on both sides, so it
+ * never names a longer URL that contains it (`/a.js` vs `/js/a.js`).
  */
 import {
   DATA_LAZY_SRC,
@@ -100,12 +101,24 @@ const URL_AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?\/\/[^/?#]*/i;
 /** The minify-cache prefix of a served path (everything up to the mirrored original). */
 const MINIFY_PREFIX = new RegExp(`^.*?${MINIFY_CACHE_DIR_SOURCE}`);
 
+/** What the served value writes right before the path text a row names. */
+type PathLead = 'slash' | 'dot-slash' | 'none';
+
 /** A URL as the served attribute writes it, split for naming. */
 interface ServedUrl {
   /** The authority as written (`host[:port]`, no scheme), or `null` for a host-less value. */
   readonly host: string | null;
   /** The text after the authority (or the whole host-less value), one leading `/` or `./` dropped. */
   readonly path: string;
+  /** What was dropped before {@link path}. */
+  readonly lead: PathLead;
+}
+
+/** The lead a path starts with, and the path without it. */
+function splitLead(text: string): { readonly lead: PathLead; readonly path: string } {
+  if (text.startsWith('/')) return { lead: 'slash', path: text.slice(1) };
+  if (text.startsWith('./')) return { lead: 'dot-slash', path: text.slice(2) };
+  return { lead: 'none', path: text };
 }
 
 /**
@@ -119,10 +132,10 @@ interface ServedUrl {
 function servedUrl(raw: string): ServedUrl {
   const text = raw.trim().split('?')[0] ?? '';
   const authority = URL_AUTHORITY.exec(text);
-  if (authority === null) return { host: null, path: text.replace(/^\.?\//, '') };
+  if (authority === null) return { host: null, ...splitLead(text) };
   return {
     host: authority[0].replace(/^[^/]*\/\//, ''),
-    path: text.slice(authority[0].length).replace(/^\//, '')
+    ...splitLead(text.slice(authority[0].length))
   };
 }
 
@@ -284,6 +297,18 @@ function fileName(path: string, host: string | null): string {
 }
 
 /**
+ * Where a URL's row text starts in the served value: after `//` (another
+ * origin's `host/path`), or a path after its lead (see {@link PathLead}).
+ */
+type UrlStart = 'authority' | PathLead;
+
+/** A URL's name and where its text starts in the served value. */
+interface AnchoredUrlName {
+  readonly name: UrlName;
+  readonly start: UrlStart;
+}
+
+/**
  * Name a script or image URL for a row.
  *
  * @param raw The attribute value (absolute or relative).
@@ -291,6 +316,17 @@ function fileName(path: string, host: string | null): string {
  * @returns The name, or null when the value is not an http(s) URL.
  */
 export function nameUrl(raw: string, pageUrl: string): UrlName | null {
+  return anchoredUrlName(raw, pageUrl)?.name ?? null;
+}
+
+/**
+ * {@link nameUrl}, with where the name starts in the served value (what a
+ * regex row anchors on).
+ *
+ * @param raw The attribute value (absolute or relative).
+ * @param pageUrl The page's URL (resolves relative values, decides same-origin).
+ */
+function anchoredUrlName(raw: string, pageUrl: string): AnchoredUrlName | null {
   const base = parseUrl(pageUrl);
   let url: URL;
   try {
@@ -317,7 +353,59 @@ export function nameUrl(raw: string, pageUrl: string): UrlName | null {
         ? ''
         : `${host}${path === '' ? '' : `/${path}`}`;
   if (text === '' || text.length > EXCLUSION_SET_LIMITS.rowChars) return null;
-  return { text, file: fileName(path, sameOrigin ? null : host) };
+  // A minified asset's original path follows the cache directory's slash.
+  const start: UrlStart = !(sameOrigin && path !== '')
+    ? 'authority'
+    : minified || served.host !== null
+      ? 'slash'
+      : served.lead;
+  return { name: { text, file: fileName(path, sameOrigin ? null : host) }, start };
+}
+
+/**
+ * Where a served `src` value starts: the subject's start (Defer JS reads the
+ * URL alone), its quote or a leading space (Delay JS reads the whole tag),
+ * or an unquoted `src=` — never any `=` (a query's `?a=a.js` is not the URL).
+ */
+const VALUE_START = `^|[\\s"']|\\ssrc=`;
+
+/**
+ * Where a same-origin root path (`/path`) may start: a value's start, an
+ * authority (`//host[:port]`, any host — the path also names its copy on a
+ * CDN), or the minify cache directory (the row names the original path, so
+ * it holds with Minify on or off). No `+`: Delay JS's runtime escapes it.
+ */
+const ROOT_PATH_START = `(?:${VALUE_START}|//[^/\\s"'>]{1,255}|${MINIFY_CACHE_DIR_SOURCE.replace('\\d+\\/', '\\d{1,20}')})`;
+
+/**
+ * Where a URL row's text must end: before the query or fragment, the
+ * attribute's closing delimiter, or the subject's end — so `a.js` never
+ * names `a.jsx` or `a.js.php`.
+ */
+const URL_ROW_END = `(?=[?#"'\\s>]|$)`;
+
+/** {@link URL_ROW_END} for a bare authority (`//host`, `//host/`). */
+const HOST_ROW_END = `(?=/?(?:[?#"'\\s>]|$))`;
+
+/**
+ * The regex row naming exactly one URL: its served text bounded on both
+ * sides, so a name never matches a longer one (`/a.js` never `/js/a.js`,
+ * `ba.js` or `a.jsx`; `//ex.com` never `//cdn.ex.com`).
+ *
+ * @param url The URL's name and where it starts.
+ */
+function urlRow(url: AnchoredUrlName): string {
+  const text = servedPattern(url.name.text);
+  switch (url.start) {
+    case 'authority':
+      return `//${text}${url.name.text.includes('/') ? URL_ROW_END : HOST_ROW_END}`;
+    case 'slash':
+      return `${ROOT_PATH_START}/${text}${URL_ROW_END}`;
+    case 'dot-slash':
+      return `(?:${VALUE_START})\\./${text}${URL_ROW_END}`;
+    case 'none':
+      return `(?:${VALUE_START})${text}${URL_ROW_END}`;
+  }
 }
 
 /**
@@ -359,8 +447,8 @@ function firstLine(text: string): string | null {
 /** The Delay JS candidate of a delayed script. */
 function delayCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | null {
   const raw = effectiveScriptUrl(el);
-  const name = raw === null ? null : nameUrl(raw, pageUrl);
-  if (name !== null) return { lane: 'delayJs', row: servedPattern(name.text), subject: name.file };
+  const url = raw === null ? null : anchoredUrlName(raw, pageUrl);
+  if (url !== null) return { lane: 'delayJs', row: urlRow(url), subject: url.name.file };
   // No URL text to name it by: its id, else its first line.
   const id = el.attribute('id');
   if (id !== null && id !== '') {
@@ -383,10 +471,8 @@ function delayCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | n
 function deferCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | null {
   if (el.attribute(WPR_DEFER_ATTRIBUTE) === null) return null;
   const raw = effectiveScriptUrl(el);
-  const name = raw === null ? null : nameUrl(raw, pageUrl);
-  return name === null
-    ? null
-    : { lane: 'deferJs', row: servedPattern(name.text), subject: name.file };
+  const url = raw === null ? null : anchoredUrlName(raw, pageUrl);
+  return url === null ? null : { lane: 'deferJs', row: urlRow(url), subject: url.name.file };
 }
 
 /**

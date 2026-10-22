@@ -39,6 +39,15 @@ import { parseExclusionSetPayload } from '../../../lib/messaging/exclusion-sessi
 
 const PAGE = 'https://example.com/shop/';
 
+/**
+ * A same-origin root path's row: bounded before (a value's start, any
+ * authority, the minify cache directory) and after (query, fragment,
+ * delimiter or end), so it names no longer URL.
+ */
+function rootPathRow(path: string): string {
+  return `(?:^|[\\s"']|\\ssrc=|//[^/\\s"'>]{1,255}|cache\\/min\\/\\d{1,20})/${path}(?=[?#"'\\s>]|$)`;
+}
+
 /** The first element of `html` (parsed as a page body). */
 function first(html: string): Element {
   const doc = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
@@ -93,7 +102,7 @@ describe('candidatesFor — rows the engine actually matches', () => {
     const [candidate] = candidates(html);
     expect(candidate).toEqual({
       lane: 'delayJs',
-      row: 'wp-content/plugins/foo/app\\.js',
+      row: rootPathRow('wp-content/plugins/foo/app\\.js'),
       subject: 'app.js'
     });
     expect(candidate && matchesServed(html, candidate)).toBe(1);
@@ -139,7 +148,7 @@ describe('candidatesFor — rows the engine actually matches', () => {
     const html =
       '<script src="https://example.com/wp-includes/js/jquery/jquery.min.js?ver=3.7.1" data-rocket-defer defer></script>';
     const [candidate] = candidates(html);
-    expect(candidate?.row).toBe('wp-includes/js/jquery/jquery\\.min\\.js');
+    expect(candidate?.row).toBe(rootPathRow('wp-includes/js/jquery/jquery\\.min\\.js'));
     expect(candidate && matchesServed(html, candidate)).toBe(1);
   });
 
@@ -148,7 +157,7 @@ describe('candidatesFor — rows the engine actually matches', () => {
       '<script src="https://www.googletagmanager.com/gtag/js?id=G-1" data-rocket-defer defer></script>';
     expect(candidates(html)[0]).toEqual({
       lane: 'deferJs',
-      row: 'www\\.googletagmanager\\.com/gtag/js',
+      row: `//www\\.googletagmanager\\.com/gtag/js(?=[?#"'\\s>]|$)`,
       subject: 'www.googletagmanager.com › gtag/js'
     });
   });
@@ -156,7 +165,41 @@ describe('candidatesFor — rows the engine actually matches', () => {
   it('names a minified asset by its original path', () => {
     const html =
       '<script src="https://example.com/wp-content/cache/min/1/wp-content/plugins/x/app.js?ver=9" data-rocket-defer defer></script>';
-    expect(candidates(html)[0]?.row).toBe('wp-content/plugins/x/app\\.js');
+    expect(candidates(html)[0]?.row).toBe(rootPathRow('wp-content/plugins/x/app\\.js'));
+  });
+
+  it.each([
+    ['delayed', 'type="rocketlazyloadscript" data-rocket-src', ''],
+    ['deferred', 'src', ' data-rocket-defer defer']
+  ])('bounds a %s script URL row on both sides: it names no longer URL', (_kind, attr, rest) => {
+    /** Scripts of `srcs`, in the lane's served form. */
+    const page = (srcs: readonly string[]): string =>
+      srcs.map((src) => `<script ${attr}="${src}"${rest}></script>`).join('');
+    const decoys = [
+      '/js/a.js',
+      '/ba.js',
+      '/a.jsx',
+      '/a.js.php',
+      '/x.js?a=/a.js',
+      '/x.js?a=a.js',
+      'js/a.js',
+      '//sub.ex.com/js/a.js',
+      '//ex.com.evil/js/a.js'
+    ];
+    for (const [picked, alike] of [
+      // A root path also names its copy on another host and under the minify cache.
+      ['/a.js', ['https://example.com/a.js?ver=1', '//cdn.ex.com/a.js#f', '/c/cache/min/1/a.js']],
+      ['//ex.com/js/a.js', ['https://ex.com/js/a.js?ver=2']],
+      ['a.js', ['a.js?ver=1']],
+      ['./a.js', []]
+    ] as const) {
+      const [candidate] = candidates(page([picked]));
+      if (candidate === undefined) throw new Error(`no row for ${picked}`);
+      const others = decoys.filter((src) => src !== picked);
+      expect(matchesServed(page([picked, ...alike, ...others]), candidate), picked).toBe(
+        1 + alike.length
+      );
+    }
   });
 
   it('names a lazy image by its real source path (literal)', () => {
@@ -614,6 +657,34 @@ describe('every picked row matches its element after WP Rocket’s save and runt
       excluded: ['p7'],
       html: '<script type="text/rocketlazyloadscript" data-rocket-src="/p&amp;q.js"></script>'
     },
+    // Anchored URL rows: the page holds longer URLs containing the name
+    // (`/js/a.js`, `/ba.js`, `/a.jsx`, `sub.ex.com`, a query's `a.js`…); only
+    // the same URL is excluded (a root path on any host or minified too).
+    {
+      fixture: 'picked-delay-anchored-path',
+      excluded: ['p1', 'p6', 'p7', 'p9', 'p14'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="/a.js"></script>'
+    },
+    {
+      fixture: 'picked-delay-anchored-host',
+      excluded: ['p10'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="//ex.com/js/a.js"></script>'
+    },
+    {
+      fixture: 'picked-delay-anchored-relative',
+      excluded: ['p8'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="a.js"></script>'
+    },
+    {
+      fixture: 'picked-defer-anchored-path',
+      excluded: ['p1', 'p6', 'p7', 'p9', 'p14'],
+      html: '<script src="/a.js" data-rocket-defer defer></script>'
+    },
+    {
+      fixture: 'picked-defer-anchored-host',
+      excluded: ['p10'],
+      html: '<script src="//ex.com/js/a.js" data-rocket-defer defer></script>'
+    },
     {
       fixture: 'picked-delay-dot',
       excluded: [],
@@ -731,7 +802,9 @@ describe('every picked row matches its element after WP Rocket’s save and runt
     ]) {
       const html = `<script type="text/rocketlazyloadscript" data-rocket-src="${served}"></script>`;
       const [candidate] = candidates(html);
-      expect(candidate?.row, served).toBe("a(?:'|&#0{0,2}39;|&#x0{0,2}27;|&apos;)b\\.js");
+      expect(candidate?.row, served).toBe(
+        rootPathRow("a(?:'|&#0{0,2}39;|&#x0{0,2}27;|&apos;)b\\.js")
+      );
       expect(candidate && matchesServed(html, candidate), served).toBe(1);
     }
     const id =
@@ -759,7 +832,7 @@ describe('every picked row matches its element after WP Rocket’s save and runt
 
   it('never writes a row that is just `0` (the save drops it)', () => {
     const script = '<script type="text/rocketlazyloadscript" data-rocket-src="/0?v=1"></script>';
-    expect(candidates(script).map((candidate) => candidate.row)).toEqual(['\\x30']);
+    expect(candidates(script).map((candidate) => candidate.row)).toEqual([rootPathRow('\\x30')]);
     expect(candidates('<img src="data:x" data-lazy-src="/0">')).toEqual([]);
   });
 
