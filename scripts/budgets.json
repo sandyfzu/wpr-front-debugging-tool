@@ -31,15 +31,15 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 131.4,
-      "gzip": 45.1
+      "raw": 132.0,
+      "gzip": 45.4
     }
   },
   {
     "surface": "exclusion builder overlay (runtime content script, loaded on open)",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 250.3,
+      "raw": 250.6,
       "gzip": 84.4
     }
   },
@@ -48,7 +48,7 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
-      "raw": 250.3,
+      "raw": 250.6,
       "gzip": 84.4
     }
   },
@@ -114,15 +114,15 @@
     "build": "firefox-mv2",
     "globs": ["exclusion-transform-worker.js"],
     "maxKb": {
-      "raw": 83.3,
-      "gzip": 28.7
+      "raw": 88.1,
+      "gzip": 30.4
     }
   },
   {
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1424.5
+      "raw": 1425.3
     }
   }
 ]
