@@ -4,9 +4,11 @@
  * the applied page's counts, and the lane's own notes (feature absent from
  * the page, rows unused under the disable). Row keyboard model: Enter adds
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
- * between rows, a multi-line paste splits into rows; leaving a row trims it
- * the way WP Rocket's settings save does (never while typing). The foot holds
- * Add row and the lane's copy-all control.
+ * between rows, a multi-line paste splits into rows; leaving a row commits
+ * it — WP Rocket's settings save applied (never while typing) — and its
+ * note says what changed, with Undo. Rows the save removed are listed under
+ * the rows, each with Undo (both until the next edit in the lane). The foot
+ * holds Add row and the lane's copy-all control.
  */
 import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
@@ -23,11 +25,12 @@ import { hasInvisibleKeptCharacters } from '../../../lib/exclusion-builder/field
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
-import { INVISIBLE_ROW_NOTE, LANE_COPY, PASTE_COPY } from '../copy';
+import { INVISIBLE_ROW_NOTE, LANE_COPY, PASTE_COPY, ROW_NOTE_COPY, type NoteText } from '../copy';
 import type { OverlayController, PasteOutcome } from '../controller';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
 import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
+import { copiedRow, laneKeyIndex, restoreIndex, type LaneNotes, type RowNote } from './row-notes';
 
 /** Seed row height (px) before measurement: one input line plus padding. */
 const ROW_ESTIMATE_PX = 37;
@@ -40,6 +43,9 @@ const FOCUS_FRAMES = 12;
 
 /** Rows a lane shows without its own scroller (one page scroller holds them). */
 const INLINE_ROWS = 8;
+
+/** Removed rows listed (with Undo) under a lane; the rest are counted. */
+export const REMOVED_ROWS_SHOWN = 3;
 
 /** Records clipboard paths that failed (the control itself tells the user). */
 const log = createLogger('exclusion-overlay');
@@ -143,6 +149,40 @@ export function Lane(props: LaneProps): JSX.Element {
     // so typing right after "Add row" lands in the row; else retry per frame.
     attempt();
   };
+
+  /**
+   * Focus fell with a row the commit removed (it was heading to one of the
+   * row's own controls): land it on that row's Restore button, else on Add
+   * row — never on the page.
+   */
+  const rescueFocus = (id: string): void => {
+    const target =
+      root?.querySelector<HTMLButtonElement>(`[data-undo-for="${id}"]`) ??
+      root?.querySelector<HTMLButtonElement>('[data-lane-add]');
+    target?.focus();
+  };
+
+  const laneNotes = (): LaneNotes => props.controller.notes().lanes[props.lane];
+  /**
+   * The removals listed, with the row numbers they show read from the lane
+   * as it is now (rows restored or committed since move them): the row a
+   * duplicate copies, and where Restore puts it back.
+   */
+  const removedShown = createMemo(() => {
+    const notes = laneNotes().removed;
+    const shown = notes.slice(0, REMOVED_ROWS_SHOWN);
+    if (shown.length === 0) return [];
+    const current = rows();
+    const keys = shown.some((note) => note.diff.reason === 'duplicate')
+      ? laneKeyIndex(props.lane, current)
+      : new Map<string, number>();
+    return shown.map((note) => ({
+      note,
+      copyOf: copiedRow(props.lane, keys, note.diff),
+      row: restoreIndex(note, notes, current) + 1
+    }));
+  });
+  const removedMore = (): number => laneNotes().removed.length - removedShown().length;
 
   createEffect(
     on(
@@ -298,6 +338,7 @@ export function Lane(props: LaneProps): JSX.Element {
                     onPaste={(event) => {
                       onRowPaste(row(), event);
                     }}
+                    onRemovedWithFocus={rescueFocus}
                   />
                 )}
               </Show>
@@ -305,10 +346,47 @@ export function Lane(props: LaneProps): JSX.Element {
           </VirtualList>
         </div>
       </Show>
+      <Show when={laneNotes().summary !== null || removedShown().length > 0}>
+        <div class="xo-lane-outcome">
+          <Show when={laneNotes().summary}>
+            {(summary) => (
+              <p class="xo-row-note">
+                <Info size={12} aria-hidden="true" />
+                <span>{ROW_NOTE_COPY.summary(summary())}</span>
+              </p>
+            )}
+          </Show>
+          <Show when={removedShown().length > 0}>
+            <ul class="xo-removed" aria-label={ROW_NOTE_COPY.removedListName(copy().label)}>
+              <For each={removedShown()}>
+                {(removed) => (
+                  <li class="xo-row-note">
+                    <Info size={12} aria-hidden="true" />
+                    <span class="xo-note-text">
+                      <NoteRuns note={ROW_NOTE_COPY.removed(removed.note.diff, removed.copyOf)} />
+                    </span>
+                    <UndoButton
+                      id={removed.note.id}
+                      label={ROW_NOTE_COPY.restore}
+                      name={ROW_NOTE_COPY.restoreName(copy().label, removed.row)}
+                      locked={props.locked}
+                      onUndo={() => props.controller.undoCommit(props.lane, removed.note.id)}
+                    />
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <Show when={removedMore() > 0}>
+            <p class="xo-row-note">{ROW_NOTE_COPY.moreRemoved(removedMore())}</p>
+          </Show>
+        </div>
+      </Show>
       <div class="xo-lane-foot">
         <button
           type="button"
           class="xo-button"
+          data-lane-add
           data-variant="ghost"
           aria-disabled={full() || props.locked ? 'true' : undefined}
           onClick={() => {
@@ -365,6 +443,57 @@ function withCode(text: string): JSX.Element {
   );
 }
 
+/**
+ * A note's runs: row texts as code (whatever characters they hold).
+ *
+ * @param props The note.
+ */
+function NoteRuns(props: { readonly note: NoteText }): JSX.Element {
+  return (
+    <For each={props.note}>
+      {(segment) =>
+        typeof segment === 'string' ? segment : <code class="xo-code">{segment.code}</code>
+      }
+    </For>
+  );
+}
+
+/** Props of {@link UndoButton}. */
+interface UndoButtonProps {
+  /** The row (or removed row) it undoes — its focus target. */
+  readonly id: string;
+  /** The visible label (the accessible name starts with it: label in name). */
+  readonly label: string;
+  /** The accessible name (names the row). */
+  readonly name: string;
+  readonly locked: boolean;
+  readonly onUndo: () => void;
+}
+
+/**
+ * A note's Undo (or Restore): a real button, held (focusable, inert) while
+ * an action is in flight.
+ *
+ * @param props See {@link UndoButtonProps}.
+ */
+function UndoButton(props: UndoButtonProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      class="xo-button xo-note-undo"
+      data-variant="ghost"
+      data-undo-for={props.id}
+      aria-label={props.name}
+      aria-disabled={props.locked ? 'true' : undefined}
+      onClick={() => {
+        if (!props.locked) props.onUndo();
+      }}
+    >
+      {props.label}
+    </button>
+  );
+}
+
 /** A row's match badge words. */
 function matchLabel(count: number): string {
   if (count === 0) return 'No match';
@@ -384,6 +513,8 @@ interface LaneRowProps {
   readonly locked: boolean;
   readonly onKeyDown: (event: KeyboardEvent) => void;
   readonly onPaste: (event: ClipboardEvent) => void;
+  /** Leaving the row removed it while focus was heading to one of its own controls. */
+  readonly onRemovedWithFocus: (id: string) => void;
 }
 
 /**
@@ -401,9 +532,11 @@ function focusLeft(field: HTMLInputElement): boolean {
 
 /**
  * One editable row: the input, its match count on the applied page, its
- * remove control, its inline problem, and a non-blocking note when the row
- * carries invisible characters WP Rocket keeps (no-break spaces at its ends,
- * zero-width characters) — otherwise a silent "No match".
+ * remove control, its inline problem, and one non-blocking note slot: what
+ * the last commit did (stored form with the typed text, unverified, safe
+ * mode — with Undo while the lane is unedited) merged with the
+ * invisible-characters note (no-break spaces at its ends, zero-width
+ * characters WP Rocket keeps — otherwise a silent "No match").
  *
  * Leaving the row trims it by setting the field's value, which in Chromium
  * resets that field's native undo history (verified; the only edit path
@@ -421,8 +554,12 @@ function LaneRow(props: LaneRowProps): JSX.Element {
   const errorId = (): string => `${props.row.id}-problem`;
   const noteId = (): string => `${props.row.id}-note`;
   const invisible = (): boolean => hasInvisibleKeptCharacters(props.row.text);
+  const note = (): RowNote | undefined =>
+    props.controller.notes().lanes[props.lane].rows.get(props.row.id);
+  const hasNote = (): boolean => note() !== undefined || invisible();
+  let line: HTMLDivElement | undefined;
   const describedBy = (): string | undefined => {
-    const ids = [problem() === null ? null : errorId(), invisible() ? noteId() : null];
+    const ids = [problem() === null ? null : errorId(), hasNote() ? noteId() : null];
     const joined = ids.filter((id) => id !== null).join(' ');
     return joined === '' ? undefined : joined;
   };
@@ -434,7 +571,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
       aria-posinset={props.position}
       data-row-id={props.row.id}
     >
-      <div class="xo-row-line">
+      <div class="xo-row-line" ref={line}>
         <input
           class="xo-row-input"
           type="text"
@@ -462,8 +599,13 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           }}
           // Native listener: the row commits (trimmed) only once left.
           on:blur={(event) => {
-            if (focusLeft(event.currentTarget))
-              props.controller.commitRow(props.lane, props.row.id);
+            if (!focusLeft(event.currentTarget)) return;
+            const id = props.row.id;
+            const next = event.relatedTarget;
+            const commit = props.controller.commitRow(props.lane, id);
+            // Focus was heading to this row's own control, gone with the row.
+            if (commit?.diff.state === 'dropped' && next instanceof Node && line?.contains(next))
+              props.onRemovedWithFocus(id);
           }}
         />
         <Show when={props.showMatches}>
@@ -498,11 +640,25 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           </p>
         )}
       </Show>
-      <Show when={invisible()}>
-        <p class="xo-row-note" id={noteId()}>
+      <Show when={hasNote()}>
+        <div class="xo-row-note">
           <Info size={12} aria-hidden="true" />
-          <span>{INVISIBLE_ROW_NOTE}</span>
-        </p>
+          <span class="xo-note-text" id={noteId()}>
+            <Show when={note()}>
+              {(current) => <NoteRuns note={ROW_NOTE_COPY.row(current().diff)} />}
+            </Show>
+            {invisible() ? `${note() === undefined ? '' : ' '}${INVISIBLE_ROW_NOTE}` : ''}
+          </span>
+          <Show when={note()?.undoable === true}>
+            <UndoButton
+              id={props.row.id}
+              label={ROW_NOTE_COPY.undo}
+              name={ROW_NOTE_COPY.undoName(LANE_COPY[props.lane].label, props.position)}
+              locked={props.locked}
+              onUndo={() => props.controller.undoCommit(props.lane, props.row.id)}
+            />
+          </Show>
+        </div>
       </Show>
     </div>
   );

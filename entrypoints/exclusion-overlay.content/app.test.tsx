@@ -621,3 +621,28 @@ describe('OverlayApp', () => {
     expect(document.querySelector('.xo-panel')?.getAttribute('data-open')).toBe('true');
   });
 });
+
+describe('stored-form announcements', () => {
+  afterEach(cleanup);
+
+  it('announces what a commit changed, by row; a typed-row draft opens converted', async () => {
+    const saved: ExclusionSet = {
+      ...validSet(),
+      rows: { ...validSet().rows, delayJs: ['jquery-*.js'] }
+    };
+    mount(port({ state: 'inactive' }, { saved }));
+    await screen.findByText(
+      'Delay JavaScript execution row 1: WP Rocket stores it as jquery-(.*).js.'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Undo change to Delay JavaScript execution row 1' })
+    ).toBeTruthy();
+    // A row left as typed is no news: the region keeps its text.
+    const row = screen.getByRole('textbox', { name: 'LazyLoad for images row 1' });
+    row.focus();
+    row.blur();
+    expect(
+      screen.getByText('Delay JavaScript execution row 1: WP Rocket stores it as jquery-(.*).js.')
+    ).toBeTruthy();
+  });
+});

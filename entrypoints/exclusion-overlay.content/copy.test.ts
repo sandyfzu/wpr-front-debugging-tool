@@ -5,14 +5,19 @@ import {
   DOCUMENT_FAILURE_COPY,
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
+  NOTE_ROW_MAX,
   PASTE_COPY,
   PROBLEM_COPY,
+  ROW_NOTE_COPY,
   UNAVAILABLE_COPY,
+  commitAnnouncement,
+  noteToText,
   saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
   viewCopy
 } from './copy';
+import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
 import type { SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
 
@@ -34,7 +39,12 @@ function allWords(): string[] {
     INVISIBLE_ROW_NOTE,
     PASTE_COPY.laneFull(500),
     PASTE_COPY.dropped(1, 500),
-    PASTE_COPY.dropped(3, 500)
+    PASTE_COPY.dropped(3, 500),
+    ROW_NOTE_COPY.undo,
+    ROW_NOTE_COPY.moreRemoved(2),
+    ROW_NOTE_COPY.summary({ source: 'paste', changed: 2, removed: 1 }),
+    noteToText(ROW_NOTE_COPY.removed({ state: 'dropped', reason: 'zero', typed: '0' }, null)),
+    noteToText(ROW_NOTE_COPY.row({ state: 'stored-as', stored: 'a', typed: 'a ' }))
   ];
 }
 
@@ -168,5 +178,205 @@ describe('paste words', () => {
       '1 pasted line was not added: a lane holds 500 rows at most.'
     );
     expect(PASTE_COPY.dropped(2, 500)).toMatch(/^2 pasted lines were not added/);
+  });
+});
+
+describe('ROW_NOTE_COPY', () => {
+  it('says how WP Rocket stores a row, with the typed text, as code runs', () => {
+    expect(
+      ROW_NOTE_COPY.row({ state: 'stored-as', stored: 'jquery-(.*).js', typed: 'jquery-*.js' })
+    ).toEqual([
+      'WP Rocket stores this as ',
+      { code: 'jquery-(.*).js' },
+      ' (you typed ',
+      { code: 'jquery-*.js' },
+      ').'
+    ]);
+  });
+
+  it('merges the unverified and safe-mode conditions into one note', () => {
+    const unverified = {
+      state: 'unverified',
+      stored: '(?+1)(x)',
+      construct: '(?+1)',
+      detail: 'relative reference',
+      typed: '(?+1)(x)'
+    } as const;
+    expect(noteToText(ROW_NOTE_COPY.row(unverified))).toBe(
+      'WP Rocket’s handling of this row isn’t checked here, so the preview doesn’t apply it; kept as typed.'
+    );
+    // Only the ends' whitespace went: said in words (it is invisible as code).
+    expect(noteToText(ROW_NOTE_COPY.row({ ...unverified, typed: ' (?+1)(x) ' }))).toBe(
+      'WP Rocket stores this without the spaces at its ends. Whether WP Rocket keeps it isn’t checked here, so the preview doesn’t apply it.'
+    );
+    expect(noteToText(ROW_NOTE_COPY.row({ ...unverified, typed: '(?+1)(x)*' }))).toBe(
+      'WP Rocket stores this as (?+1)(x) (you typed (?+1)(x)*). Whether WP Rocket keeps it isn’t checked here, so the preview doesn’t apply it.'
+    );
+    expect(
+      noteToText(
+        ROW_NOTE_COPY.row({ state: 'unchanged', typed: 'js-(before|after)', dropsInSafeMode: true })
+      )
+    ).toBe(
+      'WP Rocket drops this row when Safe Mode for jQuery is on (that setting can’t be read from the page).'
+    );
+    expect(
+      noteToText(
+        ROW_NOTE_COPY.row({
+          state: 'stored-as',
+          stored: 'js-(before|after)',
+          typed: ' js-(before|after)',
+          dropsInSafeMode: true
+        })
+      )
+    ).toMatch(/its ends\. WP Rocket drops this row when Safe Mode/);
+  });
+
+  it('names every drop reason, the copied row and the rejected construct', () => {
+    const removed = (
+      diff: Parameters<typeof ROW_NOTE_COPY.removed>[0],
+      copyOf: number | null = null
+    ): string => noteToText(ROW_NOTE_COPY.removed(diff, copyOf));
+    expect(removed({ state: 'dropped', reason: 'empty', typed: '<b></b>' })).toBe(
+      'Removed <b></b>: WP Rocket drops rows left empty once saved.'
+    );
+    expect(removed({ state: 'dropped', reason: 'zero', typed: ' 0' })).toBe(
+      'Removed  0: WP Rocket drops rows that read 0.'
+    );
+    expect(removed({ state: 'dropped', reason: 'duplicate', typed: 'a' }, 2)).toBe(
+      'Removed a: WP Rocket drops a copy of row 2.'
+    );
+    expect(removed({ state: 'dropped', reason: 'duplicate', typed: 'a' })).toBe(
+      'Removed a: WP Rocket drops a copy of another row.'
+    );
+    expect(
+      removed({
+        state: 'dropped',
+        reason: 'invalid-pattern',
+        typed: '(',
+        construct: '(',
+        detail: 'missing )'
+      })
+    ).toBe('Removed (: WP Rocket drops patterns it can’t read: ( (missing )).');
+    expect(removed({ state: 'dropped', reason: 'invalid-pattern', typed: '(' })).toBe(
+      'Removed (: WP Rocket drops patterns it can’t read.'
+    );
+    expect(removed({ state: 'dropped', reason: 'safe-mode', typed: 'js-(before|after)' })).toMatch(
+      /drops this row while Safe Mode for jQuery is on\.$/
+    );
+  });
+
+  it('cuts long row texts it quotes, keeping them code', () => {
+    const long = 'x'.repeat(NOTE_ROW_MAX + 10);
+    const note = ROW_NOTE_COPY.removed({ state: 'dropped', reason: 'zero', typed: long }, null);
+    expect(note[1]).toEqual({ code: `${'x'.repeat(NOTE_ROW_MAX)}…` });
+  });
+
+  it('counts a batch and names undo targets', () => {
+    expect(ROW_NOTE_COPY.summary({ source: 'paste', changed: 3, removed: 1 })).toBe(
+      '3 pasted rows changed to WP Rocket’s stored form, 1 removed.'
+    );
+    expect(ROW_NOTE_COPY.summary({ source: 'restore', changed: 1, removed: 0 })).toBe(
+      '1 saved row changed to WP Rocket’s stored form.'
+    );
+    expect(ROW_NOTE_COPY.summary({ source: 'apply', changed: 0, removed: 2 })).toBe(
+      '2 rows removed: WP Rocket drops them when saving.'
+    );
+    expect(ROW_NOTE_COPY.moreRemoved(1)).toBe('1 more row removed.');
+    expect(ROW_NOTE_COPY.moreRemoved(4)).toBe('4 more rows removed.');
+    expect(ROW_NOTE_COPY.undoName('Image lazyload', 3)).toBe('Undo change to Image lazyload row 3');
+    expect(ROW_NOTE_COPY.restoreName('Image lazyload', 2)).toBe(
+      'Restore removed Image lazyload row 2'
+    );
+  });
+});
+
+describe('commitAnnouncement', () => {
+  const label = LANE_COPY.delayJs.label;
+
+  it('says one changed or removed row by its number', () => {
+    expect(
+      commitAnnouncement({
+        source: 'row',
+        news: [
+          {
+            lane: 'delayJs',
+            position: 2,
+            diff: { state: 'stored-as', stored: 'a(.*)', typed: 'a*' },
+            copyOf: null
+          }
+        ]
+      })
+    ).toBe(`${label} row 2: WP Rocket stores it as a(.*).`);
+    expect(
+      commitAnnouncement({
+        source: 'row',
+        news: [
+          {
+            lane: 'delayJs',
+            position: 3,
+            diff: { state: 'dropped', reason: 'duplicate', typed: 'a' },
+            copyOf: 1
+          }
+        ]
+      })
+    ).toBe(`${label} row 3 removed: WP Rocket drops a copy of row 1.`);
+  });
+
+  it('counts a batch, ignores flag-only news, says nothing without a change', () => {
+    const flagged = {
+      lane: 'delayJs',
+      position: 1,
+      diff: { state: 'unchanged', typed: 'js-(before|after)', dropsInSafeMode: true },
+      copyOf: null
+    } as const;
+    expect(commitAnnouncement({ source: 'restore', news: [flagged] })).toBeNull();
+    expect(
+      commitAnnouncement({
+        source: 'paste',
+        news: [
+          flagged,
+          { ...flagged, diff: { state: 'stored-as', stored: 'b', typed: ' b' } },
+          { ...flagged, diff: { state: 'dropped', reason: 'zero', typed: '0' } }
+        ]
+      })
+    ).toBe('1 pasted row changed to WP Rocket’s stored form, 1 removed.');
+  });
+});
+
+describe('long and whitespace-only changes (audit round)', () => {
+  const typed = `https://example.com/wp-content/plugins/${'my-plugin/'.repeat(4)}assets/js/script-*.min.js`;
+  const stored = typed.replace('*', '(.*)');
+  const news = (diff: StoredRowDiff) =>
+    commitAnnouncement({
+      source: 'row',
+      news: [{ lane: 'delayJs', position: 2, diff, copyOf: null }]
+    });
+
+  it('cuts long rows around their difference, the same way in note and announcement', () => {
+    const note = ROW_NOTE_COPY.row({ state: 'stored-as', stored, typed });
+    const quotes = note.filter((part): part is { code: string } => typeof part !== 'string');
+    expect(quotes.map((quote) => quote.code)).toEqual([
+      '…s/js/script-(.*).min.js',
+      '…s/js/script-*.min.js'
+    ]);
+    expect(news({ state: 'stored-as', stored, typed })).toBe(
+      `${LANE_COPY.delayJs.label} row 2: WP Rocket stores it as …s/js/script-(.*).min.js.`
+    );
+  });
+
+  it('says a trim of the ends in words, never as invisible quotes', () => {
+    const diff = { state: 'stored-as', stored: 'a.js', typed: '\ta.js  ' } as const;
+    expect(noteToText(ROW_NOTE_COPY.row(diff))).toBe(
+      'WP Rocket stores this without the spaces at its ends.'
+    );
+    expect(news(diff)).toBe(
+      `${LANE_COPY.delayJs.label} row 2: WP Rocket stores it without the spaces at its ends.`
+    );
+  });
+
+  it('names the removed-rows list by its lane', () => {
+    expect(ROW_NOTE_COPY.removedListName('LazyLoad for images')).toBe(
+      'LazyLoad for images rows removed'
+    );
   });
 });
