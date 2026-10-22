@@ -111,38 +111,60 @@ export const EXCLUSION_PIPELINE_IDS: readonly ExclusionFeatureId[] = FEATURE_PIP
   (entry) => entry.id
 );
 
-/** One exclusion-pipeline step: a feature's transform, keyed by its feature id. */
-export type ExclusionPipelineStep = PipelineStep<TransformReport, ExclusionFeatureId>;
+/**
+ * One exclusion-pipeline step, keyed by the feature whose work it does: a
+ * feature's transform (its report), or the Defer JS inline-pass replay
+ * (no report of its own — Defer JS reports it).
+ */
+export type ExclusionPipelineStep = PipelineStep<TransformReport | null, ExclusionFeatureId>;
+
+/** The feature whose work the inline-pass replay is (WP Rocket's Defer JS). */
+const INLINE_PASS_FEATURE: ExclusionFeatureId = 'defer_all_js';
 
 /**
- * The exclusion pipeline's steps for one set, in the declared execution
- * order — what {@link applyPipeline} composes. Exposed for consumers that
- * must observe the run step by step (e.g. to bound its wall time between
- * steps); they must prevalidate the set first, exactly as `applyPipeline`
- * does, or a step throws its feature's validation error mid-run.
+ * The ids of {@link exclusionPipelineSteps}' steps, in execution order: the
+ * inline-pass replay (as Defer JS), then the features.
+ */
+export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
+  INLINE_PASS_FEATURE,
+  ...EXCLUSION_PIPELINE_IDS
+];
+
+/**
+ * The exclusion pipeline's steps for one set, in execution order — what
+ * {@link applyPipeline} composes. Exposed for consumers that must observe
+ * the run step by step (e.g. to bound its wall time between steps and name
+ * the feature that overran); they must prevalidate the set first, exactly
+ * as `applyPipeline` does, or a step throws its feature's validation error
+ * mid-run.
+ *
+ * WP Rocket's Defer JS inline-jQuery pass ran after its deferral and before
+ * Delay JS, so the first step replays it on the served page (before any
+ * restore splits identical wrapped copies), under Defer JS's id; the
+ * feature steps follow in the declared order, the Delay and Defer ones
+ * reading that replay. Run alone, a feature step does its own replay.
  *
  * @param set The exclusion set every step reads.
  * @param bytes How the session decoded the page, when known (Automatic Lazy
  *   Rendering rebuilds libxml's reading of the bytes from it).
- * @returns One step per feature, in pipeline order.
+ * @returns The replay step, then one step per feature in pipeline order.
  */
 export function exclusionPipelineSteps(
   set: ExclusionSet,
   bytes?: DocumentBytes
 ): readonly ExclusionPipelineStep[] {
-  // WP Rocket's Defer JS inline-jQuery pass ran after its deferral and
-  // before Delay JS: the first step replays it on the served page — before
-  // any restore splits identical wrapped copies — and Defer JS reports it.
   let inline: InlinePassReplay | null = null;
-  return FEATURE_PIPELINE.map((entry, index) => ({
+  const replay: ExclusionPipelineStep = {
+    id: INLINE_PASS_FEATURE,
+    apply: (html: string) => {
+      inline = replayInlinePass(html, set);
+      return { html: inline.html, report: null };
+    }
+  };
+  const features = FEATURE_PIPELINE.map((entry): ExclusionPipelineStep => ({
     id: entry.id,
-    apply: (stepHtml: string) => {
-      let html = stepHtml;
-      if (index === 0) {
-        inline = replayInlinePass(stepHtml, set);
-        html = inline.html;
-      }
-      const afterReplay = inline === null ? undefined : AFTER_INLINE_PASS[entry.id];
+    apply: (html: string) => {
+      const afterReplay = AFTER_INLINE_PASS[entry.id];
       const result =
         afterReplay !== undefined && inline !== null
           ? afterReplay(html, set, inline)
@@ -150,6 +172,19 @@ export function exclusionPipelineSteps(
       return { html: result.html, report: result.report };
     }
   }));
+  return [replay, ...features];
+}
+
+/**
+ * The reports a composition collected, without the steps that report
+ * nothing (the inline-pass replay): one per feature, in pipeline order.
+ *
+ * @param reports Every step's report, in step order.
+ */
+export function featureReports(
+  reports: readonly (TransformReport | null)[]
+): readonly TransformReport[] {
+  return reports.filter((report): report is TransformReport => report !== null);
 }
 
 /**
@@ -171,5 +206,6 @@ export function exclusionPipelineSteps(
 export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
   const problems = prevalidateExclusionSet(set);
   if (!problems.valid) throw new ExclusionValidationError(problems.invalid);
-  return composeSteps(html, exclusionPipelineSteps(set));
+  const composed = composeSteps(html, exclusionPipelineSteps(set));
+  return { html: composed.html, reports: featureReports(composed.reports) };
 }

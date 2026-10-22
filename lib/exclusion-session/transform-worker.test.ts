@@ -5,7 +5,11 @@
  * runs, respawn after a kill, stale messages, dispose).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
+import {
+  applyPipeline,
+  EXCLUSION_PIPELINE_IDS,
+  EXCLUSION_PIPELINE_STEP_IDS
+} from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ScheduleTimer } from '../messaging/bounded-ask';
 import type { DocumentTransformRequest } from './document-transform';
@@ -134,7 +138,7 @@ describe('handleTransformWorkerMessage', () => {
       () => 0
     );
     expect(posted.slice(0, -1)).toEqual(
-      EXCLUSION_PIPELINE_IDS.map((feature) => ({ type: 'step', id: 7, feature }))
+      EXCLUSION_PIPELINE_STEP_IDS.map((feature) => ({ type: 'step', id: 7, feature }))
     );
     const expected = applyPipeline(DELAYED, SET);
     expect(posted.at(-1)).toEqual({
@@ -214,7 +218,8 @@ describe('handleTransformWorkerMessage', () => {
       id: 1,
       result: {
         ok: false,
-        outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 100 }
+        // The replay step runs first (Defer JS, no row of its own).
+        outcome: { outcome: 'over-budget', feature: 'defer_all_js', row: null, budgetMs: 100 }
       }
     });
   });

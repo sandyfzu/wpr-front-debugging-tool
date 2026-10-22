@@ -197,9 +197,12 @@ function runStepResult(
   html: string,
   set: ExclusionSet
 ): { readonly html: string; readonly report: TransformReport } {
-  const step = exclusionPipelineSteps(set).find((candidate) => candidate.id === feature);
+  // The feature's own step (Defer JS's id also names the inline-pass replay, run first).
+  const step = exclusionPipelineSteps(set).findLast((candidate) => candidate.id === feature);
   if (step === undefined) throw new Error(`no pipeline step for ${feature}`);
-  return step.apply(html);
+  const result = step.apply(html);
+  if (result.report === null) throw new Error(`the ${feature} step reports nothing`);
+  return { html: result.html, report: result.report };
 }
 
 /** The feature's pipeline step over `html`, returning the rewritten page. */

@@ -9,7 +9,9 @@ import {
   applyPipeline,
   composeSteps,
   EXCLUSION_PIPELINE_IDS,
+  EXCLUSION_PIPELINE_STEP_IDS,
   exclusionPipelineSteps,
+  featureReports,
   type PipelineStep
 } from './pipeline';
 import { delayJsTransform } from './delay-js';
@@ -234,16 +236,24 @@ describe('direct single-feature use', () => {
 describe('exclusionPipelineSteps', () => {
   const RELATIVE = '<script src="js/a.js" data-rocket-defer defer></script>';
 
-  it('yields one step per feature, in the declared order', () => {
-    expect(exclusionPipelineSteps(EMPTY_EXCLUSION_SET).map((step) => step.id)).toEqual(
-      EXCLUSION_PIPELINE_IDS
-    );
+  it('yields the inline-pass replay as Defer JS, then one step per feature in the declared order', () => {
+    const ids = exclusionPipelineSteps(EMPTY_EXCLUSION_SET).map((step) => step.id);
+    expect(ids).toEqual(['defer_all_js', ...EXCLUSION_PIPELINE_IDS]);
+    expect(ids).toEqual(EXCLUSION_PIPELINE_STEP_IDS);
+  });
+
+  it('gives the replay step no report of its own (Defer JS reports the pass)', () => {
+    const [replay] = exclusionPipelineSteps(EMPTY_EXCLUSION_SET);
+    expect(replay?.apply('<p>x</p>')).toEqual({ html: '<p>x</p>', report: null });
   });
 
   it('composes to exactly what applyPipeline returns', () => {
     const html = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>';
     const set = setWith({ delayJs: ['a\\.js'] });
-    expect(composeSteps(html, exclusionPipelineSteps(set))).toEqual(applyPipeline(html, set));
+    const composed = composeSteps(html, exclusionPipelineSteps(set));
+    expect({ html: composed.html, reports: featureReports(composed.reports) }).toEqual(
+      applyPipeline(html, set)
+    );
   });
 
   it('matches Defer JS rows against the raw src, never a resolved URL (as WP Rocket does)', () => {

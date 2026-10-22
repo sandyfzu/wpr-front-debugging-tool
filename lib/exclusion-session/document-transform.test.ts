@@ -4,7 +4,7 @@
  * rewrite (size guard, charset round trip, unchanged runs, runner faults).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_IDS } from '../exclusion-builder/pipeline';
+import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import {
   createInProcessTransformRunner,
@@ -55,17 +55,20 @@ describe('runDocumentPipeline', () => {
     });
   });
 
-  it('announces every step in pipeline order', () => {
+  it('announces every step in pipeline order (the inline-pass replay as Defer JS)', () => {
     const started: string[] = [];
     runDocumentPipeline(request(DELAYED), clock(0), (feature) => started.push(feature));
-    expect(started).toEqual(EXCLUSION_PIPELINE_IDS);
+    expect(started).toEqual(EXCLUSION_PIPELINE_STEP_IDS);
   });
 
-  it.each(EXCLUSION_PIPELINE_IDS.map((feature, index) => [feature, index] as const))(
-    'names %s when its step crosses the budget',
+  it.each(EXCLUSION_PIPELINE_STEP_IDS.map((feature, index) => [feature, index] as const))(
+    'names %s when step %i crosses the budget',
     (feature, index) => {
       // Readings: start, then one per finished step; the crossing step reads 101.
-      const readings = [0, ...EXCLUSION_PIPELINE_IDS.map((_, step) => (step < index ? 1 : 101))];
+      const readings = [
+        0,
+        ...EXCLUSION_PIPELINE_STEP_IDS.map((_, step) => (step < index ? 1 : 101))
+      ];
       const result = runDocumentPipeline(request(DELAYED), clock(...readings));
       expect(result).toEqual({
         ok: false,
@@ -248,10 +251,11 @@ describe('rewriteDocument', () => {
   });
 
   it('passes the over-budget outcome through unmodified', async () => {
+    // The first step (the Defer JS inline-pass replay) crosses: Defer JS, no row of its own.
     const overrun = createInProcessTransformRunner(clock(0, 10_000));
     const rewrite = await rewriteDocument(doc(encoder.encode(DELAYED)), DELAY_SET, overrun, 50);
     expect(rewrite).toEqual({
-      outcome: { outcome: 'over-budget', feature: 'delay_js', row: 'a\\.js', budgetMs: 50 },
+      outcome: { outcome: 'over-budget', feature: 'defer_all_js', row: null, budgetMs: 50 },
       body: null
     });
   });

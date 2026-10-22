@@ -149,7 +149,7 @@ export function runDocumentPipeline(
         return { ok: false, outcome: overBudgetOutcome(request.set, step.id, request.budgetMs) };
       }
       html = result.html;
-      reports.push(result.report);
+      if (result.report !== null) reports.push(result.report);
     }
     return { ok: true, html, outcome: { outcome: 'rewritten', reports } };
   } catch (cause) {
