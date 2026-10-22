@@ -120,6 +120,13 @@ const ALPHA = unionOf(UPPER, LOWER);
 const WORD = unionOf(DIGIT, ALPHA, bytesOf(0x5f));
 /** `\s`, `[[:space:]]`: tab, LF, VT, FF, CR, space. */
 const SPACE = byteRanges([0x09, 0x0d], [0x20, 0x20]);
+
+/**
+ * PCRE's `\s` (no UTF) as JS character-class members — for hand-written
+ * regexes over page text that mirror WP Rocket's own (`[${PCRE_SPACE_CHARS}'"]`):
+ * no JS Unicode whitespace creeps in. Pinned to {@link ESCAPE_SETS}`.s` by test.
+ */
+export const PCRE_SPACE_CHARS = '\\t\\n\\v\\f\\r ';
 /** `[[:graph:]]`. */
 const GRAPH = byteRanges([0x21, 0x7e]);
 /** `[[:alnum:]]`. */

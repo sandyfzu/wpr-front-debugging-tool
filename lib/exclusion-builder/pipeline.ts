@@ -110,7 +110,8 @@ export type ExclusionPipelineStep = PipelineStep<TransformReport, ExclusionFeatu
  *
  * @param set The exclusion set every step reads.
  * @param documentUrl The served document's absolute URL, when known
- *   (Defer JS then also matches relative `src` values in resolved form).
+ *   (on the shared transform signature; no transform reads it today —
+ *   WP Rocket matches Defer JS rows against the raw `src`).
  * @param bytes How the session decoded the page, when known (Automatic Lazy
  *   Rendering rebuilds libxml's reading of the bytes from it).
  * @returns One step per feature, in pipeline order.

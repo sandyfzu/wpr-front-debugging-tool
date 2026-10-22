@@ -103,16 +103,15 @@ describe('runDocumentPipeline', () => {
     });
   });
 
-  it('threads the document URL to URL-resolving rows', () => {
+  it('matches Defer JS rows against the raw src, never the URL resolved against the document', () => {
     const html = '<script src="js/a.js" data-rocket-defer defer></script>';
-    const set = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const resolved = runDocumentPipeline(
-      { ...request(html, set), documentUrl: 'https://s.tld/page' },
-      clock(0)
-    );
-    expect(resolved.ok && resolved.html).not.toBe(html);
-    const raw = runDocumentPipeline(request(html, set), clock(0));
-    expect(raw.ok && raw.html).toBe(html);
+    const documentUrl = 'https://s.tld/page';
+    const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
+    const resolved = runDocumentPipeline({ ...request(html, resolvedRow), documentUrl }, clock(0));
+    expect(resolved.ok && resolved.html).toBe(html);
+    const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
+    const raw = runDocumentPipeline({ ...request(html, rawRow), documentUrl }, clock(0));
+    expect(raw.ok && raw.html).not.toBe(html);
   });
 });
 

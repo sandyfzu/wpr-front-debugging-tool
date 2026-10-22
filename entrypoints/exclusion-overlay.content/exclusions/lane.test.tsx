@@ -256,7 +256,8 @@ describe('Lane', () => {
 
   it('marks a problem row, rendering quoted patterns as code', async () => {
     const controller = await readyController();
-    controller.insertRows('delayJs', ['(a+)+$'], null);
+    // Spelled without `+`: Delay JS reads every `+` as a literal one.
+    controller.insertRows('delayJs', ['(a{1,}){1,}$'], null);
     mountLane(controller);
     expect(input(1).getAttribute('aria-invalid')).toBe('true');
     const problem = document.getElementById(input(1).getAttribute('aria-describedby') ?? '');

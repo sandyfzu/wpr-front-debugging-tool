@@ -98,8 +98,10 @@ describe('delayJsTransform — restoring a live script', () => {
   });
 
   it('overwrites a surviving plain `src` with the parked original', () => {
+    // WP Rocket's served form of `src="real.js" src="placeholder.js"`: its
+    // greedy rename parks the first and leaves the second (PHP-observed).
     const html =
-      '<script type="rocketlazyloadscript" src="placeholder.js" data-rocket-src="real.js"></script>';
+      '<script type="rocketlazyloadscript" data-rocket-src="real.js" src="placeholder.js"></script>';
     const result = delayJsTransform(html, setWithRows(['real\\.js']));
     expect(result.html).toBe('<script src="real.js" data-wpr-fdt-excluded="delay_js"></script>');
     expect(result.html).not.toContain('placeholder.js');
@@ -158,7 +160,7 @@ describe('delayJsTransform — matching', () => {
     expect(result.report.unmatchedRows).toEqual(['u']);
   });
 
-  it('is case-sensitive per the source semantics — in tag names (scanner) but in row values and type values', () => {
+  it('reads type values case-sensitively and rows ASCII-case-insensitively, as WP Rocket does', () => {
     // Uppercase tag names scan fine; the served type value is what isDelayJSType reads.
     const upperTag = '<SCRIPT TYPE="rocketlazyloadscript" DATA-ROCKET-SRC="u.js"></SCRIPT>';
     expect(delayJsTransform(upperTag, setWithRows(['u\\.js'])).report.rewritten).toBe(1);
@@ -166,8 +168,11 @@ describe('delayJsTransform — matching', () => {
     const upperType = '<script type="ROCKETLAZYLOADSCRIPT" data-rocket-src="u.js"></script>';
     const upperResult = delayJsTransform(upperType, setWithRows(['u\\.js']));
     expect(upperResult.report.candidates).toBe(0);
-    // Row values match case-sensitively (no flags — like the plugin's matching).
-    expect(delayJsTransform(OLD_TYPE, setWithRows(['A.JS'])).report.rewritten).toBe(0);
+    // Rows match with WP Rocket's `i` flag: ASCII letters fold, others do not.
+    expect(delayJsTransform(OLD_TYPE, setWithRows(['A.JS'])).report.rewritten).toBe(1);
+    const accented = '<script type="text/rocketlazyloadscript">var t = "été";</script>';
+    expect(delayJsTransform(accented, setWithRows(['ÉTÉ'])).report.rewritten).toBe(0);
+    expect(delayJsTransform(accented, setWithRows(['VAR T = "été"'])).report.rewritten).toBe(1);
   });
 
   it('matches raw served text — served `&#038;` entities are not decoded', () => {

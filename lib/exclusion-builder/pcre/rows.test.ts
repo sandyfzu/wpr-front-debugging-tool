@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
-import { compileMatcher, regexRowProblems, translateRegexRows } from './rows';
+import {
+  TRANSLATION_CACHE_LIMITS,
+  compileByteMatcher,
+  compileFirstMatch,
+  regexRowProblems,
+  translateRegexRows,
+  translationRowProblems
+} from './rows';
+import { toByteString } from './translate';
 
 /** The problem id per row (`null` = none). */
 function problemIds(
@@ -27,9 +35,16 @@ describe('translateRegexRows', () => {
   it('compiles a matcher that encodes the subject itself', () => {
     const [row] = translateRegexRows('defer_all_js', ['^/.\\.js$']).rows;
     if (row?.matcher == null) throw new Error('no matcher');
-    const test = compileMatcher(row.matcher);
+    const first = compileFirstMatch([row.matcher]);
+    const test = (subject: string): boolean => first(subject) === 0;
     // `é` is two bytes: PCRE's `.` (no UTF) sees one of them.
     expect([test('/a.js'), test('/é.js'), test('/A.JS')]).toEqual([true, false, true]);
+  });
+
+  it('compiles an ordered matcher set answering the first matching row, rows without a matcher skipped', () => {
+    const { rows } = translateRegexRows('defer_all_js', ['^/.\\.js$', '(?>x)', 'x', '\\.js']);
+    const first = compileFirstMatch(rows.map(({ matcher }) => matcher));
+    expect([first('/a.js'), first('/é.js'), first('x'), first('/a.css')]).toEqual([0, 3, 2, -1]);
   });
 
   it('keeps the matcher of a match-all row (it really matches everything)', () => {
@@ -333,6 +348,23 @@ describe('work bounds', () => {
     );
   });
 
+  it('stops at PCRE’s parenthesis nesting limit, one level kept for the joined wrapper', () => {
+    const nested = (depth: number): string => `${'('.repeat(depth)}a${')'.repeat(depth)}`;
+    // 249 levels: valid alone and joined (250 with the wrapper) on PCRE — parsed
+    // through; only the backtracking guard's own depth cap speaks.
+    expect(translateRegexRows('defer_all_js', [nested(249)])).toMatchObject({
+      rows: [{ problem: { problem: 'backtracking-risk' } }]
+    });
+    // 250 levels: kept at save, but joined it is 251 — past the limit. Not modeled: unknown.
+    // Far deeper rows are bounded the same way instead of overflowing the stack.
+    for (const depth of [250, 1_875]) {
+      expect(translateRegexRows('defer_all_js', [nested(depth)])).toMatchObject({
+        page: 'unknown',
+        rows: [{ problem: { problem: 'pcre-only' } }]
+      });
+    }
+  });
+
   it('answers unknown once the dummy-string replay passes its execution budget', () => {
     // Each row only ever matches empty: the non-empty retry tries every row at
     // every position — 13 × 16 000 executions, past the 200 000 budget.
@@ -354,6 +386,13 @@ describe('work bounds', () => {
 });
 
 describe('regexRowProblems', () => {
+  it('lists the same entries from a translation already in hand', () => {
+    const rows = ['ok', '(?>x)', 'zzz|'];
+    expect(
+      translationRowProblems('defer_all_js', translateRegexRows('defer_all_js', rows))
+    ).toEqual(regexRowProblems('defer_all_js', rows));
+  });
+
   it('lists every row with a problem as a validation entry carrying its id', () => {
     expect(regexRowProblems('defer_all_js', ['a.js', '(?>a)', ''])).toEqual([
       {
@@ -375,5 +414,39 @@ describe('regexRowProblems', () => {
 
   it('is empty for clean rows', () => {
     expect(regexRowProblems('delay_js', ['jquery', 'a\\.js'])).toEqual([]);
+  });
+});
+
+describe('translation memos', () => {
+  it('keys row analyses by feature: the same text translates per feature', () => {
+    // Delay escapes `+` (literal); Defer keeps the quantifier.
+    const delay = translateRegexRows('delay_js', ['a+b']).rows[0]?.matcher?.source;
+    const defer = translateRegexRows('defer_all_js', ['a+b']).rows[0]?.matcher?.source;
+    expect(delay).toBe('[Aa]\\x2b[Bb]');
+    expect(defer).not.toBe(delay);
+    // Served again from the memo, unchanged.
+    expect(translateRegexRows('delay_js', ['a+b']).rows[0]?.matcher?.source).toBe(delay);
+  });
+
+  it('tests pre-encoded subjects with a stateless compiled matcher', () => {
+    const [row] = translateRegexRows('delay_js', ['é']).rows;
+    if (row?.matcher == null) throw new Error('no matcher');
+    const test = compileByteMatcher(row.matcher);
+    expect([test(toByteString('été')), test(toByteString('été')), test('été')]).toEqual([
+      true,
+      true,
+      false
+    ]);
+  });
+
+  it('stays bounded: past the limit the oldest analysis is rebuilt, never wrong', () => {
+    const rows = Array.from(
+      { length: TRANSLATION_CACHE_LIMITS.analysisEntries + 1 },
+      (_, i) => `memo${String(i)}`
+    );
+    translateRegexRows('delay_js', rows);
+    expect(translateRegexRows('delay_js', ['memo0']).rows[0]?.matcher?.source).toBe(
+      '[Mm][Ee][Mm][Oo]0'
+    );
   });
 });

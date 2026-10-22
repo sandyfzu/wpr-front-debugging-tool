@@ -15,6 +15,8 @@
  *
  * Each row reports its most decisive problem only (see {@link rowProblem}).
  */
+import { createBoundedMemo } from '../../../utils/bounded-memo';
+import { capText } from '../../../utils/cap-text';
 import type { InvalidExclusionRow } from '../errors';
 import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
 import type { ProblemId } from './problems';
@@ -32,7 +34,7 @@ import {
 
 /**
  * A JS matcher for one row: its source matches the subject's byte string
- * (see {@link compileMatcher}, which does the encoding). Case folding is in
+ * (see {@link compileFirstMatch}, which does the encoding). Case folding is in
  * the source; JS's `i` is never used.
  */
 export interface PcreMatcher {
@@ -77,15 +79,87 @@ export interface RegexRowsTranslation {
 }
 
 /**
- * A compiled matcher: tests a subject (page text) by encoding it to the
- * byte string the source is written for.
+ * The translation memos' bounds, declared once, in estimated retained
+ * bytes (not only entries): every realm that validates keeps them — the
+ * overlay inside host pages included — so the worst case stays well under
+ * 1 MiB whatever rows come. Estimates measured on V8 (Node 24): a kept
+ * analysis ≈ 700 B + 1 B per character of key and JS source; a compiled
+ * regex ≈ 250 B + up to 5 B per source character once it has run.
+ */
+export const TRANSLATION_CACHE_LIMITS = {
+  /** Row analyses kept at most (a set of up to this many short rows translates from the memo). */
+  analysisEntries: 256,
+  /** Estimated bytes the analysis memo keeps. */
+  analysisBytes: 256 * 1024,
+  /** Compiled regexes kept at most. */
+  regexEntries: 256,
+  /** Estimated bytes the compiled-regex memo keeps. */
+  regexBytes: 192 * 1024
+} as const;
+
+/** Estimated fixed bytes of one kept analysis (its record and arrays). */
+const ANALYSIS_ENTRY_BYTES = 768;
+/** Estimated fixed bytes of one kept regex. */
+const REGEX_ENTRY_BYTES = 256;
+/** Estimated compiled bytes per source character of a kept regex. */
+const REGEX_BYTES_PER_CHAR = 5;
+
+/** Compiled sources (a source already carries its feature's escapes, so it is the whole key). */
+const regexMemo = createBoundedMemo<RegExp>({
+  maxEntries: TRANSLATION_CACHE_LIMITS.regexEntries,
+  maxWeight: TRANSLATION_CACHE_LIMITS.regexBytes,
+  weigh: (source) => REGEX_ENTRY_BYTES + REGEX_BYTES_PER_CHAR * source.length
+});
+
+/**
+ * A compiled matcher over a subject already encoded with `toByteString` —
+ * for callers testing one subject against many rows, which encode it once.
+ * The compiled regex is memoized by source and stateless (no `g`/`y`).
  *
  * @param matcher A row's matcher.
- * @returns A stateless test.
+ * @returns A test over the subject's byte string.
  */
-export function compileMatcher(matcher: PcreMatcher): (subject: string) => boolean {
-  const regex = new RegExp(matcher.source, matcher.flags);
-  return (subject) => regex.test(toByteString(subject));
+export function compileByteMatcher(matcher: PcreMatcher): (bytes: string) => boolean {
+  const regex = regexMemo.get(matcher.source, () => new RegExp(matcher.source, matcher.flags));
+  return (bytes) => regex.test(bytes);
+}
+
+/** Row analyses by feature + row: the same text translates differently per feature (escapes). */
+const analysisMemo = createBoundedMemo<RowAnalysis>({
+  maxEntries: TRANSLATION_CACHE_LIMITS.analysisEntries,
+  maxWeight: TRANSLATION_CACHE_LIMITS.analysisBytes,
+  weigh: (key, analysis) => ANALYSIS_ENTRY_BYTES + key.length + (analysis.source?.length ?? 0)
+});
+
+/**
+ * {@link analyzeRow}, memoized: validation and matching translate the same
+ * rows on every apply, and analysis (parse, save check, risk guard) is the
+ * costly part.
+ *
+ * @param feature The row's feature (part of the key).
+ * @param row The stored row.
+ */
+function cachedAnalysis(feature: RegexFeatureId, row: string): RowAnalysis {
+  return analysisMemo.get(`${feature}\u0000${row}`, () => analyzeRow(feature, row));
+}
+
+/**
+ * Compiled matchers tested as one ordered set — WP Rocket's "first row that
+ * matches" reading: the subject is encoded once, then each row's matcher
+ * runs in list order (rows without one are skipped).
+ *
+ * @param matchers The rows' matchers, in list order (`null` = no matcher).
+ * @returns A stateless lookup of the first matching row's index, or `-1`.
+ */
+export function compileFirstMatch(
+  matchers: readonly (PcreMatcher | null)[]
+): (subject: string) => number {
+  const tests = matchers.map((matcher) => (matcher === null ? null : compileByteMatcher(matcher)));
+  if (tests.every((test) => test === null)) return () => -1;
+  return (subject) => {
+    const bytes = toByteString(subject);
+    return tests.findIndex((test) => test !== null && test(bytes));
+  };
 }
 
 /** The fixed subject of WP Rocket's Defer JS pre-check. */
@@ -421,9 +495,16 @@ function deferPage(
   return { page: consumers !== null || off ? 'off' : 'on', offRows };
 }
 
-/** Backticked construct text for a reason. */
+/**
+ * Code points of a construct a reason echoes: the row travels beside the
+ * reason, so a long construct (an unclosed group spans the rest of the row)
+ * is cut, keeping every reason short.
+ */
+export const REASON_CONSTRUCT_MAX = 48;
+
+/** Backticked construct text for a reason (long constructs cut, see {@link REASON_CONSTRUCT_MAX}). */
 function quoted(construct: PcreConstruct): string {
-  return `\`${construct.construct}\` (${construct.detail})`;
+  return `\`${capText(construct.construct, REASON_CONSTRUCT_MAX)}\` (${construct.detail})`;
 }
 
 /** What the set says about one row. */
@@ -533,7 +614,7 @@ export function translateRegexRows(
     if (spent > PCRE_LIMITS.setBytes) {
       return uncheckedRow(row, 0, `past the ${String(PCRE_LIMITS.setBytes)}-byte set budget`);
     }
-    const analysis = analyzeRow(feature, row);
+    const analysis = cachedAnalysis(feature, row);
     spent += analysis.bytes;
     return analysis;
   });
@@ -560,18 +641,18 @@ export function translateRegexRows(
 }
 
 /**
- * The rows of a regex feature that do not match here as on the live site, as
- * validation entries carrying their problem id.
+ * A translation's row problems as validation entries carrying their problem
+ * id — for callers that already hold the translation.
  *
  * @param feature `delay_js` or `defer_all_js`.
- * @param rows The stored rows, in order.
+ * @param translation The feature's rows, translated.
  * @returns One entry per row with a problem, in row order.
  */
-export function regexRowProblems(
+export function translationRowProblems(
   feature: RegexFeatureId,
-  rows: readonly string[]
+  translation: RegexRowsTranslation
 ): InvalidExclusionRow[] {
-  return translateRegexRows(feature, rows).rows.flatMap((translated, index) =>
+  return translation.rows.flatMap((translated, index) =>
     translated.problem === null
       ? []
       : [
@@ -584,4 +665,19 @@ export function regexRowProblems(
           }
         ]
   );
+}
+
+/**
+ * The rows of a regex feature that do not match here as on the live site, as
+ * validation entries carrying their problem id.
+ *
+ * @param feature `delay_js` or `defer_all_js`.
+ * @param rows The stored rows, in order.
+ * @returns One entry per row with a problem, in row order.
+ */
+export function regexRowProblems(
+  feature: RegexFeatureId,
+  rows: readonly string[]
+): InvalidExclusionRow[] {
+  return translationRowProblems(feature, translateRegexRows(feature, rows));
 }

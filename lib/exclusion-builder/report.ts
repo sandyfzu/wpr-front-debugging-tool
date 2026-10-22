@@ -12,7 +12,7 @@ export interface ExclusionRowMatch {
   readonly row: string;
   /** How the row matches (its feature's kind). */
   readonly rowKind: ExclusionRowKind;
-  /** Elements this row matched (first matching row wins per element — this tool's semantics). */
+  /** Elements this row matched (first matching row in list order wins per element; see {@link TransformReport.rowCountsBestEffort}). */
   readonly matches: number;
 }
 
@@ -47,6 +47,21 @@ export interface TransformReport {
    * original could not be read off the page); present only when non-zero.
    */
   readonly approximate?: number;
+  /**
+   * WP Rocket's own run of the feature on this page could not be
+   * determined (Defer JS: whether its joined-pattern pre-check passes, which
+   * decides whether it defers anything at all): the row matches are
+   * reported as if it runs. Present only then — a set that turns the
+   * feature off fails validation, so a report never says `off`.
+   */
+  readonly pageState?: 'unknown';
+  /**
+   * The per-row counts are best effort: WP Rocket matches the rows as one
+   * pattern, so which row matched is not observable there; the first
+   * matching row in list order is credited. Present only then (Defer JS,
+   * more than one row).
+   */
+  readonly rowCountsBestEffort?: true;
 }
 
 /** One transform's output: the rewritten html plus its report. */
@@ -72,6 +87,10 @@ export interface TransformCounters {
   readonly undetermined?: number;
   /** See {@link TransformReport.approximate} (0 when omitted). */
   readonly approximate?: number;
+  /** See {@link TransformReport.pageState} (WP Rocket runs the feature when omitted). */
+  readonly pageState?: 'unknown';
+  /** See {@link TransformReport.rowCountsBestEffort} (exact when omitted). */
+  readonly rowCountsBestEffort?: boolean;
 }
 
 /**
@@ -89,9 +108,24 @@ function optionalCounts(
 }
 
 /**
+ * The row-driven caveats of a report, each only when set (a feature-wide
+ * run consults no rows, so it never carries them).
+ *
+ * @param counters The transform's counters.
+ */
+function rowCaveats(
+  counters: TransformCounters
+): Pick<TransformReport, 'pageState' | 'rowCountsBestEffort'> {
+  return {
+    ...(counters.pageState === 'unknown' ? { pageState: 'unknown' as const } : {}),
+    ...(counters.rowCountsBestEffort === true ? { rowCountsBestEffort: true as const } : {})
+  };
+}
+
+/**
  * Build the report from a transform's counters: rows split into matched
  * (count > 0) and unmatched, both in row order. A feature-wide run reports
- * no row attributions — the disable, not a row, matched.
+ * no row attributions or row caveats — the disable, not a row, matched.
  *
  * @param counters The transform's collected counters.
  * @returns The report.
@@ -134,6 +168,7 @@ export function transformReport(counters: TransformCounters): TransformReport {
     regionRemovals,
     matchedRows,
     unmatchedRows,
-    ...optionalCounts(counters)
+    ...optionalCounts(counters),
+    ...rowCaveats(counters)
   };
 }

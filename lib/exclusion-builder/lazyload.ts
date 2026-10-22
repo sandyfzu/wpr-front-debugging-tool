@@ -17,6 +17,7 @@
 import { DATA_LAZY_SRC, DATA_LAZY_SRCSET } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import { isIgnoredLazyloadRow } from './literal-rows';
+import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import { ExclusionValidationError } from './errors';
 import { featureRowProblems } from './validate';
 import { transformReport, type TransformResult } from './report';
@@ -76,10 +77,13 @@ const NOSCRIPT_OPEN = '<noscript>';
 const NOSCRIPT_CLOSE = '</noscript>';
 
 /** The `src` value as WP Rocket reads it from `atts` (lazy, dot-all, any case). */
-const ATTS_SRC = /[ \t\n\v\f\r]src[ \t\n\v\f\r]*=[ \t\n\v\f\r]*(['"])([\s\S]*?)\1/i;
+const ATTS_SRC = new RegExp(
+  `[${PCRE_SPACE_CHARS}]src[${PCRE_SPACE_CHARS}]*=[${PCRE_SPACE_CHARS}]*(['"])([\\s\\S]*?)\\1`,
+  'i'
+);
 
 /** PCRE's `\s` (no `u`): what WP Rocket's `\s?` before the closing `/?>` takes. */
-const PCRE_SPACE = /[ \t\n\v\f\r]$/;
+const PCRE_SPACE = new RegExp(`[${PCRE_SPACE_CHARS}]$`);
 
 /** The original image WP Rocket matched rows against, and whether it is exact. */
 interface OriginalImage {

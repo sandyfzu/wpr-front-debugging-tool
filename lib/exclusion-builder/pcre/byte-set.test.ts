@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ESCAPE_SETS,
+  PCRE_SPACE_CHARS,
   byteRanges,
   bytesOf,
   complementOf,
@@ -84,5 +85,19 @@ describe('setSource', () => {
     const regex = new RegExp(`^${setSource(set)}$`);
     const matched = [...Array(256).keys()].filter((byte) => regex.test(String.fromCharCode(byte)));
     expect(matched).toEqual(members(set));
+  });
+});
+
+describe('PCRE_SPACE_CHARS', () => {
+  it('is exactly PCRE’s `\\s` byte set, and no other UTF-16 unit', () => {
+    const regex = new RegExp(`^[${PCRE_SPACE_CHARS}]$`);
+    const space = ESCAPE_SETS['s'];
+    if (space === undefined) throw new Error('no \\s set');
+    for (let unit = 0; unit < 0x10000; unit++) {
+      const expected: boolean = unit < 256 && space[unit] === 1;
+      if (regex.test(String.fromCharCode(unit)) !== expected) {
+        expect.fail(`U+${unit.toString(16)}: expected ${String(expected)}`);
+      }
+    }
   });
 });

@@ -28,10 +28,7 @@ import {
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
-import {
-  DELAY_STATUS_ATTRIBUTE,
-  DELAY_TYPE_ATTRIBUTE
-} from '../../../lib/exclusion-builder/delay-js';
+import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
 import { recoverOriginalScript } from '../../../lib/wp-rocket/minify-url-recovery';
 import { parseUrl } from '../../../utils/urls';
 import { escapeRegex } from '../../../utils/regex';
@@ -102,43 +99,130 @@ const URL_AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?\/\/[^/?#]*/i;
 /** The minify-cache prefix of a served path (everything up to the mirrored original). */
 const MINIFY_PREFIX = new RegExp(`^.*?${MINIFY_CACHE_DIR_SOURCE}`);
 
-/**
- * The URL's path exactly as the served attribute writes it — raw UTF-8 or
- * percent-encoded, whichever the page used (a parsed URL would always
- * percent-encode, and the engine matches the served text). A relative
- * value (`../x.js`) has no such text: its resolved path is used.
- *
- * @param raw The attribute value.
- * @param resolved The value resolved against the page.
- */
-function servedPath(raw: string, resolved: URL): string {
-  const text = raw.trim().split(/[?#]/)[0] ?? '';
-  const authority = URL_AUTHORITY.exec(text);
-  if (authority !== null) return text.slice(authority[0].length);
-  // Root-relative and relative paths are written as served (a relative
-  // `uploads/x.jpg` resolves elsewhere, but its served text is this).
-  return text === '' ? resolved.pathname : text.replace(/^\.\//, '');
+/** A URL as the served attribute writes it, split for naming. */
+interface ServedUrl {
+  /** The authority as written (`host[:port]`, no scheme), or `null` for a host-less value. */
+  readonly host: string | null;
+  /** The text after the authority (or the whole host-less value), one leading `/` or `./` dropped. */
+  readonly path: string;
 }
 
 /**
- * A pattern matching `text` as served: `&` may be written `&amp;` in the
- * markup (the DOM decodes it).
+ * A URL's served text, before its query (cache stamps are never part of a
+ * row; a `#…` is served text and kept): raw UTF-8 or percent-encoded,
+ * backslashes and all, as written — a parsed URL would re-encode it, and
+ * WP Rocket matches the served text.
+ *
+ * @param raw The attribute value.
+ */
+function servedUrl(raw: string): ServedUrl {
+  const text = raw.trim().split('?')[0] ?? '';
+  const authority = URL_AUTHORITY.exec(text);
+  if (authority === null) return { host: null, path: text.replace(/^\.?\//, '') };
+  return {
+    host: authority[0].replace(/^[^/]*\/\//, ''),
+    path: text.slice(authority[0].length).replace(/^\//, '')
+  };
+}
+
+/**
+ * Characters a regex row cannot hold literally: WP Rocket's settings save
+ * rewrites `<` (escaped, or stripped as markup), `%` (`%xx` octets removed),
+ * `*` (every one becomes `(.*)`) and tab/CR/LF (collapsed to a space); Delay
+ * JS's runtime turns `+` into `\+` and `?ver` into `\?ver`, so an escaped
+ * `\+`/`\?` stops matching. A hex escape survives all of them and means the
+ * same to PCRE and JS. Matches one such character (captured) or a run of
+ * other characters.
+ */
+const HEX_ESCAPED = /([+?*<%\t\n\r])|[^+?*<%\t\n\r]+/g;
+
+/**
+ * Spaces the save would change: a leading or trailing one (trimmed) and
+ * each one followed by another (a run collapses to one space).
+ */
+const HEX_ESCAPED_SPACES = /^ | (?= )| $/g;
+
+/**
+ * A character as a two-digit hex escape (`+` → `\x2B`).
+ *
+ * @param char One character below U+0100.
+ */
+function hexEscape(char: string): string {
+  return `\\x${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`;
+}
+
+/**
+ * The regex row matching `text` literally once WP Rocket has saved it and
+ * its Delay/Defer JS runtime has read it: metacharacters escaped, and every
+ * character either would change hex-escaped (`a+b.js` → `a\x2Bb\.js`,
+ * never `a\+b\.js`). `#` stays raw: the runtime escapes it itself, while a
+ * typed `\#` breaks the row.
  *
  * @param text The literal text.
  */
-function servedPattern(text: string): string {
-  return escapeRegex(text).replaceAll('&', '(?:&|&amp;)');
+function literalPattern(text: string): string {
+  // The save drops a row that is just `0` (PHP reads it as empty).
+  if (text === '0') return hexEscape(text);
+  return text
+    .replace(HEX_ESCAPED, (chunk, hex?: string) =>
+      hex === undefined ? escapeRegex(chunk) : hexEscape(hex)
+    )
+    .replace(HEX_ESCAPED_SPACES, hexEscape);
 }
 
-/** Shortest `&`-free stretch worth naming a file by. */
+/**
+ * The ways markup may write a character the DOM decodes in an attribute
+ * value — WordPress's `esc_attr`/`esc_url` named and numeric forms, decimal
+ * or hex with up to two leading zeros — as a row alternation. WP Rocket
+ * matches the raw markup, so a row from a decoded value must accept each.
+ * Free of `*`, `+`, `<`, `%` and `?ver` (the save and the runtime keep it).
+ */
+const ENCODED_FORMS: Readonly<Record<string, string>> = {
+  '&': '(?:&|&amp;|&#0{0,2}38;|&#x0{0,2}26;)',
+  "'": "(?:'|&#0{0,2}39;|&#x0{0,2}27;|&apos;)",
+  '"': '(?:"|&quot;|&#0{0,2}34;|&#x0{0,2}22;)',
+  '<': '(?:\\x3C|&lt;|&#0{0,2}60;|&#x0{0,2}3C;)',
+  '>': '(?:>|&gt;|&#0{0,2}62;|&#x0{0,2}3E;)'
+};
+
+/** Characters with {@link ENCODED_FORMS}, as split points (captured). */
+const ENCODED_CHARS = /([&'"<>])/;
+
+/**
+ * A pattern matching an attribute value `text` as served: each character
+ * markup may entity-encode accepts its encodings (see {@link ENCODED_FORMS}),
+ * the rest is {@link literalPattern}.
+ *
+ * @param text The decoded attribute text.
+ */
+function servedPattern(text: string): string {
+  return text
+    .split(ENCODED_CHARS)
+    .map((part, index) =>
+      index % 2 === 1 ? (ENCODED_FORMS[part] ?? part) : part === '' ? '' : literalPattern(part)
+    )
+    .join('');
+}
+
+/** Shortest stretch worth naming a file by. */
 const MIN_STRETCH_CHARS = 4;
 
 /**
- * A literal that is in the served form of `text` whatever the markup's `&`
- * encoding: the text itself, or its longest `&`-free stretch that is long
- * enough to name a file and in no other image's tag (a part of a name may
- * well be in another's: `a&b.jpg` → `b.jpg`, in `thumb.jpg`). Copies of the
- * same image (same `data-lazy-src`) are not others: the row names them all.
+ * Where a literal row must not reach across: characters markup may
+ * entity-encode (`& ' " < >`, see {@link ENCODED_FORMS}), and what WP
+ * Rocket's save rewrites in a literal — `<`, `%` (`%xx` octets removed),
+ * tab/CR/LF and space runs (collapsed).
+ */
+const LITERAL_BREAKS = /[&'"<>%\t\n\r]| {2,}/;
+
+/**
+ * A literal that is in the served form of `text` whatever the markup's
+ * entity encoding, and that WP Rocket stores as written: the text itself, or its
+ * longest stretch between {@link LITERAL_BREAKS} (trimmed, as the save
+ * trims) that is long enough to name a file and in no other image's tag (a
+ * part of a name may well be in another's: `a&b.jpg` → `b.jpg`, in
+ * `thumb.jpg`). Copies of the same image (same `data-lazy-src`) are not
+ * others: the row names them all.
  *
  * @param text The decoded text.
  * @param lazySrc The picked image's `data-lazy-src` value.
@@ -150,10 +234,12 @@ function servedLiteral(
   lazySrc: string,
   peers: () => readonly LazyImagePeer[]
 ): string | null {
-  if (!text.includes('&')) return text;
+  // A lone `0` is a row WP Rocket ignores; it is too short to be a stretch.
+  if (!LITERAL_BREAKS.test(text) && text.trim() === text && text !== '0') return text;
   const others = peers().filter((peer) => peer.lazySrc !== lazySrc);
   const stretches = text
-    .split('&')
+    .split(LITERAL_BREAKS)
+    .map((part) => part.trim())
     .filter((part) => part.length >= MIN_STRETCH_CHARS)
     .sort((a, b) => b.length - a.length);
   return stretches.find((part) => !others.some((peer) => peer.tag.includes(part))) ?? null;
@@ -199,15 +285,25 @@ export function nameUrl(raw: string, pageUrl: string): UrlName | null {
     return null;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  const served = servedPath(raw, url).replace(/^\/+/, '');
+  const served = servedUrl(raw);
   // A minified asset's mirrored original path names the source file on
   // whichever host served it — the cache URL's own host is not its origin.
   const minified = recoverOriginalScript(url.href).kind === 'original';
-  const path = minified ? served.replace(MINIFY_PREFIX, '') : served;
-  const sameOrigin = minified || (base !== null && base.origin === url.origin);
-  const text = sameOrigin && path !== '' ? path : `${url.host}${path === '' ? '' : `/${path}`}`;
-  if (text.length > EXCLUSION_SET_LIMITS.rowChars) return null;
-  return { text, file: fileName(path, sameOrigin ? null : url.host) };
+  const path = minified ? served.path.replace(MINIFY_PREFIX, '') : served.path;
+  // A host-less value is this page's, whatever a URL parser makes of it.
+  const sameOrigin =
+    minified || served.host === null || (base !== null && base.origin === url.origin);
+  const host = minified ? null : served.host;
+  // Named by the path, else the host as written; a host-less value with no
+  // path (`/`, `/?q=1`) holds no text a row could name.
+  const text =
+    sameOrigin && path !== ''
+      ? path
+      : host === null
+        ? ''
+        : `${host}${path === '' ? '' : `/${path}`}`;
+  if (text === '' || text.length > EXCLUSION_SET_LIMITS.rowChars) return null;
+  return { text, file: fileName(path, sameOrigin ? null : host) };
 }
 
 /**
@@ -218,13 +314,15 @@ function storable(candidate: PickCandidate): PickCandidate | null {
   return isWireRowText(candidate.row) ? candidate : null;
 }
 
-/** Whether a script is delayed by WP Rocket (type vocabulary or the delay runtime's attributes). */
+/**
+ * Whether a script is delayed by WP Rocket — the engine's own candidacy: a
+ * delay type, or the delay runtime's status marker once it ran. A parked
+ * `data-rocket-*` attribute alone is not (the engine would not restore it).
+ */
 function isDelayedScript(el: ElementSnapshot): boolean {
   // Substring match, like the engine's candidacy: `;charset=…` suffixes count.
   if ((el.attribute('type') ?? '').includes(DELAY_JS_TYPE_OLD)) return true;
-  return [DELAY_STATUS_ATTRIBUTE, DELAY_TYPE_ATTRIBUTE, DELAY_JS_SRC].some(
-    (name) => el.attribute(name) !== null
-  );
+  return el.attribute(DELAY_STATUS_ATTRIBUTE) !== null;
 }
 
 /** The script's effective URL: the delay-parked original, else `src`. */
@@ -247,24 +345,24 @@ function firstLine(text: string): string | null {
 /** The Delay JS candidate of a delayed script. */
 function delayCandidate(el: ElementSnapshot, pageUrl: string): PickCandidate | null {
   const raw = effectiveScriptUrl(el);
-  if (raw !== null) {
-    const name = nameUrl(raw, pageUrl);
-    return name === null
-      ? null
-      : { lane: 'delayJs', row: servedPattern(name.text), subject: name.file };
-  }
+  const name = raw === null ? null : nameUrl(raw, pageUrl);
+  if (name !== null) return { lane: 'delayJs', row: servedPattern(name.text), subject: name.file };
+  // No URL text to name it by: its id, else its first line.
   const id = el.attribute('id');
   if (id !== null && id !== '') {
     // `\s` bounds the attribute name (`data-id` must not match); either
-    // quote, or none, and the value bounded on both sides.
+    // quote, or none, and the value bounded on both sides. A value starting
+    // `ver` gets its `v` hex-escaped: Delay JS's runtime would read the
+    // optional quote's `?ver` as its literal `\?ver`.
+    const value = servedPattern(id).replace(/^ver/, '\\x76er');
     return {
       lane: 'delayJs',
-      row: `\\sid=["']?${servedPattern(id)}(?=["'\\s/>])`,
+      row: `\\sid=["']?${value}(?=["'\\s/>])`,
       subject: `#${id}`
     };
   }
   const line = el.text === null ? null : firstLine(el.text);
-  return line === null ? null : { lane: 'delayJs', row: escapeRegex(line), subject: line };
+  return line === null ? null : { lane: 'delayJs', row: literalPattern(line), subject: line };
 }
 
 /** The Defer JS candidate of a WP Rocket-deferred script. */

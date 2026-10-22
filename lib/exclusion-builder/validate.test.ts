@@ -3,10 +3,11 @@
  * (index + reason), never first-error-only; literal rows are never compiled;
  * the typed error carries the full problem list.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ExclusionValidationError } from './errors';
 import { featureRowWarnings, prevalidateExclusionSet } from './validate';
-import { compilePatternRows } from './compile';
+import { deferJsTransform } from './defer-js';
+import { compileDelayRows } from './delay-js-match';
 import { BACKTRACKING_RISK_REASONS } from './regex-risk';
 import { applyPipeline } from './pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -43,23 +44,46 @@ describe('prevalidateExclusionSet', () => {
       })
     );
     expect(problems.valid).toBe(false);
+    // Delay JS rows are read as WP Rocket reads them: PCRE rejects both, so
+    // its save drops them; Defer JS stores them and its runtime PCRE rejects them.
+    const dropped = expect.stringMatching(/^WP Rocket drops this row when saving/) as unknown;
+    const pcreRejects = expect.stringMatching(/PCRE rejects/) as unknown;
     expect(problems.invalid).toEqual([
-      expect.objectContaining({ feature: 'delay_js', index: 1, row: '(unclosed[' }),
-      expect.objectContaining({ feature: 'delay_js', index: 2, row: 'also-bad[' }),
-      expect.objectContaining({ feature: 'defer_all_js', index: 0, row: '[a-' }),
-      expect.objectContaining({ feature: 'defer_all_js', index: 1, row: '+bad+[' })
+      {
+        feature: 'delay_js',
+        index: 1,
+        row: '(unclosed[',
+        reason: dropped,
+        problem: 'pcre-invalid'
+      },
+      { feature: 'delay_js', index: 2, row: 'also-bad[', reason: dropped, problem: 'pcre-invalid' },
+      {
+        feature: 'defer_all_js',
+        index: 0,
+        row: '[a-',
+        reason: pcreRejects,
+        problem: 'pcre-invalid'
+      },
+      {
+        feature: 'defer_all_js',
+        index: 1,
+        row: '+bad+[',
+        reason: pcreRejects,
+        problem: 'pcre-invalid'
+      }
     ]);
-    for (const problem of problems.invalid) expect(problem.reason).toMatch(/regular expression/i);
   });
 
   it('rejects empty and whitespace-only rows — they would match every element', () => {
     const problems = prevalidateExclusionSet(setWith({ delayJs: ['', '   '], lazyload: [' '] }));
     expect(problems.valid).toBe(false);
     expect(problems.invalid).toEqual([
-      expect.objectContaining({ feature: 'delay_js', index: 0, row: '' }),
+      // Only the exact `''` is WP Rocket's match-everything Delay JS row.
+      expect.objectContaining({ feature: 'delay_js', index: 0, row: '', problem: 'match-all' }),
       expect.objectContaining({ feature: 'delay_js', index: 1, row: '   ' }),
       expect.objectContaining({ feature: 'lazyload', index: 0, row: ' ' })
     ]);
+    expect(problems.invalid[1]).not.toHaveProperty('problem');
     for (const problem of problems.invalid) expect(problem.reason).toMatch(/empty/i);
   });
 
@@ -109,19 +133,35 @@ describe('prevalidateExclusionSet', () => {
 });
 
 describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
-  /** A hostile subject: 27 `a`s that `(a+)+b` cannot finish matching. */
+  /** A hostile subject: 27 `a`s that the probe row cannot finish matching. */
   const PROBE = `<script type="rocketlazyloadscript" data-rocket-src="${'a'.repeat(27)}"></script>`;
 
+  /**
+   * The exponential probe, spelled to survive WP Rocket's Delay JS escapes
+   * (it turns every `+` literal: `(a+)+b` is a plain text row there).
+   */
+  const RISKY_DELAY_ROW = '(a{1,}){1,}b';
+
   it('rejects the exponential probe row at prevalidation, named like an invalid pattern', () => {
-    const problems = prevalidateExclusionSet(setWith({ delayJs: ['ok\\.js', '(a+)+b'] }));
+    const problems = prevalidateExclusionSet(
+      setWith({ delayJs: ['ok\\.js', RISKY_DELAY_ROW, '(a+)+b'], deferJs: ['(a+)+b'] })
+    );
     expect(problems).toEqual({
       valid: false,
       invalid: [
         {
           feature: 'delay_js',
           index: 1,
+          row: RISKY_DELAY_ROW,
+          reason: BACKTRACKING_RISK_REASONS['nested-repetition'],
+          problem: 'backtracking-risk'
+        },
+        {
+          feature: 'defer_all_js',
+          index: 0,
           row: '(a+)+b',
-          reason: BACKTRACKING_RISK_REASONS['nested-repetition']
+          reason: BACKTRACKING_RISK_REASONS['nested-repetition'],
+          problem: 'backtracking-risk'
         }
       ]
     });
@@ -130,13 +170,10 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
   it('reports an over-deep row as too complex instead of throwing out of prevalidation', () => {
     const deep = `${'('.repeat(1_875)}a${')'.repeat(1_875)}`;
     expect(() => new RegExp(deep)).not.toThrow();
-    expect(prevalidateExclusionSet(setWith({ deferJs: [deep] })).invalid).toEqual([
-      {
-        feature: 'defer_all_js',
-        index: 0,
-        row: deep,
-        reason: BACKTRACKING_RISK_REASONS['too-complex']
-      }
+    // Both features read it as PCRE does: nested past PCRE's limit, not checked here.
+    expect(prevalidateExclusionSet(setWith({ delayJs: [deep], deferJs: [deep] })).invalid).toEqual([
+      expect.objectContaining({ feature: 'delay_js', index: 0, problem: 'pcre-only' }),
+      expect.objectContaining({ feature: 'defer_all_js', index: 0, problem: 'pcre-only' })
     ]);
   });
 
@@ -152,9 +189,12 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
   });
 
   it('refuses the probe on the compile path too, so the engine never runs it', () => {
-    expect(() => compilePatternRows(['(a+)+b'], 'delay_js')).toThrow(ExclusionValidationError);
+    expect(() => deferJsTransform('', setWith({ deferJs: ['(a+)+b'] }))).toThrow(
+      ExclusionValidationError
+    );
+    expect(() => compileDelayRows([RISKY_DELAY_ROW])).toThrow(ExclusionValidationError);
     const started = performance.now();
-    expect(() => applyPipeline(PROBE, setWith({ delayJs: ['(a+)+b'] }))).toThrow(
+    expect(() => applyPipeline(PROBE, setWith({ delayJs: [RISKY_DELAY_ROW] }))).toThrow(
       ExclusionValidationError
     );
     // Smoke ceiling: running the probe would take seconds (3.6 s measured);
@@ -163,42 +203,64 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
   });
 });
 
-describe('prevalidateExclusionSet — invalid-pattern reason wording', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+describe('prevalidateExclusionSet — Defer JS rows read joined, as WP Rocket runs them', () => {
+  it('names the rows of a set WP Rocket would turn off page-wide', () => {
+    const problems = prevalidateExclusionSet(setWith({ deferJs: ['ok', '(?<n>a)x', '(?<n>b)y'] }));
+    expect(problems.invalid.map(({ index, problem }) => [index, problem])).toEqual([
+      [1, 'joined-page-off'],
+      [2, 'joined-page-off']
+    ]);
+    // Alone, each row is fine.
+    expect(prevalidateExclusionSet(setWith({ deferJs: ['(?<n>a)x'] })).valid).toBe(true);
   });
 
-  /** The single reason a one-row Delay JS set yields. */
-  function reasonFor(row: string): string | undefined {
-    return prevalidateExclusionSet(setWith({ delayJs: [row] })).invalid[0]?.reason;
+  it('keeps an empty row the editor mistake it is, ahead of the PCRE reading', () => {
+    expect(prevalidateExclusionSet(setWith({ deferJs: ['a', ' '] })).invalid).toEqual([
+      {
+        feature: 'defer_all_js',
+        index: 1,
+        row: ' ',
+        reason: expect.stringMatching(/empty/) as unknown
+      }
+    ]);
+  });
+
+  it('accepts PCRE-only syntax WP Rocket matches (a leading `(?i)` only as the last row: it would leak)', () => {
+    expect(
+      prevalidateExclusionSet(setWith({ deferJs: ['\\A/a\\.js\\z', '^/a{,2}\\.js$', '(?i)x'] }))
+        .valid
+    ).toBe(true);
+    // Delay JS tests each row alone: a leading `(?i)` leaks nowhere.
+    expect(prevalidateExclusionSet(setWith({ delayJs: ['(?i)x', 'y'] })).valid).toBe(true);
+  });
+});
+
+describe('prevalidateExclusionSet — invalid-pattern reason wording', () => {
+  /** The single reason a one-row set of `feature` yields. */
+  function reasonFor(feature: 'delayJs' | 'deferJs', row: string): string | undefined {
+    return prevalidateExclusionSet(setWith({ [feature]: [row] })).invalid[0]?.reason;
   }
 
-  it('states the lead once and never echoes the row (V8 messages repeat the pattern)', () => {
-    expect(reasonFor('(')).toBe('Invalid regular expression: Unterminated group');
-    // A row holding the echo's own separators (`/`, `: `) is stripped exactly.
-    expect(reasonFor('a/: b(')).toBe('Invalid regular expression: Unterminated group');
-    expect(reasonFor('[')).toBe('Invalid regular expression: Unterminated character class');
+  it("names PCRE's own complaint and WP Rocket's outcome, per feature", () => {
+    expect(reasonFor('delayJs', '(')).toMatch(
+      /^WP Rocket drops this row when saving: PCRE rejects `\(` .*it never matches$/
+    );
+    expect(reasonFor('deferJs', '(')).toMatch(
+      /^WP Rocket drops this row when saving: PCRE rejects `\(` .*turns Defer JS off on the page$/
+    );
   });
 
-  it('keeps the reason short however long the broken row is', () => {
-    const row = `(${'a'.repeat(2047)}`;
-    expect(reasonFor(row)).toBe('Invalid regular expression: Unterminated group');
-  });
-
-  it('prefixes a bare engine detail (SpiderMonkey shape) and non-Error throws', () => {
-    vi.stubGlobal('RegExp', function throwsBareDetail(): never {
-      throw new SyntaxError('unterminated parenthetical');
-    });
-    expect(reasonFor('(')).toBe('Invalid regular expression: unterminated parenthetical');
-    vi.stubGlobal('RegExp', function throwsLeadWithoutEcho(): never {
-      throw new SyntaxError('Invalid regular expression: odd shape');
-    });
-    expect(reasonFor('(')).toBe('Invalid regular expression: odd shape');
-    vi.stubGlobal('RegExp', function throwsNonError(): never {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- the non-Error arm under test
-      throw 'odd';
-    });
-    expect(reasonFor('(')).toBe('Invalid regular expression: odd');
+  it('keeps the reason short however long the broken row is, for both features', () => {
+    for (const feature of ['delayJs', 'deferJs'] as const) {
+      for (const row of [
+        `(${'a'.repeat(2047)}`,
+        `${'a'.repeat(2046)}[`,
+        `a{2}${'b'.repeat(2040)}{2}+`
+      ]) {
+        const reason = reasonFor(feature, row) ?? '';
+        expect(reason.length, `${feature} ${row.slice(0, 8)}`).toBeLessThanOrEqual(240);
+      }
+    }
   });
 });
 
@@ -206,7 +268,7 @@ describe('ExclusionValidationError', () => {
   it('carries every problem and a message naming feature, index, row and reason', () => {
     const problems = prevalidateExclusionSet(setWith({ delayJs: ['(bad[', ''] }));
     expect(problems.invalid.length).toBe(2);
-    // The throw site is `compilePatternRows`/`applyPipeline`; here the class
+    // The throw sites are the transforms and `applyPipeline`; here the class
     // contract is pinned directly over the prevalidator's own output.
     const error = new ExclusionValidationError(problems.invalid);
     expect(error.name).toBe('ExclusionValidationError');

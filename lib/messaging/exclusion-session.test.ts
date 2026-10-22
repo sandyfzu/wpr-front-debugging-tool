@@ -364,6 +364,32 @@ describe('document reports are tied to the session set', () => {
     }
   });
 
+  it('carries the optional row caveats, each with its one value, never on a feature-wide run', () => {
+    const parsed = parseExclusionSessionStatus(
+      withReport({ pageState: 'unknown', rowCountsBestEffort: true })
+    );
+    const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+    expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject({
+      pageState: 'unknown',
+      rowCountsBestEffort: true
+    });
+    for (const patch of [
+      { pageState: 'on' },
+      { pageState: 'off' },
+      { rowCountsBestEffort: false },
+      { rowCountsBestEffort: 'yes' },
+      { featureWide: true, matchedRows: [], unmatchedRows: [], pageState: 'unknown' },
+      { featureWide: true, matchedRows: [], unmatchedRows: [], rowCountsBestEffort: true }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
+    expect(
+      parseExclusionSessionStatus(
+        withReport({ featureWide: true, matchedRows: [], unmatchedRows: [] })
+      )
+    ).not.toBeNull();
+  });
+
   it('rejects rows the set does not hold for that feature, or more often than it holds them', () => {
     for (const patch of [
       { unmatchedRows: ['not-in-set'] },
@@ -736,6 +762,8 @@ describe('parseExclusionApplyReply', () => {
       { outcome: 'invalid', invalid: [{ ...row, reason: '' }] },
       { outcome: 'invalid', invalid: [{ ...row, reason: 5 }] },
       { outcome: 'invalid', invalid: [{ ...row, reason: 'x\u0000' }] },
+      { outcome: 'invalid', invalid: [{ ...row, problem: 'page-off' }] },
+      { outcome: 'invalid', invalid: [{ ...row, problem: null }] },
       {
         outcome: 'invalid',
         invalid: [{ ...row, reason: 'x'.repeat(EXCLUSION_SET_LIMITS.reasonChars + 1) }]
@@ -756,6 +784,19 @@ describe('invalid-row reasons fit the wire', () => {
     const set = { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: [row] } };
     const { invalid } = prevalidateExclusionSet(set);
     expect(parseExclusionApplyReply({ outcome: 'invalid', invalid })).not.toBeNull();
+    expect(parseExclusionApplyReply(invalidApplyReply(invalid))).toEqual({
+      outcome: 'invalid',
+      invalid
+    });
+  });
+
+  it("carries a row's typed problem id (unknown ids: see parseExclusionApplyReply)", () => {
+    const set = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['(?a)'] }
+    };
+    const { invalid } = prevalidateExclusionSet(set);
+    expect(invalid).toEqual([expect.objectContaining({ problem: 'match-all' })]);
     expect(parseExclusionApplyReply(invalidApplyReply(invalid))).toEqual({
       outcome: 'invalid',
       invalid
