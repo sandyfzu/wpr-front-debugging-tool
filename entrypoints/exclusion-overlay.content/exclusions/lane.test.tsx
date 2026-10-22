@@ -266,6 +266,43 @@ describe('Lane', () => {
     });
   });
 
+  it('says what a long paste left out once its slices landed, and nothing after unmount', async () => {
+    const timers: (() => void)[] = [];
+    const schedule = (run: () => void): (() => void) => {
+      timers.push(run);
+      return () => undefined;
+    };
+    const controller = await readyController(schedule);
+    controller.insertRows('delayJs', ['x'], null);
+    const { announce, unmount } = mountLane(controller);
+    const max = EXCLUSION_SET_LIMITS.rowsPerFeature;
+    const lines = Array.from({ length: max + 2 }, (_, n) => `l${String(n)}`).join('\n');
+    input(1).dispatchEvent(pasteEvent(`\n${lines}`));
+    // Nothing landed yet: the lane holds its row, editing waits.
+    expect(controller.draft().rows.delayJs).toHaveLength(1);
+    expect(controller.editable()).toBe(false);
+    while (timers.length > 0) timers.shift()?.();
+    const words = '3 pasted lines were not added: a lane holds 500 rows at most.';
+    await waitFor(() => {
+      expect(screen.getByText(words)).toBeTruthy();
+    });
+    expect(controller.draft().rows.delayJs).toHaveLength(max);
+    expect(announce).toHaveBeenCalledWith(words);
+    unmount();
+    // A long paste settling after its lane left says nothing.
+    const other = await readyController(schedule);
+    other.insertRows('delayJs', ['x'], null);
+    const second = mountLane(other);
+    input(1).dispatchEvent(pasteEvent(`\n${lines}`));
+    expect(other.editable()).toBe(false);
+    second.unmount();
+    while (timers.length > 0) timers.shift()?.();
+    await waitFor(() => {
+      expect(other.draft().rows.delayJs).toHaveLength(max);
+    });
+    expect(second.announce).not.toHaveBeenCalled();
+  });
+
   it('splits the row on a trailing line feed too (the field would drop it)', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['ab'], null);

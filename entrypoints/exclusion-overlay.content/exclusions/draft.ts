@@ -113,10 +113,59 @@ export interface Committed {
  * @param ids The rows to commit (unknown ids are ignored).
  */
 export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]): Committed {
+  const commit = startCommit(draft, lane, ids);
+  commit.step(Infinity);
+  return commit.result();
+}
+
+/**
+ * {@link commitRows} run a slice at a time: the same rows, the same order,
+ * the same result — for a commit too large for one task (a long paste).
+ */
+export interface SlicedCommit {
+  /**
+   * Commit up to `rows` more of the lane's rows (untouched rows pass free).
+   *
+   * @returns Whether every row is done.
+   */
+  step(rows: number): boolean;
+  /** The commit's result (call once every row is done). */
+  result(): Committed;
+}
+
+/**
+ * Start {@link commitRows} as a {@link SlicedCommit}.
+ *
+ * @param draft The draft.
+ * @param lane The rows' lane.
+ * @param ids The rows to commit (unknown ids are ignored).
+ * @param onKept Told each committed row's stored text as the row is kept
+ *   (e.g. to check it ahead of the draft update, a slice at a time).
+ */
+export function startCommit(
+  draft: Draft,
+  lane: LaneKey,
+  ids: readonly string[],
+  onKept?: (stored: string) => void
+): SlicedCommit {
   const rows = draft.rows[lane];
-  const { kept, commits } = commitLaneRows(lane, rows, new Set(ids));
-  const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
-  return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+  const lanes = laneCommit(lane, rows, new Set(ids), onKept);
+  let at = 0;
+  return {
+    step(count) {
+      for (let done = 0; at < rows.length && done < count; at++) {
+        const row = rows[at];
+        if (row !== undefined && lanes.commitAt(row, at)) done++;
+      }
+      return at >= rows.length;
+    },
+    result() {
+      if (at < rows.length) throw new Error(`Commit of ${lane} read before its row ${String(at)}`);
+      const { kept, commits } = lanes;
+      const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
+      return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+    }
+  };
 }
 
 /**
@@ -132,6 +181,32 @@ export function commitLaneRows(
   rows: readonly DraftRow[],
   targets: ReadonlySet<string>
 ): { readonly kept: readonly DraftRow[]; readonly commits: readonly RowCommit[] } {
+  const commit = laneCommit(lane, rows, targets);
+  rows.forEach((row, index) => commit.commitAt(row, index));
+  return commit;
+}
+
+/**
+ * The lane commit's running state: the stored forms already ahead (rows
+ * not committed now, then each committed row in order), the rows kept and
+ * the commits so far.
+ *
+ * @param lane The rows' lane.
+ * @param rows The lane's rows.
+ * @param targets The rows to commit, by id.
+ * @param onKept Told each committed row's stored text as the row is kept.
+ */
+function laneCommit(
+  lane: LaneKey,
+  rows: readonly DraftRow[],
+  targets: ReadonlySet<string>,
+  onKept?: (stored: string) => void
+): {
+  readonly kept: DraftRow[];
+  readonly commits: RowCommit[];
+  /** Take the row at `index`; true when it was committed (not passed through). */
+  commitAt(row: DraftRow, index: number): boolean;
+} {
   const feature = laneFeature(lane).id;
   const ahead = new Set<string>();
   for (const row of rows) {
@@ -139,20 +214,30 @@ export function commitLaneRows(
     const key = storedRowKey(feature, row.text);
     if (key !== null) ahead.add(key);
   }
+  const kept: DraftRow[] = [];
   const commits: RowCommit[] = [];
-  const kept = rows.flatMap((row, index): DraftRow[] => {
-    if (!targets.has(row.id) || isBlankRow(row.text)) return [row];
-    const diff = saveExclusionRow(feature, row.text, ahead);
-    commits.push({ lane, id: row.id, index, diff });
-    const stored = storedText(diff);
-    // WP Rocket dedupes before its pattern check: a row that check drops
-    // still makes a later copy of it a duplicate.
-    const key = stored ?? (isDuplicateKeyDrop(diff) ? storedRowKey(feature, row.text) : null);
-    if (key !== null) ahead.add(key);
-    if (stored === null) return [];
-    return [stored === row.text ? row : { id: row.id, text: stored }];
-  });
-  return { kept, commits };
+  return {
+    kept,
+    commits,
+    commitAt(row, index) {
+      if (!targets.has(row.id) || isBlankRow(row.text)) {
+        kept.push(row);
+        return false;
+      }
+      const diff = saveExclusionRow(feature, row.text, ahead);
+      commits.push({ lane, id: row.id, index, diff });
+      const stored = storedText(diff);
+      // WP Rocket dedupes before its pattern check: a row that check drops
+      // still makes a later copy of it a duplicate.
+      const key = stored ?? (isDuplicateKeyDrop(diff) ? storedRowKey(feature, row.text) : null);
+      if (key !== null) ahead.add(key);
+      if (stored !== null) {
+        kept.push(stored === row.text ? row : { id: row.id, text: stored });
+        onKept?.(stored);
+      }
+      return true;
+    }
+  };
 }
 
 /**

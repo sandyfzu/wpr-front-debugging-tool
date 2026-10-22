@@ -27,6 +27,7 @@ import {
   sameSet,
   setDisable,
   splitLines,
+  startCommit,
   updateRow
 } from './draft';
 
@@ -539,6 +540,41 @@ describe('pasteIntoRow', () => {
     expect(
       pasteIntoRow(start, 'delayJs', 'missing', 'a\nb', { start: 0, end: 0 }, nextId).draft
     ).toBe(start);
+  });
+});
+
+describe('startCommit (commitRows a slice at a time)', () => {
+  /** A Delay lane mixing kept, converted, duplicate, dropped and untouched rows. */
+  function mixedDraft() {
+    const nextId = createIdSource();
+    const texts = ['keep', 'a*', '', 'keep', '0', 'b*', '(', 'c', 'a(.*)', 'tail'];
+    const base = draftFromSet(EMPTY_EXCLUSION_SET, nextId);
+    const rows = texts.map((text, index) => ({ id: `r${String(index)}`, text }));
+    return { ...base, rows: { ...base.rows, delayJs: rows } };
+  }
+
+  it.each([1, 2, 3, 64])('gives commitRows exactly, %i rows per slice', (size) => {
+    const draft = mixedDraft();
+    // `tail` is left out (the caret's row), `r0` too: an untouched row ahead.
+    const ids = draft.rows.delayJs.map((row) => row.id).filter((id) => id !== 'r0' && id !== 'r9');
+    const whole = commitRows(draft, 'delayJs', ids);
+    const kept: string[] = [];
+    const sliced = startCommit(draft, 'delayJs', ids, (stored) => kept.push(stored));
+    let slices = 1;
+    while (!sliced.step(size)) slices++;
+    expect(sliced.result()).toEqual(whole);
+    expect(slices).toBeGreaterThanOrEqual(Math.ceil(7 / size));
+    // Told every committed row kept, in lane order, as stored.
+    expect(kept).toEqual(['a(.*)', 'b(.*)', 'c']);
+  });
+
+  it('keeps the draft itself when nothing changes, and refuses a result read early', () => {
+    const draft = mixedDraft();
+    // A blank row is passed through: nothing to commit, every row done in one step.
+    const unchanged = startCommit(draft, 'delayJs', ['r2']);
+    expect(() => unchanged.result()).toThrow('row 0');
+    expect(unchanged.step(1)).toBe(true);
+    expect(unchanged.result().draft).toBe(draft);
   });
 });
 

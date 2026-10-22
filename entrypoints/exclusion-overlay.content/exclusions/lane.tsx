@@ -13,7 +13,16 @@
  * the rows, each with Undo (both until the next edit in the lane). The foot
  * holds Add row and the lane's copy-all control.
  */
-import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  Show,
+  type JSX
+} from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
@@ -47,7 +56,7 @@ import {
   type NoteText,
   type RowRef
 } from '../copy';
-import type { OverlayController, PasteOutcome } from '../controller';
+import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
@@ -98,7 +107,7 @@ export interface LaneProps {
  *
  * @param outcome What the paste did.
  */
-function pasteNote(outcome: PasteOutcome): string | null {
+function pasteNote(outcome: SettledPasteOutcome): string | null {
   const max = EXCLUSION_SET_LIMITS.rowsPerFeature;
   if (outcome.kind === 'lane-full') return PASTE_COPY.laneFull(max);
   if (outcome.kind === 'dropped') return PASTE_COPY.dropped(outcome.lines, max);
@@ -276,6 +285,19 @@ export function Lane(props: LaneProps): JSX.Element {
       text,
       selectionOf(event.currentTarget, row)
     );
+    if (outcome.kind === 'pending') void outcome.done.then(tellPaste);
+    else tellPaste(outcome);
+  };
+
+  /** The lane is mounted (a long paste may settle after it left). */
+  let mounted = true;
+  onCleanup(() => {
+    mounted = false;
+  });
+
+  /** Say what a paste left out (shown inline and announced). */
+  const tellPaste = (outcome: SettledPasteOutcome): void => {
+    if (!mounted) return;
     const said = pasteNote(outcome);
     setPasteMessage(said);
     if (said !== null) props.announce(said);

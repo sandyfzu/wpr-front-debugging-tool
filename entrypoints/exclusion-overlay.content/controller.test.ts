@@ -8,12 +8,19 @@ import {
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import {
   AUTOSAVE_DELAY_MS,
+  PASTE_SLICE_ROWS,
   RELOAD_STALL_MS,
   createOverlayController,
   invalidRowsById,
   type OverlayController
 } from './controller';
-import { draftFromSet, draftToSet, createIdSource } from './exclusions/draft';
+import {
+  commitRows,
+  createIdSource,
+  draftFromSet,
+  draftToSet,
+  pasteIntoRow
+} from './exclusions/draft';
 import { SET_READING_DELAY_MS } from './exclusions/set-readings';
 import { ROW_REASONS } from '../../lib/exclusion-builder/row-reasons';
 import { prevalidateExclusionSet } from '../../lib/exclusion-builder/validate';
@@ -33,7 +40,9 @@ function timers() {
     /** Fire every live timer armed for `ms`. */
     fire: (ms: number) => {
       for (const entry of queue.splice(0)) if (!entry.cancelled && entry.ms === ms) entry.run();
-    }
+    },
+    /** Live timers armed for `ms`. */
+    pending: (ms: number) => queue.filter((entry) => !entry.cancelled && entry.ms === ms).length
   };
 }
 
@@ -243,6 +252,108 @@ describe('editing and autosave', () => {
     expect(controller.draft()).toBe(before);
     expect(controller.pasteRows('lazyload', 'missing', 'p\nq', { start: 0, end: 0 })).toEqual({
       kind: 'ignored'
+    });
+  });
+
+  describe('a paste longer than one slice', () => {
+    /** Lines over two slices: kept, converted, a duplicate, dropped ones, then the caret's row. */
+    const LONG = [
+      ...Array.from({ length: PASTE_SLICE_ROWS * 2 }, (_, index) => `s${String(index)}.js`),
+      'a*',
+      's0.js',
+      '0',
+      'last'
+    ].join('\n');
+
+    /** Run the paste's slices (each one a 0 ms timer). */
+    const runSlices = async (clock: ReturnType<typeof timers>): Promise<number> => {
+      let slices = 0;
+      for (; slices < 100 && clock.pending(0) > 0; slices++) clock.fire(0);
+      await settle();
+      return slices;
+    };
+
+    it('commits in slices, holding edits, then lands exactly as at once', async () => {
+      const { controller, clock } = await started(fakePort({ state: 'inactive' }).port);
+      const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+      const before = controller.draft();
+      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 0, end: 1 });
+      if (outcome.kind !== 'pending') throw new Error(`settled at once: ${outcome.kind}`);
+      // Nothing lands, and nothing edits, until the slices ran.
+      expect(controller.draft()).toBe(before);
+      expect(controller.editable()).toBe(false);
+      controller.editRow('delayJs', id, 'typed meanwhile');
+      expect(controller.draft()).toBe(before);
+      expect(await runSlices(clock)).toBeGreaterThanOrEqual(2);
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
+      expect(controller.editable()).toBe(true);
+      // The same rows, notes and focus as the one-step paste of the same lines.
+      const pasted = pasteIntoRow(
+        before,
+        'delayJs',
+        id,
+        LONG,
+        { start: 0, end: 1 },
+        createIdSource()
+      );
+      const once = commitRows(pasted.draft, 'delayJs', pasted.ids.slice(0, -1));
+      const rows = controller.draft().rows.delayJs;
+      expect(rows.map((row) => row.text)).toEqual(once.draft.rows.delayJs.map((row) => row.text));
+      expect(rows.at(-1)?.text).toBe('last');
+      expect(controller.notes().lanes.delayJs.summary).toEqual({
+        source: 'paste',
+        changed: 1,
+        removed: 2
+      });
+      expect(controller.notes().latest?.source).toBe('paste');
+      expect(controller.focusRequest()).toEqual({ lane: 'delayJs', id: rows.at(-1)?.id, caret: 4 });
+    });
+
+    it('lands nothing when the overlay closes between slices', async () => {
+      const { controller, clock, dispose } = await started(fakePort({ state: 'inactive' }).port);
+      const [id = ''] = controller.insertRows('delayJs', [''], null);
+      const before = controller.draft();
+      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 0, end: 0 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      controller.dispose();
+      dispose();
+      await expect(outcome.done).resolves.toEqual({ kind: 'ignored' });
+      expect(clock.pending(0)).toBe(0);
+      expect(controller.draft()).toBe(before);
+    });
+
+    it('pastes on the rows as they are when a row commit changed them meanwhile', async () => {
+      const { controller, clock } = await started(fakePort({ state: 'inactive' }).port);
+      const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+      controller.editRow('delayJs', id, ' x ');
+      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 3, end: 3 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      // Leaving the row commits it (allowed in any phase): ' x ' becomes 'x'.
+      controller.commitRow('delayJs', id);
+      const mid = controller.draft();
+      expect(mid.rows.delayJs[0]?.text).toBe('x');
+      await runSlices(clock);
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
+      const pasted = pasteIntoRow(mid, 'delayJs', id, LONG, { start: 3, end: 3 }, createIdSource());
+      const once = commitRows(pasted.draft, 'delayJs', pasted.ids.slice(0, -1));
+      expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(
+        once.draft.rows.delayJs.map((row) => row.text)
+      );
+    });
+
+    it('holds apply and reset until the paste lands', async () => {
+      const { port } = fakePort({ ...activeRecord(), set: { ...EMPTY_EXCLUSION_SET } });
+      const { controller, clock } = await started(port);
+      const [id = ''] = controller.insertRows('delayJs', [''], null);
+      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 0, end: 0 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      controller.apply();
+      controller.reset();
+      expect(port.apply).not.toHaveBeenCalled();
+      await runSlices(clock);
+      await outcome.done;
+      controller.apply();
+      expect(port.apply).toHaveBeenCalledTimes(1);
     });
   });
 
