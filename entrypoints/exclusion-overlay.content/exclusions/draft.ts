@@ -18,6 +18,7 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
+import { JOINED_ONLY_PROBLEMS } from '../../../lib/exclusion-builder/defer-js-rows';
 import { featureRowProblems, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import {
   saveExclusionRow,
@@ -639,7 +640,8 @@ export function wireRowProblem(text: string): string | null {
  * WP Rocket's pattern check — what a commit makes of it): the wire contract
  * (row cap included) on that form, then the engine's own prevalidation,
  * which names a pattern PCRE rejects ("WP Rocket drops this row when
- * saving") and never blocks an unverified one. Cached by lane + stored form,
+ * saving") and never blocks an unverified one — minus the problems a row
+ * has only joined with the others (the set reading owns those). Cached by lane + stored form,
  * so an edit re-validates only the row that changed (the PCRE reading is the
  * costly part). Blank rows, and rows the save empties, have no problem
  * (unfinished; a commit removes the latter).
@@ -663,7 +665,12 @@ export function createRowValidator(
     const key = `${lane}\u0000${stored}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
-    const reason = featureRowProblems(feature.id, feature.rowKind, [stored])[0]?.reason ?? null;
+    const entry = featureRowProblems(feature.id, feature.rowKind, [stored])[0];
+    // A joined-only problem of the row alone says nothing of the row among the
+    // others (`a\Qb` fails alone, passes next to `zz\E`): the lane's set
+    // reading alone reports those.
+    const joinedOnly = entry?.problem !== undefined && JOINED_ONLY_PROBLEMS.has(entry.problem);
+    const reason = entry === undefined || joinedOnly ? null : entry.reason;
     if (cache.size >= capacity) cache.clear();
     cache.set(key, reason);
     return reason;

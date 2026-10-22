@@ -1090,6 +1090,33 @@ describe('Defer JS page-wide failure (K.5b)', () => {
     expect(controller.lanePage('deferJs')?.offRows.map(({ id }) => id)).toEqual([kept]);
   });
 
+  it('applies a set the session accepts though a row alone would fail (`a\\Qb` + `zz\\E`)', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    controller.insertRows('deferJs', ['a\\Qb', 'zz\\E'], null);
+    // Alone, `a\Qb` quotes the joined pattern's closing parenthesis; joined, `\E` ends it.
+    expect(controller.invalidCount()).toBe(0);
+    clock.fire(SET_READING_DELAY_MS);
+    expect(controller.lanePage('deferJs')?.offRows).toEqual([]);
+    expect(controller.invalidCount()).toBe(0);
+    expect(prevalidateExclusionSet(draftToSet(controller.draft())).valid).toBe(true);
+    controller.apply();
+    expect(port.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets through an apply right after a fix, before the reading’s pause', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    const [, , named = ''] = controller.insertRows('deferJs', ["(?'n'a)x", 'ok', "(?'n'b)x"], null);
+    clock.fire(SET_READING_DELAY_MS);
+    expect(controller.lanePage('deferJs')?.offRows).toHaveLength(2);
+    controller.editRow('deferJs', named, 'plainb');
+    controller.editRow('deferJs', controller.draft().rows.deferJs[0]?.id ?? '', 'plaina');
+    controller.apply();
+    expect(controller.invalidCount()).toBe(0);
+    expect(port.apply).toHaveBeenCalledTimes(1);
+  });
+
   it('reads no page for lanes whose rows act alone', async () => {
     const { controller, clock } = await started(fakePort({ state: 'inactive' }).port);
     controller.insertRows('delayJs', ['.*', '.*x'], null);

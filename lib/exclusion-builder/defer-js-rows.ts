@@ -16,6 +16,7 @@
  */
 import { createBoundedMemo } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
+import type { ProblemId } from './pcre/problems';
 import {
   compileFirstMatch,
   translationRowProblems,
@@ -24,6 +25,17 @@ import {
 } from './pcre/rows';
 
 const FEATURE = 'defer_all_js';
+
+/**
+ * The problems a Defer JS row has only through the other rows of its set
+ * (the joined pre-check, the joined matching): reading a row alone cannot
+ * tell them — alone, `a\Qb` fails the pre-check; next to a row holding
+ * `\E`, it passes — so only a whole-set reading may report them.
+ */
+export const JOINED_ONLY_PROBLEMS: ReadonlySet<ProblemId> = new Set<ProblemId>([
+  'joined-page-off',
+  'joined-changes-matching'
+]);
 
 /** A Defer JS row set, translated once. */
 export interface DeferRowSet {
