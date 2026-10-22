@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseParityInputs,
   parseParityTable,
+  comparedFields,
   pendingOwner,
   typedLineBytes
 } from './wp-rocket-parity-table';
@@ -45,7 +46,7 @@ function validTable(): { header: Json; rows: Json[] } {
         feature: 'delay_js',
         from: 'save-a',
         rows: ['a'],
-        pending: 'K.4b',
+        pending: { owner: 'K.4b', fields: ['candidates', 'excluded'] },
         html: '<p>',
         served: '<p>',
         subjects: ['s1', '#0', 's2'],
@@ -59,6 +60,7 @@ function validTable(): { header: Json; rows: Json[] } {
         rows: ['('],
         filterOnly: true,
         engine: { problem: 'pcre-invalid' },
+        pending: { owner: 'K.4c', fields: ['problems'] },
         html: 'h',
         served: 's',
         subjects: [],
@@ -112,12 +114,17 @@ describe('parseParityTable', () => {
       'match-b',
       'match-c'
     ]);
-    expect(table.rows[1]).toMatchObject({ from: 'save-a', rows: ['a'], pending: 'K.4b' });
+    expect(table.rows[1]).toMatchObject({
+      from: 'save-a',
+      rows: ['a'],
+      pending: { owner: 'K.4b', fields: ['candidates', 'excluded'] }
+    });
     expect(table.rows[1]).toMatchObject({ subjects: ['s1', '#0', 's2'] });
     expect(table.rows[2]).toMatchObject({
       filterOnly: true,
       featureOff: true,
-      engine: { problem: 'pcre-invalid' }
+      engine: { problem: 'pcre-invalid' },
+      pending: { owner: 'K.4c', fields: ['problems'] }
     });
     expect(table.rows[3]).toMatchObject({
       hashed: ['b'],
@@ -145,7 +152,35 @@ describe('parseParityTable', () => {
     rejects((table) => (row(table, 'save-a').bogus = 1), 'row "save-a": unknown key "bogus"');
     rejects((table) => (row(table, 'match-b').id = 'match-c'), 'row "match-c": duplicate id');
     rejects((table) => (row(table, 'save-a').note = 1), '"note" must be a string');
-    rejects((table) => (row(table, 'save-a').pending = 'K.4b'), '"pending" must be "K.3"');
+    const pend = (table: { rows: Json[] }, value: unknown): void => {
+      row(table, 'match-a').pending = value;
+    };
+    rejects((table) => (row(table, 'save-a').pending = 'K.3'), '"pending" must be {"owner"');
+    rejects((table) => {
+      pend(table, { owner: 'K.3', fields: ['excluded'] });
+    }, '"pending.owner" must be "K.4b"');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: ['excluded'], x: 1 });
+    }, 'unknown key "x"');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: 'excluded' });
+    }, '"pending.fields" must be an array');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: [] });
+    }, '"pending.fields" must not be empty');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: ['excluded', 'excluded'] });
+    }, '"pending.fields" repeats');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: ['rekeyed'] });
+    }, '"pending.fields" must be a subset of candidates, excluded, in that order');
+    rejects((table) => {
+      pend(table, { owner: 'K.4b', fields: ['excluded', 'candidates'] });
+    }, 'in that order');
+    rejects(
+      (table) => (row(table, 'save-a').pending = { owner: 'K.3', fields: ['problems'] }),
+      'subset of stored, dropped'
+    );
   });
 
   it('rejects malformed save rows', () => {
@@ -208,7 +243,10 @@ describe('parseParityTable', () => {
       (table) => (row(table, 'match-a').from = 'match-b'),
       '"from" must name a save row of delay_js'
     );
-    rejects((table) => (row(table, 'match-a').feature = 'lazyload'), '"pending" must be "K.4d"');
+    rejects(
+      (table) => (row(table, 'match-a').feature = 'lazyload'),
+      '"pending.owner" must be "K.4d"'
+    );
     rejects(
       (table) => (row(table, 'match-b').filterOnly = false),
       '"filterOnly" is either true or absent'
@@ -312,6 +350,37 @@ describe('parseParityInputs', () => {
       { id: 'save-a', kind: 'save', feature: 'lazyload', typed: ['a'] },
       { id: 'match-a', kind: 'match', feature: 'lazyload', from: 'save-a', html: 'h' }
     ]);
+  });
+});
+
+describe('comparedFields', () => {
+  it('lists the fields the replay compares per row shape', () => {
+    expect(comparedFields({ kind: 'save', feature: 'delay_js' })).toEqual(['stored', 'dropped']);
+    expect(comparedFields({ kind: 'match', feature: 'delay_js' })).toEqual([
+      'candidates',
+      'excluded'
+    ]);
+    expect(comparedFields({ kind: 'match', feature: 'defer_all_js' })).toEqual([
+      'candidates',
+      'excluded',
+      'featureOff'
+    ]);
+    expect(comparedFields({ kind: 'match', feature: 'automatic_lazy_rendering' })).toEqual([
+      'candidates',
+      'excluded',
+      'hashed',
+      'rekeyed'
+    ]);
+    expect(
+      comparedFields({ kind: 'match', feature: 'defer_all_js', engine: { problem: 'match-all' } })
+    ).toEqual(['problems']);
+    expect(
+      comparedFields({
+        kind: 'match',
+        feature: 'lazyload',
+        engine: { residual: 'r', candidates: [], excluded: [] }
+      })
+    ).toEqual(['candidates', 'excluded']);
   });
 });
 

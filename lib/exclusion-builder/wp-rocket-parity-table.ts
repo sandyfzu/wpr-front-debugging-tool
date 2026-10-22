@@ -26,8 +26,33 @@
  */
 import type { ExclusionFeatureId } from './set';
 
-/** The work item expected to turn a pending row green (the row's `pending` value). */
+/** The work item expected to turn a row's pending fields green (`pending.owner`). */
 export type PendingPhase = 'K.3' | 'K.4b' | 'K.4c' | 'K.4d';
+
+/**
+ * An outcome field the replay compares: a save row's `stored`/`dropped`; a
+ * match row's `candidates`/`excluded` (+ Defer `featureOff`, lazy rendering
+ * `hashed`/`rekeyed`), or `problems` for a row whose disposition is a problem.
+ */
+export type OutcomeField =
+  | 'stored'
+  | 'dropped'
+  | 'candidates'
+  | 'excluded'
+  | 'featureOff'
+  | 'hashed'
+  | 'rekeyed'
+  | 'problems';
+
+/**
+ * The fields of a row the engine does not get right yet, and the work item
+ * expected to fix them. Every other compared field is asserted now.
+ */
+export interface PendingMark {
+  readonly owner: PendingPhase;
+  /** Non-empty, distinct, in the row's {@link comparedFields} order. */
+  readonly fields: readonly OutcomeField[];
+}
 
 /**
  * Feature → the work item owning its pending match rows. Typed as a full
@@ -124,8 +149,8 @@ export interface DroppedLine {
 interface RowBase {
   readonly id: string;
   readonly note?: string;
-  /** Set while the engine does not mirror this row yet (the replay expects a failure). */
-  readonly pending?: PendingPhase;
+  /** Fields the engine does not mirror yet (the replay expects each to still differ). */
+  readonly pending?: PendingMark;
 }
 
 /** The authored part of a save row. */
@@ -265,6 +290,28 @@ export function pendingOwner(kind: ParityRow['kind'], feature: ExclusionFeatureI
   return kind === 'save' ? SAVE_OWNER : MATCH_OWNER[feature];
 }
 
+/**
+ * The outcome fields the replay compares for a row, in order: save rows
+ * `stored`, `dropped`; a match row with a problem disposition `problems`;
+ * other match rows `candidates`, `excluded`, plus Defer `featureOff` and lazy
+ * rendering `hashed`, `rekeyed` (a residual compares `candidates`/`excluded` only).
+ *
+ * @param row The row's kind, feature and (match rows) disposition.
+ */
+export function comparedFields(row: {
+  readonly kind: ParityRow['kind'];
+  readonly feature: ExclusionFeatureId;
+  readonly engine?: EngineDisposition;
+}): OutcomeField[] {
+  if (row.kind === 'save') return ['stored', 'dropped'];
+  if (row.engine !== undefined) {
+    return 'problem' in row.engine ? ['problems'] : ['candidates', 'excluded'];
+  }
+  if (row.feature === 'defer_all_js') return ['candidates', 'excluded', 'featureOff'];
+  if (row.feature === FILTER_ONLY_FEATURE) return ['candidates', 'excluded', 'hashed', 'rekeyed'];
+  return ['candidates', 'excluded'];
+}
+
 /** A parse failure naming the table and, when known, the offending row. */
 function fail(id: string | null, problem: string): never {
   const where = id === null ? '' : ` row "${id}":`;
@@ -388,23 +435,51 @@ export function typedLineBytes(line: TypedLine): Uint8Array {
   return Uint8Array.from(atob(line.b64), (char) => char.charCodeAt(0));
 }
 
-/** Shared row fields: id, note, pending (checked against the owner). */
+/**
+ * Parse a `pending` mark: `{owner, fields}` with the row's owner and a
+ * non-empty list of its compared fields, in compared order.
+ */
+function pendingMark(
+  id: string,
+  value: unknown,
+  owner: PendingPhase,
+  fields: readonly OutcomeField[]
+): PendingMark {
+  if (!isRecord(value)) return fail(id, '"pending" must be {"owner": …, "fields": […]}');
+  checkKeys(id, value, ['owner', 'fields']);
+  if (value.owner !== owner) fail(id, `"pending.owner" must be "${owner}" for this row`);
+  const listed = keyList(id, value.fields, 'pending.fields');
+  if (listed.length === 0) fail(id, '"pending.fields" must not be empty');
+  const known = fields.filter((field) => listed.includes(field));
+  if (known.length !== listed.length || known.some((field, index) => field !== listed[index])) {
+    fail(id, `"pending.fields" must be a subset of ${fields.join(', ')}, in that order`);
+  }
+  return { owner, fields: known };
+}
+
+/** Shared row fields: id, note, pending (checked against the owner and the compared fields). */
 function rowBase(
   record: Record<string, unknown>,
   kind: ParityRow['kind'],
-  feature: ExclusionFeatureId
+  feature: ExclusionFeatureId,
+  engine?: EngineDisposition
 ): RowBase {
   const id = stringField(null, record, 'id');
   const note = record.note;
   if (note !== undefined && typeof note !== 'string') fail(id, '"note" must be a string');
-  const pending = record.pending;
-  if (pending !== undefined && pending !== pendingOwner(kind, feature)) {
-    fail(id, `"pending" must be "${pendingOwner(kind, feature)}" for a ${kind} row of ${feature}`);
-  }
+  const pending =
+    record.pending === undefined
+      ? undefined
+      : pendingMark(
+          id,
+          record.pending,
+          pendingOwner(kind, feature),
+          comparedFields({ kind, feature, ...(engine === undefined ? {} : { engine }) })
+        );
   return {
     id,
     ...(note === undefined ? {} : { note }),
-    ...(pending === undefined ? {} : { pending: pending as PendingPhase })
+    ...(pending === undefined ? {} : { pending })
   };
 }
 
@@ -453,7 +528,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
   const html = stringField(id, record, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   return {
-    ...rowBase(record, 'match', feature),
+    ...rowBase(record, 'match', feature, engine),
     kind: 'match',
     feature,
     ...(from === undefined ? {} : { from }),

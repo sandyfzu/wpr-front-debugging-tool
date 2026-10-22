@@ -11,9 +11,11 @@
  *   Defer page state and the lazy-render hashing; or, for a row with an
  *   `engine` disposition, the row problem / documented residual it names.
  *
- * A `pending` row is behavior the engine does not mirror yet. It still runs:
- * a crash (anything but the engine's validation error) fails it, and so does
- * an outcome that now equals the expected one — the signal to drop the mark.
+ * Every compared field is asserted per row. A field listed in the row's
+ * `pending.fields` is behavior the engine does not mirror yet: it must still
+ * differ, and fails once it matches — the signal to drop it from the mark.
+ * Every other field must equal now. A crash (anything but the engine's
+ * validation error) fails the row either way.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -32,6 +34,7 @@ import {
 } from './set';
 import { findAttribute } from './tag-edit';
 import {
+  comparedFields,
   parseParityTable,
   typedLineBytes,
   type MatchRow,
@@ -211,34 +214,42 @@ function isKeyList(value: unknown): value is (string | null)[] {
   return Array.isArray(value) && value.every((item) => item === null || typeof item === 'string');
 }
 
-/** Order-free comparison form: key lists sorted, everything else as is. */
-function normalized(outcome: object): unknown {
-  return Object.fromEntries(
-    Object.entries(outcome).map(([key, value]) => [
-      key,
-      isKeyList(value) ? [...value].sort((a, b) => String(a).localeCompare(String(b))) : value
-    ])
-  );
+/** Order-free comparison form of one field: key lists sorted, anything else as is. */
+function normalized(value: unknown): unknown {
+  return isKeyList(value) ? [...value].sort((a, b) => String(a).localeCompare(String(b))) : value;
 }
 
 /**
- * Assert a row: equal to expected, or — while pending — still different
- * (a pending row that now matches fails, asking for its mark to be dropped).
+ * Assert a row field by field over its compared fields (an absent field
+ * reads as `undefined`): a pending field must still differ, every other
+ * field must equal.
  */
-function assertRow(row: ParityRow, actual: object, expected: object): void {
-  if (row.pending === undefined) {
-    expect(normalized(actual)).toEqual(normalized(expected));
-    return;
+function assertRow(
+  row: ParityRow,
+  actual: Readonly<Record<string, unknown>>,
+  expected: Readonly<Record<string, unknown>>
+): void {
+  const pending = row.pending?.fields ?? [];
+  for (const field of comparedFields(row)) {
+    const got = normalized(actual[field]);
+    const want = normalized(expected[field]);
+    if (pending.includes(field)) {
+      expect(
+        got,
+        `${row.id}.${field} now matches WP Rocket — drop "${field}" from its pending fields`
+      ).not.toEqual(want);
+    } else {
+      expect(got, `${row.id}.${field}`).toEqual(want);
+    }
   }
-  expect(
-    normalized(actual),
-    `${row.id} now matches WP Rocket — drop its "pending": "${row.pending}" mark`
-  ).not.toEqual(normalized(expected));
 }
 
 /** The test title: id, the note, and the pending mark. */
 function title(row: ParityRow): string {
-  const pending = row.pending === undefined ? '' : `[pending ${row.pending}] `;
+  const pending =
+    row.pending === undefined
+      ? ''
+      : `[pending ${row.pending.owner}: ${row.pending.fields.join(', ')}] `;
   return `${pending}${row.id}${row.note === undefined ? '' : ` — ${row.note}`}`;
 }
 
