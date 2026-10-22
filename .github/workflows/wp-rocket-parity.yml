@@ -9,9 +9,12 @@ name: WP Rocket parity
 # - the latest stable tag — warnings only, never a failure (`--compare`).
 #
 # Informational: a separate workflow (the `gates` job in ci.yml is untouched),
-# not a required check — it runs only when the parity inputs change, weekly,
-# or on demand (`gh workflow run wp-rocket-parity.yml --ref <branch>`), and
-# depends on GitHub (APVM release, plugin tags), Packagist and wordpress.org.
+# not a required check — it runs only when the parity inputs change (PRs, and
+# pushes to main/develop/feat/**), weekly, or on demand (`gh workflow run
+# wp-rocket-parity.yml --ref <branch>`), and depends on GitHub (APVM release,
+# plugin tags), Packagist and wordpress.org. GitHub reads `schedule` and
+# `workflow_dispatch` only from the default branch's copy of this file, so a
+# feature branch carrying it before it reaches develop runs it via `feat/**`.
 on:
   pull_request:
     paths: &parity-paths
@@ -21,7 +24,7 @@ on:
       - scripts/wp-rocket-parity.*
       - .github/workflows/wp-rocket-parity.yml
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'feat/**']
     paths: *parity-paths
   schedule:
     # Mondays 05:17 UTC: catches a new WP Rocket release and dependency drift.
@@ -31,6 +34,9 @@ on:
 permissions:
   contents: read
 
+# One run per ref: a newer push supersedes an older run on the same branch (only
+# the latest commit's verdict matters). A PR's run has its own ref
+# (refs/pull/N/merge), so it never cancels the head branch's push run.
 concurrency:
   group: wp-rocket-parity-${{ github.ref }}
   cancel-in-progress: true
