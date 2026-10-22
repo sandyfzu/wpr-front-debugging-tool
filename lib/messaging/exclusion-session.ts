@@ -488,6 +488,8 @@ const REPORT_KEYS = [
   'inlineUnwrapped',
   'inlineUndetermined',
   'pageState',
+  'pageOffRows',
+  'matchAllRows',
   'rowCountsBestEffort'
 ] as const;
 
@@ -523,22 +525,61 @@ function inlineCount(
 }
 
 /**
- * A report's row caveats: each absent or its one value, and never on a
- * feature-wide run (it consulted no rows).
+ * A report's optional row list (`pageOffRows`, `matchAllRows`): absent, or
+ * a non-empty list of the feature's set rows (each at most as often as the
+ * set holds it).
  *
+ * @param value The raw list.
+ * @param setRows The feature's rows in the applied set.
+ * @returns The rows (`undefined` when absent), or `null` when invalid.
+ */
+function optionalSetRows(
+  value: unknown,
+  setRows: readonly string[]
+): readonly string[] | undefined | null {
+  if (value === undefined) return undefined;
+  const list = parseRowList(value, EXCLUSION_SET_LIMITS.totalChars);
+  if (list === null || list.rows.length === 0) return null;
+  return isSubMultiset(list.rows, setRows) ? list.rows : null;
+}
+
+/** A report's row caveats, parsed (see {@link parseRowCaveats}). */
+type RowCaveats = Pick<
+  TransformReport,
+  'pageState' | 'pageOffRows' | 'matchAllRows' | 'rowCountsBestEffort'
+>;
+
+/**
+ * A report's row caveats: each absent or its one value, and never on a
+ * feature-wide run (it consulted no rows). A page `off` run carries no
+ * other caveat but the rows behind it, which come only with it.
+ *
+ * @param input The raw report.
+ * @param featureWide The report's feature-wide flag.
+ * @param setRows The feature's rows in the applied set.
  * @returns The caveats present, or `null` when invalid.
  */
 function parseRowCaveats(
   input: Record<string, unknown>,
-  featureWide: boolean
-): Pick<TransformReport, 'pageState' | 'rowCountsBestEffort'> | null {
+  featureWide: boolean,
+  setRows: readonly string[]
+): RowCaveats | null {
   const pageState = ownValue(input, 'pageState');
   const bestEffort = ownValue(input, 'rowCountsBestEffort');
-  if (pageState !== undefined && pageState !== 'unknown') return null;
+  const pageOffRows = optionalSetRows(ownValue(input, 'pageOffRows'), setRows);
+  const matchAllRows = optionalSetRows(ownValue(input, 'matchAllRows'), setRows);
+  if (pageState !== undefined && pageState !== 'unknown' && pageState !== 'off') return null;
   if (bestEffort !== undefined && bestEffort !== true) return null;
-  if (featureWide && (pageState !== undefined || bestEffort !== undefined)) return null;
+  if (pageOffRows === null || matchAllRows === null) return null;
+  const caveats = [pageState, bestEffort, pageOffRows, matchAllRows];
+  if (featureWide && caveats.some((caveat) => caveat !== undefined)) return null;
+  const off = pageState === 'off';
+  if (off && (bestEffort !== undefined || matchAllRows !== undefined)) return null;
+  if (!off && pageOffRows !== undefined) return null;
   return {
     ...(pageState === undefined ? {} : { pageState }),
+    ...(pageOffRows === undefined ? {} : { pageOffRows }),
+    ...(matchAllRows === undefined ? {} : { matchAllRows }),
     ...(bestEffort === undefined ? {} : { rowCountsBestEffort: bestEffort })
   };
 }
@@ -571,8 +612,9 @@ function isSubMultiset(rows: readonly string[], pool: readonly string[]): boolea
  * counts for its first matching row only), a feature-wide run attributes no
  * rows, and the matched + unmatched rows are drawn from that feature's set
  * rows (which also bounds the report's size by the set's), the row
- * caveats hold their one value each, and only a Defer JS report counts
- * undone inline wraps.
+ * caveats hold their one value each (a page-off run credits no row; its
+ * rows and the match-all rows are set rows), and only a Defer JS report
+ * counts undone inline wraps.
  */
 function parseTransformReport(
   input: unknown,
@@ -605,8 +647,9 @@ function parseTransformReport(
   if (unmatched === null) return null;
   const unmatchedRows = unmatched.rows;
   if (featureWide && (matchedRows.length > 0 || unmatchedRows.length > 0)) return null;
+  const setRows = featureRows(set, feature);
   const reported = [...matchedRows.map((match) => match.row), ...unmatchedRows];
-  if (!isSubMultiset(reported, featureRows(set, feature))) return null;
+  if (!isSubMultiset(reported, setRows)) return null;
   const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
   const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
   if (undetermined === null || approximate === null) return null;
@@ -617,8 +660,10 @@ function parseTransformReport(
     undetermined ?? 0
   );
   if (inlineUnwrapped === null || inlineUndetermined === null) return null;
-  const caveats = parseRowCaveats(input, featureWide);
+  const caveats = parseRowCaveats(input, featureWide, setRows);
   if (caveats === null) return null;
+  // A page-off run matched no row: it credits none.
+  if (caveats.pageState === 'off' && reported.length > 0) return null;
   return {
     feature,
     featureWide,

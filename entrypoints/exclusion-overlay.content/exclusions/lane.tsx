@@ -3,9 +3,9 @@
  * code path whatever the count), its feature-wide disable when it has one,
  * the applied page's counts, and the lane's own notes (feature absent from
  * the page, rows unused under the disable, a page state not checked here).
- * A lane whose rows WP Rocket reads as one set shows its page-wide failure
- * above the rows, naming the rows behind it (Go to focuses each; a refused
- * apply focuses the message). Row keyboard model: Enter adds
+ * A lane whose rows WP Rocket reads as one set shows its page-wide warning
+ * above the rows, naming the rows behind it (Go to focuses each; Apply still
+ * runs, previewing it). Row keyboard model: Enter adds
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
  * between rows, a multi-line paste splits into rows; leaving a row commits
  * it — WP Rocket's settings save applied (never while typing) — and its
@@ -18,13 +18,17 @@ import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
 import Info from 'lucide-solid/icons/info';
+import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import {
   VirtualList,
   type VirtualizerFactory,
   type VirtualScrollRequest
 } from '../../../components/ui/virtual-list';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { hasInvisibleKeptCharacters } from '../../../lib/exclusion-builder/field-text';
+import {
+  hasInvisibleKeptCharacters,
+  trimExclusionRow
+} from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
@@ -37,9 +41,11 @@ import {
   PAGE_OFF_ROWS_SHOWN,
   PASTE_COPY,
   ROW_NOTE_COPY,
+  appliedRowWarningNote,
   rowWarningNote,
   type LanePageCopy,
-  type NoteText
+  type NoteText,
+  type RowRef
 } from '../copy';
 import type { OverlayController, PasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
@@ -144,7 +150,15 @@ export function Lane(props: LaneProps): JSX.Element {
       ? null
       : { ...current, pageUnknown: current.pageUnknown && !pageUnknown() };
   });
-  let pageMessage: HTMLDivElement | undefined;
+  /**
+   * The applied rows a count caveat names, by their position in the lane
+   * (rows hold their stored form once committed), else by their text.
+   */
+  const rowRefs = (applied: readonly string[]): readonly RowRef[] =>
+    applied.map((text) => {
+      const index = rows().findIndex((row) => trimExclusionRow(row.text) === text);
+      return index === -1 ? { text } : { position: index + 1 };
+    });
   const [scrollTo, setScrollTo] = createSignal<VirtualScrollRequest | null>(null);
   let root: HTMLElement | undefined;
 
@@ -215,18 +229,6 @@ export function Lane(props: LaneProps): JSX.Element {
       () => props.controller.focusRequest(),
       (request) => {
         if (request?.lane === props.lane) focusRow(request.id, request.caret);
-      },
-      { defer: true }
-    )
-  );
-
-  // A refused apply hands focus to this lane's page-wide message (rendered
-  // from the same draft the apply read, so it is already there).
-  createEffect(
-    on(
-      () => props.controller.pageMessageFocus(),
-      (request) => {
-        if (request?.lane === props.lane) pageMessage?.focus();
       },
       { defer: true }
     )
@@ -317,8 +319,8 @@ export function Lane(props: LaneProps): JSX.Element {
             {(current) => (
               <>
                 <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
-                <For each={COUNT_COPY.caveats(current(), copy().page)}>
-                  {(caveat) => <span class="xo-lane-caveat">{caveat}</span>}
+                <For each={COUNT_COPY.caveats(current(), copy().noun, rowRefs, copy().page)}>
+                  {(caveat) => <span class="xo-lane-caveat">{withCode(caveat)}</span>}
                 </For>
               </>
             )}
@@ -366,9 +368,6 @@ export function Lane(props: LaneProps): JSX.Element {
               id={`xo-page-off-${props.lane}`}
               rows={page()?.offRows ?? []}
               words={words()}
-              ref={(element) => {
-                pageMessage = element;
-              }}
               onGoTo={focusRow}
             />
           </Show>
@@ -570,22 +569,20 @@ function UndoButton(props: UndoButtonProps): JSX.Element {
 interface PageOffMessageProps {
   /** The message's id (its lead names the group). */
   readonly id: string;
-  /** The rows behind the page-wide failure (≥ 1), in lane order. */
+  /** The rows behind the page-wide warning (≥ 1), in lane order. */
   readonly rows: readonly PageOffRow[];
   readonly words: LanePageCopy;
-  /** Takes the message element (the refused apply's focus target). */
-  readonly ref: (element: HTMLDivElement) => void;
   /** Focus a named row for editing. */
   readonly onGoTo: (id: string) => void;
 }
 
 /**
- * The lane's page-wide failure: WP Rocket would not run the feature on the
+ * The lane's page-wide warning: WP Rocket would not run the feature on the
  * whole page because of the rows it names (stored form, each with a Go to
- * button that focuses the row; the rest counted). Programmatically
- * focusable — a refused apply lands here — and never a live region: it
- * appears while the user types, and the row's own problem is announced
- * through the row's description.
+ * button that focuses the row; the rest counted), and Apply still runs,
+ * previewing exactly that. Never a live region: it appears while the user
+ * types, and the row's own warning is announced through the row's
+ * description.
  *
  * @param props See {@link PageOffMessageProps}.
  */
@@ -593,16 +590,9 @@ function PageOffMessage(props: PageOffMessageProps): JSX.Element {
   const shown = (): readonly PageOffRow[] => props.rows.slice(0, PAGE_OFF_ROWS_SHOWN);
   const more = (): number => props.rows.length - shown().length;
   return (
-    <div
-      class="xo-page-off"
-      role="group"
-      tabindex="-1"
-      aria-labelledby={`${props.id}-lead`}
-      data-page-off
-      ref={props.ref}
-    >
+    <div class="xo-page-off" role="group" aria-labelledby={`${props.id}-lead`} data-page-off>
       <p class="xo-page-off-lead" id={`${props.id}-lead`}>
-        <CircleAlert size={12} aria-hidden="true" />
+        <TriangleAlert size={12} aria-hidden="true" />
         <span>{props.words.offLead(props.rows.length)}</span>
       </p>
       <ul class="xo-page-off-rows">
@@ -627,7 +617,7 @@ function PageOffMessage(props: PageOffMessageProps): JSX.Element {
       <Show when={more() > 0}>
         <p>{PAGE_OFF_COPY.more(more())}</p>
       </Show>
-      <p>{props.words.offFix(props.rows.length)}</p>
+      <p>{props.words.offOutcome(props.rows.length)}</p>
     </div>
   );
 }
@@ -672,9 +662,10 @@ function focusLeft(field: HTMLInputElement): boolean {
  * One editable row: the input, its match count on the applied page, its
  * remove control, its inline problem, and one non-blocking note slot: what
  * the last commit did (stored form with the typed text, unverified, safe
- * mode — with Undo while the lane is unedited) merged with the
- * row's non-blocking warning (WP Rocket accepts the row; it is almost
- * surely a mistake) and the invisible-characters note (no-break spaces at
+ * mode — with Undo while the lane is unedited) merged with the row's
+ * non-blocking warning (WP Rocket accepts the row and the preview applies
+ * it as WP Rocket does; it is almost surely a mistake — the slot then
+ * shows the warning icon) and the invisible-characters note (no-break spaces at
  * its ends, zero-width characters WP Rocket keeps — otherwise a silent
  * "No match").
  *
@@ -696,13 +687,19 @@ function LaneRow(props: LaneRowProps): JSX.Element {
   const invisible = (): boolean => hasInvisibleKeptCharacters(props.row.text);
   const note = (): RowNote | undefined =>
     props.controller.notes().lanes[props.lane].rows.get(props.row.id);
-  const warning = (): string | null => props.controller.rowWarning(props.lane, props.row.text);
+  const warning = (): ReturnType<OverlayController['rowWarning']> =>
+    props.controller.rowWarning(props.lane, props.row.id, props.row.text);
+  /** The warning's words in the slot. */
+  const warningNote = (): string | null => {
+    const current = warning();
+    if (current === null) return null;
+    return current.kind === 'applied'
+      ? appliedRowWarningNote(current.reason)
+      : rowWarningNote(current.reason);
+  };
   /** The slot's plain sentences after the commit note: the warning, the invisible characters. */
   const tail = (): string =>
-    [
-      warning() === null ? null : rowWarningNote(warning() ?? ''),
-      invisible() ? INVISIBLE_ROW_NOTE : null
-    ]
+    [warningNote(), invisible() ? INVISIBLE_ROW_NOTE : null]
       .filter((part) => part !== null)
       .join(' ');
   const hasNote = (): boolean => note() !== undefined || tail() !== '';
@@ -790,13 +787,16 @@ function LaneRow(props: LaneRowProps): JSX.Element {
         )}
       </Show>
       <Show when={hasNote()}>
-        <div class="xo-row-note">
-          <Info size={12} aria-hidden="true" />
+        <div class="xo-row-note" data-tone={warning() === null ? undefined : 'warn'}>
+          <Show when={warning() !== null} fallback={<Info size={12} aria-hidden="true" />}>
+            <TriangleAlert size={12} aria-hidden="true" />
+          </Show>
           <span class="xo-note-text" id={noteId()}>
             <Show when={note()}>
               {(current) => <NoteRuns note={ROW_NOTE_COPY.row(current().diff)} />}
             </Show>
-            {tail() === '' ? '' : `${note() === undefined ? '' : ' '}${tail()}`}
+            {note() !== undefined && tail() !== '' ? ' ' : ''}
+            {withCode(tail())}
           </span>
           <Show when={note()?.undoable === true}>
             <UndoButton

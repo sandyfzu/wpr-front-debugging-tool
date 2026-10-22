@@ -91,6 +91,20 @@ describe('runDocumentPipeline', () => {
     expect(result.cause).toMatchObject({ name: 'ExclusionValidationError' });
   });
 
+  it('rewrites a set whose rows only warn, as WP Rocket applies them', () => {
+    const html = `${DELAYED}<script src="b.js" data-rocket-defer defer></script>`;
+    // `(?a)` matches every script; `.*` makes Defer JS defer nothing on the page.
+    const set = setWith({ delayJs: ['(?a)'], deferJs: ['.*'] });
+    const result = runDocumentPipeline(request(html, set), clock(0));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.html).not.toContain('rocketlazyloadscript');
+    expect(result.html).not.toContain('data-rocket-defer');
+    const [delay, defer] = result.outcome.reports;
+    expect(delay).toMatchObject({ rewritten: 1, matchAllRows: ['(?a)'] });
+    expect(defer).toMatchObject({ rewritten: 1, pageState: 'off', pageOffRows: ['.*'] });
+  });
+
   it('reports an engine throw as engine-failed with its cause', () => {
     const boom = new Error('boom');
     const result = runDocumentPipeline(request(DELAYED), () => {

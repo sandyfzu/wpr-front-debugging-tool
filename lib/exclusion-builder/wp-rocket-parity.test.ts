@@ -9,8 +9,9 @@
  *   feature's pipeline step with the stored rows → the engine's candidates,
  *   the subjects it restores (its exclusion marker) and, per feature, the
  *   Defer page state and inline-jQuery wrapping, and the lazy-render
- *   hashing; or, for a row with an
- *   `engine` disposition, the row problem / documented residual it names.
+ *   hashing (plus, for a row with a `warning` disposition, the warning the
+ *   engine names); or, for a row with a `problem` / `residual`
+ *   disposition, the row problem / documented residual it names.
  *
  * Every compared field is asserted per row. A field listed in the row's
  * `pending.fields` is behavior the engine does not mirror yet: it must still
@@ -24,11 +25,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import { INLINE_WRAP_OPEN } from '../wp-rocket/constants';
-import { ExclusionValidationError } from './errors';
+import { ExclusionValidationError, type InvalidExclusionRow } from './errors';
 import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
 import { lazyRenderRekeyed } from './lazy-render-hashing';
 import { exclusionPipelineSteps } from './pipeline';
+import { prevalidateExclusionSet } from './validate';
 import type { TransformReport } from './report';
 import {
   EMPTY_EXCLUSION_SET,
@@ -228,12 +230,13 @@ type MatchOutcome =
       readonly inlineWrapped?: readonly string[] | 'undetermined' | 'report-mismatch';
       readonly hashed?: readonly string[];
       readonly rekeyed?: readonly string[] | null;
+      readonly warnings?: readonly (string | null)[];
     }
   | { readonly problems: readonly (string | null)[] };
 
-/** The problem ids a validation error carries (`null` where an entry has none). */
-function problemIds(error: ExclusionValidationError): (string | null)[] {
-  const ids = error.invalid.map((entry) =>
+/** The distinct problem ids of named rows (`null` where an entry has none), sorted. */
+function problemIds(entries: readonly InvalidExclusionRow[]): (string | null)[] {
+  const ids = entries.map((entry) =>
     'problem' in entry && typeof entry.problem === 'string' ? entry.problem : null
   );
   return [...new Set(ids)].sort();
@@ -254,10 +257,10 @@ function engineRekeyed(row: MatchRow): string[] | null {
 /**
  * The engine's outcome for a match row. A validation error is an answer
  * (its problem ids); any other throw is a crash and propagates. Defer's
- * `featureOff`: a set that turns WP Rocket's Defer off is a validation
- * error, so a run is `false` — or `'unknown'` when the report says the page
- * state could not be replayed (never equal to WP Rocket's boolean). Defer's
- * `inlineWrapped`: see {@link engineInlineWrapped}.
+ * `featureOff`: the report's page state — `off` is `true`, `'unknown'`
+ * when it could not be replayed (never equal to WP Rocket's boolean), else
+ * `false`. Defer's `inlineWrapped`: see {@link engineInlineWrapped}.
+ * `warnings`: the warning ids prevalidation names for the set.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
@@ -277,14 +280,16 @@ function engineMatch(row: MatchRow): MatchOutcome {
       excluded,
       ...(row.feature === 'defer_all_js'
         ? {
-            featureOff: run.report.pageState === 'unknown' ? 'unknown' : false,
+            featureOff:
+              run.report.pageState === 'unknown' ? 'unknown' : run.report.pageState === 'off',
             inlineWrapped: engineInlineWrapped(row, run)
           }
         : {}),
-      ...lazyRender
+      ...lazyRender,
+      warnings: problemIds(prevalidateExclusionSet(set).warnings)
     };
   } catch (error) {
-    if (error instanceof ExclusionValidationError) return { problems: problemIds(error) };
+    if (error instanceof ExclusionValidationError) return { problems: problemIds(error.invalid) };
     throw error;
   }
 }
@@ -293,8 +298,11 @@ function engineMatch(row: MatchRow): MatchOutcome {
 function expectedMatch(row: MatchRow): MatchOutcome {
   const engine = row.engine;
   if (engine !== undefined && 'problem' in engine) return { problems: [engine.problem] };
-  if (engine !== undefined) return { candidates: engine.candidates, excluded: engine.excluded };
+  if (engine !== undefined && 'residual' in engine) {
+    return { candidates: engine.candidates, excluded: engine.excluded };
+  }
   return {
+    ...(engine === undefined ? {} : { warnings: [engine.warning] }),
     candidates: row.candidates,
     excluded: row.excluded,
     ...(row.featureOff === undefined ? {} : { featureOff: row.featureOff }),

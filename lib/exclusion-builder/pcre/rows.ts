@@ -52,15 +52,20 @@ export interface RowProblem {
   readonly reason: string;
 }
 
+/** The matcher of a row that matches every subject: the empty pattern. */
+const MATCH_EVERYTHING: PcreMatcher = { source: '', flags: '' };
+
 /** One row's translation. */
 export interface TranslatedRow {
   readonly row: string;
   /**
    * The exact JS equivalent of the row's runtime pattern, when one exists and
-   * is safe to run — kept with a `match-all` or page-off problem (a
-   * `match-all` row's matcher really matches everything). `null` when the
-   * row has no proven translation, its save fate is not modeled (unverified), is a backtracking risk, or matches
-   * differently joined (`joined-changes-matching`).
+   * is safe to run — kept with a page-off problem. A `match-all` row gets
+   * the empty pattern, which matches every subject as the row does (even
+   * where its own syntax has no JS equivalent, e.g. `(?a)`). `null` when the
+   * row has no proven translation, its save fate is not modeled
+   * (unverified), is a backtracking risk, or matches differently joined
+   * (`joined-changes-matching`).
    */
   readonly matcher: PcreMatcher | null;
   readonly problem: RowProblem | null;
@@ -639,9 +644,11 @@ export function translateRegexRows(
     return {
       row,
       matcher:
-        source !== null && risk === null && !joinedDiffers && !unverified
-          ? { source, flags: '' }
-          : null,
+        problem?.problem === 'match-all'
+          ? MATCH_EVERYTHING
+          : source !== null && risk === null && !joinedDiffers && !unverified
+            ? { source, flags: '' }
+            : null,
       problem
     };
   });

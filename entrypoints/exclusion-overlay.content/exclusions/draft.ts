@@ -19,7 +19,8 @@ import {
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
 import { JOINED_ONLY_PROBLEMS } from '../../../lib/exclusion-builder/defer-js-rows';
-import { featureRowProblems, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
+import type { ProblemId } from '../../../lib/exclusion-builder/pcre/problems';
+import { featureRowReading, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import {
   saveExclusionRow,
   saveExclusionRows,
@@ -610,15 +611,18 @@ export function draftChars(draft: Draft): number {
 }
 
 /**
- * A row's non-blocking warning, or null: a row WP Rocket accepts as written
- * that is almost surely a mistake (an Automatic Lazy Rendering row of only
- * whitespace — the editor leaves such a blank row out).
+ * A blank row's warning, or null: a blank row WP Rocket would accept as
+ * written that is almost surely a mistake (an Automatic Lazy Rendering row
+ * of only whitespace — the editor leaves such a blank row out). Read alone,
+ * as typed: only the literal lanes have such rows.
  *
  * @param lane The row's lane.
  * @param text The row as it is.
  */
-export function rowWarning(lane: LaneKey, text: string): string | null {
-  return featureRowWarnings(laneFeature(lane).id, [text])[0]?.reason ?? null;
+export function blankRowWarning(lane: LaneKey, text: string): string | null {
+  const feature = laneFeature(lane);
+  if (feature.rowKind !== 'literal' || !isBlankRow(text)) return null;
+  return featureRowWarnings(feature.id, feature.rowKind, [text])[0]?.reason ?? null;
 }
 
 /**
@@ -636,43 +640,69 @@ export function wireRowProblem(text: string): string | null {
 }
 
 /**
+ * What a row check found: a problem that blocks an apply, or a warning that
+ * never does (WP Rocket applies the row as stored and so does the preview —
+ * e.g. a row matching every script).
+ */
+export interface RowCheck {
+  readonly reason: string;
+  readonly blocking: boolean;
+}
+
+/**
+ * A row's check from its feature's reading of it alone: its blocking
+ * problem, else its warning — minus what a row has only joined with the
+ * others (`a\Qb` fails Defer JS's check alone, passes next to `zz\E`): the
+ * lane's set reading alone reports those.
+ *
+ * @param lane The row's lane.
+ * @param stored The row's stored form.
+ */
+function storedRowCheck(lane: LaneKey, stored: string): RowCheck | null {
+  const feature = laneFeature(lane);
+  const reading = featureRowReading(feature.id, feature.rowKind, [stored]);
+  const alone = (entry: { readonly problem?: ProblemId }): boolean =>
+    entry.problem === undefined || !JOINED_ONLY_PROBLEMS.has(entry.problem);
+  const problem = reading.problems.find(alone);
+  if (problem !== undefined) return { reason: problem.reason, blocking: true };
+  const warning = reading.warnings.find(alone);
+  return warning === undefined ? null : { reason: warning.reason, blocking: false };
+}
+
+/**
  * A memoizing row validator over the row's stored form (its text before
  * WP Rocket's pattern check — what a commit makes of it): the wire contract
- * (row cap included) on that form, then the engine's own prevalidation,
- * which names a pattern PCRE rejects ("WP Rocket drops this row when
- * saving") and never blocks an unverified one — minus the problems a row
- * has only joined with the others (the set reading owns those). Cached by lane + stored form,
- * so an edit re-validates only the row that changed (the PCRE reading is the
- * costly part). Blank rows, and rows the save empties, have no problem
+ * (row cap included) on that form, then the engine's own prevalidation of
+ * the row alone (see {@link storedRowCheck}), which names a pattern PCRE
+ * rejects ("WP Rocket drops this row when saving"), warns on a row matching
+ * everything, and never blocks an unverified one. Cached by lane + stored
+ * form, so an edit re-validates only the row that changed (the PCRE reading
+ * is the costly part). Blank rows, and rows the save empties, have no check
  * (unfinished; a commit removes the latter).
  *
  * @param capacity Cached verdicts kept before the cache restarts.
- * @returns `(lane, text) → reason | null`.
+ * @returns `(lane, text) → check | null`.
  */
 export function createRowValidator(
   capacity = 4_096
-): (lane: LaneKey, text: string) => string | null {
-  const cache = new Map<string, string | null>();
+): (lane: LaneKey, text: string) => RowCheck | null {
+  const cache = new Map<string, RowCheck | null>();
+  const blocking = (reason: string | null): RowCheck | null =>
+    reason === null ? null : { reason, blocking: true };
   return (lane, typed) => {
     if (isBlankRow(typed)) return null;
     // A broken (half) character is the typed text's own problem: the save would replace it.
-    if (!typed.isWellFormed()) return wireRowProblem(typed);
-    const feature = laneFeature(lane);
-    const stored = storedRowKey(feature.id, typed);
+    if (!typed.isWellFormed()) return blocking(wireRowProblem(typed));
+    const stored = storedRowKey(laneFeature(lane).id, typed);
     if (stored === null) return null;
     const wire = wireRowProblem(stored);
-    if (wire !== null) return wire;
+    if (wire !== null) return blocking(wire);
     const key = `${lane}\u0000${stored}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
-    const entry = featureRowProblems(feature.id, feature.rowKind, [stored])[0];
-    // A joined-only problem of the row alone says nothing of the row among the
-    // others (`a\Qb` fails alone, passes next to `zz\E`): the lane's set
-    // reading alone reports those.
-    const joinedOnly = entry?.problem !== undefined && JOINED_ONLY_PROBLEMS.has(entry.problem);
-    const reason = entry === undefined || joinedOnly ? null : entry.reason;
+    const check = storedRowCheck(lane, stored);
     if (cache.size >= capacity) cache.clear();
-    cache.set(key, reason);
-    return reason;
+    cache.set(key, check);
+    return check;
   };
 }

@@ -35,6 +35,14 @@ export interface LaneCounts {
    * wasn't checked: the counts assume it does.
    */
   readonly pageUnknown: boolean;
+  /**
+   * WP Rocket runs the feature on nothing under the applied rows (Defer JS
+   * defers no script): the rows behind it, as applied (empty when not
+   * named); `null` when it runs.
+   */
+  readonly pageOffRows: readonly string[] | null;
+  /** Applied rows that match every candidate, as applied (WP Rocket excludes everything with them). */
+  readonly matchAllRows: readonly string[];
 }
 
 /**
@@ -68,7 +76,9 @@ export function laneCounts(report: TransformReport | undefined): LaneCounts | nu
     approximate: report.approximate ?? 0,
     inlineUnknown: inline > 0,
     bestEffort: report.rowCountsBestEffort === true,
-    pageUnknown: report.pageState === 'unknown'
+    pageUnknown: report.pageState === 'unknown',
+    pageOffRows: report.pageState === 'off' ? (report.pageOffRows ?? []) : null,
+    matchAllRows: report.matchAllRows ?? []
   };
 }
 
@@ -76,7 +86,7 @@ export function laneCounts(report: TransformReport | undefined): LaneCounts | nu
  * How many elements a row matched on the rewritten page: a count (0 = the
  * no-match warning), or null when unknown — the row was not in the applied
  * set (edited or added since), or the feature-wide disable ran instead of
- * rows.
+ * rows, or the rows turned the feature off on the page (no row matched).
  *
  * @param report The row's lane report.
  * @param text The row as typed.

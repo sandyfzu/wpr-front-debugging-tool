@@ -1,8 +1,9 @@
 /**
- * Property: the editor's final row problems agree with the session's
+ * Property: the editor's final row verdicts agree with the session's
  * prevalidation on every Defer JS set — the editor never blocks an apply the
- * session accepts, nor lets through one it refuses. The editor's problem for
- * a row is its lane's set reading, else the single-row check (as the
+ * session accepts, nor lets through one it refuses, and it warns on exactly
+ * the rows the session warns on. The editor's verdict for a row is its
+ * lane's set reading, else the single-row check (`rowVerdict`, as the
  * controller composes them); the session judges the set the editor applies
  * (the next commit of the uncommitted rows, then the apply's commit of
  * every row). Checked in three states per set: every row typed, every row
@@ -26,12 +27,14 @@ import {
   type Draft,
   type DraftRow
 } from './draft';
-import { lanePage } from './lane-page';
+import { lanePage, rowVerdict, type RowVerdict } from './lane-page';
 
 /** Fragments rows are built from (WP Rocket's hard cases for a joined pattern). */
 const FRAGMENTS = [
   '(?<n>a)',
   "(?'n'x)",
+  '(?a)',
+  '|',
   '(?P<n>d)',
   '(?J)',
   '(?-J)',
@@ -151,26 +154,34 @@ const draftOf = (rows: readonly DraftRow[]): Draft => ({
   disable: { ...EMPTY_EXCLUSION_SET.disable }
 });
 
-/** The editor's problem for each row: the set reading, else the single-row check. */
-function editorProblems(
+/** The editor's verdict for each row: the set reading, else the single-row check. */
+function editorVerdicts(
   rows: readonly DraftRow[],
   uncommitted: ReadonlySet<string>
-): Map<string, string | null> {
+): Map<string, RowVerdict> {
   const page = lanePage('deferJs', rows, uncommitted);
   return new Map(
-    rows.map((row) => [row.id, page?.problems.get(row.id) ?? validate('deferJs', row.text)])
+    rows.map((row) => [row.id, rowVerdict(page, row.id, validate('deferJs', row.text))])
   );
 }
 
-/** The session's problem for each row the applied set holds, by row id. */
-function sessionProblems(rows: readonly DraftRow[], uncommitted: ReadonlySet<string>) {
+/** The session's verdict for each row the applied set holds, by row id. */
+function sessionVerdicts(rows: readonly DraftRow[], uncommitted: ReadonlySet<string>) {
   const next = commitRows(draftOf(rows), 'deferJs', [...uncommitted]).draft;
   const applied = commitAll(next).draft;
   const kept = applied.rows.deferJs.filter((row) => !isBlankRow(row.text));
-  const invalid = prevalidateExclusionSet(draftToSet(applied)).invalid;
-  const byId = new Map<string, string | null>(kept.map((row) => [row.id, null]));
+  const { invalid, warnings } = prevalidateExclusionSet(draftToSet(applied));
+  const byId = new Map<string, RowVerdict>(
+    kept.map((row) => [row.id, { problem: null, warning: null }])
+  );
+  const verdictOf = (index: number): RowVerdict =>
+    byId.get(kept[index]?.id ?? '') ?? { problem: null, warning: null };
   for (const { feature, index, reason } of invalid)
-    if (feature === 'defer_all_js') byId.set(kept[index]?.id ?? '', reason);
+    if (feature === 'defer_all_js')
+      byId.set(kept[index]?.id ?? '', { ...verdictOf(index), problem: reason });
+  for (const { feature, index, reason } of warnings)
+    if (feature === 'defer_all_js')
+      byId.set(kept[index]?.id ?? '', { ...verdictOf(index), warning: reason });
   return { byId, applied: applied.rows.deferJs };
 }
 
@@ -179,24 +190,25 @@ const withIds = (texts: readonly string[]): DraftRow[] =>
   texts.map((text, index) => ({ id: `r${String(index + 1)}`, text }));
 
 /**
- * Check one state: the editor's problem for every row that stays equals the
- * session's; and once committed as at apply (nothing uncommitted), every row.
+ * Check one state: the editor's verdict (problem and warning) for every row
+ * that stays equals the session's; and once committed as at apply (nothing
+ * uncommitted), every row.
  */
 function expectAgreement(rows: readonly DraftRow[], uncommitted: ReadonlySet<string>): void {
-  const { byId, applied } = sessionProblems(rows, uncommitted);
-  const before = editorProblems(rows, uncommitted);
-  for (const [id, reason] of byId)
+  const { byId, applied } = sessionVerdicts(rows, uncommitted);
+  const before = editorVerdicts(rows, uncommitted);
+  for (const [id, verdict] of byId)
     expect({ rows: rows.map((row) => row.text), id, editor: before.get(id) }).toEqual({
       rows: rows.map((row) => row.text),
       id,
-      editor: reason
+      editor: verdict
     });
-  const after = editorProblems(applied, new Set());
-  for (const [id, reason] of byId)
+  const after = editorVerdicts(applied, new Set());
+  for (const [id, verdict] of byId)
     expect({ applied: applied.map((row) => row.text), id, editor: after.get(id) }).toEqual({
       applied: applied.map((row) => row.text),
       id,
-      editor: reason
+      editor: verdict
     });
 }
 
@@ -204,8 +216,26 @@ describe('editor ↔ session agreement on Defer JS sets', () => {
   it('a row that fails alone but passes joined blocks nothing (`a\\Qb` + `zz\\E`)', () => {
     const rows = withIds(['a\\Qb', 'zz\\E']);
     expect(prevalidateExclusionSet(draftToSet(draftOf(rows))).valid).toBe(true);
-    expect([...editorProblems(rows, new Set()).values()]).toEqual([null, null]);
+    expect([...editorVerdicts(rows, new Set()).values()]).toEqual([
+      { problem: null, warning: null },
+      { problem: null, warning: null }
+    ]);
     expectAgreement(rows, new Set());
+  });
+
+  it('a page-off set and a match-all row warn, and block nothing (K.5c)', () => {
+    const pageOff = withIds(["(?'n'a)x", 'ok', "(?'n'b)y"]);
+    expect(prevalidateExclusionSet(draftToSet(draftOf(pageOff))).valid).toBe(true);
+    const verdicts = [...editorVerdicts(pageOff, new Set()).values()];
+    expect(verdicts.map(({ problem }) => problem)).toEqual([null, null, null]);
+    expect(verdicts.map(({ warning }) => warning !== null)).toEqual([true, false, true]);
+    expectAgreement(pageOff, new Set());
+    const matchAll = withIds(['zzz', '(?a)']);
+    expect(editorVerdicts(matchAll, new Set()).get('r2')).toEqual({
+      problem: null,
+      warning: 'WP Rocket stores this and it excludes every script'
+    });
+    expectAgreement(matchAll, new Set());
   });
 
   const sets = [...generatedSets(0x5b, 1200), ...externalSets()];

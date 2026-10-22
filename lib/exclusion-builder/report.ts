@@ -62,13 +62,25 @@ export interface TransformReport {
    */
   readonly inlineUndetermined?: number;
   /**
-   * WP Rocket's own run of the feature on this page could not be
-   * determined (Defer JS: whether its joined-pattern pre-check passes, which
-   * decides whether it defers anything at all): the row matches are
-   * reported as if it runs. Present only then — a set that turns the
-   * feature off fails validation, so a report never says `off`.
+   * WP Rocket's own run of the feature on this page, when not plainly on
+   * (Defer JS: its joined-pattern pre-check decides whether it defers
+   * anything at all). `unknown` — it could not be determined: the row
+   * matches are reported as if it runs. `off` — the rows make it run on
+   * nothing: every candidate is restored, no row is credited (matched and
+   * unmatched rows are empty), and `pageOffRows` names the rows behind it.
    */
-  readonly pageState?: 'unknown';
+  readonly pageState?: 'unknown' | 'off';
+  /**
+   * The rows behind a page `off`, in row order; present only then (and
+   * only when the reading names them).
+   */
+  readonly pageOffRows?: readonly string[];
+  /**
+   * Rows that match every candidate (WP Rocket stores them and excludes
+   * everything with them), in row order; present only when non-empty, on a
+   * row-driven run whose page is not `off`.
+   */
+  readonly matchAllRows?: readonly string[];
   /**
    * The per-row counts are best effort: WP Rocket matches the rows as one
    * pattern, so which row matched is not observable there; the first
@@ -106,7 +118,11 @@ export interface TransformCounters {
   /** See {@link TransformReport.inlineUndetermined} (0 when omitted). */
   readonly inlineUndetermined?: number;
   /** See {@link TransformReport.pageState} (WP Rocket runs the feature when omitted). */
-  readonly pageState?: 'unknown';
+  readonly pageState?: 'unknown' | 'off';
+  /** See {@link TransformReport.pageOffRows} (read only with a page `off`). */
+  readonly pageOffRows?: readonly string[];
+  /** See {@link TransformReport.matchAllRows} (none when omitted). */
+  readonly matchAllRows?: readonly string[];
   /** See {@link TransformReport.rowCountsBestEffort} (exact when omitted). */
   readonly rowCountsBestEffort?: boolean;
 }
@@ -132,15 +148,22 @@ function optionalCounts(
 
 /**
  * The row-driven caveats of a report, each only when set (a feature-wide
- * run consults no rows, so it never carries them).
+ * run consults no rows, so it never carries them; a page-off run credits
+ * no row, so it carries only its page state and rows).
  *
  * @param counters The transform's counters.
  */
 function rowCaveats(
   counters: TransformCounters
-): Pick<TransformReport, 'pageState' | 'rowCountsBestEffort'> {
+): Pick<TransformReport, 'pageState' | 'pageOffRows' | 'matchAllRows' | 'rowCountsBestEffort'> {
+  if (counters.pageState === 'off') {
+    const rows = counters.pageOffRows ?? [];
+    return { pageState: 'off', ...(rows.length > 0 ? { pageOffRows: [...rows] } : {}) };
+  }
+  const matchAll = counters.matchAllRows ?? [];
   return {
     ...(counters.pageState === 'unknown' ? { pageState: 'unknown' as const } : {}),
+    ...(matchAll.length > 0 ? { matchAllRows: [...matchAll] } : {}),
     ...(counters.rowCountsBestEffort === true ? { rowCountsBestEffort: true as const } : {})
   };
 }
@@ -148,7 +171,8 @@ function rowCaveats(
 /**
  * Build the report from a transform's counters: rows split into matched
  * (count > 0) and unmatched, both in row order. A feature-wide run reports
- * no row attributions or row caveats — the disable, not a row, matched.
+ * no row attributions or row caveats — the disable, not a row, matched; a
+ * page-off run reports no row attributions — no row was matched.
  *
  * @param counters The transform's collected counters.
  * @returns The report.
@@ -178,7 +202,9 @@ export function transformReport(counters: TransformCounters): TransformReport {
   }
   const matchedRows: ExclusionRowMatch[] = [];
   const unmatchedRows: string[] = [];
+  const pageOff = counters.pageState === 'off';
   rows.forEach((row, index) => {
+    if (pageOff) return;
     const matches = matchCounts[index] ?? 0;
     if (matches > 0) matchedRows.push({ row, rowKind, matches });
     else unmatchedRows.push(row);

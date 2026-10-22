@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { storedExclusionRows } from '../../../lib/exclusion-builder/field-text';
 import { EMPTY_EXCLUSION_SET, type ExclusionFeatureId } from '../../../lib/exclusion-builder/set';
-import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
+import { featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { validSet } from '../../../lib/messaging/exclusion-session.fixtures';
 import {
@@ -23,7 +23,7 @@ import {
   reinsertRow,
   removeRow,
   restoreDraft,
-  rowWarning,
+  blankRowWarning,
   sameSet,
   setDisable,
   splitLines,
@@ -88,7 +88,7 @@ describe('draft ↔ set', () => {
     const set = draftToSet(draftFromSet(typed, createIdSource()));
     expect(set.rows.deferJs).toEqual(["(?'n'a)x"]);
     const pageOff = (rows: readonly string[]): boolean =>
-      featureRowProblems('defer_all_js', 'pattern', rows).some(
+      featureRowWarnings('defer_all_js', 'pattern', rows).some(
         ({ problem }) => problem === 'joined-page-off'
       );
     // Joined twice, the repeated group name fails WP Rocket's pre-check; stored once, it cannot.
@@ -554,23 +554,31 @@ describe('splitLines', () => {
 });
 
 describe('createRowValidator', () => {
+  /** A blocking check whose reason matches `reason`. */
+  const blocking = (reason: RegExp): unknown => ({
+    reason: expect.stringMatching(reason) as unknown,
+    blocking: true
+  });
+
   it('names invalid and risky patterns, accepts literals as text', () => {
     const validate = createRowValidator();
     // Regex rows are read as WP Rocket reads them (its save drops what PCRE rejects).
-    expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row when saving/);
-    expect(validate('deferJs', '(')).toMatch(/^WP Rocket drops this row when saving/);
-    expect(validate('deferJs', '(a+)+$')).toMatch(/^Risky regular expression/);
+    expect(validate('delayJs', '(')).toEqual(blocking(/^WP Rocket drops this row when saving/));
+    expect(validate('deferJs', '(')).toEqual(blocking(/^WP Rocket drops this row when saving/));
+    expect(validate('deferJs', '(a+)+$')).toEqual(blocking(/^Risky regular expression/));
     expect(validate('lazyload', '(')).toBeNull();
     expect(validate('delayJs', 'gtag')).toBeNull();
   });
 
   it('names rows the session cannot store: over the row cap or with control characters', () => {
     const validate = createRowValidator();
-    expect(validate('lazyload', 'x'.repeat(EXCLUSION_SET_LIMITS.rowChars + 1))).toMatch(
-      /longer than 2048/
+    expect(validate('lazyload', 'x'.repeat(EXCLUSION_SET_LIMITS.rowChars + 1))).toEqual(
+      blocking(/longer than 2048/)
     );
-    expect(validate('lazyload', 'a\u0007b')).toMatch(/control character/);
-    expect(validate('delayJs', `x${String.fromCharCode(0xd83c)}`)).toMatch(/control character/);
+    expect(validate('lazyload', 'a\u0007b')).toEqual(blocking(/control character/));
+    expect(validate('delayJs', `x${String.fromCharCode(0xd83c)}`)).toEqual(
+      blocking(/control character/)
+    );
     expect(validate('lazyload', 'x'.repeat(EXCLUSION_SET_LIMITS.rowChars))).toBeNull();
   });
 
@@ -582,7 +590,7 @@ describe('createRowValidator', () => {
     const validate = createRowValidator();
     expect(validate('lazyload', 'logo.png\t')).toBeNull();
     expect(validate('lazyload', `  ${'x'.repeat(EXCLUSION_SET_LIMITS.rowChars)}  `)).toBeNull();
-    expect(validate('delayJs', ' ( ')).toMatch(/^WP Rocket drops this row when saving/);
+    expect(validate('delayJs', ' ( ')).toEqual(blocking(/^WP Rocket drops this row when saving/));
   });
 
   it('serves repeated rows from its cache and restarts past capacity', () => {
@@ -590,16 +598,39 @@ describe('createRowValidator', () => {
     expect(validate('delayJs', '(')).toBe(validate('delayJs', '('));
     validate('delayJs', 'a');
     validate('delayJs', 'b');
-    expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row/);
+    expect(validate('delayJs', '(')).toEqual(blocking(/^WP Rocket drops this row/));
+  });
+
+  it('warns, never blocks, on a row WP Rocket applies matching every script (K.5c)', () => {
+    const validate = createRowValidator();
+    for (const lane of ['delayJs', 'deferJs'] as const) {
+      expect(validate(lane, '(?a)')).toEqual({
+        reason: 'WP Rocket stores this and it excludes every script',
+        blocking: false
+      });
+    }
+  });
+
+  it('leaves joined-only problems to the set reading, blocking or not', () => {
+    const validate = createRowValidator();
+    // Alone, `.*` turns Defer JS off (a warning) and `a\\Qb` fails its check:
+    // next to other rows both may differ, so the row check says nothing.
+    expect(validate('deferJs', '.*')).toBeNull();
+    expect(validate('deferJs', 'a\\Qb')).toBeNull();
+    // Delay JS reads rows alone: `.*` matches every script there.
+    expect(validate('delayJs', '.*')).toMatchObject({ blocking: false });
   });
 });
 
-describe('rowWarning', () => {
+describe('blankRowWarning', () => {
   it('warns on a whitespace-only lazy-render row only', () => {
-    expect(rowWarning('lazyRender', '  ')).toMatch(/^Row is only whitespace/);
-    expect(rowWarning('lazyRender', '')).toBeNull();
-    expect(rowWarning('lazyRender', 'id="a"')).toBeNull();
-    expect(rowWarning('lazyload', '  ')).toBeNull();
-    expect(rowWarning('delayJs', '  ')).toBeNull();
+    expect(blankRowWarning('lazyRender', '  ')).toMatch(/^Row is only whitespace/);
+    expect(blankRowWarning('lazyRender', '')).toBeNull();
+    expect(blankRowWarning('lazyRender', 'id="a"')).toBeNull();
+    expect(blankRowWarning('lazyload', '  ')).toBeNull();
+    expect(blankRowWarning('delayJs', '  ')).toBeNull();
+    // A blank pattern row is an unfinished edit: no warning (its `''` is never sent).
+    expect(blankRowWarning('delayJs', '')).toBeNull();
+    expect(blankRowWarning('deferJs', '')).toBeNull();
   });
 });

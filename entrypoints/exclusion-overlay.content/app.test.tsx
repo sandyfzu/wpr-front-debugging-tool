@@ -529,7 +529,8 @@ describe('OverlayApp', () => {
   });
 
   it('dismisses a notice from its corner control, focus landing on the heading', async () => {
-    const saved = { ...validSet(), rows: { ...validSet().rows, deferJs: ['(?a)'] } };
+    // A backtracking risk blocks (a row matching everything would only warn).
+    const saved = { ...validSet(), rows: { ...validSet().rows, deferJs: ['(a+)+$'] } };
     mount(port({ state: 'inactive' }, { saved }));
     fireEvent.click(await screen.findByRole('button', { name: /^Apply$/ }));
     fireEvent.click(await screen.findByRole('button', { name: /^Dismiss: Fix 1 row/ }));

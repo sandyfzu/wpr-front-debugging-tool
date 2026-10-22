@@ -90,7 +90,9 @@ describe('parseExclusionSet', () => {
     const set = setWithRows('delayJs', ['', '   ', '(unclosed']);
     const parsed = parseExclusionSet(set, 'reject');
     expect(parsed?.rows.delayJs).toEqual(['', '   ', '(unclosed']);
-    expect(parsed && prevalidateExclusionSet(parsed).invalid).toHaveLength(3);
+    // `''` matches every script (a warning); the other two block.
+    expect(parsed && prevalidateExclusionSet(parsed).invalid).toHaveLength(2);
+    expect(parsed && prevalidateExclusionSet(parsed).warnings).toHaveLength(1);
   });
 
   it('rejects non-records and missing parts', () => {
@@ -446,6 +448,7 @@ describe('document reports are tied to the session set', () => {
     });
     for (const patch of [
       { pageState: 'on' },
+      // A page-off run credits no row: the fixture's rows are attributed.
       { pageState: 'off' },
       { rowCountsBestEffort: false },
       { rowCountsBestEffort: 'yes' },
@@ -459,6 +462,47 @@ describe('document reports are tied to the session set', () => {
         withReport({ featureWide: true, matchedRows: [], unmatchedRows: [] })
       )
     ).not.toBeNull();
+  });
+
+  it('carries a page-off run: no row credited, the rows behind it drawn from the set', () => {
+    const off = { matchedRows: [], unmatchedRows: [], rewritten: 3, pageState: 'off' };
+    for (const patch of [off, { ...off, pageOffRows: ['gtag'] }]) {
+      const parsed = parseExclusionSessionStatus(withReport(patch));
+      const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+      expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject(patch);
+    }
+    for (const patch of [
+      { ...off, matchedRows: [{ row: 'gtag', rowKind: 'pattern', matches: 1 }] },
+      { ...off, unmatchedRows: ['gtag'] },
+      { ...off, rowCountsBestEffort: true },
+      { ...off, matchAllRows: ['gtag'] },
+      { ...off, pageOffRows: [] },
+      { ...off, pageOffRows: ['not-in-set'] },
+      { ...off, pageOffRows: ['gtag', 'gtag'] },
+      { ...off, pageOffRows: 'gtag' },
+      // The rows behind a page-off come only with it.
+      { pageOffRows: ['gtag'] },
+      { pageState: 'unknown', pageOffRows: ['gtag'] },
+      { ...off, featureWide: true }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
+  });
+
+  it('carries the rows matching every candidate, drawn from the set, never feature-wide', () => {
+    const parsed = parseExclusionSessionStatus(withReport({ matchAllRows: ['gtag'] }));
+    const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+    expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject({
+      matchAllRows: ['gtag']
+    });
+    for (const patch of [
+      { matchAllRows: [] },
+      { matchAllRows: ['not-in-set'] },
+      { matchAllRows: [5] },
+      { featureWide: true, matchedRows: [], unmatchedRows: [], matchAllRows: ['gtag'] }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
   });
 
   it('rejects rows the set does not hold for that feature, or more often than it holds them', () => {
@@ -864,10 +908,10 @@ describe('invalid-row reasons fit the wire', () => {
   it("carries a row's typed problem id (unknown ids: see parseExclusionApplyReply)", () => {
     const set = {
       ...EMPTY_EXCLUSION_SET,
-      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['(?a)'] }
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['(a{1,}){1,}b'] }
     };
     const { invalid } = prevalidateExclusionSet(set);
-    expect(invalid).toEqual([expect.objectContaining({ problem: 'match-all' })]);
+    expect(invalid).toEqual([expect.objectContaining({ problem: 'backtracking-risk' })]);
     expect(parseExclusionApplyReply(invalidApplyReply(invalid))).toEqual({
       outcome: 'invalid',
       invalid

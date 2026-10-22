@@ -266,16 +266,30 @@ describe('apply', () => {
 
   it('answers invalid rows without arming or saving', async () => {
     const r = rig();
-    // `(?a)` is WP Rocket's stored form (of `(?<n>a)`) and matches every script.
+    // A backtracking risk: the engine cannot run it safely.
     const reply = await r.controller.apply(page(), {
-      set: { ...SET, rows: { ...SET.rows, delayJs: ['ok', '(?a)'] } }
+      set: { ...SET, rows: { ...SET.rows, delayJs: ['ok', '(a{1,}){1,}b'] } }
     });
     expect(reply).toMatchObject({
       outcome: 'invalid',
-      invalid: [{ feature: 'delay_js', index: 1, row: '(?a)', problem: 'match-all' }]
+      invalid: [
+        { feature: 'delay_js', index: 1, row: '(a{1,}){1,}b', problem: 'backtracking-risk' }
+      ]
     });
     expect(r.backend.calls).toEqual([]);
     await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
+  });
+
+  it('arms a set whose rows only warn (they apply as WP Rocket applies them)', async () => {
+    const r = rig();
+    // `(?a)` is WP Rocket's stored form (of `(?<n>a)`) and matches every
+    // script; `.*` makes Defer JS's pre-check fail (no script deferred).
+    const set: ExclusionSet = {
+      ...SET,
+      rows: { ...SET.rows, delayJs: ['ok', '(?a)'], deferJs: ['.*'] }
+    };
+    await expect(r.controller.apply(page(), { set })).resolves.toEqual({ outcome: 'applying' });
+    await expect(getSavedExclusionSet(ORIGIN)).resolves.toEqual(set);
   });
 
   it("refuses a set not in WP Rocket's stored form, naming each such row, without arming", async () => {

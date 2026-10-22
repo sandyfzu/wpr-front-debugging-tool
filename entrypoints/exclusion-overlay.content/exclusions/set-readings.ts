@@ -8,7 +8,7 @@
  *
  * Between a change and its reading, the last reading still speaks for the
  * rows it read that are unchanged (same id, same text): their row problems
- * stay, and its page message stays only while every row it names is
+ * and warnings stay, and its page message stays only while every row it names is
  * unchanged — so nothing blinks while typing elsewhere, and no message ever
  * names a row that changed. Built on Solid signals (inside the caller's
  * reactive root); the timer is injected.
@@ -54,8 +54,8 @@ interface Reading {
 
 /**
  * The last reading, restricted to what still holds for the current rows:
- * row problems of unchanged rows, and the page-off rows only while every one
- * of them is unchanged.
+ * row problems and warnings of unchanged rows, and the page-off rows only
+ * while every one of them is unchanged.
  *
  * @param reading The last reading.
  * @param rows The lane's current rows.
@@ -67,10 +67,11 @@ function stillTrue(reading: Reading, rows: readonly DraftRow[]): LanePage | null
   const before = new Map(reading.rows.map((row) => [row.id, row.text]));
   const unchanged = (id: string): boolean => before.has(id) && now.get(id)?.text === before.get(id);
   const problems = new Map([...page.problems].filter(([id]) => unchanged(id)));
+  const warnings = new Map([...page.warnings].filter(([id]) => unchanged(id)));
   const offRows = page.offRows.every(({ id }) => unchanged(id))
     ? page.offRows.map((row) => ({ ...row, position: now.get(row.id)?.position ?? row.position }))
     : [];
-  return { page: page.page, offRows, problems };
+  return { page: page.page, offRows, problems, warnings };
 }
 
 /**

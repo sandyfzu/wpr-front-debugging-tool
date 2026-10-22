@@ -265,27 +265,50 @@ describe('deferJsTransform — joined-row semantics', () => {
     expect(disabled.report).not.toHaveProperty('rowCountsBestEffort');
   });
 
-  it('refuses a set WP Rocket would turn off page-wide, naming the rows', () => {
-    const throws = (): unknown => deferJsTransform(DEFERRED, setWithRows(['(?<n>a)x', '(?<n>b)y']));
-    expect(throws).toThrow(ExclusionValidationError);
-    try {
-      throws();
-    } catch (error) {
-      expect(
-        (error as ExclusionValidationError).invalid.map(({ index, problem }) => [index, problem])
-      ).toEqual([
-        [0, 'joined-page-off'],
-        [1, 'joined-page-off']
-      ]);
+  it('restores every script of a set WP Rocket turns off page-wide, naming the rows behind it', () => {
+    const html = `${DEFERRED}${DEFERRED_AND_DELAYED}`;
+    const result = deferJsTransform(html, setWithRows(['zzz', '(?<n>a)x', '(?<n>b)y']));
+    // WP Rocket defers nothing: both scripts come back, though no row matches them.
+    expect(result.html).not.toContain('data-rocket-defer');
+    expect(result.html.match(/data-wpr-fdt-excluded="defer_all_js"/g)).toHaveLength(2);
+    expect(result.report).toEqual({
+      feature: 'defer_all_js',
+      featureWide: false,
+      candidates: 2,
+      rewritten: 2,
+      regionRemovals: 0,
+      // No row matched anything: none is credited, none reported unmatched.
+      matchedRows: [],
+      unmatchedRows: [],
+      pageState: 'off',
+      pageOffRows: ['(?<n>a)x', '(?<n>b)y']
+    });
+  });
+
+  it('keeps the inline pass as it is under a page-off set (it has no pre-check)', () => {
+    const wrapped =
+      '<script id="i">window.addEventListener(\'DOMContentLoaded\', function() {jQuery(1)});</script>';
+    // `.*` consumes the pre-check's subject: page off, yet no row names a jQuery file.
+    const result = deferJsTransform(`${DEFERRED}${wrapped}`, setWithRows(['.*']));
+    expect(result.html).toContain(wrapped);
+    expect(result.report).toMatchObject({ pageState: 'off', pageOffRows: ['.*'], rewritten: 1 });
+    expect(result.report.inlineUnwrapped).toBeUndefined();
+  });
+
+  it('applies a row matching every script, and names it in the report', () => {
+    for (const rows of [['zzz|'], ['(?a)'], ['jquery', '\\.*']]) {
+      const result = deferJsTransform(`${DEFERRED}${DEFERRED_AND_DELAYED}`, setWithRows(rows));
+      expect(result.report.rewritten, JSON.stringify(rows)).toBe(2);
+      expect(result.report.matchAllRows, JSON.stringify(rows)).toEqual([rows.at(-1)]);
+      // A match-all row restores everything whatever the pre-check says.
+      expect(result.report.pageState, JSON.stringify(rows)).toBeUndefined();
     }
   });
 
-  it('refuses rows that match differently joined, or match every script', () => {
-    for (const rows of [['(?-i)zzz', 'A.JS'], ['zzz|']]) {
-      expect(() => deferJsTransform(DEFERRED, setWithRows(rows)), JSON.stringify(rows)).toThrow(
-        ExclusionValidationError
-      );
-    }
+  it('still refuses rows that match differently joined (the engine cannot replay them)', () => {
+    expect(() => deferJsTransform(DEFERRED, setWithRows(['(?-i)zzz', 'A.JS']))).toThrow(
+      ExclusionValidationError
+    );
   });
 
   it('reports an unknown page state instead of claiming WP Rocket defers', () => {

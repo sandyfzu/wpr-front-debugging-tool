@@ -1,14 +1,15 @@
 /**
  * A lane's rows read as one set: the page state, the rows behind a
- * page-off (by lane position, stored form), the set's row problems by row
- * id — and, once committed, the same verdict as the session's prevalidation.
+ * page-off (by lane position, stored form), the set's row problems and
+ * warnings by row id — and, once committed, the same verdict as the
+ * session's prevalidation; and one row's verdict composed from it.
  */
 import { describe, expect, it } from 'vitest';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { EMPTY_EXCLUSION_SET } from '../../../lib/exclusion-builder/set';
 import { prevalidateExclusionSet } from '../../../lib/exclusion-builder/validate';
 import { commitAll, createIdSource, draftFromSet, draftToSet, type DraftRow } from './draft';
-import { lanePage } from './lane-page';
+import { lanePage, rowVerdict } from './lane-page';
 
 /** Rows with ids `r1`, `r2`, … in order. */
 const rows = (...texts: string[]): DraftRow[] =>
@@ -19,7 +20,12 @@ describe('lanePage', () => {
     expect(lanePage('delayJs', rows('.*', '.*'))).toBeNull();
     expect(lanePage('lazyload', rows('a'))).toBeNull();
     expect(lanePage('lazyRender', rows('a'))).toBeNull();
-    expect(lanePage('deferJs', [])).toEqual({ page: 'on', offRows: [], problems: new Map() });
+    expect(lanePage('deferJs', [])).toEqual({
+      page: 'on',
+      offRows: [],
+      problems: new Map(),
+      warnings: new Map()
+    });
   });
 
   it('names the rows behind a page-off by lane position (blank rows count) and stored form', () => {
@@ -29,7 +35,9 @@ describe('lanePage', () => {
       { id: 'r1', position: 1, stored: "(?'n'a)" },
       { id: 'r4', position: 4, stored: "(?'n'b)" }
     ]);
-    expect(page?.problems).toEqual(
+    // The page-off rows warn: WP Rocket defers nothing, and so does the preview.
+    expect(page?.problems).toEqual(new Map());
+    expect(page?.warnings).toEqual(
       new Map([
         ['r1', ROW_REASONS.joinedPageOff],
         ['r4', ROW_REASONS.joinedPageOff]
@@ -44,6 +52,13 @@ describe('lanePage', () => {
       offRows: [{ id: 'r2', position: 2, stored: '\\p{L}\\Qab' }]
     });
     expect(page?.problems.get('r1')).toBeUndefined();
+    expect([...(page?.warnings.keys() ?? [])]).toEqual(['r2']);
+  });
+
+  it('reads a row matching every script as a warning', () => {
+    const page = lanePage('deferJs', rows('ok', 'zzz|'));
+    expect(page?.problems).toEqual(new Map());
+    expect(page?.warnings).toEqual(new Map([['r2', ROW_REASONS.matchAll]]));
   });
 
   it('leaves out rows the save drops, as their commit will', () => {
@@ -57,7 +72,8 @@ describe('lanePage', () => {
     expect(lanePage('deferJs', rows('(', 'a'), new Set(['r1']))).toEqual({
       page: 'on',
       offRows: [],
-      problems: new Map()
+      problems: new Map(),
+      warnings: new Map()
     });
   });
 
@@ -89,7 +105,8 @@ describe('lanePage', () => {
     expect(lanePage('deferJs', rows('\\p{L}'))).toEqual({
       page: 'unknown',
       offRows: [],
-      problems: new Map()
+      problems: new Map(),
+      warnings: new Map()
     });
   });
 
@@ -111,13 +128,40 @@ describe('lanePage', () => {
       const committed = commitAll(draft).draft;
       const lane = committed.rows.deferJs;
       const page = lanePage('deferJs', lane);
-      const session = prevalidateExclusionSet(draftToSet(committed)).invalid.filter(
-        ({ feature }) => feature === 'defer_all_js'
-      );
-      expect({ typed, problems: page?.problems }).toEqual({
+      const session = prevalidateExclusionSet(draftToSet(committed));
+      const byId = (entries: typeof session.invalid): Map<string, string> =>
+        new Map(
+          entries
+            .filter(({ feature }) => feature === 'defer_all_js')
+            .map(({ index, reason }) => [lane[index]?.id ?? '', reason])
+        );
+      expect({ typed, problems: page?.problems, warnings: page?.warnings }).toEqual({
         typed,
-        problems: new Map(session.map(({ index, reason }) => [lane[index]?.id ?? '', reason]))
+        problems: byId(session.invalid),
+        warnings: byId(session.warnings)
       });
     }
+  });
+});
+
+describe('rowVerdict', () => {
+  const page = {
+    page: 'off' as const,
+    offRows: [],
+    problems: new Map([['p', 'joined problem']]),
+    warnings: new Map([['w', 'joined warning']])
+  };
+  const blocking = { reason: 'alone problem', blocking: true };
+  const warning = { reason: 'alone warning', blocking: false };
+
+  it('takes the set reading’s verdict on a row it read', () => {
+    expect(rowVerdict(page, 'p', warning)).toEqual({ problem: 'joined problem', warning: null });
+    expect(rowVerdict(page, 'w', blocking)).toEqual({ problem: null, warning: 'joined warning' });
+  });
+
+  it('falls back to the row alone otherwise, a problem or a warning (never both)', () => {
+    expect(rowVerdict(page, 'x', blocking)).toEqual({ problem: 'alone problem', warning: null });
+    expect(rowVerdict(null, 'x', warning)).toEqual({ problem: null, warning: 'alone warning' });
+    expect(rowVerdict(null, 'x', null)).toEqual({ problem: null, warning: null });
   });
 });

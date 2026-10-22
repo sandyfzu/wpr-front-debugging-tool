@@ -8,7 +8,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import { lazyRenderTransform } from './lazy-render';
-import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
 function setWithRows(rows: string[], disableLazyRender = false): ExclusionSet {
@@ -152,10 +151,11 @@ describe('lazyRenderTransform — feature-wide disable', () => {
     expect(result.html.match(/data-wpr-fdt-excluded="automatic_lazy_rendering"/g)?.length).toBe(2);
   });
 
-  it('rejects an empty row next to others on a disabled feature — but never compiles literal rows', () => {
-    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows(['', 'x'], true))).toThrow(
-      ExclusionValidationError
-    );
+  it('applies an empty row next to others on a disabled feature as the disable — and never compiles literal rows', () => {
+    // The disable consults no row: the match-all row is not reported.
+    const wide = lazyRenderTransform(STYLED_PAGE, setWithRows(['', 'x'], true));
+    expect(wide.report).toMatchObject({ featureWide: true, rewritten: 1 });
+    expect(wide.report).not.toHaveProperty('matchAllRows');
     // A lone empty row is WP Rocket's own no-op, not a problem.
     expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows([''], true))).not.toThrow();
     // Regex metacharacters are plain text for a literal feature.
@@ -213,18 +213,14 @@ describe('lazyRenderTransform — WP Rocket hash-pass semantics', () => {
     expect(lazyRenderTransform(PAGE, setWithRows(["class='Hero'"])).report.rewritten).toBe(0);
   });
 
-  it('ignores a lone empty or "0" row, and rejects an empty row next to others as match-all', () => {
+  it('ignores a lone empty or "0" row, and applies an empty row next to others as match-all', () => {
     expect(lazyRenderTransform(PAGE, setWithRows([''])).report.rewritten).toBe(0);
     expect(lazyRenderTransform(PAGE, setWithRows(['0'])).report.rewritten).toBe(0);
-    let caught: unknown = null;
-    try {
-      lazyRenderTransform(PAGE, setWithRows(['0', '']));
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(ExclusionValidationError);
-    expect((caught as ExclusionValidationError).invalid).toEqual([
-      expect.objectContaining({ index: 1, row: '', problem: 'match-all' })
-    ]);
+    const all = lazyRenderTransform(PAGE, setWithRows(['0', '']));
+    const stamped = lazyRenderTransform(PAGE, setWithRows([], true)).report.rewritten;
+    // Every stamped element is excluded, as WP Rocket's empty alternative does.
+    expect(all.report.rewritten).toBe(stamped);
+    expect(all.report.matchAllRows).toEqual(['']);
+    expect(all.report.featureWide).toBe(false);
   });
 });

@@ -37,3 +37,15 @@ export const PROBLEM_IDS: readonly ProblemId[] = [
   'joined-changes-matching',
   'backtracking-risk'
 ];
+
+/**
+ * The problems that warn instead of blocking: WP Rocket applies the row as
+ * stored and the engine reproduces that outcome exactly — `match-all` (the
+ * row excludes every candidate) and `joined-page-off` (Defer JS defers no
+ * script on the page). Every other problem blocks: the engine cannot apply
+ * the row the way WP Rocket does.
+ */
+export const NON_BLOCKING_PROBLEMS: ReadonlySet<ProblemId> = new Set<ProblemId>([
+  'match-all',
+  'joined-page-off'
+]);

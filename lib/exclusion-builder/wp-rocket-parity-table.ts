@@ -17,15 +17,16 @@
  *   comments skipped); lazy-render subjects are always keyed by id.
  *
  * A match row may carry an authored `engine` disposition: the engine is not
- * meant to reproduce WP Rocket's outcome there (it reports a row problem, or
- * a documented residual applies); the PHP-derived outputs stay as the record
- * of the live outcome.
+ * meant to reproduce WP Rocket's outcome there (it reports a blocking row
+ * problem, or a documented residual applies; the PHP-derived outputs stay
+ * as the record of the live outcome), or it reproduces it and warns
+ * (`warning`: the outputs are asserted, and so is the warning).
  *
  * Inputs are authored by hand; outputs are written by the dev script only.
  * Runtime imports carry their `.ts` extension and reach only leaf modules, so
  * the dev script can load this module under Node's native TypeScript.
  */
-import { PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
+import { NON_BLOCKING_PROBLEMS, PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
 import { STORED_ROW_DROP_REASONS, type StoredRowDropReason } from './stored-row-drops.ts';
 import type { ExclusionFeatureId } from './set';
 
@@ -35,8 +36,9 @@ export type PendingPhase = 'K.3' | 'K.4b' | 'K.4c' | 'K.4d';
 /**
  * An outcome field the replay compares: a save row's `stored`/`dropped`; a
  * match row's `candidates`/`excluded` (+ Defer `featureOff`/`inlineWrapped`,
- * lazy rendering `hashed`/`rekeyed`), or `problems` for a row whose
- * disposition is a problem.
+ * lazy rendering `hashed`/`rekeyed`, and `warnings` for a row whose
+ * disposition is a warning), or `problems` for a row whose disposition is a
+ * problem.
  */
 export type OutcomeField =
   | 'stored'
@@ -47,7 +49,8 @@ export type OutcomeField =
   | 'inlineWrapped'
   | 'hashed'
   | 'rekeyed'
-  | 'problems';
+  | 'problems'
+  | 'warnings';
 
 /**
  * The fields of a row the engine does not get right yet, and the work item
@@ -86,12 +89,15 @@ const FEATURE_IDS = Object.keys(MATCH_OWNER) as ExclusionFeatureId[];
 const SAVE_FEATURE_IDS = FEATURE_IDS.filter((id) => id !== FILTER_ONLY_FEATURE);
 
 /**
- * How the engine is meant to answer a match row instead of WP Rocket's
- * outcome: report `problem`, or — for a documented `residual` the engine
- * cannot rebuild — produce exactly the authored `candidates`/`excluded`.
+ * How the engine is meant to answer a match row: instead of WP Rocket's
+ * outcome, report a blocking `problem`, or — for a documented `residual`
+ * the engine cannot rebuild — produce exactly the authored
+ * `candidates`/`excluded`; or reproduce WP Rocket's outcome and name the
+ * row with a non-blocking `warning`.
  */
 export type EngineDisposition =
   | { readonly problem: ProblemId }
+  | { readonly warning: ProblemId }
   | {
       readonly residual: string;
       readonly candidates: readonly string[];
@@ -276,7 +282,7 @@ export function pendingOwner(kind: ParityRow['kind'], feature: ExclusionFeatureI
  * `stored`, `dropped`; a match row with a problem disposition `problems`;
  * other match rows `candidates`, `excluded`, plus Defer `featureOff`,
  * `inlineWrapped` and lazy rendering `hashed`, `rekeyed` (a residual compares
- * `candidates`/`excluded` only).
+ * `candidates`/`excluded` only; a warning adds `warnings`).
  *
  * @param row The row's kind, feature and (match rows) disposition.
  */
@@ -286,14 +292,16 @@ export function comparedFields(row: {
   readonly engine?: EngineDisposition;
 }): OutcomeField[] {
   if (row.kind === 'save') return ['stored', 'dropped'];
-  if (row.engine !== undefined) {
-    return 'problem' in row.engine ? ['problems'] : ['candidates', 'excluded'];
-  }
+  if (row.engine !== undefined && 'problem' in row.engine) return ['problems'];
+  if (row.engine !== undefined && 'residual' in row.engine) return ['candidates', 'excluded'];
+  const warned: OutcomeField[] = row.engine === undefined ? [] : ['warnings'];
   if (row.feature === 'defer_all_js') {
-    return ['candidates', 'excluded', 'featureOff', 'inlineWrapped'];
+    return ['candidates', 'excluded', 'featureOff', 'inlineWrapped', ...warned];
   }
-  if (row.feature === FILTER_ONLY_FEATURE) return ['candidates', 'excluded', 'hashed', 'rekeyed'];
-  return ['candidates', 'excluded'];
+  if (row.feature === FILTER_ONLY_FEATURE) {
+    return ['candidates', 'excluded', 'hashed', 'rekeyed', ...warned];
+  }
+  return ['candidates', 'excluded', ...warned];
 }
 
 /** A parse failure naming the table and, when known, the offending row. */
@@ -362,17 +370,21 @@ function checkSubset(
 }
 
 /**
- * Parse an `engine` disposition: exactly `{problem}` with a known id, or
+ * Parse an `engine` disposition: exactly `{problem}` with a known blocking
+ * id, `{warning}` with a known non-blocking id, or
  * `{residual, candidates, excluded}` with `excluded` ⊆ `candidates`.
  */
 function engineDisposition(id: string, value: unknown): EngineDisposition {
   if (!isRecord(value)) return fail(id, '"engine" must be an object');
-  if ('problem' in value) {
-    checkKeys(id, value, ['problem']);
-    const problem = PROBLEM_IDS.find((candidate) => candidate === value.problem);
-    if (problem === undefined)
-      fail(id, `engine problem ${JSON.stringify(value.problem)} is unknown`);
-    return { problem };
+  for (const key of ['problem', 'warning'] as const) {
+    if (!(key in value)) continue;
+    checkKeys(id, value, [key]);
+    const known = PROBLEM_IDS.find((candidate) => candidate === value[key]);
+    if (known === undefined) fail(id, `engine ${key} ${JSON.stringify(value[key])} is unknown`);
+    if (NON_BLOCKING_PROBLEMS.has(known) !== (key === 'warning')) {
+      fail(id, `engine ${key} "${known}" is ${key === 'warning' ? 'blocking' : 'a warning'}`);
+    }
+    return key === 'problem' ? { problem: known } : { warning: known };
   }
   checkKeys(id, value, ['residual', 'candidates', 'excluded']);
   const residual = stringField(id, value, 'residual');

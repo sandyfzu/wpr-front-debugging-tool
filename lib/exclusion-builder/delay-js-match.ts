@@ -7,7 +7,7 @@
  */
 import { DELAY_JS_SRC, DELAY_JS_TYPES, isDelayJSType } from '../wp-rocket/constants';
 import { delayAttributeRewrite } from './delay-js-rewrite';
-import { ExclusionValidationError } from './errors';
+import { matchAllRows, throwIfBlocking } from './errors';
 import { parseTagAt } from './html-scan';
 import { compileFirstMatch, translateRegexRows, translationRowProblems } from './pcre/rows';
 import { pcreFeatureProblems } from './validate';
@@ -204,31 +204,52 @@ export type DelayVerdict = { readonly row: number; readonly approximate: boolean
 /** A compiled Delay JS row set over a served script element. */
 export type DelayRowMatch = (region: string) => DelayVerdict;
 
+/** Delay JS rows read for matching. */
+export interface DelayRowSet {
+  /** The matcher over a served script element (`<script` through its end tag). */
+  readonly match: DelayRowMatch;
+  /** Rows that match every script (WP Rocket stores and applies them), in row order. */
+  readonly matchAllRows: readonly string[];
+}
+
 /**
- * Compile Delay JS rows for matching, after validating them all (every
- * problem named at once: rows with no exact translation, rows matching
- * every script, backtracking risks — see `featureRowProblems`).
+ * Read Delay JS rows for matching, after validating them all (every
+ * blocking problem named at once: rows with no exact translation,
+ * backtracking risks — see `featureRowReading`). Rows matching every
+ * script only warn: their matcher matches every script, as on WP Rocket.
  *
  * @param rows The stored rows, in order.
- * @returns A matcher over a served script element (`<script` through its end tag).
- * @throws {@link ExclusionValidationError} naming every row with a problem.
+ * @returns The matcher and the rows matching every script.
+ * @throws {@link ExclusionValidationError} naming every blocking row.
  */
-export function compileDelayRows(rows: readonly string[]): DelayRowMatch {
+export function readDelayRows(rows: readonly string[]): DelayRowSet {
   // One translation serves validation and matching.
   const translation = translateRegexRows('delay_js', rows);
-  const problems = pcreFeatureProblems(
+  const entries = pcreFeatureProblems(
     'delay_js',
     rows,
     translationRowProblems('delay_js', translation)
   );
-  if (problems.length > 0) throw new ExclusionValidationError(problems);
+  throwIfBlocking(entries);
   const first = compileFirstMatch(translation.rows.map((row) => row.matcher));
-  return (region) => {
+  const match: DelayRowMatch = (region) => {
     const reading = undoDelayRenames(region);
     if (reading.kind === 'not-delayed') return { row: first(region), approximate: true };
     if (reading.kind === 'approximate') return { row: first(reading.text), approximate: true };
     return agreedVerdict(reading.texts.map(first));
   };
+  return { match, matchAllRows: matchAllRows(entries) };
+}
+
+/**
+ * Compile Delay JS rows for matching (see {@link readDelayRows}).
+ *
+ * @param rows The stored rows, in order.
+ * @returns A matcher over a served script element (`<script` through its end tag).
+ * @throws {@link ExclusionValidationError} naming every blocking row.
+ */
+export function compileDelayRows(rows: readonly string[]): DelayRowMatch {
+  return readDelayRows(rows).match;
 }
 
 /**

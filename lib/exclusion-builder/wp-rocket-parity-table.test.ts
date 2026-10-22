@@ -294,8 +294,20 @@ describe('parseParityTable', () => {
       'engine problem "nope" is unknown'
     );
     rejects(
-      (table) => (row(table, 'match-b').engine = { problem: 'match-all', extra: 1 }),
+      (table) => (row(table, 'match-b').engine = { problem: 'pcre-only', extra: 1 }),
       'unknown key "extra"'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { problem: 'match-all' }),
+      'engine problem "match-all" is a warning'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { warning: 'pcre-only' }),
+      'engine warning "pcre-only" is blocking'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').engine = { warning: 'nope' }),
+      'engine warning "nope" is unknown'
     );
     rejects(
       (table) => (row(table, 'match-b').engine = { residual: '', candidates: [], excluded: [] }),
@@ -409,8 +421,26 @@ describe('comparedFields', () => {
       'rekeyed'
     ]);
     expect(
-      comparedFields({ kind: 'match', feature: 'defer_all_js', engine: { problem: 'match-all' } })
+      comparedFields({ kind: 'match', feature: 'defer_all_js', engine: { problem: 'pcre-only' } })
     ).toEqual(['problems']);
+    // A warning: WP Rocket's outcome is asserted, and so is the warning.
+    expect(
+      comparedFields({
+        kind: 'match',
+        feature: 'defer_all_js',
+        engine: { warning: 'joined-page-off' }
+      })
+    ).toEqual(['candidates', 'excluded', 'featureOff', 'inlineWrapped', 'warnings']);
+    expect(
+      comparedFields({ kind: 'match', feature: 'delay_js', engine: { warning: 'match-all' } })
+    ).toEqual(['candidates', 'excluded', 'warnings']);
+    expect(
+      comparedFields({
+        kind: 'match',
+        feature: 'automatic_lazy_rendering',
+        engine: { warning: 'match-all' }
+      })
+    ).toEqual(['candidates', 'excluded', 'hashed', 'rekeyed', 'warnings']);
     expect(
       comparedFields({
         kind: 'match',

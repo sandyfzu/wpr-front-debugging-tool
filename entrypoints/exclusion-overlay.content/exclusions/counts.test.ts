@@ -37,9 +37,26 @@ describe('laneReport / laneCounts', () => {
       approximate: 0,
       inlineUnknown: false,
       bestEffort: false,
-      pageUnknown: false
+      pageUnknown: false,
+      pageOffRows: null,
+      matchAllRows: []
     });
     expect(laneCounts(undefined)).toBeNull();
+  });
+
+  it('reads the applied warnings: a page-off run and the rows matching everything (K.5c)', () => {
+    const off: TransformReport = {
+      ...DELAY,
+      feature: 'defer_all_js',
+      matchedRows: [],
+      unmatchedRows: [],
+      pageState: 'off',
+      pageOffRows: ['.*']
+    };
+    expect(laneCounts(off)).toMatchObject({ pageOffRows: ['.*'], pageUnknown: false });
+    // An off run whose rows the reading did not name still says the page is off.
+    expect(laneCounts({ ...off, pageOffRows: undefined })?.pageOffRows).toEqual([]);
+    expect(laneCounts({ ...DELAY, matchAllRows: ['(?a)'] })?.matchAllRows).toEqual(['(?a)']);
   });
 
   it('reads a page state the engine could not check', () => {

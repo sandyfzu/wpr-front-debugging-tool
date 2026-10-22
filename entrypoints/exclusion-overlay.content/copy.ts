@@ -65,17 +65,25 @@ export interface LaneCopy {
 /** A set-read lane's page-wide words (its rows can turn the feature off for the whole page). */
 export interface LanePageCopy {
   /**
-   * The page-off message's lead, before the rows it names.
+   * The page-off warning's lead, before the rows it names.
    *
    * @param rows How many rows it names (≥ 1).
    */
   readonly offLead: (rows: number) => string;
   /**
-   * The page-off message's way out, after the rows.
+   * The page-off warning's outcome, after the rows: Apply still runs, what
+   * the preview shows, and the way back.
    *
    * @param rows How many rows it names (≥ 1).
    */
-  readonly offFix: (rows: number) => string;
+  readonly offOutcome: (rows: number) => string;
+  /**
+   * The applied page's count caveat when the applied rows turned the
+   * feature off on the page.
+   *
+   * @param rows The rows behind it, as {@link rowsPhrase} names them (empty: not named).
+   */
+  readonly countsOff: (rows: string) => string;
   /** The rows' page state isn't checked here (non-blocking). */
   readonly unknown: string;
   /** The applied page's counts assume a page state that wasn't checked (a count caveat). */
@@ -131,8 +139,11 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
       'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here (assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions).',
     page: {
       offLead: (rows) =>
-        `WP Rocket would stop deferring every script on this page because of ${rows === 1 ? 'this row' : 'these rows'}:`,
-      offFix: (rows) => `Edit or remove ${rows === 1 ? 'it' : 'them'} to apply.`,
+        `WP Rocket defers no script on this page because of ${rows === 1 ? 'this row' : 'these rows'}:`,
+      offOutcome: (rows) =>
+        `Apply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove ${rows === 1 ? 'it' : 'them'} to defer scripts again.`,
+      countsOff: (rows) =>
+        `WP Rocket defers no script on this page because of ${rows === '' ? 'the applied rows' : rows}, so every deferred script is restored.`,
       unknown: 'WP Rocket may defer no script on this page with these rows — not checked here.',
       countsUnknown:
         'These counts assume WP Rocket defers scripts on this page: with the applied rows, that isn’t checked here.'
@@ -177,6 +188,41 @@ export function rowWarningNote(reason: string): string {
   return `${reason}. It is left out here: a blank row is an unfinished edit.`;
 }
 
+/**
+ * The words a row warning WP Rocket applies gets in the editor: the
+ * engine's reading, then that the preview applies it too (never blocked).
+ *
+ * @param reason The engine's warning.
+ */
+export function appliedRowWarningNote(reason: string): string {
+  return `${reason}. Apply still runs and previews it as WP Rocket would.`;
+}
+
+/** How a count caveat refers to an applied row: its position in the lane, else its text. */
+export type RowRef = { readonly position: number } | { readonly text: string };
+
+/**
+ * Applied rows named in a caveat: "row 2", "rows 1 and 3", "rows 1, 2 and
+ * 4"; a row no longer in the lane by its text in backticks (shown as code).
+ *
+ * @param refs The rows, in lane order (≥ 1).
+ */
+export function rowsPhrase(refs: readonly RowRef[]): string {
+  const join = (parts: readonly string[]): string =>
+    parts.length < 2
+      ? (parts[0] ?? '')
+      : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}`;
+  const positions = refs.flatMap((ref) => ('position' in ref ? [String(ref.position)] : []));
+  if (positions.length === refs.length) {
+    return `${positions.length === 1 ? 'row' : 'rows'} ${join(positions)}`;
+  }
+  return join(
+    refs.map((ref) =>
+      'position' in ref ? `row ${String(ref.position)}` : `\`${capText(ref.text, NOTE_ROW_MAX)}\``
+    )
+  );
+}
+
 /** Inline-jQuery wrapping that only the site's own exclusions decide (one page-level line). */
 export const INLINE_JQUERY_LINE =
   'Whether inline jQuery stays wrapped depends on your existing Defer JS exclusions';
@@ -194,13 +240,33 @@ export const COUNT_COPY = {
       ? `All ${String(counts.rewritten)} ${noun} restored (feature disabled)`
       : `${String(counts.rewritten)} of ${String(counts.candidates)} ${noun} restored`,
   /**
-   * What the count could not tell, one line each (none when it is exact).
+   * What the count could not tell, and the warnings it carries out, one
+   * line each (none when it is exact and nothing warned). Applied rows are
+   * named in backticks only when they left the lane (shown as code).
    *
    * @param counts The lane's counts.
+   * @param noun What is counted (plural).
+   * @param refs Names the applied rows (see {@link rowsPhrase}).
    * @param page The lane's page-wide words (set-read lanes only).
    */
-  caveats: (counts: LaneCounts, page?: LanePageCopy): string[] => {
+  caveats: (
+    counts: LaneCounts,
+    noun: string,
+    refs: (rows: readonly string[]) => readonly RowRef[],
+    page?: LanePageCopy
+  ): string[] => {
     const lines: string[] = [];
+    if (counts.pageOffRows !== null && page !== undefined) {
+      const named = counts.pageOffRows.length === 0 ? '' : rowsPhrase(refs(counts.pageOffRows));
+      lines.push(page.countsOff(named));
+    }
+    if (counts.matchAllRows.length > 0) {
+      const named = rowsPhrase(refs(counts.matchAllRows));
+      const one = counts.matchAllRows.length === 1;
+      lines.push(
+        `${named.charAt(0).toUpperCase()}${named.slice(1)} ${one ? 'matches' : 'match'} everything: WP Rocket excludes all ${noun} with ${one ? 'it' : 'them'}, and so does this preview.`
+      );
+    }
     if (counts.pageUnknown && page !== undefined) lines.push(page.countsUnknown);
     if (counts.undetermined > 0)
       lines.push(

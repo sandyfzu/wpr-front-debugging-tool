@@ -12,6 +12,7 @@ import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { SET_READING_DELAY_MS } from './set-readings';
 import { Lane } from './lane';
+import { appliedRowWarningNote } from '../copy';
 import type { LaneKey } from './draft';
 
 /** Renders every row (happy-dom has no layout). */
@@ -852,7 +853,7 @@ describe('Lane counts, hints and copy forms (K.5a.2)', () => {
   });
 });
 
-describe('Lane page-wide state (K.5b)', () => {
+describe('Lane page-wide state (K.5b; a warning since K.5c)', () => {
   /** A ready controller whose set readings run at once (their pause elapsed). */
   const readingController = (): Promise<OverlayController> =>
     readyController((run, ms) => {
@@ -879,17 +880,18 @@ describe('Lane page-wide state (K.5b)', () => {
     expect(
       message?.compareDocumentPosition(deferInput(1)) === Node.DOCUMENT_POSITION_FOLLOWING
     ).toBe(true);
-    expect(
-      screen.getByRole('group', { name: /^WP Rocket would stop deferring every script/ })
-    ).toBe(message);
+    expect(screen.getByRole('group', { name: /^WP Rocket defers no script on this page/ })).toBe(
+      message
+    );
     expect(message?.textContent).toBe(
-      'WP Rocket would stop deferring every script on this page because of this row:Go to row 2.*Edit or remove it to apply.'
+      'WP Rocket defers no script on this page because of this row:Go to row 2.*Apply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove it to defer scripts again.'
     );
-    // The row keeps its own words (no repeat of the page-wide consequence).
-    const rowProblem = document.getElementById(
-      deferInput(2).getAttribute('aria-describedby') ?? ''
-    );
-    expect(rowProblem?.textContent).toBe(ROW_REASONS.joinedPageOff);
+    // The row keeps its own words as a warning in its note slot (no repeat of
+    // the page-wide consequence), and is not invalid: Apply runs.
+    expect(deferInput(2).getAttribute('aria-invalid')).toBe('false');
+    const rowNote = document.getElementById(deferInput(2).getAttribute('aria-describedby') ?? '');
+    expect(rowNote?.textContent).toBe(appliedRowWarningNote(ROW_REASONS.joinedPageOff));
+    expect(rowNote?.closest('.xo-row-note')?.getAttribute('data-tone')).toBe('warn');
     expect(ROW_REASONS.joinedPageOff).not.toMatch(/every script|defer no script/);
     fireEvent.click(screen.getByRole('button', { name: 'Go to row 2' }));
     expect(document.activeElement).toBe(deferInput(2));
@@ -901,16 +903,26 @@ describe('Lane page-wide state (K.5b)', () => {
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     expect(screen.getByRole('button', { name: 'Go to row 3' })).toBeTruthy();
     expect(pageOff()?.querySelector('code')?.textContent).toBe('\\p{L}\\Qab');
-    expect(deferInput(3).getAttribute('aria-invalid')).toBe('true');
+    expect(deferInput(3).getAttribute('aria-invalid')).toBe('false');
   });
 
-  it('takes focus when an apply is refused for it, and leaves once the row is fixed', async () => {
+  it('never blocks: an apply goes out with the message shown', async () => {
     const controller = await readingController();
     controller.insertRows('deferJs', ['.*'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(controller.invalidCount()).toBe(0);
     controller.apply();
-    expect(document.activeElement).toBe(pageOff());
-    expect(pageOff()?.getAttribute('tabindex')).toBe('-1');
+    // The apply is in flight (no fix-rows notice); the message is no focus target.
+    expect(controller.state()).toMatchObject({ phase: 'ready', pending: 'apply' });
+    expect(pageOff()?.hasAttribute('tabindex')).toBe(false);
+    expect(document.activeElement).not.toBe(pageOff());
+  });
+
+  it('leaves once the row behind it is fixed', async () => {
+    const controller = await readingController();
+    controller.insertRows('deferJs', ['.*'], null);
+    mountLane(controller, undefined, undefined, undefined, 'deferJs');
+    expect(pageOff()).not.toBeNull();
     fireEvent.input(deferInput(1), { target: { value: 'jquery' } });
     expect(pageOff()).toBeNull();
   });
@@ -922,7 +934,32 @@ describe('Lane page-wide state (K.5b)', () => {
     expect(pageOff()?.querySelectorAll('li')).toHaveLength(3);
     expect(screen.getByText(/because of these rows:$/)).toBeTruthy();
     expect(screen.getByText('And 1 more row.')).toBeTruthy();
-    expect(screen.getByText('Edit or remove them to apply.')).toBeTruthy();
+    expect(screen.getByText(/Edit or remove them to defer scripts again\.$/)).toBeTruthy();
+  });
+
+  it('carries the applied page-off into the counts, naming the rows by position (K.5c)', async () => {
+    const report: TransformReport = {
+      feature: 'defer_all_js',
+      featureWide: false,
+      candidates: 4,
+      rewritten: 4,
+      regionRemovals: 0,
+      matchedRows: [],
+      unmatchedRows: [],
+      pageState: 'off',
+      pageOffRows: ['.*']
+    };
+    const controller = await readingController();
+    controller.insertRows('deferJs', ['jquery', '.*'], null);
+    mountLane(controller, report, undefined, undefined, 'deferJs');
+    expect(screen.getByText('4 of 4 deferred and wrapped scripts restored')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'WP Rocket defers no script on this page because of row 2, so every deferred script is restored.'
+      )
+    ).toBeTruthy();
+    // No row was matched: no row badge claims a count.
+    expect(screen.queryByText(/^No match$/)).toBeNull();
   });
 
   it('shows no page message for a joined-only row problem, nor for a page that is on', async () => {
@@ -969,5 +1006,39 @@ describe('Lane page-wide state (K.5b)', () => {
     controller.editRow('deferJs', row, '\\p{L}');
     expect(screen.getByText(UNKNOWN)).toBeTruthy();
     expect(screen.queryByText(caveat)).toBeNull();
+  });
+});
+
+describe('Lane rows matching everything (K.5c)', () => {
+  afterEach(cleanup);
+
+  it('warns in the row note slot, never as a problem, and names the row in the counts', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['ok', '(?a)'], null);
+    const report: TransformReport = {
+      feature: 'delay_js',
+      featureWide: false,
+      candidates: 5,
+      rewritten: 5,
+      regionRemovals: 0,
+      matchedRows: [{ row: '(?a)', rowKind: 'pattern', matches: 5 }],
+      unmatchedRows: ['ok'],
+      matchAllRows: ['(?a)']
+    };
+    mountLane(controller, report);
+    expect(input(2).getAttribute('aria-invalid')).toBe('false');
+    const note = document.getElementById(input(2).getAttribute('aria-describedby') ?? '');
+    expect(note?.textContent).toBe(appliedRowWarningNote(ROW_REASONS.matchAll));
+    expect(note?.closest('.xo-row-note')?.getAttribute('data-tone')).toBe('warn');
+    expect(controller.invalidCount()).toBe(0);
+    expect(
+      screen.getByText(
+        'Row 2 matches everything: WP Rocket excludes all delayed scripts with it, and so does this preview.'
+      )
+    ).toBeTruthy();
+    // Edited away, the applied row is named by its text, as code.
+    controller.editRow('delayJs', controller.draft().rows.delayJs[1]?.id ?? '', 'x');
+    const caveat = screen.getByText(/matches everything/);
+    expect(caveat.querySelector('code')?.textContent).toBe('(?a)');
   });
 });

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RENAME_CHOICES,
   agreedVerdict,
+  readDelayRows,
   compileDelayRows,
   undoDelayRenames
 } from './delay-js-match';
@@ -163,17 +164,26 @@ describe('compileDelayRows', () => {
     expect(compileDelayRows(['u\\.js'])(other)).toEqual({ row: 0, approximate: true });
   });
 
-  it('throws the typed error naming every row WP Rocket would not match as written', () => {
+  it('throws the typed error naming every blocking row WP Rocket would not match as written', () => {
     try {
-      compileDelayRows(['ok', '(?a)', '(', '']);
+      compileDelayRows(['ok', '(?a)', '(', '', '(a{1,}){1,}b']);
       expect.unreachable('the rows are invalid');
     } catch (error) {
       expect(error).toBeInstanceOf(ExclusionValidationError);
-      expect((error as ExclusionValidationError).invalid.map((entry) => entry.problem)).toEqual([
-        'match-all',
-        'pcre-invalid',
-        'match-all'
+      // Rows matching every script only warn: they are not named here.
+      expect(
+        (error as ExclusionValidationError).invalid.map(({ index, problem }) => [index, problem])
+      ).toEqual([
+        [2, 'pcre-invalid'],
+        [4, 'backtracking-risk']
       ]);
     }
+  });
+
+  it('applies rows matching every script — `(?a)` included — and names them', () => {
+    const read = readDelayRows(['zzz', '(?a)', '']);
+    expect(read.matchAllRows).toEqual(['(?a)', '']);
+    expect(read.match(SCRIPT)).toEqual({ row: 1, approximate: false });
+    expect(readDelayRows(['src']).matchAllRows).toEqual([]);
   });
 });

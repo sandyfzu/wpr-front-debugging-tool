@@ -6,7 +6,7 @@
  * (Defer JS’s reading is memoized by its own module, never kept here).
  */
 import { deferRowProblems } from './defer-js-rows';
-import type { InvalidExclusionRow } from './errors';
+import { isBlockingProblem, type InvalidExclusionRow } from './errors';
 import { trimExclusionRow } from './field-text';
 import { isIgnoredLazyloadRow, isMatchAllLazyRenderRow } from './literal-rows';
 import { regexRowProblems } from './pcre/rows';
@@ -21,10 +21,27 @@ import {
 
 /** The outcome of validating a whole set. */
 export interface ExclusionSetProblems {
-  /** `true` when no row is invalid. */
+  /** `true` when no row blocks the set. */
   readonly valid: boolean;
-  /** Every problem, feature by feature in registry order, rows in list order. */
+  /** Every blocking problem, feature by feature in registry order, rows in list order. */
   readonly invalid: readonly InvalidExclusionRow[];
+  /**
+   * Every warning (never blocks: WP Rocket applies the row as stored and the
+   * engine mirrors it), in the same order.
+   */
+  readonly warnings: readonly InvalidExclusionRow[];
+}
+
+/** One feature's rows, read: what blocks, and what only warns. */
+export interface FeatureRowReading {
+  /** Rows that block an apply, in list order. */
+  readonly problems: readonly InvalidExclusionRow[];
+  /**
+   * Rows applied as WP Rocket applies them that are almost surely mistakes
+   * (they match every candidate, turn Defer JS off on the page, or are only
+   * whitespace), in list order.
+   */
+  readonly warnings: readonly InvalidExclusionRow[];
 }
 
 /** One row's problem: the reason, plus its typed id where one is named. */
@@ -71,16 +88,16 @@ const PCRE_ROW_PROBLEMS: Readonly<Record<RegexFeatureId, PcreRowReading>> = {
 };
 
 /**
- * Validate one feature's rows — all of them.
+ * Every row of one feature the engine names, blocking or not.
  *
  * @param feature The feature the rows belong to (names the problem rows).
  * @param rowKind How the rows will be matched.
  * @param rows The rows as given.
- * @returns Every problem, in list order; empty when the rows are valid.
+ * @returns Every named row, in list order.
  * @throws {@link Error} for pattern rows of a feature without a PCRE reading
  *   (a broken registry, never user data).
  */
-export function featureRowProblems(
+function featureRowEntries(
   feature: ExclusionFeatureId,
   rowKind: ExclusionRowKind,
   rows: readonly string[]
@@ -99,7 +116,46 @@ export function featureRowProblems(
 }
 
 /**
- * A pattern feature's problems from its PCRE reading, with the one
+ * Read one feature's rows — all of them: the problems that block an apply,
+ * and the warnings that never do (see `isBlockingProblem`).
+ *
+ * @param feature The feature the rows belong to (names the rows).
+ * @param rowKind How the rows will be matched.
+ * @param rows The rows as given.
+ * @throws {@link Error} for pattern rows of a feature without a PCRE reading.
+ */
+export function featureRowReading(
+  feature: ExclusionFeatureId,
+  rowKind: ExclusionRowKind,
+  rows: readonly string[]
+): FeatureRowReading {
+  const entries = featureRowEntries(feature, rowKind, rows);
+  const warnings = [...entries.filter((entry) => !isBlockingProblem(entry))];
+  warnings.push(...whitespaceRowWarnings(feature, rows));
+  warnings.sort((left, right) => left.index - right.index);
+  return { problems: entries.filter(isBlockingProblem), warnings };
+}
+
+/**
+ * One feature's blocking problems (see {@link featureRowReading}).
+ *
+ * @param feature The feature the rows belong to.
+ * @param rowKind How the rows will be matched.
+ * @param rows The rows as given.
+ * @returns Every blocking problem, in list order; empty when the rows can apply.
+ * @throws {@link Error} for pattern rows of a feature without a PCRE reading.
+ */
+export function featureRowProblems(
+  feature: ExclusionFeatureId,
+  rowKind: ExclusionRowKind,
+  rows: readonly string[]
+): readonly InvalidExclusionRow[] {
+  return featureRowReading(feature, rowKind, rows).problems;
+}
+
+/**
+ * A pattern feature's named rows from its PCRE reading (blocking or not),
+ * with the one
  * empty-row policy: a row empty once trimmed stays the editor's own
  * mistake, ahead of any PCRE reading — the exact `''` also carries
  * `match-all` (verified for both features: a filter-delivered `''`
@@ -129,32 +185,51 @@ export function pcreFeatureProblems(
 /**
  * Prevalidate a whole exclusion set — the UI's inline-feedback source and
  * the pipeline's gate: every row of every feature is checked, and the
- * result names each invalid one. Each transform re-runs its feature's
- * checks on its throwing path.
+ * result names each blocking one and each warning. Each transform re-runs
+ * its feature's checks on its throwing path.
  *
  * @param set The set as given (rows untrusted until validated).
  */
 export function prevalidateExclusionSet(set: ExclusionSet): ExclusionSetProblems {
   const invalid: InvalidExclusionRow[] = [];
+  const warnings: InvalidExclusionRow[] = [];
   for (const feature of EXCLUSION_FEATURES) {
-    invalid.push(...featureRowProblems(feature.id, feature.rowKind, set.rows[feature.rowsKey]));
+    const reading = featureRowReading(feature.id, feature.rowKind, set.rows[feature.rowsKey]);
+    invalid.push(...reading.problems);
+    warnings.push(...reading.warnings);
   }
-  return { valid: invalid.length === 0, invalid };
+  return { valid: invalid.length === 0, invalid, warnings };
 }
 
 /**
- * Non-blocking row warnings: rows WP Rocket accepts and applies as written
- * that are almost surely mistakes. A whitespace-only Automatic Lazy
- * Rendering row is a valid literal there (the engine keeps it valid,
- * faithfully) yet, like the whitespace-only Lazyload row the engine
- * rejects, it matches nearly every element. The `''` row is not warned
- * here (a lone one is inert; next to others it is the `match-all` problem).
+ * One feature's warnings (see {@link featureRowReading}).
+ *
+ * @param feature The feature the rows belong to.
+ * @param rowKind How the rows will be matched.
+ * @param rows The rows as given.
+ * @returns One warning per such row, in list order (never thrown).
+ * @throws {@link Error} for pattern rows of a feature without a PCRE reading.
+ */
+export function featureRowWarnings(
+  feature: ExclusionFeatureId,
+  rowKind: ExclusionRowKind,
+  rows: readonly string[]
+): readonly InvalidExclusionRow[] {
+  return featureRowReading(feature, rowKind, rows).warnings;
+}
+
+/**
+ * Whitespace-only rows WP Rocket accepts and applies as written: a
+ * whitespace-only Automatic Lazy Rendering row is a valid literal there
+ * (the engine keeps it valid, faithfully) yet, like the whitespace-only
+ * Lazyload row the engine rejects, it matches nearly every element. The
+ * `''` row is not one (a lone one is inert; next to others it is
+ * `match-all`).
  *
  * @param feature The feature the rows belong to.
  * @param rows The rows as given.
- * @returns One warning per such row, in list order (never thrown).
  */
-export function featureRowWarnings(
+function whitespaceRowWarnings(
   feature: ExclusionFeatureId,
   rows: readonly string[]
 ): readonly InvalidExclusionRow[] {

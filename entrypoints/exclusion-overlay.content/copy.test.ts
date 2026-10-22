@@ -13,9 +13,12 @@ import {
   PROBLEM_COPY,
   ROW_NOTE_COPY,
   UNAVAILABLE_COPY,
+  appliedRowWarningNote,
   commitAnnouncement,
   noteToText,
   rowWarningNote,
+  rowsPhrase,
+  type RowRef,
   saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
@@ -24,6 +27,15 @@ import {
 import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
 import type { SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
+
+/** Names applied rows by their text (the rows left the lane). */
+const textRefs = (rows: readonly string[]): readonly RowRef[] => rows.map((text) => ({ text }));
+
+/** Names applied rows by their 1-based position in `lane`. */
+const positionRefs =
+  (lane: readonly string[]) =>
+  (rows: readonly string[]): readonly RowRef[] =>
+    rows.map((text) => ({ position: lane.indexOf(text) + 1 }));
 
 /** Every string the tables hold. */
 function allWords(): string[] {
@@ -42,20 +54,45 @@ function allWords(): string[] {
     ]),
     INLINE_JQUERY_LINE,
     rowWarningNote('Row is only whitespace — x'),
-    ...COUNT_COPY.caveats({
-      candidates: 9,
-      rewritten: 1,
-      featureWide: false,
-      undetermined: 2,
-      approximate: 1,
-      inlineUnknown: true,
-      bestEffort: true,
-      pageUnknown: false
-    }),
+    appliedRowWarningNote('WP Rocket stores this and it excludes every script'),
+    ...COUNT_COPY.caveats(
+      {
+        candidates: 9,
+        rewritten: 1,
+        featureWide: false,
+        undetermined: 2,
+        approximate: 1,
+        inlineUnknown: true,
+        bestEffort: true,
+        pageUnknown: false,
+        pageOffRows: null,
+        matchAllRows: ['(?a)']
+      },
+      'delayed scripts',
+      positionRefs(['(?a)'])
+    ),
+    ...COUNT_COPY.caveats(
+      {
+        candidates: 9,
+        rewritten: 9,
+        featureWide: false,
+        undetermined: 0,
+        approximate: 0,
+        inlineUnknown: false,
+        bestEffort: false,
+        pageUnknown: false,
+        pageOffRows: ['.*'],
+        matchAllRows: []
+      },
+      'deferred and wrapped scripts',
+      textRefs,
+      LANE_COPY.deferJs.page
+    ),
     LANE_COPY.deferJs.page?.offLead(1) ?? '',
     LANE_COPY.deferJs.page?.offLead(2) ?? '',
-    LANE_COPY.deferJs.page?.offFix(1) ?? '',
-    LANE_COPY.deferJs.page?.offFix(2) ?? '',
+    LANE_COPY.deferJs.page?.offOutcome(1) ?? '',
+    LANE_COPY.deferJs.page?.offOutcome(2) ?? '',
+    LANE_COPY.deferJs.page?.countsOff('row 1') ?? '',
     LANE_COPY.deferJs.page?.unknown ?? '',
     LANE_COPY.deferJs.page?.countsUnknown ?? '',
     PAGE_OFF_COPY.goTo(2),
@@ -417,29 +454,36 @@ describe('lane counts and hints (K.5a.2)', () => {
     approximate: 0,
     inlineUnknown: false,
     bestEffort: false,
-    pageUnknown: false
+    pageUnknown: false,
+    pageOffRows: null,
+    matchAllRows: []
   };
+  const NOUN = 'delayed scripts';
 
   it('words the count, feature-wide or row-driven, with no caveat when exact', () => {
     expect(COUNT_COPY.line(exact, 'delayed scripts')).toBe('3 of 9 delayed scripts restored');
     expect(COUNT_COPY.line({ ...exact, featureWide: true, rewritten: 9 }, 'lazy images')).toBe(
       'All 9 lazy images restored (feature disabled)'
     );
-    expect(COUNT_COPY.caveats(exact)).toEqual([]);
+    expect(COUNT_COPY.caveats(exact, NOUN, textRefs)).toEqual([]);
   });
 
   it('says what the count could not tell, one line each, singular and plural', () => {
-    expect(COUNT_COPY.caveats({ ...exact, undetermined: 1 })).toEqual([
+    expect(COUNT_COPY.caveats({ ...exact, undetermined: 1 }, NOUN, textRefs)).toEqual([
       '1 left as served: how WP Rocket matched it can’t be read from this page.'
     ]);
     expect(
-      COUNT_COPY.caveats({
-        ...exact,
-        undetermined: 2,
-        approximate: 3,
-        inlineUnknown: true,
-        bestEffort: true
-      })
+      COUNT_COPY.caveats(
+        {
+          ...exact,
+          undetermined: 2,
+          approximate: 3,
+          inlineUnknown: true,
+          bestEffort: true
+        },
+        NOUN,
+        textRefs
+      )
     ).toEqual([
       '2 left as served: how WP Rocket matched them can’t be read from this page.',
       '3 matched against a rebuilt tag: WP Rocket’s original wasn’t on the page.',
@@ -457,16 +501,18 @@ describe('lane counts and hints (K.5a.2)', () => {
       expect(LANE_COPY[lane].limitHint).toBeUndefined();
   });
 
-  it('words Defer JS’s page-wide states, singular and plural (K.5b)', () => {
+  it('words Defer JS’s page-wide states, singular and plural (K.5b, warning since K.5c)', () => {
     const page = LANE_COPY.deferJs.page;
-    expect(page?.offLead(1)).toBe(
-      'WP Rocket would stop deferring every script on this page because of this row:'
+    expect(page?.offLead(1)).toBe('WP Rocket defers no script on this page because of this row:');
+    expect(page?.offLead(2)).toBe('WP Rocket defers no script on this page because of these rows:');
+    expect(page?.offOutcome(1)).toBe(
+      'Apply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove it to defer scripts again.'
     );
-    expect(page?.offLead(2)).toBe(
-      'WP Rocket would stop deferring every script on this page because of these rows:'
+    expect(page?.offOutcome(3)).toMatch(/Edit or remove them to defer scripts again\.$/);
+    expect(page?.countsOff('rows 1 and 3')).toBe(
+      'WP Rocket defers no script on this page because of rows 1 and 3, so every deferred script is restored.'
     );
-    expect(page?.offFix(1)).toBe('Edit or remove it to apply.');
-    expect(page?.offFix(3)).toBe('Edit or remove them to apply.');
+    expect(page?.countsOff('')).toMatch(/because of the applied rows,/);
     expect(page?.unknown).toBe(
       'WP Rocket may defer no script on this page with these rows — not checked here.'
     );
@@ -482,11 +528,56 @@ describe('lane counts and hints (K.5a.2)', () => {
 
   it('puts the page-state caveat first, only for a lane with page words', () => {
     const unknown = { ...exact, pageUnknown: true, bestEffort: true };
-    expect(COUNT_COPY.caveats(unknown, LANE_COPY.deferJs.page)).toEqual([
+    expect(COUNT_COPY.caveats(unknown, NOUN, textRefs, LANE_COPY.deferJs.page)).toEqual([
       'These counts assume WP Rocket defers scripts on this page: with the applied rows, that isn’t checked here.',
       'Row counts are best effort: WP Rocket matches these rows as one pattern, so the first matching row is credited.'
     ]);
-    expect(COUNT_COPY.caveats(unknown)).toHaveLength(1);
+    expect(COUNT_COPY.caveats(unknown, NOUN, textRefs)).toHaveLength(1);
+  });
+
+  it('carries the applied warnings into the counts: page off first, then match-all rows (K.5c)', () => {
+    const off = { ...exact, rewritten: 9, pageOffRows: ['(?<n>a)x', '(?<n>b)y'] };
+    expect(
+      COUNT_COPY.caveats(
+        off,
+        NOUN,
+        positionRefs(['zzz', '(?<n>a)x', '(?<n>b)y']),
+        LANE_COPY.deferJs.page
+      )
+    ).toEqual([
+      'WP Rocket defers no script on this page because of rows 2 and 3, so every deferred script is restored.'
+    ]);
+    // Rows not named by the report: the generic words.
+    expect(
+      COUNT_COPY.caveats({ ...off, pageOffRows: [] }, NOUN, textRefs, LANE_COPY.deferJs.page)
+    ).toEqual([
+      'WP Rocket defers no script on this page because of the applied rows, so every deferred script is restored.'
+    ]);
+    // Without page words (not a set-read lane), no page line.
+    expect(COUNT_COPY.caveats(off, NOUN, textRefs)).toEqual([]);
+    const one = { ...exact, matchAllRows: ['(?a)'] };
+    expect(COUNT_COPY.caveats(one, NOUN, positionRefs(['ok', '(?a)']))).toEqual([
+      'Row 2 matches everything: WP Rocket excludes all delayed scripts with it, and so does this preview.'
+    ]);
+    const two = { ...exact, matchAllRows: ['(?a)', 'zzz|'] };
+    expect(COUNT_COPY.caveats(two, NOUN, textRefs)).toEqual([
+      '`(?a)` and `zzz|` match everything: WP Rocket excludes all delayed scripts with them, and so does this preview.'
+    ]);
+  });
+
+  it('names applied rows by position, else by their text as code (capped)', () => {
+    expect(rowsPhrase([{ position: 4 }])).toBe('row 4');
+    expect(rowsPhrase([{ position: 1 }, { position: 3 }])).toBe('rows 1 and 3');
+    expect(rowsPhrase([{ position: 1 }, { position: 2 }, { position: 4 }])).toBe('rows 1, 2 and 4');
+    expect(rowsPhrase([{ position: 1 }, { text: 'a.js' }])).toBe('row 1 and `a.js`');
+    const long = 'x'.repeat(NOTE_ROW_MAX + 10);
+    expect(rowsPhrase([{ text: long }])).toBe(`\`${'x'.repeat(NOTE_ROW_MAX)}…\``);
+  });
+
+  it('words a row warning the preview applies (K.5c)', () => {
+    expect(appliedRowWarningNote('WP Rocket stores this and it excludes every script')).toBe(
+      'WP Rocket stores this and it excludes every script. Apply still runs and previews it as WP Rocket would.'
+    );
   });
 
   it('hints each lane by WP Rocket’s own matching subject and case', () => {

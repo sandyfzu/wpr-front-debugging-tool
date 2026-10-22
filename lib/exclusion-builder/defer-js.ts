@@ -11,11 +11,11 @@
 import { WPR_DEFER_ATTRIBUTE } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
-import { deferRowSet } from './defer-js-rows';
+import { deferRowSet, type DeferRowSet } from './defer-js-rows';
 import { replayInlinePass, type InlinePassReplay } from './defer-inline-js';
 import { undoDelayRenames } from './delay-js-match';
-import { ExclusionValidationError } from './errors';
-import { transformReport, type TransformResult } from './report';
+import { matchAllRows, throwIfBlocking, type InvalidExclusionRow } from './errors';
+import { transformReport, type TransformCounters, type TransformResult } from './report';
 import {
   applyPatches,
   findAttribute,
@@ -128,6 +128,9 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  * The Defer JS transform: `servedHtml` + the exclusion set → the html with
  * matched WP Rocket-deferred scripts stripped of both defer markers, plus
  * the transform's report. The rewrite stamps the exclusion marker as CSV.
+ * When the rows make WP Rocket's pre-check fail it defers no script on the
+ * page: every deferred script is restored and the report says why (the
+ * rows behind it); rows matching every script are named in the report.
  * When WP Rocket's page state cannot be replayed, the matches are applied
  * as if it defers and the report says so; a script whose subject cannot be
  * read back is left as served and counted undetermined. Inline scripts
@@ -142,7 +145,8 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  *   URL is taken: WP Rocket matches the raw `src` value, never a resolved one.
  * @returns The rewritten html and the report.
  * @throws {@link ExclusionValidationError} when any Defer JS row has a
- *   problem — the page-wide `joined-page-off` included.
+ *   blocking problem (`match-all` and the page-wide `joined-page-off` only
+ *   warn: they are applied as WP Rocket applies them).
  */
 export function deferJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
   return deferWithInlinePass(servedHtml, set, null);
@@ -168,6 +172,31 @@ export function deferJsTransformAfterInlinePass(
 }
 
 /**
+ * A row-driven run's page caveats for its report: the page state when it
+ * is not plainly `on` (`off` with the rows behind it; `unknown` only when it
+ * could change the outcome), else the rows that match every script.
+ *
+ * @param rowSet The translated rows.
+ * @param pageOff WP Rocket's pre-check fails (and the run is row-driven).
+ * @param entries The rows' named entries.
+ */
+function pageCaveats(
+  rowSet: DeferRowSet,
+  pageOff: boolean,
+  entries: readonly InvalidExclusionRow[]
+): Pick<TransformCounters, 'pageState' | 'pageOffRows' | 'matchAllRows'> {
+  if (pageOff) {
+    const rows = entries.filter((entry) => rowSet.pageOffRows.includes(entry.index));
+    return { pageState: 'off', pageOffRows: rows.map((entry) => entry.row) };
+  }
+  const matchAll = matchAllRows(entries);
+  // A row matching every script restores them all whether the pre-check
+  // passes or not: the unknown page state changes nothing then.
+  const unknown = rowSet.page === 'unknown' && matchAll.length === 0;
+  return { ...(unknown ? { pageState: 'unknown' as const } : {}), matchAllRows: matchAll };
+}
+
+/**
  * The Defer JS transform's body (see {@link deferJsTransform}).
  *
  * @param servedHtml The page.
@@ -184,9 +213,11 @@ function deferWithInlinePass(
   const rows = set.rows.deferJs;
   // One translation serves validation and matching (a heavy set is not memoized).
   const rowSet = deferRowSet(rows);
-  const problems = pcreFeatureProblems(FEATURE, rows, rowSet.problems);
-  if (problems.length > 0) throw new ExclusionValidationError(problems);
+  const entries = pcreFeatureProblems(FEATURE, rows, rowSet.problems);
+  throwIfBlocking(entries);
   const featureWide = set.disable.deferJs;
+  // WP Rocket's pre-check fails: it defers nothing, so every script is restored.
+  const pageOff = !featureWide && rowSet.page === 'off';
   const matchCounts = rows.map(() => 0);
   const patches: TextPatch[] = [];
   let candidates = 0;
@@ -198,7 +229,7 @@ function deferWithInlinePass(
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     if (findAttribute(parseTagAt(tagText, 0), WPR_DEFER_ATTRIBUTE) === null) continue;
     candidates++;
-    if (!featureWide) {
+    if (!featureWide && !pageOff) {
       const body = servedHtml.slice(tag.openingEnd, tag.contentEnd);
       const rowIndex = deferVerdict(tagText + stampedLead(body), rowSet.firstMatch);
       // WP Rocket captured a subject here, but it cannot be read back: left as served.
@@ -236,9 +267,9 @@ function deferWithInlinePass(
       undetermined: undetermined + inline.undetermined,
       inlineUnwrapped: inline.unwrapped,
       inlineUndetermined: inline.undetermined,
-      ...(rowSet.page === 'unknown' ? { pageState: 'unknown' as const } : {}),
-      // A feature-wide run consults no row: nothing to credit.
-      rowCountsBestEffort: rows.length > 1 && !featureWide
+      ...pageCaveats(rowSet, pageOff, entries),
+      // A feature-wide or page-off run matches no row: nothing to credit.
+      rowCountsBestEffort: rows.length > 1 && !featureWide && !pageOff
     })
   };
 }

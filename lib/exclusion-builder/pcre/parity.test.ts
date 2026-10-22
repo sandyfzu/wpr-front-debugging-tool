@@ -1,7 +1,8 @@
 /**
  * The translator against the WP Rocket parity table: every Delay/Defer match
  * row, fed its stored rows only (no subject), yields exactly the row's
- * `engine.problem` when it has one and no problem otherwise; and no stored
+ * `engine.problem` (or `engine.warning`) when it has one and no problem
+ * otherwise; and no stored
  * row of a save fixture is one WP Rocket's save rejects.
  */
 import { readFileSync } from 'node:fs';
@@ -32,8 +33,14 @@ describe('PCRE translator vs the WP Rocket parity table', () => {
     for (const row of table.rows) {
       if (row.kind !== 'match' || !isRegexFeature(row.feature)) continue;
       const feature = row.feature;
-      const expected =
-        row.engine !== undefined && 'problem' in row.engine ? [row.engine.problem] : [];
+      const engine = row.engine;
+      const named =
+        engine === undefined || 'residual' in engine
+          ? null
+          : 'problem' in engine
+            ? engine.problem
+            : engine.warning;
+      const expected = named === null ? [] : [named];
       it(`${row.id} → ${expected.join(', ') || 'no problem'}`, () => {
         const ids = [...new Set(regexRowProblems(feature, row.rows).map((entry) => entry.problem))];
         expect(ids).toEqual(expected);

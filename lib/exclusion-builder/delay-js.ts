@@ -13,7 +13,7 @@ import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/c
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag } from './html-scan';
 import {
-  compileDelayRows,
+  readDelayRows,
   DELAY_TYPE_ATTRIBUTE,
   type DelayRowMatch,
   type DelayVerdict
@@ -154,7 +154,8 @@ function verdictAfterInlinePass(
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Delay JS rows + toggle slice; Defer JS rows + toggle).
  * @returns The rewritten html and the report.
- * @throws {@link ExclusionValidationError} when any Delay JS row is invalid.
+ * @throws {@link ExclusionValidationError} when any Delay JS row blocks (a row
+ *   matching every script only warns: it is applied, as on WP Rocket).
  */
 export function delayJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
   return delayAfterInlinePass(servedHtml, set, inlinePassUnder(set));
@@ -193,7 +194,7 @@ function delayAfterInlinePass(
   inlinePass: InlinePass
 ): TransformResult {
   const rows = set.rows.delayJs;
-  const matchRow = compileDelayRows(rows);
+  const { match: matchRow, matchAllRows } = readDelayRows(rows);
   const featureWide = set.disable.delayJs;
   const matchCounts = rows.map(() => 0);
   const patches: TextPatch[] = [];
@@ -267,7 +268,8 @@ function delayAfterInlinePass(
       regionRemovals,
       featureWide,
       undetermined,
-      approximate
+      approximate,
+      matchAllRows
     })
   };
 }

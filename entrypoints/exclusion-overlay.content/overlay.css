@@ -716,33 +716,31 @@
   font-size: 11px;
 }
 
-/* A lane's page-wide failure: blocks Apply, names its rows (icon + words, never color alone). */
+/* A lane's page-wide warning: names its rows, never blocks (icon + words, never color alone). */
 .xo-page-off {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin: 0 10px 8px;
   padding: 6px 8px;
-  border: 1px solid var(--status-error);
+  border: 1px solid var(--status-warn);
   border-radius: 6px;
-  background: var(--status-error-soft);
+  background: var(--status-warn-soft);
   color: var(--fg-primary);
   font-size: 11px;
   overflow-wrap: anywhere;
-}
-
-/* A focus target, not a control: focused only by a refused apply — always shown. */
-.xo-page-off:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .xo-page-off-lead {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  color: var(--status-error);
   font-weight: 600;
+}
+
+.xo-page-off-lead svg {
+  flex: none;
+  color: var(--status-warn);
 }
 
 .xo-page-off-rows {
@@ -883,6 +881,12 @@
 .xo-row-note .xo-code {
   background: var(--surface-3);
   color: var(--fg-primary);
+}
+
+/* A warning in the note slot: the icon carries the tone (the words say it too). */
+.xo-row-note[data-tone='warn'] > svg {
+  flex: none;
+  color: var(--status-warn);
 }
 
 .xo-note-text {

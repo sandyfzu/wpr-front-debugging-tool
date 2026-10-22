@@ -1,9 +1,10 @@
 /**
- * Typed errors of the exclusion engine. A broken exclusion row is user data
- * to fix in the editor, not a crash to swallow — the validation error
- * carries every problem at once so a UI can render them all inline.
+ * Typed errors of the exclusion engine, and which named rows block. A
+ * broken exclusion row is user data to fix in the editor, not a crash to
+ * swallow — the validation error carries every problem at once so a UI can
+ * render them all inline.
  */
-import type { ProblemId } from './pcre/problems';
+import { NON_BLOCKING_PROBLEMS, type ProblemId } from './pcre/problems';
 import type { ExclusionFeatureId } from './set';
 
 /** One invalid exclusion row, named for inline feedback in the editor. */
@@ -17,6 +18,25 @@ export interface InvalidExclusionRow {
   readonly reason: string;
   /** The typed kind of problem, where one is named (e.g. a row that matches every element). */
   readonly problem?: ProblemId;
+}
+
+/**
+ * Whether a named row blocks an apply (see {@link NON_BLOCKING_PROBLEMS}).
+ *
+ * @param entry The row's entry.
+ */
+export function isBlockingProblem(entry: Pick<InvalidExclusionRow, 'problem'>): boolean {
+  return entry.problem === undefined || !NON_BLOCKING_PROBLEMS.has(entry.problem);
+}
+
+/**
+ * The rows named as matching every candidate (`match-all`), in entry order —
+ * a transform's report names them beside its counts.
+ *
+ * @param entries A feature's named rows.
+ */
+export function matchAllRows(entries: readonly InvalidExclusionRow[]): string[] {
+  return entries.filter((entry) => entry.problem === 'match-all').map((entry) => entry.row);
 }
 
 /**
@@ -49,4 +69,16 @@ export class ExclusionValidationError extends Error {
     );
     this.invalid = invalid;
   }
+}
+
+/**
+ * Throw for a feature's blocking rows; the non-blocking ones are the
+ * caller's to apply (and report).
+ *
+ * @param entries Every row the feature's reading named.
+ * @throws {@link ExclusionValidationError} naming every blocking row, when any.
+ */
+export function throwIfBlocking(entries: readonly InvalidExclusionRow[]): void {
+  const blocking = entries.filter(isBlockingProblem);
+  if (blocking.length > 0) throw new ExclusionValidationError(blocking);
 }

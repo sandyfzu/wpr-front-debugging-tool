@@ -11,10 +11,10 @@
  */
 import { LAZY_RENDER_ATTRIBUTE, LAZY_RENDER_INLINE_CSS_ID } from '../wp-rocket/constants';
 import { isEndTag, parseTagAt, scanTokens, type ScannedTag } from './html-scan';
-import { ExclusionValidationError } from './errors';
+import { matchAllRows, throwIfBlocking } from './errors';
 import { analyzeLazyRender, isLazyRenderStamped } from './lazy-render-hashing';
 import type { DocumentBytes } from './libxml/charset';
-import { featureRowProblems } from './validate';
+import { featureRowReading } from './validate';
 import { transformReport, type TransformResult } from './report';
 import {
   applyPatches,
@@ -43,11 +43,10 @@ const ID_ATTRIBUTE = 'id';
  * @param _documentUrl Unused (the pipeline's shared transform signature).
  * @param bytes How the session decoded the page (UTF-8 without a BOM when omitted).
  * @returns The rewritten html and the report.
- * @throws {@link ExclusionValidationError} when an empty row sits next to
- *   other rows (it would match every element; a lone `''`/`"0"` row is
- *   WP Rocket's no-op) — even under the feature-wide disable, where a broken
- *   row is surfaced, never silently inert. Rows are never compiled as
- *   regexes, so regex-looking text is a fine literal.
+ * An empty row next to other rows matches every element, as on WP Rocket
+ * (a warning, named in the report; a lone `''`/`"0"` row is WP Rocket's
+ * no-op). Rows are never compiled as regexes, so regex-looking text is a
+ * fine literal.
  */
 export function lazyRenderTransform(
   servedHtml: string,
@@ -56,8 +55,8 @@ export function lazyRenderTransform(
   bytes?: DocumentBytes
 ): TransformResult {
   const rows = set.rows.lazyRender;
-  const problems = featureRowProblems(FEATURE, 'literal', rows);
-  if (problems.length > 0) throw new ExclusionValidationError(problems);
+  const reading = featureRowReading(FEATURE, 'literal', rows);
+  throwIfBlocking(reading.problems);
   const featureWide = set.disable.lazyRender;
   const matchCounts = rows.map(() => 0);
   const tokens = scanTokens(servedHtml);
@@ -113,7 +112,8 @@ export function lazyRenderTransform(
       rewritten,
       regionRemovals: removals.length,
       featureWide,
-      undetermined
+      undetermined,
+      matchAllRows: matchAllRows(reading.warnings)
     })
   };
 }
