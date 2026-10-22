@@ -14,7 +14,7 @@
  * overrunning feature.
  */
 import { ExclusionValidationError } from '../exclusion-builder/errors';
-import { exclusionPipelineSteps } from '../exclusion-builder/pipeline';
+import { exclusionPipelineSteps, pipelineSetProblems } from '../exclusion-builder/pipeline';
 import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
 import type { TransformReport } from '../exclusion-builder/report';
 import {
@@ -22,7 +22,6 @@ import {
   type ExclusionFeatureId,
   type ExclusionSet
 } from '../exclusion-builder/set';
-import { prevalidateExclusionSet } from '../exclusion-builder/validate';
 import type { ExclusionDocumentOutcome } from '../messaging/exclusion-session';
 import { decodeDocument, encodeDocument, extractMimeType } from './charset';
 import { removeSpeculationRules } from './speculation-rules';
@@ -137,8 +136,8 @@ export function runDocumentPipeline(
 ): DocumentTransformResult {
   try {
     const started = now();
-    const problems = prevalidateExclusionSet(request.set);
-    if (!problems.valid) return engineFailed(new ExclusionValidationError(problems.invalid));
+    const problems = pipelineSetProblems(request.set);
+    if (problems.length > 0) return engineFailed(new ExclusionValidationError(problems));
     let html = request.html;
     const reports: TransformReport[] = [];
     const steps = exclusionPipelineSteps(request.set, request.bytes);

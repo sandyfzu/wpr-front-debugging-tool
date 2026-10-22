@@ -94,6 +94,18 @@ describe('runDocumentPipeline', () => {
     expect(result.cause).toMatchObject({ name: 'ExclusionValidationError' });
   });
 
+  it("refuses a set outside WP Rocket's stored form as engine-failed, never running it", () => {
+    const set = setWith({ delayJs: ['a\\.js', 'a\\.js'] });
+    const result = runDocumentPipeline(request(DELAYED, set), clock(0));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toEqual({ outcome: 'failed', reason: 'engine-failed' });
+    expect(result.cause).toMatchObject({
+      name: 'ExclusionValidationError',
+      invalid: [{ feature: 'delay_js', index: 1, row: 'a\\.js' }]
+    });
+  });
+
   it('rewrites a set whose rows only warn, as WP Rocket applies them', () => {
     const html = `${DELAYED}<script src="b.js" data-rocket-defer defer></script>`;
     // `(?a)` matches every script; `.*` makes Defer JS defer nothing on the page.

@@ -18,6 +18,8 @@ import { delayJsTransform } from './delay-js';
 import { deferJsTransform } from './defer-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 import type { TransformReport } from './report';
+import { ExclusionValidationError } from './errors';
+import { ROW_REASONS } from './row-reasons';
 
 /** A set with selected rows/toggles replaced (spread keeps the rest empty). */
 function setWith(
@@ -87,6 +89,32 @@ describe('EXCLUSION_PIPELINE_IDS', () => {
 });
 
 describe('applyPipeline', () => {
+  it("refuses a set outside WP Rocket's stored form, naming every such row", () => {
+    // WP Rocket dedupes before joining Defer rows: undeduped, two identical
+    // named-group rows read as a page-wide failure it never has.
+    const html = '<script src="a.js" data-rocket-defer defer></script>';
+    const set = setWith({ deferJs: ["(?'n'a)", "(?'n'a)"], delayJs: [' a\\.js'] });
+    let thrown: unknown;
+    try {
+      applyPipeline(html, set);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ExclusionValidationError);
+    expect((thrown as ExclusionValidationError).invalid).toEqual([
+      { feature: 'delay_js', index: 0, row: ' a\\.js', reason: ROW_REASONS.notStored },
+      { feature: 'defer_all_js', index: 1, row: "(?'n'a)", reason: ROW_REASONS.notStored }
+    ]);
+  });
+
+  it('reads the stored form of that set as WP Rocket does: one row, judged alone', () => {
+    const html = '<script src="a.js" data-rocket-defer defer></script>';
+    expect(() => applyPipeline(html, setWith({ deferJs: ["(?'n'a)"] }))).toThrow(
+      /PCRE-only syntax/
+    );
+    expect(applyPipeline(html, setWith({ deferJs: ['a\\.js'] })).reports).toHaveLength(4);
+  });
+
   it('is the identity for an empty set on any document, with a zeroed report per transform', () => {
     const html = `<script type="rocketlazyloadscript" data-rocket-src="a.js" data-rocket-defer defer></script>`;
     const result = applyPipeline(html, EMPTY_EXCLUSION_SET);

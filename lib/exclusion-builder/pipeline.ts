@@ -17,7 +17,8 @@ import { deferJsTransform, deferJsTransformAfterInlinePass } from './defer-js';
 import { replayInlinePass, type InlinePassReplay } from './defer-inline-js';
 import { lazyloadTransform } from './lazyload';
 import { lazyRenderTransform } from './lazy-render';
-import { ExclusionValidationError } from './errors';
+import { ExclusionValidationError, type InvalidExclusionRow } from './errors';
+import { notStoredRows } from './field-text';
 import { prevalidateExclusionSet } from './validate';
 import type { DocumentBytes } from './libxml/charset';
 import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
@@ -134,9 +135,9 @@ export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
  * The exclusion pipeline's steps for one set, in execution order — what
  * {@link applyPipeline} composes. Exposed for consumers that must observe
  * the run step by step (e.g. to bound its wall time between steps and name
- * the feature that overran); they must prevalidate the set first, exactly
- * as `applyPipeline` does, or a step throws its feature's validation error
- * mid-run.
+ * the feature that overran); they must check {@link pipelineSetProblems}
+ * first, exactly as `applyPipeline` does, or a step throws its feature's
+ * validation error mid-run (or reads rows WP Rocket would never run).
  *
  * WP Rocket's Defer JS inline-jQuery pass ran after its deferral and before
  * Delay JS, so the first step replays it on the served page (before any
@@ -188,9 +189,24 @@ export function featureReports(
 }
 
 /**
+ * Why a set cannot run, before anything runs: its rows outside WP Rocket's
+ * stored form (the transforms read rows as WP Rocket stored them — deduped,
+ * sanitized; two identical named-group Defer rows, which WP Rocket would
+ * dedupe, would otherwise read as a page-wide failure), else every blocking
+ * row problem. Empty when the set can run.
+ *
+ * @param set The exclusion set.
+ * @returns The offending rows (all of them, never first-only).
+ */
+export function pipelineSetProblems(set: ExclusionSet): readonly InvalidExclusionRow[] {
+  const notStored = notStoredRows(set);
+  return notStored.length > 0 ? notStored : prevalidateExclusionSet(set).invalid;
+}
+
+/**
  * The exclusion pipeline: validate the whole set up front (every invalid
- * row named at once, before anything runs), then apply the four transforms
- * in their declared order.
+ * row named at once, before anything runs — {@link pipelineSetProblems}),
+ * then apply the four transforms in their declared order.
  *
  * Each transform rescans the (linear) document, so the whole pipeline stays
  * linear in the document size times the feature count; pattern compilation
@@ -200,12 +216,12 @@ export function featureReports(
  *   session backends' job, never the engine's).
  * @param set The exclusion set (rows + feature-wide disables).
  * @returns The rewritten html and one report per transform, in pipeline order.
- * @throws {@link ExclusionValidationError} naming every invalid row across
- *   every feature, before any transform runs.
+ * @throws {@link ExclusionValidationError} naming every row outside the
+ *   stored form, else every invalid row, before any transform runs.
  */
 export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
-  const problems = prevalidateExclusionSet(set);
-  if (!problems.valid) throw new ExclusionValidationError(problems.invalid);
+  const problems = pipelineSetProblems(set);
+  if (problems.length > 0) throw new ExclusionValidationError(problems);
   const composed = composeSteps(html, exclusionPipelineSteps(set));
   return { html: composed.html, reports: featureReports(composed.reports) };
 }
