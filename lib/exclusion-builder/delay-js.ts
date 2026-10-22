@@ -3,15 +3,16 @@
  * delayed markup, and — under the feature-wide disable — removes the three
  * controller scripts the feature serves. Candidates are scripts whose
  * `type` is a delay type or that carry the delay controller's runtime
- * status marker; rows match the whole script markup (attributes, body, end
- * tag) as regular expressions; the restore follows the controller's own
+ * status marker; rows match the whole script element as WP Rocket's
+ * runtime does (`./delay-js-match`: each row alone, ASCII-case-insensitive,
+ * against the element as it was before delaying); the restore follows the controller's own
  * runtime semantics — `type` reclaims `data-rocket-type`'s value (dropped
  * entirely when the original had none) and `src` reclaims `data-rocket-src`.
  */
 import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag } from './html-scan';
-import { compilePatternRows } from './compile';
+import { compileDelayRows, DELAY_TYPE_ATTRIBUTE } from './delay-js-match';
 import { transformReport, type TransformResult } from './report';
 import {
   addAttributeValue,
@@ -26,9 +27,6 @@ import type { ExclusionFeatureId, ExclusionSet } from './set';
 
 /** The delay controller's runtime status marker — a snapshot's delayed-script evidence. */
 export const DELAY_STATUS_ATTRIBUTE = 'data-rocket-status';
-
-/** Where the controller parks a delayed script's original `type` value. */
-export const DELAY_TYPE_ATTRIBUTE = 'data-rocket-type';
 
 const FEATURE: ExclusionFeatureId = 'delay_js';
 const TYPE_ATTRIBUTE = 'type';
@@ -120,13 +118,15 @@ function restoreDelayedScript(tagText: string): string {
  */
 export function delayJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
   const rows = set.rows.delayJs;
-  const compiled = compilePatternRows(rows, FEATURE);
+  const matchRow = compileDelayRows(rows);
   const featureWide = set.disable.delayJs;
   const matchCounts = rows.map(() => 0);
   const patches: TextPatch[] = [];
   let candidates = 0;
   let rewritten = 0;
   let regionRemovals = 0;
+  let undetermined = 0;
+  let approximate = 0;
   // Each controller script is removed once — the first of its kind (the
   // tool's own disable semantics; duplicates are just scripts after that).
   let redirectScriptRemoved = false;
@@ -157,12 +157,17 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
     if (tag.name !== 'script' || !isDelayedScript(tag)) continue;
     candidates++;
     if (!featureWide) {
-      // The whole script markup is the match target (both delay types live
-      // in the opening tag; rows may also match body text).
-      const region = servedHtml.slice(tag.start, tag.end);
-      const rowIndex = compiled.findIndex(({ regex }) => regex.test(region));
-      if (rowIndex === -1) continue;
-      matchCounts[rowIndex] = (matchCounts[rowIndex] ?? 0) + 1;
+      // The whole script element is the match target, as WP Rocket saw it
+      // before delaying it (rows may also match body text).
+      const verdict = matchRow(servedHtml.slice(tag.start, tag.end));
+      // Its possible originals disagree: left as served, counted undetermined.
+      if (verdict === null) {
+        undetermined++;
+        continue;
+      }
+      if (verdict.approximate) approximate++;
+      if (verdict.row === -1) continue;
+      matchCounts[verdict.row] = (matchCounts[verdict.row] ?? 0) + 1;
     }
     const tagText = servedHtml.slice(tag.start, tag.openingEnd);
     const restored = restoreDelayedScript(tagText);
@@ -184,7 +189,9 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       candidates,
       rewritten,
       regionRemovals,
-      featureWide
+      featureWide,
+      undetermined,
+      approximate
     })
   };
 }

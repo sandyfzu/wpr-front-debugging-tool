@@ -186,12 +186,21 @@ const OPEN_AT_END = new Set([
 
 /** Longest construct text a stopped parse names. */
 const STOP_CONSTRUCT_LENGTH = 16;
+
+/**
+ * PCRE2's parenthesis nesting limit (observed 250 on 10.44 and 10.49: 251
+ * open groups fail to compile). A group this deep stops the parse as
+ * unknown: one level is Defer JS's joined wrapper (a row 250 deep is kept
+ * at save yet breaks the joined pattern), and the bound keeps the
+ * recursive parse and its consumers off the call stack's limit.
+ */
+const PCRE_NEST_LIMIT = 250;
 /** Letter escapes PCRE2 rejects, inside and outside classes (observed). */
 const UNKNOWN_LETTER_ESCAPES = new Set('ijlmquyFIJLMOTUY');
 /** Escapes valid outside classes that PCRE2 rejects inside one (observed). */
 const OUTSIDE_ONLY_ESCAPES = new Set('ABCGKNRXZz');
 /** Characters after `(?` that PCRE2 rejects outright (observed). */
-const INVALID_AFTER_GROUP_QUERY = new Set(' "$%,./;?@[\\]_`{}~');
+const INVALID_AFTER_GROUP_QUERY = new Set(' "$%,./;?@\\]_`{}~');
 /** Single-character escapes for control bytes. */
 const CONTROL_ESCAPES: Readonly<Record<string, number>> = {
   a: 0x07,
@@ -208,10 +217,23 @@ const CONTROL_ESCAPES: Readonly<Record<string, number>> = {
  * (literal text on 10.42, which PHP 8.3 bundles) — the reference versions
  * here are 10.44 and 10.49.
  */
-const BRACE_QUANTIFIER = /^\{(?:(\d+)(,(\d*))?|,(\d+))\}/;
+const BRACE_QUANTIFIER = /\{(?:(\d+)(,(\d*))?|,(\d+))\}/y;
 /** A brace that PCRE2 ≥ 10.43 reads as a quantifier only thanks to inner spaces. */
 const SPACED_BRACE_QUANTIFIER =
-  /^\{[ \t]*(?:(\d+)[ \t]*(,[ \t]*(\d*)[ \t]*)?|,[ \t]*(\d+)[ \t]*)\}/;
+  /\{[ \t]*(?:(\d+)[ \t]*(,[ \t]*(\d*)[ \t]*)?|,[ \t]*(\d+)[ \t]*)\}/y;
+
+/**
+ * A sticky regex's match exactly at `pos` (no window: a quantifier's
+ * digits may run past any fixed length — `x{0…01}` is `x{1}` to PCRE).
+ *
+ * @param regex A sticky (`y`) regex.
+ * @param text The text.
+ * @param pos Where the match must start.
+ */
+function matchAt(regex: RegExp, text: string, pos: number): RegExpExecArray | null {
+  regex.lastIndex = pos;
+  return regex.exec(text);
+}
 /** A group name. */
 const GROUP_NAME = /^[A-Za-z_][A-Za-z0-9_]*/;
 /**
@@ -411,8 +433,10 @@ class Parser {
     const char = this.peek();
     if (char === '*' || char === '+' || char === '?') return true;
     if (char !== '{') return false;
-    const rest = this.src.slice(this.pos, this.pos + 64);
-    return BRACE_QUANTIFIER.test(rest) || SPACED_BRACE_QUANTIFIER.test(rest);
+    return (
+      matchAt(BRACE_QUANTIFIER, this.src, this.pos) !== null ||
+      matchAt(SPACED_BRACE_QUANTIFIER, this.src, this.pos) !== null
+    );
   }
 
   /** Parse the quantifier at `pos` and apply it to the last node. */
@@ -467,9 +491,8 @@ class Parser {
     if (char === '+') return { min: 1, max: null };
     if (char === '?') return { min: 0, max: 1 };
     const start = this.pos - 1;
-    const rest = this.src.slice(start, start + 64);
-    const plain = BRACE_QUANTIFIER.exec(rest);
-    const match = plain ?? SPACED_BRACE_QUANTIFIER.exec(rest);
+    const plain = matchAt(BRACE_QUANTIFIER, this.src, start);
+    const match = plain ?? matchAt(SPACED_BRACE_QUANTIFIER, this.src, start);
     if (match === null) return null;
     this.pos = start + match[0].length;
     if (plain === null) this.issue('untranslated', start, this.pos, 'quantifier with spaces');
@@ -940,6 +963,9 @@ class Parser {
       return this.numberedCall(start);
     }
     if (char === '(') this.stop(start, 'conditional group');
+    // Perl extended class: PCRE2 10.47+ compiles some (`(?[[:alpha:]])`),
+    // 10.44 rejects them all (observed) — its fate is not modeled.
+    if (char === '[') this.stop(start, 'extended character class');
     if (char === 'C') this.stop(start, 'callout');
     if (char === '+' || INVALID_AFTER_GROUP_QUERY.has(char)) {
       this.pos++;
@@ -960,6 +986,7 @@ class Parser {
     capture: number | null,
     duplicates: boolean | null = this.duplicates.at(-1) ?? null
   ): PatternNode {
+    if (this.depth + 1 >= PCRE_NEST_LIMIT) this.stop(start, 'parentheses nested near PCRE’s limit');
     this.duplicates.push(duplicates);
     this.depth++;
     const assertion = isLookaround(kind);

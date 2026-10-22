@@ -12,10 +12,8 @@ import {
   LAZY_RENDER_ATTRIBUTE,
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
-import {
-  DELAY_STATUS_ATTRIBUTE,
-  DELAY_TYPE_ATTRIBUTE
-} from '../../../lib/exclusion-builder/delay-js';
+import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
+import { DELAY_TYPE_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js-match';
 import {
   candidatesFor,
   lazyRenderPeerText,

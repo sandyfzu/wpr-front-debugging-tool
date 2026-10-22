@@ -596,6 +596,12 @@ describe('emitRow: JS over the byte string matches exactly when PCRE does', () =
     }
   });
 
+  it('reads a long-digit count as PCRE does (observed: `x{0…01}` matches "xxx")', () => {
+    const emitted = emitRow(F, `x{${'0'.repeat(70)}1}`);
+    expect(isEmitted(emitted) && new RegExp(emitted.source).test('x')).toBe(true);
+    expect(isEmitted(emitted) && new RegExp(`^(?:${emitted.source})$`).test('x')).toBe(true);
+  });
+
   it('never uses the JS i flag: Latin-1 bytes keep their case', () => {
     const emitted = emitRow(F, 'é');
     expect(isEmitted(emitted) && emitted.source).toBe('\\xc3\\xa9');
@@ -663,6 +669,29 @@ describe('toByteString', () => {
   it('handles text longer than one chunk', () => {
     const text = 'é'.repeat(40_000);
     expect(toByteString(text)).toBe('\xc3\xa9'.repeat(40_000));
+  });
+
+  it('equals encoding the whole text at once, lone surrogates included (property)', () => {
+    /** The plain reference: every unit through one TextEncoder pass. */
+    const reference = (text: string): string =>
+      Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join('');
+    const units = [
+      0x00, 0x09, 0x41, 0x7f, 0x80, 0xe9, 0x7ff, 0x800, 0x20ac, 0xd83d, 0xde00, 0xdc00, 0xfffd,
+      0xffff
+    ];
+    // Deterministic pseudo-random strings mixing ASCII runs, pairs and lone halves.
+    let seed = 7;
+    const next = (): number => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32;
+    for (let round = 0; round < 2_000; round++) {
+      const length = Math.floor(next() * 24);
+      let text = '';
+      for (let index = 0; index < length; index++) {
+        text += String.fromCharCode(units[Math.floor(next() * units.length)] ?? 0x41);
+      }
+      expect(toByteString(text), JSON.stringify(text)).toBe(reference(text));
+    }
+    expect(toByteString('a\ud83d')).toBe('a\xef\xbf\xbd');
+    expect(toByteString('\ude00b😀')).toBe('\xef\xbf\xbdb\xf0\x9f\x98\x80');
   });
 });
 
@@ -758,7 +787,9 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['a(?<=(?:a{0})*)b', '(?<=(?:a{0})*)'],
     ['js(?<=s(?:\\b)*)', '(?<=s(?:\\b)*)'],
     ['(?<=(?:(?=a))+)', '(?<=(?:(?=a))+)'],
-    ['(?<=(?<=a){1,})', '(?<=(?<=a){1,})']
+    ['(?<=(?<=a){1,})', '(?<=(?<=a){1,})'],
+    // A count past PCRE's limit, however many digits (no fixed lookahead window).
+    [`x{${'9'.repeat(70)}}`, `{${'9'.repeat(70)}}`]
   ])('%s is dropped (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'dropped', construct });
   });
@@ -782,7 +813,10 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['a\\E*'],
     ['a{2,}\\E?'],
     ['a{ 2 }'],
-    ['[\\E]a]']
+    ['[\\E]a]'],
+    // Leading zeros: PCRE reads `{0…01}` as `{1}` however long (observed, both versions).
+    [`x{${'0'.repeat(70)}1}`],
+    [`x{1,${'0'.repeat(70)}1}`]
   ])('%s is kept', (row) => {
     expect(saveOutcome(row)).toEqual({ outcome: 'kept' });
   });
@@ -805,7 +839,10 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['(?:a){65535}', '(?:a){65535}'],
     // Nested repeats of items that can match empty: PHP drops some, keeps others.
     ['(?:|){100}', '(?:|){100}'],
-    ['x(?:|){100}', 'x(?:|){100}']
+    ['x(?:|){100}', 'x(?:|){100}'],
+    // Perl extended classes: PCRE2 10.49 keeps some, 10.44 drops them all (observed).
+    ['(?[[:alpha:]])', '(?[[:alpha:]])'],
+    ['(?[[a-z]])', '(?[[a-z]])']
   ])('%s is unknown (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'unknown', construct });
   });

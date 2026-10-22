@@ -145,22 +145,38 @@ const JS_ONLY_FOLDED = byteRanges([0xc0, 0xd6], [0xd8, 0xde], [0xe0, 0xf6], [0xf
 /** `\R` without its atomicity problem: CR is a line break alone only when no LF follows. */
 const LINEBREAK_SOURCE = '(?:\\r\\n|\\r(?!\\n)|[\\n\\x0b\\f\\x85])';
 
+/** Shared encoder (stateless). */
+const UTF8 = new TextEncoder();
+
+/** A run of non-ASCII UTF-16 units (a surrogate pair always stays inside one run). */
+const NON_ASCII_RUN = /[\u0080-\uffff]+/g;
+
 /**
- * A string's UTF-8 bytes as a byte string: one UTF-16 unit (0x00–0xFF) per
- * byte — the form translated sources match against. Exact for text decoded
- * from UTF-8 (WordPress's default `blog_charset`); a lone surrogate encodes
- * as U+FFFD's bytes, as `TextEncoder` does.
+ * One text's UTF-8 bytes, one unit per byte.
  *
- * @param text The subject or pattern text.
+ * @param text The text.
  */
-export function toByteString(text: string): string {
+function encodeBytes(text: string): string {
   let bytes = '';
-  const encoded = new TextEncoder().encode(text);
+  const encoded = UTF8.encode(text);
   // Chunked: spreading a huge array into fromCharCode overflows the stack.
   for (let index = 0; index < encoded.length; index += 0x8000) {
     bytes += String.fromCharCode(...encoded.subarray(index, index + 0x8000));
   }
   return bytes;
+}
+
+/**
+ * A string's UTF-8 bytes as a byte string: one UTF-16 unit (0x00–0xFF) per
+ * byte — the form translated sources match against. Exact for text decoded
+ * from UTF-8 (WordPress's default `blog_charset`); a lone surrogate encodes
+ * as U+FFFD's bytes, as `TextEncoder` does. ASCII is its own encoding, so
+ * only the non-ASCII runs are encoded (pages are mostly ASCII).
+ *
+ * @param text The subject or pattern text.
+ */
+export function toByteString(text: string): string {
+  return text.replace(NON_ASCII_RUN, encodeBytes);
 }
 
 /** A byte string back to text, for naming constructs (invalid UTF-8 → U+FFFD). */

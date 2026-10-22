@@ -2,12 +2,15 @@
  * All-at-once prevalidation of an exclusion set: every row of every
  * feature is checked, and every problem is named (feature, index, row,
  * reason) — never first-error-only, so an editor can render all feedback
- * inline in one pass. Pure: no compilation state is kept.
+ * inline in one pass. Pure: the same rows always yield the same problems
+ * (Defer JS’s reading is memoized by its own module, never kept here).
  */
+import { deferRowProblems } from './defer-js-rows';
 import type { InvalidExclusionRow } from './errors';
 import { trimExclusionRow } from './field-text';
 import { isIgnoredLazyloadRow, isMatchAllLazyRenderRow } from './literal-rows';
-import { BACKTRACKING_RISK_REASONS, regexBacktrackingRisk } from './regex-risk';
+import { regexRowProblems } from './pcre/rows';
+import type { RegexFeatureId } from './pcre/translate';
 import {
   EXCLUSION_FEATURES,
   type ExclusionRowKind,
@@ -21,27 +24,6 @@ export interface ExclusionSetProblems {
   readonly valid: boolean;
   /** Every problem, feature by feature in registry order, rows in list order. */
   readonly invalid: readonly InvalidExclusionRow[];
-}
-
-/** The lead every invalid-pattern reason carries (V8's own messages start with it too). */
-const REGEX_REASON_LEAD = 'Invalid regular expression: ';
-
-/**
- * The engine-specific detail of a regex compile error, without any lead or
- * echoed pattern: V8 reports `Invalid regular expression: /<row>/: <detail>`
- * (the row repeated verbatim), SpiderMonkey only the detail. The row itself
- * travels beside the reason, so echoing it would only bloat the reason —
- * unboundedly with the row's length.
- *
- * @param row The pattern that failed to compile.
- * @param error What `new RegExp(row)` threw.
- * @returns The bare detail (e.g. `Unterminated group`).
- */
-function regexErrorDetail(row: string, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  const echoed = `${REGEX_REASON_LEAD}/${row}/: `;
-  if (message.startsWith(echoed)) return message.slice(echoed.length);
-  return message.startsWith(REGEX_REASON_LEAD) ? message.slice(REGEX_REASON_LEAD.length) : message;
 }
 
 /** The reason for a row empty once trimmed. */
@@ -81,32 +63,18 @@ function literalRowProblem(
   return trimExclusionRow(row) === '' ? { reason: EMPTY_ROW_REASON } : null;
 }
 
+/** A pattern feature's row problems, read the way WP Rocket's PCRE reads the rows. */
+type PcreRowReading = (rows: readonly string[]) => readonly InvalidExclusionRow[];
+
 /**
- * Why one pattern row cannot work, or `null` when it is valid.
- *
- * A row empty once trimmed the way the settings save trims it would match
- * every element (an empty regex is always-true), so it is rejected as the
- * user mistake it is. A pattern row must compile as a regular expression and carry no
- * known catastrophic-backtracking shape (`./regex-risk` — a heuristic; the
- * guard rejects exponential shapes only — polynomial ones are accepted and
- * bounded only where the engine runs preemptibly).
- *
- * @param row The row as given.
- * @param rowKind How the row will be matched.
+ * Every pattern feature, keyed to its PCRE translator's row problems
+ * (whole-set: some only exist joined): WP Rocket matches these rows with
+ * PCRE, so the translator — never a JS compile — says what is wrong.
  */
-function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
-  if (trimExclusionRow(row) === '') return EMPTY_ROW_REASON;
-  if (rowKind === 'pattern') {
-    try {
-      new RegExp(row);
-    } catch (error) {
-      return `${REGEX_REASON_LEAD}${regexErrorDetail(row, error)}`;
-    }
-    const risk = regexBacktrackingRisk(row);
-    if (risk !== null) return BACKTRACKING_RISK_REASONS[risk];
-  }
-  return null;
-}
+const PCRE_ROW_PROBLEMS: Readonly<Record<RegexFeatureId, PcreRowReading>> = {
+  delay_js: (rows) => regexRowProblems('delay_js', rows),
+  defer_all_js: deferRowProblems
+};
 
 /**
  * Validate one feature's rows — all of them.
@@ -115,31 +83,60 @@ function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
  * @param rowKind How the rows will be matched.
  * @param rows The rows as given.
  * @returns Every problem, in list order; empty when the rows are valid.
+ * @throws {@link Error} for pattern rows of a feature without a PCRE reading
+ *   (a broken registry, never user data).
  */
 export function featureRowProblems(
   feature: ExclusionFeatureId,
   rowKind: ExclusionRowKind,
   rows: readonly string[]
 ): readonly InvalidExclusionRow[] {
-  const problems: InvalidExclusionRow[] = [];
-  rows.forEach((row, index) => {
-    if (rowKind === 'literal') {
+  if (rowKind === 'literal') {
+    return rows.flatMap((row, index) => {
       const problem = literalRowProblem(feature, row, rows);
-      if (problem !== null) problems.push({ feature, index, row, ...problem });
-      return;
+      return problem === null ? [] : [{ feature, index, row, ...problem }];
+    });
+  }
+  const reading = (PCRE_ROW_PROBLEMS as Partial<Record<ExclusionFeatureId, PcreRowReading>>)[
+    feature
+  ];
+  if (reading === undefined) throw new Error(`No PCRE reading for pattern rows of ${feature}`);
+  return pcreFeatureProblems(feature, rows, reading(rows));
+}
+
+/**
+ * A pattern feature's problems from its PCRE reading, with the one
+ * empty-row policy: a row empty once trimmed stays the editor's own
+ * mistake, ahead of any PCRE reading — the exact `''` also carries
+ * `match-all` (verified for both features: a filter-delivered `''`
+ * excludes every script). For transforms that already hold the reading.
+ *
+ * @param feature The feature (names the problem rows).
+ * @param rows The rows as given.
+ * @param pcreProblems The feature's PCRE reading of `rows` (entries by row index).
+ * @returns Every problem, in list order.
+ */
+export function pcreFeatureProblems(
+  feature: ExclusionFeatureId,
+  rows: readonly string[],
+  pcreProblems: readonly InvalidExclusionRow[]
+): readonly InvalidExclusionRow[] {
+  const byIndex = new Map(pcreProblems.map((entry) => [entry.index, entry]));
+  return rows.flatMap((row, index): InvalidExclusionRow[] => {
+    if (trimExclusionRow(row) === '') {
+      const matchAll = row === '' ? { problem: 'match-all' as const } : {};
+      return [{ feature, index, row, reason: EMPTY_ROW_REASON, ...matchAll }];
     }
-    const reason = rowProblem(row, rowKind);
-    if (reason !== null) problems.push({ feature, index, row, reason });
+    const entry = byIndex.get(index);
+    return entry === undefined ? [] : [entry];
   });
-  return problems;
 }
 
 /**
  * Prevalidate a whole exclusion set — the UI's inline-feedback source and
  * the pipeline's gate: every row of every feature is checked, and the
- * result names each invalid one. Compilation itself lives in
- * `compilePattern`/`compilePatternRows`, which re-run these checks on the
- * throwing path.
+ * result names each invalid one. Each transform re-runs its feature's
+ * checks on its throwing path.
  *
  * @param set The set as given (rows untrusted until validated).
  */
