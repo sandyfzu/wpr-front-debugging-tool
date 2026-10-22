@@ -222,7 +222,11 @@ describe('editing and autosave', () => {
 
   it('says when the lane cap left pasted lines out, or took none of them', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }).port);
-    const filler = Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature - 2 }, () => 'f');
+    // Distinct rows: inserted rows are committed, and a duplicate would leave the lane.
+    const filler = Array.from(
+      { length: EXCLUSION_SET_LIMITS.rowsPerFeature - 2 },
+      (_, index) => `f${String(index)}`
+    );
     const [id] = controller.insertRows('lazyload', ['x', ...filler], null);
     expect(controller.pasteRows('lazyload', id ?? '', 'a\nb\nc', { start: 1, end: 1 })).toEqual({
       kind: 'dropped',
@@ -272,20 +276,85 @@ describe('editing and autosave', () => {
     });
   });
 
-  it('keeps "saved" when a row left after the save is trimmed (the set cannot change)', async () => {
+  it('saves the stored form once a row left is committed, and says what changed', async () => {
     const { port } = fakePort({ state: 'inactive' });
     const { controller, clock } = await started(port);
     const [id] = controller.insertRows('lazyload', [''], null);
-    controller.editRow('lazyload', id ?? '', ' logo.png ');
+    controller.editRow('lazyload', id ?? '', ' logo%41.png ');
     clock.fire(AUTOSAVE_DELAY_MS);
     await settle();
     expect(controller.saveState()).toEqual({ kind: 'saved' });
     controller.commitRow('lazyload', id ?? '');
+    expect(controller.draft().rows.lazyload[0]?.text).toBe('logo.png');
+    expect(controller.commits()).toEqual([
+      {
+        lane: 'lazyload',
+        id,
+        index: 0,
+        diff: { state: 'stored-as', stored: 'logo.png', typed: ' logo%41.png ' }
+      }
+    ]);
     clock.fire(AUTOSAVE_DELAY_MS);
     await settle();
-    expect(controller.draft().rows.lazyload[0]?.text).toBe('logo.png');
     expect(controller.saveState()).toEqual({ kind: 'saved' });
-    expect(port.save).toHaveBeenCalledTimes(1);
+    expect(port.save).toHaveBeenCalledTimes(2);
+    expect(port.save).toHaveBeenLastCalledWith({
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: ['logo.png'] }
+    });
+    // Committing it again changes nothing: no save, no news.
+    controller.commitRow('lazyload', id ?? '');
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a committed row WP Rocket drops, keeping its typed text for an undo', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    const [id] = controller.insertRows('delayJs', [''], null);
+    controller.editRow('delayJs', id ?? '', '(');
+    expect(controller.rowProblem('delayJs', id ?? '', '(')).toMatch(/^WP Rocket drops this row/);
+    controller.commitRow('delayJs', id ?? '');
+    expect(controller.draft().rows.delayJs).toEqual([]);
+    expect(controller.commits()).toMatchObject([
+      {
+        lane: 'delayJs',
+        id,
+        index: 0,
+        diff: { state: 'dropped', reason: 'invalid-pattern', typed: '(' }
+      }
+    ]);
+  });
+
+  it('stores inserted, pasted and picked rows at once (the row being typed stays as is)', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    expect(controller.insertRows('delayJs', ['a*', 'a.*', '0'], null)).toHaveLength(1);
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['a(.*)']);
+    const [id] = controller.insertRows('delayJs', [''], null);
+    controller.pasteRows('delayJs', id ?? '', 'b*\nc*', { start: 0, end: 0 });
+    // `b*` is stored; `c*` holds the caret and stays typed until left.
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual([
+      'a(.*)',
+      'b(.*)',
+      'c*'
+    ]);
+    expect(controller.addCandidate('delayJs', 'x%41.js', false)).toBe(true);
+    expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('x.js');
+    expect(controller.commits()).toEqual([
+      expect.objectContaining({ diff: { state: 'stored-as', stored: 'x.js', typed: 'x%41.js' } })
+    ]);
+  });
+
+  it('commits every row before an apply, so the set sent is the stored form', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller } = await started(port);
+    const [id] = controller.insertRows('delayJs', [''], null);
+    controller.editRow('delayJs', id ?? '', ' q* ');
+    controller.apply();
+    expect(port.apply).toHaveBeenCalledWith({
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['q(.*)'] }
+    });
   });
 
   it('marks edits against the active set as dirty', async () => {
@@ -389,7 +458,7 @@ describe('apply / reset / stop', () => {
     const { controller } = await started(port);
     controller.insertRows(
       'lazyload',
-      Array.from({ length: 40 }, () => 'z'.repeat(2000)),
+      Array.from({ length: 40 }, (_, index) => `${String(index)}${'z'.repeat(2000)}`),
       null
     );
     controller.apply();
@@ -445,10 +514,21 @@ describe('apply / reset / stop', () => {
 
 describe('invalidRowsById', () => {
   it('counts non-blank rows only and skips unknown rows', () => {
-    const draft = draftFromSet(
-      { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, deferJs: [' ', 'a', 'b'] } },
-      createIdSource()
-    );
+    // A blank (unfinished) row in the draft, never in the set.
+    const draft = {
+      ...draftFromSet(EMPTY_EXCLUSION_SET, createIdSource()),
+      rows: {
+        ...EMPTY_EXCLUSION_SET.rows,
+        delayJs: [],
+        deferJs: [
+          { id: 'r1', text: ' ' },
+          { id: 'r2', text: 'a' },
+          { id: 'r3', text: 'b' }
+        ],
+        lazyload: [],
+        lazyRender: []
+      }
+    };
     const byId = invalidRowsById(draft, [
       { feature: 'defer_all_js', index: 1, row: 'b', reason: 'R' },
       { feature: 'defer_all_js', index: 9, row: '?', reason: 'gone' }

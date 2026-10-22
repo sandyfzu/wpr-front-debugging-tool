@@ -29,7 +29,8 @@ import {
   toByteString,
   type PcreConstruct,
   type RegexFeatureId,
-  type RowAnalysis
+  type RowAnalysis,
+  type SaveOutcome
 } from './translate';
 
 /**
@@ -58,7 +59,7 @@ export interface TranslatedRow {
    * The exact JS equivalent of the row's runtime pattern, when one exists and
    * is safe to run — kept with a `match-all` or page-off problem (a
    * `match-all` row's matcher really matches everything). `null` when the
-   * row has no proven translation, is a backtracking risk, or matches
+   * row has no proven translation, its save fate is not modeled (unverified), is a backtracking risk, or matches
    * differently joined (`joined-changes-matching`).
    */
   readonly matcher: PcreMatcher | null;
@@ -141,6 +142,17 @@ const analysisMemo = createBoundedMemo<RowAnalysis>({
  */
 function cachedAnalysis(feature: RegexFeatureId, row: string): RowAnalysis {
   return analysisMemo.get(`${feature}\u0000${row}`, () => analyzeRow(feature, row));
+}
+
+/**
+ * WP Rocket's settings-save check on a stored row, read from the same
+ * memoized analysis validation and matching use (one cache over the parse).
+ *
+ * @param feature The row's feature (`delay_js` or `defer_all_js`).
+ * @param row The row in its stored form.
+ */
+export function rowSaveOutcome(feature: RegexFeatureId, row: string): SaveOutcome {
+  return cachedAnalysis(feature, row).save;
 }
 
 /**
@@ -515,8 +527,8 @@ interface JoinedFacts {
 
 /**
  * A row's most decisive problem, or `null`. Order: what the save does
- * first (a dropped row, or one whose fate is not modeled — then nothing is
- * claimed about what WP Rocket stores), then the page-wide Defer failure,
+ * first (a dropped row; one whose fate is not modeled has no problem at
+ * all — it matches nothing and never blocks), then the page-wide Defer failure,
  * `match-all`, the runtime translation, the joined effects, the
  * backtracking guard.
  */
@@ -544,13 +556,9 @@ function rowProblem(
       reason: `This row is not checked here (${save.outcome === 'kept' ? 'not analyzed' : save.detail})`
     };
   }
-  if (save.outcome === 'unknown') {
-    return {
-      problem: 'pcre-only',
-      construct: save.construct,
-      reason: `PCRE-only syntax: ${quoted(save)} — not checked here, and WP Rocket may drop this row when saving`
-    };
-  }
+  // Whether WP Rocket's save keeps the row is not modeled: no claim, and no
+  // matcher either (see `translateRegexRows`) — it never blocks the set.
+  if (save.outcome === 'unknown') return null;
   if (joined.pageOff) {
     return {
       problem: 'joined-page-off',
@@ -629,11 +637,16 @@ export function translateRegexRows(
       pageOff: offRows.has(index),
       last: index === rows.length - 1
     });
-    // Joined, the row matches differently from its own pattern: no exact matcher.
+    // Joined, the row matches differently from its own pattern: no exact
+    // matcher; an unverified row (save fate not modeled) matches nothing.
     const joinedDiffers = problem?.problem === 'joined-changes-matching';
+    const unverified = analysis.save.outcome === 'unknown';
     return {
       row,
-      matcher: source !== null && risk === null && !joinedDiffers ? { source, flags: '' } : null,
+      matcher:
+        source !== null && risk === null && !joinedDiffers && !unverified
+          ? { source, flags: '' }
+          : null,
       problem
     };
   });

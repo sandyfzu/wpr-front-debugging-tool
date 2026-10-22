@@ -19,11 +19,14 @@ import type { Logger } from '../../lib/logger';
 import {
   LANE_ORDER,
   addCandidate,
+  commitAll,
+  commitRows,
   createIdSource,
   createRowValidator,
   draftChars,
   draftFromSet,
   draftToSet,
+  restoreDraft,
   insertRows,
   isBlankRow,
   laneFeature,
@@ -31,10 +34,11 @@ import {
   removeRow,
   sameSet,
   setDisable,
-  trimRow,
   updateRow,
+  type Committed,
   type Draft,
   type LaneKey,
+  type RowCommit,
   type RowSelection,
   type ToggleKey
 } from './exclusions/draft';
@@ -106,6 +110,12 @@ export interface OverlayController {
   /** The latest focus request (a fresh object per request). */
   readonly focusRequest: Accessor<FocusRequest | null>;
   /**
+   * What the latest commit did to each row it touched (stored form, drop
+   * and its reason, unverified, safe-mode flag — with the typed text, so the
+   * change can be shown and undone); empty until a commit changes a row.
+   */
+  readonly commits: Accessor<readonly RowCommit[]>;
+  /**
    * A row's problem: the background's reason from the last refused apply
    * (until the row changes), else the engine's prevalidation.
    */
@@ -131,9 +141,10 @@ export interface OverlayController {
   readonly editable: Accessor<boolean>;
   editRow(lane: LaneKey, id: string, text: string): void;
   /**
-   * Commit a row the user left: trim it the way WP Rocket's settings save
-   * does, so the editor shows what would be stored (never while typing).
-   * Never changes the set, so it never saves and works in any phase.
+   * Commit a row the user left: it becomes the form WP Rocket's settings
+   * save stores, or leaves the lane when the save drops it (never while
+   * typing). Works in any phase (a row left while an action is in flight is
+   * committed at once); it saves the draft only when ready.
    */
   commitRow(lane: LaneKey, id: string): void;
   /**
@@ -198,6 +209,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [saveState, setSaveState] = createSignal<SaveState>({ kind: 'idle' });
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
+  const [commits, setCommits] = createSignal<readonly RowCommit[]>([]);
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
   let cancelAutosave: (() => void) | null = null;
@@ -301,6 +313,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     if (state().phase === 'ready') scheduleAutosave();
   };
 
+  /**
+   * Take a commit: store its draft and publish what it changed (rows left
+   * as they were are not news).
+   *
+   * @returns The committed draft.
+   */
+  const takeCommit = (committed: Committed): Draft => {
+    setDraft(committed.draft);
+    const changed = committed.commits.filter(({ diff }) => diff.state !== 'unchanged');
+    if (changed.length > 0) setCommits(changed);
+    return committed.draft;
+  };
+
   /** Clear a row's background reason once it is edited. */
   const clearServerReason = (id: string): void => {
     if (!serverInvalid().has(id)) return;
@@ -326,8 +351,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     const set =
       saved ?? (current.reply.state === 'active' ? current.reply.set : EMPTY_EXCLUSION_SET);
     lastSaved = saved ?? EMPTY_EXCLUSION_SET;
+    // A set saved before rows were stored this way opens in the stored form.
+    const restored = restoreDraft(set, nextId);
     batch(() => {
-      setDraftSignal(draftFromSet(set, nextId));
+      setDraftSignal(restored.draft);
+      const changed = restored.commits.filter(({ diff }) => diff.state !== 'unchanged');
+      if (changed.length > 0) setCommits(changed);
       dispatch({ type: 'loaded', status: current.reply });
     });
     if (pushedWhileLoading) {
@@ -401,6 +430,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dirty,
     invalidCount,
     focusRequest,
+    commits,
     rowProblem,
     start: () => {
       // eslint-disable-next-line solid/reactivity -- a push callback: reads the phase untracked, when a push lands
@@ -421,6 +451,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     apply: () => {
       if (!canStart(state(), 'apply')) return;
+      // The set carries WP Rocket's stored form: a row still being typed is committed first.
+      takeCommit(commitAll(draft()));
       if (invalidCount() > 0) {
         dispatch({ type: 'apply-blocked', block: { kind: 'invalid', rows: invalidCount() } });
         focusFirstInvalid();
@@ -475,19 +507,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       setDraft(updateRow(draft(), lane, id, text));
     },
     commitRow: (lane, id) => {
-      // Set-neutral by construction (the set is built from trimmed rows):
-      // no autosave, no save-state change, no background reason cleared, and
-      // safe while an action is in flight (the inputs are read-only then),
-      // so a row left meanwhile is trimmed at once rather than never.
-      setDraftSignal(trimRow(draft(), lane, id));
+      // Safe while an action is in flight (the inputs are read-only then),
+      // so a row left meanwhile is committed at once rather than never.
+      takeCommit(commitRows(draft(), lane, [id]));
     },
     insertRows: (lane, texts, afterId) => {
       if (!editable()) return [];
       const inserted = insertRows(draft(), lane, texts, afterId, nextId);
-      setDraft(inserted.draft);
-      const first = inserted.ids[0];
+      // Inserted text was not typed here: it is committed at once.
+      const committed = takeCommit(commitRows(inserted.draft, lane, inserted.ids));
+      const kept = inserted.ids.filter((id) => committed.rows[lane].some((row) => row.id === id));
+      const first = kept[0];
       if (first !== undefined) setFocusRequest({ lane, id: first });
-      return inserted.ids;
+      return kept;
     },
     pasteRows: (lane, id, text, selection) => {
       if (!editable()) return { kind: 'ignored' };
@@ -495,7 +527,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const last = pasted.ids.at(-1);
       if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
       clearServerReason(id);
-      setDraft(pasted.draft);
+      // Every filled row but the one the caret lands in is committed.
+      takeCommit(commitRows(pasted.draft, lane, pasted.ids.slice(0, -1)));
       setFocusRequest({
         lane,
         id: last,
@@ -518,6 +551,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!editable()) return false;
       const added = addCandidate(draft(), lane, row, nextId);
       setDraft(added.draft);
+      const at = added.draft.rows[lane].findIndex((candidate) => candidate.id === added.id);
+      if (added.id !== null) setCommits([{ lane, id: added.id, index: at, diff: added.diff }]);
       if (focus && added.id !== null) setFocusRequest({ lane, id: added.id });
       return added.added;
     },

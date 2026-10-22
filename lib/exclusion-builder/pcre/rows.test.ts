@@ -75,12 +75,8 @@ describe('translateRegexRows', () => {
       reason:
         'WP Rocket drops this row when saving: PCRE rejects `\\i` (unrecognized escape \\i); added through a filter, it never matches'
     });
-    expect(only?.problem).toEqual({
-      problem: 'pcre-only',
-      construct: '\\p{L}',
-      reason:
-        'PCRE-only syntax: `\\p{L}` (Unicode property) — not checked here, and WP Rocket may drop this row when saving'
-    });
+    // Whether the save keeps `\\p{L}` is not modeled: unverified, no problem, no matcher.
+    expect(only).toMatchObject({ problem: null, matcher: null });
     expect(risky?.problem).toEqual({
       problem: 'backtracking-risk',
       construct: null,
@@ -98,14 +94,12 @@ describe('translateRegexRows', () => {
   it('claims nothing about storing a row whose save is not modeled', () => {
     // Subroutine calls can recurse forever: `(?+1)(x)` is not modeled (WP Rocket keeps it,
     // and Delay's `+` escape then breaks it at runtime).
+    // It is unverified: no problem (never blocking) and no matcher (it matches nothing).
     const [row] = translateRegexRows('delay_js', ['(?+1)(x)']).rows;
-    expect(row?.problem).toMatchObject({ problem: 'pcre-only', construct: '(?+1)' });
-    // `(?R)*?` would match every script, but PHP drops it at save: no `match-all`
+    expect(row).toMatchObject({ problem: null, matcher: null });
+    // `(?R)*?` would match every script, but its save is not modeled (unverified): no
     // claim. (`[\E]*?` is modeled: `\E` vanishes, so the class never closes.)
-    expect(problemIds('defer_all_js', ['(?R)*?', '[\\E]*?'])).toEqual([
-      'pcre-only',
-      'pcre-invalid'
-    ]);
+    expect(problemIds('defer_all_js', ['(?R)*?', '[\\E]*?'])).toEqual([null, 'pcre-invalid']);
   });
 
   it('reports a too-long row in terms of the row', () => {
@@ -360,7 +354,7 @@ describe('work bounds', () => {
     for (const depth of [250, 1_875]) {
       expect(translateRegexRows('defer_all_js', [nested(depth)])).toMatchObject({
         page: 'unknown',
-        rows: [{ problem: { problem: 'pcre-only' } }]
+        rows: [{ problem: null, matcher: null }]
       });
     }
   });

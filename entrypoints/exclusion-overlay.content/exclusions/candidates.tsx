@@ -10,7 +10,7 @@ import Plus from 'lucide-solid/icons/plus';
 import { VirtualList, type VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { LANE_COPY } from '../copy';
 import type { PageCandidate } from './page-scan';
-import { holdsRow, laneIdentities, LANE_ORDER, type Draft, type LaneKey } from './draft';
+import { holdsCandidate, laneRowSet, LANE_ORDER, type Draft, type LaneKey } from './draft';
 
 /** Seed entry height (px). */
 const ENTRY_ESTIMATE_PX = 37;
@@ -47,13 +47,14 @@ export function Candidates(props: CandidatesProps): JSX.Element {
       ? props.candidates
       : props.candidates.filter((candidate) => candidate.lane === filter);
   });
-  // What each lane holds as WP Rocket would store it, once per draft change.
+  // Each lane's stored rows, once per draft change; a candidate is held when
+  // its stored form is one of them.
   const held = createMemo(
-    () => new Map(LANE_ORDER.map((key) => [key, laneIdentities(props.draft, key)]))
+    () => new Map(LANE_ORDER.map((key) => [key, laneRowSet(props.draft, key)]))
   );
   const added = (candidate: PageCandidate): boolean => {
-    const identities = held().get(candidate.lane);
-    return identities !== undefined && holdsRow(identities, candidate.row);
+    const rows = held().get(candidate.lane);
+    return rows !== undefined && holdsCandidate(rows, candidate.lane, candidate.row);
   };
 
   return (

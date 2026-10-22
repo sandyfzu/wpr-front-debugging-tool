@@ -170,11 +170,11 @@ describe('prevalidateExclusionSet — catastrophic-backtracking guard', () => {
   it('reports an over-deep row as too complex instead of throwing out of prevalidation', () => {
     const deep = `${'('.repeat(1_875)}a${')'.repeat(1_875)}`;
     expect(() => new RegExp(deep)).not.toThrow();
-    // Both features read it as PCRE does: nested past PCRE's limit, not checked here.
-    expect(prevalidateExclusionSet(setWith({ delayJs: [deep], deferJs: [deep] })).invalid).toEqual([
-      expect.objectContaining({ feature: 'delay_js', index: 0, problem: 'pcre-only' }),
-      expect.objectContaining({ feature: 'defer_all_js', index: 0, problem: 'pcre-only' })
-    ]);
+    // Nested past PCRE's limit, its save is not modeled: unverified — no
+    // problem, never blocking, and no matcher (it matches nothing).
+    expect(prevalidateExclusionSet(setWith({ delayJs: [deep], deferJs: [deep] })).invalid).toEqual(
+      []
+    );
   });
 
   it('guards both pattern features, and never the literal ones', () => {

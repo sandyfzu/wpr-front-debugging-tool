@@ -1,24 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_EXCLUSION_SET } from '../../../lib/exclusion-builder/set';
+import { storedExclusionRows } from '../../../lib/exclusion-builder/field-text';
+import { EMPTY_EXCLUSION_SET, type ExclusionFeatureId } from '../../../lib/exclusion-builder/set';
+import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { validSet } from '../../../lib/messaging/exclusion-session.fixtures';
 import {
   LANE_ORDER,
   addCandidate,
+  commitAll,
+  commitRows,
   createIdSource,
   createRowValidator,
   draftChars,
   draftFromSet,
   draftToSet,
+  holdsCandidate,
   insertRows,
   isBlankRow,
   laneFeature,
+  laneRowSet,
   pasteIntoRow,
   removeRow,
+  restoreDraft,
   sameSet,
   setDisable,
   splitLines,
-  trimRow,
   updateRow
 } from './draft';
 
@@ -35,16 +41,57 @@ describe('draft ↔ set', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('drops blank rows from the set and trims the rest like the settings save', () => {
+  it('drops blank rows from the set and sends committed rows in their stored form', () => {
     const nextId = createIdSource();
-    const { draft } = insertRows(
+    const { draft, ids } = insertRows(
       draftFromSet(EMPTY_EXCLUSION_SET, nextId),
       'delayJs',
       ['  ', ' gtag ', '', '\tjquery\r', 'a b'],
       null,
       nextId
     );
-    expect(draftToSet(draft).rows.delayJs).toEqual(['gtag', 'jquery', 'a b']);
+    expect(draftToSet(commitRows(draft, 'delayJs', ids).draft).rows.delayJs).toEqual([
+      'gtag',
+      'jquery',
+      'a b'
+    ]);
+    // Rows are sent as they are: an uncommitted row is not rewritten here.
+    expect(draftToSet(draft).rows.delayJs).toEqual([' gtag ', '\tjquery\r', 'a b']);
+  });
+
+  it('restores a set in its stored form, saying what changed per row', () => {
+    const typed = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['x%41*', '', 'xA(.*)', '(', 'ok'] }
+    };
+    const restored = restoreDraft(typed, createIdSource());
+    expect(restored.draft.rows.delayJs.map((row) => row.text)).toEqual(['x(.*)', 'xA(.*)', 'ok']);
+    expect(restored.commits.map(({ index, diff }) => [index, diff.state])).toEqual([
+      [0, 'stored-as'],
+      [1, 'unchanged'],
+      [2, 'dropped'],
+      [3, 'unchanged']
+    ]);
+    // A stored set restores as is.
+    const again = restoreDraft(draftToSet(restored.draft), createIdSource());
+    expect(draftToSet(again.draft)).toEqual(draftToSet(restored.draft));
+    expect(again.commits.every(({ diff }) => diff.state === 'unchanged')).toBe(true);
+  });
+
+  it('dedupes Defer JS rows on restore, so duplicate named groups never turn the page off', () => {
+    const typed = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, deferJs: ["(?'n'a)x", " (?'n'a)x "] }
+    };
+    const set = draftToSet(draftFromSet(typed, createIdSource()));
+    expect(set.rows.deferJs).toEqual(["(?'n'a)x"]);
+    const pageOff = (rows: readonly string[]): boolean =>
+      featureRowProblems('defer_all_js', 'pattern', rows).some(
+        ({ problem }) => problem === 'joined-page-off'
+      );
+    // Joined twice, the repeated group name fails WP Rocket's pre-check; stored once, it cannot.
+    expect(pageOff(["(?'n'a)x", "(?'n'a)x"])).toBe(true);
+    expect(pageOff(set.rows.deferJs)).toBe(false);
   });
 
   it('loads a set in its trimmed form, so a stored untrimmed row reads as an edit', () => {
@@ -142,33 +189,120 @@ describe('row edits', () => {
 
   it('adds a candidate once', () => {
     const added = addCandidate(start, 'lazyload', 'logo.png', nextId);
-    expect(added.added).toBe(true);
+    expect(added).toMatchObject({ added: true, diff: { state: 'unchanged', typed: 'logo.png' } });
     const again = addCandidate(added.draft, 'lazyload', 'logo.png', nextId);
-    expect(again).toEqual({ draft: added.draft, id: added.id, added: false });
+    expect(again).toMatchObject({ draft: added.draft, id: added.id, added: false });
+    expect(again.diff).toMatchObject({ state: 'dropped', reason: 'duplicate' });
   });
 
-  it('adds a candidate trimmed, and finds it again whatever its surrounding whitespace', () => {
+  it('adds a candidate stored, and finds it again whatever its surrounding whitespace', () => {
     const added = addCandidate(start, 'lazyload', ' hero.webp\t', nextId);
     expect(added.draft.rows.lazyload.at(-1)?.text).toBe('hero.webp');
     const typed = updateRow(start, 'lazyload', start.rows.lazyload[0]?.id ?? '', 'logo.png  ');
     const again = addCandidate(typed, 'lazyload', 'logo.png', nextId);
-    expect(again).toEqual({ draft: typed, id: start.rows.lazyload[0]?.id, added: false });
+    expect(again).toMatchObject({ draft: typed, id: start.rows.lazyload[0]?.id, added: false });
   });
 
-  it('trims one row in place, identity when already trimmed or unknown', () => {
+  it('adds a candidate in its stored form, never one the save drops, never twice once stored', () => {
+    const typed = insertRows(start, 'delayJs', ['x%41y.js'], null, nextId).draft;
+    // `xy.js` is how WP Rocket stores `x%41y.js` (the row is still typed).
+    const held = addCandidate(typed, 'delayJs', 'xy.js', nextId);
+    expect(held).toMatchObject({ draft: typed, added: false });
+    expect(held.id).toBe(typed.rows.delayJs.at(-1)?.id);
+    const star = addCandidate(start, 'delayJs', 'a.*', nextId);
+    expect(star.draft.rows.delayJs.at(-1)?.text).toBe('a(.*)');
+    expect(addCandidate(star.draft, 'delayJs', 'a*', nextId).added).toBe(false);
+    const literal = addCandidate(start, 'lazyload', 'a.*', nextId);
+    expect(addCandidate(literal.draft, 'lazyload', 'a*', nextId).added).toBe(true);
+    const dropped = addCandidate(start, 'delayJs', '(', nextId);
+    expect(dropped).toMatchObject({ draft: start, id: null, added: false });
+    expect(dropped.diff).toMatchObject({ state: 'dropped', reason: 'invalid-pattern' });
+  });
+
+  it('answers "already held" per lane by the candidate\'s stored form', () => {
+    const rows = laneRowSet(start, 'deferJs');
+    const held = [...rows][0] ?? '';
+    expect(holdsCandidate(rows, 'deferJs', ` ${held} `)).toBe(true);
+    expect(holdsCandidate(rows, 'deferJs', 'other.js')).toBe(false);
+    expect(holdsCandidate(rows, 'deferJs', '<b></b>')).toBe(false);
+  });
+
+  it('commits a row into its stored form; idempotent, identity when nothing changes', () => {
     const id = start.rows.delayJs[0]?.id ?? '';
-    const typed = updateRow(start, 'delayJs', id, '  gtag\t');
-    const trimmed = trimRow(typed, 'delayJs', id);
-    expect(trimmed.rows.delayJs[0]).toEqual({ id, text: 'gtag' });
-    expect(trimRow(trimmed, 'delayJs', id)).toBe(trimmed);
-    expect(trimRow(trimmed, 'delayJs', 'missing')).toBe(trimmed);
+    const typed = updateRow(start, 'delayJs', id, '  g%41tag*\t');
+    const committed = commitRows(typed, 'delayJs', [id]);
+    expect(committed.draft.rows.delayJs[0]).toEqual({ id, text: 'gtag(.*)' });
+    expect(committed.commits).toEqual([
+      {
+        lane: 'delayJs',
+        id,
+        index: 0,
+        diff: { state: 'stored-as', stored: 'gtag(.*)', typed: '  g%41tag*\t' }
+      }
+    ]);
+    const again = commitRows(committed.draft, 'delayJs', [id]);
+    expect(again.draft).toBe(committed.draft);
+    expect(again.commits.map(({ diff }) => diff.state)).toEqual(['unchanged']);
+    expect(commitRows(committed.draft, 'delayJs', ['missing']).draft).toBe(committed.draft);
+    expect(commitAll(committed.draft).draft).toBe(committed.draft);
   });
 
-  it('counts the wire characters of non-blank rows, trimmed', () => {
+  it('removes a committed row the save drops, keeping the typed text for an undo', () => {
+    const { draft, ids } = insertRows(start, 'delayJs', ['(', '<b></b>', '0'], null, nextId);
+    const committed = commitRows(draft, 'delayJs', ids);
+    expect(committed.draft.rows.delayJs).toEqual(start.rows.delayJs);
+    expect(committed.commits.map(({ diff }) => diff)).toEqual([
+      expect.objectContaining({ state: 'dropped', reason: 'invalid-pattern', typed: '(' }),
+      { state: 'dropped', reason: 'empty', typed: '<b></b>' },
+      { state: 'dropped', reason: 'zero', typed: '0' }
+    ]);
+  });
+
+  it('drops the committed row as a duplicate: the rows already there win', () => {
+    const existing = start.rows.delayJs[0];
+    const { draft, ids } = insertRows(
+      start,
+      'delayJs',
+      [` ${existing?.text ?? ''} `],
+      null,
+      nextId
+    );
+    const committed = commitRows(draft, 'delayJs', ids);
+    expect(committed.draft.rows.delayJs).toEqual(start.rows.delayJs);
+    expect(committed.commits[0]?.diff).toMatchObject({ state: 'dropped', reason: 'duplicate' });
+  });
+
+  it('keeps unverified and safe-mode rows on commit, flagged', () => {
+    const { draft, ids } = insertRows(
+      start,
+      'delayJs',
+      ['(?+1)(x)', 'js-(before|after)'],
+      null,
+      nextId
+    );
+    const committed = commitRows(draft, 'delayJs', ids);
+    expect(committed.draft.rows.delayJs.slice(-2).map((row) => row.text)).toEqual([
+      '(?+1)(x)',
+      'js-(before|after)'
+    ]);
+    expect(committed.commits.map(({ diff }) => diff)).toEqual([
+      expect.objectContaining({ state: 'unverified', stored: '(?+1)(x)' }),
+      { state: 'unchanged', typed: 'js-(before|after)', dropsInSafeMode: true }
+    ]);
+  });
+
+  it('leaves blank rows alone on commit (unfinished edits)', () => {
+    const { draft, ids } = insertRows(start, 'delayJs', ['  '], null, nextId);
+    expect(commitRows(draft, 'delayJs', ids)).toEqual({ draft, commits: [] });
+  });
+
+  it('counts the wire characters of non-blank rows, as they are', () => {
     const blankAdded = insertRows(start, 'delayJs', ['   '], null, nextId).draft;
     expect(draftChars(blankAdded)).toBe(draftChars(start));
-    const padded = insertRows(start, 'delayJs', ['  ab\t'], null, nextId).draft;
-    expect(draftChars(padded)).toBe(draftChars(start) + 2);
+    const added = insertRows(start, 'delayJs', ['a*'], null, nextId);
+    const stored = commitRows(added.draft, 'delayJs', added.ids).draft;
+    // Stored as `a(.*)`: the wire carries 5 characters, not the 2 typed.
+    expect(draftChars(stored)).toBe(draftChars(start) + 5);
     expect(draftChars(start)).toBe(
       'jquery\\.min\\.js'.length +
         4 +
@@ -182,14 +316,18 @@ describe('row edits', () => {
 /**
  * What WP Rocket stores for a row after a paste: the field's text (before +
  * pasted + after) as a textarea holds it (every CR or CRLF read as LF),
- * split on LF, each line trimmed, blank lines dropped — derived from the
- * textarea and save rules, independently of the paste code.
+ * split on LF — derived from the textarea rules, independently of the paste
+ * code — then through the settings save.
  */
-function wpRocketLines(row: string, start: number, end: number, pasted: string): string[] {
-  return (row.slice(0, start) + pasted + row.slice(end))
-    .split(/\r\n|\r|\n/)
-    .map((line) => line.replace(/^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g, ''))
-    .filter((line) => line !== '');
+function wpRocketLines(
+  feature: ExclusionFeatureId,
+  row: string,
+  start: number,
+  end: number,
+  pasted: string
+): readonly string[] {
+  const lines = (row.slice(0, start) + pasted + row.slice(end)).split(/\r\n|\r|\n/);
+  return storedExclusionRows(feature, lines);
 }
 
 describe('pasteIntoRow', () => {
@@ -283,10 +421,10 @@ describe('pasteIntoRow', () => {
       { start: 0, end: 0 },
       nextId
     );
-    // The edited row trims when left; the set already reads it trimmed.
+    // The edited row is stored when committed (left, or before an apply).
     expect(texts(pasted.draft)).toEqual([' a ', 'b', 'c jquery\\.min\\.js', 'gtag']);
-    expect(draftToSet(pasted.draft).rows.delayJs).toEqual(
-      wpRocketLines(first?.text ?? '', 0, 0, ' a \n  b  \r\n\tc ').concat('gtag')
+    expect(draftToSet(commitAll(pasted.draft).draft).rows.delayJs).toEqual(
+      wpRocketLines('delay_js', first?.text ?? '', 0, 0, ' a \n  b  \r\n\tc ').concat('gtag')
     );
   });
 
@@ -308,7 +446,9 @@ describe('pasteIntoRow', () => {
       ids: [row]
     } = insertRows(draftFromSet(EMPTY_EXCLUSION_SET, ids), 'lazyload', ['ab'], null, ids);
     const pasted = pasteIntoRow(draft, 'lazyload', row ?? '', text, { start: 1, end: 1 }, ids);
-    expect(draftToSet(pasted.draft).rows.lazyload).toEqual(wpRocketLines('ab', 1, 1, text));
+    expect(draftToSet(commitAll(pasted.draft).draft).rows.lazyload).toEqual(
+      wpRocketLines('lazyload', 'ab', 1, 1, text)
+    );
   });
 
   it('leaves no CR in any row (CR and CRLF break lines like LF)', () => {

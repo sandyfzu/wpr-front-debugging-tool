@@ -4,7 +4,6 @@
  * UTF-8), including the WP Rocket save tables' cases.
  */
 import { describe, expect, it } from 'vitest';
-import { phpTrim } from './php-trim';
 import { sanitizeTextField, submittedText } from './sanitize-text-field';
 
 /** Bytes from base64 (lines that are not UTF-8). */
@@ -70,16 +69,10 @@ describe('sanitizeTextField', () => {
     expect(sanitizeTextField(input)).toBe(expected);
   });
 
-  it('empties a row that is not valid UTF-8', () => {
-    // 0xFF, an overlong `/`, a UTF-16 surrogate, a truncated sequence.
-    for (const line of ['/2JhZA==', 'wK8=', '7aCA', 'YYA=']) {
-      expect(sanitizeTextField(bytes(line))).toBe('');
-    }
-  });
-
   it('reads valid UTF-8 bytes as their text, a leading BOM included', () => {
-    expect(sanitizeTextField(new TextEncoder().encode('é<b>x</b>'))).toBe('éx');
-    expect(sanitizeTextField(Uint8Array.of(0xef, 0xbb, 0xbf, 0x61))).toBe('﻿a');
+    const read = (row: Uint8Array): string => sanitizeTextField(submittedText(row) ?? '');
+    expect(read(new TextEncoder().encode('é<b>x</b>'))).toBe('éx');
+    expect(read(Uint8Array.of(0xef, 0xbb, 0xbf, 0x61))).toBe('\ufeffa');
   });
 });
 
@@ -89,15 +82,11 @@ describe('submittedText', () => {
     expect(submittedText('😀')).toBe('😀');
   });
 
-  it('is null for bytes that are not UTF-8', () => {
-    expect(submittedText(bytes('wK8='))).toBeNull();
+  it('is null for bytes that are not UTF-8 (WordPress empties the row)', () => {
+    // 0xFF, an overlong `/`, a UTF-16 surrogate, a truncated sequence.
+    for (const line of ['/2JhZA==', 'wK8=', '7aCA', 'YYA=']) {
+      expect(submittedText(bytes(line))).toBeNull();
+    }
     expect(submittedText(Uint8Array.of(0x61))).toBe('a');
-  });
-});
-
-describe('phpTrim', () => {
-  it('strips space, tab, LF, CR, NUL and vertical tab only', () => {
-    expect(phpTrim('\n\r\t \v\0a\0\v \t\r\n')).toBe('a');
-    expect(phpTrim('\f a  ')).toBe('\f a  ');
   });
 });

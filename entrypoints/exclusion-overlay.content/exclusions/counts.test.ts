@@ -44,13 +44,6 @@ describe('rowMatches', () => {
     expect(rowMatches(DELAY, 'nothing  ')).toBe(0);
   });
 
-  it('finds a typed row by the form WP Rocket stores (and the report names) it in', () => {
-    expect(rowMatches(DELAY, 'g%41tag')).toBe(3);
-    expect(rowMatches(DELAY, '<b>nothing</b>')).toBe(0);
-    // A row the save empties never ran.
-    expect(rowMatches(DELAY, '<b></b>')).toBeNull();
-  });
-
   it('is unknown for rows outside the applied set, a feature-wide run, or no report', () => {
     expect(rowMatches(DELAY, 'new row')).toBeNull();
     expect(rowMatches(ALR_WIDE, 'x')).toBeNull();

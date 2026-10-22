@@ -11,6 +11,7 @@
  * gives the same matches as PCRE reading its UTF-8 bytes.
  */
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
+import { phpTrim } from './php/trim';
 
 /** PCRE's `\s` (no UTF) as a JS class. */
 const SPACE = `[${PCRE_SPACE_CHARS}]`;
@@ -50,18 +51,6 @@ const VALUELESS_TYPE = new RegExp(
 );
 /** The `src` rename (greedy, every match). */
 const SRC_RENAME = new RegExp(`src${SPACE}*=${SPACE}*(["'])([^\\n]*)\\1`, 'gi');
-/** PHP `trim`'s default characters at either end. */
-const PHP_TRIM = /^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g;
-
-/**
- * PHP's `trim` with its default character list.
- *
- * @param text The text.
- */
-export function phpTrim(text: string): string {
-  return text.replace(PHP_TRIM, '');
-}
-
 /**
  * WP Rocket's Delay JS rewrite of a script's attribute text
  * (`DelayJS\HTML::replace_scripts`), as served after `<script type="…" `:

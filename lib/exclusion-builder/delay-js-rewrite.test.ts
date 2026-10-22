@@ -4,7 +4,7 @@
  * 3.23.5.1, PHP 8.1.34 / PCRE2 10.49) through the parity harness.
  */
 import { describe, expect, it } from 'vitest';
-import { DELAY_JS_ALLOWED_TYPES, delayAttributeRewrite, phpTrim } from './delay-js-rewrite';
+import { DELAY_JS_ALLOWED_TYPES, delayAttributeRewrite } from './delay-js-rewrite';
 
 describe('delayAttributeRewrite', () => {
   it('renames `type=`/`src=` in place, whitespace around `=` dropped, then trims', () => {
@@ -52,12 +52,5 @@ describe('delayAttributeRewrite', () => {
     expect(delayAttributeRewrite(' SRC="/a.js"')).toBe('data-rocket-src="/a.js"');
     // `ſ` (U+017F) upper-cases to `S` in Unicode, never in PCRE without UTF.
     expect(delayAttributeRewrite(' ſrc="/a.js"')).toBe('ſrc="/a.js"');
-  });
-});
-
-describe('phpTrim', () => {
-  it("strips PHP's default characters only", () => {
-    expect(phpTrim(' \t\n\r\0\x0Ba  \x0B')).toBe('a ');
-    expect(phpTrim('\f a')).toBe('\f a');
   });
 });

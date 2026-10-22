@@ -3,7 +3,7 @@
  * false)`, unfiltered, `blog_charset` UTF-8), ported step for step — WP
  * Rocket runs it on every row of its exclusion fields before storing them:
  *
- * 1. invalid UTF-8 → the whole row becomes `''`;
+ * 1. invalid UTF-8 → the whole row becomes `''` (`submittedText` reads the row: `null`);
  * 2. only when the row holds a `<`: each `<…` run with no `>` before the
  *    next `<` or the end is HTML-escaped (`esc_html`, never double-encoding
  *    an entity), then `<script>`/`<style>` blocks are removed with their
@@ -14,8 +14,8 @@
  *    was, runs of spaces collapse and the row is trimmed again.
  */
 import { libxmlEntityCodePoint } from '../libxml/entities';
-import { phpTrim } from './php-trim';
-import { stripTags } from './strip-tags';
+import { phpTrim } from '../php/trim';
+import { stripTags } from '../php/strip-tags';
 
 /** UTF-8 validation (`mb_check_encoding`): fatal, and a leading BOM is content, not stripped. */
 const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -147,14 +147,14 @@ function removeOctets(text: string): { readonly text: string; readonly found: bo
 }
 
 /**
- * WordPress's `sanitize_text_field` on one row.
+ * WordPress's `sanitize_text_field` on one row already read as text
+ * ({@link submittedText}: a JS string is valid UTF-8 once submitted, so
+ * step 1 has nothing left to empty).
  *
- * @param row Text, or the raw bytes of a submitted line.
- * @returns The sanitized row (`''` for invalid UTF-8).
+ * @param text The row as submitted text.
+ * @returns The sanitized row.
  */
-export function sanitizeTextField(row: string | Uint8Array): string {
-  const text = submittedText(row);
-  if (text === null) return '';
+export function sanitizeTextField(text: string): string {
   const unmarked = text.includes('<') ? stripMarkup(text) : text;
   const collapsed = phpTrim(unmarked.replace(/[\r\n\t ]+/g, ' '));
   const octets = removeOctets(collapsed);

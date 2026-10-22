@@ -398,20 +398,6 @@ describe('Lane copy-all', () => {
     expect(announce).toHaveBeenCalledWith('Copied 2 exclusions');
   });
 
-  it('says WP Rocket drops every row when no typed row would be stored', async () => {
-    const controller = await readyController();
-    controller.insertRows('delayJs', ['<b></b>', '('], null);
-    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
-    const { announce } = mountLane(controller, undefined, write);
-    expect(copyAll().getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(copyAll());
-    await Promise.resolve();
-    expect(write).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(
-      'Nothing to copy: WP Rocket drops every row of this lane when it saves them.'
-    );
-  });
-
   it('stays focusable but inert on an empty lane, and says why', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['   '], null);

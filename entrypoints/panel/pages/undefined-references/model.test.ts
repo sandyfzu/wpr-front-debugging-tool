@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { storedExclusionRows } from '../../../../lib/exclusion-builder/field-text';
-import { compileMatcher, translateRegexRows } from '../../../../lib/exclusion-builder/pcre/rows';
+import { compileFirstMatch, translateRegexRows } from '../../../../lib/exclusion-builder/pcre/rows';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import {
@@ -404,8 +404,8 @@ function wpRocketSave(pattern: string): string {
  */
 function wpRocketMatches(pattern: string, tag: string): boolean {
   const stored = storedExclusionRows('delay_js', [pattern]);
-  const matcher = translateRegexRows('delay_js', stored).rows[0]?.matcher ?? null;
-  return matcher !== null && compileMatcher(matcher)(tag);
+  const matchers = translateRegexRows('delay_js', stored).rows.map(({ matcher }) => matcher);
+  return compileFirstMatch(matchers)(tag) !== -1;
 }
 
 /** A plain `new RegExp(pattern)` test (how an exclusion builder previews one). */

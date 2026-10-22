@@ -1570,7 +1570,6 @@
       "feature": "delay_js",
       "rows": ["(?+1)(x)", "c.js"],
       "note": "(?+1)(x) is valid at save; the runtime + escape makes it (?\\+1)(x): that row warns, others still apply",
-      "engine": { "problem": "pcre-only" },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a+b.js\" id=\"d1\"></script>\n<script src=\"/x.js?ver=1\" id=\"d2\"></script>\n<script type=\"text/javascript\" id=\"d3\">var foo = 1;\nvar bar=2;</script>\n<script src=\"/c.js\" id=\"d4\" data-rocket-defer defer></script>\n<script id=\"d5\">var t = \"ÉTÉ\";</script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a+b.js\" id=\"d1\"></script>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/x.js?ver=1\" id=\"d2\"></script>\n<script type=\"text/rocketlazyloadscript\" data-rocket-type=\"text/javascript\" id=\"d3\">var foo = 1;\nvar bar=2;</script>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/c.js\" id=\"d4\" data-rocket-defer defer></script>\n<script type=\"text/rocketlazyloadscript\" id=\"d5\">var t = \"ÉTÉ\";</script>\n</body></html><!-- wpr_delay_js -->",
       "subjects": ["d1", "d2", "d3", "d4", "d5"],
@@ -2663,7 +2662,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["^/\\p{L}\\.js$"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1", "s2"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/é.js\" id=\"s1\"></script>\n<script src=\"/a.js\" id=\"s2\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/é.js\" id=\"s1\" data-rocket-defer defer></script>\n<script src=\"/a.js\" id=\"s2\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1", "s2"],
@@ -3022,7 +3025,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["^/(a(?R)?b)?\\.js$"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/aabb.js\" id=\"s1\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/aabb.js\" id=\"s1\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1"],
@@ -3035,7 +3042,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["(a)(?1)"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1", "s2"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/aa.js\" id=\"s1\"></script>\n<script src=\"/a.js\" id=\"s2\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/aa.js\" id=\"s1\" data-rocket-defer defer></script>\n<script src=\"/a.js\" id=\"s2\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1", "s2"],
@@ -3048,7 +3059,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["^/(a)?(?(1)b|c)\\.js$"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1", "s2", "s3"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\"></script>\n<script src=\"/c.js\" id=\"s2\"></script>\n<script src=\"/b.js\" id=\"s3\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\" data-rocket-defer defer></script>\n<script src=\"/c.js\" id=\"s2\" data-rocket-defer defer></script>\n<script src=\"/b.js\" id=\"s3\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1", "s2", "s3"],
@@ -3074,7 +3089,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["a(*FAIL)|b"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1", "s2"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"s1\"></script>\n<script src=\"/b.js\" id=\"s2\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"s1\" data-rocket-defer defer></script>\n<script src=\"/b.js\" id=\"s2\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1", "s2"],
@@ -3087,7 +3106,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["a(?C1)b"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1"],
@@ -3203,7 +3226,11 @@
       "kind": "match",
       "feature": "defer_all_js",
       "rows": ["(?x)a b"],
-      "engine": { "problem": "pcre-only" },
+      "engine": {
+        "residual": "WP Rocket's save check on this row is not modeled (it may keep or drop it): the row stays unverified here and matches nothing, so the engine excludes no script with it",
+        "candidates": ["s1", "s2"],
+        "excluded": []
+      },
       "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\"></script>\n<script src=\"/a b.js\" id=\"s2\"></script>\n</body></html>",
       "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/ab.js\" id=\"s1\" data-rocket-defer defer></script>\n<script src=\"/a b.js\" id=\"s2\" data-rocket-defer defer></script>\n</body></html><!-- wpr_defer_js -->",
       "subjects": ["s1", "s2"],

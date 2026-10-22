@@ -9,6 +9,7 @@
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../logger';
+import { storedExclusionRows } from '../exclusion-builder/field-text';
 import { applyPipeline } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import type { ExclusionSessionStatus } from '../messaging/exclusion-session';
@@ -265,26 +266,32 @@ describe('apply', () => {
 
   it('answers invalid rows without arming or saving', async () => {
     const r = rig();
-    // Validated as stored: `(?<n>a)` is stored as `(?a)`, which JS rejects; the
-    // problem names the typed row (`0` is dropped by the save, so 1 ≠ 0).
+    // `(?a)` is WP Rocket's stored form (of `(?<n>a)`) and matches every script.
     const reply = await r.controller.apply(page(), {
-      set: { ...SET, rows: { ...SET.rows, delayJs: ['0', '(?<n>a)'] } }
+      set: { ...SET, rows: { ...SET.rows, delayJs: ['ok', '(?a)'] } }
     });
     expect(reply).toMatchObject({
       outcome: 'invalid',
-      invalid: [{ feature: 'delay_js', index: 1, row: '(?a)' }]
+      invalid: [{ feature: 'delay_js', index: 1, row: '(?a)', problem: 'match-all' }]
     });
     expect(r.backend.calls).toEqual([]);
     await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
   });
 
-  it('applies a set whose only problem rows WP Rocket drops at save, keeping them typed', async () => {
+  it("refuses a set not in WP Rocket's stored form, naming each such row, without arming", async () => {
     const r = rig();
-    const typed = { ...SET, rows: { ...SET.rows, delayJs: ['(', 'a\\.js'] } };
-    await expect(r.controller.apply(page(), { set: typed })).resolves.toEqual({
-      outcome: 'applying'
+    const reply = await r.controller.apply(page(), {
+      set: { ...SET, rows: { ...SET.rows, delayJs: ['a\\.js', 'jquery-*.js', '('] } }
     });
-    await expect(getSavedExclusionSet(ORIGIN)).resolves.toEqual(typed);
+    expect(reply).toMatchObject({
+      outcome: 'invalid',
+      invalid: [
+        { feature: 'delay_js', index: 1, row: 'jquery-*.js' },
+        { feature: 'delay_js', index: 2, row: '(' }
+      ]
+    });
+    expect(r.backend.calls).toEqual([]);
+    await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
   });
 
   it('answers unsupported-browser without a backend and stores the warning', async () => {
@@ -589,21 +596,31 @@ describe('host', () => {
     expect(r.tabPushes.at(-1)?.[1]).toMatchObject({ document: { outcome: 'rewritten' } });
   });
 
-  it('rewrites with the rows WP Rocket stores for the typed set', async () => {
+  it('rewrites end to end with a row WP Rocket stores rewritten (jquery-*.js)', async () => {
     const r = rig();
-    await putExclusionSessionRecord(TAB, {
-      state: 'active',
-      origin: ORIGIN,
-      set: { ...SET, rows: { ...SET.rows, delayJs: ['a\\.js', ' a\\.js', 'x%41', '('] } },
-      startedAt: NOW - 1000,
-      document: null
+    // The editor commits `jquery-*.js` as WP Rocket stores it: `jquery-(.*).js`.
+    const set = {
+      ...SET,
+      rows: { ...SET.rows, delayJs: storedExclusionRows('delay_js', ['jquery-*.js']) }
+    };
+    expect(set.rows.delayJs).toEqual(['jquery-(.*).js']);
+    await expect(r.controller.apply(page(), { set })).resolves.toEqual({ outcome: 'applying' });
+    await flush();
+    const html =
+      '<script type="rocketlazyloadscript" data-rocket-src="/jquery-3.7.1.min.js"></script>' +
+      '<script type="rocketlazyloadscript" data-rocket-src="/other.js"></script>';
+    const body = await r.host.rewriteDocument(doc(`${ORIGIN}/next`, html));
+    const expected = applyPipeline(html, set);
+    expect(body).toEqual(encoder.encode(expected.html));
+    await flush();
+    await expect(getExclusionSessionStatus(TAB)).resolves.toMatchObject({
+      document: { outcome: 'rewritten', reports: expected.reports }
     });
-    const runner = vi.fn<DocumentTransformRunner>(() =>
-      Promise.resolve({ ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' } })
-    );
-    r.backend.runner = runner;
-    await r.host.rewriteDocument(doc());
-    expect(runner.mock.calls[0]?.[0].set.rows.delayJs).toEqual(['a\\.js', 'x']);
+    const delay = expected.reports.find((report) => report.feature === 'delay_js');
+    expect(delay).toMatchObject({
+      rewritten: 1,
+      matchedRows: [{ row: 'jquery-(.*).js', matches: 1 }]
+    });
   });
 
   it('passes other origins and session-less tabs through without recording', async () => {

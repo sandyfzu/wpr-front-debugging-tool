@@ -29,6 +29,7 @@ import {
 } from '../../../lib/wp-rocket/constants';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
+import { storedRowKey, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import { recoverOriginalScript } from '../../../lib/wp-rocket/minify-url-recovery';
 import { parseUrl } from '../../../utils/urls';
 import { escapeRegex } from '../../../utils/regex';
@@ -161,13 +162,15 @@ function hexEscape(char: string): string {
  * @param text The literal text.
  */
 function literalPattern(text: string): string {
-  // The save drops a row that is just `0` (PHP reads it as empty).
-  if (text === '0') return hexEscape(text);
-  return text
+  const pattern = text
     .replace(HEX_ESCAPED, (chunk, hex?: string) =>
       hex === undefined ? escapeRegex(chunk) : hexEscape(hex)
     )
     .replace(HEX_ESCAPED_SPACES, hexEscape);
+  // A row the save would empty (`0`: PHP reads it as empty) is written hex-escaped.
+  return storedRowKey('delay_js', pattern) === null
+    ? pattern.replace(/[\0-\xFF]/g, hexEscape)
+    : pattern;
 }
 
 /**
@@ -207,22 +210,34 @@ function servedPattern(text: string): string {
 /** Shortest stretch worth naming a file by. */
 const MIN_STRETCH_CHARS = 4;
 
+/** Characters markup may entity-encode (see {@link ENCODED_FORMS}): a literal must not reach across one. */
+const MARKUP_ENCODED = /[&'"<>]/;
+
 /**
- * Where a literal row must not reach across: characters markup may
- * entity-encode (`& ' " < >`, see {@link ENCODED_FORMS}), and what WP
- * Rocket's save rewrites in a literal — `<`, `%` (`%xx` octets removed),
- * tab/CR/LF and space runs (collapsed).
+ * Where to cut a literal into candidate stretches: the characters markup
+ * may entity-encode, and those WP Rocket's save tends to rewrite (`%`, tab,
+ * CR, LF, space runs). Each stretch is then checked through the save itself.
  */
 const LITERAL_BREAKS = /[&'"<>%\t\n\r]| {2,}/;
 
 /**
+ * Whether WP Rocket's settings save stores an Image Lazyload literal exactly
+ * as written (the one declaring site of that save decides).
+ *
+ * @param text The literal.
+ */
+function storedAsWritten(text: string): boolean {
+  return storedRowKey('lazyload', text) === text;
+}
+
+/**
  * A literal that is in the served form of `text` whatever the markup's
  * entity encoding, and that WP Rocket stores as written: the text itself, or its
- * longest stretch between {@link LITERAL_BREAKS} (trimmed, as the save
- * trims) that is long enough to name a file and in no other image's tag (a
- * part of a name may well be in another's: `a&b.jpg` → `b.jpg`, in
- * `thumb.jpg`). Copies of the same image (same `data-lazy-src`) are not
- * others: the row names them all.
+ * longest stretch between {@link LITERAL_BREAKS} (trimmed as the save
+ * trims, and stored as written) that is long enough to name a file and in
+ * no other image's tag (a part of a name may well be in another's:
+ * `a&b.jpg` → `b.jpg`, in `thumb.jpg`). Copies of the same image (same
+ * `data-lazy-src`) are not others: the row names them all.
  *
  * @param text The decoded text.
  * @param lazySrc The picked image's `data-lazy-src` value.
@@ -234,13 +249,12 @@ function servedLiteral(
   lazySrc: string,
   peers: () => readonly LazyImagePeer[]
 ): string | null {
-  // A lone `0` is a row WP Rocket ignores; it is too short to be a stretch.
-  if (!LITERAL_BREAKS.test(text) && text.trim() === text && text !== '0') return text;
+  if (!MARKUP_ENCODED.test(text) && storedAsWritten(text)) return text;
   const others = peers().filter((peer) => peer.lazySrc !== lazySrc);
   const stretches = text
     .split(LITERAL_BREAKS)
-    .map((part) => part.trim())
-    .filter((part) => part.length >= MIN_STRETCH_CHARS)
+    .map(trimExclusionRow)
+    .filter((part) => part.length >= MIN_STRETCH_CHARS && storedAsWritten(part))
     .sort((a, b) => b.length - a.length);
   return stretches.find((part) => !others.some((peer) => peer.tag.includes(part))) ?? null;
 }

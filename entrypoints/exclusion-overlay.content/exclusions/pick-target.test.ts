@@ -8,6 +8,8 @@ import {
   type ParityRow
 } from '../../../lib/exclusion-builder/wp-rocket-parity-table';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../../lib/exclusion-builder/set';
+import { saveExclusionRows, storedText } from '../../../lib/exclusion-builder/field-text';
+import { laneFeature } from './draft';
 import { delayJsTransform } from '../../../lib/exclusion-builder/delay-js';
 import { deferJsTransform } from '../../../lib/exclusion-builder/defer-js';
 import { lazyloadTransform } from '../../../lib/exclusion-builder/lazyload';
@@ -685,6 +687,29 @@ describe('every picked row matches its element after WP Rocket’s save and runt
         ).toBe(true);
       }
     }
+  });
+
+  it('writes every row in the form WP Rocket stores it (picking never needs a commit rewrite)', () => {
+    const pages = [
+      '<script type="text/rocketlazyloadscript" data-rocket-src="/a+b*c%41.js?ver=1"></script>',
+      '<script type="text/rocketlazyloadscript" id="x+y<z">go()</script>',
+      '<script type="text/rocketlazyloadscript">  if (a < b) {  x = 1 * 2 }</script>',
+      '<script type="text/rocketlazyloadscript">0</script>',
+      '<script type="text/rocketlazyloadscript">var  a =\t1; /* c */ %41</script>',
+      '<script src="/p q/%E2%9C%93.js" data-rocket-defer defer></script>',
+      '<img src="data:," data-lazy-src="/up/a&amp;b  c%20d.jpg">',
+      '<img src="data:," data-lazy-src="/up/\u00a0logo 0.png">',
+      '<div data-wpr-lazyrender="1" id=" spaced  id ">x</div>'
+    ];
+    let checked = 0;
+    for (const html of pages) {
+      for (const { lane, row } of candidates(html)) {
+        const diff = saveExclusionRows(laneFeature(lane).id, [row]).diffs[0];
+        expect(diff && storedText(diff), `${lane}: ${row}`).toBe(row);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(pages.length);
   });
 
   it('hex-escapes whitespace the save would collapse or trim, and a `?ver` the runtime would escape', () => {

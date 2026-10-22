@@ -18,13 +18,16 @@
  * Rendering has no field: its rows reach WP Rocket only through a PHP
  * filter, as written (identity here).
  *
- * The editor keeps what was typed; the per-row diff says what WP Rocket
- * stores instead, and the session applies the stored rows.
+ * The editor and the set hold rows in this stored form: a row turns into it
+ * when committed, and the per-row diff (which carries the typed text) says
+ * what changed, so the change can be shown and undone.
  */
-import { saveOutcome, type SaveOutcome } from './pcre/translate';
-import type { ExclusionFeatureId } from './set';
+import type { InvalidExclusionRow } from './errors';
+import { rowSaveOutcome } from './pcre/rows';
+import type { SaveOutcome } from './pcre/translate';
+import { phpTrim } from './php/trim';
+import { EXCLUSION_FEATURES, type ExclusionFeatureId, type ExclusionSet } from './set';
 import type { StoredRowDropReason } from './stored-row-drops';
-import { phpTrim } from './wordpress/php-trim';
 import { sanitizeTextField, submittedText } from './wordpress/sanitize-text-field';
 
 /** A typed row: text, or the raw bytes of a submitted line (which may not be UTF-8). */
@@ -35,15 +38,18 @@ export interface SaveOptions {
   /**
    * Delay JS "Safe Mode for jQuery": `true` removes its three patterns,
    * `false` keeps them; unknown (the extension cannot read the setting)
-   * keeps them and flags them ({@link KeptRowDiff.dropsInSafeMode}).
+   * keeps them and flags them (`dropsInSafeMode`).
    */
   readonly safeMode?: boolean;
 }
 
-/** What a kept row's diff always carries. */
-interface KeptRowDiff {
-  /** The row's position among the stored rows. */
-  readonly index: number;
+/** What every diff carries: the row as typed (for the note, and to undo). */
+interface TypedRowDiff {
+  readonly typed: string;
+}
+
+/** What a kept row's diff carries beyond the typed text. */
+interface KeptRowDiff extends TypedRowDiff {
   /** Delay JS, safe mode unknown: WP Rocket drops this row when Safe Mode for jQuery is on. */
   readonly dropsInSafeMode?: true;
 }
@@ -52,26 +58,27 @@ interface KeptRowDiff {
 export type StoredRowDiff =
   /** Stored exactly as typed. */
   | ({ readonly state: 'unchanged' } & KeptRowDiff)
-  /** Stored, but as `text`. */
-  | ({ readonly state: 'stored-as'; readonly text: string } & KeptRowDiff)
+  /** Stored, as `stored`. */
+  | ({ readonly state: 'stored-as'; readonly stored: string } & KeptRowDiff)
   /**
-   * Kept here as `text` (equal to the typed row or not), but whether WP
-   * Rocket's pattern check keeps it is not modeled — PCRE syntax `construct`
-   * ("can't verify WP Rocket keeps this").
+   * Kept here as `stored` (its trim, sanitize and wildcard stages are
+   * verified), but whether WP Rocket's pattern check keeps it is not
+   * modeled — PCRE syntax `construct` ("can't verify WP Rocket keeps this"):
+   * the engine matches nothing with it, and it never blocks the set.
    */
   | ({
       readonly state: 'unverified';
-      readonly text: string;
+      readonly stored: string;
       readonly construct: string;
       readonly detail: string;
     } & KeptRowDiff)
   /** Not stored; an `invalid-pattern` drop names the construct PCRE rejects. */
-  | {
+  | ({
       readonly state: 'dropped';
       readonly reason: StoredRowDropReason;
       readonly construct?: string;
       readonly detail?: string;
-    };
+    } & TypedRowDiff);
 
 /** A field's rows as stored, plus what happened to each typed row. */
 export interface SavedRows {
@@ -88,7 +95,7 @@ const PATTERN_CHECKED: ReadonlySet<ExclusionFeatureId> = new Set(['delay_js', 'd
  * The three Delay JS patterns "Safe Mode for jQuery" removes from the
  * stored rows (WP Rocket's own safe-mode exclusions, as stored).
  */
-export const SAFE_MODE_DELAY_ROWS: readonly string[] = [
+const SAFE_MODE_DELAY_ROWS: readonly string[] = [
   '\\/jquery(-migrate)?-?([0-9.]+)?(.min|.slim|.slim.min)?.js(\\?(.*))?( |\'|"|>)',
   'js-(before|after)',
   '(?:/wp-content/|/wp-includes/)(.*)'
@@ -110,7 +117,7 @@ const WILDCARD_FORM = '(.*)';
  *
  * @param row The sanitized row.
  */
-export function cleanWildcards(row: string): string {
+function cleanWildcards(row: string): string {
   if (row === '0') return '';
   let out = '';
   let index = 0;
@@ -133,9 +140,13 @@ function emptiedReason(text: string): 'empty' | 'zero' | null {
   return text === '0' ? 'zero' : null;
 }
 
+/** Reads bytes the identity path receives (never fails: as written, U+FFFD for bad bytes). */
+const LENIENT_UTF8 = new TextDecoder();
+
 /** One row's per-row stages: its stored form, or why it is dropped first. */
 type RowForm =
-  { readonly form: string; readonly typed: string } | { readonly reason: 'empty' | 'zero' };
+  | { readonly form: string; readonly typed: string }
+  | { readonly reason: 'empty' | 'zero'; readonly typed: string };
 
 /**
  * One row through the per-row stages (trim, sanitize, Delay wildcards).
@@ -146,21 +157,23 @@ type RowForm =
 function rowForm(feature: ExclusionFeatureId, row: SubmittedRow): RowForm {
   if (feature === 'automatic_lazy_rendering') {
     // Rows reach it through a PHP filter, as written.
-    const written = typeof row === 'string' ? row : new TextDecoder().decode(row);
+    const written = typeof row === 'string' ? row : LENIENT_UTF8.decode(row);
     return { form: written, typed: written };
   }
-  const typed = submittedText(row);
+  const text = submittedText(row);
+  // The typed text as given (undo restores it); bytes read leniently.
+  const typed = typeof row === 'string' ? row : (text ?? LENIENT_UTF8.decode(row));
   // Not UTF-8: a non-empty row that sanitizes to ''.
-  if (typed === null) return { reason: 'empty' };
-  const steps: readonly ((text: string) => string)[] =
+  if (text === null) return { reason: 'empty', typed };
+  const steps: readonly ((value: string) => string)[] =
     feature === 'delay_js'
       ? [phpTrim, sanitizeTextField, cleanWildcards]
       : [phpTrim, sanitizeTextField];
-  let form = typed;
+  let form = text;
   for (const step of steps) {
     form = step(form);
     const reason = emptiedReason(form);
-    if (reason !== null) return { reason };
+    if (reason !== null) return { reason, typed };
   }
   return { form, typed };
 }
@@ -179,71 +192,111 @@ export function storedRowKey(feature: ExclusionFeatureId, row: SubmittedRow): st
   return 'form' in result ? result.form : null;
 }
 
-/** Pattern-check verdicts kept before the memo restarts. */
-const OUTCOME_MEMO_CAPACITY = 4_096;
+/**
+ * The pattern check's verdict, when the feature has one (shared memo with
+ * validation and matching).
+ */
+function patternCheck(feature: ExclusionFeatureId, form: string): SaveOutcome {
+  if (feature !== 'delay_js' && feature !== 'defer_all_js') return { outcome: 'kept' };
+  return rowSaveOutcome(feature, form);
+}
 
-/** Pattern-check verdicts by stored row (the parse is the costly step; rows recur per edit). */
-const outcomeMemo = new Map<string, SaveOutcome>();
-
-/** {@link saveOutcome}, memoized. */
-function patternCheck(row: string): SaveOutcome {
-  const cached = outcomeMemo.get(row);
-  if (cached !== undefined) return cached;
-  const outcome = saveOutcome(row);
-  if (outcomeMemo.size >= OUTCOME_MEMO_CAPACITY) outcomeMemo.clear();
-  outcomeMemo.set(row, outcome);
-  return outcome;
+/** One row's save: its diff, and its form (the dedupe key) when it got one. */
+interface RowSave {
+  readonly diff: StoredRowDiff;
+  readonly form: string | null;
 }
 
 /**
- * The set-level verdict on a deduplicated form: dropped, or kept with its
- * flags.
+ * WP Rocket's save of one typed row (see {@link saveExclusionRow}), with
+ * the row's form: the dedupe runs before safe mode and the pattern check,
+ * so a row those drop still makes a later copy of it a duplicate.
  */
-function setLevelVerdict(
+function saveRow(
+  feature: ExclusionFeatureId,
+  row: SubmittedRow,
+  ahead: ReadonlySet<string>,
+  options: SaveOptions
+): RowSave {
+  const result = rowForm(feature, row);
+  if (!('form' in result)) {
+    return { diff: { state: 'dropped', reason: result.reason, typed: result.typed }, form: null };
+  }
+  return { diff: formDiff(feature, result.form, result.typed, ahead, options), form: result.form };
+}
+
+/**
+ * WP Rocket's save of one typed row, given the forms of the rows ahead of
+ * it (its dedupe): the row's diff, with its stored text when kept.
+ *
+ * @param feature The field's feature.
+ * @param row The typed row.
+ * @param ahead The forms ({@link storedRowKey}) of the rows ahead of it, or
+ *   of the lane's other rows (the rows already there win).
+ * @param options Safe mode, when known.
+ */
+export function saveExclusionRow(
+  feature: ExclusionFeatureId,
+  row: SubmittedRow,
+  ahead: ReadonlySet<string>,
+  options: SaveOptions = {}
+): StoredRowDiff {
+  return saveRow(feature, row, ahead, options).diff;
+}
+
+/**
+ * The set-level steps on a row's form: dedupe, safe mode, the pattern check.
+ *
+ * @param feature The field's feature.
+ * @param form The row's form after the per-row stages.
+ * @param typed The row as typed.
+ * @param ahead The forms ahead of it.
+ * @param options Safe mode, when known.
+ */
+function formDiff(
   feature: ExclusionFeatureId,
   form: string,
+  typed: string,
+  ahead: ReadonlySet<string>,
   options: SaveOptions
-):
-  | { readonly dropped: StoredRowDiff & { readonly state: 'dropped' } }
-  | { readonly dropsInSafeMode: boolean; readonly unverified: SaveOutcome | null } {
-  let dropsInSafeMode = false;
+): StoredRowDiff {
+  if (feature === 'automatic_lazy_rendering') return { state: 'unchanged', typed };
+  if (ahead.has(form)) return { state: 'dropped', reason: 'duplicate', typed };
+  let flag = {};
   if (feature === 'delay_js' && SAFE_MODE_DELAY_ROWS.includes(form)) {
-    if (options.safeMode === true) return { dropped: { state: 'dropped', reason: 'safe-mode' } };
-    dropsInSafeMode = options.safeMode === undefined;
+    if (options.safeMode === true) return { state: 'dropped', reason: 'safe-mode', typed };
+    if (options.safeMode === undefined) flag = { dropsInSafeMode: true as const };
   }
-  if (!PATTERN_CHECKED.has(feature)) return { dropsInSafeMode, unverified: null };
-  const outcome = patternCheck(form);
-  if (outcome.outcome === 'dropped') {
-    const { construct, detail } = outcome;
-    return { dropped: { state: 'dropped', reason: 'invalid-pattern', construct, detail } };
+  if (PATTERN_CHECKED.has(feature)) {
+    const outcome = patternCheck(feature, form);
+    if (outcome.outcome === 'dropped') {
+      const { construct, detail } = outcome;
+      return { state: 'dropped', reason: 'invalid-pattern', construct, detail, typed };
+    }
+    if (outcome.outcome === 'unknown') {
+      const { construct, detail } = outcome;
+      return { state: 'unverified', stored: form, construct, detail, typed, ...flag };
+    }
   }
-  return { dropsInSafeMode, unverified: outcome.outcome === 'unknown' ? outcome : null };
+  return typed === form
+    ? { state: 'unchanged', typed, ...flag }
+    : { state: 'stored-as', stored: form, typed, ...flag };
 }
 
 /**
- * The kept row's diff.
+ * The text a kept diff stores, or `null` for a dropped row.
  *
- * @param typed The typed row as text.
- * @param form Its stored form.
- * @param index Its position among the stored rows.
- * @param dropsInSafeMode Whether to flag it as a safe-mode pattern.
- * @param unverified The pattern check's `unknown` verdict, when it is one.
+ * @param diff A row's diff.
  */
-function keptDiff(
-  typed: string,
-  form: string,
-  index: number,
-  dropsInSafeMode: boolean,
-  unverified: SaveOutcome | null
-): StoredRowDiff {
-  const flag = dropsInSafeMode ? { dropsInSafeMode: true as const } : {};
-  if (unverified !== null && unverified.outcome !== 'kept') {
-    const { construct, detail } = unverified;
-    return { state: 'unverified', text: form, construct, detail, index, ...flag };
+export function storedText(diff: StoredRowDiff): string | null {
+  switch (diff.state) {
+    case 'unchanged':
+      return diff.typed;
+    case 'dropped':
+      return null;
+    default:
+      return diff.stored;
   }
-  return typed === form
-    ? { state: 'unchanged', index, ...flag }
-    : { state: 'stored-as', text: form, index, ...flag };
 }
 
 /**
@@ -261,26 +314,13 @@ export function saveExclusionRows(
   options: SaveOptions = {}
 ): SavedRows {
   const rows: string[] = [];
-  const seen = new Set<string>();
-  const diffs = typed.map((row): StoredRowDiff => {
-    const result = rowForm(feature, row);
-    if (!('form' in result)) return { state: 'dropped', reason: result.reason };
-    if (feature === 'automatic_lazy_rendering') {
-      rows.push(result.form);
-      return { state: 'unchanged', index: rows.length - 1 };
-    }
-    if (seen.has(result.form)) return { state: 'dropped', reason: 'duplicate' };
-    seen.add(result.form);
-    const verdict = setLevelVerdict(feature, result.form, options);
-    if ('dropped' in verdict) return verdict.dropped;
-    rows.push(result.form);
-    return keptDiff(
-      result.typed,
-      result.form,
-      rows.length - 1,
-      verdict.dropsInSafeMode,
-      verdict.unverified
-    );
+  const ahead = new Set<string>();
+  const diffs = typed.map((row) => {
+    const { diff, form } = saveRow(feature, row, ahead, options);
+    if (form !== null) ahead.add(form);
+    const stored = storedText(diff);
+    if (stored !== null) rows.push(stored);
+    return diff;
   });
   return { rows, diffs };
 }
@@ -291,14 +331,35 @@ export function saveExclusionRows(
  *
  * @param feature The field's feature.
  * @param typed The rows as typed.
- * @param options Safe mode, when known.
  */
 export function storedExclusionRows(
   feature: ExclusionFeatureId,
-  typed: readonly SubmittedRow[],
-  options: SaveOptions = {}
+  typed: readonly SubmittedRow[]
 ): readonly string[] {
-  return saveExclusionRows(feature, typed, options).rows;
+  return saveExclusionRows(feature, typed).rows;
+}
+
+/** The reason for a set row that is not in WP Rocket's stored form. */
+const NOT_STORED_REASON =
+  'Row is not in the form WP Rocket stores — edit it again so it is saved as WP Rocket would';
+
+/**
+ * Rows of a set that are not WP Rocket's stored form (saving the field
+ * again would change or drop them): every set the editor sends is already
+ * stored, so any entry here is a refused, out-of-contract set.
+ *
+ * @param set The set as sent.
+ * @returns One entry per offending row, feature by feature, in row order.
+ */
+export function notStoredRows(set: ExclusionSet): readonly InvalidExclusionRow[] {
+  return EXCLUSION_FEATURES.flatMap((feature) =>
+    saveExclusionRows(feature.id, set.rows[feature.rowsKey]).diffs.flatMap(
+      (diff, index): InvalidExclusionRow[] =>
+        storedText(diff) === diff.typed
+          ? []
+          : [{ feature: feature.id, index, row: diff.typed, reason: NOT_STORED_REASON }]
+    )
+  );
 }
 
 /** The separator between rows in the settings field (one row per line). */
@@ -319,30 +380,14 @@ export function exclusionFieldText(stored: readonly string[]): string {
 /**
  * One row as the save's first step leaves it: PHP-`trim`med (space, tab,
  * LF, CR, NUL and vertical tab — wider Unicode spaces such as the no-break
- * space are kept, as the save keeps them). The editor commits a row this
- * way when it is left, and a row empty once trimmed is a blank edit.
+ * space are kept, as the save keeps them). A row empty once trimmed is a
+ * blank (unfinished) edit.
  *
  * @param row The row as typed.
  * @returns The trimmed row (empty when the row was whitespace only).
  */
 export function trimExclusionRow(row: string): string {
   return phpTrim(row);
-}
-
-/**
- * The rows the editor commits: each trimmed ({@link trimExclusionRow}),
- * blank ones dropped, order and duplicates kept — typed text, not the
- * stored form (that is {@link saveExclusionRows}).
- *
- * @param rows The rows as typed.
- */
-export function committedFieldRows(rows: readonly string[]): string[] {
-  const lines: string[] = [];
-  for (const row of rows) {
-    const line = trimExclusionRow(row);
-    if (line !== '') lines.push(line);
-  }
-  return lines;
 }
 
 /**

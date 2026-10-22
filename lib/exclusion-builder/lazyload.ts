@@ -31,7 +31,7 @@ import {
   type TextPatch
 } from './tag-edit';
 import type { ExclusionFeatureId, ExclusionSet } from './set';
-import { phpTrim } from './wordpress/php-trim';
+import { phpTrim } from './php/trim';
 
 /**
  * The lazy `sizes` carrier — the third of the lazyload family's attributes

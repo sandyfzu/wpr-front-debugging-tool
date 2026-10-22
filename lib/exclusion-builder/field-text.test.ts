@@ -6,19 +6,27 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  cleanWildcards,
-  committedFieldRows,
   exclusionFieldText,
   hasInvisibleKeptCharacters,
-  SAFE_MODE_DELAY_ROWS,
+  notStoredRows,
+  saveExclusionRow,
   saveExclusionRows,
   splitFieldText,
   storedExclusionRows,
   storedRowKey,
+  storedText,
   trimExclusionRow
 } from './field-text';
+import { EMPTY_EXCLUSION_SET } from './set';
 
-describe('cleanWildcards', () => {
+/** WP Rocket's three "Safe Mode for jQuery" patterns. */
+const SAFE_MODE = [
+  '\\/jquery(-migrate)?-?([0-9.]+)?(.min|.slim|.slim.min)?.js(\\?(.*))?( |\'|"|>)',
+  'js-(before|after)',
+  '(?:/wp-content/|/wp-includes/)(.*)'
+];
+
+describe('Delay JS wildcards (rocket_clean_wildcards)', () => {
   it.each([
     ['\\d*x', '\\d(.*)x'],
     ['*', '(.*)'],
@@ -32,26 +40,24 @@ describe('cleanWildcards', () => {
     ['[*]', '[(.*)]'],
     ['(.*?)', '((.*)?)'],
     ['a/*/b', 'a/(.*)/b'],
-    ['a.+b', 'a.+b'],
-    ['0', ''],
-    ['', '']
+    ['a.+b', 'a.+b']
   ])('%j → %j', (row, expected) => {
-    expect(cleanWildcards(row)).toBe(expected);
+    expect(storedRowKey('delay_js', row)).toBe(expected);
   });
 });
 
 describe('saveExclusionRows: the per-row diff', () => {
-  it('says unchanged, stored-as, or dropped with the reason, one diff per typed row', () => {
+  it('says unchanged, stored-as, or dropped with the reason, each with the typed text', () => {
     expect(saveExclusionRows('defer_all_js', ['a.js', ' b.js ', 'x%41y', '', '0', 'a.js'])).toEqual(
       {
         rows: ['a.js', 'b.js', 'xy'],
         diffs: [
-          { state: 'unchanged', index: 0 },
-          { state: 'stored-as', text: 'b.js', index: 1 },
-          { state: 'stored-as', text: 'xy', index: 2 },
-          { state: 'dropped', reason: 'empty' },
-          { state: 'dropped', reason: 'zero' },
-          { state: 'dropped', reason: 'duplicate' }
+          { state: 'unchanged', typed: 'a.js' },
+          { state: 'stored-as', stored: 'b.js', typed: ' b.js ' },
+          { state: 'stored-as', stored: 'xy', typed: 'x%41y' },
+          { state: 'dropped', reason: 'empty', typed: '' },
+          { state: 'dropped', reason: 'zero', typed: '0' },
+          { state: 'dropped', reason: 'duplicate', typed: 'a.js' }
         ]
       }
     );
@@ -80,7 +86,11 @@ describe('saveExclusionRows: the per-row diff', () => {
   it('drops a Delay/Defer row PCRE rejects, naming the construct; Lazyload stores it', () => {
     const delay = saveExclusionRows('delay_js', ['(', 'ok']);
     expect(delay.rows).toEqual(['ok']);
-    expect(delay.diffs[0]).toMatchObject({ state: 'dropped', reason: 'invalid-pattern' });
+    expect(delay.diffs[0]).toMatchObject({
+      state: 'dropped',
+      reason: 'invalid-pattern',
+      typed: '('
+    });
     expect(delay.diffs[0]).toHaveProperty('construct');
     // A Delay `\*` becomes `\(.*)`, which PCRE rejects; Defer keeps `\*`.
     expect(saveExclusionRows('delay_js', ['\\*']).diffs[0]).toMatchObject({
@@ -91,23 +101,26 @@ describe('saveExclusionRows: the per-row diff', () => {
     expect(storedExclusionRows('lazyload', ['('])).toEqual(['(']);
   });
 
-  it('keeps a row whose pattern check is not modeled, as unverified', () => {
-    const saved = saveExclusionRows('delay_js', ['(?+1)(x)', 'a\\\0b']);
-    expect(saved.rows).toEqual(['(?+1)(x)', 'a\\\0b']);
-    expect(saved.diffs[0]).toMatchObject({ state: 'unverified', text: '(?+1)(x)', index: 0 });
-    expect(saved.diffs[1]).toMatchObject({ state: 'unverified', construct: '\\0', index: 1 });
+  it('keeps a row whose pattern check is not modeled, as unverified in its per-row form', () => {
+    const saved = saveExclusionRows('delay_js', ['(?+1)(x)', ' a\\\0b* ']);
+    expect(saved.rows).toEqual(['(?+1)(x)', 'a\\\0b(.*)']);
+    expect(saved.diffs[0]).toMatchObject({ state: 'unverified', stored: '(?+1)(x)' });
+    expect(saved.diffs[1]).toMatchObject({
+      state: 'unverified',
+      stored: 'a\\\0b(.*)',
+      typed: ' a\\\0b* ',
+      construct: '\\0'
+    });
   });
 
   it('flags the safe-mode patterns when safe mode is unknown, drops them when on', () => {
-    const typed = [...SAFE_MODE_DELAY_ROWS, 'other'];
+    const typed = [...SAFE_MODE, 'other'];
     const unknown = saveExclusionRows('delay_js', typed);
     expect(unknown.rows).toEqual(typed);
-    expect(unknown.diffs.slice(0, 3)).toEqual([
-      { state: 'unchanged', index: 0, dropsInSafeMode: true },
-      { state: 'unchanged', index: 1, dropsInSafeMode: true },
-      { state: 'unchanged', index: 2, dropsInSafeMode: true }
-    ]);
-    expect(unknown.diffs[3]).toEqual({ state: 'unchanged', index: 3 });
+    expect(unknown.diffs.slice(0, 3)).toEqual(
+      SAFE_MODE.map((row) => ({ state: 'unchanged', typed: row, dropsInSafeMode: true }))
+    );
+    expect(unknown.diffs[3]).toEqual({ state: 'unchanged', typed: 'other' });
     const on = saveExclusionRows('delay_js', typed, { safeMode: true });
     expect(on.rows).toEqual(['other']);
     expect(on.diffs.slice(0, 3).map((diff) => diff.state === 'dropped' && diff.reason)).toEqual([
@@ -117,12 +130,12 @@ describe('saveExclusionRows: the per-row diff', () => {
     ]);
     expect(saveExclusionRows('delay_js', typed, { safeMode: false }).diffs[0]).toEqual({
       state: 'unchanged',
-      index: 0
+      typed: SAFE_MODE[0]
     });
     // Only Delay JS has safe mode.
     expect(saveExclusionRows('defer_all_js', typed).diffs[1]).toEqual({
       state: 'unchanged',
-      index: 1
+      typed: SAFE_MODE[1]
     });
   });
 
@@ -132,16 +145,52 @@ describe('saveExclusionRows: the per-row diff', () => {
       new TextEncoder().encode(' é ')
     ]);
     expect(saved.rows).toEqual(['é']);
-    expect(saved.diffs).toEqual([
-      { state: 'dropped', reason: 'empty' },
-      { state: 'stored-as', text: 'é', index: 0 }
-    ]);
+    expect(saved.diffs[0]).toMatchObject({ state: 'dropped', reason: 'empty' });
+    expect(saved.diffs[1]).toEqual({ state: 'stored-as', stored: 'é', typed: ' é ' });
+  });
+
+  it('keeps the typed text of a lone surrogate (undo restores it) and stores U+FFFD', () => {
+    expect(saveExclusionRows('lazyload', ['a\ud800']).diffs[0]).toEqual({
+      state: 'stored-as',
+      stored: 'a�',
+      typed: 'a\ud800'
+    });
   });
 
   it('takes Automatic Lazy Rendering rows as written: no trim, no dedupe, no drop', () => {
-    expect(saveExclusionRows('automatic_lazy_rendering', [' a ', 'a', 'a', '', '0'])).toEqual({
-      rows: [' a ', 'a', 'a', '', '0'],
-      diffs: [0, 1, 2, 3, 4].map((index) => ({ state: 'unchanged', index }))
+    const typed = [' a ', 'a', 'a', '', '0'];
+    expect(saveExclusionRows('automatic_lazy_rendering', typed)).toEqual({
+      rows: typed,
+      diffs: typed.map((row) => ({ state: 'unchanged', typed: row }))
+    });
+  });
+
+  it('is idempotent: saving the stored rows again changes nothing', () => {
+    const cases: [Parameters<typeof storedExclusionRows>[0], string[]][] = [
+      ['delay_js', ['a<b', 'x%41*', 'q*', ' q* ', '(?<n>a)', '[<a]', '(?+1)(x)', ...SAFE_MODE]],
+      ['defer_all_js', ['a&b<c', '<b>a</b> c', '%2541', '(?a)', '\\*']],
+      ['lazyload', ['[^<>]+x', '(?P<n>a)', ' é ', '*']]
+    ];
+    for (const [feature, typed] of cases) {
+      const stored = storedExclusionRows(feature, typed);
+      const again = saveExclusionRows(feature, stored);
+      expect(again.rows).toEqual(stored);
+      expect(again.diffs.every((diff) => storedText(diff) === diff.typed)).toBe(true);
+    }
+  });
+});
+
+describe('saveExclusionRow', () => {
+  it('drops a row whose stored form is already held, keeps it otherwise', () => {
+    expect(saveExclusionRow('delay_js', 'a.*', new Set(['a(.*)']))).toEqual({
+      state: 'dropped',
+      reason: 'duplicate',
+      typed: 'a.*'
+    });
+    expect(saveExclusionRow('delay_js', 'a.*', new Set())).toEqual({
+      state: 'stored-as',
+      stored: 'a(.*)',
+      typed: 'a.*'
     });
   });
 });
@@ -153,6 +202,24 @@ describe('storedRowKey', () => {
     expect(storedRowKey('defer_all_js', '<b></b>')).toBeNull();
     expect(storedRowKey('lazyload', '0')).toBeNull();
     expect(storedRowKey('automatic_lazy_rendering', ' x ')).toBe(' x ');
+  });
+});
+
+describe('notStoredRows', () => {
+  it('names every set row saving would change or drop; a stored set has none', () => {
+    const set = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['a(.*)', 'a*', 'a(.*)', '(?+1)(x)'] }
+    };
+    expect(notStoredRows(set).map(({ feature, index, row }) => ({ feature, index, row }))).toEqual([
+      { feature: 'delay_js', index: 1, row: 'a*' },
+      { feature: 'delay_js', index: 2, row: 'a(.*)' }
+    ]);
+    const stored = {
+      ...set,
+      rows: { ...set.rows, delayJs: storedExclusionRows('delay_js', set.rows.delayJs) }
+    };
+    expect(notStoredRows(stored)).toEqual([]);
   });
 });
 
@@ -194,21 +261,6 @@ describe('trimExclusionRow', () => {
     expect(trimExclusionRow('gtag')).toBe('gtag');
     expect(trimExclusionRow('')).toBe('');
     expect(trimExclusionRow(' \t\r\n ')).toBe('');
-  });
-});
-
-describe('committedFieldRows', () => {
-  it('trims every row and drops the blank ones, keeping order and duplicates', () => {
-    expect(committedFieldRows([' b ', '', '\t', 'a', '  c', 'a'])).toEqual(['b', 'a', 'c', 'a']);
-  });
-
-  it('keeps typed text the save would rewrite (it is not the stored form)', () => {
-    expect(committedFieldRows(['x%41y', '<b>a</b>', '*'])).toEqual(['x%41y', '<b>a</b>', '*']);
-  });
-
-  it('is empty for no rows or blank rows only', () => {
-    expect(committedFieldRows([])).toEqual([]);
-    expect(committedFieldRows(['', '   '])).toEqual([]);
   });
 });
 
