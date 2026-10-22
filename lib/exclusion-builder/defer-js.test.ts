@@ -283,9 +283,10 @@ describe('deferJsTransform — joined-row semantics', () => {
   });
 
   it('reports an unknown page state instead of claiming WP Rocket defers', () => {
-    // Distinct rows that match empty at most positions, yet are not provably
-    // match-all: the pre-check replay passes its execution budget.
-    const rows = Array.from({ length: 16_000 }, (_, index) => `(?:q${String(index)})?(?!x)`);
+    // Problem-free rows whose join is not modeled: the second row's open `\Q`
+    // quotes into the third, whose `\E` closes it — the joined pre-check may
+    // still compile, so it is not replayed. The first row still matches.
+    const rows = ['jquery\\.js$', 'a\\Qb', 'c\\E'];
     const result = deferJsTransform(DEFERRED, setWithRows(rows));
     expect(result.report.pageState).toBe('unknown');
     expect(result.report.rewritten).toBe(1);
