@@ -4,7 +4,7 @@
 
 Full re-think of the parked design, agreed with the owner 2026-10-20. The old flow (separate unlisted page + file pick/rewrite + Chrome overrides to load edited HTML) is **superseded** — too many steps, unused in practice. New shape: the builder lives as a **shadow-isolated overlay injected into the inspected page** (same machinery as the on-page strip), the user picks scripts/elements and composes exclusions in place, then clicks **Apply**: the page reloads and the extension **rewrites the served HTML in flight before parse/render**, so the render is a real page with the exclusions applied. Backends per browser — Chromium: `chrome.debugger` + CDP `Fetch` (response-stage intercept → transform → fulfill); Firefox: `webRequest.filterResponseData` streaming rewrite. When interception is unavailable, there is **no fallback** — a first-class warning state names the cause and remedy (G-3, decided 2026-10-20). All http(s) hosts are already host permissions (`URL_PATTERNS`); Chromium needs the new `debugger` permission (Chromium manifest only, gated on spike + owner acceptance G-2). Implementation **starts only after G-1** (owner approval of this plan). Technically parallel with P11 (disjoint modules; additive contract rows only).
 
-**Order after P10G (owner 2026-10-21):** P10K (mirror WP Rocket's stored + runtime row semantics: K.1–K.5a done → K.5b; K.6 CI parity job, parallel) → P10L (deferred nits + flaky side-by-side suite) → P10M ("On this page" toggle state) → P10H Firefox wiring → P10.1 → P10J. Policy-block check deferred (owner 2026-10-21). WP Rocket feature simulation on sites without the feature = its own phase [P21](./21-phase-21-wpr-simulation.md) (before release, owner 2026-10-22).
+**Order after P10G (owner 2026-10-21):** P10K (mirror WP Rocket's stored + runtime row semantics: K.1–K.5a done → K.5b; K.6 CI parity job, parallel) → P10L (deferred nits + flaky side-by-side suite) → P10M ("On this page" toggle state) → P10N (cross-surface sync: builder state in the panel + on-page strip; N.0 spike may run early, owner 2026-10-22) → P10H Firefox wiring → P10.1 → P10J. Policy-block check deferred (owner 2026-10-21). WP Rocket feature simulation on sites without the feature = its own phase [P21](./21-phase-21-wpr-simulation.md) (before release, owner 2026-10-22).
 
 **Shared session surface (owner mandate 2026-10-20):** the overlay is a **tool shell on one in-page session**, and the interception backend exposes a **transform-pipeline seam** — P10 ships the shell + Exclusions mode; the inspector-baseline testers (RUCSS test, beacon/LCP test, live script/LCP views) plug into the same shell/session per their owning phases P13/P14, improved per the owner mandate ("target to improve them all" — code/UI/UX). Their implementations, contracts, and gates stay in P13/P14; P10 owns only the shell, the session lifecycle, and the pipeline seam.
 
@@ -16,6 +16,7 @@ Full re-think of the parked design, agreed with the owner 2026-10-20. The old fl
 - **G-2 (owner): ACCEPTED 2026-10-20, conditional on store review** — owner accepts both warnings provided store approval is not blocked. Policy status: the `debugger` permission is store-legal (no policy prohibition), but it puts the submission under deeper review (justification/review notes, possible longer review; the broad-data warning is already shown by the existing all-hosts permissions). If store review ever blocks it, the fallback decision is split distribution (store build without interception, self-distributed build with it) — revisit only if it happens.
 - **G-3 (owner): DECIDED 2026-10-20 — no fallback, no simulation.** When interception is unavailable, Apply does nothing destructive: the overlay shows a first-class warning state naming the cause (attach denied / debugging policy / cancelled infobar / no support on this page) and the remedy, with Retry where the cause is transient — never a dead end (UX-D9), never a silent no-op. No DNR simulation, no DOM-hook simulation. Rarity rationale: the spike found interception available even with DevTools open (CFT 156); the realistic unavailable paths are managed-browser policy and a cancelled infobar — a clear warning beats building an approximate mode.
 - **G-4 (owner): APPROVED 2026-10-20** — keep the source's three feature-wide disable toggles (Delay JS / Defer JS / Automatic Lazy Rendering; no Lazyload toggle).
+- **R-1 (owner request, 2026-10-22) → [P10N](#p10n--cross-surface-sync-exclusion-builder-state-in-detection-surfaces).** "When Exclusions builder is used to deactivate for example DelayJS, indeed, DelayJS seems to be deactivated on the site, no Delayed Script, no DelayJS own scripts, great! But devtools panel still displays it as active, maybe because of the meta generator tag. […] I also would like the on-page detection widget and the Devtools panel to display it is deactivated by the exclusion builder, or something like that. I need all the parts in the extension to be synchronized between them. Even when they are 'separated modules' they must interact and react with the rest of modules and features of the extension." Principle adopted: every surface (panel, popup, on-page strip, overlay, badge) reflects the other modules' state; detection stays honest about what WP Rocket served and adds the builder's in-tab effect on top.
 - **G-5 (owner): APPROVED 2026-10-20** — the applied rewrite persists across navigations in the tab until **Stop** or tab close; cleanup contract: Stop, tab close, or extension reload restores unmodified rendering.
 
 ## Verified feasibility (2026-10-20)
@@ -887,12 +888,100 @@ Where (verified 2026-10-21): `entrypoints/exclusion-overlay.content/exclusions/m
 
 DoD: open/closed distinguishable at a glance in both palettes and to AT; §D receipted; budgets green. Effort S · difficulty easy.
 
+### P10N — Cross-surface sync: exclusion-builder state in detection surfaces
+
+Owner request R-1 (2026-10-22, recorded under Decision gates): a builder-disabled feature (e.g. Delay JS) is really off on the page, yet the devtools panel still shows it active; the panel and the on-page detection strip must say it is disabled/modified by the Exclusion Builder, and every surface must react to the others' state.
+
+**Placement: after P10M, before P10H.** The fix rides the transform pipeline and the detection payload, so it lands after P10K (final row semantics and the elements the transforms stamp) and P10L (removes `documentUrl` from the same transform signatures — serialize, don't conflict). It precedes P10H so the Firefox wiring receipt covers the new signal on both engines in one pass, and P10.1/P10J so the suites and gates include it. N.0 is read-only and may run any time (parallel K.5b/K.6/L/M).
+
+**Preliminary code read (2026-10-22, tree `b0ec53d`; N.0 confirms live, never assume):**
+
+- **Verdict source (panel + strip share one root).** Both render `readHudFeature` (`lib/detection/hud.ts:313`) over the data hub's single pass: `XMLSerializer` snapshot at DOMContentLoaded (`entrypoints/isolated.content/data-hub.ts:292`) → `parsePage` + `runChecks` (`data-hub.ts:183–184`). Panel: `lib/panel/detections-view-model.ts:141/235`; strip: `entrypoints/isolated.content/inspector/strip-state.ts:270/282`; state composed by `describeDetections` (`lib/detection/describe.ts:183`) from each row's `present`. `present` comes from the footprint checks (`lib/detection/run-detection.ts:84–101`), then the generator meta overrides it: `applyFeatureMetaAuthority` (`lib/detection/feature-meta.ts:150`; declared → `present: true, source: 'meta'` at `:162–164`), called at `run-detection.ts:102`. Tokens: `delay_js`→`wpr_delay_js`, `defer_all_js`→`wpr_defer_js`, `lazyload`→`wpr_lazyload_images`, `automatic_lazy_rendering`→`wpr_automatic_lazy_rendering` (`lib/wp-rocket/constants.ts:328–346`). Response headers feed only the cache context (`lib/detection/cache-context.ts`), not these four rows.
+- **Why it stays "active".** The rewrite never touches the generator meta: nothing under `lib/exclusion-builder/` or `lib/exclusion-session/` references `generator`, `data-wpr-features` or `FEATURE_META_TOKENS` (grep). Feature-wide Delay JS removes the controller scripts and restores every delayed script (`lib/exclusion-builder/delay-js.ts:197–231`), so the footprint should read absent (hypothesis), but the served meta still declares `wpr_delay_js` → meta authority forces present. Same shape expected for Defer JS (`defer-js.ts:189`) and ALR (`lazy-render.ts:61`). Row-level exclusions leave the feature applied on the remaining elements, so "active" is correct there; excluded elements carry `data-wpr-fdt-excluded` (`lib/wp-rocket/constants.ts:19`, stamped by `tag-edit.ts:197`), read into `fdtExcluded` (`lib/detection/detect-optimizations.ts:108`) and already shown on the JavaScript (`entrypoints/panel/pages/javascript/script-view.ts:96`) and Lazyload (`entrypoints/panel/pages/lazyload/lazyload-rows.ts:55`) pages — not on the Detections card, the strip, or the support report.
+- **Signals today.** Background controller per tab, persisted in `session:exclusion-sessions` (`lib/storage/exclusion-sessions.ts:41`); `ExclusionSessionStatus` (`lib/messaging/exclusion-session.ts:226–254`: active carries the applied `set` + the last `document` outcome with its `served` identity). Channels: `getExclusionSession` (top-frame content sender, `lib/messaging/protocol.ts:126`), `exclusionSessionChanged` push (`:142`, consumed only by the overlay, `entrypoints/exclusion-overlay.content/index.tsx:72`), `getExclusionSessionForTab` / `exclusionSessionUpdated` (`:148/:154`, consumed only by the panel status-bar builder entry, `entrypoints/panel/status-bar/builder-entry.tsx:70/81`, summarized to state + origin by `lib/messaging/exclusion-panel.ts:37`). Document↔record matching (`matchServedDocument`) is overlay-only (`entrypoints/exclusion-overlay.content/session/page-match.ts:99`). In-band: only the per-element `data-wpr-fdt-excluded` stamp.
+- **Missing.** (a) No per-document fact "feature disabled by the session on this render" — a feature-wide disable leaves no document-level mark; (b) the data hub/strip has no session subscription; (c) the detections payload has no field to carry it; (d) the panel's summary drops the set and never reaches Detections.
+
+**Options (N.0 lays them out for the owner; recommended default D):**
+
+| Option                                     | How                                                                                                                                                                    | For                                                                                                                                                                                                          | Against                                                                                                                                                    |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A — in-band document stamp                 | Last pipeline step stamps one bounded document-level marker listing feature-wide-disabled features; detection parses it like the feature meta and adds a per-row fact. | Exact per document (an over-budget/failed document is served unmodified, so it carries none); no race with the DCL capture; no new messaging; both backends share the pipeline; panel, strip, report get it. | One more page-visible node (page-forgeable — same trust as every footprint, mis-describes only that page); must stay out of copy/pick surfaces and parity. |
+| B — out-of-band join                       | Surfaces read the session status, promote `matchServedDocument` to `lib/exclusion-session/`, compose at render.                                                        | No extra DOM change.                                                                                                                                                                                         | New strip subscription; `cant-tell` matches (no served identity, history moves) leave the verdict ambiguous; three surfaces repeat the join; capture race. |
+| C — rewrite/strip the meta tokens          | Remove the disabled token from `data-wpr-features`.                                                                                                                    | Zero detection change.                                                                                                                                                                                       | **Rejected default:** detection would misreport what WP Rocket served and lose that fact.                                                                  |
+| D — A for the verdict, B's existing pushes | A decides the per-feature modifier; the existing session pushes keep the tab-level "builder session active" state (status bar today, strip later) current.             | Honest served fact + exact in-tab modifier; minimal new channels.                                                                                                                                            | Two mechanisms (each owns one concern).                                                                                                                    |
+
+Verdict model (default, owner confirms): the served verdict stays ("WP Rocket served it") and a **modifier** is added — "Disabled in this tab by the Exclusion Builder" (feature-wide) or "N excluded by the Exclusion Builder" (rows); never a silent flip to "not active".
+
+#### P10N.0 — Spike: confirm, decide (no product code)
+
+Depends:— (current tree). Parallel:P10K.5b, P10K.6, P10L, P10M. Goal: every preliminary answer above confirmed or corrected with `file:line` anchors, and the owner's choices recorded.
+
+- [ ] Live on the docker site (Chromium, [runbook](../local-site-runbook.md)): apply feature-wide Delay JS, Defer JS, ALR, then Lazyload rows only, then Delay JS rows only; record per case the panel Detections card, the strip chip, the support report row and the source chip. Save the served snapshot; run the engine over it with and without the generator meta (scratch harness, not committed) to prove whether meta authority alone keeps each row present.
+- [ ] Map each builder feature to the detection rows it can affect (e.g. do Lazyload rows reach iframes/CSS backgrounds, or images only).
+- [ ] Verify Stop's effect: does Stop reload the tab (`lib/exclusion-session/controller.ts:466` reload effect) or leave the rewritten document displayed — option A stays correct either way; B must handle it.
+- [ ] Firefox: the same detection and shared pipeline run there (`entrypoints/background/stream-filter-backend.ts` → `DocumentTransformRunner`), so the same gap is expected; the panel's builder entry is not offered on Firefox until P10H (`builder-entry.tsx` header). Record; P10H receipts the Firefox arm.
+- [ ] Cross-module inventory (record only, no scope added; each gap = an owner decision, default "later phase"): device simulation (`deviceSimulationChanged` reaches only the isolated side-by-side + UA relay — panel/strip don't say the tab is simulated, though the UA can change the served HTML); known conflicts (on-page only, `entrypoints/isolated.content/known-conflicts/` — no panel/popup surface, grep 2026-10-22); builder session vs the toolbar badge (`entrypoints/background/badge.ts` shows presence/cache only); popup (deferred P8: must read the same signals when built). Already synced (reference patterns): appearance (`components/injected-ui/live-theme.ts`), bypass (`cacheState`, panel + strip), KC DB (`knownConflictsStore.watch`).
+- [ ] Owner decisions (recommended defaults): **O-N1** option D; **O-N2** wording + modifier above; **O-N3** P6G.12 filter bucket for a builder-disabled feature — Inactive (not running in this tab), the card keeps the served fact; **O-N4** stamp shape (A/D: one marker, its name declared once next to `FDT_EXCLUDED_RESOURCE`, location, caps) and that it never appears in the overlay's candidate list, the stored-form copy or the WP Rocket parity table; **O-N5** whether the strip also shows a tab-level "Exclusion Builder session active" line (B's push) now or in P12B.
+
+DoD: findings + decisions recorded here (replacing this preliminary read), N.1–N.4 checklists adjusted to the chosen option. Effort S · difficulty medium.
+
+#### P10N.1 — Contracts: builder fact, additive (pure)
+
+Depends:P10N.0, P10L. Parallel:—. Goal: the detection payload carries an honest per-row builder fact; old payloads stay valid.
+
+- [ ] Option A/D (default): a final pipeline step in `lib/exclusion-builder/` stamps the document marker (one declaring site, O-N4) only when a feature-wide disable actually changed the document; test-first (present/absent per toggle, idempotent, never on an unmodified document, inside the P10B budget).
+- [ ] `lib/detection/` parser (new module, colocated test), bounded like `feature-meta.ts` (caps; a violation degrades to "no fact", never invents one); per row derive `builder?: { disabled: true } | { excluded: number }` from the marker + the `data-wpr-fdt-excluded` stamps already parsed. Additive optional field on the four `WprDetections` rows (`lib/wp-rocket/types.ts`), validator in `lib/messaging/validate.ts` (unknown values rejected, absence tolerated), caps in `lib/messaging/payload-bounds.ts`.
+- [ ] Reference engine (`lib/detection/reference/`) and `reference-parity.test.ts`: decide (record why) whether the field is compared or excluded — the reference duplicates control flow only.
+- [ ] Option B instead: promote `page-match.ts` to `lib/exclusion-session/` (second surface), add the data-hub subscription to `exclusionSessionChanged`; tests at the seam.
+
+DoD: contract tests (present/absent/hostile/degraded), old-payload tolerance, gates + budgets green. Effort M · difficulty medium.
+
+#### P10N.2 — Shared reading + copy
+
+Depends:P10N.1. Parallel:—. Goal: one declaring site for how a builder fact reads, used by every surface.
+
+- [ ] `HudReading` gains the modifier (`lib/detection/hud.ts`); `hudStateLine` + chip/tooltip copy (O-N2) declared once beside `SOURCE_COPY`; the verdict itself is unchanged.
+- [ ] Support report row (`lib/panel/support-report.ts`) states served verdict + modifier.
+- [ ] Unit tests: every verdict × modifier, copy strings pinned.
+
+DoD: tests + gates green. Effort S · difficulty easy.
+
+#### P10N.3 — Devtools panel UI
+
+Depends:P10N.2. Parallel:P10N.4. Goal: the Detections card says the feature is disabled/modified in this tab.
+
+- [ ] Card modifier badge + tooltip (`entrypoints/panel/pages/detections/**`, `lib/panel/detections-view-model.ts`), tokens/primitives only, not color alone (K-5); the summary strip counts per O-N3.
+- [ ] P6G.12 filter: if shipped, classify per O-N3 (+ its unit test); if not, add the rule to P6G.12's checklist.
+- [ ] Refresh: a new document (Apply/Stop reload) re-renders through the existing panel reload; verify no stale modifier after Stop.
+- [ ] Unit/page tests; UI bar §D receipt (D-1 320 px, D-2 both palettes, D-3, D-4).
+
+DoD: card/report/filter correct for the five N.0 cases; §D receipted; gates + budgets green. Effort S · difficulty easy.
+
+#### P10N.4 — On-page strip UI
+
+Depends:P10N.2. Parallel:P10N.3. Goal: the strip chip says the same thing as the panel.
+
+- [ ] `chipStateForFeature` / row tooltip (`entrypoints/isolated.content/inspector/strip-state.ts:148/286`) render the modifier; shadow-isolated tokens only; the O-N5 tab-level line if decided "now".
+- [ ] Unit tests (`strip-state.test.ts`); §D receipt; strip bundle budget re-measured. P12B later inherits the shape (no rework).
+
+DoD: strip matches the panel for the five cases; gates + budgets green. Effort S · difficulty easy.
+
+#### P10N.5 — Browser suite + live check
+
+Depends:P10N.3, P10N.4. Parallel:—. Goal: the sync proven end to end on Chromium.
+
+- [ ] `tests/e2e/` spec: a fixture page carrying the stamp + `data-wpr-fdt-excluded` (covers detection → panel card + strip without interception); the interception arm follows P10A's Playwright-coexistence finding (if it cannot coexist: manual evidence, gap stated).
+- [ ] Owner live check on the docker site: the five N.0 cases, then Stop → every surface back to the served verdict.
+
+DoD: spec green with the tier; live check recorded; Firefox arm handed to P10H. Effort S · difficulty medium.
+
 ### P10H — Firefox wiring
 
-Depends:P10E+F, G for the shared wiring shape; P10K–P10M first (owner order 2026-10-21). Parallel:—.
+Depends:P10E+F, G for the shared wiring shape; P10K–P10N first (owner order 2026-10-21; P10N added 2026-10-22). Parallel:—.
 
 - [ ] Firefox apply flow end-to-end; streaming backend's applied-state surfaced in the same overlay contract.
 - [ ] Cross-browser receipt: same exclusion set, both engines, same engine report.
+- [ ] P10N on Firefox: panel card + strip show the builder modifier for the five P10N.0 cases (the panel builder entry becomes available here).
 - [ ] Verify Firefox shares the isolated world between the manifest content script and `scripting.executeScript` files (the navigation anchor); if not, the overlay falls back to the read-at-mount anchor and degrades to "can't verify".
 - [ ] Re-check the page-key guard's order against the page's inline `<head>` scripts on the real flow (Apply's reload, cold starts) — fine on reload/fresh navigation in P10F's final round.
 
@@ -900,9 +989,9 @@ DoD: Firefox parity with the shared flow (no fallback exists — G-3); no Chromi
 
 ### P10.1 — Browser suites (this file, local tier)
 
-Depends:P10G(+P10H), P10K–P10M; P4.1 harness. Scope shaped by P10A's Playwright-coexistence finding:
+Depends:P10G(+P10H), P10K–P10N; P4.1 harness. Scope shaped by P10A's Playwright-coexistence finding:
 
-- [ ] Overlay editor suites: compose/validate/counts, pick flows, state matrix arms, Stop/Reset, mode indicator (backend stubbed at the message seam); P10K stored-form notes + copy-all stored text; P10M toggle open/closed.
+- [ ] Overlay editor suites: compose/validate/counts, pick flows, state matrix arms, Stop/Reset, mode indicator (backend stubbed at the message seam); P10K stored-form notes + copy-all stored text; P10M toggle open/closed; P10N.5's spec joins the tier.
 - [ ] If CDP coexists: one interception arm asserting the fulfilled document applied the engine transform; else interception stays manual-evidenced and the suite covers everything around it — the gap stated, never hidden.
 - [ ] Keyboard/axe (D-3/D-4), width matrix (D-1), reduced motion (D-2); Firefox arms manual per harness rules unless re-verified.
 
@@ -910,7 +999,7 @@ DoD: suites green with the tier; suite scope vs manual evidence recorded. Effort
 
 ### P10J — Gates, budgets, docs
 
-Depends:all above (P10A–P10M, P10.1). Parallel:—.
+Depends:all above (P10A–P10N, P10.1). Parallel:—.
 
 - [ ] Full gates: `pnpm compile && pnpm lint && pnpm format:check && pnpm test`; `pnpm build` (+ `:firefox`) and `pnpm check:budgets` with new rows/receipted deltas.
 - [ ] AGENTS.md: `debugger` permission (why + warning), new lib module, any new script; runbook rows (apply modes, DevTools interplay, Reset semantics); README active-work line closed with receipts; master train slot confirmed by owner.
