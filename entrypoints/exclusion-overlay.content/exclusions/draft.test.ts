@@ -181,12 +181,13 @@ describe('row edits', () => {
 
 /**
  * What WP Rocket stores for a row after a paste: the field's text (before +
- * pasted + after) split on LF, each line trimmed, blank lines dropped —
- * derived from the save rule, independently of the paste code.
+ * pasted + after) as a textarea holds it (every CR or CRLF read as LF),
+ * split on LF, each line trimmed, blank lines dropped — derived from the
+ * textarea and save rules, independently of the paste code.
  */
 function wpRocketLines(row: string, start: number, end: number, pasted: string): string[] {
   return (row.slice(0, start) + pasted + row.slice(end))
-    .split('\n')
+    .split(/\r\n|\r|\n/)
     .map((line) => line.replace(/^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g, ''))
     .filter((line) => line !== '');
 }
@@ -257,6 +258,7 @@ describe('pasteIntoRow', () => {
     expect(pasted.draft.rows.delayJs).toHaveLength(EXCLUSION_SET_LIMITS.rowsPerFeature);
     // Lines a, b, cjquery… — the cap drops the pasted b, keeps the row's text.
     expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'cjquery\\.min\\.js']);
+    expect(pasted.dropped).toBe(1);
   });
 
   it('takes no multi-line paste into a full lane', () => {
@@ -269,7 +271,7 @@ describe('pasteIntoRow', () => {
     ).draft;
     expect(
       pasteIntoRow(full, 'delayJs', first?.id ?? '', 'a\nb', { start: 0, end: 0 }, nextId)
-    ).toEqual({ draft: full, ids: [] });
+    ).toEqual({ draft: full, ids: [], dropped: 1, caret: null });
   });
 
   it('trims whole lines of the joined text like the settings save, never fragments', () => {
@@ -288,29 +290,56 @@ describe('pasteIntoRow', () => {
     );
   });
 
-  it.each([' foo \n bar ', '\tc \n', '\n foo', 'a  \n', 'x \ny', '\n', '\n  \n'])(
-    'stores what WP Rocket would for %j pasted between a|b',
-    (text) => {
-      const ids = createIdSource('w');
-      const {
-        draft,
-        ids: [row]
-      } = insertRows(draftFromSet(EMPTY_EXCLUSION_SET, ids), 'lazyload', ['ab'], null, ids);
-      const pasted = pasteIntoRow(draft, 'lazyload', row ?? '', text, { start: 1, end: 1 }, ids);
-      expect(draftToSet(pasted.draft).rows.lazyload).toEqual(wpRocketLines('ab', 1, 1, text));
-    }
-  );
+  it.each([
+    ' foo \n bar ',
+    '\tc \n',
+    '\n foo',
+    'a  \n',
+    'x \ny',
+    '\n',
+    '\n  \n',
+    'a\rb\nc',
+    'p\rq',
+    'x\r\ny\r'
+  ])('stores what WP Rocket would for %j pasted between a|b', (text) => {
+    const ids = createIdSource('w');
+    const {
+      draft,
+      ids: [row]
+    } = insertRows(draftFromSet(EMPTY_EXCLUSION_SET, ids), 'lazyload', ['ab'], null, ids);
+    const pasted = pasteIntoRow(draft, 'lazyload', row ?? '', text, { start: 1, end: 1 }, ids);
+    expect(draftToSet(pasted.draft).rows.lazyload).toEqual(wpRocketLines('ab', 1, 1, text));
+  });
 
-  it('drops the CR of a CRLF from the edited row (the field cannot hold it)', () => {
+  it('leaves no CR in any row (CR and CRLF break lines like LF)', () => {
     const pasted = pasteIntoRow(
       start,
       'delayJs',
       first?.id ?? '',
-      'x\r\ny',
+      'x\r\ny\rz',
       { start: 0, end: 0 },
       nextId
     );
-    expect(texts(pasted.draft).slice(0, 2)).toEqual(['x', 'yjquery\\.min\\.js']);
+    expect(texts(pasted.draft).slice(0, 3)).toEqual(['x', 'y', 'zjquery\\.min\\.js']);
+  });
+
+  it('puts the caret right after the pasted text, before the kept row text', () => {
+    // 'ab', caret a|b: rows 'a foo', 'bar b' — caret after 'bar'.
+    const ids = createIdSource('c');
+    const {
+      draft,
+      ids: [row]
+    } = insertRows(draftFromSet(EMPTY_EXCLUSION_SET, ids), 'lazyload', ['ab'], null, ids);
+    const at = (text: string): number | null =>
+      pasteIntoRow(draft, 'lazyload', row ?? '', text, { start: 1, end: 1 }, ids).caret;
+    expect(at(' foo \n bar ')).toBe('bar '.length);
+    expect(at('foo\n  ')).toBe(0);
+    expect(at('x\n')).toBe(0);
+    expect(at('x\ny\n\n')).toBe(0);
+    expect(at('plain')).toBe('aplain'.length);
+    // No suffix: the end of the last row.
+    const end = pasteIntoRow(draft, 'lazyload', row ?? '', 'x\n yz ', { start: 2, end: 2 }, ids);
+    expect(end.caret).toBe('yz'.length);
   });
 
   it('changes nothing for an unknown row', () => {
@@ -325,8 +354,8 @@ describe('splitLines', () => {
     expect(splitLines('a\r\nb\n\n  \nc ')).toEqual(['a', 'b', 'c']);
   });
 
-  it('splits on LF only, like the settings save: a lone CR stays inside its line', () => {
-    expect(splitLines('a\rb\nc\r')).toEqual(['a\rb', 'c']);
+  it('breaks lines on a lone CR too, as the field normalizes it', () => {
+    expect(splitLines('a\rb\nc\r')).toEqual(['a', 'b', 'c']);
     expect(splitLines('\r\n\r')).toEqual([]);
   });
 });

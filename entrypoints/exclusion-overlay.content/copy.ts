@@ -84,7 +84,26 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
 
 /** A row with invisible characters WP Rocket keeps (non-blocking). */
 export const INVISIBLE_ROW_NOTE =
-  'Has invisible characters WP Rocket keeps (non-breaking or zero-width spaces): they must match too.';
+  'This row has invisible characters WP Rocket keeps (non-breaking, zero-width or soft-hyphen characters): they must match too.';
+
+/** A paste the lane cap cut short. */
+export const PASTE_COPY = {
+  /**
+   * Nothing pasted: the lane holds no more rows.
+   *
+   * @param max The lane's row cap.
+   */
+  laneFull: (max: number): string =>
+    `Lane full: the paste was not added (${String(max)} rows max).`,
+  /**
+   * Some pasted lines left out.
+   *
+   * @param lines Lines left out (≥ 1).
+   * @param max The lane's row cap.
+   */
+  dropped: (lines: number, max: number): string =>
+    `${String(lines)} pasted ${lines === 1 ? 'line was' : 'lines were'} not added: a lane holds ${String(max)} rows at most.`
+} as const;
 
 /** The per-lane copy-all control's words. */
 export const COPY_ALL_COPY = {

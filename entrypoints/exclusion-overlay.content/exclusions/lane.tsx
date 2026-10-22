@@ -23,8 +23,8 @@ import { hasInvisibleKeptCharacters } from '../../../lib/exclusion-builder/field
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
-import { INVISIBLE_ROW_NOTE, LANE_COPY } from '../copy';
-import type { OverlayController } from '../controller';
+import { INVISIBLE_ROW_NOTE, LANE_COPY, PASTE_COPY } from '../copy';
+import type { OverlayController, PasteOutcome } from '../controller';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
 import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
@@ -62,6 +62,18 @@ export interface LaneProps {
   readonly writeClipboard?: ClipboardWriter | undefined;
   /** The virtualizer seam (tests). */
   readonly createVirtualizer?: VirtualizerFactory | undefined;
+}
+
+/**
+ * What to tell about a paste that left lines out, or null.
+ *
+ * @param outcome What the paste did.
+ */
+function pasteNote(outcome: PasteOutcome): string | null {
+  const max = EXCLUSION_SET_LIMITS.rowsPerFeature;
+  if (outcome.kind === 'lane-full') return PASTE_COPY.laneFull(max);
+  if (outcome.kind === 'dropped') return PASTE_COPY.dropped(outcome.lines, max);
+  return null;
 }
 
 /** The lane's count line, e.g. "3 of 9 delayed scripts restored". */
@@ -107,7 +119,7 @@ export function Lane(props: LaneProps): JSX.Element {
   /** The row a focus move is heading to (arrow presses accumulate on it, never on a stale focus). */
   let focusTarget: string | null = null;
   /** Focus a row's input once it is rendered (scrolling it into the window first). */
-  const focusRow = (id: string): void => {
+  const focusRow = (id: string, caret?: number): void => {
     const index = rows().findIndex((row) => row.id === id);
     if (index === -1) return;
     focusTarget = id;
@@ -118,6 +130,7 @@ export function Lane(props: LaneProps): JSX.Element {
       const input = root?.querySelector<HTMLInputElement>(`[data-row-id="${id}"] input`);
       if (input) {
         input.focus({ preventScroll: false });
+        if (caret !== undefined) input.setSelectionRange(caret, caret);
         focusTarget = null;
         return;
       }
@@ -135,7 +148,7 @@ export function Lane(props: LaneProps): JSX.Element {
     on(
       () => props.controller.focusRequest(),
       (request) => {
-        if (request?.lane === props.lane) focusRow(request.id);
+        if (request?.lane === props.lane) focusRow(request.id, request.caret);
       },
       { defer: true }
     )
@@ -172,14 +185,35 @@ export function Lane(props: LaneProps): JSX.Element {
       return;
     }
     const text = event.clipboardData?.getData('text/plain') ?? '';
-    // Any line feed splits the row, as it would in WP Rocket's field (the
-    // input itself would drop it); anything else is a native paste.
-    if (!text.includes('\n')) return;
+    // Any line break (LF, CR or CRLF — a textarea reads them all as one)
+    // splits the row, as it would in WP Rocket's field (the input itself
+    // would drop it); anything else is a native paste.
+    if (!/[\r\n]/.test(text)) return;
     event.preventDefault();
-    props.controller.pasteRows(props.lane, row.id, text, selectionOf(event.currentTarget, row));
+    const outcome = props.controller.pasteRows(
+      props.lane,
+      row.id,
+      text,
+      selectionOf(event.currentTarget, row)
+    );
+    const said = pasteNote(outcome);
+    setPasteMessage(said);
+    if (said !== null) props.announce(said);
   };
 
   const full = (): boolean => rows().length >= EXCLUSION_SET_LIMITS.rowsPerFeature;
+
+  /** Why the last paste left lines out (until the lane's rows change). */
+  const [pasteMessage, setPasteMessage] = createSignal<string | null>(null);
+  createEffect(
+    on(
+      rows,
+      () => {
+        setPasteMessage(null);
+      },
+      { defer: true }
+    )
+  );
 
   return (
     <section
@@ -284,6 +318,14 @@ export function Lane(props: LaneProps): JSX.Element {
           <Plus size={14} aria-hidden="true" />
           Add row
         </button>
+        <Show when={pasteMessage()}>
+          {(message) => (
+            <p class="xo-row-error xo-copy-line">
+              <CircleAlert size={12} aria-hidden="true" />
+              <span>{message()}</span>
+            </p>
+          )}
+        </Show>
         <Show when={full()}>
           <span class="xo-lane-limit">
             {`${String(EXCLUSION_SET_LIMITS.rowsPerFeature)} rows is the most a lane holds.`}

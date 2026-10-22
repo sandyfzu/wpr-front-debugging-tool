@@ -16,7 +16,11 @@ import {
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
 import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
-import { exclusionFieldLines, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
+import {
+  exclusionFieldLines,
+  splitFieldText,
+  trimExclusionRow
+} from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 
 /** One editor lane = one feature's row list. */
@@ -122,14 +126,14 @@ export function sameSet(a: ExclusionSet, b: ExclusionSet): boolean {
 }
 
 /**
- * Split pasted text into rows the way WP Rocket's save splits its field:
- * on `\n` only, each line trimmed (which takes a CRLF's `\r` with it), lines
- * left empty dropped — a lone `\r` inside a line stays part of that line.
+ * Split pasted text into rows the way WP Rocket's field reads it: line
+ * breaks normalized as a textarea does (CRLF and a lone CR are LF), split on
+ * LF, each line trimmed, lines left empty dropped.
  *
  * @param text The pasted text.
  */
 export function splitLines(text: string): string[] {
-  return exclusionFieldLines(text.split('\n'));
+  return exclusionFieldLines(splitFieldText(text));
 }
 
 /** The result of an insertion. */
@@ -179,16 +183,30 @@ export interface RowSelection {
   readonly end: number;
 }
 
+/** The result of a paste. */
+export interface Pasted extends Inserted {
+  /** Pasted lines the lane cap left out (all of them for a full lane). */
+  readonly dropped: number;
+  /**
+   * Where the caret belongs in the last filled row (`ids` last): right after
+   * the pasted text, before the row's own text that followed the selection;
+   * null when nothing was filled.
+   */
+  readonly caret: number | null;
+}
+
 /**
  * Paste text into a row the way WP Rocket's field would read the result:
  * the row's text before the selection, the pasted text and the row's text
- * after it are joined, then split on `\n` — whole lines, never fragments,
- * so surrounding spaces are trimmed per line only. The edited row keeps the
- * first line as is (it trims when left, like any typed row; a CRLF's `\r`
- * the field cannot hold is dropped), and every further line becomes a row
- * after it, trimmed, blank ones dropped. At the lane cap, pasted lines are
- * dropped — never the line holding the row's text after the selection; a
- * full lane takes no multi-line paste.
+ * after it are joined, then split into lines as the field does
+ * ({@link splitFieldText}: any CR/CRLF/LF breaks a line) — whole lines,
+ * never fragments, so surrounding spaces are trimmed per line only. The
+ * edited row keeps the first line as is (it trims when left, like any typed
+ * row), and every further line becomes a row after it, trimmed, blank ones
+ * dropped. At the lane cap, pasted lines are dropped — never the line
+ * holding the row's text after the selection; a full lane takes none of a
+ * multi-line paste (the edited row cannot hold line breaks). `dropped`
+ * counts what was left out, so the caller can say so.
  *
  * @param draft The draft.
  * @param lane The row's lane.
@@ -196,8 +214,8 @@ export interface RowSelection {
  * @param pasted The pasted text.
  * @param selection Where in the row's text the paste lands.
  * @param nextId Mints the new rows' ids.
- * @returns The draft and the rows the paste filled, the edited one first
- *   (none, draft unchanged: an unknown row, or a full lane).
+ * @returns The draft, the rows the paste filled (the edited one first; none
+ *   for an unknown row or a full lane), the lines dropped and the caret.
  */
 export function pasteIntoRow(
   draft: Draft,
@@ -206,25 +224,69 @@ export function pasteIntoRow(
   pasted: string,
   selection: RowSelection,
   nextId: IdSource
-): Inserted {
+): Pasted {
   const row = draft.rows[lane].find((candidate) => candidate.id === id);
-  const room = EXCLUSION_SET_LIMITS.rowsPerFeature - draft.rows[lane].length;
-  if (row === undefined) return { draft, ids: [] };
+  if (row === undefined) return { draft, ids: [], dropped: 0, caret: null };
+  const before = row.text.slice(0, selection.start);
   const suffix = row.text.slice(selection.end);
-  const [first = '', ...tail] = (row.text.slice(0, selection.start) + pasted + suffix).split('\n');
+  const [first = '', ...tail] = splitFieldText(before + pasted + suffix);
+  if (tail.length === 0) {
+    // No line break: the text simply lands in the row.
+    return {
+      draft: updateRow(draft, lane, id, first),
+      ids: [id],
+      dropped: 0,
+      caret: before.length + pasted.length
+    };
+  }
+  const room = EXCLUSION_SET_LIMITS.rowsPerFeature - draft.rows[lane].length;
   const lines = splitLines(tail.join('\n'));
-  if (lines.length > 0 && room <= 0) return { draft, ids: [] };
-  const head = tail.length > 0 ? first.replace(/\r$/, '') : first;
+  if (lines.length > 0 && room <= 0) {
+    return { draft, ids: [], dropped: lines.length, caret: null };
+  }
+  const lastRaw = tail.at(-1) ?? '';
   // The last line holds the row's own text after the selection: kept at the cap.
-  const keepsSuffix = suffix !== '' && !isBlankRow(tail.at(-1) ?? '');
+  const keepsSuffix = suffix !== '' && !isBlankRow(lastRaw);
   const following =
     lines.length <= room
       ? lines
       : keepsSuffix
         ? [...lines.slice(0, room - 1), ...lines.slice(-1)]
         : lines.slice(0, room);
-  const inserted = insertRows(updateRow(draft, lane, id, head), lane, following, id, nextId);
-  return { draft: inserted.draft, ids: [id, ...inserted.ids] };
+  const inserted = insertRows(updateRow(draft, lane, id, first), lane, following, id, nextId);
+  return {
+    draft: inserted.draft,
+    ids: [id, ...inserted.ids],
+    dropped: lines.length - following.length,
+    caret: pastedCaret(first, following, lastRaw, suffix, lines.length <= room || keepsSuffix)
+  };
+}
+
+/**
+ * The caret after a multi-line paste: in the last created row, right after
+ * the pasted text (before the kept text that followed the selection); at the
+ * end of the edited row when no row was created.
+ *
+ * @param head The edited row's new text.
+ * @param following The rows created, trimmed.
+ * @param lastRaw The joined text's last line, untrimmed.
+ * @param suffix The row's text that followed the selection.
+ * @param lastKept Whether the last created row is that last line.
+ */
+function pastedCaret(
+  head: string,
+  following: readonly string[],
+  lastRaw: string,
+  suffix: string,
+  lastKept: boolean
+): number {
+  const last = following.at(-1);
+  if (last === undefined) return head.length;
+  if (!lastKept || isBlankRow(lastRaw)) return last.length;
+  // The trimmed row ends with the suffix trimmed at its end only (the '.'
+  // shields its start from the trim).
+  const suffixKept = trimExclusionRow(`.${suffix}`).length - 1;
+  return Math.max(0, last.length - suffixKept);
 }
 
 /**

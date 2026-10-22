@@ -1,7 +1,10 @@
 import { createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../lib/exclusion-builder/set';
-import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
+import {
+  EXCLUSION_SET_LIMITS,
+  type ExclusionSessionStatus
+} from '../../lib/messaging/exclusion-session';
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import {
   AUTOSAVE_DELAY_MS,
@@ -205,10 +208,35 @@ describe('editing and autosave', () => {
   it('splits a multi-line paste into rows and focuses the last', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }).port);
     const [id] = controller.insertRows('lazyload', [''], null);
-    controller.pasteRows('lazyload', id ?? '', 'a.png\nb.png\r\n\nc.png', { start: 0, end: 0 });
+    expect(
+      controller.pasteRows('lazyload', id ?? '', 'a.png\nb.png\r\n\nc.png', {
+        start: 0,
+        end: 0
+      })
+    ).toEqual({ kind: 'pasted' });
     const rows = controller.draft().rows.lazyload;
     expect(rows.map((row) => row.text)).toEqual(['a.png', 'b.png', 'c.png']);
-    expect(controller.focusRequest()).toEqual({ lane: 'lazyload', id: rows[2]?.id });
+    // The caret lands after the pasted text.
+    expect(controller.focusRequest()).toEqual({ lane: 'lazyload', id: rows[2]?.id, caret: 5 });
+  });
+
+  it('says when the lane cap left pasted lines out, or took none of them', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    const filler = Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature - 2 }, () => 'f');
+    const [id] = controller.insertRows('lazyload', ['x', ...filler], null);
+    expect(controller.pasteRows('lazyload', id ?? '', 'a\nb\nc', { start: 1, end: 1 })).toEqual({
+      kind: 'dropped',
+      lines: 1
+    });
+    expect(controller.draft().rows.lazyload).toHaveLength(EXCLUSION_SET_LIMITS.rowsPerFeature);
+    const before = controller.draft();
+    expect(controller.pasteRows('lazyload', id ?? '', 'p\nq', { start: 0, end: 0 })).toEqual({
+      kind: 'lane-full'
+    });
+    expect(controller.draft()).toBe(before);
+    expect(controller.pasteRows('lazyload', 'missing', 'p\nq', { start: 0, end: 0 })).toEqual({
+      kind: 'ignored'
+    });
   });
 
   it('adds a candidate once, focusing its row only when asked', async () => {

@@ -60,20 +60,32 @@ export function exclusionFieldText(rows: readonly string[]): string {
 }
 
 /**
- * Characters that render as nothing yet stay in a stored row wherever they
- * are: zero-width space/joiners, word joiner, BOM, next line, soft hyphen.
+ * Characters a stored row keeps that a reader cannot tell apart from a
+ * plain space or from nothing: every non-ASCII whitespace (no-break,
+ * narrow, ideographic, line-separator spaces, BOM…) and the zero-width
+ * marks (zero-width space/joiners, word joiner, next line, soft hyphen).
  */
-const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF\u0085\u00AD]/;
+const INVISIBLE_KEPT = /[^\S \t\n\r\v\f]|[\u200B-\u200D\u2060\u0085\u00AD]/;
 
 /**
- * Whether a row carries invisible characters the save keeps — no-break or
- * other Unicode spaces at its ends (a row of only those looks blank), or
- * zero-width characters anywhere — so it must match them too, while the
- * editor shows nothing there.
+ * Whether a row carries characters the save keeps but the editor cannot
+ * show for what they are — so a row that looks right silently fails to
+ * match (a no-break space never matches a typed space).
  *
  * @param row The row as typed.
  */
 export function hasInvisibleKeptCharacters(row: string): boolean {
-  const stored = trimExclusionRow(row);
-  return stored !== stored.trim() || ZERO_WIDTH.test(stored);
+  return INVISIBLE_KEPT.test(trimExclusionRow(row));
+}
+
+/**
+ * Split field text into lines the way the settings field reads it: a
+ * textarea's value normalizes every CRLF and lone CR to LF (HTML's API
+ * value), and the save splits on LF — so a lone CR breaks a line too.
+ *
+ * @param text Text bound for the field (a paste, the row around it).
+ * @returns The lines, untrimmed (empty ones kept).
+ */
+export function splitFieldText(text: string): string[] {
+  return text.replace(/\r\n?/g, '\n').split('\n');
 }

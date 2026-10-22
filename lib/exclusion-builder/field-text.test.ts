@@ -9,6 +9,7 @@ import {
   exclusionFieldLines,
   exclusionFieldText,
   hasInvisibleKeptCharacters,
+  splitFieldText,
   trimExclusionRow
 } from './field-text';
 
@@ -79,10 +80,26 @@ describe('hasInvisibleKeptCharacters', () => {
     }
   });
 
-  it('leaves blank rows, plain rows and inner no-break spaces alone', () => {
+  it('flags inner no-break and other Unicode spaces (they never match a typed space)', () => {
+    expect(hasInvisibleKeptCharacters('a\u00a0b')).toBe(true);
+    expect(hasInvisibleKeptCharacters('a\u202fb')).toBe(true);
+  });
+
+  it('leaves blank rows and rows of visible text and ASCII spaces alone', () => {
     expect(hasInvisibleKeptCharacters('  \t')).toBe(false);
     expect(hasInvisibleKeptCharacters(' gtag ')).toBe(false);
-    expect(hasInvisibleKeptCharacters('a\u00a0b')).toBe(false);
+    expect(hasInvisibleKeptCharacters('a b')).toBe(false);
     expect(hasInvisibleKeptCharacters('')).toBe(false);
+  });
+});
+
+describe('splitFieldText', () => {
+  it('breaks lines on LF, CRLF and a lone CR, as a textarea normalizes them', () => {
+    expect(splitFieldText('a\rb\r\nc\nd')).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('keeps empty and untrimmed lines (trimming is the save step)', () => {
+    expect(splitFieldText(' a \n\n')).toEqual([' a ', '', '']);
+    expect(splitFieldText('')).toEqual(['']);
   });
 });

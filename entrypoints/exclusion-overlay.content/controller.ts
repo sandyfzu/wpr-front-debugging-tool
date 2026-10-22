@@ -79,7 +79,18 @@ export interface OverlayControllerDeps {
 export interface FocusRequest {
   readonly lane: LaneKey;
   readonly id: string;
+  /** Where the caret goes in the row (default: where focus puts it). */
+  readonly caret?: number;
 }
+
+/**
+ * What a paste did: `pasted` (every line in), `dropped` (the lane cap left
+ * `lines` pasted lines out), `lane-full` (nothing pasted: the lane holds no
+ * more rows), `ignored` (not editable now, or an unknown row).
+ */
+export type PasteOutcome =
+  | { readonly kind: 'pasted' | 'lane-full' | 'ignored' }
+  | { readonly kind: 'dropped'; readonly lines: number };
 
 /** The controller's surface. */
 export interface OverlayController {
@@ -133,9 +144,11 @@ export interface OverlayController {
   insertRows(lane: LaneKey, texts: readonly string[], afterId: string | null): readonly string[];
   /**
    * Paste lines into a row at `selection` (its text before and after it is
-   * kept), focusing the last row filled.
+   * kept), focusing the last row filled with the caret after the pasted text.
+   *
+   * @returns What the paste did (the caller says so when lines were left out).
    */
-  pasteRows(lane: LaneKey, id: string, text: string, selection: RowSelection): void;
+  pasteRows(lane: LaneKey, id: string, text: string, selection: RowSelection): PasteOutcome;
   removeRow(lane: LaneKey, id: string): void;
   setDisable(key: ToggleKey, value: boolean): void;
   /**
@@ -477,13 +490,18 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       return inserted.ids;
     },
     pasteRows: (lane, id, text, selection) => {
-      if (!editable()) return;
+      if (!editable()) return { kind: 'ignored' };
       const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
       const last = pasted.ids.at(-1);
-      if (last === undefined) return;
+      if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
       clearServerReason(id);
       setDraft(pasted.draft);
-      setFocusRequest({ lane, id: last });
+      setFocusRequest({
+        lane,
+        id: last,
+        ...(pasted.caret === null ? {} : { caret: pasted.caret })
+      });
+      return pasted.dropped > 0 ? { kind: 'dropped', lines: pasted.dropped } : { kind: 'pasted' };
     },
     removeRow: (lane, id) => {
       if (!editable()) return;

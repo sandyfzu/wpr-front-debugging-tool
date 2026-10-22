@@ -3,7 +3,9 @@ import { INTERCEPTION_UNAVAILABLE_CAUSES } from '../../lib/messaging/exclusion-s
 import {
   COPY_ALL_COPY,
   DOCUMENT_FAILURE_COPY,
+  INVISIBLE_ROW_NOTE,
   LANE_COPY,
+  PASTE_COPY,
   PROBLEM_COPY,
   UNAVAILABLE_COPY,
   saveStateWords,
@@ -28,7 +30,11 @@ function allWords(): string[] {
       copy.copyHint
     ]),
     COPY_ALL_COPY.empty,
-    COPY_ALL_COPY.failed
+    COPY_ALL_COPY.failed,
+    INVISIBLE_ROW_NOTE,
+    PASTE_COPY.laneFull(500),
+    PASTE_COPY.dropped(1, 500),
+    PASTE_COPY.dropped(3, 500)
   ];
 }
 
@@ -153,5 +159,14 @@ describe('copy-all words', () => {
   it('tells the lane without a settings field where its lines go', () => {
     expect(LANE_COPY.lazyRender.copyHint).toMatch(/rocket_lrc_exclusions/);
     expect(LANE_COPY.delayJs.copyHint).toMatch(/one per line/i);
+  });
+});
+
+describe('paste words', () => {
+  it('count the lines a capped paste left out', () => {
+    expect(PASTE_COPY.dropped(1, 500)).toBe(
+      '1 pasted line was not added: a lane holds 500 rows at most.'
+    );
+    expect(PASTE_COPY.dropped(2, 500)).toMatch(/^2 pasted lines were not added/);
   });
 });

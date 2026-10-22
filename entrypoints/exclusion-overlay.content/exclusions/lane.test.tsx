@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COPIED_FLASH_MS } from '../../../components/ui/copy-flash';
+import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import type { ExclusionSessionStatus } from '../../../lib/messaging/exclusion-session';
 import type { VirtualizerFactory } from '../../../components/ui/virtual-list';
@@ -60,7 +61,8 @@ async function readyController(): Promise<OverlayController> {
 function mountLane(
   controller: OverlayController,
   report?: TransformReport,
-  write: ClipboardWriter = () => Promise.resolve('copied')
+  write: ClipboardWriter = () => Promise.resolve('copied'),
+  createVirtualizer: VirtualizerFactory = everyRow
 ) {
   const [locked, setLocked] = createSignal(false);
   const announce = vi.fn<(text: string) => void>();
@@ -76,7 +78,7 @@ function mountLane(
       locked={locked()}
       announce={announce}
       writeClipboard={write}
-      createVirtualizer={everyRow}
+      createVirtualizer={createVirtualizer}
     />
   ));
   return { setLocked, announce, unmount };
@@ -143,14 +145,56 @@ describe('Lane', () => {
     expect(input(1).value).toBe('gtag');
   });
 
-  it('leaves a paste without a line feed to the field (a lone CR is not a line break)', async () => {
+  it('splits on a lone CR like a line feed (a textarea reads it as one)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['ab'], null);
+    mountLane(controller);
+    input(1).setSelectionRange(1, 1);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'p\rq' } });
+    input(1).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['ap', 'qb']);
+    // Caret after the pasted 'q', before the kept 'b'.
+    expect(document.activeElement).toBe(input(2));
+    expect(input(2).selectionStart).toBe(1);
+    expect(input(2).selectionEnd).toBe(1);
+  });
+
+  it('leaves a paste without a line break to the field', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', [''], null);
     mountLane(controller);
     const event = new Event('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'a\rb' } });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'a b' } });
     input(1).dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('says so, inline and announced, when a full lane takes none of a paste', async () => {
+    const controller = await readyController();
+    controller.insertRows(
+      'delayJs',
+      Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature }, (_, n) => `r${String(n)}`),
+      null
+    );
+    // Two rows rendered: the lane's 500 need not all be in the DOM.
+    const firstRows: VirtualizerFactory = (options) => ({
+      ...everyRow(options),
+      getVirtualItems: () => everyRow(options).getVirtualItems().slice(0, 2)
+    });
+    const { announce } = mountLane(controller, undefined, undefined, firstRows);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'a\nb' } });
+    input(1).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    const words = 'Lane full: the paste was not added (500 rows max).';
+    expect(screen.getByText(words)).toBeTruthy();
+    expect(announce).toHaveBeenCalledWith(words);
+    controller.removeRow('delayJs', controller.draft().rows.delayJs[0]?.id ?? '');
+    await waitFor(() => {
+      expect(screen.queryByText(words)).toBeNull();
+    });
   });
 
   it('splits the row on a trailing line feed too (the field would drop it)', async () => {
@@ -169,7 +213,7 @@ describe('Lane', () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['\u00a0', 'gtag'], null);
     mountLane(controller);
-    const note = screen.getByText(/^Has invisible characters WP Rocket keeps/);
+    const note = screen.getByText(/^This row has invisible characters WP Rocket keeps/);
     expect(input(1).getAttribute('aria-describedby')).toBe(note.parentElement?.id);
     expect(input(1).getAttribute('aria-invalid')).toBe('false');
     expect(input(2).getAttribute('aria-describedby')).toBeNull();
