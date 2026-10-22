@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   exclusionFieldLines,
   exclusionFieldText,
-  isInvisibleKeptRow,
+  hasInvisibleKeptCharacters,
   trimExclusionRow
 } from './field-text';
 
@@ -65,15 +65,24 @@ describe('exclusionFieldText', () => {
   });
 });
 
-describe('isInvisibleKeptRow', () => {
-  it('flags rows of kept-but-invisible spaces only', () => {
-    expect(isInvisibleKeptRow('\u00a0')).toBe(true);
-    expect(isInvisibleKeptRow(' \u00a0\u2028 ')).toBe(true);
+describe('hasInvisibleKeptCharacters', () => {
+  it('flags rows of kept-but-invisible spaces only, and kept spaces around text', () => {
+    expect(hasInvisibleKeptCharacters('\u00a0')).toBe(true);
+    expect(hasInvisibleKeptCharacters(' \u00a0\u2028 ')).toBe(true);
+    expect(hasInvisibleKeptCharacters('\u00a0gtag')).toBe(true);
+    expect(hasInvisibleKeptCharacters('gtag\u3000')).toBe(true);
   });
 
-  it('leaves blank rows, rows with visible text and empty rows alone', () => {
-    expect(isInvisibleKeptRow('  \t')).toBe(false);
-    expect(isInvisibleKeptRow('\u00a0x')).toBe(false);
-    expect(isInvisibleKeptRow('')).toBe(false);
+  it('flags zero-width characters anywhere', () => {
+    for (const mark of ['\u200b', '\u200d', '\u2060', '\ufeff', '\u0085', '\u00ad']) {
+      expect(hasInvisibleKeptCharacters(`gt${mark}ag`)).toBe(true);
+    }
+  });
+
+  it('leaves blank rows, plain rows and inner no-break spaces alone', () => {
+    expect(hasInvisibleKeptCharacters('  \t')).toBe(false);
+    expect(hasInvisibleKeptCharacters(' gtag ')).toBe(false);
+    expect(hasInvisibleKeptCharacters('a\u00a0b')).toBe(false);
+    expect(hasInvisibleKeptCharacters('')).toBe(false);
   });
 });

@@ -82,9 +82,9 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   }
 };
 
-/** A row that looks blank yet is kept and applied (non-blocking). */
+/** A row with invisible characters WP Rocket keeps (non-blocking). */
 export const INVISIBLE_ROW_NOTE =
-  'Only non-breaking or other special spaces: WP Rocket keeps this row, so it is applied.';
+  'Has invisible characters WP Rocket keeps (non-breaking or zero-width spaces): they must match too.';
 
 /** The per-lane copy-all control's words. */
 export const COPY_ALL_COPY = {

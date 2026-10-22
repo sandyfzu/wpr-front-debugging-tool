@@ -179,6 +179,18 @@ describe('row edits', () => {
   });
 });
 
+/**
+ * What WP Rocket stores for a row after a paste: the field's text (before +
+ * pasted + after) split on LF, each line trimmed, blank lines dropped —
+ * derived from the save rule, independently of the paste code.
+ */
+function wpRocketLines(row: string, start: number, end: number, pasted: string): string[] {
+  return (row.slice(0, start) + pasted + row.slice(end))
+    .split('\n')
+    .map((line) => line.replace(/^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g, ''))
+    .filter((line) => line !== '');
+}
+
 describe('pasteIntoRow', () => {
   const nextId = createIdSource('p');
   const start = draftFromSet(validSet(), nextId);
@@ -243,10 +255,24 @@ describe('pasteIntoRow', () => {
       nextId
     );
     expect(pasted.draft.rows.delayJs).toHaveLength(EXCLUSION_SET_LIMITS.rowsPerFeature);
-    expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'bjquery\\.min\\.js']);
+    // Lines a, b, cjquery… — the cap drops the pasted b, keeps the row's text.
+    expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'cjquery\\.min\\.js']);
   });
 
-  it('trims pasted lines and the rows a paste creates like the settings save', () => {
+  it('takes no multi-line paste into a full lane', () => {
+    const full = insertRows(
+      start,
+      'delayJs',
+      Array.from({ length: EXCLUSION_SET_LIMITS.rowsPerFeature - 2 }, () => 'f'),
+      null,
+      nextId
+    ).draft;
+    expect(
+      pasteIntoRow(full, 'delayJs', first?.id ?? '', 'a\nb', { start: 0, end: 0 }, nextId)
+    ).toEqual({ draft: full, ids: [] });
+  });
+
+  it('trims whole lines of the joined text like the settings save, never fragments', () => {
     const pasted = pasteIntoRow(
       start,
       'delayJs',
@@ -255,16 +281,39 @@ describe('pasteIntoRow', () => {
       { start: 0, end: 0 },
       nextId
     );
-    expect(texts(pasted.draft)).toEqual(['a', 'b', 'cjquery\\.min\\.js', 'gtag']);
+    // The edited row trims when left; the set already reads it trimmed.
+    expect(texts(pasted.draft)).toEqual([' a ', 'b', 'c jquery\\.min\\.js', 'gtag']);
+    expect(draftToSet(pasted.draft).rows.delayJs).toEqual(
+      wpRocketLines(first?.text ?? '', 0, 0, ' a \n  b  \r\n\tc ').concat('gtag')
+    );
   });
 
-  it('changes nothing for a blank paste or an unknown row', () => {
-    expect(
-      pasteIntoRow(start, 'delayJs', first?.id ?? '', '\n  \n', { start: 0, end: 0 }, nextId)
-    ).toEqual({
-      draft: start,
-      ids: []
-    });
+  it.each([' foo \n bar ', '\tc \n', '\n foo', 'a  \n', 'x \ny', '\n', '\n  \n'])(
+    'stores what WP Rocket would for %j pasted between a|b',
+    (text) => {
+      const ids = createIdSource('w');
+      const {
+        draft,
+        ids: [row]
+      } = insertRows(draftFromSet(EMPTY_EXCLUSION_SET, ids), 'lazyload', ['ab'], null, ids);
+      const pasted = pasteIntoRow(draft, 'lazyload', row ?? '', text, { start: 1, end: 1 }, ids);
+      expect(draftToSet(pasted.draft).rows.lazyload).toEqual(wpRocketLines('ab', 1, 1, text));
+    }
+  );
+
+  it('drops the CR of a CRLF from the edited row (the field cannot hold it)', () => {
+    const pasted = pasteIntoRow(
+      start,
+      'delayJs',
+      first?.id ?? '',
+      'x\r\ny',
+      { start: 0, end: 0 },
+      nextId
+    );
+    expect(texts(pasted.draft).slice(0, 2)).toEqual(['x', 'yjquery\\.min\\.js']);
+  });
+
+  it('changes nothing for an unknown row', () => {
     expect(
       pasteIntoRow(start, 'delayJs', 'missing', 'a\nb', { start: 0, end: 0 }, nextId).draft
     ).toBe(start);

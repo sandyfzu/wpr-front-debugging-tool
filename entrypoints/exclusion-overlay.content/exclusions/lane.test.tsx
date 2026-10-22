@@ -147,19 +147,29 @@ describe('Lane', () => {
     const controller = await readyController();
     controller.insertRows('delayJs', [''], null);
     mountLane(controller);
-    for (const text of ['a\rb', ' gtag\n ']) {
-      const event = new Event('paste', { bubbles: true, cancelable: true });
-      Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
-      input(1).dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(false);
-    }
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'a\rb' } });
+    input(1).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 
-  it('notes a row of only no-break spaces (kept and applied), without blocking it', async () => {
+  it('splits the row on a trailing line feed too (the field would drop it)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['ab'], null);
+    mountLane(controller);
+    input(1).setSelectionRange(1, 1);
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'foo\n' } });
+    input(1).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['afoo', 'b']);
+  });
+
+  it('notes a row with invisible characters WP Rocket keeps, without blocking it', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['\u00a0', 'gtag'], null);
     mountLane(controller);
-    const note = screen.getByText(/^Only non-breaking or other special spaces/);
+    const note = screen.getByText(/^Has invisible characters WP Rocket keeps/);
     expect(input(1).getAttribute('aria-describedby')).toBe(note.parentElement?.id);
     expect(input(1).getAttribute('aria-invalid')).toBe('false');
     expect(input(2).getAttribute('aria-describedby')).toBeNull();

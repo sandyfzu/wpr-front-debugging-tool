@@ -180,13 +180,15 @@ export interface RowSelection {
 }
 
 /**
- * Paste lines into a row the way a text editor splits it: the row keeps its
- * text before the selection, then the first pasted line; each further line
- * becomes a row after it, the last followed by the row's text after the
- * selection. Pasted lines are split and trimmed as {@link splitLines} does
- * (blank ones dropped), lines past the lane cap too — never the row's own
- * text. The rows the paste creates are trimmed like any committed row; the
- * edited row keeps its own text until it is committed.
+ * Paste text into a row the way WP Rocket's field would read the result:
+ * the row's text before the selection, the pasted text and the row's text
+ * after it are joined, then split on `\n` — whole lines, never fragments,
+ * so surrounding spaces are trimmed per line only. The edited row keeps the
+ * first line as is (it trims when left, like any typed row; a CRLF's `\r`
+ * the field cannot hold is dropped), and every further line becomes a row
+ * after it, trimmed, blank ones dropped. At the lane cap, pasted lines are
+ * dropped — never the line holding the row's text after the selection; a
+ * full lane takes no multi-line paste.
  *
  * @param draft The draft.
  * @param lane The row's lane.
@@ -195,7 +197,7 @@ export interface RowSelection {
  * @param selection Where in the row's text the paste lands.
  * @param nextId Mints the new rows' ids.
  * @returns The draft and the rows the paste filled, the edited one first
- *   (none, draft unchanged: a blank paste or an unknown row).
+ *   (none, draft unchanged: an unknown row, or a full lane).
  */
 export function pasteIntoRow(
   draft: Draft,
@@ -207,22 +209,21 @@ export function pasteIntoRow(
 ): Inserted {
   const row = draft.rows[lane].find((candidate) => candidate.id === id);
   const room = EXCLUSION_SET_LIMITS.rowsPerFeature - draft.rows[lane].length;
-  const lines = splitLines(pasted).slice(0, Math.max(0, room) + 1);
-  if (row === undefined || lines.length === 0) return { draft, ids: [] };
-  const last = lines.length - 1;
-  const [head = '', ...rest] = lines.map(
-    (line, index) =>
-      (index === 0 ? row.text.slice(0, selection.start) : '') +
-      line +
-      (index === last ? row.text.slice(selection.end) : '')
-  );
-  const inserted = insertRows(
-    updateRow(draft, lane, id, head),
-    lane,
-    rest.map(trimExclusionRow),
-    id,
-    nextId
-  );
+  if (row === undefined) return { draft, ids: [] };
+  const suffix = row.text.slice(selection.end);
+  const [first = '', ...tail] = (row.text.slice(0, selection.start) + pasted + suffix).split('\n');
+  const lines = splitLines(tail.join('\n'));
+  if (lines.length > 0 && room <= 0) return { draft, ids: [] };
+  const head = tail.length > 0 ? first.replace(/\r$/, '') : first;
+  // The last line holds the row's own text after the selection: kept at the cap.
+  const keepsSuffix = suffix !== '' && !isBlankRow(tail.at(-1) ?? '');
+  const following =
+    lines.length <= room
+      ? lines
+      : keepsSuffix
+        ? [...lines.slice(0, room - 1), ...lines.slice(-1)]
+        : lines.slice(0, room);
+  const inserted = insertRows(updateRow(draft, lane, id, head), lane, following, id, nextId);
   return { draft: inserted.draft, ids: [id, ...inserted.ids] };
 }
 

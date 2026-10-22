@@ -19,7 +19,7 @@ import {
   type VirtualScrollRequest
 } from '../../../components/ui/virtual-list';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { isInvisibleKeptRow, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
+import { hasInvisibleKeptCharacters } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
@@ -172,8 +172,9 @@ export function Lane(props: LaneProps): JSX.Element {
       return;
     }
     const text = event.clipboardData?.getData('text/plain') ?? '';
-    // Several lines once split the way the save splits them; else a native paste.
-    if (!trimExclusionRow(text).includes('\n')) return;
+    // Any line feed splits the row, as it would in WP Rocket's field (the
+    // input itself would drop it); anything else is a native paste.
+    if (!text.includes('\n')) return;
     event.preventDefault();
     props.controller.pasteRows(props.lane, row.id, text, selectionOf(event.currentTarget, row));
   };
@@ -359,7 +360,8 @@ function focusLeft(field: HTMLInputElement): boolean {
 /**
  * One editable row: the input, its match count on the applied page, its
  * remove control, its inline problem, and a non-blocking note when the row
- * looks blank yet is kept (only no-break or other Unicode spaces).
+ * carries invisible characters WP Rocket keeps (no-break spaces at its ends,
+ * zero-width characters) — otherwise a silent "No match".
  *
  * Leaving the row trims it by setting the field's value, which in Chromium
  * resets that field's native undo history (verified; the only edit path
@@ -376,7 +378,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
   const matches = (): number | null => rowMatches(props.report, props.row.text);
   const errorId = (): string => `${props.row.id}-problem`;
   const noteId = (): string => `${props.row.id}-note`;
-  const invisible = (): boolean => isInvisibleKeptRow(props.row.text);
+  const invisible = (): boolean => hasInvisibleKeptCharacters(props.row.text);
   const describedBy = (): string | undefined => {
     const ids = [problem() === null ? null : errorId(), invisible() ? noteId() : null];
     const joined = ids.filter((id) => id !== null).join(' ');

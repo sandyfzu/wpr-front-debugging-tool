@@ -60,12 +60,20 @@ export function exclusionFieldText(rows: readonly string[]): string {
 }
 
 /**
- * Whether a row looks blank yet is kept: it holds only whitespace the save
- * does not strip (no-break spaces, other Unicode spaces), so it is stored —
- * and applied — although nothing visible is in it.
+ * Characters that render as nothing yet stay in a stored row wherever they
+ * are: zero-width space/joiners, word joiner, BOM, next line, soft hyphen.
+ */
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF\u0085\u00AD]/;
+
+/**
+ * Whether a row carries invisible characters the save keeps — no-break or
+ * other Unicode spaces at its ends (a row of only those looks blank), or
+ * zero-width characters anywhere — so it must match them too, while the
+ * editor shows nothing there.
  *
  * @param row The row as typed.
  */
-export function isInvisibleKeptRow(row: string): boolean {
-  return trimExclusionRow(row) !== '' && row.trim() === '';
+export function hasInvisibleKeptCharacters(row: string): boolean {
+  const stored = trimExclusionRow(row);
+  return stored !== stored.trim() || ZERO_WIDTH.test(stored);
 }
