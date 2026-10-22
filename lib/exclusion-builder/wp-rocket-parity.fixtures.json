@@ -175,6 +175,41 @@
       "dropped": []
     },
     {
+      "id": "save-defer-verbs-conditions",
+      "kind": "save",
+      "feature": "defer_all_js",
+      "typed": [
+        "(**)",
+        "a(**x)b",
+        "a(*UTF)",
+        "x|(*UCP)y",
+        "(?:)(*UTF)a",
+        "a(*LIMIT_MATCH=1)",
+        "a(*FOO:x)",
+        "a(*F1)",
+        "(?(",
+        "a(?(",
+        "(?()a)",
+        "a(?()b|c)"
+      ],
+      "note": "(** and non-verb (*NAME past the start dropped; (?( at the end / (?() dropped",
+      "stored": [],
+      "dropped": [
+        { "index": 0, "row": "(**)", "reason": "invalid-pattern" },
+        { "index": 1, "row": "a(**x)b", "reason": "invalid-pattern" },
+        { "index": 2, "row": "a(*UTF)", "reason": "invalid-pattern" },
+        { "index": 3, "row": "x|(*UCP)y", "reason": "invalid-pattern" },
+        { "index": 4, "row": "(?:)(*UTF)a", "reason": "invalid-pattern" },
+        { "index": 5, "row": "a(*LIMIT_MATCH=1)", "reason": "invalid-pattern" },
+        { "index": 6, "row": "a(*FOO:x)", "reason": "invalid-pattern" },
+        { "index": 7, "row": "a(*F1)", "reason": "invalid-pattern" },
+        { "index": 8, "row": "(?(", "reason": "invalid-pattern" },
+        { "index": 9, "row": "a(?(", "reason": "invalid-pattern" },
+        { "index": 10, "row": "(?()a)", "reason": "invalid-pattern" },
+        { "index": 11, "row": "a(?()b|c)", "reason": "invalid-pattern" }
+      ]
+    },
+    {
       "id": "save-delay-invalid-utf8",
       "kind": "save",
       "feature": "delay_js",

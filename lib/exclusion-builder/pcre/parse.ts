@@ -201,6 +201,27 @@ const UNKNOWN_LETTER_ESCAPES = new Set('ijlmquyFIJLMOTUY');
 const OUTSIDE_ONLY_ESCAPES = new Set('ABCGKNRXZz');
 /** Characters after `(?` that PCRE2 rejects outright (observed). */
 const INVALID_AFTER_GROUP_QUERY = new Set(' "$%,./;?@\\]_`{}~');
+
+/**
+ * PCRE2's backtracking verbs (bare or with a `:NAME` argument). Past the
+ * pattern's start (where its start-of-pattern options such as `(*UTF)` are
+ * read) any other upper-case `(*NAME` fails to compile — "(*VERB) not
+ * recognized" on 10.44 and 10.49 alike (observed); lower-case names are alpha
+ * assertions, whose list grows between versions, so they stay unmodeled.
+ */
+const BACKTRACKING_VERBS = new Set([
+  'ACCEPT',
+  'FAIL',
+  'F',
+  'COMMIT',
+  'PRUNE',
+  'SKIP',
+  'THEN',
+  'MARK'
+]);
+
+/** An upper-case `(*NAME` name (read after the `*`). */
+const VERB_NAME = /^[A-Z][A-Z0-9_]*/;
 /** Single-character escapes for control bytes. */
 const CONTROL_ESCAPES: Readonly<Record<string, number>> = {
   a: 0x07,
@@ -349,6 +370,49 @@ class Parser {
     const end = close === -1 || close - start > STOP_CONSTRUCT_LENGTH ? start + 3 : close + 1;
     this.issue('unknown', start, Math.min(this.src.length, end), detail);
     throw new StopParse();
+  }
+
+  /**
+   * Record a construct that fails to compile whatever follows it, and stop
+   * (the row is dropped; its extent need not be known).
+   */
+  private reject(start: number, detail: string): never {
+    const close = this.src.indexOf(')', start);
+    const end = close === -1 || close - start > STOP_CONSTRUCT_LENGTH ? start + 3 : close + 1;
+    this.issue('invalid', start, Math.min(this.src.length, end), detail);
+    throw new StopParse();
+  }
+
+  /**
+   * Reject a `(*` construct PCRE2 never compiles (pos is on the `*`):
+   * `(**`, or an upper-case name that is no backtracking verb past the
+   * pattern's start (a start-of-pattern option such as `(*UTF)` there, a
+   * typo). Returns when the construct may compile.
+   */
+  private rejectVerb(start: number): void {
+    if (this.peek(1) === '*') this.reject(start, 'unrecognized (*VERB)');
+    if (start === 0) return;
+    const name = VERB_NAME.exec(this.src.slice(this.pos + 1, this.pos + 1 + STOP_CONSTRUCT_LENGTH));
+    if (name !== null && !BACKTRACKING_VERBS.has(name[0])) {
+      this.reject(start, 'unrecognized (*VERB) (options such as (*UTF) only lead a pattern)');
+    }
+  }
+
+  /**
+   * A conditional group (pos is on the `(` after `(?`). Conditionals are not
+   * modeled; only the two condition shapes that fail on 10.44 and 10.49
+   * alike (observed) are rejected: `(?(` ending the pattern (joined, the
+   * text after it may still close it) and the empty condition `(?()`.
+   */
+  private conditionStart(start: number): never {
+    const next = this.peek(1);
+    if (next === '') {
+      this.pos = this.src.length;
+      this.issue('invalid', start, this.pos, 'missing closing parenthesis', { join: 'parens' });
+      throw new StopParse();
+    }
+    if (next === ')') this.reject(start, 'subpattern name expected in a condition');
+    this.stop(start, 'conditional group');
   }
 
   /** The character at `pos + offset` (`''` past the end). */
@@ -926,6 +990,7 @@ class Parser {
         this.issue('invalid', start, this.pos, '(*) is not a verb');
         return { type: 'opaque' };
       }
+      this.rejectVerb(start);
       this.stop(start, 'backtracking verb or alpha assertion');
     }
     if (this.peek() !== '?') {
@@ -962,7 +1027,7 @@ class Parser {
     if (/[0-9]/.test(char) || ((char === '+' || char === '-') && /[0-9]/.test(next))) {
       return this.numberedCall(start);
     }
-    if (char === '(') this.stop(start, 'conditional group');
+    if (char === '(') this.conditionStart(start);
     // Perl extended class: PCRE2 10.47+ compiles some (`(?[[:alpha:]])`),
     // 10.44 rejects them all (observed) — its fate is not modeled.
     if (char === '[') this.stop(start, 'extended character class');

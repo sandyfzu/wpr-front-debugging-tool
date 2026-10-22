@@ -789,7 +789,22 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['(?<=(?:(?=a))+)', '(?<=(?:(?=a))+)'],
     ['(?<=(?<=a){1,})', '(?<=(?<=a){1,})'],
     // A count past PCRE's limit, however many digits (no fixed lookahead window).
-    [`x{${'9'.repeat(70)}}`, `{${'9'.repeat(70)}}`]
+    [`x{${'9'.repeat(70)}}`, `{${'9'.repeat(70)}}`],
+    // `(**` anywhere; an upper-case non-verb name past the pattern's start
+    // (start-of-pattern options lead it only); a conditional open at the end
+    // or with an empty condition (parity row `save-defer-verbs-conditions`).
+    ['(**)', '(**)'],
+    ['a(**x)b', '(**x)'],
+    ['a(*UTF)', '(*UTF)'],
+    ['x|(*UCP)y', '(*UCP)'],
+    ['(?:)(*UTF)a', '(*UTF)'],
+    ['a(*LIMIT_MATCH=1)', '(*LIMIT_MATCH=1)'],
+    ['a(*FOO:x)', '(*FOO:x)'],
+    ['a(*F1)', '(*F1)'],
+    ['(?(', '(?('],
+    ['a(?(', '(?('],
+    ['(?()a)', '(?()'],
+    ['a(?()b|c)', '(?()']
   ])('%s is dropped (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'dropped', construct });
   });
@@ -844,7 +859,18 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['x(?:|){100}', 'x(?:|){100}'],
     // Perl extended classes: PCRE2 10.49 keeps some, 10.44 drops them all (observed).
     ['(?[[:alpha:]])', '(?[[:alpha:]])'],
-    ['(?[[a-z]])', '(?[[a-z]])']
+    ['(?[[a-z]])', '(?[[a-z]])'],
+    // Start-of-pattern options: kept, but the set grows between versions
+    // (`(*CASELESS_RESTRICT)` is dropped on 10.44, kept on 10.49).
+    ['(*UTF)a', '(*UTF)'],
+    ['(*CASELESS_RESTRICT)a', '(*C'],
+    ['(*UTF)(*CASELESS_RESTRICT)a', '(*UTF)'],
+    // Verbs, alpha assertions and other conditions are not modeled.
+    ['a(*ACCEPT)', '(*ACCEPT)'],
+    ['a(*MARK:x)b', '(*MARK:x)'],
+    ['a(*utf)', '(*utf)'],
+    ['(?(1)a|b)', '(?(1)'],
+    ['(?(?C1)a)', '(?(?C1)']
   ])('%s is unknown (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'unknown', construct });
   });
