@@ -50,8 +50,8 @@ describe('stateBanner — the state matrix', () => {
       [{ kind: 'unavailable', cause: 'attach-denied', retryable: true }, 'error', ['retry-apply']],
       [{ kind: 'unavailable', cause: 'debugging-policy', retryable: false }, 'error', []],
       [{ kind: 'armed' }, 'info', ['reload']],
-      [{ kind: 'applied', reports: [], unmatched: 0, served: undefined }, 'ok', []],
-      [{ kind: 'applied', reports: [], unmatched: 2, served: undefined }, 'warn', []],
+      [{ kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined }, 'ok', []],
+      [{ kind: 'applied', reports: [], unmatched: 2, warnings: [], served: undefined }, 'warn', []],
       [
         {
           kind: 'unmodified',
@@ -80,7 +80,7 @@ describe('the session’s persistence (it outlives the page)', () => {
   it('promises the next pages only where this page shows the session working', () => {
     for (const view of [
       { kind: 'armed' },
-      { kind: 'applied', reports: [], unmatched: 0, served: undefined }
+      { kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined }
     ] as const) {
       expect(stateBanner(READY, view)?.notes[0], view.kind).toBe(SESSION_PERSISTS_NOTE);
     }
@@ -89,6 +89,7 @@ describe('the session’s persistence (it outlives the page)', () => {
         kind: 'applied',
         reports: [],
         unmatched: 0,
+        warnings: [],
         served: { ...SERVED, copy: true }
       })?.notes
     ).toEqual([SESSION_PERSISTS_NOTE, ...servedNotes({ ...SERVED, copy: true })]);
@@ -174,5 +175,21 @@ describe('withoutRepeatedActions', () => {
     const stalled = noticeBanner({ kind: 'reload-stalled' });
     expect(withoutRepeatedActions(armed, stalled).actions).toEqual([]);
     expect(withoutRepeatedActions(armed, null)).toBe(armed);
+  });
+});
+
+describe('the applied banner with warnings (K.5c)', () => {
+  it('warns in the polite status words, naming why the preview looks as it does', () => {
+    const banner = stateBanner(READY, {
+      kind: 'applied',
+      reports: [],
+      unmatched: 0,
+      warnings: [{ lane: 'deferJs', kind: 'page-off', positions: [1, 3] }],
+      served: undefined
+    });
+    expect(banner).toMatchObject({ tone: 'warn', glyph: 'alert', title: 'Applied, with warnings' });
+    expect(banner?.body).toMatch(
+      /WP Rocket defers no script on this page because of rows 1 and 3, so every deferred script is restored\.$/
+    );
   });
 });

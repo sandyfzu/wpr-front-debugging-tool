@@ -32,7 +32,7 @@ import {
 } from './exclusions/row-notes';
 import type { SessionProblem } from './session/port';
 import type { OverlayState, SessionAction } from './session/machine';
-import type { SessionView, UnmodifiedReason } from './session/session-view';
+import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
 import type { SaveState } from './controller';
 
 /** The tool's name (the overlay's heading). */
@@ -230,6 +230,17 @@ export const INLINE_JQUERY_LINE =
 /** A lane's count line and the caveats under it. */
 export const COUNT_COPY = {
   /**
+   * Applied rows that match every candidate.
+   *
+   * @param refs The rows (≥ 1), as {@link rowsPhrase} names them.
+   * @param noun What is counted (plural).
+   */
+  matchAll: (refs: readonly RowRef[], noun: string): string => {
+    const named = rowsPhrase(refs);
+    const one = refs.length === 1;
+    return `${named.charAt(0).toUpperCase()}${named.slice(1)} ${one ? 'matches' : 'match'} everything: WP Rocket excludes all ${noun} with ${one ? 'it' : 'them'}, and so does this preview.`;
+  },
+  /**
    * The lane's count, e.g. "3 of 9 delayed scripts restored".
    *
    * @param counts The lane's counts.
@@ -261,11 +272,7 @@ export const COUNT_COPY = {
       lines.push(page.countsOff(named));
     }
     if (counts.matchAllRows.length > 0) {
-      const named = rowsPhrase(refs(counts.matchAllRows));
-      const one = counts.matchAllRows.length === 1;
-      lines.push(
-        `${named.charAt(0).toUpperCase()}${named.slice(1)} ${one ? 'matches' : 'match'} everything: WP Rocket excludes all ${noun} with ${one ? 'it' : 'them'}, and so does this preview.`
-      );
+      lines.push(COUNT_COPY.matchAll(refs(counts.matchAllRows), noun));
     }
     if (counts.pageUnknown && page !== undefined) lines.push(page.countsUnknown);
     if (counts.undetermined > 0)
@@ -639,6 +646,46 @@ export const SESSION_ON_NOTE =
  */
 export const SESSION_PERSISTS_NOTE = `${SESSION_ON_NOTE.slice(0, -1)}: each page of this site you open here loads with these exclusions.`;
 
+/**
+ * An applied warning as the page-wide announcement says it: the lane, then
+ * the same words its counts carry.
+ *
+ * @param warning The applied warning.
+ */
+export function appliedWarningLine(warning: AppliedWarning): string {
+  const lane = LANE_COPY[warning.lane];
+  const refs = warning.positions.map((position) => ({ position }));
+  if (warning.kind === 'match-all') return `${lane.label}: ${COUNT_COPY.matchAll(refs, lane.noun)}`;
+  const named = refs.length === 0 ? '' : rowsPhrase(refs);
+  const words =
+    lane.page?.countsOff(named) ?? `WP Rocket runs ${lane.label} on nothing on this page.`;
+  return `${lane.label}: ${words}`;
+}
+
+/**
+ * The applied banner's words: what the page shows, then each applied
+ * warning — the banner is the polite status region, so a screen reader
+ * hears why the preview looks as it does.
+ *
+ * @param view The applied view.
+ */
+function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy {
+  const warnings = view.warnings.map(appliedWarningLine);
+  const tail = warnings.length === 0 ? '' : ` ${warnings.join(' ')}`;
+  if (view.unmatched > 0) {
+    return {
+      title: 'Applied, with rows that matched nothing',
+      body: `${String(view.unmatched)} ${view.unmatched === 1 ? 'row matches' : 'rows match'} no element on this page. Check the rows marked “No match”.${tail}`
+    };
+  }
+  return warnings.length === 0
+    ? { title: 'Applied', body: 'This page was rendered with your exclusions.' }
+    : {
+        title: 'Applied, with warnings',
+        body: `This page was rendered with your exclusions.${tail}`
+      };
+}
+
 /** The session view's banner words. */
 export function viewCopy(view: SessionView): StateCopy {
   switch (view.kind) {
@@ -655,12 +702,7 @@ export function viewCopy(view: SessionView): StateCopy {
         body: 'Reload to render this page through the session.'
       };
     case 'applied':
-      return view.unmatched === 0
-        ? { title: 'Applied', body: 'This page was rendered with your exclusions.' }
-        : {
-            title: 'Applied, with rows that matched nothing',
-            body: `${String(view.unmatched)} ${view.unmatched === 1 ? 'row matches' : 'rows match'} no element on this page. Check the rows marked “No match”.`
-          };
+      return appliedCopy(view);
     case 'unmodified':
       return { title: 'Served unmodified', body: unmodifiedCopy(view.reason) };
     case 'not-intercepted':

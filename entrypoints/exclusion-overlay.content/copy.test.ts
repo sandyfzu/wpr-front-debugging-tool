@@ -14,6 +14,7 @@ import {
   ROW_NOTE_COPY,
   UNAVAILABLE_COPY,
   appliedRowWarningNote,
+  appliedWarningLine,
   commitAnnouncement,
   noteToText,
   rowWarningNote,
@@ -25,7 +26,7 @@ import {
   viewCopy
 } from './copy';
 import type { StoredRowDiff } from '../../lib/exclusion-builder/field-text';
-import type { SessionView } from './session/session-view';
+import type { AppliedWarning, SessionView } from './session/session-view';
 import type { OverlayState } from './session/machine';
 
 /** Names applied rows by their text (the rows left the lane). */
@@ -116,9 +117,9 @@ const VIEWS: readonly SessionView[] = [
   { kind: 'off' },
   { kind: 'unavailable', cause: 'detached', retryable: true },
   { kind: 'armed' },
-  { kind: 'applied', reports: [], unmatched: 0, served: undefined },
-  { kind: 'applied', reports: [], unmatched: 1, served: undefined },
-  { kind: 'applied', reports: [], unmatched: 3, served: undefined },
+  { kind: 'applied', reports: [], unmatched: 0, warnings: [], served: undefined },
+  { kind: 'applied', reports: [], unmatched: 1, warnings: [], served: undefined },
+  { kind: 'applied', reports: [], unmatched: 3, warnings: [], served: undefined },
   { kind: 'unmodified', reason: { kind: 'failed', reason: 'decode-failed' }, served: undefined },
   { kind: 'not-intercepted' },
   { kind: 'cant-tell' }
@@ -612,5 +613,43 @@ describe('lane counts and hints (K.5a.2)', () => {
     expect(rowWarningNote('Row is only whitespace — x')).toBe(
       'Row is only whitespace — x. It is left out here: a blank row is an unfinished edit.'
     );
+  });
+});
+
+describe('applied warnings in the status banner (K.5c)', () => {
+  const applied = (
+    warnings: readonly AppliedWarning[],
+    unmatched = 0
+  ): Extract<SessionView, { kind: 'applied' }> => ({
+    kind: 'applied',
+    reports: [],
+    unmatched,
+    warnings,
+    served: undefined
+  });
+
+  it('says each applied warning after what the page shows', () => {
+    expect(viewCopy(applied([{ lane: 'deferJs', kind: 'page-off', positions: [1, 3] }]))).toEqual({
+      title: 'Applied, with warnings',
+      body: 'This page was rendered with your exclusions. Load JavaScript deferred: WP Rocket defers no script on this page because of rows 1 and 3, so every deferred script is restored.'
+    });
+    expect(
+      viewCopy(applied([{ lane: 'delayJs', kind: 'match-all', positions: [2] }], 1)).body
+    ).toBe(
+      '1 row matches no element on this page. Check the rows marked “No match”. Delay JavaScript execution: Row 2 matches everything: WP Rocket excludes all delayed scripts with it, and so does this preview.'
+    );
+  });
+
+  it('words a page-off whose rows are not named', () => {
+    expect(appliedWarningLine({ lane: 'deferJs', kind: 'page-off', positions: [] })).toBe(
+      'Load JavaScript deferred: WP Rocket defers no script on this page because of the applied rows, so every deferred script is restored.'
+    );
+  });
+
+  it('stays the plain words without warnings', () => {
+    expect(viewCopy(applied([]))).toEqual({
+      title: 'Applied',
+      body: 'This page was rendered with your exclusions.'
+    });
   });
 });

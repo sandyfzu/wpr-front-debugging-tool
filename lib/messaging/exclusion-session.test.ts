@@ -464,25 +464,37 @@ describe('document reports are tied to the session set', () => {
     ).not.toBeNull();
   });
 
-  it('carries a page-off run: no row credited, the rows behind it drawn from the set', () => {
-    const off = { matchedRows: [], unmatchedRows: [], rewritten: 3, pageState: 'off' };
-    for (const patch of [off, { ...off, pageOffRows: ['gtag'] }]) {
+  it('carries a page-off run on Defer JS only: no row credited, its rows drawn from the set', () => {
+    // The fixture's Defer JS row (`/wp-includes/js/`); its Delay rows are `gtag` & co.
+    const off = {
+      feature: 'defer_all_js',
+      matchedRows: [],
+      unmatchedRows: [],
+      rewritten: 3,
+      pageState: 'off'
+    };
+    const deferRow = '/wp-includes/js/';
+    for (const patch of [off, { ...off, pageOffRows: [deferRow] }]) {
       const parsed = parseExclusionSessionStatus(withReport(patch));
       const document = parsed !== null && 'document' in parsed ? parsed.document : null;
       expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject(patch);
     }
     for (const patch of [
-      { ...off, matchedRows: [{ row: 'gtag', rowKind: 'pattern', matches: 1 }] },
-      { ...off, unmatchedRows: ['gtag'] },
+      // Only Defer JS's rows can turn its feature off page-wide.
+      { ...off, feature: 'delay_js' },
+      { ...off, feature: 'lazyload' },
+      { ...off, feature: 'automatic_lazy_rendering' },
+      { ...off, matchedRows: [{ row: deferRow, rowKind: 'pattern', matches: 1 }] },
+      { ...off, unmatchedRows: [deferRow] },
       { ...off, rowCountsBestEffort: true },
-      { ...off, matchAllRows: ['gtag'] },
+      { ...off, matchAllRows: [deferRow] },
       { ...off, pageOffRows: [] },
-      { ...off, pageOffRows: ['not-in-set'] },
-      { ...off, pageOffRows: ['gtag', 'gtag'] },
-      { ...off, pageOffRows: 'gtag' },
+      { ...off, pageOffRows: ['gtag'] },
+      { ...off, pageOffRows: [deferRow, deferRow] },
+      { ...off, pageOffRows: deferRow },
       // The rows behind a page-off come only with it.
-      { pageOffRows: ['gtag'] },
-      { pageState: 'unknown', pageOffRows: ['gtag'] },
+      { feature: 'defer_all_js', matchedRows: [], unmatchedRows: [], pageOffRows: [deferRow] },
+      { ...off, pageState: 'unknown', pageOffRows: [deferRow] },
       { ...off, featureWide: true }
     ]) {
       expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();

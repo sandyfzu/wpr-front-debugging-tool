@@ -551,16 +551,19 @@ type RowCaveats = Pick<
 
 /**
  * A report's row caveats: each absent or its one value, and never on a
- * feature-wide run (it consulted no rows). A page `off` run carries no
- * other caveat but the rows behind it, which come only with it.
+ * feature-wide run (it consulted no rows). A page `off` run — Defer JS only,
+ * the one feature whose rows can turn it off page-wide — carries no other
+ * caveat but the rows behind it, which come only with it.
  *
  * @param input The raw report.
+ * @param feature The report's feature.
  * @param featureWide The report's feature-wide flag.
  * @param setRows The feature's rows in the applied set.
  * @returns The caveats present, or `null` when invalid.
  */
 function parseRowCaveats(
   input: Record<string, unknown>,
+  feature: ExclusionFeatureId,
   featureWide: boolean,
   setRows: readonly string[]
 ): RowCaveats | null {
@@ -574,6 +577,7 @@ function parseRowCaveats(
   const caveats = [pageState, bestEffort, pageOffRows, matchAllRows];
   if (featureWide && caveats.some((caveat) => caveat !== undefined)) return null;
   const off = pageState === 'off';
+  if (off && feature !== 'defer_all_js') return null;
   if (off && (bestEffort !== undefined || matchAllRows !== undefined)) return null;
   if (!off && pageOffRows !== undefined) return null;
   return {
@@ -660,7 +664,7 @@ function parseTransformReport(
     undetermined ?? 0
   );
   if (inlineUnwrapped === null || inlineUndetermined === null) return null;
-  const caveats = parseRowCaveats(input, featureWide, setRows);
+  const caveats = parseRowCaveats(input, feature, featureWide, setRows);
   if (caveats === null) return null;
   // A page-off run matched no row: it credits none.
   if (caveats.pageState === 'off' && reported.length > 0) return null;

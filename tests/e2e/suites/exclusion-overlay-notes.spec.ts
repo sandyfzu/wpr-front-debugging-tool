@@ -390,6 +390,12 @@ test.describe('exclusion builder stored-form notes', () => {
     ).toBeVisible();
     // The message stays beside the counts: the preview explains itself.
     await expect(message).toBeVisible();
+    // Screen readers hear it too: the polite status banner carries the warning.
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Applied, with warnings' })
+    ).toContainText(
+      'Load JavaScript deferred: WP Rocket defers no script on this page because of row 2, so every deferred script is restored.'
+    );
     // As WP Rocket would serve it: no script deferred, both ran.
     await expect
       .poll(() =>
@@ -427,6 +433,9 @@ test.describe('exclusion builder stored-form notes', () => {
       )
     ).toBeVisible();
     await expect(row).toContainText('2 matches');
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Applied, with warnings' })
+    ).toContainText('Delay JavaScript execution: Row 1 matches everything');
     // The warning stays after the apply, next to the counts.
     await expect(row).toContainText('WP Rocket stores this and it excludes every script.');
     await expect

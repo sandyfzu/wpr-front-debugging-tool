@@ -5,7 +5,7 @@ import type {
 } from '../../../lib/messaging/exclusion-session';
 import { activeRecord } from '../../../lib/messaging/exclusion-session.fixtures';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
-import { sessionView } from './session-view';
+import { appliedWarnings, sessionView } from './session-view';
 
 /** The fixture session with another document outcome. */
 function withDocument(document: ExclusionDocumentOutcome | null): ActiveExclusionSession {
@@ -47,7 +47,13 @@ describe('sessionView', () => {
       withDocument({ outcome: 'rewritten', reports: [REPORT] }),
       () => 'this-page'
     );
-    expect(view).toEqual({ kind: 'applied', reports: [REPORT], unmatched: 2, served: undefined });
+    expect(view).toEqual({
+      kind: 'applied',
+      reports: [REPORT],
+      unmatched: 2,
+      warnings: [],
+      served: undefined
+    });
   });
 
   it('says not intercepted when the record is another page', () => {
@@ -81,6 +87,51 @@ describe('sessionView', () => {
       kind: 'unmodified',
       reason: { kind: 'failed', reason: 'decode-failed' },
       served: undefined
+    });
+  });
+});
+
+describe('appliedWarnings', () => {
+  /** The fixture set (Delay rows `jquery\\.min\\.js`, `gtag`; Defer `/wp-includes/js/`). */
+  const SET = activeRecord().set;
+  const base = { featureWide: false, candidates: 3, rewritten: 3, regionRemovals: 0 } as const;
+
+  it('names page-off and match-all rows by their position in the applied set', () => {
+    const reports: TransformReport[] = [
+      { ...base, feature: 'delay_js', matchedRows: [], unmatchedRows: [], matchAllRows: ['gtag'] },
+      {
+        ...base,
+        feature: 'defer_all_js',
+        matchedRows: [],
+        unmatchedRows: [],
+        pageState: 'off',
+        pageOffRows: ['/wp-includes/js/']
+      }
+    ];
+    expect(appliedWarnings(reports, SET)).toEqual([
+      { lane: 'delayJs', kind: 'match-all', positions: [2] },
+      { lane: 'deferJs', kind: 'page-off', positions: [1] }
+    ]);
+  });
+
+  it('keeps a page-off whose rows the report did not name, and nothing for a clean report', () => {
+    const off: TransformReport = {
+      ...base,
+      feature: 'defer_all_js',
+      matchedRows: [],
+      unmatchedRows: [],
+      pageState: 'off'
+    };
+    expect(appliedWarnings([off, REPORT], SET)).toEqual([
+      { lane: 'deferJs', kind: 'page-off', positions: [] }
+    ]);
+  });
+
+  it('reaches the applied view', () => {
+    const reports: TransformReport[] = [{ ...REPORT, matchAllRows: ['gtag'] }];
+    const view = sessionView(withDocument({ outcome: 'rewritten', reports }), () => 'this-page');
+    expect(view).toMatchObject({
+      warnings: [{ lane: 'delayJs', kind: 'match-all', positions: [2] }]
     });
   });
 });

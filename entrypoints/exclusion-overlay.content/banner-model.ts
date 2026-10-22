@@ -79,14 +79,16 @@ function viewBanner(view: SessionView): Banner | null {
       };
     case 'armed':
       return { ...base, tone: 'info', glyph: 'waiting', actions: ['reload'] };
-    case 'applied':
+    case 'applied': {
+      const clean = view.unmatched === 0 && view.warnings.length === 0;
       return {
         ...base,
-        tone: view.unmatched === 0 ? 'ok' : 'warn',
-        glyph: view.unmatched === 0 ? 'check' : 'alert',
+        tone: clean ? 'ok' : 'warn',
+        glyph: clean ? 'check' : 'alert',
         notes: [...base.notes, ...servedNotes(view.served)],
         actions: []
       };
+    }
     case 'unmodified':
       return {
         ...base,

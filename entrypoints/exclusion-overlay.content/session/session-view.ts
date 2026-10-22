@@ -11,7 +11,12 @@ import type {
   InterceptionUnavailableCause
 } from '../../../lib/messaging/exclusion-session';
 import { INTERCEPTION_UNAVAILABLE_CAUSES } from '../../../lib/messaging/exclusion-session';
-import type { ExclusionFeatureId } from '../../../lib/exclusion-builder/set';
+import {
+  EXCLUSION_FEATURES,
+  type ExclusionFeatureId,
+  type ExclusionSet,
+  type ExclusionSetRows
+} from '../../../lib/exclusion-builder/set';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import type { PageMatch } from './page-match';
 
@@ -20,7 +25,8 @@ import type { PageMatch } from './page-match';
  * - `unavailable` — interception cannot run (the kept warning).
  * - `armed` — applied; no document intercepted yet.
  * - `applied` — this page was rewritten; `unmatched` counts rows that
- *   matched nothing (the no-match warnings).
+ *   matched nothing (the no-match warnings); `warnings` names the applied
+ *   rows WP Rocket applies as-is that change the whole feature on the page.
  * - `unmodified` — this page was intercepted but served unmodified.
  * - `not-intercepted` — the session is on, but this page is not the one it
  *   rewrote.
@@ -39,6 +45,7 @@ export type SessionView =
       readonly kind: 'applied';
       readonly reports: readonly TransformReport[];
       readonly unmatched: number;
+      readonly warnings: readonly AppliedWarning[];
       readonly served: ExclusionServedDocument | undefined;
     }
   | {
@@ -58,6 +65,41 @@ export type UnmodifiedReason =
       readonly row: string | null;
       readonly budgetMs: number;
     };
+
+/**
+ * An applied warning, for the page-wide announcement: the rows behind a
+ * page-off (`page-off`), or the rows matching every candidate (`match-all`),
+ * by their 1-based position in the applied set's lane.
+ */
+export interface AppliedWarning {
+  readonly lane: keyof ExclusionSetRows;
+  readonly kind: 'page-off' | 'match-all';
+  /** Positions in the applied lane (empty when the report names no row). */
+  readonly positions: readonly number[];
+}
+
+/**
+ * The applied warnings of a rewritten page, in pipeline order.
+ *
+ * @param reports The page's reports.
+ * @param set The applied set (positions are read from it).
+ */
+export function appliedWarnings(
+  reports: readonly TransformReport[],
+  set: ExclusionSet
+): AppliedWarning[] {
+  return reports.flatMap((report): AppliedWarning[] => {
+    const lane = EXCLUSION_FEATURES.find(({ id }) => id === report.feature)?.rowsKey;
+    if (lane === undefined) return [];
+    const positions = (rows: readonly string[]): number[] =>
+      rows.map((row) => set.rows[lane].indexOf(row) + 1).filter((position) => position > 0);
+    if (report.pageState === 'off') {
+      return [{ lane, kind: 'page-off', positions: positions(report.pageOffRows ?? []) }];
+    }
+    const matchAll = positions(report.matchAllRows ?? []);
+    return matchAll.length === 0 ? [] : [{ lane, kind: 'match-all', positions: matchAll }];
+  });
+}
 
 /** Rows that matched nothing, summed over the reports. */
 function unmatchedRows(reports: readonly TransformReport[]): number {
@@ -93,6 +135,7 @@ export function sessionView(
         kind: 'applied',
         reports: document.reports,
         unmatched: unmatchedRows(document.reports),
+        warnings: appliedWarnings(document.reports, status.set),
         served: document.served
       };
     case 'over-budget':
