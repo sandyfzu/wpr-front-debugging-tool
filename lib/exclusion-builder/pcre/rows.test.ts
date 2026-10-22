@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
-import { compileMatcher, regexRowProblems, translateRegexRows } from './rows';
+import {
+  TRANSLATION_CACHE_LIMIT,
+  compileByteMatcher,
+  compileMatcher,
+  regexRowProblems,
+  translateRegexRows
+} from './rows';
+import { toByteString } from './translate';
 
 /** The problem id per row (`null` = none). */
 function problemIds(
@@ -375,5 +382,36 @@ describe('regexRowProblems', () => {
 
   it('is empty for clean rows', () => {
     expect(regexRowProblems('delay_js', ['jquery', 'a\\.js'])).toEqual([]);
+  });
+});
+
+describe('translation memos', () => {
+  it('keys row analyses by feature: the same text translates per feature', () => {
+    // Delay escapes `+` (literal); Defer keeps the quantifier.
+    const delay = translateRegexRows('delay_js', ['a+b']).rows[0]?.matcher?.source;
+    const defer = translateRegexRows('defer_all_js', ['a+b']).rows[0]?.matcher?.source;
+    expect(delay).toBe('[Aa]\\x2b[Bb]');
+    expect(defer).not.toBe(delay);
+    // Served again from the memo, unchanged.
+    expect(translateRegexRows('delay_js', ['a+b']).rows[0]?.matcher?.source).toBe(delay);
+  });
+
+  it('tests pre-encoded subjects with a stateless compiled matcher', () => {
+    const [row] = translateRegexRows('delay_js', ['é']).rows;
+    if (row?.matcher == null) throw new Error('no matcher');
+    const test = compileByteMatcher(row.matcher);
+    expect([test(toByteString('été')), test(toByteString('été')), test('été')]).toEqual([
+      true,
+      true,
+      false
+    ]);
+  });
+
+  it('stays bounded: past the limit the oldest analysis is rebuilt, never wrong', () => {
+    const rows = Array.from({ length: TRANSLATION_CACHE_LIMIT + 1 }, (_, i) => `memo${String(i)}`);
+    translateRegexRows('delay_js', rows);
+    expect(translateRegexRows('delay_js', ['memo0']).rows[0]?.matcher?.source).toBe(
+      '[Mm][Ee][Mm][Oo]0'
+    );
   });
 });

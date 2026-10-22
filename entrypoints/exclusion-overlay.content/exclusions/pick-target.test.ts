@@ -1,4 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import { FDT_EXCLUDED_RESOURCE } from '../../../lib/wp-rocket/constants';
+import {
+  parseParityTable,
+  type ParityRow
+} from '../../../lib/exclusion-builder/wp-rocket-parity-table';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../../lib/exclusion-builder/set';
 import { delayJsTransform } from '../../../lib/exclusion-builder/delay-js';
 import { deferJsTransform } from '../../../lib/exclusion-builder/defer-js';
@@ -9,9 +17,12 @@ import {
   candidatesFor,
   nameUrl,
   resolvePointerPick,
+  type ElementSnapshot,
   type PickCandidate,
   type PickContext
 } from './pick-target';
+import { scanTags } from '../../../lib/exclusion-builder/html-scan';
+import { findAttribute } from '../../../lib/exclusion-builder/tag-edit';
 import {
   createElementKeys,
   elementSnapshot,
@@ -196,7 +207,11 @@ describe('nameUrl', () => {
       text: 'cdn.example.net',
       file: 'cdn.example.net'
     });
-    expect(nameUrl('/', PAGE)).toEqual({ text: 'example.com', file: '/' });
+    // Changed in P10K.4b: a host-less value without a path holds no text a
+    // row could name (the host is not in the markup), so it gets no name.
+    expect(nameUrl('/', PAGE)).toBeNull();
+    expect(nameUrl('/?wc-ajax=1', PAGE)).toBeNull();
+    expect(nameUrl('//example.com/?q=1', PAGE)).toEqual({ text: 'example.com', file: '/' });
   });
 });
 
@@ -481,5 +496,207 @@ describe('rows hold against served markup (verification round)', () => {
     expect(
       served(`<script type="rocketlazyloadscript" id="${longId}">a()</script>`, 'script')
     ).toEqual([]);
+  });
+});
+
+describe('every picked row matches its element after WP Rocket’s save and runtime', () => {
+  /** The WP Rocket parity table (outputs derived from the real plugin). */
+  const table = parseParityTable(
+    JSON.parse(
+      readFileSync(
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          '../../../lib/exclusion-builder/wp-rocket-parity.fixtures.json'
+        ),
+        'utf8'
+      )
+    )
+  );
+
+  /** A table row by id (fails loudly when a fixture is renamed). */
+  function tableRow(id: string): ParityRow {
+    const row = table.rows.find((candidate) => candidate.id === id);
+    if (row === undefined) throw new Error(`no parity row ${id}`);
+    return row;
+  }
+
+  /**
+   * A script's snapshot from its served markup: attributes as the DOM reads
+   * them (entities decoded) and its raw text. The DOM stand-in mis-parses a
+   * `<` inside a script's text, so only the empty opening tag is parsed.
+   *
+   * @param region The script element, `<script…>` through `</script>`.
+   */
+  function scriptSnapshot(region: string): ElementSnapshot {
+    const [tag] = scanTags(region);
+    if (tag === undefined) throw new Error(`no tag in ${region}`);
+    const element = first(`${region.slice(0, tag.openingEnd)}</script>`);
+    const snapshot = elementSnapshot(element);
+    const text = element.hasAttribute('src') ? null : region.slice(tag.openingEnd, tag.contentEnd);
+    return {
+      tag: snapshot.tag,
+      attribute: (name) => element.getAttribute(name),
+      attributeNames: () => element.getAttributeNames(),
+      openingTag: snapshot.openingTag,
+      text
+    };
+  }
+
+  /** The pick context of a page with no lazy peers. */
+  const SCRIPT_CONTEXT: PickContext = {
+    pageUrl: PAGE,
+    lazyRenderPeers: [],
+    lazyImagePeers: () => []
+  };
+
+  /**
+   * Each picked spelling the table proves safe — stored exactly as typed by
+   * WP Rocket's save, and excluding its element at runtime — with markup
+   * the picker writes it for.
+   */
+  const SAFE_SPELLINGS: readonly {
+    readonly fixture: string;
+    /** The fixture page's scripts it excludes on WP Rocket (`a.b` is on none). */
+    readonly excluded: readonly string[];
+    readonly html: string;
+  }[] = [
+    {
+      fixture: 'picked-delay-path-plus-hex',
+      excluded: ['p1'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="/a+b.js"></script>'
+    },
+    {
+      fixture: 'picked-delay-id-plus-hex',
+      excluded: ['a+b'],
+      html: '<script type="text/rocketlazyloadscript" id="a+b">go()</script>'
+    },
+    {
+      fixture: 'picked-delay-ver-hex',
+      excluded: ['p2'],
+      html: '<script type="text/rocketlazyloadscript">x.js?ver=1</script>'
+    },
+    {
+      fixture: 'picked-delay-star-hex',
+      excluded: ['p3'],
+      html: '<script type="text/rocketlazyloadscript">/* c */ var q = 1;</script>'
+    },
+    {
+      fixture: 'picked-delay-lt-hex',
+      excluded: ['p4'],
+      html: '<script type="text/rocketlazyloadscript">if(a<b)</script>'
+    },
+    {
+      fixture: 'picked-delay-octet-hex',
+      excluded: ['p5'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="/x%41y.js"></script>'
+    },
+    {
+      fixture: 'picked-defer-octet-hex',
+      excluded: ['p5'],
+      html: '<script src="/x%41y.js" data-rocket-defer defer></script>'
+    },
+    {
+      fixture: 'picked-delay-amp',
+      excluded: ['p7'],
+      html: '<script type="text/rocketlazyloadscript" data-rocket-src="/p&amp;q.js"></script>'
+    },
+    {
+      fixture: 'picked-delay-dot',
+      excluded: [],
+      html: '<script type="text/rocketlazyloadscript">a.b</script>'
+    },
+    {
+      fixture: 'picked-delay-hash',
+      excluded: ['p8'],
+      html: '<script type="text/rocketlazyloadscript">a#b</script>'
+    }
+  ];
+
+  /** The rows the picker writes for a script's markup. */
+  function pickedRows(html: string): readonly PickCandidate[] {
+    return candidatesFor(scriptSnapshot(html), SCRIPT_CONTEXT);
+  }
+
+  it('writes each character the way the table proves WP Rocket stores and matches it', () => {
+    for (const { fixture, excluded, html } of SAFE_SPELLINGS) {
+      const save = tableRow(`save-${fixture}`);
+      const match = tableRow(`match-${fixture}`);
+      if (save.kind !== 'save' || match.kind !== 'match') throw new Error(`bad rows ${fixture}`);
+      const lane: LaneKey = save.feature === 'delay_js' ? 'delayJs' : 'deferJs';
+      const row = pickedRows(html).find((candidate) => candidate.lane === lane)?.row;
+      expect(save.typed, fixture).toEqual([row]);
+      // Stored as typed, and on the plugin's runtime it excludes its element.
+      expect(save.stored, fixture).toEqual(save.typed);
+      expect(match.from, fixture).toBe(save.id);
+      expect(match.excluded, fixture).toEqual(excluded);
+    }
+  });
+
+  it('never writes the spellings the table proves broken (\\+, \\?, \\*, raw <, raw %xx)', () => {
+    const picked = SAFE_SPELLINGS.flatMap(({ html }) => pickedRows(html).map(({ row }) => row));
+    for (const id of ['path-plus', 'id-plus', 'ver', 'star', 'lt', 'octet']) {
+      const save = tableRow(`save-picked-delay-${id}`);
+      const match = tableRow(`match-picked-delay-${id}`);
+      if (save.kind !== 'save' || match.kind !== 'match') throw new Error(`bad rows ${id}`);
+      // Each old spelling is changed by the save or never excludes live.
+      const changed = JSON.stringify(save.stored) !== JSON.stringify(save.typed);
+      expect(changed || match.excluded.length === 0, id).toBe(true);
+      for (const typed of save.typed) expect(picked).not.toContain(typed);
+    }
+  });
+
+  it("excludes every picked script of the table's picked-row pages through the engine", () => {
+    for (const id of ['match-picked-delay-path-plus-hex', 'match-picked-defer-path-plus']) {
+      const row = tableRow(id);
+      if (row.kind !== 'match') throw new Error(`bad row ${id}`);
+      const lane: LaneKey = row.feature === 'delay_js' ? 'delayJs' : 'deferJs';
+      const scripts = scanTags(row.served).filter((tag) => tag.name === 'script');
+      for (const key of row.candidates) {
+        const tag = scripts.find((script) => findAttribute(script, 'id')?.value === key);
+        if (tag === undefined) throw new Error(`no #${key}`);
+        const snapshot = scriptSnapshot(row.served.slice(tag.start, tag.end));
+        const candidate = candidatesFor(snapshot, SCRIPT_CONTEXT).find(
+          (found) => found.lane === lane
+        );
+        if (candidate === undefined) throw new Error(`no ${lane} row for #${key}`);
+        const set: ExclusionSet = {
+          ...EMPTY_EXCLUSION_SET,
+          rows: { ...EMPTY_EXCLUSION_SET.rows, [lane]: [candidate.row] }
+        };
+        const html = TRANSFORMS[lane](row.served, set).html;
+        const excluded = scanTags(html).filter(
+          (scanned) => findAttribute(scanned, FDT_EXCLUDED_RESOURCE) !== null
+        );
+        expect(
+          excluded.some((scanned) => findAttribute(scanned, 'id')?.value === key),
+          `${id} #${key}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('hex-escapes whitespace the save would collapse or trim, and a `?ver` the runtime would escape', () => {
+    const [tabbed] = candidates('<script type="text/rocketlazyloadscript">var  a =\t1;</script>');
+    expect(tabbed?.row).toBe('var\\x20 a =\\x091;');
+    const html = '<script type="text/rocketlazyloadscript" id="version-1">a()</script>';
+    const [ver] = candidates(html);
+    expect(ver?.row).toBe('\\sid=["\']?\\x76ersion-1(?=["\'\\s/>])');
+    expect(ver && matchesServed(html, ver)).toBe(1);
+  });
+
+  it('never writes a row that is just `0` (the save drops it)', () => {
+    const script = '<script type="text/rocketlazyloadscript" data-rocket-src="/0?v=1"></script>';
+    expect(candidates(script).map((candidate) => candidate.row)).toEqual(['\\x30']);
+    expect(candidates('<img src="data:x" data-lazy-src="/0">')).toEqual([]);
+  });
+
+  it('names a lazy image by a stretch WP Rocket stores as written (no `<`, `%`, or space run)', () => {
+    for (const [src, row] of [
+      ['https://example.com/up/a%41long.jpg', '41long.jpg'],
+      ['https://example.com/up/ab  photo-1.jpg', 'photo-1.jpg']
+    ] as const) {
+      const html = `<img src="data:x" data-lazy-src="${src}">`;
+      expect(candidates(html).map((candidate) => candidate.row)).toEqual([row]);
+    }
   });
 });

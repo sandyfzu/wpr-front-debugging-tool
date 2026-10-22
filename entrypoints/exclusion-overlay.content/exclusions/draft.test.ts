@@ -363,7 +363,9 @@ describe('splitLines', () => {
 describe('createRowValidator', () => {
   it('names invalid and risky patterns, accepts literals as text', () => {
     const validate = createRowValidator();
-    expect(validate('delayJs', '(')).toMatch(/^Invalid regular expression: /);
+    // Delay JS rows are read as WP Rocket reads them (its save drops what PCRE rejects).
+    expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row when saving/);
+    expect(validate('deferJs', '(')).toMatch(/^Invalid regular expression: /);
     expect(validate('deferJs', '(a+)+$')).toMatch(/^Risky regular expression/);
     expect(validate('lazyload', '(')).toBeNull();
     expect(validate('delayJs', 'gtag')).toBeNull();
@@ -387,7 +389,7 @@ describe('createRowValidator', () => {
     const validate = createRowValidator();
     expect(validate('lazyload', 'logo.png\t')).toBeNull();
     expect(validate('lazyload', `  ${'x'.repeat(EXCLUSION_SET_LIMITS.rowChars)}  `)).toBeNull();
-    expect(validate('delayJs', ' ( ')).toMatch(/^Invalid regular expression: /);
+    expect(validate('delayJs', ' ( ')).toMatch(/^WP Rocket drops this row when saving/);
   });
 
   it('serves repeated rows from its cache and restarts past capacity', () => {
@@ -395,6 +397,6 @@ describe('createRowValidator', () => {
     expect(validate('delayJs', '(')).toBe(validate('delayJs', '('));
     validate('delayJs', 'a');
     validate('delayJs', 'b');
-    expect(validate('delayJs', '(')).toMatch(/^Invalid/);
+    expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row/);
   });
 });

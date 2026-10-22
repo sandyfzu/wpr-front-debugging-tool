@@ -762,6 +762,21 @@ describe('invalid-row reasons fit the wire', () => {
     });
   });
 
+  it("carries a row's typed problem id, and refuses an unknown one", () => {
+    const set = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['(?a)'] }
+    };
+    const { invalid } = prevalidateExclusionSet(set);
+    expect(invalid).toEqual([expect.objectContaining({ problem: 'match-all' })]);
+    expect(parseExclusionApplyReply(invalidApplyReply(invalid))).toEqual({
+      outcome: 'invalid',
+      invalid
+    });
+    const unknown = { feature: 'delay_js', index: 0, row: 'x', reason: 'r', problem: 'other' };
+    expect(parseExclusionApplyReply({ outcome: 'invalid', invalid: [unknown] })).toBeNull();
+  });
+
   it('truncates an over-cap reason without splitting a surrogate pair', () => {
     const cap = EXCLUSION_SET_LIMITS.reasonChars;
     const row = { feature: 'delay_js', index: 0, row: '(' } as const;

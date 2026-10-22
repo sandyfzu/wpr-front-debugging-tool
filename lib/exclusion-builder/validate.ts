@@ -7,6 +7,7 @@
 import type { InvalidExclusionRow } from './errors';
 import { trimExclusionRow } from './field-text';
 import { isIgnoredLazyloadRow, isMatchAllLazyRenderRow } from './literal-rows';
+import { regexRowProblems } from './pcre/rows';
 import { BACKTRACKING_RISK_REASONS, regexBacktrackingRisk } from './regex-risk';
 import {
   EXCLUSION_FEATURES,
@@ -109,6 +110,43 @@ function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
 }
 
 /**
+ * Regex features whose rows are checked the way WP Rocket's runtime reads
+ * them (the PCRE translator's row problems), keyed by feature. Features
+ * not listed are checked by {@link rowProblem} (a JS compile + the
+ * backtracking guard).
+ */
+const TRANSLATED_ROW_PROBLEMS: Partial<
+  Record<ExclusionFeatureId, (rows: readonly string[]) => readonly InvalidExclusionRow[]>
+> = {
+  delay_js: (rows) => regexRowProblems('delay_js', rows)
+};
+
+/**
+ * One translated feature's problems: a row empty once trimmed is the user
+ * mistake it always is (the exact `''` is WP Rocket's match-everything
+ * row), every other row gets the translator's verdict.
+ *
+ * @param feature The feature (names the problem rows).
+ * @param rows The rows as given.
+ * @param translated The feature's translator check.
+ */
+function translatedRowProblems(
+  feature: ExclusionFeatureId,
+  rows: readonly string[],
+  translated: (rows: readonly string[]) => readonly InvalidExclusionRow[]
+): readonly InvalidExclusionRow[] {
+  const byIndex = new Map(translated(rows).map((problem) => [problem.index, problem]));
+  return rows.flatMap((row, index): InvalidExclusionRow[] => {
+    if (trimExclusionRow(row) === '') {
+      const problem = row === '' ? { problem: 'match-all' as const } : {};
+      return [{ feature, index, row, reason: EMPTY_ROW_REASON, ...problem }];
+    }
+    const found = byIndex.get(index);
+    return found === undefined ? [] : [found];
+  });
+}
+
+/**
  * Validate one feature's rows — all of them.
  *
  * @param feature The feature the rows belong to (names the problem rows).
@@ -121,6 +159,8 @@ export function featureRowProblems(
   rowKind: ExclusionRowKind,
   rows: readonly string[]
 ): readonly InvalidExclusionRow[] {
+  const translated = rowKind === 'pattern' ? TRANSLATED_ROW_PROBLEMS[feature] : undefined;
+  if (translated !== undefined) return translatedRowProblems(feature, rows, translated);
   const problems: InvalidExclusionRow[] = [];
   rows.forEach((row, index) => {
     if (rowKind === 'literal') {

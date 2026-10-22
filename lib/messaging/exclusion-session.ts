@@ -21,6 +21,7 @@
  * `unavailable` save nothing.
  */
 import type { InvalidExclusionRow } from '../exclusion-builder/errors';
+import { PROBLEM_IDS } from '../exclusion-builder/pcre/problems';
 import type { ExclusionRowMatch, TransformReport } from '../exclusion-builder/report';
 import {
   EXCLUSION_FEATURES,
@@ -814,20 +815,22 @@ export function parseExclusionSaveReply(input: unknown): ExclusionSaveReply | nu
   return known === undefined ? null : { outcome: 'not-saved', reason: known };
 }
 
-/** Parse one engine-named invalid row. */
+/** Parse one engine-named invalid row (its typed `problem` id is optional). */
 function parseInvalidRow(input: unknown): InvalidExclusionRow | null {
-  if (!isRecord(input) || !keysAllowed(input, ['feature', 'index', 'row', 'reason'], 'reject')) {
-    return null;
-  }
+  const keys = ['feature', 'index', 'row', 'reason', 'problem'];
+  if (!isRecord(input) || !keysAllowed(input, keys, 'reject')) return null;
   const feature = ownValue(input, 'feature');
   const index = ownValue(input, 'index');
   const row = ownValue(input, 'row');
   const reason = ownValue(input, 'reason');
+  const problem = ownValue(input, 'problem');
   if (!isFeatureId(feature) || !isCount(index) || !isWireRowText(row)) return null;
   if (index >= EXCLUSION_SET_LIMITS.rowsPerFeature) return null;
   if (typeof reason !== 'string' || reason.length < 1) return null;
   if (reason.length > EXCLUSION_SET_LIMITS.reasonChars || !isPrintable(reason)) return null;
-  return { feature, index, row, reason };
+  if (problem === undefined) return { feature, index, row, reason };
+  const known = PROBLEM_IDS.find((id) => id === problem);
+  return known === undefined ? null : { feature, index, row, reason, problem: known };
 }
 
 /**

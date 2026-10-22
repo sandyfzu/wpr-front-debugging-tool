@@ -84,8 +84,70 @@ export interface RegexRowsTranslation {
  * @returns A stateless test.
  */
 export function compileMatcher(matcher: PcreMatcher): (subject: string) => boolean {
-  const regex = new RegExp(matcher.source, matcher.flags);
-  return (subject) => regex.test(toByteString(subject));
+  const test = compileByteMatcher(matcher);
+  return (subject) => test(toByteString(subject));
+}
+
+/**
+ * Entries each translation memo keeps before evicting its oldest: a few
+ * full sets' worth, bounded so a long-lived surface cannot grow it (a
+ * wire-valid row's analysis is at most a few tens of KiB).
+ */
+export const TRANSLATION_CACHE_LIMIT = 512;
+
+/**
+ * Read a bounded memo (oldest-inserted evicted first), building and storing
+ * the value on a miss.
+ *
+ * @param cache The memo.
+ * @param key The entry's key.
+ * @param build Makes the value on a miss.
+ */
+function memoized<V>(cache: Map<string, V>, key: string, build: () => V): V {
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  const value = build();
+  if (cache.size >= TRANSLATION_CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (oldest.done !== true) cache.delete(oldest.value);
+  }
+  cache.set(key, value);
+  return value;
+}
+
+/** Compiled sources (a source already carries its feature's escapes, so it is the whole key). */
+const regexCache = new Map<string, RegExp>();
+
+/**
+ * A compiled matcher over a subject already encoded with `toByteString` —
+ * for callers testing one subject against many rows, which encode it once.
+ * The compiled regex is memoized by source and stateless (no `g`/`y`).
+ *
+ * @param matcher A row's matcher.
+ * @returns A test over the subject's byte string.
+ */
+export function compileByteMatcher(matcher: PcreMatcher): (bytes: string) => boolean {
+  const regex = memoized(
+    regexCache,
+    matcher.source,
+    () => new RegExp(matcher.source, matcher.flags)
+  );
+  return (bytes) => regex.test(bytes);
+}
+
+/** Row analyses by feature + row: the same text translates differently per feature (escapes). */
+const analysisCache = new Map<string, RowAnalysis>();
+
+/**
+ * {@link analyzeRow}, memoized: validation and matching translate the same
+ * rows on every apply, and analysis (parse, save check, risk guard) is the
+ * costly part.
+ *
+ * @param feature The row's feature (part of the key).
+ * @param row The stored row.
+ */
+function cachedAnalysis(feature: RegexFeatureId, row: string): RowAnalysis {
+  return memoized(analysisCache, `${feature}\u0000${row}`, () => analyzeRow(feature, row));
 }
 
 /** The fixed subject of WP Rocket's Defer JS pre-check. */
@@ -533,7 +595,7 @@ export function translateRegexRows(
     if (spent > PCRE_LIMITS.setBytes) {
       return uncheckedRow(row, 0, `past the ${String(PCRE_LIMITS.setBytes)}-byte set budget`);
     }
-    const analysis = analyzeRow(feature, row);
+    const analysis = cachedAnalysis(feature, row);
     spent += analysis.bytes;
     return analysis;
   });
