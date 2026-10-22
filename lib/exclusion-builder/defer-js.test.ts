@@ -71,11 +71,12 @@ describe('deferJsTransform — stripping the markers', () => {
     );
   });
 
-  it('prefers `data-rocket-src` over `src` as the effective URL', () => {
+  it('reads a delayed script with two `src` as WP Rocket did: the last one fits', () => {
+    // Observed: Delay renamed only the first `src`; Defer had captured the second.
     const html =
-      '<script src="placeholder.js" data-rocket-src="real.js" data-rocket-defer="defer"></script>';
-    const result = deferJsTransform(html, setWithRows(['^real\\.js$']));
-    expect(result.report.rewritten).toBe(1);
+      '<script type="text/rocketlazyloadscript" data-rocket-src="real.js" src="placeholder.js" data-rocket-defer defer></script>';
+    expect(deferJsTransform(html, setWithRows(['^real\\.js$'])).report.rewritten).toBe(0);
+    expect(deferJsTransform(html, setWithRows(['^placeholder\\.js$'])).report.rewritten).toBe(1);
   });
 
   it('does not match a row that only fits the surrounding tag (the URL is the match target)', () => {
@@ -125,7 +126,8 @@ describe('deferJsTransform — adversarial markup', () => {
     expect(result.html).toBe('<script data-wpr-fdt-excluded="defer_all_js">inline();</script>');
   });
 
-  it('never matches a row against a marker script without a URL (nothing to match with)', () => {
+  it('never matches a row against a marker script without a URL: undetermined, left as served', () => {
+    // WP Rocket only stamps scripts it captured a `src` from, so this one cannot be read back.
     const html = '<script data-rocket-defer="defer">inline();</script>';
     const result = deferJsTransform(html, setWithRows(['inline']));
     expect(result.html).toBe(html);
@@ -136,7 +138,8 @@ describe('deferJsTransform — adversarial markup', () => {
       rewritten: 0,
       regionRemovals: 0,
       matchedRows: [],
-      unmatchedRows: ['inline']
+      unmatchedRows: ['inline'],
+      undetermined: 1
     });
   });
 });
@@ -148,7 +151,8 @@ describe('deferJsTransform — the subject: the raw src WP Rocket captured', () 
     return [...out.matchAll(/id="([^"]+)" data-wpr-fdt-excluded/g)].map((match) => match[1] ?? '');
   }
 
-  // Served by the real DeferJS::defer_js; every expectation below was observed there.
+  // Served by the real DeferJS::defer_js (then DelayJS\\HTML::delay_js where delayed);
+  // every expectation in this block was observed there.
   const SERVED = [
     `<script src="/it's.js" id="q" data-rocket-defer defer></script>`,
     `<script src="/a.js" title=" src='/t.js'" id="t" data-rocket-defer defer></script>`,
@@ -185,6 +189,46 @@ describe('deferJsTransform — the subject: the raw src WP Rocket captured', () 
     expect(restoredIds(delayed, ['^/q'])).toEqual([]);
     expect(restoredIds(delayed, ['^/b'])).toEqual(['d']);
     expect(restoredIds(delayed, ['^/a\\.js$'])).toEqual(['x']);
+  });
+
+  it('undoes its own stamp on a `>` inside the value (WP Rocket stamps every `>` it matched)', () => {
+    const served =
+      '<script src="/js/x?y= data-rocket-defer defer>1" id="a" data-rocket-defer defer></script>';
+    expect(restoredIds(served, ['^/js/x\\?y=>1$'])).toEqual(['a']);
+    expect(restoredIds(served, ['rocket'])).toEqual([]);
+  });
+
+  it('reads the rest of WP Rocket’s match from the body when a parser ends the tag early', () => {
+    // A vertical tab is PCRE whitespace but not HTML's: the value reads unquoted, cut at its `>`.
+    const served =
+      '<script src=\v"/js/x?y= data-rocket-defer defer>1" id="d" data-rocket-defer defer></script>';
+    const report = deferJsTransform(served, setWithRows(['x\\?y=>1'])).report;
+    expect(report).toMatchObject({ candidates: 1, rewritten: 1 });
+    expect(report).not.toHaveProperty('undetermined');
+  });
+
+  it('undoes Delay JS’s rename wherever its text is, not where a parser sees an attribute', () => {
+    const inValue =
+      '<script type="text/rocketlazyloadscript" src=/js/a.js title=" data-rocket-src=\'/t.js\'" id="b" data-rocket-defer defer></script>';
+    expect(restoredIds(inValue, ['^/t\\.js$'])).toEqual(['b']);
+    const afterVerticalTab =
+      '<script type="text/rocketlazyloadscript" data-rocket-type="module"\vdata-rocket-src=\'module.mjs\' id="c" data-rocket-defer defer></script>';
+    expect(restoredIds(afterVerticalTab, ['module\\.mjs'])).toEqual(['c']);
+  });
+
+  it('leaves a source `data-rocket-src` alone on a tag Delay JS did not rewrite', () => {
+    const served =
+      '<script src="/r.js" data-rocket-src="/pre.js" id="f" data-rocket-defer defer></script>';
+    expect(restoredIds(served, ['^/r\\.js$'])).toEqual(['f']);
+  });
+
+  it('counts a script undetermined when its captured src cannot be read back', () => {
+    // Delay JS's bare-`type` removal glued `nomodule` to the renamed `src` (WP Rocket excluded it).
+    const served =
+      '<script type="text/rocketlazyloadscript" nomoduledata-rocket-src="/n.js" id="e" data-rocket-defer defer></script>';
+    const result = deferJsTransform(served, setWithRows(['/n\\.js']));
+    expect(result.html).toBe(served);
+    expect(result.report).toMatchObject({ candidates: 1, rewritten: 0, undetermined: 1 });
   });
 
   it('captures nothing from an unquoted src, so no row matches it', () => {
