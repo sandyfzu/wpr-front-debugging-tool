@@ -4,7 +4,7 @@
 
 Port both behavioral baselines, improve correctness/speed/safety/UX, never copy structures. [Index](./README.md) owns status/read routing; active plans own tasks and colocated browser suites; completed records own compact decisions/evidence/open verification. Current code/lockfile/budget table—not old receipts—own implementation facts.
 
-Remaining train: **P6G/P6.1 + independent P9 → owner P10 disposition → P11 → P12 → P13/P14 → P14.5 → P14.6 → deferred P7 → P5J → deferred P8 → P15**. P8 is the last implementation, immediately before release (owner2026-10-19: popup not settled); optional P17 SBS panel home decision-gated. Technical dependencies/parallelism below do not override chosen slots or authorize delegation.
+Remaining train: **P6G/P6.1 + independent P9 → owner P10 disposition → P11 → P12 → P13/P14 → P14.5 → P14.6 → deferred P7 → P5J → deferred P8 → P15**. P8 is the last implementation, immediately before release (owner2026-10-19: popup not settled); optional P17 SBS panel home decision-gated. **P20** [WP Rocket simulation](./20-phase-20-wpr-simulation.md) (owner idea 2026-10-21) planned after P10, slot owner to confirm. Technical dependencies/parallelism below do not override chosen slots or authorize delegation.
 
 ## 1. Baselines and stack
 
@@ -27,6 +27,7 @@ Detection eager/single-flight at capture (owner2026-10-08), one parse/cache shar
 - P11 dependsP1/P1.1/P6; chosen after P10 resolution. **P19 planned** (owner 2026-10-20): [on-page command palette + UI gate](./19-phase-19-page-command-palette.md) afterP11 — dependsP10 disposition/P11, gate G-1; P19D serializes with P12M injected-UI edits. P12 dependsP11/P3/P5 (+P9 options toggle surface; the popup's Detections row joins additively at deferred P8 — one shared item, no rework); earlyP12A shipped without moving fullP12 slot. P13/P14 needP11/P12/P3/P5/P6; **P14 integration additionally requires P13 executor pattern**, although independent pure work may parallel. No contradictory blanket “fully parallel” promise.
 - Each X.1 suite depends own implementation+P4.1 (+P4.2 if site), runs with/after feature; focused regression ships with change. Suites live in **same phase file**, not separate planning track. Chromium local-only, never CI; Firefox installed-extension smoke explicit/manual unless new verified harness.
 - P14.5 dependsP11–P14, decision gate first. P14.6 dependsP14.5+owner site or explicit scope skip; then rebuilt-plugin-gatedP7, thenP5J, then deferredP8, then all-requiredP15. External/Firefox/parked work cannot silently vanish.
+- **P20 WP Rocket simulation** dependsP10 (session pipeline + overlay mode registry)/P10K (row semantics); only P20A (investigate/decide) planned, it plans P20B+; slot owner to confirm.
 - Optional **P17 Compare panel home** dependsP5/P6/P16; no doc/implementation until scheduled. Filename17 Firefox workstream is unrelated. Its technical fixes may parallel independent work but strict Chromium nonregression gate applies.
 
 ## 4. Cross-cutting commitments
