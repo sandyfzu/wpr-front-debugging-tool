@@ -1,18 +1,19 @@
 /**
  * A lane's rows read as one set, the way WP Rocket runs them on the page —
  * for lanes whose rows act together (Defer JS joins them into one pattern,
- * with a pre-check that can turn the feature off for the whole page). The
- * draft holds typed rows while they are edited, so each row is read in the
- * form WP Rocket's save gives it (rows the save drops are left out, as they
- * would be once committed): after an apply's commit the set read here is
- * exactly the one the session validates, so the editor and the session
- * agree on every row problem and on the page state.
+ * with a pre-check that can turn the feature off for the whole page).
+ *
+ * The rows are read as the lane will hold them once its uncommitted rows
+ * are committed — the same commit the editor runs (a typed copy of a row
+ * leaves, the rows already there win; rows the save drops leave) — so the
+ * rows named are the rows that stay. After an apply's commit the set read
+ * here is exactly the one the session validates: the editor and the
+ * session agree on every row problem and on the page state.
  */
 import { deferRowSet } from '../../../lib/exclusion-builder/defer-js-rows';
-import { saveExclusionRows, storedText } from '../../../lib/exclusion-builder/field-text';
+import { storedRowKey } from '../../../lib/exclusion-builder/field-text';
 import type { PageState } from '../../../lib/exclusion-builder/pcre/rows';
-import type { ExclusionFeatureId } from '../../../lib/exclusion-builder/set';
-import { isBlankRow, laneFeature, type DraftRow, type LaneKey } from './draft';
+import { commitLaneRows, isBlankRow, laneFeature, type DraftRow, type LaneKey } from './draft';
 
 /** A row behind a page-wide failure, named the way the lane message shows it. */
 export interface PageOffRow {
@@ -50,44 +51,37 @@ const SET_READINGS: Partial<Readonly<Record<LaneKey, SetReading>>> = {
 };
 
 /**
- * Read a lane's rows as one set.
+ * Whether a lane's rows are read as one set (see {@link lanePage}).
  *
- * @param feature The lane's feature (whose save gives the stored form).
- * @param rows The lane's rows (typed or committed; blank rows are unfinished edits).
- * @param read The lane's set reading.
+ * @param lane The lane.
  */
-function readRows(
-  feature: ExclusionFeatureId,
+export function readsAsSet(lane: LaneKey): boolean {
+  return SET_READINGS[lane] !== undefined;
+}
+
+/**
+ * The lane's rows still to commit: those the editor holds uncommitted
+ * (edited since their last commit), plus any non-blank row that is not its
+ * own stored form (a commit would change it) — per-row stages memoized, so
+ * a keystroke re-saves only the row it changed.
+ *
+ * @param lane The lane.
+ * @param rows Its rows.
+ * @param uncommitted Rows the editor holds uncommitted, by id.
+ */
+function commitTargets(
+  lane: LaneKey,
   rows: readonly DraftRow[],
-  read: SetReading
-): LanePage {
-  const filled = rows
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => !isBlankRow(row.text));
-  const { diffs } = saveExclusionRows(
-    feature,
-    filled.map(({ row }) => row.text)
-  );
-  // The stored rows, each with the lane position it came from.
-  const stored: { readonly text: string; readonly row: DraftRow; readonly index: number }[] = [];
-  diffs.forEach((diff, at) => {
-    const text = storedText(diff);
-    const owner = filled[at];
-    if (text !== null && owner !== undefined) stored.push({ text, ...owner });
-  });
-  const set = read(stored.map(({ text }) => text));
-  const problems = new Map<string, string>();
-  for (const { index, reason } of set.problems) {
-    const owner = stored[index];
-    if (owner !== undefined) problems.set(owner.row.id, reason);
+  uncommitted: ReadonlySet<string>
+): ReadonlySet<string> {
+  const feature = laneFeature(lane).id;
+  const targets = new Set<string>();
+  for (const row of rows) {
+    if (isBlankRow(row.text)) continue;
+    if (uncommitted.has(row.id) || storedRowKey(feature, row.text) !== row.text)
+      targets.add(row.id);
   }
-  const offRows = set.pageOffRows.flatMap((index): PageOffRow[] => {
-    const owner = stored[index];
-    return owner === undefined
-      ? []
-      : [{ id: owner.row.id, position: owner.index + 1, stored: owner.text }];
-  });
-  return { page: set.page, offRows, problems };
+  return targets;
 }
 
 /**
@@ -95,8 +89,38 @@ function readRows(
  *
  * @param lane The lane.
  * @param rows Its rows.
+ * @param uncommitted Rows the editor holds uncommitted (edited since their
+ *   last commit), by id: their commit runs against the rows already there.
  */
-export function lanePage(lane: LaneKey, rows: readonly DraftRow[]): LanePage | null {
+export function lanePage(
+  lane: LaneKey,
+  rows: readonly DraftRow[],
+  uncommitted: ReadonlySet<string> = new Set()
+): LanePage | null {
   const read = SET_READINGS[lane];
-  return read === undefined ? null : readRows(laneFeature(lane).id, rows, read);
+  if (read === undefined) return null;
+  const { kept } = commitLaneRows(lane, rows, commitTargets(lane, rows, uncommitted));
+  // Committed rows never repeat one another; should two still match, the
+  // first stays (as the apply's commit of every row decides).
+  const seen = new Set<string>();
+  const stored = kept.filter((row) => {
+    if (isBlankRow(row.text) || seen.has(row.text)) return false;
+    seen.add(row.text);
+    return true;
+  });
+  const positions = new Map(rows.map((row, index) => [row.id, index + 1]));
+  const set = read(stored.map((row) => row.text));
+  const problems = new Map<string, string>();
+  for (const { index, reason } of set.problems) {
+    const owner = stored[index];
+    if (owner !== undefined) problems.set(owner.id, reason);
+  }
+  const offRows = set.pageOffRows.flatMap((index): PageOffRow[] => {
+    const owner = stored[index];
+    const position = owner === undefined ? undefined : positions.get(owner.id);
+    return owner === undefined || position === undefined
+      ? []
+      : [{ id: owner.id, position, stored: owner.text }];
+  });
+  return { page: set.page, offRows, problems };
 }

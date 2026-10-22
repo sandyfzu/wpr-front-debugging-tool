@@ -366,8 +366,13 @@ test.describe('exclusion builder stored-form notes', () => {
     await expect(deferRow(2)).toHaveAttribute('aria-invalid', 'true');
     await expect(deferRow(1)).toHaveAttribute('aria-invalid', 'false');
     await page.getByRole('button', { name: /^Apply$/ }).click();
-    // Blocked before asking: the page stays, focus lands on the message.
+    // Blocked before asking: the page stays, focus lands on the message — a group
+    // named by its lead (`aria-labelledby`), so a screen reader says what it is.
     await expect(message).toBeFocused();
+    await expect(message).toHaveAttribute('role', 'group');
+    await expect(message).toHaveAccessibleName(
+      'WP Rocket would stop deferring every script on this page because of this row:'
+    );
     await expect(page.getByText('Fix 1 row before applying')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
     await message.getByRole('button', { name: 'Go to row 2' }).click();

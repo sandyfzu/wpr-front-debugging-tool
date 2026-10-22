@@ -111,9 +111,26 @@ export interface Committed {
  * @param ids The rows to commit (unknown ids are ignored).
  */
 export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]): Committed {
-  const feature = laneFeature(lane).id;
-  const targets = new Set(ids);
   const rows = draft.rows[lane];
+  const { kept, commits } = commitLaneRows(lane, rows, new Set(ids));
+  const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
+  return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+}
+
+/**
+ * One lane's rows after committing `targets` (see {@link commitRows}):
+ * untouched rows keep their identity.
+ *
+ * @param lane The rows' lane.
+ * @param rows The lane's rows.
+ * @param targets The rows to commit, by id.
+ */
+export function commitLaneRows(
+  lane: LaneKey,
+  rows: readonly DraftRow[],
+  targets: ReadonlySet<string>
+): { readonly kept: readonly DraftRow[]; readonly commits: readonly RowCommit[] } {
+  const feature = laneFeature(lane).id;
   const ahead = new Set<string>();
   for (const row of rows) {
     if (targets.has(row.id) || isBlankRow(row.text)) continue;
@@ -133,8 +150,7 @@ export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]):
     if (stored === null) return [];
     return [stored === row.text ? row : { id: row.id, text: stored }];
   });
-  const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
-  return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+  return { kept, commits };
 }
 
 /**

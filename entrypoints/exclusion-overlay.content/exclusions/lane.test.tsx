@@ -10,6 +10,7 @@ import { createOverlayController, type OverlayController } from '../controller';
 import type { ExclusionSessionPort, PortOutcome } from '../session/port';
 import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
+import { SET_READING_DELAY_MS } from './set-readings';
 import { Lane } from './lane';
 import type { LaneKey } from './draft';
 
@@ -31,8 +32,14 @@ const everyRow: VirtualizerFactory = (options) => ({
 const reply = <T,>(value: T): Promise<PortOutcome<T>> =>
   Promise.resolve({ kind: 'reply', reply: value });
 
-/** A ready controller over an idle port. */
-async function readyController(): Promise<OverlayController> {
+/**
+ * A ready controller over an idle port.
+ *
+ * @param schedule The timers (default: none ever fires).
+ */
+async function readyController(
+  schedule: (run: () => void, ms: number) => () => void = () => () => undefined
+): Promise<OverlayController> {
   const port: ExclusionSessionPort = {
     status: () => reply<ExclusionSessionStatus>({ state: 'inactive' }),
     savedSet: () => reply({ set: null }),
@@ -50,7 +57,7 @@ async function readyController(): Promise<OverlayController> {
       responseEnd: null
     }),
     now: () => 1,
-    schedule: () => () => undefined,
+    schedule,
     reload: vi.fn(),
     log: { warn: vi.fn() }
   });
@@ -846,6 +853,13 @@ describe('Lane counts, hints and copy forms (K.5a.2)', () => {
 });
 
 describe('Lane page-wide state (K.5b)', () => {
+  /** A ready controller whose set readings run at once (their pause elapsed). */
+  const readingController = (): Promise<OverlayController> =>
+    readyController((run, ms) => {
+      if (ms === SET_READING_DELAY_MS) run();
+      return () => undefined;
+    });
+
   afterEach(cleanup);
 
   const deferInput = (n: number): HTMLInputElement =>
@@ -856,7 +870,7 @@ describe('Lane page-wide state (K.5b)', () => {
   const UNKNOWN = 'WP Rocket may defer no script on this page with these rows — not checked here.';
 
   it('names the row behind a page-off above the rows; Go to focuses it', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ['jquery', '.*'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     const message = pageOff();
@@ -882,7 +896,7 @@ describe('Lane page-wide state (K.5b)', () => {
   });
 
   it('names an unverified row behind a page-off, with a blank row counted in its position', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ['a\\.js', '', '\\p{L}\\Qab'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     expect(screen.getByRole('button', { name: 'Go to row 3' })).toBeTruthy();
@@ -891,7 +905,7 @@ describe('Lane page-wide state (K.5b)', () => {
   });
 
   it('takes focus when an apply is refused for it, and leaves once the row is fixed', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ['.*'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     controller.apply();
@@ -902,7 +916,7 @@ describe('Lane page-wide state (K.5b)', () => {
   });
 
   it('names three rows and counts the rest, plural words', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ["(?'n'a)", "(?'n'b)", "(?'n'c)", "(?'n'd)"], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     expect(pageOff()?.querySelectorAll('li')).toHaveLength(3);
@@ -912,7 +926,7 @@ describe('Lane page-wide state (K.5b)', () => {
   });
 
   it('shows no page message for a joined-only row problem, nor for a page that is on', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ['(?-i)zzz', 'A.JS'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     expect(pageOff()).toBeNull();
@@ -923,7 +937,7 @@ describe('Lane page-wide state (K.5b)', () => {
   });
 
   it('notes an unchecked page state without blocking, never while the feature is disabled', async () => {
-    const controller = await readyController();
+    const controller = await readingController();
     controller.insertRows('deferJs', ['\\p{L}'], null);
     mountLane(controller, undefined, undefined, undefined, 'deferJs');
     expect(screen.getByText(UNKNOWN)).toBeTruthy();
@@ -947,7 +961,7 @@ describe('Lane page-wide state (K.5b)', () => {
       pageState: 'unknown'
     };
     const caveat = /^These counts assume WP Rocket defers scripts on this page/;
-    const controller = await readyController();
+    const controller = await readingController();
     const [row = ''] = controller.insertRows('deferJs', ['zzz'], null);
     mountLane(controller, report, undefined, undefined, 'deferJs');
     expect(screen.getByText(caveat)).toBeTruthy();

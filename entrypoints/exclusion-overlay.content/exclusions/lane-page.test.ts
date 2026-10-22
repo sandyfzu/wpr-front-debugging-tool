@@ -52,13 +52,29 @@ describe('lanePage', () => {
       lanePage('deferJs', rows("(?'n'a)x"))
     );
     expect(lanePage('deferJs', rows("(?'n'a)x", " (?'n'a)x"))?.page).not.toBe('off');
-    // A pattern PCRE rejects is dropped at save: the set left is fine (the row's own
-    // problem comes from the row check, not from here).
-    expect(lanePage('deferJs', rows('(', 'a'))).toEqual({
+    // A pattern PCRE rejects, typed (uncommitted), is dropped at its commit: the set
+    // left is fine (the row's own problem comes from the row check, not from here).
+    expect(lanePage('deferJs', rows('(', 'a'), new Set(['r1']))).toEqual({
       page: 'on',
       offRows: [],
       problems: new Map()
     });
+  });
+
+  it('names the copy that stays: a typed copy leaves, the row already there wins', () => {
+    // Row 1 typed (uncommitted) repeats row 3, which is behind the page-off: the
+    // commit drops row 1, so the message names row 3.
+    expect(lanePage('deferJs', rows('.*', 'ok', '.*'), new Set(['r1']))?.offRows).toEqual([
+      { id: 'r3', position: 3, stored: '.*' }
+    ]);
+    // Nothing uncommitted (the apply's commit of every row): the first copy stays.
+    expect(lanePage('deferJs', rows('.*', 'ok', '.*'))?.offRows).toEqual([
+      { id: 'r1', position: 1, stored: '.*' }
+    ]);
+    // A row not in its stored form is committed whatever the tracking says.
+    expect(lanePage('deferJs', rows(' .* ', 'ok', '.*'))?.offRows).toEqual([
+      { id: 'r3', position: 3, stored: '.*' }
+    ]);
   });
 
   it('keeps a joined-only row problem a row problem, never a page-off', () => {
