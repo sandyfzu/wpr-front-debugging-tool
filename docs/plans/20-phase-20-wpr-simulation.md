@@ -6,7 +6,7 @@ Owner idea (2026-10-21): now that the extension can intercept and rewrite docume
 
 Not P10's rejected G-3 "simulation fallback" (that was an approximation _instead of_ interception); P20 rides the interception.
 
-**Depends:** P10 (session pipeline seam + overlay mode registry), P10K (WP Rocket stored/runtime row semantics — simulated features must match exclusions the same way). **Train slot: owner to confirm.** Only P20A is planned; later sub-phases are planned by P20A. Stack: installed; P20A decides any addition (none expected).
+**Depends:** P10 (session pipeline seam + overlay mode registry), P10K (WP Rocket stored/runtime row semantics — simulated features must match exclusions the same way). **Train slot (owner 2026-10-22): before release** — any slot after P10, closed before P8 (the last pre-release implementation), so P15 gates it. Only P20A is planned; later sub-phases are planned by P20A. Stack: installed; P20A decides any addition (none expected).
 
 ## P20A — Investigate, plan, settle decisions (no product code)
 
@@ -30,8 +30,8 @@ Deliverables:
 
 - [ ] Decision record in this doc (one dated block per question: answer, evidence, rejected options).
 - [ ] P20B+ sub-phases written here: each small, independently reviewable, with Depends/Parallel/Goal/checklist/DoD/effort·difficulty; stack/dependency additions stated with verified latest-stable versions.
-- [ ] Owner decisions listed as explicit gates (licensing, placement, train slot).
+- [ ] Owner decisions listed as explicit gates (licensing, placement); train slot decided 2026-10-22 (before release).
 
-DoD: every question answered or explicitly gated on the owner; follow-up sub-phases planned; README + master updated with the confirmed slot. Effort M · difficulty medium.
+DoD: every question answered or explicitly gated on the owner; follow-up sub-phases planned; README + master updated with the P20B+ order inside the decided slot. Effort M · difficulty medium.
 
 ## P20B+ — to be planned by P20A
