@@ -36,6 +36,9 @@ const DELAY = 'Delay JavaScript execution';
 /** The Defer lane's label (the verified feature name). */
 const DEFER = 'Load JavaScript deferred';
 
+/** The Automatic Lazy Rendering lane's label. */
+const LAZY_RENDER = 'Automatic Lazy Rendering';
+
 /** `chrome.storage.local` key of the per-origin saved drafts (WXT `local:exclusion-sets`). */
 const SAVED_DRAFTS_KEY = 'exclusion-sets';
 
@@ -299,6 +302,42 @@ test.describe('exclusion builder stored-form notes', () => {
     await page.getByRole('button', { name: `Copy all ${DELAY} exclusions`, exact: true }).click();
     await expect(page.getByRole('status').last()).toHaveText('Copied 2 exclusions');
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('jquery-(.*).js\ngtag');
+    await page.close();
+  });
+
+  test('lazy-render rows copy as a rocket_lrc_exclusions filter, with the re-keying note', async ({
+    extension
+  }) => {
+    await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: ORIGIN_A
+    });
+    const { page } = await openBuilder(extension);
+    const lazyRender = page.getByRole('region', { name: LAZY_RENDER });
+    await expect(lazyRender).toContainText(
+      'Text, matched case-insensitively against the element’s opening tag'
+    );
+    await lazyRender.getByRole('button', { name: 'Add row' }).click();
+    await page.keyboard.type('id="footer"');
+    await expect(lazyRender).toContainText('Excluding an element re-keys the elements after it');
+    await lazyRender
+      .getByRole('button', { name: `Copy all ${LAZY_RENDER} exclusions`, exact: true })
+      .click();
+    await expect(page.getByRole('status').last()).toHaveText(
+      'Copied 1 exclusion as a rocket_lrc_exclusions filter'
+    );
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      [
+        "add_filter( 'rocket_lrc_exclusions', function ( $exclusions ) {",
+        '\treturn array_merge( (array) $exclusions, [',
+        '\t\t\'id="footer"\',',
+        '\t] );',
+        '} );'
+      ].join('\n')
+    );
+    // Defer JS names what this preview cannot read.
+    await expect(page.getByRole('region', { name: DEFER })).toContainText(
+      'WP Rocket’s remote exclusion lists aren’t read here'
+    );
     await page.close();
   });
 
