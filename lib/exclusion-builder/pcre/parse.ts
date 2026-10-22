@@ -28,6 +28,7 @@ import {
   foldInPlace,
   literalSet,
   posixSet,
+  setSize,
   type ByteSet
 } from './byte-set';
 
@@ -92,6 +93,24 @@ export interface ParseIssue {
   readonly detail: string;
   /** A subroutine call: its `unknown` (recursion) leaves the group facts trustworthy. */
   readonly call?: true;
+  /**
+   * An `invalid` issue other rows may repair once WP Rocket joins every Defer
+   * row into `#(r1|r2|…)#`: a group reference (the wrapper and other rows
+   * add groups and names), a parenthesis imbalance, or a repeated name (an
+   * earlier row's `J` can license it).
+   */
+  readonly join?: JoinRepair;
+  /** The construct runs to the end of the pattern (joined, the next row may complete it). */
+  readonly atEnd?: true;
+}
+
+/** How a joined pattern can repair an invalid row (see {@link ParseIssue}). */
+export type JoinRepair = 'reference' | 'parens' | 'names';
+
+/** Extra facts an issue may carry. */
+interface IssueTags {
+  readonly call?: true;
+  readonly join?: JoinRepair;
 }
 
 /**
@@ -124,6 +143,12 @@ export interface ParsedPattern {
    * would quote the rest (WP Rocket's Defer wrapper `)` included).
    */
   readonly unterminatedQuote: boolean;
+  /**
+   * Parenthesis balance: `net` = groups opened minus closed (unmatched `)`
+   * count −1), `min` = the lowest running depth — what joining needs to
+   * tell whether the rows' parentheses balance out.
+   */
+  readonly parens: { readonly net: number; readonly min: number };
 }
 
 /** Largest `{n,m}` count PCRE2 accepts. */
@@ -134,6 +159,30 @@ const MAX_VARIABLE_LOOKBEHIND = 255;
 const MAX_FIXED_LOOKBEHIND = 65_535;
 /** Largest byte value an octal or hex escape may carry without UTF. */
 const MAX_BYTE = 0xff;
+
+/**
+ * Errors of a construct still open at the pattern's end: joined, the text
+ * after it (`|`, the next row, the wrapper's `)`) may complete it — `[a` +
+ * `|b]`, `\c` + `|`, `(?i` + `)`. Self-contained errors (`\i`, `a**`) are
+ * not listed.
+ */
+const OPEN_AT_END = new Set([
+  '\\ at end of pattern',
+  '\\c needs a printable ASCII character',
+  'missing terminating ] for character class',
+  '\\N{…} without UTF',
+  'unterminated \\p{…}',
+  'malformed \\p property',
+  '\\o without {…}',
+  'malformed braced character code',
+  'malformed group name',
+  'unrecognized character after (?P',
+  'unrecognized character after (?',
+  'malformed \\g reference',
+  '\\k is not followed by a group name',
+  'unrecognized option setting',
+  'malformed subroutine call'
+]);
 
 /** Longest construct text a stopped parse names. */
 const STOP_CONSTRUCT_LENGTH = 16;
@@ -191,6 +240,9 @@ class Parser {
   /** Open branch reset groups `(?|…)` around the current position. */
   private branchResetDepth = 0;
   private unterminatedQuote = false;
+  /** Running parenthesis depth and its minimum (see {@link ParsedPattern}). */
+  private depth = 0;
+  private minDepth = 0;
   /** The `J` option per open group (index 0 = top level); `null` = not set in this pattern. */
   private readonly duplicates: (boolean | null)[] = [null];
   private readonly issues: ParseIssue[] = [];
@@ -214,11 +266,19 @@ class Parser {
       alternatives = this.alternatives();
       while (this.pos < this.src.length) {
         // Only an unmatched `)` ends the top level early.
-        this.issue('invalid', this.pos, this.pos + 1, 'unmatched closing parenthesis');
+        this.issue('invalid', this.pos, this.pos + 1, 'unmatched closing parenthesis', {
+          join: 'parens'
+        });
         this.pos++;
+        this.depth--;
+        this.minDepth = Math.min(this.minDepth, this.depth);
         alternatives.push(...this.alternatives());
       }
       this.checkReferences();
+      if (compiledSize(alternatives) > COMPILED_SIZE_BOUND) {
+        const shown = Math.min(this.src.length, STOP_CONSTRUCT_LENGTH);
+        this.issue('unknown', 0, shown, 'may exceed PCRE’s compiled pattern size');
+      }
     } catch (error) {
       if (!(error instanceof StopParse)) throw error;
       complete = false;
@@ -230,20 +290,25 @@ class Parser {
       groupCount: this.groupCount,
       names: this.names,
       duplicatesAllowedAtEnd: this.duplicates[0] ?? null,
-      unterminatedQuote: this.unterminatedQuote
+      unterminatedQuote: this.unterminatedQuote,
+      parens: { net: this.depth, min: this.minDepth }
     };
   }
 
-  /**
-   * Record an issue for `src[start, end)`; `call` marks a subroutine call
-   * (unknown only for its recursion, never for the groups it sees).
-   */
-  private issue(kind: IssueKind, start: number, end: number, detail: string, call = false): void {
+  /** Record an issue for `src[start, end)`, with its tags (see {@link ParseIssue}). */
+  private issue(
+    kind: IssueKind,
+    start: number,
+    end: number,
+    detail: string,
+    tags: IssueTags = {}
+  ): void {
     this.issues.push({
       kind,
       construct: this.src.slice(start, end),
       detail,
-      ...(call ? { call } : {})
+      ...tags,
+      ...(end >= this.src.length && OPEN_AT_END.has(detail) ? { atEnd: true as const } : {})
     });
   }
 
@@ -621,7 +686,10 @@ class Parser {
   private numberedReference(group: number, absolute: boolean, start: number): PatternNode {
     const construct = this.src.slice(start, this.pos);
     if (group < 1) {
-      this.issue('invalid', start, this.pos, 'reference to group 0 or before the first group');
+      // A relative reference before the first group finds the joined wrapper.
+      this.issue('invalid', start, this.pos, 'reference to group 0 or before the first group', {
+        ...(absolute ? {} : { join: 'reference' as const })
+      });
       return { type: 'opaque' };
     }
     this.pending.push({ by: 'number', group, construct });
@@ -829,7 +897,8 @@ class Parser {
     const char = this.peek();
     const next = this.peek(1);
     if (char === '') {
-      this.issue('invalid', start, this.pos, 'missing closing parenthesis');
+      this.issue('invalid', start, this.pos, 'missing closing parenthesis', { join: 'parens' });
+      this.depth++;
       return { type: 'opaque' };
     }
     const simple = SIMPLE_GROUPS[char === '<' ? `<${next}` : char];
@@ -876,13 +945,15 @@ class Parser {
     duplicates: boolean | null = this.duplicates.at(-1) ?? null
   ): PatternNode {
     this.duplicates.push(duplicates);
+    this.depth++;
     const alternatives = this.alternatives();
     this.duplicates.pop();
     if (this.peek() !== ')') {
-      this.issue('invalid', start, this.pos, 'missing closing parenthesis');
+      this.issue('invalid', start, this.pos, 'missing closing parenthesis', { join: 'parens' });
       return { type: 'group', kind, capture, alternatives };
     }
     this.pos++;
+    this.depth--;
     if (kind === 'lookbehind' || kind === 'negative-lookbehind') {
       this.checkLookbehind(start, alternatives);
     }
@@ -894,8 +965,18 @@ class Parser {
    * branch is rejected; when some branch varies in length, every branch
    * must be at most 255 bytes; fixed-length branches may reach 65 535.
    * A branch holding a back-reference or a PCRE-only atom is not measured.
+   * Repeats of zero-length items count too (see {@link zeroLengthRepeat}).
    */
   private checkLookbehind(start: number, alternatives: readonly (readonly PatternNode[])[]): void {
+    const repeat = zeroLengthRepeat(alternatives);
+    if (repeat !== null) {
+      if (repeat === 'unbounded') {
+        this.issue('invalid', start, this.pos, 'lookbehind repeats an empty item without bound');
+      } else {
+        this.issue('unknown', start, this.pos, 'lookbehind repeats an empty item many times');
+      }
+      return;
+    }
     const lengths = alternatives.map((nodes) => sequenceLength(nodes));
     if (lengths.some(({ min, max }) => Number.isNaN(min) || Number.isNaN(max))) {
       this.issue('unknown', start, this.pos, 'lookbehind of unmeasured length');
@@ -963,7 +1044,7 @@ class Parser {
     this.pos += name.length + 1;
     const construct = this.src.slice(start, this.pos);
     this.pending.push({ by: 'name', name, construct });
-    this.issue(kind, start, this.pos, 'named reference or subroutine call', true);
+    this.issue(kind, start, this.pos, 'named reference or subroutine call', { call: true });
     return { type: 'opaque' };
   }
 
@@ -987,9 +1068,13 @@ class Parser {
           : number;
     if (number !== 0 && target < 1) {
       // A missing group is a compile error: before the call's own `unknown`.
-      this.issue('invalid', start, this.pos, 'reference to a group that does not exist');
+      this.issue('invalid', start, this.pos, 'reference to a group that does not exist', {
+        join: 'reference'
+      });
     }
-    this.issue('unknown', start, this.pos, number === 0 ? 'recursion' : 'subroutine call', true);
+    this.issue('unknown', start, this.pos, number === 0 ? 'recursion' : 'subroutine call', {
+      call: true
+    });
     if (number !== 0 && target >= 1) {
       this.pending.push({
         by: 'number',
@@ -1046,7 +1131,8 @@ class Parser {
         missing.push({
           kind: 'invalid',
           construct: reference.construct,
-          detail: 'reference to a group that does not exist'
+          detail: 'reference to a group that does not exist',
+          join: 'reference'
         });
       }
     }
@@ -1068,7 +1154,12 @@ class Parser {
     const seen = new Set<string>();
     for (const { name, duplicatesAllowed } of this.names) {
       if (seen.has(name) && duplicatesAllowed !== true) {
-        this.issues.push({ kind: 'invalid', construct: name, detail: 'two groups share a name' });
+        this.issues.push({
+          kind: 'invalid',
+          construct: name,
+          detail: 'two groups share a name',
+          join: 'names'
+        });
         return;
       }
       seen.add(name);
@@ -1106,6 +1197,89 @@ function duplicatesAfter(spec: string, current: boolean | null): boolean | null 
 /** Whether a group kind is a lookaround assertion. */
 function isLookaround(kind: GroupKind): boolean {
   return kind !== 'capture' && kind !== 'group' && kind !== 'opaque';
+}
+
+/**
+ * Estimated compiled size past which a pattern's verdict is not claimed.
+ * PCRE2 (link size 2) caps compiled code near 64 K units, and a counted
+ * repeat of a group compiles one copy per count: `(?:a){65535}` is
+ * rejected on both versions (observed) while `a{65535}` — one item, one
+ * counted opcode — is kept. Half the cap, with a deliberately high per-node
+ * estimate, keeps every claim on the safe side.
+ */
+const COMPILED_SIZE_BOUND = 30_000;
+
+/** Estimated compiled units per node kind (see {@link COMPILED_SIZE_BOUND}). */
+const UNITS = { item: 3, class: 33, group: 6 } as const;
+
+/** A sequence list's estimated compiled size. */
+function compiledSize(alternatives: readonly (readonly PatternNode[])[]): number {
+  let size = 0;
+  for (const nodes of alternatives) for (const node of nodes) size += nodeSize(node);
+  return size;
+}
+
+/** One node's estimated compiled size: a repeated group counts once per copy. */
+function nodeSize(node: PatternNode): number {
+  switch (node.type) {
+    case 'set':
+      return setSize(node.set) <= 2 ? UNITS.item : UNITS.class;
+    case 'group':
+      return UNITS.group + compiledSize(node.alternatives);
+    case 'repeat': {
+      const body = nodeSize(node.node);
+      if (node.node.type !== 'group') return body + UNITS.item;
+      // PCRE copies a group `max` times, or `min + 1` for an open repeat.
+      const copies = node.max ?? node.min + 1;
+      return Math.max(1, copies) * body;
+    }
+    default:
+      return UNITS.item;
+  }
+}
+
+/** The largest count a lookbehind may repeat an empty item with, as observed accepted (10 001 kept; 30 000 dropped). */
+const LARGEST_EMPTY_REPEAT = 10_001;
+
+/**
+ * A repeat of a zero-length item inside a lookbehind (not inside a nested
+ * lookaround, which is measured on its own): PCRE2 rejects one without an
+ * upper bound (`(?<=x(?:)*)`, `(?<=\b+)`, `(?<=(?<=a)*)`, observed on both
+ * versions) — except a repeated lookahead (`(?<=(?=a)*)` compiles) — and
+ * past {@link LARGEST_EMPTY_REPEAT} its verdict is not proven.
+ *
+ * @returns `'unbounded'` (rejected), `'large'` (not proven), or `null`.
+ */
+function zeroLengthRepeat(
+  alternatives: readonly (readonly PatternNode[])[]
+): 'unbounded' | 'large' | null {
+  for (const nodes of alternatives) {
+    for (const node of nodes) {
+      const found = zeroLengthRepeatIn(node);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
+/** {@link zeroLengthRepeat} for one node and what it holds. */
+function zeroLengthRepeatIn(node: PatternNode): 'unbounded' | 'large' | null {
+  if (node.type === 'group') {
+    return isLookaround(node.kind) ? null : zeroLengthRepeat(node.alternatives);
+  }
+  if (node.type !== 'repeat') return null;
+  const body = node.node;
+  const lookahead =
+    body.type === 'group' && (body.kind === 'lookahead' || body.kind === 'negative-lookahead');
+  if (nodeLength(body).max === 0) {
+    // `(?=a)*` compiles, `(?=a){20000}` does not: for a lookahead only the count matters.
+    if (node.max === null) {
+      if (!lookahead) return 'unbounded';
+    } else if (node.max > LARGEST_EMPTY_REPEAT) {
+      return 'large';
+    }
+  }
+  return zeroLengthRepeatIn(body);
 }
 
 /** Whether PCRE lets a quantifier follow this node. */

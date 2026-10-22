@@ -98,7 +98,7 @@ describe('translateRegexRows', () => {
       'a'.repeat(9000),
       'a'.repeat(1500)
     ]).rows;
-    expect(long?.problem?.reason).toBe('This row is too long to check here (over 8192 bytes)');
+    expect(long?.problem?.reason).toBe('This row is not checked here (longer than 8192 bytes)');
     // 1 500 letters fit, but their translation (`[Aa]` each) is past the backtracking guard's cap.
     expect(nested?.problem?.reason).toBe(
       'This row is too long or too deeply nested to check for slow matching — shorten it'
@@ -266,7 +266,65 @@ describe('Defer JS joined checks', () => {
   });
 });
 
+describe('Defer JS rows the save drops, joined', () => {
+  // Each page verified against `preg_replace('#(r1|r2…)#i', '', 'dummy-string')`
+  // on PCRE2 10.49 and 10.44 (identical).
+  it.each([
+    // A missing group: joined, `\1`/`\g1`/`(?-1)` find the wrapper group → PHP: on.
+    [['\\g1'], 'unknown'],
+    [['0', '\\1', 'string'], 'unknown'],
+    [['_(?-1)'], 'unknown'],
+    // Parentheses the other rows balance → PHP: on.
+    [['(', ')'], 'unknown'],
+    [['a)(b'], 'unknown'],
+    // A construct open at the row's end, completed by what follows → PHP: on.
+    [['x\\', '*'], 'unknown'],
+    [['[a', 'b]'], 'unknown'],
+    [['.)\\Q{1, 2}'], 'unknown'],
+    // A repeated name after an earlier row's `J` → PHP: on.
+    [['(?J)x', '(?<n>a)(?<n>b)'], 'unknown'],
+    // Errors no join repairs → PHP: off.
+    [['(', 'a.js'], 'off'],
+    [['*', 'x\\'], 'off'],
+    [['(?<n>a)(?<n>b)'], 'off'],
+    [['a{2}{2}', 'x'], 'off'],
+    [['x(?<=x(?:)*)'], 'off']
+  ])('%j → page %s', (rows, page) => {
+    expect(translateRegexRows('defer_all_js', rows).page).toBe(page);
+  });
+
+  it('still flags the kept rows behind an off page', () => {
+    expect(problemIds('defer_all_js', ['(', 'dummy-string'])).toEqual([
+      'pcre-invalid',
+      'joined-page-off'
+    ]);
+  });
+
+  it('withholds the matcher of a row that matches differently joined', () => {
+    const [row] = translateRegexRows('defer_all_js', ['(a)\\1']).rows;
+    expect(row).toMatchObject({ problem: { problem: 'joined-changes-matching' }, matcher: null });
+    // Delay runs it alone: its matcher is exact there.
+    expect(translateRegexRows('delay_js', ['(a)\\1']).rows[0]?.matcher).not.toBeNull();
+  });
+});
+
 describe('work bounds', () => {
+  it('does not check rows past the set byte budget, and says so', () => {
+    const big = 'a'.repeat(8000);
+    const rows = Array.from({ length: 70 }, () => big);
+    const result = translateRegexRows('defer_all_js', rows);
+    expect(result.page).toBe('unknown');
+    expect(result.rows.at(-1)?.problem).toEqual({
+      problem: 'pcre-only',
+      construct: null,
+      reason: 'This row is not checked here (past the 524288-byte set budget)'
+    });
+    // An over-long row is rejected before being encoded.
+    expect(translateRegexRows('delay_js', ['é'.repeat(9000)]).rows[0]?.problem?.reason).toBe(
+      'This row is not checked here (longer than 8192 bytes)'
+    );
+  });
+
   it('answers unknown once the dummy-string replay passes its execution budget', () => {
     // Each row only ever matches empty: the non-empty retry tries every row at
     // every position — 13 × 16 000 executions, past the 200 000 budget.

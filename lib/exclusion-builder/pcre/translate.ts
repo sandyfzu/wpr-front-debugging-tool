@@ -21,6 +21,8 @@ import {
   sequenceLength,
   type Assertion,
   type GroupKind,
+  type JoinRepair,
+  type ParseIssue,
   type NameDeclaration,
   type ParsedPattern,
   type PatternNode
@@ -36,6 +38,11 @@ import {
 export const PCRE_LIMITS = {
   /** UTF-8 bytes of one row. */
   rowBytes: 8_192,
+  /**
+   * UTF-8 bytes of one set (rows past it are not checked). The wire caps a
+   * set at 64 K characters (≤ 192 KiB), so a wire-valid set never reaches it.
+   */
+  setBytes: 512 * 1024,
   /** Regex executions of one `dummy-string` replay (a 500-row set needs ~13 000). */
   replayExecs: 200_000
 } as const;
@@ -53,10 +60,19 @@ export interface PcreConstruct {
 
 /** Everything learned about one row on its own (no set context). */
 export interface RowAnalysis {
-  /** The row is longer than {@link PCRE_LIMITS}`.rowBytes`: nothing else was analyzed. */
-  readonly tooLong: boolean;
+  /**
+   * The row was not analyzed: past {@link PCRE_LIMITS}`.rowBytes`, or past
+   * the set's `setBytes` budget (the save outcome's `detail` says which).
+   */
+  readonly unchecked: boolean;
+  /** The row's UTF-8 length in bytes (the work it cost). */
+  readonly bytes: number;
   /** What WP Rocket's settings save does with the row (its `#…#` check, no `i`). */
   readonly save: SaveOutcome;
+  /** A dropped row: how joining may repair each of its proven errors (see {@link DropRepair}). */
+  readonly dropRepairs: readonly DropRepair[];
+  /** Parenthesis balance (net, lowest depth) of the row as joined; `null` when unknown. */
+  readonly parens: { readonly net: number; readonly min: number } | null;
   /**
    * Why the runtime pattern has no proven JS translation: a PCRE-only or
    * unmodeled construct, or one PCRE rejects only at runtime (Delay's `+`
@@ -77,6 +93,8 @@ export interface RowAnalysis {
   readonly names: readonly NameDeclaration[];
   /** The top-level `J` state the row leaves behind (`null` = never set). */
   readonly duplicatesAllowedAtEnd: boolean | null;
+  /** The fewest bytes a match spans (`NaN` when not measured): no shorter text can match. */
+  readonly minLength: number;
   /** `\G` or `\K`: the `preg_replace` replay needs a per-offset source (see {@link EmitOptions}). */
   readonly searchDependent: boolean;
   /** Defer joining: a `\Q` left open quotes the wrapper's `)`, so the joined pattern cannot compile. */
@@ -185,6 +203,61 @@ function delimiterProblem(pattern: string): PcreConstruct | null {
 }
 
 /**
+ * Why a row the save drops may still compile once WP Rocket joins every
+ * Defer row into `#(r1|r2|…)#i`: `fixed` (it cannot — the error survives
+ * any join), `open-end` (a construct runs to the row's end: the next row can
+ * complete it), or a {@link JoinRepair} kind.
+ */
+export type DropRepair = JoinRepair | 'open-end' | 'fixed';
+
+/** The save check with what the Defer join needs to know. */
+interface SaveCheck {
+  readonly outcome: SaveOutcome;
+  /** For a dropped row: how each proven error may be repaired by joining. */
+  readonly repairs: readonly DropRepair[];
+  /** Parenthesis balance of the save form (`null` when not fully parsed). */
+  readonly parens: { readonly net: number; readonly min: number } | null;
+}
+
+/** How a joined pattern may repair one proven error. */
+function repairOf(issue: ParseIssue): DropRepair {
+  return issue.join ?? (issue.atEnd === true ? 'open-end' : 'fixed');
+}
+
+/** WP Rocket's save check on a row (see {@link saveOutcome}), with the join facts. */
+function saveCheck(bytes: string): SaveCheck {
+  const pattern = applyEscapes(bytes, SAVE_ESCAPES);
+  const delimiter = delimiterProblem(pattern);
+  if (delimiter !== null) {
+    const nul = delimiter.construct === '\\0';
+    return {
+      outcome: { outcome: nul ? 'unknown' : 'dropped', ...delimiter },
+      // A trailing `\` escapes whatever follows it: joined, the next `|`.
+      repairs: delimiter.construct === '\\' ? ['open-end'] : ['fixed'],
+      parens: null
+    };
+  }
+  const parsed = parsePcre(pattern, false);
+  // Issues are in source order: past an unknown construct the parse is no
+  // longer trusted, so only an invalid one before it proves a drop.
+  const firstUnknown = parsed.issues.findIndex((issue) => issue.kind === 'unknown');
+  const trusted = firstUnknown === -1 ? parsed.issues : parsed.issues.slice(0, firstUnknown);
+  const proven = trusted.filter((issue) => issue.kind === 'invalid');
+  const parens = parsed.complete ? parsed.parens : null;
+  const first = proven[0] ?? parsed.issues[firstUnknown];
+  if (first === undefined) return { outcome: { outcome: 'kept' }, repairs: [], parens };
+  return {
+    outcome: {
+      outcome: first.kind === 'invalid' ? 'dropped' : 'unknown',
+      construct: fromByteString(first.construct),
+      detail: first.detail
+    },
+    repairs: proven.map(repairOf),
+    parens
+  };
+}
+
+/**
  * What WP Rocket's settings save does with a row: its validation compiles
  * `#row#` (`#` escaped, no `i`) and removes rows PCRE rejects. Only
  * rejections observed on both reference PCRE2 versions are claimed;
@@ -193,21 +266,7 @@ function delimiterProblem(pattern: string): PcreConstruct | null {
  * @param row A stored-form row (text).
  */
 export function saveOutcome(row: string): SaveOutcome {
-  const pattern = applyEscapes(toByteString(row), SAVE_ESCAPES);
-  const delimiter = delimiterProblem(pattern);
-  if (delimiter !== null) {
-    return { outcome: delimiter.construct === '\\0' ? 'unknown' : 'dropped', ...delimiter };
-  }
-  const parsed = parsePcre(pattern, false);
-  // Issues are in source order: past an unknown construct the parse is no
-  // longer trusted, so only an invalid one before it proves a drop.
-  const first = parsed.issues.find((issue) => issue.kind !== 'untranslated');
-  if (first === undefined) return { outcome: 'kept' };
-  return {
-    outcome: first.kind === 'invalid' ? 'dropped' : 'unknown',
-    construct: fromByteString(first.construct),
-    detail: first.detail
-  };
+  return saveCheck(toByteString(row)).outcome;
 }
 
 /** Whether a node can match the empty string wherever it is tried. */
@@ -236,12 +295,13 @@ function hasTopLevelOption(parsed: ParsedPattern): boolean {
 }
 
 /** Visit every node of a tree, depth first. */
-function* walk(nodes: readonly PatternNode[]): Generator<PatternNode> {
+function walk(nodes: readonly PatternNode[], into: PatternNode[] = []): PatternNode[] {
   for (const node of nodes) {
-    yield node;
-    if (node.type === 'group') for (const branch of node.alternatives) yield* walk(branch);
-    if (node.type === 'repeat') yield* walk([node.node]);
+    into.push(node);
+    if (node.type === 'group') for (const branch of node.alternatives) walk(branch, into);
+    if (node.type === 'repeat') walk([node.node], into);
   }
+  return into;
 }
 
 /**
@@ -341,7 +401,7 @@ class Emitter {
           inner.type === 'group' &&
           (inner.kind === 'lookbehind' || inner.kind === 'negative-lookbehind')
         ) {
-          const holdsState = [...walk(inner.alternatives.flat())].some(
+          const holdsState = walk(inner.alternatives.flat()).some(
             (child) =>
               child.type === 'backref' ||
               child.type === 'keep' ||
@@ -469,7 +529,12 @@ function quantifierSource(min: number, max: number | null, lazy: boolean): strin
 
 /** The runtime pattern of a row for a feature, as a byte string. */
 function runtimePattern(feature: RegexFeatureId, row: string): string {
-  return applyEscapes(toByteString(row), RUNTIME_ESCAPES[feature]);
+  return runtimeEscapes(feature, toByteString(row));
+}
+
+/** WP Rocket's runtime escapes applied to a row's byte string. */
+function runtimeEscapes(feature: RegexFeatureId, bytes: string): string {
+  return applyEscapes(bytes, RUNTIME_ESCAPES[feature]);
 }
 
 /**
@@ -513,19 +578,26 @@ export function isEmitted(result: Emitted | PcreConstruct): result is Emitted {
  * @param row The stored row.
  */
 export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
-  if (toByteString(row).length > PCRE_LIMITS.rowBytes) return tooLongRow(row);
-  const pattern = runtimePattern(feature, row);
+  // Every character is at least one byte: an over-long row is not even encoded.
+  const tooLong = `longer than ${String(PCRE_LIMITS.rowBytes)} bytes`;
+  if (row.length > PCRE_LIMITS.rowBytes) return uncheckedRow(row, row.length, tooLong);
+  const bytes = toByteString(row);
+  if (bytes.length > PCRE_LIMITS.rowBytes) return uncheckedRow(row, bytes.length, tooLong);
+  const pattern = runtimeEscapes(feature, bytes);
   const parsed = parsePcre(pattern, true);
   const delimiter = delimiterProblem(pattern);
   const emitted = delimiter ?? emitParsed(parsed, {});
-  const save = saveOutcome(row);
-  const nodes = [...walk(parsed.alternatives.flat())];
+  const { outcome: save, repairs: dropRepairs, parens } = saveCheck(bytes);
+  const nodes = walk(parsed.alternatives.flat());
   const source = isEmitted(emitted) ? emitted.source : null;
   const option = parsed.issues.find((issue) => issue.detail === 'option setting');
   const absolute = nodes.find((node) => node.type === 'backref' && node.absolute);
   return {
-    tooLong: false,
+    unchecked: false,
+    bytes: bytes.length,
     save,
+    dropRepairs,
+    parens,
     pcreOnly: isEmitted(emitted) ? null : emitted,
     matchesAll: parsed.complete && parsed.alternatives.some((nodes) => nodes.every(alwaysNullable)),
     source,
@@ -540,6 +612,7 @@ export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
         : null,
     names: parsed.names,
     duplicatesAllowedAtEnd: parsed.duplicatesAllowedAtEnd,
+    minLength: Math.min(...parsed.alternatives.map((branch) => sequenceLength(branch).min)),
     searchDependent: nodes.some(
       (node) =>
         node.type === 'keep' || (node.type === 'assert' && node.assertion === 'search-start')
@@ -548,15 +621,22 @@ export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
   };
 }
 
-/** The analysis of a row past {@link PCRE_LIMITS}`.rowBytes`: unknown in every respect. */
-function tooLongRow(row: string): RowAnalysis {
-  const unchecked = {
-    construct: `${row.slice(0, 16)}…`,
-    detail: `longer than ${String(PCRE_LIMITS.rowBytes)} bytes`
-  };
+/**
+ * The analysis of a row not checked (past a {@link PCRE_LIMITS} bound):
+ * unknown in every respect.
+ *
+ * @param row The row.
+ * @param bytes What it costs (its length, at least).
+ * @param detail Which bound, for the reason.
+ */
+export function uncheckedRow(row: string, bytes: number, detail: string): RowAnalysis {
+  const unchecked = { construct: `${row.slice(0, 16)}…`, detail };
   return {
-    tooLong: true,
+    unchecked: true,
+    bytes,
     save: { outcome: 'unknown', ...unchecked },
+    dropRepairs: [],
+    parens: null,
     pcreOnly: unchecked,
     matchesAll: false,
     source: null,
@@ -565,6 +645,7 @@ function tooLongRow(row: string): RowAnalysis {
     absoluteBackreference: null,
     names: [],
     duplicatesAllowedAtEnd: null,
+    minLength: NaN,
     searchDependent: false,
     breaksJoin: false
   };

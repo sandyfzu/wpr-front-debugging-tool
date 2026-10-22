@@ -213,6 +213,24 @@ function rangesSource(set: ByteSet, member: number): string {
   return body;
 }
 
+/** Member counts already taken, per set object (sets are immutable once built). */
+const SIZES = new WeakMap<ByteSet, number>();
+
+/**
+ * How many bytes a set holds (memoized: shared literal sets are counted once).
+ *
+ * @param set The set.
+ */
+export function setSize(set: ByteSet): number {
+  let size = SIZES.get(set);
+  if (size === undefined) {
+    size = 0;
+    for (let byte = 0; byte < BYTE_COUNT; byte++) size += set[byte] ?? 0;
+    SIZES.set(set, size);
+  }
+  return size;
+}
+
 /** Sources already emitted, per set object (sets are immutable once built). */
 const SOURCES = new WeakMap<ByteSet, string>();
 
@@ -226,8 +244,7 @@ const SOURCES = new WeakMap<ByteSet, string>();
 export function setSource(set: ByteSet): string {
   const cached = SOURCES.get(set);
   if (cached !== undefined) return cached;
-  let size = 0;
-  for (let byte = 0; byte < BYTE_COUNT; byte++) size += set[byte] ?? 0;
+  const size = setSize(set);
   const source =
     size === BYTE_COUNT
       ? '[\\s\\S]'

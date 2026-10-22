@@ -21,6 +21,7 @@ import type { ProblemId } from './problems';
 import {
   analyzeRow,
   emitRow,
+  uncheckedRow,
   isEmitted,
   PCRE_LIMITS,
   toByteString,
@@ -53,9 +54,10 @@ export interface TranslatedRow {
   readonly row: string;
   /**
    * The exact JS equivalent of the row's runtime pattern, when one exists and
-   * is safe to run — whatever the row's problem (a `match-all` row's matcher
-   * really matches everything). `null` when the row has no proven
-   * translation or is a backtracking risk.
+   * is safe to run — kept with a `match-all` or page-off problem (a
+   * `match-all` row's matcher really matches everything). `null` when the
+   * row has no proven translation, is a backtracking risk, or matches
+   * differently joined (`joined-changes-matching`).
    */
   readonly matcher: PcreMatcher | null;
   readonly problem: RowProblem | null;
@@ -113,6 +115,8 @@ interface ReplayRow {
   readonly row: string;
   readonly source: string;
   readonly searchDependent: boolean;
+  /** The fewest bytes a match spans (`NaN` = not measured). */
+  readonly minLength: number;
 }
 
 /**
@@ -122,6 +126,12 @@ interface ReplayRow {
  */
 class ReplayRows {
   private readonly cache = new Map<string, ReplayRegex | null>();
+  /**
+   * Per offset-independent row, its last search: a match found from `from`
+   * is still the first one from any later offset up to its start, and no
+   * match from `from` means none from later — so most searches are reused.
+   */
+  private readonly last = new Map<number, { from: number; match: ReplayMatch | null }>();
   private execs = 0;
 
   /** @param rows The replayed rows, all translatable. */
@@ -136,6 +146,23 @@ class ReplayRows {
    *   retry after an empty match).
    */
   matchFrom(index: number, from: number, nonEmpty: boolean): ReplayMatch | null {
+    // A row needing more bytes than are left cannot match: no regex needed.
+    const minLength = this.rows[index]?.minLength ?? NaN;
+    if (minLength > PRECHECK_SUBJECT.length - from) return null;
+    const reusable = !nonEmpty && this.rows[index]?.searchDependent === false;
+    if (reusable) {
+      const last = this.last.get(index);
+      if (last !== undefined && last.from <= from && (last.match?.start ?? Infinity) >= from) {
+        return last.match;
+      }
+    }
+    const match = this.search(index, from, nonEmpty);
+    if (reusable) this.last.set(index, { from, match });
+    return match;
+  }
+
+  /** One regex execution of {@link matchFrom}, charged to the budget. */
+  private search(index: number, from: number, nonEmpty: boolean): ReplayMatch | null {
     // Charged before compiling, so the budget bounds compilation too.
     if (++this.execs > PCRE_LIMITS.replayExecs) throw new ReplayBudgetExceeded();
     const compiled = this.compiled(index, from, nonEmpty);
@@ -276,10 +303,74 @@ function replayable(analysis: RowAnalysis): boolean {
 }
 
 /**
- * Defer JS's page state and the rows behind a page-off. A row PCRE rejects
- * turns the page off by itself (stored, it breaks the joined pattern); the
- * rows the save keeps are then checked for an open `\Q`, clashing group
- * names, and — when every one replays exactly — the `dummy-string` replay.
+ * Whether the rows' parentheses, joined as `(r1|r2|…)`, balance out: the
+ * depth never drops below zero and ends at zero. `null` when a row's
+ * balance is unknown.
+ */
+function joinedParensBalance(analyses: readonly RowAnalysis[]): boolean | null {
+  let depth = 1;
+  for (const { parens } of analyses) {
+    if (parens === null) return null;
+    if (depth + parens.min < 0) return false;
+    depth += parens.net;
+  }
+  return depth === 1;
+}
+
+/**
+ * What the stored rows WP Rocket's save would drop do to the joined
+ * pattern (a stored set holds them only through a PHP filter). A proven
+ * error that no join repairs breaks it: `off`. Errors a join can repair —
+ * a group reference (the wrapper is group 1 and other rows add groups and
+ * names), a construct running to the row's end with a row after it,
+ * a repeated name after an earlier row's `J`, a parenthesis imbalance the
+ * other rows balance — or a row after one that may merge into it:
+ * `unknown`. `null` when no row is dropped.
+ */
+function droppedRowsPage(analyses: readonly RowAnalysis[]): PageState | null {
+  const verdicts = new Set<PageState | 'parens'>();
+  let mergeBefore = false;
+  let duplicatesBefore = false;
+  for (const analysis of analyses) {
+    if (analysis.save.outcome === 'dropped') {
+      verdicts.add(dropVerdict(analysis, mergeBefore, duplicatesBefore));
+      mergeBefore ||= analysis.dropRepairs.includes('open-end') || analysis.breaksJoin;
+    }
+    duplicatesBefore ||= analysis.duplicatesAllowedAtEnd === true;
+  }
+  if (verdicts.has('off')) return 'off';
+  if (verdicts.has('unknown')) return 'unknown';
+  if (!verdicts.has('parens')) return null;
+  return joinedParensBalance(analyses) === false ? 'off' : 'unknown';
+}
+
+/**
+ * One dropped row's effect on the joined pattern (see {@link droppedRowsPage});
+ * `parens` when only the set's parenthesis balance can tell.
+ *
+ * @param analysis The dropped row.
+ * @param mergeBefore An earlier dropped row may run into this one.
+ * @param duplicatesBefore An earlier row leaves `J` on.
+ */
+function dropVerdict(
+  analysis: RowAnalysis,
+  mergeBefore: boolean,
+  duplicatesBefore: boolean
+): PageState | 'parens' {
+  const repairs = analysis.dropRepairs;
+  // An open `\Q` quotes the rest of the join, wrapper `)` included.
+  if (mergeBefore || analysis.breaksJoin) return 'unknown';
+  if (repairs.includes('fixed')) return 'off';
+  if (repairs.includes('open-end') || repairs.includes('reference')) return 'unknown';
+  if (repairs.includes('names')) return duplicatesBefore ? 'unknown' : 'off';
+  return 'parens';
+}
+
+/**
+ * Defer JS's page state and the rows behind a page-off. Rows the save
+ * would drop are judged first ({@link droppedRowsPage}); the rows it keeps
+ * are then checked for an open `\Q`, clashing group names, and — when every
+ * row replays exactly — the `dummy-string` replay.
  *
  * @param rows The stored rows.
  * @param analyses Their analyses.
@@ -288,7 +379,10 @@ function deferPage(
   rows: readonly string[],
   analyses: readonly RowAnalysis[]
 ): { readonly page: PageState; readonly offRows: ReadonlySet<number> } {
-  const dropped = analyses.some((analysis) => analysis.save.outcome === 'dropped');
+  const droppedPage = droppedRowsPage(analyses);
+  // A row a join may repair can also rebalance or license the others: no claim.
+  if (droppedPage === 'unknown') return { page: 'unknown', offRows: new Set() };
+  // Off already; the kept rows are still checked to flag the rows behind it.
   const kept = analyses
     .map((analysis, index) => [index, analysis] as const)
     .filter(([, analysis]) => analysis.save.outcome !== 'dropped');
@@ -299,8 +393,9 @@ function deferPage(
   const leaks = kept.some(([, analysis], position) => {
     return analysis.topLevelOption !== null && position < kept.length - 1;
   });
+  const off = droppedPage === 'off';
   if (leaks || !kept.every(([, analysis]) => replayable(analysis))) {
-    return { page: dropped ? 'off' : 'unknown', offRows: new Set() };
+    return { page: off ? 'off' : 'unknown', offRows: new Set() };
   }
   let consumers: ReadonlySet<number> | null;
   try {
@@ -308,15 +403,16 @@ function deferPage(
       kept.map(([index, analysis]) => ({
         row: rows[index] ?? '',
         source: analysis.source ?? '',
-        searchDependent: analysis.searchDependent
+        searchDependent: analysis.searchDependent,
+        minLength: analysis.minLength
       }))
     );
   } catch (error) {
     if (!(error instanceof ReplayBudgetExceeded)) throw error;
-    return { page: dropped ? 'off' : 'unknown', offRows: new Set() };
+    return { page: off ? 'off' : 'unknown', offRows: new Set() };
   }
   const offRows = new Set([...(consumers ?? [])].map((position) => kept[position]?.[0] ?? -1));
-  return { page: consumers !== null || dropped ? 'off' : 'on', offRows };
+  return { page: consumers !== null || off ? 'off' : 'on', offRows };
 }
 
 /** Backticked construct text for a reason. */
@@ -354,11 +450,11 @@ function rowProblem(
       reason: `WP Rocket drops this row when saving: PCRE rejects ${quoted(save)}; ${live}`
     };
   }
-  if (analysis.tooLong) {
+  if (analysis.unchecked) {
     return {
       problem: 'pcre-only',
       construct: null,
-      reason: `This row is too long to check here (over ${String(PCRE_LIMITS.rowBytes)} bytes)`
+      reason: `This row is not checked here (${save.outcome === 'kept' ? 'not analyzed' : save.detail})`
     };
   }
   if (save.outcome === 'unknown') {
@@ -425,7 +521,16 @@ export function translateRegexRows(
   feature: RegexFeatureId,
   rows: readonly string[]
 ): RegexRowsTranslation {
-  const analyses = rows.map((row) => analyzeRow(feature, row));
+  // Work budget: once the set has cost `setBytes`, later rows are not checked.
+  let spent = 0;
+  const analyses = rows.map((row) => {
+    if (spent > PCRE_LIMITS.setBytes) {
+      return uncheckedRow(row, 0, `past the ${String(PCRE_LIMITS.setBytes)}-byte set budget`);
+    }
+    const analysis = analyzeRow(feature, row);
+    spent += analysis.bytes;
+    return analysis;
+  });
   const { page, offRows } =
     feature === 'defer_all_js'
       ? deferPage(rows, analyses)
@@ -433,13 +538,16 @@ export function translateRegexRows(
   const translated = rows.map((row, index): TranslatedRow => {
     const analysis = analyses[index] as RowAnalysis;
     const { source, risk } = analysis;
+    const problem = rowProblem(feature, analysis, {
+      pageOff: offRows.has(index),
+      last: index === rows.length - 1
+    });
+    // Joined, the row matches differently from its own pattern: no exact matcher.
+    const joinedDiffers = problem?.problem === 'joined-changes-matching';
     return {
       row,
-      matcher: source !== null && risk === null ? { source, flags: '' } : null,
-      problem: rowProblem(feature, analysis, {
-        pageOff: offRows.has(index),
-        last: index === rows.length - 1
-      })
+      matcher: source !== null && risk === null && !joinedDiffers ? { source, flags: '' } : null,
+      problem
     };
   });
   return { rows: translated, page };

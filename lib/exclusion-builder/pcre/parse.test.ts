@@ -211,6 +211,92 @@ describe('parsePcre', () => {
   });
 });
 
+describe('lookbehind repeats of empty items (observed on PCRE2 10.44 and 10.49)', () => {
+  /** The first issue that decides validity (`null` = none): not a merely untranslated one. */
+  function deciding(pattern: string) {
+    return parsePcre(pattern, false).issues.find(({ kind }) => kind !== 'untranslated') ?? null;
+  }
+
+  /** {@link deciding}'s kind. */
+  function verdict(pattern: string): string | null {
+    return deciding(pattern)?.kind ?? null;
+  }
+
+  it.each([
+    ['x(?<=x(?:)*)'],
+    ['a(?<=(?:a{0})*)b'],
+    ['js(?<=s(?:\\b)*)'],
+    ['(?<=(?:(?=a))+)'],
+    ['(?<=(?<=a){1,})'],
+    ['(?<=(?:(?:)*)?)'],
+    ['(?<=x(?:){1,}?)']
+  ])('%s is rejected: an empty item repeated without bound', (pattern) => {
+    expect(deciding(pattern)).toMatchObject({
+      kind: 'invalid',
+      detail: 'lookbehind repeats an empty item without bound'
+    });
+  });
+
+  it.each([
+    ['(?<=(?=a)*)'],
+    ['(?<=(?!a){2,})'],
+    ['(?<=(?:){3}a)'],
+    ['(?<=(?:){1,3}a)'],
+    ['(?<=(?:)?a)'],
+    ['(?<=(?:\\b)?)']
+  ])('%s is accepted (a repeated lookahead, or a bounded repeat)', (pattern) => {
+    expect(verdict(pattern)).toBeNull();
+  });
+
+  it('leaves large counts unproven', () => {
+    expect(deciding('(?<=(?:){65535}\\x41)')).toMatchObject({
+      kind: 'unknown',
+      detail: 'lookbehind repeats an empty item many times'
+    });
+    expect(verdict('(?<=(?=a){20000})')).toBe('unknown');
+  });
+});
+
+describe('compiled size', () => {
+  it('leaves a pattern whose repeated groups may exceed PCRE’s compiled size unknown', () => {
+    // `(?:a){65535}` is rejected on both versions; `a{65535}` is one counted item.
+    expect(parsePcre('(?:a){65535}', false).issues).toMatchObject([
+      { kind: 'unknown', detail: 'may exceed PCRE’s compiled pattern size' }
+    ]);
+    expect(parsePcre('((?:ab){100}){100}', false).issues[0]?.kind).toBe('unknown');
+    expect(parsePcre('a{65535}', false).issues).toEqual([]);
+    expect(parsePcre('(?:ab){1000}', false).issues).toEqual([]);
+  });
+});
+
+describe('join facts', () => {
+  it('tags errors a joined pattern may repair', () => {
+    const tags = (pattern: string) =>
+      parsePcre(pattern, false).issues.map(({ join, atEnd }) => [join ?? null, atEnd ?? false]);
+    expect(tags('\\1')).toEqual([['reference', false]]);
+    expect(tags('\\g{-1}')).toEqual([['reference', false]]);
+    expect(tags('(?-1)')).toMatchObject([
+      ['reference', false],
+      [null, false]
+    ]);
+    expect(tags('a)')).toEqual([['parens', false]]);
+    expect(tags('(a')).toEqual([['parens', false]]);
+    expect(tags('[a')).toEqual([[null, true]]);
+    expect(tags('\\c')).toEqual([[null, true]]);
+    // Self-contained errors are not open, even at the end.
+    expect(tags('a**')).toEqual([[null, false]]);
+    expect(tags('\\i')).toEqual([[null, false]]);
+    expect(tags('\\g0')).toEqual([[null, false]]);
+    expect(tags('(?<n>a)(?<n>b)')).toEqual([['names', false]]);
+  });
+
+  it('measures the parenthesis balance', () => {
+    expect(parsePcre('a)(b', false).parens).toEqual({ net: 0, min: -1 });
+    expect(parsePcre('((a)', false).parens).toEqual({ net: 1, min: 0 });
+    expect(parsePcre('(?:a)(?=b)', false).parens).toEqual({ net: 0, min: 0 });
+  });
+});
+
 describe('sequenceLength', () => {
   /** The length of a whole pattern's first alternative. */
   function length(pattern: string): { min: number; max: number } {

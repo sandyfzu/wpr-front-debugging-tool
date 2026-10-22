@@ -753,7 +753,13 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['jquery.js(?ver=3.7)', '(?ver='],
     ['(?Q)', '(?Q)'],
     ['\\p', '\\p'],
-    ['(?<=j++k)', '(?<=j++k)']
+    ['(?<=j++k)', '(?<=j++k)'],
+    // Lookbehinds repeating an empty item without bound (observed on both versions).
+    ['x(?<=x(?:)*)', '(?<=x(?:)*)'],
+    ['a(?<=(?:a{0})*)b', '(?<=(?:a{0})*)'],
+    ['js(?<=s(?:\\b)*)', '(?<=s(?:\\b)*)'],
+    ['(?<=(?:(?=a))+)', '(?<=(?:(?=a))+)'],
+    ['(?<=(?<=a){1,})', '(?<=(?<=a){1,})']
   ])('%s is dropped (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'dropped', construct });
   });
@@ -794,7 +800,10 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['(?x)a #', '(?x)'],
     ['a\0b', '\\0'],
     // Past an unknown construct the parse is not trusted: no later claim.
-    ['[\\g](', '\\g']
+    ['[\\g](', '\\g'],
+    // A large count of an empty item, or of a group (PCRE's compiled size), is unproven.
+    ['(?<=(?:){65535}\\x41)', '(?<=(?:){65535}\\x41)'],
+    ['(?:a){65535}', '(?:a){65535}']
   ])('%s is unknown (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'unknown', construct });
   });
@@ -815,7 +824,7 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
 describe('analyzeRow', () => {
   it('reports the facts the joined checks need', () => {
     expect(analyzeRow(F, '(?s)(?<n>a)\\1')).toMatchObject({
-      tooLong: false,
+      unchecked: false,
       save: { outcome: 'kept' },
       pcreOnly: { construct: '(?s)', detail: 'option setting' },
       matchesAll: false,
@@ -835,11 +844,11 @@ describe('analyzeRow', () => {
   it('bounds a row by its bytes', () => {
     const analysis = analyzeRow(F, 'a'.repeat(8193));
     expect(analysis).toMatchObject({
-      tooLong: true,
+      unchecked: true,
       save: { outcome: 'unknown', detail: 'longer than 8192 bytes' },
       source: null
     });
-    expect(analyzeRow(F, 'a'.repeat(8192)).tooLong).toBe(false);
+    expect(analyzeRow(F, 'a'.repeat(8192)).unchecked).toBe(false);
   });
 
   it.each([
