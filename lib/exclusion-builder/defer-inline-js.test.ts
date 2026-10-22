@@ -70,14 +70,19 @@ describe('inlinePassUnder — certain only where the live rows cannot change it'
     );
   });
 
-  it('runs when no row holds `.js` (nothing can complete a `jquery`)', () => {
+  it('runs when no row holds `.js` or `jquery` (nothing can pair up)', () => {
     expect(inlinePassUnder(EMPTY_EXCLUSION_SET)).toBe('runs');
-    expect(inlinePassUnder(deferSet(['jquery', 'jquery-migrate', 'app.css', 'js']))).toBe('runs');
+    expect(inlinePassUnder(deferSet(['jqu', 'app.css', 'js', 'ery.j', '.j#s']))).toBe('runs');
   });
 
   // Each set below gives opposite WP Rocket outcomes depending on the live
-  // rows (run: live rows + these rows, served page wrapped without them).
+  // rows and where the set's rows sit among them (run: served page wrapped
+  // without the set).
   it.each([
+    // live `foo.js`: `jquery` below it → runs; `jquery` above it → `jquery|foo.js` skips.
+    [['jquery']],
+    // live `a.js`: `jquery-ui` above it skips; below it → runs.
+    [['jquery-ui']],
     // live `/wp-includes/js/jquery/` or `jquery-migrate`: skipped; no live rows: runs.
     [['foo.js']],
     // live `foo.js`: the second `foo.js` is dropped as a duplicate → runs;
@@ -103,7 +108,7 @@ describe('replayInlinePass', () => {
       unwrapped: 1,
       undetermined: 0
     });
-    expect(replayInlinePass(SERVED, deferSet(['jquery']))).toEqual({
+    expect(replayInlinePass(SERVED, deferSet(['jqu']))).toEqual({
       html: SERVED,
       wrapped: 1,
       unwrapped: 0,

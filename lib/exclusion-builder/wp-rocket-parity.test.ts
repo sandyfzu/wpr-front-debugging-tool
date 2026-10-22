@@ -24,7 +24,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import { INLINE_WRAP_OPEN } from '../wp-rocket/constants';
-import { replayInlinePass } from './defer-inline-js';
 import { ExclusionValidationError } from './errors';
 import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
@@ -130,6 +129,27 @@ function wrappedKeys(source: string, page: string): string[] {
     .map(({ key }) => key);
 }
 
+/**
+ * The engine's inline-pass answer for a Defer row, read from the Defer
+ * step's own report: `'undetermined'` when it reports undetermined scripts
+ * (the table's Defer pages have no undetermined deferred script), else the
+ * keys still wrapped — and `'report-mismatch'` when the report's
+ * `inlineUnwrapped` disagrees with the scripts it actually unwrapped.
+ *
+ * @param row The match row.
+ * @param run The Defer step's result on the row's served page.
+ */
+function engineInlineWrapped(
+  row: MatchRow,
+  run: { readonly html: string; readonly report: TransformReport }
+): readonly string[] | 'undetermined' | 'report-mismatch' {
+  if ((run.report.undetermined ?? 0) > 0) return 'undetermined';
+  const servedWrapped = wrappedKeys(row.html, row.served).length;
+  const stillWrapped = wrappedKeys(row.html, run.html);
+  const unwrapped = servedWrapped - stillWrapped.length;
+  return (run.report.inlineUnwrapped ?? 0) === unwrapped ? stillWrapped : 'report-mismatch';
+}
+
 /** A typed line as the save receives it: text, or the raw bytes of a non-UTF-8 line. */
 function submitted(line: TypedLine): SubmittedRow {
   return typeof line === 'string' ? line : typedLineBytes(line);
@@ -205,7 +225,7 @@ type MatchOutcome =
       readonly candidates: readonly string[];
       readonly excluded: readonly string[];
       readonly featureOff?: boolean | 'unknown';
-      readonly inlineWrapped?: readonly string[] | 'undetermined';
+      readonly inlineWrapped?: readonly string[] | 'undetermined' | 'report-mismatch';
       readonly hashed?: readonly string[];
       readonly rekeyed?: readonly string[] | null;
     }
@@ -237,8 +257,7 @@ function engineRekeyed(row: MatchRow): string[] | null {
  * `featureOff`: a set that turns WP Rocket's Defer off is a validation
  * error, so a run is `false` — or `'unknown'` when the report says the page
  * state could not be replayed (never equal to WP Rocket's boolean). Defer's
- * `inlineWrapped`: the scripts still wrapped in the engine's page, or
- * `'undetermined'` when the engine leaves the inline pass's outcome open.
+ * `inlineWrapped`: see {@link engineInlineWrapped}.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
@@ -259,10 +278,7 @@ function engineMatch(row: MatchRow): MatchOutcome {
       ...(row.feature === 'defer_all_js'
         ? {
             featureOff: run.report.pageState === 'unknown' ? 'unknown' : false,
-            inlineWrapped:
-              replayInlinePass(row.served, set).undetermined > 0
-                ? 'undetermined'
-                : wrappedKeys(row.html, run.html)
+            inlineWrapped: engineInlineWrapped(row, run)
           }
         : {}),
       ...lazyRender

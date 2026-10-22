@@ -363,8 +363,8 @@ describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, r
     });
   });
 
-  it('keeps the wrapping while no row can complete a jQuery file, and never adds one', () => {
-    for (const rows of [[], ['jquery-ui']]) {
+  it('keeps the wrapping while no row can help name a jQuery file, and never adds one', () => {
+    for (const rows of [[], ['core.min']]) {
       const kept = deferJsTransform(SERVED, setWithRows(rows));
       expect(kept.html, JSON.stringify(rows)).toBe(SERVED);
       expect(kept.report, JSON.stringify(rows)).toMatchObject({ candidates: 2 });

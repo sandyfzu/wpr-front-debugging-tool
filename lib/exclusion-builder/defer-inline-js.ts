@@ -68,18 +68,20 @@ export type InlinePass = 'runs' | 'skipped' | 'unknown';
 /**
  * Whether WP Rocket's inline pass runs under a set, for a page whose served
  * markup shows its wrapping. WP Rocket tests its remote external list, the
- * live rows and the set's rows (in that order, deduplicated) as one text;
- * only the set's rows are known here, but a wrapped served page proves the
- * list plus the live rows alone do not match. Hence:
+ * live rows and the set's rows (deduplicated) as one text; only the set's
+ * rows are known here — nor where they land among the live ones in the
+ * field — but a wrapped served page proves the list plus the live rows
+ * alone do not match. Hence, wherever the set's rows sit:
  *
  * - `skipped` — Defer JS is off, or one row of the set matches on its own:
- *   deduplication cannot drop it (the earlier copy would match alone, and
- *   the served page would not be wrapped), so the joined text matches.
- * - `runs` — no row of the set holds `.js`: a match needs `.js` after
- *   `jquery`, the set's rows come last, and the earlier text has no match.
- * - `unknown` — otherwise: a match may span rows, a `.js` row may complete a
- *   live `jquery` (or be dropped as a duplicate of a live row), so the
- *   outcome depends on rows this tool cannot read.
+ *   deduplication cannot drop it (a twin would match alone, and the served
+ *   page would not be wrapped), so the joined text matches.
+ * - `runs` — no row of the set holds `.js` or `jquery`: a new match would
+ *   need one of them from the set, as the other text has none that pair up
+ *   (rows hold no line break — the settings field splits on it).
+ * - `unknown` — otherwise: a match may span rows, a set row may complete a
+ *   live `jquery` or `.js` (or be dropped as a duplicate of a live row), so
+ *   the outcome depends on rows this tool cannot read.
  *
  * Filters (`rocket_exclude_defer_js`, `rocket_defer_jquery_patterns`,
  * `rocket_defer_inline_exclusions`) are assumed unregistered.
@@ -90,7 +92,8 @@ export type InlinePass = 'runs' | 'skipped' | 'unknown';
 export function inlinePassUnder(set: ExclusionSet): InlinePass {
   const rows = set.rows.deferJs;
   if (set.disable.deferJs || rows.some((row) => namesJqueryFile([row]))) return 'skipped';
-  return rows.some((row) => JS_EXTENSION.test(row)) ? 'unknown' : 'runs';
+  const couldPair = rows.some((row) => JS_EXTENSION.test(row) || JQUERY_WORD.test(row));
+  return couldPair ? 'unknown' : 'runs';
 }
 
 /**
