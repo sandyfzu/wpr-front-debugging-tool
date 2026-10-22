@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CopyReportOutcome } from '../../report/copy-report';
 import { makeFdtData } from '../../state/fixtures';
-import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
 import { CopyReportButton } from './copy-report-button';
 
 afterEach(() => {

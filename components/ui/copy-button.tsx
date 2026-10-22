@@ -23,9 +23,6 @@ import { COPIED_FLASH_MS } from './copy-flash';
 /** The logger for copy degradations — the toast is the user feedback, this is the operational record. */
 const logger = createLogger('copy-button');
 
-// Re-exported: the flash's consumers import it from the copy control.
-export { COPIED_FLASH_MS };
-
 /** The error toast's title — the copy mechanism, not the copied thing, failed. */
 const COPY_FAILED_TITLE = 'Copy failed';
 
