@@ -1,21 +1,36 @@
 /**
- * The parity script's pure helpers: CLI mode, preflight probes, harness case
- * building, the form-survival rule for match rows, row assembly in file key
- * order, and the staleness report. The PHP run itself is exercised by
- * `pnpm parity:wp-rocket` (dev-time only).
+ * The parity script's pure helpers: CLI options, preflight probes, package
+ * versions, harness case building, the form-survival rule for match rows, row
+ * assembly in file key order, the staleness report, the `--ci` and
+ * `--compare` verdicts and their GitHub Actions output. The PHP run itself is
+ * exercised by `pnpm parity:wp-rocket` and the WP Rocket parity workflow.
  */
 import { describe, expect, it } from 'vitest';
 import type { ParityInput } from '../lib/exclusion-builder/wp-rocket-parity-table.ts';
 import {
+  PHP_EXTENSIONS,
+  annotation,
   assembleRow,
   checkPhpProbe,
   checkSurvival,
+  ciFindings,
+  compareFindings,
   describeStaleness,
+  differingRowIds,
+  extensionArgs,
   formatTable,
+  headerDifferences,
   matchCases,
-  parseMode,
+  packageDifferences,
+  parseArgs,
+  parsePhpProbe,
+  readPackageVersions,
   readPluginVersion,
-  saveCases
+  rowDifferences,
+  sameVersionFindings,
+  saveCases,
+  summaryMarkdown,
+  type TableObject
 } from './wp-rocket-parity.ts';
 
 /** Inputs covering each case-building branch. */
@@ -42,28 +57,90 @@ const INPUTS: ParityInput[] = [
   { id: 'match-d', kind: 'match', feature: 'automatic_lazy_rendering', rows: [''], html: 'h' }
 ];
 
-describe('parseMode', () => {
-  it('defaults to check, accepts --write, rejects anything else', () => {
-    expect(parseMode([])).toBe('check');
-    expect(parseMode(['--write'])).toBe('write');
-    expect(() => parseMode(['--force'])).toThrow('unknown arguments: --force');
-    expect(() => parseMode(['--write', '--write'])).toThrow('unknown arguments');
+describe('parseArgs', () => {
+  it('defaults to check and reads one mode flag plus an optional --zip', () => {
+    expect(parseArgs([])).toEqual({ mode: 'check' });
+    expect(parseArgs(['--write'])).toEqual({ mode: 'write' });
+    expect(parseArgs(['--ci'])).toEqual({ mode: 'ci' });
+    expect(parseArgs(['--zip', 'a.zip', '--compare'])).toEqual({ mode: 'compare', zip: 'a.zip' });
+    expect(parseArgs(['--zip', 'a.zip'])).toEqual({ mode: 'check', zip: 'a.zip' });
+  });
+
+  it('rejects unknown arguments, two modes and a missing or repeated --zip path', () => {
+    expect(() => parseArgs(['--force'])).toThrow('unknown arguments: --force');
+    expect(() => parseArgs(['a.zip'])).toThrow('unknown arguments: a.zip');
+    expect(() => parseArgs(['--write', '--write'])).toThrow('one mode only');
+    expect(() => parseArgs(['--ci', '--compare'])).toThrow('one mode only');
+    expect(() => parseArgs(['--zip'])).toThrow('--zip needs exactly one path');
+    expect(() => parseArgs(['--zip', ''])).toThrow('--zip needs exactly one path');
+    expect(() => parseArgs(['--zip', '--ci'])).toThrow('--zip needs exactly one path');
+    expect(() => parseArgs(['--zip', 'a', '--zip', 'b'])).toThrow('--zip needs exactly one path');
   });
 });
 
-describe('checkPhpProbe', () => {
-  it('returns the version of a PHP >= 8.1 with ext-dom', () => {
-    expect(checkPhpProbe('8.1.34\ndom\n')).toBe('8.1.34');
-    expect(checkPhpProbe('9.0.0\ndom')).toBe('9.0.0');
+describe('PHP probe', () => {
+  it('parses the version and the loaded required extensions', () => {
+    expect(parsePhpProbe('8.1.34\ndom,mbstring\n')).toEqual({
+      version: '8.1.34',
+      loaded: ['dom', 'mbstring']
+    });
+    expect(parsePhpProbe('8.1.34\n')).toEqual({ version: '8.1.34', loaded: [] });
+    expect(parsePhpProbe('')).toEqual({ version: '', loaded: [] });
   });
 
-  it('fails fast on an old PHP or a missing ext-dom', () => {
-    expect(() => checkPhpProbe('8.0.30\ndom')).toThrow(
+  it('loads exactly the missing extensions as shared modules', () => {
+    expect(extensionArgs({ version: '8.1', loaded: ['dom', 'mbstring'] })).toEqual([]);
+    expect(extensionArgs({ version: '8.1', loaded: ['mbstring'] })).toEqual([
+      '-d',
+      'extension=dom'
+    ]);
+    expect(extensionArgs({ version: '8.1', loaded: [] })).toEqual([
+      '-d',
+      'extension=dom',
+      '-d',
+      'extension=mbstring'
+    ]);
+    expect(PHP_EXTENSIONS).toEqual(['dom', 'mbstring']);
+  });
+
+  it('returns the version of a PHP >= 8.1 with every required extension', () => {
+    expect(checkPhpProbe({ version: '8.1.34', loaded: ['dom', 'mbstring'] })).toBe('8.1.34');
+    expect(checkPhpProbe({ version: '9.0.0', loaded: ['mbstring', 'dom'] })).toBe('9.0.0');
+  });
+
+  it('fails fast on an old PHP or a missing extension, naming it', () => {
+    const all = ['dom', 'mbstring'];
+    expect(() => checkPhpProbe({ version: '8.0.30', loaded: all })).toThrow(
       'PHP 8.0.30 found; the harness needs PHP >= 8.1'
     );
-    expect(() => checkPhpProbe('7.4.1\ndom')).toThrow('needs PHP >= 8.1');
-    expect(() => checkPhpProbe('')).toThrow('PHP ? found');
-    expect(() => checkPhpProbe('8.4.1\nnodom')).toThrow('has no ext-dom under `php -n`');
+    expect(() => checkPhpProbe({ version: '7.4.1', loaded: all })).toThrow('needs PHP >= 8.1');
+    expect(() => checkPhpProbe({ version: '', loaded: all })).toThrow('PHP ? found');
+    expect(() => checkPhpProbe({ version: '8.4.1', loaded: ['dom'] })).toThrow(
+      'PHP 8.4.1 has no mbstring under `php -n`'
+    );
+    expect(() => checkPhpProbe({ version: '8.4.1', loaded: [] })).toThrow('has no dom, mbstring');
+  });
+});
+
+describe('readPackageVersions', () => {
+  const lock = JSON.stringify({
+    packages: [{ name: 'a/run', version: 'v1.2' }, { name: 'broken' }, null],
+    'packages-dev': [{ name: 'a/dev', version: '3.0.22' }]
+  });
+
+  it('reads runtime and dev packages, keys sorted', () => {
+    const versions = readPackageVersions(lock, ['a/run', 'a/dev']);
+    expect(versions).toEqual({ 'a/dev': '3.0.22', 'a/run': 'v1.2' });
+    expect(Object.keys(versions)).toEqual(['a/dev', 'a/run']);
+  });
+
+  it('fails fast on a missing package or a malformed lock', () => {
+    expect(() => readPackageVersions(lock, ['broken'])).toThrow(
+      'composer.lock lists no "broken", yet its vendor/ code ran'
+    );
+    expect(() => readPackageVersions('{', ['a/run'])).toThrow('composer.lock is not valid JSON');
+    expect(() => readPackageVersions('null', ['a/run'])).toThrow('lists no "a/run"');
+    expect(readPackageVersions('{"packages": 1}', [])).toEqual({});
   });
 });
 
@@ -247,5 +324,221 @@ describe('formatTable', () => {
   it('formats with the repo Prettier config (JSON, two-space indent, trailing newline)', async () => {
     const text = await formatTable({ header: { a: 1 }, rows: [] });
     expect(text).toBe('{ "header": { "a": 1 }, "rows": [] }\n');
+  });
+});
+
+describe('difference helpers', () => {
+  it('compares header fields by JSON value, absent spelled out', () => {
+    expect(
+      headerDifferences(
+        { a: '1', p: { x: 'v1' }, same: { y: 'v' } },
+        { a: '2', p: { x: 'v2' }, same: { y: 'v' }, b: '3' },
+        ['a', 'p', 'same', 'b']
+      )
+    ).toEqual([
+      'header.a: "1" → "2"',
+      'header.p: {"x":"v1"} → {"x":"v2"}',
+      'header.b: absent → "3"'
+    ]);
+    expect(headerDifferences(undefined, { a: '1' }, ['a'])).toEqual(['header.a: absent → "1"']);
+  });
+
+  it('lists row differences by id and each differing id once', () => {
+    const differences = rowDifferences(
+      [{ id: 'r1', a: 1, b: 2 }, { id: 'gone' }],
+      [{ id: 'r1', a: 9, b: 8 }, { id: 'new' }]
+    );
+    expect(differences).toEqual([
+      { id: 'r1', line: 'r1.a: 1 → 9' },
+      { id: 'r1', line: 'r1.b: 2 → 8' },
+      { id: 'new', line: 'new: missing from the committed table' },
+      { id: 'gone', line: 'gone: not derivable from the inputs' }
+    ]);
+    expect(differingRowIds(differences)).toEqual(['r1', 'new', 'gone']);
+  });
+
+  it('lists added, removed and changed packages, sorted', () => {
+    expect(
+      packageDifferences({ b: 'v1', c: 'v1', d: 'v1' }, { a: 'v1', b: 'v2', d: 'v1' })
+    ).toEqual(['a: absent → v1', 'b: v1 → v2', 'c: v1 → absent']);
+    expect(packageDifferences({ a: 'v1' }, { a: 'v1' })).toEqual([]);
+  });
+});
+
+/** A valid committed table: one save row. */
+function table(): {
+  header: Record<string, unknown>;
+  rows: Record<string, unknown>[];
+} {
+  return {
+    header: {
+      plugin: '3.0',
+      pluginZipSha256: 'aa',
+      pluginPackages: { 'a/run': 'v1' },
+      wp: '7.0',
+      wpZipSha1: 'bb',
+      php: '8.1.34',
+      pcre2: '10.49',
+      libxml: '2.9.13',
+      generatedBy: 'test'
+    },
+    rows: [
+      { id: 'save-a', kind: 'save', feature: 'delay_js', typed: ['a'], stored: ['a'], dropped: [] }
+    ]
+  };
+}
+
+describe('ciFindings', () => {
+  /** The verdict for the committed {@link table} against a mutated fresh copy. */
+  async function verdict(mutate: (fresh: ReturnType<typeof table>) => void) {
+    const fresh = table();
+    mutate(fresh);
+    return ciFindings(await formatTable(table()), fresh);
+  }
+
+  it('reproduces when only the zip bytes differ', async () => {
+    expect(await verdict((fresh) => (fresh.header.pluginZipSha256 = 'cc'))).toEqual([
+      {
+        level: 'notice',
+        title: 'the table reproduces with a fresh build of WP Rocket 3.0',
+        details: []
+      }
+    ]);
+  });
+
+  it('reports another PHP build as a notice, never an error', async () => {
+    const findings = await verdict((fresh) => {
+      fresh.header.php = '8.4.27';
+      fresh.header.pcre2 = '10.44';
+      fresh.header.libxml = '2.9.14';
+    });
+    expect(findings.map((finding) => finding.level)).toEqual(['notice', 'notice']);
+    expect(findings[0]).toEqual({
+      level: 'notice',
+      title: 'another PHP build than the table header',
+      details: [
+        'header.php: "8.1.34" → "8.4.27"',
+        'header.pcre2: "10.49" → "10.44"',
+        'header.libxml: "2.9.13" → "2.9.14"',
+        'Rows are still compared; this alone never fails.'
+      ]
+    });
+  });
+
+  it('fails as "table stale" on a row difference, naming it', async () => {
+    const findings = await verdict((fresh) => {
+      (fresh.rows[0] as { stored: string[] }).stored = ['b'];
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.level).toBe('error');
+    expect(findings[0]?.title).toBe('table stale');
+    expect(findings[0]?.details[0]).toBe('save-a.stored: ["a"] → ["b"]');
+  });
+
+  it('fails as "table stale" on another plugin version (a wrong reference build)', async () => {
+    const findings = await verdict((fresh) => (fresh.header.plugin = '3.1'));
+    expect(findings[0]?.title).toBe('table stale');
+    expect(findings[0]?.details[0]).toBe('header.plugin: "3.0" → "3.1"');
+  });
+
+  it('fails as "reference drift" on other vendored package versions', async () => {
+    const findings = await verdict((fresh) => (fresh.header.pluginPackages = { 'a/run': 'v2' }));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.level).toBe('error');
+    expect(findings[0]?.title).toBe('reference drift: rebuild locally and review');
+    expect(findings[0]?.details[0]).toBe('a/run: v1 → v2');
+    expect(findings[0]?.details[1]).toContain('`apvm build wp-rocket tag:v3.0`');
+  });
+
+  it('reports both failures when both occur, stale first', async () => {
+    const findings = await verdict((fresh) => {
+      fresh.header.pluginPackages = { 'a/run': 'v2' };
+      (fresh.rows[0] as { stored: string[] }).stored = [];
+    });
+    expect(findings.map((finding) => finding.title)).toEqual([
+      'table stale',
+      'reference drift: rebuild locally and review'
+    ]);
+  });
+
+  it('fails on a formatting-only difference and on an unparsable committed table', async () => {
+    const committed = JSON.stringify(table());
+    const findings = await ciFindings(committed, table());
+    expect(findings[0]?.title).toBe('table stale');
+    expect(findings[0]?.details[0]).toBe('formatting differs (run with --write)');
+    await expect(ciFindings('{"rows": []}', table())).rejects.toThrow('"header" must be an object');
+  });
+});
+
+describe('compare findings', () => {
+  /** A table with `rows` save rows and the given plugin + packages. */
+  function versioned(plugin: string, rows: number, stored = 'a', run = 'v1'): TableObject {
+    const base = table();
+    return {
+      header: { ...base.header, plugin, pluginPackages: { 'a/run': run } },
+      rows: Array.from({ length: rows }, (_, index) => ({
+        ...base.rows[0],
+        id: `save-${String(index)}`,
+        stored: [stored]
+      }))
+    };
+  }
+
+  it('skips the comparison for the reference version', () => {
+    expect(sameVersionFindings('3.0')).toEqual([
+      {
+        level: 'notice',
+        title: "WP Rocket 3.0 is the table's reference version; comparison skipped",
+        details: []
+      }
+    ]);
+  });
+
+  it('notes a newer version that matches every row, with package changes', () => {
+    expect(compareFindings(versioned('3.0', 2), versioned('3.1', 2, 'a', 'v2'))).toEqual([
+      {
+        level: 'notice',
+        title: 'WP Rocket 3.1 matches the table (WP Rocket 3.0) on all 2 rows',
+        details: ['package a/run: v1 → v2']
+      }
+    ]);
+  });
+
+  it('warns (never errors) with the count and ids of the differing rows', () => {
+    const [finding] = compareFindings(versioned('3.0', 2), versioned('3.1', 2, 'b'));
+    expect(finding?.level).toBe('warning');
+    expect(finding?.title).toBe(
+      'WP Rocket 3.1 differs from the table (WP Rocket 3.0) on 2 rows: save-0, save-1'
+    );
+    expect(finding?.details.slice(0, 2)).toEqual([
+      'save-0.stored: ["a"] → ["b"]',
+      'save-1.stored: ["a"] → ["b"]'
+    ]);
+  });
+
+  it('shortens a long id list in the title; the details keep every row', () => {
+    const [finding] = compareFindings(versioned('3.0', 23), versioned('3.1', 23, 'b'));
+    expect(finding?.title).toMatch(/on 23 rows: save-0, .*save-19 and 3 more$/);
+    expect(finding?.details.filter((line) => line.startsWith('save-'))).toHaveLength(23);
+  });
+});
+
+describe('GitHub Actions output', () => {
+  it('escapes annotation titles and messages', () => {
+    expect(annotation({ level: 'warning', title: 'a: b, 100%', details: ['x: 1', 'y\r%'] })).toBe(
+      '::warning title=a%3A b%2C 100%25::x: 1%0Ay%0D%25'
+    );
+    expect(annotation({ level: 'notice', title: 'only a title', details: [] })).toBe(
+      '::notice title=only a title::only a title'
+    );
+  });
+
+  it('writes a summary section with a fence longer than any backtick run', () => {
+    expect(
+      summaryMarkdown('Heading', [
+        { level: 'error', title: 'table stale', details: ['run `x`', 'a ``` b'] },
+        { level: 'notice', title: 'ok', details: [] }
+      ])
+    ).toBe('### Heading\n\n❌ **table stale**\n\n````\nrun `x`\na ``` b\n````\n\nℹ️ **ok**\n\n');
   });
 });

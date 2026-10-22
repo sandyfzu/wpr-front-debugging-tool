@@ -105,6 +105,12 @@ export type TypedLine = string | { readonly b64: string };
 export interface ParityHeader {
   readonly plugin: string;
   readonly pluginZipSha256: string;
+  /**
+   * Version of each composer package whose `vendor/` code the harness ran,
+   * from the plugin zip's root `composer.lock` (the build resolves them fresh,
+   * so a rebuild of the same tag may vendor other versions).
+   */
+  readonly pluginPackages: Readonly<Record<string, string>>;
   readonly wp: string;
   readonly wpZipSha1: string;
   readonly php: string;
@@ -203,6 +209,7 @@ export interface ParityTable {
 export const HEADER_KEYS: readonly (keyof ParityHeader)[] = [
   'plugin',
   'pluginZipSha256',
+  'pluginPackages',
   'wp',
   'wpZipSha1',
   'php',
@@ -583,12 +590,29 @@ export function parseParityInputs(value: unknown): ParityInput[] {
   return inputs;
 }
 
+/** Parse `pluginPackages`: a non-empty `{name: version}` map of non-empty strings. */
+function packageVersions(value: unknown): Record<string, string> {
+  if (!isRecord(value) || Object.keys(value).length === 0) {
+    return fail(null, 'header "pluginPackages" must be a non-empty {name: version} object');
+  }
+  for (const [name, version] of Object.entries(value)) {
+    if (typeof version !== 'string' || version === '') {
+      fail(null, `header "pluginPackages" "${name}" must be a non-empty version string`);
+    }
+  }
+  return value as Record<string, string>;
+}
+
 /** Parse the header strictly. */
 function parseHeader(value: unknown): ParityHeader {
   if (!isRecord(value)) return fail(null, '"header" must be an object');
   checkKeys(null, value, HEADER_KEYS);
-  const header: Partial<Record<keyof ParityHeader, string>> = {};
+  const header: Partial<Record<keyof ParityHeader, unknown>> = {};
   for (const key of HEADER_KEYS) {
+    if (key === 'pluginPackages') {
+      header[key] = packageVersions(value[key]);
+      continue;
+    }
     const field = stringField(null, value, key);
     if (field === '') fail(null, `header "${key}" must not be empty`);
     header[key] = field;

@@ -2,8 +2,7 @@
 /**
  * WP Rocket parity harness: runs the REAL plugin and WordPress core code on
  * fixture inputs and prints the observed outputs as JSON. Driven by
- * `scripts/wp-rocket-parity.ts` (`pnpm parity:wp-rocket`), never by hand and
- * never in CI.
+ * `scripts/wp-rocket-parity.ts` (`pnpm parity:wp-rocket`), never by hand.
  *
  * Usage: php -n wp-rocket-parity.php <plugin-root> <wp-root> < cases.json > results.json
  *
@@ -16,7 +15,8 @@
  * stored rows) arrive base64-encoded:
  *   save:  {id, kind:"save", feature, typed:[b64…], safeMode:bool}
  *   match: {id, kind:"match", feature, rows:[b64…], html}
- * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case).
+ * Output (stdout): {"env":{…}, "results":[…]} (see save_case / match_case);
+ * `env.vendorPackages` names the composer packages whose `vendor/` code ran.
  */
 
 declare(strict_types=1);
@@ -37,6 +37,11 @@ if ($argc !== 3) {
 }
 if (!extension_loaded('dom')) {
 	fwrite(STDERR, "ext-dom is not loaded under `php -n`: the lazy-render processor needs DOMDocument.\n");
+	exit(2);
+}
+if (!extension_loaded('mbstring')) {
+	// WordPress' UTF-8 helpers pick another code path without it: outputs would not be comparable.
+	fwrite(STDERR, "ext-mbstring is not loaded under `php -n`: WordPress' UTF-8 helpers branch on it.\n");
 	exit(2);
 }
 
@@ -576,12 +581,38 @@ $results = [];
 foreach ($input['cases'] as $case) {
 	$results[] = $case['kind'] === 'save' ? save_case($case) : match_case($case);
 }
+/**
+ * The composer packages (`vendor/<vendor>/<name>/`) whose files were loaded:
+ * the dependency versions the outputs depend on (the autoloader itself excluded).
+ *
+ * @param string $plugin The plugin root.
+ * @return string[] Sorted package names.
+ */
+function loaded_vendor_packages(string $plugin): array {
+	$packages = [];
+	// Included paths are resolved (e.g. macOS /var → /private/var), so resolve the root too.
+	$prefix   = (realpath($plugin) ?: $plugin) . '/vendor/';
+	foreach (get_included_files() as $file) {
+		if (strncmp($file, $prefix, strlen($prefix)) !== 0) {
+			continue;
+		}
+		$parts = explode('/', substr($file, strlen($prefix)));
+		if (count($parts) > 2 && $parts[0] !== 'composer') {
+			$packages[$parts[0] . '/' . $parts[1]] = true;
+		}
+	}
+	$names = array_keys($packages);
+	sort($names);
+	return $names;
+}
+
 echo json_encode(
 	[
 		'env'     => [
-			'php'    => PHP_VERSION,
-			'pcre2'  => explode(' ', PCRE_VERSION)[0],
-			'libxml' => LIBXML_DOTTED_VERSION,
+			'php'            => PHP_VERSION,
+			'pcre2'          => explode(' ', PCRE_VERSION)[0],
+			'libxml'         => LIBXML_DOTTED_VERSION,
+			'vendorPackages' => loaded_vendor_packages($PLUGIN),
 		],
 		'results' => $results,
 	],
