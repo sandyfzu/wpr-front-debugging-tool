@@ -363,9 +363,9 @@ describe('splitLines', () => {
 describe('createRowValidator', () => {
   it('names invalid and risky patterns, accepts literals as text', () => {
     const validate = createRowValidator();
-    // Delay JS rows are read as WP Rocket reads them (its save drops what PCRE rejects).
+    // Regex rows are read as WP Rocket reads them (its save drops what PCRE rejects).
     expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row when saving/);
-    expect(validate('deferJs', '(')).toMatch(/^Invalid regular expression: /);
+    expect(validate('deferJs', '(')).toMatch(/^WP Rocket drops this row when saving/);
     expect(validate('deferJs', '(a+)+$')).toMatch(/^Risky regular expression/);
     expect(validate('lazyload', '(')).toBeNull();
     expect(validate('delayJs', 'gtag')).toBeNull();

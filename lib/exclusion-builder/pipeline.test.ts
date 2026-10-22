@@ -246,13 +246,14 @@ describe('exclusionPipelineSteps', () => {
     expect(composeSteps(html, exclusionPipelineSteps(set))).toEqual(applyPipeline(html, set));
   });
 
-  it('threads the document URL into the steps that resolve URLs (Defer JS)', () => {
-    const set = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
-    const steps = exclusionPipelineSteps(set, 'https://s.tld/page');
-    const resolved = composeSteps(RELATIVE, steps).reports[1];
-    expect(resolved?.rewritten).toBe(1);
-    expect(applyPipeline(RELATIVE, set, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
-    // Without a document URL only the raw attribute is matched.
-    expect(applyPipeline(RELATIVE, set).reports[1]?.rewritten).toBe(0);
+  it('matches Defer JS rows against the raw src whatever the document URL (as WP Rocket does)', () => {
+    const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
+    const steps = exclusionPipelineSteps(resolvedRow, 'https://s.tld/page');
+    expect(composeSteps(RELATIVE, steps).reports[1]?.rewritten).toBe(0);
+    expect(applyPipeline(RELATIVE, resolvedRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(
+      0
+    );
+    const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
+    expect(applyPipeline(RELATIVE, rawRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
   });
 });

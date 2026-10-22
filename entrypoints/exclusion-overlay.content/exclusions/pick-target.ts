@@ -28,10 +28,8 @@ import {
   WPR_DEFER_ATTRIBUTE
 } from '../../../lib/wp-rocket/constants';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
-import {
-  DELAY_STATUS_ATTRIBUTE,
-  DELAY_TYPE_ATTRIBUTE
-} from '../../../lib/exclusion-builder/delay-js';
+import { DELAY_STATUS_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js';
+import { DELAY_TYPE_ATTRIBUTE } from '../../../lib/exclusion-builder/delay-js-match';
 import { recoverOriginalScript } from '../../../lib/wp-rocket/minify-url-recovery';
 import { parseUrl } from '../../../utils/urls';
 import { escapeRegex } from '../../../utils/regex';

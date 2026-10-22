@@ -186,6 +186,15 @@ const OPEN_AT_END = new Set([
 
 /** Longest construct text a stopped parse names. */
 const STOP_CONSTRUCT_LENGTH = 16;
+
+/**
+ * PCRE2's parenthesis nesting limit (observed 250 on 10.44 and 10.49: 251
+ * open groups fail to compile). A group this deep stops the parse as
+ * unknown: one level is Defer JS's joined wrapper (a row 250 deep is kept
+ * at save yet breaks the joined pattern), and the bound keeps the
+ * recursive parse and its consumers off the call stack's limit.
+ */
+const PCRE_NEST_LIMIT = 250;
 /** Letter escapes PCRE2 rejects, inside and outside classes (observed). */
 const UNKNOWN_LETTER_ESCAPES = new Set('ijlmquyFIJLMOTUY');
 /** Escapes valid outside classes that PCRE2 rejects inside one (observed). */
@@ -960,6 +969,7 @@ class Parser {
     capture: number | null,
     duplicates: boolean | null = this.duplicates.at(-1) ?? null
   ): PatternNode {
+    if (this.depth + 1 >= PCRE_NEST_LIMIT) this.stop(start, 'parentheses nested near PCRE’s limit');
     this.duplicates.push(duplicates);
     this.depth++;
     const assertion = isLookaround(kind);

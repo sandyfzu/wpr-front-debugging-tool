@@ -28,8 +28,6 @@ import type { ExclusionFeatureId, ExclusionSet } from './set';
 /** The delay controller's runtime status marker — a snapshot's delayed-script evidence. */
 export const DELAY_STATUS_ATTRIBUTE = 'data-rocket-status';
 
-export { DELAY_TYPE_ATTRIBUTE };
-
 const FEATURE: ExclusionFeatureId = 'delay_js';
 const TYPE_ATTRIBUTE = 'type';
 const SRC_ATTRIBUTE = 'src';

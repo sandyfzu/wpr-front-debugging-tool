@@ -8,8 +8,7 @@
 import { DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
 import { ExclusionValidationError } from './errors';
 import { parseTagAt } from './html-scan';
-import { compileByteMatcher, translateRegexRows } from './pcre/rows';
-import { toByteString } from './pcre/translate';
+import { compileFirstMatch, translateRegexRows } from './pcre/rows';
 import { featureRowProblems } from './validate';
 
 /** Where a delayed script parks its original `type` value. */
@@ -57,6 +56,19 @@ export function preDelayElement(region: string): string {
     const end = spaceAfter ? type.attrEnd + 1 : type.attrEnd;
     text = text.slice(0, start) + text.slice(end);
   }
+  return undoDelayRenames(text);
+}
+
+/**
+ * Delay JS's in-place renames undone: `data-rocket-type=` → `type=` and
+ * `data-rocket-src=` → `src=` inside the attribute text — up to the first
+ * `>`, where WP Rocket's own pattern ends a tag's attributes; the rest
+ * (body, end tag) is kept as is.
+ *
+ * @param text Served markup starting at a delayed script's `<script`.
+ * @returns The text with the renames undone.
+ */
+export function undoDelayRenames(text: string): string {
   const attributesEnd = text.indexOf('>');
   if (attributesEnd === -1) return text;
   let attributes = text.slice(0, attributesEnd);
@@ -81,15 +93,8 @@ export type DelayRowMatch = (region: string) => number;
 export function compileDelayRows(rows: readonly string[]): DelayRowMatch {
   const problems = featureRowProblems('delay_js', 'pattern', rows);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
-  const tests = translateRegexRows('delay_js', rows).rows.map(({ row, matcher }) => {
-    // A row without a problem always has a matcher (the translator's contract).
-    if (matcher === null) throw new Error(`Delay JS row ${JSON.stringify(row)} has no matcher`);
-    return compileByteMatcher(matcher);
-  });
-  if (tests.length === 0) return () => -1;
-  return (region) => {
-    // Encoded once per script, then tested by every row in order.
-    const subject = toByteString(preDelayElement(region));
-    return tests.findIndex((test) => test(subject));
-  };
+  const first = compileFirstMatch(
+    translateRegexRows('delay_js', rows).rows.map((row) => row.matcher)
+  );
+  return (region) => first(preDelayElement(region));
 }
