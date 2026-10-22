@@ -244,6 +244,22 @@ describe('editing and autosave', () => {
     });
   });
 
+  it('keeps "saved" when a row left after the save is trimmed (the set cannot change)', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    const [id] = controller.insertRows('lazyload', [''], null);
+    controller.editRow('lazyload', id ?? '', ' logo.png ');
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(controller.saveState()).toEqual({ kind: 'saved' });
+    controller.commitRow('lazyload', id ?? '');
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(controller.draft().rows.lazyload[0]?.text).toBe('logo.png');
+    expect(controller.saveState()).toEqual({ kind: 'saved' });
+    expect(port.save).toHaveBeenCalledTimes(1);
+  });
+
   it('marks edits against the active set as dirty', async () => {
     const { controller } = await started(fakePort(activeRecord()).port);
     controller.setDisable('lazyRender', true);
@@ -481,11 +497,22 @@ describe('audit round 1', () => {
     controller.removeRow('delayJs', id ?? '');
     controller.setDisable('delayJs', true);
     controller.pasteRows('delayJs', id ?? '', 'a\nb', { start: 0, end: 0 });
-    controller.commitRow('delayJs', id ?? '');
     expect(controller.addCandidate('delayJs', 'x', false)).toBe(false);
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
     expect(controller.draft().disable.delayJs).toBe(false);
     finish({ kind: 'problem', problem: 'timeout' });
+  });
+
+  it('trims a row left while an action is in flight (set-neutral, so not held back)', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    port.apply.mockImplementationOnce(() => new Promise(() => undefined));
+    const { controller } = await started(port);
+    const [id] = controller.insertRows('delayJs', [' gtag\t'], null);
+    controller.apply();
+    expect(controller.editable()).toBe(false);
+    controller.commitRow('delayJs', id ?? '');
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
+    expect(port.save).not.toHaveBeenCalled();
   });
 
   it('does not ask to save a draft the session cannot carry, and says why', async () => {

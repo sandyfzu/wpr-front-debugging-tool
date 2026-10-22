@@ -122,6 +122,7 @@ export interface OverlayController {
   /**
    * Commit a row the user left: trim it the way WP Rocket's settings save
    * does, so the editor shows what would be stored (never while typing).
+   * Never changes the set, so it never saves and works in any phase.
    */
   commitRow(lane: LaneKey, id: string): void;
   /**
@@ -461,9 +462,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       setDraft(updateRow(draft(), lane, id, text));
     },
     commitRow: (lane, id) => {
-      // The trimmed row is the one already applied/validated: its background
-      // reason (if any) still holds, so it is kept.
-      if (editable()) setDraft(trimRow(draft(), lane, id));
+      // Set-neutral by construction (the set is built from trimmed rows):
+      // no autosave, no save-state change, no background reason cleared, and
+      // safe while an action is in flight (the inputs are read-only then),
+      // so a row left meanwhile is trimmed at once rather than never.
+      setDraftSignal(trimRow(draft(), lane, id));
     },
     insertRows: (lane, texts, afterId) => {
       if (!editable()) return [];
