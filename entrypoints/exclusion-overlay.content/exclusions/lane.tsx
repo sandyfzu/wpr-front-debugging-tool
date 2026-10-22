@@ -30,7 +30,7 @@ import type { OverlayController, PasteOutcome } from '../controller';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
 import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
-import type { LaneNotes, RowNote } from './row-notes';
+import { copiedRow, laneKeyIndex, restoreIndex, type LaneNotes, type RowNote } from './row-notes';
 
 /** Seed row height (px) before measurement: one input line plus padding. */
 const ROW_ESTIMATE_PX = 37;
@@ -163,7 +163,25 @@ export function Lane(props: LaneProps): JSX.Element {
   };
 
   const laneNotes = (): LaneNotes => props.controller.notes().lanes[props.lane];
-  const removedShown = createMemo(() => laneNotes().removed.slice(0, REMOVED_ROWS_SHOWN));
+  /**
+   * The removals listed, with the row numbers they show read from the lane
+   * as it is now (rows restored or committed since move them): the row a
+   * duplicate copies, and where Restore puts it back.
+   */
+  const removedShown = createMemo(() => {
+    const notes = laneNotes().removed;
+    const shown = notes.slice(0, REMOVED_ROWS_SHOWN);
+    if (shown.length === 0) return [];
+    const current = rows();
+    const keys = shown.some((note) => note.diff.reason === 'duplicate')
+      ? laneKeyIndex(props.lane, current)
+      : new Map<string, number>();
+    return shown.map((note) => ({
+      note,
+      copyOf: copiedRow(props.lane, keys, note.diff),
+      row: restoreIndex(note, notes, current) + 1
+    }));
+  });
   const removedMore = (): number => laneNotes().removed.length - removedShown().length;
 
   createEffect(
@@ -339,20 +357,20 @@ export function Lane(props: LaneProps): JSX.Element {
             )}
           </Show>
           <Show when={removedShown().length > 0}>
-            <ul class="xo-removed" aria-label={`${copy().label} rows removed`}>
+            <ul class="xo-removed" aria-label={ROW_NOTE_COPY.removedListName(copy().label)}>
               <For each={removedShown()}>
                 {(removed) => (
                   <li class="xo-row-note">
                     <Info size={12} aria-hidden="true" />
                     <span class="xo-note-text">
-                      <NoteRuns note={ROW_NOTE_COPY.removed(removed.diff, removed.copyOf)} />
+                      <NoteRuns note={ROW_NOTE_COPY.removed(removed.note.diff, removed.copyOf)} />
                     </span>
                     <UndoButton
-                      id={removed.id}
+                      id={removed.note.id}
                       label={ROW_NOTE_COPY.restore}
-                      name={ROW_NOTE_COPY.restoreName(copy().label, removed.index + 1)}
+                      name={ROW_NOTE_COPY.restoreName(copy().label, removed.row)}
                       locked={props.locked}
-                      onUndo={() => props.controller.undoCommit(props.lane, removed.id)}
+                      onUndo={() => props.controller.undoCommit(props.lane, removed.note.id)}
                     />
                   </li>
                 )}

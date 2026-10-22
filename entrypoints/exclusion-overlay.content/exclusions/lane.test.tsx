@@ -652,4 +652,64 @@ describe('Lane stored-form notes', () => {
     // The note itself stays (it is still true).
     expect(input(1).getAttribute('aria-describedby')).not.toBeNull();
   });
+
+  it('keeps Undo after Shift+Tab back into the row and Tab out again', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    typeAndLeave(input(1), 'a*');
+    input(1).focus();
+    screen.getByRole('button', { name: 'Remove Delay JavaScript execution row 1' }).focus();
+    expect(undo(1)).toBeTruthy();
+  });
+
+  it('keeps Undo when arrows pass through the converted row', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['', 'b'], null);
+    mountLane(controller);
+    input(1).focus();
+    fireEvent.input(input(1), { target: { value: 'a*' } });
+    fireEvent.keyDown(input(1), { key: 'ArrowDown' });
+    fireEvent.keyDown(input(2), { key: 'ArrowUp' });
+    fireEvent.keyDown(input(1), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(input(2));
+    expect(undo(1)).toBeTruthy();
+  });
+
+  it('points every aria-describedby at an element, ids unique', async () => {
+    const controller = await readyController();
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    controller.pasteRows('delayJs', id, ' a* \n b*\n(\nc', { start: 0, end: 0 });
+    copyAll().focus();
+    for (const element of document.querySelectorAll('[aria-describedby]'))
+      for (const ref of (element.getAttribute('aria-describedby') ?? '').split(' '))
+        expect(document.getElementById(ref), ref).not.toBeNull();
+    const ids = [...document.querySelectorAll('[id]')].map((element) => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('reads the copied row and the Restore place from the lane as it is now', async () => {
+    const controller = await readyController();
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    controller.insertRows('delayJs', ['x'], null);
+    mountLane(controller);
+    // [x(typed), x, z, last, x(kept)]: both typed copies leave; `x` is row 3.
+    controller.pasteRows('delayJs', id, 'x\nx\nz\nlast', { start: 0, end: 0 });
+    copyAll().focus();
+    const removedList = (): HTMLElement =>
+      screen.getByRole('list', { name: 'Delay JavaScript execution rows removed' });
+    expect(removedList().textContent).toContain('a copy of row 3');
+    // Both copies would go back at row 1 now (the first is still out).
+    const restores = screen.getAllByRole('button', {
+      name: 'Restore removed Delay JavaScript execution row 1'
+    });
+    expect(restores).toHaveLength(2);
+    fireEvent.click(restores[0] as HTMLButtonElement);
+    // The restored `x` is row 1 now: the other copy names it, and goes back after it.
+    expect(removedList().textContent).toContain('a copy of row 1');
+    expect(
+      screen.getByRole('button', { name: 'Restore removed Delay JavaScript execution row 2' })
+    ).toBeTruthy();
+  });
 });

@@ -286,12 +286,12 @@ describe('editing and autosave', () => {
     expect(controller.saveState()).toEqual({ kind: 'saved' });
     controller.commitRow('lazyload', id ?? '');
     expect(controller.draft().rows.lazyload[0]?.text).toBe('logo.png');
-    expect(controller.commits()).toEqual([
+    expect(controller.notes().latest?.news).toEqual([
       {
         lane: 'lazyload',
-        id,
-        index: 0,
-        diff: { state: 'stored-as', stored: 'logo.png', typed: ' logo%41.png ' }
+        position: 1,
+        diff: { state: 'stored-as', stored: 'logo.png', typed: ' logo%41.png ' },
+        copyOf: null
       }
     ]);
     clock.fire(AUTOSAVE_DELAY_MS);
@@ -316,9 +316,8 @@ describe('editing and autosave', () => {
     expect(controller.rowProblem('delayJs', id ?? '', '(')).toMatch(/^WP Rocket drops this row/);
     controller.commitRow('delayJs', id ?? '');
     expect(controller.draft().rows.delayJs).toEqual([]);
-    expect(controller.commits()).toMatchObject([
+    expect(controller.notes().lanes.delayJs.removed).toMatchObject([
       {
-        lane: 'delayJs',
         id,
         index: 0,
         diff: { state: 'dropped', reason: 'invalid-pattern', typed: '(' }
@@ -340,7 +339,7 @@ describe('editing and autosave', () => {
     ]);
     expect(controller.addCandidate('delayJs', 'x%41.js', false)).toBe(true);
     expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('x.js');
-    expect(controller.commits()).toEqual([
+    expect(controller.notes().latest?.news).toEqual([
       expect.objectContaining({ diff: { state: 'stored-as', stored: 'x.js', typed: 'x%41.js' } })
     ]);
   });
@@ -730,18 +729,20 @@ describe('stored-form notes and undo', () => {
     expect(delayNotes(controller).rows.get(id)?.undoable).toBe(true);
   });
 
-  it('lists a removed duplicate with the row it copies, and restores it at its place', async () => {
+  it('lists a removed duplicate after its anchor, and restores it at its place', async () => {
     const { controller, id } = await typedAndLeft(' gtag ', ['gtag', 'b']);
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag', 'b']);
+    const anchor = controller.draft().rows.delayJs[1]?.id;
     expect(delayNotes(controller).removed).toEqual([
       {
         id,
+        anchor,
+        before: [],
         index: 2,
-        batch: expect.any(Number) as number,
-        diff: { state: 'dropped', reason: 'duplicate', typed: ' gtag ' },
-        copyOf: 1
+        diff: { state: 'dropped', reason: 'duplicate', typed: ' gtag ' }
       }
     ]);
+    expect(controller.notes().latest?.news[0]?.copyOf).toBe(1);
     expect(controller.undoCommit('delayJs', id)).toBe(true);
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag', 'b', ' gtag ']);
     expect(controller.focusRequest()).toEqual({ lane: 'delayJs', id, caret: 6 });
@@ -796,9 +797,158 @@ describe('stored-form notes and undo', () => {
     expect(controller.notes().lanes.lazyload.rows.get(id)?.undoable).toBe(true);
     const fresh = await started(fakePort({ state: 'inactive' }).port);
     fresh.controller.addCandidate('lazyload', 'logo.png', false);
-    const before = fresh.controller.commits();
+    const before = fresh.controller.notes();
     expect(fresh.controller.addCandidate('lazyload', 'logo.png', false)).toBe(false);
-    expect(fresh.controller.commits()).toBe(before);
+    expect(fresh.controller.notes()).toBe(before);
     expect(fresh.controller.notes().lanes.lazyload.removed).toEqual([]);
+  });
+});
+
+describe('notes outlive commits that change nothing (audit round)', () => {
+  /** A ready controller with one typed Delay JS row left (committed). */
+  async function typedAndLeft(typed: string, before: readonly string[] = []) {
+    const { port } = fakePort({ state: 'inactive' });
+    const ctx = await started(port);
+    ctx.controller.insertRows('delayJs', before, null);
+    const [id = ''] = ctx.controller.insertRows('delayJs', [''], null);
+    ctx.controller.editRow('delayJs', id, typed);
+    ctx.controller.commitRow('delayJs', id);
+    return { ...ctx, id };
+  }
+
+  const delay = (controller: OverlayController) => controller.notes().lanes.delayJs;
+  const texts = (controller: OverlayController): string[] =>
+    controller.draft().rows.delayJs.map((row) => row.text);
+
+  it('keeps note and undo when the row is left again (Shift+Tab, Tab; arrows)', async () => {
+    const { controller, id } = await typedAndLeft('a*', ['other']);
+    const other = controller.draft().rows.delayJs[0]?.id ?? '';
+    for (let pass = 0; pass < 3; pass += 1) {
+      controller.commitRow('delayJs', id);
+      controller.commitRow('delayJs', other);
+    }
+    expect(delay(controller).rows.get(id)?.undoable).toBe(true);
+    expect(controller.undoCommit('delayJs', id)).toBe(true);
+    expect(texts(controller)).toEqual(['other', 'a*']);
+  });
+
+  it('keeps every earlier note through an apply', async () => {
+    const { controller, id } = await typedAndLeft('a*');
+    controller.apply();
+    await settle();
+    expect(delay(controller).rows.get(id)?.undoable).toBe(true);
+  });
+
+  it("keeps the paste target's note when focus moves on to the caret row", async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    controller.pasteRows('delayJs', id, ' a* \nb', { start: 0, end: 0 });
+    // The target row blurs as focus moves to the caret row: it commits again.
+    controller.commitRow('delayJs', id);
+    expect(delay(controller).rows.get(id)?.undoable).toBe(true);
+  });
+
+  it('keeps a restored draft’s notes through a focus pass over every row', async () => {
+    const saved = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['a*', 'a.*', 'ok'] }
+    };
+    const { controller } = await started(fakePort({ state: 'inactive' }, saved).port);
+    for (const row of controller.draft().rows.delayJs) controller.commitRow('delayJs', row.id);
+    const [removed] = delay(controller).removed;
+    expect(removed?.diff.typed).toBe('a.*');
+    expect(delay(controller).rows.size).toBe(1);
+    expect(controller.undoCommit('delayJs', removed?.id ?? '')).toBe(true);
+    expect(texts(controller)).toEqual(['a(.*)', 'a.*', 'ok']);
+  });
+
+  it('restores removals of different batches in place, in either order', async () => {
+    for (const reverse of [false, true]) {
+      const { controller } = await started(fakePort({ state: 'inactive' }).port);
+      controller.insertRows('delayJs', ['x'], null);
+      const [id = ''] = controller.insertRows('delayJs', [''], null);
+      controller.insertRows('delayJs', ['tail'], null);
+      controller.pasteRows('delayJs', id, 'x\nb\nx', { start: 0, end: 0 });
+      controller.commitRow('delayJs', controller.focusRequest()?.id ?? '');
+      expect(texts(controller)).toEqual(['x', 'b', 'tail']);
+      const removed = delay(controller).removed.map((note) => note.id);
+      for (const target of reverse ? [...removed].reverse() : removed)
+        expect(controller.undoCommit('delayJs', target)).toBe(true);
+      expect(texts(controller)).toEqual(['x', 'x', 'b', 'x', 'tail']);
+    }
+  });
+
+  it('restores duplicates of rows elsewhere in the lane in place, last first', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    controller.insertRows('delayJs', ['x', 'y'], null);
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    controller.pasteRows('delayJs', id, 'y\nz\nx\nx\nlast', { start: 0, end: 0 });
+    expect(texts(controller)).toEqual(['x', 'y', 'z', 'last']);
+    for (const note of [...delay(controller).removed].reverse())
+      expect(controller.undoCommit('delayJs', note.id)).toBe(true);
+    expect(texts(controller)).toEqual(['x', 'y', 'y', 'z', 'x', 'x', 'last']);
+  });
+
+  it('gives the same note when a restored row is left unchanged again', async () => {
+    const { controller, id } = await typedAndLeft('gtag', ['gtag']);
+    const first = delay(controller).removed[0];
+    controller.undoCommit('delayJs', id);
+    controller.commitRow('delayJs', id);
+    expect(delay(controller).removed).toEqual([first]);
+  });
+
+  it('notes the edit after an undo, not the undone text', async () => {
+    const { controller, id } = await typedAndLeft('a*');
+    controller.undoCommit('delayJs', id);
+    controller.editRow('delayJs', id, 'a**');
+    controller.commitRow('delayJs', id);
+    expect(texts(controller)).toEqual(['a(.*)(.*)']);
+    expect(delay(controller).rows.get(id)?.diff.typed).toBe('a**');
+  });
+
+  it('holds notes in two lanes at once, each undoable', async () => {
+    const { controller, id } = await typedAndLeft('a*');
+    const [lazy = ''] = controller.insertRows('lazyload', [''], null);
+    controller.editRow('lazyload', lazy, ' logo.png ');
+    controller.commitRow('lazyload', lazy);
+    expect(controller.undoCommit('delayJs', id)).toBe(true);
+    expect(controller.undoCommit('lazyload', lazy)).toBe(true);
+    expect(texts(controller)).toEqual(['a*']);
+    expect(controller.draft().rows.lazyload.map((row) => row.text)).toEqual([' logo.png ']);
+  });
+
+  it('notes the latest of rapid edit and leave rounds', async () => {
+    const { controller, id } = await typedAndLeft('a*');
+    for (let round = 0; round < 50; round += 1) {
+      controller.editRow('delayJs', id, `b${String(round)}*`);
+      controller.commitRow('delayJs', id);
+    }
+    expect(delay(controller).rows.get(id)?.diff.typed).toBe('b49*');
+    expect(controller.undoCommit('delayJs', id)).toBe(true);
+    expect(texts(controller)).toEqual(['b49*']);
+  });
+
+  it('lists the duplicates an insert removes, and forgets a row pasted over', async () => {
+    const { controller, id } = await typedAndLeft('a*');
+    controller.insertRows('delayJs', ['x', 'x', 'y*'], null);
+    expect(texts(controller)).toEqual(['a(.*)', 'x', 'y(.*)']);
+    expect(delay(controller).removed).toHaveLength(1);
+    controller.pasteRows('delayJs', id, 'p\nq', { start: 0, end: 5 });
+    expect(delay(controller).rows.has(id)).toBe(false);
+  });
+
+  it('clears notes and the latest batch on a reset', async () => {
+    const active = {
+      ...activeRecord(),
+      set: { ...EMPTY_EXCLUSION_SET, rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: ['a.png'] } }
+    };
+    const { controller } = await started(fakePort(active, null).port);
+    const [id = ''] = controller.insertRows('delayJs', [''], null);
+    controller.editRow('delayJs', id, 'a*');
+    controller.commitRow('delayJs', id);
+    expect(controller.notes().latest).not.toBeNull();
+    controller.reset();
+    expect(controller.notes().latest).toBeNull();
+    expect(delay(controller).rows.size).toBe(0);
   });
 });

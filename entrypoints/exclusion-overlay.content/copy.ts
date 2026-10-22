@@ -16,8 +16,9 @@ import {
   LABEL_IMAGE_LAZYLOAD,
   LABEL_LOAD_JAVASCRIPT_DEFERRED
 } from '../../lib/detection/labels';
-import { storedText } from '../../lib/exclusion-builder/field-text';
+import { storedText, trimExclusionRow } from '../../lib/exclusion-builder/field-text';
 import { capText } from '../../utils/cap-text';
+import { differenceExcerpts } from '../../utils/difference-excerpt';
 import type { LaneKey } from './exclusions/draft';
 import {
   isConversion,
@@ -134,11 +135,31 @@ function dropPhrase(diff: DroppedRowDiff, copyOf: number | null): NoteText {
       return [copyOf === null ? 'a copy of another row' : `a copy of row ${String(copyOf)}`];
     case 'invalid-pattern':
       return diff.construct === undefined
-        ? ['patterns PCRE rejects']
-        : ['patterns PCRE rejects: ', quotedRow(diff.construct), ` (${diff.detail ?? 'invalid'})`];
+        ? ['patterns it can’t read']
+        : ['patterns it can’t read: ', quotedRow(diff.construct), ` (${diff.detail ?? 'invalid'})`];
     case 'safe-mode':
       return ['this row while Safe Mode for jQuery is on'];
   }
+}
+
+/**
+ * How a kept row's stored form differs from what was typed, as a note
+ * shows it: in words when only the ends' whitespace went (invisible as
+ * code), else both texts cut around their first difference (long rows
+ * would otherwise show two identical prefixes).
+ *
+ * @param stored The stored form.
+ * @param typed The row as typed (≠ `stored`).
+ */
+function storedChange(
+  stored: string,
+  typed: string
+):
+  | { readonly kind: 'ends-trimmed' }
+  | { readonly kind: 'excerpts'; readonly stored: string; readonly typed: string } {
+  if (trimExclusionRow(typed) === stored) return { kind: 'ends-trimmed' };
+  const excerpts = differenceExcerpts(stored, typed, NOTE_ROW_MAX);
+  return { kind: 'excerpts', stored: excerpts.left, typed: excerpts.right };
 }
 
 /** The word a batch's rows get in its count ("3 pasted rows"). */
@@ -161,16 +182,19 @@ export const ROW_NOTE_COPY = {
    */
   row: (diff: KeptRowDiff): NoteText => {
     const stored = storedText(diff) ?? diff.typed;
+    const change = stored === diff.typed ? null : storedChange(stored, diff.typed);
     const parts: NoteSegment[] =
-      stored === diff.typed
+      change === null
         ? []
-        : [
-            'WP Rocket stores this as ',
-            quotedRow(stored),
-            ' (you typed ',
-            quotedRow(diff.typed),
-            ').'
-          ];
+        : change.kind === 'ends-trimmed'
+          ? ['WP Rocket stores this without the spaces at its ends.']
+          : [
+              'WP Rocket stores this as ',
+              { code: change.stored },
+              ' (you typed ',
+              { code: change.typed },
+              ').'
+            ];
     if (diff.state === 'unverified') {
       parts.push(
         parts.length === 0
@@ -217,6 +241,12 @@ export const ROW_NOTE_COPY = {
    */
   restoreName: (lane: string, row: number): string => `Restore removed ${lane} row ${String(row)}`,
   /**
+   * The removed-rows list's accessible name.
+   *
+   * @param lane The lane's label.
+   */
+  removedListName: (lane: string): string => `${lane} rows removed`,
+  /**
    * Removed rows past the ones listed.
    *
    * @param count Rows not listed (≥ 1).
@@ -255,7 +285,11 @@ export function commitAnnouncement(latest: LatestCommits): string | null {
     if (only.diff.state === 'dropped') {
       return `${row} removed: WP Rocket drops ${noteToText(dropPhrase(only.diff, only.copyOf))}.`;
     }
-    return `${row}: WP Rocket stores it as ${storedText(only.diff) ?? ''}.`;
+    // The same words as the row's note.
+    const change = storedChange(storedText(only.diff) ?? '', only.diff.typed);
+    return change.kind === 'ends-trimmed'
+      ? `${row}: WP Rocket stores it without the spaces at its ends.`
+      : `${row}: WP Rocket stores it as ${change.stored}.`;
   }
   const removed = changed.filter((item) => item.diff.state === 'dropped').length;
   return ROW_NOTE_COPY.summary({

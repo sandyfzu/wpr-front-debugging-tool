@@ -7,18 +7,28 @@
  * the next edit in its lane. Pure and immutable, keyed by row id (notes
  * outlive virtual rows); the controller owns the one instance.
  *
- * Lifetimes: a row's note lasts until that row is edited, removed, or
- * committed again unchanged; removed-row notes and the summary last until
- * the next edit in the lane; undo ends with the next edit in the lane
- * (another commit or an undo is not an edit — a paste's batch stays
- * undoable while its last row is committed).
+ * Lifetimes: a row's note lasts until that row is edited or removed (a
+ * commit that leaves the row as it is — leaving it again, an arrow pass,
+ * an apply — keeps it); removed-row notes and the summary last until the
+ * next edit in the lane; undo ends with the next edit in the lane (a
+ * commit or an undo is not an edit).
+ *
+ * Row numbers a note shows ("a copy of row N", "Restore removed row N")
+ * are read from the lane as it is now, never kept from the commit.
  */
 import {
   storedRowKey,
   storedText,
   type StoredRowDiff
 } from '../../../lib/exclusion-builder/field-text';
-import { LANE_ORDER, laneFeature, type Draft, type LaneKey, type RowCommit } from './draft';
+import {
+  LANE_ORDER,
+  laneFeature,
+  type Draft,
+  type DraftRow,
+  type LaneKey,
+  type RowCommit
+} from './draft';
 
 /** What made a commit (the announcement's wording). */
 export type CommitSource = 'row' | 'insert' | 'paste' | 'candidate' | 'restore' | 'apply';
@@ -36,17 +46,22 @@ export interface RowNote {
   readonly undoable: boolean;
 }
 
-/** A row the save removed. */
+/**
+ * A row the save removed, and where it goes back: right after its anchor
+ * (the row that preceded it and stayed), past the rows removed before it
+ * under the same anchor that are back already — so restores land in place
+ * whatever their order, across batches too.
+ */
 export interface RemovedNote {
   /** The row's former id (an undo puts it back under it). */
   readonly id: string;
-  /** Its position in the lane before the commit (0-based). */
+  /** The nearest row before it that the commit kept; `null` = the lane's start. */
+  readonly anchor: string | null;
+  /** Rows removed before it under the same anchor (they go back ahead of it). */
+  readonly before: readonly string[];
+  /** Its index before the commit (the fallback place when its anchor is gone). */
   readonly index: number;
-  /** The commit batch that removed it. */
-  readonly batch: number;
   readonly diff: DroppedRowDiff;
-  /** For a duplicate: the 1-based row it copies, when still found. */
-  readonly copyOf: number | null;
 }
 
 /** A batch's count, shown when it changed more than one row of a lane. */
@@ -85,8 +100,6 @@ export interface LatestCommits {
 export interface DraftNotes {
   readonly lanes: Readonly<Record<LaneKey, LaneNotes>>;
   readonly latest: LatestCommits | null;
-  /** The last batch number issued. */
-  readonly batch: number;
 }
 
 /** A lane without notes. */
@@ -98,8 +111,7 @@ export const EMPTY_DRAFT_NOTES: DraftNotes = {
     LaneKey,
     LaneNotes
   >,
-  latest: null,
-  batch: 0
+  latest: null
 };
 
 /**
@@ -124,18 +136,73 @@ export function isConversion(diff: StoredRowDiff): boolean {
 }
 
 /**
- * The 1-based row a dropped duplicate copies, in the lane as committed.
+ * The 0-based index of the first row holding each stored form in a lane —
+ * one pass, so naming the copied row of every duplicate costs O(rows).
  *
- * @param draft The committed draft.
- * @param lane The lane.
- * @param typed The duplicate as typed.
+ * @param lane The lane's feature lane.
+ * @param rows The lane's rows.
  */
-function copiedRow(draft: Draft, lane: LaneKey, typed: string): number | null {
+export function laneKeyIndex(
+  lane: LaneKey,
+  rows: readonly DraftRow[]
+): ReadonlyMap<string, number> {
   const feature = laneFeature(lane).id;
-  const key = storedRowKey(feature, typed);
-  if (key === null) return null;
-  const index = draft.rows[lane].findIndex((row) => storedRowKey(feature, row.text) === key);
-  return index === -1 ? null : index + 1;
+  const index = new Map<string, number>();
+  rows.forEach((row, at) => {
+    const key = storedRowKey(feature, row.text);
+    if (key !== null && !index.has(key)) index.set(key, at);
+  });
+  return index;
+}
+
+/**
+ * The 1-based row a removed duplicate copies, in the lane as it is.
+ *
+ * @param lane The lane.
+ * @param keys The lane's {@link laneKeyIndex}.
+ * @param diff The removed row's diff.
+ * @returns `null` for another reason, or when no row holds its form any more.
+ */
+export function copiedRow(
+  lane: LaneKey,
+  keys: ReadonlyMap<string, number>,
+  diff: DroppedRowDiff
+): number | null {
+  if (diff.reason !== 'duplicate') return null;
+  const key = storedRowKey(laneFeature(lane).id, diff.typed);
+  const at = key === null ? undefined : keys.get(key);
+  return at === undefined ? null : at + 1;
+}
+
+/**
+ * Where a removed row goes back in the lane as it is now (0-based): after
+ * its anchor — or where its anchor would go back, when that was removed
+ * too — past the rows removed before it under that anchor that are back.
+ * Falls back to its former index (clamped) when its anchor is gone for
+ * another reason.
+ *
+ * @param note The removed row.
+ * @param removed The lane's removal notes (to follow a removed anchor).
+ * @param rows The lane's rows now.
+ */
+export function restoreIndex(
+  note: RemovedNote,
+  removed: readonly RemovedNote[],
+  rows: readonly DraftRow[]
+): number {
+  let at: number;
+  if (note.anchor === null) at = 0;
+  else {
+    const anchor = note.anchor;
+    const present = rows.findIndex((row) => row.id === anchor);
+    const anchorNote = removed.find((other) => other.id === anchor);
+    if (present !== -1) at = present + 1;
+    else if (anchorNote !== undefined) at = restoreIndex(anchorNote, removed, rows);
+    else at = Math.min(note.index, rows.length);
+  }
+  const back = new Set(note.before);
+  while (at < rows.length && back.has(rows[at]?.id ?? '')) at += 1;
+  return at;
 }
 
 /** Replace one lane's notes. */
@@ -144,9 +211,36 @@ function withLane(notes: DraftNotes, lane: LaneKey, next: LaneNotes): DraftNotes
 }
 
 /**
+ * The removal notes of one lane's batch: each dropped row's anchor (the
+ * nearest row before it that stayed — its index less the drops before it
+ * gives its place among the kept rows) and the rows removed before it under
+ * that anchor, this batch's and earlier ones'.
+ *
+ * @param drops The lane's dropped commits, in lane order.
+ * @param rows The lane's rows after the commit.
+ * @param earlier The lane's removal notes so far.
+ */
+function removalNotes(
+  drops: readonly (RowCommit & { readonly diff: DroppedRowDiff })[],
+  rows: readonly DraftRow[],
+  earlier: readonly RemovedNote[]
+): RemovedNote[] {
+  const notes: RemovedNote[] = [];
+  drops.forEach((commit, dropsBefore) => {
+    const kept = commit.index - dropsBefore;
+    const anchor = kept > 0 ? (rows[kept - 1]?.id ?? null) : null;
+    const before = [...earlier, ...notes]
+      .filter((other) => other.anchor === anchor && other.id !== commit.id)
+      .map((other) => other.id);
+    notes.push({ id: commit.id, anchor, before, index: commit.index, diff: commit.diff });
+  });
+  return notes;
+}
+
+/**
  * Record a commit batch: notes for its rows, removals, the lane summaries
- * and the batch to announce. A batch without news changes nothing but the
- * notes of rows recommitted unchanged (they lose a stale note).
+ * and the batch to announce. A row the batch left as it was keeps its note
+ * (a commit is not an edit); a batch without news changes nothing.
  *
  * @param notes The current notes.
  * @param commits The batch (every row committed, in lane order).
@@ -159,40 +253,48 @@ export function recordCommits(
   source: CommitSource,
   draft: Draft
 ): DraftNotes {
-  const batch = notes.batch + 1;
+  const newsful = commits.filter((commit) => isNews(commit.diff));
+  if (newsful.length === 0) return notes;
   const lanes = { ...notes.lanes };
   const news: CommitNews[] = [];
-  const touched = new Set<LaneKey>();
-  for (const commit of commits) {
-    const lane = lanes[commit.lane];
-    const rows = new Map(lane.rows);
-    const { diff } = commit;
-    if (!isNews(diff)) {
-      if (!rows.delete(commit.id)) continue;
-      lanes[commit.lane] = { ...lane, rows };
-      continue;
+  for (const lane of LANE_ORDER) {
+    const laneCommits = newsful.filter((commit) => commit.lane === lane);
+    if (laneCommits.length === 0) continue;
+    const rows = draft.rows[lane];
+    const current = lanes[lane];
+    const notedRows = new Map(current.rows);
+    const drops = laneCommits.filter(
+      (commit): commit is RowCommit & { readonly diff: DroppedRowDiff } =>
+        commit.diff.state === 'dropped'
+    );
+    // Built once per lane and batch, only when a duplicate needs its row.
+    const keys = drops.some((commit) => commit.diff.reason === 'duplicate')
+      ? laneKeyIndex(lane, rows)
+      : new Map<string, number>();
+    const removed = removalNotes(drops, rows, current.removed);
+    const removedIds = new Set(removed.map((note) => note.id));
+    const positions = new Map(rows.map((row, at) => [row.id, at + 1]));
+    for (const commit of laneCommits) {
+      const { diff } = commit;
+      if (diff.state === 'dropped') {
+        notedRows.delete(commit.id);
+        const copyOf = copiedRow(lane, keys, diff);
+        news.push({ lane, position: commit.index + 1, diff, copyOf });
+      } else {
+        notedRows.set(commit.id, { diff, undoable: isConversion(diff) });
+        news.push({ lane, position: positions.get(commit.id) ?? 0, diff, copyOf: null });
+      }
     }
-    touched.add(commit.lane);
-    if (diff.state === 'dropped') {
-      rows.delete(commit.id);
-      const copyOf = diff.reason === 'duplicate' ? copiedRow(draft, commit.lane, diff.typed) : null;
-      const removed = { id: commit.id, index: commit.index, batch, diff, copyOf };
-      lanes[commit.lane] = { ...lane, rows, removed: [...lane.removed, removed] };
-      news.push({ lane: commit.lane, position: commit.index + 1, diff, copyOf });
-      continue;
-    }
-    rows.set(commit.id, { diff, undoable: isConversion(diff) });
-    lanes[commit.lane] = { ...lane, rows };
-    const position = draft.rows[commit.lane].findIndex((row) => row.id === commit.id) + 1;
-    news.push({ lane: commit.lane, position, diff, copyOf: null });
+    // A batch of one change keeps the lane's summary (a paste's last row
+    // commits on its own, after the paste's batch).
+    const summary = summaryOf(news, lane, source) ?? current.summary;
+    lanes[lane] = {
+      rows: notedRows,
+      removed: [...current.removed.filter((note) => !removedIds.has(note.id)), ...removed],
+      summary
+    };
   }
-  // A batch of one change keeps the lane's summary (a paste's last row
-  // commits on its own, after the paste's batch).
-  for (const lane of touched) {
-    const summary = summaryOf(news, lane, source);
-    if (summary !== null) lanes[lane] = { ...lanes[lane], summary };
-  }
-  return news.length === 0 ? { ...notes, lanes } : { lanes, latest: { source, news }, batch };
+  return { lanes, latest: { source, news } };
 }
 
 /**
@@ -260,42 +362,45 @@ export type UndoTarget =
 
 /**
  * Take a note's undo: the note leaves (leaving the row again commits it,
- * with the same note) and the target says what to put back. A removed row
- * goes back where it was: its former index, less the rows its batch removed
- * before it that are still out.
+ * with the same note) and the target says what to put back — a removed
+ * row at {@link restoreIndex}.
  *
  * @param notes The notes.
  * @param lane The lane.
  * @param id The row (or the removed row's former id).
+ * @param rows The lane's rows now.
  * @returns The notes without that note and the target, or `null` when it has no undo.
  */
 export function takeUndo(
   notes: DraftNotes,
   lane: LaneKey,
-  id: string
+  id: string,
+  rows: readonly DraftRow[]
 ): { readonly notes: DraftNotes; readonly target: UndoTarget } | null {
   const current = notes.lanes[lane];
   const note = current.rows.get(id);
   if (note !== undefined) {
     if (!note.undoable) return null;
-    const rows = new Map(current.rows);
-    rows.delete(id);
+    const kept = new Map(current.rows);
+    kept.delete(id);
     return {
-      notes: withLane(notes, lane, { ...current, rows }),
+      notes: withLane(notes, lane, { ...current, rows: kept }),
       target: { kind: 'row', id, typed: note.diff.typed }
     };
   }
   const removed = current.removed.find((candidate) => candidate.id === id);
   if (removed === undefined) return null;
-  const before = current.removed.filter(
-    (other) => other.batch === removed.batch && other.index < removed.index
-  ).length;
   return {
     notes: withLane(notes, lane, {
       ...current,
       removed: current.removed.filter((candidate) => candidate !== removed),
       summary: null
     }),
-    target: { kind: 'removed', id, typed: removed.diff.typed, at: removed.index - before }
+    target: {
+      kind: 'removed',
+      id,
+      typed: removed.diff.typed,
+      at: restoreIndex(removed, current.removed, rows)
+    }
   };
 }

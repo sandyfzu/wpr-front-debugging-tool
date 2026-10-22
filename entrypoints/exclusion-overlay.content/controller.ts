@@ -46,7 +46,6 @@ import {
 import {
   EMPTY_DRAFT_NOTES,
   forgetRow,
-  isNews,
   recordCommits,
   retireLane,
   takeUndo,
@@ -121,14 +120,10 @@ export interface OverlayController {
   /** The latest focus request (a fresh object per request). */
   readonly focusRequest: Accessor<FocusRequest | null>;
   /**
-   * What the latest commit did to each row it touched (stored form, drop
-   * and its reason, unverified, safe-mode flag — with the typed text, so the
-   * change can be shown and undone); empty until a commit changes a row.
-   */
-  readonly commits: Accessor<readonly RowCommit[]>;
-  /**
-   * What the editor tells about committed rows (row notes, removals, the
-   * latest batch to announce), with their undo state.
+   * What the editor tells about committed rows — WP Rocket's save applied
+   * at commit (stored form, drop and its reason, unverified, safe-mode flag,
+   * each with the typed text): row notes, removals and the latest batch to
+   * announce, with their undo state.
    */
   readonly notes: Accessor<DraftNotes>;
   /**
@@ -237,7 +232,6 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [saveState, setSaveState] = createSignal<SaveState>({ kind: 'idle' });
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
-  const [commits, setCommits] = createSignal<readonly RowCommit[]>([]);
   const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
@@ -343,8 +337,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   };
 
   /**
-   * Take a commit: store its draft, publish what it changed (rows stored as
-   * typed are not news) and record its notes.
+   * Take a commit: store its draft and record its notes (rows stored as
+   * typed are not news).
    *
    * @param source What made the commit (the announcement's wording).
    * @returns The committed draft.
@@ -357,12 +351,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return committed.draft;
   };
 
-  /** Publish a commit's news and record its notes. */
+  /** Record a commit's notes (a batch without news changes nothing). */
   const publishCommits = (committed: Committed, source: CommitSource): void => {
-    const changed = committed.commits.filter(({ diff }) => isNews(diff));
-    if (changed.length > 0) setCommits(changed);
-    if (committed.commits.length > 0)
-      setNotes((current) => recordCommits(current, committed.commits, source, committed.draft));
+    setNotes((current) => recordCommits(current, committed.commits, source, committed.draft));
   };
 
   /** An edit in a lane: its undos end (and the edited row's note leaves). */
@@ -474,7 +465,6 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dirty,
     invalidCount,
     focusRequest,
-    commits,
     notes,
     rowProblem,
     start: () => {
@@ -566,7 +556,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     undoCommit: (lane, id) => {
       if (!editable()) return false;
-      const taken = takeUndo(notes(), lane, id);
+      const taken = takeUndo(notes(), lane, id, draft().rows[lane]);
       if (taken === null) return false;
       const { target } = taken;
       const next =
