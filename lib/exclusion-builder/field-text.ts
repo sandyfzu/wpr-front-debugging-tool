@@ -417,10 +417,15 @@ export function trimExclusionRow(row: string): string {
 /**
  * Characters a stored row keeps that a reader cannot tell apart from a
  * plain space or from nothing: every non-ASCII whitespace (no-break,
- * narrow, ideographic, line-separator spaces, BOM…) and the zero-width
- * marks (zero-width space/joiners, word joiner, next line, soft hyphen).
+ * narrow, ideographic, line-separator spaces, BOM…), next line (U+0085),
+ * and every Unicode default-ignorable code point — zero-width space and
+ * joiners, word joiner, soft hyphen, bidi marks (LRM, RLM, ALM),
+ * embeddings/overrides (U+202A–U+202E), isolates (U+2066–U+2069),
+ * variation selectors, tag characters, Hangul fillers. The save keeps them
+ * all. Visible format characters (e.g. the Arabic number signs) are not
+ * default-ignorable, so they are not flagged.
  */
-const INVISIBLE_KEPT = /[^\S \t\n\r\v\f]|[​-‍⁠\u0085­]/;
+const INVISIBLE_KEPT = /[^\S \t\n\r\v\f]|\u0085|\p{Default_Ignorable_Code_Point}/u;
 
 /**
  * Whether a row carries characters the save keeps but the editor cannot

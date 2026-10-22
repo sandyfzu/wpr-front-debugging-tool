@@ -175,7 +175,7 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
 
 /** A row with invisible characters WP Rocket keeps (non-blocking). */
 export const INVISIBLE_ROW_NOTE =
-  'This row has invisible characters WP Rocket keeps (non-breaking, zero-width or soft-hyphen characters): they must match too.';
+  'This row has invisible characters WP Rocket keeps (non-breaking spaces, zero-width, text-direction or soft-hyphen characters): they must match too.';
 
 /**
  * The words a row warning gets in the editor: WP Rocket's reading, then
