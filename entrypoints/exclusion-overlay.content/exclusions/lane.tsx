@@ -128,6 +128,22 @@ function selectionOf(field: EventTarget | null, row: DraftRow): RowSelection {
 }
 
 /**
+ * Whether a key press would edit a row's text (a character, deletion, or
+ * Enter's new row) — not a move, a shortcut or a modifier alone.
+ *
+ * @param event The key press.
+ */
+function isEditingKey(event: KeyboardEvent): boolean {
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  return (
+    event.key.length === 1 ||
+    event.key === 'Backspace' ||
+    event.key === 'Delete' ||
+    event.key === 'Enter'
+  );
+}
+
+/**
  * The editor lane.
  *
  * @param props See {@link LaneProps}.
@@ -258,7 +274,10 @@ export function Lane(props: LaneProps): JSX.Element {
       moveFocus(row.id, event.key === 'ArrowDown' ? 1 : -1);
       return;
     }
-    if (props.locked) return;
+    if (props.locked) {
+      if (isEditingKey(event)) tellHeld();
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       props.controller.insertRows(props.lane, [''], row.id);
@@ -271,6 +290,7 @@ export function Lane(props: LaneProps): JSX.Element {
   const onRowPaste = (row: DraftRow, event: ClipboardEvent): void => {
     if (props.locked) {
       event.preventDefault();
+      tellHeld();
       return;
     }
     const text = event.clipboardData?.getData('text/plain') ?? '';
@@ -294,6 +314,32 @@ export function Lane(props: LaneProps): JSX.Element {
   onCleanup(() => {
     mounted = false;
   });
+
+  /** Told this hold already (announced once per long paste, not per keystroke). */
+  let toldHeld = false;
+  /**
+   * Say that typing or a paste was not taken because a long paste is still
+   * landing (shown inline until the rows change, announced once per hold);
+   * a lock for any other reason (an action in flight) says nothing here.
+   */
+  const tellHeld = (): void => {
+    if (!props.controller.pasting()) return;
+    setPasteMessage(PASTE_COPY.held);
+    if (toldHeld) return;
+    toldHeld = true;
+    props.announce(PASTE_COPY.held);
+  };
+  createEffect(
+    on(
+      () => props.controller.pasting(),
+      (pasting) => {
+        if (pasting) return;
+        toldHeld = false;
+        if (pasteMessage() === PASTE_COPY.held) setPasteMessage(null);
+      },
+      { defer: true }
+    )
+  );
 
   /** Say what a paste left out (shown inline and announced). */
   const tellPaste = (outcome: SettledPasteOutcome): void => {
@@ -321,6 +367,8 @@ export function Lane(props: LaneProps): JSX.Element {
     <section
       class="xo-lane"
       aria-labelledby={headingId()}
+      // A long paste is landing in this lane's rows.
+      aria-busy={props.controller.pasting() ? 'true' : undefined}
       ref={root}
       // Focus that landed on a row by any other way (click, Tab) ends a
       // pending arrow move.

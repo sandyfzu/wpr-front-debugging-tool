@@ -102,6 +102,7 @@ function allWords(): string[] {
     COPY_ALL_COPY.empty,
     COPY_ALL_COPY.failed,
     INVISIBLE_ROW_NOTE,
+    PASTE_COPY.held,
     PASTE_COPY.laneFull(500),
     PASTE_COPY.dropped(1, 500),
     PASTE_COPY.dropped(3, 500),

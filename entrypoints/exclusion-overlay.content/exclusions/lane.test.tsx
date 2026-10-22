@@ -12,7 +12,7 @@ import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { SET_READING_DELAY_MS } from './set-readings';
 import { Lane } from './lane';
-import { appliedRowWarningNote } from '../copy';
+import { PASTE_COPY, appliedRowWarningNote } from '../copy';
 import type { LaneKey } from './draft';
 
 /** Renders every row (happy-dom has no layout). */
@@ -301,6 +301,53 @@ describe('Lane', () => {
       expect(other.draft().rows.delayJs).toHaveLength(max);
     });
     expect(second.announce).not.toHaveBeenCalled();
+  });
+
+  it('says typing and a second paste wait while a long paste lands, announcing it once', async () => {
+    const timers: (() => void)[] = [];
+    const controller = await readyController((run) => {
+      timers.push(run);
+      return () => undefined;
+    });
+    controller.insertRows('delayJs', ['x', 'y'], null);
+    const { setLocked, announce } = mountLane(controller);
+    const lines = Array.from({ length: 100 }, (_, n) => `l${String(n)}`).join('\n');
+    input(1).dispatchEvent(pasteEvent(`\n${lines}`));
+    // The overlay locks the rows while the paste holds the draft.
+    setLocked(!controller.editable());
+    expect(screen.getByRole('region').getAttribute('aria-busy')).toBe('true');
+    // Moves and shortcuts are not edits: nothing said.
+    fireEvent.keyDown(input(2), { key: 'ArrowLeft' });
+    fireEvent.keyDown(input(2), { key: 'c', ctrlKey: true });
+    expect(screen.queryByText(PASTE_COPY.held)).toBeNull();
+    fireEvent.keyDown(input(2), { key: 'z' });
+    const second = pasteEvent('p\nq');
+    input(2).dispatchEvent(second);
+    expect(second.defaultPrevented).toBe(true);
+    fireEvent.keyDown(input(2), { key: 'Backspace' });
+    expect(screen.getByText(PASTE_COPY.held)).toBeTruthy();
+    expect(announce.mock.calls.filter(([text]) => text === PASTE_COPY.held)).toHaveLength(1);
+    while (timers.length > 0) timers.shift()?.();
+    await waitFor(() => {
+      expect(controller.pasting()).toBe(false);
+    });
+    setLocked(!controller.editable());
+    expect(screen.queryByText(PASTE_COPY.held)).toBeNull();
+    expect(screen.getByRole('region').getAttribute('aria-busy')).toBeNull();
+    // Only the first paste landed; the second one's lines are nowhere.
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).not.toContain('p');
+    expect(controller.draft().rows.delayJs).toHaveLength(102);
+  });
+
+  it('says nothing about a paste hold while the lane is locked for another reason', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['x'], null);
+    const { setLocked, announce } = mountLane(controller);
+    setLocked(true);
+    fireEvent.keyDown(input(1), { key: 'z' });
+    input(1).dispatchEvent(pasteEvent('p\nq'));
+    expect(screen.queryByText(PASTE_COPY.held)).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('splits the row on a trailing line feed too (the field would drop it)', async () => {

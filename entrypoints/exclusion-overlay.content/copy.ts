@@ -494,8 +494,10 @@ export function commitAnnouncement(latest: LatestCommits): string | null {
   });
 }
 
-/** A paste the lane cap cut short. */
+/** A paste the lane cap cut short, or one still landing. */
 export const PASTE_COPY = {
+  /** Typing or a second paste while a long paste's rows are still landing (nothing taken). */
+  held: 'Still adding the pasted rows: type or paste again once they are in.',
   /**
    * Nothing pasted: the lane holds no more rows.
    *

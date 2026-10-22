@@ -483,6 +483,23 @@ describe('editing and autosave', () => {
       expect(result.applied).toHaveLength(1);
     });
 
+    it('says it is pasting, taking no edit or second paste until the rows land', async () => {
+      const { controller, clock } = await started(fakePort({ state: 'inactive' }).port);
+      const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 1, end: 1 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      expect(controller.pasting()).toBe(true);
+      // The lane says so: a second paste's selection would point into rows about to change.
+      expect(controller.pasteRows('delayJs', id, 'p\nq', { start: 0, end: 0 })).toEqual({
+        kind: 'ignored'
+      });
+      expect(controller.insertRows('delayJs', ['y'], null)).toEqual([]);
+      await runSlices(clock);
+      await outcome.done;
+      expect(controller.pasting()).toBe(false);
+      expect(controller.draft().rows.delayJs.map((row) => row.text)).not.toContain('p');
+    });
+
     it('settles a paste cut short by closing as ignored, with no slice left', async () => {
       const fake = fakePort({ state: 'inactive' });
       const { controller, clock, dispose } = await started(fake.port);
