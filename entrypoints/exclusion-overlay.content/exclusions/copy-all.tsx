@@ -1,7 +1,9 @@
 /**
  * A lane's copy-all control: copies the lane's exclusions as WP Rocket
- * stores them (the lane holds them in that form) — one per line, in list
- * order, blank rows left out.
+ * stores them, in the form it takes them (`exclusionCopyText`: the settings
+ * field's lines, or the `rocket_lrc_exclusions` filter where there is no
+ * field), in list order, blank rows left out. The lane is committed first,
+ * so a row still being typed is copied in its stored form.
  * States: idle · copying (busy, repeat clicks ignored) · copied (check +
  * "Copied" for the shared flash window — the accessible name says "Copied"
  * too — announced with the count) · failed (announced, plus an inline line
@@ -17,16 +19,21 @@ import Copy from 'lucide-solid/icons/copy';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
 import Info from 'lucide-solid/icons/info';
 import { COPIED_FLASH_MS } from '../../../components/ui/copy-flash';
-import { exclusionFieldText } from '../../../lib/exclusion-builder/field-text';
+import { exclusionCopyText } from '../../../lib/exclusion-builder/copy-form';
 import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { COPY_ALL_COPY, LANE_COPY } from '../copy';
-import { nonBlankRows, type LaneKey } from './draft';
+import { laneFeature, nonBlankRows, type LaneKey } from './draft';
 
 /** Props of {@link CopyAll}. */
 export interface CopyAllProps {
   readonly lane: LaneKey;
-  /** The lane's rows as typed (blank and untrimmed ones included). */
+  /** The lane's rows (blank ones included; stored once committed). */
   readonly rows: readonly string[];
+  /**
+   * Commit the lane's rows before copying (a row still being typed — the
+   * control was activated without focus leaving it — is copied stored).
+   */
+  readonly commit: () => void;
   /** Polite announcement in the overlay's live region. */
   readonly announce: (text: string) => void;
   readonly write: ClipboardWriter;
@@ -44,7 +51,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
   const [state, setState] = createSignal<CopyState>('idle');
   // The lane's rows are WP Rocket's stored form (blank ones are unfinished edits).
   const stored = createMemo(() => nonBlankRows(props.rows));
-  const text = createMemo(() => exclusionFieldText(stored()));
+  const text = createMemo(() => exclusionCopyText(laneFeature(props.lane).id, stored()));
   const count = (): number => stored().length;
   const empty = (): boolean => count() === 0;
   const hint = (): string => (empty() ? COPY_ALL_COPY.empty : LANE_COPY[props.lane].copyHint);
@@ -73,6 +80,8 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
   const copy = async (): Promise<void> => {
     if (state() === 'copying' || button === undefined) return;
     clearTimeout(flash);
+    // The rows update synchronously: what follows reads the stored form.
+    props.commit();
     if (empty()) {
       setState('explained');
       props.announce(COPY_ALL_COPY.empty);
@@ -91,7 +100,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
     if (disposed) return;
     if (outcome === 'copied') {
       setState('copied');
-      props.announce(COPY_ALL_COPY.copied(copied));
+      props.announce(COPY_ALL_COPY.copied(copied, LANE_COPY[props.lane].copiedAs));
       flash = setTimeout(() => setState('idle'), COPIED_FLASH_MS);
     } else {
       setState('failed');

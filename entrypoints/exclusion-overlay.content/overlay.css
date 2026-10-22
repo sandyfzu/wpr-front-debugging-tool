@@ -655,6 +655,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* What a count could not tell: supporting text, never color alone (words). */
+.xo-lane-caveat {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .xo-switch {
   display: inline-flex;
   align-items: center;

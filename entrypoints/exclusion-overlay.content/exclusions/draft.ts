@@ -18,7 +18,7 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
-import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
+import { featureRowProblems, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import {
   saveExclusionRow,
   saveExclusionRows,
@@ -590,6 +590,18 @@ export function draftChars(draft: Draft): number {
   const set = draftToSet(draft);
   for (const lane of LANE_ORDER) for (const row of set.rows[lane]) chars += row.length;
   return chars;
+}
+
+/**
+ * A row's non-blocking warning, or null: a row WP Rocket accepts as written
+ * that is almost surely a mistake (an Automatic Lazy Rendering row of only
+ * whitespace — the editor leaves such a blank row out).
+ *
+ * @param lane The row's lane.
+ * @param text The row as it is.
+ */
+export function rowWarning(lane: LaneKey, text: string): string | null {
+  return featureRowWarnings(laneFeature(lane).id, [text])[0]?.reason ?? null;
 }
 
 /**

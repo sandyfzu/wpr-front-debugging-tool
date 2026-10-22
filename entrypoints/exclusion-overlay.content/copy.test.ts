@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { INTERCEPTION_UNAVAILABLE_CAUSES } from '../../lib/messaging/exclusion-session';
 import {
   COPY_ALL_COPY,
+  COUNT_COPY,
   DOCUMENT_FAILURE_COPY,
+  INLINE_JQUERY_LINE,
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
   NOTE_ROW_MAX,
@@ -12,6 +14,7 @@ import {
   UNAVAILABLE_COPY,
   commitAnnouncement,
   noteToText,
+  rowWarningNote,
   saveStateWords,
   sessionIndicator,
   unmodifiedCopy,
@@ -32,8 +35,21 @@ function allWords(): string[] {
       copy.label,
       copy.rowHint,
       copy.absent,
-      copy.copyHint
+      copy.copyHint,
+      ...(copy.limitHint === undefined ? [] : [copy.limitHint]),
+      ...(copy.rowsNote === undefined ? [] : [copy.rowsNote])
     ]),
+    INLINE_JQUERY_LINE,
+    rowWarningNote('Row is only whitespace — x'),
+    ...COUNT_COPY.caveats({
+      candidates: 9,
+      rewritten: 1,
+      featureWide: false,
+      undetermined: 2,
+      approximate: 1,
+      inlineUnknown: true,
+      bestEffort: true
+    }),
     COPY_ALL_COPY.empty,
     COPY_ALL_COPY.failed,
     INVISIBLE_ROW_NOTE,
@@ -377,6 +393,79 @@ describe('long and whitespace-only changes (audit round)', () => {
   it('names the removed-rows list by its lane', () => {
     expect(ROW_NOTE_COPY.removedListName('LazyLoad for images')).toBe(
       'LazyLoad for images rows removed'
+    );
+  });
+});
+
+describe('lane counts and hints (K.5a.2)', () => {
+  const exact = {
+    candidates: 9,
+    rewritten: 3,
+    featureWide: false,
+    undetermined: 0,
+    approximate: 0,
+    inlineUnknown: false,
+    bestEffort: false
+  };
+
+  it('words the count, feature-wide or row-driven, with no caveat when exact', () => {
+    expect(COUNT_COPY.line(exact, 'delayed scripts')).toBe('3 of 9 delayed scripts restored');
+    expect(COUNT_COPY.line({ ...exact, featureWide: true, rewritten: 9 }, 'lazy images')).toBe(
+      'All 9 lazy images restored (feature disabled)'
+    );
+    expect(COUNT_COPY.caveats(exact)).toEqual([]);
+  });
+
+  it('says what the count could not tell, one line each, singular and plural', () => {
+    expect(COUNT_COPY.caveats({ ...exact, undetermined: 1 })).toEqual([
+      '1 left as served: how WP Rocket matched it can’t be read from this page.'
+    ]);
+    expect(
+      COUNT_COPY.caveats({
+        ...exact,
+        undetermined: 2,
+        approximate: 3,
+        inlineUnknown: true,
+        bestEffort: true
+      })
+    ).toEqual([
+      '2 left as served: how WP Rocket matched them can’t be read from this page.',
+      '3 matched against a rebuilt tag: WP Rocket’s original wasn’t on the page.',
+      'Whether inline jQuery stays wrapped depends on your existing Defer JS exclusions.',
+      'Row counts are best effort: WP Rocket matches these rows as one pattern, so the first matching row is credited.'
+    ]);
+  });
+
+  it('counts Defer JS scripts with the wrapped inline ones, and names its limits', () => {
+    expect(LANE_COPY.deferJs.noun).toBe('deferred and wrapped scripts');
+    expect(LANE_COPY.deferJs.limitHint).toMatch(
+      /remote exclusion lists aren’t read here.*rocket_exclude_defer_js, rocket_defer_jquery_patterns and rocket_defer_inline_exclusions/
+    );
+    for (const lane of ['delayJs', 'lazyload', 'lazyRender'] as const)
+      expect(LANE_COPY[lane].limitHint).toBeUndefined();
+  });
+
+  it('hints each lane by WP Rocket’s own matching subject and case', () => {
+    expect(LANE_COPY.delayJs.rowHint).toMatch(/script element, case-insensitively$/);
+    expect(LANE_COPY.deferJs.rowHint).toMatch(/src value, case-insensitively$/);
+    expect(LANE_COPY.lazyload.rowHint).toMatch(/image’s attributes, case-sensitively/);
+    expect(LANE_COPY.lazyRender.rowHint).toMatch(
+      /case-insensitively against the element’s opening tag$/
+    );
+  });
+
+  it('copies Automatic Lazy Rendering as a filter, and says so', () => {
+    expect(LANE_COPY.lazyRender.copyHint).toMatch(/rocket_lrc_exclusions filter/);
+    expect(LANE_COPY.lazyRender.rowsNote).toMatch(/^Excluding an element re-keys/);
+    expect(COPY_ALL_COPY.copied(2, LANE_COPY.lazyRender.copiedAs)).toBe(
+      'Copied 2 exclusions as a rocket_lrc_exclusions filter'
+    );
+    expect(COPY_ALL_COPY.copied(1, LANE_COPY.delayJs.copiedAs)).toBe('Copied 1 exclusion');
+  });
+
+  it('tells what the editor does with a warned row', () => {
+    expect(rowWarningNote('Row is only whitespace — x')).toBe(
+      'Row is only whitespace — x. It is left out here: a blank row is an unfinished edit.'
     );
   });
 });

@@ -23,6 +23,7 @@ import {
   reinsertRow,
   removeRow,
   restoreDraft,
+  rowWarning,
   sameSet,
   setDisable,
   splitLines,
@@ -590,5 +591,15 @@ describe('createRowValidator', () => {
     validate('delayJs', 'a');
     validate('delayJs', 'b');
     expect(validate('delayJs', '(')).toMatch(/^WP Rocket drops this row/);
+  });
+});
+
+describe('rowWarning', () => {
+  it('warns on a whitespace-only lazy-render row only', () => {
+    expect(rowWarning('lazyRender', '  ')).toMatch(/^Row is only whitespace/);
+    expect(rowWarning('lazyRender', '')).toBeNull();
+    expect(rowWarning('lazyRender', 'id="a"')).toBeNull();
+    expect(rowWarning('lazyload', '  ')).toBeNull();
+    expect(rowWarning('delayJs', '  ')).toBeNull();
   });
 });

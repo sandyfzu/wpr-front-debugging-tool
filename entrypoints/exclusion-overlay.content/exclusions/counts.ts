@@ -7,7 +7,7 @@ import { trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import { laneFeature, type LaneKey } from './draft';
 
-/** One lane's counts on the rewritten page. */
+/** One lane's counts on the rewritten page, with what the engine could not tell. */
 export interface LaneCounts {
   /** Elements the feature had acted on (candidates for the exclusion). */
   readonly candidates: number;
@@ -15,6 +15,21 @@ export interface LaneCounts {
   readonly rewritten: number;
   /** The feature-wide disable, not rows, drove the run. */
   readonly featureWide: boolean;
+  /**
+   * Candidates left as served because how WP Rocket matched them cannot be
+   * read off the page (the inline-jQuery share excluded: see `inlineUnknown`).
+   */
+  readonly undetermined: number;
+  /** Candidates matched against a rebuilt tag (WP Rocket's original was not on the page). */
+  readonly approximate: number;
+  /**
+   * Defer JS: wrapped inline scripts were left as served because whether WP
+   * Rocket's inline-jQuery pass runs depends on the site's own exclusions —
+   * told once for the page, never counted per script.
+   */
+  readonly inlineUnknown: boolean;
+  /** The per-row counts credit the first matching row only (WP Rocket matches the rows as one pattern). */
+  readonly bestEffort: boolean;
 }
 
 /**
@@ -39,10 +54,15 @@ export function laneReport(
  */
 export function laneCounts(report: TransformReport | undefined): LaneCounts | null {
   if (report === undefined) return null;
+  const inline = report.inlineUndetermined ?? 0;
   return {
     candidates: report.candidates,
     rewritten: report.rewritten,
-    featureWide: report.featureWide
+    featureWide: report.featureWide,
+    undetermined: (report.undetermined ?? 0) - inline,
+    approximate: report.approximate ?? 0,
+    inlineUnknown: inline > 0,
+    bestEffort: report.rowCountsBestEffort === true
   };
 }
 

@@ -952,3 +952,17 @@ describe('notes outlive commits that change nothing (audit round)', () => {
     expect(delay(controller).rows.size).toBe(0);
   });
 });
+
+describe('commitLane', () => {
+  it('commits every row of one lane (before a copy), leaving other lanes typed', async () => {
+    const { controller } = await started(fakePort({ state: 'inactive' }).port);
+    const [delay = ''] = controller.insertRows('delayJs', [''], null);
+    const [lazy = ''] = controller.insertRows('lazyload', [''], null);
+    controller.editRow('delayJs', delay, ' a* ');
+    controller.editRow('lazyload', lazy, ' b.png ');
+    controller.commitLane('delayJs');
+    expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['a(.*)']);
+    expect(controller.draft().rows.lazyload.map((row) => row.text)).toEqual([' b.png ']);
+    expect(controller.notes().lanes.delayJs.rows.get(delay)?.undoable).toBe(true);
+  });
+});

@@ -16,9 +16,11 @@ import {
   LABEL_IMAGE_LAZYLOAD,
   LABEL_LOAD_JAVASCRIPT_DEFERRED
 } from '../../lib/detection/labels';
+import { LAZY_RENDER_EXCLUSIONS_FILTER } from '../../lib/exclusion-builder/copy-form';
 import { storedText, trimExclusionRow } from '../../lib/exclusion-builder/field-text';
 import { capText } from '../../utils/cap-text';
 import { differenceExcerpts } from '../../utils/difference-excerpt';
+import type { LaneCounts } from './exclusions/counts';
 import type { LaneKey } from './exclusions/draft';
 import {
   isConversion,
@@ -50,6 +52,12 @@ export interface LaneCopy {
   readonly absent: string;
   /** Where the lane's copied lines go (the copy-all control's hint). */
   readonly copyHint: string;
+  /** What copy-all copies, after "Copied N exclusions" (empty: the field text). */
+  readonly copiedAs: string;
+  /** What this preview cannot see of WP Rocket's own matching (a lane line). */
+  readonly limitHint?: string;
+  /** Shown while the lane holds rows (what they do beyond matching). */
+  readonly rowsNote?: string;
 }
 
 /** The settings-field hint shared by the lanes WP Rocket has a field for. */
@@ -60,42 +68,102 @@ const FIELD_COPY_HINT =
 export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   delayJs: {
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
-    rowHint: 'Regular expression, matched against the delayed script’s markup',
+    rowHint: 'Regular expression, matched against the script element, case-insensitively',
     placeholder: 'wp-content/plugins/slider/',
     noun: 'delayed scripts',
     absent: 'No delayed scripts on this page.',
-    copyHint: FIELD_COPY_HINT
+    copyHint: FIELD_COPY_HINT,
+    copiedAs: ''
   },
   deferJs: {
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
-    rowHint: 'Regular expression, matched against the script URL',
+    rowHint: 'Regular expression, matched against the script’s src value, case-insensitively',
     placeholder: 'jquery\\.min\\.js',
-    noun: 'deferred scripts',
+    // WP Rocket's inline-jQuery wrapping is Defer JS's work too: counted with them.
+    noun: 'deferred and wrapped scripts',
     absent: 'No deferred scripts on this page.',
-    copyHint: FIELD_COPY_HINT
+    copyHint: FIELD_COPY_HINT,
+    copiedAs: '',
+    limitHint:
+      'WP Rocket’s remote exclusion lists aren’t read here, and the rocket_exclude_defer_js, rocket_defer_jquery_patterns and rocket_defer_inline_exclusions filters are assumed unused.'
   },
   lazyRender: {
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
-    rowHint: 'Text, matched against the element’s opening tag',
+    rowHint: 'Text, matched case-insensitively against the element’s opening tag',
     placeholder: 'id="footer"',
     noun: 'lazily rendered elements',
     absent: 'No lazily rendered elements on this page.',
-    copyHint:
-      'Copies the exclusions one per line; WP Rocket takes these through the rocket_lrc_exclusions filter, not a settings field'
+    copyHint: `Copies a ready-to-paste ${LAZY_RENDER_EXCLUSIONS_FILTER} filter (PHP, for a must-use plugin or the theme’s functions.php): WP Rocket has no settings field for these`,
+    copiedAs: ` as a ${LAZY_RENDER_EXCLUSIONS_FILTER} filter`,
+    rowsNote:
+      'Excluding an element re-keys the elements after it: WP Rocket keeps them rendered until its lazy-render data is regenerated.'
   },
   lazyload: {
     label: LABEL_IMAGE_LAZYLOAD,
-    rowHint: 'Text, matched against the image tag with its real source',
+    rowHint:
+      'Text, matched against the image’s attributes, case-sensitively (images only: pictures, iframes and background images aren’t previewed)',
     placeholder: 'hero.jpg',
     noun: 'lazy images',
     absent: 'No lazy images on this page.',
-    copyHint: FIELD_COPY_HINT
+    copyHint: FIELD_COPY_HINT,
+    copiedAs: ''
   }
 };
 
 /** A row with invisible characters WP Rocket keeps (non-blocking). */
 export const INVISIBLE_ROW_NOTE =
   'This row has invisible characters WP Rocket keeps (non-breaking, zero-width or soft-hyphen characters): they must match too.';
+
+/**
+ * The words a row warning gets in the editor: WP Rocket's reading, then
+ * what the editor does with the row (a blank row is an unfinished edit —
+ * never sent, never copied).
+ *
+ * @param reason The engine's warning.
+ */
+export function rowWarningNote(reason: string): string {
+  return `${reason}. It is left out here: a blank row is an unfinished edit.`;
+}
+
+/** Inline-jQuery wrapping that only the site's own exclusions decide (one page-level line). */
+export const INLINE_JQUERY_LINE =
+  'Whether inline jQuery stays wrapped depends on your existing Defer JS exclusions';
+
+/** A lane's count line and the caveats under it. */
+export const COUNT_COPY = {
+  /**
+   * The lane's count, e.g. "3 of 9 delayed scripts restored".
+   *
+   * @param counts The lane's counts.
+   * @param noun What is counted (plural).
+   */
+  line: (counts: LaneCounts, noun: string): string =>
+    counts.featureWide
+      ? `All ${String(counts.rewritten)} ${noun} restored (feature disabled)`
+      : `${String(counts.rewritten)} of ${String(counts.candidates)} ${noun} restored`,
+  /**
+   * What the count could not tell, one line each (none when it is exact).
+   *
+   * @param counts The lane's counts.
+   */
+  caveats: (counts: LaneCounts): string[] => {
+    const lines: string[] = [];
+    if (counts.undetermined > 0)
+      lines.push(
+        `${String(counts.undetermined)} left as served: how WP Rocket matched ${counts.undetermined === 1 ? 'it' : 'them'} can’t be read from this page.`
+      );
+    if (counts.approximate > 0)
+      lines.push(
+        `${String(counts.approximate)} matched against a rebuilt tag: WP Rocket’s original wasn’t on the page.`
+      );
+    if (counts.inlineUnknown) lines.push(`${INLINE_JQUERY_LINE}.`);
+    if (counts.bestEffort)
+      lines.push(
+        'Row counts are best effort: WP Rocket matches these rows as one pattern, so the first matching row is credited.'
+      );
+    return lines;
+  }
+} as const;
 
 /** A text run of a note: plain words, or a row's text shown as code. */
 export type NoteSegment = string | { readonly code: string };
@@ -339,9 +407,10 @@ export const COPY_ALL_COPY = {
    * The success announcement.
    *
    * @param count Exclusions copied (≥ 1).
+   * @param as What they were copied as (the lane's `copiedAs`; empty: field text).
    */
-  copied: (count: number): string =>
-    `Copied ${String(count)} ${count === 1 ? 'exclusion' : 'exclusions'}`,
+  copied: (count: number, as = ''): string =>
+    `Copied ${String(count)} ${count === 1 ? 'exclusion' : 'exclusions'}${as}`,
   /** Why the control does nothing on an empty lane. */
   empty: 'Nothing to copy yet: add an exclusion to this lane first.',
   /** A refused copy, with the way forward. */

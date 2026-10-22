@@ -25,11 +25,19 @@ import { hasInvisibleKeptCharacters } from '../../../lib/exclusion-builder/field
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
-import { INVISIBLE_ROW_NOTE, LANE_COPY, PASTE_COPY, ROW_NOTE_COPY, type NoteText } from '../copy';
+import {
+  COUNT_COPY,
+  INVISIBLE_ROW_NOTE,
+  LANE_COPY,
+  PASTE_COPY,
+  ROW_NOTE_COPY,
+  rowWarningNote,
+  type NoteText
+} from '../copy';
 import type { OverlayController, PasteOutcome } from '../controller';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
-import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
+import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 import { copiedRow, laneKeyIndex, restoreIndex, type LaneNotes, type RowNote } from './row-notes';
 
 /** Seed row height (px) before measurement: one input line plus padding. */
@@ -82,15 +90,6 @@ function pasteNote(outcome: PasteOutcome): string | null {
   return null;
 }
 
-/** The lane's count line, e.g. "3 of 9 delayed scripts restored". */
-function countLine(report: TransformReport | undefined, noun: string): string | null {
-  const counts = laneCounts(report);
-  if (counts === null) return null;
-  if (counts.featureWide)
-    return `All ${String(counts.rewritten)} ${noun} restored (feature disabled)`;
-  return `${String(counts.rewritten)} of ${String(counts.candidates)} ${noun} restored`;
-}
-
 /**
  * Where a paste lands in a row: its input's selection, or the end of its text
  * when the input has none.
@@ -119,6 +118,9 @@ export function Lane(props: LaneProps): JSX.Element {
     return key !== null && props.controller.draft().disable[key];
   };
   const headingId = (): string => `xo-lane-${props.lane}`;
+  const counts = createMemo(() => laneCounts(props.report));
+  /** The lane holds a row that is not an unfinished (blank) edit. */
+  const hasRows = createMemo(() => rows().some((row) => !isBlankRow(row.text)));
   const [scrollTo, setScrollTo] = createSignal<VirtualScrollRequest | null>(null);
   let root: HTMLElement | undefined;
 
@@ -272,8 +274,18 @@ export function Lane(props: LaneProps): JSX.Element {
             {copy().label}
           </h2>
           <span class="xo-lane-hint">{copy().rowHint}</span>
-          <Show when={countLine(props.report, copy().noun)}>
-            {(line) => <span class="xo-lane-count">{line()}</span>}
+          <Show when={copy().limitHint}>
+            {(hint) => <span class="xo-lane-hint">{hint()}</span>}
+          </Show>
+          <Show when={counts()}>
+            {(current) => (
+              <>
+                <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
+                <For each={COUNT_COPY.caveats(current())}>
+                  {(caveat) => <span class="xo-lane-caveat">{caveat}</span>}
+                </For>
+              </>
+            )}
           </Show>
         </div>
         <Show when={toggleKey()}>
@@ -304,6 +316,9 @@ export function Lane(props: LaneProps): JSX.Element {
       </Show>
       <Show when={!disabled() && props.pageCount === 0 && rows().length === 0}>
         <p class="xo-lane-note">{copy().absent}</p>
+      </Show>
+      <Show when={hasRows() ? copy().rowsNote : undefined}>
+        {(note) => <p class="xo-lane-note">{note()}</p>}
       </Show>
       <Show when={rows().length > 0}>
         <div class="xo-rows" data-scroll={rows().length > INLINE_ROWS ? 'own' : undefined}>
@@ -412,6 +427,9 @@ export function Lane(props: LaneProps): JSX.Element {
         <CopyAll
           lane={props.lane}
           rows={rows().map((row) => row.text)}
+          commit={() => {
+            props.controller.commitLane(props.lane);
+          }}
           announce={props.announce}
           write={
             props.writeClipboard ??
@@ -535,8 +553,10 @@ function focusLeft(field: HTMLInputElement): boolean {
  * remove control, its inline problem, and one non-blocking note slot: what
  * the last commit did (stored form with the typed text, unverified, safe
  * mode — with Undo while the lane is unedited) merged with the
- * invisible-characters note (no-break spaces at its ends, zero-width
- * characters WP Rocket keeps — otherwise a silent "No match").
+ * row's non-blocking warning (WP Rocket accepts the row; it is almost
+ * surely a mistake) and the invisible-characters note (no-break spaces at
+ * its ends, zero-width characters WP Rocket keeps — otherwise a silent
+ * "No match").
  *
  * Leaving the row trims it by setting the field's value, which in Chromium
  * resets that field's native undo history (verified; the only edit path
@@ -556,7 +576,16 @@ function LaneRow(props: LaneRowProps): JSX.Element {
   const invisible = (): boolean => hasInvisibleKeptCharacters(props.row.text);
   const note = (): RowNote | undefined =>
     props.controller.notes().lanes[props.lane].rows.get(props.row.id);
-  const hasNote = (): boolean => note() !== undefined || invisible();
+  const warning = (): string | null => props.controller.rowWarning(props.lane, props.row.text);
+  /** The slot's plain sentences after the commit note: the warning, the invisible characters. */
+  const tail = (): string =>
+    [
+      warning() === null ? null : rowWarningNote(warning() ?? ''),
+      invisible() ? INVISIBLE_ROW_NOTE : null
+    ]
+      .filter((part) => part !== null)
+      .join(' ');
+  const hasNote = (): boolean => note() !== undefined || tail() !== '';
   let line: HTMLDivElement | undefined;
   const describedBy = (): string | undefined => {
     const ids = [problem() === null ? null : errorId(), hasNote() ? noteId() : null];
@@ -647,7 +676,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
             <Show when={note()}>
               {(current) => <NoteRuns note={ROW_NOTE_COPY.row(current().diff)} />}
             </Show>
-            {invisible() ? `${note() === undefined ? '' : ' '}${INVISIBLE_ROW_NOTE}` : ''}
+            {tail() === '' ? '' : `${note() === undefined ? '' : ' '}${tail()}`}
           </span>
           <Show when={note()?.undoable === true}>
             <UndoButton

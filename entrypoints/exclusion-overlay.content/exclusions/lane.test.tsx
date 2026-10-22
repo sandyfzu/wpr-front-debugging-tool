@@ -10,6 +10,7 @@ import { createOverlayController, type OverlayController } from '../controller';
 import type { ExclusionSessionPort, PortOutcome } from '../session/port';
 import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { Lane } from './lane';
+import type { LaneKey } from './draft';
 
 /** Renders every row (happy-dom has no layout). */
 const everyRow: VirtualizerFactory = (options) => ({
@@ -57,18 +58,19 @@ async function readyController(): Promise<OverlayController> {
   return controller;
 }
 
-/** Render the Delay JS lane (its clipboard and live region faked). */
+/** Render a lane — Delay JS unless named (its clipboard and live region faked). */
 function mountLane(
   controller: OverlayController,
   report?: TransformReport,
   write: ClipboardWriter = () => Promise.resolve('copied'),
-  createVirtualizer: VirtualizerFactory = everyRow
+  createVirtualizer: VirtualizerFactory = everyRow,
+  lane: LaneKey = 'delayJs'
 ) {
   const [locked, setLocked] = createSignal(false);
   const announce = vi.fn<(text: string) => void>();
   const { unmount } = render(() => (
     <Lane
-      lane="delayJs"
+      lane={lane}
       controller={controller}
       report={report}
       pageCount={0}
@@ -711,5 +713,131 @@ describe('Lane stored-form notes', () => {
     expect(
       screen.getByRole('button', { name: 'Restore removed Delay JavaScript execution row 2' })
     ).toBeTruthy();
+  });
+});
+
+describe('Lane counts, hints and copy forms (K.5a.2)', () => {
+  afterEach(cleanup);
+
+  const DEFER_REPORT: TransformReport = {
+    feature: 'defer_all_js',
+    featureWide: false,
+    candidates: 9,
+    rewritten: 2,
+    regionRemovals: 0,
+    matchedRows: [],
+    unmatchedRows: [],
+    undetermined: 4,
+    inlineUndetermined: 3,
+    approximate: 1,
+    rowCountsBestEffort: true
+  };
+
+  it('shows the count with each caveat, the inline-jQuery line once, and the limit hint', async () => {
+    mountLane(await readyController(), DEFER_REPORT, undefined, undefined, 'deferJs');
+    expect(screen.getByText('2 of 9 deferred and wrapped scripts restored')).toBeTruthy();
+    expect(screen.getByText(/^1 left as served/)).toBeTruthy();
+    expect(screen.getByText(/^1 matched against a rebuilt tag/)).toBeTruthy();
+    expect(
+      screen.getAllByText(
+        'Whether inline jQuery stays wrapped depends on your existing Defer JS exclusions.'
+      )
+    ).toHaveLength(1);
+    expect(screen.getByText(/^Row counts are best effort/)).toBeTruthy();
+    expect(
+      screen.getByText(/rocket_defer_inline_exclusions filters are assumed unused\.$/)
+    ).toBeTruthy();
+  });
+
+  it('shows no caveat for an exact count, and no limit hint outside Defer JS', async () => {
+    mountLane(await readyController(), {
+      feature: 'delay_js',
+      featureWide: false,
+      candidates: 3,
+      rewritten: 1,
+      regionRemovals: 0,
+      matchedRows: [],
+      unmatchedRows: []
+    });
+    expect(screen.getByText('1 of 3 delayed scripts restored')).toBeTruthy();
+    expect(document.querySelector('.xo-lane-caveat')).toBeNull();
+    expect(screen.queryByText(/remote exclusion lists/)).toBeNull();
+  });
+
+  it('notes re-keying while the lazy-render lane holds rows, never for blank ones', async () => {
+    const controller = await readyController();
+    const [id = ''] = controller.insertRows('lazyRender', [''], null);
+    mountLane(controller, undefined, undefined, undefined, 'lazyRender');
+    expect(screen.queryByText(/^Excluding an element re-keys/)).toBeNull();
+    controller.editRow('lazyRender', id, 'id="footer"');
+    expect(screen.getByText(/^Excluding an element re-keys/)).toBeTruthy();
+  });
+
+  it('warns on a whitespace-only lazy-render row, in the one note slot, without blocking it', async () => {
+    const controller = await readyController();
+    const [id = ''] = controller.insertRows('lazyRender', [''], null);
+    mountLane(controller, undefined, undefined, undefined, 'lazyRender');
+    controller.editRow('lazyRender', id, '   ');
+    const field = screen.getByRole('textbox', { name: 'Automatic Lazy Rendering row 1' });
+    const note = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+    expect(note?.textContent).toBe(
+      'Row is only whitespace — it matches nearly every element (any opening tag holding it). It is left out here: a blank row is an unfinished edit.'
+    );
+    expect(field.getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('copies the lazy-render rows as a rocket_lrc_exclusions filter, announced as one', async () => {
+    const controller = await readyController();
+    controller.insertRows('lazyRender', ['id="footer"', "it's"], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write, undefined, 'lazyRender');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Copy all Automatic Lazy Rendering exclusions' })
+    );
+    await waitFor(() => {
+      expect(announce).toHaveBeenCalledWith(
+        'Copied 2 exclusions as a rocket_lrc_exclusions filter'
+      );
+    });
+    expect(write.mock.calls[0]?.[0]).toBe(
+      [
+        "add_filter( 'rocket_lrc_exclusions', function ( $exclusions ) {",
+        '\treturn array_merge( (array) $exclusions, [',
+        '\t\t\'id="footer"\',',
+        "\t\t'it\\'s',",
+        '\t] );',
+        '} );'
+      ].join('\n')
+    );
+  });
+
+  it('copies a row still being typed in its stored form (Copy all activated without focus leaving it)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['', '(?+1)(x)'], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    mountLane(controller, undefined, write);
+    input(1).focus();
+    fireEvent.input(input(1), { target: { value: ' jquery-*.js ' } });
+    // A click that does not move focus (assistive tech, scripted activation).
+    fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(write).toHaveBeenCalled();
+    });
+    // Stored form, and the unverified row copied as kept.
+    expect(write.mock.calls[0]?.[0]).toBe('jquery-(.*).js\n(?+1)(x)');
+    expect(input(1).value).toBe('jquery-(.*).js');
+  });
+
+  it('explains instead of copying when every row is blank', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write);
+    fireEvent.input(input(1), { target: { value: '   ' } });
+    fireEvent.click(copyAll());
+    expect(write).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledWith(
+      'Nothing to copy yet: add an exclusion to this lane first.'
+    );
   });
 });

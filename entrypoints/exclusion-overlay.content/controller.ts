@@ -33,6 +33,7 @@ import {
   pasteIntoRow,
   reinsertRow,
   removeRow,
+  rowWarning,
   sameSet,
   setDisable,
   updateRow,
@@ -131,6 +132,8 @@ export interface OverlayController {
    * (until the row changes), else the engine's prevalidation.
    */
   rowProblem(lane: LaneKey, id: string, text: string): string | null;
+  /** A row's non-blocking warning (WP Rocket accepts it; it is almost surely a mistake). */
+  rowWarning(lane: LaneKey, text: string): string | null;
   /** Start loading (call once, after mount). */
   start(): void;
   /**
@@ -170,6 +173,11 @@ export interface OverlayController {
    *   undo for that note any more, or no room in the lane).
    */
   undoCommit(lane: LaneKey, id: string): boolean;
+  /**
+   * Commit every row of a lane (before its rows are copied: a row still
+   * being typed must be copied in its stored form). Works in any phase.
+   */
+  commitLane(lane: LaneKey): void;
   /**
    * Insert rows after a row (`null` = append), focusing the first one.
    *
@@ -467,6 +475,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     focusRequest,
     notes,
     rowProblem,
+    rowWarning,
     start: () => {
       // eslint-disable-next-line solid/reactivity -- a push callback: reads the phase untracked, when a push lands
       unsubscribe = deps.port.onStatus((pushed) => {
@@ -553,6 +562,16 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const committed = commitRows(draft(), lane, [id]);
       takeCommit(committed, 'row');
       return committed.commits[0] ?? null;
+    },
+    commitLane: (lane) => {
+      takeCommit(
+        commitRows(
+          draft(),
+          lane,
+          draft().rows[lane].map((row) => row.id)
+        ),
+        'row'
+      );
     },
     undoCommit: (lane, id) => {
       if (!editable()) return false;

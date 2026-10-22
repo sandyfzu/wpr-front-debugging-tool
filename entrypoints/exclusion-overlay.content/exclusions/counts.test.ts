@@ -28,8 +28,38 @@ describe('laneReport / laneCounts', () => {
   });
 
   it('reads the counts, null without a report', () => {
-    expect(laneCounts(DELAY)).toEqual({ candidates: 9, rewritten: 3, featureWide: false });
+    // Changed in K.5a.2: the counts now carry what the engine could not tell.
+    expect(laneCounts(DELAY)).toEqual({
+      candidates: 9,
+      rewritten: 3,
+      featureWide: false,
+      undetermined: 0,
+      approximate: 0,
+      inlineUnknown: false,
+      bestEffort: false
+    });
     expect(laneCounts(undefined)).toBeNull();
+  });
+
+  it('splits the inline-jQuery share out of the undetermined count', () => {
+    const defer: TransformReport = {
+      ...DELAY,
+      feature: 'defer_all_js',
+      undetermined: 5,
+      inlineUndetermined: 3,
+      approximate: 2,
+      rowCountsBestEffort: true
+    };
+    expect(laneCounts(defer)).toMatchObject({
+      undetermined: 2,
+      approximate: 2,
+      inlineUnknown: true,
+      bestEffort: true
+    });
+    expect(laneCounts({ ...defer, undetermined: 3 })).toMatchObject({
+      undetermined: 0,
+      inlineUnknown: true
+    });
   });
 });
 
