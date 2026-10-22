@@ -50,3 +50,6 @@ docker/state/
 
 # WP Rocket parity harness download cache (pinned WordPress zip; scripts/wp-rocket-parity.ts)
 .cache/
+
+# Local agent worktrees — machine state, never part of the repo
+.claude/worktrees/

@@ -33,7 +33,14 @@ export default defineConfig({
     // tests/e2e is the Playwright (browser) tier — `*.spec.ts` there belongs
     // to that runner (`pnpm test:e2e`), never to this one; keeping the two
     // runners disjoint is a deliberate contract guard, not organizational.
-    exclude: ['**/node_modules/**', '**/.git/**', 'lib/detection/bench/**', 'tests/e2e/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/.git/**',
+      // Local agent worktrees are machine state, never part of this checkout.
+      '**/.claude/worktrees/**',
+      'lib/detection/bench/**',
+      'tests/e2e/**'
+    ],
     // happy-dom reports disabled iframe/CSS/JS loads on its own console —
     // expected offline noise, filtered from the gate signal (shared module).
     onConsoleLog: filterDisabledLoadNoise,

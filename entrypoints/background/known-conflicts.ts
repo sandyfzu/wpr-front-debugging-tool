@@ -35,7 +35,7 @@ import dbSeedUrl from '../../lib/known-conflicts/known-conflicts-db.json?url&no-
 const log = createLogger('known-conflicts');
 
 /** The plugin's public Server endpoint the database refreshes from. */
-export const DB_ENDPOINT = 'https://mega.wp-rocket.me/support/kc/known-conflicts.json';
+export const DB_ENDPOINT = 'https://apps.wpr-support.com/kc/known-conflicts.json';
 
 /**
  * Fetch cap in ms: the refresh must never hold the single-flight lock or an
