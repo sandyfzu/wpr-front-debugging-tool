@@ -10,6 +10,7 @@ import {
   commitAll,
   commitRows,
   createIdSource,
+  ROW_CHECK_CACHE_LIMITS,
   createRowValidator,
   draftChars,
   draftFromSet,
@@ -629,12 +630,42 @@ describe('createRowValidator', () => {
     expect(validate('delayJs', ' ( ')).toEqual(blocking(/^WP Rocket drops this row when saving/));
   });
 
-  it('serves repeated rows from its cache and restarts past capacity', () => {
-    const validate = createRowValidator(2);
-    expect(validate('delayJs', '(')).toBe(validate('delayJs', '('));
+  it('serves repeated rows from its cache, evicting the oldest past its entry bound', () => {
+    const validate = createRowValidator({ entries: 2, bytes: ROW_CHECK_CACHE_LIMITS.bytes });
+    const first = validate('delayJs', '(');
+    expect(validate('delayJs', '(')).toBe(first);
     validate('delayJs', 'a');
     validate('delayJs', 'b');
-    expect(validate('delayJs', '(')).toEqual(blocking(/^WP Rocket drops this row/));
+    expect(validate.cached.size).toBe(2);
+    const again = validate('delayJs', '(');
+    expect(again).not.toBe(first);
+    expect(again).toEqual(blocking(/^WP Rocket drops this row/));
+  });
+
+  it('keeps at most its byte bound, however long and two-byte the rows', () => {
+    const validate = createRowValidator();
+    // Rows at the wire's cap, two bytes per character: 4 KiB of key each.
+    const row = (n: number): string =>
+      `${String(n)}${'中'.repeat(EXCLUSION_SET_LIMITS.rowChars - String(n).length)}`;
+    for (let n = 0; n < 400; n++) validate('lazyload', row(n));
+    expect(validate.cached.weight).toBeLessThanOrEqual(ROW_CHECK_CACHE_LIMITS.bytes);
+    expect(validate.cached.size).toBeGreaterThan(200);
+    expect(validate.cached.size).toBeLessThan(400);
+    // Short rows are bound by the entry count.
+    const short = createRowValidator();
+    for (let n = 0; n < ROW_CHECK_CACHE_LIMITS.entries + 10; n++)
+      short('lazyload', `r${String(n)}`);
+    expect(short.cached.size).toBe(ROW_CHECK_CACHE_LIMITS.entries);
+  });
+
+  it('weighs a check by its fixed cost, its row and its reason', () => {
+    const validate = createRowValidator();
+    validate('delayJs', '(a');
+    const key = 'delayJs\u0000(a'.length;
+    expect(validate.cached.size).toBe(1);
+    // Fixed cost + key + reason: more than the key alone, well under a kibibyte.
+    expect(validate.cached.weight).toBeGreaterThan(key);
+    expect(validate.cached.weight).toBeLessThan(1024);
   });
 
   it('warns, never blocks, on a row WP Rocket applies matching every script (K.5c)', () => {

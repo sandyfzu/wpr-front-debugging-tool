@@ -31,6 +31,12 @@ import {
   type StoredRowDiff
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
+import {
+  createBoundedMemo,
+  detachedString,
+  stringBytes,
+  type BoundedMemoLimits
+} from '../../../utils/bounded-memo';
 
 /** One editor lane = one feature's row list. */
 export type LaneKey = keyof ExclusionSetRows;
@@ -765,16 +771,16 @@ function storedRowCheck(lane: LaneKey, stored: string): RowCheck | null {
  * is the costly part). Blank rows, and rows the save empties, have no check
  * (unfinished; a commit removes the latter).
  *
- * @param capacity Cached verdicts kept before the cache restarts.
+ * @param limits The cache's bounds (default {@link ROW_CHECK_CACHE_LIMITS}).
  * @returns `(lane, text) → check | null`.
  */
 export function createRowValidator(
-  capacity = 4_096
-): (lane: LaneKey, text: string) => RowCheck | null {
-  const cache = new Map<string, RowCheck | null>();
+  limits: { readonly entries: number; readonly bytes: number } = ROW_CHECK_CACHE_LIMITS
+): RowValidator {
+  const cache = createBoundedMemo<RowCheck | null>(rowCheckMemoLimits(limits));
   const blocking = (reason: string | null): RowCheck | null =>
     reason === null ? null : { reason, blocking: true };
-  return (lane, typed) => {
+  const validate = (lane: LaneKey, typed: string): RowCheck | null => {
     if (isBlankRow(typed)) return null;
     // A broken (half) character is the typed text's own problem: the save would replace it.
     if (!typed.isWellFormed()) return blocking(wireRowProblem(typed));
@@ -782,12 +788,65 @@ export function createRowValidator(
     if (stored === null) return null;
     const wire = wireRowProblem(stored);
     if (wire !== null) return blocking(wire);
-    const key = `${lane}\u0000${stored}`;
-    const cached = cache.get(key);
-    if (cached !== undefined) return cached;
-    const check = storedRowCheck(lane, stored);
-    if (cache.size >= capacity) cache.clear();
-    cache.set(key, check);
-    return check;
+    // The memo keeps a detached key; the check's reason may quote the row, so it is detached too.
+    return cache.get(`${lane}\u0000${stored}`, () => detachedCheck(storedRowCheck(lane, stored)));
   };
+  return Object.assign(validate, { cached: cache });
+}
+
+/** A memoizing row validator (see {@link createRowValidator}). */
+export interface RowValidator {
+  /**
+   * The row's check.
+   *
+   * @param lane The row's lane.
+   * @param text The row as typed.
+   * @returns Its check, or null (no problem, or blank/unfinished).
+   */
+  (lane: LaneKey, text: string): RowCheck | null;
+  /** Checks kept now, and their weight in bytes. */
+  readonly cached: { readonly size: number; readonly weight: number };
+}
+
+/**
+ * The row validator's cache bounds: every validated row of every lane is
+ * kept up to these (in the host page's realm), each row up to the wire's
+ * row cap — two-byte rows at that cap weigh 4 KiB each, so the bytes bind
+ * long before the entries do.
+ */
+export const ROW_CHECK_CACHE_LIMITS = { entries: 4096, bytes: 1024 * 1024 } as const;
+
+/**
+ * Fixed bytes of one kept check (its entries, record and string headers):
+ * Chromium retains ≈ 60 B for a short row's; the rest is headroom for a
+ * check's record (a long two-byte row with a reason retains within 2 % of
+ * its weight).
+ */
+const ROW_CHECK_ENTRY_BYTES = 192;
+
+/**
+ * The bounded-memo limits for the row validator: each entry weighs its
+ * fixed cost, its key and its check's reason as Chromium keeps them.
+ *
+ * @param limits Most entries, most bytes.
+ */
+function rowCheckMemoLimits(limits: {
+  readonly entries: number;
+  readonly bytes: number;
+}): BoundedMemoLimits<RowCheck | null> {
+  return {
+    maxEntries: limits.entries,
+    maxWeight: limits.bytes,
+    weigh: (key, check) =>
+      ROW_CHECK_ENTRY_BYTES + stringBytes(key) + (check === null ? 0 : stringBytes(check.reason))
+  };
+}
+
+/**
+ * A check that shares no storage with the row it was read from.
+ *
+ * @param check The fresh check.
+ */
+function detachedCheck(check: RowCheck | null): RowCheck | null {
+  return check === null ? null : { reason: detachedString(check.reason), blocking: check.blocking };
 }
