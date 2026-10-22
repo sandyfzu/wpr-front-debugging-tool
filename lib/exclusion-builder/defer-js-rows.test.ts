@@ -48,6 +48,20 @@ describe('deferRowSet — set-level outcomes', () => {
     ]);
   });
 
+  it('lists the rows behind a page-off — unverified ones too, never outranked ones', () => {
+    expect(deferRowSet(['ok', '.*']).pageOffRows).toEqual([1]);
+    expect(deferRowSet(["(?'n'a)", 'ok', "(?'n'b)"]).pageOffRows).toEqual([0, 2]);
+    // `\p{L}` leaves its save unmodeled; its open `\Q` breaks the joined pattern.
+    expect(deferRowSet(['a\\.js', '\\p{L}\\Qab'])).toMatchObject({
+      page: 'off',
+      pageOffRows: [1]
+    });
+    // Off only through a row the save drops: that row's own problem says it.
+    expect(deferRowSet(['(', 'a'])).toMatchObject({ page: 'off', pageOffRows: [] });
+    expect(deferRowSet(['ok']).pageOffRows).toEqual([]);
+    expect(deferRowSet(['(?>x)', 'zzz']).pageOffRows).toEqual([]);
+  });
+
   it('is `unknown` when a row cannot be replayed — never `on`', () => {
     expect(deferRowSet(['(?>x)', 'zzz']).page).toBe('unknown');
   });

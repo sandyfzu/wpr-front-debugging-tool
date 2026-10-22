@@ -16,6 +16,7 @@
  */
 import { createBoundedMemo } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
+import type { ProblemId } from './pcre/problems';
 import {
   compileFirstMatch,
   translationRowProblems,
@@ -24,6 +25,17 @@ import {
 } from './pcre/rows';
 
 const FEATURE = 'defer_all_js';
+
+/**
+ * The problems a Defer JS row has only through the other rows of its set
+ * (the joined pre-check, the joined matching): reading a row alone cannot
+ * tell them — alone, `a\Qb` fails the pre-check; next to a row holding
+ * `\E`, it passes — so only a whole-set reading may report them.
+ */
+export const JOINED_ONLY_PROBLEMS: ReadonlySet<ProblemId> = new Set<ProblemId>([
+  'joined-page-off',
+  'joined-changes-matching'
+]);
 
 /** A Defer JS row set, translated once. */
 export interface DeferRowSet {
@@ -36,6 +48,13 @@ export interface DeferRowSet {
    * exactly here; `on` otherwise.
    */
   readonly page: PageState;
+  /**
+   * The rows behind a page `off`, by index in list order: those carrying
+   * `joined-page-off` (unverified rows included). Empty when the page is
+   * not off, or when only rows with an outranking problem (one WP Rocket's
+   * save drops) turn it off — their own problem says so.
+   */
+  readonly pageOffRows: readonly number[];
   /**
    * The index of the first row, in list order, whose matcher matches the
    * subject; `-1` when none does. Rows without a matcher (each one has a
@@ -72,9 +91,13 @@ const rowSetMemo = createBoundedMemo<DeferRowSet>({
 function translateRowSet(rows: readonly string[]): DeferRowSet {
   const translation = translateRegexRows(FEATURE, rows);
   let firstMatch: ((subject: string) => number) | null = null;
+  const problems = translationRowProblems(FEATURE, translation);
   return {
-    problems: translationRowProblems(FEATURE, translation),
+    problems,
     page: translation.page,
+    pageOffRows: problems
+      .filter(({ problem }) => problem === 'joined-page-off')
+      .map(({ index }) => index),
     sourceChars: translation.rows.reduce(
       (sum, { matcher }) => sum + (matcher?.source.length ?? 0),
       0

@@ -8,9 +8,12 @@
  * row again, arrow passes and an apply (only an edit ends them); a
  * duplicate row leaves with its note and Restore, and focus that was
  * heading into the removed row lands on Restore; a 250-row paste of
- * duplicates causes no long task; copy-all copies the stored form; and,
- * applied, a Delay row typed in another case matches its script while a
- * picked row whose file name holds `+` excludes its own (both scripts run).
+ * duplicates causes no long task; copy-all copies the stored form; a Defer
+ * JS set WP Rocket would turn off page-wide (P10K.5b) blocks Apply with the
+ * message naming its row — unverified, here — focus on the message, Go to
+ * on the row, and fixing the row unblocks it; and, applied, a Delay row
+ * typed in another case matches its script while a picked row whose file
+ * name holds `+` excludes its own (both scripts run).
  *
  * The overlay is a shadow-root UI (open root): Playwright's role locators
  * pierce it. Every leg opens its own fixture tab (a session is per tab).
@@ -338,6 +341,49 @@ test.describe('exclusion builder stored-form notes', () => {
     await expect(page.getByRole('region', { name: DEFER })).toContainText(
       'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here'
     );
+    await page.close();
+  });
+
+  test('a Defer JS set WP Rocket would turn off page-wide blocks Apply, naming the row; fixing it unblocks', async ({
+    extension
+  }) => {
+    const { page } = await openBuilder(extension);
+    const defer = page.getByRole('region', { name: DEFER });
+    const deferRow = (n: number): Locator =>
+      page.getByRole('textbox', { name: `${DEFER} row ${String(n)}`, exact: true });
+    await defer.getByRole('button', { name: 'Add row' }).click();
+    await page.keyboard.type('a\\.js');
+    await page.keyboard.press('Enter');
+    // Unverified (`\p{L}`: its save isn't modeled) yet behind the page-off: its open
+    // `\Q` quotes the joined pattern's closing parenthesis.
+    await page.keyboard.type('\\p{L}\\Qab');
+    const message = defer.getByRole('group', {
+      name: 'WP Rocket would stop deferring every script on this page because of this row:'
+    });
+    await expect(message).toHaveText(
+      'WP Rocket would stop deferring every script on this page because of this row:Go to row 2\\p{L}\\QabEdit or remove it to apply.'
+    );
+    await expect(deferRow(2)).toHaveAttribute('aria-invalid', 'true');
+    await expect(deferRow(1)).toHaveAttribute('aria-invalid', 'false');
+    await page.getByRole('button', { name: /^Apply$/ }).click();
+    // Blocked before asking: the page stays, focus lands on the message — a group
+    // named by its lead (`aria-labelledby`), so a screen reader says what it is.
+    await expect(message).toBeFocused();
+    await expect(message).toHaveAttribute('role', 'group');
+    await expect(message).toHaveAccessibleName(
+      'WP Rocket would stop deferring every script on this page because of this row:'
+    );
+    await expect(page.getByText('Fix 1 row before applying')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
+    await message.getByRole('button', { name: 'Go to row 2' }).click();
+    await expect(deferRow(2)).toBeFocused();
+    await deferRow(2).fill('\\.min\\.js$');
+    await expect(message).toHaveCount(0);
+    await expect(page.getByText('Fix 1 row before applying')).toHaveCount(0);
+    await page.getByRole('button', { name: /^Apply$/ }).click();
+    // The session applies: the page reloads with the builder back on an active session.
+    await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible(APPLIED);
+    await page.getByRole('button', { name: 'Stop' }).click();
     await page.close();
   });
 

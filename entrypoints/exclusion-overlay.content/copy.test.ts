@@ -8,6 +8,7 @@ import {
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
   NOTE_ROW_MAX,
+  PAGE_OFF_COPY,
   PASTE_COPY,
   PROBLEM_COPY,
   ROW_NOTE_COPY,
@@ -48,8 +49,18 @@ function allWords(): string[] {
       undetermined: 2,
       approximate: 1,
       inlineUnknown: true,
-      bestEffort: true
+      bestEffort: true,
+      pageUnknown: false
     }),
+    LANE_COPY.deferJs.page?.offLead(1) ?? '',
+    LANE_COPY.deferJs.page?.offLead(2) ?? '',
+    LANE_COPY.deferJs.page?.offFix(1) ?? '',
+    LANE_COPY.deferJs.page?.offFix(2) ?? '',
+    LANE_COPY.deferJs.page?.unknown ?? '',
+    LANE_COPY.deferJs.page?.countsUnknown ?? '',
+    PAGE_OFF_COPY.goTo(2),
+    PAGE_OFF_COPY.more(1),
+    PAGE_OFF_COPY.more(4),
     COPY_ALL_COPY.empty,
     COPY_ALL_COPY.failed,
     INVISIBLE_ROW_NOTE,
@@ -405,7 +416,8 @@ describe('lane counts and hints (K.5a.2)', () => {
     undetermined: 0,
     approximate: 0,
     inlineUnknown: false,
-    bestEffort: false
+    bestEffort: false,
+    pageUnknown: false
   };
 
   it('words the count, feature-wide or row-driven, with no caveat when exact', () => {
@@ -443,6 +455,38 @@ describe('lane counts and hints (K.5a.2)', () => {
     );
     for (const lane of ['delayJs', 'lazyload', 'lazyRender'] as const)
       expect(LANE_COPY[lane].limitHint).toBeUndefined();
+  });
+
+  it('words Defer JS’s page-wide states, singular and plural (K.5b)', () => {
+    const page = LANE_COPY.deferJs.page;
+    expect(page?.offLead(1)).toBe(
+      'WP Rocket would stop deferring every script on this page because of this row:'
+    );
+    expect(page?.offLead(2)).toBe(
+      'WP Rocket would stop deferring every script on this page because of these rows:'
+    );
+    expect(page?.offFix(1)).toBe('Edit or remove it to apply.');
+    expect(page?.offFix(3)).toBe('Edit or remove them to apply.');
+    expect(page?.unknown).toBe(
+      'WP Rocket may defer no script on this page with these rows — not checked here.'
+    );
+    expect(PAGE_OFF_COPY.goTo(12)).toBe('Go to row 12');
+    expect([PAGE_OFF_COPY.more(1), PAGE_OFF_COPY.more(2)]).toEqual([
+      'And 1 more row.',
+      'And 2 more rows.'
+    ]);
+    // Only the set-read lane has page words.
+    for (const lane of ['delayJs', 'lazyload', 'lazyRender'] as const)
+      expect(LANE_COPY[lane].page).toBeUndefined();
+  });
+
+  it('puts the page-state caveat first, only for a lane with page words', () => {
+    const unknown = { ...exact, pageUnknown: true, bestEffort: true };
+    expect(COUNT_COPY.caveats(unknown, LANE_COPY.deferJs.page)).toEqual([
+      'These counts assume WP Rocket defers scripts on this page: with the applied rows, that isn’t checked here.',
+      'Row counts are best effort: WP Rocket matches these rows as one pattern, so the first matching row is credited.'
+    ]);
+    expect(COUNT_COPY.caveats(unknown)).toHaveLength(1);
   });
 
   it('hints each lane by WP Rocket’s own matching subject and case', () => {
