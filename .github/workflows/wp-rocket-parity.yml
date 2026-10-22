@@ -1,0 +1,191 @@
+name: WP Rocket parity
+
+# Re-derives lib/exclusion-builder/wp-rocket-parity.fixtures.json with the real
+# plugin (`pnpm parity:wp-rocket`, see its header) on a fresh WP Rocket build:
+#
+# - the table's reference tag (`v` + header.plugin) — fails as "table stale"
+#   on any row difference and as "reference drift" when the build vendored
+#   other package versions than header.pluginPackages (`--ci`);
+# - the latest stable tag — warnings only, never a failure (`--compare`).
+#
+# Informational: a separate workflow (the `gates` job in ci.yml is untouched),
+# not a required check — it runs only when the parity inputs change, weekly,
+# or on demand (`gh workflow run wp-rocket-parity.yml --ref <branch>`), and
+# depends on GitHub (APVM release, plugin tags), Packagist and wordpress.org.
+on:
+  pull_request:
+    paths: &parity-paths
+      - lib/exclusion-builder/wp-rocket-parity*
+      - lib/exclusion-builder/pcre/problems.ts
+      - lib/exclusion-builder/stored-row-drops.ts
+      - scripts/wp-rocket-parity.*
+      - .github/workflows/wp-rocket-parity.yml
+  push:
+    branches: [main, develop]
+    paths: *parity-paths
+  schedule:
+    # Mondays 05:17 UTC: catches a new WP Rocket release and dependency drift.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wp-rocket-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # Explicit bash = `-eo pipefail`: a failing command anywhere in a pipe fails the step.
+    shell: bash
+
+jobs:
+  parity:
+    name: WP Rocket parity
+    # A pinned runner OS, not `-latest`: the plugin build (git, rsync, zip, composer)
+    # runs on it; the harness PHP comes from PHP_IMAGE either way.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # APVM CLI release; the binary is verified against that release's checksums.txt.
+      APVM_VERSION: v3.3.0
+      APVM_NO_UPDATE_CHECK: '1'
+      # The harness PHP: php:8.4-cli-bookworm — bundled PCRE2 10.44 + libxml 2.9.14
+      # (ext-dom/mbstring compiled in), which reproduces every row of the table. The
+      # distro PHPs of the runners do not: PCRE2 10.42 (ubuntu-24.04) predates the
+      # 10.43 option letters, libxml 2.15 (ubuntu-26.04) re-serializes attributes.
+      PHP_IMAGE: php@sha256:496b5e02fe9fe44fcfb715023b931048111dc4e0bc719789d83c906be9f04b05
+      TABLE: lib/exclusion-builder/wp-rocket-parity.fixtures.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # No step pushes; keep the token out of `.git/config`.
+          persist-credentials: false
+
+      - name: Install pnpm (version from package.json `packageManager`)
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node (version from .nvmrc)
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # PHP + composer for the APVM build only (composer resolves the plugin's
+      # dependencies on the PHP minor the table is generated with locally).
+      - name: Setup PHP 8.1 + composer (plugin build)
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.1'
+          tools: composer
+          coverage: none
+
+      - name: Read the table reference
+        id: reference
+        run: |
+          plugin=$(jq -er '.header.plugin' "$TABLE")
+          wp=$(jq -er '.header.wp + "-" + .header.wpZipSha1' "$TABLE")
+          composer_cache=$(composer config --global cache-dir)
+          {
+            echo "tag=v$plugin"
+            echo "wp=$wp"
+            echo "composer-cache=$composer_cache"
+          } >> "$GITHUB_OUTPUT"
+
+      # Composer's download cache only. The APVM artifact cache is never restored
+      # across runs: a hit replays the zip without running composer, which would
+      # hide dependency drift (a cold build takes ~30 s).
+      - name: Cache composer downloads
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.reference.outputs.composer-cache }}
+          key: wpr-parity-composer-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: wpr-parity-composer-${{ runner.os }}-
+
+      - name: Cache the pinned WordPress zip
+        uses: actions/cache@v6
+        with:
+          path: .cache/wp-rocket-parity
+          key: wpr-parity-wordpress-${{ steps.reference.outputs.wp }}
+
+      - name: Install APVM ${{ env.APVM_VERSION }} (checksum-verified)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/apvm"
+          mkdir -p "$dir/bin"
+          cd "$dir"
+          gh release download "$APVM_VERSION" -R wp-media/automation-plugin-version-manager \
+            -p apvm-linux-x64-gnu -p checksums.txt
+          # No checksum line → sha256sum reads nothing and fails; a mismatch fails too.
+          grep ' apvm-linux-x64-gnu$' checksums.txt | sha256sum --check
+          install -m 0755 apvm-linux-x64-gnu "$dir/bin/apvm"
+          echo "$dir/bin" >> "$GITHUB_PATH"
+          echo "APVM_CACHE_DIR=$RUNNER_TEMP/apvm-cache" >> "$GITHUB_ENV"
+
+      - name: Build WP Rocket ${{ steps.reference.outputs.tag }} (table reference)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.reference.outputs.tag }}
+        run: |
+          out="$RUNNER_TEMP/wpr-reference"
+          apvm --version
+          apvm build --verbose wp-rocket "tag:$TAG" "$out"
+          zips=("$out"/wp-rocket-*.zip)
+          [ "${#zips[@]}" -eq 1 ] && [ -f "${zips[0]}" ] || { echo "::error::expected one zip in $out"; exit 1; }
+          mkdir -p docker/wpr
+          cp "${zips[0]}" docker/wpr/wpr-rocket.zip
+
+      - name: Build WP Rocket latest stable
+        id: latest
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$RUNNER_TEMP/wpr-latest"
+          # Same commit as the reference → an instant hit in this job's APVM cache.
+          apvm build --verbose wp-rocket tag:latest-stable "$out"
+          zips=("$out"/wp-rocket-*.zip)
+          [ "${#zips[@]}" -eq 1 ] && [ -f "${zips[0]}" ] || { echo "::error::expected one zip in $out"; exit 1; }
+          echo "zip=${zips[0]}" >> "$GITHUB_OUTPUT"
+
+      # After the builds (composer must keep the setup-php PHP): from here on, `php`
+      # runs in the pinned image, offline, with the workspace and the script's temp
+      # directory mounted read-only at their own paths.
+      - name: Route the harness PHP to the pinned image
+        run: |
+          docker pull --quiet "$PHP_IMAGE"
+          shim="$RUNNER_TEMP/php-shim"
+          mkdir -p "$shim" "$RUNNER_TEMP/parity-tmp"
+          cat > "$shim/php" <<EOF
+          #!/usr/bin/env bash
+          exec docker run --rm -i --network none \\
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \\
+            -v "$RUNNER_TEMP/parity-tmp:$RUNNER_TEMP/parity-tmp:ro" \\
+            -w "$GITHUB_WORKSPACE" "$PHP_IMAGE" php "\$@"
+          EOF
+          chmod +x "$shim/php"
+          echo "$shim" >> "$GITHUB_PATH"
+          echo "TMPDIR=$RUNNER_TEMP/parity-tmp" >> "$GITHUB_ENV"
+
+      - name: Check the table against the reference build
+        run: pnpm parity:wp-rocket --ci
+
+      - name: Compare the latest stable WP Rocket with the table (warnings only)
+        if: ${{ !cancelled() && steps.latest.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          ZIP: ${{ steps.latest.outputs.zip }}
+        run: pnpm parity:wp-rocket --compare --zip "$ZIP"
+
+      - name: Report a failed latest-stable build (warning only)
+        if: ${{ !cancelled() && steps.latest.outcome == 'failure' }}
+        run: |
+          message='Could not build WP Rocket tag:latest-stable with APVM; the comparison was skipped (see the build step log).'
+          echo "::warning title=latest stable not compared::$message"
+          printf '### WP Rocket parity: latest stable\n\n⚠️ %s\n' "$message" >> "$GITHUB_STEP_SUMMARY"

@@ -98,14 +98,15 @@ pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chro
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
 pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
 pnpm parity:wp-rocket # WP Rocket parity table (lib/exclusion-builder/wp-rocket-parity.fixtures.json): re-derives its
-                     #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom, `unzip`,
-                     #   docker/wpr/wpr-rocket.zip; network on the first run only — the pinned WordPress zip is then
-                     #   cached in .cache/) — fails when stale; --write regenerates; local only, never CI
+                     #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom/mbstring,
+                     #   compiled in or shared, `unzip`, docker/wpr/wpr-rocket.zip; network on the first run only — the
+                     #   pinned WordPress zip is then cached in .cache/) — fails when stale; --write regenerates;
+                     #   --ci / --compare [--zip <zip>] are the parity workflow's modes (see its header)
 docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh / reset.sh; URLs, credentials
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`).
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds WP Rocket with a pinned APVM and runs `parity:wp-rocket --ci` against the table's reference tag (fails on a stale table or reference drift) and `--compare` against the latest stable tag (warnings only) — on PRs/pushes touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`).
 
 ## Non-negotiable rules
 

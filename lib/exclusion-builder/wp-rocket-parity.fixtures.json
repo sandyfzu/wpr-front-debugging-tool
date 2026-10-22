@@ -2,6 +2,7 @@
   "header": {
     "plugin": "3.23.5.1",
     "pluginZipSha256": "e42f4b1ac3bfb32690dc616a36f35cb579262931ab9758e942bbd0aefe870e31",
+    "pluginPackages": { "wp-media/apply-filters-typed": "v1.2" },
     "wp": "7.1.3",
     "wpZipSha1": "13eb1d042b1ca39224e44906cd84fe203112210c",
     "php": "8.1.34",

@@ -19,6 +19,7 @@ function validTable(): { header: Json; rows: Json[] } {
     header: {
       plugin: '3.0',
       pluginZipSha256: 'aa',
+      pluginPackages: { 'a/b': 'v1' },
       wp: '7.0',
       wpZipSha1: 'bb',
       php: '8.1',
@@ -143,6 +144,23 @@ describe('parseParityTable', () => {
     rejects((table) => delete table.header.php, '"php" must be a string');
     rejects((table) => (table.header.php = ''), 'header "php" must not be empty');
     rejects((table) => (table.header.extra = 'x'), 'unknown key "extra"');
+  });
+
+  it('parses pluginPackages as a non-empty map of non-empty version strings', () => {
+    expect(parseParityTable(validTable()).header.pluginPackages).toEqual({ 'a/b': 'v1' });
+    const shape = 'header "pluginPackages" must be a non-empty {name: version} object';
+    rejects((table) => delete table.header.pluginPackages, shape);
+    rejects((table) => (table.header.pluginPackages = {}), shape);
+    rejects((table) => (table.header.pluginPackages = ['v1']), shape);
+    rejects((table) => (table.header.pluginPackages = 'v1'), shape);
+    rejects(
+      (table) => (table.header.pluginPackages = { 'a/b': '' }),
+      'header "pluginPackages" "a/b" must be a non-empty version string'
+    );
+    rejects(
+      (table) => (table.header.pluginPackages = { 'a/b': 1 }),
+      'header "pluginPackages" "a/b" must be a non-empty version string'
+    );
   });
 
   it('rejects malformed rows by id', () => {
