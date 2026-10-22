@@ -386,4 +386,20 @@ describe('delayJsTransform — the subject after the Defer JS inline-jQuery pass
       );
     }
   });
+
+  it('is undetermined when the pass depends on the live rows and the readings disagree', () => {
+    const result = delayJsTransform(SERVED, withDefer(['foo.js']));
+    expect(result.html).toBe(SERVED);
+    expect(result.report).toMatchObject({ candidates: 1, rewritten: 0, undetermined: 1 });
+  });
+
+  it('answers when the pass depends on the live rows but both readings agree', () => {
+    const set = {
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['jQuery\\(1\\)'], deferJs: ['foo.js'] },
+      disable: EMPTY_EXCLUSION_SET.disable
+    };
+    const result = delayJsTransform(SERVED, set);
+    expect(result.report.undetermined).toBeUndefined();
+    expect(result.report.rewritten).toBe(1);
+  });
 });

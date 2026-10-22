@@ -383,8 +383,8 @@ describe('document reports are tied to the session set', () => {
     const defer = {
       feature: 'defer_all_js',
       featureWide: true,
-      candidates: 0,
-      rewritten: 0,
+      candidates: 7,
+      rewritten: 7,
       regionRemovals: 0,
       matchedRows: [],
       unmatchedRows: []
@@ -399,7 +399,9 @@ describe('document reports are tied to the session set', () => {
       { ...defer, inlineUnwrapped: 0 },
       { ...defer, inlineUnwrapped: -1 },
       { ...defer, inlineUnwrapped: 1.5 },
-      { ...defer, inlineUnwrapped: '1' }
+      { ...defer, inlineUnwrapped: '1' },
+      { ...defer, inlineUnwrapped: 8 },
+      { ...defer, rewritten: 6, inlineUnwrapped: 7 }
     ]) {
       expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
     }

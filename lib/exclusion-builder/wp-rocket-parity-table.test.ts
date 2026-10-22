@@ -340,6 +340,24 @@ describe('parseParityTable', () => {
       (table) => (row(table, 'match-b').inlineWrapped = ['w', 'w']),
       '"inlineWrapped" repeats an id'
     );
+    for (const [id, value] of [
+      ['match-b', ''],
+      ['match-b', 5],
+      ['match-a', 'needs live rows']
+    ] as const) {
+      rejects(
+        (table) => (row(table, id).inlineUndetermined = value),
+        '"inlineUndetermined" is a non-empty reason on a Defer JS row'
+      );
+    }
+    expect(
+      parseParityTable({
+        ...validTable(),
+        rows: validTable().rows.map((entry) =>
+          entry.id === 'match-b' ? { ...entry, inlineUndetermined: 'needs live rows' } : entry
+        )
+      }).rows[2]
+    ).toMatchObject({ inlineUndetermined: 'needs live rows' });
     rejects(
       (table) => (row(table, 'match-a').hashed = []),
       '"hashed"/"rekeyed" are present exactly'

@@ -187,6 +187,15 @@ describe('applyPatches', () => {
     ).toThrow(/overlap/i);
   });
 
+  it.each([
+    [{ start: 3, end: 2, text: '' }, 'Invalid HTML patch [3,2) over a 4-character document'],
+    [{ start: -1, end: 1, text: '' }, 'Invalid HTML patch [-1,1)'],
+    [{ start: 2, end: 5, text: '' }, 'Invalid HTML patch [2,5)'],
+    [{ start: 0.5, end: 1, text: '' }, 'Invalid HTML patch [0.5,1)']
+  ])('fails fast on an inverted or out-of-range patch %j', (patch, message) => {
+    expect(() => applyPatches('abcd', [{ start: 0, end: 0, text: 'x' }, patch])).toThrow(message);
+  });
+
   it('equals splicing each patch from the end, for many mixed patches', () => {
     const html = 'abcdefghij'.repeat(200_000);
     // Every 4 000th offset: a replacement, a removal or a zero-width insertion.

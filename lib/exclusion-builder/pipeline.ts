@@ -12,8 +12,9 @@
  * a typed session failure naming the offending feature/row, never a hung
  * navigation).
  */
-import { delayJsTransform } from './delay-js';
-import { deferJsTransform } from './defer-js';
+import { delayJsTransform, delayJsTransformAfterInlinePass } from './delay-js';
+import { deferJsTransform, deferJsTransformAfterInlinePass } from './defer-js';
+import { replayInlinePass, type InlinePassReplay } from './defer-inline-js';
 import { lazyloadTransform } from './lazyload';
 import { lazyRenderTransform } from './lazy-render';
 import { ExclusionValidationError } from './errors';
@@ -87,6 +88,20 @@ const FEATURE_TRANSFORMS: Record<ExclusionFeatureId, FeatureTransform> = {
   automatic_lazy_rendering: lazyRenderTransform
 };
 
+/**
+ * The transforms that read the Defer JS inline pass, in their form for a
+ * page the pipeline already replayed it on (see {@link exclusionPipelineSteps}).
+ */
+const AFTER_INLINE_PASS: Partial<
+  Record<
+    ExclusionFeatureId,
+    (html: string, set: ExclusionSet, inline: InlinePassReplay) => TransformResult
+  >
+> = {
+  delay_js: delayJsTransformAfterInlinePass,
+  defer_all_js: deferJsTransformAfterInlinePass
+};
+
 /** The pipeline steps, derived from the registry's declared execution order. */
 const FEATURE_PIPELINE: readonly FeatureEntry[] = EXCLUSION_FEATURES.map(({ id }) => ({
   id,
@@ -121,10 +136,23 @@ export function exclusionPipelineSteps(
   documentUrl?: string,
   bytes?: DocumentBytes
 ): readonly ExclusionPipelineStep[] {
-  return FEATURE_PIPELINE.map((entry) => ({
+  // WP Rocket's Defer JS inline-jQuery pass ran after its deferral and
+  // before Delay JS: the first step replays it on the served page — before
+  // any restore splits identical wrapped copies — and Defer JS reports it.
+  let inline: InlinePassReplay | null = null;
+  return FEATURE_PIPELINE.map((entry, index) => ({
     id: entry.id,
     apply: (stepHtml: string) => {
-      const result = entry.transform(stepHtml, set, documentUrl, bytes);
+      let html = stepHtml;
+      if (index === 0) {
+        inline = replayInlinePass(stepHtml, set);
+        html = inline.html;
+      }
+      const afterReplay = inline === null ? undefined : AFTER_INLINE_PASS[entry.id];
+      const result =
+        afterReplay !== undefined && inline !== null
+          ? afterReplay(html, set, inline)
+          : entry.transform(html, set, documentUrl, bytes);
       return { html: result.html, report: result.report };
     }
   }));

@@ -3,39 +3,33 @@
  * after deferring scripts, WP Rocket wraps the body of every inline script
  * whose code calls jQuery in a `DOMContentLoaded` listener, so it runs after
  * the deferred jQuery. It skips the whole pass when Defer JS is off, or when
- * its joined exclusion text names a jQuery file — a row like `jquery.min.js`,
- * or `jquery` followed, in any later row, by `.js`.
+ * its joined exclusion text names a jQuery file.
  *
- * The served page carries the live site's wrapping. When a set would make
- * WP Rocket skip the pass, this module undoes the wrapping it finds; it never
- * adds one (a draft only adds exclusions on top of what the site serves).
+ * The served page carries the live site's wrapping, made under rows this
+ * tool cannot read; a set adds its rows to those. This module decides what
+ * the pass does under a set — when that is certain — and undoes the served
+ * wrapping when the pass would not run. It never adds a wrapping.
  */
-import { applyPatches, type TextPatch } from './tag-edit';
+import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN } from '../wp-rocket/constants';
 import type { ExclusionSet } from './set';
 
-/** The opening WP Rocket puts before a wrapped inline script's body. */
-export const INLINE_WRAP_OPEN = "window.addEventListener('DOMContentLoaded', function() {";
+/** `jquery`, ASCII case-insensitive (PCRE `i` folds ASCII only). */
+const JQUERY_WORD = /[jJ][qQ][uU][eE][rR][yY]/;
 
-/** The closing WP Rocket puts after a wrapped inline script's body. */
-export const INLINE_WRAP_CLOSE = '});';
+/** `.js`, ASCII case-insensitive. */
+const JS_EXTENSION = /\.[jJ][sS]/;
 
 /**
- * WP Rocket's jQuery-code test on a body, `jQuery|\$\.\(|\$\(` under PCRE's
- * ASCII-only `i` — case written out, so no JS case folding creeps in.
+ * WP Rocket's jQuery-code test on a body: its default pattern
+ * `jQuery|\$\.\(|\$\(`, ASCII case-insensitive.
  */
-const JQUERY_CODE = /[jJ][qQ][uU][eE][rR][yY]|\$\.?\(/;
+const JQUERY_CODE = new RegExp(`${JQUERY_WORD.source}|\\$\\.?\\(`);
 
 /**
  * WP Rocket's structured-data test on the whole element (tag and body):
  * `application/ld+json`, ASCII case-insensitive. Such a script is never wrapped.
  */
 const LD_JSON = /[aA][pP][pP][lL][iI][cC][aA][tT][iI][oO][nN]\/[lL][dD]\+[jJ][sS][oO][nN]/;
-
-/** `jquery`, ASCII case-insensitive. */
-const JQUERY_WORD = /[jJ][qQ][uU][eE][rR][yY]/;
-
-/** `.js`, ASCII case-insensitive. */
-const JS_EXTENSION = /\.[jJ][sS]/;
 
 /**
  * WP Rocket's script match (`<script[^>]*>` up to the first `</script>`, both
@@ -47,20 +41,14 @@ const SCRIPT_OR_COMMENT =
   /<!--[\s\S]*?-->|<[Ss][Cc][Rr][Ii][Pp][Tt][^>]*>([\s\S]*?)<\/[Ss][Cc][Rr][Ii][Pp][Tt]>/g;
 
 /**
- * Whether WP Rocket's joined Defer JS exclusion text names a jQuery file —
- * its `/(jquery(?:.*)?\.js)/i` test, which turns the inline pass off. The
- * text is the rows deduplicated (first occurrence kept), `#` escaped, joined
- * with `|`, exactly as WP Rocket builds it, so the test spans rows: `jquery`
- * in one row and `.js` in any later one match. PCRE's `.` stops at `\n`
- * only, so a match is a line holding `jquery` with `.js` after it; checking
- * the first `jquery` per line is enough and keeps the test linear.
+ * WP Rocket's skip test, `/(jquery(?:.*)?\.js)/i`, over rows joined as it
+ * joins them: deduplicated (first occurrence kept), `#` escaped, `|`
+ * between rows — so a match can span rows (`jquery` in one, `.js` in a later
+ * one). PCRE's `.` stops at `\n` only, so a match is a line holding `jquery`
+ * with `.js` after it; checking the first `jquery` per line keeps it linear.
  *
- * WP Rocket also joins its remote `defer_js_external_exclusions` list in
- * front of the rows. This tool cannot read it; the published list names no
- * jQuery file, and coming first, its `.js` entries cannot complete a
- * `jquery` that only appears in a later row.
- *
- * @param rows The stored Defer JS rows, in order.
+ * @param rows Exclusion rows, in WP Rocket's order.
+ * @returns Whether the joined text matches (the pass is skipped).
  */
 export function namesJqueryFile(rows: readonly string[]): boolean {
   const joined = [...new Set(rows)].map((row) => row.replaceAll('#', '\\#')).join('|');
@@ -72,92 +60,181 @@ export function namesJqueryFile(rows: readonly string[]): boolean {
 }
 
 /**
- * Whether WP Rocket runs its inline-jQuery pass under a set: Defer JS is on
- * and its joined exclusion text names no jQuery file.
+ * What WP Rocket's inline-jQuery pass does under a set, for a served page
+ * it wrapped: `skipped` and `runs` are certain, `unknown` is not.
+ */
+export type InlinePass = 'runs' | 'skipped' | 'unknown';
+
+/**
+ * Whether WP Rocket's inline pass runs under a set, for a page whose served
+ * markup shows its wrapping. WP Rocket tests its remote external list, the
+ * live rows and the set's rows (in that order, deduplicated) as one text;
+ * only the set's rows are known here, but a wrapped served page proves the
+ * list plus the live rows alone do not match. Hence:
+ *
+ * - `skipped` — Defer JS is off, or one row of the set matches on its own:
+ *   deduplication cannot drop it (the earlier copy would match alone, and
+ *   the served page would not be wrapped), so the joined text matches.
+ * - `runs` — no row of the set holds `.js`: a match needs `.js` after
+ *   `jquery`, the set's rows come last, and the earlier text has no match.
+ * - `unknown` — otherwise: a match may span rows, a `.js` row may complete a
+ *   live `jquery` (or be dropped as a duplicate of a live row), so the
+ *   outcome depends on rows this tool cannot read.
+ *
+ * Filters (`rocket_exclude_defer_js`, `rocket_defer_jquery_patterns`,
+ * `rocket_defer_inline_exclusions`) are assumed unregistered.
  *
  * @param set The exclusion set (Defer JS rows + toggle).
+ * @returns The pass's outcome under the set.
  */
-export function inlineWrapRuns(set: ExclusionSet): boolean {
-  return !set.disable.deferJs && !namesJqueryFile(set.rows.deferJs);
+export function inlinePassUnder(set: ExclusionSet): InlinePass {
+  const rows = set.rows.deferJs;
+  if (set.disable.deferJs || rows.some((row) => namesJqueryFile([row]))) return 'skipped';
+  return rows.some((row) => JS_EXTENSION.test(row)) ? 'unknown' : 'runs';
 }
 
 /**
- * The element WP Rocket wrapped into `element`, or `null` when it did not
- * wrap it. WP Rocket replaces every copy of the body in the element (one in
- * an attribute included) with the wrapped body; the original is that
- * replacement undone, kept only when WP Rocket would wrap it (jQuery code,
- * no `application/ld+json`) and its own replacement leads back to `element`.
+ * The body WP Rocket wrapped into one script, or `null` when it did not: the
+ * body is exactly the wrapper around jQuery code, and the element names no
+ * structured data.
  *
  * @param element One script element as WP Rocket matches it.
  * @param body Its body as WP Rocket matches it.
+ * @returns The original body, or `null`.
  */
-function wrappedOriginal(element: string, body: string): string | null {
+function wrappedInner(element: string, body: string): string | null {
   if (body.length < INLINE_WRAP_OPEN.length + INLINE_WRAP_CLOSE.length) return null;
   if (!body.startsWith(INLINE_WRAP_OPEN) || !body.endsWith(INLINE_WRAP_CLOSE)) return null;
   const inner = body.slice(INLINE_WRAP_OPEN.length, body.length - INLINE_WRAP_CLOSE.length);
-  if (!JQUERY_CODE.test(inner)) return null;
-  // Function replacers: the code may hold `$'`/`$&`, which a string replacement expands.
-  const original = element.replaceAll(body, () => inner);
-  if (LD_JSON.test(original)) return null;
-  return original.replaceAll(inner, () => body) === element ? original : null;
+  if (!JQUERY_CODE.test(inner) || LD_JSON.test(element)) return null;
+  return inner;
+}
+
+/** The scripts of a page WP Rocket wrapped. */
+interface WrappedScripts {
+  /** Their original bodies, distinct. */
+  readonly inners: ReadonlySet<string>;
+  /** How many script elements (outside comments) were wrapped. */
+  readonly count: number;
+}
+
+/**
+ * Find the scripts WP Rocket wrapped on a page.
+ *
+ * @param html The page (or one script element).
+ * @returns Their original bodies and their count.
+ */
+function wrappedScripts(html: string): WrappedScripts {
+  const inners = new Set<string>();
+  let count = 0;
+  if (!html.includes(INLINE_WRAP_OPEN)) return { inners, count };
+  for (const match of html.matchAll(SCRIPT_OR_COMMENT)) {
+    const body = match[1];
+    if (body === undefined) continue; // A comment.
+    const inner = wrappedInner(match[0], body);
+    if (inner === null) continue;
+    inners.add(inner);
+    count++;
+  }
+  return { inners, count };
+}
+
+/**
+ * Put every wrapped copy of the given bodies back, page-wide, in one
+ * left-to-right pass (the longest body first where several fit). WP Rocket
+ * replaces each wrapped element's text page-wide with PHP's `str_replace`
+ * (in attributes, in comments, across a comment's end), so the wrapping is
+ * undone wherever it stands, independent of later rewrites of the tag.
+ *
+ * @param html The page.
+ * @param inners The original bodies.
+ * @returns The page with each `OPEN + body + CLOSE` replaced by the body.
+ */
+function replaceWrapped(html: string, inners: ReadonlySet<string>): string {
+  const byLength = new Map<number, Set<string>>();
+  for (const inner of inners) {
+    const bucket = byLength.get(inner.length) ?? new Set<string>();
+    bucket.add(inner);
+    byLength.set(inner.length, bucket);
+  }
+  const lengths = [...byLength.keys()].sort((left, right) => right - left);
+  const pieces: string[] = [];
+  let cursor = 0;
+  let open = html.indexOf(INLINE_WRAP_OPEN);
+  while (open !== -1) {
+    const at = open + INLINE_WRAP_OPEN.length;
+    const length = lengths.find(
+      (candidate) =>
+        html.startsWith(INLINE_WRAP_CLOSE, at + candidate) &&
+        byLength.get(candidate)?.has(html.slice(at, at + candidate)) === true
+    );
+    if (length === undefined) {
+      open = html.indexOf(INLINE_WRAP_OPEN, open + 1);
+      continue;
+    }
+    pieces.push(html.slice(cursor, open), html.slice(at, at + length));
+    cursor = at + length + INLINE_WRAP_CLOSE.length;
+    open = html.indexOf(INLINE_WRAP_OPEN, cursor);
+  }
+  pieces.push(html.slice(cursor));
+  return pieces.join('');
 }
 
 /** A page with WP Rocket's inline wrapping undone. */
 export interface InlineUnwrap {
   readonly html: string;
-  /** Script elements whose wrapping was undone. */
+  /** Script elements (outside comments) whose wrapping was undone. */
   readonly unwrapped: number;
-}
-
-/**
- * A comment with every wrapped element copy put back. WP Rocket replaces
- * each wrapped element's text throughout the page, so an identical copy
- * inside a comment was wrapped with it.
- *
- * @param comment The comment text.
- * @param restored Wrapped element text → original, from the page's live scripts.
- */
-function restoreCommentCopies(comment: string, restored: ReadonlyMap<string, string>): string {
-  let text = comment;
-  for (const [wrapped, original] of restored) {
-    if (text.includes(wrapped)) text = text.replaceAll(wrapped, () => original);
-  }
-  return text;
 }
 
 /**
  * Undo WP Rocket's inline-jQuery wrapping on a page: every script whose
  * body is exactly a wrapped jQuery body gets its original back, byte for
- * byte, and so does each identical copy inside a comment. A script whose
- * source already reads exactly like WP Rocket's wrapper around jQuery code
- * is indistinguishable from its output and is unwrapped too.
+ * byte, and so does every other copy of that wrapped body on the page. A
+ * script whose source already reads exactly like WP Rocket's wrapper around
+ * jQuery code is indistinguishable from its output and is unwrapped too.
  *
  * @param html The page (or one script element).
- * @returns The page without the wrapping, and how many scripts changed
- *   (comment copies not counted).
+ * @returns The page without the wrapping, and how many scripts changed.
  */
 export function unwrapInlineScripts(html: string): InlineUnwrap {
-  if (!html.includes(INLINE_WRAP_OPEN)) return { html, unwrapped: 0 };
-  const patches: TextPatch[] = [];
-  const comments: RegExpExecArray[] = [];
-  const restored = new Map<string, string>();
-  for (const match of html.matchAll(SCRIPT_OR_COMMENT)) {
-    const body = match[1];
-    if (body === undefined) {
-      if (match[0].includes(INLINE_WRAP_OPEN)) comments.push(match);
-      continue;
-    }
-    const original = wrappedOriginal(match[0], body);
-    if (original === null) continue;
-    restored.set(match[0], original);
-    patches.push({ start: match.index, end: match.index + match[0].length, text: original });
+  const { inners, count } = wrappedScripts(html);
+  return count === 0
+    ? { html, unwrapped: 0 }
+    : { html: replaceWrapped(html, inners), unwrapped: count };
+}
+
+/** The inline pass replayed on a page under a set. */
+export interface InlinePassReplay {
+  readonly html: string;
+  /** Scripts the served page shows wrapped (outside comments). */
+  readonly wrapped: number;
+  /** Of those, the ones given their original body back (the pass is skipped). */
+  readonly unwrapped: number;
+  /** Of those, the ones left as served because the pass's outcome is unknown. */
+  readonly undetermined: number;
+}
+
+/**
+ * Replay the inline pass under a set on a served page: undo the wrapping
+ * when the pass is certainly skipped, keep it when it certainly runs, and
+ * leave it as served — counted undetermined — otherwise.
+ *
+ * @param html The served page (any later rewrite of opening tags is fine).
+ * @param set The exclusion set (Defer JS rows + toggle).
+ * @returns The page and the counts.
+ */
+export function replayInlinePass(html: string, set: ExclusionSet): InlinePassReplay {
+  const { inners, count } = wrappedScripts(html);
+  if (count === 0) return { html, wrapped: 0, unwrapped: 0, undetermined: 0 };
+  const pass = inlinePassUnder(set);
+  if (pass === 'skipped') {
+    return {
+      html: replaceWrapped(html, inners),
+      wrapped: count,
+      unwrapped: count,
+      undetermined: 0
+    };
   }
-  const unwrapped = patches.length;
-  for (const comment of comments) {
-    const text = restoreCommentCopies(comment[0], restored);
-    if (text !== comment[0]) {
-      patches.push({ start: comment.index, end: comment.index + comment[0].length, text });
-    }
-  }
-  return { html: applyPatches(html, patches), unwrapped };
+  return { html, wrapped: count, unwrapped: 0, undetermined: pass === 'unknown' ? count : 0 };
 }

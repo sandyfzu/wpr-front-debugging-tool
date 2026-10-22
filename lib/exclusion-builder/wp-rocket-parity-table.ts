@@ -157,6 +157,12 @@ export interface MatchInput extends RowBase {
   readonly filterOnly?: true;
   /** What the engine answers instead of WP Rocket's outcome, when it is not meant to match it. */
   readonly engine?: EngineDisposition;
+  /**
+   * Defer JS only: why the engine reports the inline pass undetermined here
+   * (its outcome depends on live rows the harness does not have), instead
+   * of WP Rocket's `inlineWrapped`.
+   */
+  readonly inlineUndetermined?: string;
   readonly html: string;
 }
 
@@ -229,6 +235,7 @@ export const MATCH_INPUT_KEYS = [
   'note',
   'pending',
   'engine',
+  'inlineUndetermined',
   'html'
 ] as const;
 
@@ -502,6 +509,15 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
   }
   const rows = from === undefined ? stringList(id, record, 'rows') : undefined;
   const engine = record.engine === undefined ? undefined : engineDisposition(id, record.engine);
+  const inlineUndetermined = record.inlineUndetermined;
+  if (
+    inlineUndetermined !== undefined &&
+    (typeof inlineUndetermined !== 'string' ||
+      inlineUndetermined === '' ||
+      feature !== 'defer_all_js')
+  ) {
+    fail(id, '"inlineUndetermined" is a non-empty reason on a Defer JS row');
+  }
   const html = stringField(id, record, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   return {
@@ -512,6 +528,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
     ...(rows === undefined ? {} : { rows }),
     ...(filterOnly === true ? { filterOnly } : {}),
     ...(engine === undefined ? {} : { engine }),
+    ...(inlineUndetermined === undefined ? {} : { inlineUndetermined }),
     html
   };
 }

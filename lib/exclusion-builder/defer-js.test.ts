@@ -342,10 +342,11 @@ describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, r
     '<script id="i">window.addEventListener(\'DOMContentLoaded\', function() {jQuery(1)});</script>';
   const SERVED = `${DEFERRED}${WRAPPED}`;
 
-  it('undoes the wrapping when a row names a jQuery file, and counts it', () => {
+  it('undoes the wrapping when a row names a jQuery file, and counts it a rewritten candidate', () => {
     const result = deferJsTransform(SERVED, setWithRows(['jquery\\.min\\.js']));
     expect(result.html).toBe(`${DEFERRED}<script id="i">jQuery(1)</script>`);
-    expect(result.report).toMatchObject({ candidates: 1, rewritten: 0, inlineUnwrapped: 1 });
+    expect(result.report).toMatchObject({ candidates: 2, rewritten: 1, inlineUnwrapped: 1 });
+    expect(result.report.undetermined).toBeUndefined();
   });
 
   it('undoes it under the feature-wide disable (WP Rocket wraps nothing with Defer JS off)', () => {
@@ -354,17 +355,32 @@ describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, r
       '<script src="https://s.tld/jquery.js" id="jquery-core-js" data-wpr-fdt-excluded="defer_all_js"></script>' +
         '<script id="i">jQuery(1)</script>'
     );
-    expect(result.report).toMatchObject({ featureWide: true, rewritten: 1, inlineUnwrapped: 1 });
+    expect(result.report).toMatchObject({
+      featureWide: true,
+      candidates: 2,
+      rewritten: 2,
+      inlineUnwrapped: 1
+    });
   });
 
-  it('keeps the wrapping while the rows name no jQuery file, and never adds one', () => {
-    for (const rows of [[], ['jquery-ui'], ['foo.js', 'jquery-ui']]) {
+  it('keeps the wrapping while no row can complete a jQuery file, and never adds one', () => {
+    for (const rows of [[], ['jquery-ui']]) {
       const kept = deferJsTransform(SERVED, setWithRows(rows));
       expect(kept.html, JSON.stringify(rows)).toBe(SERVED);
+      expect(kept.report, JSON.stringify(rows)).toMatchObject({ candidates: 2 });
       expect(kept.report.inlineUnwrapped, JSON.stringify(rows)).toBeUndefined();
+      expect(kept.report.undetermined, JSON.stringify(rows)).toBeUndefined();
     }
     // Served unwrapped (the live rows already turn the pass off): left as served.
     const unwrapped = `${DEFERRED}<script id="i">jQuery(1)</script>`;
     expect(deferJsTransform(unwrapped, setWithRows(['foo'])).html).toBe(unwrapped);
+  });
+
+  it('leaves the wrapping as served, undetermined, when the live rows decide', () => {
+    // Run: with a live `jquery-migrate` row WP Rocket skips the pass; without, it runs.
+    const result = deferJsTransform(SERVED, setWithRows(['foo.js', 'jquery-ui']));
+    expect(result.html).toBe(SERVED);
+    expect(result.report).toMatchObject({ candidates: 2, rewritten: 0, undetermined: 1 });
+    expect(result.report.inlineUnwrapped).toBeUndefined();
   });
 });

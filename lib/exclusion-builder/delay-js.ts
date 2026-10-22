@@ -12,8 +12,18 @@
 import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag } from './html-scan';
-import { compileDelayRows, DELAY_TYPE_ATTRIBUTE } from './delay-js-match';
-import { inlineWrapRuns, unwrapInlineScripts } from './defer-inline-js';
+import {
+  compileDelayRows,
+  DELAY_TYPE_ATTRIBUTE,
+  type DelayRowMatch,
+  type DelayVerdict
+} from './delay-js-match';
+import {
+  inlinePassUnder,
+  unwrapInlineScripts,
+  type InlinePass,
+  type InlinePassReplay
+} from './defer-inline-js';
 import { transformReport, type TransformResult } from './report';
 import {
   addAttributeValue,
@@ -102,6 +112,31 @@ function restoreDelayedScript(tagText: string): string {
 }
 
 /**
+ * Delay JS's verdict on one served element as WP Rocket's Delay JS saw it,
+ * after the Defer JS inline pass: wrapped while the pass runs, unwrapped
+ * when it is skipped; when the pass's outcome is unknown both readings must
+ * agree, else the verdict is undetermined.
+ *
+ * @param matchRow The compiled rows.
+ * @param element The served script element.
+ * @param pass The inline pass's outcome under the set.
+ * @returns The verdict (`null` when undetermined).
+ */
+function verdictAfterInlinePass(
+  matchRow: DelayRowMatch,
+  element: string,
+  pass: InlinePass
+): DelayVerdict {
+  if (pass === 'runs') return matchRow(element);
+  const unwrapped = unwrapInlineScripts(element).html;
+  if (pass === 'skipped' || unwrapped === element) return matchRow(unwrapped);
+  const kept = matchRow(element);
+  const undone = matchRow(unwrapped);
+  if (kept === null || undone === null || (kept.row === -1) !== (undone.row === -1)) return null;
+  return { row: kept.row, approximate: kept.approximate || undone.approximate };
+}
+
+/**
  * The Delay JS transform: `servedHtml` + the exclusion set → the html with
  * matched delayed scripts restored to live scripts, plus the transform's
  * report. Rows are validated before anything runs (all of them named on
@@ -113,8 +148,8 @@ function restoreDelayedScript(tagText: string): string {
  * outright — the first of each kind only — and everything else is restored.
  *
  * WP Rocket delays scripts after its Defer JS inline-jQuery pass, so a row
- * sees an inline body as that pass left it: when the set turns the pass off
- * (Defer JS rows or toggle), the served wrapping is undone in the subject.
+ * sees an inline body as that pass left it under the set's Defer JS rows and
+ * toggle (see `verdictAfterInlinePass`).
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Delay JS rows + toggle slice; Defer JS rows + toggle).
@@ -122,9 +157,43 @@ function restoreDelayedScript(tagText: string): string {
  * @throws {@link ExclusionValidationError} when any Delay JS row is invalid.
  */
 export function delayJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
+  return delayAfterInlinePass(servedHtml, set, inlinePassUnder(set));
+}
+
+/**
+ * The Delay JS transform over a page whose inline pass was already replayed
+ * (the pipeline replays it first): a skipped pass is already undone there,
+ * so elements are read as they stand, or both ways while it is unknown.
+ *
+ * @param html The page after the replay.
+ * @param set The exclusion set.
+ * @param inline The replay's result.
+ * @returns The rewritten html and the report.
+ * @throws {@link ExclusionValidationError} as {@link delayJsTransform}.
+ */
+export function delayJsTransformAfterInlinePass(
+  html: string,
+  set: ExclusionSet,
+  inline: InlinePassReplay
+): TransformResult {
+  return delayAfterInlinePass(html, set, inline.undetermined > 0 ? 'unknown' : 'runs');
+}
+
+/**
+ * The Delay JS transform's body (see {@link delayJsTransform}).
+ *
+ * @param servedHtml The page.
+ * @param set The exclusion set.
+ * @param inlinePass How to read wrapped inline bodies (see `verdictAfterInlinePass`).
+ * @returns The rewritten html and the report.
+ */
+function delayAfterInlinePass(
+  servedHtml: string,
+  set: ExclusionSet,
+  inlinePass: InlinePass
+): TransformResult {
   const rows = set.rows.delayJs;
   const matchRow = compileDelayRows(rows);
-  const unwrapSubjects = !inlineWrapRuns(set);
   const featureWide = set.disable.delayJs;
   const matchCounts = rows.map(() => 0);
   const patches: TextPatch[] = [];
@@ -166,7 +235,7 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       // The whole script element is the match target, as WP Rocket saw it
       // before delaying it (rows may also match body text).
       const element = servedHtml.slice(tag.start, tag.end);
-      const verdict = matchRow(unwrapSubjects ? unwrapInlineScripts(element).html : element);
+      const verdict = verdictAfterInlinePass(matchRow, element, inlinePass);
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {
         undetermined++;

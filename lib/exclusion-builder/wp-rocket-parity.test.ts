@@ -23,7 +23,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
-import { INLINE_WRAP_OPEN } from './defer-inline-js';
+import { INLINE_WRAP_OPEN } from '../wp-rocket/constants';
+import { replayInlinePass } from './defer-inline-js';
 import { ExclusionValidationError } from './errors';
 import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
@@ -204,7 +205,7 @@ type MatchOutcome =
       readonly candidates: readonly string[];
       readonly excluded: readonly string[];
       readonly featureOff?: boolean | 'unknown';
-      readonly inlineWrapped?: readonly string[];
+      readonly inlineWrapped?: readonly string[] | 'undetermined';
       readonly hashed?: readonly string[];
       readonly rekeyed?: readonly string[] | null;
     }
@@ -236,11 +237,13 @@ function engineRekeyed(row: MatchRow): string[] | null {
  * `featureOff`: a set that turns WP Rocket's Defer off is a validation
  * error, so a run is `false` — or `'unknown'` when the report says the page
  * state could not be replayed (never equal to WP Rocket's boolean). Defer's
- * `inlineWrapped`: the scripts still wrapped in the engine's page.
+ * `inlineWrapped`: the scripts still wrapped in the engine's page, or
+ * `'undetermined'` when the engine leaves the inline pass's outcome open.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
-    const run = runStepResult(row.feature, row.served, setFor(row.feature, row.rows));
+    const set = setFor(row.feature, row.rows);
+    const run = runStepResult(row.feature, row.served, set);
     const excluded = markedKeys(run.html, row.feature);
     const candidates = engineCandidates(row);
     const lazyRender =
@@ -256,7 +259,10 @@ function engineMatch(row: MatchRow): MatchOutcome {
       ...(row.feature === 'defer_all_js'
         ? {
             featureOff: run.report.pageState === 'unknown' ? 'unknown' : false,
-            inlineWrapped: wrappedKeys(row.html, run.html)
+            inlineWrapped:
+              replayInlinePass(row.served, set).undetermined > 0
+                ? 'undetermined'
+                : wrappedKeys(row.html, run.html)
           }
         : {}),
       ...lazyRender
@@ -276,7 +282,11 @@ function expectedMatch(row: MatchRow): MatchOutcome {
     candidates: row.candidates,
     excluded: row.excluded,
     ...(row.featureOff === undefined ? {} : { featureOff: row.featureOff }),
-    ...(row.inlineWrapped === undefined ? {} : { inlineWrapped: row.inlineWrapped }),
+    ...(row.inlineWrapped === undefined
+      ? {}
+      : {
+          inlineWrapped: row.inlineUndetermined === undefined ? row.inlineWrapped : 'undetermined'
+        }),
     ...(row.hashed === undefined ? {} : { hashed: row.hashed, rekeyed: row.rekeyed })
   };
 }

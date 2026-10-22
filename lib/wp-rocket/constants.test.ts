@@ -58,7 +58,9 @@ import {
   ROCKET_PRECONNECT_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
   URL_PATTERNS,
-  WPR_DEFER_ATTRIBUTE
+  WPR_DEFER_ATTRIBUTE,
+  INLINE_WRAP_OPEN,
+  INLINE_WRAP_CLOSE
 } from './constants';
 import { PANEL_SEARCH_ACTIONS } from './types';
 
@@ -295,6 +297,8 @@ describe('platforms and ids', () => {
     expect(DELAY_JS_SRC).toBe('data-rocket-src');
     expect(FDT_EXCLUDED_RESOURCE).toBe('data-wpr-fdt-excluded');
     expect(WPR_DEFER_ATTRIBUTE).toBe('data-rocket-defer');
+    expect(INLINE_WRAP_OPEN).toBe("window.addEventListener('DOMContentLoaded', function() {");
+    expect(INLINE_WRAP_CLOSE).toBe('});');
     expect(Object.values(PANEL_SEARCH_ACTIONS).sort()).toEqual(
       ['cancelSearch', 'nextSearchResult', 'performSearch', 'previousSearchResult'].sort()
     );

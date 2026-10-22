@@ -503,16 +503,23 @@ function optionalCount(value: unknown, candidates: number): number | undefined |
 
 /**
  * A report's count of undone inline-jQuery wraps: absent, or a positive
- * count on a Defer JS report (the only transform that undoes them).
+ * count on a Defer JS report (the only transform that undoes them) no
+ * larger than its rewrites (each undone wrap is one).
  *
+ * @param value The raw count.
+ * @param feature The report's feature.
+ * @param rewritten The report's rewrite count.
  * @returns The count (`undefined` when absent), or `null` when invalid.
  */
 function inlineUnwrappedCount(
   value: unknown,
-  feature: ExclusionFeatureId
+  feature: ExclusionFeatureId,
+  rewritten: number
 ): number | undefined | null {
   if (value === undefined) return undefined;
-  return isCount(value) && value > 0 && feature === 'defer_all_js' ? value : null;
+  return isCount(value) && value > 0 && value <= rewritten && feature === 'defer_all_js'
+    ? value
+    : null;
 }
 
 /**
@@ -603,7 +610,11 @@ function parseTransformReport(
   const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
   const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
   if (undetermined === null || approximate === null) return null;
-  const inlineUnwrapped = inlineUnwrappedCount(ownValue(input, 'inlineUnwrapped'), feature);
+  const inlineUnwrapped = inlineUnwrappedCount(
+    ownValue(input, 'inlineUnwrapped'),
+    feature,
+    rewritten
+  );
   if (inlineUnwrapped === null) return null;
   const caveats = parseRowCaveats(input, featureWide);
   if (caveats === null) return null;

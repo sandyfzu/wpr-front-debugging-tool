@@ -21,6 +21,15 @@ export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
 /** Attribute WP Rocket adds to scripts it defers. */
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
 
+/**
+ * What WP Rocket's Defer JS puts before the body of an inline jQuery script
+ * (its inline pass); {@link INLINE_WRAP_CLOSE} goes after it.
+ */
+export const INLINE_WRAP_OPEN = "window.addEventListener('DOMContentLoaded', function() {";
+
+/** The closing of WP Rocket's inline-jQuery wrapper (see {@link INLINE_WRAP_OPEN}). */
+export const INLINE_WRAP_CLOSE = '});';
+
 /** Attribute marking WP Rocket-preloaded subresources on `link` elements. */
 export const WPR_PRELOAD_ATTRIBUTE = 'data-rocket-preload';
 

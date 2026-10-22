@@ -34,11 +34,25 @@ export interface TextPatch {
  * @param html The original document text.
  * @param patches The patches (any order; zero-width insertions allowed).
  * @returns The rewritten text; the input itself when there are no patches.
- * @throws {@link Error} when two patches overlap (a patch's start strictly
- *   inside a previous patch's span) — a bug to fix, not to hide.
+ * @throws {@link Error} when a patch is out of range or inverted, or when
+ *   two patches overlap (a patch's start strictly inside a previous patch's
+ *   span) — a bug to fix, not to hide.
  */
 export function applyPatches(html: string, patches: readonly TextPatch[]): string {
   if (patches.length === 0) return html;
+  for (const { start, end } of patches) {
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      start > end ||
+      end > html.length
+    ) {
+      throw new Error(
+        `Invalid HTML patch [${String(start)},${String(end)}) over a ${String(html.length)}-character document`
+      );
+    }
+  }
   const sorted = [...patches].sort((left, right) => right.start - left.start);
   // Built right to left, then reversed: the same result as splicing each
   // patch into the text from the end, without re-copying the text per patch.

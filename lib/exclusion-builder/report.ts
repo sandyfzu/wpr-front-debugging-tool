@@ -50,7 +50,9 @@ export interface TransformReport {
   /**
    * Defer JS: inline scripts whose WP Rocket jQuery wrapping (a
    * `DOMContentLoaded` listener around the body) was undone, because the set
-   * turns that pass off. Not candidates; present only when non-zero.
+   * certainly turns that pass off. Wrapped scripts are Defer JS candidates
+   * and each undone one a rewrite (so this is ≤ `rewritten`); present only
+   * when non-zero.
    */
   readonly inlineUnwrapped?: number;
   /**

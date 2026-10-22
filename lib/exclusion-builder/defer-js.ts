@@ -5,14 +5,14 @@
  * work); rows match the `src` value WP Rocket captured — raw, as served
  * (whitespace and entities kept) — with WP Rocket's joined-row semantics
  * (`./defer-js-rows`), and the rewrite strips both defer markers. When the
- * set turns WP Rocket's inline-jQuery pass off, its wrapping of inline
- * scripts is undone too (`./defer-inline-js`).
+ * set certainly turns WP Rocket's inline-jQuery pass off, its wrapping of
+ * inline scripts is undone too (`./defer-inline-js`).
  */
 import { WPR_DEFER_ATTRIBUTE } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import { deferRowSet } from './defer-js-rows';
-import { inlineWrapRuns, unwrapInlineScripts } from './defer-inline-js';
+import { replayInlinePass, type InlinePassReplay } from './defer-inline-js';
 import { undoDelayRenames } from './delay-js-match';
 import { ExclusionValidationError } from './errors';
 import { transformReport, type TransformResult } from './report';
@@ -130,12 +130,12 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  * the transform's report. The rewrite stamps the exclusion marker as CSV.
  * When WP Rocket's page state cannot be replayed, the matches are applied
  * as if it defers and the report says so; a script whose subject cannot be
- * read back is left as served and counted undetermined. When the set turns
- * WP Rocket's inline-jQuery pass off (Defer JS disabled, or a row naming a
- * jQuery file), the inline scripts it wrapped get their original body back
- * (counted in the report); the reverse — wrapping scripts the served page
- * left unwrapped — is never done: the served page already reflects the live
- * rows, which a set only adds to.
+ * read back is left as served and counted undetermined. Inline scripts
+ * WP Rocket wrapped (its inline-jQuery pass) count as candidates: when the
+ * set certainly turns that pass off they get their original body back,
+ * when the outcome depends on the live rows they stay as served and count
+ * undetermined (`./defer-inline-js`). Wrapping is never added: the served
+ * page already reflects the live rows, which a set only adds to.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Defer JS rows + toggle slice). No document
@@ -145,6 +145,42 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  *   problem — the page-wide `joined-page-off` included.
  */
 export function deferJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
+  return deferWithInlinePass(servedHtml, set, null);
+}
+
+/**
+ * The Defer JS transform over a page whose inline pass was already replayed
+ * (the pipeline replays it before Delay JS, whose restores would otherwise
+ * split identical wrapped copies): the replay's counts join the report.
+ *
+ * @param html The page after the replay (and any earlier step).
+ * @param set The exclusion set.
+ * @param inline The replay's result.
+ * @returns The rewritten html and the report.
+ * @throws {@link ExclusionValidationError} as {@link deferJsTransform}.
+ */
+export function deferJsTransformAfterInlinePass(
+  html: string,
+  set: ExclusionSet,
+  inline: InlinePassReplay
+): TransformResult {
+  return deferWithInlinePass(html, set, inline);
+}
+
+/**
+ * The Defer JS transform's body (see {@link deferJsTransform}).
+ *
+ * @param servedHtml The page.
+ * @param set The exclusion set.
+ * @param replayed The inline pass's replay when already done on `servedHtml`,
+ *   else `null` (replayed here, after the deferral rewrites).
+ * @returns The rewritten html and the report.
+ */
+function deferWithInlinePass(
+  servedHtml: string,
+  set: ExclusionSet,
+  replayed: InlinePassReplay | null
+): TransformResult {
   const rows = set.rows.deferJs;
   // One translation serves validation and matching (a heavy set is not memoized).
   const rowSet = deferRowSet(rows);
@@ -182,22 +218,22 @@ export function deferJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       text: stampExclusionMarker(restored, FEATURE)
     });
   }
+  // Wrapped inline scripts are Defer JS's work too: candidates, rewritten
+  // when unwrapped, undetermined when the pass's outcome is unknown.
   const deferred = applyPatches(servedHtml, patches);
-  const inline = inlineWrapRuns(set)
-    ? { html: deferred, unwrapped: 0 }
-    : unwrapInlineScripts(deferred);
+  const inline = replayed ?? replayInlinePass(deferred, set);
   return {
-    html: inline.html,
+    html: replayed === null ? inline.html : deferred,
     report: transformReport({
       feature: FEATURE,
       rowKind: 'pattern',
       rows,
       matchCounts,
-      candidates,
-      rewritten,
+      candidates: candidates + inline.wrapped,
+      rewritten: rewritten + inline.unwrapped,
       regionRemovals: 0,
       featureWide,
-      undetermined,
+      undetermined: undetermined + inline.undetermined,
       inlineUnwrapped: inline.unwrapped,
       ...(rowSet.page === 'unknown' ? { pageState: 'unknown' as const } : {}),
       rowCountsBestEffort: rows.length > 1

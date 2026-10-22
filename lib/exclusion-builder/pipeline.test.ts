@@ -257,3 +257,29 @@ describe('exclusionPipelineSteps', () => {
     expect(applyPipeline(RELATIVE, rawRow, 'https://s.tld/page').reports[1]?.rewritten).toBe(1);
   });
 });
+
+describe('the Defer JS inline pass across Delay JS (WP Rocket 3.23.5.1, run)', () => {
+  // Served with no rows: Defer JS wrapped both copies (its tag match ends at
+  // the first `>`, so the wrapper starts in the attribute), Delay JS delayed both.
+  const open = "window.addEventListener('DOMContentLoaded', function() {";
+  const delayed = `<script type="text/rocketlazyloadscript" data-x=">${open}jQuery">>jQuery(1)});</script>`;
+  const SERVED = `${delayed}<!-- ${delayed} -->`;
+
+  it('undoes the wrapping before Delay JS restores, so every copy comes back', () => {
+    const set = setWith({ deferJs: ['JQUERY.JS'], delayJs: ['data-x'] });
+    const { html, reports } = applyPipeline(SERVED, set);
+    // WP Rocket serves `<script data-x=">jQuery">>jQuery(1)</script>` for both
+    // copies; Delay JS restores never reach inside a comment (that copy stays delayed).
+    expect(html).toBe(
+      '<script data-x=">jQuery" data-wpr-fdt-excluded="delay_js">>jQuery(1)</script>' +
+        '<!-- <script type="text/rocketlazyloadscript" data-x=">jQuery">>jQuery(1)</script> -->'
+    );
+    expect(reports[1]).toMatchObject({ feature: 'defer_all_js', inlineUnwrapped: 1 });
+  });
+
+  it('leaves the wrapping and reports it undetermined when the live rows decide', () => {
+    const { html, reports } = applyPipeline(SERVED, setWith({ deferJs: ['foo.js'] }));
+    expect(html).toBe(SERVED);
+    expect(reports[1]).toMatchObject({ feature: 'defer_all_js', undetermined: 1 });
+  });
+});

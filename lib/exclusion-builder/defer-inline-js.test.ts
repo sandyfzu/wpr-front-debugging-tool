@@ -1,15 +1,15 @@
 /**
  * WP Rocket's Defer JS inline-jQuery pass: when its joined exclusion text
- * turns the pass off, and undoing the wrapping it served. Expected values
- * are WP Rocket 3.23.5.1's own (`DeferJS::defer_inline_js` run on these
- * inputs, PHP 8.1 / PCRE2 10.49).
+ * turns the pass off, when that is certain without the live rows, and
+ * undoing the wrapping it served. Expected values are WP Rocket 3.23.5.1's
+ * own (`DeferJS::defer_inline_js` run on these inputs, PHP 8.1 / PCRE2 10.49).
  */
 import { describe, expect, it } from 'vitest';
+import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN } from '../wp-rocket/constants';
 import {
-  INLINE_WRAP_CLOSE,
-  INLINE_WRAP_OPEN,
-  inlineWrapRuns,
+  inlinePassUnder,
   namesJqueryFile,
+  replayInlinePass,
   unwrapInlineScripts
 } from './defer-inline-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -17,6 +17,7 @@ import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 /** A body as WP Rocket wraps it. */
 const wrap = (body: string): string => `${INLINE_WRAP_OPEN}${body}${INLINE_WRAP_CLOSE}`;
 
+/** A set with these Defer JS rows (and, optionally, Defer JS disabled). */
 function deferSet(rows: string[], disabled = false): ExclusionSet {
   return {
     rows: { ...EMPTY_EXCLUSION_SET.rows, deferJs: rows },
@@ -59,15 +60,71 @@ describe('namesJqueryFile — WP Rocket`s /(jquery(?:.*)?\\.js)/i over the joine
   });
 });
 
-describe('inlineWrapRuns', () => {
-  it('runs with Defer JS on and no jQuery file named', () => {
-    expect(inlineWrapRuns(EMPTY_EXCLUSION_SET)).toBe(true);
-    expect(inlineWrapRuns(deferSet(['jquery']))).toBe(true);
+describe('inlinePassUnder — certain only where the live rows cannot change it', () => {
+  it('is skipped under the Defer JS disable, or when one row names a jQuery file alone', () => {
+    expect(inlinePassUnder(deferSet([], true))).toBe('skipped');
+    expect(inlinePassUnder(deferSet(['jquery.min.js']))).toBe('skipped');
+    expect(inlinePassUnder(deferSet(['foo', 'JQUERY.JS']))).toBe('skipped');
+    expect(inlinePassUnder(deferSet(['/jquery-?[0-9.]*(.min|.slim|.slim.min)?.js']))).toBe(
+      'skipped'
+    );
   });
 
-  it('is off under the Defer JS disable, or when the rows name a jQuery file', () => {
-    expect(inlineWrapRuns(deferSet([], true))).toBe(false);
-    expect(inlineWrapRuns(deferSet(['jquery.min.js']))).toBe(false);
+  it('runs when no row holds `.js` (nothing can complete a `jquery`)', () => {
+    expect(inlinePassUnder(EMPTY_EXCLUSION_SET)).toBe('runs');
+    expect(inlinePassUnder(deferSet(['jquery', 'jquery-migrate', 'app.css', 'js']))).toBe('runs');
+  });
+
+  // Each set below gives opposite WP Rocket outcomes depending on the live
+  // rows (run: live rows + these rows, served page wrapped without them).
+  it.each([
+    // live `/wp-includes/js/jquery/` or `jquery-migrate`: skipped; no live rows: runs.
+    [['foo.js']],
+    // live `foo.js`: the second `foo.js` is dropped as a duplicate → runs;
+    // no live rows: `jquery|foo.js` → skipped.
+    [['jquery', 'foo.js']],
+    // The external list holds `/wp-includes/js/dist/i18n.min.js`: the row is
+    // dropped as its duplicate → runs; with another list: skipped.
+    [['jquery', '/wp-includes/js/dist/i18n.min.js']],
+    [['jquery#x', 'a.js']],
+    [['.js']]
+  ])('is unknown for %j', (rows) => {
+    expect(inlinePassUnder(deferSet(rows))).toBe('unknown');
+  });
+});
+
+describe('replayInlinePass', () => {
+  const SERVED = `<script src="/a.js" data-rocket-defer defer></script><script>${wrap('jQuery(1)')}</script>`;
+
+  it('undoes, keeps, or leaves the wrapping undetermined per the pass', () => {
+    expect(replayInlinePass(SERVED, deferSet(['jquery.js']))).toEqual({
+      html: '<script src="/a.js" data-rocket-defer defer></script><script>jQuery(1)</script>',
+      wrapped: 1,
+      unwrapped: 1,
+      undetermined: 0
+    });
+    expect(replayInlinePass(SERVED, deferSet(['jquery']))).toEqual({
+      html: SERVED,
+      wrapped: 1,
+      unwrapped: 0,
+      undetermined: 0
+    });
+    expect(replayInlinePass(SERVED, deferSet(['foo.js']))).toEqual({
+      html: SERVED,
+      wrapped: 1,
+      unwrapped: 0,
+      undetermined: 1
+    });
+  });
+
+  it('counts nothing on a page without the wrapping', () => {
+    const plain = '<script>jQuery(1)</script>';
+    expect(replayInlinePass(plain, deferSet(['foo.js']))).toEqual({
+      html: plain,
+      wrapped: 0,
+      unwrapped: 0,
+      undetermined: 0
+    });
   });
 });
 
@@ -105,6 +162,35 @@ describe('unwrapInlineScripts', () => {
     expect(unwrapInlineScripts(SOURCE)).toEqual({ html: SOURCE, unwrapped: 0 });
   });
 
+  it('restores a copy page-wide, across a comment end inside the element', () => {
+    // WP Rocket's `str_replace` wraps the commented copy too, although the
+    // comment ends at the element's own `-->`.
+    const element = (body: string): string => `<script>${body}</script>`;
+    const source = `${element('jQuery(1)-->x')}<!-- ${element('jQuery(1)-->x')} -->`;
+    const served = `${element(wrap('jQuery(1)-->x'))}<!-- ${element(wrap('jQuery(1)-->x'))} -->`;
+    expect(unwrapInlineScripts(served)).toEqual({ html: source, unwrapped: 1 });
+  });
+
+  it('restores copies whatever later rewrites did to their opening tags', () => {
+    const served =
+      `<script data-wpr-fdt-excluded="delay_js">${wrap('jQuery(1)')}</script>` +
+      `<!-- <script type="text/rocketlazyloadscript">${wrap('jQuery(1)')}</script> -->`;
+    expect(unwrapInlineScripts(served)).toEqual({
+      html:
+        '<script data-wpr-fdt-excluded="delay_js">jQuery(1)</script>' +
+        '<!-- <script type="text/rocketlazyloadscript">jQuery(1)</script> -->',
+      unwrapped: 1
+    });
+  });
+
+  it('unwraps a body whose attribute copy was left as the source wrote it', () => {
+    // Not WP Rocket output (it would have wrapped the copy too): a source
+    // already in wrapper form, unwrapped like any wrapped body.
+    expect(unwrapInlineScripts(`<script data-b="jQuery(1)">${wrap('jQuery(1)')}</script>`)).toEqual(
+      { html: '<script data-b="jQuery(1)">jQuery(1)</script>', unwrapped: 1 }
+    );
+  });
+
   it('takes off one layer of a body wrapped twice', () => {
     const once = `<script>${wrap('jQuery(3)')}</script>`;
     expect(unwrapInlineScripts(`<script>${wrap(wrap('jQuery(3)'))}</script>`)).toEqual({
@@ -122,11 +208,6 @@ describe('unwrapInlineScripts', () => {
     ],
     ['an opening without its closing', `<script>${INLINE_WRAP_OPEN}jQuery(1)</script>`],
     ['the wrapper alone', `<script>${INLINE_WRAP_OPEN}${INLINE_WRAP_CLOSE}</script>`],
-    // WP Rocket would have wrapped the attribute copy too.
-    [
-      'a copy of the body left unwrapped',
-      `<script data-b="jQuery(1)">${wrap('jQuery(1)')}</script>`
-    ],
     ['a script inside a comment only', `<!-- <script>${wrap('jQuery(1)')}</script> -->`]
   ])('leaves %s as served', (_label, html) => {
     expect(unwrapInlineScripts(html)).toEqual({ html, unwrapped: 0 });
