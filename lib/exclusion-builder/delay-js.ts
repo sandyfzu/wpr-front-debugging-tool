@@ -8,6 +8,11 @@
  * against the element as it was before delaying); the restore follows the controller's own
  * runtime semantics — `type` reclaims `data-rocket-type`'s value (dropped
  * entirely when the original had none) and `src` reclaims `data-rocket-src`.
+ *
+ * Reach: script elements only. WP Rocket's Delay regex also rewrites script
+ * text inside HTML comments, so a matching row leaves those copies
+ * original there; here they stay as served. A comment never runs, so the
+ * page behaves the same.
  */
 import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';

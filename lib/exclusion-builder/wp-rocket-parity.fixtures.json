@@ -1115,6 +1115,18 @@
       "inlineWrapped": []
     },
     {
+      "id": "match-delay-copy-in-comment",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["/a\\.js"],
+      "note": "residual: WP Rocket delays (and, excluded, leaves) the commented copy too; the engine restores elements only",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"s1\"></script>\n<!-- <script src=\"/a.js\"></script> -->\n<!-- <script>a();</script> -->\n<script src=\"/b.js\" id=\"s2\"></script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\" id=\"s1\"></script>\n<!-- <script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/a.js\"></script> -->\n<!-- <script type=\"text/rocketlazyloadscript\">a();</script> -->\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/b.js\" id=\"s2\"></script>\n</body></html><!-- wpr_delay_js -->",
+      "subjects": ["s1", "s2"],
+      "candidates": ["s1", "s2"],
+      "excluded": ["s1"]
+    },
+    {
       "id": "save-picked-delay-path-plus",
       "kind": "save",
       "feature": "delay_js",

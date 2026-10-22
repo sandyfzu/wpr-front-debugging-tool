@@ -11,6 +11,25 @@ import { delayJsTransform } from './delay-js';
 import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 import { scanTags } from './html-scan';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseParityTable, type ParityRow } from './wp-rocket-parity-table';
+
+/** A match row of the WP Rocket parity table (outputs derived from the real plugin). */
+function parityRow(id: string): Extract<ParityRow, { kind: 'match' }> {
+  const table = parseParityTable(
+    JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), 'wp-rocket-parity.fixtures.json'),
+        'utf8'
+      )
+    )
+  );
+  const row = table.rows.find((candidate) => candidate.id === id);
+  if (row?.kind !== 'match') throw new Error(`no match row ${id}`);
+  return row;
+}
 
 /** A set whose Delay JS rows are replaced. */
 function setWithRows(rows: string[], disableDelayJs = false): ExclusionSet {
@@ -223,6 +242,19 @@ describe('delayJsTransform — adversarial markup', () => {
     const result = delayJsTransform(html, setWithRows(['decoy']));
     expect(result.report.candidates).toBe(0);
     expect(result.html).toBe(html);
+  });
+
+  it('leaves the copies WP Rocket delayed inside comments as served (named residual)', () => {
+    // WP Rocket's Delay regex reaches commented copies (the table's served
+    // page shows them delayed), so with a matching row it would leave them
+    // original. A comment never runs: the engine restores elements only.
+    const served = parityRow('match-delay-copy-in-comment').served;
+    const result = delayJsTransform(served, setWithRows(['/a\\.js']));
+    expect(result.report.rewritten).toBe(1);
+    expect(result.html).toContain(
+      '<!-- <script type="text/rocketlazyloadscript" data-rocket-src="/a.js"></script> -->'
+    );
+    expect(result.html).toContain('<script id="s1" src="/a.js"');
   });
 
   it('preserves the doctype byte-for-byte and passes lone surrogates through (no byte handling here)', () => {
