@@ -88,7 +88,14 @@ export interface UpdateDeps {
 export async function fetchAndStoreKnownConflicts(deps: UpdateDeps): Promise<UpdateOutcome> {
   let response: Response;
   try {
-    response = await deps.fetch(DB_ENDPOINT, { signal: AbortSignal.timeout(DB_FETCH_TIMEOUT_MS) });
+    // `no-cache`: always revalidate with the server. The endpoint sends
+    // `Last-Modified` without `Cache-Control`, so the default mode would serve
+    // a heuristically "fresh" HTTP-cache copy with no network at all, and the
+    // refresh would stamp stale rows as just fetched (even offline).
+    response = await deps.fetch(DB_ENDPOINT, {
+      cache: 'no-cache',
+      signal: AbortSignal.timeout(DB_FETCH_TIMEOUT_MS)
+    });
   } catch (cause) {
     const mode: UpdateFailureReason =
       cause instanceof DOMException && cause.name === 'TimeoutError'
