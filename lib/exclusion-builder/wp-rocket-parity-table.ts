@@ -21,9 +21,10 @@
  * of the live outcome.
  *
  * Inputs are authored by hand; outputs are written by the dev script only.
- * Imports are type-only so the dev script can load this module under Node's
- * native TypeScript (no extensionless runtime import to resolve).
+ * Runtime imports carry their `.ts` extension and reach only leaf modules, so
+ * the dev script can load this module under Node's native TypeScript.
  */
+import { PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
 import type { ExclusionFeatureId } from './set';
 
 /** The work item expected to turn a row's pending fields green (`pending.owner`). */
@@ -82,31 +83,6 @@ const SAVE_FEATURE_IDS = FEATURE_IDS.filter((id) => id !== FILTER_ONLY_FEATURE);
 
 /** Why the settings form does not store a typed line. */
 export type DropReason = 'empty' | 'zero' | 'duplicate' | 'invalid-pattern' | 'safe-mode';
-
-/**
- * A row problem the engine reports instead of matching like WP Rocket:
- * PCRE-only syntax not checked here, a row PCRE rejects, a row that matches
- * every subject, a Defer set WP Rocket turns off page-wide, a Defer set
- * whose joined rows change each other's matching, a catastrophic-backtracking
- * shape.
- */
-export type ProblemId =
-  | 'pcre-only'
-  | 'pcre-invalid'
-  | 'match-all'
-  | 'joined-page-off'
-  | 'joined-changes-matching'
-  | 'backtracking-risk';
-
-/** Every problem id, for validation. */
-const PROBLEM_IDS: readonly ProblemId[] = [
-  'pcre-only',
-  'pcre-invalid',
-  'match-all',
-  'joined-page-off',
-  'joined-changes-matching',
-  'backtracking-risk'
-];
 
 /**
  * How the engine is meant to answer a match row instead of WP Rocket's

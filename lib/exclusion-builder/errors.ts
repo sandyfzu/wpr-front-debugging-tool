@@ -3,6 +3,7 @@
  * to fix in the editor, not a crash to swallow — the validation error
  * carries every problem at once so a UI can render them all inline.
  */
+import type { ProblemId } from './pcre/problems';
 import type { ExclusionFeatureId } from './set';
 
 /** One invalid exclusion row, named for inline feedback in the editor. */
@@ -14,6 +15,8 @@ export interface InvalidExclusionRow {
   readonly row: string;
   /** Why the row cannot work — actionable, naming the offending value. */
   readonly reason: string;
+  /** The typed problem, when the row is checked against WP Rocket's PCRE semantics. */
+  readonly problem?: ProblemId;
 }
 
 /**
