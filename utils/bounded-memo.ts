@@ -4,7 +4,37 @@
  * `weigh` says — e.g. the characters it retains), evicting the oldest
  * inserted first. A value heavier than the whole bound is returned but
  * never kept, so one huge input cannot flush the cache for nothing.
+ *
+ * Weights are only as honest as the weighers: {@link stringBytes} is what a
+ * kept string costs, and a kept substring must be {@link detachedString}
+ * first — engines share a substring's storage with the string it was cut
+ * from (a row split out of a whole field's text would pin that text).
  */
+
+/** Characters an engine stores one byte each (Latin-1); any other makes a string two bytes per unit. */
+const TWO_BYTE_CHARACTER = /[^\u0000-ÿ]/;
+
+/**
+ * The bytes a string's characters take in a JS engine: one per UTF-16 unit
+ * when every unit is ≤ U+00FF, else two (V8 and SpiderMonkey alike).
+ *
+ * @param text The string.
+ */
+export function stringBytes(text: string): number {
+  return TWO_BYTE_CHARACTER.test(text) ? text.length * 2 : text.length;
+}
+
+/**
+ * An equal string that shares no storage with another: engines keep a
+ * substring (`slice`, `split`, a match) as a view on its parent, so keeping
+ * it keeps the whole parent alive. The JSON round trip builds a fresh
+ * string (lone surrogates survive: they are escaped, then restored).
+ *
+ * @param text The string to keep.
+ */
+export function detachedString(text: string): string {
+  return JSON.parse(JSON.stringify(text)) as string;
+}
 
 /** A bounded memo's limits. */
 export interface BoundedMemoLimits<V> {
@@ -59,7 +89,8 @@ export function createBoundedMemo<V>(limits: BoundedMemoLimits<V>): BoundedMemo<
       const weight = weigh(key, value);
       if (weight > maxWeight) return value;
       while (entries.size >= maxEntries || total + weight > maxWeight) evictOldest();
-      entries.set(key, { value, weight });
+      // The key is kept: never as a view on a larger string.
+      entries.set(detachedString(key), { value, weight });
       total += weight;
       return value;
     },

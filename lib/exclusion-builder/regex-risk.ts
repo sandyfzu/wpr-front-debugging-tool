@@ -55,7 +55,7 @@
  * Syntax the parser does not model is accepted (never a false rejection of
  * a pattern the engine compiles).
  */
-import { createBoundedMemo } from '../../utils/bounded-memo';
+import { createBoundedMemo, stringBytes } from '../../utils/bounded-memo';
 
 /** Why a pattern is risky. */
 export type BacktrackingRisk =
@@ -1229,9 +1229,9 @@ export function analyzeRegexRisk(source: string): RegexRiskAnalysis {
  */
 const riskMemo = createBoundedMemo<BacktrackingRisk | null>({
   maxEntries: 512,
-  // Estimated retained bytes: a one-byte source string plus its entry.
+  // Retained bytes: the source string plus its entry (measured ≤ 1 KiB).
   maxWeight: 96 * 1024,
-  weigh: (source) => 64 + source.length
+  weigh: (source) => 1024 + stringBytes(source)
 });
 
 /**

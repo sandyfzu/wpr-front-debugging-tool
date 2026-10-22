@@ -15,7 +15,7 @@
  *
  * Each row reports its most decisive problem only (see {@link rowProblem}).
  */
-import { createBoundedMemo } from '../../../utils/bounded-memo';
+import { createBoundedMemo, detachedString, stringBytes } from '../../../utils/bounded-memo';
 import { capText } from '../../../utils/cap-text';
 import type { InvalidExclusionRow } from '../errors';
 import { ROW_REASONS } from '../row-reasons';
@@ -85,12 +85,11 @@ export interface RegexRowsTranslation {
 }
 
 /**
- * The translation memos' bounds, declared once, in estimated retained
- * bytes (not only entries): every realm that validates keeps them — the
- * overlay inside host pages included — so the worst case stays well under
- * 1 MiB whatever rows come. Estimates measured on V8 (Node 24): a kept
- * analysis ≈ 700 B + 1 B per character of key and JS source; a compiled
- * regex ≈ 250 B + up to 5 B per source character once it has run.
+ * The translation memos' bounds, declared once, in retained bytes (not only
+ * entries): every realm that validates keeps them — the overlay inside host
+ * pages included — so the worst case stays under half a mebibyte whatever
+ * rows come. The weights are upper bounds of what Chromium retains after GC
+ * (heap measured per shape: short, long, two-byte, class-heavy rows).
  */
 export const TRANSLATION_CACHE_LIMITS = {
   /** Row analyses kept at most (a set of up to this many short rows translates from the memo). */
@@ -103,18 +102,29 @@ export const TRANSLATION_CACHE_LIMITS = {
   regexBytes: 192 * 1024
 } as const;
 
-/** Estimated fixed bytes of one kept analysis (its record and arrays). */
-const ANALYSIS_ENTRY_BYTES = 768;
-/** Estimated fixed bytes of one kept regex. */
-const REGEX_ENTRY_BYTES = 256;
-/** Estimated compiled bytes per source character of a kept regex. */
-const REGEX_BYTES_PER_CHAR = 5;
+/**
+ * Fixed bytes of one kept analysis (its record, arrays and entry): measured
+ * 1.4–2.4 KiB for short rows.
+ */
+const ANALYSIS_ENTRY_BYTES = 2560;
+/**
+ * Bytes per byte of an analysis's key and source: the strings plus what is
+ * derived from them (constructs, names) — measured up to about twice.
+ */
+const ANALYSIS_BYTES_PER_STRING_BYTE = 2;
+/** Fixed bytes of one kept regex (its record and entry). */
+const REGEX_ENTRY_BYTES = 1024;
+/**
+ * Compiled bytes per source character of a regex once it has run: measured
+ * 3 (literal two-byte text) to 80 (byte classes) on V8's native code.
+ */
+export const REGEX_BYTES_PER_CHAR = 80;
 
 /** Compiled sources (a source already carries its feature's escapes, so it is the whole key). */
 const regexMemo = createBoundedMemo<RegExp>({
   maxEntries: TRANSLATION_CACHE_LIMITS.regexEntries,
   maxWeight: TRANSLATION_CACHE_LIMITS.regexBytes,
-  weigh: (source) => REGEX_ENTRY_BYTES + REGEX_BYTES_PER_CHAR * source.length
+  weigh: (source) => REGEX_ENTRY_BYTES + stringBytes(source) + REGEX_BYTES_PER_CHAR * source.length
 });
 
 /**
@@ -134,7 +144,10 @@ export function compileByteMatcher(matcher: PcreMatcher): (bytes: string) => boo
 const analysisMemo = createBoundedMemo<RowAnalysis>({
   maxEntries: TRANSLATION_CACHE_LIMITS.analysisEntries,
   maxWeight: TRANSLATION_CACHE_LIMITS.analysisBytes,
-  weigh: (key, analysis) => ANALYSIS_ENTRY_BYTES + key.length + (analysis.source?.length ?? 0)
+  weigh: (key, analysis) =>
+    ANALYSIS_ENTRY_BYTES +
+    ANALYSIS_BYTES_PER_STRING_BYTE *
+      (stringBytes(key) + (analysis.source === null ? 0 : stringBytes(analysis.source)))
 });
 
 /**
@@ -146,7 +159,8 @@ const analysisMemo = createBoundedMemo<RowAnalysis>({
  * @param row The stored row.
  */
 function cachedAnalysis(feature: RegexFeatureId, row: string): RowAnalysis {
-  return analysisMemo.get(`${feature}\u0000${row}`, () => analyzeRow(feature, row));
+  // The analysis keeps strings cut from the row: never from a larger text it was cut from.
+  return analysisMemo.get(`${feature}\u0000${row}`, () => analyzeRow(feature, detachedString(row)));
 }
 
 /**

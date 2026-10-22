@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBoundedMemo } from './bounded-memo';
+import { createBoundedMemo, detachedString, stringBytes } from './bounded-memo';
 
 describe('createBoundedMemo', () => {
   it('builds once per key and serves the kept value after', () => {
@@ -58,5 +58,34 @@ describe('createBoundedMemo', () => {
   it('refuses impossible bounds', () => {
     expect(() => createBoundedMemo({ maxEntries: 0 })).toThrow(RangeError);
     expect(() => createBoundedMemo({ maxEntries: 1, maxWeight: -1 })).toThrow(RangeError);
+  });
+
+  it('keeps a key that equals the asked one (a detached copy)', () => {
+    const memo = createBoundedMemo<number>({ maxEntries: 2 });
+    const parent = `${'p'.repeat(64)}key-one${'q'.repeat(64)}`;
+    memo.get(parent.slice(64, 71), () => 1);
+    const again = vi.fn(() => 2);
+    expect(memo.get('key-one', again)).toBe(1);
+    expect(again).not.toHaveBeenCalled();
+  });
+});
+
+describe('stringBytes', () => {
+  it('counts one byte per character up to U+00FF, else two', () => {
+    expect(stringBytes('')).toBe(0);
+    expect(stringBytes('abcÿ')).toBe(4);
+    expect(stringBytes('abĀ')).toBe(6);
+    expect(stringBytes('😀')).toBe(4);
+    expect(stringBytes('a\ud800')).toBe(4);
+  });
+});
+
+describe('detachedString', () => {
+  it('returns an equal string, lone surrogates and controls included', () => {
+    for (const text of ['', 'abc', 'a\ud800b\udfff', '"\\\n\u0000 ', 'é漢😀']) {
+      expect(detachedString(text)).toBe(text);
+    }
+    const parent = 'x'.repeat(10_000) + 'tail-of-the-parent';
+    expect(detachedString(parent.slice(10_000))).toBe('tail-of-the-parent');
   });
 });

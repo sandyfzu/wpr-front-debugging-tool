@@ -22,7 +22,7 @@
  * when committed, and the per-row diff (which carries the typed text) says
  * what changed, so the change can be shown and undone.
  */
-import { createBoundedMemo } from '../../utils/bounded-memo';
+import { createBoundedMemo, detachedString, stringBytes } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
 import { rowSaveOutcome } from './pcre/rows';
 import type { SaveOutcome } from './pcre/translate';
@@ -153,15 +153,22 @@ type RowForm =
 /**
  * The per-row stages' memo bounds: a lane re-saved on every keystroke
  * re-reads its unchanged rows from here (each up to the wire's row cap),
- * while a few full lanes cannot pin more than about a megabyte.
+ * while a few full lanes cannot pin more than a mebibyte.
  */
-export const ROW_FORM_CACHE_LIMITS = { entries: 4096, chars: 512 * 1024 } as const;
+export const ROW_FORM_CACHE_LIMITS = { entries: 4096, bytes: 1024 * 1024 } as const;
+
+/** Fixed bytes of one kept row form (its record and entry): measured ≈ 130. */
+const ROW_FORM_ENTRY_BYTES = 256;
 
 /** Text rows' per-row stages, by feature and row (pure: the same row always gives the same form). */
 const rowFormMemo = createBoundedMemo<RowForm>({
   maxEntries: ROW_FORM_CACHE_LIMITS.entries,
-  maxWeight: ROW_FORM_CACHE_LIMITS.chars,
-  weigh: (key, result) => key.length + ('form' in result ? result.form.length : 0)
+  maxWeight: ROW_FORM_CACHE_LIMITS.bytes,
+  weigh: (key, result) =>
+    ROW_FORM_ENTRY_BYTES +
+    stringBytes(key) +
+    stringBytes(result.typed) +
+    ('form' in result ? stringBytes(result.form) : 0)
 });
 
 /**
@@ -173,7 +180,10 @@ const rowFormMemo = createBoundedMemo<RowForm>({
  */
 function rowForm(feature: ExclusionFeatureId, row: SubmittedRow): RowForm {
   if (typeof row !== 'string') return computeRowForm(feature, row);
-  return rowFormMemo.get(`${feature}\u0000${row}`, () => computeRowForm(feature, row));
+  // The form keeps the row: never as a view on the whole field's text.
+  return rowFormMemo.get(`${feature}\u0000${row}`, () =>
+    computeRowForm(feature, detachedString(row))
+  );
 }
 
 /**

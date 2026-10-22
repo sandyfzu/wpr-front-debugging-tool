@@ -14,11 +14,12 @@
  * One translation per row set, memoized: the validator and the transform
  * share it.
  */
-import { createBoundedMemo } from '../../utils/bounded-memo';
+import { createBoundedMemo, detachedString, stringBytes } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
 import type { ProblemId } from './pcre/problems';
 import {
   compileFirstMatch,
+  REGEX_BYTES_PER_CHAR,
   translationRowProblems,
   translateRegexRows,
   type PageState
@@ -61,25 +62,27 @@ export interface DeferRowSet {
    * problem) never match.
    */
   readonly firstMatch: (subject: string) => number;
-  /** Characters of translated source the set retains (its memo weight). */
-  readonly sourceChars: number;
+  /** Bytes the set retains at most, its matcher compiled (its memo weight). */
+  readonly retainedBytes: number;
 }
 
 /**
- * The set memo's bounds: entries, and estimated bytes retained (the rows'
- * JSON key plus their translated sources, one byte per character), so a
- * few wire-cap sets cannot pin megabytes in the overlay's realm.
+ * The set memo's bounds: entries, and bytes retained (see
+ * {@link DeferRowSet.retainedBytes}), so a few wire-cap sets cannot pin
+ * megabytes in the overlay's realm.
  */
 export const DEFER_ROW_SET_CACHE_LIMITS = { entries: 16, bytes: 128 * 1024 } as const;
 
-/** Estimated fixed bytes of one kept set (its records, problems and closures). */
-const SET_ENTRY_BYTES = 1024;
+/** Fixed bytes of one kept set (its record, closures and entry). */
+const SET_ENTRY_BYTES = 4096;
+/** Bytes per row of a kept set (its translated-row record, matcher and problem): measured ≈ 540. */
+const SET_ROW_BYTES = 640;
 
 /** The memo: the rows (as a JSON key) → their translation. */
 const rowSetMemo = createBoundedMemo<DeferRowSet>({
   maxEntries: DEFER_ROW_SET_CACHE_LIMITS.entries,
   maxWeight: DEFER_ROW_SET_CACHE_LIMITS.bytes,
-  weigh: (key, set) => SET_ENTRY_BYTES + key.length + set.sourceChars
+  weigh: (key, set) => stringBytes(key) + set.retainedBytes
 });
 
 /**
@@ -98,9 +101,17 @@ function translateRowSet(rows: readonly string[]): DeferRowSet {
     pageOffRows: problems
       .filter(({ problem }) => problem === 'joined-page-off')
       .map(({ index }) => index),
-    sourceChars: translation.rows.reduce(
-      (sum, { matcher }) => sum + (matcher?.source.length ?? 0),
-      0
+    // Upper bound of what the set keeps once its matcher ran: the rows'
+    // records, their sources and those sources compiled.
+    retainedBytes: translation.rows.reduce(
+      (sum, { row, matcher }) =>
+        sum +
+        SET_ROW_BYTES +
+        stringBytes(row) +
+        (matcher === null
+          ? 0
+          : stringBytes(matcher.source) + REGEX_BYTES_PER_CHAR * matcher.source.length),
+      SET_ENTRY_BYTES
     ),
     firstMatch: (subject) => {
       firstMatch ??= compileFirstMatch(translation.rows.map(({ matcher }) => matcher));
@@ -116,7 +127,8 @@ function translateRowSet(rows: readonly string[]): DeferRowSet {
  * @param rows The stored rows, in order.
  */
 export function deferRowSet(rows: readonly string[]): DeferRowSet {
-  return rowSetMemo.get(JSON.stringify(rows), () => translateRowSet(rows));
+  // The set keeps its rows: never as views on the field's text.
+  return rowSetMemo.get(JSON.stringify(rows), () => translateRowSet(rows.map(detachedString)));
 }
 
 /**
