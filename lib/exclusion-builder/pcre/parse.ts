@@ -243,6 +243,8 @@ class Parser {
   /** Running parenthesis depth and its minimum (see {@link ParsedPattern}). */
   private depth = 0;
   private minDepth = 0;
+  /** Open lookaround groups around the current position. */
+  private lookarounds = 0;
   /** The `J` option per open group (index 0 = top level); `null` = not set in this pattern. */
   private readonly duplicates: (boolean | null)[] = [null];
   private readonly issues: ParseIssue[] = [];
@@ -278,6 +280,10 @@ class Parser {
       if (compiledSize(alternatives) > COMPILED_SIZE_BOUND) {
         const shown = Math.min(this.src.length, STOP_CONSTRUCT_LENGTH);
         this.issue('unknown', 0, shown, 'may exceed PCRE’s compiled pattern size');
+      }
+      if (nullableRepeats(alternatives, 1) >= NULLABLE_REPEAT_BOUND) {
+        const shown = Math.min(this.src.length, STOP_CONSTRUCT_LENGTH);
+        this.issue('unknown', 0, shown, 'repeats an item that can match empty many times');
       }
     } catch (error) {
       if (!(error instanceof StopParse)) throw error;
@@ -430,7 +436,12 @@ class Parser {
     if (bounds !== null) {
       // A possessive repeat keeps its node (its lengths still count); the issue blocks emission.
       nodes[nodes.length - 1] = { type: 'repeat', node: target, ...bounds, lazy };
-      if (target.type === 'group' && isLookaround(target.kind)) {
+      if (target.type === 'group' && bounds.max === 0) {
+        // PCRE's start-of-match optimization reads a group (assertions too)
+        // skipped with `{0}`: `(?=(?:a|b){0})` matches only some subjects
+        // there (observed), all in JS — so no translation and no `match-all`.
+        this.issue('untranslated', start, this.pos, 'group repeated zero times');
+      } else if (target.type === 'group' && isLookaround(target.kind)) {
         this.issue('untranslated', start, this.pos, 'quantified assertion');
       }
     }
@@ -535,6 +546,11 @@ class Parser {
       case 'G':
         return { type: 'assert', assertion: 'search-start' };
       case 'K':
+        if (this.lookarounds > 0) {
+          // In an assertion `\K` can move the match start past its end; a
+          // `preg_replace` then fails (observed): not modeled.
+          this.issue('untranslated', start, this.pos, '\\K inside an assertion');
+        }
         return { type: 'keep' };
       case 'g':
         return this.gReference(start);
@@ -946,7 +962,10 @@ class Parser {
   ): PatternNode {
     this.duplicates.push(duplicates);
     this.depth++;
+    const assertion = isLookaround(kind);
+    if (assertion) this.lookarounds++;
     const alternatives = this.alternatives();
+    if (assertion) this.lookarounds--;
     this.duplicates.pop();
     if (this.peek() !== ')') {
       this.issue('invalid', start, this.pos, 'missing closing parenthesis', { join: 'parens' });
@@ -1208,6 +1227,40 @@ function isLookaround(kind: GroupKind): boolean {
  * estimate, keeps every claim on the safe side.
  */
 const COMPILED_SIZE_BOUND = 30_000;
+
+/**
+ * Nested repeat counts over items that can match empty, from which a
+ * pattern's verdict is not claimed. PCRE2 rejects some such patterns at
+ * compile time — `(?:|){20}`, `(?:(?:|){5}){4}`, `((?:|){4}){5}` — and
+ * keeps others (`(?:|){19}`, `x(?:|){100}`, `(?:a?){999}`): observed on
+ * both versions, the rule is not modeled; 16 stays below every rejection seen.
+ */
+const NULLABLE_REPEAT_BOUND = 16;
+
+/**
+ * The largest product of nested repeat counts (`max`, else `min` for an
+ * open repeat) over items that can match empty (or are not measured).
+ *
+ * @param alternatives The branches to scan.
+ * @param outer The product of the enclosing nullable repeats.
+ */
+function nullableRepeats(alternatives: readonly (readonly PatternNode[])[], outer: number): number {
+  let largest = outer;
+  for (const nodes of alternatives) {
+    for (const node of nodes) largest = Math.max(largest, nullableRepeatsIn(node, outer));
+  }
+  return largest;
+}
+
+/** {@link nullableRepeats} for one node. */
+function nullableRepeatsIn(node: PatternNode, outer: number): number {
+  if (node.type === 'group') return nullableRepeats(node.alternatives, outer);
+  if (node.type !== 'repeat') return outer;
+  const min = nodeLength(node.node).min;
+  const nullable = !(min > 0);
+  const product = nullable ? outer * Math.max(1, node.max ?? node.min) : outer;
+  return Math.max(product, nullableRepeatsIn(node.node, product));
+}
 
 /** Estimated compiled units per node kind (see {@link COMPILED_SIZE_BOUND}). */
 const UNITS = { item: 3, class: 33, group: 6 } as const;

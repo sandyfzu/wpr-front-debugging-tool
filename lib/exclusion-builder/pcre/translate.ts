@@ -599,7 +599,11 @@ export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
     dropRepairs,
     parens,
     pcreOnly: isEmitted(emitted) ? null : emitted,
-    matchesAll: parsed.complete && parsed.alternatives.some((nodes) => nodes.every(alwaysNullable)),
+    // A `{0}` group can stop PCRE matching at some starts (see the parser): no claim.
+    matchesAll:
+      parsed.complete &&
+      !parsed.issues.some(({ detail }) => detail === 'group repeated zero times') &&
+      parsed.alternatives.some((nodes) => nodes.every(alwaysNullable)),
     source,
     risk: source === null ? null : regexBacktrackingRisk(source),
     topLevelOption:

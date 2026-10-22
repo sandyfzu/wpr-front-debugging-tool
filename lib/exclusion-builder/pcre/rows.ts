@@ -387,7 +387,13 @@ function deferPage(
     .map((analysis, index) => [index, analysis] as const)
     .filter(([, analysis]) => analysis.save.outcome !== 'dropped');
   const breakers = new Set(kept.filter(([, analysis]) => analysis.breaksJoin).map(([i]) => i));
-  if (breakers.size > 0) return { page: 'off', offRows: breakers };
+  if (breakers.size > 0) {
+    // A later row's `\E` ends the quote, and the rest may compile (observed):
+    // only a quote nothing closes is proven to break the joined pattern.
+    const first = Math.min(...breakers);
+    const closed = rows.slice(first + 1).some((row) => row.includes('\\E'));
+    return closed ? { page: 'unknown', offRows: new Set() } : { page: 'off', offRows: breakers };
+  }
   const clashes = nameClashRows(kept);
   if (clashes.size > 0) return { page: 'off', offRows: clashes };
   const leaks = kept.some(([, analysis], position) => {

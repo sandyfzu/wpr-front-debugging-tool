@@ -269,6 +269,66 @@ describe('compiled size', () => {
   });
 });
 
+describe('repeats of items that can match empty (observed on both versions)', () => {
+  /** The first issue that is not merely untranslated (`null` = none). */
+  function deciding(pattern: string) {
+    return parsePcre(pattern, false).issues.find(({ kind }) => kind !== 'untranslated') ?? null;
+  }
+
+  it.each([
+    // PHP drops these…
+    ['(?:|){100}'],
+    ['(?:|){20}'],
+    ['(?:(?:|){3,1000})(?<=\\d)'],
+    ['(?:(?:|){5}){4}'],
+    ['((?:|){4}){5}'],
+    ['(?=(?:(?:(?:))*){2,1000}.{10002})'],
+    // …and keeps these, by a rule not modeled: no claim either way.
+    ['x(?:|){100}'],
+    ['(?:a?){999}'],
+    ['(?:\\b){999}']
+  ])('%s: verdict not claimed', (pattern) => {
+    expect(deciding(pattern)).toMatchObject({
+      kind: 'unknown',
+      detail: 'repeats an item that can match empty many times'
+    });
+  });
+
+  it.each([['(?:|){15}'], ['(?:(?:|){3}){5}'], ['(?:a?){15}'], ['(?:ab){999}'], ['(?:|a)*']])(
+    '%s stays below the bound',
+    (pattern) => {
+      expect(deciding(pattern)).toBeNull();
+    }
+  );
+});
+
+describe('groups repeated zero times', () => {
+  it('are not translated (PCRE’s start-of-match optimization still reads them)', () => {
+    // `(?=(?:a|b){0})` matches "b"/"ab"/"bc" but not "a" in PCRE; JS matches all.
+    for (const pattern of [
+      '(?=(?:a|b){0})',
+      '(?=(a|b){0})',
+      '(?:ab){0}',
+      '(?:a){0,0}',
+      '(?<!a){0}'
+    ]) {
+      expect(parsePcre(pattern, false).issues).toMatchObject([
+        { kind: 'untranslated', detail: 'group repeated zero times' }
+      ]);
+    }
+    expect(parsePcre('a{0}', false).issues).toEqual([]);
+  });
+});
+
+describe('\\K inside an assertion', () => {
+  it('is not translated (a preg_replace can fail on it)', () => {
+    expect(parsePcre('(?=a\\K)', false).issues).toMatchObject([
+      { kind: 'untranslated', detail: '\\K inside an assertion' }
+    ]);
+    expect(parsePcre('a\\Kb', false).issues).toEqual([]);
+  });
+});
+
 describe('join facts', () => {
   it('tags errors a joined pattern may repair', () => {
     const tags = (pattern: string) =>

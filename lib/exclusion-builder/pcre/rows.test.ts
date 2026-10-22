@@ -283,6 +283,14 @@ describe('Defer JS rows the save drops, joined', () => {
     [['.)\\Q{1, 2}'], 'unknown'],
     // A repeated name after an earlier row's `J` → PHP: on.
     [['(?J)x', '(?<n>a)(?<n>b)'], 'unknown'],
+    // An open `\\Q` a later row's `\\E` closes → PHP: on.
+    [['a\\Qb', 'c\\E'], 'unknown'],
+    [['a\\Qb', 'x', 'c\\E'], 'unknown'],
+    [['\\Qdummy-string', '\\E'], 'unknown'],
+    [['a\\Qb', '\\\\E'], 'unknown'],
+    // …and one nothing closes → PHP: off.
+    [['a\\Qb', 'c'], 'off'],
+    [['\\Q', 'x'], 'off'],
     // Errors no join repairs → PHP: off.
     [['(', 'a.js'], 'off'],
     [['*', 'x\\'], 'off'],

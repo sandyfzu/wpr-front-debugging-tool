@@ -644,8 +644,7 @@ describe('emitRow: JS over the byte string matches exactly when PCRE does', () =
     ['(é)\\1', 'caseless back-reference to non-ASCII text'],
     ['(.)\\1', 'caseless back-reference to non-ASCII text'],
     ['(?<=(a))b', 'lookbehind holding a group, back-reference or \\K'],
-    ['(?<=a\\K)b', 'lookbehind holding a group, back-reference or \\K'],
-    // `\R` spans 1–2 bytes: `(?<=\R)[^a]` matches "\r\n" in PCRE only.
+    ['(?<=a\\K)b', '\\K inside an assertion'], // `\R` spans 1–2 bytes: `(?<=\R)[^a]` matches "\r\n" in PCRE only.
     ['(?<=\\R)x', 'variable-length lookbehind'],
     // PCRE scans a variable branch forwards: `-(?<!$\n?)` differs on "dummy-string".
     ['-(?<!$\\n?)', 'variable-length lookbehind']
@@ -803,7 +802,10 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['[\\g](', '\\g'],
     // A large count of an empty item, or of a group (PCRE's compiled size), is unproven.
     ['(?<=(?:){65535}\\x41)', '(?<=(?:){65535}\\x41)'],
-    ['(?:a){65535}', '(?:a){65535}']
+    ['(?:a){65535}', '(?:a){65535}'],
+    // Nested repeats of items that can match empty: PHP drops some, keeps others.
+    ['(?:|){100}', '(?:|){100}'],
+    ['x(?:|){100}', 'x(?:|){100}']
   ])('%s is unknown (%s)', (row, construct) => {
     expect(saveOutcome(row)).toMatchObject({ outcome: 'unknown', construct });
   });
@@ -868,7 +870,10 @@ describe('analyzeRow', () => {
     ['\\b', false],
     ['(?>a?)', false],
     ['a+', false],
-    ['(?<n>a)\\1', false]
+    ['(?<n>a)\\1', false],
+    // A `{0}` group: PCRE's start-of-match optimization can still refuse some starts.
+    ['(?<!a){0}', false],
+    ['(?:a|b){0}', false]
   ])('%j matches every subject: %s', (row, all) => {
     expect(analyzeRow(F, row).matchesAll).toBe(all);
   });
