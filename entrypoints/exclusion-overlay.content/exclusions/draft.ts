@@ -122,13 +122,14 @@ export function sameSet(a: ExclusionSet, b: ExclusionSet): boolean {
 }
 
 /**
- * Split pasted text into rows: one per line (`\n` or `\r\n`), blank lines
- * dropped, each line kept as written.
+ * Split pasted text into rows the way WP Rocket's save splits its field:
+ * on `\n` only, each line trimmed (which takes a CRLF's `\r` with it), lines
+ * left empty dropped — a lone `\r` inside a line stays part of that line.
  *
  * @param text The pasted text.
  */
 export function splitLines(text: string): string[] {
-  return text.split(/\r?\n/).filter((line) => !isBlankRow(line));
+  return exclusionFieldLines(text.split('\n'));
 }
 
 /** The result of an insertion. */
@@ -182,9 +183,10 @@ export interface RowSelection {
  * Paste lines into a row the way a text editor splits it: the row keeps its
  * text before the selection, then the first pasted line; each further line
  * becomes a row after it, the last followed by the row's text after the
- * selection. Blank pasted lines are dropped, and lines past the lane cap too
- * — never the row's own text. The rows the paste creates are trimmed like
- * any committed row; the edited row keeps its text until it is committed.
+ * selection. Pasted lines are split and trimmed as {@link splitLines} does
+ * (blank ones dropped), lines past the lane cap too — never the row's own
+ * text. The rows the paste creates are trimmed like any committed row; the
+ * edited row keeps its own text until it is committed.
  *
  * @param draft The draft.
  * @param lane The row's lane.

@@ -5,7 +5,12 @@
  * order and joined by `\n` with no trailing newline.
  */
 import { describe, expect, it } from 'vitest';
-import { exclusionFieldLines, exclusionFieldText, trimExclusionRow } from './field-text';
+import {
+  exclusionFieldLines,
+  exclusionFieldText,
+  isInvisibleKeptRow,
+  trimExclusionRow
+} from './field-text';
 
 describe('trimExclusionRow', () => {
   it('strips leading and trailing spaces, tabs and line breaks', () => {
@@ -57,5 +62,18 @@ describe('exclusionFieldText', () => {
   it('is the single line itself, and empty when nothing is left', () => {
     expect(exclusionFieldText(['  one'])).toBe('one');
     expect(exclusionFieldText(['  ', ''])).toBe('');
+  });
+});
+
+describe('isInvisibleKeptRow', () => {
+  it('flags rows of kept-but-invisible spaces only', () => {
+    expect(isInvisibleKeptRow('\u00a0')).toBe(true);
+    expect(isInvisibleKeptRow(' \u00a0\u2028 ')).toBe(true);
+  });
+
+  it('leaves blank rows, rows with visible text and empty rows alone', () => {
+    expect(isInvisibleKeptRow('  \t')).toBe(false);
+    expect(isInvisibleKeptRow('\u00a0x')).toBe(false);
+    expect(isInvisibleKeptRow('')).toBe(false);
   });
 });

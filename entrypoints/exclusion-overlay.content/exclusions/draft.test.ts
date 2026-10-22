@@ -246,7 +246,7 @@ describe('pasteIntoRow', () => {
     expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'bjquery\\.min\\.js']);
   });
 
-  it('trims the rows a paste creates like the settings save; the edited row commits on blur', () => {
+  it('trims pasted lines and the rows a paste creates like the settings save', () => {
     const pasted = pasteIntoRow(
       start,
       'delayJs',
@@ -255,7 +255,7 @@ describe('pasteIntoRow', () => {
       { start: 0, end: 0 },
       nextId
     );
-    expect(texts(pasted.draft)).toEqual([' a ', 'b', 'c jquery\\.min\\.js', 'gtag']);
+    expect(texts(pasted.draft)).toEqual(['a', 'b', 'cjquery\\.min\\.js', 'gtag']);
   });
 
   it('changes nothing for a blank paste or an unknown row', () => {
@@ -272,8 +272,13 @@ describe('pasteIntoRow', () => {
 });
 
 describe('splitLines', () => {
-  it('splits on both newline styles and drops blank lines', () => {
-    expect(splitLines('a\r\nb\n\n  \nc ')).toEqual(['a', 'b', 'c ']);
+  it('splits on both newline styles, trims lines and drops blank ones', () => {
+    expect(splitLines('a\r\nb\n\n  \nc ')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('splits on LF only, like the settings save: a lone CR stays inside its line', () => {
+    expect(splitLines('a\rb\nc\r')).toEqual(['a\rb', 'c']);
+    expect(splitLines('\r\n\r')).toEqual([]);
   });
 });
 

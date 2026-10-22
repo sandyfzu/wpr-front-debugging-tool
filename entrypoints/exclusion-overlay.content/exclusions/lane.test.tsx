@@ -64,7 +64,7 @@ function mountLane(
 ) {
   const [locked, setLocked] = createSignal(false);
   const announce = vi.fn<(text: string) => void>();
-  render(() => (
+  const { unmount } = render(() => (
     <Lane
       lane="delayJs"
       controller={controller}
@@ -79,11 +79,13 @@ function mountLane(
       createVirtualizer={everyRow}
     />
   ));
-  return { setLocked, announce };
+  return { setLocked, announce, unmount };
 }
 
 const copyAll = (): HTMLButtonElement =>
-  screen.getByRole('button', { name: 'Copy all Delay JavaScript execution exclusions' });
+  screen.getByRole('button', {
+    name: /^Cop(y|ied) all Delay JavaScript execution exclusions$/
+  });
 
 const input = (n: number): HTMLInputElement =>
   screen.getByRole('textbox', {
@@ -139,6 +141,28 @@ describe('Lane', () => {
     input(2).focus();
     expect(controller.draft().rows.delayJs[0]?.text).toBe('gtag');
     expect(input(1).value).toBe('gtag');
+  });
+
+  it('leaves a paste without a line feed to the field (a lone CR is not a line break)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', [''], null);
+    mountLane(controller);
+    for (const text of ['a\rb', ' gtag\n ']) {
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
+      input(1).dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
+  it('notes a row of only no-break spaces (kept and applied), without blocking it', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['\u00a0', 'gtag'], null);
+    mountLane(controller);
+    const note = screen.getByText(/^Only non-breaking or other special spaces/);
+    expect(input(1).getAttribute('aria-describedby')).toBe(note.parentElement?.id);
+    expect(input(1).getAttribute('aria-invalid')).toBe('false');
+    expect(input(2).getAttribute('aria-describedby')).toBeNull();
   });
 
   it('splits a multi-line paste into rows', async () => {
@@ -295,9 +319,16 @@ describe('Lane copy-all', () => {
     expect(write).toHaveBeenCalledTimes(1);
     expect(write.mock.calls[0]?.[0]).toBe('gtag\njquery\\.min\\.js\na b');
     expect(announce).toHaveBeenCalledWith('Copied 3 exclusions');
+    // WCAG 2.5.3: the visible "Copied" is part of the accessible name.
     expect(copyAll().textContent).toBe('Copied');
+    expect(copyAll().getAttribute('aria-label')).toBe(
+      'Copied all Delay JavaScript execution exclusions'
+    );
     await vi.advanceTimersByTimeAsync(COPIED_FLASH_MS);
     expect(copyAll().textContent).toBe('Copy all');
+    expect(copyAll().getAttribute('aria-label')).toBe(
+      'Copy all Delay JavaScript execution exclusions'
+    );
   });
 
   it('stays focusable but inert on an empty lane, and says why', async () => {
@@ -315,6 +346,53 @@ describe('Lane copy-all', () => {
     expect(announce).toHaveBeenCalledWith(
       'Nothing to copy yet: add an exclusion to this lane first.'
     );
+    // Sighted users see the reason too, until the lane changes.
+    const reason = (): HTMLElement | null => document.querySelector('.xo-copy-line');
+    expect(reason()?.textContent).toMatch(/^Nothing to copy yet/);
+    controller.insertRows('delayJs', ['gtag'], null);
+    await waitFor(() => {
+      expect(reason()).toBeNull();
+    });
+  });
+
+  it('drops the failure line once the lane rows change', async () => {
+    const controller = await readyController();
+    const [id] = controller.insertRows('delayJs', ['gtag'], null);
+    mountLane(controller, undefined, () => Promise.resolve('failed'));
+    fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(screen.getByText(/^Copy failed/)).toBeTruthy();
+    });
+    controller.editRow('delayJs', id ?? '', 'gtag2');
+    await waitFor(() => {
+      expect(screen.queryByText(/^Copy failed/)).toBeNull();
+    });
+  });
+
+  it('neither announces nor arms the flash once unmounted mid-copy', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag'], null);
+    let finish: (outcome: ClipboardWrite) => void = () => undefined;
+    const { announce, unmount } = mountLane(
+      controller,
+      undefined,
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    fireEvent.click(copyAll());
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    unmount();
+    finish('copied');
+    await new Promise((resolve) => {
+      queueMicrotask(() => {
+        resolve(undefined);
+      });
+    });
+    expect(announce).not.toHaveBeenCalled();
+    expect(timers).not.toHaveBeenCalled();
+    timers.mockRestore();
   });
 
   it('shows and announces a refused copy until the next attempt', async () => {

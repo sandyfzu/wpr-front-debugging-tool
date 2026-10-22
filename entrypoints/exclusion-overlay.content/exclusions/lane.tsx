@@ -12,16 +12,18 @@ import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 
 import Plus from 'lucide-solid/icons/plus';
 import Trash from 'lucide-solid/icons/trash';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
+import Info from 'lucide-solid/icons/info';
 import {
   VirtualList,
   type VirtualizerFactory,
   type VirtualScrollRequest
 } from '../../../components/ui/virtual-list';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
+import { isInvisibleKeptRow, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
 import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
-import { LANE_COPY } from '../copy';
+import { INVISIBLE_ROW_NOTE, LANE_COPY } from '../copy';
 import type { OverlayController } from '../controller';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
@@ -170,7 +172,8 @@ export function Lane(props: LaneProps): JSX.Element {
       return;
     }
     const text = event.clipboardData?.getData('text/plain') ?? '';
-    if (!/\r?\n/.test(text.trim())) return;
+    // Several lines once split the way the save splits them; else a native paste.
+    if (!trimExclusionRow(text).includes('\n')) return;
     event.preventDefault();
     props.controller.pasteRows(props.lane, row.id, text, selectionOf(event.currentTarget, row));
   };
@@ -355,7 +358,14 @@ function focusLeft(field: HTMLInputElement): boolean {
 
 /**
  * One editable row: the input, its match count on the applied page, its
- * remove control and its inline problem.
+ * remove control, its inline problem, and a non-blocking note when the row
+ * looks blank yet is kept (only no-break or other Unicode spaces).
+ *
+ * Leaving the row trims it by setting the field's value, which in Chromium
+ * resets that field's native undo history (verified; the only edit path
+ * that keeps it, `execCommand('insertText')`, needs the field focused again
+ * on its way out — focus would have to bounce back to wherever it went, not
+ * known at `blur`). A trim that changes nothing sets nothing.
  *
  * @param props See {@link LaneRowProps}.
  */
@@ -365,6 +375,13 @@ function LaneRow(props: LaneRowProps): JSX.Element {
     props.controller.rowProblem(props.lane, props.row.id, props.row.text);
   const matches = (): number | null => rowMatches(props.report, props.row.text);
   const errorId = (): string => `${props.row.id}-problem`;
+  const noteId = (): string => `${props.row.id}-note`;
+  const invisible = (): boolean => isInvisibleKeptRow(props.row.text);
+  const describedBy = (): string | undefined => {
+    const ids = [problem() === null ? null : errorId(), invisible() ? noteId() : null];
+    const joined = ids.filter((id) => id !== null).join(' ');
+    return joined === '' ? undefined : joined;
+  };
   return (
     <div
       class="xo-row"
@@ -386,7 +403,7 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           placeholder={LANE_COPY[props.lane].placeholder}
           aria-label={label()}
           aria-invalid={problem() !== null}
-          aria-describedby={problem() === null ? undefined : errorId()}
+          aria-describedby={describedBy()}
           readOnly={props.locked}
           onInput={(event) => {
             props.controller.editRow(props.lane, props.row.id, event.currentTarget.value);
@@ -436,6 +453,12 @@ function LaneRow(props: LaneRowProps): JSX.Element {
             <span>{withCode(reason())}</span>
           </p>
         )}
+      </Show>
+      <Show when={invisible()}>
+        <p class="xo-row-note" id={noteId()}>
+          <Info size={12} aria-hidden="true" />
+          <span>{INVISIBLE_ROW_NOTE}</span>
+        </p>
       </Show>
     </div>
   );

@@ -82,6 +82,10 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
   }
 };
 
+/** A row that looks blank yet is kept and applied (non-blocking). */
+export const INVISIBLE_ROW_NOTE =
+  'Only non-breaking or other special spaces: WP Rocket keeps this row, so it is applied.';
+
 /** The per-lane copy-all control's words. */
 export const COPY_ALL_COPY = {
   label: 'Copy all',
@@ -93,6 +97,12 @@ export const COPY_ALL_COPY = {
    * @param lane The lane's label.
    */
   name: (lane: string): string => `Copy all ${lane} exclusions`,
+  /**
+   * The accessible name while "Copied" shows (it holds the visible label).
+   *
+   * @param lane The lane's label.
+   */
+  copiedName: (lane: string): string => `Copied all ${lane} exclusions`,
   /**
    * The success announcement.
    *

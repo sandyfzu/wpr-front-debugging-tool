@@ -801,6 +801,15 @@
   overflow-wrap: anywhere;
 }
 
+.xo-row-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .xo-lane-foot {
   display: flex;
   flex-wrap: wrap;
@@ -825,7 +834,7 @@
   color: var(--status-ok);
 }
 
-.xo-copy-error {
+.xo-copy-line {
   flex-basis: 100%;
 }
 

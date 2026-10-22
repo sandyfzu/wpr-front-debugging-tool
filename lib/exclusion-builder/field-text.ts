@@ -58,3 +58,14 @@ export function exclusionFieldLines(rows: readonly string[]): string[] {
 export function exclusionFieldText(rows: readonly string[]): string {
   return exclusionFieldLines(rows).join(FIELD_LINE_SEPARATOR);
 }
+
+/**
+ * Whether a row looks blank yet is kept: it holds only whitespace the save
+ * does not strip (no-break spaces, other Unicode spaces), so it is stored —
+ * and applied — although nothing visible is in it.
+ *
+ * @param row The row as typed.
+ */
+export function isInvisibleKeptRow(row: string): boolean {
+  return trimExclusionRow(row) !== '' && row.trim() === '';
+}
