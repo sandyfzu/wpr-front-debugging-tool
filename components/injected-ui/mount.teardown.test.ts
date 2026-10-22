@@ -41,6 +41,19 @@ vi.mock('solid-js/web', (): Record<string, unknown> => ({
   }
 }));
 
+/** The isolation is mocked out (its contract is `event-isolation.test.tsx`'s). */
+vi.mock('./event-isolation', (): Record<string, unknown> => ({
+  isolateUiEvents: (): void => undefined
+}));
+
+/** A container inside an open shadow root, as WXT's `onMount` hands them over. */
+function shadowContainer(): { container: HTMLElement; shadow: ShadowRoot } {
+  const shadow = document.createElement('div').attachShadow({ mode: 'open' });
+  const container = document.createElement('div');
+  shadow.append(container);
+  return { container, shadow };
+}
+
 /** Probe view returning a detached element. */
 function probeView(): JSX.Element {
   const el = document.createElement('div');
@@ -65,8 +78,8 @@ afterEach(() => {
 
 describe('mountShadowUi teardown contracts', () => {
   it('disposes the view first even when stopping the follow throws, without escaping', async () => {
-    const container = document.createElement('div');
-    const dispose = await mountShadowUi(container, probeView);
+    const { container, shadow } = shadowContainer();
+    const dispose = await mountShadowUi(container, shadow, probeView);
     expect(container.querySelector('.teardown-probe')).not.toBeNull();
     expect(() => {
       dispose();
@@ -79,8 +92,8 @@ describe('mountShadowUi teardown contracts', () => {
 
   it('swallows the dead-context stop with an actionable prefixed warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const container = document.createElement('div');
-    const dispose = await mountShadowUi(container, probeView);
+    const { container, shadow } = shadowContainer();
+    const dispose = await mountShadowUi(container, shadow, probeView);
     expect(() => {
       dispose();
     }).not.toThrow();
@@ -88,8 +101,10 @@ describe('mountShadowUi teardown contracts', () => {
   });
 
   it('unwinds the armed follow when the render itself fails', async () => {
-    const container = document.createElement('div');
-    await expect(mountShadowUi(container, explodingView)).rejects.toThrow('view factory exploded');
+    const { container, shadow } = shadowContainer();
+    await expect(mountShadowUi(container, shadow, explodingView)).rejects.toThrow(
+      'view factory exploded'
+    );
     // The follow's stop ran exactly once: the failed mount left no subscription.
     expect(stopFollowing).toHaveBeenCalledTimes(1);
   });

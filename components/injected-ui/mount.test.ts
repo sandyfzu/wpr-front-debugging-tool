@@ -1,6 +1,7 @@
 /**
- * The shared mount's contract as effects: the stored palette is on the
- * container before the view renders, the live theme leg follows later
+ * The shared mount's contract as effects: the root's input is isolated
+ * and the stored palette is on the container before the view renders,
+ * the live theme leg follows later
  * appearance writes over the real options item (storage events included),
  * and the returned disposer removes the tree AND the follow — a later write
  * after disposal touches nothing.
@@ -28,9 +29,34 @@ vi.mock('solid-js/web', (): Record<string, unknown> => ({
   }
 }));
 
+/** Each `isolateUiEvents` call, in order with the renders (the mock records both). */
+const calls: string[] = [];
+
+/**
+ * The isolation is mocked at the seam the mount composes over (its own
+ * contract is `event-isolation.test.tsx`'s; the real one needs Solid's
+ * client build, which this file's renderer mock replaces).
+ */
+vi.mock('./event-isolation', (): Record<string, unknown> => ({
+  isolateUiEvents: (shadow: ShadowRoot): void => {
+    calls.push(`isolate:${shadow.host.id}`);
+  }
+}));
+
 beforeEach(() => {
   fakeBrowser.reset();
+  calls.length = 0;
 });
+
+/** A container inside an open shadow root, as WXT's `onMount` hands them over. */
+function shadowContainer(): { container: HTMLElement; shadow: ShadowRoot } {
+  const host = document.createElement('div');
+  host.id = 'ui-host';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const container = document.createElement('div');
+  shadow.append(container);
+  return { container, shadow };
+}
 
 /** Whole-shape options with one appearance; the other slots seed from the defaults. */
 function storedOptions(appearance: StoredOptions['appearance']): StoredOptions {
@@ -49,12 +75,21 @@ function probeView(label: string): JSX.Element {
 }
 
 describe('mountShadowUi', () => {
+  it('isolates the shadow root input once, before the view renders', async () => {
+    const { container, shadow } = shadowContainer();
+    await mountShadowUi(container, shadow, () => {
+      calls.push('render');
+      return probeView('mount-probe');
+    });
+    expect(calls).toEqual(['isolate:ui-host', 'render']);
+  });
+
   it('puts the stored appearance on the container before the view renders', async () => {
     await optionsStore.setValue(storedOptions('dark'));
-    const container = document.createElement('div');
+    const { container, shadow } = shadowContainer();
     let themeAtFirstRender: string | undefined;
 
-    await mountShadowUi(container, () => {
+    await mountShadowUi(container, shadow, () => {
       // Runs during the render: after the theme application, before any
       // frame of this tree could paint with a wrong palette.
       themeAtFirstRender = container.dataset.theme;
@@ -67,8 +102,8 @@ describe('mountShadowUi', () => {
 
   it('follows appearance writes live over the real item, until disposal', async () => {
     await optionsStore.setValue(storedOptions('dark'));
-    const container = document.createElement('div');
-    const dispose = await mountShadowUi(container, () => probeView('mount-probe'));
+    const { container, shadow } = shadowContainer();
+    const dispose = await mountShadowUi(container, shadow, () => probeView('mount-probe'));
     expect(container.dataset.theme).toBe('dark');
 
     await optionsStore.setValue(storedOptions('light'));
@@ -84,8 +119,8 @@ describe('mountShadowUi', () => {
   });
 
   it('starts from the documented defaults when nothing is stored', async () => {
-    const container = document.createElement('div');
-    await mountShadowUi(container, () => probeView('mount-probe'));
+    const { container, shadow } = shadowContainer();
+    await mountShadowUi(container, shadow, () => probeView('mount-probe'));
     expect(container.dataset.theme).toBe(FALLBACK.appearance);
   });
 
@@ -95,8 +130,8 @@ describe('mountShadowUi', () => {
       new Error('The storage API will not work with a temporary addon ID.')
     );
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const container = document.createElement('div');
-    const dispose = await mountShadowUi(container, () => probeView('refused'));
+    const { container, shadow } = shadowContainer();
+    const dispose = await mountShadowUi(container, shadow, () => probeView('refused'));
     expect(container.querySelector('.refused')).not.toBeNull();
     expect(container.getAttribute('data-theme')).toBe('system');
     expect(warn).toHaveBeenCalledTimes(1);

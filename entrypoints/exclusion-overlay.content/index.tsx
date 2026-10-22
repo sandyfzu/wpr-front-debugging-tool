@@ -20,7 +20,6 @@ import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { createLogger } from '../../lib/logger';
 import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
-import { isolateUiEvents } from '../../components/injected-ui/event-isolation';
 import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
@@ -84,8 +83,6 @@ function renderOverlay(
   presentation: OverlayPresentation | null,
   slot: StartingOverlay
 ): Promise<() => void> {
-  // The page never sees the overlay's input (a delay runtime would replay it).
-  isolateUiEvents(shadow);
   const listen = (
     target: EventTarget,
     type: string,
@@ -94,7 +91,7 @@ function renderOverlay(
   ): void => {
     ctx.addEventListener(target, type as keyof WindowEventMap, handler, { passive, capture: true });
   };
-  return mountShadowUi(container, () => {
+  return mountShadowUi(container, shadow, () => {
     const page = createPageTools({
       doc: document,
       win: window,

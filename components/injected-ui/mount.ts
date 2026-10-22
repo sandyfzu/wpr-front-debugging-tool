@@ -7,7 +7,9 @@
  * live, no reload.
  *
  * Injection isolation the caller gets by mounting through here: everything
- * renders inside the shadow root, and the container carries the appearance —
+ * renders inside the shadow root, the root keeps the UI's input events from
+ * the host page (`./event-isolation` — built in, so no UI can forget it),
+ * and the container carries the appearance —
  * `data-theme="system"|"dark"|"light"` (the container contract is
  * `live-theme.ts`'s).
  */
@@ -15,6 +17,7 @@
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
 import { createLogger } from '../../lib/logger';
+import { isolateUiEvents } from './event-isolation';
 import { followStoredAppearance } from './live-theme';
 
 const log = createLogger('injected-ui');
@@ -22,9 +25,12 @@ const log = createLogger('injected-ui');
 /**
  * Mount a Solid component tree into a shadow-root UI container once the
  * stored appearance is on the container. The palette is applied before the
- * view renders, so no frame ever paints in the wrong palette.
+ * view renders, so no frame ever paints in the wrong palette; the shadow
+ * root's input events are isolated (and Solid delegated there) before
+ * anything renders, so the first event is covered.
  *
  * @param container The UI container inside the shadow root.
+ * @param shadow The shadow root holding the container.
  * @param view Solid component returning the UI's root element.
  * @returns The disposer — removes the render tree and stops the appearance
  *   follow; the caller invokes it exactly once, when the whole shadow host
@@ -36,8 +42,11 @@ const log = createLogger('injected-ui');
  */
 export async function mountShadowUi(
   container: HTMLElement,
+  shadow: ShadowRoot,
   view: () => JSX.Element
 ): Promise<() => void> {
+  // The page never sees the UI's input (a delay runtime would replay it).
+  isolateUiEvents(shadow);
   const stopFollowingTheme = await followStoredAppearance(container);
   try {
     const disposeView = render(view, container);

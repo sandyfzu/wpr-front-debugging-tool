@@ -27,7 +27,6 @@ import { isHttpUrl } from '../../../utils/urls';
 import { debounce } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
-import { isolateUiEvents } from '../../../components/injected-ui/event-isolation';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
@@ -181,9 +180,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
         // leaves the page) through the onRemove handle; a mount failure is
         // logged, not an unhandled rejection.
         onMount: (container, shadow) => {
-          // The page never sees the UI's input (a delay runtime would replay it).
-          isolateUiEvents(shadow);
-          void mountShadowUi(container, () => (
+          void mountShadowUi(container, shadow, () => (
             <KnownConflictsView state={state} actions={actions} />
           ))
             .then((dispose) => {

@@ -49,7 +49,6 @@ import {
   inspectorOriginsStore
 } from '../../../lib/storage/inspector-origins';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
-import { isolateUiEvents } from '../../../components/injected-ui/event-isolation';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
@@ -554,9 +553,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
         name: INSPECTOR_UI_NAME,
         position: 'inline',
         onMount: (container, shadow) => {
-          // The page never sees the UI's input (a delay runtime would replay it).
-          isolateUiEvents(shadow);
-          void mountShadowUi(container, () => (
+          void mountShadowUi(container, shadow, () => (
             <InspectorView
               model={model}
               mood={mood}
