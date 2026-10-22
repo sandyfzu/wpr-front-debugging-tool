@@ -14,13 +14,13 @@
  * invalidated context (extension reload) removes the whole overlay.
  */
 import { onCleanup, onMount } from 'solid-js';
-import { DelegatedEvents, delegateEvents } from 'solid-js/web';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { createLogger } from '../../lib/logger';
 import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
+import { isolateUiEvents } from '../../components/injected-ui/event-isolation';
 import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { OverlayApp } from './app';
 import { createOverlayController } from './controller';
@@ -41,29 +41,6 @@ const log = createLogger('exclusion-overlay');
 
 /** The extension's isolated world (where the overlay's slot lives). */
 const ISOLATED_WORLD = globalThis as unknown as Record<string, unknown>;
-
-/**
- * Events stopped at the shadow root, so the page never sees the overlay's
- * input: every event Solid delegates, plus the other input events pages
- * hook. Pages do act on them — WP Rocket's delay runtime, for one, saves
- * a page's first interactions at the window and replays them on their
- * targets once its scripts load, which would replay a click on an overlay
- * button a second time.
- */
-const ISOLATED_EVENTS = [
-  ...DelegatedEvents,
-  'keypress',
-  'wheel',
-  'touchcancel',
-  'pointercancel',
-  'auxclick',
-  'paste',
-  'copy',
-  'cut',
-  'compositionstart',
-  'compositionupdate',
-  'compositionend'
-];
 
 /** The extension messenger as the session port's transport. */
 const MESSAGING_TRANSPORT: SessionTransport = {
@@ -107,9 +84,8 @@ function renderOverlay(
   presentation: OverlayPresentation | null,
   slot: StartingOverlay
 ): Promise<() => void> {
-  // Isolated events never reach the document, where Solid delegates by
-  // default: delegate them at the shadow root instead.
-  delegateEvents([...DelegatedEvents], shadow as unknown as Document);
+  // The page never sees the overlay's input (a delay runtime would replay it).
+  isolateUiEvents(shadow);
   const listen = (
     target: EventTarget,
     type: string,
@@ -242,7 +218,6 @@ export default defineContentScript({
           // escapes it anyway; this covers browsers without popovers).
           anchor: 'html',
           append: 'last',
-          isolateEvents: ISOLATED_EVENTS,
           ...hooks
         }),
       render: (container, shadow, host) =>

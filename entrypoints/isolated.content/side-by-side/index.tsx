@@ -52,6 +52,7 @@ import {
 } from '../../../lib/side-by-side/presentation-state';
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { isolateUiEvents } from '../../../components/injected-ui/event-isolation';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
 import type { CompareUrls } from './urls';
 import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
@@ -455,8 +456,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       ui = await createShadowRootUi(ctx, {
         name: UI_NAME,
         position: 'inline',
-        isolateEvents: true,
-        onMount: (container) => {
+        onMount: (container, shadow) => {
+          // The page never sees the UI's input (a delay runtime would replay it).
+          isolateUiEvents(shadow);
           // The mount promise is owned, not fire-and-forget: the open path
           // awaits it before starting the sync engine, and its value states
           // whether the view is really up — a false result keeps the open
