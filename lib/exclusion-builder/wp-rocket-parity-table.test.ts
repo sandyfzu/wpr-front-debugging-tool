@@ -1,0 +1,277 @@
+/**
+ * The parity table parser: a well-formed table round-trips, and every
+ * malformed shape fails with a message naming the offending row.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  parseParityInputs,
+  parseParityTable,
+  pendingOwner,
+  typedLineBytes
+} from './wp-rocket-parity-table';
+
+type Json = Record<string, unknown>;
+
+/** A small valid table: one row per shape (save, from-match, Defer, lazy rendering). */
+function validTable(): { header: Json; rows: Json[] } {
+  return {
+    header: {
+      plugin: '3.0',
+      pluginZipSha256: 'aa',
+      wp: '7.0',
+      wpZipSha1: 'bb',
+      php: '8.1',
+      pcre2: '10.49',
+      libxml: '2.9',
+      generatedBy: 'test'
+    },
+    rows: [
+      {
+        id: 'save-a',
+        kind: 'save',
+        feature: 'delay_js',
+        typed: ['a', ' ', { b64: '/w==' }],
+        safeMode: true,
+        note: 'n',
+        stored: ['a'],
+        dropped: [
+          { index: 1, row: ' ', reason: 'empty' },
+          { index: 2, row: { b64: '/w==' }, reason: 'empty' }
+        ]
+      },
+      {
+        id: 'match-a',
+        kind: 'match',
+        feature: 'delay_js',
+        from: 'save-a',
+        rows: ['a'],
+        pending: 'K.4b',
+        html: '<p>',
+        served: '<p>',
+        candidates: ['s1', 's2'],
+        excluded: ['s1']
+      },
+      {
+        id: 'match-b',
+        kind: 'match',
+        feature: 'defer_all_js',
+        rows: ['('],
+        filterOnly: true,
+        html: 'h',
+        served: 's',
+        candidates: [],
+        excluded: [],
+        featureOff: true
+      },
+      {
+        id: 'match-c',
+        kind: 'match',
+        feature: 'automatic_lazy_rendering',
+        rows: [''],
+        html: 'h',
+        served: 's',
+        candidates: ['a', 'b'],
+        excluded: ['a'],
+        hashed: ['b'],
+        rekeyed: ['b']
+      }
+    ]
+  };
+}
+
+/** The row with an id, from a table copy. */
+function row(table: { rows: Json[] }, id: string): Json {
+  const found = table.rows.find((candidate) => candidate.id === id);
+  if (found === undefined) throw new Error(`no row ${id}`);
+  return found;
+}
+
+/**
+ * Expect the parser to reject a mutated valid table with a message.
+ *
+ * @param mutate Edits the fresh valid table in place.
+ * @param message Text the error message must contain.
+ */
+function rejects(mutate: (table: { header: Json; rows: Json[] }) => void, message: string): void {
+  const table = validTable();
+  mutate(table);
+  expect(() => parseParityTable(table)).toThrow(message);
+}
+
+describe('parseParityTable', () => {
+  it('parses a well-formed table, keeping every field', () => {
+    const table = parseParityTable(validTable());
+    expect(table.header.pcre2).toBe('10.49');
+    expect(table.rows.map((parsed) => parsed.id)).toEqual([
+      'save-a',
+      'match-a',
+      'match-b',
+      'match-c'
+    ]);
+    expect(table.rows[1]).toMatchObject({ from: 'save-a', rows: ['a'], pending: 'K.4b' });
+    expect(table.rows[2]).toMatchObject({ filterOnly: true, featureOff: true });
+    expect(table.rows[3]).toMatchObject({ hashed: ['b'], rekeyed: ['b'] });
+  });
+
+  it('rejects malformed tables and headers', () => {
+    expect(() => parseParityTable([])).toThrow('expected {"header"');
+    expect(() => parseParityTable({ header: validTable().header })).toThrow('expected {"rows"');
+    rejects((table) => Object.assign(table, { extra: 1 }), 'unknown key "extra"');
+    rejects((table) => (table.header = [] as unknown as Json), '"header" must be an object');
+    rejects((table) => delete table.header.php, '"php" must be a string');
+    rejects((table) => (table.header.php = ''), 'header "php" must not be empty');
+    rejects((table) => (table.header.extra = 'x'), 'unknown key "extra"');
+  });
+
+  it('rejects malformed rows by id', () => {
+    rejects((table) => table.rows.push([] as unknown as Json), 'row #4 must be an object');
+    rejects((table) => (row(table, 'save-a').id = 'save_A'), 'lowercase kebab case');
+    rejects((table) => (row(table, 'save-a').id = 'match-z'), 'save row ids start with "save-"');
+    rejects((table) => (row(table, 'match-b').id = 'save-z'), 'match row ids start with "match-"');
+    rejects((table) => (row(table, 'save-a').kind = 'other'), '"kind" must be "save" or "match"');
+    rejects((table) => (row(table, 'save-a').bogus = 1), 'row "save-a": unknown key "bogus"');
+    rejects((table) => (row(table, 'match-b').id = 'match-c'), 'row "match-c": duplicate id');
+    rejects((table) => (row(table, 'save-a').note = 1), '"note" must be a string');
+    rejects((table) => (row(table, 'save-a').pending = 'K.4b'), '"pending" must be "K.3"');
+  });
+
+  it('rejects malformed save rows', () => {
+    rejects(
+      (table) => (row(table, 'save-a').feature = 'automatic_lazy_rendering'),
+      '"feature" must be one of'
+    );
+    rejects((table) => (row(table, 'save-a').typed = []), '"typed" must be a non-empty array');
+    rejects(
+      (table) => ((row(table, 'save-a').typed as unknown[])[0] = 'a\nb'),
+      'contains a line break'
+    );
+    rejects(
+      (table) => ((row(table, 'save-a').typed as unknown[])[0] = { b64: '%%' }),
+      'is not base64'
+    );
+    rejects(
+      (table) => ((row(table, 'save-a').typed as unknown[])[0] = 1),
+      'must be a string or {"b64"'
+    );
+    rejects((table) => (row(table, 'save-a').safeMode = 'yes'), '"safeMode" must be a boolean');
+    rejects(
+      (table) => Object.assign(row(table, 'save-a'), { feature: 'defer_all_js', safeMode: false }),
+      '"safeMode" is a Delay JS setting'
+    );
+    rejects((table) => (row(table, 'save-a').stored = [1]), '"stored" must be an array of strings');
+  });
+
+  it('rejects inconsistent dropped lines', () => {
+    const dropped = (table: { rows: Json[] }): Json[] => row(table, 'save-a').dropped as Json[];
+    rejects((table) => (row(table, 'save-a').dropped = {}), '"dropped" must be an array');
+    rejects((table) => (dropped(table)[0] = 'x' as unknown as Json), 'must be an object');
+    rejects((table) => ((dropped(table)[0] as Json).extra = 1), 'unknown key "extra"');
+    rejects((table) => ((dropped(table)[0] as Json).index = 9), 'is not an ascending index');
+    rejects((table) => ((dropped(table)[1] as Json).index = 1), 'is not an ascending index');
+    rejects((table) => ((dropped(table)[0] as Json).index = 'one'), 'is not an ascending index');
+    rejects((table) => ((dropped(table)[0] as Json).row = 'a'), 'differs from the typed line');
+    rejects(
+      (table) => ((dropped(table)[1] as Json).row = { b64: 'AA==' }),
+      'differs from the typed line'
+    );
+    rejects(
+      (table) => ((dropped(table)[0] as Json).reason = 'gone'),
+      'drop reason "gone" is unknown'
+    );
+    rejects(
+      (table) =>
+        Object.assign(row(table, 'save-a'), {
+          safeMode: false,
+          dropped: [{ index: 1, row: ' ', reason: 'safe-mode' }, dropped(table)[1]]
+        }),
+      'a safe-mode drop needs safeMode'
+    );
+    rejects((table) => (row(table, 'save-a').stored = ['a', 'b']), 'either stored or dropped');
+  });
+
+  it('rejects malformed match rows', () => {
+    rejects((table) => (row(table, 'match-a').from = 1), '"from" must be a save row id');
+    rejects(
+      (table) => (row(table, 'match-a').from = 'match-b'),
+      '"from" must name a save row of delay_js'
+    );
+    rejects((table) => (row(table, 'match-a').feature = 'lazyload'), '"pending" must be "K.4d"');
+    rejects(
+      (table) => (row(table, 'match-b').filterOnly = false),
+      '"filterOnly" is either true or absent'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').filterOnly = true),
+      '"filterOnly" applies to authored rows'
+    );
+    rejects(
+      (table) => (row(table, 'match-c').filterOnly = true),
+      '"filterOnly" applies to authored rows'
+    );
+    rejects((table) => delete row(table, 'match-b').rows, '"rows" must be an array of strings');
+    rejects((table) => (row(table, 'match-b').html = ''), '"html" must not be empty');
+    rejects((table) => delete row(table, 'match-b').served, '"served" must be a string');
+    rejects(
+      (table) => (row(table, 'match-a').candidates = ['s1', 's1']),
+      '"candidates" repeats an id'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').excluded = ['s3']),
+      'excluded "s3" is not a candidate'
+    );
+    rejects(
+      (table) => delete row(table, 'match-b').featureOff,
+      '"featureOff" is present exactly on Defer JS rows'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').featureOff = false),
+      '"featureOff" is present exactly on Defer JS rows'
+    );
+    rejects((table) => (row(table, 'match-b').featureOff = 'no'), '"featureOff" must be a boolean');
+    rejects(
+      (table) => (row(table, 'match-a').hashed = []),
+      '"hashed"/"rekeyed" are present exactly'
+    );
+    rejects(
+      (table) => delete row(table, 'match-c').rekeyed,
+      '"hashed"/"rekeyed" are present exactly'
+    );
+    rejects((table) => (row(table, 'match-c').rekeyed = ['a']), 'rekeyed "a" is not hashed');
+    rejects(
+      (table) => (row(table, 'match-a').rows = ['b']),
+      '"rows" must equal the stored rows of "save-a"'
+    );
+  });
+});
+
+describe('parseParityInputs', () => {
+  it('reads the authored inputs of a table without outputs or header', () => {
+    const inputs = parseParityInputs({
+      rows: [
+        { id: 'save-a', kind: 'save', feature: 'lazyload', typed: ['a'] },
+        { id: 'match-a', kind: 'match', feature: 'lazyload', from: 'save-a', html: 'h' }
+      ]
+    });
+    expect(inputs).toEqual([
+      { id: 'save-a', kind: 'save', feature: 'lazyload', typed: ['a'] },
+      { id: 'match-a', kind: 'match', feature: 'lazyload', from: 'save-a', html: 'h' }
+    ]);
+  });
+});
+
+describe('pendingOwner', () => {
+  it('maps each row kind/feature to the sub-phase that flips it', () => {
+    expect(pendingOwner('save', 'lazyload')).toBe('K.3');
+    expect(pendingOwner('match', 'delay_js')).toBe('K.4b');
+    expect(pendingOwner('match', 'defer_all_js')).toBe('K.4c');
+    expect(pendingOwner('match', 'lazyload')).toBe('K.4d');
+    expect(pendingOwner('match', 'automatic_lazy_rendering')).toBe('K.4d');
+  });
+});
+
+describe('typedLineBytes', () => {
+  it('encodes text as UTF-8 and decodes base64 lines to their bytes', () => {
+    expect([...typedLineBytes('é')]).toEqual([0xc3, 0xa9]);
+    expect([...typedLineBytes({ b64: '/2Jh' })]).toEqual([0xff, 0x62, 0x61]);
+  });
+});
