@@ -9,11 +9,13 @@
  * duplicate row leaves with its note and Restore, and focus that was
  * heading into the removed row lands on Restore; a 250-row paste of
  * duplicates causes no long task; copy-all copies the stored form; a Defer
- * JS set WP Rocket would turn off page-wide (P10K.5b) blocks Apply with the
- * message naming its row — unverified, here — focus on the message, Go to
- * on the row, and fixing the row unblocks it; and, applied, a Delay row
- * typed in another case matches its script while a picked row whose file
- * name holds `+` excludes its own (both scripts run).
+ * JS set WP Rocket turns off page-wide (P10K.5b; a warning since P10K.5c)
+ * warns with the message naming its row — unverified, here — and Go to on
+ * the row, Apply goes through and the preview has no script deferred, the
+ * message and the counts saying why; a Delay row matching everything
+ * (P10K.5c) warns, applies, and excludes every script; and, applied, a
+ * Delay row typed in another case matches its script while a picked row
+ * whose file name holds `+` excludes its own (both scripts run).
  *
  * The overlay is a shadow-root UI (open root): Playwright's role locators
  * pierce it. Every leg opens its own fixture tab (a session is per tab).
@@ -32,6 +34,9 @@ import {
 
 /** The fixture page: two scripts served as Delay JavaScript execution delays them. */
 const FIXTURE = '/exclusion/delayed.html';
+
+/** The fixture page: two scripts served as Load JavaScript deferred defers them. */
+const DEFERRED_FIXTURE = '/exclusion/deferred.html';
 
 /** The Delay lane's label (the verified feature name). */
 const DELAY = 'Delay JavaScript execution';
@@ -54,13 +59,14 @@ const APPLIED = { timeout: 30_000 };
  * injection: the overlay's runtime content script into the top frame).
  *
  * @param extension The driver.
+ * @param fixture The fixture page's path.
  */
-async function openBuilder(extension: ExtensionDriver): Promise<DriverPage> {
+async function openBuilder(extension: ExtensionDriver, fixture = FIXTURE): Promise<DriverPage> {
   // The overlay reopens on the origin's autosaved draft: every leg starts empty.
   await extension.evaluateInWorker(async (key: string) => {
     await chrome.storage.local.remove(key);
   }, SAVED_DRAFTS_KEY);
-  const opened = await openFixturePage(extension, FIXTURE);
+  const opened = await openFixturePage(extension, fixture);
   await extension.evaluateInWorker(async (tabId: number) => {
     await chrome.scripting.executeScript({
       target: { tabId, frameIds: [0] },
@@ -220,12 +226,12 @@ test.describe('exclusion builder stored-form notes', () => {
     await expect(delayRow(page, 2)).toBeFocused();
     await expect(delayRow(page, 1)).toHaveAccessibleDescription(note);
     await expect(undo).toBeVisible();
-    // `(?a)` is kept by WP Rocket's save but refused here: the apply commits
-    // every row, then stops on it, so the page stays. Another lane, so no
-    // edit in the Delay lane retires its undo.
+    // `(a+)+$` is kept by WP Rocket's save but refused here (a backtracking
+    // risk): the apply commits every row, then stops on it, so the page
+    // stays. Another lane, so no edit in the Delay lane retires its undo.
     const defer = page.getByRole('region', { name: DEFER });
     await defer.getByRole('button', { name: 'Add row' }).click();
-    await page.keyboard.type('(?a)');
+    await page.keyboard.type('(a+)+$');
     await page.getByRole('button', { name: /^Apply$/ }).click();
     await expect(
       page.getByRole('textbox', { name: `${DEFER} row 1`, exact: true })
@@ -344,10 +350,10 @@ test.describe('exclusion builder stored-form notes', () => {
     await page.close();
   });
 
-  test('a Defer JS set WP Rocket would turn off page-wide blocks Apply, naming the row; fixing it unblocks', async ({
+  test('a Defer JS set WP Rocket turns off page-wide warns, naming the row; Apply previews no script deferred', async ({
     extension
   }) => {
-    const { page } = await openBuilder(extension);
+    const { page } = await openBuilder(extension, DEFERRED_FIXTURE);
     const defer = page.getByRole('region', { name: DEFER });
     const deferRow = (n: number): Locator =>
       page.getByRole('textbox', { name: `${DEFER} row ${String(n)}`, exact: true });
@@ -357,32 +363,80 @@ test.describe('exclusion builder stored-form notes', () => {
     // Unverified (`\p{L}`: its save isn't modeled) yet behind the page-off: its open
     // `\Q` quotes the joined pattern's closing parenthesis.
     await page.keyboard.type('\\p{L}\\Qab');
-    const message = defer.getByRole('group', {
-      name: 'WP Rocket would stop deferring every script on this page because of this row:'
-    });
+    const lead = 'WP Rocket defers no script on this page because of this row:';
+    const message = defer.getByRole('group', { name: lead });
     await expect(message).toHaveText(
-      'WP Rocket would stop deferring every script on this page because of this row:Go to row 2\\p{L}\\QabEdit or remove it to apply.'
+      `${lead}Go to row 2\\p{L}\\QabApply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove it to defer scripts again.`
     );
-    await expect(deferRow(2)).toHaveAttribute('aria-invalid', 'true');
-    await expect(deferRow(1)).toHaveAttribute('aria-invalid', 'false');
-    await page.getByRole('button', { name: /^Apply$/ }).click();
-    // Blocked before asking: the page stays, focus lands on the message — a group
-    // named by its lead (`aria-labelledby`), so a screen reader says what it is.
-    await expect(message).toBeFocused();
+    // A group named by its lead (`aria-labelledby`), so a screen reader says what it is.
     await expect(message).toHaveAttribute('role', 'group');
-    await expect(message).toHaveAccessibleName(
-      'WP Rocket would stop deferring every script on this page because of this row:'
+    await expect(message).toHaveAccessibleName(lead);
+    // A warning, never a problem: the row says so in its note slot.
+    await expect(deferRow(2)).toHaveAttribute('aria-invalid', 'false');
+    await expect(deferRow(2)).toHaveAccessibleDescription(
+      'This row makes WP Rocket’s Defer JS check fail (it checks all the rows joined as one pattern). Apply still runs and previews it as WP Rocket would.'
     );
-    await expect(page.getByText('Fix 1 row before applying')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
     await message.getByRole('button', { name: 'Go to row 2' }).click();
     await expect(deferRow(2)).toBeFocused();
-    await deferRow(2).fill('\\.min\\.js$');
-    await expect(message).toHaveCount(0);
-    await expect(page.getByText('Fix 1 row before applying')).toHaveCount(0);
     await page.getByRole('button', { name: /^Apply$/ }).click();
+    await expect(page.getByText(/before applying/)).toHaveCount(0);
     // The session applies: the page reloads with the builder back on an active session.
     await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible(APPLIED);
+    await expect(defer.getByText('2 of 2 deferred and wrapped scripts restored')).toBeVisible();
+    await expect(
+      defer.getByText(
+        'WP Rocket defers no script on this page because of row 2, so every deferred script is restored.'
+      )
+    ).toBeVisible();
+    // The message stays beside the counts: the preview explains itself.
+    await expect(message).toBeVisible();
+    // As WP Rocket would serve it: no script deferred, both ran.
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          deferred: document.querySelectorAll('script[defer], script[data-rocket-defer]').length,
+          ran: [
+            document.documentElement.dataset.deferredOneRan,
+            document.documentElement.dataset.deferredTwoRan
+          ]
+        }))
+      )
+      .toEqual({ deferred: 0, ran: ['true', 'true'] });
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await page.close();
+  });
+
+  test('a Delay row matching everything warns; Apply goes through and excludes every script', async ({
+    extension
+  }) => {
+    const { page } = await openBuilder(extension);
+    // WP Rocket's stored form of `(?<n>a)`: it matches every script.
+    await typeNewDelayRow(page, '(?a)');
+    await page.keyboard.press('Tab');
+    await expect(delayRow(page, 1)).toHaveAttribute('aria-invalid', 'false');
+    const row = delayLane(page).getByRole('listitem').nth(0);
+    await expect(delayRow(page, 1)).toHaveAccessibleDescription(
+      'WP Rocket stores this and it excludes every script. Apply still runs and previews it as WP Rocket would.'
+    );
+    await page.getByRole('button', { name: /^Apply$/ }).click();
+    await expect(page.getByText(/before applying/)).toHaveCount(0);
+    await expect(page.getByText('2 of 2 delayed scripts restored')).toBeVisible(APPLIED);
+    await expect(
+      delayLane(page).getByText(
+        'Row 1 matches everything: WP Rocket excludes all delayed scripts with it, and so does this preview.'
+      )
+    ).toBeVisible();
+    await expect(row).toContainText('2 matches');
+    // The warning stays after the apply, next to the counts.
+    await expect(row).toContainText('WP Rocket stores this and it excludes every script.');
+    await expect
+      .poll(() =>
+        page.evaluate(() => [
+          document.documentElement.dataset.jqueryUiRan,
+          document.documentElement.dataset.abRan
+        ])
+      )
+      .toEqual(['true', 'true']);
     await page.getByRole('button', { name: 'Stop' }).click();
     await page.close();
   });
