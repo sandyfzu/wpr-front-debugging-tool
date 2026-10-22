@@ -534,8 +534,9 @@ export function scriptLocation(parts: ScriptUrlParts): string {
  * How a raw (unencoded) URL character is written into an exclusion, when it
  * is not a plain literal. Exclusions are read by `new RegExp(…)` and by WP
  * Rocket, which saves them through `sanitize_text_field` (drops `%XX`,
- * strips anything after a `<`) and `rocket_clean_wildcards` (turns any `*`
- * into `(.*)`), then escapes `+`, `?ver` and `#`. So:
+ * escapes or strips `<…` runs) and `rocket_clean_wildcards` (turns any `*`
+ * into `(.*)`) — the save `lib/exclusion-builder/field-text` declares —
+ * then escapes `+`, `?ver` and `#` at runtime. So:
  * - regex syntax becomes a one-character class (`[+]`, `[(]`…) that
  *   matches only itself under both readers (`[+]` escaped to `[\+]` still
  *   means `+`);

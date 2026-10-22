@@ -798,6 +798,8 @@ describe('saveOutcome: what WP Rocket’s settings save does with a row', () => 
     ['(?|(?<n>a)|(?<n>b))', '(?<n>'],
     ['(?x)a #', '(?x)'],
     ['a\0b', '\\0'],
+    // An escaped NUL too (PHP 8.1 stops the pattern there and drops the row).
+    ['\\\0DOCTYPE', '\\0'],
     // Past an unknown construct the parse is not trusted: no later claim.
     ['[\\g](', '\\g'],
     // A large count of an empty item, or of a group (PCRE's compiled size), is unproven.

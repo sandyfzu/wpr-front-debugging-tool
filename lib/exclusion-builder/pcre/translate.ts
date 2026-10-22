@@ -194,6 +194,10 @@ function delimiterProblem(pattern: string): PcreConstruct | null {
       if (index === pattern.length - 1) {
         return { construct: '\\', detail: 'a trailing `\\` escapes the closing delimiter' };
       }
+      // An escaped NUL is still a NUL byte (PHP < 8.2 stops there too).
+      if (pattern.charAt(index + 1) === '\0') {
+        return { construct: '\\0', detail: 'NUL byte (PHP-version dependent)' };
+      }
       index += 2;
       continue;
     }

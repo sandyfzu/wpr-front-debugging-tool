@@ -326,7 +326,7 @@ describe('apply / reset / stop', () => {
   it('refuses to ask with invalid rows, focusing the first one', async () => {
     const { port } = fakePort({ state: 'inactive' });
     const { controller } = await started(port);
-    const [bad] = controller.insertRows('deferJs', ['('], null);
+    const [bad] = controller.insertRows('deferJs', ['(?a)'], null);
     controller.insertRows('delayJs', ['ok'], null);
     expect(controller.invalidCount()).toBe(1);
     controller.apply();
@@ -555,7 +555,7 @@ describe('audit round 1', () => {
 
   it('clears the fix-rows notice once no row has a problem', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }).port);
-    const [bad] = controller.insertRows('deferJs', ['('], null);
+    const [bad] = controller.insertRows('deferJs', ['(?a)'], null);
     controller.apply();
     expect(controller.state()).toMatchObject({ notice: { kind: 'invalid', rows: 1 } });
     controller.editRow('deferJs', bad ?? '', '\\(');

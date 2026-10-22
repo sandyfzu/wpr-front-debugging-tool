@@ -25,6 +25,7 @@
  * the dev script can load this module under Node's native TypeScript.
  */
 import { PROBLEM_IDS, type ProblemId } from './pcre/problems.ts';
+import { STORED_ROW_DROP_REASONS, type StoredRowDropReason } from './stored-row-drops.ts';
 import type { ExclusionFeatureId } from './set';
 
 /** The work item expected to turn a row's pending fields green (`pending.owner`). */
@@ -81,9 +82,6 @@ const FEATURE_IDS = Object.keys(MATCH_OWNER) as ExclusionFeatureId[];
 /** Every feature id a save row may name. */
 const SAVE_FEATURE_IDS = FEATURE_IDS.filter((id) => id !== FILTER_ONLY_FEATURE);
 
-/** Why the settings form does not store a typed line. */
-export type DropReason = 'empty' | 'zero' | 'duplicate' | 'invalid-pattern' | 'safe-mode';
-
 /**
  * How the engine is meant to answer a match row instead of WP Rocket's
  * outcome: report `problem`, or — for a documented `residual` the engine
@@ -118,7 +116,7 @@ export interface DroppedLine {
   readonly index: number;
   /** The line as typed (a copy of `typed[index]`). */
   readonly row: TypedLine;
-  readonly reason: DropReason;
+  readonly reason: StoredRowDropReason;
 }
 
 /** Fields every row shares. */
@@ -236,15 +234,6 @@ export const MATCH_OUTPUT_KEYS = [
   'hashed',
   'rekeyed'
 ] as const;
-
-/** Every drop reason, for validation. */
-const DROP_REASONS: readonly DropReason[] = [
-  'empty',
-  'zero',
-  'duplicate',
-  'invalid-pattern',
-  'safe-mode'
-];
 
 /** Row ids: `save-…` / `match-…`, lowercase kebab case. */
 const ROW_ID = /^(?:save|match)-[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -602,7 +591,7 @@ function saveRow(input: SaveInput, record: Record<string, unknown>): SaveRow {
     const row = typedLine(id, entry.row);
     if (!sameLine(row, typedAt))
       fail(id, `dropped row at ${String(index)} differs from the typed line`);
-    const known = DROP_REASONS.find((candidate) => candidate === reason);
+    const known = STORED_ROW_DROP_REASONS.find((candidate) => candidate === reason);
     if (known === undefined) fail(id, `drop reason ${JSON.stringify(reason)} is unknown`);
     if (known === 'safe-mode' && input.safeMode !== true)
       fail(id, 'a safe-mode drop needs safeMode');

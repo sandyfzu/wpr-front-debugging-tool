@@ -16,7 +16,6 @@
       "feature": "delay_js",
       "typed": ["  a.js  ", "\tb.js\t", "c.js\u000b", " ", ""],
       "note": "PHP trim set; whitespace-only lines dropped",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a.js", "b.js", "c.js"],
       "dropped": [
         { "index": 3, "row": " ", "reason": "empty" },
@@ -29,7 +28,6 @@
       "feature": "delay_js",
       "typed": ["0", "00", "0.0", " 0 ", "a"],
       "note": "array_filter drops \"0\" only",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["00", "0.0", "a"],
       "dropped": [
         { "index": 0, "row": "0", "reason": "zero" },
@@ -42,7 +40,6 @@
       "feature": "delay_js",
       "typed": ["a", "b", "a", " a", "A"],
       "note": "first occurrence kept, case-sensitive",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a", "b", "A"],
       "dropped": [
         { "index": 2, "row": "a", "reason": "duplicate" },
@@ -55,7 +52,6 @@
       "feature": "delay_js",
       "typed": ["a b", "a  b", "a\tb"],
       "note": "dedupe runs on the sanitized form",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a b"],
       "dropped": [
         { "index": 1, "row": "a  b", "reason": "duplicate" },
@@ -75,7 +71,6 @@
         "<style>x</style>y"
       ],
       "note": "tags, script/style blocks and comments stripped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["acd", "ok", "ab", "y"],
       "dropped": [
         { "index": 0, "row": "<b></b>", "reason": "empty" },
@@ -88,7 +83,6 @@
       "feature": "delay_js",
       "typed": ["a<b", "x<y<z>w", "a&b<c&d\"e'f", "a&amp;<b"],
       "note": "an unclosed < run is HTML-escaped, no double encoding",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a&lt;b", "x&lt;yw", "a&b&lt;c&amp;d&quot;e&#039;f", "a&amp;&lt;b"],
       "dropped": []
     },
@@ -98,7 +92,6 @@
       "feature": "delay_js",
       "typed": ["a < b > c", "a<b\"c>d\"e>f", "1<2 and 3>2", "[^<>]+x"],
       "note": "strip_tags: < + whitespace kept, quotes tracked inside a tag",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a < b > c", "af", "12"],
       "dropped": [{ "index": 3, "row": "[^<>]+x", "reason": "invalid-pattern" }]
     },
@@ -108,7 +101,6 @@
       "feature": "delay_js",
       "typed": ["x%41y", "%2541", "%zz%2F%2f", "%E2%80%8B", "a%20b"],
       "note": "%xx octets removed in a loop",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["xy", "41", "%zz", "ab"],
       "dropped": [{ "index": 3, "row": "%E2%80%8B", "reason": "empty" }]
     },
@@ -118,7 +110,6 @@
       "feature": "delay_js",
       "typed": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "note": "NBSP / zero-width / BOM kept",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "dropped": []
     },
@@ -134,7 +125,6 @@
         { "b64": "YYA=" }
       ],
       "note": "invalid UTF-8 row sanitizes to empty",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["ok"],
       "dropped": [
         { "index": 0, "row": { "b64": "/2JhZA==" }, "reason": "empty" },
@@ -149,7 +139,6 @@
       "feature": "delay_js",
       "typed": ["<i></i>", "%41%42", "<b> </b>", "%20"],
       "note": "rows left empty by the sanitizer are dropped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "<i></i>", "reason": "empty" },
@@ -164,7 +153,6 @@
       "feature": "delay_js",
       "typed": ["(?<n>a)", "(?P<n>a)", "(?<=a)b", "(?<!a)b", "\\k<n>", "[<a]", "(?'n'a)\\k'n'"],
       "note": "PCRE syntax with < mangled by the sanitizer",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["(?a)", "[&lt;a]", "(?'n'a)\\k'n'"],
       "dropped": [
         { "index": 1, "row": "(?P<n>a)", "reason": "invalid-pattern" },
@@ -179,7 +167,6 @@
       "feature": "delay_js",
       "typed": ["\\d*x", "jquery-?[0-9.]*(.min)?.js", "[a-z]{2,}*", "(.*?)", "[*]", "a.+b"],
       "note": "Delay rewrites every *; other fields keep it",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [
         "\\d(.*)x",
         "jquery-?[0-9.](.*)(.min)?.js",
@@ -196,7 +183,6 @@
       "feature": "delay_js",
       "typed": [".*", "*", "(*)", "(.*)"],
       "note": "Delay: all four spell (.*) after the rewrite",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["(.*)"],
       "dropped": [
         { "index": 1, "row": "*", "reason": "duplicate" },
@@ -210,7 +196,6 @@
       "feature": "delay_js",
       "typed": ["\\*", "\\.*", "/\\* c \\*/ var q = 1;"],
       "note": "Delay: \\* becomes \\(.*) and fails the PCRE check",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "\\*", "reason": "invalid-pattern" },
@@ -235,7 +220,6 @@
         "x\\"
       ],
       "note": "rows PCRE rejects in the form-submit check (Lazyload: no check)",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "(?#c)", "reason": "invalid-pattern" },
@@ -256,7 +240,6 @@
       "feature": "defer_all_js",
       "typed": ["  a.js  ", "\tb.js\t", "c.js\u000b", " ", ""],
       "note": "PHP trim set; whitespace-only lines dropped",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a.js", "b.js", "c.js"],
       "dropped": [
         { "index": 3, "row": " ", "reason": "empty" },
@@ -269,7 +252,6 @@
       "feature": "defer_all_js",
       "typed": ["0", "00", "0.0", " 0 ", "a"],
       "note": "array_filter drops \"0\" only",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["00", "0.0", "a"],
       "dropped": [
         { "index": 0, "row": "0", "reason": "zero" },
@@ -282,7 +264,6 @@
       "feature": "defer_all_js",
       "typed": ["a", "b", "a", " a", "A"],
       "note": "first occurrence kept, case-sensitive",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a", "b", "A"],
       "dropped": [
         { "index": 2, "row": "a", "reason": "duplicate" },
@@ -295,7 +276,6 @@
       "feature": "defer_all_js",
       "typed": ["a b", "a  b", "a\tb"],
       "note": "dedupe runs on the sanitized form",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a b"],
       "dropped": [
         { "index": 1, "row": "a  b", "reason": "duplicate" },
@@ -315,7 +295,6 @@
         "<style>x</style>y"
       ],
       "note": "tags, script/style blocks and comments stripped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["acd", "ok", "ab", "y"],
       "dropped": [
         { "index": 0, "row": "<b></b>", "reason": "empty" },
@@ -328,7 +307,6 @@
       "feature": "defer_all_js",
       "typed": ["a<b", "x<y<z>w", "a&b<c&d\"e'f", "a&amp;<b"],
       "note": "an unclosed < run is HTML-escaped, no double encoding",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a&lt;b", "x&lt;yw", "a&b&lt;c&amp;d&quot;e&#039;f", "a&amp;&lt;b"],
       "dropped": []
     },
@@ -338,7 +316,6 @@
       "feature": "defer_all_js",
       "typed": ["a < b > c", "a<b\"c>d\"e>f", "1<2 and 3>2", "[^<>]+x"],
       "note": "strip_tags: < + whitespace kept, quotes tracked inside a tag",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a < b > c", "af", "12"],
       "dropped": [{ "index": 3, "row": "[^<>]+x", "reason": "invalid-pattern" }]
     },
@@ -348,7 +325,6 @@
       "feature": "defer_all_js",
       "typed": ["x%41y", "%2541", "%zz%2F%2f", "%E2%80%8B", "a%20b"],
       "note": "%xx octets removed in a loop",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["xy", "41", "%zz", "ab"],
       "dropped": [{ "index": 3, "row": "%E2%80%8B", "reason": "empty" }]
     },
@@ -358,7 +334,6 @@
       "feature": "defer_all_js",
       "typed": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "note": "NBSP / zero-width / BOM kept",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "dropped": []
     },
@@ -374,7 +349,6 @@
         { "b64": "YYA=" }
       ],
       "note": "invalid UTF-8 row sanitizes to empty",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["ok"],
       "dropped": [
         { "index": 0, "row": { "b64": "/2JhZA==" }, "reason": "empty" },
@@ -389,7 +363,6 @@
       "feature": "defer_all_js",
       "typed": ["<i></i>", "%41%42", "<b> </b>", "%20"],
       "note": "rows left empty by the sanitizer are dropped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "<i></i>", "reason": "empty" },
@@ -404,7 +377,6 @@
       "feature": "defer_all_js",
       "typed": ["(?<n>a)", "(?P<n>a)", "(?<=a)b", "(?<!a)b", "\\k<n>", "[<a]", "(?'n'a)\\k'n'"],
       "note": "PCRE syntax with < mangled by the sanitizer",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["(?a)", "[&lt;a]", "(?'n'a)\\k'n'"],
       "dropped": [
         { "index": 1, "row": "(?P<n>a)", "reason": "invalid-pattern" },
@@ -419,7 +391,6 @@
       "feature": "defer_all_js",
       "typed": ["\\d*x", "jquery-?[0-9.]*(.min)?.js", "[a-z]{2,}*", "(.*?)", "[*]", "a.+b"],
       "note": "Delay rewrites every *; other fields keep it",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["\\d*x", "jquery-?[0-9.]*(.min)?.js", "(.*?)", "[*]", "a.+b"],
       "dropped": [{ "index": 2, "row": "[a-z]{2,}*", "reason": "invalid-pattern" }]
     },
@@ -429,7 +400,6 @@
       "feature": "defer_all_js",
       "typed": [".*", "*", "(*)", "(.*)"],
       "note": "Delay: all four spell (.*) after the rewrite",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [".*", "(.*)"],
       "dropped": [
         { "index": 1, "row": "*", "reason": "invalid-pattern" },
@@ -442,7 +412,6 @@
       "feature": "defer_all_js",
       "typed": ["\\*", "\\.*", "/\\* c \\*/ var q = 1;"],
       "note": "Delay: \\* becomes \\(.*) and fails the PCRE check",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\*", "\\.*", "/\\* c \\*/ var q = 1;"],
       "dropped": []
     },
@@ -463,7 +432,6 @@
         "x\\"
       ],
       "note": "rows PCRE rejects in the form-submit check (Lazyload: no check)",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "(?#c)", "reason": "invalid-pattern" },
@@ -484,7 +452,6 @@
       "feature": "lazyload",
       "typed": ["  a.js  ", "\tb.js\t", "c.js\u000b", " ", ""],
       "note": "PHP trim set; whitespace-only lines dropped",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a.js", "b.js", "c.js"],
       "dropped": [
         { "index": 3, "row": " ", "reason": "empty" },
@@ -497,7 +464,6 @@
       "feature": "lazyload",
       "typed": ["0", "00", "0.0", " 0 ", "a"],
       "note": "array_filter drops \"0\" only",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["00", "0.0", "a"],
       "dropped": [
         { "index": 0, "row": "0", "reason": "zero" },
@@ -510,7 +476,6 @@
       "feature": "lazyload",
       "typed": ["a", "b", "a", " a", "A"],
       "note": "first occurrence kept, case-sensitive",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a", "b", "A"],
       "dropped": [
         { "index": 2, "row": "a", "reason": "duplicate" },
@@ -523,7 +488,6 @@
       "feature": "lazyload",
       "typed": ["a b", "a  b", "a\tb"],
       "note": "dedupe runs on the sanitized form",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a b"],
       "dropped": [
         { "index": 1, "row": "a  b", "reason": "duplicate" },
@@ -543,7 +507,6 @@
         "<style>x</style>y"
       ],
       "note": "tags, script/style blocks and comments stripped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["acd", "ok", "ab", "y"],
       "dropped": [
         { "index": 0, "row": "<b></b>", "reason": "empty" },
@@ -556,7 +519,6 @@
       "feature": "lazyload",
       "typed": ["a<b", "x<y<z>w", "a&b<c&d\"e'f", "a&amp;<b"],
       "note": "an unclosed < run is HTML-escaped, no double encoding",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a&lt;b", "x&lt;yw", "a&b&lt;c&amp;d&quot;e&#039;f", "a&amp;&lt;b"],
       "dropped": []
     },
@@ -566,7 +528,6 @@
       "feature": "lazyload",
       "typed": ["a < b > c", "a<b\"c>d\"e>f", "1<2 and 3>2", "[^<>]+x"],
       "note": "strip_tags: < + whitespace kept, quotes tracked inside a tag",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a < b > c", "af", "12", "[^]+x"],
       "dropped": []
     },
@@ -576,7 +537,6 @@
       "feature": "lazyload",
       "typed": ["x%41y", "%2541", "%zz%2F%2f", "%E2%80%8B", "a%20b"],
       "note": "%xx octets removed in a loop",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["xy", "41", "%zz", "ab"],
       "dropped": [{ "index": 3, "row": "%E2%80%8B", "reason": "empty" }]
     },
@@ -586,7 +546,6 @@
       "feature": "lazyload",
       "typed": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "note": "NBSP / zero-width / BOM kept",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": [" a ", "a b", "a​b", "​", " ", "﻿a"],
       "dropped": []
     },
@@ -602,7 +561,6 @@
         { "b64": "YYA=" }
       ],
       "note": "invalid UTF-8 row sanitizes to empty",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["ok"],
       "dropped": [
         { "index": 0, "row": { "b64": "/2JhZA==" }, "reason": "empty" },
@@ -617,7 +575,6 @@
       "feature": "lazyload",
       "typed": ["<i></i>", "%41%42", "<b> </b>", "%20"],
       "note": "rows left empty by the sanitizer are dropped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [
         { "index": 0, "row": "<i></i>", "reason": "empty" },
@@ -632,7 +589,6 @@
       "feature": "lazyload",
       "typed": ["(?<n>a)", "(?P<n>a)", "(?<=a)b", "(?<!a)b", "\\k<n>", "[<a]", "(?'n'a)\\k'n'"],
       "note": "PCRE syntax with < mangled by the sanitizer",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["(?a)", "(?Pa)", "(?&lt;=a)b", "(?&lt;!a)b", "\\k", "[&lt;a]", "(?'n'a)\\k'n'"],
       "dropped": []
     },
@@ -642,7 +598,6 @@
       "feature": "lazyload",
       "typed": ["\\d*x", "jquery-?[0-9.]*(.min)?.js", "[a-z]{2,}*", "(.*?)", "[*]", "a.+b"],
       "note": "Delay rewrites every *; other fields keep it",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\d*x", "jquery-?[0-9.]*(.min)?.js", "[a-z]{2,}*", "(.*?)", "[*]", "a.+b"],
       "dropped": []
     },
@@ -652,7 +607,6 @@
       "feature": "lazyload",
       "typed": [".*", "*", "(*)", "(.*)"],
       "note": "Delay: all four spell (.*) after the rewrite",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": [".*", "*", "(*)", "(.*)"],
       "dropped": []
     },
@@ -662,7 +616,6 @@
       "feature": "lazyload",
       "typed": ["\\*", "\\.*", "/\\* c \\*/ var q = 1;"],
       "note": "Delay: \\* becomes \\(.*) and fails the PCRE check",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\*", "\\.*", "/\\* c \\*/ var q = 1;"],
       "dropped": []
     },
@@ -683,7 +636,6 @@
         "x\\"
       ],
       "note": "rows PCRE rejects in the form-submit check (Lazyload: no check)",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": [
         "(?#c)",
         "\\i",
@@ -704,7 +656,6 @@
       "feature": "delay_js",
       "typed": ["(?a)", "(?aD)", "(?aS)", "(?aW)", "(?aP)", "(?aT)", "(?r)"],
       "note": "PCRE2 >= 10.43 option letters compile at save",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["(?a)", "(?aD)", "(?aS)", "(?aW)", "(?aP)", "(?aT)", "(?r)"],
       "dropped": []
     },
@@ -714,7 +665,6 @@
       "feature": "delay_js",
       "typed": ["a+b", "a\\+b", "x\\?ver", "a++", "(?+1)x", "(?+1)(x)", "a#b", "\\x23"],
       "note": "valid at save (the check has no runtime escapes); (?+1)x alone has no group 1 and is dropped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a+b", "a\\+b", "x\\?ver", "a++", "(?+1)(x)", "a#b", "\\x23"],
       "dropped": [{ "index": 4, "row": "(?+1)x", "reason": "invalid-pattern" }]
     },
@@ -724,7 +674,6 @@
       "feature": "defer_all_js",
       "typed": ["(?a)", "(?aD)", "(?aS)", "(?aW)", "(?aP)", "(?aT)", "(?r)"],
       "note": "PCRE2 >= 10.43 option letters compile at save",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["(?a)", "(?aD)", "(?aS)", "(?aW)", "(?aP)", "(?aT)", "(?r)"],
       "dropped": []
     },
@@ -734,7 +683,6 @@
       "feature": "defer_all_js",
       "typed": ["a+b", "a\\+b", "x\\?ver", "a++", "(?+1)x", "(?+1)(x)", "a#b", "\\x23"],
       "note": "valid at save (the check has no runtime escapes); (?+1)x alone has no group 1 and is dropped",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["a+b", "a\\+b", "x\\?ver", "a++", "(?+1)(x)", "a#b", "\\x23"],
       "dropped": [{ "index": 4, "row": "(?+1)x", "reason": "invalid-pattern" }]
     },
@@ -751,7 +699,6 @@
       ],
       "safeMode": true,
       "note": "Safe Mode for jQuery on: its three patterns removed",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["other"],
       "dropped": [
         {
@@ -777,7 +724,6 @@
       ],
       "safeMode": false,
       "note": "Safe Mode off: kept",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [
         "\\/jquery(-migrate)?-?([0-9.]+)?(.min|.slim|.slim.min)?.js(\\?(.*))?( |'|\"|>)",
         "js-(before|after)",
@@ -792,7 +738,6 @@
       "feature": "delay_js",
       "typed": ["a\\+b\\.js"],
       "note": "picked path: \\+ survives save, runtime doubles it",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a\\+b\\.js"],
       "dropped": []
     },
@@ -816,7 +761,6 @@
       "feature": "delay_js",
       "typed": ["a\\x2Bb\\.js"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a\\x2Bb\\.js"],
       "dropped": []
     },
@@ -839,7 +783,6 @@
       "feature": "delay_js",
       "typed": ["a[+]b\\.js"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a[+]b\\.js"],
       "dropped": []
     },
@@ -862,7 +805,6 @@
       "feature": "delay_js",
       "typed": ["\\sid=[\"']?a\\+b(?=[\"'\\s/>])"],
       "note": "picked id row",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\sid=[\"']?a\\+b(?=[\"'\\s/>])"],
       "dropped": []
     },
@@ -886,7 +828,6 @@
       "feature": "delay_js",
       "typed": ["\\sid=[\"']?a\\x2Bb(?=[\"'\\s/>])"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\sid=[\"']?a\\x2Bb(?=[\"'\\s/>])"],
       "dropped": []
     },
@@ -909,7 +850,6 @@
       "feature": "delay_js",
       "typed": ["x\\.js\\?ver=1"],
       "note": "picked excerpt: \\?ver becomes \\\\?ver",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x\\.js\\?ver=1"],
       "dropped": []
     },
@@ -933,7 +873,6 @@
       "feature": "delay_js",
       "typed": ["x\\.js\\x3Fver=1"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x\\.js\\x3Fver=1"],
       "dropped": []
     },
@@ -956,7 +895,6 @@
       "feature": "delay_js",
       "typed": ["x\\.js[?]ver=1"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x\\.js[?]ver=1"],
       "dropped": []
     },
@@ -979,7 +917,6 @@
       "feature": "delay_js",
       "typed": ["/\\* c \\*/ var q = 1;"],
       "note": "picked excerpt: dropped at save",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": [],
       "dropped": [{ "index": 0, "row": "/\\* c \\*/ var q = 1;", "reason": "invalid-pattern" }]
     },
@@ -1002,7 +939,6 @@
       "feature": "delay_js",
       "typed": ["/\\x2A c \\x2A/ var q = 1;"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["/\\x2A c \\x2A/ var q = 1;"],
       "dropped": []
     },
@@ -1025,7 +961,6 @@
       "feature": "delay_js",
       "typed": ["/[*] c [*]/ var q = 1;"],
       "note": "[*] becomes [(.*)]: over-matches",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["/[(.*)] c [(.*)]/ var q = 1;"],
       "dropped": []
     },
@@ -1048,7 +983,6 @@
       "feature": "delay_js",
       "typed": ["if\\(a<b\\)"],
       "note": "picked excerpt: < stored as &lt;",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["if\\(a&lt;b\\)"],
       "dropped": []
     },
@@ -1071,7 +1005,6 @@
       "feature": "delay_js",
       "typed": ["if\\(a\\x3Cb\\)"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["if\\(a\\x3Cb\\)"],
       "dropped": []
     },
@@ -1094,7 +1027,6 @@
       "feature": "delay_js",
       "typed": ["if\\(a[<]b\\)"],
       "note": "[<] stored as [&lt;]: broken",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["if\\(a[&lt;]b\\)"],
       "dropped": []
     },
@@ -1117,7 +1049,6 @@
       "feature": "delay_js",
       "typed": ["x%41y\\.js"],
       "note": "picked path: %41 stripped at save",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["xy\\.js"],
       "dropped": []
     },
@@ -1140,7 +1071,6 @@
       "feature": "delay_js",
       "typed": ["x\\x2541y\\.js"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x\\x2541y\\.js"],
       "dropped": []
     },
@@ -1163,7 +1093,6 @@
       "feature": "delay_js",
       "typed": ["x[%]41y\\.js"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x[%]41y\\.js"],
       "dropped": []
     },
@@ -1186,7 +1115,6 @@
       "feature": "delay_js",
       "typed": ["p(?:&|&amp;)q\\.js"],
       "note": "picked alternation survives",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["p(?:&|&amp;)q\\.js"],
       "dropped": []
     },
@@ -1209,7 +1137,6 @@
       "feature": "delay_js",
       "typed": ["a\\.b"],
       "note": "plain escapes survive",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a\\.b"],
       "dropped": []
     },
@@ -1232,7 +1159,6 @@
       "feature": "delay_js",
       "typed": ["foo\\(1\\)|2\\^3\\$"],
       "note": "plain escapes survive",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["foo\\(1\\)|2\\^3\\$"],
       "dropped": []
     },
@@ -1255,7 +1181,6 @@
       "feature": "delay_js",
       "typed": ["a#b"],
       "note": "raw # escaped at runtime",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a#b"],
       "dropped": []
     },
@@ -1278,7 +1203,6 @@
       "feature": "delay_js",
       "typed": ["\\x23"],
       "note": "\\x23 matches #",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["\\x23"],
       "dropped": []
     },
@@ -1301,7 +1225,6 @@
       "feature": "defer_all_js",
       "typed": ["a\\+b\\.js"],
       "note": "Defer has no + escape",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["a\\+b\\.js"],
       "dropped": []
     },
@@ -1325,7 +1248,6 @@
       "feature": "defer_all_js",
       "typed": ["x%41y\\.js"],
       "note": "picked path: %41 stripped at save",
-      "pending": { "owner": "K.3", "fields": ["stored", "dropped"] },
       "stored": ["xy\\.js"],
       "dropped": []
     },
@@ -1349,7 +1271,6 @@
       "feature": "defer_all_js",
       "typed": ["x\\x2541y\\.js"],
       "note": "safe spelling",
-      "pending": { "owner": "K.3", "fields": ["dropped"] },
       "stored": ["x\\x2541y\\.js"],
       "dropped": []
     },

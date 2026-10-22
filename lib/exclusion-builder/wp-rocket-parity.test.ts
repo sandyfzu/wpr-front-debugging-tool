@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
 import { ExclusionValidationError } from './errors';
-import { exclusionFieldLines } from './field-text';
+import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
 import { lazyRenderRekeyed } from './lazy-render-hashing';
 import { exclusionPipelineSteps } from './pipeline';
@@ -38,6 +38,7 @@ import {
   comparedFields,
   parseParityTable,
   typedLineBytes,
+  type DroppedLine,
   type MatchRow,
   type ParityRow,
   type SaveRow,
@@ -99,18 +100,28 @@ function markedKeys(html: string, feature: ExclusionFeatureId): string[] {
     .map(({ key }) => key);
 }
 
-/** A typed line as editor text (bytes that are not UTF-8 decode to U+FFFD). */
-function editorText(line: TypedLine): string {
-  return typeof line === 'string' ? line : new TextDecoder().decode(typedLineBytes(line));
+/** A typed line as the save receives it: text, or the raw bytes of a non-UTF-8 line. */
+function submitted(line: TypedLine): SubmittedRow {
+  return typeof line === 'string' ? line : typedLineBytes(line);
 }
 
 /**
- * What the engine stores for a save row: `exclusionFieldLines` gives the
- * stored rows; the engine has no per-line drop report yet, so `dropped` is
- * `null` (every save row stays pending until one exists).
+ * What the engine stores for a save row: the field normalization's stored
+ * rows and, from its per-row diff, each dropped line with its reason (safe
+ * mode off unless the row says otherwise, as the table records it).
  */
-function engineSave(row: SaveRow): { stored: readonly string[]; dropped: null } {
-  return { stored: exclusionFieldLines(row.typed.map(editorText)), dropped: null };
+function engineSave(row: SaveRow): { stored: readonly string[]; dropped: DroppedLine[] } {
+  const saved = saveExclusionRows(row.feature, row.typed.map(submitted), {
+    safeMode: row.safeMode ?? false
+  });
+  const dropped: DroppedLine[] = [];
+  saved.diffs.forEach((diff, index) => {
+    const line = row.typed[index];
+    if (diff.state === 'dropped' && line !== undefined) {
+      dropped.push({ index, row: line, reason: diff.reason });
+    }
+  });
+  return { stored: saved.rows, dropped };
 }
 
 /** A set carrying `rows` on `feature` (and, optionally, its feature-wide disable). */

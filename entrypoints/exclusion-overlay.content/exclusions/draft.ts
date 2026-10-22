@@ -4,9 +4,11 @@
  * never the index) plus the feature-wide disables. Pure and immutable: every
  * edit returns a new draft; the view stores it. Blank rows are unfinished
  * edits, not exclusions: they never reach the set and never show an error.
- * Rows reach the set trimmed the way WP Rocket's settings save trims them
- * (`trimExclusionRow`); a row being typed keeps its text until it is
- * committed (`trimRow`, on leaving the row), so typing is never fought.
+ * Rows reach the set as typed, trimmed (`trimExclusionRow`, the save's
+ * first step); the session applies what WP Rocket's settings save stores
+ * for them (`saveExclusionRows`), so a persisted or applied set keeps the
+ * typed text. A row being typed keeps its text until it is committed
+ * (`trimRow`, on leaving the row), so typing is never fought.
  */
 import {
   EXCLUSION_FEATURES,
@@ -17,8 +19,10 @@ import {
 } from '../../../lib/exclusion-builder/set';
 import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
 import {
-  exclusionFieldLines,
+  committedFieldRows,
+  saveExclusionRows,
   splitFieldText,
+  storedRowKey,
   trimExclusionRow
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
@@ -75,7 +79,7 @@ export function laneFeature(lane: LaneKey): ExclusionFeatureSpec {
 }
 
 /**
- * A draft holding a set's rows (in their trimmed, stored form) and disables.
+ * A draft holding a set's rows (as committed: trimmed, typed text) and disables.
  *
  * @param set The set to edit.
  * @param nextId The id issuer.
@@ -93,15 +97,16 @@ export function isBlankRow(text: string): boolean {
 }
 
 /**
- * The set a draft stands for: every row trimmed, rows left blank dropped —
- * what WP Rocket would store for the same lines.
+ * The set a draft stands for: every row trimmed, rows left blank dropped,
+ * otherwise as typed (duplicates and all) — the session applies what WP
+ * Rocket stores for them, and a saved set reopens on the typed rows.
  *
  * @param draft The draft.
  */
 export function draftToSet(draft: Draft): ExclusionSet {
   const rows = {} as Record<LaneKey, string[]>;
   for (const lane of LANE_ORDER) {
-    rows[lane] = exclusionFieldLines(draft.rows[lane].map((row) => row.text));
+    rows[lane] = committedFieldRows(draft.rows[lane].map((row) => row.text));
   }
   return { rows, disable: { ...draft.disable } };
 }
@@ -133,7 +138,7 @@ export function sameSet(a: ExclusionSet, b: ExclusionSet): boolean {
  * @param text The pasted text.
  */
 export function splitLines(text: string): string[] {
-  return exclusionFieldLines(splitFieldText(text));
+  return committedFieldRows(splitFieldText(text));
 }
 
 /** The result of an insertion. */
@@ -373,8 +378,80 @@ export interface CandidateAdded {
 }
 
 /**
- * Add a candidate row (trimmed) to a lane unless the lane already holds it
- * once trimmed (picking twice never duplicates).
+ * What makes two rows of a lane the same row: the stored form WP Rocket
+ * dedupes on, or — for a row the save empties — its trimmed text.
+ */
+interface RowIdentity {
+  readonly stored: boolean;
+  readonly text: string;
+}
+
+/**
+ * A row's identity in its lane.
+ *
+ * @param lane The lane.
+ * @param text The row as typed.
+ */
+function rowIdentity(lane: LaneKey, text: string): RowIdentity {
+  const key = storedRowKey(laneFeature(lane).id, text);
+  return key === null
+    ? { stored: false, text: trimExclusionRow(text) }
+    : { stored: true, text: key };
+}
+
+/** The identities a lane's rows hold, for repeated "does it hold this row" checks. */
+export interface LaneIdentities {
+  readonly lane: LaneKey;
+  readonly stored: ReadonlySet<string>;
+  readonly emptied: ReadonlySet<string>;
+}
+
+/**
+ * The identities of a lane's rows.
+ *
+ * @param draft The draft.
+ * @param lane The lane.
+ */
+export function laneIdentities(draft: Draft, lane: LaneKey): LaneIdentities {
+  const stored = new Set<string>();
+  const emptied = new Set<string>();
+  for (const row of draft.rows[lane]) {
+    const identity = rowIdentity(lane, row.text);
+    (identity.stored ? stored : emptied).add(identity.text);
+  }
+  return { lane, stored, emptied };
+}
+
+/**
+ * Whether a lane already holds `text` as WP Rocket would store it.
+ *
+ * @param identities The lane's identities ({@link laneIdentities}).
+ * @param text A row as typed.
+ */
+export function holdsRow(identities: LaneIdentities, text: string): boolean {
+  const identity = rowIdentity(identities.lane, text);
+  return (identity.stored ? identities.stored : identities.emptied).has(identity.text);
+}
+
+/**
+ * The lane's row that is the same row as `text` once WP Rocket stores both,
+ * or undefined.
+ *
+ * @param draft The draft.
+ * @param lane The lane.
+ * @param text A row as typed.
+ */
+function rowHolding(draft: Draft, lane: LaneKey, text: string): DraftRow | undefined {
+  const wanted = rowIdentity(lane, text);
+  return draft.rows[lane].find((row) => {
+    const identity = rowIdentity(lane, row.text);
+    return identity.stored === wanted.stored && identity.text === wanted.text;
+  });
+}
+
+/**
+ * Add a candidate row (trimmed) to a lane unless the lane already holds the
+ * same row once stored (picking twice never duplicates).
  *
  * @param draft The draft.
  * @param lane The lane the candidate belongs to.
@@ -388,7 +465,7 @@ export function addCandidate(
   nextId: IdSource
 ): CandidateAdded {
   const row = trimExclusionRow(text);
-  const existing = draft.rows[lane].find((candidate) => trimExclusionRow(candidate.text) === row);
+  const existing = rowHolding(draft, lane, row);
   if (existing !== undefined) return { draft, id: existing.id, added: false };
   const inserted = insertRows(draft, lane, [row], null, nextId);
   const id = inserted.ids[0] ?? null;
@@ -424,11 +501,13 @@ export function wireRowProblem(text: string): string | null {
 }
 
 /**
- * A memoizing row validator over the row as it would be stored (trimmed):
- * the wire contract's row check, then the engine's own prevalidation, cached
- * by lane + trimmed text, so an edit re-validates only the row that changed
- * (the regex guard is the costly part) and surrounding whitespace never
- * decides a verdict. Blank rows have no problem (unfinished).
+ * A memoizing row validator: the wire contract's check on the row as sent
+ * (trimmed), then the engine's own prevalidation of the row as WP Rocket
+ * stores it, cached by lane + stored form, so an edit re-validates only the
+ * row that changed (the regex guard is the costly part) and text the save
+ * rewrites away never decides a verdict. Blank rows have no problem
+ * (unfinished); neither do rows WP Rocket drops at save — they are never
+ * applied (what becomes of them is the row's stored-form note).
  *
  * @param capacity Cached verdicts kept before the cache restarts.
  * @returns `(lane, text) → reason | null`.
@@ -440,14 +519,15 @@ export function createRowValidator(
   return (lane, typed) => {
     const text = trimExclusionRow(typed);
     if (text === '') return null;
-    const key = `${lane}\u0000${text}`;
+    const wire = wireRowProblem(text);
+    if (wire !== null) return wire;
+    const feature = laneFeature(lane);
+    const stored = saveExclusionRows(feature.id, [text]).rows[0];
+    if (stored === undefined) return null;
+    const key = `${lane}\u0000${stored}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
-    const feature = laneFeature(lane);
-    const reason =
-      wireRowProblem(text) ??
-      featureRowProblems(feature.id, feature.rowKind, [text])[0]?.reason ??
-      null;
+    const reason = featureRowProblems(feature.id, feature.rowKind, [stored])[0]?.reason ?? null;
     if (cache.size >= capacity) cache.clear();
     cache.set(key, reason);
     return reason;

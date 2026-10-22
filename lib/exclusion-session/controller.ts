@@ -24,6 +24,9 @@
  *   stopped session's late document or end never lands on a newer one.
  * - **Saving**: an apply saves the origin's set only when it answers
  *   `applying`; `saveExclusionSet` stores any wire-valid draft.
+ * - **Typed in, stored applied**: sets are kept as typed; an apply is
+ *   validated, and each document rewritten, with the rows WP Rocket's
+ *   settings save would store for them (problems still name typed rows).
  * - **A stored record is a hint**: at wake every active record is
  *   re-validated through the backend (stale ⇒ cleared, served unmodified)
  *   before any ask or document is served; an install/update clears all.
@@ -34,7 +37,7 @@
  * - Pushes tolerate the no-receiver case; every other failure is logged.
  */
 import { createLogger, type Logger } from '../logger';
-import { prevalidateExclusionSet } from '../exclusion-builder/validate';
+import { prevalidateStoredForm, storedExclusionSet } from '../exclusion-builder/stored-set';
 import type { ExclusionSet } from '../exclusion-builder/set';
 import { scheduleWithTimeout, type ScheduleTimer } from '../messaging/bounded-ask';
 import {
@@ -649,7 +652,9 @@ export function createExclusionSessionController(
     if (!isRewritableResponse(document)) return null;
     const session = await activeFor(document.tabId, document.documentUrl);
     if (session === null) return null;
-    const result = await rewriteDocument(document, session.set, boundedRunner);
+    // The session keeps the typed rows; the page gets the rows WP Rocket stores.
+    const stored = storedExclusionSet(session.set).set;
+    const result = await rewriteDocument(document, stored, boundedRunner);
     if (result.cause !== undefined) {
       log.error('Exclusion engine failed — document served unmodified', {
         tabId: document.tabId,
@@ -843,7 +848,7 @@ export function createExclusionSessionController(
       if (page === null) return { outcome: 'unavailable', cause: 'unsupported-page' };
       const payload = parseExclusionSetPayload(data);
       if (payload === null) throw new Error('applyExclusionSession: malformed payload refused');
-      const problems = prevalidateExclusionSet(payload.set);
+      const problems = prevalidateStoredForm(payload.set);
       if (!problems.valid) return invalidApplyReply(problems.invalid);
       const after = await enqueueAsk(page.tabId, 'applyExclusionSession', () =>
         drive(page.tabId, {

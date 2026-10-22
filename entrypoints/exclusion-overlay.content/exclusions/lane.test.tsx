@@ -385,6 +385,32 @@ describe('Lane copy-all', () => {
     );
   });
 
+  it('copies the rows as WP Rocket stores them: sanitized, wildcards rewritten, one copy each', async () => {
+    const controller = await readyController();
+    vi.useFakeTimers();
+    controller.insertRows('delayJs', ['x%41y.js', 'a*', 'a.*', '<b></b>', '('], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write);
+    fireEvent.click(copyAll());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(write.mock.calls[0]?.[0]).toBe('xy.js\na(.*)');
+    expect(announce).toHaveBeenCalledWith('Copied 2 exclusions');
+  });
+
+  it('says WP Rocket drops every row when no typed row would be stored', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['<b></b>', '('], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write);
+    expect(copyAll().getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(copyAll());
+    await Promise.resolve();
+    expect(write).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledWith(
+      'Nothing to copy: WP Rocket drops every row of this lane when it saves them.'
+    );
+  });
+
   it('stays focusable but inert on an empty lane, and says why', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['   '], null);

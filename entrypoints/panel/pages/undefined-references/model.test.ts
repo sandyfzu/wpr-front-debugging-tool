@@ -5,6 +5,8 @@
  * the answer reconciliation that keeps rows mounted.
  */
 import { describe, expect, it } from 'vitest';
+import { storedExclusionRows } from '../../../../lib/exclusion-builder/field-text';
+import { compileMatcher, translateRegexRows } from '../../../../lib/exclusion-builder/pcre/rows';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import {
@@ -386,35 +388,24 @@ describe('splitScriptUrl + scriptLocation', () => {
 });
 
 /**
- * WP Rocket's save pipeline for a `delay_js_exclusions` line:
- * `sanitize_text_field` (drops `%XX` octets, collapses whitespace, trims)
- * then `rocket_clean_wildcards` (per `/` component, `.*`, `*`, `(*)` and
- * `(.*)` become `(.*)`). A pattern must come out of it unchanged.
+ * WP Rocket's settings save of one `delay_js_exclusions` line (the engine's
+ * own port of it): the stored row, or `''` when the save drops the line. A
+ * pattern must come out of it unchanged.
  */
 function wpRocketSave(pattern: string): string {
-  const sanitized = pattern
-    .replace(/%[a-f0-9]{2}/gi, '')
-    .replace(/[\r\n\t ]+/g, ' ')
-    .trim();
-  return sanitized
-    .split('/')
-    .map((part) => part.replace(/\(\.\*\)|\(\*\)|\.\*|\*/g, '(.*)'))
-    .join('/');
+  return storedExclusionRows('delay_js', [pattern])[0] ?? '';
 }
 
 /**
- * WP Rocket's matching of one saved exclusion against a script element: it
- * escapes `+`, `?ver` and `#`, then runs `preg_match("#{$pattern}#i", $tag)`
- * over the whole element (attributes and inline body). The JS equivalent of
- * that PCRE pattern (no PCRE-only syntax is involved; the escaped `\#` is a
- * literal in both) is a case-insensitive RegExp.
+ * WP Rocket's matching of one exclusion, saved, against a script element:
+ * `preg_match('#…#i')` over the whole element with its `+`/`?ver`/`#`
+ * escapes, through the engine's PCRE translation of it. A row the save
+ * drops, or that has no proven translation, matches nothing.
  */
 function wpRocketMatches(pattern: string, tag: string): boolean {
-  const escaped = wpRocketSave(pattern)
-    .replaceAll('+', '\\+')
-    .replaceAll('?ver', '\\?ver')
-    .replaceAll('#', '\\#');
-  return new RegExp(escaped, 'i').test(tag);
+  const stored = storedExclusionRows('delay_js', [pattern]);
+  const matcher = translateRegexRows('delay_js', stored).rows[0]?.matcher ?? null;
+  return matcher !== null && compileMatcher(matcher)(tag);
 }
 
 /** A plain `new RegExp(pattern)` test (how an exclusion builder previews one). */

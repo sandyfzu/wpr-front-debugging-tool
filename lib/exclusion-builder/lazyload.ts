@@ -30,6 +30,7 @@ import {
   type TextPatch
 } from './tag-edit';
 import type { ExclusionFeatureId, ExclusionSet } from './set';
+import { phpTrim } from './wordpress/php-trim';
 
 /**
  * The lazy `sizes` carrier — the third of the lazyload family's attributes
@@ -76,9 +77,6 @@ const NOSCRIPT_CLOSE = '</noscript>';
 
 /** The `src` value as WP Rocket reads it from `atts` (lazy, dot-all, any case). */
 const ATTS_SRC = /[ \t\n\v\f\r]src[ \t\n\v\f\r]*=[ \t\n\v\f\r]*(['"])([\s\S]*?)\1/i;
-
-/** PHP `trim`'s default character set, at either end. */
-const PHP_TRIM = /^[ \t\n\r\0\v]+|[ \t\n\r\0\v]+$/g;
 
 /** PCRE's `\s` (no `u`): what WP Rocket's `\s?` before the closing `/?>` takes. */
 const PCRE_SPACE = /[ \t\n\v\f\r]$/;
@@ -129,7 +127,7 @@ function imageSubjects(original: string): { readonly atts: string; readonly src:
   let atts = original.slice(IMG_TAG.length + 1, gt === -1 ? original.length : gt);
   if (atts.endsWith('/')) atts = atts.slice(0, -1);
   if (PCRE_SPACE.test(atts)) atts = atts.slice(0, -1);
-  const src = (ATTS_SRC.exec(atts)?.[2] ?? '').replace(PHP_TRIM, '');
+  const src = phpTrim(ATTS_SRC.exec(atts)?.[2] ?? '');
   return { atts, src };
 }
 

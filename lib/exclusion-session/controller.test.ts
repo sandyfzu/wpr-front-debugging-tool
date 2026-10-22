@@ -265,15 +265,26 @@ describe('apply', () => {
 
   it('answers invalid rows without arming or saving', async () => {
     const r = rig();
+    // Validated as stored: `(?<n>a)` is stored as `(?a)`, which JS rejects; the
+    // problem names the typed row (`0` is dropped by the save, so 1 ≠ 0).
     const reply = await r.controller.apply(page(), {
-      set: { ...SET, rows: { ...SET.rows, delayJs: ['('] } }
+      set: { ...SET, rows: { ...SET.rows, delayJs: ['0', '(?<n>a)'] } }
     });
     expect(reply).toMatchObject({
       outcome: 'invalid',
-      invalid: [{ feature: 'delay_js', index: 0, row: '(' }]
+      invalid: [{ feature: 'delay_js', index: 1, row: '(?a)' }]
     });
     expect(r.backend.calls).toEqual([]);
     await expect(getSavedExclusionSet(ORIGIN)).resolves.toBeNull();
+  });
+
+  it('applies a set whose only problem rows WP Rocket drops at save, keeping them typed', async () => {
+    const r = rig();
+    const typed = { ...SET, rows: { ...SET.rows, delayJs: ['(', 'a\\.js'] } };
+    await expect(r.controller.apply(page(), { set: typed })).resolves.toEqual({
+      outcome: 'applying'
+    });
+    await expect(getSavedExclusionSet(ORIGIN)).resolves.toEqual(typed);
   });
 
   it('answers unsupported-browser without a backend and stores the warning', async () => {
@@ -576,6 +587,23 @@ describe('host', () => {
       document: { outcome: 'rewritten', reports: expected.reports }
     });
     expect(r.tabPushes.at(-1)?.[1]).toMatchObject({ document: { outcome: 'rewritten' } });
+  });
+
+  it('rewrites with the rows WP Rocket stores for the typed set', async () => {
+    const r = rig();
+    await putExclusionSessionRecord(TAB, {
+      state: 'active',
+      origin: ORIGIN,
+      set: { ...SET, rows: { ...SET.rows, delayJs: ['a\\.js', ' a\\.js', 'x%41', '('] } },
+      startedAt: NOW - 1000,
+      document: null
+    });
+    const runner = vi.fn<DocumentTransformRunner>(() =>
+      Promise.resolve({ ok: false, outcome: { outcome: 'failed', reason: 'engine-failed' } })
+    );
+    r.backend.runner = runner;
+    await r.host.rewriteDocument(doc());
+    expect(runner.mock.calls[0]?.[0].set.rows.delayJs).toEqual(['a\\.js', 'x']);
   });
 
   it('passes other origins and session-less tabs through without recording', async () => {

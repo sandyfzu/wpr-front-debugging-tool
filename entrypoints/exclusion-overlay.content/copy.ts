@@ -131,6 +131,8 @@ export const COPY_ALL_COPY = {
     `Copied ${String(count)} ${count === 1 ? 'exclusion' : 'exclusions'}`,
   /** Why the control does nothing on an empty lane. */
   empty: 'Nothing to copy yet: add an exclusion to this lane first.',
+  /** Why the control does nothing when WP Rocket's save drops every row of the lane. */
+  allDropped: 'Nothing to copy: WP Rocket drops every row of this lane when it saves them.',
   /** A refused copy, with the way forward. */
   failed:
     'Copy failed: this page refused clipboard access. Select Copy all again, or copy each row from its field.'

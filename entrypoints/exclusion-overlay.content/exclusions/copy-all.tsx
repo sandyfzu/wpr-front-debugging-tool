@@ -1,12 +1,13 @@
 /**
- * A lane's copy-all control: copies the lane's exclusions the way WP
- * Rocket's field takes them — one per line, each trimmed, blank rows left
- * out, in list order. States: idle · copying (busy, repeat clicks ignored) ·
- * copied (check + "Copied" for the shared flash window — the accessible name
- * says "Copied" too — announced with the count) · failed (announced, plus
- * an inline line with the way forward) · explained (an empty lane's control
- * was activated: focusable but inert, `aria-disabled`, it announces and
- * shows why nothing was copied). The failed and explained lines last until
+ * A lane's copy-all control: copies the lane's exclusions as WP Rocket
+ * stores them — one per line, in list order, rows the save drops left out.
+ * States: idle · copying (busy, repeat clicks ignored) · copied (check +
+ * "Copied" for the shared flash window — the accessible name says "Copied"
+ * too — announced with the count) · failed (announced, plus an inline line
+ * with the way forward) · explained (a lane with nothing to copy — empty, or
+ * every row dropped by the save — was activated: focusable but inert,
+ * `aria-disabled`, it announces and shows why nothing was copied). The
+ * failed and explained lines last until
  * the next attempt or a change to the lane's rows.
  */
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from 'solid-js';
@@ -15,10 +16,14 @@ import Copy from 'lucide-solid/icons/copy';
 import CircleAlert from 'lucide-solid/icons/circle-alert';
 import Info from 'lucide-solid/icons/info';
 import { COPIED_FLASH_MS } from '../../../components/ui/copy-flash';
-import { exclusionFieldLines, exclusionFieldText } from '../../../lib/exclusion-builder/field-text';
+import {
+  exclusionFieldText,
+  storedExclusionRows,
+  committedFieldRows
+} from '../../../lib/exclusion-builder/field-text';
 import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { COPY_ALL_COPY, LANE_COPY } from '../copy';
-import type { LaneKey } from './draft';
+import { laneFeature, type LaneKey } from './draft';
 
 /** Props of {@link CopyAll}. */
 export interface CopyAllProps {
@@ -40,10 +45,16 @@ type CopyState = 'idle' | 'copying' | 'copied' | 'failed' | 'explained';
  */
 export function CopyAll(props: CopyAllProps): JSX.Element {
   const [state, setState] = createSignal<CopyState>('idle');
-  const text = createMemo(() => exclusionFieldText(props.rows));
-  const count = createMemo(() => exclusionFieldLines(props.rows).length);
+  // The lane's rows as the editor commits them (blank ones are unfinished edits).
+  const committed = createMemo(() => committedFieldRows(props.rows));
+  const stored = createMemo(() => storedExclusionRows(laneFeature(props.lane).id, committed()));
+  const text = createMemo(() => exclusionFieldText(stored()));
+  const count = (): number => stored().length;
   const empty = (): boolean => count() === 0;
-  const hint = (): string => (empty() ? COPY_ALL_COPY.empty : LANE_COPY[props.lane].copyHint);
+  // Rows typed but none stored: say so, not "add an exclusion".
+  const emptyCopy = (): string =>
+    committed().length > 0 ? COPY_ALL_COPY.allDropped : COPY_ALL_COPY.empty;
+  const hint = (): string => (empty() ? emptyCopy() : LANE_COPY[props.lane].copyHint);
   const hintId = (): string => `xo-copy-hint-${props.lane}`;
   const label = (): string => LANE_COPY[props.lane].label;
   let button: HTMLButtonElement | undefined;
@@ -71,7 +82,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
     clearTimeout(flash);
     if (empty()) {
       setState('explained');
-      props.announce(COPY_ALL_COPY.empty);
+      props.announce(emptyCopy());
       return;
     }
     const copied = count();
@@ -131,7 +142,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
       <Show when={state() === 'explained'}>
         <p class="xo-row-note xo-copy-line">
           <Info size={12} aria-hidden="true" />
-          <span>{COPY_ALL_COPY.empty}</span>
+          <span>{emptyCopy()}</span>
         </p>
       </Show>
     </>

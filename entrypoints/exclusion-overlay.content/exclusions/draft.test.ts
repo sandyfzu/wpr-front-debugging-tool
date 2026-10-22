@@ -10,8 +10,10 @@ import {
   draftChars,
   draftFromSet,
   draftToSet,
+  holdsRow,
   insertRows,
   isBlankRow,
+  laneIdentities,
   laneFeature,
   pasteIntoRow,
   removeRow,
@@ -153,6 +155,34 @@ describe('row edits', () => {
     const typed = updateRow(start, 'lazyload', start.rows.lazyload[0]?.id ?? '', 'logo.png  ');
     const again = addCandidate(typed, 'lazyload', 'logo.png', nextId);
     expect(again).toEqual({ draft: typed, id: start.rows.lazyload[0]?.id, added: false });
+  });
+
+  it('finds a candidate already held as the same row once WP Rocket stores both', () => {
+    const typed = insertRows(start, 'delayJs', ['x%41y.js', '<b></b>'], null, nextId).draft;
+    const held = typed.rows.delayJs.find((row) => row.text === 'x%41y.js');
+    // `xy.js` is how WP Rocket stores `x%41y.js`.
+    expect(addCandidate(typed, 'delayJs', 'xy.js', nextId)).toEqual({
+      draft: typed,
+      id: held?.id,
+      added: false
+    });
+    // Delay JS stores `a.*` and `a*` alike; Lazyload keeps both apart.
+    const star = addCandidate(typed, 'delayJs', 'a.*', nextId);
+    expect(addCandidate(star.draft, 'delayJs', 'a*', nextId).added).toBe(false);
+    const literal = addCandidate(start, 'lazyload', 'a.*', nextId);
+    expect(addCandidate(literal.draft, 'lazyload', 'a*', nextId).added).toBe(true);
+    // A row the save empties is matched by its trimmed text only.
+    expect(addCandidate(typed, 'delayJs', '<b></b>', nextId).added).toBe(false);
+    expect(addCandidate(typed, 'delayJs', '<i></i>', nextId).added).toBe(true);
+  });
+
+  it('answers "already held" per lane from its identities', () => {
+    const typed = insertRows(start, 'deferJs', ['  q%41.js ', '<i></i>'], null, nextId).draft;
+    const identities = laneIdentities(typed, 'deferJs');
+    expect(holdsRow(identities, 'q.js')).toBe(true);
+    expect(holdsRow(identities, '<i></i>')).toBe(true);
+    expect(holdsRow(identities, '<b></b>')).toBe(false);
+    expect(holdsRow(identities, 'other.js')).toBe(false);
   });
 
   it('trims one row in place, identity when already trimmed or unknown', () => {
@@ -363,7 +393,7 @@ describe('splitLines', () => {
 describe('createRowValidator', () => {
   it('names invalid and risky patterns, accepts literals as text', () => {
     const validate = createRowValidator();
-    expect(validate('delayJs', '(')).toMatch(/^Invalid regular expression: /);
+    expect(validate('delayJs', '(?a)')).toMatch(/^Invalid regular expression: /);
     expect(validate('deferJs', '(a+)+$')).toMatch(/^Risky regular expression/);
     expect(validate('lazyload', '(')).toBeNull();
     expect(validate('delayJs', 'gtag')).toBeNull();
@@ -387,14 +417,27 @@ describe('createRowValidator', () => {
     const validate = createRowValidator();
     expect(validate('lazyload', 'logo.png\t')).toBeNull();
     expect(validate('lazyload', `  ${'x'.repeat(EXCLUSION_SET_LIMITS.rowChars)}  `)).toBeNull();
-    expect(validate('delayJs', ' ( ')).toMatch(/^Invalid regular expression: /);
+    expect(validate('delayJs', ' (?a) ')).toMatch(/^Invalid regular expression: /);
+  });
+
+  it('validates what WP Rocket stores, and passes rows its save drops (never applied)', () => {
+    const validate = createRowValidator();
+    // `(?<n>a)` is stored as `(?a)`: the stored row is what fails.
+    expect(validate('deferJs', '(?<n>a)')).toMatch(/^Invalid regular expression: /);
+    // A tag the save strips leaves a valid row.
+    expect(validate('deferJs', '<b>(</b>gtag')).toBeNull();
+    // PCRE rejects `(`: the save drops it, so the engine never sees it.
+    expect(validate('delayJs', '(')).toBeNull();
+    expect(validate('lazyload', '0')).toBeNull();
+    // The wire check still reads the row as sent.
+    expect(validate('delayJs', '<b>\u0007</b>')).toMatch(/control character/);
   });
 
   it('serves repeated rows from its cache and restarts past capacity', () => {
     const validate = createRowValidator(2);
-    expect(validate('delayJs', '(')).toBe(validate('delayJs', '('));
+    expect(validate('delayJs', '(?a)')).toBe(validate('delayJs', '(?a)'));
     validate('delayJs', 'a');
     validate('delayJs', 'b');
-    expect(validate('delayJs', '(')).toMatch(/^Invalid/);
+    expect(validate('delayJs', '(?a)')).toMatch(/^Invalid/);
   });
 });

@@ -1,17 +1,176 @@
 /**
- * The settings-field form of exclusion rows: each row trimmed of exactly the
- * whitespace the settings save strips (space, tab, LF, CR, NUL, vertical
- * tab — no other Unicode space), rows left empty dropped, the rest kept in
- * order and joined by `\n` with no trailing newline.
+ * WP Rocket's settings save of exclusion rows, per feature: the stored rows
+ * and the per-row diff. Stored forms and drop reasons are the real save's
+ * (WP Rocket 3.23.5.1 + WordPress 7.1.3, as in the parity table); the whole
+ * save tables replay in `wp-rocket-parity.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  exclusionFieldLines,
+  cleanWildcards,
+  committedFieldRows,
   exclusionFieldText,
   hasInvisibleKeptCharacters,
+  SAFE_MODE_DELAY_ROWS,
+  saveExclusionRows,
   splitFieldText,
+  storedExclusionRows,
+  storedRowKey,
   trimExclusionRow
 } from './field-text';
+
+describe('cleanWildcards', () => {
+  it.each([
+    ['\\d*x', '\\d(.*)x'],
+    ['*', '(.*)'],
+    ['(*)', '(.*)'],
+    ['.*', '(.*)'],
+    ['(.*)', '(.*)'],
+    ['((.*)', '((.*)'],
+    ['..*', '.(.*)'],
+    ['**', '(.*)(.*)'],
+    ['\\*', '\\(.*)'],
+    ['[*]', '[(.*)]'],
+    ['(.*?)', '((.*)?)'],
+    ['a/*/b', 'a/(.*)/b'],
+    ['a.+b', 'a.+b'],
+    ['0', ''],
+    ['', '']
+  ])('%j → %j', (row, expected) => {
+    expect(cleanWildcards(row)).toBe(expected);
+  });
+});
+
+describe('saveExclusionRows: the per-row diff', () => {
+  it('says unchanged, stored-as, or dropped with the reason, one diff per typed row', () => {
+    expect(saveExclusionRows('defer_all_js', ['a.js', ' b.js ', 'x%41y', '', '0', 'a.js'])).toEqual(
+      {
+        rows: ['a.js', 'b.js', 'xy'],
+        diffs: [
+          { state: 'unchanged', index: 0 },
+          { state: 'stored-as', text: 'b.js', index: 1 },
+          { state: 'stored-as', text: 'xy', index: 2 },
+          { state: 'dropped', reason: 'empty' },
+          { state: 'dropped', reason: 'zero' },
+          { state: 'dropped', reason: 'duplicate' }
+        ]
+      }
+    );
+  });
+
+  it('drops rows emptied or zeroed by the sanitizer', () => {
+    const saved = saveExclusionRows('lazyload', ['<b></b>', '<b>0</b>', '%E2%80%8B', ' 0 ']);
+    expect(saved.rows).toEqual([]);
+    expect(saved.diffs.map((diff) => diff.state === 'dropped' && diff.reason)).toEqual([
+      'empty',
+      'zero',
+      'empty',
+      'zero'
+    ]);
+  });
+
+  it('dedupes on the stored form, keeping the first occurrence (case-sensitive)', () => {
+    expect(storedExclusionRows('lazyload', ['a b', 'a  b', 'a\tb', 'A b'])).toEqual(['a b', 'A b']);
+  });
+
+  it('rewrites Delay JS wildcards before deduping; other fields keep them', () => {
+    expect(storedExclusionRows('delay_js', ['.*', '*', '(*)', '(.*)'])).toEqual(['(.*)']);
+    expect(storedExclusionRows('lazyload', ['.*', '*'])).toEqual(['.*', '*']);
+  });
+
+  it('drops a Delay/Defer row PCRE rejects, naming the construct; Lazyload stores it', () => {
+    const delay = saveExclusionRows('delay_js', ['(', 'ok']);
+    expect(delay.rows).toEqual(['ok']);
+    expect(delay.diffs[0]).toMatchObject({ state: 'dropped', reason: 'invalid-pattern' });
+    expect(delay.diffs[0]).toHaveProperty('construct');
+    // A Delay `\*` becomes `\(.*)`, which PCRE rejects; Defer keeps `\*`.
+    expect(saveExclusionRows('delay_js', ['\\*']).diffs[0]).toMatchObject({
+      state: 'dropped',
+      reason: 'invalid-pattern'
+    });
+    expect(storedExclusionRows('defer_all_js', ['\\*'])).toEqual(['\\*']);
+    expect(storedExclusionRows('lazyload', ['('])).toEqual(['(']);
+  });
+
+  it('keeps a row whose pattern check is not modeled, as unverified', () => {
+    const saved = saveExclusionRows('delay_js', ['(?+1)(x)', 'a\\\0b']);
+    expect(saved.rows).toEqual(['(?+1)(x)', 'a\\\0b']);
+    expect(saved.diffs[0]).toMatchObject({ state: 'unverified', text: '(?+1)(x)', index: 0 });
+    expect(saved.diffs[1]).toMatchObject({ state: 'unverified', construct: '\\0', index: 1 });
+  });
+
+  it('flags the safe-mode patterns when safe mode is unknown, drops them when on', () => {
+    const typed = [...SAFE_MODE_DELAY_ROWS, 'other'];
+    const unknown = saveExclusionRows('delay_js', typed);
+    expect(unknown.rows).toEqual(typed);
+    expect(unknown.diffs.slice(0, 3)).toEqual([
+      { state: 'unchanged', index: 0, dropsInSafeMode: true },
+      { state: 'unchanged', index: 1, dropsInSafeMode: true },
+      { state: 'unchanged', index: 2, dropsInSafeMode: true }
+    ]);
+    expect(unknown.diffs[3]).toEqual({ state: 'unchanged', index: 3 });
+    const on = saveExclusionRows('delay_js', typed, { safeMode: true });
+    expect(on.rows).toEqual(['other']);
+    expect(on.diffs.slice(0, 3).map((diff) => diff.state === 'dropped' && diff.reason)).toEqual([
+      'safe-mode',
+      'safe-mode',
+      'safe-mode'
+    ]);
+    expect(saveExclusionRows('delay_js', typed, { safeMode: false }).diffs[0]).toEqual({
+      state: 'unchanged',
+      index: 0
+    });
+    // Only Delay JS has safe mode.
+    expect(saveExclusionRows('defer_all_js', typed).diffs[1]).toEqual({
+      state: 'unchanged',
+      index: 1
+    });
+  });
+
+  it('drops a non-UTF-8 line as empty and reads valid bytes as text', () => {
+    const saved = saveExclusionRows('defer_all_js', [
+      Uint8Array.of(0xc0, 0xaf),
+      new TextEncoder().encode(' é ')
+    ]);
+    expect(saved.rows).toEqual(['é']);
+    expect(saved.diffs).toEqual([
+      { state: 'dropped', reason: 'empty' },
+      { state: 'stored-as', text: 'é', index: 0 }
+    ]);
+  });
+
+  it('takes Automatic Lazy Rendering rows as written: no trim, no dedupe, no drop', () => {
+    expect(saveExclusionRows('automatic_lazy_rendering', [' a ', 'a', 'a', '', '0'])).toEqual({
+      rows: [' a ', 'a', 'a', '', '0'],
+      diffs: [0, 1, 2, 3, 4].map((index) => ({ state: 'unchanged', index }))
+    });
+  });
+});
+
+describe('storedRowKey', () => {
+  it('is the stored form before dedupe and the pattern check, null when emptied', () => {
+    expect(storedRowKey('delay_js', ' x%41y* ')).toBe('xy(.*)');
+    expect(storedRowKey('delay_js', '\\*')).toBe('\\(.*)');
+    expect(storedRowKey('defer_all_js', '<b></b>')).toBeNull();
+    expect(storedRowKey('lazyload', '0')).toBeNull();
+    expect(storedRowKey('automatic_lazy_rendering', ' x ')).toBe(' x ');
+  });
+});
+
+describe('exclusionFieldText', () => {
+  it('joins stored rows with LF and no trailing newline', () => {
+    expect(exclusionFieldText(storedExclusionRows('delay_js', [' gtag ', '', 'a*\r']))).toBe(
+      'gtag\na(.*)'
+    );
+    expect(exclusionFieldText([])).toBe('');
+  });
+
+  it('saves back to the same rows', () => {
+    const stored = storedExclusionRows('delay_js', ['a<b', 'x%41', 'q*', 'q*']);
+    expect(storedExclusionRows('delay_js', splitFieldText(exclusionFieldText(stored)))).toEqual(
+      stored
+    );
+  });
+});
 
 describe('trimExclusionRow', () => {
   it('strips leading and trailing spaces, tabs and line breaks', () => {
@@ -38,31 +197,18 @@ describe('trimExclusionRow', () => {
   });
 });
 
-describe('exclusionFieldLines', () => {
-  it('trims every row and drops the ones left empty, keeping list order', () => {
-    expect(exclusionFieldLines([' b ', '', '\t', 'a', '  c'])).toEqual(['b', 'a', 'c']);
+describe('committedFieldRows', () => {
+  it('trims every row and drops the blank ones, keeping order and duplicates', () => {
+    expect(committedFieldRows([' b ', '', '\t', 'a', '  c', 'a'])).toEqual(['b', 'a', 'c', 'a']);
   });
 
-  it('keeps duplicates and regex-looking text verbatim (only whitespace is touched)', () => {
-    expect(exclusionFieldLines(['x', ' x', '(.*)\\.js'])).toEqual(['x', 'x', '(.*)\\.js']);
+  it('keeps typed text the save would rewrite (it is not the stored form)', () => {
+    expect(committedFieldRows(['x%41y', '<b>a</b>', '*'])).toEqual(['x%41y', '<b>a</b>', '*']);
   });
 
   it('is empty for no rows or blank rows only', () => {
-    expect(exclusionFieldLines([])).toEqual([]);
-    expect(exclusionFieldLines(['', '   '])).toEqual([]);
-  });
-});
-
-describe('exclusionFieldText', () => {
-  it('joins the field lines with LF and no trailing newline', () => {
-    expect(exclusionFieldText([' gtag ', '', 'jquery\\.min\\.js\r'])).toBe(
-      'gtag\njquery\\.min\\.js'
-    );
-  });
-
-  it('is the single line itself, and empty when nothing is left', () => {
-    expect(exclusionFieldText(['  one'])).toBe('one');
-    expect(exclusionFieldText(['  ', ''])).toBe('');
+    expect(committedFieldRows([])).toEqual([]);
+    expect(committedFieldRows(['', '   '])).toEqual([]);
   });
 });
 
