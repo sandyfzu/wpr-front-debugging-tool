@@ -16,7 +16,7 @@ DoD: one of those two evidenced outcomes, secret-safe site cleanup/preconditions
 
 ## P15 hardening/release
 
-Depends:all required phases inclP14.5/P14.6 disposition/P7/P5J/P20 (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
+Depends:all required phases inclP14.5/P14.6 disposition/P7/P5J/P21 WP Rocket simulation (before release, owner 2026-10-22); P10 needs owner replan/disposition, not silent skip; P17 optional. Parallel:—final gate. Installed Node24/pinned pnpm/TS5.9/WXT/Solid/test tools, no speculative upgrades.
 
 ### P15A — Budgets/performance
 
