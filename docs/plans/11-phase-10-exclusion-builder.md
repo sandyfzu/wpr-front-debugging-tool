@@ -4,6 +4,8 @@
 
 Full re-think of the parked design, agreed with the owner 2026-10-20. The old flow (separate unlisted page + file pick/rewrite + Chrome overrides to load edited HTML) is **superseded** — too many steps, unused in practice. New shape: the builder lives as a **shadow-isolated overlay injected into the inspected page** (same machinery as the on-page strip), the user picks scripts/elements and composes exclusions in place, then clicks **Apply**: the page reloads and the extension **rewrites the served HTML in flight before parse/render**, so the render is a real page with the exclusions applied. Backends per browser — Chromium: `chrome.debugger` + CDP `Fetch` (response-stage intercept → transform → fulfill); Firefox: `webRequest.filterResponseData` streaming rewrite. When interception is unavailable, there is **no fallback** — a first-class warning state names the cause and remedy (G-3, decided 2026-10-20). All http(s) hosts are already host permissions (`URL_PATTERNS`); Chromium needs the new `debugger` permission (Chromium manifest only, gated on spike + owner acceptance G-2). Implementation **starts only after G-1** (owner approval of this plan). Technically parallel with P11 (disjoint modules; additive contract rows only).
 
+**Order after P10G (owner 2026-10-21):** P10K (mirror WP Rocket's stored + runtime row semantics, K.1–K.5) → P10L (deferred nits + flaky side-by-side suite) → P10M ("On this page" toggle state) → P10H Firefox wiring → P10.1 → P10J. Policy-block check deferred (owner 2026-10-21). WP Rocket feature simulation on sites without the feature = its own phase [P20](./20-phase-20-wpr-simulation.md).
+
 **Shared session surface (owner mandate 2026-10-20):** the overlay is a **tool shell on one in-page session**, and the interception backend exposes a **transform-pipeline seam** — P10 ships the shell + Exclusions mode; the inspector-baseline testers (RUCSS test, beacon/LCP test, live script/LCP views) plug into the same shell/session per their owning phases P13/P14, improved per the owner mandate ("target to improve them all" — code/UI/UX). Their implementations, contracts, and gates stay in P13/P14; P10 owns only the shell, the session lifecycle, and the pipeline seam.
 
 ## Decision gates (G-*, not to be confused with the UI bar's §D receipt ids)
@@ -230,7 +232,7 @@ Uncommitted on `feat/p10d-chromium-backend` (from `feat/p10` @ `e7f8ca9`). New `
   - **Budgets:** Chromium background 112.2 KiB raw ⇒ row 109 → 113; Firefox background 108.3 ⇒ 107 → 109 (digest, served contract, monotonic stamp, release module, guard bookkeeping); Firefox worker 26.4 / 28 unchanged.
   - **Changed expectations:** controller arm/resume calls now carry the origin; two document-transform pins gained `rulesOnly`; an abandoned fulfill is released once (no plain continue after "Invalid InterceptionId"); arm call-sequence pins split into unguarded (no origin) / guarded (origin); "adopts an existing session" ⇒ "replaces it (detach + attach)".
 - **Final verification (2026-10-21, on `88f4d23`; no MAJOR+), fixed test-first:** (1) a fulfill that finds the request gone (detach-replacement race, abandoned navigation) or refused left a false `rewritten` record — the release now answers `fulfilled | refused | gone` and the backend calls the new host method `documentNotServed(tabId, url, identity?)`, which records `failed{not-served}` (additive reason) with the same identity — same order, so it replaces only its own response's record, never a later page's; the Firefox stream backend reports the same when writing the host's rewrite fails (its pre-record abandonment stays `abandoned?`). (2) The guard sweeps each inserted node in its own try/catch (test: a throwing node then a rule in one mutation record ⇒ the rule still removed, no page error; a no-op `finally` fails it). (3) Wake order seeding from every tab's records pinned (another tab's stored order far ahead ⇒ the next document continues after it; removing the seed fails it). (4) Overlay contract (also in `ExclusionServedDocument` TSDoc): `u = new URL(location.href); u.hash = ''; hex = lowercase hex SHA-256(UTF-8(u.href))`, compare with `served.urlDigest`; after `history.pushState`/`replaceState` a mismatch means "can't tell", not "not intercepted"; low-entropy query digests are guessable ("no raw query stored", not "query private"); URLs with embedded credentials unverified; the guard can be disabled by a hostile page for itself (patching `RegExp.prototype.test` / NodeList iteration — only its own prefetches come back).
-- **Unverified / owner manual checks:** infobar **Cancel** — _passed, owner 2026-10-21 (feedback round below)_; `DeveloperToolsAvailability = 2` (managed policy; expect `debugging-policy`) — _still pending owner_; background restart while attached (adoption path unit-tested; Chromium holds a debugger keepalive on the worker, `debugger_api.cc`, so it is not a normal path); a session after a renderer crash; guard copies stacking on an adopted session after a background restart (harmless: idempotent); `Network`-event cost on very heavy pages (measured only on the local site).
+- **Unverified / owner manual checks:** infobar **Cancel** — _passed, owner 2026-10-21 (feedback round below)_; `DeveloperToolsAvailability = 2` (managed policy; expect `debugging-policy`) — _deferred, check later (owner 2026-10-21; how-to in the feedback round)_; background restart while attached (adoption path unit-tested; Chromium holds a debugger keepalive on the worker, `debugger_api.cc`, so it is not a normal path); a session after a renderer crash; guard copies stacking on an adopted session after a background restart (harmless: idempotent); `Network`-event cost on very heavy pages (measured only on the local site).
 
 ### P10E — Firefox streaming backend ✅
 
@@ -392,7 +394,7 @@ Commits on `feat/p10g-apply` (from `feat/p10` @ `57d45f4`): `00f9ab2` retire tab
 - **Decided (owner):** context-menu "Exclusion Builder" = **always open** — opens when hidden/closed; on a live overlay it reveals that instance (no replacement, no toggle; the shipped M1b/N2/R3 reveal path). Toggle dropped.
 - **Owner live check passed (Chrome):** apply → reload → "Applied"; same-site link stays applied; X-close → pill on later pages; Back → "Can't verify"; Stop → normal.
 - **Owner manual check passed:** debugger infobar Cancel (and its ×) → the overlay shows the red infobar-cancelled state.
-- **Still pending owner:** the `DeveloperToolsAvailability = 2` policy check (expect `debugging-policy`).
+- **Policy-block check (`DeveloperToolsAvailability = 2`): deferred, check later (owner 2026-10-21)** — likely not applicable to support agents; not a P10 blocker. How-to (verified 2026-10-21): on macOS only a `.mobileconfig` configuration profile works — a plain `defaults write com.google.Chrome DeveloperToolsAvailability -int 2` lands at recommended level, which this mandatory-only policy ignores (Chromium `policy_loader_mac.mm`); confirm Level = Mandatory at `chrome://policy`. Value 2 also blocks `chrome.debugger` (policy definition YAML) ⇒ Apply should show `debugging-policy`.
 - **New owner requirements (this round):** exclusions trimmed like WP Rocket on save; per-lane copy-all button.
 - **Commits:** `6f528ca` decisions · `6ce211d` pill centering · `dd6b779` trim · `e6fbc69` copy-all · `c2cae18` budgets · docs commit.
 - **Pill icon centering (root cause):** the base `.xo-brand` carried the header's alignment (`align-self: flex-start` + 1 px top margin), overriding the pill's `align-items: center` ⇒ mark 3 px above the pill's center. Base rule = shape only; header/pill own size + alignment. Live (CFT 156 headless, scratch fixture): brand center − pill center −3 px → **0 px** light + dark, paused pill 0 px, header mark unchanged (top 11 px, 24 px, flex-start). Not unit-pinned (happy-dom has no layout); live evidence only.
@@ -402,7 +404,7 @@ Commits on `feat/p10g-apply` (from `feat/p10` @ `57d45f4`): `00f9ab2` retire tab
 - **Live (CFT 156 headless, fixture `127.0.0.1:8971`, clipboard read back from a granted page):** secure origin ⇒ `writeText`, clipboard `gtag\njquery\.min\.js` (rows typed `' gtag '`, blank, `'jquery\.min\.js  '`), "Copied 2 exclusions", page `copy` listeners saw 0 events; **non-secure origin** (`insecure.test` mapped to 127.0.0.1, `isSecureContext` false, no `navigator.clipboard`) ⇒ selection copy, same clipboard text; **`Permissions-Policy: clipboard-write=()`** ⇒ `writeText` refused (NotAllowedError logged), fallback copied within the same click's activation. Focus stays on the control; no buffer left behind. 320 px (light + dark): lane fits, Tab order row → Remove → Add row → Copy all, focus ring visible. Failure state not reachable live (both paths worked) — unit-pinned.
 - **Budgets (bytes; before = `6a90827`, rows = measured + 0.1 KiB rounded up):** overlay 179 694 → 183 814 (raw 175.6 → 179.7), gzip 59.48 → 60.84 KiB (59.6 → 61), both builds; Chromium background 121 631 → 121 709 and Firefox background 117 549 → 117 627 (+78: engine's shared trim; rows 118.9 / 114.9 kept); isolated 134 444 and panel 336 948 unchanged; whole build 1 317 730 → 1 321 928 (backstop 1287 → 1291.1).
 - **Gates:** compile/lint/format green; `pnpm test` 266 files, 5 196 passed (+1 skipped), coverage 98.52/96.93/100/99.18; `build` + `build:firefox` + `check:budgets` green; D-6 grep gate empty.
-- **Still owner:** `DeveloperToolsAvailability = 2` check (steps in the round's report); a real-Chrome look at the copy-all control and the centered pill.
+- **Still owner:** a real-Chrome look at the copy-all control and the centered pill.
 - **Audit follow-ups (on `e0a54b8`; e2e 196/197, the miss a flaky side-by-side test, green on rerun) — fixed test-first** (`109b37c`, `a3e73c0`, `6224b1d`, `3ee5a41`, `4b76df1` + this docs commit):
   - **m1** leaving a row after "Draft saved" hid it (the trim re-armed the autosave, whose no-op save reset the state): `commitRow` now only updates the draft (set-neutral by construction) and runs in any phase — a row left during an action is trimmed at once.
   - **m2** identical announcements were silent (plain signal): shared `announcer.ts` clears the live region, writes the text next frame, newest wins — every overlay announcement. Live (CFT 156): the same lane copied twice records `''`, text, `''`, text on the region (a screen reader cannot run headless; the region changes are the evidence). An empty lane's activation now also shows its reason inline.
@@ -423,11 +425,101 @@ Commits on `feat/p10g-apply` (from `feat/p10` @ `57d45f4`): `00f9ab2` retire tab
   - **Changed expectations:** `splitLines('a\rb\nc\r')` ⇒ `a`, `b`, `c`; a lone-CR paste is split, not native; the tests' WP Rocket helper models the textarea normalization; the pasted focus request carries the caret; inner no-break spaces are flagged.
   - **Budgets (bytes; before = `43684c1`):** overlay 185 134 → 186 349 (raw 180.9 → 182.1), gzip 61.25 → 61.66 KiB (61.4 → 61.8), both builds; whole build 1 323 248 → 1 324 463 (backstop 1292.4 → 1293.6); backgrounds 121 709 / 117 627 unchanged.
   - **Gates:** compile/lint/format green; `pnpm test` 267 files, 5 230 passed (+1 skipped), coverage 98.52/96.93/100/99.18; `build` + `build:firefox` + `check:budgets` green.
-- **Pending owner decision (auditor M1/m3, verified in WP Rocket 3.23.5.1; engine unchanged):** beyond whitespace, WP Rocket normalizes on save and matches differently at runtime — (1) `rocket_clean_wildcards` on `delay_js_exclusions`: per `/` segment `*`, `.*`, `(*)` → `(.*)`; (2) `sanitize_text_field` on all three fields: collapses inner whitespace runs, strips tags and `%xx` octets, drops invalid UTF-8; (3) `array_unique` drops duplicates, `array_filter` drops a `"0"` line; (4) Delay JS runtime (`inc/Engine/Optimization/DelayJS/HTML.php`): rows get `+` → `\+`, `?ver` → `\?ver`, `#` → `\#` and match as `preg_match("#{$pattern}#i")` — **case-insensitive** — while `compile.ts` compiles rows raw and case-sensitive. Each changes what a row matches here vs. on the live site; owner to decide which to mirror.
+- **Decided 2026-10-21 → [P10K](#p10k--mirror-wp-rockets-stored-and-runtime-semantics)** (owner: mirror WP Rocket exactly; auditor M1/m3, verified in WP Rocket 3.23.5.1; engine unchanged until P10K): beyond whitespace, WP Rocket normalizes on save and matches differently at runtime — (1) `rocket_clean_wildcards` on `delay_js_exclusions`: per `/` segment `*`, `.*`, `(*)` → `(.*)`; (2) `sanitize_text_field` on all three fields: collapses inner whitespace runs, strips tags and `%xx` octets, drops invalid UTF-8; (3) `array_unique` drops duplicates, `array_filter` drops a `"0"` line; (4) Delay JS runtime (`inc/Engine/Optimization/DelayJS/HTML.php`): rows get `+` → `\+`, `?ver` → `\?ver`, `#` → `\#` and match as `preg_match("#{$pattern}#i")` — **case-insensitive** — while `compile.ts` compiles rows raw and case-sensitive. Each changes what a row matches here vs. on the live site; all mirrored by P10K.
+
+### P10K — Mirror WP Rocket's stored and runtime semantics
+
+Owner 2026-10-21: "I want to mirror what WP Rocket does exactly." A row must mean here what it means on the live site: the set the engine applies, the counts, validation and copy-all all use the form WP Rocket **stores** and the way its runtime **matches** it. Reference: WP Rocket 3.23.5.1 (`/Volumes/Shared/projects/wp-media/wpr-front-debugging-tool/docker/wpr/wpr-rocket.zip`) + the WordPress core the docker site runs (`sanitize_text_field` lives in WP core `wp-includes/formatting.php`, not the plugin). Starting facts: the feedback round's save-behavior bullet and the decided block above. Stack: installed; dev-time PHP CLI (local `php` is 8.1.34 — K.1 records which PHP/PCRE2 the harness uses), no new npm dependency.
+
+Rules for every sub-phase:
+
+- **Editor keeps typed text** (plus the shipped trim-on-leave); stored-form differences surface as a **non-blocking per-row note** "WP Rocket stores this as `…`" (or "WP Rocket drops this row" / "WP Rocket keeps one copy" — final words per W-1), never a silent rewrite. Persisted drafts keep typed rows (the note survives a restore).
+- **One declaring site per concept:** save normalization in `lib/exclusion-builder/field-text.ts` (feature-aware: `(feature, rows) → stored rows`); runtime matching in the engine's per-feature matcher (`compile.ts` + the feature module) — consumers (draft→set, counts, validation, dedupe, copy-all, per-row match lookup) only call them.
+- **PCRE vs JS:** every construct where `preg_match` and a JS `RegExp` disagree is either translated (provably same result) or **rejected as a row problem** naming the construct ("PCRE-only syntax: `(?>…)` — not checked here"), never silently compiled with different semantics.
+- **Parity proven against the real plugin**, not re-read memory: fixture table rows carry PHP-derived expected outputs.
+- Changed test expectations (e.g. engine tests that pinned case-sensitive matching) are listed in the receipt with the reason (AGENTS test rule).
+
+#### P10K.1 — Spike: inventory save + runtime code per feature (no product code)
+
+Depends:P10G. Parallel:P10L's e2e flake item. Goal: every fact K.2–K.5 build on is read from the plugin source and recorded here, with file:function anchors.
+
+- [ ] Save chain per field (`exclude_defer_js`, `exclude_lazyload`, `delay_js_exclusions`; ALR has no field — confirm `rocket_lrc_exclusions` and its defaults/merges): exact order (split → trim → `array_filter` → sanitizers → `array_unique`), `rocket_clean_wildcards` exact rewrite, `sanitize_text_field` steps (`wp_check_invalid_utf8`, tag strip, `%xx` strip, whitespace collapse, final trim) at the docker site's WP version. Open edge to settle: a row that sanitizes to `''` **after** `array_filter` ran (e.g. tag-only `<b></b>`) — stored as `''`? what does each runtime do with an empty pattern?
+- [ ] Runtime matching per feature — Delay JS (`DelayJS/HTML.php`: escapes, `#…#i`, the subject string matched — whole tag or URL?), Defer JS, Image Lazyload (WP Rocket's lazyload library), Automatic Lazy Rendering: function, subject, literal vs regex, case sensitivity, delimiter/escaping, flags, invalid-pattern behavior (`preg_match` returns `false` + warning — is the row ignored, does the page still optimize?), any default exclusions merged in. Don't assume any feature mirrors Delay JS.
+- [ ] PCRE↔JS difference inventory with a disposition per row (translate / reject / irrelevant): delimiter `#` and escaping, `i` without `/u` (PCRE byte mode, ASCII-only folding vs JS Unicode simple folding), byte vs UTF-16 subjects (`.`/`{n}` on multibyte text), `$` before a final newline, `\A \z \Z \h \R \Q…\E \x{…} \e`, POSIX classes `[[:alpha:]]`, possessive `++`, atomic `(?>…)`, recursion `(?R)`, `(?P<n>…)`, inline `(?i)` (JS supports only scoped modifier groups — verify current Chromium/Firefox support), lookbehind length rules, backreference forms, catastrophic backtracking (vs the shipped `regex-risk.ts` and `pcre.backtrack_limit` — PCRE gives up and returns `false`).
+- [ ] Engine gap list: where `compile.ts`/feature modules differ today, which tests pin the current behavior, which surfaces read each function (overlay counts, background session backends — both browsers).
+- [ ] Decide the harness shape for K.2: how WP core's `sanitize_text_field` is loaded under `php -n` (pinned WP core copy matching the docker site vs the container's PHP), and the fixture-table file format/location.
+
+DoD: inventory + dispositions + harness decision recorded under this heading with anchors and dates; any fact contradicting this plan flagged, not worked around. Effort S · difficulty medium.
+
+#### P10K.2 — Parity fixture table + PHP dev harness
+
+Depends:P10K.1. Parallel:P10L's e2e flake item. Goal: one committed table of `(feature, typed row(s)) → stored rows` and `(feature, stored row, subject) → matches` with expected outputs produced by the real plugin code.
+
+- [ ] Fixture table (location/format per K.1, e.g. JSON next to the engine's tests): every K.1 inventory row, the whitespace/`"0"`/duplicate/tag/octet/invalid-UTF-8/wildcard cases, each PCRE-difference construct, NBSP/zero-width rows, empty-after-sanitize rows.
+- [ ] Dev script (new `scripts/` entry + `package.json` script, AGENTS.md Commands row): unzips the plugin to a scratch dir, runs a `php -n` harness that calls the plugin's own functions (no re-implementation in PHP), writes the expected outputs, and fails with a diff when the committed table is stale. Records plugin version, WP core version, PHP + PCRE2 versions in the table header.
+- [ ] A vitest suite reads the table (expected rows only; no PHP in `pnpm test`) — rows for not-yet-mirrored behavior marked pending so K.3/K.4 flip them test-first.
+
+DoD: script reproduces the committed table byte-for-byte; `pnpm test` runs the table without PHP; gates green. Effort M · difficulty medium.
+
+#### P10K.3 — Save normalization at the declaring site
+
+Depends:P10K.2. Parallel:P10K.4. Goal: `field-text.ts` yields exactly the rows WP Rocket stores, per feature.
+
+- [ ] Feature-aware stored-rows function: split (shipped `splitFieldText`) → PHP trim → drop empty and `"0"` → `sanitize_text_field` port (pure; UTF-8 validity check on the string's encoded form) → `rocket_clean_wildcards` on Delay JS → first-occurrence dedupe — order and edge semantics exactly per K.1 (incl. the empty-after-sanitize case).
+- [ ] Per-row diff helper for the note: `unchanged | stored-as {text} | dropped {reason: empty|zero|duplicate}` — pure, table-tested.
+- [ ] Every consumer that reads the stored form today (draft→set, wire char count, validator keys, candidate dedupe, per-row match lookup, engine empty-row check, copy-all text) goes through it; no second normalization anywhere (grep receipt).
+
+DoD: all save rows of the table green; consumers switched; gates green. Effort M · difficulty medium.
+
+#### P10K.4 — Runtime matching parity in the engine
+
+Depends:P10K.2. Parallel:P10K.3. Goal: a stored row matches here exactly what it matches on the live site, per feature.
+
+- [ ] Per-feature matcher from K.1 replaces the raw case-sensitive compile where WP Rocket differs: Delay JS = escape `+`, `?ver`, `#` then case-insensitive match over the K.1 subject; Defer JS / Lazyload / ALR per their K.1 rows (literal stays literal where the plugin uses `strpos`-style matching).
+- [ ] PCRE-only constructs: translate where K.1 proved equivalence, else a typed row problem (feeds the existing all-at-once prevalidation and the inline invalid-row UI); patterns PCRE itself rejects stay invalid with the plugin's outcome named.
+- [ ] Cache keys include the feature (same text, different semantics); `regex-risk.ts` still guards backtracking; wall-time contract (P10B M6) unchanged.
+- [ ] Both session backends run the new matchers unchanged (shared engine) — Chromium + Firefox unit arms; budgets for overlay + both backgrounds.
+
+DoD: all match rows of the table green; engine matrix green with listed changed expectations; `build` + `build:firefox` + `check:budgets` green with receipted deltas. Effort L · difficulty hard.
+
+#### P10K.5 — Overlay: stored-form note, copy-all, row problems
+
+Depends:P10K.3 (+P10K.4 for PCRE row problems). Parallel:—. Goal: the user sees, before Apply, every row WP Rocket would store or match differently.
+
+- [ ] Non-blocking per-row note from the K.3 diff (merged with the shipped invisible-characters note into one note slot per row, so a row never stacks two); copy-all copies the stored form (already via `exclusionFieldText` → switch it to the K.3 function); PCRE row problems render through the existing invalid-row path.
+- [ ] Counts/validation/Apply read stored + runtime semantics (no UI-side re-derivation).
+- [ ] UI bar §D receipt (D-1 320 px, D-2, D-3, D-4, D-6), W-1/W-2 string deltas listed; live check on the docker site: a Delay JS row typed in different case matches, the note shows the stored form, copy-all pastes into WP Rocket's field and saves to the same rows (owner-visible proof).
+
+DoD: owner-visible flow above passes on Chromium; Firefox build green; gates + budgets green. Effort M · difficulty medium.
+
+**Open question (owner):** PHP in CI? Default chosen: **no** — the PHP harness is a dev-time check (run when the fixture table or the WP Rocket reference version changes, and before every release), CI runs only the committed table through vitest. Alternative: a CI job with a pinned PHP setup action re-deriving the table (catches a stale table automatically; adds a CI dependency + plugin zip availability in CI, which is not committed today).
+
+### P10L — Deferred nits and flaky suite
+
+Depends:P10K (field-text/lane edits land on K's shape). Parallel:P10M; the e2e flake item may run any time (disjoint files). Goal: close the recorded nits and make `site-side-by-side.spec.ts` deterministic.
+
+- [ ] Receipt nit: the round-2 nit line's "no-break/Unicode spaces at the ends" is stale (round 3 flags any non-ASCII space anywhere) — mark it superseded inline, as the other round-2 lines are.
+- [ ] `hasInvisibleKeptCharacters` (`lib/exclusion-builder/field-text.ts`, `INVISIBLE_KEPT`) misses LRM/RLM (U+200E/U+200F): add them test-first; while there, verify the remaining invisible format characters a pasted row can carry (ALM U+061C, bidi embeddings/isolates U+202A–U+202E, U+2066–U+2069) and include or explicitly exclude each with the reason.
+- [ ] Paste outcome message cleared early: when the target row must scroll into view, focus lands a frame later → the previously focused row is left → its trim counts as a row change → the outcome ("N pasted lines were not added…" / "Lane full…") clears before it can be read. Reproduce first (long lane, paste near the cap off-screen), then make the clear react only to user row changes, not to the paste's own focus hand-off; unit test the sequence (`entrypoints/exclusion-overlay.content/exclusions/lane.tsx`, controller paste outcome).
+- [ ] Flaky e2e `tests/e2e/suites/site-side-by-side.spec.ts` (observed 2026-10-21, pre-existing, unrelated to P10): "the engaged device is named next to the mobile switch, unnamed when disengaging" and "per-side refresh re-navigates the real frames independently" each failed once across runs, passed on rerun. Root-cause (repeat each ≥ 20× with `--repeat-each`, trace on failure, find the unawaited state/race), fix the test's synchronization or the product race it exposes; **never** loosen assertions, raise timeouts blindly, or add retries. Record cause + fix + the repeat-run counts.
+
+DoD: nits fixed test-first; the two cases green over the recorded repeat runs; gates green (budgets if the overlay changes). Effort S · difficulty medium (the flake).
+
+### P10M — "On this page" toggle state
+
+Depends:P10K.5 (shared overlay CSS/toolbar). Parallel:P10L. Goal: the toolbar toggle that expands/collapses the page-candidates list visibly says whether the list is open.
+
+Where (verified 2026-10-21): `entrypoints/exclusion-overlay.content/exclusions/mode.tsx` — toolbar `button.xo-button` with `List` icon, label "On this page" + count, `aria-expanded={listOpen()}`, `aria-controls="xo-candidates"`; the list renders under `<Show when={listOpen()}>` (`#xo-candidates`, `exclusions/candidates.tsx`); styles `entrypoints/exclusion-overlay.content/overlay.css` (`.xo-button`; `.xo-chip[aria-pressed='true']` is the existing selected-state precedent). Today both states look identical.
+
+- [ ] Open state styled from `[aria-expanded='true']` (tokens only; selected-state treatment consistent with the chip precedent; not color alone — K-5); trailing chevron that turns when open per M-2 "Disclosure chevron" (shadow CSS writes `--motion-fast` + `--ease-standard`, transform only, reduced motion collapses it — M-4/M-6).
+- [ ] K-3 disclosure pattern verified: `aria-expanded` toggles; `aria-controls` targets an element that exists (the list is unmounted while closed — keep the id resolvable, e.g. a persistent wrapper, or set `aria-controls` only when open); focus stays on the toggle (K-2); disabled state (`aria-disabled` while not ready) still reads as disabled in both states.
+- [ ] Unit tests: attribute + class per state, chevron present, disabled arm. §D receipt: D-1 (320 px), D-2 light/dark + reduced motion, D-3, D-4, D-6.
+
+DoD: open/closed distinguishable at a glance in both palettes and to AT; §D receipted; budgets green. Effort S · difficulty easy.
 
 ### P10H — Firefox wiring
 
-Depends:P10E+F, G for the shared wiring shape. Parallel:—.
+Depends:P10E+F, G for the shared wiring shape; P10K–P10M first (owner order 2026-10-21). Parallel:—.
 
 - [ ] Firefox apply flow end-to-end; streaming backend's applied-state surfaced in the same overlay contract.
 - [ ] Cross-browser receipt: same exclusion set, both engines, same engine report.
@@ -438,9 +530,9 @@ DoD: Firefox parity with the shared flow (no fallback exists — G-3); no Chromi
 
 ### P10.1 — Browser suites (this file, local tier)
 
-Depends:P10G(+P10H); P4.1 harness. Scope shaped by P10A's Playwright-coexistence finding:
+Depends:P10G(+P10H), P10K–P10M; P4.1 harness. Scope shaped by P10A's Playwright-coexistence finding:
 
-- [ ] Overlay editor suites: compose/validate/counts, pick flows, state matrix arms, Stop/Reset, mode indicator (backend stubbed at the message seam).
+- [ ] Overlay editor suites: compose/validate/counts, pick flows, state matrix arms, Stop/Reset, mode indicator (backend stubbed at the message seam); P10K stored-form notes + copy-all stored text; P10M toggle open/closed.
 - [ ] If CDP coexists: one interception arm asserting the fulfilled document applied the engine transform; else interception stays manual-evidenced and the suite covers everything around it — the gap stated, never hidden.
 - [ ] Keyboard/axe (D-3/D-4), width matrix (D-1), reduced motion (D-2); Firefox arms manual per harness rules unless re-verified.
 
@@ -448,15 +540,16 @@ DoD: suites green with the tier; suite scope vs manual evidence recorded. Effort
 
 ### P10J — Gates, budgets, docs
 
-Depends:all above. Parallel:—.
+Depends:all above (P10A–P10M, P10.1). Parallel:—.
 
 - [ ] Full gates: `pnpm compile && pnpm lint && pnpm format:check && pnpm test`; `pnpm build` (+ `:firefox`) and `pnpm check:budgets` with new rows/receipted deltas.
 - [ ] AGENTS.md: `debugger` permission (why + warning), new lib module, any new script; runbook rows (apply modes, DevTools interplay, Reset semantics); README active-work line closed with receipts; master train slot confirmed by owner.
 - [ ] Every G-gate receipted; every behavior delta vs the source inventory dispositioned with evidence.
+- [ ] Policy-block check (`DeveloperToolsAvailability = 2`) stays **deferred, check later (owner 2026-10-21)** — not a P10 close blocker; carry it to P15's open-verification ledger.
 
 DoD: all gates green, docs current, P10 closable pending owner live-check. Effort S · difficulty easy.
 
 ## Non-goals
 
-- No file-import/export flow (superseded); no byte-identical old-notice mandate; **no simulation fallback of any kind — interception unavailable = the G-3 warning state** (DNR and DOM-hook simulation both rejected by owner 2026-10-20); no page-load performance instrumentation (P14's domain); no exclusion _recommendations_ engine (P6's copy-as-exclusion vocabulary remains the generator); no i18n; no new dependency; no POST-navigation applies (the apply targets a GET reload; POST endpoints out of scope).
+- No file-import/export flow (superseded); no byte-identical old-notice mandate; **no simulation fallback of any kind — interception unavailable = the G-3 warning state** (DNR and DOM-hook simulation both rejected by owner 2026-10-20; [P20](./20-phase-20-wpr-simulation.md)'s WP Rocket feature simulation is a separate owner-requested capability riding the interception, not a fallback); no page-load performance instrumentation (P14's domain); no exclusion _recommendations_ engine (P6's copy-as-exclusion vocabulary remains the generator); no i18n; no new dependency; no POST-navigation applies (the apply targets a GET reload; POST endpoints out of scope).
 - RUCSS tester, beacon/LCP, and script-runtime implementations stay in P13/P14 — P10 ships only the shell, session lifecycle, and pipeline seam (no tester config/results UI here).
