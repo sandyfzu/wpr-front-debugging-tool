@@ -102,6 +102,46 @@ describe('translateRegexRows', () => {
     expect(problemIds('defer_all_js', ['(?R)*?', '[\\E]*?'])).toEqual([null, 'pcre-invalid']);
   });
 
+  it('names an unverified row that turns the Defer page off (never an unnamed page-off)', () => {
+    // `\p{L}` leaves the save unmodeled; the open `\Q` quotes the wrapper's `)`, and no
+    // later row holds `\E`: joined, the pattern cannot compile, whichever row comes first.
+    for (const rows of [
+      ['\\p{L}\\Qab', 'a\\.js'],
+      ['a\\.js', '\\p{L}\\Qab']
+    ]) {
+      const translation = translateRegexRows('defer_all_js', rows);
+      expect(translation.page).toBe('off');
+      const at = rows.indexOf('\\p{L}\\Qab');
+      expect(translation.rows[at]).toMatchObject({
+        matcher: null,
+        problem: { problem: 'joined-page-off', reason: ROW_REASONS.joinedPageOff }
+      });
+      expect(translation.rows[1 - at]?.problem).toBeNull();
+    }
+    // Alone it still claims nothing: the page cannot be replayed, so it is not off.
+    expect(translateRegexRows('defer_all_js', ['\\p{L}'])).toMatchObject({
+      page: 'unknown',
+      rows: [{ problem: null, matcher: null }]
+    });
+  });
+
+  it('never leaves a Defer page off without a row problem naming why', () => {
+    for (const rows of [
+      ['.*'],
+      ['ok', '.*'],
+      ["(?'n'a)", "(?'n'b)"],
+      ['\\p{L}\\Qab', 'a\\.js'],
+      ['(?<n>a)', '\\p{L}', '(?<n>b)'],
+      ['(', 'a'],
+      ['(?>x)', '(?<n>a)', '(?<n>b)'],
+      ['a\\Qb']
+    ]) {
+      const translation = translateRegexRows('defer_all_js', rows);
+      expect({ rows, page: translation.page }).toEqual({ rows, page: 'off' });
+      expect(translation.rows.some(({ problem }) => problem !== null)).toBe(true);
+    }
+  });
+
   it('reports a too-long row in terms of the row', () => {
     const [long, nested] = translateRegexRows('defer_all_js', [
       'a'.repeat(9000),
@@ -271,9 +311,7 @@ describe('Defer JS joined checks', () => {
         'Joined with the other Defer JS rows, `(?s)` (option setting) matches differently on WP Rocket'
     });
     const [off] = translateRegexRows('defer_all_js', ['.*']).rows;
-    expect(off?.problem?.reason).toBe(
-      'Joined with the other rows, WP Rocket’s Defer JS check fails on this row: it would defer no script on the page'
-    );
+    expect(off?.problem?.reason).toBe(ROW_REASONS.joinedPageOff);
   });
 });
 

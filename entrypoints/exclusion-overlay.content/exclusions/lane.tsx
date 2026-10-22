@@ -2,7 +2,10 @@
  * One editor lane: a feature's rows (always through the virtual list — one
  * code path whatever the count), its feature-wide disable when it has one,
  * the applied page's counts, and the lane's own notes (feature absent from
- * the page, rows unused under the disable). Row keyboard model: Enter adds
+ * the page, rows unused under the disable, a page state not checked here).
+ * A lane whose rows WP Rocket reads as one set shows its page-wide failure
+ * above the rows, naming the rows behind it (Go to focuses each; a refused
+ * apply focuses the message). Row keyboard model: Enter adds
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
  * between rows, a multi-line paste splits into rows; leaving a row commits
  * it — WP Rocket's settings save applied (never while typing) — and its
@@ -29,15 +32,21 @@ import {
   COUNT_COPY,
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
+  NOTE_ROW_MAX,
+  PAGE_OFF_COPY,
+  PAGE_OFF_ROWS_SHOWN,
   PASTE_COPY,
   ROW_NOTE_COPY,
   rowWarningNote,
+  type LanePageCopy,
   type NoteText
 } from '../copy';
 import type { OverlayController, PasteOutcome } from '../controller';
+import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
 import { isBlankRow, laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
+import type { PageOffRow } from './lane-page';
 import { copiedRow, laneKeyIndex, restoreIndex, type LaneNotes, type RowNote } from './row-notes';
 
 /** Seed row height (px) before measurement: one input line plus padding. */
@@ -118,9 +127,24 @@ export function Lane(props: LaneProps): JSX.Element {
     return key !== null && props.controller.draft().disable[key];
   };
   const headingId = (): string => `xo-lane-${props.lane}`;
-  const counts = createMemo(() => laneCounts(props.report));
+  /** The lane's rows read as one set (null: its rows act alone). */
+  const page = (): ReturnType<OverlayController['lanePage']> =>
+    props.controller.lanePage(props.lane);
   /** The lane holds a row that is not an unfinished (blank) edit. */
   const hasRows = createMemo(() => rows().some((row) => !isBlankRow(row.text)));
+  /** The rows' page state isn't checked here (the lane's note says so; rows unused while disabled). */
+  const pageUnknown = (): boolean => page()?.page === 'unknown' && hasRows() && !disabled();
+  /**
+   * The applied page's counts, with their page-state caveat dropped while
+   * the lane's own note says the same of the rows as they are now.
+   */
+  const counts = createMemo(() => {
+    const current = laneCounts(props.report);
+    return current === null
+      ? null
+      : { ...current, pageUnknown: current.pageUnknown && !pageUnknown() };
+  });
+  let pageMessage: HTMLDivElement | undefined;
   const [scrollTo, setScrollTo] = createSignal<VirtualScrollRequest | null>(null);
   let root: HTMLElement | undefined;
 
@@ -191,6 +215,18 @@ export function Lane(props: LaneProps): JSX.Element {
       () => props.controller.focusRequest(),
       (request) => {
         if (request?.lane === props.lane) focusRow(request.id, request.caret);
+      },
+      { defer: true }
+    )
+  );
+
+  // A refused apply hands focus to this lane's page-wide message (rendered
+  // from the same draft the apply read, so it is already there).
+  createEffect(
+    on(
+      () => props.controller.pageMessageFocus(),
+      (request) => {
+        if (request?.lane === props.lane) pageMessage?.focus();
       },
       { defer: true }
     )
@@ -281,7 +317,7 @@ export function Lane(props: LaneProps): JSX.Element {
             {(current) => (
               <>
                 <span class="xo-lane-count">{COUNT_COPY.line(current(), copy().noun)}</span>
-                <For each={COUNT_COPY.caveats(current())}>
+                <For each={COUNT_COPY.caveats(current(), copy().page)}>
                   {(caveat) => <span class="xo-lane-caveat">{caveat}</span>}
                 </For>
               </>
@@ -319,6 +355,24 @@ export function Lane(props: LaneProps): JSX.Element {
       </Show>
       <Show when={hasRows() ? copy().rowsNote : undefined}>
         {(note) => <p class="xo-lane-note">{note()}</p>}
+      </Show>
+      <Show when={pageUnknown() ? copy().page : undefined}>
+        {(words) => <p class="xo-lane-note">{words().unknown}</p>}
+      </Show>
+      <Show when={copy().page}>
+        {(words) => (
+          <Show when={(page()?.offRows.length ?? 0) > 0}>
+            <PageOffMessage
+              id={`xo-page-off-${props.lane}`}
+              rows={page()?.offRows ?? []}
+              words={words()}
+              ref={(element) => {
+                pageMessage = element;
+              }}
+              onGoTo={focusRow}
+            />
+          </Show>
+        )}
       </Show>
       <Show when={rows().length > 0}>
         <div class="xo-rows" data-scroll={rows().length > INLINE_ROWS ? 'own' : undefined}>
@@ -509,6 +563,72 @@ function UndoButton(props: UndoButtonProps): JSX.Element {
     >
       {props.label}
     </button>
+  );
+}
+
+/** Props of {@link PageOffMessage}. */
+interface PageOffMessageProps {
+  /** The message's id (its lead names the group). */
+  readonly id: string;
+  /** The rows behind the page-wide failure (≥ 1), in lane order. */
+  readonly rows: readonly PageOffRow[];
+  readonly words: LanePageCopy;
+  /** Takes the message element (the refused apply's focus target). */
+  readonly ref: (element: HTMLDivElement) => void;
+  /** Focus a named row for editing. */
+  readonly onGoTo: (id: string) => void;
+}
+
+/**
+ * The lane's page-wide failure: WP Rocket would not run the feature on the
+ * whole page because of the rows it names (stored form, each with a Go to
+ * button that focuses the row; the rest counted). Programmatically
+ * focusable — a refused apply lands here — and never a live region: it
+ * appears while the user types, and the row's own problem is announced
+ * through the row's description.
+ *
+ * @param props See {@link PageOffMessageProps}.
+ */
+function PageOffMessage(props: PageOffMessageProps): JSX.Element {
+  const shown = (): readonly PageOffRow[] => props.rows.slice(0, PAGE_OFF_ROWS_SHOWN);
+  const more = (): number => props.rows.length - shown().length;
+  return (
+    <div
+      class="xo-page-off"
+      role="group"
+      tabindex="-1"
+      aria-labelledby={`${props.id}-lead`}
+      data-page-off
+      ref={props.ref}
+    >
+      <p class="xo-page-off-lead" id={`${props.id}-lead`}>
+        <CircleAlert size={12} aria-hidden="true" />
+        <span>{props.words.offLead(props.rows.length)}</span>
+      </p>
+      <ul class="xo-page-off-rows">
+        <For each={shown()}>
+          {(row) => (
+            <li class="xo-page-off-row">
+              <button
+                type="button"
+                class="xo-button xo-page-off-go"
+                data-variant="ghost"
+                onClick={() => {
+                  props.onGoTo(row.id);
+                }}
+              >
+                {PAGE_OFF_COPY.goTo(row.position)}
+              </button>
+              <code class="xo-code">{capText(row.stored, NOTE_ROW_MAX)}</code>
+            </li>
+          )}
+        </For>
+      </ul>
+      <Show when={more() > 0}>
+        <p>{PAGE_OFF_COPY.more(more())}</p>
+      </Show>
+      <p>{props.words.offFix(props.rows.length)}</p>
+    </div>
   );
 }
 

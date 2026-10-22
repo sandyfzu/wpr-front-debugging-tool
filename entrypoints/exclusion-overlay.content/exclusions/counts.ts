@@ -30,6 +30,11 @@ export interface LaneCounts {
   readonly inlineUnknown: boolean;
   /** The per-row counts credit the first matching row only (WP Rocket matches the rows as one pattern). */
   readonly bestEffort: boolean;
+  /**
+   * Whether WP Rocket runs the feature on the page under the applied rows
+   * wasn't checked: the counts assume it does.
+   */
+  readonly pageUnknown: boolean;
 }
 
 /**
@@ -62,7 +67,8 @@ export function laneCounts(report: TransformReport | undefined): LaneCounts | nu
     undetermined: (report.undetermined ?? 0) - inline,
     approximate: report.approximate ?? 0,
     inlineUnknown: inline > 0,
-    bestEffort: report.rowCountsBestEffort === true
+    bestEffort: report.rowCountsBestEffort === true,
+    pageUnknown: report.pageState === 'unknown'
   };
 }
 

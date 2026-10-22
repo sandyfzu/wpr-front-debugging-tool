@@ -36,9 +36,14 @@ export const ROW_REASONS = {
     'Row is not in the form WP Rocket stores — edit it again so it is saved as WP Rocket would',
   /** `match-all`: stored, and it matches every subject. */
   matchAll: 'WP Rocket stores this and it excludes every script',
-  /** `joined-page-off`: Defer JS's joined pre-check fails on this row. */
+  /**
+   * `joined-page-off`: Defer JS's pre-check fails on the joined pattern
+   * because of this row (a lone row too: WP Rocket wraps it all the same).
+   * The page-wide outcome is the editor's lane message, which names these
+   * rows, so the row's own words stay on the row.
+   */
   joinedPageOff:
-    'Joined with the other rows, WP Rocket’s Defer JS check fails on this row: it would defer no script on the page',
+    'This row makes WP Rocket’s Defer JS check fail (it checks all the rows joined as one pattern)',
   /**
    * `pcre-invalid`: the save drops the row; what it would do anyway when
    * added through a filter.

@@ -18,6 +18,7 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
+import { JOINED_ONLY_PROBLEMS } from '../../../lib/exclusion-builder/defer-js-rows';
 import { featureRowProblems, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import {
   saveExclusionRow,
@@ -111,9 +112,26 @@ export interface Committed {
  * @param ids The rows to commit (unknown ids are ignored).
  */
 export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]): Committed {
-  const feature = laneFeature(lane).id;
-  const targets = new Set(ids);
   const rows = draft.rows[lane];
+  const { kept, commits } = commitLaneRows(lane, rows, new Set(ids));
+  const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
+  return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+}
+
+/**
+ * One lane's rows after committing `targets` (see {@link commitRows}):
+ * untouched rows keep their identity.
+ *
+ * @param lane The rows' lane.
+ * @param rows The lane's rows.
+ * @param targets The rows to commit, by id.
+ */
+export function commitLaneRows(
+  lane: LaneKey,
+  rows: readonly DraftRow[],
+  targets: ReadonlySet<string>
+): { readonly kept: readonly DraftRow[]; readonly commits: readonly RowCommit[] } {
+  const feature = laneFeature(lane).id;
   const ahead = new Set<string>();
   for (const row of rows) {
     if (targets.has(row.id) || isBlankRow(row.text)) continue;
@@ -133,8 +151,7 @@ export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]):
     if (stored === null) return [];
     return [stored === row.text ? row : { id: row.id, text: stored }];
   });
-  const changed = kept.length !== rows.length || kept.some((row, index) => row !== rows[index]);
-  return { draft: changed ? withLane(draft, lane, kept) : draft, commits };
+  return { kept, commits };
 }
 
 /**
@@ -623,7 +640,8 @@ export function wireRowProblem(text: string): string | null {
  * WP Rocket's pattern check — what a commit makes of it): the wire contract
  * (row cap included) on that form, then the engine's own prevalidation,
  * which names a pattern PCRE rejects ("WP Rocket drops this row when
- * saving") and never blocks an unverified one. Cached by lane + stored form,
+ * saving") and never blocks an unverified one — minus the problems a row
+ * has only joined with the others (the set reading owns those). Cached by lane + stored form,
  * so an edit re-validates only the row that changed (the PCRE reading is the
  * costly part). Blank rows, and rows the save empties, have no problem
  * (unfinished; a commit removes the latter).
@@ -647,7 +665,12 @@ export function createRowValidator(
     const key = `${lane}\u0000${stored}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
-    const reason = featureRowProblems(feature.id, feature.rowKind, [stored])[0]?.reason ?? null;
+    const entry = featureRowProblems(feature.id, feature.rowKind, [stored])[0];
+    // A joined-only problem of the row alone says nothing of the row among the
+    // others (`a\Qb` fails alone, passes next to `zz\E`): the lane's set
+    // reading alone reports those.
+    const joinedOnly = entry?.problem !== undefined && JOINED_ONLY_PROBLEMS.has(entry.problem);
+    const reason = entry === undefined || joinedOnly ? null : entry.reason;
     if (cache.size >= capacity) cache.clear();
     cache.set(key, reason);
     return reason;

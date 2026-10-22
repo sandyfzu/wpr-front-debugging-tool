@@ -22,6 +22,7 @@
  * when committed, and the per-row diff (which carries the typed text) says
  * what changed, so the change can be shown and undone.
  */
+import { createBoundedMemo } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
 import { rowSaveOutcome } from './pcre/rows';
 import type { SaveOutcome } from './pcre/translate';
@@ -150,12 +151,38 @@ type RowForm =
   | { readonly reason: 'empty' | 'zero'; readonly typed: string };
 
 /**
- * One row through the per-row stages (trim, sanitize, Delay wildcards).
+ * The per-row stages' memo bounds: a lane re-saved on every keystroke
+ * re-reads its unchanged rows from here (each up to the wire's row cap),
+ * while a few full lanes cannot pin more than about a megabyte.
+ */
+export const ROW_FORM_CACHE_LIMITS = { entries: 4096, chars: 512 * 1024 } as const;
+
+/** Text rows' per-row stages, by feature and row (pure: the same row always gives the same form). */
+const rowFormMemo = createBoundedMemo<RowForm>({
+  maxEntries: ROW_FORM_CACHE_LIMITS.entries,
+  maxWeight: ROW_FORM_CACHE_LIMITS.chars,
+  weigh: (key, result) => key.length + ('form' in result ? result.form.length : 0)
+});
+
+/**
+ * One row through the per-row stages (trim, sanitize, Delay wildcards),
+ * memoized for text rows (byte rows come only from a form submission).
  *
  * @param feature The field's feature.
  * @param row The typed row.
  */
 function rowForm(feature: ExclusionFeatureId, row: SubmittedRow): RowForm {
+  if (typeof row !== 'string') return computeRowForm(feature, row);
+  return rowFormMemo.get(`${feature}\u0000${row}`, () => computeRowForm(feature, row));
+}
+
+/**
+ * One row through the per-row stages, uncached (see {@link rowForm}).
+ *
+ * @param feature The field's feature.
+ * @param row The typed row.
+ */
+function computeRowForm(feature: ExclusionFeatureId, row: SubmittedRow): RowForm {
   if (feature === 'automatic_lazy_rendering') {
     // Rows reach it through a PHP filter, as written.
     const written = typeof row === 'string' ? row : LENIENT_UTF8.decode(row);

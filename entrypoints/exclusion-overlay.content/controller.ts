@@ -53,6 +53,8 @@ import {
   type CommitSource,
   type DraftNotes
 } from './exclusions/row-notes';
+import type { LanePage } from './exclusions/lane-page';
+import { createSetReadings } from './exclusions/set-readings';
 import { INITIAL_OVERLAY_STATE, canStart, overlayTransition } from './session/machine';
 import type { OverlayEvent, OverlayState, SessionAction } from './session/machine';
 import { matchServedDocument, type PageFacts } from './session/page-match';
@@ -121,6 +123,18 @@ export interface OverlayController {
   /** The latest focus request (a fresh object per request). */
   readonly focusRequest: Accessor<FocusRequest | null>;
   /**
+   * The latest request to focus a lane's page-wide message (a refused apply
+   * whose rows turn a feature off for the whole page; a fresh object per
+   * request).
+   */
+  readonly pageMessageFocus: Accessor<{ readonly lane: LaneKey } | null>;
+  /**
+   * A lane's rows read as one set, as WP Rocket runs them on the page (its
+   * page state and the rows behind a page-wide failure); `null` for a lane
+   * whose rows act alone.
+   */
+  lanePage(lane: LaneKey): LanePage | null;
+  /**
    * What the editor tells about committed rows — WP Rocket's save applied
    * at commit (stored form, drop and its reason, unverified, safe-mode flag,
    * each with the typed text): row notes, removals and the latest batch to
@@ -129,7 +143,9 @@ export interface OverlayController {
   readonly notes: Accessor<DraftNotes>;
   /**
    * A row's problem: the background's reason from the last refused apply
-   * (until the row changes), else the engine's prevalidation.
+   * (until the row changes), else the engine's prevalidation — the lane's
+   * rows read as one set first (problems that exist only joined), then the
+   * row alone.
    */
   rowProblem(lane: LaneKey, id: string, text: string): string | null;
   /** A row's non-blocking warning (WP Rocket accepts it; it is almost surely a mistake). */
@@ -240,6 +256,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [saveState, setSaveState] = createSignal<SaveState>({ kind: 'idle' });
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
+  const [pageMessageFocus, setPageMessageFocus] = createSignal<{ readonly lane: LaneKey } | null>(
+    null
+  );
   const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
@@ -279,8 +298,18 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return current.phase === 'ready' && current.pending === null;
   });
 
+  /** Rows edited since their last commit (their commit runs against the rows already there). */
+  const uncommitted = new Set<string>();
+  const setReadings = createSetReadings({
+    draft,
+    uncommitted,
+    schedule: deps.schedule,
+    lanes: LANE_ORDER
+  });
+  const lanePage = (lane: LaneKey): LanePage | null => setReadings.page(lane);
+
   const rowProblem = (lane: LaneKey, id: string, text: string): string | null =>
-    serverInvalid().get(id) ?? validate(lane, text);
+    serverInvalid().get(id) ?? lanePage(lane)?.problems.get(id) ?? validate(lane, text);
 
   const invalidCount = createMemo(() => {
     let count = 0;
@@ -293,10 +322,15 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   });
 
   // The fix-rows notice is true only while a row has a problem: it leaves
-  // with the last one.
+  // with the last one (judged once the set readings caught up with the rows).
   createEffect(() => {
     const current = state();
-    if (current.phase === 'ready' && current.notice?.kind === 'invalid' && invalidCount() === 0) {
+    if (
+      current.phase === 'ready' &&
+      current.notice?.kind === 'invalid' &&
+      setReadings.settled() &&
+      invalidCount() === 0
+    ) {
       dispatch({ type: 'dismiss-notice' });
     }
   });
@@ -352,6 +386,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
    * @returns The committed draft.
    */
   const takeCommit = (committed: Committed, source: CommitSource): Draft => {
+    for (const { id } of committed.commits) uncommitted.delete(id);
     batch(() => {
       setDraft(committed.draft);
       publishCommits(committed, source);
@@ -396,6 +431,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     lastSaved = saved ?? EMPTY_EXCLUSION_SET;
     // A set saved before rows were stored this way opens in the stored form.
     const restored = restoreDraft(set, nextId);
+    uncommitted.clear();
     batch(() => {
       setDraftSignal(restored.draft);
       setNotes(EMPTY_DRAFT_NOTES);
@@ -445,10 +481,20 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
     if (outcome.reply.outcome === 'invalid') {
       setServerInvalid(invalidRowsById(applied, outcome.reply.invalid));
-      focusFirstInvalid();
+      focusBlocker();
     }
     dispatch({ type: 'apply-answered', reply: outcome.reply, at: deps.now() });
     watchReload();
+  };
+
+  /**
+   * Move focus to what blocks the apply: a lane's page-wide message (it
+   * names its rows and leads to them), else the first row with a problem.
+   */
+  const focusBlocker = (): void => {
+    const pageOff = LANE_ORDER.find((lane) => (lanePage(lane)?.offRows.length ?? 0) > 0);
+    if (pageOff === undefined) focusFirstInvalid();
+    else setPageMessageFocus({ lane: pageOff });
   };
 
   /** Move focus to the first row with a problem. */
@@ -473,6 +519,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     dirty,
     invalidCount,
     focusRequest,
+    pageMessageFocus,
+    lanePage,
     notes,
     rowProblem,
     rowWarning,
@@ -497,9 +545,13 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!canStart(state(), 'apply')) return;
       // The set carries WP Rocket's stored form: a row still being typed is committed first.
       takeCommit(commitAll(draft()), 'apply');
+      // A page-wide failure is a row problem too (the rows behind it carry
+      // it): one gate, the same one the session's prevalidation applies —
+      // read now, never from a reading still waiting for its pause.
+      setReadings.readNow();
       if (invalidCount() > 0) {
         dispatch({ type: 'apply-blocked', block: { kind: 'invalid', rows: invalidCount() } });
-        focusFirstInvalid();
+        focusBlocker();
         return;
       }
       if (draftChars(draft()) > EXCLUSION_SET_LIMITS.totalChars) {
@@ -512,6 +564,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const current = status();
       if (current?.state !== 'active' || !canStart(state(), 'reset')) return;
       const restored = draftFromSet(current.set, nextId);
+      uncommitted.clear();
       batch(() => {
         setDraftSignal(restored);
         setServerInvalid(new Map());
@@ -551,6 +604,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const next = updateRow(draft(), lane, id, text);
       if (next === draft()) return;
       clearServerReason(id);
+      uncommitted.add(id);
       batch(() => {
         noteEdit(lane, id);
         setDraft(next);
@@ -583,6 +637,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
           ? updateRow(draft(), lane, id, target.typed)
           : reinsertRow(draft(), lane, { id, text: target.typed }, target.at);
       if (next === null) return false;
+      // Back to its typed text, for editing: uncommitted until it is left.
+      uncommitted.add(id);
       batch(() => {
         setNotes(taken.notes);
         setDraft(next);
@@ -608,6 +664,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
       clearServerReason(id);
       noteEdit(lane, id);
+      uncommitted.add(last);
       // Every filled row but the one the caret lands in is committed.
       takeCommit(commitRows(pasted.draft, lane, pasted.ids.slice(0, -1)), 'paste');
       setFocusRequest({
@@ -622,6 +679,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       clearServerReason(id);
       const removed = removeRow(draft(), lane, id);
       if (removed.draft === draft()) return;
+      uncommitted.delete(id);
       batch(() => {
         noteEdit(lane, id);
         setDraft(removed.draft);
@@ -653,6 +711,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       disposed = true;
       cancelAutosave?.();
       cancelStall?.();
+      setReadings.dispose();
       unsubscribe?.();
     }
   };

@@ -527,10 +527,11 @@ interface JoinedFacts {
 
 /**
  * A row's most decisive problem, or `null`. Order: what the save does
- * first (a dropped row; one whose fate is not modeled has no problem at
- * all — it matches nothing and never blocks), then the page-wide Defer failure,
- * `match-all`, the runtime translation, the joined effects, the
- * backtracking guard.
+ * first (a dropped row), then the page-wide Defer failure (an unverified
+ * row included: the page state is read from the rows as given), then — a
+ * row whose save fate is not modeled has no other problem: it matches
+ * nothing and never blocks — `match-all`, the runtime translation, the
+ * joined effects, the backtracking guard.
  */
 function rowProblem(
   feature: RegexFeatureId,
@@ -552,9 +553,8 @@ function rowProblem(
       reason: ROW_REASONS.unchecked(save.outcome === 'kept' ? 'not analyzed' : save.detail)
     };
   }
-  // Whether WP Rocket's save keeps the row is not modeled: no claim, and no
-  // matcher either (see `translateRegexRows`) — it never blocks the set.
-  if (save.outcome === 'unknown') return null;
+  // Behind a page-off even when its save is not modeled: the page state is
+  // read from the rows as given, so the row that breaks it must be named.
   if (joined.pageOff) {
     return {
       problem: 'joined-page-off',
@@ -562,6 +562,9 @@ function rowProblem(
       reason: ROW_REASONS.joinedPageOff
     };
   }
+  // Whether WP Rocket's save keeps the row is not modeled: no claim, and no
+  // matcher either (see `translateRegexRows`) — it never blocks the set.
+  if (save.outcome === 'unknown') return null;
   if (analysis.matchesAll) {
     return {
       problem: 'match-all',

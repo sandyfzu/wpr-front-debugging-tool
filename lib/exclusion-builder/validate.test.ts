@@ -215,6 +215,14 @@ describe('prevalidateExclusionSet — Defer JS rows read joined, as WP Rocket ru
     expect(prevalidateExclusionSet(setWith({ deferJs: ['(?<n>a)x'] })).valid).toBe(true);
   });
 
+  it('refuses a page-off set whose breaking row is unverified (its save is not modeled)', () => {
+    const problems = prevalidateExclusionSet(setWith({ deferJs: ['a\\.js', '\\p{L}\\Qab'] }));
+    expect(problems.valid).toBe(false);
+    expect(problems.invalid.map(({ index, problem }) => [index, problem])).toEqual([
+      [1, 'joined-page-off']
+    ]);
+  });
+
   it('keeps an empty row the editor mistake it is, ahead of the PCRE reading', () => {
     expect(prevalidateExclusionSet(setWith({ deferJs: ['a', ' '] })).invalid).toEqual([
       {

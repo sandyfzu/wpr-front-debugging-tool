@@ -58,7 +58,48 @@ export interface LaneCopy {
   readonly limitHint?: string;
   /** Shown while the lane holds rows (what they do beyond matching). */
   readonly rowsNote?: string;
+  /** The page-wide words, for a lane whose rows WP Rocket reads as one set. */
+  readonly page?: LanePageCopy;
 }
+
+/** A set-read lane's page-wide words (its rows can turn the feature off for the whole page). */
+export interface LanePageCopy {
+  /**
+   * The page-off message's lead, before the rows it names.
+   *
+   * @param rows How many rows it names (≥ 1).
+   */
+  readonly offLead: (rows: number) => string;
+  /**
+   * The page-off message's way out, after the rows.
+   *
+   * @param rows How many rows it names (≥ 1).
+   */
+  readonly offFix: (rows: number) => string;
+  /** The rows' page state isn't checked here (non-blocking). */
+  readonly unknown: string;
+  /** The applied page's counts assume a page state that wasn't checked (a count caveat). */
+  readonly countsUnknown: string;
+}
+
+/** Rows the page-off message names (each with its Go to button); the rest are counted. */
+export const PAGE_OFF_ROWS_SHOWN = 3;
+
+/** The page-off message's per-row words. */
+export const PAGE_OFF_COPY = {
+  /**
+   * A named row's Go to button (visible label = accessible name).
+   *
+   * @param position The row's 1-based position in its lane.
+   */
+  goTo: (position: number): string => `Go to row ${String(position)}`,
+  /**
+   * Rows past the ones named.
+   *
+   * @param count Rows not named (≥ 1).
+   */
+  more: (count: number): string => `And ${String(count)} more ${count === 1 ? 'row' : 'rows'}.`
+} as const;
 
 /** The settings-field hint shared by the lanes WP Rocket has a field for. */
 const FIELD_COPY_HINT =
@@ -87,7 +128,15 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
     copyHint: FIELD_COPY_HINT,
     copiedAs: '',
     limitHint:
-      'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here (assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions).'
+      'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here (assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions).',
+    page: {
+      offLead: (rows) =>
+        `WP Rocket would stop deferring every script on this page because of ${rows === 1 ? 'this row' : 'these rows'}:`,
+      offFix: (rows) => `Edit or remove ${rows === 1 ? 'it' : 'them'} to apply.`,
+      unknown: 'WP Rocket may defer no script on this page with these rows — not checked here.',
+      countsUnknown:
+        'These counts assume WP Rocket defers scripts on this page: with the applied rows, that isn’t checked here.'
+    }
   },
   lazyRender: {
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
@@ -148,9 +197,11 @@ export const COUNT_COPY = {
    * What the count could not tell, one line each (none when it is exact).
    *
    * @param counts The lane's counts.
+   * @param page The lane's page-wide words (set-read lanes only).
    */
-  caveats: (counts: LaneCounts): string[] => {
+  caveats: (counts: LaneCounts, page?: LanePageCopy): string[] => {
     const lines: string[] = [];
+    if (counts.pageUnknown && page !== undefined) lines.push(page.countsUnknown);
     if (counts.undetermined > 0)
       lines.push(
         `${String(counts.undetermined)} left as served: how WP Rocket matched ${counts.undetermined === 1 ? 'it' : 'them'} can’t be read from this page.`
