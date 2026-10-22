@@ -166,6 +166,15 @@
       "dropped": []
     },
     {
+      "id": "save-delay-annotation-anchors",
+      "kind": "save",
+      "feature": "delay_js",
+      "typed": ["a￹b", "a￺b", "a￻b"],
+      "note": "interlinear annotation anchors (format, not default-ignorable) kept",
+      "stored": ["a￹b", "a￺b", "a￻b"],
+      "dropped": []
+    },
+    {
       "id": "save-delay-invalid-utf8",
       "kind": "save",
       "feature": "delay_js",

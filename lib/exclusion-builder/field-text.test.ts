@@ -308,6 +308,15 @@ describe('hasInvisibleKeptCharacters', () => {
     expect(hasInvisibleKeptCharacters('\u200e')).toBe(true);
   });
 
+  it('flags the interlinear annotation anchors (invisible, yet not default-ignorable)', () => {
+    // Kept by the save (parity row `save-delay-annotation-anchors`).
+    for (const mark of ['￹', '￺', '￻']) {
+      expect(hasInvisibleKeptCharacters(`gt${mark}ag`), mark.codePointAt(0)?.toString(16)).toBe(
+        true
+      );
+    }
+  });
+
   it('leaves visible format-category characters alone', () => {
     // Arabic number sign: a format character that renders a visible glyph.
     expect(hasInvisibleKeptCharacters('a\u0600b')).toBe(false);
