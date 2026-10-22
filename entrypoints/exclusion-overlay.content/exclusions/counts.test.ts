@@ -39,6 +39,11 @@ describe('rowMatches', () => {
     expect(rowMatches(DELAY, 'nothing')).toBe(0);
   });
 
+  it('finds a row still carrying surrounding whitespace by its applied (trimmed) form', () => {
+    expect(rowMatches(DELAY, ' gtag\t')).toBe(3);
+    expect(rowMatches(DELAY, 'nothing  ')).toBe(0);
+  });
+
   it('is unknown for rows outside the applied set, a feature-wide run, or no report', () => {
     expect(rowMatches(DELAY, 'new row')).toBeNull();
     expect(rowMatches(ALR_WIDE, 'x')).toBeNull();

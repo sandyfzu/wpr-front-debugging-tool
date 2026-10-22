@@ -63,6 +63,15 @@ describe('prevalidateExclusionSet', () => {
     for (const problem of problems.invalid) expect(problem.reason).toMatch(/empty/i);
   });
 
+  it('reads emptiness with the settings trim: tab/CR/LF-only rows are empty, a no-break space is text', () => {
+    const problems = prevalidateExclusionSet(
+      setWith({ deferJs: ['\t\r\n'], lazyload: ['\u00a0'], delayJs: ['\u00a0'] })
+    );
+    expect(problems.invalid).toEqual([
+      expect.objectContaining({ feature: 'defer_all_js', index: 0, row: '\t\r\n' })
+    ]);
+  });
+
   it('never compiles literal rows — regex metacharacters are valid for the literal features', () => {
     const problems = prevalidateExclusionSet(
       setWith({ lazyload: ['[a-z]+("webp")'], lazyRender: ['(pagination|[class='] })

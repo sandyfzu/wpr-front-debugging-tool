@@ -3,6 +3,7 @@
  * counts of the page the session rewrote. A count is shown only where it is
  * true — for a row the applied set carried, on the page it was applied to.
  */
+import { trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import { laneFeature, type LaneKey } from './draft';
 
@@ -56,7 +57,9 @@ export function laneCounts(report: TransformReport | undefined): LaneCounts | nu
  */
 export function rowMatches(report: TransformReport | undefined, text: string): number | null {
   if (report === undefined || report.featureWide) return null;
-  const matched = report.matchedRows.find((row) => row.row === text);
+  // The report names rows as applied — trimmed; the row may still be typed.
+  const row = trimExclusionRow(text);
+  const matched = report.matchedRows.find((candidate) => candidate.row === row);
   if (matched !== undefined) return matched.matches;
-  return report.unmatchedRows.includes(text) ? 0 : null;
+  return report.unmatchedRows.includes(row) ? 0 : null;
 }

@@ -227,6 +227,23 @@ describe('editing and autosave', () => {
     expect(controller.focusRequest()).toEqual({ lane: 'delayJs', id: first });
   });
 
+  it('commits a row trimmed when it is left, and saves the trimmed set', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    const [id] = controller.insertRows('lazyload', [''], null);
+    controller.editRow('lazyload', id ?? '', ' logo.png\t');
+    expect(controller.draft().rows.lazyload[0]?.text).toBe(' logo.png\t');
+    controller.commitRow('lazyload', id ?? '');
+    expect(controller.draft().rows.lazyload[0]?.text).toBe('logo.png');
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).toHaveBeenCalledTimes(1);
+    expect(port.save).toHaveBeenCalledWith({
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: ['logo.png'] }
+    });
+  });
+
   it('marks edits against the active set as dirty', async () => {
     const { controller } = await started(fakePort(activeRecord()).port);
     controller.setDisable('lazyRender', true);
@@ -235,10 +252,11 @@ describe('editing and autosave', () => {
 });
 
 describe('apply / reset / stop', () => {
-  it('applies the draft (blank rows dropped) and waits for the reload, then offers a manual one', async () => {
+  it('applies the draft (blank rows dropped, rows trimmed) and waits for the reload, then offers a manual one', async () => {
     const { port } = fakePort({ state: 'inactive' });
     const { controller, clock, reload } = await started(port);
-    controller.insertRows('delayJs', ['gtag', '  '], null);
+    // Still being typed (never committed): applied trimmed all the same.
+    controller.insertRows('delayJs', [' gtag\t', '  '], null);
     controller.apply();
     expect(controller.state()).toMatchObject({ phase: 'ready', pending: 'apply' });
     await settle();
@@ -463,6 +481,7 @@ describe('audit round 1', () => {
     controller.removeRow('delayJs', id ?? '');
     controller.setDisable('delayJs', true);
     controller.pasteRows('delayJs', id ?? '', 'a\nb', { start: 0, end: 0 });
+    controller.commitRow('delayJs', id ?? '');
     expect(controller.addCandidate('delayJs', 'x', false)).toBe(false);
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
     expect(controller.draft().disable.delayJs).toBe(false);

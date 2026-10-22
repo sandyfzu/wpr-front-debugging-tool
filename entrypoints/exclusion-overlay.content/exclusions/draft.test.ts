@@ -11,12 +11,14 @@ import {
   draftFromSet,
   draftToSet,
   insertRows,
+  isBlankRow,
   laneFeature,
   pasteIntoRow,
   removeRow,
   sameSet,
   setDisable,
   splitLines,
+  trimRow,
   updateRow
 } from './draft';
 
@@ -33,16 +35,31 @@ describe('draft ↔ set', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('drops blank rows from the set, keeps every other row as typed', () => {
+  it('drops blank rows from the set and trims the rest like the settings save', () => {
     const nextId = createIdSource();
     const { draft } = insertRows(
       draftFromSet(EMPTY_EXCLUSION_SET, nextId),
       'delayJs',
-      ['  ', ' gtag ', ''],
+      ['  ', ' gtag ', '', '\tjquery\r', 'a b'],
       null,
       nextId
     );
-    expect(draftToSet(draft).rows.delayJs).toEqual([' gtag ']);
+    expect(draftToSet(draft).rows.delayJs).toEqual(['gtag', 'jquery', 'a b']);
+  });
+
+  it('loads a set in its trimmed form, so a stored untrimmed row reads as an edit', () => {
+    const untrimmed = {
+      ...EMPTY_EXCLUSION_SET,
+      rows: { ...EMPTY_EXCLUSION_SET.rows, lazyload: [' logo.png '] }
+    };
+    const draft = draftFromSet(untrimmed, createIdSource());
+    expect(draft.rows.lazyload.map((row) => row.text)).toEqual(['logo.png']);
+    expect(sameSet(draftToSet(draft), untrimmed)).toBe(false);
+  });
+
+  it('reads blankness with the settings trim (a no-break space is text)', () => {
+    expect(isBlankRow(' \t\r\n')).toBe(true);
+    expect(isBlankRow('\u00a0')).toBe(false);
   });
 
   it('tells sets apart by rows, order and disables', () => {
@@ -130,9 +147,28 @@ describe('row edits', () => {
     expect(again).toEqual({ draft: added.draft, id: added.id, added: false });
   });
 
-  it('counts the wire characters of non-blank rows', () => {
+  it('adds a candidate trimmed, and finds it again whatever its surrounding whitespace', () => {
+    const added = addCandidate(start, 'lazyload', ' hero.webp\t', nextId);
+    expect(added.draft.rows.lazyload.at(-1)?.text).toBe('hero.webp');
+    const typed = updateRow(start, 'lazyload', start.rows.lazyload[0]?.id ?? '', 'logo.png  ');
+    const again = addCandidate(typed, 'lazyload', 'logo.png', nextId);
+    expect(again).toEqual({ draft: typed, id: start.rows.lazyload[0]?.id, added: false });
+  });
+
+  it('trims one row in place, identity when already trimmed or unknown', () => {
+    const id = start.rows.delayJs[0]?.id ?? '';
+    const typed = updateRow(start, 'delayJs', id, '  gtag\t');
+    const trimmed = trimRow(typed, 'delayJs', id);
+    expect(trimmed.rows.delayJs[0]).toEqual({ id, text: 'gtag' });
+    expect(trimRow(trimmed, 'delayJs', id)).toBe(trimmed);
+    expect(trimRow(trimmed, 'delayJs', 'missing')).toBe(trimmed);
+  });
+
+  it('counts the wire characters of non-blank rows, trimmed', () => {
     const blankAdded = insertRows(start, 'delayJs', ['   '], null, nextId).draft;
     expect(draftChars(blankAdded)).toBe(draftChars(start));
+    const padded = insertRows(start, 'delayJs', ['  ab\t'], null, nextId).draft;
+    expect(draftChars(padded)).toBe(draftChars(start) + 2);
     expect(draftChars(start)).toBe(
       'jquery\\.min\\.js'.length +
         4 +
@@ -210,6 +246,18 @@ describe('pasteIntoRow', () => {
     expect(texts(pasted.draft).slice(0, 2)).toEqual(['a', 'bjquery\\.min\\.js']);
   });
 
+  it('trims the rows a paste creates like the settings save; the edited row commits on blur', () => {
+    const pasted = pasteIntoRow(
+      start,
+      'delayJs',
+      first?.id ?? '',
+      ' a \n  b  \r\n\tc ',
+      { start: 0, end: 0 },
+      nextId
+    );
+    expect(texts(pasted.draft)).toEqual([' a ', 'b', 'c jquery\\.min\\.js', 'gtag']);
+  });
+
   it('changes nothing for a blank paste or an unknown row', () => {
     expect(
       pasteIntoRow(start, 'delayJs', first?.id ?? '', '\n  \n', { start: 0, end: 0 }, nextId)
@@ -250,6 +298,13 @@ describe('createRowValidator', () => {
 
   it('treats blank rows as unfinished, never as errors', () => {
     expect(createRowValidator()('delayJs', '   ')).toBeNull();
+  });
+
+  it('validates the row as it would be stored: surrounding whitespace never decides', () => {
+    const validate = createRowValidator();
+    expect(validate('lazyload', 'logo.png\t')).toBeNull();
+    expect(validate('lazyload', `  ${'x'.repeat(EXCLUSION_SET_LIMITS.rowChars)}  `)).toBeNull();
+    expect(validate('delayJs', ' ( ')).toMatch(/^Invalid regular expression: /);
   });
 
   it('serves repeated rows from its cache and restarts past capacity', () => {

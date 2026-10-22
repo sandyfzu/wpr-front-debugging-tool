@@ -4,7 +4,8 @@
  * the applied page's counts, and the lane's own notes (feature absent from
  * the page, rows unused under the disable). Row keyboard model: Enter adds
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
- * between rows, a multi-line paste splits into rows.
+ * between rows, a multi-line paste splits into rows; leaving a row trims it
+ * the way WP Rocket's settings save does (never while typing).
  */
 import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
@@ -318,6 +319,19 @@ interface LaneRowProps {
 }
 
 /**
+ * Whether focus really left a field on its `blur`: a window losing focus
+ * blurs the field too, yet keeps it its root's active element — the user is
+ * still on that row.
+ *
+ * @param field The blurred field.
+ */
+function focusLeft(field: HTMLInputElement): boolean {
+  // A document or a shadow root (a detached field's root has neither: left).
+  const root = field.getRootNode() as Partial<DocumentOrShadowRoot>;
+  return root.activeElement !== field;
+}
+
+/**
  * One editable row: the input, its match count on the applied page, its
  * remove control and its inline problem.
  *
@@ -362,6 +376,11 @@ function LaneRow(props: LaneRowProps): JSX.Element {
           }}
           onPaste={(event) => {
             props.onPaste(event);
+          }}
+          // Native listener: the row commits (trimmed) only once left.
+          on:blur={(event) => {
+            if (focusLeft(event.currentTarget))
+              props.controller.commitRow(props.lane, props.row.id);
           }}
         />
         <Show when={props.showMatches}>

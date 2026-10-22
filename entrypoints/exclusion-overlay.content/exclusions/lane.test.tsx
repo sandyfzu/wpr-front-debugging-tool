@@ -113,6 +113,22 @@ describe('Lane', () => {
     expect(document.activeElement).toBe(input(2));
   });
 
+  it("keeps a row's surrounding whitespace while typing, trims it when focus leaves the row", async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['', 'other'], null);
+    mountLane(controller);
+    input(1).focus();
+    fireEvent.input(input(1), { target: { value: ' gtag ' } });
+    expect(input(1).value).toBe(' gtag ');
+    // The window losing focus blurs the row but keeps it the active element:
+    // the user is still typing there, so nothing is trimmed.
+    input(1).dispatchEvent(new FocusEvent('blur'));
+    expect(controller.draft().rows.delayJs[0]?.text).toBe(' gtag ');
+    input(2).focus();
+    expect(controller.draft().rows.delayJs[0]?.text).toBe('gtag');
+    expect(input(1).value).toBe('gtag');
+  });
+
   it('splits a multi-line paste into rows', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', [''], null);

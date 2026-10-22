@@ -31,6 +31,7 @@ import {
   removeRow,
   sameSet,
   setDisable,
+  trimRow,
   updateRow,
   type Draft,
   type LaneKey,
@@ -118,6 +119,11 @@ export interface OverlayController {
   /** Whether the draft can be edited now (loaded, no action in flight). */
   readonly editable: Accessor<boolean>;
   editRow(lane: LaneKey, id: string, text: string): void;
+  /**
+   * Commit a row the user left: trim it the way WP Rocket's settings save
+   * does, so the editor shows what would be stored (never while typing).
+   */
+  commitRow(lane: LaneKey, id: string): void;
   /**
    * Insert rows after a row (`null` = append), focusing the first one.
    *
@@ -453,6 +459,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (!editable()) return;
       clearServerReason(id);
       setDraft(updateRow(draft(), lane, id, text));
+    },
+    commitRow: (lane, id) => {
+      // The trimmed row is the one already applied/validated: its background
+      // reason (if any) still holds, so it is kept.
+      if (editable()) setDraft(trimRow(draft(), lane, id));
     },
     insertRows: (lane, texts, afterId) => {
       if (!editable()) return [];

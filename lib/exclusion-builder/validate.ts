@@ -5,6 +5,7 @@
  * inline in one pass. Pure: no compilation state is kept.
  */
 import type { InvalidExclusionRow } from './errors';
+import { trimExclusionRow } from './field-text';
 import { BACKTRACKING_RISK_REASONS, regexBacktrackingRisk } from './regex-risk';
 import {
   EXCLUSION_FEATURES,
@@ -45,9 +46,9 @@ function regexErrorDetail(row: string, error: unknown): string {
 /**
  * Why one row cannot work, or `null` when it is valid.
  *
- * A whitespace-only row would match every element (an empty regex and an
- * empty `includes` are always-true), so it is rejected as the user mistake
- * it is. A pattern row must compile as a regular expression and carry no
+ * A row empty once trimmed the way the settings save trims it would match
+ * every element (an empty regex and an empty `includes` are always-true),
+ * so it is rejected as the user mistake it is. A pattern row must compile as a regular expression and carry no
  * known catastrophic-backtracking shape (`./regex-risk` — a heuristic; the
  * guard rejects exponential shapes only — polynomial ones are accepted and
  * bounded only where the engine runs preemptibly); a literal row is never
@@ -57,7 +58,7 @@ function regexErrorDetail(row: string, error: unknown): string {
  * @param rowKind How the row will be matched.
  */
 function rowProblem(row: string, rowKind: ExclusionRowKind): string | null {
-  if (row.trim() === '') return 'Row is empty — it would match every element';
+  if (trimExclusionRow(row) === '') return 'Row is empty — it would match every element';
   if (rowKind === 'pattern') {
     try {
       new RegExp(row);

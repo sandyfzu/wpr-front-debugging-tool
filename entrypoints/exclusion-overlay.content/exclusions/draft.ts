@@ -4,6 +4,9 @@
  * never the index) plus the feature-wide disables. Pure and immutable: every
  * edit returns a new draft; the view stores it. Blank rows are unfinished
  * edits, not exclusions: they never reach the set and never show an error.
+ * Rows reach the set trimmed the way WP Rocket's settings save trims them
+ * (`trimExclusionRow`); a row being typed keeps its text until it is
+ * committed (`trimRow`, on leaving the row), so typing is never fought.
  */
 import {
   EXCLUSION_FEATURES,
@@ -13,6 +16,7 @@ import {
   type ExclusionSetToggles
 } from '../../../lib/exclusion-builder/set';
 import { featureRowProblems } from '../../../lib/exclusion-builder/validate';
+import { exclusionFieldLines, trimExclusionRow } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
 
 /** One editor lane = one feature's row list. */
@@ -25,7 +29,7 @@ export type ToggleKey = keyof ExclusionSetToggles;
 export interface DraftRow {
   /** Stable identity for the row's lifetime (list key, focus target). */
   readonly id: string;
-  /** The row as typed. */
+  /** The row as typed (trimmed once committed). */
   readonly text: string;
 }
 
@@ -67,7 +71,7 @@ export function laneFeature(lane: LaneKey): ExclusionFeatureSpec {
 }
 
 /**
- * A draft holding a set's rows and disables.
+ * A draft holding a set's rows (in their trimmed, stored form) and disables.
  *
  * @param set The set to edit.
  * @param nextId The id issuer.
@@ -75,25 +79,25 @@ export function laneFeature(lane: LaneKey): ExclusionFeatureSpec {
 export function draftFromSet(set: ExclusionSet, nextId: IdSource): Draft {
   const rows = {} as Record<LaneKey, DraftRow[]>;
   for (const lane of LANE_ORDER)
-    rows[lane] = set.rows[lane].map((text) => ({ id: nextId(), text }));
+    rows[lane] = set.rows[lane].map((text) => ({ id: nextId(), text: trimExclusionRow(text) }));
   return { rows, disable: { ...set.disable } };
 }
 
-/** Whether a row is an unfinished (blank) edit. */
+/** Whether a row is an unfinished (blank) edit: empty once trimmed. */
 export function isBlankRow(text: string): boolean {
-  return text.trim() === '';
+  return trimExclusionRow(text) === '';
 }
 
 /**
- * The set a draft stands for: blank rows dropped, every other row exactly
- * as typed.
+ * The set a draft stands for: every row trimmed, rows left blank dropped —
+ * what WP Rocket would store for the same lines.
  *
  * @param draft The draft.
  */
 export function draftToSet(draft: Draft): ExclusionSet {
   const rows = {} as Record<LaneKey, string[]>;
   for (const lane of LANE_ORDER) {
-    rows[lane] = draft.rows[lane].map((row) => row.text).filter((text) => !isBlankRow(text));
+    rows[lane] = exclusionFieldLines(draft.rows[lane].map((row) => row.text));
   }
   return { rows, disable: { ...draft.disable } };
 }
@@ -179,7 +183,8 @@ export interface RowSelection {
  * text before the selection, then the first pasted line; each further line
  * becomes a row after it, the last followed by the row's text after the
  * selection. Blank pasted lines are dropped, and lines past the lane cap too
- * — never the row's own text.
+ * — never the row's own text. The rows the paste creates are trimmed like
+ * any committed row; the edited row keeps its text until it is committed.
  *
  * @param draft The draft.
  * @param lane The row's lane.
@@ -209,7 +214,13 @@ export function pasteIntoRow(
       line +
       (index === last ? row.text.slice(selection.end) : '')
   );
-  const inserted = insertRows(updateRow(draft, lane, id, head), lane, rest, id, nextId);
+  const inserted = insertRows(
+    updateRow(draft, lane, id, head),
+    lane,
+    rest.map(trimExclusionRow),
+    id,
+    nextId
+  );
   return { draft: inserted.draft, ids: [id, ...inserted.ids] };
 }
 
@@ -230,6 +241,19 @@ export function updateRow(draft: Draft, lane: LaneKey, id: string, text: string)
     lane,
     rows.map((row) => (row.id === id ? { id, text } : row))
   );
+}
+
+/**
+ * Commit one row: trim it the way the settings save would (a no-op for a
+ * trimmed row or an unknown id — the draft is returned as is).
+ *
+ * @param draft The draft.
+ * @param lane The row's lane.
+ * @param id The row.
+ */
+export function trimRow(draft: Draft, lane: LaneKey, id: string): Draft {
+  const row = draft.rows[lane].find((candidate) => candidate.id === id);
+  return row === undefined ? draft : updateRow(draft, lane, id, trimExclusionRow(row.text));
 }
 
 /** The result of a removal. */
@@ -284,8 +308,8 @@ export interface CandidateAdded {
 }
 
 /**
- * Add a candidate row to a lane unless the lane already holds that exact
- * row (picking twice never duplicates).
+ * Add a candidate row (trimmed) to a lane unless the lane already holds it
+ * once trimmed (picking twice never duplicates).
  *
  * @param draft The draft.
  * @param lane The lane the candidate belongs to.
@@ -298,23 +322,24 @@ export function addCandidate(
   text: string,
   nextId: IdSource
 ): CandidateAdded {
-  const existing = draft.rows[lane].find((row) => row.text === text);
+  const row = trimExclusionRow(text);
+  const existing = draft.rows[lane].find((candidate) => trimExclusionRow(candidate.text) === row);
   if (existing !== undefined) return { draft, id: existing.id, added: false };
-  const inserted = insertRows(draft, lane, [text], null, nextId);
+  const inserted = insertRows(draft, lane, [row], null, nextId);
   const id = inserted.ids[0] ?? null;
   return { draft: inserted.draft, id, added: id !== null };
 }
 
 /**
- * Characters the set would carry over the wire (non-blank rows) — checked
- * against the whole-set cap before an apply.
+ * Characters the set would carry over the wire (non-blank rows, trimmed) —
+ * checked against the whole-set cap before an apply.
  *
  * @param draft The draft.
  */
 export function draftChars(draft: Draft): number {
   let chars = 0;
   for (const lane of LANE_ORDER) {
-    for (const row of draft.rows[lane]) if (!isBlankRow(row.text)) chars += row.text.length;
+    for (const row of draft.rows[lane]) chars += trimExclusionRow(row.text).length;
   }
   return chars;
 }
@@ -334,10 +359,11 @@ export function wireRowProblem(text: string): string | null {
 }
 
 /**
- * A memoizing row validator: the wire contract's row check, then the
- * engine's own prevalidation per row, cached
- * by lane + text, so an edit re-validates only the row that changed (the
- * regex guard is the costly part). Blank rows have no problem (unfinished).
+ * A memoizing row validator over the row as it would be stored (trimmed):
+ * the wire contract's row check, then the engine's own prevalidation, cached
+ * by lane + trimmed text, so an edit re-validates only the row that changed
+ * (the regex guard is the costly part) and surrounding whitespace never
+ * decides a verdict. Blank rows have no problem (unfinished).
  *
  * @param capacity Cached verdicts kept before the cache restarts.
  * @returns `(lane, text) → reason | null`.
@@ -346,8 +372,9 @@ export function createRowValidator(
   capacity = 4_096
 ): (lane: LaneKey, text: string) => string | null {
   const cache = new Map<string, string | null>();
-  return (lane, text) => {
-    if (isBlankRow(text)) return null;
+  return (lane, typed) => {
+    const text = trimExclusionRow(typed);
+    if (text === '') return null;
     const key = `${lane}\u0000${text}`;
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
