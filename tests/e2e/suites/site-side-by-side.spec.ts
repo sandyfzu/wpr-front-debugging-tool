@@ -266,6 +266,12 @@ siteTest.describe('site side-by-side', () => {
     // delay runtime saves a page's first interactions at the window and
     // replays them on their targets once its scripts load — a replayed
     // refresh click reloaded the cached side a second time.
+    // Why this counter proves it: it is a bubbling-phase window listener,
+    // the phase the delay runtime registers its own (`passive: false`, no
+    // capture), and Playwright's clicks are real input events that bubble
+    // from the overlay's button through its shadow root to the window. The
+    // UI stops them at its shadow root, so the count stays 0; without that
+    // isolation every overlay click reaches here (one per click).
     await main.page.evaluate(() => {
       const counter = window as unknown as { e2ePageClicks: number };
       counter.e2ePageClicks = 0;
