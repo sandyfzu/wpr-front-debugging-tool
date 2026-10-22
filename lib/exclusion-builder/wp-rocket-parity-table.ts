@@ -11,7 +11,8 @@
  * - **match** — stored rows + a page → the page WP Rocket serves without user
  *   rows (`served`, the engine's input), every subject of that page in
  *   document order (`subjects`), the ones it optimizes there (`candidates`)
- *   and the ones the rows leave un-optimized (`excluded`). A subject's key is
+ *   and the ones the rows leave un-optimized (`excluded`); Defer JS rows also
+ *   record the inline scripts WP Rocket wraps under the rows (`inlineWrapped`). A subject's key is
  *   its `id` attribute, else `#n` for the n-th id-less subject tag (0-based,
  *   comments skipped); lazy-render subjects are always keyed by id.
  *
@@ -33,8 +34,9 @@ export type PendingPhase = 'K.3' | 'K.4b' | 'K.4c' | 'K.4d';
 
 /**
  * An outcome field the replay compares: a save row's `stored`/`dropped`; a
- * match row's `candidates`/`excluded` (+ Defer `featureOff`, lazy rendering
- * `hashed`/`rekeyed`), or `problems` for a row whose disposition is a problem.
+ * match row's `candidates`/`excluded` (+ Defer `featureOff`/`inlineWrapped`,
+ * lazy rendering `hashed`/`rekeyed`), or `problems` for a row whose
+ * disposition is a problem.
  */
 export type OutcomeField =
   | 'stored'
@@ -42,6 +44,7 @@ export type OutcomeField =
   | 'candidates'
   | 'excluded'
   | 'featureOff'
+  | 'inlineWrapped'
   | 'hashed'
   | 'rekeyed'
   | 'problems';
@@ -167,6 +170,11 @@ export interface MatchRow extends MatchInput {
   readonly excluded: readonly string[];
   /** Defer JS only: the joined-pattern pre-check failed and nothing was deferred. */
   readonly featureOff?: boolean;
+  /**
+   * Defer JS only: the subjects whose inline body WP Rocket wraps in its
+   * `DOMContentLoaded` listener under the rows (its inline-jQuery pass).
+   */
+  readonly inlineWrapped?: readonly string[];
   /** Lazy rendering only: ids hashed under the rows. */
   readonly hashed?: readonly string[];
   /** Lazy rendering only: ids hashed in both runs whose hash changed. */
@@ -231,6 +239,7 @@ export const MATCH_OUTPUT_KEYS = [
   'candidates',
   'excluded',
   'featureOff',
+  'inlineWrapped',
   'hashed',
   'rekeyed'
 ] as const;
@@ -258,8 +267,9 @@ export function pendingOwner(kind: ParityRow['kind'], feature: ExclusionFeatureI
 /**
  * The outcome fields the replay compares for a row, in order: save rows
  * `stored`, `dropped`; a match row with a problem disposition `problems`;
- * other match rows `candidates`, `excluded`, plus Defer `featureOff` and lazy
- * rendering `hashed`, `rekeyed` (a residual compares `candidates`/`excluded` only).
+ * other match rows `candidates`, `excluded`, plus Defer `featureOff`,
+ * `inlineWrapped` and lazy rendering `hashed`, `rekeyed` (a residual compares
+ * `candidates`/`excluded` only).
  *
  * @param row The row's kind, feature and (match rows) disposition.
  */
@@ -272,7 +282,9 @@ export function comparedFields(row: {
   if (row.engine !== undefined) {
     return 'problem' in row.engine ? ['problems'] : ['candidates', 'excluded'];
   }
-  if (row.feature === 'defer_all_js') return ['candidates', 'excluded', 'featureOff'];
+  if (row.feature === 'defer_all_js') {
+    return ['candidates', 'excluded', 'featureOff', 'inlineWrapped'];
+  }
   if (row.feature === FILTER_ONLY_FEATURE) return ['candidates', 'excluded', 'hashed', 'rekeyed'];
   return ['candidates', 'excluded'];
 }
@@ -622,9 +634,17 @@ function matchRow(input: MatchInput, record: Record<string, unknown>): MatchRow 
   for (const subject of excluded) {
     if (!candidates.includes(subject)) fail(id, `excluded "${subject}" is not a candidate`);
   }
+  const isDefer = feature === 'defer_all_js';
   const featureOff = optionalBoolean(id, record, 'featureOff');
-  if ((featureOff !== undefined) !== (feature === 'defer_all_js')) {
+  if ((featureOff !== undefined) !== isDefer) {
     fail(id, '"featureOff" is present exactly on Defer JS rows');
+  }
+  if ((record.inlineWrapped !== undefined) !== isDefer) {
+    fail(id, '"inlineWrapped" is present exactly on Defer JS rows');
+  }
+  const inlineWrapped = isDefer ? idList(id, record, 'inlineWrapped') : undefined;
+  if (subjects !== undefined) {
+    checkSubset(id, inlineWrapped ?? [], subjects, 'inlineWrapped', 'a subject');
   }
   const hasHashed = record.hashed !== undefined;
   if (hasHashed !== isLazyRender || (record.rekeyed !== undefined) !== isLazyRender) {
@@ -643,6 +663,7 @@ function matchRow(input: MatchInput, record: Record<string, unknown>): MatchRow 
     candidates,
     excluded,
     ...(featureOff === undefined ? {} : { featureOff }),
+    ...(inlineWrapped === undefined ? {} : { inlineWrapped }),
     ...(hashed === undefined ? {} : { hashed }),
     ...(rekeyed === undefined ? {} : { rekeyed })
   };

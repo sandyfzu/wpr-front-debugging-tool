@@ -183,6 +183,7 @@ describe('assembleRow', () => {
     expect(fromRow.rows).toEqual(['a']);
     const deferRow = assembleRow(INPUTS[3] as ParityInput, {
       id: 'match-b',
+      inlineWrapped: [],
       featureOff: false,
       excluded: [],
       candidates: [],
@@ -201,7 +202,8 @@ describe('assembleRow', () => {
       'subjects',
       'candidates',
       'excluded',
-      'featureOff'
+      'featureOff',
+      'inlineWrapped'
     ]);
   });
 });

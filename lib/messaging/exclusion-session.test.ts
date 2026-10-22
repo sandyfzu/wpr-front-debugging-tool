@@ -236,6 +236,21 @@ describe('parseExclusionSessionStatus', () => {
     expect(parseExclusionSessionStatus(status)).toEqual(status);
   });
 
+  it("accepts the engine's Defer JS report with undone inline wraps", () => {
+    const html =
+      "<script>window.addEventListener('DOMContentLoaded', function() {jQuery(1)});</script>";
+    const set = {
+      rows: { delayJs: [], deferJs: ['jquery.min.js'], lazyload: [], lazyRender: [] },
+      disable: { delayJs: false, deferJs: false, lazyRender: false }
+    };
+    const { reports } = applyPipeline(html, set);
+    expect(reports.find((report) => report.feature === 'defer_all_js')).toMatchObject({
+      inlineUnwrapped: 1
+    });
+    const status = { ...activeRecord(), set, document: { outcome: 'rewritten', reports } };
+    expect(parseExclusionSessionStatus(status)).toEqual(status);
+  });
+
   it('accepts every unavailable cause, rejects unknown ones and bad stamps', () => {
     for (const cause of Object.keys(INTERCEPTION_UNAVAILABLE_CAUSES)) {
       const status = { state: 'unavailable', cause, at: 0 };
@@ -359,6 +374,32 @@ describe('document reports are tied to the session set', () => {
       { approximate: -1 },
       { approximate: 1.5 },
       { undetermined: 'x' }
+    ]) {
+      expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
+    }
+  });
+
+  it('carries the undone inline-wrap count on a Defer JS report only', () => {
+    const defer = {
+      feature: 'defer_all_js',
+      featureWide: true,
+      candidates: 0,
+      rewritten: 0,
+      regionRemovals: 0,
+      matchedRows: [],
+      unmatchedRows: []
+    };
+    const parsed = parseExclusionSessionStatus(withReport({ ...defer, inlineUnwrapped: 7 }));
+    const document = parsed !== null && 'document' in parsed ? parsed.document : null;
+    expect(document?.outcome === 'rewritten' ? document.reports[0] : null).toMatchObject({
+      inlineUnwrapped: 7
+    });
+    for (const patch of [
+      { inlineUnwrapped: 1 },
+      { ...defer, inlineUnwrapped: 0 },
+      { ...defer, inlineUnwrapped: -1 },
+      { ...defer, inlineUnwrapped: 1.5 },
+      { ...defer, inlineUnwrapped: '1' }
     ]) {
       expect(parseExclusionSessionStatus(withReport(patch)), JSON.stringify(patch)).toBeNull();
     }

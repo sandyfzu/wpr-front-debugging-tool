@@ -8,7 +8,8 @@
  * - match rows: the page WP Rocket serves without user rows, run through the
  *   feature's pipeline step with the stored rows → the engine's candidates,
  *   the subjects it restores (its exclusion marker) and, per feature, the
- *   Defer page state and the lazy-render hashing; or, for a row with an
+ *   Defer page state and inline-jQuery wrapping, and the lazy-render
+ *   hashing; or, for a row with an
  *   `engine` disposition, the row problem / documented residual it names.
  *
  * Every compared field is asserted per row. A field listed in the row's
@@ -22,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FDT_EXCLUDED_RESOURCE } from '../wp-rocket/constants';
+import { INLINE_WRAP_OPEN } from './defer-inline-js';
 import { ExclusionValidationError } from './errors';
 import { saveExclusionRows, type SubmittedRow } from './field-text';
 import { parseTagAt, scanTags } from './html-scan';
@@ -68,6 +70,8 @@ const SUBJECT_TAG: Readonly<Record<ExclusionFeatureId, string | null>> = {
 interface KeyedTag {
   readonly key: string;
   readonly tagText: string;
+  /** The opening tag plus its raw-text content (the opening tag alone for other tags). */
+  readonly element: string;
 }
 
 /**
@@ -89,7 +93,9 @@ function subjectTags(html: string, feature: ExclusionFeatureId): KeyedTag[] {
     const id = findAttribute(parseTagAt(tagText, 0), 'id')?.value ?? null;
     if (id === null && name === null) continue;
     const key = id ?? `#${String(anonymous++)}`;
-    if (!keyed.some((entry) => entry.key === key)) keyed.push({ key, tagText });
+    if (!keyed.some((entry) => entry.key === key)) {
+      keyed.push({ key, tagText, element: html.slice(tag.start, tag.contentEnd) });
+    }
   }
   return keyed;
 }
@@ -98,6 +104,28 @@ function subjectTags(html: string, feature: ExclusionFeatureId): KeyedTag[] {
 function markedKeys(html: string, feature: ExclusionFeatureId): string[] {
   return subjectTags(html, feature)
     .filter(({ tagText }) => findAttribute(parseTagAt(tagText, 0), FDT_EXCLUDED_RESOURCE) !== null)
+    .map(({ key }) => key);
+}
+
+/** How often an element holds WP Rocket's inline wrapper opening. */
+function wrapperCount(element: string): number {
+  return element.split(INLINE_WRAP_OPEN).length - 1;
+}
+
+/**
+ * Keys of the scripts the engine's page holds wrapped more often than the
+ * source page — read as the harness reads WP Rocket's (whole element: a `>`
+ * in a value moves the wrapper into the opening tag).
+ *
+ * @param source The page before WP Rocket (the row's `html`).
+ * @param page The engine's output.
+ */
+function wrappedKeys(source: string, page: string): string[] {
+  const before = new Map(
+    subjectTags(source, 'defer_all_js').map(({ key, element }) => [key, wrapperCount(element)])
+  );
+  return subjectTags(page, 'defer_all_js')
+    .filter(({ key, element }) => wrapperCount(element) > (before.get(key) ?? 0))
     .map(({ key }) => key);
 }
 
@@ -176,6 +204,7 @@ type MatchOutcome =
       readonly candidates: readonly string[];
       readonly excluded: readonly string[];
       readonly featureOff?: boolean | 'unknown';
+      readonly inlineWrapped?: readonly string[];
       readonly hashed?: readonly string[];
       readonly rekeyed?: readonly string[] | null;
     }
@@ -206,7 +235,8 @@ function engineRekeyed(row: MatchRow): string[] | null {
  * (its problem ids); any other throw is a crash and propagates. Defer's
  * `featureOff`: a set that turns WP Rocket's Defer off is a validation
  * error, so a run is `false` — or `'unknown'` when the report says the page
- * state could not be replayed (never equal to WP Rocket's boolean).
+ * state could not be replayed (never equal to WP Rocket's boolean). Defer's
+ * `inlineWrapped`: the scripts still wrapped in the engine's page.
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
@@ -224,7 +254,10 @@ function engineMatch(row: MatchRow): MatchOutcome {
       candidates,
       excluded,
       ...(row.feature === 'defer_all_js'
-        ? { featureOff: run.report.pageState === 'unknown' ? 'unknown' : false }
+        ? {
+            featureOff: run.report.pageState === 'unknown' ? 'unknown' : false,
+            inlineWrapped: wrappedKeys(row.html, run.html)
+          }
         : {}),
       ...lazyRender
     };
@@ -243,6 +276,7 @@ function expectedMatch(row: MatchRow): MatchOutcome {
     candidates: row.candidates,
     excluded: row.excluded,
     ...(row.featureOff === undefined ? {} : { featureOff: row.featureOff }),
+    ...(row.inlineWrapped === undefined ? {} : { inlineWrapped: row.inlineWrapped }),
     ...(row.hashed === undefined ? {} : { hashed: row.hashed, rekeyed: row.rekeyed })
   };
 }

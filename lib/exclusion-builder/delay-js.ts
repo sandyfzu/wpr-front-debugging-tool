@@ -13,6 +13,7 @@ import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/c
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag } from './html-scan';
 import { compileDelayRows, DELAY_TYPE_ATTRIBUTE } from './delay-js-match';
+import { inlineWrapRuns, unwrapInlineScripts } from './defer-inline-js';
 import { transformReport, type TransformResult } from './report';
 import {
   addAttributeValue,
@@ -111,14 +112,19 @@ function restoreDelayedScript(tagText: string): string {
  * controller's run invocation, the Elementor animation helper) are removed
  * outright — the first of each kind only — and everything else is restored.
  *
+ * WP Rocket delays scripts after its Defer JS inline-jQuery pass, so a row
+ * sees an inline body as that pass left it: when the set turns the pass off
+ * (Defer JS rows or toggle), the served wrapping is undone in the subject.
+ *
  * @param servedHtml The served document (decoded text — no byte handling here).
- * @param set The exclusion set (Delay JS rows + toggle slice).
+ * @param set The exclusion set (Delay JS rows + toggle slice; Defer JS rows + toggle).
  * @returns The rewritten html and the report.
  * @throws {@link ExclusionValidationError} when any Delay JS row is invalid.
  */
 export function delayJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
   const rows = set.rows.delayJs;
   const matchRow = compileDelayRows(rows);
+  const unwrapSubjects = !inlineWrapRuns(set);
   const featureWide = set.disable.delayJs;
   const matchCounts = rows.map(() => 0);
   const patches: TextPatch[] = [];
@@ -159,7 +165,8 @@ export function delayJsTransform(servedHtml: string, set: ExclusionSet): Transfo
     if (!featureWide) {
       // The whole script element is the match target, as WP Rocket saw it
       // before delaying it (rows may also match body text).
-      const verdict = matchRow(servedHtml.slice(tag.start, tag.end));
+      const element = servedHtml.slice(tag.start, tag.end);
+      const verdict = matchRow(unwrapSubjects ? unwrapInlineScripts(element).html : element);
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {
         undetermined++;

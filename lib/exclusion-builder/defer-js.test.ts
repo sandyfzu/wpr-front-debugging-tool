@@ -336,3 +336,35 @@ describe('deferJsTransform — marker accumulation', () => {
     expect(result.html).toContain('data-wpr-fdt-excluded="defer_all_js"');
   });
 });
+
+describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, run)', () => {
+  const WRAPPED =
+    '<script id="i">window.addEventListener(\'DOMContentLoaded\', function() {jQuery(1)});</script>';
+  const SERVED = `${DEFERRED}${WRAPPED}`;
+
+  it('undoes the wrapping when a row names a jQuery file, and counts it', () => {
+    const result = deferJsTransform(SERVED, setWithRows(['jquery\\.min\\.js']));
+    expect(result.html).toBe(`${DEFERRED}<script id="i">jQuery(1)</script>`);
+    expect(result.report).toMatchObject({ candidates: 1, rewritten: 0, inlineUnwrapped: 1 });
+  });
+
+  it('undoes it under the feature-wide disable (WP Rocket wraps nothing with Defer JS off)', () => {
+    const result = deferJsTransform(SERVED, setWithRows([], true));
+    expect(result.html).toBe(
+      '<script src="https://s.tld/jquery.js" id="jquery-core-js" data-wpr-fdt-excluded="defer_all_js"></script>' +
+        '<script id="i">jQuery(1)</script>'
+    );
+    expect(result.report).toMatchObject({ featureWide: true, rewritten: 1, inlineUnwrapped: 1 });
+  });
+
+  it('keeps the wrapping while the rows name no jQuery file, and never adds one', () => {
+    for (const rows of [[], ['jquery-ui'], ['foo.js', 'jquery-ui']]) {
+      const kept = deferJsTransform(SERVED, setWithRows(rows));
+      expect(kept.html, JSON.stringify(rows)).toBe(SERVED);
+      expect(kept.report.inlineUnwrapped, JSON.stringify(rows)).toBeUndefined();
+    }
+    // Served unwrapped (the live rows already turn the pass off): left as served.
+    const unwrapped = `${DEFERRED}<script id="i">jQuery(1)</script>`;
+    expect(deferJsTransform(unwrapped, setWithRows(['foo'])).html).toBe(unwrapped);
+  });
+});

@@ -27,7 +27,9 @@ export interface TextPatch {
  * not overlap — a transform emits at most one patch per tag span, so an
  * overlap is broken transform logic, never input shape. Adjacent patches
  * are fine: sharing an edge coordinate (`previous.end === patch.start`,
- * zero-width insertions at one offset included) is not an overlap.
+ * zero-width insertions at one offset included) is not an overlap. The
+ * output is assembled from pieces in one join, so the cost stays linear in
+ * the document however many patches there are.
  *
  * @param html The original document text.
  * @param patches The patches (any order; zero-width insertions allowed).
@@ -38,7 +40,10 @@ export interface TextPatch {
 export function applyPatches(html: string, patches: readonly TextPatch[]): string {
   if (patches.length === 0) return html;
   const sorted = [...patches].sort((left, right) => right.start - left.start);
-  let out = html;
+  // Built right to left, then reversed: the same result as splicing each
+  // patch into the text from the end, without re-copying the text per patch.
+  const pieces: string[] = [];
+  let cursor = html.length;
   for (let index = 0; index < sorted.length; index++) {
     const patch = sorted[index];
     if (patch === undefined) break;
@@ -48,9 +53,11 @@ export function applyPatches(html: string, patches: readonly TextPatch[]): strin
         `Overlapping HTML patches [${String(previous.start)},${String(previous.end)}) and [${String(patch.start)},${String(patch.end)})`
       );
     }
-    out = out.slice(0, patch.start) + patch.text + out.slice(patch.end);
+    pieces.push(html.slice(patch.end, cursor), patch.text);
+    cursor = patch.start;
   }
-  return out;
+  pieces.push(html.slice(0, cursor));
+  return pieces.reverse().join('');
 }
 
 /**

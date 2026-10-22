@@ -1237,7 +1237,8 @@
       "subjects": ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "a+b", "p10"],
       "candidates": ["p1", "p2", "p5", "p6", "p7", "p8", "a+b", "p10"],
       "excluded": ["p1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "save-picked-defer-octet",
@@ -1260,7 +1261,8 @@
       "subjects": ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "a+b", "p10"],
       "candidates": ["p1", "p2", "p5", "p6", "p7", "p8", "a+b", "p10"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "save-picked-defer-octet-hex",
@@ -1283,7 +1285,8 @@
       "subjects": ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "a+b", "p10"],
       "candidates": ["p1", "p2", "p5", "p6", "p7", "p8", "a+b", "p10"],
       "excluded": ["p5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-delay-plus",
@@ -2163,7 +2166,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-plain",
@@ -2175,7 +2179,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-anchor",
@@ -2187,7 +2192,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-raw-src-whitespace",
@@ -2200,7 +2206,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["k"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-attributes-never",
@@ -2213,7 +2220,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-case-insensitive",
@@ -2226,7 +2234,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-end-anchor",
@@ -2238,7 +2247,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-all-js",
@@ -2250,7 +2260,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-entity-raw",
@@ -2263,7 +2274,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-entity-decoded",
@@ -2276,7 +2288,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-empty-alternative",
@@ -2290,7 +2303,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-escaped-dot-star",
@@ -2304,7 +2318,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-option-letter",
@@ -2318,7 +2333,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-dummy-string",
@@ -2332,7 +2348,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": true
+      "featureOff": true,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-dummy",
@@ -2345,7 +2362,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-dash",
@@ -2357,7 +2375,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-dot-star",
@@ -2371,7 +2390,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": true
+      "featureOff": true,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-bad-row",
@@ -2386,7 +2406,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": true
+      "featureOff": true,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-duplicate-names",
@@ -2400,7 +2421,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": true
+      "featureOff": true,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-duplicate-names-angle",
@@ -2415,7 +2437,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": ["s1", "k", "s3", "s5"],
-      "featureOff": true
+      "featureOff": true,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-flag-leak",
@@ -2429,7 +2452,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-backref-shift",
@@ -2443,7 +2467,8 @@
       "subjects": ["s1", "k", "s3", "s4", "s5", "s6"],
       "candidates": ["s1", "k", "s3", "s5"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-ie-conditional",
@@ -2456,7 +2481,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-fold-non-ascii",
@@ -2469,7 +2495,8 @@
       "subjects": ["s1", "s2", "s3"],
       "candidates": ["s1", "s2", "s3"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-dot",
@@ -2482,7 +2509,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-two-dots",
@@ -2494,7 +2522,8 @@
       "subjects": ["s1", "s2", "s3"],
       "candidates": ["s1", "s2", "s3"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-quantified",
@@ -2507,7 +2536,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-class-anchored",
@@ -2520,7 +2550,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-class-unanchored",
@@ -2532,7 +2563,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-negated-class",
@@ -2544,7 +2576,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-emoji-dot",
@@ -2556,7 +2589,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-hex-escape",
@@ -2569,7 +2603,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-hex-pair",
@@ -2582,7 +2617,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-braced-hex",
@@ -2594,7 +2630,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-word",
@@ -2607,7 +2644,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-non-word",
@@ -2619,7 +2657,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-range-anchored",
@@ -2631,7 +2670,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-range-unanchored",
@@ -2643,7 +2683,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-range-ascii-start",
@@ -2655,7 +2696,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-byte-unicode-property",
@@ -2672,7 +2714,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-space-nbsp",
@@ -2685,7 +2728,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-space-nbsp-byte",
@@ -2697,7 +2741,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-horizontal-space",
@@ -2709,7 +2754,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-horizontal-space-byte",
@@ -2722,7 +2768,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-vertical-space",
@@ -2734,7 +2781,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-vertical-space-byte",
@@ -2747,7 +2795,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-newline-sequence",
@@ -2759,7 +2808,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-dot-cr",
@@ -2772,7 +2822,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-dot-lf",
@@ -2785,7 +2836,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-dot-line-separator",
@@ -2798,7 +2850,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-dollar-final-newline",
@@ -2811,7 +2864,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-start-of-subject",
@@ -2823,7 +2877,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-end-of-subject",
@@ -2835,7 +2890,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-end-or-final-newline",
@@ -2847,7 +2903,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-first-match-position",
@@ -2859,7 +2916,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-quoted",
@@ -2871,7 +2929,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-escape-char",
@@ -2883,7 +2942,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-control-char",
@@ -2895,7 +2955,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-octal",
@@ -2907,7 +2968,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-hex",
@@ -2919,7 +2981,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-posix-class",
@@ -2931,7 +2994,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-bracket-first",
@@ -2943,7 +3007,8 @@
       "subjects": ["s1", "s2", "s3"],
       "candidates": ["s1", "s2", "s3"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-negated-bracket-first",
@@ -2955,7 +3020,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-min-omitted",
@@ -2968,7 +3034,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-any-char-not-newline",
@@ -2980,7 +3047,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-keep-out",
@@ -2992,7 +3060,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-possessive",
@@ -3005,7 +3074,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-atomic",
@@ -3018,7 +3088,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-recursion",
@@ -3035,7 +3106,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-subroutine",
@@ -3052,7 +3124,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-conditional",
@@ -3069,7 +3142,8 @@
       "subjects": ["s1", "s2", "s3"],
       "candidates": ["s1", "s2", "s3"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-branch-reset",
@@ -3082,7 +3156,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-verb",
@@ -3099,7 +3174,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-callout",
@@ -3116,7 +3192,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-quote-named-group",
@@ -3129,7 +3206,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-python-backref",
@@ -3142,7 +3220,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-g-backref",
@@ -3155,7 +3234,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-g-relative-backref",
@@ -3167,7 +3247,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-backref-shift",
@@ -3181,7 +3262,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-leading-caseless",
@@ -3193,7 +3275,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-unset-caseless",
@@ -3206,7 +3289,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-dotall",
@@ -3219,7 +3303,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-extended",
@@ -3236,7 +3321,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-hash",
@@ -3249,7 +3335,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-polynomial",
@@ -3262,7 +3349,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-catastrophic",
@@ -3276,7 +3364,8 @@
       "subjects": ["s1"],
       "candidates": ["s1"],
       "excluded": [],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-a-d",
@@ -3289,7 +3378,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-a-s",
@@ -3302,7 +3392,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-a-w",
@@ -3315,7 +3406,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-a-p",
@@ -3328,7 +3420,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-a-t",
@@ -3341,7 +3434,8 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-defer-pcre-option-r",
@@ -3354,7 +3448,193 @@
       "subjects": ["s1", "s2"],
       "candidates": ["s1", "s2"],
       "excluded": ["s1", "s2"],
-      "featureOff": false
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-no-rows",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": [],
+      "note": "no rows: every inline jQuery script is wrapped",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": ["i1", "i2", "i7", "i8", "i9"]
+    },
+    {
+      "id": "match-defer-inline-jquery-alone",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery"],
+      "note": "`jquery` alone does not match /(jquery(?:.*)?\\.js)/i: wrapped",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq"],
+      "featureOff": false,
+      "inlineWrapped": ["i1", "i2", "i7", "i8", "i9"]
+    },
+    {
+      "id": "match-defer-inline-jquery-min-js",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery.min.js"],
+      "note": "a jquery file row turns the inline pass off",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq"],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-safe-mode-row",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["/jquery-?[0-9.]*(.min|.slim|.slim.min)?.js"],
+      "note": "the safe-mode jQuery row turns the inline pass off",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq"],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-jquery-then-js",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery", "foo.js"],
+      "note": "tested on the joined text: `jquery|foo.js` matches",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq", "f"],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-js-then-jquery",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["foo.js", "jquery"],
+      "note": "order matters: `foo.js|jquery` does not match",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq", "f"],
+      "featureOff": false,
+      "inlineWrapped": ["i1", "i2", "i7", "i8", "i9"]
+    },
+    {
+      "id": "match-defer-inline-case",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["JQUERY.JS"],
+      "note": "case-insensitive",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-hash-escaped",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery#x", "a.js"],
+      "note": "the `#` escape sits inside the joined text: `jquery\\#x|a.js` matches",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-dedupe",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["foo.js", "jquery", "foo.js"],
+      "filterOnly": true,
+      "note": "array_unique before the join: `foo.js|jquery`, wrapped",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq", "f"],
+      "featureOff": false,
+      "inlineWrapped": ["i1", "i2", "i7", "i8", "i9"]
+    },
+    {
+      "id": "match-defer-inline-page-off",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": [".*"],
+      "note": "Defer page off; defer_inline_js has no pre-check and still wraps",
+      "engine": { "problem": "joined-page-off" },
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq", "f", "i9"],
+      "featureOff": true,
+      "inlineWrapped": ["i1", "i2", "i7", "i8", "i9"]
+    },
+    {
+      "id": "match-defer-inline-page-off-jquery",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["(?'n'a)jquery", "(?'n'b)\\.js"],
+      "note": "Defer page off and the joined text matches: nothing wrapped",
+      "engine": { "problem": "joined-page-off" },
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\"></script>\n<script src=\"/foo.js\" id=\"f\"></script>\n<script id=\"i1\">jQuery(function($){ $('.a').show(); });</script>\n<script id=\"i2\">$(document).ready(go);</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">JQUERY.noop()</script>\n<script type=\"text/template\" id=\"i8\">$(x)</script>\n<script src=\"/b.js\" id=\"i9\">jQuery(4)</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-includes/js/jquery/jquery.min.js\" id=\"jq\" data-rocket-defer defer></script>\n<script src=\"/foo.js\" id=\"f\" data-rocket-defer defer></script>\n<script id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(function($){ $('.a').show(); });});</script>\n<script id=\"i2\">window.addEventListener('DOMContentLoaded', function() {$(document).ready(go);});</script>\n<script id=\"i3\">$.ajax({});</script>\n<script id=\"i4\">var plain = 1;</script>\n<script type=\"application/ld+json\" id=\"i5\">{\"jQuery\": 1}</script>\n<script id=\"i6\"></script>\n<script id=\"i7\">window.addEventListener('DOMContentLoaded', function() {JQUERY.noop()});</script>\n<script type=\"text/template\" id=\"i8\">window.addEventListener('DOMContentLoaded', function() {$(x)});</script>\n<script src=\"/b.js\" id=\"i9\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(4)});</script>\n<script id=\"i10\">var n = \"application/ld+json\"; jQuery(5)</script>\n<!-- <script id=\"c1\">jQuery(3)</script> -->\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["jq", "f", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10"],
+      "candidates": ["jq", "f", "i9"],
+      "excluded": ["jq", "f", "i9"],
+      "featureOff": true,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-markup-edges",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": [],
+      "note": "a `>` in a value ends the pass's opening tag; a body copy in an attribute is wrapped too; a body already in wrapper form is wrapped again",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"a\"></script>\n<script id=\"g1\" data-x=\"a>b\">jQuery(1)</script>\n<script id=\"g2\" data-x=\"jQuery(2)\">jQuery(2)</script>\n<script id=\"g3\">window.addEventListener('DOMContentLoaded', function() {jQuery(3)});</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"a\" data-rocket-defer defer></script>\n<script id=\"g1\" data-x=\"a>window.addEventListener('DOMContentLoaded', function() {b\">jQuery(1)});</script>\n<script id=\"g2\" data-x=\"window.addEventListener('DOMContentLoaded', function() {jQuery(2)});\">window.addEventListener('DOMContentLoaded', function() {jQuery(2)});</script>\n<script id=\"g3\">window.addEventListener('DOMContentLoaded', function() {window.addEventListener('DOMContentLoaded', function() {jQuery(3)});});</script>\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["a", "g1", "g2", "g3"],
+      "candidates": ["a"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": ["g1", "g2", "g3"]
+    },
+    {
+      "id": "match-defer-inline-markup-edges-off",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery.js"],
+      "note": "the same page, inline pass off",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"a\"></script>\n<script id=\"g1\" data-x=\"a>b\">jQuery(1)</script>\n<script id=\"g2\" data-x=\"jQuery(2)\">jQuery(2)</script>\n<script id=\"g3\">window.addEventListener('DOMContentLoaded', function() {jQuery(3)});</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/a.js\" id=\"a\" data-rocket-defer defer></script>\n<script id=\"g1\" data-x=\"a>window.addEventListener('DOMContentLoaded', function() {b\">jQuery(1)});</script>\n<script id=\"g2\" data-x=\"window.addEventListener('DOMContentLoaded', function() {jQuery(2)});\">window.addEventListener('DOMContentLoaded', function() {jQuery(2)});</script>\n<script id=\"g3\">window.addEventListener('DOMContentLoaded', function() {window.addEventListener('DOMContentLoaded', function() {jQuery(3)});});</script>\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["a", "g1", "g2", "g3"],
+      "candidates": ["a"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-lazyload-src-file",

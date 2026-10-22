@@ -485,6 +485,7 @@ const REPORT_KEYS = [
   'unmatchedRows',
   'undetermined',
   'approximate',
+  'inlineUnwrapped',
   'pageState',
   'rowCountsBestEffort'
 ] as const;
@@ -498,6 +499,20 @@ const REPORT_KEYS = [
 function optionalCount(value: unknown, candidates: number): number | undefined | null {
   if (value === undefined) return undefined;
   return isCount(value) && value > 0 && value <= candidates ? value : null;
+}
+
+/**
+ * A report's count of undone inline-jQuery wraps: absent, or a positive
+ * count on a Defer JS report (the only transform that undoes them).
+ *
+ * @returns The count (`undefined` when absent), or `null` when invalid.
+ */
+function inlineUnwrappedCount(
+  value: unknown,
+  feature: ExclusionFeatureId
+): number | undefined | null {
+  if (value === undefined) return undefined;
+  return isCount(value) && value > 0 && feature === 'defer_all_js' ? value : null;
 }
 
 /**
@@ -548,8 +563,9 @@ function isSubMultiset(rows: readonly string[], pool: readonly string[]): boolea
  * `candidates`, the summed row matches ≤ `candidates` — each candidate
  * counts for its first matching row only), a feature-wide run attributes no
  * rows, and the matched + unmatched rows are drawn from that feature's set
- * rows (which also bounds the report's size by the set's), and the row
- * caveats hold their one value each.
+ * rows (which also bounds the report's size by the set's), the row
+ * caveats hold their one value each, and only a Defer JS report counts
+ * undone inline wraps.
  */
 function parseTransformReport(
   input: unknown,
@@ -587,6 +603,8 @@ function parseTransformReport(
   const undetermined = optionalCount(ownValue(input, 'undetermined'), candidates);
   const approximate = optionalCount(ownValue(input, 'approximate'), candidates);
   if (undetermined === null || approximate === null) return null;
+  const inlineUnwrapped = inlineUnwrappedCount(ownValue(input, 'inlineUnwrapped'), feature);
+  if (inlineUnwrapped === null) return null;
   const caveats = parseRowCaveats(input, featureWide);
   if (caveats === null) return null;
   return {
@@ -599,6 +617,7 @@ function parseTransformReport(
     unmatchedRows,
     ...(undetermined === undefined ? {} : { undetermined }),
     ...(approximate === undefined ? {} : { approximate }),
+    ...(inlineUnwrapped === undefined ? {} : { inlineUnwrapped }),
     ...caveats
   };
 }

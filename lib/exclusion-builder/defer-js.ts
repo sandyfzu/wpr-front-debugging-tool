@@ -4,12 +4,15 @@
  * bare native `defer` the plugin never stamped is not this feature's
  * work); rows match the `src` value WP Rocket captured — raw, as served
  * (whitespace and entities kept) — with WP Rocket's joined-row semantics
- * (`./defer-js-rows`), and the rewrite strips both defer markers.
+ * (`./defer-js-rows`), and the rewrite strips both defer markers. When the
+ * set turns WP Rocket's inline-jQuery pass off, its wrapping of inline
+ * scripts is undone too (`./defer-inline-js`).
  */
 import { WPR_DEFER_ATTRIBUTE } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import { deferRowSet } from './defer-js-rows';
+import { inlineWrapRuns, unwrapInlineScripts } from './defer-inline-js';
 import { undoDelayRenames } from './delay-js-match';
 import { ExclusionValidationError } from './errors';
 import { transformReport, type TransformResult } from './report';
@@ -127,7 +130,12 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  * the transform's report. The rewrite stamps the exclusion marker as CSV.
  * When WP Rocket's page state cannot be replayed, the matches are applied
  * as if it defers and the report says so; a script whose subject cannot be
- * read back is left as served and counted undetermined.
+ * read back is left as served and counted undetermined. When the set turns
+ * WP Rocket's inline-jQuery pass off (Defer JS disabled, or a row naming a
+ * jQuery file), the inline scripts it wrapped get their original body back
+ * (counted in the report); the reverse — wrapping scripts the served page
+ * left unwrapped — is never done: the served page already reflects the live
+ * rows, which a set only adds to.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
  * @param set The exclusion set (Defer JS rows + toggle slice). No document
@@ -174,8 +182,12 @@ export function deferJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       text: stampExclusionMarker(restored, FEATURE)
     });
   }
+  const deferred = applyPatches(servedHtml, patches);
+  const inline = inlineWrapRuns(set)
+    ? { html: deferred, unwrapped: 0 }
+    : unwrapInlineScripts(deferred);
   return {
-    html: applyPatches(servedHtml, patches),
+    html: inline.html,
     report: transformReport({
       feature: FEATURE,
       rowKind: 'pattern',
@@ -186,6 +198,7 @@ export function deferJsTransform(servedHtml: string, set: ExclusionSet): Transfo
       regionRemovals: 0,
       featureWide,
       undetermined,
+      inlineUnwrapped: inline.unwrapped,
       ...(rowSet.page === 'unknown' ? { pageState: 'unknown' as const } : {}),
       rowCountsBestEffort: rows.length > 1
     })

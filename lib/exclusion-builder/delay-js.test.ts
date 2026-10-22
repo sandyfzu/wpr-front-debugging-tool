@@ -353,3 +353,37 @@ describe('delayJsTransform — scanner parity', () => {
     ]);
   });
 });
+
+describe('delayJsTransform — the subject after the Defer JS inline-jQuery pass (WP Rocket 3.23.5.1, run)', () => {
+  // Served with no rows: Defer JS wrapped the inline body before Delay JS ran.
+  const SERVED =
+    '<script type="text/rocketlazyloadscript" id="d">' +
+    "window.addEventListener('DOMContentLoaded', function() {jQuery(1)});</script>";
+  const ROW = 'script id="d">jQuery';
+
+  /** The Delay JS row plus the given Defer JS rows / toggle. */
+  function withDefer(deferJs: string[], disableDeferJs = false): ExclusionSet {
+    return {
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: [ROW], deferJs },
+      disable: { ...EMPTY_EXCLUSION_SET.disable, deferJs: disableDeferJs }
+    };
+  }
+
+  it('matches the wrapped body while the Defer JS pass still wraps it', () => {
+    const result = delayJsTransform(SERVED, withDefer([]));
+    expect(result.html).toBe(SERVED);
+    expect(result.report.unmatchedRows).toEqual([ROW]);
+  });
+
+  it('matches the unwrapped body when the Defer JS rows or toggle turn the pass off', () => {
+    for (const set of [withDefer(['jquery.js']), withDefer([], true)]) {
+      const result = delayJsTransform(SERVED, set);
+      expect(result.report.matchedRows).toEqual([{ row: ROW, rowKind: 'pattern', matches: 1 }]);
+      // The body itself is the Defer JS transform's to restore.
+      expect(result.html).toBe(
+        '<script id="d" data-wpr-fdt-excluded="delay_js">' +
+          "window.addEventListener('DOMContentLoaded', function() {jQuery(1)});</script>"
+      );
+    }
+  });
+});

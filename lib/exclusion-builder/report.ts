@@ -48,6 +48,12 @@ export interface TransformReport {
    */
   readonly approximate?: number;
   /**
+   * Defer JS: inline scripts whose WP Rocket jQuery wrapping (a
+   * `DOMContentLoaded` listener around the body) was undone, because the set
+   * turns that pass off. Not candidates; present only when non-zero.
+   */
+  readonly inlineUnwrapped?: number;
+  /**
    * WP Rocket's own run of the feature on this page could not be
    * determined (Defer JS: whether its joined-pattern pre-check passes, which
    * decides whether it defers anything at all): the row matches are
@@ -87,6 +93,8 @@ export interface TransformCounters {
   readonly undetermined?: number;
   /** See {@link TransformReport.approximate} (0 when omitted). */
   readonly approximate?: number;
+  /** See {@link TransformReport.inlineUnwrapped} (0 when omitted). */
+  readonly inlineUnwrapped?: number;
   /** See {@link TransformReport.pageState} (WP Rocket runs the feature when omitted). */
   readonly pageState?: 'unknown';
   /** See {@link TransformReport.rowCountsBestEffort} (exact when omitted). */
@@ -100,10 +108,11 @@ export interface TransformCounters {
  */
 function optionalCounts(
   counters: TransformCounters
-): Pick<TransformReport, 'undetermined' | 'approximate'> {
+): Pick<TransformReport, 'undetermined' | 'approximate' | 'inlineUnwrapped'> {
   return {
     ...(counters.undetermined ? { undetermined: counters.undetermined } : {}),
-    ...(counters.approximate ? { approximate: counters.approximate } : {})
+    ...(counters.approximate ? { approximate: counters.approximate } : {}),
+    ...(counters.inlineUnwrapped ? { inlineUnwrapped: counters.inlineUnwrapped } : {})
   };
 }
 

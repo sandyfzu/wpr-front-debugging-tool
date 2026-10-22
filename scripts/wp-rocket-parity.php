@@ -165,6 +165,13 @@ const FIELD = [
 const DEFER_LIST = ['wpr-fdt-parity-sentinel-never-matches'];
 
 /**
+ * The inline-exclusions list `defer_inline_js` serves: one never-matching
+ * sentinel. With an empty list the plugin wraps no inline script at all, which
+ * would hide the wrapping the fixtures observe.
+ */
+const DEFER_INLINE_LIST = ['wpr-fdt-parity-sentinel-never-matches'];
+
+/**
  * A DataManager double: fixed dynamic lists, no filesystem or network.
  *
  * @param array $lists List name => rows.
@@ -354,18 +361,66 @@ function delay_pass(array $rows, string $html): string {
 }
 
 /**
- * Defer JS: the real DeferJS::defer_js with the rows as the stored option.
+ * Defer JS: the real DeferJS::defer_js, then its inline-jQuery pass
+ * DeferJS::defer_inline_js (buffer priorities 24 and 25, one buffer), with the
+ * rows as the stored option.
  *
  * @param bool $off Set to whether defer_js returned its input untouched (its joined-pattern pre-check failed).
  */
 function defer_pass(array $rows, string $html, ?bool &$off = null): string {
 	$options = new Options_Data(['defer_all_js' => 1, 'exclude_defer_js' => $rows]);
-	$pass    = new DeferJS($options, lists(['defer_js_external_exclusions' => DEFER_LIST, 'defer_js_inline_exclusions' => []]));
+	$pass    = new DeferJS($options, lists(['defer_js_external_exclusions' => DEFER_LIST, 'defer_js_inline_exclusions' => DEFER_INLINE_LIST]));
 	return buffer_pass(static function (string $page) use ($pass, &$off): string {
 		$result = $pass->defer_js($page);
 		$off    = $result === $page;
-		return $result;
+		return $pass->defer_inline_js($result);
 	}, $html);
+}
+
+/** The opening of the wrapper defer_inline_js puts around an inline script's body. */
+const INLINE_WRAPPER = "window.addEventListener('DOMContentLoaded', function() {";
+
+/**
+ * Keys of the script subjects defer_inline_js wrapped in a run: the element
+ * (opening tag + body) holds the wrapper more often than before. The element,
+ * not the body alone: the pass ends the opening tag at its first `>`, so a
+ * `>` inside an attribute value puts the wrapper into the tag. Not "the
+ * element changed": defer_js stamps opening tags (and may stamp a body's lead).
+ *
+ * @return string[]
+ */
+function wrapped_keys(string $caseId, string $before, string $after): array {
+	$original = script_elements($caseId, $before);
+	$keys     = [];
+	foreach (script_elements($caseId, $after) as $key => $element) {
+		if (!array_key_exists($key, $original)) {
+			throw new RuntimeException("match $caseId: script \"$key\" appeared in the run");
+		}
+		if (substr_count($element, INLINE_WRAPPER) > substr_count($original[$key], INLINE_WRAPPER)) {
+			$keys[] = (string) $key;
+		}
+	}
+	return $keys;
+}
+
+/**
+ * Key => element of every script subject (keys as subject_tags gives them):
+ * its opening tag plus the body up to the next `</script`, comments removed
+ * first as subject_tags removes them.
+ *
+ * @return array<string,string>
+ */
+function script_elements(string $caseId, string $html): array {
+	$page     = preg_replace(HTML_COMMENT, '', $html);
+	$elements = [];
+	$from     = 0;
+	foreach (subject_tags($caseId, $html, 'script') as [$key, $tag]) {
+		$at   = strpos($page, $tag, $from);
+		$end  = stripos($page, '</script', $at + strlen($tag));
+		$from = $at + strlen($tag);
+		$elements[$key] = substr($page, $at, $end === false ? null : $end - $at);
+	}
+	return $elements;
 }
 
 /**
@@ -439,10 +494,11 @@ function check_lazyload_fixture(string $id, string $html): void {
  * engine's input); `subjects` = every subject key of the served page in
  * document order (comments skipped); `candidates` = subjects optimized there;
  * `excluded` = candidates the rows leave un-optimized. Defer adds
- * `featureOff` (the pre-check returned the page untouched); lazy rendering
- * keys by id only and adds `hashed` (ids hashed under the rows) and `rekeyed`
- * (ids hashed in both runs whose hash changed — stored below-the-fold data
- * no longer matches them).
+ * `featureOff` (the pre-check returned the page untouched) and
+ * `inlineWrapped` (scripts whose body defer_inline_js wrapped under the rows);
+ * lazy rendering keys by id only and adds `hashed` (ids hashed under the
+ * rows) and `rekeyed` (ids hashed in both runs whose hash changed — stored
+ * below-the-fold data no longer matches them).
  */
 function match_case(array $case): array {
 	$id   = $case['id'];
@@ -465,7 +521,9 @@ function match_case(array $case): array {
 			if ($base === []) {
 				throw new RuntimeException("match $id: a Defer fixture needs at least one deferred script (featureOff would be meaningless)");
 			}
-			$after      = optimized_keys($id, defer_pass($rows, $html, $featureOff), 'script', $isDeferred);
+			$deferred   = defer_pass($rows, $html, $featureOff);
+			$after      = optimized_keys($id, $deferred, 'script', $isDeferred);
+			$wrapped    = wrapped_keys($id, $html, $deferred);
 			break;
 		case 'lazyload':
 			check_lazyload_fixture($id, $html);
@@ -501,7 +559,8 @@ function match_case(array $case): array {
 	$out['candidates'] = $base;
 	$out['excluded']   = array_values(array_diff($base, $after));
 	if (isset($featureOff)) {
-		$out['featureOff'] = $featureOff;
+		$out['featureOff']    = $featureOff;
+		$out['inlineWrapped'] = $wrapped;
 	}
 	if (isset($rekeyed)) {
 		$out['hashed']  = $after;

@@ -63,10 +63,11 @@ function validTable(): { header: Json; rows: Json[] } {
         pending: { owner: 'K.4c', fields: ['problems'] },
         html: 'h',
         served: 's',
-        subjects: [],
+        subjects: ['w'],
         candidates: [],
         excluded: [],
-        featureOff: true
+        featureOff: true,
+        inlineWrapped: ['w']
       },
       {
         id: 'match-c',
@@ -123,6 +124,7 @@ describe('parseParityTable', () => {
     expect(table.rows[2]).toMatchObject({
       filterOnly: true,
       featureOff: true,
+      inlineWrapped: ['w'],
       engine: { problem: 'pcre-invalid' },
       pending: { owner: 'K.4c', fields: ['problems'] }
     });
@@ -323,6 +325,22 @@ describe('parseParityTable', () => {
     );
     rejects((table) => (row(table, 'match-b').featureOff = 'no'), '"featureOff" must be a boolean');
     rejects(
+      (table) => delete row(table, 'match-b').inlineWrapped,
+      '"inlineWrapped" is present exactly on Defer JS rows'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').inlineWrapped = []),
+      '"inlineWrapped" is present exactly on Defer JS rows'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').inlineWrapped = ['x']),
+      'inlineWrapped "x" is not a subject'
+    );
+    rejects(
+      (table) => (row(table, 'match-b').inlineWrapped = ['w', 'w']),
+      '"inlineWrapped" repeats an id'
+    );
+    rejects(
       (table) => (row(table, 'match-a').hashed = []),
       '"hashed"/"rekeyed" are present exactly'
     );
@@ -363,7 +381,8 @@ describe('comparedFields', () => {
     expect(comparedFields({ kind: 'match', feature: 'defer_all_js' })).toEqual([
       'candidates',
       'excluded',
-      'featureOff'
+      'featureOff',
+      'inlineWrapped'
     ]);
     expect(comparedFields({ kind: 'match', feature: 'automatic_lazy_rendering' })).toEqual([
       'candidates',

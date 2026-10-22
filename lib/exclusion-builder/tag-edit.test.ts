@@ -186,4 +186,24 @@ describe('applyPatches', () => {
       ])
     ).toThrow(/overlap/i);
   });
+
+  it('equals splicing each patch from the end, for many mixed patches', () => {
+    const html = 'abcdefghij'.repeat(200_000);
+    // Every 4 000th offset: a replacement, a removal or a zero-width insertion.
+    const patches = Array.from({ length: 500 }, (_, index) => {
+      const start = index * 4000;
+      const kind = index % 3;
+      return {
+        start,
+        end: kind === 2 ? start : start + 10,
+        text: kind === 1 ? '' : `<${String(index)}>`
+      };
+    });
+    let spliced = html;
+    for (const patch of [...patches].reverse()) {
+      spliced = spliced.slice(0, patch.start) + patch.text + spliced.slice(patch.end);
+    }
+    expect(applyPatches(html, patches)).toBe(spliced);
+    expect(applyPatches(html, [...patches].reverse())).toBe(spliced);
+  });
 });
