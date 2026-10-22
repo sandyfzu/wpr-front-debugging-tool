@@ -815,6 +815,34 @@
   font-size: 11px;
 }
 
+/* Copy-all sits at the foot's far end; its failure line takes a full row. */
+.xo-lane-copy {
+  margin-left: auto;
+}
+
+.xo-lane-copy[data-copied],
+.xo-lane-copy[data-copied]:hover {
+  color: var(--status-ok);
+}
+
+.xo-copy-error {
+  flex-basis: 100%;
+}
+
+/* The selection-copy fallback's field: selectable, never seen or hit. */
+.xo-copy-buffer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  resize: none;
+}
+
 /* ---- Footer ------------------------------------------------------------------- */
 
 .xo-footer {

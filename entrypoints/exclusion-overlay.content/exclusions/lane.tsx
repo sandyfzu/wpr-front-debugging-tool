@@ -5,7 +5,8 @@
  * the page, rows unused under the disable). Row keyboard model: Enter adds
  * a row below, Backspace on an empty row removes it, ArrowUp/ArrowDown move
  * between rows, a multi-line paste splits into rows; leaving a row trims it
- * the way WP Rocket's settings save does (never while typing).
+ * the way WP Rocket's settings save does (never while typing). The foot holds
+ * Add row and the lane's copy-all control.
  */
 import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 'solid-js';
 import Plus from 'lucide-solid/icons/plus';
@@ -18,8 +19,11 @@ import {
 } from '../../../components/ui/virtual-list';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import { EXCLUSION_SET_LIMITS } from '../../../lib/messaging/exclusion-session';
+import { createLogger } from '../../../lib/logger';
+import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
 import { LANE_COPY } from '../copy';
 import type { OverlayController } from '../controller';
+import { CopyAll } from './copy-all';
 import { laneCounts, rowMatches } from './counts';
 import { laneFeature, type DraftRow, type LaneKey, type RowSelection } from './draft';
 
@@ -35,6 +39,9 @@ const FOCUS_FRAMES = 12;
 /** Rows a lane shows without its own scroller (one page scroller holds them). */
 const INLINE_ROWS = 8;
 
+/** Records clipboard paths that failed (the control itself tells the user). */
+const log = createLogger('exclusion-overlay');
+
 /** Props of {@link Lane}. */
 export interface LaneProps {
   readonly lane: LaneKey;
@@ -47,6 +54,10 @@ export interface LaneProps {
   readonly requestFrame: (run: () => void) => void;
   /** Whether controls are locked (an action is in flight). */
   readonly locked: boolean;
+  /** Polite announcement in the overlay's live region. */
+  readonly announce: (text: string) => void;
+  /** The clipboard seam (tests); defaults to the page's clipboard paths. */
+  readonly writeClipboard?: ClipboardWriter | undefined;
   /** The virtualizer seam (tests). */
   readonly createVirtualizer?: VirtualizerFactory | undefined;
 }
@@ -274,6 +285,17 @@ export function Lane(props: LaneProps): JSX.Element {
             {`${String(EXCLUSION_SET_LIMITS.rowsPerFeature)} rows is the most a lane holds.`}
           </span>
         </Show>
+        <CopyAll
+          lane={props.lane}
+          rows={rows().map((row) => row.text)}
+          announce={props.announce}
+          write={
+            props.writeClipboard ??
+            pageClipboardWriter(window, (message, cause) => {
+              log.warn(message, cause);
+            })
+          }
+        />
       </div>
     </section>
   );

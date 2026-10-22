@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INTERCEPTION_UNAVAILABLE_CAUSES } from '../../lib/messaging/exclusion-session';
 import {
+  COPY_ALL_COPY,
   DOCUMENT_FAILURE_COPY,
   LANE_COPY,
   PROBLEM_COPY,
@@ -20,7 +21,14 @@ function allWords(): string[] {
     ...Object.values(DOCUMENT_FAILURE_COPY),
     ...Object.values(PROBLEM_COPY),
     // Placeholders are sample row text, not sentences.
-    ...Object.values(LANE_COPY).flatMap((copy) => [copy.label, copy.rowHint, copy.absent])
+    ...Object.values(LANE_COPY).flatMap((copy) => [
+      copy.label,
+      copy.rowHint,
+      copy.absent,
+      copy.copyHint
+    ]),
+    COPY_ALL_COPY.empty,
+    COPY_ALL_COPY.failed
   ];
 }
 
@@ -130,5 +138,20 @@ describe('saveStateWords', () => {
       // Changed in audit round 1: its own clause, no longer a lower-cased sentence.
       'Draft not saved: the extension took too long to answer'
     );
+  });
+});
+
+describe('copy-all words', () => {
+  it('names the control per lane and counts what was copied', () => {
+    expect(COPY_ALL_COPY.name(LANE_COPY.delayJs.label)).toBe(
+      `Copy all ${LANE_COPY.delayJs.label} exclusions`
+    );
+    expect(COPY_ALL_COPY.copied(1)).toBe('Copied 1 exclusion');
+    expect(COPY_ALL_COPY.copied(12)).toBe('Copied 12 exclusions');
+  });
+
+  it('tells the lane without a settings field where its lines go', () => {
+    expect(LANE_COPY.lazyRender.copyHint).toMatch(/rocket_lrc_exclusions/);
+    expect(LANE_COPY.delayJs.copyHint).toMatch(/one per line/i);
   });
 });

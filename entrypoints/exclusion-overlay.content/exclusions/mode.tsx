@@ -158,6 +158,9 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
             pageCount={shell.page.scanned() ? (pageCounts().get(lane) ?? 0) : null}
             requestFrame={shell.requestFrame}
             locked={held()}
+            announce={(text) => {
+              shell.announce(text);
+            }}
             createVirtualizer={shell.createVirtualizer}
           />
         )}

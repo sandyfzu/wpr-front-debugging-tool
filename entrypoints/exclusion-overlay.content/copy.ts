@@ -37,7 +37,13 @@ export interface LaneCopy {
   readonly noun: string;
   /** Shown when the page has nothing this lane can act on. */
   readonly absent: string;
+  /** Where the lane's copied lines go (the copy-all control's hint). */
+  readonly copyHint: string;
 }
+
+/** The settings-field hint shared by the lanes WP Rocket has a field for. */
+const FIELD_COPY_HINT =
+  'Copies the exclusions one per line, as WP Rocket’s exclusion field takes them';
 
 /** The lanes' words. */
 export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
@@ -46,30 +52,60 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
     rowHint: 'Regular expression, matched against the delayed script’s markup',
     placeholder: 'wp-content/plugins/slider/',
     noun: 'delayed scripts',
-    absent: 'No delayed scripts on this page.'
+    absent: 'No delayed scripts on this page.',
+    copyHint: FIELD_COPY_HINT
   },
   deferJs: {
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
     rowHint: 'Regular expression, matched against the script URL',
     placeholder: 'jquery\\.min\\.js',
     noun: 'deferred scripts',
-    absent: 'No deferred scripts on this page.'
+    absent: 'No deferred scripts on this page.',
+    copyHint: FIELD_COPY_HINT
   },
   lazyRender: {
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
     rowHint: 'Text, matched against the element’s opening tag',
     placeholder: 'id="footer"',
     noun: 'lazily rendered elements',
-    absent: 'No lazily rendered elements on this page.'
+    absent: 'No lazily rendered elements on this page.',
+    copyHint:
+      'Copies the exclusions one per line; WP Rocket takes these through the rocket_lrc_exclusions filter, not a settings field'
   },
   lazyload: {
     label: LABEL_IMAGE_LAZYLOAD,
     rowHint: 'Text, matched against the image tag with its real source',
     placeholder: 'hero.jpg',
     noun: 'lazy images',
-    absent: 'No lazy images on this page.'
+    absent: 'No lazy images on this page.',
+    copyHint: FIELD_COPY_HINT
   }
 };
+
+/** The per-lane copy-all control's words. */
+export const COPY_ALL_COPY = {
+  label: 'Copy all',
+  /** The visible label while the confirmation shows. */
+  copiedLabel: 'Copied',
+  /**
+   * The control's accessible name (stable across the confirmation).
+   *
+   * @param lane The lane's label.
+   */
+  name: (lane: string): string => `Copy all ${lane} exclusions`,
+  /**
+   * The success announcement.
+   *
+   * @param count Exclusions copied (≥ 1).
+   */
+  copied: (count: number): string =>
+    `Copied ${String(count)} ${count === 1 ? 'exclusion' : 'exclusions'}`,
+  /** Why the control does nothing on an empty lane. */
+  empty: 'Nothing to copy yet: add an exclusion to this lane first.',
+  /** A refused copy, with the way forward. */
+  failed:
+    'Copy failed: this page refused clipboard access. Select Copy all again, or copy each row from its field.'
+} as const;
 
 /** The feature names by engine id (report → words). */
 export const FEATURE_NAMES: Readonly<Record<ExclusionFeatureId, string>> = {

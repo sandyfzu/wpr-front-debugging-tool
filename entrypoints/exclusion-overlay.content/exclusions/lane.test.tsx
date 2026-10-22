@@ -1,11 +1,13 @@
 import { createSignal } from 'solid-js';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { COPIED_FLASH_MS } from '../../../components/ui/copy-flash';
 import type { TransformReport } from '../../../lib/exclusion-builder/report';
 import type { ExclusionSessionStatus } from '../../../lib/messaging/exclusion-session';
 import type { VirtualizerFactory } from '../../../components/ui/virtual-list';
 import { createOverlayController, type OverlayController } from '../controller';
 import type { ExclusionSessionPort, PortOutcome } from '../session/port';
+import type { ClipboardWrite, ClipboardWriter } from '../clipboard';
 import { Lane } from './lane';
 
 /** Renders every row (happy-dom has no layout). */
@@ -54,9 +56,14 @@ async function readyController(): Promise<OverlayController> {
   return controller;
 }
 
-/** Render the Delay JS lane. */
-function mountLane(controller: OverlayController, report?: TransformReport) {
+/** Render the Delay JS lane (its clipboard and live region faked). */
+function mountLane(
+  controller: OverlayController,
+  report?: TransformReport,
+  write: ClipboardWriter = () => Promise.resolve('copied')
+) {
   const [locked, setLocked] = createSignal(false);
+  const announce = vi.fn<(text: string) => void>();
   render(() => (
     <Lane
       lane="delayJs"
@@ -67,11 +74,16 @@ function mountLane(controller: OverlayController, report?: TransformReport) {
         run();
       }}
       locked={locked()}
+      announce={announce}
+      writeClipboard={write}
       createVirtualizer={everyRow}
     />
   ));
-  return { setLocked };
+  return { setLocked, announce };
 }
+
+const copyAll = (): HTMLButtonElement =>
+  screen.getByRole('button', { name: 'Copy all Delay JavaScript execution exclusions' });
 
 const input = (n: number): HTMLInputElement =>
   screen.getByRole('textbox', {
@@ -223,6 +235,7 @@ describe('Lane', () => {
           run();
         }}
         locked={false}
+        announce={vi.fn()}
         createVirtualizer={twoRows}
       />
     ));
@@ -250,6 +263,7 @@ describe('Lane', () => {
         // Frames never run: the move to row 3 stays pending.
         requestFrame={() => undefined}
         locked={false}
+        announce={vi.fn()}
         createVirtualizer={twoRows}
       />
     ));
@@ -260,5 +274,99 @@ describe('Lane', () => {
     // ...so Down goes from row 1 (a kept target would aim at row 4).
     fireEvent.keyDown(input(1), { key: 'ArrowDown' });
     expect(document.activeElement).toBe(input(2));
+  });
+});
+
+describe('Lane copy-all', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('copies the lane as the settings field takes it: trimmed, one per line, blanks left out', async () => {
+    const controller = await readyController();
+    vi.useFakeTimers();
+    controller.insertRows('delayJs', [' gtag ', '', '\tjquery\\.min\\.js', 'a b'], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write);
+    expect(copyAll().getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(copyAll());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toBe('gtag\njquery\\.min\\.js\na b');
+    expect(announce).toHaveBeenCalledWith('Copied 3 exclusions');
+    expect(copyAll().textContent).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(COPIED_FLASH_MS);
+    expect(copyAll().textContent).toBe('Copy all');
+  });
+
+  it('stays focusable but inert on an empty lane, and says why', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['   '], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { announce } = mountLane(controller, undefined, write);
+    expect(copyAll().getAttribute('aria-disabled')).toBe('true');
+    expect(copyAll().getAttribute('title')).toMatch(/Nothing to copy/);
+    const hint = document.getElementById(copyAll().getAttribute('aria-describedby') ?? '');
+    expect(hint?.textContent).toMatch(/Nothing to copy/);
+    fireEvent.click(copyAll());
+    await Promise.resolve();
+    expect(write).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledWith(
+      'Nothing to copy yet: add an exclusion to this lane first.'
+    );
+  });
+
+  it('shows and announces a refused copy until the next attempt', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag'], null);
+    let answer: ClipboardWrite = 'failed';
+    const { announce } = mountLane(controller, undefined, () => Promise.resolve(answer));
+    expect(copyAll().getAttribute('title')).toMatch(/one per line/);
+    fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(screen.getByText(/^Copy failed: this page refused clipboard access/)).toBeTruthy();
+    });
+    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Copy failed/));
+    answer = 'copied';
+    fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(screen.queryByText(/^Copy failed/)).toBeNull();
+    });
+    expect(announce).toHaveBeenLastCalledWith('Copied 1 exclusion');
+  });
+
+  it('ignores clicks while a copy is in flight, and reads a rejecting writer as a failure', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag'], null);
+    let reject: (cause: Error) => void = () => undefined;
+    const write = vi.fn<ClipboardWriter>(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        })
+    );
+    const { announce } = mountLane(controller, undefined, write);
+    fireEvent.click(copyAll());
+    expect(copyAll().getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(copyAll());
+    expect(write).toHaveBeenCalledTimes(1);
+    reject(new Error('broken writer'));
+    await waitFor(() => {
+      expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Copy failed/));
+    });
+    expect(copyAll().getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('copies while the editor is locked (copying never edits)', async () => {
+    const controller = await readyController();
+    controller.insertRows('delayJs', ['gtag'], null);
+    const write = vi.fn<ClipboardWriter>(() => Promise.resolve('copied'));
+    const { setLocked } = mountLane(controller, undefined, write);
+    setLocked(true);
+    fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(write).toHaveBeenCalledWith('gtag', expect.any(HTMLElement));
+    });
   });
 });
