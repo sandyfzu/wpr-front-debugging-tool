@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { analyzeRow, emitRow, isEmitted, saveRejection, toByteString } from './translate';
+import { analyzeRow, emitRow, isEmitted, saveOutcome, toByteString } from './translate';
 
 const D = 'delay_js';
 const F = 'defer_all_js';
@@ -485,6 +485,101 @@ const MATCH_CASES: readonly (readonly [
       ['foo\nbar', false],
       ['foo x bar', true]
     ]
+  ],
+  // Fix round: caseless `[:lower:]`/`[:upper:]` mean `[:alpha:]` (negated too),
+  // `\N{2}` repeats `\N`, `\E` is transparent to a lazy suffix, `(?J)` is a no-op.
+  [
+    F,
+    '^[[:^lower:]]$',
+    [
+      ['a', false],
+      ['A', false],
+      ['z', false],
+      ['Z', false],
+      ['1', true],
+      ['-', true]
+    ]
+  ],
+  [
+    F,
+    '^[^[:^lower:]]$',
+    [
+      ['a', true],
+      ['A', true],
+      ['z', true],
+      ['Z', true],
+      ['1', false],
+      ['-', false]
+    ]
+  ],
+  [
+    D,
+    '^[[:^upper:]]$',
+    [
+      ['a', false],
+      ['A', false],
+      ['z', false],
+      ['Z', false],
+      ['1', true],
+      ['-', true]
+    ]
+  ],
+  [
+    D,
+    '^[^[:^upper:]0-9]$',
+    [
+      ['a', true],
+      ['A', true],
+      ['Z', true],
+      ['1', false],
+      ['-', false]
+    ]
+  ],
+  [
+    F,
+    '^[[:lower:]]$',
+    [
+      ['a', true],
+      ['A', true],
+      ['Z', true],
+      ['1', false]
+    ]
+  ],
+  [
+    F,
+    '^a\\N{2}b$',
+    [
+      ['axyb', true],
+      ['axb', false],
+      ['a\n\nb', false]
+    ]
+  ],
+  [
+    F,
+    '^a{2,}\\E?$',
+    [
+      ['aa', true],
+      ['aaa', true],
+      ['aa?', false]
+    ]
+  ],
+  [
+    F,
+    '(?J)(?<n>a)b',
+    [
+      ['ab', true],
+      ['AB', true],
+      ['b', false]
+    ]
+  ],
+  [
+    F,
+    '(?<=ab|c)x',
+    [
+      ['abx', true],
+      ['cx', true],
+      ['bx', false]
+    ]
   ]
 ];
 
@@ -549,7 +644,11 @@ describe('emitRow: JS over the byte string matches exactly when PCRE does', () =
     ['(é)\\1', 'caseless back-reference to non-ASCII text'],
     ['(.)\\1', 'caseless back-reference to non-ASCII text'],
     ['(?<=(a))b', 'lookbehind holding a group, back-reference or \\K'],
-    ['(?<=a\\K)b', 'lookbehind holding a group, back-reference or \\K']
+    ['(?<=a\\K)b', 'lookbehind holding a group, back-reference or \\K'],
+    // `\R` spans 1–2 bytes: `(?<=\R)[^a]` matches "\r\n" in PCRE only.
+    ['(?<=\\R)x', 'variable-length lookbehind'],
+    // PCRE scans a variable branch forwards: `-(?<!$\n?)` differs on "dummy-string".
+    ['-(?<!$\\n?)', 'variable-length lookbehind']
   ])('fails closed on %s (%s)', (row, detail) => {
     const emitted = emitRow(F, row);
     expect(isEmitted(emitted) ? null : emitted.detail).toBe(detail);
@@ -575,10 +674,10 @@ const fixturePath = join(
   'wp-rocket-parity.fixtures.json'
 );
 
-describe('saveRejection: rows WP Rocket drops at save', () => {
+describe('saveOutcome: what WP Rocket’s settings save does with a row', () => {
   // The stored forms of every typed line the K.2 save fixtures drop as
   // `invalid-pattern` (the save's sanitizing steps applied by hand), plus
-  // shapes observed failing on PCRE2 10.44 and 10.49.
+  // shapes observed failing on both PCRE2 10.44 and 10.49.
   it.each([
     ['(?#c)', '(?\\'],
     ['\\i', '\\i'],
@@ -612,8 +711,6 @@ describe('saveRejection: rows WP Rocket drops at save', () => {
     ['\\E*', '*'],
     ['a{3,2}', '{3,2}'],
     ['a{65536}', '{65536}'],
-    ['\\x', '\\x'],
-    ['\\xZ', '\\x'],
     ['\\x{}', '\\x{}'],
     ['\\x{41', '\\x{41'],
     ['\\o', '\\o'],
@@ -651,14 +748,18 @@ describe('saveRejection: rows WP Rocket drops at save', () => {
     ['[\\N]', '\\N'],
     ['[\\400]', '\\400'],
     ['(?<=a+)b', '(?<=a+)'],
-    ['(?<=a{0,256})b', '(?<=a{0,256})']
-  ])('%s is rejected (%s)', (row, construct) => {
-    expect(saveRejection(row)?.construct).toBe(construct);
+    ['(?<=a{0,256})b', '(?<=a{0,256})'],
+    // Option letters PCRE2 rejects (a `?ver` row the Delay escape would fix at runtime).
+    ['jquery.js(?ver=3.7)', '(?ver='],
+    ['(?Q)', '(?Q)'],
+    ['\\p', '\\p'],
+    ['(?<=j++k)', '(?<=j++k)']
+  ])('%s is dropped (%s)', (row, construct) => {
+    expect(saveOutcome(row)).toMatchObject({ outcome: 'dropped', construct });
   });
 
   it.each([
     ['(?a)'],
-    ['(?+1)(x)'],
     ['\\1(a)'],
     ['a{,2}'],
     ['a{x}'],
@@ -670,22 +771,35 @@ describe('saveRejection: rows WP Rocket drops at save', () => {
     ['[[:alpha]'],
     ['[[:a]b:]]'],
     ['(?J)(?<n>a)(?<n>b)'],
-    ['(?|(?<n>a)|(?<n>b))'],
     ['(?<=\\R)x'],
     ['(?<=a{0,255})x'],
+    ['(?<=a{256})x'],
     ['a\\E*'],
     ['a{2,}\\E?'],
-    ['a\0b'],
-    // Unknown to this parser: kept rather than claimed (fail closed).
-    ['(?Q)'],
     ['a{ 2 }'],
-    ['\\p'],
-    ['(?R)']
+    ['[\\E]a]']
   ])('%s is kept', (row) => {
-    expect(saveRejection(row)).toBeNull();
+    expect(saveOutcome(row)).toEqual({ outcome: 'kept' });
   });
 
-  it('keeps every row the K.2 save fixtures store', () => {
+  it.each([
+    // Version-dependent: `\x` alone is NUL on PCRE2 10.44, an error on 10.49.
+    ['\\x', '\\x'],
+    ['\\xZ', '\\x'],
+    // Validity not modeled (recursion can loop forever; unknown property names; …).
+    ['(?R)', '(?R)'],
+    ['(?+1)(x)', '(?+1)'],
+    ['\\p{Xx}', '\\p{Xx}'],
+    ['(?|(?<n>a)|(?<n>b))', '(?<n>'],
+    ['(?x)a #', '(?x)'],
+    ['a\0b', '\\0'],
+    // Past an unknown construct the parse is not trusted: no later claim.
+    ['[\\g](', '\\g']
+  ])('%s is unknown (%s)', (row, construct) => {
+    expect(saveOutcome(row)).toMatchObject({ outcome: 'unknown', construct });
+  });
+
+  it('keeps every row the K.2 save fixtures store, except one it cannot model', () => {
     const table = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
       rows: { kind: string; feature: string; stored?: string[] }[];
     };
@@ -693,24 +807,39 @@ describe('saveRejection: rows WP Rocket drops at save', () => {
       row.kind === 'save' && row.feature !== 'lazyload' ? (row.stored ?? []) : []
     );
     expect(stored.length).toBeGreaterThan(50);
-    expect(stored.filter((row) => saveRejection(row) !== null)).toEqual([]);
+    const notKept = stored.filter((row) => saveOutcome(row).outcome !== 'kept');
+    expect([...new Set(notKept)]).toEqual(['(?+1)(x)']);
   });
 });
 
 describe('analyzeRow', () => {
   it('reports the facts the joined checks need', () => {
     expect(analyzeRow(F, '(?s)(?<n>a)\\1')).toMatchObject({
-      invalidAtSave: null,
+      tooLong: false,
+      save: { outcome: 'kept' },
       pcreOnly: { construct: '(?s)', detail: 'option setting' },
       matchesAll: false,
       source: null,
       risk: null,
       topLevelOption: { construct: '(?s)', detail: 'option setting' },
       absoluteBackreference: { construct: '\\1', detail: 'numbered back-reference' },
-      names: ['n'],
-      allowsDuplicateNames: false,
+      names: [{ name: 'n', duplicatesAllowed: null }],
+      duplicatesAllowedAtEnd: null,
+      searchDependent: false,
       breaksJoin: false
     });
+    expect(analyzeRow(F, 'a\\K').searchDependent).toBe(true);
+    expect(analyzeRow(F, '\\Ga').searchDependent).toBe(true);
+  });
+
+  it('bounds a row by its bytes', () => {
+    const analysis = analyzeRow(F, 'a'.repeat(8193));
+    expect(analysis).toMatchObject({
+      tooLong: true,
+      save: { outcome: 'unknown', detail: 'longer than 8192 bytes' },
+      source: null
+    });
+    expect(analyzeRow(F, 'a'.repeat(8192)).tooLong).toBe(false);
   });
 
   it.each([

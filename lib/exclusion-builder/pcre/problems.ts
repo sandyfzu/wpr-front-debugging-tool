@@ -7,7 +7,8 @@
 
 /**
  * Why a regex row is not matched here the way WP Rocket matches it:
- * - `pcre-only` — PCRE syntax with no proven JS equivalent (not checked here);
+ * - `pcre-only` — PCRE syntax with no proven JS equivalent, or whose fate at
+ *   save is not modeled, or a row too long to check (not checked here);
  * - `pcre-invalid` — PCRE rejects the row (WP Rocket drops it at save);
  * - `match-all` — the row matches every subject;
  * - `joined-page-off` — Defer JS: with the other rows, WP Rocket's joined
@@ -25,9 +26,8 @@ export type ProblemId =
   | 'backtracking-risk';
 
 /**
- * Every problem id, most decisive first: when a row has several, it reports
- * the earliest (a row WP Rocket drops says so before anything about how it
- * would match).
+ * Every problem id, for validating authored data. (Which one a row reports
+ * when several apply is the translator's call, not this order.)
  */
 export const PROBLEM_IDS: readonly ProblemId[] = [
   'pcre-invalid',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
-import { regexRowProblems, translateRegexRows } from './rows';
+import { compileMatcher, regexRowProblems, translateRegexRows } from './rows';
 
 /** The problem id per row (`null` = none). */
 function problemIds(
@@ -13,7 +13,7 @@ function problemIds(
 describe('translateRegexRows', () => {
   it('translates clean rows into flagless matchers, with no problem', () => {
     const result = translateRegexRows('delay_js', ['jquery', 'a+b']);
-    expect(result.pageOff).toBe(false);
+    expect(result.page).toBe('on');
     expect(result.rows).toEqual([
       { row: 'jquery', matcher: { source: '[Jj][Qq][Uu][Ee][Rr][Yy]', flags: '' }, problem: null },
       { row: 'a+b', matcher: { source: '[Aa]\\x2b[Bb]', flags: '' }, problem: null }
@@ -21,7 +21,15 @@ describe('translateRegexRows', () => {
   });
 
   it('returns no rows for an empty set', () => {
-    expect(translateRegexRows('defer_all_js', [])).toEqual({ rows: [], pageOff: false });
+    expect(translateRegexRows('defer_all_js', [])).toEqual({ rows: [], page: 'on' });
+  });
+
+  it('compiles a matcher that encodes the subject itself', () => {
+    const [row] = translateRegexRows('defer_all_js', ['^/.\\.js$']).rows;
+    if (row?.matcher == null) throw new Error('no matcher');
+    const test = compileMatcher(row.matcher);
+    // `é` is two bytes: PCRE's `.` (no UTF) sees one of them.
+    expect([test('/a.js'), test('/é.js'), test('/A.JS')]).toEqual([true, false, true]);
   });
 
   it('keeps the matcher of a match-all row (it really matches everything)', () => {
@@ -49,12 +57,14 @@ describe('translateRegexRows', () => {
     expect(invalid?.problem).toEqual({
       problem: 'pcre-invalid',
       construct: '\\i',
-      reason: 'WP Rocket drops this row when saving: PCRE rejects `\\i` (unrecognized escape \\i)'
+      reason:
+        'WP Rocket drops this row when saving: PCRE rejects `\\i` (unrecognized escape \\i); added through a filter, it never matches'
     });
     expect(only?.problem).toEqual({
       problem: 'pcre-only',
       construct: '\\p{L}',
-      reason: 'PCRE-only syntax: `\\p{L}` (Unicode property) — not checked here'
+      reason:
+        'PCRE-only syntax: `\\p{L}` (Unicode property) — not checked here, and WP Rocket may drop this row when saving'
     });
     expect(risky?.problem).toEqual({
       problem: 'backtracking-risk',
@@ -63,11 +73,36 @@ describe('translateRegexRows', () => {
     });
   });
 
-  it('reports a row PCRE rejects only at runtime as PCRE-only (Delay escapes `+`)', () => {
-    // Valid at save; the runtime `+` escape turns `(?+1)` into `(?\+1)`.
+  it('words a Defer row WP Rocket drops by its live effect', () => {
+    const [row] = translateRegexRows('defer_all_js', ['(']).rows;
+    expect(row?.problem?.reason).toBe(
+      'WP Rocket drops this row when saving: PCRE rejects `(` (missing closing parenthesis); added through a filter, it turns Defer JS off on the page'
+    );
+  });
+
+  it('claims nothing about storing a row whose save is not modeled', () => {
+    // Subroutine calls can recurse forever: `(?+1)(x)` is not modeled (WP Rocket keeps it,
+    // and Delay's `+` escape then breaks it at runtime).
     const [row] = translateRegexRows('delay_js', ['(?+1)(x)']).rows;
-    expect(row?.problem?.problem).toBe('pcre-only');
-    expect(row?.problem?.construct).toBe('(?\\');
+    expect(row?.problem).toMatchObject({ problem: 'pcre-only', construct: '(?+1)' });
+    // `(?R)*?` would match every script, but PHP drops it at save: no `match-all`
+    // claim. (`[\E]*?` is modeled: `\E` vanishes, so the class never closes.)
+    expect(problemIds('defer_all_js', ['(?R)*?', '[\\E]*?'])).toEqual([
+      'pcre-only',
+      'pcre-invalid'
+    ]);
+  });
+
+  it('reports a too-long row in terms of the row', () => {
+    const [long, nested] = translateRegexRows('defer_all_js', [
+      'a'.repeat(9000),
+      'a'.repeat(1500)
+    ]).rows;
+    expect(long?.problem?.reason).toBe('This row is too long to check here (over 8192 bytes)');
+    // 1 500 letters fit, but their translation (`[Aa]` each) is past the backtracking guard's cap.
+    expect(nested?.problem?.reason).toBe(
+      'This row is too long or too deeply nested to check for slow matching — shorten it'
+    );
   });
 
   it('reports one problem per row, the most decisive', () => {
@@ -108,7 +143,7 @@ describe('Defer JS joined checks', () => {
     [['dummy-s(?<n>tring)'], [true]]
   ])('%j consumes all of dummy-string: WP Rocket defers nothing', (rows, off) => {
     const result = translateRegexRows('defer_all_js', rows);
-    expect(result.pageOff).toBe(true);
+    expect(result.page).toBe('off');
     expect(result.rows.map((row) => row.problem?.problem === 'joined-page-off')).toEqual(off);
   });
 
@@ -124,7 +159,7 @@ describe('Defer JS joined checks', () => {
     ['zzz|'],
     ['.{13}']
   ])('%s leaves part of dummy-string: the pre-check passes', (row) => {
-    expect(translateRegexRows('defer_all_js', [row]).pageOff).toBe(false);
+    expect(translateRegexRows('defer_all_js', [row]).page).toBe('on');
   });
 
   it('turns the page off when two rows declare the same group name', () => {
@@ -133,12 +168,21 @@ describe('Defer JS joined checks', () => {
       'joined-page-off',
       null
     ]);
-    expect(translateRegexRows('defer_all_js', ['(?<n>a)x', '(?P<n>b)y']).pageOff).toBe(true);
+    expect(translateRegexRows('defer_all_js', ['(?<n>a)x', '(?P<n>b)y']).page).toBe('off');
   });
 
-  it('allows repeated names once a row permits duplicates', () => {
-    expect(translateRegexRows('defer_all_js', ['(?J)(?<n>a)', '(?<n>b)']).pageOff).toBe(false);
-    expect(translateRegexRows('defer_all_js', ['(?|(?<n>a)|(?<n>b))', 'c']).pageOff).toBe(false);
+  it.each([
+    // Observed in PHP: a later `(?J)` or a branch reset licenses nothing across rows.
+    [['(?<n>a)', '(?<n>b)', '(?|x)'], 'off'],
+    [['(?<n>a)', '(?<n>b)', '(?J)x'], 'off'],
+    [['(?|(?<n>a)|(?<n>b))', '(?<n>c)'], 'off'],
+    // `J` left on at a row's top level leaks forward through the wrapper group.
+    [['(?<n>a)', '(?J)x', '(?<n>b)'], 'on'],
+    [['(?J)(?<n>a)', '(?<n>b)'], 'on'],
+    [['(?J:(?<n>a))', '(?<n>b)'], 'off'],
+    [['(?J)(?<n>a)', '(?-J)(?<n>b)'], 'off']
+  ])('%j: repeated names → page %s', (rows, page) => {
+    expect(translateRegexRows('defer_all_js', rows).page).toBe(page);
   });
 
   it('turns the page off for a row whose \\Q quotes the joined wrapper', () => {
@@ -147,10 +191,38 @@ describe('Defer JS joined checks', () => {
     expect(problemIds('delay_js', ['a\\Qb'])).toEqual([null]);
   });
 
-  it('claims no page-off while a row is dropped at save, PCRE-only or risky', () => {
-    expect(translateRegexRows('defer_all_js', ['(', '.*']).pageOff).toBe(false);
-    expect(translateRegexRows('defer_all_js', ['(?>x)', '.*']).pageOff).toBe(false);
-    expect(translateRegexRows('defer_all_js', ['(a+)+$', '.*']).pageOff).toBe(false);
+  it('turns the page off for a stored row PCRE rejects, and checks the kept rows', () => {
+    // Fixture `match-defer-bad-row`: a filter-delivered `(` breaks the joined pattern.
+    expect(translateRegexRows('defer_all_js', ['(', 'a.js'])).toMatchObject({
+      page: 'off',
+      rows: [{ problem: { problem: 'pcre-invalid' } }, { problem: null }]
+    });
+    expect(problemIds('defer_all_js', ['(', 'dummy-string'])).toEqual([
+      'pcre-invalid',
+      'joined-page-off'
+    ]);
+    expect(problemIds('defer_all_js', ['(?<n>a)', '(?<n>b)', '('])).toEqual([
+      'joined-page-off',
+      'joined-page-off',
+      'pcre-invalid'
+    ]);
+  });
+
+  it('says unknown when a row cannot be replayed exactly', () => {
+    for (const rows of [
+      ['(?>x)', '.*'],
+      ['(a+)+$', 'zzz'],
+      ['(a)\\1', 'zzz'],
+      ['(?-i)zzz', 'a'],
+      ['(?R)', 'a']
+    ]) {
+      expect({ rows, page: translateRegexRows('defer_all_js', rows).page }).toEqual({
+        rows,
+        page: 'unknown'
+      });
+    }
+    // Off evidence still wins over an unknown row.
+    expect(translateRegexRows('defer_all_js', ['(?>x)', '(?<n>a)', '(?<n>b)']).page).toBe('off');
   });
 
   it('flags an unscoped option leaking into later rows, not from the last row', () => {
@@ -176,7 +248,7 @@ describe('Defer JS joined checks', () => {
 
   it('runs no joined check on Delay JS rows (each runs alone)', () => {
     expect(problemIds('delay_js', ['(a)\\1', '(?-i)zzz', 'b'])).toEqual([null, 'pcre-only', null]);
-    expect(translateRegexRows('delay_js', ['.*', '(?<n>a)', '(?<n>b)']).pageOff).toBe(false);
+    expect(translateRegexRows('delay_js', ['.*', '(?<n>a)', '(?<n>b)']).page).toBe('on');
   });
 
   it('reasons name the joined effect', () => {
@@ -191,6 +263,27 @@ describe('Defer JS joined checks', () => {
     expect(off?.problem?.reason).toBe(
       'Joined with the other rows, WP Rocket’s Defer JS check fails on this row: it would defer no script on the page'
     );
+  });
+});
+
+describe('work bounds', () => {
+  it('answers unknown once the dummy-string replay passes its execution budget', () => {
+    // Each row only ever matches empty: the non-empty retry tries every row at
+    // every position — 13 × 16 000 executions, past the 200 000 budget.
+    const rows: string[] = Array.from({ length: 16_000 }, () => 'x*');
+    expect(translateRegexRows('defer_all_js', rows).page).toBe('unknown');
+  });
+
+  it('smoke: a wire-cap-sized set (500 rows, 64 KiB) translates far inside the prevalidation bound', () => {
+    // Wall clock is not the gate (the byte and execution bounds are): this only
+    // catches a gross regression. Measured ≈ 20–40 ms on the development machine.
+    const rows = Array.from({ length: 500 }, (_, i) =>
+      `é${String(i)}`.padEnd(131, 'éàü€[a-z]x*').slice(0, 131)
+    );
+    const started = performance.now();
+    translateRegexRows('defer_all_js', rows);
+    translateRegexRows('delay_js', rows);
+    expect(performance.now() - started).toBeLessThan(1_600);
   });
 });
 

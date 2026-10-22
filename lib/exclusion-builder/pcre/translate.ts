@@ -14,18 +14,34 @@
  * never used — letters are expanded in the sets (`a` → `[Aa]`) instead.
  */
 import { regexBacktrackingRisk, type BacktrackingRisk } from '../regex-risk';
+import type { ExclusionFeatureId } from '../set';
 import { intersects, byteRanges, setSource, unionOf, type ByteSet } from './byte-set';
 import {
   parsePcre,
+  sequenceLength,
   type Assertion,
   type GroupKind,
-  type ParseIssue,
+  type NameDeclaration,
   type ParsedPattern,
   type PatternNode
 } from './parse';
 
+/**
+ * The translator's work bounds, declared once. Parsing and emission are
+ * linear in a row's bytes, so capping the bytes caps a row's work (the
+ * wire caps a row at 2 048 characters — at most 6 144 UTF-8 bytes); the
+ * Defer pre-check replay is capped in regex executions. Past a bound the
+ * answer is "not checked here", never a guess.
+ */
+export const PCRE_LIMITS = {
+  /** UTF-8 bytes of one row. */
+  rowBytes: 8_192,
+  /** Regex executions of one `dummy-string` replay (a 500-row set needs ~13 000). */
+  replayExecs: 200_000
+} as const;
+
 /** The features whose rows are PCRE patterns. */
-export type RegexFeatureId = 'delay_js' | 'defer_all_js';
+export type RegexFeatureId = Extract<ExclusionFeatureId, 'delay_js' | 'defer_all_js'>;
 
 /** One PCRE construct the translator reports, named for the row note. */
 export interface PcreConstruct {
@@ -37,9 +53,15 @@ export interface PcreConstruct {
 
 /** Everything learned about one row on its own (no set context). */
 export interface RowAnalysis {
-  /** WP Rocket's save drops the row: PCRE rejects it (its `#…#` check, no `i`). */
-  readonly invalidAtSave: PcreConstruct | null;
-  /** A construct with no proven JS equivalent at runtime (or one PCRE rejects only there). */
+  /** The row is longer than {@link PCRE_LIMITS}`.rowBytes`: nothing else was analyzed. */
+  readonly tooLong: boolean;
+  /** What WP Rocket's settings save does with the row (its `#…#` check, no `i`). */
+  readonly save: SaveOutcome;
+  /**
+   * Why the runtime pattern has no proven JS translation: a PCRE-only or
+   * unmodeled construct, or one PCRE rejects only at runtime (Delay's `+`
+   * escape can break a row the save accepted).
+   */
   readonly pcreOnly: PcreConstruct | null;
   /** The row can match the empty string at any position: it matches every subject. */
   readonly matchesAll: boolean;
@@ -51,13 +73,23 @@ export interface RowAnalysis {
   readonly topLevelOption: PcreConstruct | null;
   /** Defer joining: a numbered absolute back-reference (the joined wrapper group shifts it). */
   readonly absoluteBackreference: PcreConstruct | null;
-  /** Group names the row declares. */
-  readonly names: readonly string[];
-  /** The row may repeat a group name (`(?J)` / branch reset), so joining it cannot clash. */
-  readonly allowsDuplicateNames: boolean;
+  /** Group names the row declares, with the `J` (duplicate names) state at each. */
+  readonly names: readonly NameDeclaration[];
+  /** The top-level `J` state the row leaves behind (`null` = never set). */
+  readonly duplicatesAllowedAtEnd: boolean | null;
+  /** `\G` or `\K`: the `preg_replace` replay needs a per-offset source (see {@link EmitOptions}). */
+  readonly searchDependent: boolean;
   /** Defer joining: a `\Q` left open quotes the wrapper's `)`, so the joined pattern cannot compile. */
   readonly breaksJoin: boolean;
 }
+
+/**
+ * What the settings save does with a row: `kept`, `dropped` (PCRE rejects
+ * it — observed on PCRE2 10.44 and 10.49), or `unknown` (its validity is
+ * not modeled, or differs between those versions).
+ */
+export type SaveOutcome =
+  { readonly outcome: 'kept' } | ({ readonly outcome: 'dropped' | 'unknown' } & PcreConstruct);
 
 /** How the JS source is emitted. */
 export interface EmitOptions {
@@ -152,27 +184,30 @@ function delimiterProblem(pattern: string): PcreConstruct | null {
   return null;
 }
 
-/** The first issue of a kind, as a construct named in text. */
-function firstIssue(issues: readonly ParseIssue[], kind: ParseIssue['kind']): PcreConstruct | null {
-  const issue = issues.find((candidate) => candidate.kind === kind);
-  return issue === undefined
-    ? null
-    : { construct: fromByteString(issue.construct), detail: issue.detail };
-}
-
 /**
- * Whether WP Rocket's save drops the row: its validation compiles
+ * What WP Rocket's settings save does with a row: its validation compiles
  * `#row#` (`#` escaped, no `i`) and removes rows PCRE rejects. Only
- * rejections proven on PCRE2 are claimed; anything unknown is kept.
+ * rejections observed on both reference PCRE2 versions are claimed;
+ * syntax whose validity is not modeled is `unknown`, never `kept`.
  *
  * @param row A stored-form row (text).
- * @returns The rejected construct, or `null` when the row is kept.
  */
-export function saveRejection(row: string): PcreConstruct | null {
+export function saveOutcome(row: string): SaveOutcome {
   const pattern = applyEscapes(toByteString(row), SAVE_ESCAPES);
   const delimiter = delimiterProblem(pattern);
-  if (delimiter !== null) return delimiter.construct === '\\0' ? null : delimiter;
-  return firstIssue(parsePcre(pattern, false).issues, 'invalid');
+  if (delimiter !== null) {
+    return { outcome: delimiter.construct === '\\0' ? 'unknown' : 'dropped', ...delimiter };
+  }
+  const parsed = parsePcre(pattern, false);
+  // Issues are in source order: past an unknown construct the parse is no
+  // longer trusted, so only an invalid one before it proves a drop.
+  const first = parsed.issues.find((issue) => issue.kind !== 'untranslated');
+  if (first === undefined) return { outcome: 'kept' };
+  return {
+    outcome: first.kind === 'invalid' ? 'dropped' : 'unknown',
+    construct: fromByteString(first.construct),
+    detail: first.detail
+  };
 }
 
 /** Whether a node can match the empty string wherever it is tried. */
@@ -196,7 +231,7 @@ function alwaysNullable(node: PatternNode): boolean {
 /** The unscoped option settings at a row's top level that change matching (not a bare `i`). */
 function hasTopLevelOption(parsed: ParsedPattern): boolean {
   return parsed.alternatives.some((nodes) =>
-    nodes.some((node) => node.type === 'option' && !node.caselessOnly)
+    nodes.some((node) => node.type === 'option' && !node.noop)
   );
 }
 
@@ -231,13 +266,12 @@ class Emitter {
   private readonly keepGroups: number[] = [];
 
   /**
-   * @param parsed The runtime-form parse (complete, no issues).
-   * @param caseless Whether back-references compare caselessly.
+   * @param parsed The runtime-form parse (complete, no issues; both
+   *   features run caselessly, so back-references compare caselessly).
    * @param options Replace-mode settings.
    */
   constructor(
     private readonly parsed: ParsedPattern,
-    private readonly caseless: boolean,
     private readonly options: EmitOptions
   ) {}
 
@@ -296,7 +330,7 @@ class Emitter {
           }
           const group = branch[closedAt];
           const bytes = group?.type === 'group' ? bytesConsumed(group.alternatives.flat()) : null;
-          if (bytes === null || (this.caseless && intersects(bytes, JS_ONLY_FOLDED))) {
+          if (bytes === null || intersects(bytes, JS_ONLY_FOLDED)) {
             return {
               construct: `\\${String(inner.group)}`,
               detail: 'caseless back-reference to non-ASCII text'
@@ -313,6 +347,16 @@ class Emitter {
               child.type === 'keep' ||
               (child.type === 'group' && child.kind === 'capture')
           );
+          // PCRE matches a variable-length branch forwards from each start, JS
+          // backwards: only fixed-length branches are proven equal (`\R` spans
+          // 1–2 bytes: `(?<=\R)[^a]` matches "\r\n" in PCRE only, observed).
+          const variable = inner.alternatives.some((branch) => {
+            const { min, max } = sequenceLength(branch);
+            return min !== max;
+          });
+          if (variable) {
+            return { construct: '(?<=', detail: 'variable-length lookbehind' };
+          }
           if (holdsState)
             return {
               construct: '(?<=',
@@ -346,8 +390,9 @@ class Emitter {
         return '';
       case 'backref': {
         const target = this.groupMap.get(node.group) ?? node.group;
-        // Wrapped so a following digit never extends the reference number.
-        return this.caseless ? `(?i:\\${String(target)})` : `(?:\\${String(target)})`;
+        // Caseless like PCRE's (ASCII only: the group holds no byte JS folds
+        // differently), and wrapped so a following digit never extends the number.
+        return `(?i:\\${String(target)})`;
       }
       case 'repeat':
         return this.node(node.node) + quantifierSource(node.min, node.max, node.lazy);
@@ -451,7 +496,7 @@ function emitParsed(parsed: ParsedPattern, options: EmitOptions): Emitted | Pcre
   if (issue !== undefined) {
     return { construct: fromByteString(issue.construct), detail: issue.detail };
   }
-  return new Emitter(parsed, true, options).run();
+  return new Emitter(parsed, options).run();
 }
 
 /** Whether an emit result is a translation. */
@@ -460,24 +505,27 @@ export function isEmitted(result: Emitted | PcreConstruct): result is Emitted {
 }
 
 /**
- * Analyze one stored row of a regex feature on its own: whether WP Rocket's
- * save keeps it, how its runtime pattern translates, and the facts the
+ * Analyze one stored row of a regex feature on its own: what WP Rocket's
+ * save does with it, how its runtime pattern translates, and the facts the
  * Defer joined checks need.
  *
  * @param feature The row's feature.
  * @param row The stored row.
  */
 export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
+  if (toByteString(row).length > PCRE_LIMITS.rowBytes) return tooLongRow(row);
   const pattern = runtimePattern(feature, row);
   const parsed = parsePcre(pattern, true);
-  const emitted = delimiterProblem(pattern) ?? emitParsed(parsed, {});
+  const delimiter = delimiterProblem(pattern);
+  const emitted = delimiter ?? emitParsed(parsed, {});
+  const save = saveOutcome(row);
+  const nodes = [...walk(parsed.alternatives.flat())];
   const source = isEmitted(emitted) ? emitted.source : null;
   const option = parsed.issues.find((issue) => issue.detail === 'option setting');
-  const absolute = [...walk(parsed.alternatives.flat())].find(
-    (node) => node.type === 'backref' && node.absolute
-  );
+  const absolute = nodes.find((node) => node.type === 'backref' && node.absolute);
   return {
-    invalidAtSave: saveRejection(row),
+    tooLong: false,
+    save,
     pcreOnly: isEmitted(emitted) ? null : emitted,
     matchesAll: parsed.complete && parsed.alternatives.some((nodes) => nodes.every(alwaysNullable)),
     source,
@@ -491,7 +539,33 @@ export function analyzeRow(feature: RegexFeatureId, row: string): RowAnalysis {
         ? { construct: `\\${String(absolute.group)}`, detail: 'numbered back-reference' }
         : null,
     names: parsed.names,
-    allowsDuplicateNames: parsed.allowsDuplicateNames,
+    duplicatesAllowedAtEnd: parsed.duplicatesAllowedAtEnd,
+    searchDependent: nodes.some(
+      (node) =>
+        node.type === 'keep' || (node.type === 'assert' && node.assertion === 'search-start')
+    ),
     breaksJoin: parsed.unterminatedQuote
+  };
+}
+
+/** The analysis of a row past {@link PCRE_LIMITS}`.rowBytes`: unknown in every respect. */
+function tooLongRow(row: string): RowAnalysis {
+  const unchecked = {
+    construct: `${row.slice(0, 16)}…`,
+    detail: `longer than ${String(PCRE_LIMITS.rowBytes)} bytes`
+  };
+  return {
+    tooLong: true,
+    save: { outcome: 'unknown', ...unchecked },
+    pcreOnly: unchecked,
+    matchesAll: false,
+    source: null,
+    risk: null,
+    topLevelOption: null,
+    absoluteBackreference: null,
+    names: [],
+    duplicatesAllowedAtEnd: null,
+    searchDependent: false,
+    breaksJoin: false
   };
 }

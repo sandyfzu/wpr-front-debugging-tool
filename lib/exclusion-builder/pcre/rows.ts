@@ -5,39 +5,44 @@
  * a pre-check on it, so a Defer set has outcomes no single row has:
  *
  * - `joined-page-off` — the pre-check `preg_replace(joined, '', 'dummy-string')`
- *   returns a falsy string (the joined pattern does not compile — a group
- *   name repeated across rows, a row's open `\Q` quoting the wrapper's `)` —
- *   or it consumes all of `dummy-string`): WP Rocket then defers nothing on
- *   the page;
+ *   returns a falsy string: the joined pattern does not compile (a row PCRE
+ *   rejects, a group name repeated across rows, a row's open `\Q` quoting
+ *   the wrapper's `)`) or it consumes all of `dummy-string`. WP Rocket then
+ *   defers nothing on the page;
  * - `joined-changes-matching` — the set compiles but a row behaves
  *   differently joined: an unscoped option setting leaks into the rows after
  *   it, and a numbered back-reference counts the wrapper group.
  *
- * Each row reports its most decisive problem only ({@link PROBLEM_IDS} order).
+ * Each row reports its most decisive problem only (see {@link rowProblem}).
  */
 import type { InvalidExclusionRow } from '../errors';
 import { BACKTRACKING_RISK_REASONS } from '../regex-risk';
-import { PROBLEM_IDS, type ProblemId } from './problems';
+import type { ProblemId } from './problems';
 import {
   analyzeRow,
   emitRow,
   isEmitted,
+  PCRE_LIMITS,
+  toByteString,
   type PcreConstruct,
   type RegexFeatureId,
   type RowAnalysis
 } from './translate';
 
-/** A JS matcher for one row: compile `new RegExp(source, flags)`, test the subject's byte string. */
+/**
+ * A JS matcher for one row: its source matches the subject's byte string
+ * (see {@link compileMatcher}, which does the encoding). Case folding is in
+ * the source; JS's `i` is never used.
+ */
 export interface PcreMatcher {
   readonly source: string;
-  /** Always `''`: case folding is in the source, never JS's `i`. */
-  readonly flags: string;
+  readonly flags: '';
 }
 
 /** Why a row does not match here as it does on the live site. */
 export interface RowProblem {
   readonly problem: ProblemId;
-  /** The offending construct as WP Rocket's runtime sees it, when one is named. */
+  /** The offending construct as WP Rocket sees it, when one is named. */
   readonly construct: string | null;
   /** Actionable text for the row note. */
   readonly reason: string;
@@ -47,20 +52,38 @@ export interface RowProblem {
 export interface TranslatedRow {
   readonly row: string;
   /**
-   * The exact JS equivalent, when one exists and is safe to run (absent for
-   * `pcre-invalid`, `pcre-only` and `backtracking-risk` rows). Rows with
-   * another problem keep it: a `match-all` row really matches everything,
-   * and a joined problem concerns the set, not the row's own pattern.
+   * The exact JS equivalent of the row's runtime pattern, when one exists and
+   * is safe to run — whatever the row's problem (a `match-all` row's matcher
+   * really matches everything). `null` when the row has no proven
+   * translation or is a backtracking risk.
    */
   readonly matcher: PcreMatcher | null;
   readonly problem: RowProblem | null;
 }
 
+/**
+ * Defer JS's page state under the rows: `on` (WP Rocket defers), `off` (its
+ * pre-check fails: nothing deferred), or `unknown` (a row's semantics are
+ * not modeled well enough to replay the pre-check exactly). Delay JS: `on`.
+ */
+export type PageState = 'on' | 'off' | 'unknown';
+
 /** A feature's rows translated together. */
 export interface RegexRowsTranslation {
   readonly rows: readonly TranslatedRow[];
-  /** Defer JS: WP Rocket's joined pre-check fails and nothing is deferred on the page. */
-  readonly pageOff: boolean;
+  readonly page: PageState;
+}
+
+/**
+ * A compiled matcher: tests a subject (page text) by encoding it to the
+ * byte string the source is written for.
+ *
+ * @param matcher A row's matcher.
+ * @returns A stateless test.
+ */
+export function compileMatcher(matcher: PcreMatcher): (subject: string) => boolean {
+  const regex = new RegExp(matcher.source, matcher.flags);
+  return (subject) => regex.test(toByteString(subject));
 }
 
 /** The fixed subject of WP Rocket's Defer JS pre-check. */
@@ -68,6 +91,7 @@ const PRECHECK_SUBJECT = 'dummy-string';
 
 /** One match found by the pre-check replay. */
 interface ReplayMatch {
+  /** Index into the replayed rows. */
   readonly row: number;
   readonly start: number;
   /** Where the replaced text starts (`\K` moves it right). */
@@ -75,78 +99,99 @@ interface ReplayMatch {
   readonly end: number;
 }
 
-/** A row compiled for the replay: sticky, with match indices for the `\K` markers. */
+/** Thrown when a replay passes {@link PCRE_LIMITS}`.replayExecs` (caught by {@link deferPage}). */
+class ReplayBudgetExceeded extends Error {}
+
+/** A row compiled for the replay, with the JS groups of its `\K` markers. */
 interface ReplayRegex {
   readonly regex: RegExp;
   readonly keepGroups: readonly number[];
 }
 
+/** One replayed row: its plain source, and whether `\G`/`\K` make it depend on the scan. */
+interface ReplayRow {
+  readonly row: string;
+  readonly source: string;
+  readonly searchDependent: boolean;
+}
+
 /**
- * The replay's compiled rows, memoized per (row, search offset, non-empty):
- * `\G` depends on the offset, and the non-empty retry adds an end bound.
+ * The replay's compiled rows. A row is compiled once, unless `\G` or `\K`
+ * make its source depend on the scan offset; the non-empty retry adds an
+ * end bound per offset. All memoized.
  */
 class ReplayRows {
   private readonly cache = new Map<string, ReplayRegex | null>();
+  private execs = 0;
 
-  /** @param rows The stored rows, all translatable. */
-  constructor(readonly rows: readonly string[]) {}
+  /** @param rows The replayed rows, all translatable. */
+  constructor(readonly rows: readonly ReplayRow[]) {}
 
   /**
-   * Match row `index` at exactly `at`, as one alternative of the joined pattern.
+   * Row `index`'s first match from `from` (`sticky`: only at `from`).
    *
    * @param index The row's index.
-   * @param at The position to match at.
-   * @param searchStart The scan's current offset (what `\G` asserts).
-   * @param nonEmpty Require a non-empty match (PCRE's retry after an empty
-   *   one, which always happens at the scan offset).
+   * @param from Where to search; also the scan offset `\G` asserts.
+   * @param nonEmpty Require a non-empty match at exactly `from` (PCRE's
+   *   retry after an empty match).
    */
-  matchAt(index: number, at: number, searchStart: number, nonEmpty: boolean): ReplayMatch | null {
-    const compiled = this.compiled(index, searchStart, nonEmpty);
+  matchFrom(index: number, from: number, nonEmpty: boolean): ReplayMatch | null {
+    // Charged before compiling, so the budget bounds compilation too.
+    if (++this.execs > PCRE_LIMITS.replayExecs) throw new ReplayBudgetExceeded();
+    const compiled = this.compiled(index, from, nonEmpty);
     if (compiled === null) return null;
-    compiled.regex.lastIndex = at;
+    compiled.regex.lastIndex = from;
     const match = compiled.regex.exec(PRECHECK_SUBJECT);
     if (match === null) return null;
-    const keeps = compiled.keepGroups
-      .map((group) => match.indices?.[group]?.[0])
-      .filter((start): start is number => start !== undefined);
-    return {
-      row: index,
-      start: match.index,
-      replaceStart: Math.max(match.index, ...keeps),
-      end: match.index + match[0].length
-    };
+    let replaceStart = match.index;
+    for (const group of compiled.keepGroups) {
+      const keep = match.indices?.[group]?.[0];
+      if (keep !== undefined && keep > replaceStart) replaceStart = keep;
+    }
+    return { row: index, start: match.index, replaceStart, end: match.index + match[0].length };
   }
 
-  /** Row `index` compiled for one offset (memoized). */
-  private compiled(index: number, searchStart: number, nonEmpty: boolean): ReplayRegex | null {
-    const key = `${String(index)}:${String(searchStart)}:${String(nonEmpty)}`;
+  /** Row `index` compiled for one search (memoized). */
+  private compiled(index: number, from: number, nonEmpty: boolean): ReplayRegex | null {
+    const row = this.rows[index];
+    if (row === undefined) return null;
+    const offset = row.searchDependent || nonEmpty ? from : -1;
+    const key = `${String(index)}:${String(offset)}:${String(nonEmpty)}`;
     const cached = this.cache.get(key);
     if (cached !== undefined) return cached;
-    const emitted = emitRow('defer_all_js', this.rows[index] ?? '', { searchStart });
-    // Ends past `searchStart`: the lookbehind counts at least one more unit.
-    const tail = nonEmpty ? `(?<=^[\\s\\S]{${String(searchStart + 1)},})` : '';
-    const compiled = isEmitted(emitted)
-      ? { regex: new RegExp(`(?:${emitted.source})${tail}`, 'yd'), keepGroups: emitted.keepGroups }
-      : null;
+    let source = row.source;
+    let keepGroups: readonly number[] = [];
+    if (row.searchDependent) {
+      const emitted = emitRow('defer_all_js', row.row, { searchStart: from });
+      // Unreachable failure: the row translated in matching mode.
+      source = isEmitted(emitted) ? emitted.source : '[^\\s\\S]';
+      keepGroups = isEmitted(emitted) ? emitted.keepGroups : [];
+    }
+    // The match must end past `from`: the lookbehind counts at least one more unit.
+    const tail = nonEmpty ? `(?<=^[\\s\\S]{${String(from + 1)},})` : '';
+    const compiled = {
+      regex: new RegExp(`(?:${source})${tail}`, nonEmpty ? 'yd' : 'gd'),
+      keepGroups
+    };
     this.cache.set(key, compiled);
     return compiled;
   }
 
-  /** The first row (in order) matching at the leftmost position from `from`. */
+  /** The leftmost match from `from`; at equal starts, the first row (joined alternation order). */
   leftmost(from: number): ReplayMatch | null {
-    for (let at = from; at <= PRECHECK_SUBJECT.length; at++) {
-      for (const index of this.rows.keys()) {
-        const match = this.matchAt(index, at, from, false);
-        if (match !== null) return match;
-      }
+    let best: ReplayMatch | null = null;
+    for (const index of this.rows.keys()) {
+      const match = this.matchFrom(index, from, false);
+      if (match !== null && (best === null || match.start < best.start)) best = match;
+      if (best?.start === from) break;
     }
-    return null;
+    return best;
   }
 
   /** The first row matching non-empty at exactly `at` (the retry after an empty match). */
   nonEmptyAt(at: number): ReplayMatch | null {
     for (const index of this.rows.keys()) {
-      const match = this.matchAt(index, at, at, true);
+      const match = this.matchFrom(index, at, true);
       if (match !== null) return match;
     }
     return null;
@@ -157,14 +202,13 @@ class ReplayRows {
  * Replay `preg_replace(joined, '', 'dummy-string')` with the rows' JS
  * equivalents: PCRE's global scan, where an empty match is followed by a
  * non-empty anchored retry at the same position before one byte is copied.
- * Exact when every row translates and none leaks into another (leaking rows
- * are reported on their own).
+ * Exact when every row translates and none behaves differently joined.
  *
- * @param rows The stored rows, all translatable.
- * @returns The rows whose matches consumed text, when what remains is falsy
- *   in PHP (`''` or `'0'`); `null` when the pre-check passes.
+ * @param rows The rows, all translatable.
+ * @returns The rows (indexes into `rows`) whose matches consumed text when
+ *   what remains is falsy in PHP (`''` or `'0'`); `null` when the pre-check passes.
  */
-function precheckConsumers(rows: readonly string[]): ReadonlySet<number> | null {
+function precheckConsumers(rows: readonly ReplayRow[]): ReadonlySet<number> | null {
   const replay = new ReplayRows(rows);
   let kept = '';
   let pos = 0;
@@ -190,41 +234,89 @@ function precheckConsumers(rows: readonly string[]): ReadonlySet<number> | null 
   return kept === '' || kept === '0' ? consumers : null;
 }
 
-/** Rows declaring a group name another row also declares (joined, PCRE rejects the duplicate). */
-function duplicateNameRows(analyses: readonly RowAnalysis[]): ReadonlySet<number> {
-  const rows = new Set<number>();
-  if (analyses.some((analysis) => analysis.allowsDuplicateNames)) return rows;
-  analyses.forEach((analysis, index) => {
-    analyses.forEach((other, otherIndex) => {
-      if (otherIndex !== index && analysis.names.some((name) => other.names.includes(name))) {
-        rows.add(index);
+/**
+ * Rows declaring a group name an earlier row declared, where joined PCRE
+ * rejects the duplicate: unless the `J` option is in force at the second
+ * declaration — set in that row, or left on at the top level of an earlier
+ * one (it leaks forward through the wrapper group). A branch reset never
+ * licenses a name across rows. Both rows of a clash are returned.
+ *
+ * @param rows Indexes and analyses of the rows joined, in order.
+ */
+function nameClashRows(rows: readonly (readonly [number, RowAnalysis])[]): ReadonlySet<number> {
+  const clashes = new Set<number>();
+  const declaredIn = new Map<string, number[]>();
+  let carried = false;
+  for (const [index, analysis] of rows) {
+    for (const { name, duplicatesAllowed } of analysis.names) {
+      const earlier = declaredIn.get(name) ?? [];
+      if (earlier.length > 0 && !(duplicatesAllowed ?? carried)) {
+        clashes.add(index);
+        for (const other of earlier) clashes.add(other);
       }
-    });
-  });
-  return rows;
+    }
+    for (const { name } of analysis.names) {
+      const list = declaredIn.get(name) ?? [];
+      if (!list.includes(index)) list.push(index);
+      declaredIn.set(name, list);
+    }
+    carried = analysis.duplicatesAllowedAtEnd ?? carried;
+  }
+  return clashes;
+}
+
+/** Whether a row can be replayed exactly: kept by the save, translated, safe, unaffected by the join. */
+function replayable(analysis: RowAnalysis): boolean {
+  return (
+    analysis.save.outcome === 'kept' &&
+    analysis.source !== null &&
+    analysis.risk === null &&
+    analysis.absoluteBackreference === null
+  );
 }
 
 /**
- * Rows behind a Defer page-off: rows that break the joined pattern's syntax
- * (an open `\Q`), else rows sharing a group name, else — when every row
- * translates and is safe to run — the rows that consume `dummy-string`.
- * Rows WP Rocket drops at save are left out: their own problem says so.
+ * Defer JS's page state and the rows behind a page-off. A row PCRE rejects
+ * turns the page off by itself (stored, it breaks the joined pattern); the
+ * rows the save keeps are then checked for an open `\Q`, clashing group
+ * names, and — when every one replays exactly — the `dummy-string` replay.
+ *
+ * @param rows The stored rows.
+ * @param analyses Their analyses.
  */
-function pageOffRows(
+function deferPage(
   rows: readonly string[],
   analyses: readonly RowAnalysis[]
-): ReadonlySet<number> {
-  if (analyses.some((analysis) => analysis.invalidAtSave !== null)) return new Set();
-  const breakers = new Set(
-    analyses.flatMap((analysis, index) => (analysis.breaksJoin ? [index] : []))
-  );
-  if (breakers.size > 0) return breakers;
-  const named = duplicateNameRows(analyses);
-  if (named.size > 0) return named;
-  const replayable = analyses.every(
-    (analysis) => analysis.source !== null && analysis.risk === null
-  );
-  return replayable ? (precheckConsumers(rows) ?? new Set()) : new Set();
+): { readonly page: PageState; readonly offRows: ReadonlySet<number> } {
+  const dropped = analyses.some((analysis) => analysis.save.outcome === 'dropped');
+  const kept = analyses
+    .map((analysis, index) => [index, analysis] as const)
+    .filter(([, analysis]) => analysis.save.outcome !== 'dropped');
+  const breakers = new Set(kept.filter(([, analysis]) => analysis.breaksJoin).map(([i]) => i));
+  if (breakers.size > 0) return { page: 'off', offRows: breakers };
+  const clashes = nameClashRows(kept);
+  if (clashes.size > 0) return { page: 'off', offRows: clashes };
+  const leaks = kept.some(([, analysis], position) => {
+    return analysis.topLevelOption !== null && position < kept.length - 1;
+  });
+  if (leaks || !kept.every(([, analysis]) => replayable(analysis))) {
+    return { page: dropped ? 'off' : 'unknown', offRows: new Set() };
+  }
+  let consumers: ReadonlySet<number> | null;
+  try {
+    consumers = precheckConsumers(
+      kept.map(([index, analysis]) => ({
+        row: rows[index] ?? '',
+        source: analysis.source ?? '',
+        searchDependent: analysis.searchDependent
+      }))
+    );
+  } catch (error) {
+    if (!(error instanceof ReplayBudgetExceeded)) throw error;
+    return { page: dropped ? 'off' : 'unknown', offRows: new Set() };
+  }
+  const offRows = new Set([...(consumers ?? [])].map((position) => kept[position]?.[0] ?? -1));
+  return { page: consumers !== null || dropped ? 'off' : 'on', offRows };
 }
 
 /** Backticked construct text for a reason. */
@@ -232,22 +324,52 @@ function quoted(construct: PcreConstruct): string {
   return `\`${construct.construct}\` (${construct.detail})`;
 }
 
-/** Each problem a row has, keyed by id (the caller keeps the most decisive). */
-function rowProblems(
+/** What the set says about one row. */
+interface JoinedFacts {
+  readonly pageOff: boolean;
+  readonly last: boolean;
+}
+
+/**
+ * A row's most decisive problem, or `null`. Order: what the save does
+ * first (a dropped row, or one whose fate is not modeled — then nothing is
+ * claimed about what WP Rocket stores), then the page-wide Defer failure,
+ * `match-all`, the runtime translation, the joined effects, the
+ * backtracking guard.
+ */
+function rowProblem(
   feature: RegexFeatureId,
   analysis: RowAnalysis,
-  joined: { readonly pageOff: boolean; readonly last: boolean }
-): Partial<Record<ProblemId, RowProblem>> {
-  const problems: Partial<Record<ProblemId, RowProblem>> = {};
-  if (analysis.invalidAtSave !== null) {
-    problems['pcre-invalid'] = {
+  joined: JoinedFacts
+): RowProblem | null {
+  const { save } = analysis;
+  if (save.outcome === 'dropped') {
+    const live =
+      feature === 'delay_js'
+        ? 'added through a filter, it never matches'
+        : 'added through a filter, it turns Defer JS off on the page';
+    return {
       problem: 'pcre-invalid',
-      construct: analysis.invalidAtSave.construct,
-      reason: `WP Rocket drops this row when saving: PCRE rejects ${quoted(analysis.invalidAtSave)}`
+      construct: save.construct,
+      reason: `WP Rocket drops this row when saving: PCRE rejects ${quoted(save)}; ${live}`
+    };
+  }
+  if (analysis.tooLong) {
+    return {
+      problem: 'pcre-only',
+      construct: null,
+      reason: `This row is too long to check here (over ${String(PCRE_LIMITS.rowBytes)} bytes)`
+    };
+  }
+  if (save.outcome === 'unknown') {
+    return {
+      problem: 'pcre-only',
+      construct: save.construct,
+      reason: `PCRE-only syntax: ${quoted(save)} — not checked here, and WP Rocket may drop this row when saving`
     };
   }
   if (joined.pageOff) {
-    problems['joined-page-off'] = {
+    return {
       problem: 'joined-page-off',
       construct: null,
       reason:
@@ -255,7 +377,7 @@ function rowProblems(
     };
   }
   if (analysis.matchesAll) {
-    problems['match-all'] = {
+    return {
       problem: 'match-all',
       construct: null,
       reason: 'WP Rocket stores this and it excludes every script'
@@ -264,7 +386,7 @@ function rowProblems(
   // An option leaking into later rows changes them: that outranks the row's own syntax.
   const leak = feature === 'defer_all_js' && !joined.last ? analysis.topLevelOption : null;
   if (analysis.pcreOnly !== null && leak === null) {
-    problems['pcre-only'] = {
+    return {
       problem: 'pcre-only',
       construct: analysis.pcreOnly.construct,
       reason: `PCRE-only syntax: ${quoted(analysis.pcreOnly)} — not checked here`
@@ -273,25 +395,28 @@ function rowProblems(
   const shift = feature === 'defer_all_js' ? analysis.absoluteBackreference : null;
   const changes = leak ?? shift;
   if (changes !== null) {
-    problems['joined-changes-matching'] = {
+    return {
       problem: 'joined-changes-matching',
       construct: changes.construct,
       reason: `Joined with the other Defer JS rows, ${quoted(changes)} matches differently on WP Rocket`
     };
   }
   if (analysis.risk !== null) {
-    problems['backtracking-risk'] = {
+    return {
       problem: 'backtracking-risk',
       construct: null,
-      reason: BACKTRACKING_RISK_REASONS[analysis.risk]
+      reason:
+        analysis.risk === 'too-complex'
+          ? 'This row is too long or too deeply nested to check for slow matching — shorten it'
+          : BACKTRACKING_RISK_REASONS[analysis.risk]
     };
   }
-  return problems;
+  return null;
 }
 
 /**
  * Translate a regex feature's stored rows: each row's JS matcher and its
- * most decisive problem, plus Defer JS's page-wide state.
+ * most decisive problem, plus Defer JS's page state.
  *
  * @param feature `delay_js` or `defer_all_js`.
  * @param rows The stored rows, in order.
@@ -301,22 +426,23 @@ export function translateRegexRows(
   rows: readonly string[]
 ): RegexRowsTranslation {
   const analyses = rows.map((row) => analyzeRow(feature, row));
-  const pageOff = feature === 'defer_all_js' ? pageOffRows(rows, analyses) : new Set<number>();
+  const { page, offRows } =
+    feature === 'defer_all_js'
+      ? deferPage(rows, analyses)
+      : { page: 'on' as const, offRows: new Set<number>() };
   const translated = rows.map((row, index): TranslatedRow => {
     const analysis = analyses[index] as RowAnalysis;
-    const problems = rowProblems(feature, analysis, {
-      pageOff: pageOff.has(index),
-      last: index === rows.length - 1
-    });
-    const decisive = PROBLEM_IDS.find((id) => problems[id] !== undefined);
     const { source, risk } = analysis;
     return {
       row,
       matcher: source !== null && risk === null ? { source, flags: '' } : null,
-      problem: decisive === undefined ? null : (problems[decisive] as RowProblem)
+      problem: rowProblem(feature, analysis, {
+        pageOff: offRows.has(index),
+        last: index === rows.length - 1
+      })
     };
   });
-  return { rows: translated, pageOff: pageOff.size > 0 };
+  return { rows: translated, page };
 }
 
 /**

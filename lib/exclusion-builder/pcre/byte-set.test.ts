@@ -1,19 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ANY_BYTE,
   ESCAPE_SETS,
-  POSIX_SETS,
   byteRanges,
   bytesOf,
   complementOf,
+  emptySet,
   foldAsciiCase,
   intersects,
+  literalSet,
+  posixSet,
   setSource,
   unionOf
 } from './byte-set';
 
 /** The members of a set. */
-function members(set: Uint8Array): number[] {
+function members(set: Uint8Array | undefined): number[] {
+  if (set === undefined) throw new Error('no set');
   return [...set.keys()].filter((byte) => set[byte] === 1);
 }
 
@@ -32,21 +34,39 @@ describe('byte sets', () => {
     ]);
   });
 
+  it('share literal sets per byte and case mode', () => {
+    expect(literalSet(0x61, true)).toBe(literalSet(0x61, true));
+    expect(members(literalSet(0x61, true))).toEqual([0x41, 0x61]);
+    expect(members(literalSet(0x61, false))).toEqual([0x61]);
+  });
+
   it('hold the observed PCRE2 default-table members', () => {
-    expect(members(ESCAPE_SETS.s ?? new Uint8Array())).toEqual([
-      0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20
+    expect(members(ESCAPE_SETS.s)).toEqual([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]);
+    expect(members(ESCAPE_SETS.h)).toEqual([0x09, 0x20, 0xa0]);
+    expect(members(ESCAPE_SETS.v)).toEqual([0x0a, 0x0b, 0x0c, 0x0d, 0x85]);
+    expect(members(posixSet('punct', false, false))).toHaveLength(32);
+    expect(members(posixSet('xdigit', false, false))).toHaveLength(22);
+    expect(posixSet('foo', false, false)).toBeUndefined();
+  });
+
+  it('read caseless [:lower:]/[:upper:] as [:alpha:] before negating (observed)', () => {
+    const alpha = members(posixSet('alpha', false, false));
+    expect(members(posixSet('lower', false, true))).toEqual(alpha);
+    expect(members(posixSet('upper', false, true))).toEqual(alpha);
+    // `[[:^lower:]]` with `i` matches no letter at all (PHP: a/A/z/Z/1/-/é → 0000111).
+    const notLower = posixSet('lower', true, true);
+    expect([0x61, 0x41, 0x7a, 0x5a, 0x31, 0x2d, 0xc3].map((byte) => notLower?.[byte])).toEqual([
+      0, 0, 0, 0, 1, 1, 1
     ]);
-    expect(members(ESCAPE_SETS.h ?? new Uint8Array())).toEqual([0x09, 0x20, 0xa0]);
-    expect(members(ESCAPE_SETS.v ?? new Uint8Array())).toEqual([0x0a, 0x0b, 0x0c, 0x0d, 0x85]);
-    expect(members(POSIX_SETS.punct ?? new Uint8Array())).toHaveLength(32);
-    expect(members(POSIX_SETS.xdigit ?? new Uint8Array())).toHaveLength(22);
+    // Case-sensitively they stay apart.
+    expect(members(posixSet('lower', false, false))).toEqual(members(byteRanges([0x61, 0x7a])));
   });
 });
 
 describe('setSource', () => {
   it.each([
-    [ANY_BYTE, '[\\s\\S]'],
-    [new Uint8Array(256), '[^\\s\\S]'],
+    [complementOf(emptySet()), '[\\s\\S]'],
+    [emptySet(), '[^\\s\\S]'],
     [bytesOf(0x61), 'a'],
     [bytesOf(0x2e), '\\x2e'],
     [bytesOf(0x41, 0x61), '[Aa]'],
@@ -55,10 +75,12 @@ describe('setSource', () => {
     [byteRanges([0x00, 0x7f]), '[\\x00-\\x7f]']
   ])('emits the shortest exact form (%#)', (set, source) => {
     expect(setSource(set)).toBe(source);
+    // Memoized per set.
+    expect(setSource(set)).toBe(source);
   });
 
   it('matches exactly its members among all 256 units', () => {
-    const set = unionOf(ESCAPE_SETS.w ?? new Uint8Array(), bytesOf(0x2d, 0xe9));
+    const set = unionOf(ESCAPE_SETS.w ?? emptySet(), bytesOf(0x2d, 0xe9));
     const regex = new RegExp(`^${setSource(set)}$`);
     const matched = [...Array(256).keys()].filter((byte) => regex.test(String.fromCharCode(byte)));
     expect(matched).toEqual(members(set));

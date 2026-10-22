@@ -3,14 +3,17 @@
  * them: no UTF option, so the pattern and the subject are byte strings (one
  * UTF-16 unit per byte, 0x00–0xFF — see `toByteString`). It builds the tree
  * the translator emits JS from and records every construct it does not
- * translate:
+ * translate, by what is known of it:
  *
  * - `invalid` — PCRE2 rejects the pattern at compile time. Only shapes
- *   observed failing on PCRE2 10.44 and 10.49 are claimed (an unproven claim
- *   would say WP Rocket drops a row it keeps);
- * - `pcre-only` — valid or unknown PCRE syntax with no proven JS equivalent.
- *   Anything this parser does not recognize lands here (fail closed); a
- *   construct whose extent it cannot tell stops the parse (`complete` false).
+ *   observed failing on both PCRE2 10.44 and 10.49 are claimed (an unproven
+ *   claim would say WP Rocket drops a row it keeps);
+ * - `untranslated` — PCRE2 accepts it (observed on both) but no JS
+ *   equivalent is proven;
+ * - `unknown` — whether PCRE2 accepts it is not modeled (or differs between
+ *   versions). Anything this parser does not recognize lands here (fail
+ *   closed); a construct whose extent it cannot tell stops the parse
+ *   (`complete` false).
  *
  * Every character position reduces to a {@link ByteSet}; caseless matching
  * (PCRE's `i`: ASCII letters only) is folded into the sets as they are built,
@@ -18,13 +21,13 @@
  */
 import {
   ESCAPE_SETS,
-  NEWLINE,
-  POSIX_SETS,
+  NOT_NEWLINE,
+  addAll,
   bytesOf,
-  byteRanges,
-  complementOf,
-  foldAsciiCase,
-  unionOf,
+  emptySet,
+  foldInPlace,
+  literalSet,
+  posixSet,
   type ByteSet
 } from './byte-set';
 
@@ -72,18 +75,34 @@ export type PatternNode =
     }
   /** `\K`: resets the reported match start. */
   | { readonly type: 'keep' }
-  /** An unscoped option setting `(?…)`; `caseless` when it only sets `i`. */
-  | { readonly type: 'option'; readonly caselessOnly: boolean }
+  /** An unscoped option setting `(?…)`; `noop` when it only sets `i`/`J` (matching unchanged). */
+  | { readonly type: 'option'; readonly noop: boolean }
   /** A PCRE-only atom (`\p{…}`, a subroutine call…): matching unknown. */
   | { readonly type: 'opaque' };
 
+/** How much is known about a construct the parser does not translate. */
+export type IssueKind = 'invalid' | 'untranslated' | 'unknown';
+
 /** A construct the parser does not translate, located in the parsed text. */
 export interface ParseIssue {
-  readonly kind: 'invalid' | 'pcre-only';
+  readonly kind: IssueKind;
   /** The construct as written (a slice of the parsed text). */
   readonly construct: string;
   /** What is wrong, for the reason text. */
   readonly detail: string;
+  /** A subroutine call: its `unknown` (recursion) leaves the group facts trustworthy. */
+  readonly call?: true;
+}
+
+/**
+ * A group name declaration, with the `J` option (duplicate names allowed)
+ * in force there: `true`/`false` when set earlier in the pattern, `null`
+ * when the pattern never set it — joined after other rows it inherits
+ * theirs.
+ */
+export interface NameDeclaration {
+  readonly name: string;
+  readonly duplicatesAllowed: boolean | null;
 }
 
 /** The parse of one pattern. */
@@ -96,10 +115,10 @@ export interface ParsedPattern {
   readonly complete: boolean;
   /** Capture groups opened. */
   readonly groupCount: number;
-  /** Group names, in source order (with repeats). */
-  readonly names: readonly string[];
-  /** The pattern can legitimately repeat a name (`(?J)`, or a branch reset `(?|`). */
-  readonly allowsDuplicateNames: boolean;
+  /** Group name declarations, in source order. */
+  readonly names: readonly NameDeclaration[];
+  /** The top-level `J` state at the end (`null` = never set): it leaks into a joined pattern's later rows. */
+  readonly duplicatesAllowedAtEnd: boolean | null;
   /**
    * A `\Q` runs to the end of the pattern: joined into a larger pattern it
    * would quote the rest (WP Rocket's Defer wrapper `)` included).
@@ -109,8 +128,10 @@ export interface ParsedPattern {
 
 /** Largest `{n,m}` count PCRE2 accepts. */
 const MAX_REPEAT = 65_535;
-/** Longest lookbehind PCRE2 accepts (its default `max_varlookbehind`). */
-const MAX_LOOKBEHIND = 255;
+/** Longest lookbehind branch PCRE2 accepts when a branch varies in length. */
+const MAX_VARIABLE_LOOKBEHIND = 255;
+/** Longest fixed-length lookbehind branch PCRE2 accepts. */
+const MAX_FIXED_LOOKBEHIND = 65_535;
 /** Largest byte value an octal or hex escape may carry without UTF. */
 const MAX_BYTE = 0xff;
 
@@ -132,12 +153,28 @@ const CONTROL_ESCAPES: Readonly<Record<string, number>> = {
   t: 0x09
 };
 
-/** A `{…}` quantifier without spaces (`{n}`, `{n,}`, `{n,m}`, `{,m}`). */
+/**
+ * A `{…}` quantifier without spaces (`{n}`, `{n,}`, `{n,m}`, `{,m}`). The
+ * `{,m}` form and inner spaces are quantifiers since PCRE2 10.43 only
+ * (literal text on 10.42, which PHP 8.3 bundles) — the reference versions
+ * here are 10.44 and 10.49.
+ */
 const BRACE_QUANTIFIER = /^\{(?:(\d+)(,(\d*))?|,(\d+))\}/;
 /** A brace that PCRE2 ≥ 10.43 reads as a quantifier only thanks to inner spaces. */
-const SPACED_BRACE_QUANTIFIER = /^\{[ \t]*(?:\d+[ \t]*(?:,[ \t]*\d*[ \t]*)?|,[ \t]*\d+[ \t]*)\}/;
+const SPACED_BRACE_QUANTIFIER =
+  /^\{[ \t]*(?:(\d+)[ \t]*(,[ \t]*(\d*)[ \t]*)?|,[ \t]*(\d+)[ \t]*)\}/;
 /** A group name. */
 const GROUP_NAME = /^[A-Za-z_][A-Za-z0-9_]*/;
+/**
+ * Option letters PCRE2 10.44/10.49 accept (observed): `i m n s x J U r a`,
+ * `x` repeatable, `a` optionally followed by one of `D S W P T`; `^` only
+ * first and never with `-`; at most one `-`.
+ */
+const OPTION_LETTERS = '(?:[imnsxJUr]|a[DSWPT]?)*';
+/** A whole valid option specification (see {@link OPTION_LETTERS}). */
+const OPTION_SPEC = new RegExp(
+  `^(?:\\^${OPTION_LETTERS}|${OPTION_LETTERS}(?:-${OPTION_LETTERS})?)$`
+);
 
 /** Thrown to stop parsing at a construct of unknown extent (caught by {@link parsePcre}). */
 class StopParse extends Error {}
@@ -151,10 +188,13 @@ type PendingReference =
 class Parser {
   private pos = 0;
   private groupCount = 0;
-  private allowsDuplicateNames = false;
+  /** Open branch reset groups `(?|…)` around the current position. */
+  private branchResetDepth = 0;
   private unterminatedQuote = false;
+  /** The `J` option per open group (index 0 = top level); `null` = not set in this pattern. */
+  private readonly duplicates: (boolean | null)[] = [null];
   private readonly issues: ParseIssue[] = [];
-  private readonly names: string[] = [];
+  private readonly names: NameDeclaration[] = [];
   private readonly pending: PendingReference[] = [];
 
   /**
@@ -171,12 +211,12 @@ class Parser {
     let alternatives: PatternNode[][] = [];
     let complete = true;
     try {
-      alternatives = this.alternatives(0);
+      alternatives = this.alternatives();
       while (this.pos < this.src.length) {
         // Only an unmatched `)` ends the top level early.
         this.issue('invalid', this.pos, this.pos + 1, 'unmatched closing parenthesis');
         this.pos++;
-        alternatives.push(...this.alternatives(0));
+        alternatives.push(...this.alternatives());
       }
       this.checkReferences();
     } catch (error) {
@@ -189,24 +229,32 @@ class Parser {
       complete,
       groupCount: this.groupCount,
       names: this.names,
-      allowsDuplicateNames: this.allowsDuplicateNames,
+      duplicatesAllowedAtEnd: this.duplicates[0] ?? null,
       unterminatedQuote: this.unterminatedQuote
     };
   }
 
-  /** Record an issue for `src[start, end)`. */
-  private issue(kind: ParseIssue['kind'], start: number, end: number, detail: string): void {
-    this.issues.push({ kind, construct: this.src.slice(start, end), detail });
+  /**
+   * Record an issue for `src[start, end)`; `call` marks a subroutine call
+   * (unknown only for its recursion, never for the groups it sees).
+   */
+  private issue(kind: IssueKind, start: number, end: number, detail: string, call = false): void {
+    this.issues.push({
+      kind,
+      construct: this.src.slice(start, end),
+      detail,
+      ...(call ? { call } : {})
+    });
   }
 
   /**
-   * Record a PCRE-only construct whose extent is unknown, and stop. The
+   * Record a construct of unknown extent and validity, and stop. The
    * construct is named up to its first `)` (at most a few characters).
    */
   private stop(start: number, detail: string): never {
     const close = this.src.indexOf(')', start);
     const end = close === -1 || close - start > STOP_CONSTRUCT_LENGTH ? start + 3 : close + 1;
-    this.issue('pcre-only', start, Math.min(this.src.length, end), detail);
+    this.issue('unknown', start, Math.min(this.src.length, end), detail);
     throw new StopParse();
   }
 
@@ -217,20 +265,15 @@ class Parser {
 
   /** A literal byte as a set (case-folded when caseless). */
   private literal(byte: number): PatternNode {
-    return { type: 'set', set: this.fold(bytesOf(byte)) };
-  }
-
-  /** Fold a set when caseless. */
-  private fold(set: ByteSet): ByteSet {
-    return this.caseless ? foldAsciiCase(set) : set;
+    return { type: 'set', set: literalSet(byte, this.caseless) };
   }
 
   /** Alternatives up to a `)` (not consumed) or the end. */
-  private alternatives(depth: number): PatternNode[][] {
-    const alternatives = [this.sequence(depth)];
+  private alternatives(): PatternNode[][] {
+    const alternatives = [this.sequence()];
     while (this.peek() === '|') {
       this.pos++;
-      alternatives.push(this.sequence(depth));
+      alternatives.push(this.sequence());
     }
     return alternatives;
   }
@@ -240,7 +283,7 @@ class Parser {
    * runs and stray `\E` add no atom of their own, so a quantifier after them
    * applies to the atom before.
    */
-  private sequence(depth: number): PatternNode[] {
+  private sequence(): PatternNode[] {
     const nodes: PatternNode[] = [];
     // Whether the last node may take a quantifier now.
     let quantifiable = false;
@@ -272,7 +315,7 @@ class Parser {
         quantifiable = false;
         continue;
       }
-      const node = this.atom(depth);
+      const node = this.atom();
       nodes.push(node);
       quantifiable = isQuantifiable(node);
     }
@@ -297,7 +340,7 @@ class Parser {
     const char = this.peek();
     if (char === '*' || char === '+' || char === '?') return true;
     if (char !== '{') return false;
-    const rest = this.src.slice(this.pos);
+    const rest = this.src.slice(this.pos, this.pos + 64);
     return BRACE_QUANTIFIER.test(rest) || SPACED_BRACE_QUANTIFIER.test(rest);
   }
 
@@ -317,15 +360,13 @@ class Parser {
       this.pos++;
     } else if (this.peek() === '+') {
       this.pos++;
-      this.issue('pcre-only', start, this.pos, 'possessive quantifier');
-      nodes[nodes.length - 1] = { type: 'opaque' };
-      this.rejectFollowingQuantifier();
-      return;
+      this.issue('untranslated', start, this.pos, 'possessive quantifier');
     }
     if (bounds !== null) {
+      // A possessive repeat keeps its node (its lengths still count); the issue blocks emission.
       nodes[nodes.length - 1] = { type: 'repeat', node: target, ...bounds, lazy };
       if (target.type === 'group' && isLookaround(target.kind)) {
-        this.issue('pcre-only', start, this.pos, 'quantified assertion');
+        this.issue('untranslated', start, this.pos, 'quantified assertion');
       }
     }
     this.rejectFollowingQuantifier();
@@ -341,9 +382,8 @@ class Parser {
   }
 
   /**
-   * Consume a quantifier's bounds; `null` when they are not translatable
-   * (spaced braces — recorded as PCRE-only — or out-of-range counts —
-   * recorded as invalid).
+   * Consume a quantifier's bounds; `null` when they are out of range
+   * (recorded as invalid). Spaced braces are recorded as untranslated.
    */
   private bounds(): { min: number; max: number | null } | null {
     const char = this.src.charAt(this.pos++);
@@ -351,15 +391,13 @@ class Parser {
     if (char === '+') return { min: 1, max: null };
     if (char === '?') return { min: 0, max: 1 };
     const start = this.pos - 1;
-    const rest = this.src.slice(start);
+    const rest = this.src.slice(start, start + 64);
     const plain = BRACE_QUANTIFIER.exec(rest);
-    if (plain === null) {
-      this.pos = start + (SPACED_BRACE_QUANTIFIER.exec(rest)?.[0].length ?? 1);
-      this.issue('pcre-only', start, this.pos, 'quantifier with spaces');
-      return null;
-    }
-    this.pos = start + plain[0].length;
-    const [, minText, comma, maxText, onlyMax] = plain;
+    const match = plain ?? SPACED_BRACE_QUANTIFIER.exec(rest);
+    if (match === null) return null;
+    this.pos = start + match[0].length;
+    if (plain === null) this.issue('untranslated', start, this.pos, 'quantifier with spaces');
+    const [, minText, comma, maxText, onlyMax] = match;
     const min = minText === undefined ? 0 : Number(minText);
     const max =
       onlyMax !== undefined
@@ -381,13 +419,13 @@ class Parser {
   }
 
   /** One atom at `pos` (never a quantifier). */
-  private atom(depth: number): PatternNode {
+  private atom(): PatternNode {
     const char = this.peek();
-    if (char === '(') return this.group(depth);
+    if (char === '(') return this.group();
     if (char === '[') return this.characterClass();
     if (char === '\\') return this.escape();
     this.pos++;
-    if (char === '.') return { type: 'set', set: complementOf(bytesOf(NEWLINE)) };
+    if (char === '.') return { type: 'set', set: NOT_NEWLINE };
     if (char === '^') return { type: 'assert', assertion: 'subject-start' };
     if (char === '$') return { type: 'assert', assertion: 'end-or-final-newline' };
     return this.literal(char.charCodeAt(0));
@@ -408,8 +446,15 @@ class Parser {
     if (set !== undefined) return { type: 'set', set };
     switch (char) {
       case 'N':
-        if (this.peek() === '{') this.stop(start, '\\N{…}');
-        return { type: 'set', set: complementOf(bytesOf(NEWLINE)) };
+        if (this.peek() === '{' && !this.quantifierAhead()) {
+          // `\N{U+…}` needs UTF mode: rejected on both versions (observed);
+          // `\N{2}` is `\N` repeated.
+          const close = this.src.indexOf('}', this.pos);
+          this.pos = close === -1 ? this.src.length : close + 1;
+          this.issue('invalid', start, this.pos, '\\N{…} without UTF');
+          return { type: 'opaque' };
+        }
+        return { type: 'set', set: NOT_NEWLINE };
       case 'R':
         return { type: 'linebreak' };
       case 'b':
@@ -432,17 +477,39 @@ class Parser {
         return this.namedReference(start);
       case 'p':
       case 'P':
-        if (this.peek() === '{') this.skipPast('}', start);
-        else this.pos++;
-        this.issue('pcre-only', start, this.pos, 'Unicode property');
-        return { type: 'opaque' };
+        return this.property(start);
       case 'X':
       case 'C':
-        this.issue('pcre-only', start, this.pos, `\\${char}`);
+        this.issue('untranslated', start, this.pos, `\\${char}`);
         return { type: 'opaque' };
     }
     // Every letter is handled above; only the digits 1–9 remain.
     return this.numericEscape(start);
+  }
+
+  /**
+   * `\p…`/`\P…`: a Unicode property. Its names are not modeled (unknown);
+   * a bare `\p`, a non-letter after it, or an unclosed `{` is rejected
+   * (observed).
+   */
+  private property(start: number): PatternNode {
+    const next = this.peek();
+    if (next === '{') {
+      const close = this.src.indexOf('}', this.pos);
+      if (close === -1) {
+        this.pos = this.src.length;
+        this.issue('invalid', start, this.pos, 'unterminated \\p{…}');
+        return { type: 'opaque' };
+      }
+      this.pos = close + 1;
+    } else if (/^[A-Za-z]$/.test(next)) {
+      this.pos++;
+    } else {
+      this.issue('invalid', start, this.pos, 'malformed \\p property');
+      return { type: 'opaque' };
+    }
+    this.issue('unknown', start, this.pos, 'Unicode property');
+    return { type: 'opaque' };
   }
 
   /**
@@ -458,9 +525,15 @@ class Parser {
     if (char === 'o') return this.bracedNumber(start, 8);
     if (char === 'x') {
       if (this.peek() === '{') return this.bracedNumber(start, 16);
-      const hex = /^[0-9A-Fa-f]{1,2}/.exec(this.src.slice(this.pos))?.[0];
+      const hex = /^[0-9A-Fa-f]{1,2}/.exec(this.src.slice(this.pos, this.pos + 2))?.[0];
       if (hex === undefined) {
-        this.issue('invalid', start, this.pos, '\\x without hexadecimal digits');
+        // NUL on PCRE2 10.44, an error on 10.49 (observed).
+        this.issue(
+          'unknown',
+          start,
+          this.pos,
+          '\\x without hexadecimal digits (version-dependent)'
+        );
         return null;
       }
       this.pos += hex.length;
@@ -469,12 +542,8 @@ class Parser {
     if (char === 'c') {
       const target = this.src.charCodeAt(this.pos);
       if (!(target >= 0x20 && target <= 0x7e)) {
-        this.issue(
-          'invalid',
-          start,
-          Math.min(this.pos + 1, this.src.length),
-          '\\c needs a printable ASCII character'
-        );
+        const end = Math.min(this.pos + 1, this.src.length);
+        this.issue('invalid', start, end, '\\c needs a printable ASCII character');
         return null;
       }
       this.pos++;
@@ -573,25 +642,22 @@ class Parser {
     const named = /^\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(rest);
     if (named !== null) {
       this.pos += named[0].length;
-      this.pending.push({
-        by: 'name',
-        name: named[1] ?? '',
-        construct: this.src.slice(start, this.pos)
-      });
-      this.issue('pcre-only', start, this.pos, 'named back-reference');
+      const construct = this.src.slice(start, this.pos);
+      this.pending.push({ by: 'name', name: named[1] ?? '', construct });
+      this.issue('untranslated', start, this.pos, 'named back-reference');
       return { type: 'opaque' };
     }
     const subroutine = /^(?:<[^>]*>|'[^']*'|\{\+\d+\}|\+\d+)/.exec(rest);
     if (subroutine !== null) {
       this.pos += subroutine[0].length;
-      this.issue('pcre-only', start, this.pos, 'subroutine call or relative reference');
+      this.issue('unknown', start, this.pos, 'subroutine call or relative reference');
       return { type: 'opaque' };
     }
     this.issue('invalid', start, this.pos, 'malformed \\g reference');
     return { type: 'opaque' };
   }
 
-  /** `\k<n>`, `\k'n'`, `\k{n}`: named back-references (PCRE-only); bare `\k` is an error. */
+  /** `\k<n>`, `\k'n'`, `\k{n}`: named back-references; bare `\k` is an error. */
   private namedReference(start: number): PatternNode {
     const named = /^(?:<([A-Za-z_]\w*)>|'([A-Za-z_]\w*)'|\{([A-Za-z_]\w*)\})/.exec(
       this.src.slice(this.pos)
@@ -606,15 +672,8 @@ class Parser {
     this.pos += named[0].length;
     const name = named[1] ?? named[2] ?? named[3] ?? '';
     this.pending.push({ by: 'name', name, construct: this.src.slice(start, this.pos) });
-    this.issue('pcre-only', start, this.pos, 'named back-reference');
+    this.issue('untranslated', start, this.pos, 'named back-reference');
     return { type: 'opaque' };
-  }
-
-  /** Move past the next `char`, or stop when there is none. */
-  private skipPast(char: string, start: number): void {
-    const index = this.src.indexOf(char, this.pos);
-    if (index === -1) this.stop(start, 'unterminated construct');
-    this.pos = index + 1;
   }
 
   /** A bracket class. */
@@ -623,22 +682,40 @@ class Parser {
     this.pos++;
     if (/^[:.=]/.test(this.peek())) {
       // `[:alpha:]` at the top level is an error, `[:a]` is not: not modeled.
-      this.issue('pcre-only', start, this.pos + 1, 'class starting like a POSIX class');
+      this.issue('unknown', start, this.pos + 1, 'class starting like a POSIX class');
     }
     const negated = this.peek() === '^';
     if (negated) this.pos++;
-    let members: ByteSet = new Uint8Array(256);
+    const members = emptySet();
     let first = true;
-    while (this.pos < this.src.length && (first || this.peek() !== ']')) {
+    let quoting = false;
+    while (this.pos < this.src.length && (quoting || first || this.peek() !== ']')) {
+      // `\E` is ignored and `\Q…\E` quotes literally inside a class too (a
+      // `]` after a leading `\E` is still the first character, so literal).
+      if (this.src.startsWith('\\E', this.pos)) {
+        quoting = false;
+        this.pos += 2;
+        continue;
+      }
+      if (quoting || this.src.startsWith('\\Q', this.pos)) {
+        if (!quoting) {
+          quoting = true;
+          this.pos += 2;
+          continue;
+        }
+        // A quoted range is not modeled: quoted characters are taken one by one.
+        if (this.peek(1) === '-') {
+          this.issue('unknown', start, this.pos + 2, 'range inside \\Q…\\E in a class');
+        }
+        members[this.src.charCodeAt(this.pos++)] = 1;
+        first = false;
+        continue;
+      }
       first = false;
       const item = this.classItem();
       if (item === null) continue;
-      if (
-        item.byte !== null &&
-        this.peek() === '-' &&
-        this.peek(1) !== ']' &&
-        this.peek(1) !== ''
-      ) {
+      const rangeAhead = this.peek() === '-' && this.peek(1) !== ']' && this.peek(1) !== '';
+      if (item.byte !== null && rangeAhead) {
         this.pos++;
         const high = this.classItem();
         if (high === null) continue;
@@ -650,26 +727,23 @@ class Parser {
           this.issue('invalid', start, this.pos, 'range out of order in character class');
           continue;
         }
-        members = unionOf(members, byteRanges([item.byte, high.byte]));
+        members.fill(1, item.byte, high.byte + 1);
         continue;
       }
-      if (
-        item.byte === null &&
-        this.peek() === '-' &&
-        this.peek(1) !== ']' &&
-        this.peek(1) !== ''
-      ) {
+      if (item.byte === null && rangeAhead) {
         this.issue('invalid', start, this.pos + 1, 'invalid range in character class');
       }
-      members = unionOf(members, item.set);
+      addAll(members, item.set);
     }
     if (this.pos >= this.src.length) {
       this.issue('invalid', start, this.pos, 'missing terminating ] for character class');
       return { type: 'opaque' };
     }
     this.pos++;
-    const folded = this.fold(members);
-    return { type: 'set', set: negated ? complementOf(folded) : folded };
+    if (this.caseless) foldInPlace(members);
+    if (negated)
+      for (let byte = 0; byte < members.length; byte++) members[byte] = 1 - (members[byte] ?? 0);
+    return { type: 'set', set: members };
   }
 
   /**
@@ -704,7 +778,7 @@ class Parser {
     const byte = this.byteEscape(letter, escapeStart, true);
     if (byte === null) return null;
     if (byte !== undefined) return { byte, set: bytesOf(byte) };
-    this.issue('pcre-only', escapeStart, this.pos, `\\${letter} in a character class`);
+    this.issue('unknown', escapeStart, this.pos, `\\${letter} in a character class`);
     return null;
   }
 
@@ -727,16 +801,16 @@ class Parser {
     }
     const body = this.src.slice(itemStart + 2, close - 1);
     const negated = body.startsWith('^');
-    const set = POSIX_SETS[negated ? body.slice(1) : body];
+    const set = posixSet(negated ? body.slice(1) : body, negated, this.caseless);
     if (set === undefined) {
       this.issue('invalid', itemStart, this.pos, 'unknown POSIX class name');
       return null;
     }
-    return negated ? complementOf(set) : set;
+    return set;
   }
 
   /** A parenthesized construct at `pos`. */
-  private group(depth: number): PatternNode {
+  private group(): PatternNode {
     const start = this.pos;
     this.pos++;
     if (this.peek() === '*') {
@@ -749,7 +823,7 @@ class Parser {
     }
     if (this.peek() !== '?') {
       this.groupCount++;
-      return this.groupBody(start, depth, 'capture', this.groupCount);
+      return this.groupBody(start, 'capture', this.groupCount);
     }
     this.pos++;
     const char = this.peek();
@@ -758,36 +832,23 @@ class Parser {
       this.issue('invalid', start, this.pos, 'missing closing parenthesis');
       return { type: 'opaque' };
     }
-    if (char === ':') return this.consumeThen(1, () => this.groupBody(start, depth, 'group', null));
-    if (char === '=')
-      return this.consumeThen(1, () => this.groupBody(start, depth, 'lookahead', null));
-    if (char === '!') {
-      return this.consumeThen(1, () => this.groupBody(start, depth, 'negative-lookahead', null));
+    const simple = SIMPLE_GROUPS[char === '<' ? `<${next}` : char];
+    if (simple !== undefined) {
+      this.pos += simple.skip;
+      if (simple.issue !== undefined) this.issue('untranslated', start, this.pos, simple.issue);
+      if (char !== '|') return this.groupBody(start, simple.kind, null);
+      this.branchResetDepth++;
+      const node = this.groupBody(start, simple.kind, null);
+      this.branchResetDepth--;
+      return node;
     }
-    if (char === '<' && next === '=') {
-      return this.consumeThen(2, () => this.groupBody(start, depth, 'lookbehind', null));
-    }
-    if (char === '<' && next === '!') {
-      return this.consumeThen(2, () => this.groupBody(start, depth, 'negative-lookbehind', null));
-    }
-    if (char === '<') return this.namedGroup(start, depth, 1, '>', false);
-    if (char === "'") return this.namedGroup(start, depth, 1, "'", true);
-    if (char === 'P') return this.pythonGroup(start, depth);
-    if (char === '>' || char === '|' || char === '*') {
-      if (char === '|') this.allowsDuplicateNames = true;
-      this.pos++;
-      this.issue(
-        'pcre-only',
-        start,
-        this.pos,
-        char === '>' ? 'atomic group' : char === '|' ? 'branch reset group' : 'non-atomic lookahead'
-      );
-      return this.groupBody(start, depth, 'opaque', null);
-    }
-    if (char === '&') return this.namedCall(start, 1);
+    if (char === '<') return this.namedGroup(start, 1, '>', false);
+    if (char === "'") return this.namedGroup(start, 1, "'", true);
+    if (char === 'P') return this.pythonGroup(start);
+    if (char === '&') return this.namedCall(start, 1, 'unknown');
     if (char === 'R' && next === ')') {
       this.pos += 2;
-      this.issue('pcre-only', start, this.pos, 'recursion');
+      this.issue('unknown', start, this.pos, 'recursion');
       return { type: 'opaque' };
     }
     if (/[0-9]/.test(char) || ((char === '+' || char === '-') && /[0-9]/.test(next))) {
@@ -800,56 +861,62 @@ class Parser {
       this.issue('invalid', start, this.pos, `unrecognized character after (?`);
       return { type: 'opaque' };
     }
-    return this.optionSetting(start, depth);
+    return this.optionSetting(start);
   }
 
-  /** Skip `count` characters, then run `then`. */
-  private consumeThen(count: number, then: () => PatternNode): PatternNode {
-    this.pos += count;
-    return then();
-  }
-
-  /** A group's alternatives and its closing `)`. */
+  /**
+   * A group's alternatives and its closing `)`, with its own `J` scope.
+   *
+   * @param duplicates The `J` state inside the group (default: inherited).
+   */
   private groupBody(
     start: number,
-    depth: number,
     kind: GroupKind,
-    capture: number | null
+    capture: number | null,
+    duplicates: boolean | null = this.duplicates.at(-1) ?? null
   ): PatternNode {
-    const alternatives = this.alternatives(depth + 1);
+    this.duplicates.push(duplicates);
+    const alternatives = this.alternatives();
+    this.duplicates.pop();
     if (this.peek() !== ')') {
       this.issue('invalid', start, this.pos, 'missing closing parenthesis');
       return { type: 'group', kind, capture, alternatives };
     }
     this.pos++;
-    const node: PatternNode = { type: 'group', kind, capture, alternatives };
-    if (kind === 'lookbehind' || kind === 'negative-lookbehind') this.checkLookbehind(start, node);
-    return node;
+    if (kind === 'lookbehind' || kind === 'negative-lookbehind') {
+      this.checkLookbehind(start, alternatives);
+    }
+    return { type: 'group', kind, capture, alternatives };
   }
 
-  /** PCRE2 rejects a lookbehind longer than 255 bytes, or unbounded. */
-  private checkLookbehind(start: number, node: PatternNode & { type: 'group' }): void {
-    const length = alternativesMaxLength(node.alternatives);
-    if (length > MAX_LOOKBEHIND) {
-      this.issue(
-        'invalid',
-        start,
-        this.pos,
-        'lookbehind assertion is unbounded or longer than 255'
-      );
+  /**
+   * PCRE2's lookbehind limits (observed on both versions): an unbounded
+   * branch is rejected; when some branch varies in length, every branch
+   * must be at most 255 bytes; fixed-length branches may reach 65 535.
+   * A branch holding a back-reference or a PCRE-only atom is not measured.
+   */
+  private checkLookbehind(start: number, alternatives: readonly (readonly PatternNode[])[]): void {
+    const lengths = alternatives.map((nodes) => sequenceLength(nodes));
+    if (lengths.some(({ min, max }) => Number.isNaN(min) || Number.isNaN(max))) {
+      this.issue('unknown', start, this.pos, 'lookbehind of unmeasured length');
+      return;
+    }
+    const variable = lengths.some(({ min, max }) => min !== max);
+    const limit = variable ? MAX_VARIABLE_LOOKBEHIND : MAX_FIXED_LOOKBEHIND;
+    if (lengths.some(({ max }) => max > limit)) {
+      this.issue('invalid', start, this.pos, 'lookbehind assertion is unbounded or too long');
     }
   }
 
   /**
    * A named capture `(?<n>…)` / `(?P<n>…)` (translated) or `(?'n'…)`
-   * (PCRE-only); a bad or unterminated name is an error.
+   * (untranslated); a bad or unterminated name is an error.
    */
   private namedGroup(
     start: number,
-    depth: number,
     skip: number,
     terminator: string,
-    pcreOnly: boolean
+    quoted: boolean
   ): PatternNode {
     this.pos += skip;
     const name = GROUP_NAME.exec(this.src.slice(this.pos))?.[0];
@@ -859,24 +926,33 @@ class Parser {
       return { type: 'opaque' };
     }
     this.pos += name.length + 1;
-    this.names.push(name);
+    this.names.push({ name, duplicatesAllowed: this.duplicates.at(-1) ?? null });
+    if (this.branchResetDepth > 0) {
+      // Names share numbers across a branch reset's alternatives: not modeled.
+      this.issue('unknown', start, this.pos, 'named group inside a branch reset');
+    }
     this.groupCount++;
-    if (pcreOnly) this.issue('pcre-only', start, this.pos, "(?'name'…) group");
-    return this.groupBody(start, depth, 'capture', this.groupCount);
+    if (quoted) this.issue('untranslated', start, this.pos, "(?'name'…) group");
+    return this.groupBody(start, 'capture', this.groupCount);
   }
 
   /** `(?P<n>…)`, `(?P=n)`, `(?P>n)`; any other `(?P` is an error. */
-  private pythonGroup(start: number, depth: number): PatternNode {
+  private pythonGroup(start: number): PatternNode {
     const kind = this.peek(1);
-    if (kind === '<') return this.namedGroup(start, depth, 2, '>', false);
-    if (kind === '=' || kind === '>') return this.namedCall(start, 2);
+    if (kind === '<') return this.namedGroup(start, 2, '>', false);
+    if (kind === '=') return this.namedCall(start, 2, 'untranslated');
+    if (kind === '>') return this.namedCall(start, 2, 'unknown');
     this.pos++;
     this.issue('invalid', start, this.pos, 'unrecognized character after (?P');
     return { type: 'opaque' };
   }
 
-  /** `(?&n)`, `(?P=n)`, `(?P>n)`: PCRE-only; a malformed or unknown name is an error. */
-  private namedCall(start: number, skip: number): PatternNode {
+  /**
+   * `(?P=n)` (a named back-reference: valid once `n` exists) and the named
+   * subroutine calls `(?&n)`, `(?P>n)` (validity not modeled: a call can
+   * recurse forever); a malformed or unknown name is an error.
+   */
+  private namedCall(start: number, skip: number, kind: IssueKind): PatternNode {
     this.pos += skip;
     const name = GROUP_NAME.exec(this.src.slice(this.pos))?.[0];
     if (name === undefined || this.peek(name.length) !== ')') {
@@ -887,11 +963,11 @@ class Parser {
     this.pos += name.length + 1;
     const construct = this.src.slice(start, this.pos);
     this.pending.push({ by: 'name', name, construct });
-    this.issue('pcre-only', start, this.pos, 'named reference or subroutine call');
+    this.issue(kind, start, this.pos, 'named reference or subroutine call', true);
     return { type: 'opaque' };
   }
 
-  /** `(?n)`, `(?+n)`, `(?-n)`: subroutine calls (PCRE-only); `(?0)` recurses. */
+  /** `(?n)`, `(?+n)`, `(?-n)`: subroutine calls; `(?0)` recurses (validity not modeled). */
   private numberedCall(start: number): PatternNode {
     const call = /^([+-]?)(\d+)/.exec(this.src.slice(this.pos));
     const sign = call?.[1] ?? '';
@@ -909,75 +985,126 @@ class Parser {
         : sign === '-'
           ? this.groupCount - number + 1
           : number;
-    this.issue('pcre-only', start, this.pos, number === 0 ? 'recursion' : 'subroutine call');
-    if (number !== 0) {
-      if (target < 1)
-        this.issue('invalid', start, this.pos, 'reference to a group that does not exist');
-      else
-        this.pending.push({
-          by: 'number',
-          group: target,
-          construct: this.src.slice(start, this.pos)
-        });
+    if (number !== 0 && target < 1) {
+      // A missing group is a compile error: before the call's own `unknown`.
+      this.issue('invalid', start, this.pos, 'reference to a group that does not exist');
+    }
+    this.issue('unknown', start, this.pos, number === 0 ? 'recursion' : 'subroutine call', true);
+    if (number !== 0 && target >= 1) {
+      this.pending.push({
+        by: 'number',
+        group: target,
+        construct: this.src.slice(start, this.pos)
+      });
     }
     return { type: 'opaque' };
   }
 
   /**
    * An option setting: `(?letters)` / `(?letters-letters)` / `(?^…)`
-   * unscoped, or `(?…:…)` scoped. Only `i` is translated (both features
-   * already match caselessly); everything else is PCRE-only.
+   * unscoped, or `(?…:…)` scoped. Letters are checked against what PCRE2
+   * accepts; only `i` is translated (both features already match
+   * caselessly).
    */
-  private optionSetting(start: number, depth: number): PatternNode {
-    const letters = /^\^?[A-Za-z]*(?:-[A-Za-z]*)?/.exec(this.src.slice(this.pos))?.[0] ?? '';
-    this.pos += letters.length;
+  private optionSetting(start: number): PatternNode {
+    const spec = /^[\^A-Za-z-]*/.exec(this.src.slice(this.pos))?.[0] ?? '';
+    this.pos += spec.length;
     const end = this.peek();
-    if (end === '') {
-      this.issue('invalid', start, this.pos, 'missing closing parenthesis');
+    if (!OPTION_SPEC.test(spec) || (end !== ')' && end !== ':')) {
+      this.pos = Math.min(this.src.length, this.pos + 1);
+      this.issue('invalid', start, this.pos, 'unrecognized option setting');
       return { type: 'opaque' };
     }
-    if (end !== ')' && end !== ':') this.stop(start, 'option setting');
     this.pos++;
-    if (/J/.test(letters.split('-')[0] ?? '')) this.allowsDuplicateNames = true;
-    const caselessOnly = letters === 'i';
+    const duplicates = duplicatesAfter(spec, this.duplicates.at(-1) ?? null);
+    // `i` is already on (both features run caselessly) and `J` only licenses
+    // repeated names: neither changes what the pattern matches.
+    const noop = /^[iJ]+$/.test(spec);
+    // `x`/`xx` (spaces and `#` comments ignored) and `n` (plain groups do not
+    // capture) change how the rest parses: not modeled.
+    const reparses = /[xn]/.test(spec.split('-')[0] ?? '');
+    if (reparses) this.issue('unknown', start, this.pos, 'option changing the pattern syntax');
     if (end === ')') {
-      if (!caselessOnly) this.issue('pcre-only', start, this.pos, 'option setting');
-      return { type: 'option', caselessOnly };
+      this.duplicates[this.duplicates.length - 1] = duplicates;
+      if (!noop) this.issue('untranslated', start, this.pos, 'option setting');
+      return { type: 'option', noop };
     }
-    if (caselessOnly) return this.groupBody(start, depth, 'group', null);
-    this.issue('pcre-only', start, this.pos, 'scoped option setting');
-    return this.groupBody(start, depth, 'opaque', null);
+    if (noop) return this.groupBody(start, 'group', null, duplicates);
+    this.issue('untranslated', start, this.pos, 'scoped option setting');
+    return this.groupBody(start, 'opaque', null, duplicates);
   }
 
-  /** Check every reference against the whole pattern's groups and names. */
+  /** Check every reference against the whole pattern's groups and names, then repeated names. */
   private checkReferences(): void {
+    const missing: ParseIssue[] = [];
     for (const reference of this.pending) {
-      const missing =
+      const absent =
         reference.by === 'number'
           ? reference.group > this.groupCount
-          : !this.names.includes(reference.name);
-      if (missing) {
-        this.issues.push({
+          : !this.names.some(({ name }) => name === reference.name);
+      if (absent) {
+        missing.push({
           kind: 'invalid',
           construct: reference.construct,
           detail: 'reference to a group that does not exist'
         });
       }
     }
-    if (this.allowsDuplicateNames) return;
-    const repeated = this.names.find((name, index) => this.names.indexOf(name) !== index);
-    if (repeated !== undefined) {
-      this.issues.push({
-        kind: 'invalid',
-        construct: repeated,
-        detail: 'two groups share a name'
-      });
+    // A missing group is a compile error wherever the reference sits, so with
+    // nothing unknown in the pattern it leads the list (it outranks a
+    // subroutine call's own `unknown`); otherwise the groups seen may be off.
+    const trusted = !this.issues.some((issue) => issue.kind === 'unknown' && !issue.call);
+    if (trusted) this.issues.unshift(...missing);
+    else this.issues.push(...missing);
+    this.checkRepeatedNames();
+  }
+
+  /**
+   * A name declared twice is an error unless `J` is in force at the second
+   * declaration (inside a branch reset it can be legal: such names are
+   * already `unknown`, which outranks this).
+   */
+  private checkRepeatedNames(): void {
+    const seen = new Set<string>();
+    for (const { name, duplicatesAllowed } of this.names) {
+      if (seen.has(name) && duplicatesAllowed !== true) {
+        this.issues.push({ kind: 'invalid', construct: name, detail: 'two groups share a name' });
+        return;
+      }
+      seen.add(name);
     }
   }
 }
 
+/** Fixed-prefix groups: the `(?` continuation → kind, characters to skip, untranslated issue. */
+const SIMPLE_GROUPS: Readonly<
+  Record<string, { readonly kind: GroupKind; readonly skip: number; readonly issue?: string }>
+> = {
+  ':': { kind: 'group', skip: 1 },
+  '=': { kind: 'lookahead', skip: 1 },
+  '!': { kind: 'negative-lookahead', skip: 1 },
+  '<=': { kind: 'lookbehind', skip: 2 },
+  '<!': { kind: 'negative-lookbehind', skip: 2 },
+  '>': { kind: 'opaque', skip: 1, issue: 'atomic group' },
+  '|': { kind: 'opaque', skip: 1, issue: 'branch reset group' },
+  // A lookahead (zero-width), but not atomic: never translated.
+  '*': { kind: 'lookahead', skip: 1, issue: 'non-atomic lookahead' }
+};
+
+/**
+ * The `J` state after an option spec: `^` resets every option (so `J` is
+ * on only if listed after it); `J` before `-` sets it, after `-` clears it.
+ */
+function duplicatesAfter(spec: string, current: boolean | null): boolean | null {
+  const [on = '', off = ''] = spec.split('-');
+  if (on.startsWith('^')) return on.includes('J');
+  if (on.includes('J')) return true;
+  if (off.includes('J')) return false;
+  return current;
+}
+
 /** Whether a group kind is a lookaround assertion. */
-export function isLookaround(kind: GroupKind): boolean {
+function isLookaround(kind: GroupKind): boolean {
   return kind !== 'capture' && kind !== 'group' && kind !== 'opaque';
 }
 
@@ -986,40 +1113,62 @@ function isQuantifiable(node: PatternNode): boolean {
   return node.type !== 'assert' && node.type !== 'keep' && node.type !== 'option';
 }
 
+/** The shortest and longest text a match can span, in bytes. */
+export interface Length {
+  readonly min: number;
+  /** `Infinity` when unbounded. */
+  readonly max: number;
+}
+
+/** Unknown length (a back-reference or a PCRE-only atom). */
+const UNMEASURED: Length = { min: NaN, max: NaN };
+
+/** A sequence's length: the sum of its nodes'. */
+export function sequenceLength(nodes: readonly PatternNode[]): Length {
+  let min = 0;
+  let max = 0;
+  for (const node of nodes) {
+    const length = nodeLength(node);
+    min += length.min;
+    max += length.max;
+  }
+  return { min, max };
+}
+
 /**
- * The longest text a node can match, in bytes (`Infinity` when unbounded;
- * an opaque or back-reference node counts as unbounded, so a lookbehind
- * holding one is never wrongly accepted — only reported if it is also
- * provably too long, see the caller).
+ * A node's length (see {@link Length}); lookarounds and assertions span
+ * nothing, back-references and opaque atoms are unmeasured (NaN).
+ *
+ * @param node The node.
  */
-export function maxLength(node: PatternNode): number {
+function nodeLength(node: PatternNode): Length {
   switch (node.type) {
     case 'set':
-      return 1;
+      return { min: 1, max: 1 };
     case 'linebreak':
-      return 2;
+      return { min: 1, max: 2 };
     case 'assert':
     case 'keep':
     case 'option':
-      return 0;
-    case 'group':
-      return isLookaround(node.kind) ? 0 : alternativesMaxLength(node.alternatives);
+      return { min: 0, max: 0 };
+    case 'group': {
+      if (isLookaround(node.kind)) return { min: 0, max: 0 };
+      const lengths = node.alternatives.map((nodes) => sequenceLength(nodes));
+      return {
+        min: Math.min(...lengths.map(({ min }) => min)),
+        max: Math.max(...lengths.map(({ max }) => max))
+      };
+    }
     case 'repeat': {
-      const body = maxLength(node.node);
-      if (body === 0 || Number.isNaN(body)) return body;
-      return node.max === null ? Infinity : body * node.max;
+      const body = nodeLength(node.node);
+      if (Number.isNaN(body.max)) return UNMEASURED;
+      const max = node.max === null ? (body.max === 0 ? 0 : Infinity) : body.max * node.max;
+      return { min: body.min * node.min, max };
     }
     case 'backref':
     case 'opaque':
-      return NaN;
+      return UNMEASURED;
   }
-}
-
-/** The longest text any of `alternatives` can match (see {@link maxLength}). */
-function alternativesMaxLength(alternatives: readonly (readonly PatternNode[])[]): number {
-  return Math.max(
-    ...alternatives.map((nodes) => nodes.reduce((sum, child) => sum + maxLength(child), 0))
-  );
 }
 
 /**
