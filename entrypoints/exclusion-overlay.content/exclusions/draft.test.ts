@@ -658,6 +658,23 @@ describe('createRowValidator', () => {
     expect(short.cached.size).toBe(ROW_CHECK_CACHE_LIMITS.entries);
   });
 
+  it('keys lanes apart, and returns a check heavier than its whole bound without keeping it', () => {
+    const lanes = createRowValidator();
+    lanes('lazyload', 'same');
+    lanes('lazyRender', 'same');
+    expect(lanes.cached.size).toBe(2);
+    const tiny = createRowValidator({ entries: 10, bytes: 100 });
+    expect(tiny('lazyload', 'big.js')).toBeNull();
+    expect(tiny('delayJs', '(')).toEqual(blocking(/^WP Rocket drops this row/));
+    expect(tiny.cached.size).toBe(0);
+    // A hit neither grows nor reorders the weight.
+    const hits = createRowValidator();
+    hits('lazyload', 'a.js');
+    const weight = hits.cached.weight;
+    hits('lazyload', 'a.js');
+    expect(hits.cached.weight).toBe(weight);
+  });
+
   it('weighs a check by its fixed cost, its row and its reason', () => {
     const validate = createRowValidator();
     validate('delayJs', '(a');
