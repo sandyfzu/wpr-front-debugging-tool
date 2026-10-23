@@ -3,7 +3,15 @@
  * an invalidation listener (nor the callback behind it) once settled.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { contextScheduler, type TimerContext, type TimerFunctions } from './context-timer';
+import {
+  WINDOW_FRAMES,
+  WINDOW_TIMERS,
+  contextFrames,
+  contextScheduler,
+  type FrameFunctions,
+  type TimerContext,
+  type TimerFunctions
+} from './context-timers';
 
 /** A fake context counting its live invalidation listeners. */
 function fakeContext() {
@@ -93,5 +101,49 @@ describe('contextScheduler', () => {
     for (let n = 0; n < 100; n++) schedule(() => undefined, 0);
     fireAll();
     expect(listeners.size).toBe(0);
+  });
+});
+
+describe('contextFrames', () => {
+  it('runs on the next frame, then holds no listener; a cancel or an invalidation stops it', () => {
+    const { ctx, listeners, invalidate } = fakeContext();
+    const { timers, pending, fireAll } = fakeTimers();
+    const frames: FrameFunctions = {
+      requestAnimationFrame: (run) => timers.setTimeout(run, 0),
+      cancelAnimationFrame: (id) => {
+        timers.clearTimeout(id);
+      }
+    };
+    const nextFrame = contextFrames(ctx, frames);
+    const run = vi.fn();
+    nextFrame(run);
+    const cancelled = vi.fn();
+    nextFrame(cancelled)();
+    fireAll();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
+    const late = vi.fn();
+    nextFrame(late);
+    invalidate();
+    expect(pending.size).toBe(0);
+    expect(late).not.toHaveBeenCalled();
+  });
+});
+
+describe('the window seams', () => {
+  it('schedule and cancel on the window', async () => {
+    const ran = vi.fn();
+    WINDOW_TIMERS.clearTimeout(WINDOW_TIMERS.setTimeout(ran, 0));
+    WINDOW_FRAMES.cancelAnimationFrame(WINDOW_FRAMES.requestAnimationFrame(ran));
+    const fired = await new Promise<boolean>((resolve) => {
+      WINDOW_FRAMES.requestAnimationFrame(() => {
+        WINDOW_TIMERS.setTimeout(() => {
+          resolve(true);
+        }, 0);
+      });
+    });
+    expect(fired).toBe(true);
+    expect(ran).not.toHaveBeenCalled();
   });
 });

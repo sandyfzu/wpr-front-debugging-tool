@@ -38,6 +38,7 @@
 import { createMemo } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { WINDOW_FRAMES, contextFrames } from '../../../utils/context-timers';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { createLogger } from '../../../lib/logger';
 import type { PageDataSnapshot } from '../data-hub';
@@ -78,6 +79,8 @@ interface InspectorUiState {
  * @param ctx The content script's context; everything registers through it.
  */
 export function setupInspectorWidget(ctx: ContentScriptContext): void {
+  // Frames and timers that let go of their callbacks (see utils/context-timers).
+  const nextFrame = contextFrames(ctx, WINDOW_FRAMES);
   const pageOrigin = window.location.origin;
   const fdtVersion = browser.runtime.getManifest().version;
 
@@ -145,7 +148,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   /** The focus choreography rides this context's frames (ui/focus's contract). */
   const focusDeps: FocusChoreographyDeps = {
     requestFrame: (callback) => {
-      ctx.requestAnimationFrame(callback);
+      nextFrame(callback);
     },
     isInvalid: () => ctx.isInvalid,
     log
@@ -521,7 +524,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // The context's own frame seam: a dead context never delivers the
       // release (and the cycle's liveness read ends it at once anyway).
       nextFrame: (callback) => {
-        ctx.requestAnimationFrame(callback);
+        nextFrame(callback);
       },
       // The settle bound is wall-clock ms (the choreography it waits out is
       // timed in ms), so the seam is the content script's own wall clock.

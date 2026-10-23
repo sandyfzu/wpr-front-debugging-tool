@@ -22,7 +22,12 @@ import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
 import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { OverlayApp } from './app';
-import { contextScheduler } from './context-timer';
+import {
+  WINDOW_FRAMES,
+  WINDOW_TIMERS,
+  contextFrames,
+  contextScheduler
+} from '../../utils/context-timers';
 import { createOverlayController } from './controller';
 import { createPageTools } from './page-tools';
 import { mountOverlay } from './mount-overlay';
@@ -93,12 +98,7 @@ function renderOverlay(
     ctx.addEventListener(target, type as keyof WindowEventMap, handler, { passive, capture: true });
   };
   return mountShadowUi(container, shadow, () => {
-    const schedule = contextScheduler(ctx, {
-      setTimeout: (run, ms) => window.setTimeout(run, ms),
-      clearTimeout: (id) => {
-        window.clearTimeout(id);
-      }
-    });
+    const schedule = contextScheduler(ctx, WINDOW_TIMERS);
     const page = createPageTools({
       doc: document,
       win: window,
@@ -134,8 +134,9 @@ function renderOverlay(
       controller.dispose();
       page.dispose();
     });
+    const nextFrame = contextFrames(ctx, WINDOW_FRAMES);
     const requestFrame = (run: () => void): void => {
-      ctx.requestAnimationFrame(run);
+      nextFrame(run);
     };
     return (
       <OverlayApp
