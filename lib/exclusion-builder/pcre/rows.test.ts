@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ROW_REASONS } from '../row-reasons';
 import {
   TRANSLATION_CACHE_LIMITS,
@@ -509,11 +509,32 @@ describe('the save-check memo', () => {
     );
   });
 
-  it('stays within its bounds with long, dropped rows', () => {
-    for (let n = 0; n < 1500; n++)
-      rowSaveOutcome('defer_all_js', `(${String(n)}${'x'.repeat(2000)}`);
-    const kept = saveCheckCacheUsage();
-    expect(kept.entries).toBeLessThanOrEqual(TRANSLATION_CACHE_LIMITS.saveEntries);
+  it('evicts the oldest long, dropped rows once their bytes pass the bound', async () => {
+    // A fresh memo: its weight per row is read, not assumed.
+    vi.resetModules();
+    const fresh = await import('./rows');
+    /** A dropped row at the wire cap (an unclosed group, 2 000+ characters). */
+    const row = (n: number): string => `(${String(n)}${'x'.repeat(2000)}`;
+    const first = fresh.rowSaveOutcome('defer_all_js', row(0));
+    const perRow = fresh.saveCheckCacheUsage().bytes;
+    // The fewest rows whose weights pass the byte bound (well under the entry bound).
+    const rows = Math.floor(TRANSLATION_CACHE_LIMITS.saveBytes / perRow) + 2;
+    expect(rows).toBeLessThan(TRANSLATION_CACHE_LIMITS.saveEntries);
+    for (let n = 1; n < rows; n++) fresh.rowSaveOutcome('defer_all_js', row(n));
+    const kept = fresh.saveCheckCacheUsage();
     expect(kept.bytes).toBeLessThanOrEqual(TRANSLATION_CACHE_LIMITS.saveBytes);
+    expect(kept.entries).toBeLessThan(rows);
+    // Oldest out first: the first row is checked again, the last one is still kept.
+    const last = fresh.rowSaveOutcome('defer_all_js', row(rows - 1));
+    expect(fresh.rowSaveOutcome('defer_all_js', row(rows - 1))).toBe(last);
+    expect(fresh.rowSaveOutcome('defer_all_js', row(0))).not.toBe(first);
+  });
+
+  it('keeps at most its entry bound of short rows', async () => {
+    vi.resetModules();
+    const fresh = await import('./rows');
+    for (let n = 0; n <= TRANSLATION_CACHE_LIMITS.saveEntries; n++)
+      fresh.rowSaveOutcome('defer_all_js', `(${String(n)}`);
+    expect(fresh.saveCheckCacheUsage().entries).toBe(TRANSLATION_CACHE_LIMITS.saveEntries);
   });
 });

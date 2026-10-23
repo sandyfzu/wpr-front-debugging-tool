@@ -4,7 +4,12 @@
  * included) as a validation entry, and one translation per row set.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFER_ROW_SET_CACHE_LIMITS, deferRowProblems, deferRowSet } from './defer-js-rows';
+import {
+  DEFER_ROW_SET_CACHE_LIMITS,
+  deferRowProblems,
+  deferRowSet,
+  deferRowSetCacheUsage
+} from './defer-js-rows';
 
 describe('deferRowSet — matching', () => {
   it('credits the first row in list order that matches the subject', () => {
@@ -92,11 +97,21 @@ describe('deferRowSet — memo', () => {
     expect(deferRowSet([`filler-${String(DEFER_ROW_SET_CACHE_LIMITS.entries - 1)}`])).toBe(last);
   });
 
-  it('never keeps a set heavier than its character bound (translated again, same result)', () => {
-    const heavy = Array.from({ length: 200 }, (_, i) => `${'h'.repeat(2000)}${String(i)}`);
-    const first = deferRowSet(heavy);
-    expect(deferRowSet(heavy)).not.toBe(first);
-    expect(deferRowSet(heavy).problems).toEqual(first.problems);
+  it('never keeps a set heavier than its byte bound', () => {
+    /** Wire-cap rows: about 4 KiB of weight each. */
+    const row = (i: number): string => `${'h'.repeat(2000)}${String(i)}`;
+    // The fewest such rows whose set passes the bound: read from one row's weight.
+    const perRow =
+      deferRowSet([row(0), row(1)]).retainedBytes - deferRowSet([row(0)]).retainedBytes;
+    const heavy = Array.from(
+      { length: Math.ceil(DEFER_ROW_SET_CACHE_LIMITS.bytes / perRow) + 1 },
+      (_, i) => row(i)
+    );
+    const before = deferRowSetCacheUsage();
+    const set = deferRowSet(heavy);
+    expect(set.retainedBytes).toBeGreaterThan(DEFER_ROW_SET_CACHE_LIMITS.bytes);
+    // Returned, never kept: the memo holds what it held.
+    expect(deferRowSetCacheUsage()).toEqual(before);
   });
 });
 
