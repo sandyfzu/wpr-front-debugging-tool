@@ -28,7 +28,8 @@ import {
   isDelayJSType
 } from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
-import type { ParsedTag } from './html-scan';
+import type { ParsedTag, ScannedTag } from './html-scan';
+import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import {
   readDelayRows,
   DELAY_TYPE_ATTRIBUTE,
@@ -77,6 +78,45 @@ const CONTROLLER_RUN_MARKER = `${DELAY_JS_CONTROLLER}.run`;
 
 /** The Elementor animation helper the plugin serves alongside Delay JS. */
 const ELEMENTOR_ANIMATION_RUN_MARKER = 'RocketElementorAnimation.run';
+
+/**
+ * The end of a script in WP Rocket's Delay JS regex
+ * (`<\s*script(…)?>(?<content>.*?)?<\s*\/\s*script\s*>`, `ims`): PCRE's
+ * `\s` (no UTF) and an ASCII-caseless `script`, written out.
+ */
+const DELAY_SCRIPT_END = new RegExp(
+  `<[${PCRE_SPACE_CHARS}]*\\/[${PCRE_SPACE_CHARS}]*[Ss][Cc][Rr][Ii][Pp][Tt][${PCRE_SPACE_CHARS}]*>`,
+  'g'
+);
+
+/**
+ * The script as WP Rocket's Delay JS matched it: from its `<script` to the
+ * first end tag that regex accepts after the opening tag's first `>`. HTML
+ * also ends a script at `</script` followed by `/` or anything before the
+ * `>` (`</script/>`, `</script x>`), which the regex refuses: it reads on
+ * to a later end tag, so its match — the text a row is tested against, and
+ * what an excluded match leaves as it was — takes in the scripts until
+ * then (it delays the first one's opening tag only, so the served page
+ * keeps the odd end tag and those scripts undelayed). Otherwise the match
+ * is the HTML element.
+ *
+ * @param html The served page.
+ * @param tag A script the served page delays (its match started there).
+ * @returns Where the match's content ends and where it ends.
+ */
+export function delayScriptMatch(
+  html: string,
+  tag: ScannedTag
+): { readonly contentEnd: number; readonly end: number } {
+  const element = { contentEnd: tag.contentEnd, end: tag.end };
+  const openingEnd = html.indexOf('>', tag.start);
+  DELAY_SCRIPT_END.lastIndex = openingEnd === -1 ? tag.openingEnd : openingEnd + 1;
+  const match = DELAY_SCRIPT_END.exec(html);
+  // The served end tag of a delayed script is one WP Rocket wrote (`</script>`):
+  // a match ending before it would mean the page was not delayed this way.
+  if (match === null || match.index < tag.contentEnd) return element;
+  return { contentEnd: match.index, end: match.index + match[0].length };
+}
 
 /**
  * Whether a scanned script is delayed: its `type` is one of the served
@@ -265,16 +305,21 @@ function delayAfterInlinePass(
   // Whether an earlier script opens the wrapper (a later one may hold its closing).
   let afterOpening = false;
   for (const tag of scanTags(servedHtml)) {
+    // A delayed script is read as WP Rocket's regex matched it (see `delayScriptMatch`).
+    const match =
+      tag.name === 'script' && isDelayedScript(tag)
+        ? delayScriptMatch(servedHtml, tag)
+        : { contentEnd: tag.contentEnd, end: tag.end };
     let spanned: string | null = null;
     if (inline.spanning && tag.name === 'script') {
-      const body = servedHtml.slice(tag.openingEnd, tag.contentEnd);
+      const body = servedHtml.slice(tag.openingEnd, match.contentEnd);
       const reading = spanningWrapperReading(body, afterOpening);
       afterOpening ||= body.startsWith(INLINE_WRAP_OPEN);
       if (reading !== null) {
         spanned =
           servedHtml.slice(tag.start, tag.openingEnd) +
           reading +
-          servedHtml.slice(tag.contentEnd, tag.end);
+          servedHtml.slice(match.contentEnd, match.end);
       }
     }
     if (featureWide && tag.name === 'script') {
@@ -301,9 +346,9 @@ function delayAfterInlinePass(
     if (tag.name !== 'script' || !isDelayedScript(tag)) continue;
     candidates++;
     if (!featureWide) {
-      // The whole script element is the match target, as WP Rocket saw it
-      // before delaying it (rows may also match body text).
-      const element = servedHtml.slice(tag.start, tag.end);
+      // The whole match is the target, as WP Rocket saw it before delaying
+      // it (rows may also match body text).
+      const element = servedHtml.slice(tag.start, match.end);
       const verdict = verdictAfterInlinePass(matchRow, element, inline.pass, spanned);
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {

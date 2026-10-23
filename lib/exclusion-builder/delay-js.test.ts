@@ -7,7 +7,7 @@
  * plugin's three controller scripts.
  */
 import { describe, expect, it } from 'vitest';
-import { delayJsTransform } from './delay-js';
+import { delayJsTransform, delayScriptMatch } from './delay-js';
 import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 import { scanTags } from './html-scan';
@@ -487,5 +487,46 @@ describe('delayJsTransform — a Defer JS wrapper spanning scripts (WP Rocket 3.
     const result = delayJsTransform(SERVED, withRows(['\\{jQuery'], []));
     expect(result.report).toMatchObject({ rewritten: 1 });
     expect(result.report.undetermined).toBeUndefined();
+  });
+});
+
+describe('delayScriptMatch — the script as WP Rocket’s Delay JS regex matched it', () => {
+  /** The match of the first script of `html`, as text. */
+  const matched = (html: string): string => {
+    const tag = scanTags(html).find((candidate) => candidate.name === 'script');
+    if (tag === undefined) throw new Error('no script');
+    const { contentEnd, end } = delayScriptMatch(html, tag);
+    return `${html.slice(tag.start, contentEnd)}|${html.slice(contentEnd, end)}`;
+  };
+
+  it('is the HTML element when the regex accepts its end tag', () => {
+    expect(matched('<script id="a">x()</script><script>y()</script>')).toBe(
+      '<script id="a">x()|</script>'
+    );
+    expect(matched('<script>x()</SCRIPT >')).toBe('<script>x()|</SCRIPT >');
+  });
+
+  it.each([
+    ['</script/>', '<script>x()</script/><script>y()|</script>'],
+    ['</script x>', '<script>x()</script x><script>y()|</script>'],
+    ['</SCRIPT\tdata-x>', '<script>x()</SCRIPT\tdata-x><script>y()|</script>']
+  ])('reads on past %s, which HTML accepts and the regex refuses', (end, expected) => {
+    expect(matched(`<script>x()${end}<script>y()</script>`)).toBe(expected);
+  });
+
+  it('ends at any end tag the regex accepts (`< / script >`)', () => {
+    expect(matched('<script>x()</script/>a< / script ><script>y()</script>')).toBe(
+      '<script>x()</script/>a|< / script >'
+    );
+  });
+
+  it('starts reading after the opening tag’s first `>`, quoted or not', () => {
+    expect(matched('<script data-x="a>b</script/>c">x()</script>')).toBe(
+      '<script data-x="a>b</script/>c">x()|</script>'
+    );
+  });
+
+  it('is the HTML element when the regex finds no end', () => {
+    expect(matched('<script>x()</script/>tail')).toBe('<script>x()|</script/>');
   });
 });

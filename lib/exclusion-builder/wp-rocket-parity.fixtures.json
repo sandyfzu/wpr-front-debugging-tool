@@ -2586,6 +2586,42 @@
       "excluded": []
     },
     {
+      "id": "match-delay-end-tag-slash",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["foo\\("],
+      "note": "`</script/>` ends a script for HTML, not for WP Rocket's `<\\s*/\\s*script\\s*>`: a's match runs on through b, so a row naming b's code excludes a (b is never delayed)",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script id=\"a\">var x=1;</script/>\n<script id=\"b\">foo();</script>\n<script id=\"c\">bar();</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" id=\"a\">var x=1;</script/>\n<script id=\"b\">foo();</script>\n<script type=\"text/rocketlazyloadscript\" id=\"c\">bar();</script>\n</body></html><!-- wpr_delay_js -->",
+      "subjects": ["a", "b", "c"],
+      "candidates": ["a", "c"],
+      "excluded": ["a"]
+    },
+    {
+      "id": "match-delay-end-tag-slash-unmatched",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["zzz"],
+      "note": "the same page, a row matching nothing: a's whole match stays delayed, b undelayed",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script id=\"a\">var x=1;</script/>\n<script id=\"b\">foo();</script>\n<script id=\"c\">bar();</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" id=\"a\">var x=1;</script/>\n<script id=\"b\">foo();</script>\n<script type=\"text/rocketlazyloadscript\" id=\"c\">bar();</script>\n</body></html><!-- wpr_delay_js -->",
+      "subjects": ["a", "b", "c"],
+      "candidates": ["a", "c"],
+      "excluded": []
+    },
+    {
+      "id": "match-delay-end-tag-attributes",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["id=\"c\""],
+      "note": "end tags with junk before `>` (`</SCRIPT data-x>`, `</script x>`): a's match takes in b and c; a row naming c excludes a, d is matched alone",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script id=\"a\">var x=1;</SCRIPT data-x>\n<script id=\"b\">foo();</script x>\n<script id=\"c\">bar();</script>\n<script id=\"d\">baz();</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" id=\"a\">var x=1;</SCRIPT data-x>\n<script id=\"b\">foo();</script x>\n<script id=\"c\">bar();</script>\n<script type=\"text/rocketlazyloadscript\" id=\"d\">baz();</script>\n</body></html><!-- wpr_delay_js -->",
+      "subjects": ["a", "b", "c", "d"],
+      "candidates": ["a", "d"],
+      "excluded": ["a"]
+    },
+    {
       "id": "match-defer-none",
       "kind": "match",
       "feature": "defer_all_js",
@@ -4116,6 +4152,21 @@
       "excluded": [],
       "featureOff": false,
       "inlineWrapped": ["i1"]
+    },
+    {
+      "id": "match-defer-inline-end-tag-slash-delayed",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery.min.js"],
+      "note": "`</script/>` through Delay JS: the inline pass and Delay JS both read on to f's `</script>`, which Delay JS keeps, so the wrapper reads back whole",
+      "throughDelayJs": true,
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script id=\"i1\">jQuery(1)</script/>\n<script src=\"/wp-content/plugins/p/foo.js?ver=1\" id=\"f\"></script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" id=\"i1\">window.addEventListener('DOMContentLoaded', function() {jQuery(1)</script/>\n<script src=\"/wp-content/plugins/p/foo.js?ver=1\" id=\"f\" data-rocket-defer defer>});</script>\n</body></html><!-- wpr_delay_js --><!-- wpr_defer_js -->",
+      "subjects": ["i1", "f"],
+      "candidates": ["f"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": []
     },
     {
       "id": "match-lazyload-src-file",
