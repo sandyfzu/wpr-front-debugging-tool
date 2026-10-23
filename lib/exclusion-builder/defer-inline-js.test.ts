@@ -238,12 +238,14 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
 
   it('leaves it as served and undetermined unless the pass runs', () => {
     for (const rows of [['jquery.min.js'], ['foo.js']]) {
+      // Both scripts are left as served: i1, and f holding the closing (f
+      // is deferred: Defer JS counts it as a candidate already).
       expect(replayInlinePass(SPLIT, deferSet(rows))).toEqual({
         html: SPLIT,
         wrapped: 1,
         unwrapped: 0,
-        undetermined: 1,
-        spanned: 1
+        undetermined: 2,
+        spanned: 2
       });
     }
     expect(replayInlinePass(SPLIT, deferSet([]))).toEqual({
@@ -261,8 +263,8 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
       html: `<script id="w">jQuery(2)</script>${SPLIT}`,
       wrapped: 2,
       unwrapped: 1,
-      undetermined: 1,
-      spanned: 1
+      undetermined: 2,
+      spanned: 2
     });
   });
 
@@ -270,11 +272,13 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
     // Its body may be the opener's own body ending in `});` plus the next
     // script's empty body: two sources, one served page.
     const page = `${WHOLE}<script src="/f.js">${INLINE_WRAP_CLOSE}</script>`;
-    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
+    // The closing's script is not deferred: it counts as wrapped too.
+    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toEqual({
       html: page,
+      wrapped: 2,
       unwrapped: 0,
-      undetermined: 1,
-      spanned: 1
+      undetermined: 2,
+      spanned: 2
     });
     expect(hasSpanningWrapper(page)).toBe(true);
   });
@@ -283,10 +287,10 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
     const page = `${WHOLE}${WHOLE}<script>${INLINE_WRAP_CLOSE}</script>`;
     expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
       html: page,
-      wrapped: 2,
+      wrapped: 3,
       unwrapped: 0,
-      undetermined: 2,
-      spanned: 2
+      undetermined: 3,
+      spanned: 3
     });
   });
 
@@ -302,9 +306,9 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
     expect(replayInlinePass(opening, deferSet(['jquery.min.js'])).wrapped).toBe(0);
     const page = `${opening}<script>${INLINE_WRAP_CLOSE}</script>`;
     expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
-      wrapped: 1,
-      undetermined: 1,
-      spanned: 1
+      wrapped: 2,
+      undetermined: 2,
+      spanned: 2
     });
   });
 
@@ -313,6 +317,28 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
     expect(unwrapInlineScripts(`${WHOLE}${SPLIT}`)).toEqual({
       html: `<script id="w">jQuery(2)</script>${SPLIT}`,
       unwrapped: 1
+    });
+  });
+
+  it('takes the closing to sit in the first script after the opening that ends like it', () => {
+    const opening = `<script id="o">${INLINE_WRAP_OPEN}jQuery(1)</script>`;
+    const page = `${opening}<script id="p">var a;</script><script id="c">b();});</script><script id="d">e();});</script>`;
+    // o and c are left as served (and counted); p never ends like the
+    // closing, d comes after the closing was taken.
+    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toEqual({
+      html: page,
+      wrapped: 2,
+      unwrapped: 0,
+      undetermined: 2,
+      spanned: 2
+    });
+    // With the live rows deciding, the same two are undetermined.
+    expect(replayInlinePass(page, deferSet(['foo.js']))).toMatchObject({ undetermined: 2 });
+    // Another opening ends the search: its closing is its own.
+    const twice = `${opening}${opening.replace('"o"', '"q"')}<script>${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(twice, deferSet(['jquery.min.js']))).toMatchObject({
+      wrapped: 3,
+      undetermined: 3
     });
   });
 

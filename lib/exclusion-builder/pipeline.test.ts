@@ -335,7 +335,8 @@ describe('the Defer JS inline pass across Delay JS (WP Rocket 3.23.5.1, run)', (
       feature: 'defer_all_js',
       candidates: 2,
       rewritten: 0,
-      undetermined: 1
+      // Both left as served: i1, and f holding the closing.
+      undetermined: 2
     });
     // Not the live-rows caveat: the rows decide nothing here.
     expect(reports[1]?.inlineUndetermined).toBeUndefined();
