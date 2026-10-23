@@ -225,6 +225,26 @@ describe('editing and autosave', () => {
     expect(port.save).toHaveBeenCalledTimes(1);
   });
 
+  it('says a draft over the set cap is not kept (it is gone on close), and asks nothing', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    // Each row under the wire's row cap; together over the set's.
+    const rows = Array.from({ length: 40 }, (_, n) => `/p${String(n)}/${'a'.repeat(2000)}.js`);
+    controller.insertRows('delayJs', rows, null);
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).not.toHaveBeenCalled();
+    expect(controller.saveState()).toEqual({ kind: 'not-saved', reason: 'too-large' });
+    // Back under the cap: it saves again.
+    for (const row of controller.draft().rows.delayJs.slice(5)) {
+      controller.removeRow('delayJs', row.id);
+    }
+    clock.fire(AUTOSAVE_DELAY_MS);
+    await settle();
+    expect(port.save).toHaveBeenCalledTimes(1);
+    expect(controller.saveState()).toEqual({ kind: 'saved' });
+  });
+
   it('saves an edit still waiting for its pause when the overlay closes', async () => {
     const { port } = fakePort({ state: 'inactive' }, validSet());
     const { controller, clock, dispose } = await started(port);

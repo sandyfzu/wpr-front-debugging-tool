@@ -4,6 +4,7 @@ import {
   COPY_ALL_COPY,
   COUNT_COPY,
   DOCUMENT_FAILURE_COPY,
+  DRAFT_TOO_LARGE_WORDS,
   INLINE_JQUERY_LINE,
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
@@ -54,6 +55,7 @@ function allWords(): string[] {
       ...(copy.rowsNote === undefined ? [] : [copy.rowsNote])
     ]),
     INLINE_JQUERY_LINE,
+    DRAFT_TOO_LARGE_WORDS,
     rowWarningNote('Row is only whitespace — x'),
     appliedRowWarningNote('WP Rocket stores this and it excludes every script'),
     ...COUNT_COPY.caveats(
@@ -216,6 +218,9 @@ describe('saveStateWords', () => {
     expect(saveStateWords({ kind: 'saved' })).toBe('Draft saved');
     expect(saveStateWords({ kind: 'not-saved', reason: 'storage-failed' })).toBe(
       'Draft not saved: storage failed'
+    );
+    expect(saveStateWords({ kind: 'not-saved', reason: 'too-large' })).toBe(
+      'Draft not saved: it is over 65,536 characters, so closing the overlay loses it. Remove rows to keep it.'
     );
     expect(saveStateWords({ kind: 'not-saved', reason: 'timeout' })).toBe(
       // Changed in audit round 1: its own clause, no longer a lower-cased sentence.

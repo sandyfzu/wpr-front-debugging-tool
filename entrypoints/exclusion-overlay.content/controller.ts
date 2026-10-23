@@ -27,6 +27,7 @@ import {
   createRowCarry,
   createRowValidator,
   draftChars,
+  setChars,
   draftFromSet,
   draftToSet,
   restoreDraft,
@@ -82,7 +83,11 @@ export type SaveState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
   | { readonly kind: 'saved' }
-  | { readonly kind: 'not-saved'; readonly reason: ExclusionSaveFailure | SessionProblem };
+  | {
+      readonly kind: 'not-saved';
+      /** The background's answer, an ask problem, or `too-large`: the draft is over the wire's set cap. */
+      readonly reason: ExclusionSaveFailure | SessionProblem | 'too-large';
+    };
 
 /** Everything the controller needs from the outside. */
 export interface OverlayControllerDeps {
@@ -498,6 +503,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const saveNow = async (set: ExclusionSet): Promise<void> => {
     if (sameSet(set, lastSaved)) {
       setSaveState({ kind: 'idle' });
+      return;
+    }
+    // Too large to keep: said apart — closing the overlay loses it.
+    if (setChars(set) > EXCLUSION_SET_LIMITS.totalChars) {
+      setSaveState({ kind: 'not-saved', reason: 'too-large' });
       return;
     }
     // A draft the session's contract refuses would be refused anyway: say

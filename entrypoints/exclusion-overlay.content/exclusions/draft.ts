@@ -721,8 +721,16 @@ export function addCandidate(
  * @param draft The draft.
  */
 export function draftChars(draft: Draft): number {
+  return setChars(draftToSet(draft));
+}
+
+/**
+ * Characters a set carries over the wire (see {@link draftChars}).
+ *
+ * @param set The set.
+ */
+export function setChars(set: ExclusionSet): number {
   let chars = 0;
-  const set = draftToSet(draft);
   for (const lane of LANE_ORDER) for (const row of set.rows[lane]) chars += row.length;
   return chars;
 }

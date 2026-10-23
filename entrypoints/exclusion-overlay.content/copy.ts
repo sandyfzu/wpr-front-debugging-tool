@@ -9,6 +9,7 @@ import type {
   ExclusionSaveFailure,
   InterceptionUnavailableCause
 } from '../../lib/messaging/exclusion-session';
+import { EXCLUSION_SET_LIMITS } from '../../lib/messaging/exclusion-session';
 import type { ExclusionFeatureId } from '../../lib/exclusion-builder/set';
 import {
   LABEL_AUTOMATIC_LAZY_RENDERING,
@@ -778,6 +779,12 @@ export const SAVE_FAILURE_COPY: Readonly<Record<ExclusionSaveFailure, string>> =
   'storage-failed': 'storage failed'
 };
 
+/**
+ * The footer's line for a draft over the set cap: it cannot be kept, so it
+ * is gone once the overlay closes — and what to do.
+ */
+export const DRAFT_TOO_LARGE_WORDS = `Draft not saved: it is over ${EXCLUSION_SET_LIMITS.totalChars.toLocaleString('en-US')} characters, so closing the overlay loses it. Remove rows to keep it.`;
+
 /** Why a draft save got no answer, per ask problem (a footer clause). */
 const SAVE_PROBLEM_COPY: Readonly<Record<SessionProblem, string>> = {
   'no-receiver': 'the extension is not answering',
@@ -801,6 +808,7 @@ export function saveStateWords(save: SaveState): string | null {
     case 'saved':
       return 'Draft saved';
     case 'not-saved':
+      if (save.reason === 'too-large') return DRAFT_TOO_LARGE_WORDS;
       return `Draft not saved: ${
         isSaveFailure(save.reason) ? SAVE_FAILURE_COPY[save.reason] : SAVE_PROBLEM_COPY[save.reason]
       }`;
