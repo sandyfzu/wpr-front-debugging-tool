@@ -471,10 +471,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
    * @returns The committed draft.
    */
   const takeCommit = (committed: Committed, source: CommitSource): Draft => {
+    // The notes are computed before anything is written: a throw there changes nothing.
+    const nextNotes = recordCommits(notes(), committed.commits, source, committed.draft);
     for (const { id } of committed.commits) uncommitted.delete(id);
     batch(() => {
       setDraft(committed.draft);
-      publishCommits(committed, source);
+      setNotes(nextNotes);
     });
     return committed.draft;
   };
@@ -504,18 +506,50 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   ): SettledPasteOutcome => {
     const last = pasted.ids.at(-1);
     if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
-    // Committed before anything changes: a commit that throws leaves the editor as it was.
+    // Atomic: everything is computed first (a throw there writes nothing),
+    // then written in one step; once the draft holds the paste it landed,
+    // whatever its consumers do next.
     const committed = commit();
-    clearServerReason(id);
-    noteEdit(lane, id);
-    uncommitted.add(last);
-    takeCommit(committed, 'paste');
-    if (focus)
-      setFocusRequest({
-        lane,
-        id: last,
-        ...(pasted.caret === null ? {} : { caret: pasted.caret })
+    const previousNotes = notes();
+    const nextNotes = recordCommits(
+      forgetRow(previousNotes, lane, id),
+      committed.commits,
+      'paste',
+      committed.draft
+    );
+    const invalid = serverInvalid();
+    const nextInvalid = invalid.has(id) ? withoutKey(invalid, id) : invalid;
+    try {
+      batch(() => {
+        setServerInvalid(nextInvalid);
+        setNotes(nextNotes);
+        setDraftSignal(committed.draft);
       });
+    } catch (cause) {
+      // Thrown by something reacting to the writes: landed if the draft holds the paste.
+      if (draft() !== committed.draft) {
+        batch(() => {
+          setServerInvalid(invalid);
+          setNotes(previousNotes);
+        });
+        throw cause;
+      }
+      deps.log.warn(`a reaction to a paste landing in ${lane} failed`, cause);
+    }
+    for (const { id: committedId } of committed.commits) uncommitted.delete(committedId);
+    uncommitted.add(last);
+    try {
+      if (focus)
+        setFocusRequest({
+          lane,
+          id: last,
+          ...(pasted.caret === null ? {} : { caret: pasted.caret })
+        });
+      if (state().phase === 'ready') scheduleAutosave();
+    } catch (cause) {
+      // The paste is in the draft: it landed (a later edit re-arms the autosave).
+      deps.log.warn(`after a paste landed in ${lane}`, cause);
+    }
     return pasted.dropped > 0 ? { kind: 'dropped', lines: pasted.dropped } : { kind: 'pasted' };
   };
 
@@ -1033,6 +1067,18 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
   };
   return controller;
+}
+
+/**
+ * A copy of a map without one key.
+ *
+ * @param map The map.
+ * @param key The key to leave out.
+ */
+function withoutKey<V>(map: ReadonlyMap<string, V>, key: string): ReadonlyMap<string, V> {
+  const next = new Map(map);
+  next.delete(key);
+  return next;
 }
 
 /** Whether a held action is a commit (kept when the paste fails or the overlay closes). */

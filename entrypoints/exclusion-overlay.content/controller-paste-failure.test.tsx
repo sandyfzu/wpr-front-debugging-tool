@@ -6,24 +6,57 @@
  * waits for the user to read why); the lane says so as a problem, with the
  * way forward.
  */
-import { createRoot } from 'solid-js';
+import { createEffect, createRoot } from 'solid-js';
 import { cleanup, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { PASTE_COPY } from './copy';
 import { Lane } from './exclusions/lane';
 import type * as Draft from './exclusions/draft';
+import type * as RowNotes from './exclusions/row-notes';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
-import { createOverlayController, PASTE_SLICE_ROWS } from './controller';
+import { AUTOSAVE_DELAY_MS, createOverlayController, PASTE_SLICE_ROWS } from './controller';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
-/** Where the commit throws (set per test): a slice, a sliced commit's start, a one-step commit. */
-const failure = { step: false, start: false, commit: false };
+/**
+ * Where a paste throws (set per test): the row split, a slice, a sliced
+ * commit's start, a one-step commit, the notes (the edit's and the
+ * commit's), the autosave's timer, a reaction to the landed draft.
+ */
+const failure = {
+  split: false,
+  step: false,
+  start: false,
+  commit: false,
+  forget: false,
+  record: false,
+  autosave: false,
+  reaction: false
+};
+
+vi.mock('./exclusions/row-notes', async (original) => {
+  const actual = await original<typeof RowNotes>();
+  return {
+    ...actual,
+    forgetRow: (...args: Parameters<typeof actual.forgetRow>) => {
+      if (failure.forget) throw new Error('forget broke');
+      return actual.forgetRow(...args);
+    },
+    recordCommits: (...args: Parameters<typeof actual.recordCommits>) => {
+      if (failure.record) throw new Error('record broke');
+      return actual.recordCommits(...args);
+    }
+  };
+});
 
 vi.mock('./exclusions/draft', async (original) => {
   const actual = await original<typeof Draft>();
   return {
     ...actual,
+    pasteIntoRow: (...args: Parameters<typeof actual.pasteIntoRow>) => {
+      if (failure.split) throw new Error('split broke');
+      return actual.pasteIntoRow(...args);
+    },
     commitRows: (...args: Parameters<typeof actual.commitRows>) => {
       if (failure.commit) throw new Error('commit broke');
       return actual.commitRows(...args);
@@ -48,6 +81,8 @@ const reply = <T,>(value: T): Promise<PortOutcome<T>> =>
 /** A ready controller over an idle port, its timers run by hand. */
 async function ready() {
   const timers: (() => void)[] = [];
+  /** Autosave timers armed so far. */
+  let autosaves = 0;
   const port = {
     status: vi.fn(() => reply<ExclusionSessionStatus>({ state: 'inactive' })),
     savedSet: vi.fn(() => reply({ set: null })),
@@ -57,8 +92,8 @@ async function ready() {
     onStatus: vi.fn(() => () => undefined)
   } satisfies ExclusionSessionPort;
   const log = { warn: vi.fn() };
-  const controller = createRoot(() =>
-    createOverlayController({
+  const controller = createRoot(() => {
+    const built = createOverlayController({
       port,
       pageFacts: () => ({
         href: 'https://example.com/',
@@ -67,14 +102,26 @@ async function ready() {
         responseEnd: null
       }),
       now: () => 1,
-      schedule: (run) => {
+      schedule: (run, ms) => {
+        if (ms === AUTOSAVE_DELAY_MS) {
+          if (failure.autosave) throw new Error('timer broke');
+          autosaves += 1;
+          return () => undefined;
+        }
         timers.push(run);
         return () => undefined;
       },
       reload: vi.fn(),
       log
-    })
-  );
+    });
+    // A consumer of the draft (as the views are) that breaks once a paste is in.
+    createEffect(() => {
+      // The draft is read first: tracked on every run.
+      const rows = built.draft().rows.delayJs.length;
+      if (failure.reaction && rows > 1) throw new Error('view broke');
+    });
+    return built;
+  });
   controller.start();
   await new Promise((resolve) => setTimeout(resolve, 0));
   /** Run every timer until none is left. */
@@ -84,7 +131,7 @@ async function ready() {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   };
-  return { controller, port, log, drain };
+  return { controller, port, log, drain, autosaves: () => autosaves };
 }
 
 const LONG = Array.from({ length: PASTE_SLICE_ROWS * 2 }, (_, n) => `r${String(n)}.js`).join('\n');
@@ -216,4 +263,58 @@ describe('the lane after a paste broke', () => {
     expect(announce).toHaveBeenCalledWith(PASTE_COPY.failed);
     expect(controller.editable()).toBe(true);
   });
+});
+
+describe('a paste that throws at any step of its landing', () => {
+  const STEPS = [
+    // Before anything is written: nothing lands.
+    ['the row split', 'split', false],
+    ['the edit note', 'forget', false],
+    ['the commit notes', 'record', false],
+    // After the draft holds the paste: it landed.
+    ['the autosave timer', 'autosave', true],
+    ['a reaction to the draft', 'reaction', true]
+  ] as const;
+  const PATHS = [
+    ['short', 'a\nb\nc'],
+    ['long', LONG]
+  ] as const;
+
+  for (const [size, text] of PATHS) {
+    it.each(STEPS)(
+      `${size}: a throw in %s leaves draft, notes, autosave and outcome agreeing`,
+      async (_step, key, lands) => {
+        const { controller, log, drain, autosaves } = await ready();
+        const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+        await drain();
+        const before = controller.draft();
+        const notes = controller.notes();
+        const armed = autosaves();
+        failure[key] = true;
+        let settled: unknown;
+        try {
+          const outcome = controller.pasteRows('delayJs', id, text, { start: 1, end: 1 });
+          await drain();
+          settled = outcome.kind === 'pending' ? await outcome.done : outcome;
+        } finally {
+          failure[key] = false;
+        }
+        expect(log.warn).toHaveBeenCalled();
+        expect(controller.editable()).toBe(true);
+        if (lands) {
+          // Landed: it says so, and the draft, its notes and its focus show it.
+          expect(settled).toEqual({ kind: 'pasted' });
+          expect(controller.draft().rows.delayJs.length).toBeGreaterThan(1);
+          expect(controller.draft().rows.delayJs[0]?.text).toBe(size === 'short' ? 'xa' : 'xr0.js');
+          expect(controller.focusRequest()?.id).toBe(controller.draft().rows.delayJs.at(-1)?.id);
+        } else {
+          // Failed: nothing landed anywhere, and it says so.
+          expect(settled).toEqual({ kind: 'failed' });
+          expect(controller.draft()).toBe(before);
+          expect(controller.notes()).toBe(notes);
+          expect(autosaves()).toBe(armed);
+        }
+      }
+    );
+  }
 });
