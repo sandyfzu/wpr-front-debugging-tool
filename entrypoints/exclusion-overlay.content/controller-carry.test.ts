@@ -35,12 +35,15 @@ vi.mock('../../lib/exclusion-builder/validate', async (original) => {
 
 /** Set to make a set reading's next step throw. */
 const breakReading = { on: false };
+/** Set readings started (each one's translation). */
+const readingStarts = { count: 0 };
 
 vi.mock('../../lib/exclusion-builder/defer-js-rows', async (original) => {
   const actual = await original<typeof DeferJsRows>();
   return {
     ...actual,
     startDeferRowSet: (...args: Parameters<typeof actual.startDeferRowSet>) => {
+      readingStarts.count++;
       const work = actual.startDeferRowSet(...args);
       return {
         step: () => {
@@ -271,10 +274,27 @@ describe('an Apply waiting for its set readings', () => {
     controller.insertRows('deferJs', lines(40).split('\n'), null);
     controller.apply();
     expect(controller.checking()).toBe(true);
+    // Queued meanwhile: dropped on close (only commits run then).
+    controller.stop();
     controller.dispose();
+    // The hold ends with the overlay: nothing waits on the readings any more.
+    expect(controller.checking()).toBe(false);
     await fire(0);
     await fire(SET_READING_DELAY_MS);
     expect(port.apply).not.toHaveBeenCalled();
+    expect(port.stop).not.toHaveBeenCalled();
     expect(port.save).toHaveBeenCalled();
+  });
+
+  it('an Apply asked while a reading is in flight waits for that reading, never restarts it', async () => {
+    const { controller, port, fire } = await started(slow);
+    controller.insertRows('deferJs', lines(40).split('\n'), null);
+    await fire(SET_READING_DELAY_MS);
+    const before = readingStarts.count;
+    controller.apply();
+    expect(controller.checking()).toBe(true);
+    await fire(0);
+    expect(readingStarts.count).toBe(before);
+    expect(port.apply).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,9 +3,8 @@
  * path: a lane's rows are read as one set a short pause after its last
  * change, in time-boxed slices of their own tasks (a set of costly rows
  * takes many), so typing in a long lane never pays for the whole set and
- * no reading blocks the page. A run that finds its lane changed since it
- * was scheduled, or since its last slice, is dropped (the newer change has
- * scheduled its own). `readNow` reads every set-read lane whose reading is
+ * no reading blocks the page. A change of the lane cancels its run,
+ * scheduled or in flight (the change schedules its own). `readNow` reads every set-read lane whose reading is
  * not of its current rows right away (`whenSettled` tells when all are) — for the
  * apply gate, which must be exact; a lane's rows are read once per version
  * (an unchanged 500-row lane is never re-read on Apply).
@@ -144,13 +143,10 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
       const current = rows();
       const work = startLanePage(lane, current, new Set(deps.uncommitted), deps.carry);
       reads = current;
+      // A change of the rows stops the next slice (the effect below cancels
+      // it at once), so every slice reads the rows it started with.
       const slice = (): void => {
         cancel = null;
-        // A change since the last slice has scheduled its own reading.
-        if (rows() !== current) {
-          reads = null;
-          return;
-        }
         let page: LanePage | null;
         try {
           if (!stepFor(() => work.step(), deps.clock, deps.sliceMs)) {
