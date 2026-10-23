@@ -82,6 +82,8 @@ function paletteValues(name: string): PaletteValues {
 }
 
 const SURFACES = Array.from({ length: 5 }, (_, level) => `surface-${String(level)}`);
+/** The surface levels an `accent-strong` fill is laid on (page, card, injected panel). */
+const FILL_SURFACES = SURFACES.slice(0, 3);
 const STATUSES = ['ok', 'warn', 'error', 'info', 'neutral', 'attention'] as const;
 const SOFT_BACKGROUNDS = STATUSES.map((status) => `status-${status}-soft`);
 /** Surfaces host text directly; soft backgrounds host status text and body text. */
@@ -114,7 +116,14 @@ const REQUIRED_PAIRS: RequiredPair[] = [
   { foreground: 'on-accent', background: 'accent-strong', min: 4.5 },
   // The inverted pair: an `on-accent` pill inside an accent fill (the
   // selected filter chip's count) — same ratio by symmetry, pinned by name.
-  { foreground: 'accent-strong', background: 'on-accent', min: 4.5 }
+  { foreground: 'accent-strong', background: 'on-accent', min: 4.5 },
+  // The accent fill itself is a non-text state indicator (pressed chip,
+  // checked switch, open disclosure, primary action): 3:1 against every
+  // surface it is laid on — pages, cards and the injected panels use levels
+  // 0–2; nothing places it on the raised hover levels 3–4.
+  ...FILL_SURFACES.map((background) => ({ foreground: 'accent-strong', background, min: 3 })),
+  // A checked switch's thumb: a `surface-0` dot on the accent track (non-text).
+  { foreground: 'surface-0', background: 'accent-strong', min: 3 }
 ];
 
 describe('contrast math', () => {
@@ -187,6 +196,102 @@ describe('WCAG AA pairs', () => {
           failures.push(
             `${palette}: ${foreground} on ${background} = ${ratio.toFixed(2)} < ${String(min)}`
           );
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('accent fill hover/press states', () => {
+  /** Read a repo file relative to this test's directory. */
+  const read = (file: string): string =>
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), 'utf8');
+
+  /** `#rrggbb` from 0–255 channels (rounded, clamped — what the browser paints). */
+  const toHex = (channels: readonly number[]): string =>
+    `#${channels
+      .map((value) =>
+        Math.min(255, Math.max(0, Math.round(value)))
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')}`;
+
+  /** 0–255 channels of an opaque `#rrggbb`. */
+  const channelsOf = (hex: string): number[] =>
+    [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+
+  /** One derived fill: how it is computed from `accent-strong` in a palette. */
+  interface DerivedFill {
+    name: string;
+    color: (palette: 'dark' | 'light') => string;
+    /** A press flash (`:active`): held only while the pointer is down, so it
+     * is never what identifies the control — its text still must read. */
+    momentary: boolean;
+  }
+
+  // `color-mix(in srgb, var(--accent-strong) N%, var(--token))` — the injected
+  // stylesheets' hover fills (a plain per-channel mix of opaque colors).
+  const mixes: DerivedFill[] = [
+    'entrypoints/exclusion-overlay.content/overlay.css',
+    'entrypoints/isolated.content/side-by-side/side-by-side.css'
+  ].flatMap((file) =>
+    [
+      ...read(`../../${file}`).matchAll(
+        /color-mix\(in srgb, var\(--accent-strong\) (\d+)%, var\(--([\w-]+)\)\)/g
+      )
+    ].map(([source, percent, other]) => ({
+      name: `${file}: ${source}`,
+      momentary: false,
+      color: (palette: 'dark' | 'light'): string => {
+        const weight = Number(percent) / 100;
+        const accent = channelsOf(paletteValues('accent-strong')[palette]);
+        const mixed = channelsOf(paletteValues(other ?? '')[palette]);
+        return toHex(
+          accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
+        );
+      }
+    }))
+  );
+
+  // `brightness-N` utilities in the primitives that paint `bg-accent-strong`
+  // (hover lift / press): CSS `brightness()` scales each sRGB channel, clamped.
+  const brightened: DerivedFill[] = ['button.tsx', 'filter-bar.tsx'].flatMap((file) => {
+    const source = read(`../../components/ui/${file}`);
+    expect(source, `${file} paints the accent fill`).toContain('bg-accent-strong');
+    return [...source.matchAll(/(hover|active):brightness-(\d+)/g)].map(
+      ([utility, state, percent]) => ({
+        name: `${file}: ${utility}`,
+        momentary: state === 'active',
+        color: (palette: 'dark' | 'light'): string =>
+          toHex(
+            channelsOf(paletteValues('accent-strong')[palette]).map(
+              (value) => (value * Number(percent)) / 100
+            )
+          )
+      })
+    );
+  });
+
+  it('finds the derived fills it gates', () => {
+    expect(mixes.length).toBeGreaterThanOrEqual(2);
+    expect(brightened.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps on-accent text at 4.5:1 and a hover fill at 3:1 on its surfaces, both palettes', () => {
+    const failures: string[] = [];
+    for (const palette of ['dark', 'light'] as const) {
+      for (const derived of [...mixes, ...brightened]) {
+        const fill = derived.color(palette);
+        const text = contrastRatio(paletteValues('on-accent')[palette], fill);
+        if (text < 4.5)
+          failures.push(`${palette}: on-accent on ${derived.name} = ${text.toFixed(2)}`);
+        if (derived.momentary) continue;
+        for (const surface of FILL_SURFACES) {
+          const edge = contrastRatio(fill, paletteValues(surface)[palette]);
+          if (edge < 3)
+            failures.push(`${palette}: ${derived.name} on ${surface} = ${edge.toFixed(2)}`);
         }
       }
     }

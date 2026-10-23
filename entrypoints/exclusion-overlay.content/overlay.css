@@ -313,8 +313,8 @@
 }
 
 .xo-button[data-variant='primary']:hover {
-  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
-  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+  background: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
 }
 
 .xo-button[data-variant='ghost'] {
@@ -337,8 +337,8 @@
 }
 
 .xo-disclosure[aria-expanded='true']:not([aria-disabled='true']):hover {
-  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
-  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+  background: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
 }
 
 /* The disclosure chevron's turn: the one sanctioned toggle motion
