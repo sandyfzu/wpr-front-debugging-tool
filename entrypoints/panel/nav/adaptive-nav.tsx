@@ -272,7 +272,8 @@ function NavRow(props: NavRowProps): JSX.Element {
         content={tooltipContent}
         disabled
         placement="right"
-        class={cn(rowClasses(), ROW_RESERVED, DISABLED)}
+        // No idle hover: the reserved row keeps its resting look under the pointer.
+        class={cn(ROW, ROW_RESERVED, DISABLED)}
       >
         <Dynamic component={props.row.icon} size={14} class="shrink-0" aria-hidden="true" />
         <span class={ROW_LABEL}>{props.row.label}</span>

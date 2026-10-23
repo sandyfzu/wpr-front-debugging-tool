@@ -23,26 +23,58 @@ export const BUTTON_SIZES = ['sm', 'md'] as const;
 /** One button size. */
 export type ButtonSize = (typeof BUTTON_SIZES)[number];
 
-/** Class per variant — the single declaring site of the variants' colors. */
+/** Resting look per variant — the single declaring site of the variants' colors. */
 export const BUTTON_VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  // Solid accent fill; `brightness` keeps white text on the AA-verified
-  // `accent-strong`/`on-accent` pair while giving a visible hover lift
-  // (switching to the lighter `--accent` fill would break contrast in dark).
-  primary:
-    'border-transparent bg-accent-strong text-on-accent hover:brightness-110 active:brightness-95',
-  secondary: 'border-line-2 bg-surface-2 text-fg-primary hover:border-line-3 hover:bg-surface-3',
-  ghost: 'border-transparent text-fg-secondary hover:bg-surface-3 hover:text-fg-primary',
+  // Solid accent fill under the AA-verified `accent-strong`/`on-accent` pair.
+  primary: 'border-transparent bg-accent-strong text-on-accent',
+  secondary: 'border-line-2 bg-surface-2 text-fg-primary',
+  ghost: 'border-transparent text-fg-secondary',
   // The vocabulary's soft error chip, consumed from `status-badge.tsx` (UX-D7
   // single source — never re-typed here): the fill/text pair stays the
-  // AA-verified `status-error-soft`/`status-error`, and hovering emphasizes
-  // only through an inset ring — a solid error fill would put white text on
-  // the dark-palette error token, which fails the 4.5:1 floor.
-  danger: cn(
-    'border-transparent hover:ring-1 hover:ring-inset hover:ring-status-error/40',
-    STATUS_SOFT_CLASSES.error,
-    STATUS_TEXT_CLASSES.error
-  )
+  // AA-verified `status-error-soft`/`status-error`.
+  danger: cn('border-transparent', STATUS_SOFT_CLASSES.error, STATUS_TEXT_CLASSES.error)
 };
+
+/**
+ * Pointer feedback per variant (hover lift, press) — applied only to a live
+ * button, so a held one keeps its resting look under the pointer.
+ */
+export const BUTTON_VARIANT_HOVER_CLASSES: Record<ButtonVariant, string> = {
+  // `brightness` keeps white text on the accent fill at ≥ 4.5:1 while giving
+  // a visible lift (the lighter `--accent` fill would break contrast in dark).
+  primary: 'hover:brightness-110 active:brightness-95',
+  secondary: 'hover:border-line-3 hover:bg-surface-3',
+  ghost: 'hover:bg-surface-3 hover:text-fg-primary',
+  // Emphasis through an inset ring only: a solid error fill would put white
+  // text on the dark-palette error token, which fails the 4.5:1 floor.
+  danger: 'hover:ring-1 hover:ring-inset hover:ring-status-error/40'
+};
+
+/**
+ * Whether a button is held: natively disabled, or `aria-disabled` (a held
+ * action that keeps focus). A held button shows no pointer feedback.
+ *
+ * @param disabled The native `disabled` state.
+ * @param ariaDisabled The `aria-disabled` attribute value (boolean or string form).
+ * @returns `true` when either state disables the button.
+ */
+export function isHeld(disabled: boolean | undefined, ariaDisabled: unknown): boolean {
+  return disabled === true || ariaDisabled === true || ariaDisabled === 'true';
+}
+
+/**
+ * The variant's classes for a button: its resting look, plus its pointer
+ * feedback while live.
+ *
+ * @param variant The variant.
+ * @param held Whether the button is held (see {@link isHeld}).
+ * @returns The class string.
+ */
+export function buttonVariantClasses(variant: ButtonVariant, held: boolean): string {
+  return held
+    ? BUTTON_VARIANT_CLASSES[variant]
+    : `${BUTTON_VARIANT_CLASSES[variant]} ${BUTTON_VARIANT_HOVER_CLASSES[variant]}`;
+}
 
 /** Class per size — both meet the 24px hit-area floor. */
 const BUTTON_SIZE_CLASSES: Record<ButtonSize, string> = {
@@ -66,6 +98,8 @@ export type ButtonProps = {
  * no headless wrapper needed for this mechanism. While `loading`, the control
  * disables itself (native single-submit guard) and labels the busy state for
  * assistive tech via `aria-busy`; the spinner is decorative (`aria-hidden`).
+ * A held button (disabled, loading or `aria-disabled`) keeps its resting
+ * look under the pointer — no hover lift promising an action it won't take.
  *
  * @param props.variant See {@link BUTTON_VARIANTS} (default `secondary`).
  * @param props.size See {@link BUTTON_SIZES} (default `md`).
@@ -94,7 +128,10 @@ export function Button(props: ButtonProps): JSX.Element {
         'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded border font-medium',
         FOCUS_RING,
         DISABLED,
-        BUTTON_VARIANT_CLASSES[own.variant ?? 'secondary'],
+        buttonVariantClasses(
+          own.variant ?? 'secondary',
+          isHeld(own.disabled || own.loading, rest['aria-disabled'])
+        ),
         BUTTON_SIZE_CLASSES[own.size ?? 'md'],
         own.class
       )}

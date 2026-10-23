@@ -7,7 +7,14 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { For } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Button, BUTTON_SIZES, BUTTON_VARIANTS } from './button';
+import {
+  Button,
+  BUTTON_SIZES,
+  BUTTON_VARIANT_CLASSES,
+  BUTTON_VARIANT_HOVER_CLASSES,
+  BUTTON_VARIANTS,
+  isHeld
+} from './button';
 
 afterEach(() => {
   cleanup();
@@ -74,6 +81,59 @@ describe('Button', () => {
     ));
     fireEvent.click(screen.getByRole('button'));
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps pointer feedback on a live button and drops it on a held one', () => {
+    /** The pointer-state utilities on a class string (hover lift / press). */
+    const pointerTokens = (className: string): string[] =>
+      className.split(/\s+/).filter((token) => /^(hover|active):/.test(token));
+    for (const variant of BUTTON_VARIANTS) {
+      render(() => (
+        <div>
+          <Button variant={variant}>live</Button>
+          <Button variant={variant} disabled>
+            disabled
+          </Button>
+          <Button variant={variant} loading>
+            loading
+          </Button>
+          <Button variant={variant} aria-disabled="true">
+            held
+          </Button>
+          <Button variant={variant} aria-disabled={false}>
+            not held
+          </Button>
+        </div>
+      ));
+      const live = screen.getByRole('button', { name: 'live' }).className;
+      // The live look is the variant's rest classes plus its pointer feedback, unchanged.
+      for (const token of `${BUTTON_VARIANT_CLASSES[variant]} ${BUTTON_VARIANT_HOVER_CLASSES[variant]}`.split(
+        ' '
+      )) {
+        expect(live, variant).toContain(token);
+      }
+      expect(pointerTokens(live).length, variant).toBeGreaterThan(0);
+      expect(pointerTokens(screen.getByRole('button', { name: 'not held' }).className)).toEqual(
+        pointerTokens(live)
+      );
+      for (const name of ['disabled', 'loading', 'held']) {
+        const held = screen.getByRole('button', { name }).className;
+        expect(pointerTokens(held), `${variant} ${name}`).toEqual([]);
+        for (const token of BUTTON_VARIANT_CLASSES[variant].split(' ')) {
+          expect(held, `${variant} ${name}`).toContain(token);
+        }
+      }
+      cleanup();
+    }
+  });
+
+  it('reads held from the native and the ARIA disabled state', () => {
+    expect(isHeld(undefined, undefined)).toBe(false);
+    expect(isHeld(false, false)).toBe(false);
+    expect(isHeld(false, 'false')).toBe(false);
+    expect(isHeld(true, undefined)).toBe(true);
+    expect(isHeld(false, true)).toBe(true);
+    expect(isHeld(undefined, 'true')).toBe(true);
   });
 
   it('lets the caller win over the preset classes', () => {

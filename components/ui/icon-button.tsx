@@ -9,7 +9,7 @@ import { splitProps } from 'solid-js';
 import { cn } from '../../utils/cn';
 import { DISABLED, FOCUS_RING } from './classes';
 import type { ButtonVariant } from './button';
-import { BUTTON_VARIANT_CLASSES } from './button';
+import { buttonVariantClasses, isHeld } from './button';
 
 export type IconButtonProps = {
   /** The accessible name (rendered as `aria-label`, never visible text). */
@@ -37,6 +37,8 @@ const ICON_BUTTON_SIZE_CLASSES = {
  * padded square guarantees the minimum target size. For discoverability add a
  * `Tooltip` with the same icon as the tooltip's own trigger — nesting an
  * icon-button inside a tooltip trigger would nest interactive elements.
+ * Held (`disabled` or `aria-disabled`), it keeps its resting look under the
+ * pointer, like `Button`.
  *
  * @param props.label Required accessible name (icon-only controls carry none).
  * @param props.variant See {@link ButtonVariant} (default `ghost`).
@@ -55,7 +57,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         'inline-grid shrink-0 place-items-center rounded border',
         FOCUS_RING,
         DISABLED,
-        BUTTON_VARIANT_CLASSES[own.variant ?? 'ghost'],
+        buttonVariantClasses(own.variant ?? 'ghost', isHeld(rest.disabled, rest['aria-disabled'])),
         ICON_BUTTON_SIZE_CLASSES[own.size ?? 'md'],
         own.class
       )}
