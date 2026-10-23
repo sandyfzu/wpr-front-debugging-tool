@@ -96,7 +96,8 @@ pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
 pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chromium + the unpacked extension; E2E_HEADED=1 for headed, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
-pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
+pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build, on the
+                     #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused)
 pnpm parity:wp-rocket # WP Rocket parity table (lib/exclusion-builder/wp-rocket-parity.fixtures.json): re-derives its
                      #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom/mbstring,
                      #   compiled in or shared, `unzip`, docker/wpr/wpr-rocket.zip; network on the first run only — the

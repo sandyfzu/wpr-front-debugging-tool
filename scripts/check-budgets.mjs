@@ -27,6 +27,11 @@
  * Runs from any working directory (Node, pnpm script, hooks); test environments
  * that hand out non-filesystem module URLs fall back to the process cwd.
  *
+ * Gzip sizes come from the running Node's zlib, and zlib builds differ in
+ * output (Node 24's Chromium-derived zlib and Node 26's stock 1.2.12 give
+ * the same bytes 0.3 KB apart): the script refuses a Node whose major is
+ * not the one `.nvmrc` pins, and prints the zlib it measured with.
+ *
  * Run after `pnpm build` (typically `pnpm build && pnpm check:budgets`).
  */
 
@@ -270,7 +275,34 @@ function readBudgets() {
 const formatKb = (bytes, budgeted) =>
   budgeted === undefined ? '  —  ' : `${(bytes / 1024).toFixed(1)}`.padStart(5);
 
+/**
+ * Why this Node must not measure, or `null`: its major differs from the
+ * pinned one (its zlib would measure gzip sizes differently).
+ *
+ * @param {string} nodeVersion `process.version` (`v24.1.0`).
+ * @param {string} pinned The `.nvmrc` content (a major, e.g. `24`).
+ * @returns {string | null} The refusal, naming both versions.
+ */
+export function runtimeProblem(nodeVersion, pinned) {
+  const want = pinned.trim().replace(/^v/, '').split('.')[0];
+  const have = nodeVersion.replace(/^v/, '').split('.')[0];
+  if (!/^\d+$/.test(want ?? ''))
+    return `.nvmrc holds no Node major (got ${JSON.stringify(pinned)})`;
+  return have === want
+    ? null
+    : `Node ${nodeVersion} measures gzip with its own zlib; run with Node ${want} (.nvmrc)`;
+}
+
 async function main() {
+  const problem = runtimeProblem(
+    process.version,
+    readFileSync(join(packageRoot(), '.nvmrc'), 'utf8')
+  );
+  if (problem !== null) {
+    console.error(`\n✗ ${problem}.\n`);
+    process.exitCode = 1;
+    return;
+  }
   let outputDirectory;
   try {
     outputDirectory = statSync(outputRoot());
@@ -303,7 +335,8 @@ async function main() {
   };
   console.log(
     `\nSurface budgets — .output/chrome-mv3 (${filesOf(DEFAULT_BUILD).length} files)` +
-      ' + rows marked [firefox-mv2] on .output/firefox-mv2\n'
+      ' + rows marked [firefox-mv2] on .output/firefox-mv2' +
+      ` (gzip: Node ${process.version}, zlib ${process.versions.zlib})\n`
   );
   let breached = false;
   // The row-label column: the table's minimum (40) widened to the longest

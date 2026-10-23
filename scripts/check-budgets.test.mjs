@@ -5,11 +5,23 @@ import {
   matchesGlob,
   measureRow,
   measureSurface,
-  parseBudgetRows
+  parseBudgetRows,
+  runtimeProblem
 } from './check-budgets.mjs';
 
 /* Pure pieces of the budget gate (incl. the per-row outcome `measureRow`); the CLI `main()` (output discovery + table
  * printing) is thin glue and stays untested. */
+
+describe('runtimeProblem', () => {
+  it('accepts the pinned major only (its zlib measures gzip sizes)', () => {
+    expect(runtimeProblem('v24.21.0', '24\n')).toBeNull();
+    expect(runtimeProblem('v24.1.0', 'v24')).toBeNull();
+    expect(runtimeProblem('v26.12.1', '24\n')).toBe(
+      'Node v26.12.1 measures gzip with its own zlib; run with Node 24 (.nvmrc)'
+    );
+    expect(runtimeProblem('v24.21.0', 'lts/*')).toBe('.nvmrc holds no Node major (got "lts/*")');
+  });
+});
 
 describe('matchesGlob', () => {
   it('matches exact paths', () => {
