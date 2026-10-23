@@ -538,17 +538,25 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
     for (const { id: committedId } of committed.commits) uncommitted.delete(committedId);
     uncommitted.add(last);
+    // The paste is in the draft: it landed whatever fails next. The autosave
+    // goes first, so a throw reacting to the focus request cannot keep a
+    // close from saving the paste the user saw land; each step fails alone.
     try {
-      if (focus)
+      if (state().phase === 'ready') scheduleAutosave();
+    } catch (cause) {
+      // A later edit re-arms it.
+      deps.log.warn(`arming the autosave after a paste landed in ${lane} failed`, cause);
+    }
+    if (focus) {
+      try {
         setFocusRequest({
           lane,
           id: last,
           ...(pasted.caret === null ? {} : { caret: pasted.caret })
         });
-      if (state().phase === 'ready') scheduleAutosave();
-    } catch (cause) {
-      // The paste is in the draft: it landed (a later edit re-arms the autosave).
-      deps.log.warn(`after a paste landed in ${lane}`, cause);
+      } catch (cause) {
+        deps.log.warn(`a reaction to focusing a paste landed in ${lane} failed`, cause);
+      }
     }
     return pasted.dropped > 0 ? { kind: 'dropped', lines: pasted.dropped } : { kind: 'pasted' };
   };

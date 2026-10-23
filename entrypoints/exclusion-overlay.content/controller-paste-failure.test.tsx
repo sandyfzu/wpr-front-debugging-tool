@@ -6,7 +6,7 @@
  * waits for the user to read why); the lane says so as a problem, with the
  * way forward.
  */
-import { createEffect, createRoot } from 'solid-js';
+import { createEffect, createRoot, on } from 'solid-js';
 import { cleanup, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
@@ -15,13 +15,15 @@ import { Lane } from './exclusions/lane';
 import type * as Draft from './exclusions/draft';
 import type * as RowNotes from './exclusions/row-notes';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
+import type { ExclusionSet } from '../../lib/exclusion-builder/set';
 import { AUTOSAVE_DELAY_MS, createOverlayController, PASTE_SLICE_ROWS } from './controller';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
 /**
  * Where a paste throws (set per test): the row split, a slice, a sliced
  * commit's start, a one-step commit, the notes (the edit's and the
- * commit's), the autosave's timer, a reaction to the landed draft.
+ * commit's), the autosave's timer, a reaction to the landed draft, a
+ * reaction to the focus request.
  */
 const failure = {
   split: false,
@@ -31,7 +33,8 @@ const failure = {
   forget: false,
   record: false,
   autosave: false,
-  reaction: false
+  reaction: false,
+  focus: false
 };
 
 vi.mock('./exclusions/row-notes', async (original) => {
@@ -120,6 +123,16 @@ async function ready() {
       const rows = built.draft().rows.delayJs.length;
       if (failure.reaction && rows > 1) throw new Error('view broke');
     });
+    // A consumer of the focus request (as the lane views are) that breaks.
+    createEffect(
+      on(
+        built.focusRequest,
+        () => {
+          if (failure.focus) throw new Error('focus broke');
+        },
+        { defer: true }
+      )
+    );
     return built;
   });
   controller.start();
@@ -273,7 +286,8 @@ describe('a paste that throws at any step of its landing', () => {
     ['the commit notes', 'record', false],
     // After the draft holds the paste: it landed.
     ['the autosave timer', 'autosave', true],
-    ['a reaction to the draft', 'reaction', true]
+    ['a reaction to the draft', 'reaction', true],
+    ['a reaction to the focus request', 'focus', true]
   ] as const;
   const PATHS = [
     ['short', 'a\nb\nc'],
@@ -284,7 +298,7 @@ describe('a paste that throws at any step of its landing', () => {
     it.each(STEPS)(
       `${size}: a throw in %s leaves draft, notes, autosave and outcome agreeing`,
       async (_step, key, lands) => {
-        const { controller, log, drain, autosaves } = await ready();
+        const { controller, port, log, drain, autosaves } = await ready();
         const [id = ''] = controller.insertRows('delayJs', ['x'], null);
         await drain();
         const before = controller.draft();
@@ -307,6 +321,16 @@ describe('a paste that throws at any step of its landing', () => {
           expect(controller.draft().rows.delayJs.length).toBeGreaterThan(1);
           expect(controller.draft().rows.delayJs[0]?.text).toBe(size === 'short' ? 'xa' : 'xr0.js');
           expect(controller.focusRequest()?.id).toBe(controller.draft().rows.delayJs.at(-1)?.id);
+          // And it is saved on close: the autosave is armed unless its own timer broke.
+          if (key !== 'autosave') {
+            expect(autosaves()).toBeGreaterThan(armed);
+            const landed = controller.draft().rows.delayJs.map((row) => row.text);
+            controller.dispose();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            // Closing saves the paste the user saw land.
+            const saved = port.save.mock.calls as unknown as (readonly [ExclusionSet])[];
+            expect(saved.at(-1)?.[0].rows.delayJs).toEqual(landed);
+          }
         } else {
           // Failed: nothing landed anywhere, and it says so.
           expect(settled).toEqual({ kind: 'failed' });
