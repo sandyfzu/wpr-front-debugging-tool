@@ -418,3 +418,23 @@ describe('deferJsTransform — the inline-jQuery wrapping (WP Rocket 3.23.5.1, r
     expect(result.report.inlineUnwrapped).toBeUndefined();
   });
 });
+
+describe('deferJsTransform — never more undetermined scripts than candidates', () => {
+  it('counts a deferred script both readings leave as served once', () => {
+    // A wrapper spanning scripts (its opening without its closing) closes in
+    // a deferred script whose subject cannot be read back (no `src`): both
+    // the inline pass and the deferral leave that script as served.
+    const open = "window.addEventListener('DOMContentLoaded', function() {";
+    const served =
+      `<script id="o">${open}jQuery(1)</script>` +
+      '<script id="c" data-rocket-defer defer>});</script>';
+    const set = {
+      rows: { ...EMPTY_EXCLUSION_SET.rows, deferJs: ['jquery.min.js'] },
+      disable: EMPTY_EXCLUSION_SET.disable
+    };
+    expect(deferJsTransform(served, set).report).toMatchObject({
+      candidates: 2,
+      undetermined: 2
+    });
+  });
+});

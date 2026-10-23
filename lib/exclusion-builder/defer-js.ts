@@ -268,7 +268,10 @@ function deferWithInlinePass(
       rewritten: rewritten + inline.unwrapped,
       regionRemovals: 0,
       featureWide,
-      undetermined: undetermined + inline.undetermined,
+      // A deferred script holding a spanning wrapper's closing whose subject
+      // also cannot be read is counted by both readings: never more
+      // undetermined scripts than candidates.
+      undetermined: Math.min(undetermined + inline.undetermined, candidates + inline.wrapped),
       inlineUnwrapped: inline.unwrapped,
       // Only the share waiting on the live rows: a spanning wrapper is not about them.
       inlineUndetermined: inline.undetermined - inline.spanned,
