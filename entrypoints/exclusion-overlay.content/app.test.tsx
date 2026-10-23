@@ -14,6 +14,7 @@ import type { ExclusionSessionPort, PortOutcome } from './session/port';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 import type { OverlayMode, OverlayModeContext } from './modes';
+import { parseRules, type CssRule } from '../../assets/css/css-rules.fixtures';
 
 /**
  * A virtualizer that renders every row (happy-dom lays nothing out, so the
@@ -688,8 +689,29 @@ describe('stored-form announcements', () => {
 });
 
 /**
+ * Properties whose later declaration changes an asserted property's used
+ * value: its longhands (a later `background-color` beats `background`) and
+ * the shorthands that reset it (a later `border` beats `border-color`).
+ */
+const OVERRIDERS: Record<string, RegExp> = {
+  background: /^(all|background-.+)$/,
+  'background-color': /^(all|background)$/,
+  'border-color':
+    /^(all|border|border-(top|right|bottom|left|block|inline)(-(start|end))?(-color)?)$/,
+  'border-top-color':
+    /^(all|border|border-top|border-color|border-block|border-block-start(-color)?)$/,
+  color: /^all$/,
+  transform: /^(all|rotate|scale|translate)$/,
+  transition: /^(all|transition-.+)$/,
+  'transition-duration': /^(all|transition)$/,
+  'transition-property': /^(all|transition)$/
+};
+
+/**
  * The declarations a stylesheet's rules give one selector, later rules
- * overriding earlier ones (selector lists split; comments ignored).
+ * overriding earlier ones. Shorthand-aware: a later declaration that changes
+ * an earlier one's value (see {@link OVERRIDERS}) replaces that entry with an
+ * `overridden by …` marker, so an assertion on the shorthand fails.
  *
  * @param css The stylesheet text.
  * @param selector The selector, exactly as written in the sheet.
@@ -697,37 +719,78 @@ describe('stored-form announcements', () => {
  * @returns Property → value, as the cascade leaves them in source order.
  */
 function cascaded(css: string, selector: string, within?: string): Map<string, string> {
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
   const declarations = new Map<string, string>();
-  const preludes: string[] = [];
-  let from = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === '{') {
-      preludes.push(text.slice(from, index).trim());
-      from = index + 1;
-    } else if (char === '}') {
-      const prelude = preludes.pop() ?? '';
-      const selectors = prelude.split(',').map((part) => part.replace(/\s+/g, ' ').trim());
-      const scoped = within === undefined || preludes.includes(within);
-      if (scoped && selectors.includes(selector)) {
-        for (const line of text.slice(from, index).split(';')) {
-          const colon = line.indexOf(':');
-          if (colon > 0) {
-            declarations.set(
-              line.slice(0, colon).trim(),
-              line
-                .slice(colon + 1)
-                .replace(/\s+/g, ' ')
-                .trim()
-            );
-          }
+  for (const rule of parseRules(css)) {
+    if (rule.selector !== selector) continue;
+    if (within !== undefined && !rule.within.includes(within)) continue;
+    for (const [property, value] of rule.declarations) {
+      for (const earlier of declarations.keys()) {
+        if (OVERRIDERS[earlier]?.test(property) === true) {
+          declarations.set(earlier, `overridden by ${property}: ${value}`);
         }
       }
-      from = index + 1;
+      declarations.set(property, value);
     }
   }
   return declarations;
+}
+
+/**
+ * A selector's specificity as one comparable number (ids, then classes /
+ * attributes / pseudo-classes, then types). `:where()` counts zero;
+ * `:not()`/`:is()` count their argument — enough for this sheet's selectors.
+ *
+ * @param selector One complex selector.
+ * @returns `ids * 10_000 + classes * 100 + types`.
+ */
+function specificity(selector: string): number {
+  let text = selector;
+  // Drop `:where(…)` (innermost first, so nesting unwinds), then unwrap `:not/:is(…)`.
+  while (/:where\([^()]*\)/.test(text)) text = text.replace(/:where\([^()]*\)/g, '');
+  while (/:(not|is)\(([^()]*)\)/.test(text)) text = text.replace(/:(not|is)\(([^()]*)\)/g, ' $2');
+  text = text.replace(/\[[^\]]*\]/g, '.attr');
+  const ids = (text.match(/#[\w-]+/g) ?? []).length;
+  const classes = (text.match(/(\.[\w-]+|:(?!:)[\w-]+)/g) ?? []).length;
+  const types = (text.match(/(^|[\s>+~])[a-z][\w-]*/gi) ?? []).length;
+  return ids * 10_000 + classes * 100 + types;
+}
+
+/**
+ * The rule whose declaration wins one property on a live element: every
+ * sheet rule matching it (at-rule conditions assumed true — any context
+ * that could override counts), ranked by specificity then source order.
+ *
+ * @param rules The sheet's rules ({@link parseRules}).
+ * @param element The element as mounted.
+ * @param property The property asked for; its overriders (see
+ *   {@link OVERRIDERS}) compete with it.
+ * @returns The winning selector, the property it set and its value, or null.
+ */
+function winning(
+  rules: CssRule[],
+  element: Element,
+  property: string
+): { selector: string; property: string; value: string } | null {
+  let best: { rank: [number, number]; selector: string; property: string; value: string } | null =
+    null;
+  for (const rule of rules) {
+    // Pseudo-elements never style the element itself.
+    if (rule.selector.includes('::') || !element.matches(rule.selector)) continue;
+    for (const [declared, value] of rule.declarations) {
+      if (declared !== property && OVERRIDERS[property]?.test(declared) !== true) continue;
+      const rank: [number, number] = [specificity(rule.selector), rule.order];
+      if (
+        best === null ||
+        rank[0] > best.rank[0] ||
+        (rank[0] === best.rank[0] && rank[1] >= best.rank[1])
+      ) {
+        best = { rank, selector: rule.selector, property: declared, value };
+      }
+    }
+  }
+  return best === null
+    ? null
+    : { selector: best.selector, property: best.property, value: best.value };
 }
 
 describe('the "On this page" toggle', () => {
@@ -817,6 +880,62 @@ describe('the "On this page" toggle', () => {
     expect(css).toContain(".xo-button:not(:where([aria-disabled='true'])):hover {");
   });
 
+  it('wins its look on the live element: no other rule, longhand or stronger selector overrides it', async () => {
+    const rules = parseRules(readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8'));
+    mount(port({ state: 'inactive' }));
+    const button = await toggle();
+    const chevron = chevronOf(button);
+    if (chevron === null) throw new Error('the toggle has no chevron');
+    // Closed: the plain button look, a chevron at rest.
+    expect(winning(rules, button, 'background-color')).toEqual({
+      selector: '.xo-button',
+      property: 'background',
+      value: 'var(--surface-2)'
+    });
+    expect(winning(rules, chevron, 'transform')).toBeNull();
+    fireEvent.click(button);
+    const open = ".xo-disclosure[aria-expanded='true']";
+    expect(winning(rules, button, 'background-color')).toEqual({
+      selector: open,
+      property: 'background',
+      value: 'var(--accent-strong)'
+    });
+    expect(winning(rules, button, 'border-top-color')).toEqual({
+      selector: open,
+      property: 'border-color',
+      value: 'var(--accent-strong)'
+    });
+    expect(winning(rules, button, 'color')).toEqual({
+      selector: open,
+      property: 'color',
+      value: 'var(--on-accent)'
+    });
+    expect(winning(rules, chevron, 'transform')).toEqual({
+      selector: `${open} .xo-chevron`,
+      property: 'transform',
+      value: 'rotate(180deg)'
+    });
+    for (const longhand of ['transition-property', 'transition-duration']) {
+      expect(winning(rules, chevron, longhand)).toEqual({
+        selector: '.xo-chevron',
+        property: 'transition',
+        value: 'transform var(--motion-fast) var(--ease-standard)'
+      });
+    }
+  });
+
+  it('reads a later longhand as overriding an asserted shorthand', () => {
+    const css =
+      '.a { background: red; transition: x 1s; } .a { background-color: blue; } .b { border: 0; }';
+    expect(cascaded(css, '.a').get('background')).toBe('overridden by background-color: blue');
+    expect(cascaded(css, '.a').get('transition')).toBe('x 1s');
+    const later = `${css} .a { transition-property: y; }`;
+    expect(cascaded(later, '.a').get('transition')).toBe('overridden by transition-property: y');
+    expect(specificity(".x:not(:where([a='1'])):hover")).toBe(200);
+    expect(specificity(".x[a='1']:not([b='1']):hover")).toBe(400);
+    expect(specificity('.l :where(button, input)')).toBe(100);
+  });
+
   it('turns the chevron instantly under reduced motion: the token sheet collapses it', () => {
     const styles = readFileSync(`${import.meta.dirname}/styles.css`, 'utf8');
     const tokensImport = styles.indexOf("@import '../../assets/css/tokens.css';");
@@ -830,5 +949,84 @@ describe('the "On this page" toggle', () => {
     expect(readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8')).not.toContain(
       'prefers-reduced-motion'
     );
+  });
+});
+
+describe('held controls under the pointer', () => {
+  afterEach(cleanup);
+
+  /** Hover rules that never change a held control's look, with why. */
+  const HOVER_EXEMPT = new Set([
+    // A list row, never held itself (its add button is, and is guarded).
+    '.xo-candidate:hover',
+    // A text field: a locked row is read-only, never aria-disabled.
+    '.xo-row-input:hover',
+    // Restates the copied colour over the ghost hover — the resting look.
+    '.xo-lane-copy[data-copied]:hover'
+  ]);
+
+  /** The sheet's hover rules. */
+  const hoverRules = (): CssRule[] =>
+    parseRules(readFileSync(`${import.meta.dirname}/overlay.css`, 'utf8')).filter((rule) =>
+      rule.selector.includes(':hover')
+    );
+
+  it('guards every control hover rule against aria-disabled (or names why not)', () => {
+    const unguarded = hoverRules()
+      .map((rule) => rule.selector)
+      .filter(
+        (selector) =>
+          !HOVER_EXEMPT.has(selector) &&
+          !selector.includes(":not(:where([aria-disabled='true']))") &&
+          !selector.includes(":not([aria-disabled='true'])")
+      );
+    expect(unguarded).toEqual([]);
+    expect(hoverRules().length).toBeGreaterThan(HOVER_EXEMPT.size);
+  });
+
+  it('a held control of every kind matches no hover rule', async () => {
+    const { container } = mount(port({ state: 'inactive' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^On this page/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Apply$/ }));
+    await screen.findByText('Reloading with your exclusions');
+    // The kinds a reload hides rather than holds (the footer's Apply, row
+    // and dock icon buttons, chips) join as held twins inside the layer.
+    const layer = container.querySelector('.xo-layer');
+    if (layer === null) throw new Error('the overlay layer is not mounted');
+    for (const twin of [
+      '<button class="xo-button" data-variant="primary" aria-disabled="true"></button>',
+      '<button class="xo-icon-button" aria-disabled="true"></button>',
+      '<button class="xo-chip" aria-pressed="false" aria-disabled="true"></button>'
+    ]) {
+      layer.insertAdjacentHTML('beforeend', twin);
+    }
+    const held = [...container.querySelectorAll("[aria-disabled='true']")];
+    const kinds = new Set(
+      held.map(
+        (element) =>
+          [...element.classList].filter((name) => name !== 'xo-button').join('.') ||
+          `xo-button:${element.getAttribute('data-variant') ?? 'plain'}`
+      )
+    );
+    // Every control kind, live where the reload holds it.
+    for (const kind of [
+      'xo-button:primary',
+      'xo-button:ghost',
+      'xo-button:plain',
+      'xo-disclosure',
+      'xo-lane-copy',
+      'xo-candidate-add',
+      'xo-switch',
+      'xo-icon-button',
+      'xo-chip'
+    ]) {
+      expect(kinds, kind).toContain(kind);
+    }
+    const hits = held.flatMap((element) =>
+      hoverRules()
+        .filter((rule) => element.matches(rule.selector.replaceAll(':hover', '')))
+        .map((rule) => `${element.className} ← ${rule.selector}`)
+    );
+    expect(hits).toEqual([]);
   });
 });

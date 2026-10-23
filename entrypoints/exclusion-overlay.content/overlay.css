@@ -299,8 +299,9 @@
   cursor: pointer;
 }
 
-/* A held (aria-disabled) button keeps its resting look under the pointer;
- * `:where` keeps the rule's specificity, so the variants still win. */
+/* A held (aria-disabled) control keeps its resting look under the pointer:
+ * every control hover rule skips it. `:where` keeps each rule's specificity,
+ * so the variants' precedence is what it would be without the guard. */
 .xo-button:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
   border-color: var(--line-3);
@@ -312,9 +313,9 @@
   color: var(--on-accent);
 }
 
-.xo-button[data-variant='primary']:hover {
-  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
-  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+.xo-button[data-variant='primary']:not(:where([aria-disabled='true'])):hover {
+  background: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
 }
 
 .xo-button[data-variant='ghost'] {
@@ -323,7 +324,7 @@
   color: var(--fg-secondary);
 }
 
-.xo-button[data-variant='ghost']:hover {
+.xo-button[data-variant='ghost']:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
   color: var(--fg-primary);
 }
@@ -337,8 +338,8 @@
 }
 
 .xo-disclosure[aria-expanded='true']:not([aria-disabled='true']):hover {
-  background: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
-  border-color: color-mix(in srgb, var(--accent-strong) 86%, var(--fg-primary));
+  background: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
 }
 
 /* The disclosure chevron's turn: the one sanctioned toggle motion
@@ -370,7 +371,7 @@
   cursor: pointer;
 }
 
-.xo-icon-button:hover {
+.xo-icon-button:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
   color: var(--fg-primary);
 }
@@ -547,7 +548,7 @@
   cursor: pointer;
 }
 
-.xo-chip:hover {
+.xo-chip:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
 }
 
@@ -621,7 +622,7 @@
   outline: none;
 }
 
-.xo-candidate-add:hover {
+.xo-candidate-add:not(:where([aria-disabled='true'])):hover {
   background: var(--surface-3);
 }
 

@@ -189,6 +189,34 @@ describe('ChoiceGroup', () => {
     expect(checked).toBeTruthy();
   });
 
+  it('gives an unchecked tile hover feedback only while the group is enabled', () => {
+    const hover = (): string[] =>
+      screen
+        .getByText('Dark')
+        .className.split(/\s+/)
+        .filter((token) => token.startsWith('hover:'));
+    render(() => (
+      <ChoiceGroup
+        options={[...OPTIONS]}
+        value="system"
+        onChange={vi.fn()}
+        aria-label="Color theme"
+      />
+    ));
+    expect(hover()).toEqual(['hover:border-line-3', 'hover:bg-surface-3']);
+    cleanup();
+    render(() => (
+      <ChoiceGroup
+        options={[...OPTIONS]}
+        value="system"
+        onChange={vi.fn()}
+        aria-label="Color theme"
+        disabled
+      />
+    ));
+    expect(hover()).toEqual([]);
+  });
+
   it('throws when the group is named neither by label nor by reference', () => {
     expect(() =>
       render(() => (

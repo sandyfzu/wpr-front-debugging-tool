@@ -189,16 +189,16 @@ const CHIP_BASE = cn(
 );
 
 /** The unselected look: an outlined ghost chip at the page surface. */
-const CHIP_UNSELECTED = cn(
-  'border-line-2 bg-surface-2 text-fg-secondary',
-  'hover:border-line-3 hover:text-fg-primary'
-);
+const CHIP_UNSELECTED = 'border-line-2 bg-surface-2 text-fg-secondary';
 
 /** The selected look: the accent-riding chip (pressed also gets fuller text). */
-const CHIP_SELECTED = cn(
-  'border-accent-strong bg-accent-strong text-on-accent',
-  'hover:brightness-110'
-);
+const CHIP_SELECTED = 'border-accent-strong bg-accent-strong text-on-accent';
+
+/** The unselected chip's pointer feedback — live chips only (a disabled one keeps its resting look). */
+const CHIP_UNSELECTED_HOVER = 'hover:border-line-3 hover:text-fg-primary';
+
+/** The selected chip's pointer feedback — live chips only. */
+const CHIP_SELECTED_HOVER = 'hover:brightness-110';
 
 /**
  * The count pill on a selected chip: the chip's own fill/text pair inverted
@@ -242,7 +242,12 @@ function FilterChipButton(props: {
       aria-pressed={props.selected}
       disabled={props.chip.disabled}
       onClick={() => props.onSelect?.(props.chip.value)}
-      class={cn(CHIP_BASE, props.selected ? CHIP_SELECTED : CHIP_UNSELECTED)}
+      class={cn(
+        CHIP_BASE,
+        props.selected ? CHIP_SELECTED : CHIP_UNSELECTED,
+        props.chip.disabled !== true &&
+          (props.selected ? CHIP_SELECTED_HOVER : CHIP_UNSELECTED_HOVER)
+      )}
     >
       {props.chip.label}
       <span

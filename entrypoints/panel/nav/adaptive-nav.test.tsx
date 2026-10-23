@@ -260,6 +260,17 @@ describe('AdaptiveNav reserved row', () => {
       vi.useRealTimers();
     }
   });
+
+  it('keeps its resting look under the pointer, unlike a live row', () => {
+    renderNav();
+    const hover = (element: Element): string[] =>
+      element.className.split(/\s+/).filter((token) => token.startsWith('hover:'));
+    const reserved = screen.getByRole('button', { name: 'Diagnoser' });
+    expect(hover(reserved)).toEqual([]);
+    const live = document.querySelector('a[href="#/javascript"]');
+    expect(live).not.toBeNull();
+    expect(hover(live ?? reserved)).toEqual(['hover:bg-surface-3', 'hover:text-fg-primary']);
+  });
 });
 
 describe('AdaptiveNav live state', () => {
