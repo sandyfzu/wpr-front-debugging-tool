@@ -1,8 +1,10 @@
 /**
- * A long paste whose sliced commit throws: it settles as `failed` (never a
- * rejection), the editor is free again, the cause is logged, and only the
- * commits asked meanwhile run (Apply waits for the user to read why); the
- * lane says so as a problem, with the way forward.
+ * A paste whose commit throws, long (sliced) or short (one step): it
+ * settles as `failed` (never a rejection, never a throw into the host
+ * page's paste event), the editor is as it was and free, the cause is
+ * logged, and for a long one only the commits asked meanwhile run (Apply
+ * waits for the user to read why); the lane says so as a problem, with the
+ * way forward.
  */
 import { createRoot } from 'solid-js';
 import { cleanup, render, screen, waitFor } from '@solidjs/testing-library';
@@ -15,13 +17,17 @@ import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-sessi
 import { createOverlayController, PASTE_SLICE_ROWS } from './controller';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
-/** Throw from the next sliced commit step (set per test). */
-const failure = { step: false, start: false };
+/** Where the commit throws (set per test): a slice, a sliced commit's start, a one-step commit. */
+const failure = { step: false, start: false, commit: false };
 
 vi.mock('./exclusions/draft', async (original) => {
   const actual = await original<typeof Draft>();
   return {
     ...actual,
+    commitRows: (...args: Parameters<typeof actual.commitRows>) => {
+      if (failure.commit) throw new Error('commit broke');
+      return actual.commitRows(...args);
+    },
     startCommit: (...args: Parameters<typeof actual.startCommit>) => {
       if (failure.start) throw new Error('start broke');
       const commit = actual.startCommit(...args);
@@ -142,10 +148,39 @@ const everyRow: VirtualizerFactory = (options) => ({
   measureElement: () => undefined
 });
 
-describe('the lane after a long paste broke', () => {
+describe('a short paste that breaks', () => {
+  it('settles as failed at once, the draft untouched, nothing thrown', async () => {
+    const { controller, log } = await ready();
+    const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+    const before = controller.draft();
+    failure.commit = true;
+    try {
+      expect(controller.pasteRows('delayJs', id, 'a\nb\nc', { start: 1, end: 1 })).toEqual({
+        kind: 'failed'
+      });
+    } finally {
+      failure.commit = false;
+    }
+    expect(controller.draft()).toBe(before);
+    expect(controller.notes().lanes.delayJs.summary).toBeNull();
+    expect(controller.editable()).toBe(true);
+    expect(log.warn).toHaveBeenCalledWith(
+      'paste of 5 characters into delayJs failed',
+      expect.any(Error)
+    );
+    expect(controller.pasteRows('delayJs', id, 'a\nb', { start: 1, end: 1 })).toEqual({
+      kind: 'pasted'
+    });
+  });
+});
+
+describe('the lane after a paste broke', () => {
   afterEach(cleanup);
 
-  it('says the paste was not added and how to go on, announced', async () => {
+  it.each([
+    ['long', 'step'],
+    ['short', 'commit']
+  ] as const)('says a %s paste was not added and how to go on, announced', async (size, key) => {
     const { controller, drain } = await ready();
     controller.insertRows('delayJs', ['x'], null);
     const announce = vi.fn<(text: string) => void>();
@@ -165,14 +200,16 @@ describe('the lane after a long paste broke', () => {
       />
     ));
     const event = new Event('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'clipboardData', { value: { getData: () => LONG } });
-    failure.step = true;
+    const text = size === 'long' ? LONG : 'a\nb';
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => text } });
+    failure[key] = true;
     try {
       screen.getByRole('textbox', { name: /row 1$/ }).dispatchEvent(event);
       await drain();
     } finally {
-      failure.step = false;
+      failure[key] = false;
     }
+    expect(event.defaultPrevented).toBe(true);
     await waitFor(() => {
       expect(screen.getByText(PASTE_COPY.failed).closest('p')?.classList).toContain('xo-row-error');
     });

@@ -504,10 +504,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   ): SettledPasteOutcome => {
     const last = pasted.ids.at(-1);
     if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
+    // Committed before anything changes: a commit that throws leaves the editor as it was.
+    const committed = commit();
     clearServerReason(id);
     noteEdit(lane, id);
     uncommitted.add(last);
-    takeCommit(commit(), 'paste');
+    takeCommit(committed, 'paste');
     if (focus)
       setFocusRequest({
         lane,
@@ -781,6 +783,38 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
   };
 
+  /**
+   * Split a paste into rows and land it: at once, or a slice per task for a
+   * long one (see {@link PASTE_SLICE_ROWS}).
+   *
+   * @param lane The pasted lane.
+   * @param id The row pasted into.
+   * @param text The pasted text.
+   * @param selection Where in the row it lands.
+   * @throws Whatever the row split or a one-step commit throws (the caller settles it).
+   */
+  const startPaste = (
+    lane: LaneKey,
+    id: string,
+    text: string,
+    selection: RowSelection
+  ): PasteOutcome => {
+    const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
+    // Every filled row but the one the caret lands in is committed.
+    const targets = pasted.ids.slice(0, -1);
+    if (targets.length <= sliceRows) {
+      return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
+    }
+    setPasteHeld(true);
+    // Nothing changes the draft meanwhile: every edit is gated on
+    // `editable`; commits, Apply, Reset and Stop wait in `afterPaste`
+    // (the load is done before a paste can start).
+    const done = commitInSlices(pasted.draft, lane, targets).then((sliced) =>
+      settleLongPaste(lane, id, pasted, sliced)
+    );
+    return { kind: 'pending', done };
+  };
+
   const controller: OverlayController = {
     state,
     draft,
@@ -935,21 +969,17 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     pasteRows: (lane, id, text, selection) => {
       if (!editable()) return { kind: 'ignored' };
-      const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
-      // Every filled row but the one the caret lands in is committed.
-      const targets = pasted.ids.slice(0, -1);
-      if (targets.length <= sliceRows) {
-        return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
+      // A paste runs inside the host page's paste event: a throw must never
+      // reach the page — it settles `failed`, the lane says so, the editor
+      // stays as it was.
+      try {
+        return startPaste(lane, id, text, selection);
+      } catch (cause) {
+        deps.log.warn(`paste of ${String(text.length)} characters into ${lane} failed`, cause);
+        return { kind: 'failed' };
       }
-      setPasteHeld(true);
-      // Nothing changes the draft meanwhile: every edit is gated on
-      // `editable`; commits, Apply, Reset and Stop wait in `afterPaste`
-      // (the load is done before a paste can start).
-      const done = commitInSlices(pasted.draft, lane, targets).then((sliced) =>
-        settleLongPaste(lane, id, pasted, sliced)
-      );
-      return { kind: 'pending', done };
     },
+
     removeRow: (lane, id) => {
       if (!editable()) return;
       clearServerReason(id);
