@@ -318,4 +318,26 @@ describe('the Defer JS inline pass across Delay JS (WP Rocket 3.23.5.1, run)', (
     expect(html).toBe(SERVED);
     expect(reports[1]).toMatchObject({ feature: 'defer_all_js', undetermined: 1 });
   });
+
+  it('flags a wrapper spanning scripts instead of guessing its bodies', () => {
+    // `<script id="i1">jQuery(1)</script >` + an empty `f.js` script: WP Rocket
+    // wraps across both, Delay JS rewrites the end tags. Under `jquery.min.js`
+    // it serves i1 = `jQuery(1)` and f empty — not readable from this page.
+    const delayedTag = '<script type="text/rocketlazyloadscript"';
+    const spanned =
+      `${delayedTag} id="i1">${open}jQuery(1)</script>\n` +
+      `${delayedTag} data-rocket-src="/f.js" id="f" data-rocket-defer defer>});</script>`;
+    const set = setWith({ deferJs: ['jquery.min.js'], delayJs: ['\\{jQuery'] });
+    const { html, reports } = applyPipeline(spanned, set);
+    expect(html).toBe(spanned);
+    expect(reports[0]).toMatchObject({ feature: 'delay_js', rewritten: 0, undetermined: 1 });
+    expect(reports[1]).toMatchObject({
+      feature: 'defer_all_js',
+      candidates: 2,
+      rewritten: 0,
+      undetermined: 1
+    });
+    // Not the live-rows caveat: the rows decide nothing here.
+    expect(reports[1]?.inlineUndetermined).toBeUndefined();
+  });
 });

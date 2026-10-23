@@ -388,6 +388,23 @@ describe('parseParityTable', () => {
         )
       }).rows[2]
     ).toMatchObject({ inlineUndetermined: 'needs live rows' });
+    for (const [id, value] of [
+      ['match-b', false],
+      ['match-a', true]
+    ] as const) {
+      rejects(
+        (table) => (row(table, id).throughDelayJs = value),
+        '"throughDelayJs" is either true on a Defer JS row or absent'
+      );
+    }
+    expect(
+      parseParityTable({
+        ...validTable(),
+        rows: validTable().rows.map((entry) =>
+          entry.id === 'match-b' ? { ...entry, throughDelayJs: true } : entry
+        )
+      }).rows[2]
+    ).toMatchObject({ throughDelayJs: true });
     rejects(
       (table) => (row(table, 'match-a').hashed = []),
       '"hashed"/"rekeyed" are present exactly'

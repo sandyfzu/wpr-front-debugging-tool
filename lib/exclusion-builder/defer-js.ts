@@ -136,8 +136,9 @@ function deferVerdict(tagText: string, firstMatch: (subject: string) => number):
  * read back is left as served and counted undetermined. Inline scripts
  * WP Rocket wrapped (its inline-jQuery pass) count as candidates: when the
  * set certainly turns that pass off they get their original body back,
- * when the outcome depends on the live rows they stay as served and count
- * undetermined (`./defer-inline-js`). Wrapping is never added: the served
+ * when the outcome depends on the live rows — or a wrapper may span scripts,
+ * whose original bodies the page no longer shows — they stay as served and
+ * count undetermined (`./defer-inline-js`). Wrapping is never added: the served
  * page already reflects the live rows, which a set only adds to.
  *
  * @param servedHtml The served document (decoded text — no byte handling here).
@@ -269,7 +270,8 @@ function deferWithInlinePass(
       featureWide,
       undetermined: undetermined + inline.undetermined,
       inlineUnwrapped: inline.unwrapped,
-      inlineUndetermined: inline.undetermined,
+      // Only the share waiting on the live rows: a spanning wrapper is not about them.
+      inlineUndetermined: inline.undetermined - inline.spanned,
       ...pageCaveats(rowSet, pageOff, entries),
       // A feature-wide or page-off run matches no row: nothing to credit.
       rowCountsBestEffort: rows.length > 1 && !featureWide && !pageOff

@@ -303,6 +303,8 @@ interface MatchCase {
   readonly kind: 'match';
   readonly feature: MatchInput['feature'];
   readonly rows: readonly string[];
+  /** Run Delay JS (no rows) after Defer JS (see `MatchInput.throughDelayJs`). */
+  readonly throughDelayJs?: true;
   readonly html: string;
 }
 
@@ -420,6 +422,7 @@ export function matchCases(
         kind: 'match',
         feature: input.feature,
         rows: rows.map((row) => lineBase64(row)),
+        ...(input.throughDelayJs === true ? { throughDelayJs: true as const } : {}),
         html: input.html
       };
     });

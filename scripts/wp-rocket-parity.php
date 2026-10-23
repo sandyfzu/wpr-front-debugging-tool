@@ -520,13 +520,15 @@ function match_case(array $case): array {
 			break;
 		case 'defer_all_js':
 			$isDeferred = static fn(string $tag): bool => strpos($tag, 'data-rocket-defer') !== false;
-			$served     = defer_pass([], $html);
+			// Delay JS (buffer priority 26) after Defer JS, when the row asks for both features.
+			$delay      = static fn(string $page): string => empty($case['throughDelayJs']) ? $page : delay_pass([], $page);
+			$served     = $delay(defer_pass([], $html));
 			$subjects   = array_column(subject_tags($id, $served, 'script'), 0);
 			$base       = optimized_keys($id, $served, 'script', $isDeferred);
 			if ($base === []) {
 				throw new RuntimeException("match $id: a Defer fixture needs at least one deferred script (featureOff would be meaningless)");
 			}
-			$deferred   = defer_pass($rows, $html, $featureOff);
+			$deferred   = $delay(defer_pass($rows, $html, $featureOff));
 			$after      = optimized_keys($id, $deferred, 'script', $isDeferred);
 			$wrapped    = wrapped_keys($id, $html, $deferred);
 			break;

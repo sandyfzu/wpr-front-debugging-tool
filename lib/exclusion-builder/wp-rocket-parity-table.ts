@@ -171,10 +171,17 @@ export interface MatchInput extends RowBase {
   readonly engine?: EngineDisposition;
   /**
    * Defer JS only: why the engine reports the inline pass undetermined here
-   * (its outcome depends on live rows the harness does not have), instead
-   * of WP Rocket's `inlineWrapped`.
+   * (e.g. its outcome depends on live rows the harness does not have, or the
+   * served page no longer shows the original bodies), instead of WP Rocket's
+   * `inlineWrapped`.
    */
   readonly inlineUndetermined?: string;
+  /**
+   * Defer JS only: both runs also go through Delay JS (no rows), as on a site
+   * with both features — Delay JS runs after Defer JS and rewrites the
+   * scripts it delays, end tags included.
+   */
+  readonly throughDelayJs?: true;
   readonly html: string;
 }
 
@@ -249,6 +256,7 @@ export const MATCH_INPUT_KEYS = [
   'pending',
   'engine',
   'inlineUndetermined',
+  'throughDelayJs',
   'html'
 ] as const;
 
@@ -537,6 +545,10 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
   ) {
     fail(id, '"inlineUndetermined" is a non-empty reason on a Defer JS row');
   }
+  const throughDelayJs = record.throughDelayJs;
+  if (throughDelayJs !== undefined && (throughDelayJs !== true || feature !== 'defer_all_js')) {
+    fail(id, '"throughDelayJs" is either true on a Defer JS row or absent');
+  }
   const html = stringField(id, record, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   return {
@@ -548,6 +560,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
     ...(filterOnly === true ? { filterOnly } : {}),
     ...(engine === undefined ? {} : { engine }),
     ...(inlineUndetermined === undefined ? {} : { inlineUndetermined }),
+    ...(throughDelayJs === true ? { throughDelayJs } : {}),
     html
   };
 }

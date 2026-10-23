@@ -8,7 +8,8 @@
  * The served page carries the live site's wrapping, made under rows this
  * tool cannot read; a set adds its rows to those. This module decides what
  * the pass does under a set — when that is certain — and undoes the served
- * wrapping when the pass would not run. It never adds a wrapping.
+ * wrapping when the pass would not run. It never adds a wrapping, and never
+ * guesses the bodies of a wrapper that may span scripts.
  */
 import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN } from '../wp-rocket/constants';
 import type { ExclusionSet } from './set';
@@ -113,33 +114,115 @@ function wrappedInner(element: string, body: string): string | null {
   return inner;
 }
 
+/** One script whose body opens with WP Rocket's wrapper, as served. */
+interface OpenedScript {
+  /** Its original body when the body is exactly one wrapper ({@link wrappedInner}), else `null`. */
+  readonly inner: string | null;
+  /** Whether its wrapper may run past its own end tag (see {@link wrappedScripts}). */
+  spanned: boolean;
+}
+
 /** The scripts of a page WP Rocket wrapped. */
 interface WrappedScripts {
-  /** Their original bodies, distinct. */
+  /** The original bodies that can be read back, distinct. */
   readonly inners: ReadonlySet<string>;
-  /** How many script elements (outside comments) were wrapped. */
+  /** How many script elements (outside comments) show the wrapping. */
   readonly count: number;
+  /** Of those, the ones whose original body cannot be read back (a wrapper that may span scripts). */
+  readonly spanned: number;
 }
 
 /**
  * Find the scripts WP Rocket wrapped on a page.
  *
+ * WP Rocket's script match ends at the first `</script>`, so a script whose
+ * end tag is spelled otherwise (`</script >`) is wrapped together with the
+ * scripts after it: the opening lands in it, the closing in the script whose
+ * end tag ends the match. Delay JS then rewrites every end tag to
+ * `</script>`, after which the page no longer shows which script holds the
+ * closing — two sources can serve the same page yet differ once unwrapped.
+ * So a script opening the wrapper may span scripts when its body is not one
+ * whole wrapper, or when a later script's body is the closing alone (an
+ * empty script it spanned to); neither is read back. Nor is a whole wrapper
+ * whose body also stands in one that may span (bodies are undone by text,
+ * page-wide). A whole wrapper spanning to a script with a body of its own
+ * reads exactly like one wrapper followed by a script ending in `});`, which
+ * pages commonly hold: it is read back as one wrapper.
+ *
  * @param html The page (or one script element).
- * @returns Their original bodies and their count.
+ * @returns The original bodies that can be read back, and the counts.
  */
 function wrappedScripts(html: string): WrappedScripts {
-  const inners = new Set<string>();
-  let count = 0;
-  if (!html.includes(INLINE_WRAP_OPEN)) return { inners, count };
+  if (!html.includes(INLINE_WRAP_OPEN)) return { inners: new Set(), count: 0, spanned: 0 };
+  const opened: OpenedScript[] = [];
   for (const match of html.matchAll(SCRIPT_OR_COMMENT)) {
     const body = match[1];
     if (body === undefined) continue; // A comment.
-    const inner = wrappedInner(match[0], body);
-    if (inner === null) continue;
-    inners.add(inner);
-    count++;
+    if (body.startsWith(INLINE_WRAP_OPEN)) {
+      const inner = wrappedInner(match[0], body);
+      opened.push({ inner, spanned: inner === null && !body.endsWith(INLINE_WRAP_CLOSE) });
+    } else if (body === INLINE_WRAP_CLOSE) {
+      // The closing alone: an empty script the last opening may span to (one
+      // before it cannot — the script opening after it would sit inside).
+      const last = opened.at(-1);
+      if (last !== undefined) last.spanned = true;
+    }
   }
-  return { inners, count };
+  return readableWraps(opened);
+}
+
+/**
+ * The counts, and the bodies that can be read back, of the scripts opening
+ * the wrapper. One that is neither a whole wrapper nor possibly spanning is
+ * not WP Rocket's wrapping (e.g. no jQuery code, or structured data).
+ *
+ * @param opened The scripts whose body opens with the wrapper, in page order.
+ * @returns As {@link wrappedScripts}.
+ */
+function readableWraps(opened: readonly OpenedScript[]): WrappedScripts {
+  const unreadable = new Set<string>();
+  for (const script of opened) {
+    if (script.spanned && script.inner !== null) unreadable.add(script.inner);
+  }
+  const inners = new Set<string>();
+  let count = 0;
+  let readable = 0;
+  for (const script of opened) {
+    if (script.inner === null && !script.spanned) continue;
+    count++;
+    if (script.spanned || script.inner === null || unreadable.has(script.inner)) continue;
+    inners.add(script.inner);
+    readable++;
+  }
+  return { inners, count, spanned: count - readable };
+}
+
+/**
+ * Whether a served page holds a wrapper that may span scripts, whose
+ * original bodies cannot be read back (see {@link wrappedScripts}).
+ *
+ * @param html The page.
+ */
+export function hasSpanningWrapper(html: string): boolean {
+  return wrappedScripts(html).spanned > 0;
+}
+
+/**
+ * The other body a served script may have held before a wrapper spanning
+ * scripts (see {@link wrappedScripts}): without the wrapper's opening when
+ * it starts with it; else, after a script that opens one, without the
+ * closing when it ends with it.
+ *
+ * @param body The script's body as served.
+ * @param afterOpening Whether an earlier script's body opens with the wrapper.
+ * @returns That body, or `null` when neither applies.
+ */
+export function spanningWrapperReading(body: string, afterOpening: boolean): string | null {
+  if (body.startsWith(INLINE_WRAP_OPEN)) return body.slice(INLINE_WRAP_OPEN.length);
+  if (afterOpening && body.endsWith(INLINE_WRAP_CLOSE)) {
+    return body.slice(0, body.length - INLINE_WRAP_CLOSE.length);
+  }
+  return null;
 }
 
 /**
@@ -195,16 +278,16 @@ export interface InlineUnwrap {
  * body is exactly a wrapped jQuery body gets its original back, byte for
  * byte, and so does every other copy of that wrapped body on the page. A
  * script whose source already reads exactly like WP Rocket's wrapper around
- * jQuery code is indistinguishable from its output and is unwrapped too.
+ * jQuery code is indistinguishable from its output and is unwrapped too. A
+ * wrapper that may span scripts stays as served (see {@link wrappedScripts}).
  *
  * @param html The page (or one script element).
  * @returns The page without the wrapping, and how many scripts changed.
  */
 export function unwrapInlineScripts(html: string): InlineUnwrap {
-  const { inners, count } = wrappedScripts(html);
-  return count === 0
-    ? { html, unwrapped: 0 }
-    : { html: replaceWrapped(html, inners), unwrapped: count };
+  const { inners, count, spanned } = wrappedScripts(html);
+  const unwrapped = count - spanned;
+  return unwrapped === 0 ? { html, unwrapped } : { html: replaceWrapped(html, inners), unwrapped };
 }
 
 /** The inline pass replayed on a page under a set. */
@@ -214,30 +297,38 @@ export interface InlinePassReplay {
   readonly wrapped: number;
   /** Of those, the ones given their original body back (the pass is skipped). */
   readonly unwrapped: number;
-  /** Of those, the ones left as served because the pass's outcome is unknown. */
+  /** Of those, the ones left as served because what WP Rocket would serve is unknown. */
   readonly undetermined: number;
+  /**
+   * Of the undetermined, the ones whose wrapper may span scripts — their
+   * original body cannot be read back; the rest wait on the live rows.
+   */
+  readonly spanned: number;
 }
 
 /**
  * Replay the inline pass under a set on a served page: undo the wrapping
  * when the pass is certainly skipped, keep it when it certainly runs, and
- * leave it as served — counted undetermined — otherwise.
+ * leave it as served — counted undetermined — otherwise. A wrapper that may
+ * span scripts is kept when the pass runs; else it stays as served,
+ * undetermined, as its original bodies cannot be read back.
  *
  * @param html The served page (any later rewrite of opening tags is fine).
  * @param set The exclusion set (Defer JS rows + toggle).
  * @returns The page and the counts.
  */
 export function replayInlinePass(html: string, set: ExclusionSet): InlinePassReplay {
-  const { inners, count } = wrappedScripts(html);
-  if (count === 0) return { html, wrapped: 0, unwrapped: 0, undetermined: 0 };
-  const pass = inlinePassUnder(set);
-  if (pass === 'skipped') {
-    return {
-      html: replaceWrapped(html, inners),
-      wrapped: count,
-      unwrapped: count,
-      undetermined: 0
-    };
-  }
-  return { html, wrapped: count, unwrapped: 0, undetermined: pass === 'unknown' ? count : 0 };
+  const { inners, count, spanned } = wrappedScripts(html);
+  const pass = count === 0 ? 'runs' : inlinePassUnder(set);
+  if (pass === 'runs') return { html, wrapped: count, unwrapped: 0, undetermined: 0, spanned: 0 };
+  if (pass === 'unknown')
+    return { html, wrapped: count, unwrapped: 0, undetermined: count, spanned };
+  const unwrapped = count - spanned;
+  return {
+    html: unwrapped === 0 ? html : replaceWrapped(html, inners),
+    wrapped: count,
+    unwrapped,
+    undetermined: spanned,
+    spanned
+  };
 }

@@ -21,7 +21,12 @@
  * would mean restoring regex regions of raw text, which can span past
  * the comment or attribute that holds them.
  */
-import { DELAY_JS_CONTROLLER, DELAY_JS_SRC, isDelayJSType } from '../wp-rocket/constants';
+import {
+  DELAY_JS_CONTROLLER,
+  DELAY_JS_SRC,
+  INLINE_WRAP_OPEN,
+  isDelayJSType
+} from '../wp-rocket/constants';
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag } from './html-scan';
 import {
@@ -31,7 +36,9 @@ import {
   type DelayVerdict
 } from './delay-js-match';
 import {
+  hasSpanningWrapper,
   inlinePassUnder,
+  spanningWrapperReading,
   unwrapInlineScripts,
   type InlinePass,
   type InlinePassReplay
@@ -123,29 +130,59 @@ function restoreDelayedScript(tagText: string): string {
   return text;
 }
 
+/** How Delay JS reads inline bodies, given the Defer JS inline pass under the set. */
+interface InlineReading {
+  /** The pass's outcome (see `verdictAfterInlinePass`). */
+  readonly pass: InlinePass;
+  /** The page holds a wrapper that may span scripts, and the pass may not run. */
+  readonly spanning: boolean;
+}
+
 /**
  * Delay JS's verdict on one served element as WP Rocket's Delay JS saw it,
  * after the Defer JS inline pass: wrapped while the pass runs, unwrapped
  * when it is skipped; when the pass's outcome is unknown both readings must
- * agree, else the verdict is undetermined.
+ * agree, else the verdict is undetermined. A script a wrapper may span
+ * (`spanned`: the element without the wrapper's opening or closing) adds
+ * that reading, which must agree too.
  *
  * @param matchRow The compiled rows.
  * @param element The served script element.
  * @param pass The inline pass's outcome under the set.
+ * @param spanned The element read without a spanning wrapper's part, or `null`.
  * @returns The verdict (`null` when undetermined).
  */
 function verdictAfterInlinePass(
   matchRow: DelayRowMatch,
   element: string,
-  pass: InlinePass
+  pass: InlinePass,
+  spanned: string | null
 ): DelayVerdict {
   if (pass === 'runs') return matchRow(element);
   const unwrapped = unwrapInlineScripts(element).html;
-  if (pass === 'skipped' || unwrapped === element) return matchRow(unwrapped);
-  const kept = matchRow(element);
-  const undone = matchRow(unwrapped);
-  if (kept === null || undone === null || (kept.row === -1) !== (undone.row === -1)) return null;
-  return { row: kept.row, approximate: kept.approximate || undone.approximate };
+  const readings = pass === 'skipped' ? [unwrapped] : [element, unwrapped];
+  if (spanned !== null) readings.push(spanned);
+  return agreedVerdict(matchRow, [...new Set(readings)]);
+}
+
+/**
+ * The verdict every reading agrees on — matched or not — with the first
+ * reading's row, approximate when any reading is; `null` (undetermined)
+ * when any reading is undetermined or they disagree.
+ *
+ * @param matchRow The compiled rows.
+ * @param readings The element's possible texts (≥ 1).
+ */
+function agreedVerdict(matchRow: DelayRowMatch, readings: readonly string[]): DelayVerdict {
+  const verdicts = readings.map((reading) => matchRow(reading));
+  const [first] = verdicts;
+  if (first == null) return null;
+  let approximate = false;
+  for (const verdict of verdicts) {
+    if (verdict === null || (verdict.row === -1) !== (first.row === -1)) return null;
+    approximate ||= verdict.approximate;
+  }
+  return { row: first.row, approximate };
 }
 
 /**
@@ -170,7 +207,9 @@ function verdictAfterInlinePass(
  *   matching every script only warns: it is applied, as on WP Rocket).
  */
 export function delayJsTransform(servedHtml: string, set: ExclusionSet): TransformResult {
-  return delayAfterInlinePass(servedHtml, set, inlinePassUnder(set));
+  const pass = inlinePassUnder(set);
+  const spanning = pass !== 'runs' && hasSpanningWrapper(servedHtml);
+  return delayAfterInlinePass(servedHtml, set, { pass, spanning });
 }
 
 /**
@@ -189,7 +228,10 @@ export function delayJsTransformAfterInlinePass(
   set: ExclusionSet,
   inline: InlinePassReplay
 ): TransformResult {
-  return delayAfterInlinePass(html, set, inline.undetermined > 0 ? 'unknown' : 'runs');
+  return delayAfterInlinePass(html, set, {
+    pass: inline.undetermined > 0 ? 'unknown' : 'runs',
+    spanning: inline.spanned > 0
+  });
 }
 
 /**
@@ -197,13 +239,13 @@ export function delayJsTransformAfterInlinePass(
  *
  * @param servedHtml The page.
  * @param set The exclusion set.
- * @param inlinePass How to read wrapped inline bodies (see `verdictAfterInlinePass`).
+ * @param inline How to read wrapped inline bodies (see `verdictAfterInlinePass`).
  * @returns The rewritten html and the report.
  */
 function delayAfterInlinePass(
   servedHtml: string,
   set: ExclusionSet,
-  inlinePass: InlinePass
+  inline: InlineReading
 ): TransformResult {
   const rows = set.rows.delayJs;
   const { match: matchRow, matchAllRows } = readDelayRows(rows);
@@ -220,7 +262,21 @@ function delayAfterInlinePass(
   let redirectScriptRemoved = false;
   let controllerScriptRemoved = false;
   let elementorScriptRemoved = false;
+  // Whether an earlier script opens the wrapper (a later one may hold its closing).
+  let afterOpening = false;
   for (const tag of scanTags(servedHtml)) {
+    let spanned: string | null = null;
+    if (inline.spanning && tag.name === 'script') {
+      const body = servedHtml.slice(tag.openingEnd, tag.contentEnd);
+      const reading = spanningWrapperReading(body, afterOpening);
+      afterOpening ||= body.startsWith(INLINE_WRAP_OPEN);
+      if (reading !== null) {
+        spanned =
+          servedHtml.slice(tag.start, tag.openingEnd) +
+          reading +
+          servedHtml.slice(tag.contentEnd, tag.end);
+      }
+    }
     if (featureWide && tag.name === 'script') {
       // The controller markers live in the script's raw content only —
       // never in its markup — so the content text is the test subject.
@@ -248,7 +304,7 @@ function delayAfterInlinePass(
       // The whole script element is the match target, as WP Rocket saw it
       // before delaying it (rows may also match body text).
       const element = servedHtml.slice(tag.start, tag.end);
-      const verdict = verdictAfterInlinePass(matchRow, element, inlinePass);
+      const verdict = verdictAfterInlinePass(matchRow, element, inline.pass, spanned);
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {
         undetermined++;

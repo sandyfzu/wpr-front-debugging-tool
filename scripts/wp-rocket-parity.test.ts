@@ -214,6 +214,27 @@ describe('matchCases', () => {
     expect(cases[0]).toMatchObject({ kind: 'match', feature: 'delay_js', html: 'h' });
   });
 
+  it('passes throughDelayJs on to the harness only when set', () => {
+    const input: ParityInput = {
+      id: 'match-e',
+      kind: 'match',
+      feature: 'defer_all_js',
+      rows: [],
+      throughDelayJs: true,
+      html: 'h'
+    };
+    const [withDelay, plain] = matchCases([input, INPUTS[3] as ParityInput], new Map());
+    expect(withDelay).toEqual({
+      id: 'match-e',
+      kind: 'match',
+      feature: 'defer_all_js',
+      rows: [],
+      throughDelayJs: true,
+      html: 'h'
+    });
+    expect(plain).not.toHaveProperty('throughDelayJs');
+  });
+
   it('fails when a from row has no stored result', () => {
     expect(() => matchCases(INPUTS, new Map())).toThrow('match-a: no stored rows for "save-a"');
   });

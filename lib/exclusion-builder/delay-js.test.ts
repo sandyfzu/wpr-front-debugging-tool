@@ -453,3 +453,39 @@ describe('delayJsTransform — the subject after the Defer JS inline-jQuery pass
     expect(result.report.rewritten).toBe(1);
   });
 });
+
+describe('delayJsTransform — a Defer JS wrapper spanning scripts (WP Rocket 3.23.5.1, run)', () => {
+  // `<script id="i1">jQuery(1)</script >` + an empty script, served through
+  // Defer JS and Delay JS: the wrapper opens in i1 and closes in f.
+  const SERVED = parityRow('match-defer-inline-spaced-end-delayed').served;
+
+  /** These Delay JS rows, with Defer JS rows (by default one turning the inline pass off). */
+  function withRows(delayJs: string[], deferJs = ['jquery.min.js']): ExclusionSet {
+    return {
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs, deferJs },
+      disable: EMPTY_EXCLUSION_SET.disable
+    };
+  }
+
+  it('is undetermined where a row tells the readings apart, never a confident restore', () => {
+    // WP Rocket keeps both delayed: `{jQuery` and `});<` are gone once unwrapped.
+    for (const row of ['\\{jQuery', '\\}\\);<']) {
+      const result = delayJsTransform(SERVED, withRows([row]));
+      expect(result.html).toBe(SERVED);
+      expect(result.report).toMatchObject({ candidates: 2, rewritten: 0, undetermined: 1 });
+    }
+  });
+
+  it('answers where every reading agrees', () => {
+    // WP Rocket restores i1 under `jQuery\(1\)`, wrapped or not.
+    const result = delayJsTransform(SERVED, withRows(['jQuery\\(1\\)']));
+    expect(result.report).toMatchObject({ rewritten: 1 });
+    expect(result.report.undetermined).toBeUndefined();
+  });
+
+  it('reads the page as served while the pass runs', () => {
+    const result = delayJsTransform(SERVED, withRows(['\\{jQuery'], []));
+    expect(result.report).toMatchObject({ rewritten: 1 });
+    expect(result.report.undetermined).toBeUndefined();
+  });
+});

@@ -7,9 +7,11 @@
 import { describe, expect, it } from 'vitest';
 import { INLINE_WRAP_CLOSE, INLINE_WRAP_OPEN } from '../wp-rocket/constants';
 import {
+  hasSpanningWrapper,
   inlinePassUnder,
   namesJqueryFile,
   replayInlinePass,
+  spanningWrapperReading,
   unwrapInlineScripts
 } from './defer-inline-js';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -106,19 +108,22 @@ describe('replayInlinePass', () => {
       html: '<script src="/a.js" data-rocket-defer defer></script><script>jQuery(1)</script>',
       wrapped: 1,
       unwrapped: 1,
-      undetermined: 0
+      undetermined: 0,
+      spanned: 0
     });
     expect(replayInlinePass(SERVED, deferSet(['jqu']))).toEqual({
       html: SERVED,
       wrapped: 1,
       unwrapped: 0,
-      undetermined: 0
+      undetermined: 0,
+      spanned: 0
     });
     expect(replayInlinePass(SERVED, deferSet(['foo.js']))).toEqual({
       html: SERVED,
       wrapped: 1,
       unwrapped: 0,
-      undetermined: 1
+      undetermined: 1,
+      spanned: 0
     });
   });
 
@@ -128,7 +133,8 @@ describe('replayInlinePass', () => {
       html: plain,
       wrapped: 0,
       unwrapped: 0,
-      undetermined: 0
+      undetermined: 0,
+      spanned: 0
     });
   });
 });
@@ -216,5 +222,114 @@ describe('unwrapInlineScripts', () => {
     ['a script inside a comment only', `<!-- <script>${wrap('jQuery(1)')}</script> -->`]
   ])('leaves %s as served', (_label, html) => {
     expect(unwrapInlineScripts(html)).toEqual({ html, unwrapped: 0 });
+  });
+});
+
+describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewritten by Delay JS)', () => {
+  // WP Rocket's served page for `<script id="i1">jQuery(1)</script >` + an
+  // empty `foo.js` script, through Delay JS: the wrapper opens in i1 and
+  // closes in f; the source can no longer be told from the page.
+  const tag = (attributes: string): string =>
+    `<script type="text/rocketlazyloadscript"${attributes}>`;
+  const SPLIT =
+    `${tag(' id="i1"')}${INLINE_WRAP_OPEN}jQuery(1)</script>\n` +
+    `${tag(' data-rocket-src="/f.js" id="f" data-rocket-defer defer')}${INLINE_WRAP_CLOSE}</script>`;
+  const WHOLE = `<script id="w">${wrap('jQuery(2)')}</script>`;
+
+  it('leaves it as served and undetermined unless the pass runs', () => {
+    for (const rows of [['jquery.min.js'], ['foo.js']]) {
+      expect(replayInlinePass(SPLIT, deferSet(rows))).toEqual({
+        html: SPLIT,
+        wrapped: 1,
+        unwrapped: 0,
+        undetermined: 1,
+        spanned: 1
+      });
+    }
+    expect(replayInlinePass(SPLIT, deferSet([]))).toEqual({
+      html: SPLIT,
+      wrapped: 1,
+      unwrapped: 0,
+      undetermined: 0,
+      spanned: 0
+    });
+  });
+
+  it('still undoes the whole wrappers the span cannot reach', () => {
+    // A later opening sits between this wrapper and the closing: read back.
+    expect(replayInlinePass(`${WHOLE}${SPLIT}`, deferSet(['jquery.min.js']))).toEqual({
+      html: `<script id="w">jQuery(2)</script>${SPLIT}`,
+      wrapped: 2,
+      unwrapped: 1,
+      undetermined: 1,
+      spanned: 1
+    });
+  });
+
+  it('treats a whole wrapper followed by the closing alone as spanning', () => {
+    // Its body may be the opener's own body ending in `});` plus the next
+    // script's empty body: two sources, one served page.
+    const page = `${WHOLE}<script src="/f.js">${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
+      html: page,
+      unwrapped: 0,
+      undetermined: 1,
+      spanned: 1
+    });
+    expect(hasSpanningWrapper(page)).toBe(true);
+  });
+
+  it('keeps an identical whole wrapper elsewhere wrapped too (bodies are undone by text)', () => {
+    const page = `${WHOLE}${WHOLE}<script>${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
+      html: page,
+      wrapped: 2,
+      unwrapped: 0,
+      undetermined: 2,
+      spanned: 2
+    });
+  });
+
+  it('reads a whole wrapper back when the next script has a body of its own (the named limit)', () => {
+    // `$.ajax({});` is not jQuery code to WP Rocket, and ends in `});` on its own.
+    const page = `${WHOLE}<script>$.ajax({});</script>`;
+    expect(hasSpanningWrapper(page)).toBe(false);
+    expect(replayInlinePass(page, deferSet(['jquery.min.js'])).unwrapped).toBe(1);
+  });
+
+  it('counts a wrapper opening without jQuery code only when it may span', () => {
+    const opening = `<script>${wrap('var z=1;')}</script>`;
+    expect(replayInlinePass(opening, deferSet(['jquery.min.js'])).wrapped).toBe(0);
+    const page = `${opening}<script>${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(page, deferSet(['jquery.min.js']))).toMatchObject({
+      wrapped: 1,
+      undetermined: 1,
+      spanned: 1
+    });
+  });
+
+  it('is left as served by unwrapInlineScripts', () => {
+    expect(unwrapInlineScripts(SPLIT)).toEqual({ html: SPLIT, unwrapped: 0 });
+    expect(unwrapInlineScripts(`${WHOLE}${SPLIT}`)).toEqual({
+      html: `<script id="w">jQuery(2)</script>${SPLIT}`,
+      unwrapped: 1
+    });
+  });
+
+  it('is found outside comments only', () => {
+    const commented = `<!-- <script>${INLINE_WRAP_OPEN}jQuery(1)</script> -->`;
+    expect(hasSpanningWrapper(commented)).toBe(false);
+    expect(hasSpanningWrapper(SPLIT)).toBe(true);
+    expect(hasSpanningWrapper(WHOLE)).toBe(false);
+  });
+});
+
+describe('spanningWrapperReading', () => {
+  it('drops the opening at the start, else the closing at the end after an opening', () => {
+    expect(spanningWrapperReading(`${INLINE_WRAP_OPEN}jQuery(1)`, false)).toBe('jQuery(1)');
+    expect(spanningWrapperReading(wrap('jQuery(1)'), true)).toBe(`jQuery(1)${INLINE_WRAP_CLOSE}`);
+    expect(spanningWrapperReading(`b()${INLINE_WRAP_CLOSE}`, true)).toBe('b()');
+    expect(spanningWrapperReading(`b()${INLINE_WRAP_CLOSE}`, false)).toBeNull();
+    expect(spanningWrapperReading('b()', true)).toBeNull();
   });
 });
