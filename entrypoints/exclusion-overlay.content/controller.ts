@@ -118,11 +118,11 @@ export interface FocusRequest {
 /**
  * What a paste did: `pasted` (every line in), `dropped` (the lane cap left
  * `lines` pasted lines out), `lane-full` (nothing pasted: the lane holds no
- * more rows), `ignored` (not editable now, an unknown row, or the overlay
- * closed while it ran).
+ * more rows), `ignored` (not editable now, or an unknown row), `failed` (a
+ * long paste broke while committing: nothing landed, the editor is free).
  */
 export type SettledPasteOutcome =
-  | { readonly kind: 'pasted' | 'lane-full' | 'ignored' }
+  | { readonly kind: 'pasted' | 'lane-full' | 'ignored' | 'failed' }
   | { readonly kind: 'dropped'; readonly lines: number };
 
 /**
@@ -144,7 +144,12 @@ export const PASTE_SLICE_ROWS = 64;
 type HeldAction =
   | { readonly kind: 'commit-row'; readonly lane: LaneKey; readonly id: string }
   | { readonly kind: 'commit-lane'; readonly lane: LaneKey }
-  | { readonly kind: 'apply' | 'reset' };
+  | { readonly kind: 'apply' | 'reset' | 'stop' };
+
+/** How a long paste's sliced commit ended. */
+type SlicedOutcome =
+  | { readonly kind: 'committed'; readonly committed: Committed }
+  | { readonly kind: 'failed'; readonly cause: unknown };
 
 /** The controller's surface. */
 export interface OverlayController {
@@ -304,12 +309,14 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
   /** A long paste is committing: edits wait for it (its rows land at once). */
   const [pasteHeld, setPasteHeld] = createSignal(false);
-  /** Stops a long paste between its slices (it settles as ignored). */
-  let abortPaste: (() => void) | null = null;
+  /** Runs a long paste's remaining slices at once (the overlay is closing: it lands, then saves). */
+  let finishPaste: (() => void) | null = null;
+  /** Cancels the task that runs the held actions after a landing. */
+  let cancelHeldRun: (() => void) | null = null;
   /**
-   * Actions asked while a long paste holds the draft, run in order once it
-   * lands: the paste lands on the draft and selection it started from, as a
-   * short paste would have before them (dropped if the overlay closes).
+   * Actions asked while a long paste holds the draft, run in order in the
+   * task after it lands: the paste lands on the draft and selection it
+   * started from, as a short paste would have before them.
    */
   const afterPaste: HeldAction[] = [];
   const sliceRows = deps.pasteSliceRows ?? PASTE_SLICE_ROWS;
@@ -427,6 +434,18 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     }
   };
 
+  /**
+   * Save now an edit the autosave was still waiting to save (the overlay is
+   * closing: a pause shorter than the autosave's must not lose the edit).
+   */
+  const flushAutosave = (): void => {
+    if (cancelAutosave === null) return;
+    cancelAutosave();
+    cancelAutosave = null;
+    // Not the memo: the reactive root may already be gone.
+    void saveNow(draftToSet(draft()));
+  };
+
   /** (Re)arm the autosave after an edit. */
   const scheduleAutosave = (): void => {
     cancelAutosave?.();
@@ -473,12 +492,15 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
    * @param id The row pasted into.
    * @param pasted The paste's rows.
    * @param commit The paste's commit (run now, or already run in slices).
+   * @param focus Ask for focus on the last filled row (not when the user
+   *   left the row while a long paste committed: focus stays where it went).
    */
   const landPaste = (
     lane: LaneKey,
     id: string,
     pasted: Pasted,
-    commit: () => Committed
+    commit: () => Committed,
+    focus = true
   ): SettledPasteOutcome => {
     const last = pasted.ids.at(-1);
     if (last === undefined) return { kind: pasted.dropped > 0 ? 'lane-full' : 'ignored' };
@@ -486,50 +508,153 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     noteEdit(lane, id);
     uncommitted.add(last);
     takeCommit(commit(), 'paste');
-    setFocusRequest({
-      lane,
-      id: last,
-      ...(pasted.caret === null ? {} : { caret: pasted.caret })
-    });
+    if (focus)
+      setFocusRequest({
+        lane,
+        id: last,
+        ...(pasted.caret === null ? {} : { caret: pasted.caret })
+      });
     return pasted.dropped > 0 ? { kind: 'dropped', lines: pasted.dropped } : { kind: 'pasted' };
   };
 
   /**
    * Commit a long paste's rows a slice per task, checking each kept row as
    * it goes (so the draft update reads every row's verdict from the cache).
+   * Never rejects: a throw settles as `failed`.
    *
    * @param pastedDraft The draft with the pasted rows in.
    * @param lane The pasted lane.
    * @param ids The rows to commit.
-   * @returns The commit, or null when the overlay closed meanwhile.
    */
   const commitInSlices = (
     pastedDraft: Draft,
     lane: LaneKey,
     ids: readonly string[]
-  ): Promise<Committed | null> =>
+  ): Promise<SlicedOutcome> =>
     new Promise((resolve) => {
-      const commit = startCommit(pastedDraft, lane, ids, (stored) => {
-        validate(lane, stored);
-      });
-      const slice = (): void => {
-        abortPaste = null;
-        if (commit.step(sliceRows)) {
-          resolve(commit.result());
-          return;
+      let commit: ReturnType<typeof startCommit>;
+      try {
+        commit = startCommit(pastedDraft, lane, ids, (stored) => {
+          validate(lane, stored);
+        });
+      } catch (cause) {
+        resolve({ kind: 'failed', cause });
+        return;
+      }
+      /** Commit up to `count` more rows; settle once done or broken (returns whether it settled). */
+      const run = (count: number): boolean => {
+        try {
+          if (!commit.step(count)) return false;
+          resolve({ kind: 'committed', committed: commit.result() });
+        } catch (cause) {
+          resolve({ kind: 'failed', cause });
         }
+        return true;
+      };
+      const slice = (): void => {
+        finishPaste = null;
+        if (run(sliceRows)) return;
         const cancel = deps.schedule(slice, 0);
-        abortPaste = () => {
+        finishPaste = () => {
           cancel();
-          resolve(null);
+          finishPaste = null;
+          run(Number.POSITIVE_INFINITY);
         };
       };
       slice();
     });
 
   /**
+   * Settle a long paste once its slices ran: land it (unless it broke), then
+   * release the hold.
+   *
+   * @param lane The pasted lane.
+   * @param id The row pasted into.
+   * @param pasted The paste's rows.
+   * @param sliced How its commit ended.
+   */
+  const settleLongPaste = (
+    lane: LaneKey,
+    id: string,
+    pasted: Pasted,
+    sliced: SlicedOutcome
+  ): SettledPasteOutcome => {
+    let outcome: SettledPasteOutcome = { kind: 'failed' };
+    if (sliced.kind === 'failed') {
+      deps.log.warn(`paste of ${String(pasted.ids.length)} rows into ${lane} failed`, sliced.cause);
+    } else {
+      try {
+        outcome = landPaste(lane, id, pasted, () => sliced.committed, !leftDuringHold(lane, id));
+        retargetLeave(lane, id, pasted.ids.at(-1));
+      } catch (cause) {
+        deps.log.warn(`landing a paste into ${lane} failed`, cause);
+      }
+    }
+    releaseHold(outcome.kind !== 'failed');
+    return outcome;
+  };
+
+  /**
+   * Whether the user left the pasted row while the paste was committing.
+   *
+   * @param lane The pasted lane.
+   * @param id The row pasted into.
+   */
+  const leftDuringHold = (lane: LaneKey, id: string): boolean =>
+    afterPaste.some(
+      (action) => action.kind === 'commit-row' && action.lane === lane && action.id === id
+    );
+
+  /**
+   * Point a held leave of the pasted row at the row the caret landed in: a
+   * paste landing at once moves focus there, so leaving commits that row
+   * (the pasted row itself was committed with the paste).
+   *
+   * @param lane The pasted lane.
+   * @param id The row pasted into.
+   * @param last The last filled row (none when nothing was pasted).
+   */
+  const retargetLeave = (lane: LaneKey, id: string, last: string | undefined): void => {
+    if (last === undefined) return;
+    afterPaste.forEach((action, index) => {
+      if (action.kind === 'commit-row' && action.lane === lane && action.id === id)
+        afterPaste[index] = { ...action, id: last };
+    });
+  };
+
+  /**
+   * End a paste's hold: run the held actions in a task of their own (an
+   * Apply must not share the landing's task), editing still held until then
+   * so later actions queue behind them. After a failed paste only the held
+   * commits run (the user reads why before any Apply, Reset or Stop); a
+   * closing overlay runs only the held commits too, at once, then saves.
+   *
+   * @param landed Whether the paste landed.
+   */
+  const releaseHold = (landed: boolean): void => {
+    if (!landed || disposed) {
+      const commits = afterPaste.filter(isHeldCommit);
+      afterPaste.splice(0, afterPaste.length, ...commits);
+    }
+    if (disposed) {
+      runHeld();
+      flushAutosave();
+      return;
+    }
+    if (afterPaste.length === 0) {
+      setPasteHeld(false);
+      return;
+    }
+    cancelHeldRun = deps.schedule(() => {
+      cancelHeldRun = null;
+      runHeld();
+    }, 0);
+  };
+
+  /**
    * Hold an action until a long paste lands (when one is landing).
    *
+   * @param action The action asked.
    * @returns Whether it was held (the caller then does nothing now).
    */
   const heldForPaste = (action: HeldAction): boolean => {
@@ -538,13 +663,19 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     return true;
   };
 
-  /** Run the actions held for a paste, in the order asked. */
-  const runAfterPaste = (): void => {
+  /** Release the hold and run the held actions in the order asked; one failing never stops the rest. */
+  const runHeld = (): void => {
+    setPasteHeld(false);
     for (const action of afterPaste.splice(0)) {
-      if (action.kind === 'commit-row') controller.commitRow(action.lane, action.id);
-      else if (action.kind === 'commit-lane') controller.commitLane(action.lane);
-      else if (action.kind === 'apply') controller.apply();
-      else controller.reset();
+      try {
+        if (action.kind === 'commit-row') controller.commitRow(action.lane, action.id);
+        else if (action.kind === 'commit-lane') controller.commitLane(action.lane);
+        else if (action.kind === 'apply') controller.apply();
+        else if (action.kind === 'reset') controller.reset();
+        else controller.stop();
+      } catch (cause) {
+        deps.log.warn(`held ${action.kind} after a paste failed`, cause);
+      }
     }
   };
 
@@ -713,7 +844,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       void runApply('reset', restored);
     },
     stop: () => {
-      if (!canStart(state(), 'stop')) return;
+      if (heldForPaste({ kind: 'stop' }) || !canStart(state(), 'stop')) return;
       dispatch({ type: 'request', action: 'stop' });
       void deps.port.stop().then((outcome) => {
         if (disposed) return;
@@ -811,17 +942,11 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
       }
       setPasteHeld(true);
-      const done = commitInSlices(pasted.draft, lane, targets).then(
-        (committed): SettledPasteOutcome => {
-          setPasteHeld(false);
-          if (committed === null) return { kind: 'ignored' };
-          // Nothing changed the draft meanwhile: every edit is gated on
-          // `editable`, every commit, Apply and Reset waited in `afterPaste`
-          // (the load is done before a paste can start).
-          const landed = landPaste(lane, id, pasted, () => committed);
-          runAfterPaste();
-          return landed;
-        }
+      // Nothing changes the draft meanwhile: every edit is gated on
+      // `editable`; commits, Apply, Reset and Stop wait in `afterPaste`
+      // (the load is done before a paste can start).
+      const done = commitInSlices(pasted.draft, lane, targets).then((sliced) =>
+        settleLongPaste(lane, id, pasted, sliced)
       );
       return { kind: 'pending', done };
     },
@@ -860,17 +985,29 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     dispose: () => {
       disposed = true;
-      // A long paste cut short settles as ignored: nothing lands.
-      abortPaste?.();
-      abortPaste = null;
-      afterPaste.length = 0;
-      cancelAutosave?.();
       cancelStall?.();
+      if (finishPaste !== null) {
+        // A long paste still committing lands now; its landing saves (no pasted line is lost).
+        finishPaste();
+      } else {
+        // Landed, its held actions not run yet: the held commits run now.
+        if (cancelHeldRun !== null) {
+          cancelHeldRun();
+          cancelHeldRun = null;
+          releaseHold(true);
+        }
+        flushAutosave();
+      }
       setReadings.dispose();
       unsubscribe?.();
     }
   };
   return controller;
+}
+
+/** Whether a held action is a commit (kept when the paste fails or the overlay closes). */
+function isHeldCommit(action: HeldAction): boolean {
+  return action.kind === 'commit-row' || action.kind === 'commit-lane';
 }
 
 /** The first ask problem among the load's two answers. */

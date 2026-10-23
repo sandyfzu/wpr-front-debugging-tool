@@ -79,6 +79,7 @@ function fakePort(status: ExclusionSessionStatus, saved: ExclusionSet | null = n
 async function started(port: ExclusionSessionPort, pasteSliceRows?: number) {
   const clock = timers();
   const reload = vi.fn();
+  const log = { warn: vi.fn() };
   let controller: OverlayController | undefined;
   const dispose = createRoot((disposeRoot) => {
     controller = createOverlayController({
@@ -92,7 +93,7 @@ async function started(port: ExclusionSessionPort, pasteSliceRows?: number) {
       now: () => 4242,
       schedule: clock.schedule,
       reload,
-      log: { warn: vi.fn() },
+      log,
       ...(pasteSliceRows === undefined ? {} : { pasteSliceRows })
     });
     return disposeRoot;
@@ -100,7 +101,7 @@ async function started(port: ExclusionSessionPort, pasteSliceRows?: number) {
   if (controller === undefined) throw new Error('controller not built');
   controller.start();
   await settle();
-  return { controller, clock, reload, dispose };
+  return { controller, clock, reload, dispose, log };
 }
 
 describe('loading', () => {
@@ -209,6 +210,22 @@ describe('editing and autosave', () => {
     expect(port.save).toHaveBeenCalledTimes(1);
   });
 
+  it('saves an edit still waiting for its pause when the overlay closes', async () => {
+    const { port } = fakePort({ state: 'inactive' }, validSet());
+    const { controller, clock, dispose } = await started(port);
+    const row = controller.draft().rows.deferJs[0];
+    controller.editRow('deferJs', row?.id ?? '', '/kept/');
+    expect(clock.pending(AUTOSAVE_DELAY_MS)).toBe(1);
+    controller.dispose();
+    dispose();
+    expect(port.save).toHaveBeenCalledTimes(1);
+    expect(port.save).toHaveBeenLastCalledWith(draftToSet(controller.draft()));
+    expect(clock.pending(AUTOSAVE_DELAY_MS)).toBe(0);
+    // Nothing waiting: closing saves nothing more.
+    controller.dispose();
+    expect(port.save).toHaveBeenCalledTimes(1);
+  });
+
   it('shows why a save stored nothing', async () => {
     const { port } = fakePort({ state: 'inactive' });
     port.save.mockResolvedValueOnce({
@@ -270,11 +287,14 @@ describe('editing and autosave', () => {
       'last'
     ].join('\n');
 
-    /** Run the paste's slices (each one a 0 ms timer). */
+    /** Run the paste's slices (each one a 0 ms timer), then the held actions' task the landing schedules. */
     const runSlices = async (clock: ReturnType<typeof timers>): Promise<number> => {
       let slices = 0;
-      for (; slices < 100 && clock.pending(0) > 0; slices++) clock.fire(0);
       await settle();
+      for (; slices < 100 && clock.pending(0) > 0; slices++) {
+        clock.fire(0);
+        await settle();
+      }
       return slices;
     };
 
@@ -314,27 +334,34 @@ describe('editing and autosave', () => {
       expect(controller.focusRequest()).toEqual({ lane: 'delayJs', id: rows.at(-1)?.id, caret: 4 });
     });
 
-    it('lands nothing when the overlay closes between slices', async () => {
-      const { controller, clock, dispose } = await started(fakePort({ state: 'inactive' }).port);
+    it('lands and saves the paste when the overlay closes between slices', async () => {
+      const fake = fakePort({ state: 'inactive' });
+      const { controller, clock, dispose } = await started(fake.port);
       const [id = ''] = controller.insertRows('delayJs', [''], null);
-      const before = controller.draft();
       const outcome = controller.pasteRows('delayJs', id, LONG, { start: 0, end: 0 });
       if (outcome.kind !== 'pending') throw new Error('settled at once');
       controller.dispose();
       dispose();
-      await expect(outcome.done).resolves.toEqual({ kind: 'ignored' });
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
       expect(clock.pending(0)).toBe(0);
-      expect(controller.draft()).toBe(before);
+      expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('last');
+      // Saved at once: the autosave's pause died with the overlay.
+      expect(fake.port.save).toHaveBeenCalledTimes(1);
+      expect(fake.port.save).toHaveBeenLastCalledWith(draftToSet(controller.draft()));
     });
 
     /** What a user can do around a paste, as the overlay asks it of the controller. */
     type Step =
       | { readonly kind: 'paste'; readonly selection: { start: number; end: number } }
-      | { readonly kind: 'commit-row' | 'commit-lane' | 'apply' | 'reset' };
+      | { readonly kind: 'leave' | 'commit-lane' | 'apply' | 'reset' | 'stop' };
 
     /**
      * Run the same steps on a controller whose pastes all land at once and
-     * on one that slices this paste, and read what each ended with.
+     * on one that slices this paste, and read what each ended with. `leave`
+     * leaves the focused row (as Tab or a click elsewhere does): after a
+     * one-step paste that is the last pasted row, during a hold the row
+     * pasted into. Focus is read apart: a sliced paste left meanwhile asks
+     * for none (it stays where the user put it).
      *
      * @param typed The pasted row's text before the paste.
      * @param steps The steps, the paste among them.
@@ -354,17 +381,22 @@ describe('editing and autosave', () => {
         const id = controller.draft().rows.delayJs.at(-1)?.id ?? '';
         controller.editRow('delayJs', id, typed);
         const before = controller.draft();
+        const askedBefore = controller.focusRequest();
         let outcome: Promise<unknown> = Promise.resolve(null);
         let held = false;
+        let focused = id;
         for (const step of steps) {
           if (step.kind === 'paste') {
             const pasted = controller.pasteRows('delayJs', id, LONG, step.selection);
             held = pasted.kind === 'pending';
+            // A one-step paste moved focus to its last row.
+            if (!held) focused = controller.focusRequest()?.id ?? id;
             outcome = pasted.kind === 'pending' ? pasted.done : Promise.resolve(pasted);
-          } else if (step.kind === 'commit-row') controller.commitRow('delayJs', id);
+          } else if (step.kind === 'leave') controller.commitRow('delayJs', focused);
           else if (step.kind === 'commit-lane') controller.commitLane('delayJs');
           else if (step.kind === 'apply') controller.apply();
-          else controller.reset();
+          else if (step.kind === 'reset') controller.reset();
+          else controller.stop();
         }
         // Nothing lands, and nothing commits, before the slices ran.
         if (held) expect(controller.draft()).toBe(before);
@@ -374,17 +406,20 @@ describe('editing and autosave', () => {
         const focus = controller.focusRequest();
         return {
           held,
+          focusKept: focus === askedBefore,
+          focus:
+            focus === null
+              ? null
+              : { at: rows.findIndex((row) => row.id === focus.id), caret: focus.caret },
           result: {
             outcome: await outcome,
             rows: rows.map((row) => row.text),
             summary: lane.summary,
             removed: lane.removed.map((note) => note.diff),
             news: controller.notes().latest?.news ?? null,
-            focus:
-              focus === null
-                ? null
-                : { at: rows.findIndex((row) => row.id === focus.id), caret: focus.caret },
             applied: fake.port.apply.mock.calls as unknown[][],
+            stopped: fake.port.stop.mock.calls.length,
+            phase: controller.state().phase,
             editable: controller.editable(),
             pasting: controller.pasting()
           }
@@ -395,13 +430,18 @@ describe('editing and autosave', () => {
       expect(once.held).toBe(false);
       expect(sliced.held).toBe(true);
       expect(sliced.result).toEqual(once.result);
-      return sliced.result;
+      const left = steps.some((step) => step.kind === 'leave');
+      // Left meanwhile: no focus asked after the paste (the row pasted into
+      // keeps the request it had); else the same focus as a one-step paste.
+      if (left) expect(sliced.focusKept).toBe(true);
+      else expect(sliced.focus).toEqual(once.focus);
+      return { ...sliced.result, focus: once.focus };
     };
 
     it('lands on the caret it started from when the row is left meanwhile (Tab, blur)', async () => {
       const result = await bothPaths('  ab', [
         { kind: 'paste', selection: { start: 3, end: 3 } },
-        { kind: 'commit-row' }
+        { kind: 'leave' }
       ]);
       expect(result.outcome).toEqual({ kind: 'pasted' });
       expect(result.rows[0]).toBe('as0.js');
@@ -414,7 +454,7 @@ describe('editing and autosave', () => {
     it('replaces the selected range it started from when the row is left meanwhile', async () => {
       const result = await bothPaths('  abcd', [
         { kind: 'paste', selection: { start: 3, end: 5 } },
-        { kind: 'commit-row' }
+        { kind: 'leave' }
       ]);
       expect(result.rows[0]).toBe('as0.js');
       expect(result.rows.at(-1)).toBe('lastd');
@@ -432,7 +472,7 @@ describe('editing and autosave', () => {
           typed,
           [
             { kind: 'paste', selection: { start: typed.length, end: typed.length } },
-            { kind: 'commit-row' }
+            { kind: 'leave' }
           ],
           others
         );
@@ -442,6 +482,39 @@ describe('editing and autosave', () => {
         expect(result.rows.at(-1)).toBe('last');
       }
     );
+
+    it('lands at its own caret with the trailing text committed when left meanwhile', async () => {
+      // The caret row ends in a space: leaving it commits the row the caret
+      // landed in, as after a one-step paste.
+      const result = await bothPaths('ab ', [
+        { kind: 'paste', selection: { start: 1, end: 1 } },
+        { kind: 'leave' }
+      ]);
+      expect(result.rows[0]).toBe('as0.js');
+      expect(result.rows.at(-1)).toBe('lastb');
+    });
+
+    it('drops Stop asked after Apply meanwhile, as when the paste lands at once', async () => {
+      const result = await bothPaths(
+        'ab',
+        [{ kind: 'paste', selection: { start: 1, end: 1 } }, { kind: 'apply' }, { kind: 'stop' }],
+        [],
+        activeRecord()
+      );
+      expect(result.applied).toHaveLength(1);
+      expect(result.stopped).toBe(0);
+    });
+
+    it('stops after the paste lands when Stop is clicked meanwhile', async () => {
+      const result = await bothPaths(
+        'ab',
+        [{ kind: 'paste', selection: { start: 1, end: 1 } }, { kind: 'stop' }],
+        [],
+        activeRecord()
+      );
+      expect(result.stopped).toBe(1);
+      expect(result.rows.at(-1)).toBe('lastb');
+    });
 
     it('commits a lane asked meanwhile (copy all) after the paste lands', async () => {
       const result = await bothPaths(' y ', [
@@ -456,7 +529,7 @@ describe('editing and autosave', () => {
     it('applies the landed rows when Apply is clicked meanwhile', async () => {
       const result = await bothPaths('  ab', [
         { kind: 'paste', selection: { start: 3, end: 3 } },
-        { kind: 'commit-row' },
+        { kind: 'leave' },
         { kind: 'apply' }
       ]);
       expect(result.applied).toHaveLength(1);
@@ -500,21 +573,65 @@ describe('editing and autosave', () => {
       expect(controller.draft().rows.delayJs.map((row) => row.text)).not.toContain('p');
     });
 
-    it('settles a paste cut short by closing as ignored, with no slice left', async () => {
+    it('runs the rest of the held actions when one throws, naming it in the log', async () => {
+      const fake = fakePort(activeRecord());
+      const { controller, clock, log } = await started(fake.port);
+      const [id = ''] = controller.insertRows('delayJs', ['ab'], null);
+      fake.port.stop.mockImplementation(() => {
+        throw new Error('port gone');
+      });
+      const outcome = controller.pasteRows('delayJs', id, `${LONG} `, { start: 2, end: 2 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      controller.stop();
+      controller.commitLane('delayJs');
+      await runSlices(clock);
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
+      expect(log.warn).toHaveBeenCalledWith('held stop after a paste failed', expect.any(Error));
+      // The lane commit after it ran: the caret row is stored trimmed.
+      expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('last');
+      expect(controller.pasting()).toBe(false);
+    });
+
+    it('closing lands the paste and its held commits, applies nothing, and saves', async () => {
       const fake = fakePort({ state: 'inactive' });
       const { controller, clock, dispose } = await started(fake.port);
       const [id = ''] = controller.insertRows('delayJs', ['ab'], null);
-      const before = controller.draft();
-      const outcome = controller.pasteRows('delayJs', id, LONG, { start: 1, end: 1 });
+      const outcome = controller.pasteRows('delayJs', id, `${LONG} `, { start: 2, end: 2 });
       if (outcome.kind !== 'pending') throw new Error('settled at once');
       controller.commitRow('delayJs', id);
       controller.apply();
       controller.dispose();
       dispose();
-      await expect(outcome.done).resolves.toEqual({ kind: 'ignored' });
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
       expect(clock.pending(0)).toBe(0);
-      expect(controller.draft()).toBe(before);
+      // The held leave committed the caret's row: 'last ' stored trimmed.
+      expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('last');
       expect(fake.port.apply).not.toHaveBeenCalled();
+      expect(fake.port.save).toHaveBeenLastCalledWith(draftToSet(controller.draft()));
+    });
+
+    it('closing after the landing, before the held actions ran, runs the commits and saves', async () => {
+      const fake = fakePort({ state: 'inactive' });
+      const { controller, clock, dispose } = await started(fake.port);
+      const [id = ''] = controller.insertRows('delayJs', ['ab'], null);
+      const outcome = controller.pasteRows('delayJs', id, `${LONG} `, { start: 2, end: 2 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      controller.commitRow('delayJs', id);
+      controller.apply();
+      // Every slice, but not the held actions' task.
+      while (clock.pending(0) > 0) {
+        clock.fire(0);
+        await settle();
+        if (controller.draft().rows.delayJs.length > 1) break;
+      }
+      await outcome.done;
+      expect(controller.pasting()).toBe(true);
+      controller.dispose();
+      dispose();
+      expect(controller.pasting()).toBe(false);
+      expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('last');
+      expect(fake.port.apply).not.toHaveBeenCalled();
+      expect(fake.port.save).toHaveBeenLastCalledWith(draftToSet(controller.draft()));
     });
   });
 

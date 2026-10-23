@@ -279,8 +279,12 @@ describe('OverlayApp', () => {
     row.blur();
     fireEvent.click(apply);
     expect(applied).not.toHaveBeenCalled();
-    // The paste's slices (each one schedules the next).
-    for (let slice = 0; slice < 10; slice++) fireTimers();
+    // The paste's slices (each one schedules the next), then the held
+    // actions' own task, scheduled once the landing settled.
+    for (let slice = 0; slice < 10; slice++) {
+      fireTimers();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     await waitFor(() => {
       expect(applied).toHaveBeenCalledTimes(1);
     });

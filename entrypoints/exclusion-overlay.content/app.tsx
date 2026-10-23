@@ -462,9 +462,15 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     if (sessionState() !== 'active') return 'Apply';
     return c.dirty() ? 'Apply changes' : 'Re-apply';
   };
-  /** Apply and Reset wait for a long paste themselves (they run once it lands). */
+  /** Only a long paste holds the editor (no action in flight). */
   const pasteOnly = (): boolean => c.pasting() && pending() === null;
+  /**
+   * Apply, Reset and Stop are unavailable: held, unless only a long paste
+   * holds the editor — they then wait for it in the controller and run, in
+   * the order clicked, once it lands.
+   */
   const actionHeld = (): boolean => held() && !pasteOnly();
+  /** Reset is unavailable: held as {@link actionHeld}, or nothing to reset (a landing paste will make the draft differ). */
   const resetHeld = (): boolean => actionHeld() || (!c.dirty() && !pasteOnly());
 
   return (
@@ -625,7 +631,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
                 <button
                   type="button"
                   class="xo-button"
-                  aria-disabled={held() ? 'true' : undefined}
+                  aria-disabled={actionHeld() ? 'true' : undefined}
                   onClick={() => {
                     c.stop();
                   }}
