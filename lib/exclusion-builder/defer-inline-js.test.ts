@@ -342,6 +342,26 @@ describe('a wrapper spanning scripts (an end tag WP Rocket does not end at, rewr
     });
   });
 
+  it('counts every HTML script one match takes in (an end tag the match reads past)', () => {
+    // `</script/>` ends o for HTML; WP Rocket's match reads on to p's
+    // `</script>`, so one wrapper holds both — read back whole when skipped.
+    const page = `<script id="o">${INLINE_WRAP_OPEN}jQuery(1)</script/><script id="p">b();${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(page, deferSet(['foo.js']))).toMatchObject({
+      wrapped: 2,
+      undetermined: 2,
+      spanned: 0
+    });
+    const skipped = replayInlinePass(page, deferSet(['jquery.min.js']));
+    expect(skipped).toMatchObject({ unwrapped: 1, undetermined: 0 });
+    expect(skipped.html).toBe('<script id="o">jQuery(1)</script/><script id="p">b();</script>');
+    // A deferred script inside counts as a Defer JS candidate already.
+    const deferredInside = page.replace('id="p"', 'id="p" data-rocket-defer defer');
+    expect(replayInlinePass(deferredInside, deferSet(['foo.js']))).toMatchObject({
+      wrapped: 1,
+      undetermined: 2
+    });
+  });
+
   it('is found outside comments only', () => {
     const commented = `<!-- <script>${INLINE_WRAP_OPEN}jQuery(1)</script> -->`;
     expect(hasSpanningWrapper(commented)).toBe(false);

@@ -341,4 +341,27 @@ describe('the Defer JS inline pass across Delay JS (WP Rocket 3.23.5.1, run)', (
     // Not the live-rows caveat: the rows decide nothing here.
     expect(reports[1]?.inlineUndetermined).toBeUndefined();
   });
+
+  it('pins the named residual r2b: a whole wrapper spanning to a script with a body of its own', () => {
+    // Source `<script id="i1">jQuery(function(){});</script >` + `<script
+    // id="g">var a=1;</script>`, served by WP Rocket 3.23.5.1 (run) through
+    // Defer JS and Delay JS: the wrapper opens in i1 and closes in g, yet i1
+    // reads exactly like one whole wrapper. Under `jquery.min.js` + Delay row
+    // `a=1;\}\);` WP Rocket keeps both delayed: i1 as `jQuery(function(){});`,
+    // g as `var a=1;`. The engine cannot tell this page from a
+    // whole wrapper followed by a script ending in `});` (common), so it
+    // answers as for that page — this test pins that known wrong answer.
+    const delayedTag = '<script type="text/rocketlazyloadscript"';
+    const served =
+      `${delayedTag} id="i1">${open}jQuery(function(){});</script>\n` +
+      `${delayedTag} id="g">var a=1;});</script>`;
+    const set = setWith({ deferJs: ['jquery.min.js'], delayJs: ['a=1;\\}\\);'] });
+    const { html, reports } = applyPipeline(served, set);
+    expect(html).toBe(
+      `${delayedTag} id="i1">jQuery(function(){</script>\n` +
+        '<script id="g" data-wpr-fdt-excluded="delay_js">var a=1;});</script>'
+    );
+    // No lane flags it: a confident answer.
+    expect(reports.every((report) => (report.undetermined ?? 0) === 0)).toBe(true);
+  });
 });
