@@ -22,6 +22,7 @@ import { onMessage, sendMessage } from '../../lib/messaging';
 import { mountShadowUi } from '../../components/injected-ui/mount';
 import { OVERLAY_HOST_NAME } from '../../components/injected-ui/key-guard';
 import { OverlayApp } from './app';
+import { contextScheduler } from './context-timer';
 import { createOverlayController } from './controller';
 import { createPageTools } from './page-tools';
 import { mountOverlay } from './mount-overlay';
@@ -92,6 +93,12 @@ function renderOverlay(
     ctx.addEventListener(target, type as keyof WindowEventMap, handler, { passive, capture: true });
   };
   return mountShadowUi(container, shadow, () => {
+    const schedule = contextScheduler(ctx, {
+      setTimeout: (run, ms) => window.setTimeout(run, ms),
+      clearTimeout: (id) => {
+        window.clearTimeout(id);
+      }
+    });
     const page = createPageTools({
       doc: document,
       win: window,
@@ -99,7 +106,7 @@ function renderOverlay(
       listen,
       isInvalid: () => ctx.isInvalid,
       later: (run) => {
-        ctx.setTimeout(run, 0);
+        schedule(run, 0);
       },
       // Recorded at document_start by the isolated script (same world).
       navigationAnchor: () => readNavigationAnchor(ISOLATED_WORLD)
@@ -108,12 +115,7 @@ function renderOverlay(
       port: createMessagingSessionPort(MESSAGING_TRANSPORT, log),
       pageFacts: page.pageFacts,
       now: () => Date.now(),
-      schedule: (run, ms) => {
-        const id = ctx.setTimeout(run, ms);
-        return () => {
-          clearTimeout(id);
-        };
-      },
+      schedule,
       reload: () => {
         window.location.reload();
       },
