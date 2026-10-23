@@ -16,7 +16,7 @@ import type * as Draft from './exclusions/draft';
 import type * as RowNotes from './exclusions/row-notes';
 import type { ExclusionSessionStatus } from '../../lib/messaging/exclusion-session';
 import type { ExclusionSet } from '../../lib/exclusion-builder/set';
-import { AUTOSAVE_DELAY_MS, createOverlayController, PASTE_SLICE_ROWS } from './controller';
+import { AUTOSAVE_DELAY_MS, createOverlayController, PASTE_AT_ONCE } from './controller';
 import type { ExclusionSessionPort, PortOutcome } from './session/port';
 
 /**
@@ -95,6 +95,7 @@ async function ready() {
     onStatus: vi.fn(() => () => undefined)
   } satisfies ExclusionSessionPort;
   const log = { warn: vi.fn() };
+  let ticks = 0;
   const controller = createRoot(() => {
     const built = createOverlayController({
       port,
@@ -105,6 +106,8 @@ async function ready() {
         responseEnd: null
       }),
       now: () => 1,
+      // 1 ms per read: a long paste's slices commit a fixed count of rows.
+      clock: () => (ticks += 1),
       schedule: (run, ms) => {
         if (ms === AUTOSAVE_DELAY_MS) {
           if (failure.autosave) throw new Error('timer broke');
@@ -147,7 +150,9 @@ async function ready() {
   return { controller, port, log, drain, autosaves: () => autosaves };
 }
 
-const LONG = Array.from({ length: PASTE_SLICE_ROWS * 2 }, (_, n) => `r${String(n)}.js`).join('\n');
+const LONG = Array.from({ length: PASTE_AT_ONCE.rows * 2 }, (_, n) => `r${String(n)}.js`).join(
+  '\n'
+);
 
 describe('a long paste that breaks', () => {
   it.each([
@@ -173,7 +178,7 @@ describe('a long paste that breaks', () => {
     expect(controller.pasting()).toBe(false);
     expect(controller.editable()).toBe(true);
     expect(log.warn).toHaveBeenCalledWith(
-      `paste of ${String(PASTE_SLICE_ROWS * 2)} rows into delayJs failed`,
+      `paste of ${String(PASTE_AT_ONCE.rows * 2)} rows into delayJs failed`,
       expect.any(Error)
     );
     // Nothing pasted landed; the row left was committed (trimmed).

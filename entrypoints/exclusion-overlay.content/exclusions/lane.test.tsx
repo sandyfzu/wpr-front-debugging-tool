@@ -49,6 +49,7 @@ async function readyController(
     save: () => reply({ outcome: 'saved' as const }),
     onStatus: () => () => undefined
   };
+  let ticks = 0;
   const controller = createOverlayController({
     port,
     pageFacts: () => ({
@@ -58,6 +59,8 @@ async function readyController(
       responseEnd: null
     }),
     now: () => 1,
+    // 1 ms per read: a long paste's slices commit a fixed count of rows.
+    clock: () => (ticks += 1),
     schedule,
     reload: vi.fn(),
     log: { warn: vi.fn() }

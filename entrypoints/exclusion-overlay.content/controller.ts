@@ -92,8 +92,19 @@ export interface OverlayControllerDeps {
   /** Reload the page (the user's manual reload). */
   readonly reload: () => void;
   readonly log: Pick<Logger, 'warn'>;
-  /** Rows a paste commits in one task (default {@link PASTE_SLICE_ROWS}; tests compare paths with it). */
-  readonly pasteSliceRows?: number;
+  /** Monotonic ms now, for timing a long paste's slices (default `performance.now`). */
+  readonly clock?: () => number;
+  /**
+   * The most a paste lands at once (default {@link PASTE_AT_ONCE}); a longer
+   * one is sliced. Tests compare the two paths with it.
+   */
+  readonly pasteAtOnce?: PasteBounds;
+}
+
+/** How much a paste may commit in one task: rows and their characters. */
+export interface PasteBounds {
+  readonly rows: number;
+  readonly chars: number;
 }
 
 /**
@@ -127,18 +138,53 @@ export type SettledPasteOutcome =
 
 /**
  * A paste's outcome: settled at once, or `pending` for a long paste, which
- * commits its rows a slice per task (see {@link PASTE_SLICE_ROWS}) and lands
- * in the draft in one step when `done` settles.
+ * commits its rows a slice per task (see {@link PASTE_SLICE_MS}) and lands in
+ * the draft in one step when `done` settles.
  */
 export type PasteOutcome =
   SettledPasteOutcome | { readonly kind: 'pending'; readonly done: Promise<SettledPasteOutcome> };
 
 /**
- * Rows a paste commits in one task: a longer paste commits a slice of this
- * many per task (no task over 50 ms at 4× CPU throttle, measured), holding
- * edits until its rows land in the draft at once.
+ * The most a paste commits at once, in the paste's own task. Checking a row
+ * costs about linearly in its characters (and more for rows dense in
+ * character classes), so both bound it: within them the task stays well
+ * under 50 ms at 4× CPU throttle even for the costliest rows, measured.
+ * A longer paste is committed in slices (see {@link PASTE_SLICE_MS}),
+ * holding edits until its rows land in the draft at once.
  */
-export const PASTE_SLICE_ROWS = 64;
+export const PASTE_AT_ONCE: PasteBounds = { rows: 64, chars: 16 * 1024 };
+
+/**
+ * The time a long paste's slice commits rows for, in elapsed ms on the page
+ * (at least one row each, so it always progresses): a task stays near this
+ * whatever the CPU speed and the rows cost — under 50 ms at 4× throttle
+ * with the costliest row's overrun (measured ≤ 25 ms); shorter slices only
+ * add per-task overhead to the paste's total time.
+ */
+export const PASTE_SLICE_MS = 16;
+
+/**
+ * Whether a paste's rows to commit fit in one task (see {@link PASTE_AT_ONCE}).
+ *
+ * @param rows The pasted lane's rows.
+ * @param targets The rows to commit, by id.
+ * @param bounds The bounds.
+ */
+export function fitsAtOnce(
+  rows: readonly { readonly id: string; readonly text: string }[],
+  targets: readonly string[],
+  bounds: PasteBounds
+): boolean {
+  if (targets.length > bounds.rows) return false;
+  const wanted = new Set(targets);
+  let chars = 0;
+  for (const row of rows) {
+    if (!wanted.has(row.id)) continue;
+    chars += row.text.length;
+    if (chars > bounds.chars) return false;
+  }
+  return true;
+}
 
 /** An action a long paste holds until its rows land (see {@link OverlayController.pasting}). */
 type HeldAction =
@@ -210,7 +256,7 @@ export interface OverlayController {
   /** Whether the draft can be edited now (loaded, no action in flight, no long paste landing). */
   readonly editable: Accessor<boolean>;
   /**
-   * A long paste is committing (see {@link PASTE_SLICE_ROWS}): editing waits;
+   * A long paste is committing (see {@link PASTE_SLICE_MS}): editing waits;
    * row and lane commits, Apply and Reset asked meanwhile run, in order, once
    * its rows land.
    */
@@ -319,7 +365,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
    * started from, as a short paste would have before them.
    */
   const afterPaste: HeldAction[] = [];
-  const sliceRows = deps.pasteSliceRows ?? PASTE_SLICE_ROWS;
+  const atOnce = deps.pasteAtOnce ?? PASTE_AT_ONCE;
+  const clock = deps.clock ?? (() => performance.now());
   /** The set last known stored (the autosave compares against it). */
   let lastSaved: ExclusionSet = EMPTY_EXCLUSION_SET;
   let cancelAutosave: (() => void) | null = null;
@@ -585,10 +632,17 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         resolve({ kind: 'failed', cause });
         return;
       }
-      /** Commit up to `count` more rows; settle once done or broken (returns whether it settled). */
-      const run = (count: number): boolean => {
+      /**
+       * Commit rows for `ms` (at least one); settle once done or broken.
+       *
+       * @returns Whether it settled.
+       */
+      const run = (ms: number): boolean => {
         try {
-          if (!commit.step(count)) return false;
+          const started = clock();
+          let done = commit.step(1);
+          while (!done && clock() - started < ms) done = commit.step(1);
+          if (!done) return false;
           resolve({ kind: 'committed', committed: commit.result() });
         } catch (cause) {
           resolve({ kind: 'failed', cause });
@@ -597,7 +651,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       };
       const slice = (): void => {
         finishPaste = null;
-        if (run(sliceRows)) return;
+        if (run(PASTE_SLICE_MS)) return;
         const cancel = deps.schedule(slice, 0);
         finishPaste = () => {
           cancel();
@@ -827,7 +881,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
 
   /**
    * Split a paste into rows and land it: at once, or a slice per task for a
-   * long one (see {@link PASTE_SLICE_ROWS}).
+   * long one (see {@link PASTE_AT_ONCE}).
    *
    * @param lane The pasted lane.
    * @param id The row pasted into.
@@ -844,7 +898,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     const pasted = pasteIntoRow(draft(), lane, id, text, selection, nextId);
     // Every filled row but the one the caret lands in is committed.
     const targets = pasted.ids.slice(0, -1);
-    if (targets.length <= sliceRows) {
+    if (fitsAtOnce(pasted.draft.rows[lane], targets, atOnce)) {
       return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
     }
     setPasteHeld(true);

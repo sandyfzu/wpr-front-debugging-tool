@@ -8,9 +8,11 @@ import {
 import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fixtures';
 import {
   AUTOSAVE_DELAY_MS,
-  PASTE_SLICE_ROWS,
+  PASTE_AT_ONCE,
+  PASTE_SLICE_MS,
   RELOAD_STALL_MS,
   createOverlayController,
+  fitsAtOnce,
   invalidRowsById,
   type OverlayController
 } from './controller';
@@ -71,12 +73,24 @@ function fakePort(status: ExclusionSessionStatus, saved: ExclusionSet | null = n
   return { port, push: (next: ExclusionSessionStatus) => push?.(next) };
 }
 
+/** A clock that moves `step` ms on every read (slices then commit a fixed count of rows). */
+function ticking(step = 1) {
+  let now = 0;
+  const read = () => (now += step);
+  return Object.assign(read, { reads: () => now / step });
+}
+
 /**
  * Build a started controller in a reactive root.
  *
- * @param pasteSliceRows Rows a paste commits per task (default: the shipped bound).
+ * @param pasteAtOnce The most a paste lands at once (default: the shipped bounds).
+ * @param sliceClock The slices' clock (default: 1 ms per read).
  */
-async function started(port: ExclusionSessionPort, pasteSliceRows?: number) {
+async function started(
+  port: ExclusionSessionPort,
+  pasteAtOnce?: { rows: number; chars: number },
+  sliceClock: () => number = ticking()
+) {
   const clock = timers();
   const reload = vi.fn();
   const log = { warn: vi.fn() };
@@ -94,7 +108,8 @@ async function started(port: ExclusionSessionPort, pasteSliceRows?: number) {
       schedule: clock.schedule,
       reload,
       log,
-      ...(pasteSliceRows === undefined ? {} : { pasteSliceRows })
+      clock: sliceClock,
+      ...(pasteAtOnce === undefined ? {} : { pasteAtOnce })
     });
     return disposeRoot;
   });
@@ -280,7 +295,7 @@ describe('editing and autosave', () => {
   describe('a paste longer than one slice', () => {
     /** Lines over two slices: kept, converted, a duplicate, dropped ones, then the caret's row. */
     const LONG = [
-      ...Array.from({ length: PASTE_SLICE_ROWS * 2 }, (_, index) => `s${String(index)}.js`),
+      ...Array.from({ length: PASTE_AT_ONCE.rows * 2 }, (_, index) => `s${String(index)}.js`),
       'a*',
       's0.js',
       '0',
@@ -372,11 +387,12 @@ describe('editing and autosave', () => {
       typed: string,
       steps: readonly Step[],
       others: readonly string[] = [],
-      status: ExclusionSessionStatus = { state: 'inactive' }
+      status: ExclusionSessionStatus = { state: 'inactive' },
+      text = LONG
     ) => {
-      const run = async (sliceRows: number) => {
+      const run = async (atOnce?: { rows: number; chars: number }) => {
         const fake = fakePort(status);
-        const { controller, clock } = await started(fake.port, sliceRows);
+        const { controller, clock } = await started(fake.port, atOnce);
         controller.insertRows('delayJs', [...others, 'x'], null);
         const id = controller.draft().rows.delayJs.at(-1)?.id ?? '';
         controller.editRow('delayJs', id, typed);
@@ -387,7 +403,7 @@ describe('editing and autosave', () => {
         let focused = id;
         for (const step of steps) {
           if (step.kind === 'paste') {
-            const pasted = controller.pasteRows('delayJs', id, LONG, step.selection);
+            const pasted = controller.pasteRows('delayJs', id, text, step.selection);
             held = pasted.kind === 'pending';
             // A one-step paste moved focus to its last row.
             if (!held) focused = controller.focusRequest()?.id ?? id;
@@ -425,8 +441,8 @@ describe('editing and autosave', () => {
           }
         };
       };
-      const once = await run(Number.POSITIVE_INFINITY);
-      const sliced = await run(PASTE_SLICE_ROWS);
+      const once = await run({ rows: Infinity, chars: Infinity });
+      const sliced = await run();
       expect(once.held).toBe(false);
       expect(sliced.held).toBe(true);
       expect(sliced.result).toEqual(once.result);
@@ -478,7 +494,7 @@ describe('editing and autosave', () => {
         );
         expect(result.outcome).toEqual({ kind: 'pasted' });
         // Every pasted line is there: the slices' rows and the caret's row.
-        expect(result.rows).toContain(`s${String(PASTE_SLICE_ROWS * 2 - 1)}.js`);
+        expect(result.rows).toContain(`s${String(PASTE_AT_ONCE.rows * 2 - 1)}.js`);
         expect(result.rows.at(-1)).toBe('last');
       }
     );
@@ -536,6 +552,67 @@ describe('editing and autosave', () => {
       const [set] = result.applied[0] as [ExclusionSet];
       expect(set.rows.delayJs[0]).toBe('as0.js');
       expect(set.rows.delayJs.at(-1)).toBe('lastb');
+    });
+
+    /** Lines that cost the most to check: rows at the wire's row cap, and ones dense in classes. */
+    const COSTLY = {
+      'wire-cap': (n: number) => `/p${String(n)}/${'a'.repeat(2000)}.js`,
+      'class-heavy': (n: number) => `p${String(n)}${'[a-z]'.repeat(399)}`
+    } as const;
+
+    it.each(Object.entries(COSTLY))(
+      'slices a paste of %s rows by time, landing exactly as at once',
+      async (_shape, line) => {
+        // Under the row bound, over the character bound: sliced all the same.
+        const text = [...Array.from({ length: 40 }, (_, n) => line(n)), line(1), 'last'].join('\n');
+        const result = await bothPaths(
+          'ab',
+          [{ kind: 'paste', selection: { start: 1, end: 1 } }, { kind: 'leave' }],
+          [],
+          { state: 'inactive' },
+          text
+        );
+        expect(result.outcome).toEqual({ kind: 'pasted' });
+        // The duplicate of row 1 is dropped as WP Rocket's save would.
+        expect(result.rows).toHaveLength(41);
+        expect(result.rows[0]).toBe(`a${line(0)}`);
+        expect(result.rows.at(-1)).toBe('lastb');
+      }
+    );
+
+    it('commits rows for one slice budget per task', async () => {
+      // 1 ms per clock read: a slice keeps committing until its budget is spent.
+      const { controller, clock } = await started(fakePort({ state: 'inactive' }).port);
+      const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+      const lines = Array.from({ length: 200 }, (_, n) => `t${String(n)}.js`);
+      const outcome = controller.pasteRows('delayJs', id, lines.join('\n'), { start: 1, end: 1 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      // 199 rows to commit (the caret's row is not), PASTE_SLICE_MS rows a slice.
+      const slices = 1 + (await runSlices(clock));
+      expect(slices).toBe(Math.ceil(199 / PASTE_SLICE_MS));
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
+    });
+
+    it('commits at least one row a slice however slow the rows are', async () => {
+      // Every clock read is a budget and more: one row per slice, never none.
+      const slow = ticking(PASTE_SLICE_MS * 10);
+      const { controller, clock } = await started(
+        fakePort({ state: 'inactive' }).port,
+        undefined,
+        slow
+      );
+      const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+      const lines = Array.from({ length: PASTE_AT_ONCE.rows + 6 }, (_, n) => `u${String(n)}.js`);
+      const outcome = controller.pasteRows('delayJs', id, lines.join('\n'), { start: 1, end: 1 });
+      if (outcome.kind !== 'pending') throw new Error('settled at once');
+      // One row a slice for the 69 rows to commit, then one reading past the caret's row.
+      const slices = 1 + (await runSlices(clock));
+      expect(slices).toBe(lines.length);
+      await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
+      expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual([
+        'xu0.js',
+        ...lines.slice(1)
+      ]);
     });
 
     it('resets after the paste lands when Reset is clicked meanwhile', async () => {
@@ -901,6 +978,38 @@ describe('apply / reset / stop', () => {
     controller.reset();
     expect(port.stop).not.toHaveBeenCalled();
     expect(port.apply).not.toHaveBeenCalled();
+  });
+});
+
+describe('fitsAtOnce', () => {
+  const rows = [
+    { id: 'a', text: 'aaaa' },
+    { id: 'b', text: 'bb' },
+    { id: 'c', text: 'cccccc' }
+  ];
+
+  it('bounds the rows to commit by count and by characters', () => {
+    expect(fitsAtOnce(rows, ['a', 'b'], { rows: 2, chars: 6 })).toBe(true);
+    expect(fitsAtOnce(rows, ['a', 'b', 'c'], { rows: 2, chars: 100 })).toBe(false);
+    expect(fitsAtOnce(rows, ['a', 'b'], { rows: 2, chars: 5 })).toBe(false);
+  });
+
+  it('counts only the rows to commit', () => {
+    // `c` stays as it is (the caret's row): its characters cost nothing now.
+    expect(fitsAtOnce(rows, ['b'], { rows: 1, chars: 2 })).toBe(true);
+    expect(fitsAtOnce(rows, [], { rows: 0, chars: 0 })).toBe(true);
+  });
+
+  it('keeps the shipped bounds for short pastes of ordinary rows', () => {
+    const ordinary = Array.from({ length: 64 }, (_, n) => ({
+      id: String(n),
+      text: `/wp-content/plugins/p${String(n)}/assets/js/script.min.js`
+    }));
+    const ids = ordinary.map((row) => row.id);
+    expect(fitsAtOnce(ordinary, ids, PASTE_AT_ONCE)).toBe(true);
+    expect(fitsAtOnce([...ordinary, { id: 'x', text: 'x' }], [...ids, 'x'], PASTE_AT_ONCE)).toBe(
+      false
+    );
   });
 });
 
