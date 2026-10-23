@@ -17,11 +17,13 @@
 import { createBoundedMemo, detachedString, stringBytes } from '../../utils/bounded-memo';
 import type { InvalidExclusionRow } from './errors';
 import type { ProblemId } from './pcre/problems';
+import { runStepped, steppedValue, type Stepped } from '../../utils/stepped';
 import {
   compileFirstMatch,
+  startRegexRowsTranslation,
   translationRowProblems,
-  translateRegexRows,
-  type PageState
+  type PageState,
+  type RegexRowsTranslation
 } from './pcre/rows';
 
 const FEATURE = 'defer_all_js';
@@ -94,13 +96,12 @@ const rowSetMemo = createBoundedMemo<DeferRowSet>({
 });
 
 /**
- * Translate a Defer JS row set (uncached). Matchers compile on the first
- * match, so validation-only callers never build a regex.
+ * A Defer JS row set from its rows' translation. Matchers compile on the
+ * first match, so validation-only callers never build a regex.
  *
- * @param rows The stored rows, in order.
+ * @param translation The stored rows, translated.
  */
-function translateRowSet(rows: readonly string[]): DeferRowSet {
-  const translation = translateRegexRows(FEATURE, rows);
+function rowSetFrom(translation: RegexRowsTranslation): DeferRowSet {
   const problems = translationRowProblems(FEATURE, translation);
   return {
     problems,
@@ -129,8 +130,26 @@ function translateRowSet(rows: readonly string[]): DeferRowSet {
  * @param rows The stored rows, in order.
  */
 export function deferRowSet(rows: readonly string[]): DeferRowSet {
+  return runStepped(startDeferRowSet(rows));
+}
+
+/**
+ * Start {@link deferRowSet} a row at a time (see `startRegexRowsTranslation`):
+ * done at once when the memo holds the set; the translated set is kept as
+ * `deferRowSet` keeps it.
+ *
+ * @param rows The stored rows, in order.
+ */
+export function startDeferRowSet(rows: readonly string[]): Stepped<DeferRowSet> {
+  const key = JSON.stringify(rows);
+  const cached = rowSetMemo.peek(key);
+  if (cached !== undefined) return steppedValue(cached);
   // The set keeps its rows: never as views on the field's text.
-  return rowSetMemo.get(JSON.stringify(rows), () => translateRowSet(rows.map(detachedString)));
+  const translation = startRegexRowsTranslation(FEATURE, rows.map(detachedString));
+  return {
+    step: () => translation.step(),
+    result: () => rowSetMemo.get(key, () => rowSetFrom(translation.result()))
+  };
 }
 
 /** What the set memo keeps now (entries, bytes by its weights): its bound is pinned by tests. */

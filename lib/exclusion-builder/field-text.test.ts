@@ -9,13 +9,15 @@ import {
   exclusionFieldText,
   hasInvisibleKeptCharacters,
   notStoredRows,
+  readRowSave,
   saveExclusionRow,
   saveExclusionRows,
   splitFieldText,
   storedExclusionRows,
   storedRowKey,
   storedText,
-  trimExclusionRow
+  trimExclusionRow,
+  withRowsAhead
 } from './field-text';
 import { EMPTY_EXCLUSION_SET } from './set';
 
@@ -191,6 +193,37 @@ describe('saveExclusionRow', () => {
       state: 'stored-as',
       stored: 'a(.*)',
       typed: 'a.*'
+    });
+  });
+});
+
+describe('readRowSave + withRowsAhead', () => {
+  it.each([
+    ['delay_js', 'a.*', ['a(.*)']],
+    ['delay_js', 'a.*', []],
+    ['delay_js', '   ', ['']],
+    ['delay_js', '0', ['0']],
+    ['defer_all_js', '(', ['(']],
+    ['defer_all_js', ' x.js ', ['x.js']],
+    ['defer_all_js', 'x.js', ['y.js']],
+    ['lazyload', 'a.png', ['a.png']],
+    ['automatic_lazy_rendering', 'hero', ['hero']]
+  ] as const)('%s %j ahead of %j: the same diff as saveExclusionRow', (feature, row, ahead) => {
+    const reading = readRowSave(feature, row);
+    expect(withRowsAhead(feature, reading, new Set(ahead))).toEqual(
+      saveExclusionRow(feature, row, new Set(ahead))
+    );
+    // The form is the dedupe key the save would use (none for a row the stages empty).
+    expect(reading.form).toBe(storedRowKey(feature, row));
+  });
+
+  it('dedupes before the pattern check: a row that check drops is still a duplicate', () => {
+    const reading = readRowSave('defer_all_js', '(');
+    expect(reading.diff).toMatchObject({ state: 'dropped', reason: 'invalid-pattern' });
+    expect(withRowsAhead('defer_all_js', reading, new Set(['(']))).toEqual({
+      state: 'dropped',
+      reason: 'duplicate',
+      typed: '('
     });
   });
 });

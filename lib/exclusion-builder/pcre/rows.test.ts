@@ -7,6 +7,7 @@ import {
   regexRowProblems,
   rowSaveOutcome,
   saveCheckCacheUsage,
+  startRegexRowsTranslation,
   translateRegexRows,
   translationRowProblems
 } from './rows';
@@ -165,6 +166,30 @@ describe('translateRegexRows', () => {
     expect(problemIds('defer_all_js', ['\\.*'])).toEqual(['match-all']);
     // A save rejection wins over everything.
     expect(problemIds('defer_all_js', ['(?>a)('])).toEqual(['pcre-invalid']);
+  });
+});
+
+describe('startRegexRowsTranslation', () => {
+  const ROWS = ['jquery', '(?i)a', '.*', '(', 'b\\d+', '\\Qx'];
+
+  it.each(['delay_js', 'defer_all_js'] as const)(
+    '%s: a row per step, the same translation as at once',
+    (feature) => {
+      const work = startRegexRowsTranslation(feature, ROWS);
+      let steps = 1;
+      while (!work.step()) steps++;
+      expect(steps).toBe(ROWS.length);
+      expect(work.result()).toEqual(translateRegexRows(feature, ROWS));
+    }
+  );
+
+  it('refuses a result read before every row is analyzed; no rows are done at once', () => {
+    const work = startRegexRowsTranslation('defer_all_js', ROWS);
+    work.step();
+    expect(() => work.result()).toThrow('read before its row 1');
+    const none = startRegexRowsTranslation('defer_all_js', []);
+    expect(none.step()).toBe(true);
+    expect(none.result()).toEqual(translateRegexRows('defer_all_js', []));
   });
 });
 

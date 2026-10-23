@@ -8,7 +8,8 @@ import {
   DEFER_ROW_SET_CACHE_LIMITS,
   deferRowProblems,
   deferRowSet,
-  deferRowSetCacheUsage
+  deferRowSetCacheUsage,
+  startDeferRowSet
 } from './defer-js-rows';
 
 describe('deferRowSet — matching', () => {
@@ -112,6 +113,26 @@ describe('deferRowSet — memo', () => {
     expect(set.retainedBytes).toBeGreaterThan(DEFER_ROW_SET_CACHE_LIMITS.bytes);
     // Returned, never kept: the memo holds what it held.
     expect(deferRowSetCacheUsage()).toEqual(before);
+  });
+});
+
+describe('startDeferRowSet', () => {
+  it('reads a row per step and keeps the set as deferRowSet does', () => {
+    const rows = ['stepped-a', '.*', 'stepped-b'];
+    const work = startDeferRowSet(rows);
+    let steps = 1;
+    while (!work.step()) steps++;
+    expect(steps).toBe(rows.length);
+    const set = work.result();
+    expect(deferRowSet(rows)).toBe(set);
+    expect(set.page).toBe('off');
+  });
+
+  it('is done at once when the memo holds the set', () => {
+    const set = deferRowSet(['held-a', 'held-b']);
+    const work = startDeferRowSet(['held-a', 'held-b']);
+    expect(work.step()).toBe(true);
+    expect(work.result()).toBe(set);
   });
 });
 

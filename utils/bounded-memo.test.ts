@@ -68,6 +68,28 @@ describe('createBoundedMemo', () => {
     expect(memo.get('key-one', again)).toBe(1);
     expect(again).not.toHaveBeenCalled();
   });
+
+  it('counts hits, misses and evictions', () => {
+    const memo = createBoundedMemo<number>({ maxEntries: 2 });
+    memo.get('a', () => 1);
+    memo.get('b', () => 2);
+    memo.get('a', () => 0);
+    memo.get('c', () => 3);
+    expect({ hits: memo.hits, misses: memo.misses, evictions: memo.evictions }).toEqual({
+      hits: 1,
+      misses: 3,
+      evictions: 1
+    });
+  });
+
+  it('peeks without building or keeping, a found value counted as a hit', () => {
+    const memo = createBoundedMemo<number>({ maxEntries: 2 });
+    expect(memo.peek('a')).toBeUndefined();
+    expect(memo.size).toBe(0);
+    memo.get('a', () => 1);
+    expect(memo.peek('a')).toBe(1);
+    expect({ hits: memo.hits, misses: memo.misses }).toEqual({ hits: 1, misses: 1 });
+  });
 });
 
 describe('stringBytes', () => {

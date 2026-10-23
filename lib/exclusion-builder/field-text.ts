@@ -239,28 +239,66 @@ function patternCheck(feature: ExclusionFeatureId, form: string): SaveOutcome {
   return rowSaveOutcome(feature, form);
 }
 
-/** One row's save: its diff, and its form (the dedupe key) when it got one. */
-interface RowSave {
+/**
+ * What one typed row's save decides on its own (no row ahead of it): its
+ * diff, and its form (the dedupe key) when it got one. The rows ahead only
+ * add the dedupe ({@link withRowsAhead}), so a caller holding the reading
+ * of an unchanged row never re-runs its stages or its pattern check.
+ */
+export interface RowSaveReading {
   readonly diff: StoredRowDiff;
   readonly form: string | null;
 }
 
 /**
- * WP Rocket's save of one typed row (see {@link saveExclusionRow}), with
- * the row's form: the dedupe runs before safe mode and the pattern check,
- * so a row those drop still makes a later copy of it a duplicate.
+ * WP Rocket's save of one typed row with nothing ahead of it (see
+ * {@link saveExclusionRow}).
+ *
+ * @param feature The field's feature.
+ * @param row The typed row.
+ * @param options Safe mode, when known.
  */
+export function readRowSave(
+  feature: ExclusionFeatureId,
+  row: SubmittedRow,
+  options: SaveOptions = {}
+): RowSaveReading {
+  const result = rowForm(feature, row);
+  if (!('form' in result)) {
+    return { diff: { state: 'dropped', reason: result.reason, typed: result.typed }, form: null };
+  }
+  return { diff: formDiff(feature, result.form, result.typed, options), form: result.form };
+}
+
+/**
+ * A row's save given the forms of the rows ahead of it: the dedupe runs
+ * first (before safe mode and the pattern check, so a row those drop still
+ * makes a later copy of it a duplicate); otherwise the row decides alone.
+ * Automatic Lazy Rendering rows are never deduped (a PHP filter delivers them).
+ *
+ * @param feature The field's feature.
+ * @param reading The row's own save ({@link readRowSave}).
+ * @param ahead The forms of the rows ahead of it.
+ */
+export function withRowsAhead(
+  feature: ExclusionFeatureId,
+  reading: RowSaveReading,
+  ahead: ReadonlySet<string>
+): StoredRowDiff {
+  const { form, diff } = reading;
+  if (form === null || feature === 'automatic_lazy_rendering' || !ahead.has(form)) return diff;
+  return { state: 'dropped', reason: 'duplicate', typed: diff.typed };
+}
+
+/** One row's save with the rows ahead of it, and its form. */
 function saveRow(
   feature: ExclusionFeatureId,
   row: SubmittedRow,
   ahead: ReadonlySet<string>,
   options: SaveOptions
-): RowSave {
-  const result = rowForm(feature, row);
-  if (!('form' in result)) {
-    return { diff: { state: 'dropped', reason: result.reason, typed: result.typed }, form: null };
-  }
-  return { diff: formDiff(feature, result.form, result.typed, ahead, options), form: result.form };
+): RowSaveReading {
+  const reading = readRowSave(feature, row, options);
+  return { diff: withRowsAhead(feature, reading, ahead), form: reading.form };
 }
 
 /**
@@ -283,23 +321,21 @@ export function saveExclusionRow(
 }
 
 /**
- * The set-level steps on a row's form: dedupe, safe mode, the pattern check.
+ * The set-level steps on a row's form but the dedupe ({@link withRowsAhead}):
+ * safe mode, the pattern check.
  *
  * @param feature The field's feature.
  * @param form The row's form after the per-row stages.
  * @param typed The row as typed.
- * @param ahead The forms ahead of it.
  * @param options Safe mode, when known.
  */
 function formDiff(
   feature: ExclusionFeatureId,
   form: string,
   typed: string,
-  ahead: ReadonlySet<string>,
   options: SaveOptions
 ): StoredRowDiff {
   if (feature === 'automatic_lazy_rendering') return { state: 'unchanged', typed };
-  if (ahead.has(form)) return { state: 'dropped', reason: 'duplicate', typed };
   let flag = {};
   if (feature === 'delay_js' && SAFE_MODE_DELAY_ROWS.includes(form)) {
     if (options.safeMode === true) return { state: 'dropped', reason: 'safe-mode', typed };

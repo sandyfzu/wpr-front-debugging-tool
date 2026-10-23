@@ -55,10 +55,22 @@ export interface BoundedMemo<V> {
    * @param build Makes the value on a miss (must be pure for the key).
    */
   get(key: string, build: () => V): V;
+  /**
+   * The value kept for `key`, or `undefined` (nothing is built or kept).
+   *
+   * @param key The entry's key.
+   */
+  peek(key: string): V | undefined;
   /** Entries kept now. */
   readonly size: number;
   /** Total weight kept now. */
   readonly weight: number;
+  /** Reads answered from the memo so far (`get` and `peek`). */
+  readonly hits: number;
+  /** `get` reads that built their value so far. */
+  readonly misses: number;
+  /** Entries evicted so far to make room. */
+  readonly evictions: number;
 }
 
 /**
@@ -74,17 +86,25 @@ export function createBoundedMemo<V>(limits: BoundedMemoLimits<V>): BoundedMemo<
   if (!(maxWeight >= 0)) throw new RangeError(`maxWeight must be ≥ 0, got ${String(maxWeight)}`);
   const entries = new Map<string, { readonly value: V; readonly weight: number }>();
   let total = 0;
+  let hits = 0;
+  let misses = 0;
+  let evictions = 0;
   /** Evict the oldest entry. */
   const evictOldest = (): void => {
     const oldest = entries.entries().next();
     if (oldest.done === true) return;
     entries.delete(oldest.value[0]);
     total -= oldest.value[1].weight;
+    evictions++;
   };
   return {
     get(key, build) {
       const cached = entries.get(key);
-      if (cached !== undefined) return cached.value;
+      if (cached !== undefined) {
+        hits++;
+        return cached.value;
+      }
+      misses++;
       const value = build();
       const weight = weigh(key, value);
       if (weight > maxWeight) return value;
@@ -94,11 +114,26 @@ export function createBoundedMemo<V>(limits: BoundedMemoLimits<V>): BoundedMemo<
       total += weight;
       return value;
     },
+    peek(key) {
+      const cached = entries.get(key);
+      if (cached === undefined) return undefined;
+      hits++;
+      return cached.value;
+    },
     get size() {
       return entries.size;
     },
     get weight() {
       return total;
+    },
+    get hits() {
+      return hits;
+    },
+    get misses() {
+      return misses;
+    },
+    get evictions() {
+      return evictions;
     }
   };
 }

@@ -15,6 +15,7 @@
  *
  * Each row reports its most decisive problem only (see {@link rowProblem}).
  */
+import { runStepped, type Stepped } from '../../../utils/stepped';
 import { createBoundedMemo, detachedString, stringBytes } from '../../../utils/bounded-memo';
 import { capText } from '../../../utils/cap-text';
 import type { InvalidExclusionRow } from '../errors';
@@ -662,16 +663,61 @@ export function translateRegexRows(
   feature: RegexFeatureId,
   rows: readonly string[]
 ): RegexRowsTranslation {
+  return runStepped(startRegexRowsTranslation(feature, rows));
+}
+
+/**
+ * Start {@link translateRegexRows} a row at a time — one row's analysis per
+ * step (the costly part), the rows' joined reading in `result` — for a set
+ * too costly to translate in one task: the same rows, the same result.
+ *
+ * @param feature `delay_js` or `defer_all_js`.
+ * @param rows The stored rows, in order.
+ */
+export function startRegexRowsTranslation(
+  feature: RegexFeatureId,
+  rows: readonly string[]
+): Stepped<RegexRowsTranslation> {
   // Work budget: once the set has cost `setBytes`, later rows are not checked.
   let spent = 0;
-  const analyses = rows.map((row) => {
-    if (spent > PCRE_LIMITS.setBytes) {
-      return uncheckedRow(row, 0, `past the ${String(PCRE_LIMITS.setBytes)}-byte set budget`);
+  const analyses: RowAnalysis[] = [];
+  return {
+    step() {
+      const row = rows[analyses.length];
+      if (row === undefined) return true;
+      if (spent > PCRE_LIMITS.setBytes) {
+        analyses.push(
+          uncheckedRow(row, 0, `past the ${String(PCRE_LIMITS.setBytes)}-byte set budget`)
+        );
+      } else {
+        const analysis = cachedAnalysis(feature, row);
+        spent += analysis.bytes;
+        analyses.push(analysis);
+      }
+      return analyses.length >= rows.length;
+    },
+    result() {
+      if (analyses.length < rows.length) {
+        throw new Error(`Translation of ${feature} read before its row ${String(analyses.length)}`);
+      }
+      return joinedTranslation(feature, rows, analyses);
     }
-    const analysis = cachedAnalysis(feature, row);
-    spent += analysis.bytes;
-    return analysis;
-  });
+  };
+}
+
+/**
+ * The rows' translation from their analyses: the joined reading (Defer
+ * JS's page state), then each row's matcher and problem.
+ *
+ * @param feature `delay_js` or `defer_all_js`.
+ * @param rows The stored rows, in order.
+ * @param analyses One analysis per row, in order.
+ */
+function joinedTranslation(
+  feature: RegexFeatureId,
+  rows: readonly string[],
+  analyses: readonly RowAnalysis[]
+): RegexRowsTranslation {
   const { page, offRows } =
     feature === 'defer_all_js'
       ? deferPage(rows, analyses)
