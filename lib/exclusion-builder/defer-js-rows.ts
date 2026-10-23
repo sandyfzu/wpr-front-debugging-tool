@@ -133,6 +133,11 @@ export function deferRowSet(rows: readonly string[]): DeferRowSet {
   return rowSetMemo.get(JSON.stringify(rows), () => translateRowSet(rows.map(detachedString)));
 }
 
+/** What the set memo keeps now (entries, bytes by its weights): its bound is pinned by tests. */
+export function deferRowSetCacheUsage(): { readonly entries: number; readonly bytes: number } {
+  return { entries: rowSetMemo.size, bytes: rowSetMemo.weight };
+}
+
 /**
  * The Defer JS rows that do not match here as on the live site, as
  * validation entries (the page-wide `joined-page-off` included).

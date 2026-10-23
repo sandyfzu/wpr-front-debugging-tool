@@ -4,7 +4,7 @@
  * realistic rows, syntax robustness, and a timing pin that every accepted
  * corpus row stays fast on adversarial inputs.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   analysisWorkBudget,
   analyzeRegexRisk,
@@ -472,12 +472,32 @@ describe('the risk memo', () => {
     expect(kept.bytes).toBeLessThanOrEqual(RISK_CACHE_LIMITS.bytes);
   });
 
-  it('stays within its bounds whatever rows come (long and risky sources)', () => {
-    for (let n = 0; n < 1500; n++) {
-      regexBacktrackingRisk(n % 2 === 0 ? `(a+)+b${String(n)}` : `${String(n)}${'x'.repeat(2000)}`);
+  it.each([
+    ['long sources', (n: number) => `${String(n)}${'x'.repeat(2000)}`],
+    ['risky sources', (n: number) => `(a+)+b${String(n)}`]
+  ])(
+    'evicts %s once their bytes pass the bound (oldest first: see the bounded memo)',
+    async (_shape, row) => {
+      // A fresh memo: its weight per source is read, not assumed.
+      vi.resetModules();
+      const fresh = await import('./regex-risk');
+      fresh.regexBacktrackingRisk(row(0));
+      const perRow = fresh.riskCacheUsage().bytes;
+      // The fewest sources whose weights pass the byte bound (under the entry bound).
+      const rows = Math.floor(RISK_CACHE_LIMITS.bytes / perRow) + 2;
+      expect(rows).toBeLessThan(RISK_CACHE_LIMITS.entries);
+      for (let n = 1; n < rows; n++) fresh.regexBacktrackingRisk(row(n));
+      const kept = fresh.riskCacheUsage();
+      expect(kept.bytes).toBeLessThanOrEqual(RISK_CACHE_LIMITS.bytes);
+      expect(kept.entries).toBeLessThan(rows);
     }
-    const kept = riskCacheUsage();
-    expect(kept.entries).toBeLessThanOrEqual(RISK_CACHE_LIMITS.entries);
-    expect(kept.bytes).toBeLessThanOrEqual(RISK_CACHE_LIMITS.bytes);
+  );
+
+  it('keeps at most its entry bound of short sources', async () => {
+    vi.resetModules();
+    const fresh = await import('./regex-risk');
+    for (let n = 0; n <= RISK_CACHE_LIMITS.entries; n++)
+      fresh.regexBacktrackingRisk(`r${String(n)}`);
+    expect(fresh.riskCacheUsage().entries).toBe(RISK_CACHE_LIMITS.entries);
   });
 });
