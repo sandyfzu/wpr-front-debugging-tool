@@ -155,6 +155,12 @@ describe('noticeBanner', () => {
     expect(noticeBanner({ kind: 'invalid', rows: 4 }).title).toBe('Fix 4 rows before applying');
     expect(noticeBanner({ kind: 'too-large' }).body).toMatch(/65,536 characters/);
     expect(noticeBanner({ kind: 'stopped' }).actions).toEqual(['reload', 'dismiss']);
+    // A broken reading before an apply: nothing went out, and trying again reads again.
+    expect(noticeBanner({ kind: 'check-failed' })).toMatchObject({
+      tone: 'error',
+      title: 'Couldn’t check the rows before applying',
+      actions: ['retry-action', 'dismiss']
+    });
     expect(
       noticeBanner({ kind: 'action-failed', action: 'stop', problem: 'timeout' })
     ).toMatchObject({

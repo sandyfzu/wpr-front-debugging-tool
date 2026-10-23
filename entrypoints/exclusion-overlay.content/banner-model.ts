@@ -188,6 +188,15 @@ export function noticeBanner(notice: ActionNotice): Banner {
         notes: [],
         actions: ['dismiss']
       };
+    case 'check-failed':
+      return {
+        tone: 'error',
+        glyph: 'blocked',
+        title: 'Couldn’t check the rows before applying',
+        body: 'Checking how the rows work together stopped with an error. Nothing was applied: try again.',
+        notes: [],
+        actions: ['retry-action', 'dismiss']
+      };
     case 'reload-stalled':
       return {
         tone: 'warn',

@@ -19,6 +19,7 @@
  */
 import { createEffect, createMemo, createSignal, on, type Accessor } from 'solid-js';
 import { stepFor } from '../../../utils/stepped';
+import type { Logger } from '../../../lib/logger';
 import type { Draft, DraftRow, LaneKey, RowCarry } from './draft';
 import { readsAsSet, startLanePage, type LanePage } from './lane-page';
 
@@ -38,6 +39,7 @@ export interface SetReadingsDeps {
   readonly clock: () => number;
   /** How long one slice reads for (at least one row each). */
   readonly sliceMs: number;
+  readonly log: Pick<Logger, 'warn'>;
   /** The lanes to read (in display order). */
   readonly lanes: readonly LaneKey[];
 }
@@ -59,11 +61,14 @@ export interface SetReadings {
    */
   readNow(): boolean;
   /**
-   * Tell when every reading is of its lane's current rows (see {@link SetReadings.readNow}).
+   * Tell when every reading is of its lane's current rows (see {@link
+   * SetReadings.readNow}), or a reading broke — reading again (`readNow`)
+   * retries it.
    *
-   * @param done Called once settled (at once when already settled; never after `dispose`).
+   * @param done Called once, with `true` once settled (at once when already
+   *   settled) or `false` when a reading broke; never after `dispose`.
    */
-  whenSettled(done: () => void): void;
+  whenSettled(done: (settled: boolean) => void): void;
   /** Cancel the scheduled runs and the waits (teardown). */
   dispose(): void;
 }
@@ -102,15 +107,19 @@ function stillTrue(reading: Reading, rows: readonly DraftRow[]): LanePage | null
  * @param deps The editor's draft, its uncommitted rows, the timer, the lanes.
  */
 export function createSetReadings(deps: SetReadingsDeps): SetReadings {
-  /** Told once every lane's reading is of its current rows (see `whenSettled`). */
-  const waiters: (() => void)[] = [];
+  /** Told once every lane's reading is of its current rows, or one broke (see `whenSettled`). */
+  const waiters: ((settled: boolean) => void)[] = [];
   /** Each lane's freshness, as its entry is built (a reading may finish while they are). */
   const freshness: (() => boolean)[] = [];
   const settled = (): boolean => freshness.every((fresh) => fresh());
   /** Tell the waiters once settled. */
   const tellIfSettled = (): void => {
     if (!settled()) return;
-    for (const done of waiters.splice(0)) done();
+    for (const done of waiters.splice(0)) done(true);
+  };
+  /** Tell the waiters a reading broke (they never wait on it). */
+  const tellBroken = (): void => {
+    for (const done of waiters.splice(0)) done(false);
   };
   const lanes = deps.lanes.filter(readsAsSet).map((lane) => {
     // Fed by this lane's rows only: an edit elsewhere never re-reads it.
@@ -142,12 +151,23 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
           reads = null;
           return;
         }
-        if (!stepFor(() => work.step(), deps.clock, deps.sliceMs)) {
-          cancel = deps.schedule(slice, 0);
+        let page: LanePage | null;
+        try {
+          if (!stepFor(() => work.step(), deps.clock, deps.sliceMs)) {
+            cancel = deps.schedule(slice, 0);
+            return;
+          }
+          page = work.result();
+        } catch (cause) {
+          // Not read: the lane stays unread (an Apply reads it again), and
+          // whoever waits is told now, never left waiting.
+          reads = null;
+          deps.log.warn(`reading the ${lane} rows as one set failed`, cause);
+          tellBroken();
           return;
         }
         reads = null;
-        setReading({ rows: current, page: work.result() });
+        setReading({ rows: current, page });
         tellIfSettled();
       };
       slice();

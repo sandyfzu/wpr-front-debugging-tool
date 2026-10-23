@@ -432,6 +432,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     schedule: deps.schedule,
     clock,
     sliceMs: TASK_SLICE_MS,
+    log: deps.log,
     lanes: LANE_ORDER
   });
   const lanePage = (lane: LaneKey): LanePage | null => setReadings.page(lane);
@@ -762,13 +763,14 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   };
 
   /**
-   * End a paste's hold: run the held actions in a task of their own (an
-   * Apply must not share the landing's task), editing still held until then
-   * so later actions queue behind them. After a failed paste only the held
-   * commits run (the user reads why before any Apply, Reset or Stop); a
-   * closing overlay runs only the held commits too, at once, then saves.
+   * End a hold (a long paste's, or an Apply's wait for the set readings):
+   * run the held actions in a task of their own (an Apply must not share
+   * the landing's task), editing still held until then so later actions
+   * queue behind them. After a failed paste or a broken reading only the
+   * held commits run (the user reads why before any Apply, Reset or Stop);
+   * a closing overlay runs only the held commits too, at once, then saves.
    *
-   * @param landed Whether the paste landed.
+   * @param landed Whether the paste landed (the readings settled).
    */
   const releaseHold = (landed: boolean): void => {
     if (!landed || disposed) {
@@ -998,9 +1000,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         afterPaste.push({ kind: 'apply' });
         waitingForReadings = true;
         // eslint-disable-next-line solid/reactivity -- run once the readings settle: reads the draft untracked, then
-        setReadings.whenSettled(() => {
+        setReadings.whenSettled((settled) => {
           waitingForReadings = false;
-          releaseHold(true);
+          // Broken: the queued commits run, the Apply does not — the notice
+          // says so, and applying again reads the rows again.
+          releaseHold(settled);
+          if (!settled) dispatch({ type: 'apply-blocked', block: { kind: 'check-failed' } });
         });
         return;
       }
@@ -1045,7 +1050,12 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     },
     retryFailedAction: () => {
       const current = state();
-      if (current.phase !== 'ready' || current.notice?.kind !== 'action-failed') return;
+      if (current.phase !== 'ready') return;
+      if (current.notice?.kind === 'check-failed') {
+        controller.apply();
+        return;
+      }
+      if (current.notice?.kind !== 'action-failed') return;
       const action = current.notice.action;
       if (action === 'apply') controller.apply();
       else if (action === 'reset') controller.reset();

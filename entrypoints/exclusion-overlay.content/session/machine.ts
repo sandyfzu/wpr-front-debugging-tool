@@ -34,12 +34,19 @@ export type ActionNotice =
     }
   | { readonly kind: 'invalid'; readonly rows: number }
   | { readonly kind: 'too-large' }
+  | { readonly kind: 'check-failed' }
   | { readonly kind: 'stopped' }
   | { readonly kind: 'reload-stalled' };
 
-/** Why an apply was refused before asking (the draft itself is not applicable). */
+/**
+ * Why an apply was refused before asking: the draft itself is not
+ * applicable, or reading its rows before asking broke (`check-failed`:
+ * applying again retries the reading).
+ */
 export type ApplyBlock =
-  { readonly kind: 'invalid'; readonly rows: number } | { readonly kind: 'too-large' };
+  | { readonly kind: 'invalid'; readonly rows: number }
+  | { readonly kind: 'too-large' }
+  | { readonly kind: 'check-failed' };
 
 /** The overlay's state (see the module doc). */
 export type OverlayState =

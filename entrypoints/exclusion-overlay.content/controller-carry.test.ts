@@ -7,6 +7,7 @@
  */
 import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as DeferJsRows from '../../lib/exclusion-builder/defer-js-rows';
 import type * as FieldText from '../../lib/exclusion-builder/field-text';
 import type * as Validate from '../../lib/exclusion-builder/validate';
 import type { ExclusionSet } from '../../lib/exclusion-builder/set';
@@ -28,6 +29,26 @@ vi.mock('../../lib/exclusion-builder/validate', async (original) => {
     featureRowReading: (...args: Parameters<typeof actual.featureRowReading>) => {
       reads.check++;
       return actual.featureRowReading(...args);
+    }
+  };
+});
+
+/** Set to make a set reading's next step throw. */
+const breakReading = { on: false };
+
+vi.mock('../../lib/exclusion-builder/defer-js-rows', async (original) => {
+  const actual = await original<typeof DeferJsRows>();
+  return {
+    ...actual,
+    startDeferRowSet: (...args: Parameters<typeof actual.startDeferRowSet>) => {
+      const work = actual.startDeferRowSet(...args);
+      return {
+        step: () => {
+          if (breakReading.on) throw new Error('reading broke');
+          return work.step();
+        },
+        result: () => work.result()
+      };
     }
   };
 });
@@ -68,6 +89,7 @@ async function started(step = 1) {
   } satisfies ExclusionSessionPort;
   let now = 0;
   let dispose = (): void => undefined;
+  const log = { warn: vi.fn() };
   const controller = createRoot((disposeRoot): OverlayController => {
     dispose = disposeRoot;
     return createOverlayController({
@@ -89,7 +111,7 @@ async function started(step = 1) {
         };
       },
       reload: vi.fn(),
-      log: { warn: vi.fn() }
+      log
     });
   });
   controller.start();
@@ -105,7 +127,7 @@ async function started(step = 1) {
     }
     return fired;
   };
-  return { controller, port, fire, dispose };
+  return { controller, port, fire, dispose, log };
 }
 
 /** `count` distinct Delay JS rows. */
@@ -113,6 +135,7 @@ const lines = (count: number): string =>
   Array.from({ length: count }, (_, n) => `/p${String(n)}/[a-z]+\\.js`).join('\n');
 
 beforeEach(() => {
+  breakReading.on = false;
   reads.check = 0;
   reads.save = 0;
   reads.key = 0;
@@ -191,6 +214,48 @@ describe('an Apply waiting for its set readings', () => {
     await fire(SET_READING_DELAY_MS);
     expect(await fire(0)).toBeGreaterThan(30);
     expect(controller.lanePage('deferJs')?.offRows.map(({ id }) => id)).toEqual([ids[0]]);
+  });
+
+  it('a reading that breaks frees the editor, says so, and Apply retries it', async () => {
+    const { controller, port, fire, log } = await started(slow);
+    const ids = controller.insertRows('deferJs', lines(40).split('\n'), null);
+    controller.editRow('deferJs', ids[0] ?? '', '/typed\\.js ');
+    controller.apply();
+    expect(controller.checking()).toBe(true);
+    // Asked meanwhile: the commit runs after the break, the Apply does not.
+    controller.commitLane('deferJs');
+    breakReading.on = true;
+    await fire(0);
+    expect(controller.checking()).toBe(false);
+    expect(controller.editable()).toBe(true);
+    expect(port.apply).not.toHaveBeenCalled();
+    expect(controller.state()).toMatchObject({ phase: 'ready', notice: { kind: 'check-failed' } });
+    expect(log.warn).toHaveBeenCalledWith(
+      'reading the deferJs rows as one set failed',
+      expect.any(Error)
+    );
+    // The queued lane commit ran: the typed row is stored.
+    expect(controller.draft().rows.deferJs[0]?.text).toBe('/typed\\.js');
+    breakReading.on = false;
+    controller.retryFailedAction();
+    expect(controller.checking()).toBe(true);
+    await fire(0);
+    expect(port.apply).toHaveBeenCalledTimes(1);
+    expect(controller.checking()).toBe(false);
+  });
+
+  it('a reading that breaks with nobody waiting is read again on Apply', async () => {
+    const { controller, port, fire } = await started(slow);
+    controller.insertRows('deferJs', lines(40).split('\n'), null);
+    await fire(SET_READING_DELAY_MS);
+    breakReading.on = true;
+    await fire(0);
+    breakReading.on = false;
+    expect(controller.lanePage('deferJs')).toBeNull();
+    controller.apply();
+    expect(controller.checking()).toBe(true);
+    await fire(0);
+    expect(port.apply).toHaveBeenCalledTimes(1);
   });
 
   it('applies at once when one slice reads the lane', async () => {
