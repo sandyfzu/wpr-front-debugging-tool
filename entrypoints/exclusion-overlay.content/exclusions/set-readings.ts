@@ -1,10 +1,12 @@
 /**
  * The editor's set readings (see `./lane-page`), kept off the keystroke
  * path: a lane's rows are read as one set a short pause after its last
- * change, in their own task, so typing in a long lane never pays for the
- * whole set. A run that finds its lane changed since it was scheduled is
- * dropped (the newer change has scheduled its own). `readNow` reads every
- * set-read lane whose reading is not of its current rows at once — for the
+ * change, in time-boxed slices of their own tasks (a set of costly rows
+ * takes many), so typing in a long lane never pays for the whole set and
+ * no reading blocks the page. A run that finds its lane changed since it
+ * was scheduled, or since its last slice, is dropped (the newer change has
+ * scheduled its own). `readNow` reads every set-read lane whose reading is
+ * not of its current rows right away (`whenSettled` tells when all are) — for the
  * apply gate, which must be exact; a lane's rows are read once per version
  * (an unchanged 500-row lane is never re-read on Apply).
  *
@@ -16,8 +18,9 @@
  * reactive root); the timer is injected.
  */
 import { createEffect, createMemo, createSignal, on, type Accessor } from 'solid-js';
-import type { Draft, DraftRow, LaneKey } from './draft';
-import { lanePage, readsAsSet, type LanePage } from './lane-page';
+import { stepFor } from '../../../utils/stepped';
+import type { Draft, DraftRow, LaneKey, RowCarry } from './draft';
+import { readsAsSet, startLanePage, type LanePage } from './lane-page';
 
 /** How long a lane waits after its last change before it is read as one set. */
 export const SET_READING_DELAY_MS = 150;
@@ -25,10 +28,16 @@ export const SET_READING_DELAY_MS = 150;
 /** What the set readings need from the editor. */
 export interface SetReadingsDeps {
   readonly draft: Accessor<Draft>;
-  /** Rows edited since their last commit, by id (read when a reading runs). */
+  /** Rows edited since their last commit, by id (read when a reading starts). */
   readonly uncommitted: ReadonlySet<string>;
+  /** Per-row readings to reuse (see `RowCarry`). */
+  readonly carry?: RowCarry;
   /** One-shot timer; returns its cancel. */
   readonly schedule: (run: () => void, ms: number) => () => void;
+  /** Monotonic ms now, for timing the slices. */
+  readonly clock: () => number;
+  /** How long one slice reads for (at least one row each). */
+  readonly sliceMs: number;
   /** The lanes to read (in display order). */
   readonly lanes: readonly LaneKey[];
 }
@@ -42,9 +51,20 @@ export interface SetReadings {
   page(lane: LaneKey): LanePage | null;
   /** Whether every set-read lane's reading is of its current rows. */
   readonly settled: Accessor<boolean>;
-  /** Read every set-read lane not read at its current rows now (cancelling the scheduled runs). */
-  readNow(): void;
-  /** Cancel the scheduled runs (teardown). */
+  /**
+   * Start reading every set-read lane not read at its current rows, without
+   * the pause: its first slice runs now.
+   *
+   * @returns Whether every reading is now of its lane's current rows.
+   */
+  readNow(): boolean;
+  /**
+   * Tell when every reading is of its lane's current rows (see {@link SetReadings.readNow}).
+   *
+   * @param done Called once settled (at once when already settled; never after `dispose`).
+   */
+  whenSettled(done: () => void): void;
+  /** Cancel the scheduled runs and the waits (teardown). */
   dispose(): void;
 }
 
@@ -82,20 +102,59 @@ function stillTrue(reading: Reading, rows: readonly DraftRow[]): LanePage | null
  * @param deps The editor's draft, its uncommitted rows, the timer, the lanes.
  */
 export function createSetReadings(deps: SetReadingsDeps): SetReadings {
+  /** Told once every lane's reading is of its current rows (see `whenSettled`). */
+  const waiters: (() => void)[] = [];
+  /** Each lane's freshness, as its entry is built (a reading may finish while they are). */
+  const freshness: (() => boolean)[] = [];
+  const settled = (): boolean => freshness.every((fresh) => fresh());
+  /** Tell the waiters once settled. */
+  const tellIfSettled = (): void => {
+    if (!settled()) return;
+    for (const done of waiters.splice(0)) done();
+  };
   const lanes = deps.lanes.filter(readsAsSet).map((lane) => {
     // Fed by this lane's rows only: an edit elsewhere never re-reads it.
     const rows = createMemo(() => deps.draft().rows[lane]);
     const [reading, setReading] = createSignal<Reading | null>(null);
+    const fresh = (): boolean => reading()?.rows === rows();
+    // eslint-disable-next-line solid/reactivity -- read by `settled`, itself read in tracked scopes or at once
+    freshness.push(fresh);
+    /** Cancels the scheduled start or the next slice. */
     let cancel: (() => void) | null = null;
-    const read = (): void => {
+    /** The rows a running reading reads (its slices stop once they changed). */
+    let reads: readonly DraftRow[] | null = null;
+    const stop = (): void => {
       cancel?.();
       cancel = null;
+      reads = null;
+    };
+    /** Read the current rows, a slice per task. */
+    const read = (): void => {
+      stop();
+      // eslint-disable-next-line solid/reactivity -- a snapshot on purpose: the slices check it against the rows
       const current = rows();
-      setReading({ rows: current, page: lanePage(lane, current, deps.uncommitted) });
+      const work = startLanePage(lane, current, new Set(deps.uncommitted), deps.carry);
+      reads = current;
+      const slice = (): void => {
+        cancel = null;
+        // A change since the last slice has scheduled its own reading.
+        if (rows() !== current) {
+          reads = null;
+          return;
+        }
+        if (!stepFor(() => work.step(), deps.clock, deps.sliceMs)) {
+          cancel = deps.schedule(slice, 0);
+          return;
+        }
+        reads = null;
+        setReading({ rows: current, page: work.result() });
+        tellIfSettled();
+      };
+      slice();
     };
     createEffect(
       on(rows, (scheduled) => {
-        cancel?.();
+        stop();
         // eslint-disable-next-line solid/reactivity -- a timer callback: reads the rows untracked, when it fires
         cancel = deps.schedule(() => {
           cancel = null;
@@ -109,35 +168,28 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
       if (last === null) return null;
       return last.rows === rows() ? last.page : stillTrue(last, rows());
     });
-    const fresh = (): boolean => reading()?.rows === rows();
-    /** Read now unless the reading is of the current rows (one reading per rows version). */
-    const settle = (): void => {
-      if (!fresh()) {
-        read();
-        return;
-      }
-      cancel?.();
-      cancel = null;
+    /** Read now unless the reading is, or is being made, of the current rows. */
+    const hurry = (): void => {
+      if (fresh() || reads === rows()) return;
+      read();
     };
-    return {
-      lane,
-      page,
-      fresh,
-      settle,
-      dispose: () => {
-        cancel?.();
-      }
-    };
+    return { lane, page, hurry, stop };
   });
   const byLane = new Map(lanes.map((entry) => [entry.lane, entry]));
   return {
     page: (lane) => byLane.get(lane)?.page() ?? null,
-    settled: () => lanes.every((entry) => entry.fresh()),
+    settled,
     readNow: () => {
-      for (const entry of lanes) entry.settle();
+      for (const entry of lanes) entry.hurry();
+      return settled();
+    },
+    whenSettled: (done) => {
+      waiters.push(done);
+      tellIfSettled();
     },
     dispose: () => {
-      for (const entry of lanes) entry.dispose();
+      waiters.length = 0;
+      for (const entry of lanes) entry.stop();
     }
   };
 }

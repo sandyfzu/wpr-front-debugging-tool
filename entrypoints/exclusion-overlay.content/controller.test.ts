@@ -9,7 +9,7 @@ import { activeRecord, validSet } from '../../lib/messaging/exclusion-session.fi
 import {
   AUTOSAVE_DELAY_MS,
   PASTE_AT_ONCE,
-  PASTE_SLICE_MS,
+  TASK_SLICE_MS,
   RELOAD_STALL_MS,
   createOverlayController,
   fitsAtOnce,
@@ -587,15 +587,15 @@ describe('editing and autosave', () => {
       const lines = Array.from({ length: 200 }, (_, n) => `t${String(n)}.js`);
       const outcome = controller.pasteRows('delayJs', id, lines.join('\n'), { start: 1, end: 1 });
       if (outcome.kind !== 'pending') throw new Error('settled at once');
-      // 199 rows to commit (the caret's row is not), PASTE_SLICE_MS rows a slice.
+      // 199 rows to commit (the caret's row is not), TASK_SLICE_MS rows a slice.
       const slices = 1 + (await runSlices(clock));
-      expect(slices).toBe(Math.ceil(199 / PASTE_SLICE_MS));
+      expect(slices).toBe(Math.ceil(199 / TASK_SLICE_MS));
       await expect(outcome.done).resolves.toEqual({ kind: 'pasted' });
     });
 
     it('commits at least one row a slice however slow the rows are', async () => {
       // Every clock read is a budget and more: one row per slice, never none.
-      const slow = ticking(PASTE_SLICE_MS * 10);
+      const slow = ticking(TASK_SLICE_MS * 10);
       const { controller, clock } = await started(
         fakePort({ state: 'inactive' }).port,
         undefined,
@@ -1480,6 +1480,8 @@ describe('set readings on Apply', () => {
     const rows = Array.from({ length: 500 }, (_, n) => `/wp-content/p${String(n)}/s.min.js`);
     expect(controller.insertRows('deferJs', rows, null)).toHaveLength(500);
     clock.fire(SET_READING_DELAY_MS);
+    // 500 rows take several slices (one 0 ms task each).
+    for (let n = 0; n < 1000 && clock.pending(0) > 0; n++) clock.fire(0);
     const read = controller.lanePage('deferJs');
     expect(read).not.toBeNull();
     controller.apply();

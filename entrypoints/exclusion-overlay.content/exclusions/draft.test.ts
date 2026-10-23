@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { storedExclusionRows } from '../../../lib/exclusion-builder/field-text';
 import { EMPTY_EXCLUSION_SET, type ExclusionFeatureId } from '../../../lib/exclusion-builder/set';
 import { featureRowWarnings } from '../../../lib/exclusion-builder/validate';
@@ -11,6 +11,7 @@ import {
   commitRows,
   createIdSource,
   ROW_CHECK_CACHE_LIMITS,
+  createRowCarry,
   createRowValidator,
   draftChars,
   draftFromSet,
@@ -560,7 +561,7 @@ describe('startCommit (commitRows a slice at a time)', () => {
     const ids = draft.rows.delayJs.map((row) => row.id).filter((id) => id !== 'r0' && id !== 'r9');
     const whole = commitRows(draft, 'delayJs', ids);
     const kept: string[] = [];
-    const sliced = startCommit(draft, 'delayJs', ids, (stored) => kept.push(stored));
+    const sliced = startCommit(draft, 'delayJs', ids, { onKept: (row) => kept.push(row.text) });
     let slices = 1;
     while (!sliced.step(size)) slices++;
     expect(sliced.result()).toEqual(whole);
@@ -576,6 +577,49 @@ describe('startCommit (commitRows a slice at a time)', () => {
     expect(() => unchanged.result()).toThrow('row 0');
     expect(unchanged.step(1)).toBe(true);
     expect(unchanged.result().draft).toBe(draft);
+  });
+});
+
+describe('createRowCarry', () => {
+  it('checks a row once per row object, again for a new object or another lane', () => {
+    const validate = vi.fn(createRowValidator());
+    const carry = createRowCarry(validate);
+    const row = { id: 'r1', text: '(' };
+    const first = carry.check('deferJs', row);
+    expect(first?.blocking).toBe(true);
+    expect(carry.check('deferJs', row)).toBe(first);
+    expect(validate).toHaveBeenCalledTimes(1);
+    carry.check('deferJs', { ...row });
+    carry.check('delayJs', row);
+    expect(validate).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads a row’s own save once, sharing the row’s own text', () => {
+    const carry = createRowCarry(createRowValidator());
+    // Not one string with the row's: a flat copy of equal text.
+    const text = JSON.parse(JSON.stringify(`/p/${'a'.repeat(64)}.js`)) as string;
+    const row = { id: 'r1', text };
+    const save = carry.save('deferJs', row);
+    expect(save).toEqual({ form: text, diff: { state: 'unchanged', typed: text } });
+    expect(carry.save('deferJs', row)).toBe(save);
+  });
+
+  it('gives commits the same result as reading every row anew', () => {
+    const draft = draftFromSet(
+      {
+        ...EMPTY_EXCLUSION_SET,
+        rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['a(.*)', 'b', 'a(.*)x'] }
+      },
+      createIdSource()
+    );
+    const typed = updateRow(draft, 'delayJs', draft.rows.delayJs[2]?.id ?? '', ' a.* ');
+    const ids = typed.rows.delayJs.map((row) => row.id);
+    const carry = createRowCarry(createRowValidator());
+    const plain = commitRows(typed, 'delayJs', ids);
+    expect(commitRows(typed, 'delayJs', ids, carry)).toEqual(plain);
+    // Read again from the carry: still the same (the duplicate still leaves).
+    expect(commitRows(typed, 'delayJs', ids, carry)).toEqual(plain);
+    expect(commitAll(typed, carry)).toEqual(commitAll(typed));
   });
 });
 

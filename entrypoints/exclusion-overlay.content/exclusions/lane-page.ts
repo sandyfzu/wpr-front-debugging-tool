@@ -10,16 +10,18 @@
  * here is exactly the one the session validates: the editor and the
  * session agree on every row problem, every warning and on the page state.
  */
-import { deferRowSet } from '../../../lib/exclusion-builder/defer-js-rows';
+import { startDeferRowSet } from '../../../lib/exclusion-builder/defer-js-rows';
 import { isBlockingProblem, type InvalidExclusionRow } from '../../../lib/exclusion-builder/errors';
-import { storedRowKey } from '../../../lib/exclusion-builder/field-text';
+import { readRowSave } from '../../../lib/exclusion-builder/field-text';
 import type { PageState } from '../../../lib/exclusion-builder/pcre/rows';
+import { runStepped, steppedValue, type Stepped } from '../../../utils/stepped';
 import {
   commitLaneRows,
   isBlankRow,
   laneFeature,
   type DraftRow,
   type LaneKey,
+  type RowCarry,
   type RowCheck
 } from './draft';
 
@@ -55,12 +57,12 @@ interface StoredSetReading {
   readonly pageOffRows: readonly number[];
 }
 
-/** A lane's reading of its stored rows as one set. */
-type SetReading = (stored: readonly string[]) => StoredSetReading;
+/** A lane's reading of its stored rows as one set, run a step at a time. */
+type SetReading = (stored: readonly string[]) => Stepped<StoredSetReading>;
 
 /** The lanes whose rows WP Rocket reads as one set (add a lane = add a row). */
 const SET_READINGS: Partial<Readonly<Record<LaneKey, SetReading>>> = {
-  deferJs: deferRowSet
+  deferJs: startDeferRowSet
 };
 
 /**
@@ -81,18 +83,20 @@ export function readsAsSet(lane: LaneKey): boolean {
  * @param lane The lane.
  * @param rows Its rows.
  * @param uncommitted Rows the editor holds uncommitted, by id.
+ * @param carry Per-row readings to reuse (see `RowCarry`).
  */
 function commitTargets(
   lane: LaneKey,
   rows: readonly DraftRow[],
-  uncommitted: ReadonlySet<string>
+  uncommitted: ReadonlySet<string>,
+  carry?: RowCarry
 ): ReadonlySet<string> {
   const feature = laneFeature(lane).id;
   const targets = new Set<string>();
   for (const row of rows) {
     if (isBlankRow(row.text)) continue;
-    if (uncommitted.has(row.id) || storedRowKey(feature, row.text) !== row.text)
-      targets.add(row.id);
+    const form = (carry?.save(lane, row) ?? readRowSave(feature, row.text)).form;
+    if (uncommitted.has(row.id) || form !== row.text) targets.add(row.id);
   }
   return targets;
 }
@@ -104,15 +108,36 @@ function commitTargets(
  * @param rows Its rows.
  * @param uncommitted Rows the editor holds uncommitted (edited since their
  *   last commit), by id: their commit runs against the rows already there.
+ * @param carry Per-row readings to reuse (see `RowCarry`).
  */
 export function lanePage(
   lane: LaneKey,
   rows: readonly DraftRow[],
-  uncommitted: ReadonlySet<string> = new Set()
+  uncommitted: ReadonlySet<string> = new Set(),
+  carry?: RowCarry
 ): LanePage | null {
+  return runStepped(startLanePage(lane, rows, uncommitted, carry));
+}
+
+/**
+ * Start {@link lanePage} a step at a time (the set reading's rows, one per
+ * step): the same rows, the same reading — for a lane too costly to read
+ * in one task. The rows and the uncommitted ones are taken now.
+ *
+ * @param lane The lane.
+ * @param rows Its rows.
+ * @param uncommitted Rows the editor holds uncommitted, by id.
+ * @param carry Per-row readings to reuse (see `RowCarry`).
+ */
+export function startLanePage(
+  lane: LaneKey,
+  rows: readonly DraftRow[],
+  uncommitted: ReadonlySet<string> = new Set(),
+  carry?: RowCarry
+): Stepped<LanePage | null> {
   const read = SET_READINGS[lane];
-  if (read === undefined) return null;
-  const { kept } = commitLaneRows(lane, rows, commitTargets(lane, rows, uncommitted));
+  if (read === undefined) return steppedValue(null);
+  const { kept } = commitLaneRows(lane, rows, commitTargets(lane, rows, uncommitted, carry), carry);
   // Committed rows never repeat one another; should two still match, the
   // first stays (as the apply's commit of every row decides).
   const seen = new Set<string>();
@@ -121,8 +146,27 @@ export function lanePage(
     seen.add(row.text);
     return true;
   });
+  const reading = read(stored.map((row) => row.text));
+  return {
+    step: () => reading.step(),
+    result: () => pageFrom(rows, stored, reading.result())
+  };
+}
+
+/**
+ * A lane's page from its stored rows' set reading: problems and warnings
+ * by draft row id, page-off rows by lane position.
+ *
+ * @param rows The lane's rows.
+ * @param stored The rows the set reading read, in order.
+ * @param set The reading.
+ */
+function pageFrom(
+  rows: readonly DraftRow[],
+  stored: readonly DraftRow[],
+  set: StoredSetReading
+): LanePage {
   const positions = new Map(rows.map((row, index) => [row.id, index + 1]));
-  const set = read(stored.map((row) => row.text));
   const problems = new Map<string, string>();
   const warnings = new Map<string, string>();
   for (const entry of set.problems) {

@@ -22,12 +22,15 @@ import { JOINED_ONLY_PROBLEMS } from '../../../lib/exclusion-builder/defer-js-ro
 import type { ProblemId } from '../../../lib/exclusion-builder/pcre/problems';
 import { featureRowReading, featureRowWarnings } from '../../../lib/exclusion-builder/validate';
 import {
+  readRowSave,
   saveExclusionRow,
   saveExclusionRows,
   splitFieldText,
   storedRowKey,
   storedText,
   trimExclusionRow,
+  withRowsAhead,
+  type RowSaveReading,
   type StoredRowDiff
 } from '../../../lib/exclusion-builder/field-text';
 import { EXCLUSION_SET_LIMITS, isWireRowText } from '../../../lib/messaging/exclusion-session';
@@ -117,9 +120,15 @@ export interface Committed {
  * @param draft The draft.
  * @param lane The rows' lane.
  * @param ids The rows to commit (unknown ids are ignored).
+ * @param carry Per-row readings to reuse (see {@link RowCarry}).
  */
-export function commitRows(draft: Draft, lane: LaneKey, ids: readonly string[]): Committed {
-  const commit = startCommit(draft, lane, ids);
+export function commitRows(
+  draft: Draft,
+  lane: LaneKey,
+  ids: readonly string[],
+  carry?: RowCarry
+): Committed {
+  const commit = startCommit(draft, lane, ids, { carry });
   commit.step(Infinity);
   return commit.result();
 }
@@ -145,17 +154,18 @@ export interface SlicedCommit {
  * @param draft The draft.
  * @param lane The rows' lane.
  * @param ids The rows to commit (unknown ids are ignored).
- * @param onKept Told each committed row's stored text as the row is kept
- *   (e.g. to check it ahead of the draft update, a slice at a time).
+ * @param hooks `onKept`: told each committed row as it is kept (e.g. to
+ *   read it ahead of the draft update, a slice at a time); `carry`: per-row
+ *   readings to reuse (see {@link RowCarry}).
  */
 export function startCommit(
   draft: Draft,
   lane: LaneKey,
   ids: readonly string[],
-  onKept?: (stored: string) => void
+  hooks: CommitHooks = {}
 ): SlicedCommit {
   const rows = draft.rows[lane];
-  const lanes = laneCommit(lane, rows, new Set(ids), onKept);
+  const lanes = laneCommit(lane, rows, new Set(ids), hooks);
   let at = 0;
   return {
     step(count) {
@@ -181,15 +191,23 @@ export function startCommit(
  * @param lane The rows' lane.
  * @param rows The lane's rows.
  * @param targets The rows to commit, by id.
+ * @param carry Per-row readings to reuse (see {@link RowCarry}).
  */
 export function commitLaneRows(
   lane: LaneKey,
   rows: readonly DraftRow[],
-  targets: ReadonlySet<string>
+  targets: ReadonlySet<string>,
+  carry?: RowCarry
 ): { readonly kept: readonly DraftRow[]; readonly commits: readonly RowCommit[] } {
-  const commit = laneCommit(lane, rows, targets);
+  const commit = laneCommit(lane, rows, targets, { carry });
   rows.forEach((row, index) => commit.commitAt(row, index));
   return commit;
+}
+
+/** What a commit may be given besides its rows (see {@link startCommit}). */
+export interface CommitHooks {
+  readonly onKept?: (row: DraftRow) => void;
+  readonly carry?: RowCarry | undefined;
 }
 
 /**
@@ -200,13 +218,13 @@ export function commitLaneRows(
  * @param lane The rows' lane.
  * @param rows The lane's rows.
  * @param targets The rows to commit, by id.
- * @param onKept Told each committed row's stored text as the row is kept.
+ * @param hooks See {@link startCommit}.
  */
 function laneCommit(
   lane: LaneKey,
   rows: readonly DraftRow[],
   targets: ReadonlySet<string>,
-  onKept?: (stored: string) => void
+  hooks: CommitHooks = {}
 ): {
   readonly kept: DraftRow[];
   readonly commits: RowCommit[];
@@ -214,10 +232,14 @@ function laneCommit(
   commitAt(row: DraftRow, index: number): boolean;
 } {
   const feature = laneFeature(lane).id;
+  const { onKept, carry } = hooks;
+  // The row's own save: reused from the carry, else read now (a pure reading of its text).
+  const reading = (row: DraftRow): RowSaveReading =>
+    carry?.save(lane, row) ?? readRowSave(feature, row.text);
   const ahead = new Set<string>();
   for (const row of rows) {
     if (targets.has(row.id) || isBlankRow(row.text)) continue;
-    const key = storedRowKey(feature, row.text);
+    const key = reading(row).form;
     if (key !== null) ahead.add(key);
   }
   const kept: DraftRow[] = [];
@@ -230,16 +252,18 @@ function laneCommit(
         kept.push(row);
         return false;
       }
-      const diff = saveExclusionRow(feature, row.text, ahead);
+      const own = reading(row);
+      const diff = withRowsAhead(feature, own, ahead);
       commits.push({ lane, id: row.id, index, diff });
       const stored = storedText(diff);
       // WP Rocket dedupes before its pattern check: a row that check drops
       // still makes a later copy of it a duplicate.
-      const key = stored ?? (isDuplicateKeyDrop(diff) ? storedRowKey(feature, row.text) : null);
+      const key = stored ?? (isDuplicateKeyDrop(diff) ? own.form : null);
       if (key !== null) ahead.add(key);
       if (stored !== null) {
-        kept.push(stored === row.text ? row : { id: row.id, text: stored });
-        onKept?.(stored);
+        const keptRow = stored === row.text ? row : { id: row.id, text: stored };
+        kept.push(keptRow);
+        onKept?.(keptRow);
       }
       return true;
     }
@@ -263,15 +287,17 @@ function isDuplicateKeyDrop(diff: StoredRowDiff): boolean {
  * Commit every row of every lane (before an apply: the set must be stored).
  *
  * @param draft The draft.
+ * @param carry Per-row readings to reuse (see {@link RowCarry}).
  */
-export function commitAll(draft: Draft): Committed {
+export function commitAll(draft: Draft, carry?: RowCarry): Committed {
   let current = draft;
   const commits: RowCommit[] = [];
   for (const lane of LANE_ORDER) {
     const committed = commitRows(
       current,
       lane,
-      current.rows[lane].map((row) => row.id)
+      current.rows[lane].map((row) => row.id),
+      carry
     );
     current = committed.draft;
     commits.push(...committed.commits);
@@ -806,6 +832,87 @@ export interface RowValidator {
   (lane: LaneKey, text: string): RowCheck | null;
   /** Checks kept now, and their weight in bytes. */
   readonly cached: { readonly size: number; readonly weight: number };
+}
+
+/**
+ * Per-row readings kept on the draft's row objects. A row object never
+ * changes (an edit makes a new one), so its own save and its check are
+ * read once per object and reused by every later read — a commit of an
+ * unchanged lane, a re-read of every row's problem after a long paste
+ * lands — however the bounded memos behind them evicted meanwhile. Kept
+ * in a `WeakMap`: a reading lives exactly as long as its row, so the
+ * memory is the draft's own, a few small records per row.
+ */
+export interface RowCarry {
+  /**
+   * The row's own save in its lane (see `readRowSave`).
+   *
+   * @param lane The row's lane.
+   * @param row The row.
+   */
+  save(lane: LaneKey, row: DraftRow): RowSaveReading;
+  /**
+   * The row's check in its lane (see {@link createRowValidator}).
+   *
+   * @param lane The row's lane.
+   * @param row The row.
+   */
+  check(lane: LaneKey, row: DraftRow): RowCheck | null;
+}
+
+/**
+ * A save reading whose copies of the row's text are the row's own string:
+ * the reading's stages keep detached copies (the typed text, the form, the
+ * stored text — all equal to a stored row's text), which a carry would
+ * otherwise keep beside the row, tripling its bytes.
+ *
+ * @param reading The fresh reading.
+ * @param text The row's text.
+ */
+function sharingText(reading: RowSaveReading, text: string): RowSaveReading {
+  const own = (value: string): string => (value === text ? text : value);
+  const { diff, form } = reading;
+  const shared: StoredRowDiff =
+    'stored' in diff
+      ? { ...diff, typed: own(diff.typed), stored: own(diff.stored) }
+      : { ...diff, typed: own(diff.typed) };
+  return { diff: shared, form: form === null ? null : own(form) };
+}
+
+/** One row object's readings, by lane (a row belongs to one lane; the lane is checked anyway). */
+interface CarriedReadings {
+  readonly lane: LaneKey;
+  save?: RowSaveReading;
+  check?: RowCheck | null;
+}
+
+/**
+ * Build a carry over a row validator.
+ *
+ * @param validate The validator a row's check is read with on its first read.
+ */
+export function createRowCarry(
+  validate: (lane: LaneKey, text: string) => RowCheck | null
+): RowCarry {
+  const carried = new WeakMap<DraftRow, CarriedReadings>();
+  const entry = (lane: LaneKey, row: DraftRow): CarriedReadings => {
+    const known = carried.get(row);
+    if (known?.lane === lane) return known;
+    const fresh: CarriedReadings = { lane };
+    carried.set(row, fresh);
+    return fresh;
+  };
+  return {
+    save(lane, row) {
+      const readings = entry(lane, row);
+      return (readings.save ??= sharingText(readRowSave(laneFeature(lane).id, row.text), row.text));
+    },
+    check(lane, row) {
+      const readings = entry(lane, row);
+      if (readings.check === undefined) readings.check = validate(lane, row.text);
+      return readings.check;
+    }
+  };
 }
 
 /**

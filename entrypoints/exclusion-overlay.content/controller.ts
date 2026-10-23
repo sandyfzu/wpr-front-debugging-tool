@@ -7,6 +7,7 @@
  * outside effect injected so the whole flow is unit-tested.
  */
 import { batch, createEffect, createMemo, createSignal, type Accessor } from 'solid-js';
+import { stepFor } from '../../utils/stepped';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../../lib/exclusion-builder/set';
 import type { InvalidExclusionRow } from '../../lib/exclusion-builder/errors';
 import {
@@ -23,6 +24,7 @@ import {
   commitRows,
   startCommit,
   createIdSource,
+  createRowCarry,
   createRowValidator,
   draftChars,
   draftFromSet,
@@ -40,8 +42,10 @@ import {
   updateRow,
   type Committed,
   type Draft,
+  type DraftRow,
   type LaneKey,
   type Pasted,
+  type RowCheck,
   type RowCommit,
   type RowSelection,
   type ToggleKey
@@ -138,7 +142,7 @@ export type SettledPasteOutcome =
 
 /**
  * A paste's outcome: settled at once, or `pending` for a long paste, which
- * commits its rows a slice per task (see {@link PASTE_SLICE_MS}) and lands in
+ * commits its rows a slice per task (see {@link TASK_SLICE_MS}) and lands in
  * the draft in one step when `done` settles.
  */
 export type PasteOutcome =
@@ -149,19 +153,20 @@ export type PasteOutcome =
  * costs about linearly in its characters (and more for rows dense in
  * character classes), so both bound it: within them the task stays well
  * under 50 ms at 4× CPU throttle even for the costliest rows, measured.
- * A longer paste is committed in slices (see {@link PASTE_SLICE_MS}),
+ * A longer paste is committed in slices (see {@link TASK_SLICE_MS}),
  * holding edits until its rows land in the draft at once.
  */
 export const PASTE_AT_ONCE: PasteBounds = { rows: 64, chars: 16 * 1024 };
 
 /**
- * The time a long paste's slice commits rows for, in elapsed ms on the page
- * (at least one row each, so it always progresses): a task stays near this
+ * The time one slice of long work runs for — a long paste's commit, a
+ * lane's set reading — in elapsed ms on the page (at least one row each,
+ * so it always progresses): a task stays near this
  * whatever the CPU speed and the rows cost — under 50 ms at 4× throttle
  * with the costliest row's overrun (measured ≤ 25 ms); shorter slices only
  * add per-task overhead to the paste's total time.
  */
-export const PASTE_SLICE_MS = 16;
+export const TASK_SLICE_MS = 16;
 
 /**
  * Whether a paste's rows to commit fit in one task (see {@link PASTE_AT_ONCE}).
@@ -256,11 +261,16 @@ export interface OverlayController {
   /** Whether the draft can be edited now (loaded, no action in flight, no long paste landing). */
   readonly editable: Accessor<boolean>;
   /**
-   * A long paste is committing (see {@link PASTE_SLICE_MS}): editing waits;
+   * A long paste is committing (see {@link TASK_SLICE_MS}): editing waits;
    * row and lane commits, Apply and Reset asked meanwhile run, in order, once
    * its rows land.
    */
   readonly pasting: Accessor<boolean>;
+  /**
+   * An Apply waits for the set readings of rows not read yet (read in
+   * slices): editing waits, and actions asked meanwhile queue behind it.
+   */
+  readonly checking: Accessor<boolean>;
   editRow(lane: LaneKey, id: string, text: string): void;
   /**
    * Commit a row the user left: it becomes the form WP Rocket's settings
@@ -347,14 +357,22 @@ export function invalidRowsById(
 export function createOverlayController(deps: OverlayControllerDeps): OverlayController {
   const nextId = createIdSource();
   const validate = createRowValidator();
+  /** Every row's own save and check, read once per row object (see `RowCarry`). */
+  const carry = createRowCarry(validate);
   const [state, setState] = createSignal<OverlayState>(INITIAL_OVERLAY_STATE);
   const [draft, setDraftSignal] = createSignal<Draft>(draftFromSet(EMPTY_EXCLUSION_SET, nextId));
   const [saveState, setSaveState] = createSignal<SaveState>({ kind: 'idle' });
   const [serverInvalid, setServerInvalid] = createSignal<ReadonlyMap<string, string>>(new Map());
   const [focusRequest, setFocusRequest] = createSignal<FocusRequest | null>(null);
   const [notes, setNotes] = createSignal<DraftNotes>(EMPTY_DRAFT_NOTES);
-  /** A long paste is committing: edits wait for it (its rows land at once). */
-  const [pasteHeld, setPasteHeld] = createSignal(false);
+  /**
+   * What holds the draft: a long paste committing (its rows land at once),
+   * or an Apply waiting for the set readings; edits wait, and commits,
+   * Apply, Reset and Stop asked meanwhile queue (see `afterPaste`).
+   */
+  const [hold, setHold] = createSignal<'paste' | 'readings' | null>(null);
+  /** An Apply waits for the set readings (see `apply`). */
+  let waitingForReadings = false;
   /** Runs a long paste's remaining slices at once (the overlay is closing: it lands, then saves). */
   let finishPaste: (() => void) | null = null;
   /** Cancels the task that runs the held actions after a landing. */
@@ -402,7 +420,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
 
   const editable = createMemo(() => {
     const current = state();
-    return current.phase === 'ready' && current.pending === null && !pasteHeld();
+    return current.phase === 'ready' && current.pending === null && hold() === null;
   });
 
   /** Rows edited since their last commit (their commit runs against the rows already there). */
@@ -410,14 +428,34 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
   const setReadings = createSetReadings({
     draft,
     uncommitted,
+    carry,
     schedule: deps.schedule,
+    clock,
+    sliceMs: TASK_SLICE_MS,
     lanes: LANE_ORDER
   });
   const lanePage = (lane: LaneKey): LanePage | null => setReadings.page(lane);
 
+  /** Each lane's rows by id (rebuilt once per change of the lane, not per read). */
+  const rowsById = new Map<LaneKey, Accessor<ReadonlyMap<string, DraftRow>>>();
+  for (const lane of LANE_ORDER) {
+    const byId = createMemo(() => new Map(draft().rows[lane].map((row) => [row.id, row])));
+    // eslint-disable-next-line solid/reactivity -- read by `rowCheck`, inside the views' and counts' tracked scopes
+    rowsById.set(lane, byId);
+  }
+
+  /**
+   * A row's check: carried by its draft row (read once per row object),
+   * else — a text the draft does not hold for that id — read by text.
+   */
+  const rowCheck = (lane: LaneKey, id: string, text: string): RowCheck | null => {
+    const row = rowsById.get(lane)?.().get(id);
+    return row?.text === text ? carry.check(lane, row) : validate(lane, text);
+  };
+
   /** A row's verdict as the engine reads it (the server's reason aside). */
   const verdict = (lane: LaneKey, id: string, text: string): RowVerdict =>
-    rowVerdict(lanePage(lane), id, validate(lane, text));
+    rowVerdict(lanePage(lane), id, rowCheck(lane, id, text));
 
   const rowProblem = (lane: LaneKey, id: string, text: string): string | null =>
     serverInvalid().get(id) ?? verdict(lane, id, text).problem;
@@ -625,8 +663,14 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     new Promise((resolve) => {
       let commit: ReturnType<typeof startCommit>;
       try {
-        commit = startCommit(pastedDraft, lane, ids, (stored) => {
-          validate(lane, stored);
+        commit = startCommit(pastedDraft, lane, ids, {
+          carry,
+          // Read each kept row while its readings are fresh in the memos: once
+          // the paste lands, every row's check and save is carried, never redone.
+          onKept: (row) => {
+            carry.check(lane, row);
+            carry.save(lane, row);
+          }
         });
       } catch (cause) {
         resolve({ kind: 'failed', cause });
@@ -639,10 +683,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
        */
       const run = (ms: number): boolean => {
         try {
-          const started = clock();
-          let done = commit.step(1);
-          while (!done && clock() - started < ms) done = commit.step(1);
-          if (!done) return false;
+          if (!stepFor(() => commit.step(1), clock, ms)) return false;
           resolve({ kind: 'committed', committed: commit.result() });
         } catch (cause) {
           resolve({ kind: 'failed', cause });
@@ -651,7 +692,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       };
       const slice = (): void => {
         finishPaste = null;
-        if (run(PASTE_SLICE_MS)) return;
+        if (run(TASK_SLICE_MS)) return;
         const cancel = deps.schedule(slice, 0);
         finishPaste = () => {
           cancel();
@@ -740,7 +781,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       return;
     }
     if (afterPaste.length === 0) {
-      setPasteHeld(false);
+      setHold(null);
       return;
     }
     cancelHeldRun = deps.schedule(() => {
@@ -756,14 +797,15 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
    * @returns Whether it was held (the caller then does nothing now).
    */
   const heldForPaste = (action: HeldAction): boolean => {
-    if (!pasteHeld()) return false;
+    if (hold() === null) return false;
     afterPaste.push(action);
     return true;
   };
 
   /** Release the hold and run the held actions in the order asked; one failing never stops the rest. */
   const runHeld = (): void => {
-    setPasteHeld(false);
+    const after = hold() === 'readings' ? 'the set readings' : 'a paste';
+    setHold(null);
     for (const action of afterPaste.splice(0)) {
       try {
         if (action.kind === 'commit-row') controller.commitRow(action.lane, action.id);
@@ -772,7 +814,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         else if (action.kind === 'reset') controller.reset();
         else controller.stop();
       } catch (cause) {
-        deps.log.warn(`held ${action.kind} after a paste failed`, cause);
+        deps.log.warn(`held ${action.kind} after ${after} failed`, cause);
       }
     }
   };
@@ -899,9 +941,9 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
     // Every filled row but the one the caret lands in is committed.
     const targets = pasted.ids.slice(0, -1);
     if (fitsAtOnce(pasted.draft.rows[lane], targets, atOnce)) {
-      return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets));
+      return landPaste(lane, id, pasted, () => commitRows(pasted.draft, lane, targets, carry));
     }
-    setPasteHeld(true);
+    setHold('paste');
     // Nothing changes the draft meanwhile: every edit is gated on
     // `editable`; commits, Apply, Reset and Stop wait in `afterPaste`
     // (the load is done before a paste can start).
@@ -944,11 +986,24 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       // A long paste lands first: its rows are part of what is applied.
       if (heldForPaste({ kind: 'apply' }) || !canStart(state(), 'apply')) return;
       // The set carries WP Rocket's stored form: a row still being typed is committed first.
-      takeCommit(commitAll(draft()), 'apply');
+      takeCommit(commitAll(draft(), carry), 'apply');
       // One gate, the same one the session's prevalidation applies (rows
       // that only warn — a page-wide Defer JS failure included — never
-      // block) — read now, never from a reading still waiting for its pause.
-      setReadings.readNow();
+      // block) — read from the current rows, never from a reading still
+      // waiting for its pause: a lane not read yet is read now; when one
+      // slice does not finish it, the rest runs in slices, the draft held,
+      // and the Apply runs once every lane is read.
+      if (!setReadings.readNow()) {
+        setHold('readings');
+        afterPaste.push({ kind: 'apply' });
+        waitingForReadings = true;
+        // eslint-disable-next-line solid/reactivity -- run once the readings settle: reads the draft untracked, then
+        setReadings.whenSettled(() => {
+          waitingForReadings = false;
+          releaseHold(true);
+        });
+        return;
+      }
       if (invalidCount() > 0) {
         dispatch({ type: 'apply-blocked', block: { kind: 'invalid', rows: invalidCount() } });
         focusFirstInvalid();
@@ -997,7 +1052,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       else controller.stop();
     },
     editable,
-    pasting: pasteHeld,
+    pasting: () => hold() === 'paste',
+    checking: () => hold() === 'readings',
     reloadPage: () => {
       deps.reload();
     },
@@ -1018,7 +1074,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       if (heldForPaste({ kind: 'commit-row', lane, id })) return null;
       // Safe while an action is in flight (the inputs are read-only then),
       // so a row left meanwhile is committed at once rather than never.
-      const committed = commitRows(draft(), lane, [id]);
+      const committed = commitRows(draft(), lane, [id], carry);
       takeCommit(committed, 'row');
       return committed.commits[0] ?? null;
     },
@@ -1028,7 +1084,8 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         commitRows(
           draft(),
           lane,
-          draft().rows[lane].map((row) => row.id)
+          draft().rows[lane].map((row) => row.id),
+          carry
         ),
         'row'
       );
@@ -1057,7 +1114,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       const inserted = insertRows(draft(), lane, texts, afterId, nextId);
       if (inserted.ids.length > 0) noteEdit(lane, null);
       // Inserted text was not typed here: it is committed at once.
-      const committed = takeCommit(commitRows(inserted.draft, lane, inserted.ids), 'insert');
+      const committed = takeCommit(commitRows(inserted.draft, lane, inserted.ids, carry), 'insert');
       const kept = inserted.ids.filter((id) => committed.rows[lane].some((row) => row.id === id));
       const first = kept[0];
       if (first !== undefined) setFocusRequest({ lane, id: first });
@@ -1116,10 +1173,14 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         // A long paste still committing lands now; its landing saves (no pasted line is lost).
         finishPaste();
       } else {
-        // Landed, its held actions not run yet: the held commits run now.
+        // Landed (or the readings an Apply waits for still running), its
+        // held actions not run yet: the held commits run now, no Apply.
         if (cancelHeldRun !== null) {
           cancelHeldRun();
           cancelHeldRun = null;
+          releaseHold(true);
+        } else if (waitingForReadings) {
+          waitingForReadings = false;
           releaseHold(true);
         }
         flushAutosave();

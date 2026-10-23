@@ -458,7 +458,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   });
 
   const applyLabel = (): string => {
-    if (pending() === 'apply' || pending() === 'reset') return 'Applying…';
+    // An Apply waiting for its set readings is under way already.
+    if (pending() === 'apply' || pending() === 'reset' || c.checking()) return 'Applying…';
     if (sessionState() !== 'active') return 'Apply';
     return c.dirty() ? 'Apply changes' : 'Re-apply';
   };

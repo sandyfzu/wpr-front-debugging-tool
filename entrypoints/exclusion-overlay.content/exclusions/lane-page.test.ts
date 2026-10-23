@@ -8,8 +8,16 @@ import { describe, expect, it } from 'vitest';
 import { ROW_REASONS } from '../../../lib/exclusion-builder/row-reasons';
 import { EMPTY_EXCLUSION_SET } from '../../../lib/exclusion-builder/set';
 import { prevalidateExclusionSet } from '../../../lib/exclusion-builder/validate';
-import { commitAll, createIdSource, draftFromSet, draftToSet, type DraftRow } from './draft';
-import { lanePage, rowVerdict } from './lane-page';
+import {
+  commitAll,
+  createIdSource,
+  createRowCarry,
+  createRowValidator,
+  draftFromSet,
+  draftToSet,
+  type DraftRow
+} from './draft';
+import { lanePage, rowVerdict, startLanePage } from './lane-page';
 
 /** Rows with ids `r1`, `r2`, … in order. */
 const rows = (...texts: string[]): DraftRow[] =>
@@ -141,6 +149,27 @@ describe('lanePage', () => {
         warnings: byId(session.warnings)
       });
     }
+  });
+});
+
+describe('startLanePage', () => {
+  it('reads a stored row per step, the same page as at once (with or without a carry)', () => {
+    const lane = rows('jquery', '', '  .* ', 'gtag', '(');
+    const work = startLanePage('deferJs', lane, new Set(['r3']));
+    let steps = 1;
+    while (!work.step()) steps++;
+    // The blank row is not read; `(`, already stored, is (only uncommitted rows commit).
+    expect(steps).toBe(4);
+    const page = work.result();
+    expect(page).toEqual(lanePage('deferJs', lane, new Set(['r3'])));
+    const carry = createRowCarry(createRowValidator());
+    expect(lanePage('deferJs', lane, new Set(['r3']), carry)).toEqual(page);
+  });
+
+  it('is done at once for a lane whose rows act alone', () => {
+    const work = startLanePage('delayJs', rows('.*'));
+    expect(work.step()).toBe(true);
+    expect(work.result()).toBeNull();
   });
 });
 
