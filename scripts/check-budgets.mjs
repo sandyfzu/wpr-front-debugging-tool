@@ -280,10 +280,13 @@ const formatKb = (bytes, budgeted) =>
  * pinned one (its zlib would measure gzip sizes differently).
  *
  * @param {string} nodeVersion `process.version` (`v24.1.0`).
- * @param {string} pinned The `.nvmrc` content (a major, e.g. `24`).
+ * @param {string | null} pinned The `.nvmrc` content (a major, e.g. `24`), or `null` when unreadable.
  * @returns {string | null} The refusal, naming both versions.
  */
 export function runtimeProblem(nodeVersion, pinned) {
+  if (pinned === null) {
+    return '.nvmrc is missing or unreadable at the package root: it pins the Node major gzip sizes are measured with';
+  }
   const want = pinned.trim().replace(/^v/, '').split('.')[0];
   const have = nodeVersion.replace(/^v/, '').split('.')[0];
   if (!/^\d+$/.test(want ?? ''))
@@ -293,11 +296,23 @@ export function runtimeProblem(nodeVersion, pinned) {
     : `Node ${nodeVersion} measures gzip with its own zlib; run with Node ${want} (.nvmrc)`;
 }
 
+/**
+ * The pinned Node major as `.nvmrc` holds it, or `null` when the file
+ * cannot be read (the refusal then says so).
+ *
+ * @param path The `.nvmrc` path.
+ * @returns {string | null} Its content.
+ */
+export function readPinnedNode(path) {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const problem = runtimeProblem(
-    process.version,
-    readFileSync(join(packageRoot(), '.nvmrc'), 'utf8')
-  );
+  const problem = runtimeProblem(process.version, readPinnedNode(join(packageRoot(), '.nvmrc')));
   if (problem !== null) {
     console.error(`\n✗ ${problem}.\n`);
     process.exitCode = 1;

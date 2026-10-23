@@ -6,6 +6,7 @@ import {
   measureRow,
   measureSurface,
   parseBudgetRows,
+  readPinnedNode,
   runtimeProblem
 } from './check-budgets.mjs';
 
@@ -20,6 +21,11 @@ describe('runtimeProblem', () => {
       'Node v26.12.1 measures gzip with its own zlib; run with Node 24 (.nvmrc)'
     );
     expect(runtimeProblem('v24.21.0', 'lts/*')).toBe('.nvmrc holds no Node major (got "lts/*")');
+    // No file: an actionable refusal, never a raw ENOENT.
+    expect(readPinnedNode('/nonexistent/.nvmrc')).toBeNull();
+    expect(runtimeProblem('v24.21.0', null)).toBe(
+      '.nvmrc is missing or unreadable at the package root: it pins the Node major gzip sizes are measured with'
+    );
   });
 });
 
