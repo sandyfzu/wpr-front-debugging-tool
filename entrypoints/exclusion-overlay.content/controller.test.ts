@@ -1364,6 +1364,34 @@ describe('commitLane', () => {
   });
 });
 
+describe('set readings on Apply', () => {
+  it('reads an unchanged lane once: Apply reuses its reading', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    const rows = Array.from({ length: 500 }, (_, n) => `/wp-content/p${String(n)}/s.min.js`);
+    expect(controller.insertRows('deferJs', rows, null)).toHaveLength(500);
+    clock.fire(SET_READING_DELAY_MS);
+    const read = controller.lanePage('deferJs');
+    expect(read).not.toBeNull();
+    controller.apply();
+    expect(port.apply).toHaveBeenCalledTimes(1);
+    // The same reading: nothing was read again.
+    expect(controller.lanePage('deferJs')).toBe(read);
+  });
+
+  it('reads a lane edited since its reading when Apply is clicked', async () => {
+    const { port } = fakePort({ state: 'inactive' });
+    const { controller, clock } = await started(port);
+    const [first = ''] = controller.insertRows('deferJs', ['jquery', 'gtag'], null);
+    clock.fire(SET_READING_DELAY_MS);
+    const read = controller.lanePage('deferJs');
+    controller.editRow('deferJs', first, '.*');
+    controller.apply();
+    expect(controller.lanePage('deferJs')).not.toBe(read);
+    expect(controller.lanePage('deferJs')?.offRows.map((row) => row.stored)).toEqual(['.*']);
+  });
+});
+
 describe('Defer JS page-wide warning (K.5b; a warning since K.5c)', () => {
   it('warns on rows that turn Defer JS off page-wide, and lets the apply go out', async () => {
     const { port } = fakePort({ state: 'inactive' });

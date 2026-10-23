@@ -1222,16 +1222,30 @@ export function analyzeRegexRisk(source: string): RegexRiskAnalysis {
 }
 
 /**
- * The per-pattern verdict memo: rows are re-validated per document. Bounded
- * by entries and by the bytes of the sources it keys on — translated
- * sources run to tens of thousands of characters, and the memo lives in
- * every realm that validates (the overlay inside host pages included).
+ * The risk memo's bounds: two full lanes of rows (Delay and Defer, 500
+ * each, re-read on every commit and Apply) fit, so a lane's verdicts are
+ * computed once; the bytes bound what long or risky sources can pin in a
+ * realm that validates (the overlay inside host pages included).
+ */
+export const RISK_CACHE_LIMITS = { entries: 1024, bytes: 384 * 1024 } as const;
+
+/** Fixed bytes of a kept `null` verdict (its entry and key header): Chromium measured ≈ 160. */
+const RISK_SAFE_ENTRY_BYTES = 256;
+/** Fixed bytes of a kept risk (its entry and verdict): measured ≤ 700. */
+const RISK_ENTRY_BYTES = 1024;
+/** Bytes kept per byte of source: the key plus what scales with it (measured ≤ 1.3 for 2 KiB sources). */
+const RISK_BYTES_PER_SOURCE_BYTE = 1.5;
+
+/**
+ * The per-pattern verdict memo: rows are re-validated per document. Weighs
+ * what each entry retains: most rows have no risk (`null`, a small entry).
  */
 const riskMemo = createBoundedMemo<BacktrackingRisk | null>({
-  maxEntries: 512,
-  // Retained bytes: the source string plus its entry (measured ≤ 1 KiB).
-  maxWeight: 96 * 1024,
-  weigh: (source) => 1024 + stringBytes(source)
+  maxEntries: RISK_CACHE_LIMITS.entries,
+  maxWeight: RISK_CACHE_LIMITS.bytes,
+  weigh: (source, risk) =>
+    (risk === null ? RISK_SAFE_ENTRY_BYTES : RISK_ENTRY_BYTES) +
+    Math.ceil(RISK_BYTES_PER_SOURCE_BYTE * stringBytes(source))
 });
 
 /**
@@ -1244,4 +1258,9 @@ const riskMemo = createBoundedMemo<BacktrackingRisk | null>({
  */
 export function regexBacktrackingRisk(source: string): BacktrackingRisk | null {
   return riskMemo.get(source, () => analyzeRegexRisk(source).risk);
+}
+
+/** What the risk memo keeps now (entries, bytes by its weights): its bound is pinned by tests. */
+export function riskCacheUsage(): { readonly entries: number; readonly bytes: number } {
+  return { entries: riskMemo.size, bytes: riskMemo.weight };
 }

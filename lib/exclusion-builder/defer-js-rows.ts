@@ -19,7 +19,6 @@ import type { InvalidExclusionRow } from './errors';
 import type { ProblemId } from './pcre/problems';
 import {
   compileFirstMatch,
-  REGEX_BYTES_PER_CHAR,
   translationRowProblems,
   translateRegexRows,
   type PageState
@@ -57,26 +56,35 @@ export interface DeferRowSet {
    */
   readonly pageOffRows: readonly number[];
   /**
-   * The index of the first row, in list order, whose matcher matches the
-   * subject; `-1` when none does. Rows without a matcher (each one has a
-   * problem) never match.
+   * Compile the rows' matchers into a lookup of the first row, in list
+   * order, whose matcher matches the subject (`-1` when none does; rows
+   * without a matcher — each one has a problem — never match). Compiled
+   * per call and never kept by the set: compiled regexes cost up to 80 B
+   * per source character, so a memoized set stays small (validation never
+   * compiles) and a caller keeps its lookup only while it matches.
    */
-  readonly firstMatch: (subject: string) => number;
-  /** Bytes the set retains at most, its matcher compiled (its memo weight). */
+  readonly compileMatcher: () => (subject: string) => number;
+  /** Bytes the set retains at most, uncompiled (its memo weight). */
   readonly retainedBytes: number;
 }
 
 /**
  * The set memo's bounds: entries, and bytes retained (see
- * {@link DeferRowSet.retainedBytes}), so a few wire-cap sets cannot pin
- * megabytes in the overlay's realm.
+ * {@link DeferRowSet.retainedBytes}): a full realistic lane (500 rows of
+ * script paths or patterns) fits, so re-reading an unchanged lane is a
+ * hit, while a few wire-cap sets cannot pin megabytes in the overlay's
+ * realm (one heavier than the bound is translated per read, never kept).
  */
-export const DEFER_ROW_SET_CACHE_LIMITS = { entries: 16, bytes: 128 * 1024 } as const;
+export const DEFER_ROW_SET_CACHE_LIMITS = { entries: 16, bytes: 512 * 1024 } as const;
 
 /** Fixed bytes of one kept set (its record, closures and entry). */
 const SET_ENTRY_BYTES = 4096;
-/** Bytes per row of a kept set (its translated-row record, matcher and problem): measured ≈ 540. */
-const SET_ROW_BYTES = 640;
+/**
+ * Bytes per row of a kept set beyond its row and source strings (its
+ * translated-row record, matcher description and problem): Chromium
+ * retains ≤ 280 per row with the strings, uncompiled.
+ */
+const SET_ROW_BYTES = 384;
 
 /** The memo: the rows (as a JSON key) → their translation. */
 const rowSetMemo = createBoundedMemo<DeferRowSet>({
@@ -93,7 +101,6 @@ const rowSetMemo = createBoundedMemo<DeferRowSet>({
  */
 function translateRowSet(rows: readonly string[]): DeferRowSet {
   const translation = translateRegexRows(FEATURE, rows);
-  let firstMatch: ((subject: string) => number) | null = null;
   const problems = translationRowProblems(FEATURE, translation);
   return {
     problems,
@@ -101,22 +108,17 @@ function translateRowSet(rows: readonly string[]): DeferRowSet {
     pageOffRows: problems
       .filter(({ problem }) => problem === 'joined-page-off')
       .map(({ index }) => index),
-    // Upper bound of what the set keeps once its matcher ran: the rows'
-    // records, their sources and those sources compiled.
+    // Upper bound of what the set keeps: the rows' records, the rows and
+    // their sources (never compiled: see `compileMatcher`).
     retainedBytes: translation.rows.reduce(
       (sum, { row, matcher }) =>
         sum +
         SET_ROW_BYTES +
         stringBytes(row) +
-        (matcher === null
-          ? 0
-          : stringBytes(matcher.source) + REGEX_BYTES_PER_CHAR * matcher.source.length),
+        (matcher === null ? 0 : stringBytes(matcher.source)),
       SET_ENTRY_BYTES
     ),
-    firstMatch: (subject) => {
-      firstMatch ??= compileFirstMatch(translation.rows.map(({ matcher }) => matcher));
-      return firstMatch(subject);
-    }
+    compileMatcher: () => compileFirstMatch(translation.rows.map(({ matcher }) => matcher))
   };
 }
 

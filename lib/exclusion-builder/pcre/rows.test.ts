@@ -5,6 +5,8 @@ import {
   compileByteMatcher,
   compileFirstMatch,
   regexRowProblems,
+  rowSaveOutcome,
+  saveCheckCacheUsage,
   translateRegexRows,
   translationRowProblems
 } from './rows';
@@ -482,5 +484,36 @@ describe('translation memos', () => {
     expect(translateRegexRows('delay_js', ['memo0']).rows[0]?.matcher?.source).toBe(
       '[Mm][Ee][Mm][Oo]0'
     );
+  });
+});
+
+describe('the save-check memo', () => {
+  it('keeps every row of two full lanes, within its byte bound', () => {
+    const rows = [
+      ...Array.from(
+        { length: 500 },
+        (_, n) => `/wp-content/plugins/p${String(n)}/assets/js/s.min.js`
+      ),
+      ...Array.from(
+        { length: 500 },
+        (_, n) => `(?:jquery|gtag|p${String(n)})[a-z0-9_-]{1,40}\\.(?:min\\.)?js`
+      )
+    ];
+    for (const row of rows) rowSaveOutcome('delay_js', row);
+    const kept = saveCheckCacheUsage();
+    expect(kept.entries).toBeGreaterThanOrEqual(rows.length);
+    expect(kept.bytes).toBeLessThanOrEqual(TRANSLATION_CACHE_LIMITS.saveBytes);
+    // A repeated check is the kept one.
+    expect(rowSaveOutcome('delay_js', rows[3] ?? '')).toBe(
+      rowSaveOutcome('delay_js', rows[3] ?? '')
+    );
+  });
+
+  it('stays within its bounds with long, dropped rows', () => {
+    for (let n = 0; n < 1500; n++)
+      rowSaveOutcome('defer_all_js', `(${String(n)}${'x'.repeat(2000)}`);
+    const kept = saveCheckCacheUsage();
+    expect(kept.entries).toBeLessThanOrEqual(TRANSLATION_CACHE_LIMITS.saveEntries);
+    expect(kept.bytes).toBeLessThanOrEqual(TRANSLATION_CACHE_LIMITS.saveBytes);
   });
 });

@@ -4,7 +4,9 @@
  * change, in their own task, so typing in a long lane never pays for the
  * whole set. A run that finds its lane changed since it was scheduled is
  * dropped (the newer change has scheduled its own). `readNow` reads every
- * set-read lane at once — for the apply gate, which must be exact.
+ * set-read lane whose reading is not of its current rows at once — for the
+ * apply gate, which must be exact; a lane's rows are read once per version
+ * (an unchanged 500-row lane is never re-read on Apply).
  *
  * Between a change and its reading, the last reading still speaks for the
  * rows it read that are unchanged (same id, same text): their row problems
@@ -40,7 +42,7 @@ export interface SetReadings {
   page(lane: LaneKey): LanePage | null;
   /** Whether every set-read lane's reading is of its current rows. */
   readonly settled: Accessor<boolean>;
-  /** Read every set-read lane now (cancelling the scheduled runs). */
+  /** Read every set-read lane not read at its current rows now (cancelling the scheduled runs). */
   readNow(): void;
   /** Cancel the scheduled runs (teardown). */
   dispose(): void;
@@ -108,11 +110,20 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
       return last.rows === rows() ? last.page : stillTrue(last, rows());
     });
     const fresh = (): boolean => reading()?.rows === rows();
+    /** Read now unless the reading is of the current rows (one reading per rows version). */
+    const settle = (): void => {
+      if (!fresh()) {
+        read();
+        return;
+      }
+      cancel?.();
+      cancel = null;
+    };
     return {
       lane,
       page,
       fresh,
-      read,
+      settle,
       dispose: () => {
         cancel?.();
       }
@@ -123,7 +134,7 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
     page: (lane) => byLane.get(lane)?.page() ?? null,
     settled: () => lanes.every((entry) => entry.fresh()),
     readNow: () => {
-      for (const entry of lanes) entry.read();
+      for (const entry of lanes) entry.settle();
     },
     dispose: () => {
       for (const entry of lanes) entry.dispose();

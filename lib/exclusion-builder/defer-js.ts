@@ -213,6 +213,9 @@ function deferWithInlinePass(
   const rows = set.rows.deferJs;
   // One translation serves validation and matching (a heavy set is not memoized).
   const rowSet = deferRowSet(rows);
+  // Compiled once per document, on the first script that needs a verdict.
+  let compiled: ((subject: string) => number) | null = null;
+  const firstMatch = (subject: string): number => (compiled ??= rowSet.compileMatcher())(subject);
   const entries = pcreFeatureProblems(FEATURE, rows, rowSet.problems);
   throwIfBlocking(entries);
   const featureWide = set.disable.deferJs;
@@ -231,7 +234,7 @@ function deferWithInlinePass(
     candidates++;
     if (!featureWide && !pageOff) {
       const body = servedHtml.slice(tag.openingEnd, tag.contentEnd);
-      const rowIndex = deferVerdict(tagText + stampedLead(body), rowSet.firstMatch);
+      const rowIndex = deferVerdict(tagText + stampedLead(body), firstMatch);
       // WP Rocket captured a subject here, but it cannot be read back: left as served.
       if (rowIndex === null) {
         undetermined++;

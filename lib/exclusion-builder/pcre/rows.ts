@@ -99,7 +99,15 @@ export const TRANSLATION_CACHE_LIMITS = {
   /** Compiled regexes kept at most. */
   regexEntries: 256,
   /** Estimated bytes the compiled-regex memo keeps. */
-  regexBytes: 192 * 1024
+  regexBytes: 192 * 1024,
+  /**
+   * Save checks kept at most: every row of two full lanes (Delay and Defer,
+   * 500 each), so committing an unchanged lane (each Apply commits every
+   * row) never re-analyses its rows.
+   */
+  saveEntries: 1024,
+  /** Bytes the save-check memo keeps. */
+  saveBytes: 384 * 1024
 } as const;
 
 /**
@@ -163,15 +171,39 @@ function cachedAnalysis(feature: RegexFeatureId, row: string): RowAnalysis {
   return analysisMemo.get(`${feature}\u0000${row}`, () => analyzeRow(feature, detachedString(row)));
 }
 
+/** Fixed bytes of one kept save check (its entry and record; measured ≈ 100 for a kept row). */
+const SAVE_ENTRY_BYTES = 192;
+
 /**
- * WP Rocket's settings-save check on a stored row, read from the same
- * memoized analysis validation and matching use (one cache over the parse).
+ * Save checks by feature + row, apart from the analyses: a check is small
+ * (an outcome, and for a dropped or unverified row the construct and why),
+ * so a whole lane's checks stay cached where its analyses (kilobytes each)
+ * cannot.
+ */
+const saveMemo = createBoundedMemo<SaveOutcome>({
+  maxEntries: TRANSLATION_CACHE_LIMITS.saveEntries,
+  maxWeight: TRANSLATION_CACHE_LIMITS.saveBytes,
+  weigh: (key, save) =>
+    SAVE_ENTRY_BYTES +
+    stringBytes(key) +
+    // Its strings may be cut from the (detached) row: counted as the whole row.
+    (save.outcome === 'kept' ? 0 : stringBytes(key) + stringBytes(save.detail))
+});
+
+/**
+ * WP Rocket's settings-save check on a stored row, from the analysis
+ * validation and matching share (one parse), memoized on its own.
  *
  * @param feature The row's feature (`delay_js` or `defer_all_js`).
  * @param row The row in its stored form.
  */
 export function rowSaveOutcome(feature: RegexFeatureId, row: string): SaveOutcome {
-  return cachedAnalysis(feature, row).save;
+  return saveMemo.get(`${feature}\u0000${row}`, () => cachedAnalysis(feature, row).save);
+}
+
+/** What the save-check memo keeps now (entries, bytes by its weights): its bound is pinned by tests. */
+export function saveCheckCacheUsage(): { readonly entries: number; readonly bytes: number } {
+  return { entries: saveMemo.size, bytes: saveMemo.weight };
 }
 
 /**

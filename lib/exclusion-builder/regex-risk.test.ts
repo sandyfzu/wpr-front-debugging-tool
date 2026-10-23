@@ -11,6 +11,8 @@ import {
   LOOP_REPEAT_LIMIT,
   REGEX_ANALYSIS_LIMITS,
   regexBacktrackingRisk,
+  RISK_CACHE_LIMITS,
+  riskCacheUsage,
   type BacktrackingRisk
 } from './regex-risk';
 
@@ -448,5 +450,34 @@ describe('accepted rows stay fast on adversarial input', () => {
     // 5 000-unit subjects. Local ≈ 0.33 s; 2.3 s under coverage on throttled
     // (background-QoS) cores — 10 s stays robust on a shared CI runner.
     expect(performance.now() - started).toBeLessThan(10_000);
+  });
+});
+
+describe('the risk memo', () => {
+  it('keeps two full lanes of realistic rows, within its byte bound', () => {
+    // 500 script paths and 500 patterns: Delay and Defer, each at the lane cap.
+    const rows = [
+      ...Array.from(
+        { length: 500 },
+        (_, n) => `/wp-content/plugins/p${String(n)}/assets/js/s.min.js`
+      ),
+      ...Array.from(
+        { length: 500 },
+        (_, n) => `(?:jquery|gtag|p${String(n)})[a-z0-9_-]{1,40}\\.(?:min\\.)?js`
+      )
+    ];
+    for (const row of rows) regexBacktrackingRisk(row);
+    const kept = riskCacheUsage();
+    expect(kept.entries).toBeGreaterThanOrEqual(rows.length);
+    expect(kept.bytes).toBeLessThanOrEqual(RISK_CACHE_LIMITS.bytes);
+  });
+
+  it('stays within its bounds whatever rows come (long and risky sources)', () => {
+    for (let n = 0; n < 1500; n++) {
+      regexBacktrackingRisk(n % 2 === 0 ? `(a+)+b${String(n)}` : `${String(n)}${'x'.repeat(2000)}`);
+    }
+    const kept = riskCacheUsage();
+    expect(kept.entries).toBeLessThanOrEqual(RISK_CACHE_LIMITS.entries);
+    expect(kept.bytes).toBeLessThanOrEqual(RISK_CACHE_LIMITS.bytes);
   });
 });

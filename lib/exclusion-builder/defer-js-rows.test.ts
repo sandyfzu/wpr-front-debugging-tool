@@ -9,23 +9,23 @@ import { DEFER_ROW_SET_CACHE_LIMITS, deferRowProblems, deferRowSet } from './def
 describe('deferRowSet — matching', () => {
   it('credits the first row in list order that matches the subject', () => {
     const rows = deferRowSet(['zzz', 'jquery', '\\.js$']);
-    expect(rows.firstMatch('/wp-includes/js/jquery/jquery.min.js')).toBe(1);
-    expect(rows.firstMatch('/a.js')).toBe(2);
-    expect(rows.firstMatch('/a.css')).toBe(-1);
+    expect(rows.compileMatcher()('/wp-includes/js/jquery/jquery.min.js')).toBe(1);
+    expect(rows.compileMatcher()('/a.js')).toBe(2);
+    expect(rows.compileMatcher()('/a.css')).toBe(-1);
   });
 
   it('matches caselessly over the subject bytes, as `#…#i` does on WP Rocket', () => {
     const rows = deferRowSet(['^/É\\.JS$', '^/.\\.js$']);
     // `É` folds to nothing on bytes (ASCII-only case), and `.` is one byte, not one character.
-    expect(rows.firstMatch('/é.js')).toBe(-1);
-    expect(rows.firstMatch('/a.js')).toBe(1);
+    expect(rows.compileMatcher()('/é.js')).toBe(-1);
+    expect(rows.compileMatcher()('/a.js')).toBe(1);
   });
 
   it('never matches with a row that has no matcher (its problem invalidates the set)', () => {
     const rows = deferRowSet(['(?>a)', 'b']);
     expect(rows.problems.map(({ index, problem }) => [index, problem])).toEqual([[0, 'pcre-only']]);
-    expect(rows.firstMatch('a')).toBe(-1);
-    expect(rows.firstMatch('b')).toBe(1);
+    expect(rows.compileMatcher()('a')).toBe(-1);
+    expect(rows.compileMatcher()('b')).toBe(1);
   });
 });
 
@@ -93,9 +93,28 @@ describe('deferRowSet — memo', () => {
   });
 
   it('never keeps a set heavier than its character bound (translated again, same result)', () => {
-    const heavy = Array.from({ length: 80 }, (_, i) => `${'h'.repeat(2000)}${String(i)}`);
+    const heavy = Array.from({ length: 200 }, (_, i) => `${'h'.repeat(2000)}${String(i)}`);
     const first = deferRowSet(heavy);
     expect(deferRowSet(heavy)).not.toBe(first);
     expect(deferRowSet(heavy).problems).toEqual(first.problems);
+  });
+});
+
+describe('deferRowSet — a realistic full lane', () => {
+  it.each([
+    ['script paths', (n: number) => `/wp-content/plugins/p${String(n)}/assets/js/script.min.js`],
+    ['patterns', (n: number) => `(?:jquery|gtag|p${String(n)})[a-z0-9_-]{1,40}\\.(?:min\\.)?js`]
+  ])('keeps a 500-row lane of %s: re-reading the unchanged lane is a hit', (_shape, line) => {
+    const rows = Array.from({ length: 500 }, (_, n) => line(n));
+    const first = deferRowSet(rows);
+    expect(first.retainedBytes).toBeLessThan(DEFER_ROW_SET_CACHE_LIMITS.bytes);
+    expect(deferRowSet([...rows])).toBe(first);
+  });
+
+  it('compiles a fresh matcher per call, never kept by the set', () => {
+    const set = deferRowSet(['a\\.js', 'b\\.js']);
+    const one = set.compileMatcher();
+    expect(set.compileMatcher()).not.toBe(one);
+    expect(one('/b.js')).toBe(1);
   });
 });
