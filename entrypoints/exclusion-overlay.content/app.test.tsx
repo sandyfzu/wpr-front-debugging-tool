@@ -14,6 +14,7 @@ import type { ExclusionSessionPort, PortOutcome } from './session/port';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 import type { OverlayMode, OverlayModeContext } from './modes';
+import { parseRules, type CssRule } from '../../assets/css/css-rules.fixtures';
 
 /**
  * A virtualizer that renders every row (happy-dom lays nothing out, so the
@@ -648,69 +649,6 @@ describe('stored-form announcements', () => {
     ).toBeTruthy();
   });
 });
-
-/** One style rule of a stylesheet, flattened to a single selector. */
-interface CssRule {
-  /** The selector, whitespace-normalized (selector lists are split). */
-  selector: string;
-  /** The enclosing at-rule preludes, outermost first. */
-  within: string[];
-  /** Declarations in source order: property → value (whitespace-normalized). */
-  declarations: [string, string][];
-  /** Source position, for the cascade's "later wins" tie-break. */
-  order: number;
-}
-
-/**
- * Flatten a stylesheet into its style rules (comments ignored; nested
- * at-rules kept as context, not applied).
- *
- * @param css The stylesheet text.
- * @returns One {@link CssRule} per selector of each rule, in source order.
- */
-function parseRules(css: string): CssRule[] {
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const rules: CssRule[] = [];
-  const preludes: string[] = [];
-  let from = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === '{') {
-      // A statement at-rule (`@import …;`) before a rule is not its prelude.
-      const head = text.slice(from, index);
-      preludes.push(head.slice(head.lastIndexOf(';') + 1).trim());
-      from = index + 1;
-    } else if (char === '}') {
-      const prelude = preludes.pop() ?? '';
-      const declarations: [string, string][] = [];
-      for (const line of text.slice(from, index).split(';')) {
-        const colon = line.indexOf(':');
-        if (colon > 0) {
-          const value = line
-            .slice(colon + 1)
-            .replace(/\s+/g, ' ')
-            .trim();
-          declarations.push([line.slice(0, colon).trim(), value]);
-        }
-      }
-      // Keyframe blocks (`50% { … }`) are animation steps, not style rules.
-      const keyframes = preludes.some((outer) => outer.startsWith('@keyframes'));
-      if (declarations.length > 0 && !prelude.startsWith('@') && !keyframes) {
-        // Split the selector list on top-level commas only (`:where(a, b)` stays whole).
-        for (const part of prelude.split(/,(?![^()]*\))/)) {
-          rules.push({
-            selector: part.replace(/\s+/g, ' ').trim(),
-            within: [...preludes],
-            declarations,
-            order: rules.length
-          });
-        }
-      }
-      from = index + 1;
-    }
-  }
-  return rules;
-}
 
 /**
  * Properties whose later declaration changes an asserted property's used

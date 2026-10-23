@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from '../../utils/contrast';
+import { parseRules } from './css-rules.fixtures';
 
 /**
  * WCAG 2.1 AA gate for the design tokens.
@@ -243,8 +244,54 @@ describe('accent fill hover/press states', () => {
     'entrypoints/isolated.content/side-by-side/side-by-side.css'
   ];
 
-  /** The one `color-mix()` form the derivation models: a per-channel sRGB mix of two opaque tokens. */
-  const MIX = /^color-mix\(in srgb, var\(--accent-strong\) (\d+)%, var\(--([\w-]+)\)\)$/;
+  /**
+   * The one `color-mix()` form the derivation models — a per-channel sRGB mix
+   * of the accent with one opaque token — matched on the call with its
+   * whitespace collapsed (see {@link compact}), so formatting never matters.
+   */
+  const MIX = /^color-mix\(in srgb,var\(--accent-strong\)(\d+)%,var\(--([\w-]+)\)\)$/;
+
+  /**
+   * A CSS value with whitespace removed around `(`, `)` and `,` and collapsed
+   * elsewhere — one spelling per value, however it is line-wrapped.
+   *
+   * @param value The CSS value.
+   * @returns The compact form.
+   */
+  const compact = (value: string): string =>
+    value
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([(),])\s*/g, '$1')
+      .trim();
+
+  /**
+   * The fill a modeled accent mix paints.
+   *
+   * @param percent The accent's share, 0–100.
+   * @param other The token mixed in.
+   * @returns The palette → `#rrggbb` resolver.
+   */
+  const mixFill =
+    (percent: number, other: string) =>
+    (palette: 'dark' | 'light'): string => {
+      const weight = percent / 100;
+      const accent = channelsOf(paletteValues('accent-strong')[palette]);
+      const mixed = channelsOf(paletteValues(other)[palette]);
+      return toHex(
+        accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
+      );
+    };
+
+  /**
+   * The fill `brightness()` paints over the accent (each sRGB channel scaled, clamped).
+   *
+   * @param factor The brightness factor (1 = unchanged).
+   * @returns The palette → `#rrggbb` resolver.
+   */
+  const brightnessFill =
+    (factor: number) =>
+    (palette: 'dark' | 'light'): string =>
+      toHex(channelsOf(paletteValues('accent-strong')[palette]).map((value) => value * factor));
 
   /**
    * Every `color-mix(…)` call in a stylesheet, parentheses balanced.
@@ -275,26 +322,69 @@ describe('accent fill hover/press states', () => {
     colorMixCalls(read(`../../${file}`))
       .filter((call) => call.includes('accent-strong'))
       .flatMap((call) => {
-        const [, percent, other] = MIX.exec(call) ?? [];
+        const [, percent, other] = MIX.exec(compact(call)) ?? [];
         if (percent === undefined || other === undefined) {
           unmodeledMixes.push(`${file}: ${call}`);
           return [];
         }
         return [
-          {
-            name: `${file}: ${call}`,
-            momentary: false,
-            color: (palette: 'dark' | 'light'): string => {
-              const weight = Number(percent) / 100;
-              const accent = channelsOf(paletteValues('accent-strong')[palette]);
-              const mixed = channelsOf(paletteValues(other)[palette]);
-              return toHex(
-                accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
-              );
-            }
-          }
+          { name: `${file}: ${call}`, momentary: false, color: mixFill(Number(percent), other) }
         ];
       })
+  );
+
+  /** A selector for a control in its accent ("on") state. */
+  const ACCENT_SELECTOR =
+    /\[aria-(pressed|checked|expanded|selected)='true'\]|:checked|\[data-variant='primary'\]/;
+
+  /** Properties that change what a fill or its text looks like. */
+  const FILL_PROPERTIES =
+    /^(background(-color|-image)?|border(-(top|right|bottom|left))?-color|color|filter|opacity|mix-blend-mode|backdrop-filter)$/;
+
+  /** Accent-state pointer declarations in the injected sheets that the derivation cannot model. */
+  const unmodeledSheetRules: string[] = [];
+
+  // Pointer (`:hover`/`:active`) rules on an accent-state control in the
+  // injected sheets: the fill/border stays the accent or a modeled mix (gated
+  // above), the text stays `on-accent`, a `filter` is a modeled
+  // `brightness()` (gated below); any other fill-changing declaration fails.
+  const sheetBrightened: DerivedFill[] = SHEETS.flatMap((file) =>
+    parseRules(read(`../../${file}`))
+      .filter(
+        (rule) => /:(hover|active)\b/.test(rule.selector) && ACCENT_SELECTOR.test(rule.selector)
+      )
+      .flatMap((rule) =>
+        rule.declarations.flatMap(([property, value]): DerivedFill[] => {
+          if (!FILL_PROPERTIES.test(property)) return [];
+          const name = `${file}: ${rule.selector} { ${property}: ${value} }`;
+          const fill = compact(value);
+          if (/^(background(-color)?|border(-(top|right|bottom|left))?-color)$/.test(property)) {
+            if (fill !== 'var(--accent-strong)' && !MIX.test(fill)) unmodeledSheetRules.push(name);
+            return [];
+          }
+          if (property === 'color') {
+            if (fill !== 'var(--on-accent)') unmodeledSheetRules.push(name);
+            return [];
+          }
+          const [, amount, unit] = /^brightness\((\d*\.?\d+)(%?)\)$/.exec(fill) ?? [];
+          if (property !== 'filter' || amount === undefined) {
+            unmodeledSheetRules.push(name);
+            return [];
+          }
+          const factor = unit === '%' ? Number(amount) / 100 : Number(amount);
+          return [
+            { name, momentary: rule.selector.includes(':active'), color: brightnessFill(factor) }
+          ];
+        })
+      )
+  );
+
+  /** Accent-state pointer rules found per sheet (the scan must see the overlay's). */
+  const accentPointerRules = SHEETS.map(
+    (file) =>
+      parseRules(read(`../../${file}`)).filter(
+        (rule) => /:(hover|active)\b/.test(rule.selector) && ACCENT_SELECTOR.test(rule.selector)
+      ).length
   );
 
   /** The `components/ui` primitives that paint the accent fill (found, never listed). */
@@ -313,11 +403,37 @@ describe('accent fill hover/press states', () => {
   /** Hover backgrounds scoped to the accent state, i.e. drawn under or around the fill. */
   const accentStateHovers: { name: string; surface: string }[] = [];
 
+  /** Unscoped pointer surface backgrounds found, `file: token` → occurrences. */
+  const neutralPointerSurfaces: Record<string, number> = {};
+
+  /**
+   * The unscoped pointer surface backgrounds the accent primitives may carry,
+   * each with its exact count and why it never lands under the accent fill.
+   * A class string decides at runtime (variant, `checked()`), invisible to a
+   * token scan, so any new one — e.g. a hover surface on the primary button
+   * or the selected chip — fails here until it is reviewed and listed.
+   */
+  const NEUTRAL_POINTER_SURFACES: Record<string, { count: number; why: string }> = {
+    'button.tsx: hover:bg-surface-3': {
+      count: 2,
+      why: 'the secondary and ghost variants; the primary lifts with brightness instead'
+    },
+    'choice-group.tsx: hover:bg-surface-3': {
+      count: 1,
+      why: 'unchecked tiles only; the checked (accent) tile takes no hover'
+    },
+    'switch.tsx: hover:bg-surface-3': {
+      count: 1,
+      why: 'the unchecked halo; checked, data-checked:hover:bg-surface-2 overrides it'
+    }
+  };
+
   // Every pointer-state (`hover`, `active`, `group-hover…`) utility that changes
   // a fill in those files: a `brightness-N` derives the accent (CSS
   // `brightness()` scales each sRGB channel, clamped); a surface background
-  // is neutral unless an accent-state variant scopes it under the fill;
-  // anything else is unmodeled and fails.
+  // scoped to an accent state is gated as drawn under the fill, an unscoped
+  // one must be a reviewed entry of NEUTRAL_POINTER_SURFACES; anything else
+  // is unmodeled and fails.
   const brightened: DerivedFill[] = accentPrimitives.flatMap((file) =>
     read(`${primitiveDir}/${file}`)
       .split(/[\s'"`]+/)
@@ -342,12 +458,7 @@ describe('accent fill hover/press states', () => {
             {
               name,
               momentary: variants.includes('active'),
-              color: (palette: 'dark' | 'light'): string =>
-                toHex(
-                  channelsOf(paletteValues('accent-strong')[palette]).map(
-                    (value) => (value * Number(percent)) / 100
-                  )
-                )
+              color: brightnessFill(Number(percent) / 100)
             }
           ];
         }
@@ -355,6 +466,7 @@ describe('accent fill hover/press states', () => {
         if (surface === undefined) unmodeledUtilities.push(name);
         else if (variants.some((variant) => ACCENT_STATE.test(variant)))
           accentStateHovers.push({ name, surface });
+        else neutralPointerSurfaces[name] = (neutralPointerSurfaces[name] ?? 0) + 1;
         return [];
       })
   );
@@ -367,6 +479,19 @@ describe('accent fill hover/press states', () => {
     );
     expect(unmodeledMixes, 'accent color-mix() forms the derivation cannot read').toEqual([]);
     expect(unmodeledUtilities, 'fill-changing pointer utilities with no model').toEqual([]);
+    expect(
+      accentPointerRules[0],
+      'the overlay has accent-state hover rules'
+    ).toBeGreaterThanOrEqual(2);
+    expect(unmodeledSheetRules, 'accent-state pointer declarations with no model').toEqual([]);
+  });
+
+  it('allows an unscoped pointer surface in an accent primitive only where reviewed', () => {
+    expect(neutralPointerSurfaces).toEqual(
+      Object.fromEntries(
+        Object.entries(NEUTRAL_POINTER_SURFACES).map(([name, { count }]) => [name, count])
+      )
+    );
   });
 
   it('draws a hover background under an accent fill only on a gated surface', () => {
@@ -389,7 +514,7 @@ describe('accent fill hover/press states', () => {
   it('keeps on-accent text at 4.5:1 and a hover fill at 3:1 on its surfaces, both palettes', () => {
     const failures: string[] = [];
     for (const palette of ['dark', 'light'] as const) {
-      for (const derived of [...mixes, ...brightened]) {
+      for (const derived of [...mixes, ...brightened, ...sheetBrightened]) {
         const fill = derived.color(palette);
         const text = contrastRatio(paletteValues('on-accent')[palette], fill);
         if (text < 4.5)
