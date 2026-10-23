@@ -103,7 +103,7 @@ export interface LaneProps {
 }
 
 /**
- * What to tell about a paste that left lines out, or null.
+ * What to tell about a paste that left lines out or failed, or null.
  *
  * @param outcome What the paste did.
  */
@@ -111,6 +111,7 @@ function pasteNote(outcome: SettledPasteOutcome): string | null {
   const max = EXCLUSION_SET_LIMITS.rowsPerFeature;
   if (outcome.kind === 'lane-full') return PASTE_COPY.laneFull(max);
   if (outcome.kind === 'dropped') return PASTE_COPY.dropped(outcome.lines, max);
+  if (outcome.kind === 'failed') return PASTE_COPY.failed;
   return null;
 }
 
@@ -324,7 +325,7 @@ export function Lane(props: LaneProps): JSX.Element {
    */
   const tellHeld = (): void => {
     if (!props.controller.pasting()) return;
-    setPasteMessage(PASTE_COPY.held);
+    setPasteMessage({ text: PASTE_COPY.held, tone: 'info' });
     if (toldHeld) return;
     toldHeld = true;
     props.announce(PASTE_COPY.held);
@@ -335,7 +336,7 @@ export function Lane(props: LaneProps): JSX.Element {
       (pasting) => {
         if (pasting) return;
         toldHeld = false;
-        if (pasteMessage() === PASTE_COPY.held) setPasteMessage(null);
+        if (pasteMessage()?.text === PASTE_COPY.held) setPasteMessage(null);
       },
       { defer: true }
     )
@@ -345,14 +346,21 @@ export function Lane(props: LaneProps): JSX.Element {
   const tellPaste = (outcome: SettledPasteOutcome): void => {
     if (!mounted) return;
     const said = pasteNote(outcome);
-    setPasteMessage(said);
+    setPasteMessage(said === null ? null : { text: said, tone: 'error' });
     if (said !== null) props.announce(said);
   };
 
   const full = (): boolean => rows().length >= EXCLUSION_SET_LIMITS.rowsPerFeature;
 
-  /** Why the last paste left lines out (until the lane's rows change). */
-  const [pasteMessage, setPasteMessage] = createSignal<string | null>(null);
+  /**
+   * The paste line: why the last paste left lines out or failed (`error`),
+   * or that typing waits for a long paste (`info`, a wait, not a problem) —
+   * until the lane's rows change.
+   */
+  const [pasteMessage, setPasteMessage] = createSignal<{
+    readonly text: string;
+    readonly tone: 'error' | 'info';
+  } | null>(null);
   createEffect(
     on(
       rows,
@@ -367,7 +375,7 @@ export function Lane(props: LaneProps): JSX.Element {
     <section
       class="xo-lane"
       aria-labelledby={headingId()}
-      // A long paste is landing in this lane's rows.
+      // A long paste is landing: every lane's rows wait for it.
       aria-busy={props.controller.pasting() ? 'true' : undefined}
       ref={root}
       // Focus that landed on a row by any other way (click, Tab) ends a
@@ -536,9 +544,14 @@ export function Lane(props: LaneProps): JSX.Element {
         </button>
         <Show when={pasteMessage()}>
           {(message) => (
-            <p class="xo-row-error xo-copy-line">
-              <CircleAlert size={12} aria-hidden="true" />
-              <span>{message()}</span>
+            <p class={`${message().tone === 'info' ? 'xo-row-note' : 'xo-row-error'} xo-copy-line`}>
+              <Show
+                when={message().tone === 'info'}
+                fallback={<CircleAlert size={12} aria-hidden="true" />}
+              >
+                <Info size={12} aria-hidden="true" />
+              </Show>
+              <span>{message().text}</span>
             </p>
           )}
         </Show>
@@ -553,6 +566,8 @@ export function Lane(props: LaneProps): JSX.Element {
           commit={() => {
             props.controller.commitLane(props.lane);
           }}
+          held={props.controller.pasting()}
+          onHeld={tellHeld}
           announce={props.announce}
           write={
             props.writeClipboard ??

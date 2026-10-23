@@ -3,7 +3,8 @@
  * stores them, in the form it takes them (`exclusionCopyText`: the settings
  * field's lines, or the `rocket_lrc_exclusions` filter where there is no
  * field), in list order, blank rows left out. The lane is committed first,
- * so a row still being typed is copied in its stored form.
+ * so a row still being typed is copied in its stored form; while a long
+ * paste lands it copies nothing and says why (held).
  * States: idle · copying (busy, repeat clicks ignored) · copied (check +
  * "Copied" for the shared flash window — the accessible name says "Copied"
  * too — announced with the count) · failed (announced, plus an inline line
@@ -34,6 +35,13 @@ export interface CopyAllProps {
    * control was activated without focus leaving it — is copied stored).
    */
   readonly commit: () => void;
+  /**
+   * A long paste is landing: the lane's rows are not what will be stored
+   * yet, so nothing is copied (the control says why through `onHeld`).
+   */
+  readonly held: boolean;
+  /** Say why a held control did nothing. */
+  readonly onHeld: () => void;
   /** Polite announcement in the overlay's live region. */
   readonly announce: (text: string) => void;
   readonly write: ClipboardWriter;
@@ -79,6 +87,10 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
   /** One copy: the lane's field text, its outcome announced and shown. */
   const copy = async (): Promise<void> => {
     if (state() === 'copying' || button === undefined) return;
+    if (props.held) {
+      props.onHeld();
+      return;
+    }
     clearTimeout(flash);
     // The rows update synchronously: what follows reads the stored form.
     props.commit();
@@ -119,7 +131,7 @@ export function CopyAll(props: CopyAllProps): JSX.Element {
           state() === 'copied' ? COPY_ALL_COPY.copiedName(label()) : COPY_ALL_COPY.name(label())
         }
         aria-describedby={hintId()}
-        aria-disabled={empty() ? 'true' : undefined}
+        aria-disabled={empty() || props.held ? 'true' : undefined}
         aria-busy={state() === 'copying' ? 'true' : undefined}
         title={hint()}
         data-copied={state() === 'copied' ? '' : undefined}

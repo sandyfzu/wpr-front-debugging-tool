@@ -496,8 +496,10 @@ export function commitAnnouncement(latest: LatestCommits): string | null {
 
 /** A paste the lane cap cut short, or one still landing. */
 export const PASTE_COPY = {
-  /** Typing or a second paste while a long paste's rows are still landing (nothing taken). */
-  held: 'Still adding the pasted rows: type or paste again once they are in.',
+  /** Typing, a second paste or Copy all while a long paste's rows are still landing (nothing done). */
+  held: 'Still adding the pasted rows: try again once they are in.',
+  /** A long paste broke while committing: nothing was added. */
+  failed: 'The paste could not be added. Paste it again, or fewer lines at a time.',
   /**
    * Nothing pasted: the lane holds no more rows.
    *

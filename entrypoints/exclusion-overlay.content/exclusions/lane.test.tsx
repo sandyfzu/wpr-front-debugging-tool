@@ -339,6 +339,82 @@ describe('Lane', () => {
     expect(controller.draft().rows.delayJs).toHaveLength(102);
   });
 
+  it('shows the wait as a note, not as a problem', async () => {
+    const timers: (() => void)[] = [];
+    const controller = await readyController((run) => {
+      timers.push(run);
+      return () => undefined;
+    });
+    controller.insertRows('delayJs', ['x'], null);
+    const { setLocked } = mountLane(controller);
+    const lines = Array.from({ length: 100 }, (_, n) => `l${String(n)}`).join('\n');
+    input(1).dispatchEvent(pasteEvent(`\n${lines}`));
+    setLocked(true);
+    fireEvent.keyDown(input(1), { key: 'z' });
+    const line = screen.getByText(PASTE_COPY.held).closest('p');
+    expect(line?.classList.contains('xo-row-note')).toBe(true);
+    expect(line?.classList.contains('xo-row-error')).toBe(false);
+  });
+
+  /**
+   * Paste `count` lines at caret 3 of `'  ab '`, click Copy all at once,
+   * then again once the paste landed; read every clipboard write.
+   */
+  const copyAround = async (count: number) => {
+    const timers: (() => void)[] = [];
+    const controller = await readyController((run) => {
+      timers.push(run);
+      return () => undefined;
+    });
+    const [id = ''] = controller.insertRows('delayJs', ['x'], null);
+    controller.editRow('delayJs', id, '  ab ');
+    const writes: string[] = [];
+    const { setLocked, announce } = mountLane(controller, undefined, (text) => {
+      writes.push(text);
+      return Promise.resolve('copied');
+    });
+    input(1).setSelectionRange(3, 3);
+    const lines = Array.from({ length: count }, (_, n) => `k${String(n)}.js`).join('\n');
+    input(1).dispatchEvent(pasteEvent(lines));
+    setLocked(!controller.editable());
+    const heldAtClick = copyAll().getAttribute('aria-disabled');
+    fireEvent.click(copyAll());
+    await Promise.resolve();
+    const writesDuringHold = writes.length;
+    const saidDuringHold = screen.queryByText(PASTE_COPY.held) !== null;
+    while (timers.length > 0) {
+      timers.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    setLocked(!controller.editable());
+    // Copied once the rows are in (the first click copied nothing if it was held).
+    if (writes.length === 0) fireEvent.click(copyAll());
+    await waitFor(() => {
+      expect(writes.length).toBeGreaterThan(0);
+    });
+    return { heldAtClick, writesDuringHold, saidDuringHold, writes, announce };
+  };
+
+  it('holds Copy all while a long paste lands, then copies the stored rows as a short paste would', async () => {
+    const sliced = await copyAround(300);
+    expect(sliced.heldAtClick).toBe('true');
+    expect(sliced.writesDuringHold).toBe(0);
+    expect(sliced.saidDuringHold).toBe(true);
+    expect(sliced.announce).toHaveBeenCalledWith(PASTE_COPY.held);
+    const lines = sliced.writes[0]?.split('\n') ?? [];
+    expect(lines).toHaveLength(300);
+    expect(lines[0]).toBe('ak0.js');
+    expect(lines.at(-1)).toBe('k299.jsb');
+    cleanup();
+    const once = await copyAround(20);
+    expect(once.heldAtClick).toBeNull();
+    expect(once.writes[0]?.split('\n')).toEqual([
+      'ak0.js',
+      ...Array.from({ length: 18 }, (_, n) => `k${String(n + 1)}.js`),
+      'k19.jsb'
+    ]);
+  });
+
   it('says nothing about a paste hold while the lane is locked for another reason', async () => {
     const controller = await readyController();
     controller.insertRows('delayJs', ['x'], null);
