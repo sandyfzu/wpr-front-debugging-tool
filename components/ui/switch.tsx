@@ -101,9 +101,12 @@ export function Switch(props: SwitchProps): JSX.Element {
         class={cn(
           // The 24px hit area (h-6): the control toggles on any click on it,
           // around the 28×14 pill visual.
-          'inline-flex h-6 w-9 shrink-0 items-center justify-center rounded-full',
+          'group/switch inline-flex h-6 w-9 shrink-0 items-center justify-center rounded-full',
           // Dimmed but hover-explained; disabled keeps hover for tooltips.
-          own.disabled ? DISABLED : 'hover:bg-surface-3 data-checked:hover:bg-surface-4'
+          // Checked, the halo stays on surface-2: the accent pill keeps 3:1
+          // against it (on surface-3/4 it would not, in dark) — the pill's
+          // own lift carries the checked hover instead.
+          own.disabled ? DISABLED : 'hover:bg-surface-3 data-checked:hover:bg-surface-2'
         )}
       >
         <KobalteSwitch.Thumb
@@ -114,7 +117,9 @@ export function Switch(props: SwitchProps): JSX.Element {
             // discrete jump — no slide transition) on the accent fill.
             'data-checked:justify-end',
             'data-checked:border-accent-strong data-checked:bg-accent-strong',
-            own.disabled ? undefined : 'hover:border-line-3'
+            own.disabled
+              ? undefined
+              : 'hover:border-line-3 data-checked:group-hover/switch:brightness-110'
           )}
         >
           <span data-fdt-switch-handle class="block size-2.5 rounded-full bg-surface-0" />

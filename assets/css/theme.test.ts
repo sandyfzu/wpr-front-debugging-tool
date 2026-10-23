@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -82,7 +82,13 @@ function paletteValues(name: string): PaletteValues {
 }
 
 const SURFACES = Array.from({ length: 5 }, (_, level) => `surface-${String(level)}`);
-/** The surface levels an `accent-strong` fill is laid on (page, card, injected panel). */
+/**
+ * The surface levels an `accent-strong` fill may sit on — at rest and in
+ * every hover/press state (a hover halo drawn under it included): page,
+ * card, injected panel. Levels 3–4 are the raised hover surfaces, where the
+ * dark fill cannot reach 3:1; the source scans below fail any hover
+ * background under an accent fill that leaves this set.
+ */
 const FILL_SURFACES = SURFACES.slice(0, 3);
 const STATUSES = ['ok', 'warn', 'error', 'info', 'neutral', 'attention'] as const;
 const SOFT_BACKGROUNDS = STATUSES.map((status) => `status-${status}-soft`);
@@ -231,52 +237,153 @@ describe('accent fill hover/press states', () => {
     momentary: boolean;
   }
 
-  // `color-mix(in srgb, var(--accent-strong) N%, var(--token))` — the injected
-  // stylesheets' hover fills (a plain per-channel mix of opaque colors).
-  const mixes: DerivedFill[] = [
+  /** The injected stylesheets that paint the accent fill. */
+  const SHEETS = [
     'entrypoints/exclusion-overlay.content/overlay.css',
     'entrypoints/isolated.content/side-by-side/side-by-side.css'
-  ].flatMap((file) =>
-    [
-      ...read(`../../${file}`).matchAll(
-        /color-mix\(in srgb, var\(--accent-strong\) (\d+)%, var\(--([\w-]+)\)\)/g
-      )
-    ].map(([source, percent, other]) => ({
-      name: `${file}: ${source}`,
-      momentary: false,
-      color: (palette: 'dark' | 'light'): string => {
-        const weight = Number(percent) / 100;
-        const accent = channelsOf(paletteValues('accent-strong')[palette]);
-        const mixed = channelsOf(paletteValues(other ?? '')[palette]);
-        return toHex(
-          accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
-        );
+  ];
+
+  /** The one `color-mix()` form the derivation models: a per-channel sRGB mix of two opaque tokens. */
+  const MIX = /^color-mix\(in srgb, var\(--accent-strong\) (\d+)%, var\(--([\w-]+)\)\)$/;
+
+  /**
+   * Every `color-mix(…)` call in a stylesheet, parentheses balanced.
+   *
+   * @param source The stylesheet text.
+   * @returns The calls, verbatim.
+   */
+  function colorMixCalls(source: string): string[] {
+    const calls: string[] = [];
+    for (let start = source.indexOf('color-mix('); start >= 0;) {
+      let depth = 0;
+      let end = start;
+      for (; end < source.length; end += 1) {
+        if (source[end] === '(') depth += 1;
+        else if (source[end] === ')' && --depth === 0) break;
       }
-    }))
+      calls.push(source.slice(start, end + 1));
+      start = source.indexOf('color-mix(', end);
+    }
+    return calls;
+  }
+
+  /** Accent mixes in a form the derivation cannot model — each must fail loudly. */
+  const unmodeledMixes: string[] = [];
+
+  // The injected stylesheets' hover fills mixed from the accent.
+  const mixes: DerivedFill[] = SHEETS.flatMap((file) =>
+    colorMixCalls(read(`../../${file}`))
+      .filter((call) => call.includes('accent-strong'))
+      .flatMap((call) => {
+        const [, percent, other] = MIX.exec(call) ?? [];
+        if (percent === undefined || other === undefined) {
+          unmodeledMixes.push(`${file}: ${call}`);
+          return [];
+        }
+        return [
+          {
+            name: `${file}: ${call}`,
+            momentary: false,
+            color: (palette: 'dark' | 'light'): string => {
+              const weight = Number(percent) / 100;
+              const accent = channelsOf(paletteValues('accent-strong')[palette]);
+              const mixed = channelsOf(paletteValues(other)[palette]);
+              return toHex(
+                accent.map((value, index) => value * weight + (mixed[index] ?? 0) * (1 - weight))
+              );
+            }
+          }
+        ];
+      })
   );
 
-  // `brightness-N` utilities in the primitives that paint `bg-accent-strong`
-  // (hover lift / press): CSS `brightness()` scales each sRGB channel, clamped.
-  const brightened: DerivedFill[] = ['button.tsx', 'filter-bar.tsx'].flatMap((file) => {
-    const source = read(`../../components/ui/${file}`);
-    expect(source, `${file} paints the accent fill`).toContain('bg-accent-strong');
-    return [...source.matchAll(/(hover|active):brightness-(\d+)/g)].map(
-      ([utility, state, percent]) => ({
-        name: `${file}: ${utility}`,
-        momentary: state === 'active',
-        color: (palette: 'dark' | 'light'): string =>
-          toHex(
-            channelsOf(paletteValues('accent-strong')[palette]).map(
-              (value) => (value * Number(percent)) / 100
-            )
-          )
-      })
-    );
-  });
+  /** The `components/ui` primitives that paint the accent fill (found, never listed). */
+  const primitiveDir = '../../components/ui';
+  const accentPrimitives = readdirSync(join(dirname(fileURLToPath(import.meta.url)), primitiveDir))
+    .filter((file) => file.endsWith('.tsx') && !file.includes('.test.'))
+    .filter((file) => read(`${primitiveDir}/${file}`).includes('bg-accent-strong'));
 
-  it('finds the derived fills it gates', () => {
+  /** Variants that scope a utility to the accent ("on") state of its control. */
+  const ACCENT_STATE =
+    /^(data-checked|data-selected|data-pressed|aria-checked|aria-pressed|aria-selected|aria-expanded)$/;
+
+  /** Fill-changing pointer-state utilities the primitives' classification left unmodeled. */
+  const unmodeledUtilities: string[] = [];
+
+  /** Hover backgrounds scoped to the accent state, i.e. drawn under or around the fill. */
+  const accentStateHovers: { name: string; surface: string }[] = [];
+
+  // Every pointer-state (`hover`, `active`, `group-hover…`) utility that changes
+  // a fill in those files: a `brightness-N` derives the accent (CSS
+  // `brightness()` scales each sRGB channel, clamped); a surface background
+  // is neutral unless an accent-state variant scopes it under the fill;
+  // anything else is unmodeled and fails.
+  const brightened: DerivedFill[] = accentPrimitives.flatMap((file) =>
+    read(`${primitiveDir}/${file}`)
+      .split(/[\s'"`]+/)
+      .flatMap((token) => {
+        const parts = token.split(':');
+        const utility = parts.pop() ?? '';
+        const variants = parts;
+        const pointer = variants.some((variant) =>
+          /^(hover|active|group-hover|peer-hover)\b/.test(variant)
+        );
+        if (
+          !pointer ||
+          !/^(bg-|brightness-|contrast-|saturate-|opacity-|invert|grayscale|sepia|hue-rotate-)/.test(
+            utility
+          )
+        )
+          return [];
+        const name = `${file}: ${token}`;
+        const percent = /^brightness-(\d+)$/.exec(utility)?.[1];
+        if (percent !== undefined) {
+          return [
+            {
+              name,
+              momentary: variants.includes('active'),
+              color: (palette: 'dark' | 'light'): string =>
+                toHex(
+                  channelsOf(paletteValues('accent-strong')[palette]).map(
+                    (value) => (value * Number(percent)) / 100
+                  )
+                )
+            }
+          ];
+        }
+        const surface = /^bg-(surface-\d)$/.exec(utility)?.[1];
+        if (surface === undefined) unmodeledUtilities.push(name);
+        else if (variants.some((variant) => ACCENT_STATE.test(variant)))
+          accentStateHovers.push({ name, surface });
+        return [];
+      })
+  );
+
+  it('finds the derived fills it gates, and models every accent-derived form it meets', () => {
     expect(mixes.length).toBeGreaterThanOrEqual(2);
     expect(brightened.length).toBeGreaterThanOrEqual(3);
+    expect(accentPrimitives).toEqual(
+      expect.arrayContaining(['button.tsx', 'filter-bar.tsx', 'choice-group.tsx'])
+    );
+    expect(unmodeledMixes, 'accent color-mix() forms the derivation cannot read').toEqual([]);
+    expect(unmodeledUtilities, 'fill-changing pointer utilities with no model').toEqual([]);
+  });
+
+  it('draws a hover background under an accent fill only on a gated surface', () => {
+    expect(accentStateHovers.length).toBeGreaterThan(0);
+    const failures: string[] = [];
+    for (const { name, surface } of accentStateHovers) {
+      if (!FILL_SURFACES.includes(surface))
+        failures.push(`${name}: ${surface} is not a fill surface`);
+      for (const palette of ['dark', 'light'] as const) {
+        const edge = contrastRatio(
+          paletteValues('accent-strong')[palette],
+          paletteValues(surface)[palette]
+        );
+        if (edge < 3) failures.push(`${palette}: ${name} = ${edge.toFixed(2)}`);
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   it('keeps on-accent text at 4.5:1 and a hover fill at 3:1 on its surfaces, both palettes', () => {
