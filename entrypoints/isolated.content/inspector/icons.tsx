@@ -5,11 +5,11 @@
  * (an icon runtime is not justified inside this bundle's budget).
  *
  * The set is the strip brief's glyph family: one glyph per group (Tools
- * lands with the tool phases and is declared against that landing now) plus
- * the pill's presence marker pair.
+ * lands with the tool phases and is declared against that landing now), the
+ * Exclusion Builder modifier pair and the pill's presence marker.
  */
 
-import type { HudGroupId } from '../../../lib/detection/hud';
+import type { BuilderBadgeKind, HudGroupId } from '../../../lib/detection/hud';
 import type { IconCircle, IconEllipse } from '../ui/icons';
 
 /** One glyph's stroke geometry exactly as the factory consumes it. */
@@ -89,6 +89,22 @@ export const TOOLS_GROUP_ICON: StripIconGlyph = {
   paths: [
     'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z'
   ]
+};
+
+/** Builder modifier glyph: turned off in this tab (lucide `circle-off`). */
+export const BUILDER_OFF_ICON: StripIconGlyph = {
+  paths: ['m2 2 20 20', 'M8.35 2.69A10 10 0 0 1 21.3 15.65', 'M19.08 19.08A10 10 0 1 1 4.92 4.92']
+};
+
+/** Builder modifier glyph: rows excluded (lucide `list-x`). */
+export const BUILDER_EXCLUDED_ICON: StripIconGlyph = {
+  paths: ['M16 5H3', 'M11 12H3', 'M16 19H3', 'm15.5 9.5 5 5', 'm20.5 9.5-5 5']
+};
+
+/** Each builder modifier kind's glyph (the panel badge's icon pair). */
+export const BUILDER_ICONS: Readonly<Record<BuilderBadgeKind, StripIconGlyph>> = {
+  off: BUILDER_OFF_ICON,
+  excluded: BUILDER_EXCLUDED_ICON
 };
 
 /**

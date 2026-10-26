@@ -121,6 +121,11 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* The scroll region's ring sits inside it (the card clips its overflow). */
+.ins-card-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 
 /* The status chip: mono, tabular, mood-tinted; pending pulses. */
 .ins-cache {
@@ -457,6 +462,92 @@
   color: var(--status-info);
   font: 500 10px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* The Exclusion Builder modifier on a row: the badge (icon + short words,
+ * the informational pair — never colour alone) beside the chips, and the
+ * full sentence on its own line below them, wrapping inside the card. The
+ * sentence is neutral secondary text: a statement, not a link. */
+.ins-mod {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--status-info-soft);
+  color: var(--status-info);
+  font: 500 10px/1 var(--font-mono);
+  white-space: nowrap;
+}
+.ins-mod-icon {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+}
+.ins-mod-icon svg {
+  width: 10px;
+  height: 10px;
+}
+.ins-mod-line {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 0 2px 2px;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The tab-level builder line: a quiet raised note above the groups (title,
+ * then the hints). Each hint wraps whole when it can; the joiner dot sits
+ * in the inline-start gutter the hints' box clips, so it shows between
+ * hints on a line and never at a line start (drawn with empty alt text:
+ * never spoken). */
+.ins-builder {
+  /* The joiner glyph: the view sets the shared one inline; declared here so
+   * the injected chain defines every property it consumes (none: no dot). */
+  --ins-joiner: none;
+  position: relative;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--surface-3);
+}
+.ins-builder-shown {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ins-builder p {
+  margin: 0;
+}
+.ins-builder-title {
+  font: 600 11px/1.4 var(--font-mono);
+  color: var(--fg-primary);
+}
+.ins-builder-hints {
+  overflow: hidden;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--fg-secondary);
+}
+.ins-builder-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -14px;
+}
+.ins-builder-hint {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 14px;
+  overflow-wrap: anywhere;
+}
+.ins-builder-hint::before {
+  position: absolute;
+  left: -10px;
+  content: var(--ins-joiner);
+  color: var(--fg-muted);
 }
 
 /* The pending/failed body copies (the KC state-lines pattern). */

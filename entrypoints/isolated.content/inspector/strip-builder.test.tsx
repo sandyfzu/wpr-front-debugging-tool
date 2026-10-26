@@ -1,0 +1,312 @@
+/**
+ * The Exclusion Builder on the on-page strip: each changed row's modifier
+ * (badge + visible sentence, the panel card's words) and the tab-level
+ * "Exclusion Builder rewrote this page" line — none, one, many, excluded
+ * only, and a fact on a row WP Rocket did not serve — over the real engine,
+ * in the model and in the rendered card.
+ */
+import { cleanup, render } from '@solidjs/testing-library';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  builderModifierCopy,
+  builderTabLine,
+  hudFeatureOf,
+  type HudFeature
+} from '../../../lib/detection/hud';
+import { runDetection } from '../../../lib/detection/run-detection';
+import { cacheStateForPage } from '../../../lib/detection/cache-context';
+import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
+import type { FeatureMetaRow } from '../../../lib/wp-rocket/types';
+import {
+  buildStripCardModel,
+  INSPECTOR_BUILDER_LINE_ID,
+  type StripCardModel,
+  type StripCardRow
+} from './strip-state';
+import { InspectorView } from './ui';
+
+afterEach(cleanup);
+
+/** The generator meta declaring Delay/Defer/LazyLoad as served. */
+const DECLARING_GENERATOR =
+  '<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_lazyload_images">';
+
+/** The owner's example line, word for word. */
+const MANY_LINE =
+  'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded';
+
+/**
+ * The strip's card model for a WP Rocket page with an optional builder marker.
+ *
+ * @param marker The marker content, or null for none.
+ * @param generator The generator meta (default: declares Delay/Defer/LazyLoad).
+ */
+function model(marker: string | null, generator = DECLARING_GENERATOR): StripCardModel {
+  const note =
+    marker === null ? '' : `<meta name="${BUILDER_MARKER_META_NAME}" content="${marker}">`;
+  const html = `<!doctype html><html><head>${generator}${note}</head><body><img src="p.gif" data-lazy-src="r.jpg"></body></html>`;
+  const { detections } = runDetection(html);
+  return buildStripCardModel({
+    snapshot: {
+      phase: 'ready',
+      detections,
+      cacheState: cacheStateForPage({ wpr: detections.wpr, headers: null, bypassAttested: false })
+    },
+    wordpressVersion: null,
+    fdtVersion: '0.0.0'
+  });
+}
+
+/** One row of a model, failing loudly when missing. */
+function row(card: StripCardModel, id: FeatureMetaRow): StripCardRow {
+  const found = card.groups.flatMap((group) => group.rows).find((entry) => entry.id === id);
+  if (found === undefined) throw new Error(`no row ${id}`);
+  return found;
+}
+
+/** A registry row, failing loudly if the registry lost it. */
+function feature(id: string): HudFeature {
+  const found = hudFeatureOf(id);
+  if (found === undefined) throw new Error(`no HUD row ${id}`);
+  return found;
+}
+
+/** Render the open card for a model; returns the shadow-free root. */
+function renderCard(card: StripCardModel): HTMLElement {
+  const noop = (): void => undefined;
+  const { container } = render(() => (
+    <InspectorView
+      model={() => card}
+      mood={() => 'green'}
+      cardOpen={() => true}
+      actions={{
+        registerCard: noop,
+        registerPill: noop,
+        registerChrome: noop,
+        openCard: noop,
+        closeCard: noop
+      }}
+    />
+  ));
+  return container;
+}
+
+/**
+ * The text assistive tech reads: text content minus every `aria-hidden`
+ * subtree (CSS-drawn glyphs are never in it).
+ */
+function spokenText(node: Node): string {
+  if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') return '';
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  return Array.from(node.childNodes, spokenText).join('');
+}
+
+/** The visible text: every text node outside the visually hidden spans. */
+function visibleText(node: Node): string {
+  if (node instanceof Element && node.classList.contains('ins-sr')) return '';
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  return Array.from(node.childNodes, visibleText).join('');
+}
+
+describe('the strip model — tab-level line', () => {
+  it('none: a page without a fact has no line and no row modifier', () => {
+    const card = model(null);
+    expect(card.builderLine).toBeNull();
+    for (const entry of card.groups.flatMap((group) => group.rows)) {
+      expect(entry.modifier, entry.id).toBeNull();
+    }
+  });
+
+  it('one: names the one feature turned off', () => {
+    const card = model('v1 delay_js=off');
+    expect(card.builderLine?.hints).toEqual(['Delay JS off']);
+    expect(card.builderLine?.text).toBe('Exclusion Builder rewrote this page — Delay JS off');
+  });
+
+  it('many: the owner’s line, in registry order, the panel’s shared copy', () => {
+    const card = model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3');
+    expect(card.builderLine?.text).toBe(MANY_LINE);
+    expect(card.builderLine?.hints).toEqual([
+      'Delay JS off',
+      'Defer JS off on this page',
+      'Lazyload Images: 3 excluded'
+    ]);
+  });
+
+  it('excluded only: the line names the count, nothing is called off', () => {
+    const card = model('v1 lazyload=excluded:1');
+    expect(card.builderLine?.text).toBe(
+      'Exclusion Builder rewrote this page — Lazyload Images: 1 excluded'
+    );
+  });
+
+  it('is absent while the pass runs or failed', () => {
+    for (const phase of ['running', 'failed'] as const) {
+      const card = buildStripCardModel({
+        snapshot: { phase, detections: null, cacheState: null },
+        wordpressVersion: null,
+        fdtVersion: '0.0.0'
+      });
+      expect(card.builderLine, phase).toBeNull();
+    }
+  });
+
+  it('is the shared builderTabLine, never a second composition', () => {
+    const html = `<html><head>${DECLARING_GENERATOR}<meta name="${BUILDER_MARKER_META_NAME}" content="v1 delay_js=off lazyload=excluded:2"></head><body></body></html>`;
+    const { detections } = runDetection(html);
+    const card = buildStripCardModel({
+      snapshot: { phase: 'ready', detections, cacheState: null },
+      wordpressVersion: null,
+      fdtVersion: '0.0.0'
+    });
+    expect(card.builderLine).toEqual(builderTabLine(detections));
+  });
+});
+
+describe('the strip model — row modifiers', () => {
+  it('off: the served chip stays, its count gives way to the modifier', () => {
+    const delay = row(model('v1 delay_js=off'), 'delay_js');
+    expect(delay.chipState).toBe('ok');
+    expect(delay.modifier).toEqual({
+      kind: 'off',
+      chip: 'Disabled in this tab',
+      sentence: 'Disabled in this tab by the Exclusion Builder.'
+    });
+    // The count measures the rewritten page; the modifier replaces it.
+    expect(delay.count).toBeNull();
+    expect(delay.unit).toBeNull();
+    expect(delay.tooltip).toBe(
+      'Delay JavaScript execution — served by WP Rocket; disabled in this tab by the Exclusion Builder. ' +
+        "Decided by WP Rocket's generator meta tag on this page."
+    );
+  });
+
+  it('page-off: Defer’s own words', () => {
+    const defer = row(model('v1 defer_all_js=page-off'), 'defer_all_js');
+    expect(defer.chipState).toBe('ok');
+    expect(defer.modifier).toEqual({
+      kind: 'off',
+      chip: 'Off on this page',
+      sentence: 'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.'
+    });
+    expect(defer.count).toBeNull();
+  });
+
+  it('excluded: the feature still runs — its count stays beside the modifier', () => {
+    const lazy = row(model('v1 lazyload=excluded:3'), 'lazyload');
+    expect(lazy.chipState).toBe('ok');
+    expect(lazy.modifier).toEqual({
+      kind: 'excluded',
+      chip: '3 excluded',
+      sentence: '3 images excluded by the Exclusion Builder.'
+    });
+    expect(lazy.count).toBe(1);
+    expect(lazy.unit).toBe('image');
+    expect(row(model('v1 lazyload=excluded:1'), 'lazyload').modifier?.sentence).toBe(
+      '1 image excluded by the Exclusion Builder.'
+    );
+  });
+
+  it('words equal the panel card’s (one shared copy)', () => {
+    const card = model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3');
+    const facts = [
+      ['delay_js', { off: 'feature' }],
+      ['defer_all_js', { off: 'page' }],
+      ['lazyload', { excluded: 3 }]
+    ] as const;
+    for (const [id, fact] of facts) {
+      const copy = builderModifierCopy(feature(id), fact);
+      expect(row(card, id).modifier, id).toMatchObject({
+        chip: copy.chip,
+        sentence: copy.sentence
+      });
+    }
+  });
+
+  it('a fact on a row WP Rocket did not serve: the modifier alone, never "served"', () => {
+    const generator =
+      '<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_lazyload_images">';
+    const delay = row(model('v1 delay_js=off', generator), 'delay_js');
+    expect(delay.chipState).toBe('neutral');
+    expect(delay.modifier?.sentence).toBe('Disabled in this tab by the Exclusion Builder.');
+    expect(delay.tooltip).toMatch(/^Delay JavaScript execution — disabled in this tab/);
+    expect(delay.tooltip).not.toMatch(/served/i);
+  });
+});
+
+describe('the rendered card', () => {
+  it('shows the tab-level line as visible text, spoken with commas, never the dot', () => {
+    const root = renderCard(model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3'));
+    const line = root.querySelector<HTMLElement>('[data-fdt-strip-builder]');
+    expect(line).not.toBeNull();
+    expect(line?.querySelector('.ins-builder-title')?.textContent).toBe(
+      'Exclusion Builder rewrote this page'
+    );
+    const hints = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-fdt-strip-builder-hint]'),
+      visibleText
+    );
+    expect(hints).toEqual([
+      'Delay JS off',
+      'Defer JS off on this page',
+      'Lazyload Images: 3 excluded'
+    ]);
+    // The dot is CSS-drawn with empty alt text: never in the DOM text.
+    expect(line?.textContent).not.toContain('·');
+    // Spoken once, as one sentence (the laid-out pieces are hidden from
+    // assistive tech): commas where the eye sees the dot.
+    const sentence =
+      'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded';
+    expect(spokenText(line as HTMLElement)).toBe(sentence);
+    expect(root.querySelector(`#${INSPECTOR_BUILDER_LINE_ID}`)?.textContent).toBe(sentence);
+    // The joiner glyph rides the shared CSS content value.
+    expect(line?.style.getPropertyValue('--ins-joiner')).toBe(`'·' / ''`);
+    // Opening the card announces the line: it is the dialog's description.
+    expect(root.querySelector('[role="dialog"]')?.getAttribute('aria-describedby')).toBe(
+      INSPECTOR_BUILDER_LINE_ID
+    );
+  });
+
+  it('renders each modifier as a hidden badge plus a visible sentence, spoken once', () => {
+    const root = renderCard(model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3'));
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('.ins-row')).filter(
+      (entry) => entry.querySelector('[data-fdt-strip-modifier]') !== null
+    );
+    expect(rows).toHaveLength(3);
+    const expected = [
+      ['off', 'Disabled in this tab', 'Disabled in this tab by the Exclusion Builder.'],
+      [
+        'off',
+        'Off on this page',
+        'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.'
+      ],
+      ['excluded', '3 excluded', '3 images excluded by the Exclusion Builder.']
+    ] as const;
+    rows.forEach((entry, index) => {
+      const [kind, chip, sentence] = expected[index] ?? ['', '', ''];
+      const badge = entry.querySelector<HTMLElement>('[data-fdt-strip-modifier]');
+      expect(badge?.dataset['fdtStripModifier']).toBe(kind);
+      expect(badge?.getAttribute('aria-hidden')).toBe('true');
+      expect(badge?.hasAttribute('title')).toBe(false);
+      expect(badge?.textContent).toBe(chip);
+      // Not colour alone: every badge carries its kind's icon.
+      expect(badge?.querySelectorAll('svg')).toHaveLength(1);
+      const line = entry.querySelector<HTMLElement>('[data-fdt-strip-modifier-line]');
+      expect(line && visibleText(line)).toBe(sentence);
+      const spoken = spokenText(entry);
+      expect(spoken.split(sentence)).toHaveLength(2);
+    });
+    // Off rows show no count; the excluded row keeps its value chip.
+    const values = rows.map((entry) => entry.querySelector('.ins-value')?.textContent ?? null);
+    expect(values).toEqual([null, null, '1 image']);
+  });
+
+  it('a page without a fact renders no line, no modifier and no description', () => {
+    const root = renderCard(model(null));
+    expect(root.querySelector('[data-fdt-strip-builder]')).toBeNull();
+    expect(root.querySelector('[data-fdt-strip-modifier]')).toBeNull();
+    expect(root.querySelector('[data-fdt-strip-modifier-line]')).toBeNull();
+    expect(root.textContent).not.toContain('Exclusion Builder');
+    expect(root.querySelector('[role="dialog"]')?.hasAttribute('aria-describedby')).toBe(false);
+  });
+});

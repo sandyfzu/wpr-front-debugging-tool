@@ -15,6 +15,10 @@
  *   plugin's compact wording, the tooltip the full name, state, evidence
  *   source and why — the same names and readings the panel cards and the
  *   support report carry.
+ * - The Exclusion Builder's facts (the marker its rewrite left in the
+ *   displayed document) ride in-band: a per-row modifier and the tab-level
+ *   "rewrote this page" line, from the panel's shared copy and its one
+ *   "off in this tab" rule — gone once a reload serves an unmarked page.
  * - The card model (identity, cache chip, grouped rows, footer) is one pure
  *   builder the view renders verbatim; every unsure state explains itself in
  *   its tooltip copy and no chip claims more certainty than the scan has.
@@ -25,15 +29,22 @@ import { describeDetections } from '../../../lib/detection/describe';
 import { cacheCopy } from '../../../lib/detection/cache-context';
 import type { CacheState } from '../../../lib/detection/cache-context';
 import {
+  builderBadgeKind,
+  builderModifierCopy,
+  builderTabLine,
+  builderTurnsOff,
   hudGroupedFeatures,
   hudStateLine,
   readHudFeature,
   SOURCE_COPY,
+  type BuilderBadgeKind,
+  type BuilderTabLine,
   type HudFeature,
   type HudGroupId,
   type HudReading,
   type HudVerdict
 } from '../../../lib/detection/hud';
+import type { BuilderFact } from '../../../lib/wp-rocket/types';
 import { countNoun } from '../../../utils/format-count';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
 import { GROUP_ICONS, type StripIconGlyph } from './icons';
@@ -84,6 +95,19 @@ export interface StripCardRow {
   unit: string | null;
   /** The row's full name + state line + evidence source (the chip's title tooltip). */
   tooltip: string;
+  /** The Exclusion Builder's modifier on this feature in this tab, or null. */
+  modifier: StripRowModifier | null;
+}
+
+/**
+ * One row's Exclusion Builder modifier: the badge (icon kind + short text,
+ * the at-a-glance cue) and the full sentence the row shows as visible text —
+ * the panel card's words, from the one shared copy.
+ */
+export interface StripRowModifier {
+  kind: BuilderBadgeKind;
+  chip: string;
+  sentence: string;
 }
 
 /** One rendered group heading + its rows. */
@@ -104,6 +128,11 @@ export interface StripCardModel {
   cacheChip: StripCacheChip | null;
   /** The grouped rows (ready phase only). */
   groups: readonly StripCardGroup[];
+  /**
+   * The tab-level "Exclusion Builder rewrote this page" line (ready phase
+   * only), or null when the displayed document states no builder fact.
+   */
+  builderLine: BuilderTabLine | null;
   /** The body's state copy while the pass is pending or failed. */
   stateCopy: { title: string; hint: string } | null;
   /** The footer stamp (`WPR x · WP y · FDT z`). */
@@ -170,6 +199,42 @@ export function chipStateForFeature(verdict: HudVerdict): StripChipState {
 function rowTooltip(feature: HudFeature, reading: HudReading): string {
   const line = `${feature.label} — ${hudStateLine(feature, reading)}`;
   return reading.source === null ? line : `${line} ${SOURCE_COPY[reading.source].tooltip}`;
+}
+
+/**
+ * A row's Exclusion Builder modifier from the shared copy (the panel card's
+ * badge words and sentence).
+ *
+ * @param feature The HUD row.
+ * @param fact The fact the displayed document's builder marker states.
+ */
+export function stripRowModifier(feature: HudFeature, fact: BuilderFact): StripRowModifier {
+  const copy = builderModifierCopy(feature, fact);
+  return { kind: builderBadgeKind(fact), chip: copy.chip, sentence: copy.sentence };
+}
+
+/**
+ * One card row from a feature's reading. The chip keeps the served verdict
+ * (the builder fact is a modifier on top, never a verdict flip); a feature
+ * the builder turned off in this tab drops its count, which measures the
+ * rewritten page ("0 scripts") and would contradict the served chip — the
+ * modifier replaces it, as in the state line.
+ *
+ * @param feature The HUD row.
+ * @param reading The row's reading.
+ */
+export function stripRow(feature: HudFeature, reading: HudReading): StripCardRow {
+  const count = builderTurnsOff(reading.builder) ? null : reading.count;
+  return {
+    id: feature.row,
+    label: feature.shortLabel,
+    chipState: chipStateForFeature(reading.verdict),
+    count,
+    // The noun form for this count (singular for one).
+    unit: feature.unit === null || count === null ? null : countNoun(count, feature.unit),
+    tooltip: rowTooltip(feature, reading),
+    modifier: reading.builder === undefined ? null : stripRowModifier(feature, reading.builder)
+  };
 }
 
 /**
@@ -279,21 +344,9 @@ export function buildStripCardModel(input: {
           id: group.id,
           heading: group.heading,
           icon: GROUP_ICONS[group.id],
-          rows: group.features.map((feature) => {
-            const reading = readHudFeature(feature, report, detections);
-            return {
-              id: feature.row,
-              label: feature.shortLabel,
-              chipState: chipStateForFeature(reading.verdict),
-              count: reading.count,
-              // The noun form for this count (singular for one).
-              unit:
-                feature.unit === null || reading.count === null
-                  ? null
-                  : countNoun(reading.count, feature.unit),
-              tooltip: rowTooltip(feature, reading)
-            };
-          })
+          rows: group.features.map((feature) =>
+            stripRow(feature, readHudFeature(feature, report, detections))
+          )
         }));
 
   const stateCopy =
@@ -308,6 +361,7 @@ export function buildStripCardModel(input: {
     identity: identityText(snapshot),
     cacheChip: cacheChip(snapshot),
     groups,
+    builderLine: report === null || detections === null ? null : builderTabLine(detections),
     stateCopy,
     footer,
     cacheTooltip: cacheTooltip(snapshot)
@@ -322,6 +376,12 @@ export const INSPECTOR_UI_NAME = 'wpr-fdt-inspector';
 
 /** The report card's in-shadow-root element id (the pill's aria-controls). */
 export const INSPECTOR_CARD_ID = `${INSPECTOR_UI_NAME}-card`;
+
+/**
+ * The tab-level builder line's in-shadow-root element id: the card dialog's
+ * description, so opening the card (pointer or keyboard) announces it.
+ */
+export const INSPECTOR_BUILDER_LINE_ID = `${INSPECTOR_UI_NAME}-builder`;
 
 /** The card's accessible name. */
 export const CARD_ARIA_LABEL = 'WP Rocket page analysis';
