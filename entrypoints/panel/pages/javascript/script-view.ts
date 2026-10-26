@@ -14,7 +14,7 @@ import type {
   ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
-import { buildFilterChips, type CountNoun } from '../../../../lib/panel/list-behavior';
+import { buildFilterChips } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { formatCount } from '../../../../utils/format-count';
 
@@ -274,12 +274,6 @@ export const JS_VIEW_RESOURCES: ResourcePageDefinition<ScriptRowView, JsFilterId
   ),
   searchField: (view) => JS_PAGE_RESOURCES.searchField(view.row)
 };
-
-/**
- * The JavaScript page's rows' noun (its count-phrasing vocabulary, shared
- * phrasing rules live in `lib/panel/list-behavior`).
- */
-export const SCRIPTS_NOUN: CountNoun = { one: 'script', other: 'scripts' };
 
 /**
  * The chip bar's data. A chip with nothing to select is disabled (no

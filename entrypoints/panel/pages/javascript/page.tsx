@@ -63,11 +63,11 @@ import {
   buildChips,
   estimateRowSize,
   pruneRowFlags,
-  SCRIPTS_NOUN,
   toggleRowFlag,
   type ScriptRowView
 } from './script-view';
 import { contentCaptures, scriptListCut } from './capture-bounds';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { reconcileRowViews } from './script-identity';
 
 /**
@@ -160,7 +160,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const { text: announcement, live } = createResultsAnnouncement({
     rows: views,
     visible: filtered,
-    noun: SCRIPTS_NOUN,
+    noun: SCRIPT_NOUN,
     actions: [selected, () => query()]
   });
   const selectedLabel = (): string | undefined =>
@@ -361,7 +361,7 @@ function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
         )}
       </Show>
       <span data-fdt="script-total" class="ms-auto ps-2 text-fg-secondary tabular-nums">
-        {countLabel(props.total, SCRIPTS_NOUN, props.partial)}
+        {countLabel(props.total, SCRIPT_NOUN, props.partial)}
       </span>
     </div>
   );

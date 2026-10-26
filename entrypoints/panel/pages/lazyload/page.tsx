@@ -44,6 +44,7 @@ import {
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
+import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
 import { ResourceLink } from '../resource-list/resource-link';
 import { urlClipped } from '../resource-list/resource-list-view';
 import {
@@ -100,7 +101,7 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       notes={notesFor(lazyload())}
       featureLabel={getRealOptionName('lazyload')}
       featurePresent={lazyload()?.present ?? false}
-      noun={{ one: 'image', other: 'images' }}
+      noun={IMAGE_NOUN}
       listLabel="Images"
       searchLabel="Search image URLs"
       searchPlaceholder="Search image URLs…"

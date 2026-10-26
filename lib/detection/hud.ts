@@ -25,6 +25,7 @@ import type {
 import type { FeatureState, PageAnalysisReport } from './describe';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
 import { countNoun, type CountNoun } from '../../utils/format-count';
+import { DOMAIN_NOUN, ELEMENT_NOUN, FONT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from './count-nouns';
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
@@ -88,13 +89,6 @@ export interface HudFeature {
   readonly undecided: string | null;
 }
 
-/** The HUD count nouns, each in its two count forms. */
-const SCRIPTS: CountNoun = { one: 'script', other: 'scripts' };
-const IMAGES: CountNoun = { one: 'image', other: 'images' };
-const ELEMENTS: CountNoun = { one: 'element', other: 'elements' };
-const FONTS: CountNoun = { one: 'font', other: 'fonts' };
-const DOMAINS: CountNoun = { one: 'domain', other: 'domains' };
-
 /**
  * The registry, in render order (groups first, then the plugin's own order
  * inside each settings page). One row per feature detection row — pinned
@@ -115,7 +109,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
     shortLabel: 'Delay JS',
     group: 'file-optimization',
-    unit: SCRIPTS,
+    unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
     undecided: null
   },
@@ -124,7 +118,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
     shortLabel: 'Defer JS',
     group: 'file-optimization',
-    unit: SCRIPTS,
+    unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],
     undecided: null
   },
@@ -160,7 +154,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_IMAGE_LAZYLOAD,
     shortLabel: 'Lazyload Images',
     group: 'media',
-    unit: IMAGES,
+    unit: IMAGE_NOUN,
     count: (report) => report[LABEL_IMAGE_LAZYLOAD]['lazy-loaded images'],
     undecided: null
   },
@@ -228,7 +222,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_OPTIMIZE_CRITICAL_IMAGES,
     shortLabel: 'Critical Images',
     group: 'features',
-    unit: IMAGES,
+    unit: IMAGE_NOUN,
     count: (report) => report[LABEL_OPTIMIZE_CRITICAL_IMAGES]['preloaded images'],
     undecided: null
   },
@@ -237,7 +231,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
     shortLabel: 'Automatic Lazy Rendering',
     group: 'features',
-    unit: ELEMENTS,
+    unit: ELEMENT_NOUN,
     count: (report) => report[LABEL_AUTOMATIC_LAZY_RENDERING]['converted elements'],
     undecided: null
   },
@@ -246,7 +240,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRELOAD_FONTS,
     shortLabel: 'Preload Fonts',
     group: 'features',
-    unit: FONTS,
+    unit: FONT_NOUN,
     count: (report) => report[LABEL_PRELOAD_FONTS]['preloaded fonts'],
     undecided: null
   },
@@ -255,7 +249,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
     shortLabel: 'Preconnect to External Domains',
     group: 'features',
-    unit: DOMAINS,
+    unit: DOMAIN_NOUN,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
     undecided: null
   }

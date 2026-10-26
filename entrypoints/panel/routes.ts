@@ -21,6 +21,7 @@ import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { listCapped, countLabel } from '../../lib/panel/list-behavior';
 import { formatCount } from '../../utils/format-count';
+import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
 
 /** Journey groups, in the order the nav renders them. */
 export const NAV_GROUPS = ['Overview', 'Inspect', 'Diagnose', 'Tools'] as const;
@@ -141,7 +142,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const count = images.length;
       const partial = listCapped(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
-        ? { text: countLabel(count, { one: 'image', other: 'images' }, partial), tone: 'info' }
+        ? { text: countLabel(count, IMAGE_NOUN, partial), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
     }
   },
