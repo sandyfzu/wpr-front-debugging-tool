@@ -4,7 +4,9 @@
  * generic composition seam a session backend (or a later tester mode)
  * plugs other operations into. `applyPipeline` is the engine's front door:
  * served html + exclusion set → rewritten html and a combined per-transform
- * report for UI/status consumption.
+ * report for UI/status consumption. After the feature steps, the final
+ * step (`markBuilderEffects`) leaves the builder marker stating what they
+ * changed.
  *
  * Consumers must bound the pipeline's wall time: rows are operator-provided
  * patterns, so a pathological one can run long — the engine stays pure and
@@ -17,6 +19,7 @@ import { deferJsTransform, deferJsTransformAfterInlinePass } from './defer-js';
 import { replayInlinePass, type InlinePassReplay } from './defer-inline-js';
 import { lazyloadTransform } from './lazyload';
 import { lazyRenderTransform } from './lazy-render';
+import { markBuilderEffects } from './builder-marker-write';
 import { ExclusionValidationError, type InvalidExclusionRow } from './errors';
 import { notStoredRows } from './field-text';
 import { prevalidateExclusionSet } from './validate';
@@ -132,8 +135,10 @@ export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
 ];
 
 /**
- * The exclusion pipeline's steps for one set, in execution order — what
- * {@link applyPipeline} composes. Exposed for consumers that must observe
+ * The exclusion pipeline's feature steps for one set, in execution order —
+ * what {@link applyPipeline} composes before its final marker step (no
+ * feature's work, so not one of these keyed, per-feature steps: a consumer
+ * runs `markBuilderEffects` over the last step's output and the reports). Exposed for consumers that must observe
  * the run step by step (e.g. to bound its wall time between steps and name
  * the feature that overran); they must check {@link pipelineSetProblems}
  * first, exactly as `applyPipeline` does, or a step throws its feature's
@@ -206,7 +211,8 @@ export function pipelineSetProblems(set: ExclusionSet): readonly InvalidExclusio
 /**
  * The exclusion pipeline: validate the whole set up front (every invalid
  * row named at once, before anything runs — {@link pipelineSetProblems}),
- * then apply the four transforms in their declared order.
+ * then apply the four transforms in their declared order, then the final
+ * step: the builder marker for what they changed (`markBuilderEffects`).
  *
  * Each transform rescans the (linear) document, so the whole pipeline stays
  * linear in the document size times the feature count; pattern compilation
@@ -223,5 +229,6 @@ export function applyPipeline(html: string, set: ExclusionSet): CompositionOutpu
   const problems = pipelineSetProblems(set);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
   const composed = composeSteps(html, exclusionPipelineSteps(set));
-  return { html: composed.html, reports: featureReports(composed.reports) };
+  const reports = featureReports(composed.reports);
+  return { html: markBuilderEffects(composed.html, reports), reports };
 }

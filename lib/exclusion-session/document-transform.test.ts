@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
+import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import {
   createInProcessTransformRunner,
   DOCUMENT_BODY_BYTE_LIMIT,
@@ -177,6 +178,44 @@ describe('createInProcessTransformRunner', () => {
     await expect(createInProcessTransformRunner()(request(DELAYED))).resolves.toMatchObject({
       ok: true
     });
+  });
+});
+
+describe('runDocumentPipeline: the builder marker step', () => {
+  const served = `<meta name="${BUILDER_MARKER_META_NAME}" content="v1 lazyload=excluded:9">`;
+  const page = `<html><head>${served}</head><body>${DELAYED}</body></html>`;
+  const ours = `<meta name="${BUILDER_MARKER_META_NAME}" content="v1 delay_js=excluded:1">`;
+
+  it('ends a run within budget with the marker for what the features changed', () => {
+    const result = runDocumentPipeline(request(page), clock(0));
+    expect(result.ok && result.html).toBe(
+      `<html><head>${ours}</head><body>${applyPipeline(DELAYED, DELAY_SET).html}</body></html>`
+    );
+  });
+
+  it('never runs on an over-budget document: its original bytes, served copy included, are served', async () => {
+    const encoder = new TextEncoder();
+    const overrun = createInProcessTransformRunner(clock(0, 10_000));
+    const rewrite = await rewriteDocument(
+      { body: encoder.encode(page), contentType: 'text/html' },
+      DELAY_SET,
+      overrun,
+      50
+    );
+    expect(rewrite.outcome.outcome).toBe('over-budget');
+    expect(rewrite.body).toBeNull();
+  });
+
+  it('serves the rewrite when only a served copy was removed (the document changed)', async () => {
+    const encoder = new TextEncoder();
+    const html = `<html><head>${served}</head><body><p>x</p></body></html>`;
+    const rewrite = await rewriteDocument(
+      { body: encoder.encode(html), contentType: 'text/html' },
+      DELAY_SET,
+      createInProcessTransformRunner(clock(0))
+    );
+    expect(rewrite.body).toEqual(encoder.encode('<html><head></head><body><p>x</p></body></html>'));
+    expect(rewrite).not.toHaveProperty('rulesOnly');
   });
 });
 

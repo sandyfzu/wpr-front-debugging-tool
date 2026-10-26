@@ -18,6 +18,14 @@ export const DATA_ROCKET_STATUS = 'data-rocket-status';
 /** Attribute marking resources excluded from local tooling processing. */
 export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
 
+/**
+ * `name` of the one `<meta>` the Exclusion Builder's rewrite adds to a
+ * document it changed, stating per feature what it turned off or excluded
+ * (content grammar: `lib/exclusion-builder/builder-marker`). This
+ * extension's own `wpr-fdt-` namespace — never WP Rocket's `generator` meta.
+ */
+export const BUILDER_MARKER_META_NAME = 'wpr-fdt-exclusion-builder';
+
 /** Attribute WP Rocket adds to scripts it defers. */
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
 

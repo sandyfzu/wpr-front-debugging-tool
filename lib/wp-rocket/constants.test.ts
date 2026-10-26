@@ -31,6 +31,7 @@ import {
   extractWprVersion,
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
+  BUILDER_MARKER_META_NAME,
   GENERATOR_META_SELECTOR,
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR,
@@ -290,6 +291,11 @@ describe('platforms and ids', () => {
     expect(isCacheBypassUrl(sandboxed('https://example.test/?a=1&nowprocket=1'))).toBe(true);
     expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocket[x]=1'))).toBe(true);
     expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocketx=1'))).toBe(false);
+  });
+
+  it("names the Exclusion Builder's document marker in this extension's namespace", () => {
+    expect(BUILDER_MARKER_META_NAME).toBe('wpr-fdt-exclusion-builder');
+    expect(GENERATOR_META_SELECTOR).not.toContain(BUILDER_MARKER_META_NAME);
   });
 
   it('single-sources the url patterns and search action ids', () => {
