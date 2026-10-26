@@ -16,7 +16,9 @@
  *   overlay's tab-scoped UA rules and their lifecycle,
  * - the exclusion-builder sessions (`./exclusion-sessions`) — the session
  *   channels, the interception backend (`./interception-backends`) and the
- *   session cleanup paths.
+ *   session cleanup paths,
+ * - the tab relay (`./tab-relay`) — tab asks forwarded for extension pages
+ *   without the `tabs` API.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -37,6 +39,7 @@ import {
   type DeviceSimSessions
 } from './device-simulation';
 import { initExclusionSessions } from './exclusion-sessions';
+import { registerTabRelay } from './tab-relay';
 
 const log = createLogger('background');
 
@@ -142,6 +145,14 @@ async function main(): Promise<void> {
   const badge = bootBadge();
   const simSessions = bootDeviceSimSessions();
   bootExclusionSessions();
+
+  try {
+    registerTabRelay();
+  } catch (cause) {
+    // Only contexts without the `tabs` API ask through the relay; they then
+    // see no receiver and their panel reports it.
+    log.error('Tab relay init failed — tab-less pages cannot reach tabs', cause);
+  }
 
   try {
     initHeaderCapture(badge, simSessions);

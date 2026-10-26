@@ -1,0 +1,196 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { Logger } from '../../lib/logger';
+import type { TabAsks } from '../../lib/messaging/tab-asks';
+
+const { onMessage } = vi.hoisted(() => ({ onMessage: vi.fn() }));
+vi.mock('../../lib/messaging', () => ({ onMessage }));
+
+const { answerTabRelay, isTabRelaySender, registerTabRelay } = await import('./tab-relay');
+type Deps = Parameters<typeof answerTabRelay>[2];
+
+const ID = 'own-extension-id';
+const ROOT = 'moz-extension://5f1d2c3b-aaaa-bbbb-cccc-123456789abc/';
+const PANEL = { id: ID, url: `${ROOT}panel.html` };
+const CHUNK = { snapshotId: '0123456789abcdef0123456789abcdef', scriptIndex: 0, offset: 65536 };
+
+/** A logger double (no console noise; calls assertable). */
+function logDouble() {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Logger;
+}
+
+/**
+ * Deps over a direct-transport double whose asks answer `answer`; `asks`
+ * overrides single asks, the rest of `overrides` whole deps.
+ */
+function deps(
+  overrides: Partial<Omit<Deps, 'asks' | 'log'>> = {},
+  answer: unknown = { data: 1 },
+  asks: Partial<TabAsks> = {}
+) {
+  const log = logDouble();
+  const tabAsks = {
+    processPageData: vi.fn(() => Promise.resolve(answer)),
+    getFdtData: vi.fn(() => Promise.resolve(answer)),
+    getScriptSourceChunk: vi.fn(() => Promise.resolve(answer)),
+    ...asks
+  };
+  const tabExists = vi.fn(() => Promise.resolve(true));
+  return {
+    extensionId: ID,
+    extensionRootUrl: ROOT,
+    tabExists,
+    asks: tabAsks,
+    log,
+    ...overrides
+  };
+}
+
+describe('isTabRelaySender — the sender gate', () => {
+  it('admits our own tab-less extension page (Firefox and Chromium URL shapes)', () => {
+    expect(isTabRelaySender(PANEL, ID, ROOT)).toBe(true);
+    expect(
+      isTabRelaySender(
+        { id: ID, url: 'chrome-extension://abcdefghijklmnop/panel.html' },
+        ID,
+        'chrome-extension://abcdefghijklmnop/'
+      )
+    ).toBe(true);
+  });
+
+  it('refuses a content-script sender (it carries a tab), even with our id and URL', () => {
+    expect(isTabRelaySender({ ...PANEL, tab: { id: 3 } }, ID, ROOT)).toBe(false);
+    expect(isTabRelaySender({ ...PANEL, tab: { id: 3 }, frameId: 0 }, ID, ROOT)).toBe(false);
+  });
+
+  it('refuses a foreign extension id', () => {
+    expect(isTabRelaySender({ ...PANEL, id: 'other-extension' }, ID, ROOT)).toBe(false);
+    expect(isTabRelaySender({ url: PANEL.url }, ID, ROOT)).toBe(false);
+  });
+
+  it('refuses a document outside our pages (foreign origin)', () => {
+    for (const url of [
+      'moz-extension://00000000-0000-0000-0000-000000000000/panel.html',
+      'chrome-extension://5f1d2c3b-aaaa-bbbb-cccc-123456789abc/panel.html',
+      'https://example.com/panel.html',
+      'about:blank',
+      'not a url',
+      undefined,
+      42
+    ]) {
+      expect(isTabRelaySender({ id: ID, url }, ID, ROOT), String(url)).toBe(false);
+    }
+  });
+
+  it('refuses everything when our own root URL is unusable', () => {
+    expect(isTabRelaySender(PANEL, ID, 'garbage')).toBe(false);
+    expect(isTabRelaySender({ id: ID, url: 'about:blank' }, ID, 'about:blank')).toBe(false);
+  });
+
+  it('refuses a missing sender', () => {
+    expect(isTabRelaySender(undefined, ID, ROOT)).toBe(false);
+  });
+});
+
+describe('answerTabRelay — the typed answers', () => {
+  it('forwards an allowed ask to the named tab and returns the answer', async () => {
+    const d = deps({}, { status: 'ok', text: 'x'.repeat(65536), total: 140_000 });
+    const reply = await answerTabRelay(
+      PANEL,
+      { tabId: 5, ask: 'getScriptSourceChunk', payload: CHUNK },
+      d
+    );
+    expect(reply).toEqual({
+      ok: true,
+      answer: { status: 'ok', text: 'x'.repeat(65536), total: 140_000 }
+    });
+    expect(d.tabExists).toHaveBeenCalledWith(5);
+    expect(d.asks.getScriptSourceChunk).toHaveBeenCalledWith(5, CHUNK);
+  });
+
+  it('refuses a foreign sender before reading the request or touching a tab', async () => {
+    const d = deps();
+    const reply = await answerTabRelay(
+      { tab: { id: 2 }, id: ID, url: 'https://site.test/' },
+      { tabId: 5, ask: 'getFdtData' },
+      d
+    );
+    expect(reply).toEqual({ ok: false, failure: 'refused' });
+    expect(d.tabExists).not.toHaveBeenCalled();
+    expect(d.asks.getFdtData).not.toHaveBeenCalled();
+    expect(d.log.warn).toHaveBeenCalledOnce();
+  });
+
+  it('answers invalid-request for a malformed request, never forwarding', async () => {
+    const d = deps();
+    for (const data of [
+      { tabId: 5, ask: 'getWprDetections' },
+      { tabId: -5, ask: 'getFdtData' },
+      { tabId: 5, ask: 'getFdtData', payload: 1 },
+      null
+    ]) {
+      expect(await answerTabRelay(PANEL, data, d)).toEqual({
+        ok: false,
+        failure: 'invalid-request'
+      });
+    }
+    expect(d.tabExists).not.toHaveBeenCalled();
+  });
+
+  it('answers tab-gone when no tab has the id', async () => {
+    const d = deps({ tabExists: vi.fn(() => Promise.resolve(false)) });
+    expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'getFdtData' }, d)).toEqual({
+      ok: false,
+      failure: 'tab-gone'
+    });
+    expect(d.asks.getFdtData).not.toHaveBeenCalled();
+  });
+
+  it('answers no-receiver for the transport’s expected misses', async () => {
+    for (const message of [
+      'No response',
+      'Could not establish connection. Receiving end does not exist.'
+    ]) {
+      const d = deps({}, undefined, {
+        getFdtData: vi.fn(() => Promise.reject(new Error(message)))
+      });
+      expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'getFdtData' }, d)).toEqual({
+        ok: false,
+        failure: 'no-receiver'
+      });
+      expect(d.log.warn).not.toHaveBeenCalled();
+    }
+  });
+
+  it('answers failed (and warns) for any other forward or probe failure', async () => {
+    const d = deps({}, undefined, {
+      processPageData: vi.fn(() => Promise.reject(new Error('boom')))
+    });
+    expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'processPageData' }, d)).toEqual({
+      ok: false,
+      failure: 'failed'
+    });
+    expect(d.log.warn).toHaveBeenCalledOnce();
+    const probe = deps({ tabExists: vi.fn(() => Promise.reject(new Error('probe'))) });
+    expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'getFdtData' }, probe)).toEqual({
+      ok: false,
+      failure: 'failed'
+    });
+  });
+});
+
+describe('registerTabRelay', () => {
+  it('registers the relayTabAsk channel, answering a typed reply (a page sender is refused)', async () => {
+    onMessage.mockClear();
+    registerTabRelay();
+    expect(onMessage).toHaveBeenCalledOnce();
+    const [channel, handler] = onMessage.mock.calls[0] as [
+      string,
+      (message: { sender: unknown; data: unknown }) => Promise<unknown>
+    ];
+    expect(channel).toBe('relayTabAsk');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await expect(
+      handler({ sender: { tab: { id: 1 } }, data: { tabId: 1, ask: 'getFdtData' } })
+    ).resolves.toEqual({ ok: false, failure: 'refused' });
+  });
+});

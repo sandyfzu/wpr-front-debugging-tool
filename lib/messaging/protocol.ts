@@ -19,7 +19,9 @@
  *   searches. The exclusion-session panel rows share the reason: the
  *   background has no runtime tab when it pushes to the panel, and the
  *   panel has none when it asks — both carry the inspected tab id, and the
- *   background answers the ask only for senders without a runtime tab.)
+ *   background answers the ask only for senders without a runtime tab. The
+ *   tab relay row `relayTabAsk` is the same case: it names the tab to
+ *   forward to, answered for those senders only.)
  * - Push channels are typed to return `true`: the typed acknowledgement
  *   forces every push handler to mark itself as handled on purpose (the
  *   library resolves the sender's promise with whatever the handler returns —
@@ -61,6 +63,7 @@ import type {
   SavedExclusionSetReply
 } from './exclusion-session';
 import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
+import type { TabRelayReply, TabRelayRequest } from './tab-relay';
 
 export interface ProtocolMap {
   /**
@@ -164,4 +167,12 @@ export interface ProtocolMap {
    * the same way.
    */
   exclusionOverlayPresented(data: ExclusionOverlayPresentation): true;
+  /**
+   * Panel/devtools page → background: forward one registry-listed tab ask
+   * (`./tab-relay`) for a context without the `tabs` API. Carries the
+   * target tab id (the asking page has no runtime tab — see the tabId
+   * rule's exceptions); answered only for this extension's tab-less pages,
+   * every failure as a typed reply.
+   */
+  relayTabAsk(data: TabRelayRequest): TabRelayReply;
 }
