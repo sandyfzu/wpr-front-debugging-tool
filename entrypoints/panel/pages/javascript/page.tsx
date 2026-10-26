@@ -35,6 +35,7 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   buildScriptRows,
@@ -67,7 +68,6 @@ import {
   type ScriptRowView
 } from './script-view';
 import { contentCaptures, scriptListCut } from './capture-bounds';
-import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { reconcileRowViews } from './script-identity';
 
 /**

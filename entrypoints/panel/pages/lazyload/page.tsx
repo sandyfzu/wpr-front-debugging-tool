@@ -34,6 +34,7 @@ import { Badge } from '../../../../components/ui/badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
@@ -44,7 +45,6 @@ import {
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
 import { useFdtData } from '../../state/use-fdt-data';
 import { ResourceListPage } from '../resource-list/resource-list';
-import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
 import { ResourceLink } from '../resource-list/resource-link';
 import { urlClipped } from '../resource-list/resource-list-view';
 import {

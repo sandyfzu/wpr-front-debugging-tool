@@ -17,11 +17,11 @@ import ShieldCheck from 'lucide-solid/icons/shield-check';
 import Stethoscope from 'lucide-solid/icons/stethoscope';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
+import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { listCapped, countLabel } from '../../lib/panel/list-behavior';
 import { formatCount } from '../../utils/format-count';
-import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
 
 /** Journey groups, in the order the nav renders them. */
 export const NAV_GROUPS = ['Overview', 'Inspect', 'Diagnose', 'Tools'] as const;
