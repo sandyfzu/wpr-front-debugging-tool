@@ -30,6 +30,7 @@ import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
+import { canMessageTabs } from '../../lib/messaging/tab-messaging';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
@@ -37,6 +38,7 @@ import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
+import { DATA_UNAVAILABLE_TITLE, DataUnavailable } from './data-unavailable';
 import { StatusBar } from './status-bar/status-bar';
 import {
   BuilderEntry,
@@ -152,6 +154,7 @@ export function PanelApp(props: AppProps): JSX.Element {
       const edges = realMessagingEdges();
       return createFdtDataStore({
         inspectedTabId: devtoolsInspectedTabId,
+        canRequest: () => canMessageTabs(browser),
         request: (tabId) => edges.request(tabId),
         receive: (receivers) => edges.receive(receivers),
         search,
@@ -227,6 +230,12 @@ export function PanelApp(props: AppProps): JSX.Element {
     return current.status === 'error' ? { cause: current.cause } : null;
   });
 
+  /** The unavailable branch's reason (typed narrowing for the view). */
+  const unavailableReason = createMemo((): string | null => {
+    const current = data.state();
+    return current.status === 'unavailable' ? current.reason : null;
+  });
+
   /** The machine-state announcement (never the data pushes themselves). */
   const statusLine = createMemo((): string => {
     const current = data.state();
@@ -238,6 +247,8 @@ export function PanelApp(props: AppProps): JSX.Element {
         return 'Refreshing page data';
       case 'error':
         return 'Page data could not load';
+      case 'unavailable':
+        return DATA_UNAVAILABLE_TITLE;
       case 'ready':
         return `${navRoute(router.route())?.label ?? 'Page'} loaded`;
     }
@@ -329,6 +340,15 @@ export function PanelApp(props: AppProps): JSX.Element {
                               data.retry();
                             }}
                           />
+                        </PageCanvas>
+                      )}
+                    </Match>
+                    {/* No way to message the page here (feature-detected): an
+                        explicit state naming what still works — no retry. */}
+                    <Match when={unavailableReason()} keyed>
+                      {(reason) => (
+                        <PageCanvas id={router.route()}>
+                          <DataUnavailable reason={reason} />
                         </PageCanvas>
                       )}
                     </Match>

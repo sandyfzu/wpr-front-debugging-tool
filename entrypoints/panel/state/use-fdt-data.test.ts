@@ -17,7 +17,7 @@ import type { DataState } from './fdt-state-machine';
 import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from './search';
-import { createFdtDataStore, type FdtDataStore } from './use-fdt-data';
+import { TABS_UNAVAILABLE_REASON, createFdtDataStore, type FdtDataStore } from './use-fdt-data';
 import { makeFdtData, makeHardReloadBudget, makeLazyImage, makeMemoryStorage } from './fixtures';
 import { createHardReloadBudget, type HardReloadBudget } from './hard-reload-budget';
 
@@ -116,10 +116,12 @@ function loadedData(state: DataState): FdtData {
 function makeStore(
   world: ReturnType<typeof fakeWorld>,
   search: SearchStore = createSearchStore(),
-  hardReloadBudget: HardReloadBudget = makeHardReloadBudget()
+  hardReloadBudget: HardReloadBudget = makeHardReloadBudget(),
+  canRequest = true
 ): FdtDataStore {
   return createFdtDataStore({
     inspectedTabId: () => world.inspectedTabId,
+    canRequest: () => canRequest,
     request: world.request,
     receive: world.receive,
     search,
@@ -128,6 +130,37 @@ function makeStore(
     now: () => 1727000000000
   });
 }
+
+describe('a context that cannot message tabs (Firefox DevTools page)', () => {
+  it('enters the terminal unavailable state with its reason, never requesting', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world, undefined, undefined, false);
+    store.start();
+    await drained();
+    expect(store.state()).toEqual({ status: 'unavailable', reason: TABS_UNAVAILABLE_REASON });
+    expect(world.request).not.toHaveBeenCalled();
+    // The receivers still register (search relay and pushes stay wired).
+    expect(world.receiversArmed).toBe(true);
+  });
+
+  it('stays unavailable through retry, reload and a panel-reload push', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world, undefined, undefined, false);
+    store.start();
+    store.retry();
+    store.reload();
+    world.deliverPanelReload();
+    await drained();
+    expect(store.state().status).toBe('unavailable');
+    expect(world.request).not.toHaveBeenCalled();
+  });
+
+  it('names what still works, without offering a retry', () => {
+    expect(TABS_UNAVAILABLE_REASON).toContain('on-page widget');
+    expect(TABS_UNAVAILABLE_REASON).toContain('Exclusions entry');
+    expect(TABS_UNAVAILABLE_REASON.toLowerCase()).not.toContain('retry');
+  });
+});
 
 describe('registration + boot flight', () => {
   it('registers the receivers at mount, then runs the first fetch', async () => {

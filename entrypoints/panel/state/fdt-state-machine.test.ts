@@ -146,3 +146,35 @@ describe('settled outcomes', () => {
     ).toBe(success);
   });
 });
+
+describe('unavailable (no way to message the page)', () => {
+  const states: DataState[] = [
+    { status: 'idle' },
+    { status: 'fetching' },
+    ready(),
+    { status: 'refreshing', data: makeFdtData(), requestedAt: 5 },
+    { status: 'error', cause: 'x', hardReload: false }
+  ];
+
+  it('enters from every state, carrying its reason', () => {
+    for (const state of states) {
+      expect(transitionDataState(state, { type: 'unavailable', reason: 'why' }, NOW)).toEqual({
+        status: 'unavailable',
+        reason: 'why'
+      });
+    }
+  });
+
+  it('is terminal: fetch, refresh, settle and a second unavailable change nothing', () => {
+    const before: DataState = { status: 'unavailable', reason: 'why' };
+    const events = [
+      { type: 'fetch' },
+      { type: 'refresh' },
+      { type: 'settled', outcome: { ok: true, data: freshData() } },
+      { type: 'unavailable', reason: 'other' }
+    ] as const;
+    for (const event of events) {
+      expect(transitionDataState(before, event, NOW)).toBe(before);
+    }
+  });
+});

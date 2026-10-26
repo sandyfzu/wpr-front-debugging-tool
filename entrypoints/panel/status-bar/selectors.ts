@@ -242,6 +242,7 @@ export function freshnessSegment(state: DataState, nowMs: number): FreshnessSegm
     case 'fetching':
       return { kind: 'loading' };
     case 'error':
+    case 'unavailable':
       return { kind: 'unavailable' };
   }
 }
@@ -267,7 +268,7 @@ const UNAVAILABLE_SEGMENTS: StatusBarSegments = {
 
 /**
  * Resolve all four segments from the data state — the strip's one entry
- * point. An errored state renders every segment's unavailable placeholder
+ * point. An errored or unavailable state renders every segment's unavailable placeholder
  * (the error view carries the cause); the loaded states resolve each
  * segment from the carried data, with the freshness answering from the
  * machine's own stamps.
@@ -276,7 +277,7 @@ const UNAVAILABLE_SEGMENTS: StatusBarSegments = {
  * @param nowMs The reading's wall clock (milliseconds).
  */
 export function statusBarSegments(state: DataState, nowMs: number): StatusBarSegments {
-  if (state.status === 'error') return UNAVAILABLE_SEGMENTS;
+  if (state.status === 'error' || state.status === 'unavailable') return UNAVAILABLE_SEGMENTS;
   const data = state.status === 'ready' || state.status === 'refreshing' ? state.data : null;
   return {
     wpr: wprSegment(data),

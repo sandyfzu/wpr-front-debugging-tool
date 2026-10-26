@@ -63,6 +63,7 @@ function makeHarness(): Harness {
     },
     search: createSearchStore(),
     reload: vi.fn(),
+    canRequest: () => true,
     hardReloadBudget: makeHardReloadBudget(),
     now: () => Date.now()
   });

@@ -45,6 +45,12 @@ export interface FdtDataDeps {
    * nothing to request from.
    */
   inspectedTabId: () => number | null;
+  /**
+   * Whether this context can message tabs at all (production: the
+   * `tabs.sendMessage` probe). False ⇒ the store enters the terminal
+   * `unavailable` state at start and never sends a request.
+   */
+  canRequest: () => boolean;
   /** One request flight: ask the content script for the full page data. */
   request: (tabId: number | undefined) => Promise<unknown>;
   /** Register the receivers at mount; returns the stop handle for unload. */
@@ -65,7 +71,7 @@ export interface FdtDataDeps {
 
 /** What the shell and the pages read once this store exists. */
 export interface FdtDataStore {
-  /** The machine state (fetching / ready / refreshing / error / idle). */
+  /** The machine state (fetching / ready / refreshing / error / idle / unavailable). */
   readonly state: Accessor<DataState>;
   /**
    * Boot: register every receiver, then run the first fetch — in that order,
@@ -92,6 +98,14 @@ const NO_RECEIVER_CAUSE =
 
 /** The cause for a request that failed in transit (or its own side). */
 const REQUEST_FAILURE_CAUSE = 'The page could not be reached for its data.';
+
+/**
+ * The reason the unavailable view renders when this DevTools panel cannot
+ * message the page at all (Firefox gives DevTools pages no `tabs` API) —
+ * naming what still works instead of offering a retry that cannot.
+ */
+export const TABS_UNAVAILABLE_REASON =
+  'This browser’s DevTools panels can’t reach the page yet; the on-page widget and the Exclusions entry below still work.';
 
 /** The cause when the content script answered `null` (its processing failed). */
 const EMPTY_RESPONSE_CAUSE = 'The page produced no data — its content script could not process it.';
@@ -359,6 +373,11 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
       // channels — strictly before the flight below (see the header's mount
       // discipline).
       stopReceivers = deps.receive(receivers);
+      if (!deps.canRequest()) {
+        // Terminal: every later fetch/refresh/retry is a no-op by the table.
+        applyEvent({ type: 'unavailable', reason: TABS_UNAVAILABLE_REASON });
+        return;
+      }
       runFlight('fetch');
     },
     stop() {

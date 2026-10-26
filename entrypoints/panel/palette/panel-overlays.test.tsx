@@ -35,6 +35,7 @@ function bootShellWithData(): { data: ReturnType<typeof createFdtDataStore> } {
     receive: () => () => undefined,
     search: createSearchStore(),
     reload: vi.fn(),
+    canRequest: () => true,
     hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
@@ -108,6 +109,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
@@ -232,6 +234,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
@@ -355,6 +358,7 @@ describe('focus on route switch', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });

@@ -302,6 +302,12 @@ describe('freshnessSegment', () => {
     });
   });
 
+  it('renders unavailable when the panel cannot reach the page at all', () => {
+    expect(freshnessSegment({ status: 'unavailable', reason: 'x' }, NOW_MS)).toEqual({
+      kind: 'unavailable'
+    });
+  });
+
   it('renders its own state while a soft refresh is in the air', () => {
     const state: DataState = {
       status: 'refreshing',
@@ -353,6 +359,15 @@ describe('isDataStale', () => {
 describe('statusBarSegments', () => {
   it('maps an errored state to unavailable placeholders across the strip', () => {
     expect(statusBarSegments({ status: 'error', cause: 'x', hardReload: false }, NOW_MS)).toEqual({
+      wpr: { kind: 'unavailable' },
+      cache: { kind: 'unavailable' },
+      platform: { kind: 'unavailable' },
+      freshness: { kind: 'unavailable' }
+    });
+  });
+
+  it('maps the unavailable state to unavailable placeholders across the strip', () => {
+    expect(statusBarSegments({ status: 'unavailable', reason: 'x' }, NOW_MS)).toEqual({
       wpr: { kind: 'unavailable' },
       cache: { kind: 'unavailable' },
       platform: { kind: 'unavailable' },
