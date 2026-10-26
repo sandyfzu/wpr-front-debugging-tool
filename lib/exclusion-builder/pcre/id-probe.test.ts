@@ -61,7 +61,31 @@ describe('compileIdProbe', () => {
     expect(outcome('\\bad')).toBe('unknown');
   });
 
+  it('builds every construct it reads: keep, options, optional copies, empty matches', () => {
+    expect(outcome('WPR_SVG_\\K[0-9]')).toBe('depends');
+    expect(outcome('6a?d')).toBe('depends');
+    expect(outcome('(?i)6adf')).toBe('depends');
+    // A row matching the empty string matches every subject.
+    expect(outcome('[0-9]*')).toBe('all');
+    // `(?s)` changes matching: widened, so only unknown when it can touch an id.
+    expect(outcome('(?s)6.df')).toBe('unknown');
+    // Past 64 copies a repeat is widened to `+`.
+    expect(outcome('6[0-9a-f]{0,100}')).toBe('unknown');
+    // Widened to one copy then `*`: it may end inside an id (a safe over-flag).
+    expect(outcome('[0-9]{70,}')).toBe('unknown');
+    // `\R` reads no hex byte: nothing after `6` continues inside an id.
+    expect(outcome('6\\Rad')).toBe('blind');
+    // A back-reference may hold anything, an id byte included.
+    expect(outcome('(x)\\1')).toBe('unknown');
+  });
+
+  it('proves a widened row blind when the subject never leads it into an id', () => {
+    // It could step into an id after any `_`; here the id follows `G_`, never `x_`.
+    expect(outcome('x_\\b6a')).toBe('blind');
+  });
+
   it('answers unknown past its state bound', () => {
+    expect(outcome('(6[0-9a-f]{60}){60}')).toBe('unknown');
     expect(ID_PROBE_LIMITS.states).toBeGreaterThan(0);
     expect(outcome('(((a|b){40}){40}){40}')).toBe('unknown');
   });
