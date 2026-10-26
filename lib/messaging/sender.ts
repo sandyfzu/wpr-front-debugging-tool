@@ -14,7 +14,7 @@ import { isHttpOrigin, parseUrl } from '../../utils/urls';
 /** A sender tab reference and page URL as the runtime actually delivers them. */
 export interface LooseMessageSender {
   tab?: { id?: unknown } | undefined;
-  /** The sending document's URL: present on content-script senders, not on extension ones. */
+  /** The sending document's URL (Firefox sets it for a devtools panel too). */
   url?: unknown;
   /** The sending frame: `0` for a top-level frame; only set when `tab` is. */
   frameId?: unknown;

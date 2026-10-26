@@ -116,6 +116,28 @@ describe('isExtensionPageSender', () => {
     expect(isExtensionPageSender({ id: ours, tab: undefined }, ours)).toBe(true);
   });
 
+  it('accepts a Firefox devtools panel and refuses a Firefox content script (observed shapes)', () => {
+    // As delivered on Firefox 158: the panel's sender has a URL but no tab.
+    const origin = 'moz-extension://eb477113-4aa6-4271-b38a-fb6fe924c36e';
+    const panel = {
+      contextId: 274877907211,
+      id: ours,
+      envType: 'devtools_child',
+      url: `${origin}/panel.html`,
+      documentId: '3ab91b1a-738f-3f62-aa2c-b2704288ddf6',
+      origin
+    };
+    expect(isExtensionPageSender(panel, ours)).toBe(true);
+    const contentScript = {
+      id: ours,
+      envType: 'content_child',
+      url: 'http://127.0.0.1:8493/fdt/',
+      frameId: 0,
+      tab: { id: 4 }
+    };
+    expect(isExtensionPageSender(contentScript, ours)).toBe(false);
+  });
+
   it('refuses tab senders, foreign or missing ids, and no sender', () => {
     expect(isExtensionPageSender({ id: ours, tab: { id: 3 } }, ours)).toBe(false);
     expect(isExtensionPageSender({ id: 'other' }, ours)).toBe(false);

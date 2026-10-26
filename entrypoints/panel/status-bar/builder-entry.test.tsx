@@ -7,7 +7,7 @@ import type {
   ExclusionSessionSummary,
   ExclusionSessionTabSummary
 } from '../../../lib/messaging/exclusion-panel';
-import { BuilderEntry, builderEntryOffered, type BuilderEntryDeps } from './builder-entry';
+import { BuilderEntry, type BuilderEntryDeps } from './builder-entry';
 
 const TAB = 7;
 
@@ -138,12 +138,6 @@ describe('BuilderEntry', () => {
     await screen.findByText('Off');
     expect(entry().textContent).toBe('ExclusionsOff — open the exclusion builder on the page');
     expect(entry().getAttribute('title')).toBe('No exclusions applied in this tab.');
-  });
-
-  it('is offered on every build but Firefox (its panel sender is unverified there)', () => {
-    expect(builderEntryOffered('chrome')).toBe(true);
-    expect(builderEntryOffered('edge')).toBe(true);
-    expect(builderEntryOffered('firefox')).toBe(false);
   });
 
   it('is held and explained outside a DevTools window (no tab to act on)', () => {

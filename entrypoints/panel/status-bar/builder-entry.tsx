@@ -11,9 +11,9 @@
  * result or the remedy. Name = the visible words + "open the exclusion
  * builder on the page"; description = the `title` (one reading each).
  *
- * Not offered on Firefox until the Firefox wiring phase verifies what a
- * Firefox devtools panel's messages carry as sender (the background answers
- * only senders without a tab).
+ * Offered on every build: the background answers only tab-less extension
+ * senders, and a devtools panel is one on Chromium and Firefox alike (a
+ * Firefox panel's message carries no `tab`, verified on Firefox 158).
  */
 import { ErrorBoundary, Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import Crosshair from 'lucide-solid/icons/crosshair';
@@ -85,16 +85,6 @@ export function realBuilderEntryDeps(inspectedTabId: () => number | null): Build
         return true;
       })
   };
-}
-
-/**
- * Whether the entry is offered in a build: not on Firefox yet (an explicit
- * degrade — the panel's tab-less sender is unverified there).
- *
- * @param build The build's browser (`import.meta.env.BROWSER`).
- */
-export function builderEntryOffered(build: string): boolean {
-  return build !== 'firefox';
 }
 
 /** Props of {@link BuilderEntry}. */

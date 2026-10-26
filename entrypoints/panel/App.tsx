@@ -40,7 +40,6 @@ import { PageCanvas } from './pages/page-frame';
 import { StatusBar } from './status-bar/status-bar';
 import {
   BuilderEntry,
-  builderEntryOffered,
   realBuilderEntryDeps,
   type BuilderEntryDeps
 } from './status-bar/builder-entry';
@@ -344,13 +343,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                 </ErrorBoundary>
               </main>
             </div>
-            <StatusBar
-              trailing={
-                builderEntryOffered(import.meta.env.BROWSER) ? (
-                  <BuilderEntry deps={builderEntryDeps} />
-                ) : undefined
-              }
-            />
+            <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
           </div>
           <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
             {statusLine()}
