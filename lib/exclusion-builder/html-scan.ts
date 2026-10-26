@@ -6,7 +6,9 @@
  * comments and declarations skipped per the tokenizer's comment states,
  * raw-text element regions (`script`, `style`, `textarea`, `title`) closed
  * only by their exact case-insensitive end tag (WHATWG §13.2.5.14) —
- * running to EOF when no end tag exists.
+ * running to EOF when no end tag exists. A caller that must see the markup
+ * exactly as a browser does (scripting on) asks for the `browser` model,
+ * which adds every other raw-text element (see {@link RawTextModel}).
  *
  * One linear pass; every span is an offset into the string scanned, so
  * rewrites stay patch-based and inputs are never mutated. The same parser
@@ -61,8 +63,36 @@ export interface ScannedTag {
 /** HTML whitespace, per the tokenizer's definition. */
 const HTML_WHITESPACE = new Set([' ', '\t', '\n', '\r', '\f']);
 
-/** Elements whose content is raw text — their region runs to the end tag. */
-const RAW_TEXT_TAGS = new Set(['script', 'style', 'textarea', 'title']);
+/**
+ * Which raw-text elements a scan honors. `engine` — the four the transforms
+ * have always read WP Rocket's markup with (their behavior, and the WP Rocket
+ * parity table, are pinned to it). `browser` — every element whose content
+ * a browser's parser reads as text with scripting on (the WHATWG tree
+ * construction's "in head" / "in body" rules: also `xmp`, `iframe`,
+ * `noembed`, `noframes`, `noscript`, and `plaintext`, which never ends): for edits that must land where the
+ * browser will parse markup, never inside text.
+ */
+export type RawTextModel = 'engine' | 'browser';
+
+/** The `engine` model's raw-text elements. */
+const ENGINE_RAW_TEXT_TAGS: ReadonlySet<string> = new Set(['script', 'style', 'textarea', 'title']);
+
+/** Elements whose content is raw text per model — their region runs to the end tag. */
+const RAW_TEXT_TAGS: Readonly<Record<RawTextModel, ReadonlySet<string>>> = {
+  engine: ENGINE_RAW_TEXT_TAGS,
+  browser: new Set([
+    ...ENGINE_RAW_TEXT_TAGS,
+    'xmp',
+    'iframe',
+    'noembed',
+    'noframes',
+    'noscript',
+    'plaintext'
+  ])
+};
+
+/** The raw-text element no end tag closes: its text runs to the end of input. */
+const UNCLOSABLE_RAW_TEXT_TAG = 'plaintext';
 
 /**
  * End-tag matchers for the raw-text elements, one compiled per tag name and
@@ -72,7 +102,9 @@ const RAW_TEXT_TAGS = new Set(['script', 'style', 'textarea', 'title']);
  * script text while `</script x>` (an end tag with junk attributes) closes.
  */
 const RAW_TEXT_END_TAG = new Map(
-  [...RAW_TEXT_TAGS].map((name) => [name, new RegExp(`</${name}[\\t\\n\\f\\r />]`, 'gi')])
+  [...RAW_TEXT_TAGS.browser]
+    .filter((name) => name !== UNCLOSABLE_RAW_TEXT_TAG)
+    .map((name) => [name, new RegExp(`</${name}[\\t\\n\\f\\r />]`, 'gi')])
 );
 
 /** The standard HTML void elements — serialized without an end tag. */
@@ -334,7 +366,7 @@ function parseEndTagAt(html: string, lt: number): ScannedEndTag {
  * @returns Every opening tag in document order.
  */
 export function scanTags(html: string): readonly ScannedTag[] {
-  return scanMarkup(html, false) as readonly ScannedTag[];
+  return scanMarkup(html, false, 'engine') as readonly ScannedTag[];
 }
 
 /**
@@ -344,10 +376,11 @@ export function scanTags(html: string): readonly ScannedTag[] {
  * raw-text elements' own end tags stay inside their region and emit none.
  *
  * @param html The served HTML (decoded text).
+ * @param model Which raw-text elements to honor (default `engine`).
  * @returns Every opening and closing tag in document order.
  */
-export function scanTokens(html: string): readonly ScannedToken[] {
-  return scanMarkup(html, true);
+export function scanTokens(html: string, model: RawTextModel = 'engine'): readonly ScannedToken[] {
+  return scanMarkup(html, true, model);
 }
 
 /**
@@ -355,8 +388,14 @@ export function scanTokens(html: string): readonly ScannedToken[] {
  *
  * @param html The string scanned.
  * @param withEndTags Whether closing tags become tokens.
+ * @param model Which raw-text elements to honor.
  */
-function scanMarkup(html: string, withEndTags: boolean): readonly ScannedToken[] {
+function scanMarkup(
+  html: string,
+  withEndTags: boolean,
+  model: RawTextModel
+): readonly ScannedToken[] {
+  const rawTextTags = RAW_TEXT_TAGS[model];
   const tags: ScannedToken[] = [];
   const length = html.length;
   let pos = 0;
@@ -384,7 +423,7 @@ function scanMarkup(html: string, withEndTags: boolean): readonly ScannedToken[]
       continue;
     }
     const parsed = parseTagAt(html, lt);
-    const rawText = RAW_TEXT_TAGS.has(parsed.name)
+    const rawText = rawTextTags.has(parsed.name)
       ? rawTextEnd(parsed.name, html, parsed.openingEnd)
       : null;
     tags.push({

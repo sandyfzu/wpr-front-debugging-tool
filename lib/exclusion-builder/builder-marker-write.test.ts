@@ -9,6 +9,7 @@ import {
   builderFactOf,
   builderNoteOf,
   markBuilderEffects,
+  namesBuilderMarker,
   writeBuilderMarker
 } from './builder-marker-write';
 import { applyPipeline } from './pipeline';
@@ -196,18 +197,89 @@ describe('writeBuilderMarker', () => {
     expect(markerCount(once)).toBe(1);
   });
 
-  it('stays linear on a multi-megabyte document', () => {
+  it('stays linear in the document size (ratio-bounded, no wall-clock ceiling)', () => {
     const chunk = `<div class="c"><img src="a.jpg" alt="a"><p>${'text '.repeat(20)}</p></div>`;
-    const html = page(
-      '<title>t</title>',
-      chunk.repeat(Math.ceil((4 * 1024 * 1024) / chunk.length))
-    );
-    const started = performance.now();
-    const out = writeBuilderMarker(html, note);
-    const elapsed = performance.now() - started;
-    expect(markerCount(out)).toBe(1);
-    // A 4 MiB page: well inside the document budget the feature steps share.
-    expect(elapsed).toBeLessThan(500);
+    /** A page of about `mib` MiB. */
+    const sized = (mib: number): string =>
+      page('<title>t</title>', chunk.repeat(Math.ceil((mib * 1024 * 1024) / chunk.length)));
+    /** Best of three runs (ms), so one scheduler hiccup cannot decide. */
+    const best = (html: string): number => {
+      let fastest = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(markerCount(writeBuilderMarker(html, note))).toBe(1);
+        fastest = Math.min(fastest, performance.now() - started);
+      }
+      return fastest;
+    };
+    const small = best(sized(1));
+    const large = best(sized(4));
+    // 4× the input: linear is ~4×; quadratic would be ~16×. A generous
+    // ceiling (plus a 5 ms floor for timer noise) still catches the latter.
+    expect(large).toBeLessThan(10 * Math.max(small, 5));
+  });
+
+  it('removes a served copy whose name is spelled with character references', () => {
+    const spelled = [
+      'wpr-fdt-exclusion&#45;builder',
+      'wpr-fdt-exclusion&#x2D;builder',
+      'wpr-fdt-exclusion&#X2d;builder',
+      'wpr-fdt-exclusion&#0045builder',
+      '&#119;pr-fdt-exclusion-builder',
+      // A named reference may stand for anything: treated as a possible match.
+      'wpr-fdt-exclusion&hyphen;builder'
+    ];
+    for (const name of spelled) {
+      const html = page(`<meta name="${name}" content="v1 lazyload=excluded:9">`, '');
+      expect(writeBuilderMarker(html, {}), name).toBe(page('', ''));
+      expect(namesBuilderMarker(name), name).toBe(true);
+    }
+  });
+
+  it('keeps metas whose decoded name cannot be the marker', () => {
+    for (const name of [
+      'wpr-fdt-exclusion&#46;builder',
+      'wpr-fdt-exclusion&#x2D;builders',
+      'x&amp;wpr-fdt-exclusion-builder',
+      'wpr-fdt-exclusion-builder&#0;',
+      'wpr&#xE9;-fdt-exclusion-builder',
+      '&'
+    ]) {
+      expect(namesBuilderMarker(name), name).toBe(false);
+      const html = page(`<meta name="${name}" content="v1">`, '');
+      expect(writeBuilderMarker(html, {}), name).toBe(html);
+    }
+  });
+
+  it('matches a value spelling thousands of references in linear time', () => {
+    expect(namesBuilderMarker(`${'&a;'.repeat(50_000)}x`)).toBe(false);
+    expect(namesBuilderMarker(`wpr${'&a;'.repeat(50_000)}builder`)).toBe(true);
+  });
+
+  it('never inserts inside raw text the browser will not parse as markup', () => {
+    const rawText = [
+      '<noframes></head></noframes>',
+      '<noembed></head></noembed>',
+      '<xmp></head></xmp>',
+      '<iframe></head></iframe>',
+      '<noscript></head></noscript>',
+      '<textarea></head></textarea>',
+      '<title></head></title>'
+    ];
+    for (const region of rawText) {
+      const html = `<html><head>${region}</head><body></body></html>`;
+      expect(writeBuilderMarker(html, note), region).toBe(
+        `<html><head>${region}${marker('v1 delay_js=off')}</head><body></body></html>`
+      );
+    }
+    // <plaintext> never ends: no real </head> follows it, so nothing is written.
+    const plaintext = '<html><head><plaintext></head><body>';
+    expect(writeBuilderMarker(plaintext, note)).toBe(plaintext);
+  });
+
+  it('leaves a marker spelled inside raw text alone (it is text, not an element)', () => {
+    const html = page(`<noscript>${marker('v1 delay_js=off')}</noscript>`, '');
+    expect(writeBuilderMarker(html, {})).toBe(html);
   });
 });
 

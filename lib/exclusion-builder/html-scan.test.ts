@@ -228,3 +228,36 @@ describe('scanTokens — opening and closing tags in document order', () => {
     expect(scanTokens('')).toEqual([]);
   });
 });
+
+describe('scanTokens — the browser raw-text model', () => {
+  /** Token names of a scan, end tags prefixed with `/`. */
+  const names = (html: string, model: 'engine' | 'browser'): string[] =>
+    scanTokens(html, model).map((token) => (isEndTag(token) ? `/${token.name}` : token.name));
+
+  it('reads every browser raw-text element as text up to its own end tag', () => {
+    for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript']) {
+      const html = `<${tag}><b></head></${tag}><i>`;
+      expect(names(html, 'browser'), tag).toEqual([tag, 'i']);
+      const region = scanTokens(html, 'browser')[0];
+      expect(region && !isEndTag(region) && html.slice(region.openingEnd, region.contentEnd)).toBe(
+        '<b></head>'
+      );
+      // The engine model keeps reading them as markup (its transforms are pinned to it).
+      expect(names(html, 'engine'), tag).toEqual([tag, 'b', '/head', `/${tag}`, 'i']);
+    }
+  });
+
+  it('runs <plaintext> to the end of input: no end tag closes it', () => {
+    const html = '<plaintext><b></plaintext><i>';
+    const tokens = scanTokens(html, 'browser');
+    expect(tokens).toHaveLength(1);
+    const only = tokens[0];
+    expect(only && !isEndTag(only) && only.end).toBe(html.length);
+  });
+
+  it('keeps the engine model as the default, for scanTags too', () => {
+    const html = '<iframe><img src="a"></iframe>';
+    expect(scanTokens(html)).toEqual(scanTokens(html, 'engine'));
+    expect(scanTags(html).map((tag) => tag.name)).toEqual(['iframe', 'img']);
+  });
+});

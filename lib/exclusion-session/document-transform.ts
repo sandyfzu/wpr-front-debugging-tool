@@ -152,8 +152,10 @@ export function runDocumentPipeline(
       html = result.html;
       if (result.report !== null) reports.push(result.report);
     }
-    // The final step (the builder marker) is no feature's work and linear in
-    // the document, so it runs outside the per-feature budget checks.
+    // The final step (the builder marker) is no feature's work (no feature to
+    // name in an overrun), so it runs after the budget checks, unbudgeted:
+    // it is one linear scan of the document, but nothing here bounds its
+    // wall time (only a preempting runner's deadline would).
     return {
       ok: true,
       html: markBuilderEffects(html, reports),
