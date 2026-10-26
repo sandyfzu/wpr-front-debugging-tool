@@ -7,10 +7,15 @@
  * modifier on top.
  *
  * Read rule (spoof resistance): a fact exists only when the document holds
- * exactly one marker meta, as a direct child of `<head>`, carrying only its
- * `name` and `content`, whose content parses fully. Zero or several
- * markers, a misplaced one, extra attributes or malformed content ⇒ no fact
- * — never a partial or invented one. Trust: a page can still forge a
+ * exactly one marker meta, carrying only its `name` and `content`, whose
+ * content parses fully. Zero or several markers, extra attributes or
+ * malformed content ⇒ no fact — never a partial or invented one. Where the
+ * marker sits is deliberately not checked: the rewrite appends it at the
+ * end of `<head>`, but the page's own markup moves it legitimately (a
+ * `<noscript>` or stray element in `<head>` closes the head early in a
+ * re-parse of the serialized live document), and placement adds no spoof
+ * resistance — a forger can write it into `<head>` as easily. "Exactly
+ * one" plus the rewrite removing every served copy is what protects. Trust: a page can still forge a
  * well-formed marker the builder did not write; it mis-describes only that
  * page, the same page-content trust as every footprint.
  */
@@ -34,8 +39,7 @@ const MARKER_ATTRIBUTE_COUNT = 2;
 export function parseBuilderMarker(document: Document): BuilderNote | null {
   const markers = document.querySelectorAll(BUILDER_MARKER_SELECTOR);
   const marker = markers.length === 1 ? markers[0] : undefined;
-  if (marker === undefined || marker.parentElement !== document.head) return null;
-  if (marker.attributes.length !== MARKER_ATTRIBUTE_COUNT) return null;
+  if (marker === undefined || marker.attributes.length !== MARKER_ATTRIBUTE_COUNT) return null;
   const content = marker.getAttribute('content');
   return content === null ? null : parseBuilderNote(content);
 }

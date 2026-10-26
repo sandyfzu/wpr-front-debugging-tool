@@ -64,10 +64,31 @@ describe('parseBuilderMarker', () => {
     expect(read(page(marker('v1 delay_js=off'), marker('v1 lazyload=excluded:1')))).toBeNull();
   });
 
-  it('states nothing for a marker outside <head>', () => {
-    expect(read(page('', marker('v1 delay_js=off')))).toBeNull();
-    // Nested in head content rather than a direct child (scripting-off parse of <noscript>).
-    expect(read(page(`<noscript>${marker('v1 delay_js=off')}</noscript>`))).toBeNull();
+  it('reads the one marker wherever the page markup moved it', () => {
+    const fact = { delay_js: { off: 'feature' } };
+    // In <body>: the head closed early (a stray element, or the serialized
+    // live <noscript> text re-parsed with scripting off).
+    expect(read(page('', marker('v1 delay_js=off')))).toEqual(fact);
+    expect(read(page(`<div></div>${marker('v1 delay_js=off')}`))).toEqual(fact);
+    // Nested in head content rather than a direct child.
+    expect(read(page(`<noscript>${marker('v1 delay_js=off')}</noscript>`))).toEqual(fact);
+  });
+
+  it('reads the marker on a WP Rocket head carrying its noscript lazyload style', () => {
+    // WP Rocket's LazyLoad head: once the live document is serialized, the
+    // noscript content is escaped text, which closes <head> in a
+    // scripting-off parse and moves the marker (written just before
+    // </head>) into <body>.
+    const head = `${SERVED_HEAD}<noscript><style id="rocket-lazyload-nojs-css">.rll-youtube-player, [data-lazy-src]{display:none !important;}</style></noscript>`;
+    const live = new DOMParser().parseFromString(
+      page(`${head}${marker('v1 delay_js=off')}`),
+      'text/html'
+    );
+    const noscript = live.querySelector('noscript');
+    // The live (scripting-on) document holds that content as text.
+    noscript?.replaceChildren(live.createTextNode(noscript.innerHTML));
+    const serialized = new XMLSerializer().serializeToString(live);
+    expect(read(serialized)).toEqual({ delay_js: { off: 'feature' } });
   });
 
   it('states nothing for a marker with extra or missing attributes', () => {
