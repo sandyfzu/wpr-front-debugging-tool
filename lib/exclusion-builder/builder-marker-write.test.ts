@@ -225,9 +225,7 @@ describe('writeBuilderMarker', () => {
       'wpr-fdt-exclusion&#x2D;builder',
       'wpr-fdt-exclusion&#X2d;builder',
       'wpr-fdt-exclusion&#0045builder',
-      '&#119;pr-fdt-exclusion-builder',
-      // A named reference may stand for anything: treated as a possible match.
-      'wpr-fdt-exclusion&hyphen;builder'
+      '&#119;pr-fdt-exclusion-builder'
     ];
     for (const name of spelled) {
       const html = page(`<meta name="${name}" content="v1 lazyload=excluded:9">`, '');
@@ -243,7 +241,24 @@ describe('writeBuilderMarker', () => {
       'x&amp;wpr-fdt-exclusion-builder',
       'wpr-fdt-exclusion-builder&#0;',
       'wpr&#xE9;-fdt-exclusion-builder',
-      '&'
+      '&',
+      // Named references: none decodes to the name's characters but
+      // `&fjlig;` ("fj", absent from the name), so none can spell it.
+      'wpr-fdt-exclusion&hyphen;builder',
+      'wpr-fdt-exclusion&dash;builder',
+      'wpr-&fjlig;dt-exclusion-builder',
+      '&amp;',
+      '&x;',
+      '&nbsp;',
+      'wp&co',
+      'w&h',
+      'wpr&x',
+      '&a;exclusion&b;',
+      // Decoded once: `&#38;` is the `&` the DOM gives, never re-read as a reference.
+      'wpr-fdt-exclusion&#38;builder',
+      'wpr-fdt-exclusion&#38;hyphen;builder',
+      // A code point past U+FFFF never truncates to its low 16 bits (0x0077 = "w").
+      '&#x10077;pr-fdt-exclusion-builder'
     ]) {
       expect(namesBuilderMarker(name), name).toBe(false);
       const html = page(`<meta name="${name}" content="v1">`, '');
@@ -251,9 +266,18 @@ describe('writeBuilderMarker', () => {
     }
   });
 
-  it('matches a value spelling thousands of references in linear time', () => {
-    expect(namesBuilderMarker(`${'&a;'.repeat(50_000)}x`)).toBe(false);
-    expect(namesBuilderMarker(`wpr${'&a;'.repeat(50_000)}builder`)).toBe(true);
+  it('keeps the site metas whose names merely carry an ampersand', () => {
+    const html =
+      '<html><head><meta name="wp&co" content="keep me"><meta name="&nbsp;" content="keep too"></head><body></body></html>';
+    expect(writeBuilderMarker(html, {})).toBe(html);
+    expect(writeBuilderMarker(html, note)).toBe(
+      `<html><head><meta name="wp&co" content="keep me"><meta name="&nbsp;" content="keep too">${marker('v1 delay_js=off')}</head><body></body></html>`
+    );
+  });
+
+  it('decodes a value spelling thousands of references without blowing up', () => {
+    expect(namesBuilderMarker(`${'&#97;'.repeat(50_000)}x`)).toBe(false);
+    expect(namesBuilderMarker(`wpr${'&a;'.repeat(50_000)}builder`)).toBe(false);
   });
 
   it('never inserts inside raw text the browser will not parse as markup', () => {

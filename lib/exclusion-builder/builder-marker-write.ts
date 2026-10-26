@@ -57,9 +57,6 @@ export function builderNoteOf(reports: readonly TransformReport[]): BuilderNote 
 /** A numeric character reference: decimal or hex, `;` optional (the tokenizer decodes both). */
 const NUMERIC_REFERENCE = /&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?/g;
 
-/** A named character reference's spelling (`;` optional in attribute values). */
-const NAMED_REFERENCE = /&[A-Za-z][A-Za-z0-9]*;?/;
-
 /**
  * Decode a raw attribute value's numeric character references, as far as
  * matching an ASCII name needs: an ASCII code point becomes its character;
@@ -77,49 +74,25 @@ function decodeNumericReferences(raw: string): string {
 }
 
 /**
- * Whether a raw `name` value can read as the marker's name once the DOM
- * decodes it. Plain values compare exactly (case-sensitive, as the DOM's
- * `name` matching). With character references: numeric ones are decoded,
- * and each named one is treated as standing for any text — a superset of
- * what the DOM can decode it to, so no served copy the reader would count
- * escapes removal (over-matching only removes a meta deliberately spelled to
- * look like the marker).
+ * Whether a raw `name` value reads as the marker's name once the DOM
+ * decodes it (`name` compares case-sensitively). Only numeric character
+ * references need decoding: of the 2,231 WHATWG named references (both
+ * spellings, with and without `;`), the only one whose text contains any
+ * of the name's characters (`a`–`z`, `-`) is `&fjlig;` ("fj"), and "fj"
+ * does not occur in the name — so a value with a named reference can never
+ * be the name, decoded or not (an undecoded one keeps its `&`, which the
+ * name lacks). Numeric references decode in one pass, never re-read: a
+ * `&#38;` stays the `&` the DOM gives.
  *
  * @param raw The raw `name` value, as served.
  */
 export function namesBuilderMarker(raw: string): boolean {
-  if (!raw.includes('&')) return raw === BUILDER_MARKER_META_NAME;
-  const pieces = decodeNumericReferences(raw).split(NAMED_REFERENCE);
-  return wildcardMatches(pieces, BUILDER_MARKER_META_NAME);
-}
-
-/**
- * Whether `text` is the literal `pieces` in order with any text between
- * consecutive ones (a glob with `*` between pieces). Greedy, linear: no
- * regex, so a value spelling thousands of references cannot backtrack.
- *
- * @param pieces The literal pieces (at least one; split output).
- * @param text The text to match.
- */
-function wildcardMatches(pieces: readonly string[], text: string): boolean {
-  const first = pieces[0] ?? '';
-  if (pieces.length === 1) return first === text;
-  const last = pieces[pieces.length - 1] ?? '';
-  if (first.length + last.length > text.length) return false;
-  if (!text.startsWith(first) || !text.endsWith(last)) return false;
-  let at = first.length;
-  const limit = text.length - last.length;
-  for (const piece of pieces.slice(1, -1)) {
-    const found = text.indexOf(piece, at);
-    if (found === -1 || found + piece.length > limit) return false;
-    at = found + piece.length;
-  }
-  return true;
+  return decodeNumericReferences(raw) === BUILDER_MARKER_META_NAME;
 }
 
 /**
  * Whether a token is a builder marker: a `meta` start tag whose (first)
- * `name` attribute can read as the marker's name — the DOM's own reading
+ * `name` attribute reads as the marker's name — the DOM's own reading
  * (duplicate attributes drop, character references decode).
  *
  * @param token One scanned token.
