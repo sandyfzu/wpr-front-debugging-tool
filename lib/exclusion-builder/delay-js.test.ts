@@ -625,15 +625,32 @@ describe('delayScriptMatch — over the regions Delay JS masks', () => {
     );
   });
 
-  it('stays linear over many regions and scripts (regions are found by binary search)', () => {
-    const html = Array.from(
-      { length: 5000 },
-      (_, n) =>
-        `<script type="text/rocketlazyloadscript" id="s${String(n)}">x()</script><svg><use/></svg>`
-    ).join('');
-    const started = performance.now();
-    expect(delayJsTransform(html, setWithRows(['WPR_SVG'])).report.undetermined).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(250);
+  it('stays near-linear over many regions and scripts (ratio-bounded: regions are found by binary search)', () => {
+    /** `count` delayed scripts, each followed by an svg region. */
+    const page = (count: number): string =>
+      Array.from(
+        { length: count },
+        (_, n) =>
+          `<script type="text/rocketlazyloadscript" id="s${String(n)}">x()</script><svg><use/></svg>`
+      ).join('');
+    /** Best of three transforms (ms), so one scheduler or GC hiccup cannot decide. */
+    const best = (html: string): number => {
+      let fastest = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(
+          delayJsTransform(html, setWithRows(['WPR_SVG'])).report.undetermined
+        ).toBeUndefined();
+        fastest = Math.min(fastest, performance.now() - started);
+      }
+      return fastest;
+    };
+    const small = best(page(1000));
+    const large = best(page(16_000));
+    // 16× the scripts and regions: n log n is ~22×, a scan per script ~256×.
+    // A ratio, not a ceiling, so a slow machine slows both alike (a 5 ms
+    // floor absorbs timer noise on the small page).
+    expect(large).toBeLessThan(48 * Math.max(small, 5));
   });
 
   it('is the HTML element, holding nothing, when no region touches it', () => {
