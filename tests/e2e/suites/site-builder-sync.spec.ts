@@ -24,7 +24,7 @@
  *
  * The site itself is never changed: sessions are in-browser only, the page
  * is requested as served. One case per test, each in its own tab (a session
- * is per tab), the widget map and saved drafts cleared after each. The
+ * is per tab), the widget map (on by default) and saved drafts cleared around each. The
  * panel status bar's builder entry is not assertable here: the standalone
  * panel page's sender has a tab, and the background answers only tab-less
  * (real DevTools) senders.
@@ -36,13 +36,12 @@ import type { BuilderFact, BuilderFactRow } from '../../../lib/wp-rocket/types';
 import {
   expect,
   openFixturePage,
-  ORIGIN_A,
   test,
   type DriverPage,
   type ExtensionDriver
 } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
-import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
+import { openSitePage, SITE_URL } from '../helpers/site';
 
 /** The rows a builder fact can sit on (the payload's contract). */
 const FACT_ROWS: readonly FactRow[] = [
@@ -280,22 +279,14 @@ async function payloadFacts(
   return facts;
 }
 
-/** Enable the widget for the site and fixture origins (or clear the map). */
-async function setWidget(extension: ExtensionDriver, enabled: boolean): Promise<void> {
-  await extension.evaluateInWorker(
-    async (payload: { key: string; origins: string[]; enabled: boolean }) => {
-      if (!payload.enabled) {
-        await chrome.storage.sync.remove([payload.key]);
-        return;
-      }
-      await chrome.storage.sync.set({
-        [payload.key]: Object.fromEntries(
-          payload.origins.map((origin) => [origin, { enabled: true }])
-        )
-      });
-    },
-    { key: ORIGINS_KEY, origins: [SITE_ORIGIN, ORIGIN_A], enabled }
-  );
+/**
+ * Clear the per-origin widget map: every origin then follows the default
+ * (the widget is on), whatever an earlier suite in this profile left.
+ */
+async function clearWidgetMap(extension: ExtensionDriver): Promise<void> {
+  await extension.evaluateInWorker(async (key: string) => {
+    await chrome.storage.sync.remove([key]);
+  }, ORIGINS_KEY);
 }
 
 /** Drop every origin's saved draft (the overlay reopens on it). */
@@ -431,11 +422,19 @@ async function expectStripModifier(page: Page, changed: ChangedRow): Promise<voi
   await expect(page.locator(`${STRIP_HOST} [data-fdt-strip-modifier]`)).toHaveCount(1);
 }
 
-/** Copy the support report from the panel and return its lines. */
+/** Copy the support report from the panel and return its lines (this copy's, never an earlier one). */
 async function reportLines(panel: Page): Promise<string[]> {
+  await panel.evaluate(() => navigator.clipboard.writeText(''));
   await panel.getByRole('button', { name: 'Copy report', exact: true }).click();
-  await expect(panel.getByText('Report copied')).toBeVisible();
+  await expect(panel.getByText('Report copied').first()).toBeVisible();
+  await expect.poll(() => panel.evaluate(() => navigator.clipboard.readText())).not.toBe('');
   return (await panel.evaluate(() => navigator.clipboard.readText())).split('\n');
+}
+
+/** The report's summary line for `active` of `total`, with the off-in-tab suffix when given. */
+function optimizationsLine(active: number, total: number, offInTab: number): string {
+  const suffix = offInTab > 0 ? ` · ${String(offInTab)} off in this tab` : '';
+  return `- **Optimizations:** ${String(active)} of ${String(total)} active${suffix}`;
 }
 
 /** Assert the report's summary line and the changed row. */
@@ -447,7 +446,7 @@ async function expectReport(
   const lines = await reportLines(panel);
   const off = changed.kind === 'off';
   expect(lines).toContain(
-    `- **Optimizations:** ${String(off ? served.active - 1 : served.active)} of ${String(served.total)} active${off ? ' · 1 off in this tab' : ''}`
+    optimizationsLine(off ? served.active - 1 : served.active, served.total, off ? 1 : 0)
   );
   const row = lines.find((line) =>
     line.startsWith(`| ${changed.name} | Active | Generator meta |`)
@@ -476,17 +475,23 @@ async function expectServed(
   await expect(stripRow(opened.page, changed.chipLabel)).toBeVisible();
   await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
   await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-modifier]`)).toHaveCount(0);
+  // The served count is back on a row the builder had turned off.
+  await expect(stripRow(opened.page, changed.chipLabel).locator('.ins-value')).toHaveCount(1);
+  // The report: the served summary, and no builder line anywhere.
+  const lines = await reportLines(panel);
+  expect(lines).toContain(optimizationsLine(served.active, served.total, 0));
+  expect(lines.filter((line) => line.includes('Exclusion Builder'))).toEqual([]);
 }
 
 test.describe('builder state across surfaces over real sessions', () => {
   test.beforeEach(async ({ extension }) => {
     await extension.browserContext.grantPermissions(['clipboard-read', 'clipboard-write']);
     await clearDrafts(extension);
-    await setWidget(extension, true);
+    await clearWidgetMap(extension);
   });
 
   test.afterEach(async ({ extension }) => {
-    await setWidget(extension, false);
+    await clearWidgetMap(extension);
     await clearDrafts(extension);
   });
 
@@ -572,8 +577,11 @@ test.describe('builder state across surfaces over real sessions', () => {
         .toEqual({ delay_js: { off: 'feature' } });
       await expectPanelModifier(panel, DELAY_OFF, served);
       await expectStripModifier(opened.page, DELAY_OFF);
+      await expectReport(panel, DELAY_OFF, served);
       await opened.page.getByRole('button', { name: 'Stop' }).click();
       await expect(opened.page.getByText('Session stopped')).toBeVisible();
+      // Stop leaves the rewrite displayed: still only the rewrite's marker.
+      await expect.poll(() => markers(opened.page)).toEqual(['v1 delay_js=off']);
     } finally {
       await panel.close();
       await opened.page.close();
