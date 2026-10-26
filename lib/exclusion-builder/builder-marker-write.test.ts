@@ -257,6 +257,8 @@ describe('writeBuilderMarker', () => {
       // Decoded once: `&#38;` is the `&` the DOM gives, never re-read as a reference.
       'wpr-fdt-exclusion&#38;builder',
       'wpr-fdt-exclusion&#38;hyphen;builder',
+      // The DOM reads the literal `wpr-fdt-exclusion&#45;builder`: never decoded twice.
+      'wpr-fdt-exclusion&#38;#45;builder',
       // A code point past U+FFFF never truncates to its low 16 bits (0x0077 = "w").
       '&#x10077;pr-fdt-exclusion-builder'
     ]) {
