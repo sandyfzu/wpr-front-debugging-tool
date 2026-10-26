@@ -1424,7 +1424,14 @@ DoD: tests + gates green. Effort S · difficulty easy.
 - **Strip/panel rendering untouched** (N.3/N.4); the strip row tooltip already reads the new `hudStateLine`.
 - **Tests:** +20 (2 new files: `hud-builder.test.ts` 14, `panel/builder-modifier.test.ts` 6). Gates: compile, lint, format:check, test (308 files, 7422 passed / 1 skipped; 99.43 % lines), parity:wp-rocket byte-for-byte, build, build:firefox, check:budgets green. E2E serial (`E2E_FIXTURE_PORT=8897`): 210 passed, 0 skipped.
 - **Budgets** (measured + 0.1 KiB): isolated 134.9 / gz 46.4 (was 133.9 / 46.1), whole build 1456.0 (was 1454.2).
-- **Open for owner:** existing count copy stays plural ("1 scripts"); only the new builder copy singularizes.
+- **Supervisor decisions (2026-10-26):** (1) "1 scripts" fixed in this sub-phase (below); (2) the hint wording "<Feature>: n <unit> excluded" accepted — a deliberate deviation from the plan example "3 images excluded": naming the feature disambiguates Delay JS vs Defer JS script counts.
+
+**Follow-up (2026-10-26, commits `b465059` singular counts, `319c353` budgets):**
+
+- One shared pluralizer: `countNoun(count, noun)` in `utils/format-count.ts`, beside `countLabel` (moved there from `lib/panel/list-behavior.ts`, re-exported, unchanged behavior; it now phrases with `countNoun`). `HudFeature.unit` is a `CountNoun` (script/image/element/font/domain declared once in `hud.ts`); `hudStateLine`, the builder modifier copy and the strip row's unit read through it (figures ungrouped, as the strip renders them). `describe.ts` declares no count copy (report keys only).
+- **Bug-fix assertion change:** `hud-builder.test.ts` "keeps the served line and adds the excluded count" expected "applied on this page: 1 scripts. …" → "1 script. …". No other unit test or e2e spec asserted a "1 <plural>" string (grep), so no spec changed. Added: `countNoun` tests, a singular/plural pin for all seven counted HUD features, the strip row's noun at 1 and 2.
+- Tests +4 (⇒ +24 over N.2). Gates: compile, lint, format:check, test (308 files, 7426 passed / 1 skipped), parity:wp-rocket byte-for-byte, build, build:firefox, check:budgets green. E2E serial (`E2E_FIXTURE_PORT=8897`): 210 passed, 0 skipped.
+- Budgets (measured + 0.1 KiB): isolated 135.1 / gz 46.5 (was 134.9 / 46.4), whole build 1456.3 (was 1456.0).
 
 #### P10N.3 — Devtools panel UI
 
