@@ -467,6 +467,13 @@ export const BUILDER_SERVED_LEAD = 'served by WP Rocket';
  */
 export const LIST_JOINER = ' · ';
 
+/**
+ * The joiner's glyph as a CSS `content` value with empty alt text: surfaces
+ * that draw it as a gutter dot set it as a custom property, so the dot is
+ * painted but never reaches the accessibility tree.
+ */
+export const LIST_JOINER_CONTENT = `'${LIST_JOINER.trim()}' / ''`;
+
 /** The strip's tab-level line title: the page shown is the builder's rewrite. */
 export const BUILDER_TAB_LINE_TITLE = 'Exclusion Builder rewrote this page';
 
@@ -531,7 +538,15 @@ export interface BuilderTabLine {
   readonly hints: readonly string[];
   /** The whole line as one text (`<title> — <hint> · <hint>`). */
   readonly text: string;
+  /** The line as assistive tech hears it: commas where the eye sees the dot. */
+  readonly spoken: string;
 }
+
+/** The tab-level line's title/hints separator. */
+const TAB_LINE_DASH = ' — ';
+
+/** The joiner assistive tech hears where the eye sees {@link LIST_JOINER}. */
+const SPOKEN_JOINER = ', ';
 
 /**
  * The tab-level line for a page, from the same facts and copy as the
@@ -546,10 +561,12 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
     return fact === null ? [] : [builderModifierCopy(feature, fact).hint];
   });
   if (hints.length === 0) return null;
+  const lead = `${BUILDER_TAB_LINE_TITLE}${TAB_LINE_DASH}`;
   return {
     title: BUILDER_TAB_LINE_TITLE,
     hints,
-    text: `${BUILDER_TAB_LINE_TITLE} — ${hints.join(LIST_JOINER)}`
+    text: `${lead}${hints.join(LIST_JOINER)}`,
+    spoken: `${lead}${hints.join(SPOKEN_JOINER)}`
   };
 }
 

@@ -268,7 +268,9 @@ describe('builderTabLine — the strip’s tab-level line', () => {
         'Lazyload Images: 3 excluded',
         'Automatic Lazy Rendering: 1 excluded'
       ],
-      text: 'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded · Automatic Lazy Rendering: 1 excluded'
+      text: 'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded · Automatic Lazy Rendering: 1 excluded',
+      spoken:
+        'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded, Automatic Lazy Rendering: 1 excluded'
     });
   });
 

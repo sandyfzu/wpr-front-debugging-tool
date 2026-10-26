@@ -26,15 +26,8 @@ import { Show } from 'solid-js';
 import { Card } from '../../../../components/ui/card';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { cacheCopy, cacheLayerCopy, type CacheCopy } from '../../../../lib/detection/cache-context';
-import { builderOffSummary, LIST_JOINER } from '../../../../lib/detection/hud';
+import { builderOffSummary, LIST_JOINER_CONTENT } from '../../../../lib/detection/hud';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
-
-/**
- * The shared joiner's glyph as a CSS `content` value with empty alt text, so
- * the dot is drawn but never reaches the accessibility tree. Set once on the
- * strip root as `--fdt-joiner`; every gutter dot reads it.
- */
-export const JOINER_CONTENT = `'${LIST_JOINER.trim()}' / ''`;
 
 /**
  * A secondary fact (or the headline's suffix) whose separator dot sits in the inline-start gutter its container
@@ -121,7 +114,8 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
       <div
         data-fdt="detections-summary"
         class="flex flex-col gap-2"
-        style={{ '--fdt-joiner': JOINER_CONTENT }}
+        // Set once on the root; every gutter dot reads it.
+        style={{ '--fdt-joiner': LIST_JOINER_CONTENT }}
       >
         {/* The meter sits right after the headline (under it when the line
             is full), sized to read as part of the sentence, not as a bar. */}

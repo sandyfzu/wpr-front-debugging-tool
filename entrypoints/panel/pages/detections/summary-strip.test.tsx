@@ -8,8 +8,8 @@ import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
 import { cacheCopy } from '../../../../lib/detection/cache-context';
-import { LIST_JOINER } from '../../../../lib/detection/hud';
-import { explainedCacheCopy, JOINER_CONTENT, meterWidth, SummaryStrip } from './summary-strip';
+import { LIST_JOINER, LIST_JOINER_CONTENT as JOINER_CONTENT } from '../../../../lib/detection/hud';
+import { explainedCacheCopy, meterWidth, SummaryStrip } from './summary-strip';
 
 afterEach(() => {
   cleanup();
