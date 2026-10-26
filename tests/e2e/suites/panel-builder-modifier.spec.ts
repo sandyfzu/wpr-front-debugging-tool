@@ -230,9 +230,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expect(headline).toHaveText(MARKED_HEADLINE);
       // The dot never reaches assistive tech (empty CSS alt text): Chromium's own
       // accessibility tree has the suffix's words and no "·" anywhere.
-      const spoken = await accessibleTexts(panel);
-      expect(spoken.some((text) => text.includes('2 off in this tab'))).toBe(true);
-      expect(spoken.filter((text) => text.includes('·'))).toEqual([]);
+      // Polled: the accessibility tree updates after the DOM text matches.
+      await expect
+        .poll(async () => {
+          const spoken = await accessibleTexts(panel);
+          return {
+            suffix: spoken.some((text) => text.includes('2 off in this tab')),
+            dots: spoken.filter((text) => text.includes('·'))
+          };
+        })
+        .toEqual({ suffix: true, dots: [] });
 
       for (const width of WIDTHS) {
         await panel.setViewportSize({ width, height: 900 });
