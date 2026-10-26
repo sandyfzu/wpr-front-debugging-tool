@@ -606,6 +606,21 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     }
   });
 
+  it('decides 500 rows over 1 000 masked matches without running each through the ids', () => {
+    // Each row is checked once for whether it can step into an id at all.
+    const served = Array.from(
+      { length: 2000 },
+      (_, n) =>
+        `<script type="text/rocketlazyloadscript" id="s${String(n)}">var q='${n % 2 === 0 ? '<svg>' : '</svg>'}';</script>`
+    ).join('');
+    const rows = Array.from({ length: 500 }, (_, n) =>
+      n % 2 === 0 ? `jquery-ui-${String(n)}` : `/wp-content/plugins/p${String(n)}/[a-z]*\\.js`
+    );
+    const started = performance.now();
+    expect(delayJsTransform(served, setWithRows(rows)).report.undetermined).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   it('answers rows that read no id byte, or match for every id', () => {
     const served = parityRow('match-delay-mask-svg-string-unclosed').served;
     expect(delayJsTransform(served, setWithRows(['gtag'])).report.undetermined).toBeUndefined();
