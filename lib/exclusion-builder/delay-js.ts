@@ -31,7 +31,7 @@ import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag, ScannedTag } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import {
-  MASK_ID_SAMPLES,
+  MASK_ID_SENTINEL,
   delayMaskedRegions,
   firstRegionFrom,
   maskedSlice,
@@ -226,20 +226,46 @@ interface InlineReading {
  * @param matchRow The compiled rows.
  * @param element The served script element.
  * @param pass The inline pass's outcome under the set.
+ * Each reading is built from the page text, then masked on its own: Delay
+ * JS masked the page the pass left, and a wrapper's parts may sit inside a
+ * masked region (masking first would hide them from the unwrap).
+ *
+ * @param matchRow The compiled rows.
+ * @param element The served script element (WP Rocket's match, unmasked).
+ * @param pass The inline pass's outcome under the set.
  * @param spanned The element read without a spanning wrapper's part, or `null`.
+ * @param masks Whether the match holds masked regions.
  * @returns The verdict (`null` when undetermined).
  */
 function verdictAfterInlinePass(
   matchRow: DelayRowMatch,
   element: string,
   pass: InlinePass,
-  spanned: string | null
+  spanned: string | null,
+  masks: boolean
 ): DelayVerdict {
-  if (pass === 'runs') return matchRow(element);
-  const unwrapped = unwrapInlineScripts(element).html;
-  const readings = pass === 'skipped' ? [unwrapped] : [element, unwrapped];
-  if (spanned !== null) readings.push(spanned);
-  return agreedVerdict(matchRow, [...new Set(readings)]);
+  const readings = pass === 'runs' ? [element] : [];
+  if (pass !== 'runs') {
+    const unwrapped = unwrapInlineScripts(element).html;
+    readings.push(...(pass === 'skipped' ? [unwrapped] : [element, unwrapped]));
+    if (spanned !== null) readings.push(spanned);
+  }
+  const subjects = [...new Set(readings)].map((reading) =>
+    masks ? asDelayJsReadIt(reading) : reading
+  );
+  return agreedVerdict(matchRow, subjects);
+}
+
+/**
+ * A match's text as Delay JS read it: each masked region a placeholder
+ * whose id is the unknowable sentinel. The regions are found on the text
+ * itself: none straddles a delayed match's ends (it would have hidden its
+ * opening or its end tag), so they are the page's within it.
+ *
+ * @param text The match's text (from its `<script`).
+ */
+function asDelayJsReadIt(text: string): string {
+  return maskedSlice(text, 0, text.length, delayMaskedRegions(text), MASK_ID_SENTINEL);
 }
 
 /**
@@ -358,9 +384,6 @@ function delayAfterInlinePass(
       tag.name === 'script' && isDelayedScript(tag)
         ? delayScriptMatch(servedHtml, tag, regions)
         : { contentEnd: tag.contentEnd, end: tag.end, regions: [] };
-    /** The match's text from `from` to `to`, its regions as placeholders with `id`. */
-    const text = (from: number, to: number, id: string): string =>
-      maskedSlice(servedHtml, from, to, match.regions, id);
     // A spanning wrapper's other reading of the body: its range in the page.
     let spannedBody: readonly [number, number] | null = null;
     if (inline.spanning && tag.name === 'script') {
@@ -400,19 +423,19 @@ function delayAfterInlinePass(
     if (!featureWide) {
       // The whole match is the target, as WP Rocket saw it before delaying
       // it (rows may also match body text), its masked regions as
-      // placeholders whose id is unknowable: every sampled id must agree.
-      const ids = match.regions.length === 0 ? MASK_ID_SAMPLES.slice(0, 1) : MASK_ID_SAMPLES;
-      const verdict = agreedAcross(
-        ids.map((id) => {
-          const element = text(tag.start, match.end, id);
-          const spanned =
-            spannedBody === null
-              ? null
-              : text(tag.start, tag.openingEnd, id) +
-                text(spannedBody[0], spannedBody[1], id) +
-                text(match.contentEnd, match.end, id);
-          return verdictAfterInlinePass(matchRow, element, inline.pass, spanned);
-        })
+      // placeholders whose id is unknowable.
+      const spanned =
+        spannedBody === null
+          ? null
+          : servedHtml.slice(tag.start, tag.openingEnd) +
+            servedHtml.slice(spannedBody[0], spannedBody[1]) +
+            servedHtml.slice(match.contentEnd, match.end);
+      const verdict = verdictAfterInlinePass(
+        matchRow,
+        servedHtml.slice(tag.start, match.end),
+        inline.pass,
+        spanned,
+        match.regions.length > 0
       );
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {

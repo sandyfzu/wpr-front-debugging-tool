@@ -595,6 +595,38 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     expect(result.report).toMatchObject({ rewritten: 0, undetermined: 1 });
   });
 
+  it('is undetermined for a hex fragment of today’s ids, which no id sample holds (S13c, run)', () => {
+    // WP Rocket's uniqid() ids start with clock digits (`6adf…` in 2026): these
+    // rows excluded `a` on the real plugin then, and will not in a few years.
+    const served = parityRow('match-delay-mask-svg-string-unclosed').served;
+    for (const row of ['6adf', '_.ad', '6ad']) {
+      const result = delayJsTransform(served, setWithRows([row]));
+      expect(result.html, row).toBe(served);
+      expect(result.report, row).toMatchObject({ rewritten: 0, undetermined: 1 });
+    }
+  });
+
+  it('answers rows that read no id byte, or match for every id', () => {
+    const served = parityRow('match-delay-mask-svg-string-unclosed').served;
+    expect(delayJsTransform(served, setWithRows(['gtag'])).report.undetermined).toBeUndefined();
+    const all = delayJsTransform(served, setWithRows(['WPR_SVG_[0-9a-f]{13} --']));
+    expect(all.report).toMatchObject({ rewritten: 1 });
+    expect(all.report.undetermined).toBeUndefined();
+  });
+
+  it('reads the inline pass before masking: a wrapper opening inside a region (run)', () => {
+    // b's wrapper opening sits in the svg region a's match holds; under rows
+    // that leave the pass unknown, b may hold `});` or not.
+    const served = parityRow('match-delay-mask-inline-unknown').served;
+    const set: ExclusionSet = {
+      rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['\\}\\);'], deferJs: ['jquery', 'app.js'] },
+      disable: EMPTY_EXCLUSION_SET.disable
+    };
+    const result = delayJsTransform(served, set);
+    expect(result.html).toBe(served);
+    expect(result.report).toMatchObject({ rewritten: 0, undetermined: 1 });
+  });
+
   it('never tests a row against the region’s own text', () => {
     const result = delayJsTransform(SERVED, setWithRows(["q='.svg"]));
     expect(result.html).toBe(SERVED);

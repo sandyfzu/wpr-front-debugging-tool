@@ -552,6 +552,17 @@ function runtimePattern(feature: RegexFeatureId, row: string): string {
   return runtimeEscapes(feature, toByteString(row));
 }
 
+/**
+ * The parse of a row's runtime pattern as WP Rocket runs it (escapes
+ * applied, caseless) — the tree its JS matcher is emitted from.
+ *
+ * @param feature The row's feature.
+ * @param row The stored row.
+ */
+export function runtimeParse(feature: RegexFeatureId, row: string): ParsedPattern {
+  return parsePcre(runtimePattern(feature, row), true);
+}
+
 /** WP Rocket's runtime escapes applied to a row's byte string. */
 function runtimeEscapes(feature: RegexFeatureId, bytes: string): string {
   return applyEscapes(bytes, RUNTIME_ESCAPES[feature]);

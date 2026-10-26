@@ -9,7 +9,16 @@ import { DELAY_JS_SRC, DELAY_JS_TYPES, isDelayJSType } from '../wp-rocket/consta
 import { delayAttributeRewrite } from './delay-js-rewrite';
 import { matchAllRows, throwIfBlocking } from './errors';
 import { parseTagAt } from './html-scan';
-import { compileFirstMatch, translateRegexRows, translationRowProblems } from './pcre/rows';
+import {
+  compileByteMatcher,
+  compileFirstMatch,
+  translateRegexRows,
+  translationRowProblems,
+  type TranslatedRow
+} from './pcre/rows';
+import { compileIdProbe, idBytesOf, type IdOutcome } from './pcre/id-probe';
+import { runtimeParse, toByteString } from './pcre/translate';
+import { MASK_ID_SENTINEL } from './delay-js-mask';
 import { pcreFeatureProblems } from './validate';
 import { escapeRegex } from '../../utils/regex';
 
@@ -236,13 +245,62 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
   );
   throwIfBlocking(entries);
   const first = compileFirstMatch(translation.rows.map((row) => row.matcher));
+  const masked = maskedFirstMatch(translation.rows);
+  const firstOf = (text: string): number | null =>
+    text.includes(MASK_ID_SENTINEL) ? masked(text) : first(text);
   const match: DelayRowMatch = (region) => {
     const reading = undoDelayRenames(region);
-    if (reading.kind === 'not-delayed') return { row: first(region), approximate: true };
-    if (reading.kind === 'approximate') return { row: first(reading.text), approximate: true };
-    return agreedVerdict(reading.texts.map(first));
+    if (reading.kind === 'approximate' || reading.kind === 'not-delayed') {
+      const row = firstOf(reading.kind === 'approximate' ? reading.text : region);
+      return row === null ? null : { row, approximate: true };
+    }
+    return agreedVerdict(reading.texts.map(firstOf));
   };
   return { match, matchAllRows: matchAllRows(entries) };
+}
+
+/**
+ * The first matching row over a subject holding mask placeholders whose
+ * ids are {@link MASK_ID_SENTINEL} (unknowable — see `./pcre/id-probe`):
+ * a row is decided for every id at once, or not at all. The first row
+ * matching for every id wins; a row before it, or with none after, that
+ * matches for some ids only (or cannot be proven) makes the answer
+ * undetermined — except that a later certain match still settles that the
+ * script matched (its credit then goes to that row).
+ *
+ * @param rows The translated rows, in order.
+ * @returns The row index, `-1` for none, `null` when undetermined.
+ */
+function maskedFirstMatch(rows: readonly TranslatedRow[]): (text: string) => number | null {
+  const tests = rows.map((row) => (row.matcher === null ? null : compileByteMatcher(row.matcher)));
+  // Built on first use: only scripts holding masked regions need them.
+  const probes: (((subject: string, idAt: Uint8Array) => IdOutcome) | null | undefined)[] = [];
+  const probeOf = (index: number): ((subject: string, idAt: Uint8Array) => IdOutcome) | null => {
+    let probe = probes[index];
+    if (probe === undefined) {
+      const row = rows[index];
+      probe = row?.matcher == null ? null : compileIdProbe(runtimeParse('delay_js', row.row));
+      probes[index] = probe;
+    }
+    return probe;
+  };
+  return (text) => {
+    const bytes = toByteString(text);
+    const idAt = idBytesOf(bytes);
+    // Any id stands in for all where a row is blind to them.
+    const sample = bytes.replace(/\0/g, (zero, at: number) => (idAt[at] === 1 ? '0' : zero));
+    let uncertain = false;
+    for (let index = 0; index < rows.length; index++) {
+      const test = tests[index];
+      const probe = probeOf(index);
+      if (test == null || probe === null) continue;
+      const outcome = probe(bytes, idAt);
+      const matched = outcome === 'blind' ? test(sample) : outcome === 'all';
+      if (matched) return index;
+      if (outcome === 'depends' || outcome === 'unknown') uncertain = true;
+    }
+    return uncertain ? null : -1;
+  };
 }
 
 /**
@@ -260,11 +318,14 @@ export function compileDelayRows(rows: readonly string[]): DelayRowMatch {
  * One verdict from every possible original's: their shared verdict
  * (crediting the first original's row), else undetermined.
  *
- * @param rows Each possible original's first matching row (`-1` = none).
+ * @param rows Each possible original's first matching row (`-1` = none,
+ *   `null` = undetermined).
  */
-export function agreedVerdict(rows: readonly number[]): DelayVerdict {
+export function agreedVerdict(rows: readonly (number | null)[]): DelayVerdict {
   const [row] = rows;
-  if (row === undefined) return null;
+  if (row === undefined || row === null) return null;
   const matched = row !== -1;
-  return rows.every((other) => (other !== -1) === matched) ? { row, approximate: false } : null;
+  return rows.every((other) => other !== null && (other !== -1) === matched)
+    ? { row, approximate: false }
+    : null;
 }

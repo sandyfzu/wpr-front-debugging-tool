@@ -1,0 +1,85 @@
+/**
+ * The mask-id probe: a row's match over every placeholder id at once.
+ * Subjects hold placeholders whose ids are the 13-NUL sentinel.
+ */
+import { describe, expect, it } from 'vitest';
+import { compileIdProbe, idBytesOf, ID_PROBE_LIMITS, type IdOutcome } from './id-probe';
+import { runtimeParse } from './translate';
+
+const SENTINEL = '\0'.repeat(13);
+
+/** A delayed script whose match holds one svg placeholder. */
+const SUBJECT = `<script type="text/rocketlazyloadscript" id="a">el.innerHTML='<!-- WPR_SVG_${SENTINEL} -->';jQuery(1);</script>`;
+
+/** The probe's outcome for a Delay JS row over a subject. */
+const outcome = (row: string, subject = SUBJECT): IdOutcome =>
+  compileIdProbe(runtimeParse('delay_js', row))(subject, idBytesOf(subject));
+
+describe('compileIdProbe', () => {
+  it('finds rows that match for some ids only, however short the hex fragment', () => {
+    // Today's uniqid() ids start `6adf…`: these rows match now, not in a few years.
+    for (const row of ['6adf', '_.ad', 'WPR_SVG_0', '[0-9]{3}', 'WPR_SVG_\\d', 'f -->']) {
+      expect(outcome(row), row).toBe('depends');
+    }
+  });
+
+  it('decides rows that match for every id, and leaves the rest to their matcher', () => {
+    expect(outcome('WPR_SVG_[0-9a-f]{13} --')).toBe('all');
+    // Delay JS escapes `+`: this row needs a literal plus, so it cannot step through an id.
+    expect(outcome('_[0-9a-z]+ -->')).toBe('blind');
+    expect(outcome('_[0-9a-z]* -->')).toBe('all');
+    // Through the id and past it, then not this subject's text: no id matches.
+    expect(outcome('_[0-9a-f]{13} -->zz')).toBe('none');
+    expect(outcome('jquery\\(1')).toBe('blind');
+    // An id is 13 digits, then a space: no 14-digit run steps through it.
+    expect(outcome('[0-9a-f]{14}')).toBe('blind');
+    expect(outcome('gtag')).toBe('blind');
+  });
+
+  it('is blind for rows that cannot read a hex byte (their own matcher answers)', () => {
+    for (const row of [
+      'WPR_SVG_',
+      '-- >',
+      'innerHTML',
+      '/wp-includes/js/',
+      'jquery\\b',
+      '\\bjquery'
+    ]) {
+      expect(['blind', 'all', 'none'], row).toContain(outcome(row));
+    }
+    expect(outcome('WPR_SVG_')).toBe('blind');
+    expect(outcome('jquery\\b')).toBe('blind');
+  });
+
+  it('never proves a row that could read an id through a lookaround or an atom', () => {
+    expect(outcome('WPR_SVG_(?=6)')).toBe('unknown');
+    expect(outcome('WPR_SVG_(?!6)')).toBe('unknown');
+    // A lookaround that cannot read a hex byte sees the same for every id.
+    expect(outcome('WPR_SVG_(?!z)')).toBe('blind');
+    expect(outcome('(a)\\1')).toBe('unknown');
+    // An assertion widens the automaton: a hex run it could touch is unknown.
+    expect(outcome('\\bad')).toBe('unknown');
+  });
+
+  it('answers unknown past its state bound', () => {
+    expect(ID_PROBE_LIMITS.states).toBeGreaterThan(0);
+    expect(outcome('(((a|b){40}){40}){40}')).toBe('unknown');
+  });
+
+  it('is blind on a subject without placeholder ids', () => {
+    expect(outcome('6adf', '<script>x()</script>')).toBe('blind');
+  });
+});
+
+describe('idBytesOf', () => {
+  it('marks the 13 id bytes of each placeholder, nothing else', () => {
+    const subject = `a\0<!-- WPR_XMP_${SENTINEL} --><!-- WPR_SVG_${SENTINEL} -->`;
+    const marked = [...idBytesOf(subject)].flatMap((bit, at) => (bit === 1 ? [at] : []));
+    const first = subject.indexOf('WPR_XMP_') + 8;
+    const second = subject.indexOf('WPR_SVG_') + 8;
+    expect(marked).toEqual([
+      ...Array.from({ length: 13 }, (_, n) => first + n),
+      ...Array.from({ length: 13 }, (_, n) => second + n)
+    ]);
+  });
+});

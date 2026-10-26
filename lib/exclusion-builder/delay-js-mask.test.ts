@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  MASK_ID_SAMPLES,
+  MASK_ID_SENTINEL,
   delayMaskedRegions,
   firstRegionFrom,
   maskPlaceholder,
@@ -122,8 +122,7 @@ describe('maskedSlice', () => {
     expect(maskPlaceholder('xmp', '0')).toBe('<!-- WPR_XMP_0 -->');
   });
 
-  it('samples ids shaped like PHP’s uniqid (13 hex digits), all distinct', () => {
-    for (const id of MASK_ID_SAMPLES) expect(id).toMatch(/^[0-9a-f]{13}$/);
-    expect(new Set(MASK_ID_SAMPLES).size).toBe(MASK_ID_SAMPLES.length);
+  it('writes the sentinel id as 13 NULs, an id’s length', () => {
+    expect(MASK_ID_SENTINEL).toBe('\0'.repeat(13));
   });
 });

@@ -78,17 +78,14 @@ export function maskPlaceholder(kind: MaskedRegion['kind'], id: string): string 
 }
 
 /**
- * Ids standing in for the unknowable one: a row whose verdict changes
- * across them depends on it (the answer is undetermined).
+ * The id written into placeholders for matching: 13 NULs, which the Delay
+ * JS matcher reads as "every hex digit" (see `./pcre/id-probe`) — the real
+ * id is clock-derived and unknowable, so no sample of ids can stand in.
  */
-export const MASK_ID_SAMPLES: readonly string[] = [
-  '0000000000000',
-  'fffffffffffff',
-  '6713e5a1b2c3d'
-];
+export const MASK_ID_SENTINEL = '\0'.repeat(13);
 
 /** The id the xmp placeholders get while the svg regex reads the page (it reads past them). */
-const XMP_ID_WHILE_MASKING = MASK_ID_SAMPLES[0] ?? '0000000000000';
+const XMP_ID_WHILE_MASKING = '0000000000000';
 
 /**
  * The regions Delay JS hides on a page, in page order, not overlapping:
