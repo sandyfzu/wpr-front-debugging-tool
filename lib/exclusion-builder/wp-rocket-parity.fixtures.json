@@ -4397,6 +4397,35 @@
       "inlineWrapped": []
     },
     {
+      "id": "match-defer-inline-src-span-delayed",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery.min.js"],
+      "note": "the inline pass wraps scripts with a `src` too: `</script x>` lets a's match read on through b's opening (naming jquery); Delay JS reads on to b's `</script>` as well, so a's wrapper reads back whole (both scripts deferred)",
+      "throughDelayJs": true,
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-content/plugins/p/lib.js\" id=\"a\"></script x>\n<script src=\"/wp-includes/js/jquery/jquery.min.js?ver=3.7.1\" id=\"b\"></script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script type=\"text/rocketlazyloadscript\" data-rocket-src=\"/wp-content/plugins/p/lib.js\" id=\"a\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {</script x>\n<script src=\"/wp-includes/js/jquery/jquery.min.js?ver=3.7.1\" id=\"b\" data-rocket-defer defer>});</script>\n</body></html><!-- wpr_delay_js --><!-- wpr_defer_js -->",
+      "subjects": ["a", "b"],
+      "candidates": ["a", "b"],
+      "excluded": ["b"],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
+      "id": "match-defer-inline-src-whole",
+      "kind": "match",
+      "feature": "defer_all_js",
+      "rows": ["jquery.min.js"],
+      "note": "a deferred script with a `src` and a jQuery body is wrapped like an inline one; the row skips the pass, so its body is unwrapped",
+      "html": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-content/plugins/p/a.js\" id=\"a\">jQuery(1)</script>\n</body></html>",
+      "served": "<html><head><meta charset=\"utf-8\"></head><body>\n<script src=\"/wp-content/plugins/p/a.js\" id=\"a\" data-rocket-defer defer>window.addEventListener('DOMContentLoaded', function() {jQuery(1)});</script>\n</body></html><!-- wpr_defer_js -->",
+      "subjects": ["a"],
+      "candidates": ["a"],
+      "excluded": [],
+      "featureOff": false,
+      "inlineWrapped": []
+    },
+    {
       "id": "match-lazyload-src-file",
       "kind": "match",
       "feature": "lazyload",

@@ -127,6 +127,29 @@ describe('replayInlinePass', () => {
     });
   });
 
+  it('replays wrapping only deferred scripts hold (a `src` script is wrapped too)', () => {
+    const deferred = `<script src="/a.js" data-rocket-defer defer>${wrap('jQuery(1)')}</script>`;
+    expect(replayInlinePass(deferred, deferSet(['jquery.js']))).toEqual({
+      html: '<script src="/a.js" data-rocket-defer defer>jQuery(1)</script>',
+      wrapped: 0,
+      unwrapped: 1,
+      undetermined: 0,
+      spanned: 0
+    });
+    expect(replayInlinePass(deferred, deferSet(['foo.js']))).toMatchObject({ undetermined: 1 });
+    // A wrapper spanning two deferred scripts: both left as served, undetermined.
+    const split =
+      `<script data-rocket-src="/a.js" data-rocket-defer defer>${INLINE_WRAP_OPEN}</script>` +
+      `<script src="/b.js" data-rocket-defer defer>${INLINE_WRAP_CLOSE}</script>`;
+    expect(replayInlinePass(split, deferSet(['jquery.js']))).toEqual({
+      html: split,
+      wrapped: 0,
+      unwrapped: 0,
+      undetermined: 2,
+      spanned: 2
+    });
+  });
+
   it('counts nothing on a page without the wrapping', () => {
     const plain = '<script>jQuery(1)</script>';
     expect(replayInlinePass(plain, deferSet(['foo.js']))).toEqual({

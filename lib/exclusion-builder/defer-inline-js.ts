@@ -402,7 +402,9 @@ export interface InlinePassReplay {
  */
 export function replayInlinePass(html: string, set: ExclusionSet): InlinePassReplay {
   const { inners, count, readable, readableScripts, spanned } = wrappedScripts(html);
-  const pass = count === 0 ? 'runs' : inlinePassUnder(set);
+  // No wrapping at all: nothing to replay. `count` alone leaves out deferred
+  // scripts (a `src` one is wrapped too when its match names jQuery).
+  const pass = count + readable + spanned === 0 ? 'runs' : inlinePassUnder(set);
   if (pass === 'runs') return { html, wrapped: count, unwrapped: 0, undetermined: 0, spanned: 0 };
   if (pass === 'unknown') {
     // Every script it leaves as served: the openings, and the closings they hold.
