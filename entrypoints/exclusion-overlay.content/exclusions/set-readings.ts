@@ -65,7 +65,9 @@ export interface SetReadings {
    * retries it.
    *
    * @param done Called once, with `true` once settled (at once when already
-   *   settled) or `false` when a reading broke; never after `dispose`.
+   *   settled) or `false` when a reading broke (at once when a lane's last
+   *   reading broke and none is running or scheduled since); never after
+   *   `dispose`.
    */
   whenSettled(done: (settled: boolean) => void): void;
   /** Cancel the scheduled runs and the waits (teardown). */
@@ -131,6 +133,8 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
     let cancel: (() => void) | null = null;
     /** The rows a running reading reads (its slices stop once they changed). */
     let reads: readonly DraftRow[] | null = null;
+    /** Whether the last reading broke (cleared when the next one starts). */
+    let broke = false;
     const stop = (): void => {
       cancel?.();
       cancel = null;
@@ -139,6 +143,7 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
     /** Read the current rows, a slice per task. */
     const read = (): void => {
       stop();
+      broke = false;
       // eslint-disable-next-line solid/reactivity -- a snapshot on purpose: the slices check it against the rows
       const current = rows();
       const work = startLanePage(lane, current, new Set(deps.uncommitted), deps.carry);
@@ -158,6 +163,7 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
           // Not read: the lane stays unread (an Apply reads it again), and
           // whoever waits is told now, never left waiting.
           reads = null;
+          broke = true;
           deps.log.warn(`reading the ${lane} rows as one set failed`, cause);
           tellBroken();
           return;
@@ -189,7 +195,12 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
       if (fresh() || reads === rows()) return;
       read();
     };
-    return { lane, page, hurry, stop };
+    /**
+     * Whether the lane's last reading broke and nothing reads it since: a
+     * wait on it would never end (a first slice breaks before anyone waits).
+     */
+    const broken = (): boolean => broke && cancel === null && reads === null;
+    return { lane, page, hurry, stop, broken };
   });
   const byLane = new Map(lanes.map((entry) => [entry.lane, entry]));
   return {
@@ -201,7 +212,8 @@ export function createSetReadings(deps: SetReadingsDeps): SetReadings {
     },
     whenSettled: (done) => {
       waiters.push(done);
-      tellIfSettled();
+      if (lanes.some((entry) => entry.broken())) tellBroken();
+      else tellIfSettled();
     },
     dispose: () => {
       waiters.length = 0;

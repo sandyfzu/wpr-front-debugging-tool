@@ -247,6 +247,47 @@ describe('an Apply waiting for its set readings', () => {
     expect(controller.checking()).toBe(false);
   });
 
+  it('a reading that breaks on the slice Apply runs at once frees the editor, every time', async () => {
+    const { controller, port, fire } = await started(slow);
+    controller.insertRows('deferJs', lines(40).split('\n'), null);
+    breakReading.on = true;
+    const before = readingStarts.count;
+    // Apply reads the lane now: its first slice breaks before anyone waits.
+    controller.apply();
+    expect(readingStarts.count).toBe(before + 1);
+    expect(controller.checking()).toBe(false);
+    expect(controller.editable()).toBe(true);
+    expect(controller.state()).toMatchObject({ phase: 'ready', notice: { kind: 'check-failed' } });
+    // A second Apply reads it again and is told at once again, never left waiting.
+    controller.apply();
+    expect(readingStarts.count).toBe(before + 2);
+    expect(controller.checking()).toBe(false);
+    expect(controller.state()).toMatchObject({ notice: { kind: 'check-failed' } });
+    expect(port.apply).not.toHaveBeenCalled();
+    // Try again, once the reading works: it applies once.
+    breakReading.on = false;
+    controller.retryFailedAction();
+    expect(controller.checking()).toBe(true);
+    await fire(0);
+    expect(port.apply).toHaveBeenCalledTimes(1);
+    expect(controller.checking()).toBe(false);
+  });
+
+  it('a lane that broke and is read again after an edit waits for that reading', async () => {
+    const { controller, port, fire } = await started(slow);
+    const ids = controller.insertRows('deferJs', lines(40).split('\n'), null);
+    breakReading.on = true;
+    controller.apply();
+    expect(controller.state()).toMatchObject({ notice: { kind: 'check-failed' } });
+    breakReading.on = false;
+    // The edit schedules a new reading: the broken one no longer speaks.
+    controller.editRow('deferJs', ids[1] ?? '', '/fixed\\.js');
+    controller.apply();
+    expect(controller.checking()).toBe(true);
+    await fire(0);
+    expect(port.apply).toHaveBeenCalledTimes(1);
+  });
+
   it('a reading that breaks with nobody waiting is read again on Apply', async () => {
     const { controller, port, fire } = await started(slow);
     controller.insertRows('deferJs', lines(40).split('\n'), null);
