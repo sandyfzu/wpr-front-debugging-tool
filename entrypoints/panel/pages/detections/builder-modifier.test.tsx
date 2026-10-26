@@ -1,7 +1,8 @@
 /**
  * The Exclusion Builder modifier on the Detections page: each card the
- * builder changed carries its modifier badge (icon + text, the sentence
- * spoken and as the native title) beside the unchanged served verdict;
+ * builder changed carries its modifier badge (icon + short text) and the
+ * full sentence as a visible line, spoken once, beside the unchanged served
+ * verdict; a fact on a row WP Rocket did not serve shows the modifier alone;
  * the summary strip counts per O-N3; a page with no fact shows nothing.
  */
 import { cleanup, render } from '@solidjs/testing-library';
@@ -15,11 +16,20 @@ import { DetectionsView } from './page';
 
 afterEach(cleanup);
 
-/** A WP Rocket page declaring Delay/Defer/LazyLoad, with an optional builder marker. */
-function data(marker: string | null): FdtData {
+/** The generator meta declaring Delay/Defer/LazyLoad as served. */
+const DECLARING_GENERATOR =
+  '<meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_lazyload_images">';
+
+/**
+ * A WP Rocket page with an optional builder marker.
+ *
+ * @param marker The marker content, or null for none.
+ * @param generator The generator meta (default: declares Delay/Defer/LazyLoad).
+ */
+function data(marker: string | null, generator = DECLARING_GENERATOR): FdtData {
   const note =
     marker === null ? '' : `<meta name="${BUILDER_MARKER_META_NAME}" content="${marker}">`;
-  const html = `<!doctype html><html><head><meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js wpr_defer_js wpr_lazyload_images">${note}</head><body><img src="p.gif" data-lazy-src="r.jpg"></body></html>`;
+  const html = `<!doctype html><html><head>${generator}${note}</head><body><img src="p.gif" data-lazy-src="r.jpg"></body></html>`;
   return makeFdtData({ wprDetections: runDetection(html).detections });
 }
 
@@ -35,6 +45,26 @@ function modifier(id: string): HTMLElement | null {
   return card(id).querySelector<HTMLElement>('[data-fdt-card-modifier]');
 }
 
+/** A card's visible modifier sentence line, or null. */
+function modifierLine(id: string): HTMLElement | null {
+  return card(id).querySelector<HTMLElement>('[data-fdt-card-modifier-line]');
+}
+
+/**
+ * The text assistive tech reads for an element: its text content minus
+ * every `aria-hidden` subtree (what a link card's accessible name is built of).
+ */
+function spokenText(root: Node): string {
+  if (root instanceof Element && root.getAttribute('aria-hidden') === 'true') return '';
+  if (root.nodeType === Node.TEXT_NODE) return root.textContent ?? '';
+  return Array.from(root.childNodes, spokenText).join('');
+}
+
+/** How often `needle` occurs in `text`. */
+function occurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
 /** The strip's active count text ("N of M optimizations active"). */
 function activeLine(): string {
   const strip = document.querySelector<HTMLElement>('[data-fdt-summary-headline]');
@@ -43,8 +73,8 @@ function activeLine(): string {
 
 const MARKED = 'v1 delay_js=off defer_all_js=page-off lazyload=excluded:2';
 
-describe('the modifier badge on the cards', () => {
-  it('states each modifier with an icon and text, the verdict staying Active', () => {
+describe('the modifier on the cards', () => {
+  it('states each modifier with an icon, short text and the visible sentence, verdict Active', () => {
     render(() => <DetectionsView data={data(MARKED)} now={0} />);
     const cases: [string, string, string, string][] = [
       ['delay_js', 'off', 'Disabled in this tab', 'Disabled in this tab by the Exclusion Builder.'],
@@ -62,10 +92,17 @@ describe('the modifier badge on the cards', () => {
       expect(badge?.dataset.fdtCardModifier, id).toBe(kind);
       // Never color alone: an icon (decorative) and the visible words.
       expect(badge?.querySelector('svg[aria-hidden="true"]'), id).not.toBeNull();
-      expect(badge?.textContent, id).toContain(chip);
-      // The full sentence for assistive tech and as the native title.
-      expect(badge?.querySelector('.sr-only:last-child')?.textContent, id).toBe(`: ${sentence}`);
-      expect(badge?.title, id).toBe(sentence);
+      expect(badge?.textContent, id).toBe(chip);
+      // The full sentence is visible text (never hover-only), not sr-only.
+      const line = modifierLine(id);
+      expect(line?.textContent, id).toContain(sentence);
+      expect(line?.classList.contains('sr-only'), id).toBe(false);
+      expect(line?.closest('.sr-only'), id).toBeNull();
+      expect(badge?.hasAttribute('title'), id).toBe(false);
+      // Spoken once: the badge is hidden from assistive tech, the sentence read once.
+      const spoken = spokenText(card(id));
+      expect(occurrences(spoken, sentence), id).toBe(1);
+      expect(occurrences(spoken, chip), id).toBe(sentence.includes(chip) ? 1 : 0);
       // The served verdict is unchanged.
       expect(card(id).textContent, id).toContain('Active');
     }
@@ -82,7 +119,30 @@ describe('the modifier badge on the cards', () => {
   it('shows no modifier on a page with no builder fact', () => {
     render(() => <DetectionsView data={data(null)} now={0} />);
     expect(document.querySelectorAll('[data-fdt-card-modifier]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-fdt-card-modifier-line]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain('Exclusion Builder');
+  });
+
+  it('shows the modifier alone on a row WP Rocket did not serve (no source, no why)', () => {
+    // A generator meta without `data-wpr-features`: no meta evidence, and no
+    // footprint either — the card has no source chip and no why, so only the
+    // fact can open its evidence line.
+    render(() => (
+      <DetectionsView
+        data={data('v1 delay_js=off', '<meta name="generator" content="WP Rocket 3.23.5.1">')}
+        now={0}
+      />
+    ));
+    const delay = card('delay_js');
+    expect(delay.querySelector('[data-fdt-card-source]')).toBeNull();
+    expect(delay.querySelector('[data-fdt-card-why]')).toBeNull();
+    expect(delay.querySelector('[data-fdt-card-evidence]')).not.toBeNull();
+    expect(modifier('delay_js')?.textContent).toBe('Disabled in this tab');
+    expect(modifierLine('delay_js')?.textContent).toContain(
+      'Disabled in this tab by the Exclusion Builder.'
+    );
+    expect(delay.textContent).toContain('Not active');
+    expect(delay.textContent).not.toMatch(/served/i);
   });
 
   it('maps every fact to its badge kind', () => {

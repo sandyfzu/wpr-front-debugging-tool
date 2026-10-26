@@ -11,9 +11,9 @@
  * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
  * the native title) and, for an unsure verdict (collecting / unknown), the
  * amber why sentence — visible text, never hover-only — and, when the
- * Exclusion Builder changed the feature in this tab, its modifier badge
- * (icon + short text; the full sentence spoken and in the native title).
- * The verdict badge stays WP Rocket's served verdict.
+ * Exclusion Builder changed the feature in this tab, its modifier: an
+ * at-a-glance badge (icon + short text) plus the full sentence as a visible
+ * line, spoken once. The verdict badge stays WP Rocket's served verdict.
  *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time and the Known Platform card's matching header —
@@ -143,11 +143,11 @@ const BUILDER_BADGE_ICONS: Readonly<Record<BuilderBadgeKind, LucideIcon>> = {
 };
 
 /**
- * The Exclusion Builder modifier badge: icon + short text, the full
- * sentence for assistive tech and as the native title (a link card cannot
- * host an interactive tooltip).
+ * The Exclusion Builder modifier badge: icon + short text, the at-a-glance
+ * cue. Hidden from assistive tech — the visible sentence beside it
+ * ({@link ModifierLine}) already says it, so the card speaks it once.
  *
- * @param props.item The card (carrying `builder`, `modifier`, `modifierChip`).
+ * @param props.item The card (carrying `builder` and `modifierChip`).
  * @returns The badge, or nothing for a card without a builder fact.
  */
 function ModifierBadge(props: { item: StatusItem }): JSX.Element {
@@ -157,18 +157,15 @@ function ModifierBadge(props: { item: StatusItem }): JSX.Element {
         <Badge kind="info" class="shrink-0">
           <span
             data-fdt-card-modifier={builderBadgeKind(fact())}
-            title={props.item.modifier}
+            aria-hidden="true"
             class="inline-flex items-center gap-1"
           >
             <Dynamic
               component={BUILDER_BADGE_ICONS[builderBadgeKind(fact())]}
               size={11}
               class="shrink-0"
-              aria-hidden="true"
             />
-            <span class="sr-only">, </span>
             {props.item.modifierChip}
-            <span class="sr-only">: {props.item.modifier}</span>
           </span>
         </Badge>
       )}
@@ -177,8 +174,29 @@ function ModifierBadge(props: { item: StatusItem }): JSX.Element {
 }
 
 /**
- * The evidence line: source chip, the builder modifier badge and/or the
- * unsure verdict's why. Renders nothing for a card with none (non-feature
+ * The Exclusion Builder modifier's full sentence as visible text (never
+ * hover-only: keyboard and touch users read it too), styled like the why
+ * line in the modifier's info tone.
+ *
+ * @param props.item The card (carrying `modifier`).
+ * @returns The line, or nothing for a card without a builder fact.
+ */
+function ModifierLine(props: { item: StatusItem }): JSX.Element {
+  return (
+    <Show when={props.item.modifier}>
+      {(sentence) => (
+        <p data-fdt-card-modifier-line class="min-w-0 text-status-info">
+          <span class="sr-only">, </span>
+          {sentence()}
+        </p>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The evidence line: source chip, the builder modifier (badge + sentence)
+ * and/or the unsure verdict's why. Renders nothing for a card with none (non-feature
  * cards, undecided rows whose absence is an honest "not active").
  *
  * @param props.item The card.
@@ -209,6 +227,7 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
           )}
         </Show>
         <ModifierBadge item={props.item} />
+        <ModifierLine item={props.item} />
         <Show when={props.item.why}>
           {(why) => (
             <p data-fdt-card-why class="min-w-0 text-status-warn">
