@@ -110,16 +110,22 @@ function cellText(value: string): string {
 
 /**
  * The "Details" cell of one card: its facts ({@link factsCell}), then the
- * unsure verdict's why when the card carries one.
+ * unsure verdict's why, then the Exclusion Builder's in-tab modifier — each
+ * when the card carries it. The Status cell stays the served verdict; the
+ * modifier here also explains a fact the rewrite emptied (Delay JS's
+ * library version goes with its controller).
  *
  * @param item The card.
  * @returns The cell's markdown.
  */
 function detailsCell(item: StatusItem): string {
   const facts = factsCell(item);
-  if (item.why === undefined) return facts;
-  const why = cellText(item.why);
-  return facts === NONE ? why : `${facts}; ${why}`;
+  // The facts are already cell markdown; the two sentences are our own copy.
+  const notes = [item.why, item.modifier]
+    .filter((note): note is string => note !== undefined)
+    .map(cellText);
+  const parts = facts === NONE ? notes : [facts, ...notes];
+  return parts.length === 0 ? NONE : parts.join('; ');
 }
 
 /**
