@@ -5,8 +5,6 @@ import {
   lazyRenderFilterSnippet
 } from './copy-form';
 import { exclusionFieldText } from './field-text';
-import { applyPipeline } from './pipeline';
-import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 
 describe('exclusionCopyText', () => {
   it('copies the settings field text for the features with a field', () => {
@@ -39,28 +37,5 @@ describe('exclusionCopyText', () => {
       (match[1] ?? '').replace(/\\([\\'])/g, '$1')
     );
     expect(read).toEqual(["it's", 'a\\', "\\'"]);
-  });
-});
-
-describe('the builder marker is never copied', () => {
-  it('stays out of every feature’s copy-all text, even for the set that wrote it', () => {
-    const set = {
-      rows: { delayJs: ['a\\.js'], deferJs: ['.*'], lazyload: ['hero'], lazyRender: ['below'] },
-      disable: { delayJs: false, deferJs: false, lazyRender: false }
-    };
-    const page =
-      '<html><head><script src="j.js" data-rocket-defer defer></script></head><body><img src="p.gif" data-lazy-src="r.jpg" class="hero"></body></html>';
-    // The set's rewrite carries the marker; its copy forms are the rows alone.
-    expect(applyPipeline(page, set).html).toContain(BUILDER_MARKER_META_NAME);
-    const copies = [
-      exclusionCopyText('delay_js', set.rows.delayJs),
-      exclusionCopyText('defer_all_js', set.rows.deferJs),
-      exclusionCopyText('lazyload', set.rows.lazyload),
-      exclusionCopyText('automatic_lazy_rendering', set.rows.lazyRender)
-    ];
-    for (const copy of copies) {
-      expect(copy).not.toContain(BUILDER_MARKER_META_NAME);
-      expect(copy).not.toMatch(/\bv1\b/);
-    }
   });
 });

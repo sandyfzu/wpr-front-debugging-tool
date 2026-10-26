@@ -7,7 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { runDetection } from '../detection/run-detection';
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
-import { boundWprDetections, PAYLOAD_LIMITS } from './payload-bounds';
+import { boundWprDetections } from './payload-bounds';
+import { BUILDER_MARKER_LIMITS } from '../exclusion-builder/builder-marker';
 import { parseFdtDataExplained, parseWprDetections } from './validate';
 import { minimalDetections, validDetections, validFdt } from './validate.fixtures';
 
@@ -75,7 +76,7 @@ describe('the builder field on the builder rows', () => {
       { excluded: -1 },
       { excluded: 1.5 },
       { excluded: '3' },
-      { excluded: PAYLOAD_LIMITS.builderExcluded + 1 },
+      { excluded: BUILDER_MARKER_LIMITS.excludedMax + 1 },
       { excluded: Number.POSITIVE_INFINITY },
       { off: 'feature', excluded: 1 },
       { off: 'feature', extra: 1 },
@@ -127,9 +128,5 @@ describe('the builder field on the builder rows', () => {
     expect(parsed?.defer_all_js.builder).toEqual({ off: 'page' });
     expect(parsed?.automatic_lazy_rendering.builder).toEqual({ excluded: 9999 });
     expect(parsed?.lazyload.builder).toEqual({ excluded: 7 });
-  });
-
-  it('caps the excluded count at the marker’s own ceiling', () => {
-    expect(PAYLOAD_LIMITS.builderExcluded).toBe(9999);
   });
 });

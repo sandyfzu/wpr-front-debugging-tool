@@ -552,7 +552,8 @@ function featureRowKeyCount(baseKeys: number, source: FeatureEvidenceSource | un
  * A builder row's optional `builder` field (the Exclusion Builder's in-tab
  * fact): absent (the document stated none — every payload predating the
  * field), or exactly one fact the row's feature can have — `{ off:
- * 'feature' | 'page' }` or `{ excluded: 1…cap }`. Anything else (another
+ * 'feature' | 'page' }` or `{ excluded: 1…9999 }` (the grammar's own bounds,
+ * via `isBuilderFactAllowed`: one declaring site). Anything else (another
  * key, an extra key, a state the feature cannot have, an out-of-range
  * count) is not engine output.
  *
@@ -575,14 +576,8 @@ function parseOptionalBuilder(
     fact = { off };
   } else if (keys[0] === 'excluded') {
     const excluded = value['excluded'];
-    if (
-      typeof excluded !== 'number' ||
-      !Number.isSafeInteger(excluded) ||
-      excluded < 1 ||
-      excluded > LIMITS.builderExcluded
-    ) {
-      return null;
-    }
+    if (typeof excluded !== 'number') return null;
+    // The count's range (1…9999, an integer) is the grammar's, checked below.
     fact = { excluded };
   } else {
     return null;
