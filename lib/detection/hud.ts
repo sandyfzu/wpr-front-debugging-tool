@@ -458,7 +458,7 @@ export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): Bui
     return {
       chip: `${String(fact.excluded)} excluded`,
       sentence: `${phrase} excluded by the Exclusion Builder.`,
-      hint: `${feature.shortLabel}: ${phrase} excluded`
+      hint: `${feature.shortLabel}: ${String(fact.excluded)} excluded`
     };
   }
   return fact.off === 'feature'

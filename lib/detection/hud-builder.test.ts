@@ -76,17 +76,17 @@ describe('builderModifierCopy — the declared words', () => {
     expect(builderModifierCopy(LAZYLOAD, { excluded: 3 })).toEqual({
       chip: '3 excluded',
       sentence: '3 images excluded by the Exclusion Builder.',
-      hint: 'Lazyload Images: 3 images excluded'
+      hint: 'Lazyload Images: 3 excluded'
     });
     expect(builderModifierCopy(DELAY, { excluded: 1 })).toEqual({
       chip: '1 excluded',
       sentence: '1 script excluded by the Exclusion Builder.',
-      hint: 'Delay JS: 1 script excluded'
+      hint: 'Delay JS: 1 excluded'
     });
     expect(builderModifierCopy(ALR, { excluded: 9999 }).sentence).toBe(
       '9999 elements excluded by the Exclusion Builder.'
     );
-    expect(builderModifierCopy(DEFER, { excluded: 2 }).hint).toBe('Defer JS: 2 scripts excluded');
+    expect(builderModifierCopy(DEFER, { excluded: 2 }).hint).toBe('Defer JS: 2 excluded');
   });
 
   it('never claims WP Rocket served the feature (the verdict owns that)', () => {
@@ -224,10 +224,10 @@ describe('builderTabLine — the strip’s tab-level line', () => {
       hints: [
         'Delay JS off',
         'Defer JS off on this page',
-        'Lazyload Images: 3 images excluded',
-        'Automatic Lazy Rendering: 1 element excluded'
+        'Lazyload Images: 3 excluded',
+        'Automatic Lazy Rendering: 1 excluded'
       ],
-      text: 'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 images excluded · Automatic Lazy Rendering: 1 element excluded'
+      text: 'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded · Automatic Lazy Rendering: 1 excluded'
     });
   });
 
