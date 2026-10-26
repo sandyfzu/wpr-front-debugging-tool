@@ -10,8 +10,7 @@
  * recovery, so every failure is named, logged and visibly scoped).
  */
 
-import { sendMessage } from '../../lib/messaging/index';
-import { canMessageTabs } from '../../lib/messaging/tab-messaging';
+import { selectTabAsks } from '../../lib/messaging/tab-asks';
 import { isNoReceiverError } from '../../lib/messaging/no-receiver';
 import { createLogger } from '../../lib/logger';
 import { onUncaughtError, onUnhandledRejection } from '../../lib/uncaught-errors';
@@ -64,12 +63,15 @@ try {
   // (page without host permission, extension reloading, navigation mid-send):
   // the panel's first data request triggers the same processing lazily, so a
   // skipped warm-up costs a slower first answer, never a broken one.
-  if (!canMessageTabs(browser)) {
-    // A DevTools page without the `tabs` API (Firefox) cannot reach the
-    // page at all; the panel shows its unavailable view instead.
-    log.debug('Page data warm-up skipped — this context cannot message tabs');
+  // Direct where this page has the `tabs` API, else through the background
+  // relay (Firefox DevTools pages).
+  const asks = selectTabAsks(browser);
+  if (asks === null) {
+    // No way to the page at all; the panel shows its unavailable view.
+    log.debug('Page data warm-up skipped — this context has no tab transport');
   } else {
-    sendMessage('processPageData', undefined, browser.devtools.inspectedWindow.tabId)
+    asks
+      .processPageData(browser.devtools.inspectedWindow.tabId)
       .then(() => {
         log.debug('Page data warm-up handed to the inspected tab');
       })

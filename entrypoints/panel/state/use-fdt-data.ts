@@ -46,9 +46,10 @@ export interface FdtDataDeps {
    */
   inspectedTabId: () => number | null;
   /**
-   * Whether this context can message tabs at all (production: the
-   * `tabs.sendMessage` probe). False ⇒ the store enters the terminal
-   * `unavailable` state at start and never sends a request.
+   * Whether this context can reach the tab at all (production: a tab
+   * transport was selected — direct or the background relay). False ⇒ the
+   * store enters the terminal `unavailable` state at start and never sends
+   * a request.
    */
   canRequest: () => boolean;
   /** One request flight: ask the content script for the full page data. */
@@ -100,12 +101,13 @@ const NO_RECEIVER_CAUSE =
 const REQUEST_FAILURE_CAUSE = 'The page could not be reached for its data.';
 
 /**
- * The reason the unavailable view renders when this DevTools panel cannot
- * message the page at all (Firefox gives DevTools pages no `tabs` API) —
- * naming what still works instead of offering a retry that cannot.
+ * The reason the unavailable view renders when this DevTools panel has no
+ * way to the page at all — neither the `tabs` API nor the runtime send the
+ * background relay rides on — naming what still works instead of offering
+ * a retry that cannot.
  */
-export const TABS_UNAVAILABLE_REASON =
-  'This browser’s DevTools panels can’t reach the page yet; the on-page widget and the Exclusions entry below still work.';
+export const NO_PAGE_TRANSPORT_REASON =
+  'This browser gives this panel no way to reach the page — neither tab messaging nor the background relay is available. The on-page widget still works.';
 
 /** The cause when the content script answered `null` (its processing failed). */
 const EMPTY_RESPONSE_CAUSE = 'The page produced no data — its content script could not process it.';
@@ -375,7 +377,7 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
       stopReceivers = deps.receive(receivers);
       if (!deps.canRequest()) {
         // Terminal: every later fetch/refresh/retry is a no-op by the table.
-        applyEvent({ type: 'unavailable', reason: TABS_UNAVAILABLE_REASON });
+        applyEvent({ type: 'unavailable', reason: NO_PAGE_TRANSPORT_REASON });
         return;
       }
       runFlight('fetch');

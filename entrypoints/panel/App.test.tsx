@@ -16,7 +16,7 @@ import type { FdtData } from '../../lib/wp-rocket/types';
 import { PanelApp } from './App';
 import { createSearchStore, type SearchStore } from './state/search';
 import {
-  TABS_UNAVAILABLE_REASON,
+  NO_PAGE_TRANSPORT_REASON,
   createFdtDataStore,
   type FdtDataStore
 } from './state/use-fdt-data';
@@ -165,7 +165,7 @@ describe('PanelApp boot states', () => {
     const view = document.querySelector('[data-fdt="data-unavailable"]');
     expect(view).not.toBeNull();
     expect(screen.getByRole('heading', { level: 1, name: DATA_UNAVAILABLE_TITLE })).toBeTruthy();
-    expect(view?.textContent).toContain(TABS_UNAVAILABLE_REASON);
+    expect(view?.textContent).toContain(NO_PAGE_TRANSPORT_REASON);
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(screen.queryByText("Couldn't load page data")).toBeNull();
     expect(document.querySelector('[data-fdt="error-state"]')).toBeNull();

@@ -6,7 +6,9 @@
  * runtime): search actions and push batches are narrowed with the boundary
  * validators before any handler runs, senders are resolved to tab ids for
  * the push channels (the data layer leans on the ids for its tab-scoping),
- * and the request edge targets exactly one tab — the devtools-inspected one.
+ * and the request edge targets exactly one tab — the devtools-inspected one —
+ * over the tab transport `selectTabAsks` picked (direct, or the background
+ * relay where this context has no `tabs` API).
  *
  * The devtools context: extension pages loaded inside a DevTools window (the
  * `devtools_page` and every panel/sidebar page it created) run with the
@@ -16,11 +18,13 @@
  * (the request then fails as the expected no-receiver case and the panel
  * reports its error state) instead of throwing on a missing namespace.
  */
-import { onMessage, sendMessage } from '../../../lib/messaging/index';
+import { onMessage } from '../../../lib/messaging/index';
 import { resolveSenderTabId } from '../../../lib/messaging/sender';
+import type { TabAsks } from '../../../lib/messaging/tab-asks';
 import { parseErrorWords, parsePanelSearchAction } from '../../../lib/messaging/validate';
 import { createLogger } from '../../../lib/logger';
 import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
+import type { FdtDataDeps } from './use-fdt-data';
 
 const log = createLogger('panel');
 
@@ -40,17 +44,32 @@ export interface PanelReceivers {
   onPanelReload(senderTabId: number | null): void;
 }
 
-/** The transport seams the data layer runs against (tests inject doubles). */
+/** The receive seam the data layer runs against (tests inject doubles). */
 export interface MessagingEdges {
-  /**
-   * Ask one tab's content script for the full page data. `undefined` targets
-   * nothing (the accessor found no inspected tab) — the send then rejects
-   * with the expected no-receiver failure and the panel reports its error
-   * state.
-   */
-  request(tabId: number | undefined): Promise<unknown>;
   /** Register every receiver exactly once at mount; returns the stop handle. */
   receive(receivers: PanelReceivers): () => void;
+}
+
+/** The store's request seams, as {@link fdtRequestEdges} derives them. */
+export type FdtRequestEdges = Pick<FdtDataDeps, 'canRequest' | 'request'>;
+
+/**
+ * The data store's request seams over the chosen tab transport.
+ *
+ * @param asks The panel's tab asks (`selectTabAsks`), or null when this
+ *   context can reach no tab — the store then enters its unavailable state
+ *   and never requests.
+ * @returns `canRequest` + `request`. A `request` with no transport rejects
+ *   (unreachable: the store checks `canRequest` first).
+ */
+export function fdtRequestEdges(asks: TabAsks | null): FdtRequestEdges {
+  return {
+    canRequest: () => asks !== null,
+    request: (tabId) =>
+      asks === null
+        ? Promise.reject(new Error('This panel has no transport to ask the page for its data.'))
+        : asks.getFdtData(tabId)
+  };
 }
 
 /**
@@ -86,7 +105,6 @@ function warnInvalid(action: string, reason: string): void {
  */
 export function realMessagingEdges(): MessagingEdges {
   return {
-    request: (tabId) => sendMessage('getFdtData', undefined, tabId),
     receive: (receivers) => {
       const removers: Array<() => void> = [
         onMessage('panelSearch', ({ data }) => {

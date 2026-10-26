@@ -30,7 +30,7 @@ import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
-import { canMessageTabs } from '../../lib/messaging/tab-messaging';
+import { selectTabAsks } from '../../lib/messaging/tab-asks';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
@@ -58,7 +58,7 @@ import {
   type FdtDataStore
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
-import { devtoolsInspectedTabId, realMessagingEdges } from './state/edges';
+import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
 import { createHardReloadBudget } from './state/hard-reload-budget';
 
 const log = createLogger('panel');
@@ -154,8 +154,7 @@ export function PanelApp(props: AppProps): JSX.Element {
       const edges = realMessagingEdges();
       return createFdtDataStore({
         inspectedTabId: devtoolsInspectedTabId,
-        canRequest: () => canMessageTabs(browser),
-        request: (tabId) => edges.request(tabId),
+        ...fdtRequestEdges(selectTabAsks(browser)),
         receive: (receivers) => edges.receive(receivers),
         search,
         reload: () => {

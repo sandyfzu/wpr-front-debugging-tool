@@ -17,7 +17,7 @@ import type { DataState } from './fdt-state-machine';
 import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from './search';
-import { TABS_UNAVAILABLE_REASON, createFdtDataStore, type FdtDataStore } from './use-fdt-data';
+import { NO_PAGE_TRANSPORT_REASON, createFdtDataStore, type FdtDataStore } from './use-fdt-data';
 import { makeFdtData, makeHardReloadBudget, makeLazyImage, makeMemoryStorage } from './fixtures';
 import { createHardReloadBudget, type HardReloadBudget } from './hard-reload-budget';
 
@@ -131,13 +131,13 @@ function makeStore(
   });
 }
 
-describe('a context that cannot message tabs (Firefox DevTools page)', () => {
+describe('a context with no tab transport (neither tabs nor the relay)', () => {
   it('enters the terminal unavailable state with its reason, never requesting', async () => {
     const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
     const store = makeStore(world, undefined, undefined, false);
     store.start();
     await drained();
-    expect(store.state()).toEqual({ status: 'unavailable', reason: TABS_UNAVAILABLE_REASON });
+    expect(store.state()).toEqual({ status: 'unavailable', reason: NO_PAGE_TRANSPORT_REASON });
     expect(world.request).not.toHaveBeenCalled();
     // The receivers still register (search relay and pushes stay wired).
     expect(world.receiversArmed).toBe(true);
@@ -156,9 +156,18 @@ describe('a context that cannot message tabs (Firefox DevTools page)', () => {
   });
 
   it('names what still works, without offering a retry', () => {
-    expect(TABS_UNAVAILABLE_REASON).toContain('on-page widget');
-    expect(TABS_UNAVAILABLE_REASON).toContain('Exclusions entry');
-    expect(TABS_UNAVAILABLE_REASON.toLowerCase()).not.toContain('retry');
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('on-page widget');
+    expect(NO_PAGE_TRANSPORT_REASON.toLowerCase()).not.toContain('retry');
+  });
+
+  it('blames the missing transports (direct and relay), never a "not yet" or the page', () => {
+    // Shown only when neither the tabs API nor the relay's runtime send
+    // exists — the Exclusions entry rides on that same runtime send, so the
+    // copy must not promise it.
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('tab messaging');
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('background relay');
+    expect(NO_PAGE_TRANSPORT_REASON).not.toMatch(/\byet\b/);
+    expect(NO_PAGE_TRANSPORT_REASON).not.toContain('Exclusions entry');
   });
 });
 

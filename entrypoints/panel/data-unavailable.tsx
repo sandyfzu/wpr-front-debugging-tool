@@ -1,8 +1,9 @@
 /**
- * The panel's "feature absent" view: this DevTools panel cannot message the
- * page at all (Firefox gives DevTools pages no `tabs` API), so no page data
- * can load here. A title, the one sentence naming what still works, and no
- * retry — nothing the panel could retry would change the answer.
+ * The panel's "feature absent" view: this DevTools panel has no way to the
+ * page at all (no `tabs` API and no runtime send for the background relay),
+ * so no page data can load here. A title, the one sentence naming why and
+ * what still works, and no retry — nothing the panel could retry would
+ * change the answer.
  */
 import type { JSX } from 'solid-js';
 import Info from 'lucide-solid/icons/info';
