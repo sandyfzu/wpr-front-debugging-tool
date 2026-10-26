@@ -126,8 +126,9 @@ export function delayMaskedRegions(html: string): readonly MaskedRegion[] {
   map.push({ masked, page, placeholder: false });
   const text = pieces.join('');
   const toPage = (offset: number): number => {
-    let at = map[0] ?? { masked: 0, page: 0, placeholder: false };
-    for (const entry of map) if (entry.masked <= offset) at = entry;
+    // The last piece starting at or before `offset` (binary search: pieces are in order).
+    const at = map[lastAtOrBefore(map.length, (index) => map[index]?.masked ?? 0, offset)];
+    if (at === undefined) return offset;
     // An svg region starts and ends outside placeholders (their `<` is a
     // `<!--`, their `>` a `-->`): only plain text maps by offset.
     return at.page + (at.placeholder ? 0 : offset - at.masked);
@@ -137,10 +138,47 @@ export function delayMaskedRegions(html: string): readonly MaskedRegion[] {
     end: toPage(end - 1) + 1,
     kind: 'svg'
   }));
-  const kept = xmp.filter(
-    (region) => !svg.some((s) => s.start <= region.start && region.end <= s.end)
-  );
+  // An xmp region inside an svg one is listed with it (both lists in page order).
+  const kept: MaskedRegion[] = [];
+  let cover = 0;
+  for (const region of xmp) {
+    while ((svg[cover]?.end ?? Infinity) < region.end) cover++;
+    const outer = svg[cover];
+    if (outer === undefined || outer.start > region.start) kept.push(region);
+  }
   return [...kept, ...svg].sort((left, right) => left.start - right.start);
+}
+
+/**
+ * The index of the last item whose key is at or before `offset` (-1 when
+ * none): a binary search over keys in ascending order.
+ *
+ * @param length How many items.
+ * @param key An item's key, by index.
+ * @param offset The offset.
+ */
+function lastAtOrBefore(length: number, key: (index: number) => number, offset: number): number {
+  let low = 0;
+  let high = length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (key(middle) <= offset) low = middle + 1;
+    else high = middle;
+  }
+  return low - 1;
+}
+
+/**
+ * The index of the first region starting at or after `offset` (`length`
+ * when none), regions being in page order.
+ *
+ * @param regions The page's regions, in page order, not overlapping.
+ * @param offset A page offset.
+ */
+export function firstRegionFrom(regions: readonly MaskedRegion[], offset: number): number {
+  return (
+    lastAtOrBefore(regions.length, (index) => regions[index]?.start ?? Infinity, offset - 1) + 1
+  );
 }
 
 /**
@@ -162,9 +200,10 @@ export function maskedSlice(
 ): string {
   let text = '';
   let at = from;
-  for (const region of regions) {
-    // Only regions wholly inside the slice (they never straddle a match's ends).
-    if (region.start < from || region.end > to) continue;
+  // Only regions wholly inside the slice (they never straddle a match's ends).
+  for (let index = firstRegionFrom(regions, from); index < regions.length; index++) {
+    const region = regions[index];
+    if (region === undefined || region.end > to) break;
     text += html.slice(at, region.start) + maskPlaceholder(region.kind, id);
     at = region.end;
   }

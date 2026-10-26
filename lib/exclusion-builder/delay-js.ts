@@ -33,6 +33,7 @@ import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import {
   MASK_ID_SAMPLES,
   delayMaskedRegions,
+  firstRegionFrom,
   maskedSlice,
   type MaskedRegion
 } from './delay-js-mask';
@@ -121,17 +122,18 @@ export function delayScriptMatch(
 ): DelayScriptMatch {
   const element = { contentEnd: tag.contentEnd, end: tag.end };
   const gt = html.indexOf('>', tag.start);
-  const opening = regions.find(
-    (region) => region.start > tag.start && (gt === -1 || region.start < gt)
-  );
+  // Regions are in page order and never overlap: found by binary search.
+  const first = firstRegionFrom(regions, tag.start + 1);
+  const next = regions[first];
+  const opening = next !== undefined && (gt === -1 || next.start < gt) ? next : undefined;
   let from = opening?.end ?? (gt === -1 ? tag.openingEnd : gt + 1);
   let match: RegExpExecArray | null = null;
   for (;;) {
     DELAY_SCRIPT_END.lastIndex = from;
     match = DELAY_SCRIPT_END.exec(html);
-    const at = match?.index ?? -1;
-    const hidden = match === null ? undefined : regions.find((r) => r.start <= at && at < r.end);
-    if (hidden === undefined) break;
+    if (match === null) break;
+    const hidden = regions[firstRegionFrom(regions, match.index + 1) - 1];
+    if (hidden === undefined || hidden.end <= match.index) break;
     from = hidden.end;
   }
   // The served end tag of a delayed script is one WP Rocket wrote (`</script>`):
@@ -140,8 +142,9 @@ export function delayScriptMatch(
     match === null || match.index < tag.contentEnd
       ? element
       : { contentEnd: match.index, end: match.index + match[0].length };
-  const inside = regions.filter((region) => region.start > tag.start && region.end <= span.end);
-  return { ...span, regions: inside };
+  let last = first;
+  while (last < regions.length && (regions[last]?.end ?? Infinity) <= span.end) last++;
+  return { ...span, regions: regions.slice(first, last) };
 }
 
 /** A delayed script as WP Rocket's Delay JS matched it (see {@link delayScriptMatch}). */

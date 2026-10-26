@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MASK_ID_SAMPLES,
   delayMaskedRegions,
+  firstRegionFrom,
   maskPlaceholder,
   maskedSlice,
   type MaskedRegion
@@ -81,6 +82,21 @@ describe('delayMaskedRegions', () => {
     const started = performance.now();
     expect(delayMaskedRegions(html)).toEqual([]);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe('firstRegionFrom', () => {
+  const regions = delayMaskedRegions('a<svg>1</svg>b<xmp>2</xmp>c<svg>3</svg>');
+
+  it('finds the first region starting at or after an offset', () => {
+    expect(regions.map((region) => region.start)).toEqual([1, 14, 27]);
+    expect(firstRegionFrom(regions, 0)).toBe(0);
+    expect(firstRegionFrom(regions, 1)).toBe(0);
+    expect(firstRegionFrom(regions, 2)).toBe(1);
+    expect(firstRegionFrom(regions, 14)).toBe(1);
+    expect(firstRegionFrom(regions, 27)).toBe(2);
+    expect(firstRegionFrom(regions, 28)).toBe(3);
+    expect(firstRegionFrom([], 5)).toBe(0);
   });
 });
 

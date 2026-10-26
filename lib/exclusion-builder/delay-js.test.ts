@@ -558,6 +558,17 @@ describe('delayScriptMatch — over the regions Delay JS masks', () => {
     );
   });
 
+  it('stays linear over many regions and scripts (regions are found by binary search)', () => {
+    const html = Array.from(
+      { length: 5000 },
+      (_, n) =>
+        `<script type="text/rocketlazyloadscript" id="s${String(n)}">x()</script><svg><use/></svg>`
+    ).join('');
+    const started = performance.now();
+    expect(delayJsTransform(html, setWithRows(['WPR_SVG'])).report.undetermined).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
   it('is the HTML element, holding nothing, when no region touches it', () => {
     expect(matched('<script>x()</script><svg>1</svg>')).toBe('<script>x()|</script>|0');
   });
