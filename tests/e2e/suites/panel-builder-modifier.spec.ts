@@ -62,7 +62,8 @@ const CASES = [
 ] as const;
 
 /** The summary headline on the marked page: LazyLoad (rows excluded) runs, Delay + Defer are off. */
-const MARKED_HEADLINE = /^\s*1\s+of\s+\d+\s+optimizations active\s+·\s+2 off in this tab\s*$/;
+// The text form: the dot is a CSS gutter glyph (never in the text); assistive tech hears a comma.
+const MARKED_HEADLINE = /^\s*1\s+of\s+\d+\s+optimizations active,\s+2 off in this tab\s*$/;
 
 /** The panel widths of the UI bar's D-1 check. */
 const WIDTHS = [320, 480, 768, 1280] as const;
@@ -155,6 +156,26 @@ async function expectModifierContrast(panel: Page, label: string): Promise<void>
   }
 }
 
+/**
+ * Every name and value in Chromium's accessibility tree for the page (what
+ * assistive tech can speak — CSS generated content included unless its alt
+ * text is empty).
+ */
+async function accessibleTexts(panel: Page): Promise<string[]> {
+  const session = await panel.context().newCDPSession(panel);
+  try {
+    const { nodes } = (await session.send('Accessibility.getFullAXTree')) as {
+      nodes: { ignored?: boolean; name?: { value?: unknown }; value?: { value?: unknown } }[];
+    };
+    return nodes
+      .filter((node) => node.ignored !== true)
+      .flatMap((node) => [node.name?.value, node.value?.value])
+      .filter((text): text is string => typeof text === 'string' && text !== '');
+  } finally {
+    await session.detach();
+  }
+}
+
 /** Run axe over the panel page; violations and incomplete checks, by rule id. */
 async function axeAudit(panel: Page): Promise<unknown> {
   await panel.evaluate(AXE_SOURCE);
@@ -207,6 +228,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
       // Delay, Defer and LazyLoad are declared; only LazyLoad (rows excluded) still
       // runs — and the headline says why the other two are not counted.
       await expect(headline).toHaveText(MARKED_HEADLINE);
+      // The dot never reaches assistive tech (empty CSS alt text): Chromium's own
+      // accessibility tree has the suffix's words and no "·" anywhere.
+      const spoken = await accessibleTexts(panel);
+      expect(spoken.some((text) => text.includes('2 off in this tab'))).toBe(true);
+      expect(spoken.filter((text) => text.includes('·'))).toEqual([]);
 
       for (const width of WIDTHS) {
         await panel.setViewportSize({ width, height: 900 });
@@ -245,15 +271,42 @@ for (const colorScheme of ['light', 'dark'] as const) {
           const boxes = element.getClientRects();
           const own = element.getBoundingClientRect();
           const host = element.closest('[data-fdt="detections-summary"]')?.getBoundingClientRect();
+          const clip = element.closest('[data-fdt-summary-headline]')?.getBoundingClientRect();
+          const lead = element.previousElementSibling?.getBoundingClientRect();
+          const dot = getComputedStyle(element, '::before');
+          const dotRight = own.left + parseFloat(dot.left) + parseFloat(dot.width);
+          // The visible text: the element's own text nodes (the sr-only comma excluded).
+          const visible = Array.from(element.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent ?? '')
+            .join('')
+            .trim();
           return {
             // One rect per text fragment; distinct tops = line boxes.
             lines: new Set(Array.from(boxes, (box) => Math.round(box.top))).size,
             inside:
-              host !== undefined && own.left >= host.left - 0.5 && own.right <= host.right + 0.5
+              host !== undefined && own.left >= host.left - 0.5 && own.right <= host.right + 0.5,
+            wrapped: lead !== undefined && own.top > lead.top + 1,
+            startsLine: clip !== undefined && Math.abs(own.left - clip.left) < 0.5,
+            dotHidden: clip !== undefined && dotRight <= clip.left + 0.5,
+            dotContent: dot.content,
+            visible
           };
         });
         console.log(`[suffix] ${colorScheme} ${String(width)} px ${JSON.stringify(suffix)}`);
-        expect(suffix, `suffix at ${String(width)} px`).toEqual({ lines: 1, inside: true });
+        const at = `suffix at ${String(width)} px`;
+        expect({ lines: suffix.lines, inside: suffix.inside }, at).toEqual({
+          lines: 1,
+          inside: true
+        });
+        expect(suffix.visible, at).toBe('2 off in this tab');
+        expect(suffix.dotContent, at).toBe('"·" / ""');
+        // The dot shows between the phrases and is clipped exactly when the suffix wraps,
+        // so a wrapped line starts at the figure.
+        expect(suffix.dotHidden, at).toBe(suffix.wrapped);
+        if (suffix.wrapped) expect(suffix.startsLine, at).toBe(true);
+        if (width === 320) expect(suffix.wrapped, 'the suffix wraps at 320 px').toBe(true);
+        if (width === 1280) expect(suffix.wrapped, 'one headline line at 1280 px').toBe(false);
         const shots = process.env['FDT_SHOTS_DIR'];
         if (shots !== undefined && shots !== '') {
           mkdirSync(shots, { recursive: true });

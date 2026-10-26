@@ -446,6 +446,13 @@ export const SOURCE_REPORT_TEXT: Readonly<Record<FeatureEvidenceSource, string>>
 /** The state line's lead for a feature WP Rocket served that the builder turned off. */
 export const BUILDER_SERVED_LEAD = 'served by WP Rocket';
 
+/**
+ * The inline list joiner every surface shares between short phrases (the
+ * tab-level hints, the summary's reason suffix, the report line). Text form;
+ * the panel draws its glyph as a clipped gutter dot, never spoken.
+ */
+export const LIST_JOINER = ' · ';
+
 /** The strip's tab-level line title: the page shown is the builder's rewrite. */
 export const BUILDER_TAB_LINE_TITLE = 'Exclusion Builder rewrote this page';
 
@@ -528,7 +535,7 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
   return {
     title: BUILDER_TAB_LINE_TITLE,
     hints,
-    text: `${BUILDER_TAB_LINE_TITLE} — ${hints.join(' · ')}`
+    text: `${BUILDER_TAB_LINE_TITLE} — ${hints.join(LIST_JOINER)}`
   };
 }
 
