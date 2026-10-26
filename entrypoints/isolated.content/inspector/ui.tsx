@@ -231,7 +231,12 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                 <div class="ins-group-rows">
                   <For each={group.rows}>
                     {(row) => (
-                      <div class="ins-row" title={row.tooltip}>
+                      <div
+                        class="ins-row"
+                        // A modified row already shows its sentence; the tooltip would
+                        // repeat it as the row's accessible description.
+                        title={row.modifier === null ? row.tooltip : undefined}
+                      >
                         <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
                         <Show when={row.count !== null && row.unit !== null}>
                           <span class="ins-value">

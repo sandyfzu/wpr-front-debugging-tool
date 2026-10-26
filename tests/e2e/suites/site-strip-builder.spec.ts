@@ -300,6 +300,22 @@ async function accessibleTexts(page: Page): Promise<string[]> {
   }
 }
 
+/** Every accessible description in Chromium's accessibility tree for the page. */
+async function accessibleDescriptions(page: Page): Promise<string[]> {
+  const session = await page.context().newCDPSession(page);
+  try {
+    const { nodes } = (await session.send('Accessibility.getFullAXTree')) as {
+      nodes: { ignored?: boolean; description?: { value?: unknown } }[];
+    };
+    return nodes
+      .filter((node) => node.ignored !== true)
+      .map((node) => node.description?.value)
+      .filter((text): text is string => typeof text === 'string' && text !== '');
+  } finally {
+    await session.detach();
+  }
+}
+
 /** Run axe over the strip only (the host page's own markup is not ours). */
 async function axeStrip(page: Page): Promise<unknown> {
   await page.evaluate(AXE_SOURCE);
@@ -377,9 +393,26 @@ test.describe('strip builder line + modifiers', () => {
         }
 
         // Assistive tech never hears the dot.
-        const spoken = await accessibleTexts(page);
-        expect(spoken.some((text) => text.includes(TITLE))).toBe(true);
-        expect(spoken.filter((text) => text.includes('·') && text.includes(TITLE))).toEqual([]);
+        // Polled: the accessibility tree updates after the DOM.
+        await expect
+          .poll(async () => {
+            const spoken = await accessibleTexts(page);
+            return {
+              title: spoken.some((text) => text.includes(TITLE)),
+              dots: spoken.filter((text) => text.includes('·') && text.includes(TITLE))
+            };
+          })
+          .toEqual({ title: true, dots: [] });
+        // Each sentence is spoken once: no row repeats it as its description.
+        const described = await accessibleDescriptions(page);
+        for (const { sentence } of ROWS) {
+          expect(
+            described.filter((text) => text.includes(sentence)),
+            sentence
+          ).toEqual([]);
+        }
+        // The line itself is the dialog's description, nothing else's.
+        expect(described.filter((text) => text.includes(TITLE))).toEqual([DESCRIPTION]);
 
         for (const width of WIDTHS) {
           await page.setViewportSize({ width, height: 900 });
