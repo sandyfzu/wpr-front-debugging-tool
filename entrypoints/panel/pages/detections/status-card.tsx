@@ -36,17 +36,16 @@ import {
   StatusBadge
 } from '../../../../components/ui/status-badge';
 import { Tooltip } from '../../../../components/ui/tooltip';
-import { SOURCE_COPY } from '../../../../lib/detection/hud';
+import {
+  builderBadgeKind,
+  SOURCE_COPY,
+  type BuilderBadgeKind
+} from '../../../../lib/detection/hud';
 import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
 import type { StatusItem } from '../../../../lib/panel/detections-view-model';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
-import {
-  builderBadgeKind,
-  cacheAgeText,
-  STATUS_TONES,
-  type BuilderBadgeKind
-} from './card-presentation';
+import { cacheAgeText, STATUS_TONES } from './card-presentation';
 
 /**
  * The surface both forms share. Compact tier: a divided row inside the

@@ -11,7 +11,6 @@ import { runDetection } from '../../../../lib/detection/run-detection';
 import { BUILDER_MARKER_META_NAME } from '../../../../lib/wp-rocket/constants';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { makeFdtData } from '../../state/fixtures';
-import { builderBadgeKind } from './card-presentation';
 import { DetectionsView } from './page';
 
 afterEach(cleanup);
@@ -146,12 +145,6 @@ describe('the modifier on the cards', () => {
     );
     expect(delay.textContent).toContain('Not active');
     expect(delay.textContent).not.toMatch(/served/i);
-  });
-
-  it('maps every fact to its badge kind', () => {
-    expect(builderBadgeKind({ off: 'feature' })).toBe('off');
-    expect(builderBadgeKind({ off: 'page' })).toBe('off');
-    expect(builderBadgeKind({ excluded: 1 })).toBe('excluded');
   });
 });
 

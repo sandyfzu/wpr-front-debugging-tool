@@ -328,6 +328,20 @@ export function builderTurnsOff(fact?: BuilderFact): fact is BuilderOffFact {
   return fact !== undefined && 'off' in fact;
 }
 
+/** What the Exclusion Builder did to a feature, as its modifier badge reads it. */
+export type BuilderBadgeKind = 'off' | 'excluded';
+
+/**
+ * The modifier badge's kind for a builder fact: turned off (feature-wide or
+ * for the page) or rows excluded — every surface's badge icon follows it, so
+ * no badge states its meaning by colour alone.
+ *
+ * @param fact The feature's builder fact.
+ */
+export function builderBadgeKind(fact: BuilderFact): BuilderBadgeKind {
+  return builderTurnsOff(fact) ? 'off' : 'excluded';
+}
+
 /** The collecting state's explanation (the family is enabled, nothing applied yet). */
 export const COLLECTING_WHY = 'enabled, not yet applied on this page.';
 

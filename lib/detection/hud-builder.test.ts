@@ -11,6 +11,7 @@ import { describeDetections } from './describe';
 import {
   BUILDER_SERVED_LEAD,
   BUILDER_TAB_LINE_TITLE,
+  builderBadgeKind,
   builderModifierCopy,
   builderOffSummary,
   builderTabLine,
@@ -70,6 +71,14 @@ describe('builderTurnsOff — the one "off in this tab" rule', () => {
   it('is false without a fact', () => {
     expect(builderTurnsOff(undefined)).toBe(false);
     expect(builderTurnsOff()).toBe(false);
+  });
+});
+
+describe('builderBadgeKind — the badge icon every surface follows', () => {
+  it('maps every fact to its badge kind', () => {
+    expect(builderBadgeKind({ off: 'feature' })).toBe('off');
+    expect(builderBadgeKind({ off: 'page' })).toBe('off');
+    expect(builderBadgeKind({ excluded: 1 })).toBe('excluded');
   });
 });
 

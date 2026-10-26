@@ -4,9 +4,7 @@
  * verdict → vocabulary mapping and the relative cache-age line.
  */
 import type { StatusKind as Tone } from '../../../../components/ui/status-badge';
-import { builderTurnsOff } from '../../../../lib/detection/hud';
 import type { StatusItemId, StatusKind } from '../../../../lib/panel/detections-view-model';
-import type { BuilderFact } from '../../../../lib/wp-rocket/types';
 import { relativeAge } from '../../../../utils/relative-age';
 import type { RouteId } from '../../routes';
 
@@ -32,20 +30,6 @@ export const STATUS_TONES: Readonly<Record<StatusKind, Tone>> = {
   unknown: 'warn',
   'not-active': 'neutral'
 };
-
-/** What the Exclusion Builder did to a card's feature, as its modifier badge reads it. */
-export type BuilderBadgeKind = 'off' | 'excluded';
-
-/**
- * The modifier badge's kind for a builder fact: turned off (feature-wide
- * or for the page) or rows excluded — the icon follows it, so the badge
- * never states its meaning by color alone.
- *
- * @param fact The card's builder fact.
- */
-export function builderBadgeKind(fact: BuilderFact): BuilderBadgeKind {
-  return builderTurnsOff(fact) ? 'off' : 'excluded';
-}
 
 /**
  * The Cached card's relative line, aged against the page's clock.
