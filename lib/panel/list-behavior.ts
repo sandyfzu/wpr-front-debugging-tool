@@ -1,5 +1,5 @@
 /** Pure list rules shared by panel inventories; identity stays with each caller. */
-import { formatCount } from '../../utils/format-count';
+import { countLabel, formatCount, type CountNoun } from '../../utils/format-count';
 
 /** Ordered chip metadata; predicates and searched fields belong to the page definition. */
 interface ChipDefinition<Id extends string> {
@@ -105,29 +105,8 @@ export function reconcileList<Previous, Next, Key>(
   return changed ? merged : previous;
 }
 
-/** A noun in its two English count forms ("script" / "scripts"). */
-export interface CountNoun {
-  /** The singular form, used for exactly one. */
-  readonly one: string;
-  /** The plural form, used for zero and many. */
-  readonly other: string;
-}
-
-/**
- * Phrase a count with its noun: `1 image`, `0 images`, `5,000 scripts` —
- * digits rather than words, so counts scan and compare at a glance.
- *
- * @param count A non-negative row count.
- * @param noun The noun's count forms.
- * @param partial Mark the count as a capture floor: `+` after the figures
- *   (`5,000+ scripts`) and always plural, since entries beyond the shown
- *   list may exist. A cut list can never hold exactly one row in truth, so
- *   the singular form is reserved for full lists.
- * @returns The counted phrase.
- */
-export function countLabel(count: number, noun: CountNoun, partial = false): string {
-  return `${formatCount(count)}${partial ? '+' : ''} ${count === 1 && !partial ? noun.one : noun.other}`;
-}
+/** Re-exported: the count phrasing every surface shares lives in `utils/format-count`. */
+export { countLabel, type CountNoun } from '../../utils/format-count';
 
 /**
  * The polite result-count announcement after a committed filter or query

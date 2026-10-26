@@ -102,6 +102,28 @@ describe('builderModifierCopy — the declared words', () => {
   });
 });
 
+describe('hudStateLine — singular for one', () => {
+  it('reads one of every counted feature in the singular, many in the plural', () => {
+    const cases: [string, string, string][] = [
+      ['delay_js', '1 script', '2 scripts'],
+      ['defer_all_js', '1 script', '2 scripts'],
+      ['lazyload', '1 image', '2 images'],
+      ['rocket_above_the_fold_optimization', '1 image', '2 images'],
+      ['automatic_lazy_rendering', '1 element', '2 elements'],
+      ['auto_preload_fonts', '1 font', '2 fonts'],
+      ['preconnect_external_domains', '1 domain', '2 domains']
+    ];
+    for (const [row, one, many] of cases) {
+      expect(hudStateLine(feature(row), reading('applied', 1)), row).toBe(
+        `applied on this page: ${one}.`
+      );
+      expect(hudStateLine(feature(row), reading('applied', 2)), row).toBe(
+        `applied on this page: ${many}.`
+      );
+    }
+  });
+});
+
 describe('hudStateLine — every verdict × modifier', () => {
   it('replaces the served counts line when the feature is off in this tab', () => {
     // The rewritten page's own count ("applied on this page: 0 scripts") is
@@ -130,7 +152,7 @@ describe('hudStateLine — every verdict × modifier', () => {
 
   it('keeps the served line and adds the excluded count', () => {
     expect(hudStateLine(DELAY, reading('applied', 1, { excluded: 1 }))).toBe(
-      'applied on this page: 1 scripts. 1 script excluded by the Exclusion Builder.'
+      'applied on this page: 1 script. 1 script excluded by the Exclusion Builder.'
     );
     expect(hudStateLine(LAZYLOAD, reading('not applied', 0, { excluded: 2 }))).toBe(
       "nothing matched on this page (the page may predate the plugin's work). 2 images excluded by the Exclusion Builder."

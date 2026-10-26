@@ -24,6 +24,7 @@ import type {
 } from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
+import { countNoun, type CountNoun } from '../../utils/format-count';
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
@@ -75,8 +76,8 @@ export interface HudFeature {
   readonly shortLabel: string;
   /** The group the feature renders under (strip heading; registry order within it). */
   readonly group: HudGroupId;
-  /** The count's unit word when the engine measures one, else null. */
-  readonly unit: string | null;
+  /** The count's noun (both count forms) when the engine measures one, else null. */
+  readonly unit: CountNoun | null;
   /** The feature's evidence count from the report, when `unit` is set. */
   readonly count: ((report: PageAnalysisReport) => number) | null;
   /**
@@ -86,6 +87,13 @@ export interface HudFeature {
    */
   readonly undecided: string | null;
 }
+
+/** The HUD count nouns, each in its two count forms. */
+const SCRIPTS: CountNoun = { one: 'script', other: 'scripts' };
+const IMAGES: CountNoun = { one: 'image', other: 'images' };
+const ELEMENTS: CountNoun = { one: 'element', other: 'elements' };
+const FONTS: CountNoun = { one: 'font', other: 'fonts' };
+const DOMAINS: CountNoun = { one: 'domain', other: 'domains' };
 
 /**
  * The registry, in render order (groups first, then the plugin's own order
@@ -107,7 +115,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
     shortLabel: 'Delay JS',
     group: 'file-optimization',
-    unit: 'scripts',
+    unit: SCRIPTS,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
     undecided: null
   },
@@ -116,7 +124,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
     shortLabel: 'Defer JS',
     group: 'file-optimization',
-    unit: 'scripts',
+    unit: SCRIPTS,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],
     undecided: null
   },
@@ -152,7 +160,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_IMAGE_LAZYLOAD,
     shortLabel: 'Lazyload Images',
     group: 'media',
-    unit: 'images',
+    unit: IMAGES,
     count: (report) => report[LABEL_IMAGE_LAZYLOAD]['lazy-loaded images'],
     undecided: null
   },
@@ -220,7 +228,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_OPTIMIZE_CRITICAL_IMAGES,
     shortLabel: 'Critical Images',
     group: 'features',
-    unit: 'images',
+    unit: IMAGES,
     count: (report) => report[LABEL_OPTIMIZE_CRITICAL_IMAGES]['preloaded images'],
     undecided: null
   },
@@ -229,7 +237,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
     shortLabel: 'Automatic Lazy Rendering',
     group: 'features',
-    unit: 'elements',
+    unit: ELEMENTS,
     count: (report) => report[LABEL_AUTOMATIC_LAZY_RENDERING]['converted elements'],
     undecided: null
   },
@@ -238,7 +246,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRELOAD_FONTS,
     shortLabel: 'Preload Fonts',
     group: 'features',
-    unit: 'fonts',
+    unit: FONTS,
     count: (report) => report[LABEL_PRELOAD_FONTS]['preloaded fonts'],
     undecided: null
   },
@@ -247,7 +255,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
     shortLabel: 'Preconnect to External Domains',
     group: 'features',
-    unit: 'domains',
+    unit: DOMAINS,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
     undecided: null
   }
@@ -387,7 +395,7 @@ function servedStateLine(feature: HudFeature, reading: HudReading): string {
   switch (reading.verdict) {
     case 'applied':
       return reading.count !== null && feature.unit !== null
-        ? `applied on this page: ${String(reading.count)} ${feature.unit}.`
+        ? `applied on this page: ${counted(reading.count, feature.unit)}.`
         : 'applied on this page.';
     case 'collecting':
       return COLLECTING_WHY;
@@ -452,11 +460,11 @@ export interface BuilderModifierCopy {
  */
 export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): BuilderModifierCopy {
   if ('excluded' in fact) {
-    const counted = countedUnit(fact.excluded, feature.unit);
+    const phrase = counted(fact.excluded, feature.unit);
     return {
       chip: `${String(fact.excluded)} excluded`,
-      sentence: `${counted} excluded by the Exclusion Builder.`,
-      hint: `${feature.shortLabel}: ${counted} excluded`
+      sentence: `${phrase} excluded by the Exclusion Builder.`,
+      hint: `${feature.shortLabel}: ${phrase} excluded`
     };
   }
   return fact.off === 'feature'
@@ -502,15 +510,15 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
 }
 
 /**
- * A count with its unit, singular for one (every HUD unit is a regular
- * plural); just the count when the feature has no unit.
+ * A count with its noun, singular for one (the shared `countNoun` rule);
+ * the plain figure when the feature has no noun. Ungrouped digits, as the
+ * strip renders the figure.
  *
- * @param count The count (≥ 1).
- * @param unit The plural unit word, or null.
+ * @param count A non-negative count.
+ * @param noun The feature's count noun, or null.
  */
-function countedUnit(count: number, unit: string | null): string {
-  if (unit === null) return String(count);
-  return `${String(count)} ${count === 1 ? unit.replace(/s$/, '') : unit}`;
+function counted(count: number, noun: CountNoun | null): string {
+  return noun === null ? String(count) : `${String(count)} ${countNoun(count, noun)}`;
 }
 
 /**

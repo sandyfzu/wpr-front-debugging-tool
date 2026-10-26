@@ -34,6 +34,7 @@ import {
   type HudReading,
   type HudVerdict
 } from '../../../lib/detection/hud';
+import { countNoun } from '../../../utils/format-count';
 import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
 import { GROUP_ICONS, type StripIconGlyph } from './icons';
 
@@ -285,7 +286,11 @@ export function buildStripCardModel(input: {
               label: feature.shortLabel,
               chipState: chipStateForFeature(reading.verdict),
               count: reading.count,
-              unit: feature.unit,
+              // The noun form for this count (singular for one).
+              unit:
+                feature.unit === null || reading.count === null
+                  ? null
+                  : countNoun(reading.count, feature.unit),
               tooltip: rowTooltip(feature, reading)
             };
           })
