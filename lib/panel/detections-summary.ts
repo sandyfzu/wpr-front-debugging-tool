@@ -50,8 +50,16 @@ export interface DetectionsSummary {
   readonly server: string | null;
   /** The known platform and the captured header that identified it, or null. */
   readonly platform: { readonly name: string; readonly header: string } | null;
-  /** How many optimization cards are active in this tab ({@link isActiveInTab}), of how many. */
-  readonly optimizations: { readonly active: number; readonly total: number };
+  /**
+   * How many optimization cards are active in this tab ({@link isActiveInTab}),
+   * of how many, and how many WP Rocket served that the Exclusion Builder
+   * turned off here (`builderTurnsOff`) — the gap's reason.
+   */
+  readonly optimizations: {
+    readonly active: number;
+    readonly total: number;
+    readonly offInTab: number;
+  };
   /** The WordPress core version the page declared; null when undeclared. */
   readonly wordpressVersion: string | null;
   /**
@@ -155,10 +163,13 @@ export function summarizeDetections(
 
   let active = 0;
   let total = 0;
+  let offInTab = 0;
   for (const item of items) {
     if (!isOptimizationCard(item.id)) continue;
     total += 1;
     if (isActiveInTab(item)) active += 1;
+    // Served, yet not counted active only because the builder turned it off.
+    else if (item.status === 'active' && builderTurnsOff(item.builder)) offInTab += 1;
   }
 
   return {
@@ -169,7 +180,7 @@ export function summarizeDetections(
       platformDetail?.kind === 'platform'
         ? { name: platformDetail.name, header: platformDetail.header }
         : null,
-    optimizations: { active, total },
+    optimizations: { active, total, offInTab },
     wordpressVersion: facts.wordpressVersion ?? null,
     // A host layer is a cache question only on a page WP Rocket handled.
     cacheLayer: wpr.present ? (facts.cacheLayer ?? null) : null

@@ -24,7 +24,7 @@ import type {
 } from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
-import { countNoun, type CountNoun } from '../../utils/format-count';
+import { countNoun, formatCount, type CountNoun } from '../../utils/format-count';
 import { DOMAIN_NOUN, ELEMENT_NOUN, FONT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from './count-nouns';
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
@@ -448,6 +448,19 @@ export const BUILDER_SERVED_LEAD = 'served by WP Rocket';
 
 /** The strip's tab-level line title: the page shown is the builder's rewrite. */
 export const BUILDER_TAB_LINE_TITLE = 'Exclusion Builder rewrote this page';
+
+/**
+ * The summary's reason suffix: how many served features the Exclusion
+ * Builder turned off in this tab ({@link builderTurnsOff}) — appended to
+ * "N of M optimizations active" so the gap between served and active reads
+ * as the builder's doing. Excluded rows never count (the feature still runs).
+ *
+ * @param count The served features turned off in this tab.
+ * @returns e.g. "2 off in this tab" ("1 off in this tab" for one), or null for none.
+ */
+export function builderOffSummary(count: number): string | null {
+  return count > 0 ? `${formatCount(count)} off in this tab` : null;
+}
 
 /** One builder fact's on-screen renderings, beside {@link SOURCE_COPY}. */
 export interface BuilderModifierCopy {

@@ -158,7 +158,8 @@ describe('summarizeDetections', () => {
     expect(optimizationCards.map((item) => item.id)).not.toContain('priority_elements_beacon');
     expect(summarizeDetections(items).optimizations).toEqual({
       active: 1,
-      total: optimizationCards.length
+      total: optimizationCards.length,
+      offInTab: 0
     });
     // Every remaining row of the record is an optimization (16 of the 19 rows:
     // async_css rides the CSS card, plus the plugin and beacon rows).
@@ -201,7 +202,7 @@ describe('summarizeDetections', () => {
       cache: { kind: 'not-applicable' },
       server: null,
       platform: null,
-      optimizations: { active: 0, total: 0 },
+      optimizations: { active: 0, total: 0, offInTab: 0 },
       wordpressVersion: null,
       cacheLayer: null
     });

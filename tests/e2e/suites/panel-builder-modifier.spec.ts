@@ -4,7 +4,7 @@
  * JS off, Defer JS off for the page, LazyLoad rows excluded. Each card keeps
  * WP Rocket's served verdict and adds its modifier badge (icon + words) and
  * the full sentence as a visible line, spoken once; the summary counts the
- * two turned-off features as inactive. Checked at 320/480/768/1280 px, in
+ * two turned-off features as inactive and says why ("· 2 off in this tab"). Checked at 320/480/768/1280 px, in
  * both palettes, with reduced motion: no horizontal scroll, AA contrast of
  * the modifier text (computed colours), keyboard reach, strict axe. A last
  * test pins freshness: the modifier follows the displayed document — kept
@@ -60,6 +60,9 @@ const CASES = [
     sentence: '3 images excluded by the Exclusion Builder.'
   }
 ] as const;
+
+/** The summary headline on the marked page: LazyLoad (rows excluded) runs, Delay + Defer are off. */
+const MARKED_HEADLINE = /^\s*1\s+of\s+\d+\s+optimizations active\s+·\s+2 off in this tab\s*$/;
 
 /** The panel widths of the UI bar's D-1 check. */
 const WIDTHS = [320, 480, 768, 1280] as const;
@@ -201,8 +204,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
       }
       // O-N3: the two features turned off in this tab are not counted active.
       const headline = root.locator('[data-fdt-summary-headline]');
-      // Delay, Defer and LazyLoad are declared; only LazyLoad (rows excluded) still runs.
-      await expect(headline).toHaveText(/^\s*1\s+of\s+\d+\s+optimizations active\s*$/);
+      // Delay, Defer and LazyLoad are declared; only LazyLoad (rows excluded) still
+      // runs — and the headline says why the other two are not counted.
+      await expect(headline).toHaveText(MARKED_HEADLINE);
 
       for (const width of WIDTHS) {
         await panel.setViewportSize({ width, height: 900 });
@@ -236,6 +240,20 @@ for (const colorScheme of ['light', 'dark'] as const) {
           expect(inside, `${id} line inside its card at ${String(width)} px`).toBe(true);
         }
         await expectModifierContrast(panel, `${colorScheme} ${String(width)} px`);
+        // The headline's reason suffix: one unbroken line box, inside the summary card.
+        const suffix = await root.locator('[data-fdt-summary-off]').evaluate((element) => {
+          const boxes = element.getClientRects();
+          const own = element.getBoundingClientRect();
+          const host = element.closest('[data-fdt="detections-summary"]')?.getBoundingClientRect();
+          return {
+            // One rect per text fragment; distinct tops = line boxes.
+            lines: new Set(Array.from(boxes, (box) => Math.round(box.top))).size,
+            inside:
+              host !== undefined && own.left >= host.left - 0.5 && own.right <= host.right + 0.5
+          };
+        });
+        console.log(`[suffix] ${colorScheme} ${String(width)} px ${JSON.stringify(suffix)}`);
+        expect(suffix, `suffix at ${String(width)} px`).toEqual({ lines: 1, inside: true });
         const shots = process.env['FDT_SHOTS_DIR'];
         if (shots !== undefined && shots !== '') {
           mkdirSync(shots, { recursive: true });
@@ -304,7 +322,7 @@ test('the modifier follows the displayed document: kept on re-read, gone after a
     await fixture.page.reload();
     await expect(badges).toHaveCount(CASES.length);
     await expect(lines).toHaveCount(CASES.length);
-    await expect(headline).toHaveText(/^\s*1\s+of\s+\d+\s+optimizations active\s*$/);
+    await expect(headline).toHaveText(MARKED_HEADLINE);
 
     // A reload that serves the page without the marker: the served verdicts alone.
     body = MARKED_PAGE.replace(/<meta name="[^"]+" content="v1 [^"]*">\n/, '');

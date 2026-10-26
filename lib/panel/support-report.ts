@@ -24,7 +24,7 @@
 
 import { formatCacheTimestamp } from '../detection/describe';
 import { cacheCopy, cacheLayerCopy } from '../detection/cache-context';
-import { SOURCE_REPORT_TEXT } from '../detection/hud';
+import { builderOffSummary, SOURCE_REPORT_TEXT } from '../detection/hud';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
 import type { FdtData } from '../wp-rocket/types';
 import {
@@ -223,8 +223,9 @@ function summaryLines(summary: DetectionsSummary): string[] {
     );
   }
   if (summary.server !== null) lines.push(`- **Server:** ${codeSpan(summary.server)}`);
+  const offInTab = builderOffSummary(summary.optimizations.offInTab);
   lines.push(
-    `- **Optimizations:** ${summary.optimizations.active.toString()} of ${summary.optimizations.total.toString()} active`
+    `- **Optimizations:** ${summary.optimizations.active.toString()} of ${summary.optimizations.total.toString()} active${offInTab === null ? '' : ` · ${offInTab}`}`
   );
   return lines;
 }

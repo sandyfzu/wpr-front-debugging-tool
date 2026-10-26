@@ -12,6 +12,7 @@ import {
   BUILDER_SERVED_LEAD,
   BUILDER_TAB_LINE_TITLE,
   builderModifierCopy,
+  builderOffSummary,
   builderTabLine,
   builderTurnsOff,
   hudFeatureOf,
@@ -69,6 +70,19 @@ describe('builderTurnsOff — the one "off in this tab" rule', () => {
   it('is false without a fact', () => {
     expect(builderTurnsOff(undefined)).toBe(false);
     expect(builderTurnsOff()).toBe(false);
+  });
+});
+
+describe('builderOffSummary — the summary reason suffix', () => {
+  it('says nothing when no feature is off in this tab', () => {
+    expect(builderOffSummary(0)).toBeNull();
+    expect(builderOffSummary(-1)).toBeNull();
+  });
+
+  it('counts one and many with the same wording', () => {
+    expect(builderOffSummary(1)).toBe('1 off in this tab');
+    expect(builderOffSummary(2)).toBe('2 off in this tab');
+    expect(builderOffSummary(4)).toBe('4 off in this tab');
   });
 });
 

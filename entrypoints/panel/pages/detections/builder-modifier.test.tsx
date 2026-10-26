@@ -162,5 +162,8 @@ describe('the summary strip counts (O-N3)', () => {
     const count = (line: string): number => Number(/(\d+)\s*of/.exec(line)?.[1] ?? Number.NaN);
     expect(Number.isInteger(count(plain)) && count(plain) >= 3).toBe(true);
     expect(count(marked)).toBe(count(plain) - 2);
+    // The gap's reason: Delay off + Defer page-off; the excluded rows do not count.
+    expect(marked).toMatch(/optimizations active · 2 off in this tab$/);
+    expect(plain).not.toContain('off in this tab');
   });
 });

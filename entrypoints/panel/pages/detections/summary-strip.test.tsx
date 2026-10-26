@@ -21,7 +21,7 @@ function summary(overrides?: Partial<DetectionsSummary>): DetectionsSummary {
     cache: { kind: 'bypass-requested' },
     server: 'nginx',
     platform: null,
-    optimizations: { active: 3, total: 12 },
+    optimizations: { active: 3, total: 12, offInTab: 0 },
     wordpressVersion: null,
     cacheLayer: null,
     ...overrides
@@ -61,6 +61,24 @@ describe('SummaryStrip', () => {
     expect(meter?.className).toContain('w-48');
     expect(meter?.firstElementChild?.className).toContain('bg-accent');
     expect(meter?.firstElementChild?.className).not.toContain('status');
+  });
+
+  it('adds the builder reason suffix only when features are off in this tab', () => {
+    const headline = (offInTab: number): string => {
+      cleanup();
+      render(() => (
+        <SummaryStrip summary={summary({ optimizations: { active: 1, total: 16, offInTab } })} />
+      ));
+      return document.querySelector('[data-fdt-summary-headline]')?.textContent ?? '';
+    };
+    expect(headline(0)).toBe('1 of 16 optimizations active');
+    expect(document.querySelector('[data-fdt-summary-off]')).toBeNull();
+    expect(headline(1)).toBe('1 of 16 optimizations active · 1 off in this tab');
+    expect(headline(2)).toBe('1 of 16 optimizations active · 2 off in this tab');
+    // The suffix wraps as one unit, never mid-phrase.
+    expect(document.querySelector('[data-fdt-summary-off]')?.className).toContain(
+      'whitespace-nowrap'
+    );
   });
 
   it('states the absolute cache time as a machine-readable <time>', () => {
@@ -116,7 +134,7 @@ describe('SummaryStrip', () => {
         summary={summary({
           wpr: { present: false },
           cache: { kind: 'not-applicable' },
-          optimizations: { active: 0, total: 14 }
+          optimizations: { active: 0, total: 14, offInTab: 0 }
         })}
       />
     ));

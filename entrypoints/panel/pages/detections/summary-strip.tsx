@@ -1,7 +1,9 @@
 /**
  * The Detections summary strip — the one answer the status bar does not
  * give: how much of WP Rocket is working on this page ("N of M
- * optimizations active", with a small accent meter right after it), plus
+ * optimizations active", with a small accent meter right after it — and,
+ * when the Exclusion Builder turned served features off in this tab, the
+ * reason suffix "· N off in this tab"), plus
  * the facts the bar lacks or only labels: the cache's absolute generation
  * time (the bar shows its age); for every non-cached state, the same cache
  * label the bar's segment shows, here as the focusable trigger of the
@@ -22,6 +24,7 @@ import { Show } from 'solid-js';
 import { Card } from '../../../../components/ui/card';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { cacheCopy, cacheLayerCopy, type CacheCopy } from '../../../../lib/detection/cache-context';
+import { builderOffSummary } from '../../../../lib/detection/hud';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
 
 /** One secondary fact, its separator dot in the clipped gutter. */
@@ -112,6 +115,17 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
               {' '}
               of <span class="tabular-nums">{counts().total}</span> optimizations active
             </span>
+            <Show when={builderOffSummary(counts().offInTab)}>
+              {(suffix) => (
+                <>
+                  {' '}
+                  {/* One unit: wraps whole onto the next line, never mid-phrase. */}
+                  <span data-fdt-summary-off class="whitespace-nowrap text-fg-secondary">
+                    · {suffix()}
+                  </span>
+                </>
+              )}
+            </Show>
           </p>
           {/* Decorative: the sentence beside it states the same numbers. */}
           <div

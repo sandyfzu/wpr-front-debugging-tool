@@ -2,7 +2,8 @@
  * The Exclusion Builder modifier on the Detections cards and in the
  * support report: the served verdict stays in Status, the modifier joins
  * the Details (explaining a fact the rewrite emptied), and nothing is said
- * on a page with no builder fact.
+ * on a page with no builder fact; the summary counts features off in this
+ * tab and both the strip and the report give that reason.
  */
 import { describe, expect, it } from 'vitest';
 import { runDetection } from '../detection/run-detection';
@@ -163,6 +164,50 @@ describe('the summary counts (O-N3)', () => {
     ).summary.optimizations;
     expect(marked.total).toBe(plain.total);
     expect(marked.active).toBe(plain.active - 2);
+  });
+
+  it.each([
+    ['no fact', null, 0],
+    ['excluded rows only', 'v1 lazyload=excluded:2', 0],
+    ['Delay off', 'v1 delay_js=off', 1],
+    ['Delay off + Defer page-off', 'v1 delay_js=off defer_all_js=page-off', 2],
+    [
+      'Delay off + Defer page-off + rows',
+      'v1 delay_js=off defer_all_js=page-off lazyload=excluded:2',
+      2
+    ]
+  ] as const)('counts the served features off in this tab: %s → %d', (_name, marker, offInTab) => {
+    const served = '<img src="p.gif" data-lazy-src="r.jpg">';
+    const counts = summarizeFdtData(
+      makeReportData({ wprDetections: runDetection(page(DECLARED, marker, served)).detections })
+    ).summary.optimizations;
+    expect(counts.offInTab).toBe(offInTab);
+  });
+
+  it('never counts a feature WP Rocket did not serve as off in this tab', () => {
+    // No declaration: the fact stands on a card that is not active.
+    const counts = summarizeFdtData(
+      makeReportData({ wprDetections: runDetection(page('', 'v1 delay_js=off')).detections })
+    ).summary.optimizations;
+    expect(counts.offInTab).toBe(0);
+  });
+
+  it('gives the reason suffix in the report, only when a feature is off in this tab', () => {
+    const report = (marker: string | null): string =>
+      buildSupportReport(
+        makeReportData({ wprDetections: runDetection(page(DECLARED, marker)).detections }),
+        CONTEXT
+      );
+    expect(report('v1 delay_js=off defer_all_js=page-off')).toMatch(
+      /^- \*\*Optimizations:\*\* \d+ of \d+ active · 2 off in this tab$/m
+    );
+    expect(report('v1 delay_js=off')).toMatch(
+      /^- \*\*Optimizations:\*\* \d+ of \d+ active · 1 off in this tab$/m
+    );
+    expect(report('v1 lazyload=excluded:2')).toMatch(
+      /^- \*\*Optimizations:\*\* \d+ of \d+ active$/m
+    );
+    expect(report(null)).toMatch(/^- \*\*Optimizations:\*\* \d+ of \d+ active$/m);
   });
 
   it('states the same count in the report', () => {
