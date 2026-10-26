@@ -1481,7 +1481,7 @@ Depends:P10N.2. Parallel:P10N.3. Goal: the strip says the same as the panel — 
 
 - [x] `chipStateForFeature` / row tooltip (`entrypoints/isolated.content/inspector/strip-state.ts:148/169`) render the modifier; shadow-isolated tokens only.
 - [x] Tab-level line (O-N5): shown only when the payload carries a builder fact, N.2 copy; names each feature turned off (`off`/`page-off`) and each excluded count, e.g. "Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded" (owner-shortened hint). Keyboard/screen-reader reachable in the strip's existing structure; stays after Stop, goes on reload (in-band, no new subscription).
-- [x] Unit tests (`strip-state.test.ts`: line absent/present, every token, wording equals the panel's); §D receipt (D-1 320 px, D-2 both palettes, D-3, D-4); strip bundle budget re-measured. P12B inherits the shape (no rework).
+- [x] Unit tests (`inspector/strip-builder.test.tsx`: line absent/present, every token, wording equals the panel's); §D receipt (D-1 320 px, D-2 both palettes, D-3, D-4); strip bundle budget re-measured. P12B inherits the shape (no rework).
 
 DoD: strip matches the panel for the N.0 cases; the tab-level line present exactly on rewritten documents; gates + budgets green. Effort S–M · difficulty easy (was S: + the O-N5 line).
 
@@ -1493,6 +1493,15 @@ DoD: strip matches the panel for the N.0 cases; the tab-level line present exact
 - **§D** (e2e `tests/e2e/suites/site-strip-builder.spec.ts`, real `/fdt/` HTML + real writer marker, route-served): D-1 320/480/768/1280 — card inside the viewport, no body overflow, 0 px document overflow added by the strip (the theme itself overflows 45 px at 320), sentences inside the card, every hint inside its clip, dots clipped exactly at line starts (3 hint lines at 320, 2 above); D-2 light + dark + reduced motion — AA from computed colours: title 15.28/12.99, hints 7.95/7.47, badges 5.06/6.19, sentences 9.07/8.26 (light/dark); D-3 Enter on the pill focuses the dialog, described by the line; Tab → close → scroll region; D-4 strict axe over the strip 0/0; D-6 grep gate empty over the changed strip files. Proven to fail without the UI change (3 of 4 tests red with `ui.tsx` reverted). Screenshots (scratchpad, not committed): `n4/strip-{light,dark}-{320,480,768,1280}.png`.
 - **Tests:** `inspector/strip-builder.test.tsx` 14 (model: none / one / many / excluded only / running+failed / equals `builderTabLine`; rows: off, page-off, excluded + singular, words equal the panel's, unserved row; render: line visible + spoken once + description, badge/sentence/icon/no count, fact-less page) + `hud-builder.test.ts` builderBadgeKind (moved) + `spoken` pin; e2e 4. Gates: compile, lint, format:check, test (310 files, 7463 passed / 1 skipped), parity:wp-rocket byte-for-byte, build, build:firefox, check:budgets green. E2E serial (`E2E_FIXTURE_PORT=8897`): 217 passed, 0 skipped (the existing strip suite unaffected by the new tab stop / head-foot tags).
 - **Budgets:** isolated content script 137.146 / gz 47.024 KiB (ceilings 135.1/46.5 → 137.2/47.1); whole build 1460.294 (→ 1460.4).
+
+**P10N.4 audit round (2026-10-26, audit passed at `332748f`; merged feat/p10 `3491cf1` as `795b559`; commits `0bf08ec` e2e poll, `1d9ac6a` row tooltip, `79c14fe` drop `text` + test hardening):**
+
+- **MINOR-1 (flake, on the base too):** `panel-builder-modifier.spec.ts` read the accessibility tree once right after the headline's DOM text matched (the tree updates a beat later); both builder specs now `expect.poll` the same checks. 5 consecutive runs of `panel-builder-modifier site-strip-builder`: 7/7 passed each.
+- **MINOR-2:** the running/failed case now builds over real marked rows; fails with `report === null ||` removed from the `builderLine` gate.
+- **NIT-1:** `BuilderTabLine.text` dropped (read by tests only); those assertions pin `spoken` or the shown reading (title + hints joined by `LIST_JOINER`) against the owner's line.
+- **NIT-2:** a row with a modifier carries no `title` (it repeated the visible sentence as the row's description; the panel does the same since N.3 M1). Pinned in the unit test and in Chromium's tree (CDP: no node's description carries a row sentence; the line is the dialog's description only) — fails with the title restored.
+- **NIT-3:** each badge kind's glyph pinned by its own path (`m2 2 20 20` circle-off, `m15.5 9.5 5 5` list-x); fails with `BUILDER_ICONS` swapped. **NIT-4:** checklist names `inspector/strip-builder.test.tsx`.
+- Gates green (310 files, 7463 passed / 1 skipped; parity byte-for-byte; budgets unchanged — isolated 137.110 / gz 47.017, within 137.2/47.1). E2E serial: 217 passed, 0 skipped.
 
 #### P10N.5 — Browser suite + live check
 
