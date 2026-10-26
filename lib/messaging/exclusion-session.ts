@@ -30,7 +30,7 @@ import {
   type ExclusionSetRows,
   type ExclusionSetToggles
 } from '../exclusion-builder/set';
-import { isRecord, ownValue } from '../../utils/is-record';
+import { hasOnlyKeys, isRecord, ownValue } from '../../utils/is-record';
 import { isHttpOrigin, isHttpUrl, parseUrl } from '../../utils/urls';
 import { isPrintable } from './error-words';
 import { numericTabId } from './sender';
@@ -363,7 +363,7 @@ function keysAllowed(
   allowed: readonly string[],
   policy: UnknownKeyPolicy
 ): boolean {
-  return policy === 'ignore' || Object.keys(record).every((key) => allowed.includes(key));
+  return policy === 'ignore' || hasOnlyKeys(record, allowed);
 }
 
 /** A non-negative safe integer (counts, indices, epoch ms, run ids). */

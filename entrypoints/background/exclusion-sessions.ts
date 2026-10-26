@@ -45,6 +45,7 @@ import {
 } from '../../lib/messaging/sender';
 import { INTERCEPTION_BACKENDS } from './interception-backends';
 import { openExclusionOverlay, reopenExclusionOverlay } from './exclusion-overlay';
+import { tabExists } from './tab-exists';
 
 const log = createLogger('exclusion-session');
 
@@ -73,17 +74,6 @@ function scheduleReload(tabId: number): void {
       log.error('Applied-session reload failed', { tabId, cause });
     });
   }, 0);
-}
-
-/** Whether a tab exists (an id-only read needs no `tabs` permission). */
-async function tabExists(tabId: number): Promise<boolean> {
-  try {
-    await browser.tabs.get(tabId);
-    return true;
-  } catch (cause) {
-    log.debug('Session tab probe found no tab', { tabId, cause });
-    return false;
-  }
 }
 
 /**
@@ -172,7 +162,7 @@ export function initExclusionSessions(
       sendMessage('exclusionSessionChanged', status, { tabId, frameId: 0 }),
     pushToPanels: (tabId, status) => sendMessage('exclusionSessionUpdated', { tabId, status }),
     reload: scheduleReload,
-    tabExists,
+    tabExists: (tabId) => tabExists(tabId, log),
     now: () => Date.now(),
     extensionId: browser.runtime.id,
     log

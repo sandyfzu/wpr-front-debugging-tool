@@ -19,3 +19,15 @@ export function isRecord(input: unknown): input is Record<string, unknown> {
 export function ownValue(record: Record<string, unknown>, key: string): unknown {
   return Object.hasOwn(record, key) ? record[key] : undefined;
 }
+
+/**
+ * Whether every own enumerable key of a record is one of `allowed` — the
+ * exact-shape gate for payloads whose unknown fields must be refused, not
+ * ignored. Missing keys pass; the caller's field checks require them.
+ *
+ * @param record The record (already past {@link isRecord}).
+ * @param allowed The permitted key names.
+ */
+export function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(record).every((key) => allowed.includes(key));
+}
