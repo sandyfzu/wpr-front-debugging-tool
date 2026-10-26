@@ -175,8 +175,10 @@ function ModifierBadge(props: { item: StatusItem }): JSX.Element {
 
 /**
  * The Exclusion Builder modifier's full sentence as visible text (never
- * hover-only: keyboard and touch users read it too), styled like the why
- * line in the modifier's info tone.
+ * hover-only: keyboard and touch users read it too), laid out like the why
+ * line in the card's neutral secondary text — not the info blue, which
+ * above the accent "Open …" link would read as a link; the badge's icon
+ * and blue chip stay the visual cue.
  *
  * @param props.item The card (carrying `modifier`).
  * @returns The line, or nothing for a card without a builder fact.
@@ -185,7 +187,7 @@ function ModifierLine(props: { item: StatusItem }): JSX.Element {
   return (
     <Show when={props.item.modifier}>
       {(sentence) => (
-        <p data-fdt-card-modifier-line class="min-w-0 text-status-info">
+        <p data-fdt-card-modifier-line class="min-w-0 text-fg-secondary">
           <span class="sr-only">, </span>
           {sentence()}
         </p>

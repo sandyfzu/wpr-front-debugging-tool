@@ -98,6 +98,9 @@ describe('the modifier on the cards', () => {
       expect(line?.textContent, id).toContain(sentence);
       expect(line?.classList.contains('sr-only'), id).toBe(false);
       expect(line?.closest('.sr-only'), id).toBeNull();
+      // Neutral secondary text, never the info/accent blue a link reads in.
+      expect(line?.classList.contains('text-fg-secondary'), id).toBe(true);
+      expect(line?.className, id).not.toMatch(/text-(status-info|accent)\b/);
       expect(badge?.hasAttribute('title'), id).toBe(false);
       // Spoken once: the badge is hidden from assistive tech, the sentence read once.
       const spoken = spokenText(card(id));
