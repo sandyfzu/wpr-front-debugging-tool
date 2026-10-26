@@ -755,19 +755,32 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
   );
 
   it('answers each masked script the same whatever the order of the others', () => {
-    // Rows that step through ids, over small and large masked scripts in turn:
-    // each script gets the same share of the probe work, so the large ones
-    // (and only they) run out of it — wherever they stand on the page.
+    // Rows that step through ids, over small and large masked scripts: each
+    // script gets the same share of the probe work, so the large ones (and
+    // only they) run out of it — wherever they stand on the page. Uncapped,
+    // the large ones alone outrun the document's budget, so a budget spent
+    // first-come would answer differently by order. Few large scripts keep
+    // the work spent (≈ a quarter of the document's budget per order) small.
     const rows = Array.from({ length: 5 }, (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`);
+    const large = (n: number): boolean => n % 6 === 0;
     const scripts = Array.from(
-      { length: 300 },
-      (_, n) => svgScripts(1, n % 2 === 0 ? 6400 : 300, () => '')[0] ?? ''
+      { length: 42 },
+      (_, n) => svgScripts(1, large(n) ? 64_000 : 300, () => '')[0] ?? ''
     );
-    const undetermined = (order: readonly string[]): number | undefined =>
-      delayJsTransform(order.join('\n'), setWithRows(rows)).report.undetermined;
-    expect(undetermined(scripts)).toBe(150);
-    expect(undetermined([...scripts].reverse())).toBe(150);
-    expect(undetermined([...scripts.slice(150), ...scripts.slice(0, 150)])).toBe(150);
+    const share = ID_PROBE_LIMITS.documentSteps / scripts.length;
+    /** Undetermined scripts over `order`; each large one spends its share, each small one less. */
+    const undetermined = (order: readonly number[]): number | undefined => {
+      const { result, spent } = withProbeWork(() =>
+        delayJsTransform(order.map((n) => scripts[n]).join('\n'), setWithRows(rows))
+      );
+      expect(spent).toHaveLength(order.length);
+      expect(order.filter((n, at) => large(n) !== (spent[at] ?? 0) >= share)).toEqual([]);
+      return result.report.undetermined;
+    };
+    const order = scripts.map((_, n) => n);
+    expect(undetermined(order)).toBe(7);
+    expect(undetermined([...order].reverse())).toBe(7);
+    expect(undetermined([...order.slice(21), ...order.slice(0, 21)])).toBe(7);
   });
 
   it('answers rows that read no id byte, or match for every id', () => {
