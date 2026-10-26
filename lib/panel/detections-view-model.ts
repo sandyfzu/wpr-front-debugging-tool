@@ -23,6 +23,7 @@ import {
   HUD_FEATURES,
   hudFeatureOf,
   readHudFeature,
+  type HudFeature,
   type HudVerdict
 } from '../detection/hud';
 import { LABEL_OPTIMIZE_CSS_DELIVERY, LABEL_PRIORITY_ELEMENTS_BEACON } from '../detection/labels';
@@ -87,6 +88,8 @@ export interface StatusItem {
   readonly builder?: BuilderFact;
   /** The modifier's sentence (the shared builder copy), beside `builder`. */
   readonly modifier?: string;
+  /** The modifier's chip text (the shared builder copy), beside `builder`. */
+  readonly modifierChip?: string;
 }
 
 /** The measurement beacon's verified label (the one non-feature row the option map lacks). */
@@ -152,7 +155,7 @@ function featureFacts(
   row: DetectionRow,
   report: PageAnalysisReport,
   detections: WprDetections
-): Pick<StatusItem, 'status' | 'source' | 'why' | 'builder' | 'modifier'> {
+): Pick<StatusItem, 'status' | 'source' | 'why' | 'builder' | 'modifier' | 'modifierChip'> {
   const feature = hudFeatureOf(row);
   if (feature === undefined) {
     // A row outside the registry (a future row): its presence is the answer.
@@ -163,13 +166,22 @@ function featureFacts(
     status: CARD_STATUS[reading.verdict],
     ...(reading.source === null ? {} : { source: reading.source }),
     ...(reading.why === null ? {} : { why: capitalize(reading.why) }),
-    ...(reading.builder === undefined
-      ? {}
-      : {
-          builder: reading.builder,
-          modifier: builderModifierCopy(feature, reading.builder).sentence
-        })
+    ...(reading.builder === undefined ? {} : builderFacts(feature, reading.builder))
   };
+}
+
+/**
+ * A feature card's builder fields: the fact plus its shared copy.
+ *
+ * @param feature The HUD row.
+ * @param fact The row's builder fact.
+ */
+function builderFacts(
+  feature: HudFeature,
+  fact: BuilderFact
+): Pick<StatusItem, 'builder' | 'modifier' | 'modifierChip'> {
+  const copy = builderModifierCopy(feature, fact);
+  return { builder: fact, modifier: copy.sentence, modifierChip: copy.chip };
 }
 
 /**

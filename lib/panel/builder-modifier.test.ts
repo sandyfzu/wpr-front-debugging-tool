@@ -9,6 +9,7 @@ import { runDetection } from '../detection/run-detection';
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { buildSupportReport, type SupportReportContext } from './support-report';
+import { isActiveInTab, summarizeFdtData } from './detections-summary';
 import { emptyDetections, makeReportData } from './support-report.fixtures';
 
 const CONTEXT: SupportReportContext = {
@@ -58,7 +59,8 @@ describe('the Detections cards', () => {
       status: 'active',
       source: 'meta',
       builder: { off: 'feature' },
-      modifier: 'Disabled in this tab by the Exclusion Builder.'
+      modifier: 'Disabled in this tab by the Exclusion Builder.',
+      modifierChip: 'Disabled in this tab'
     });
     expect(card(items, 'lazyload')).toMatchObject({
       status: 'active',
@@ -73,6 +75,7 @@ describe('the Detections cards', () => {
     for (const item of cards(page(DECLARED, null))) {
       expect(item, item.id).not.toHaveProperty('builder');
       expect(item, item.id).not.toHaveProperty('modifier');
+      expect(item, item.id).not.toHaveProperty('modifierChip');
     }
   });
 });
@@ -130,5 +133,45 @@ describe('the support report row', () => {
       CONTEXT
     );
     expect(report).not.toContain('Exclusion Builder');
+  });
+});
+
+describe('the summary counts (O-N3)', () => {
+  const base: StatusItem = { id: 'delay_js', name: 'Delay JavaScript execution', status: 'active' };
+
+  it('counts a builder-disabled card under inactive, an excluded one under active', () => {
+    expect(isActiveInTab(base)).toBe(true);
+    expect(isActiveInTab({ ...base, builder: { off: 'feature' } })).toBe(false);
+    expect(isActiveInTab({ ...base, builder: { off: 'page' } })).toBe(false);
+    expect(isActiveInTab({ ...base, builder: { excluded: 3 } })).toBe(true);
+    // A card WP Rocket did not serve is never active, fact or not.
+    expect(isActiveInTab({ ...base, status: 'not-active', builder: { excluded: 1 } })).toBe(false);
+    expect(isActiveInTab({ ...base, status: 'collecting' })).toBe(false);
+  });
+
+  it('drops Delay off and Defer page-off from the active count, keeps Lazyload excluded', () => {
+    const served = '<img src="p.gif" data-lazy-src="r.jpg">';
+    const plain = summarizeFdtData(
+      makeReportData({ wprDetections: runDetection(page(DECLARED, null, served)).detections })
+    ).summary.optimizations;
+    const marked = summarizeFdtData(
+      makeReportData({
+        wprDetections: runDetection(
+          page(DECLARED, 'v1 delay_js=off defer_all_js=page-off lazyload=excluded:2', served)
+        ).detections
+      })
+    ).summary.optimizations;
+    expect(marked.total).toBe(plain.total);
+    expect(marked.active).toBe(plain.active - 2);
+  });
+
+  it('states the same count in the report', () => {
+    const data = makeReportData({
+      wprDetections: runDetection(page(DECLARED, 'v1 delay_js=off')).detections
+    });
+    const { active, total } = summarizeFdtData(data).summary.optimizations;
+    expect(buildSupportReport(data, CONTEXT)).toContain(
+      `- **Optimizations:** ${String(active)} of ${String(total)} active`
+    );
   });
 });

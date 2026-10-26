@@ -10,7 +10,10 @@
  * A feature card adds its evidence line under the name: the source chip
  * (`Meta` / `Footprint`, its meaning spelled out for assistive tech and in
  * the native title) and, for an unsure verdict (collecting / unknown), the
- * amber why sentence — visible text, never hover-only.
+ * amber why sentence — visible text, never hover-only — and, when the
+ * Exclusion Builder changed the feature in this tab, its modifier badge
+ * (icon + short text; the full sentence spoken and in the native title).
+ * The verdict badge stays WP Rocket's served verdict.
  *
  * Tooltips appear only where data would otherwise be hidden — the Cached
  * card's absolute UTC time and the Known Platform card's matching header —
@@ -21,6 +24,9 @@ import type { JSX } from 'solid-js';
 import { Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import ChevronRight from 'lucide-solid/icons/chevron-right';
+import CircleOff from 'lucide-solid/icons/circle-off';
+import ListX from 'lucide-solid/icons/list-x';
+import type { LucideIcon } from 'lucide-solid';
 import { Badge } from '../../../../components/ui/badge';
 import { CARD_LEVEL_CLASSES } from '../../../../components/ui/card';
 import { FOCUS_RING, MOTION_LIFT } from '../../../../components/ui/classes';
@@ -35,7 +41,12 @@ import { STATUS_LABELS } from '../../../../lib/panel/detections-summary';
 import type { StatusItem } from '../../../../lib/panel/detections-view-model';
 import { cn } from '../../../../utils/cn';
 import { navRoute, type RouteId } from '../../routes';
-import { cacheAgeText, STATUS_TONES } from './card-presentation';
+import {
+  builderBadgeKind,
+  cacheAgeText,
+  STATUS_TONES,
+  type BuilderBadgeKind
+} from './card-presentation';
 
 /**
  * The surface both forms share. Compact tier: a divided row inside the
@@ -125,10 +136,50 @@ function CardHead(props: { item: StatusItem }): JSX.Element {
   );
 }
 
+/** The modifier badge's icon per kind (the shape carries the meaning, not the color). */
+const BUILDER_BADGE_ICONS: Readonly<Record<BuilderBadgeKind, LucideIcon>> = {
+  off: CircleOff,
+  excluded: ListX
+};
+
 /**
- * The evidence line: source chip and/or the unsure verdict's why. Renders
- * nothing for a card with neither (non-feature cards, undecided rows whose
- * absence is an honest "not active").
+ * The Exclusion Builder modifier badge: icon + short text, the full
+ * sentence for assistive tech and as the native title (a link card cannot
+ * host an interactive tooltip).
+ *
+ * @param props.item The card (carrying `builder`, `modifier`, `modifierChip`).
+ * @returns The badge, or nothing for a card without a builder fact.
+ */
+function ModifierBadge(props: { item: StatusItem }): JSX.Element {
+  return (
+    <Show when={props.item.builder}>
+      {(fact) => (
+        <Badge kind="info" class="shrink-0">
+          <span
+            data-fdt-card-modifier={builderBadgeKind(fact())}
+            title={props.item.modifier}
+            class="inline-flex items-center gap-1"
+          >
+            <Dynamic
+              component={BUILDER_BADGE_ICONS[builderBadgeKind(fact())]}
+              size={11}
+              class="shrink-0"
+              aria-hidden="true"
+            />
+            <span class="sr-only">, </span>
+            {props.item.modifierChip}
+            <span class="sr-only">: {props.item.modifier}</span>
+          </span>
+        </Badge>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The evidence line: source chip, the builder modifier badge and/or the
+ * unsure verdict's why. Renders nothing for a card with none (non-feature
+ * cards, undecided rows whose absence is an honest "not active").
  *
  * @param props.item The card.
  * @returns The evidence line, or nothing.
@@ -137,7 +188,11 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
   const source = () =>
     props.item.source === undefined ? undefined : SOURCE_COPY[props.item.source];
   return (
-    <Show when={source() !== undefined || props.item.why !== undefined}>
+    <Show
+      when={
+        source() !== undefined || props.item.why !== undefined || props.item.builder !== undefined
+      }
+    >
       <div
         data-fdt-card-evidence
         class={cn(UNDER_NAME, 'flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs')}
@@ -153,6 +208,7 @@ function CardEvidence(props: { item: StatusItem }): JSX.Element {
             </Badge>
           )}
         </Show>
+        <ModifierBadge item={props.item} />
         <Show when={props.item.why}>
           {(why) => (
             <p data-fdt-card-why class="min-w-0 text-status-warn">

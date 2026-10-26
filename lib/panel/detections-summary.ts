@@ -49,7 +49,7 @@ export interface DetectionsSummary {
   readonly server: string | null;
   /** The known platform and the captured header that identified it, or null. */
   readonly platform: { readonly name: string; readonly header: string } | null;
-  /** How many optimization cards are active, of how many. */
+  /** How many optimization cards are active in this tab ({@link isActiveInTab}), of how many. */
   readonly optimizations: { readonly active: number; readonly total: number };
   /** The WordPress core version the page declared; null when undeclared. */
   readonly wordpressVersion: string | null;
@@ -84,6 +84,20 @@ const NON_OPTIMIZATION_ROWS: ReadonlySet<DetectionRow> = new Set([
 export function isOptimizationCard(id: StatusItemId): boolean {
   if (DERIVED_CARD_IDS.has(id)) return false;
   return !NON_OPTIMIZATION_ROWS.has(id as DetectionRow);
+}
+
+/**
+ * Whether an optimization card counts as active in this tab: WP Rocket
+ * served it (`active`) and the Exclusion Builder did not turn it off here
+ * (`off` feature-wide or page-off). Excluded rows leave it active — the
+ * feature still runs on the rest of the page. The card itself keeps the
+ * served verdict; this is the counting rule the summary (and any status
+ * filter) shares.
+ *
+ * @param item The card.
+ */
+export function isActiveInTab(item: StatusItem): boolean {
+  return item.status === 'active' && !(item.builder !== undefined && 'off' in item.builder);
 }
 
 /**
@@ -143,7 +157,7 @@ export function summarizeDetections(
   for (const item of items) {
     if (!isOptimizationCard(item.id)) continue;
     total += 1;
-    if (item.status === 'active') active += 1;
+    if (isActiveInTab(item)) active += 1;
   }
 
   return {
