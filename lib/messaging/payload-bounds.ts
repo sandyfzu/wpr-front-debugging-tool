@@ -28,6 +28,7 @@ import type {
   PreloadedResources,
   WprDetections
 } from '../wp-rocket/types';
+import { BUILDER_MARKER_LIMITS } from '../exclusion-builder/builder-marker';
 
 /**
  * Count/length caps per page-derived structure. Generous (real pages sit far
@@ -61,7 +62,13 @@ export const PAYLOAD_LIMITS = {
    */
   scriptCount: 1_000_000,
   /** Version strings read off the page. */
-  versions: 64
+  versions: 64,
+  /**
+   * A builder row's `builder.excluded` count: the marker's own ceiling (it
+   * clamps larger counts on write), so a bounded payload never exceeds it
+   * and the producer has nothing to cut.
+   */
+  builderExcluded: BUILDER_MARKER_LIMITS.excludedMax
 } as const;
 
 /** Whether anything was cut while one row was rebuilt. */

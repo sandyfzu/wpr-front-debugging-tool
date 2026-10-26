@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { runDetection } from './run-detection';
 import { runReferenceDetection } from './reference/engine';
 import { FIXTURE_DIR } from './fixtures/corpus';
+import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 
 /** A minimal page with the given post-document comment. */
 function page(comment: string, body = ''): string {
@@ -94,5 +95,31 @@ describe('port ≡ reference: footprint branches fixture', () => {
       cached: true,
       timeStamp: 1791342241
     });
+  });
+});
+
+/**
+ * The Exclusion Builder's `builder` field is excluded from the comparison:
+ * it is this extension's own annotation of its rewrite (read from its own
+ * marker), not a WP Rocket footprint, so the reference — an independent
+ * reading of what WP Rocket served — has no counterpart and never emits it.
+ * Everything else must stay equal on a marked page.
+ */
+describe('port ≡ reference: the builder field is excluded', () => {
+  it('agrees on every other field of a page carrying a builder marker', () => {
+    const marker = `<meta name="${BUILDER_MARKER_META_NAME}" content="v1 delay_js=off defer_all_js=page-off automatic_lazy_rendering=excluded:1 lazyload=excluded:2">`;
+    const html = page(
+      "This website is like a Rocket, isn't it?",
+      '<script>class RocketLazyLoadScripts{constructor(){this.v="2.0.5"}}</script>'
+    ).replace('</head>', `${marker}</head>`);
+    const port = structuredClone(runDetection(html).detections);
+    const reference = runReferenceDetection(html).wprDetections;
+    expect(port.delay_js.builder).toEqual({ off: 'feature' });
+    expect(reference.delay_js).not.toHaveProperty('builder');
+    delete port.delay_js.builder;
+    delete port.defer_all_js.builder;
+    delete port.automatic_lazy_rendering.builder;
+    delete port.lazyload.builder;
+    expect(port).toEqual(reference);
   });
 });

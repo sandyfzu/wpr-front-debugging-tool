@@ -20,6 +20,7 @@
 import { isScriptSnapshotId } from './script-source';
 import type {
   BeaconFeatureStatus,
+  BuilderFact,
   DiagnoserDocData,
   FdtData,
   FeatureEvidenceSource,
@@ -48,6 +49,8 @@ import { numericTabId } from './sender';
 // site, no second limit.
 import { MAX_REPRESENTABLE_MS } from '../detection/describe';
 import { PAYLOAD_LIMITS } from './payload-bounds';
+import { isBuilderFactAllowed } from '../exclusion-builder/builder-marker';
+import type { ExclusionFeatureId } from '../exclusion-builder/set';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
@@ -545,6 +548,58 @@ function featureRowKeyCount(baseKeys: number, source: FeatureEvidenceSource | un
   return baseKeys + (source === undefined ? 0 : 1);
 }
 
+/**
+ * A builder row's optional `builder` field (the Exclusion Builder's in-tab
+ * fact): absent (the document stated none — every payload predating the
+ * field), or exactly one fact the row's feature can have — `{ off:
+ * 'feature' | 'page' }` or `{ excluded: 1…cap }`. Anything else (another
+ * key, an extra key, a state the feature cannot have, an out-of-range
+ * count) is not engine output.
+ *
+ * @param value The raw `builder` value.
+ * @param feature The row's feature.
+ * @returns The validated fact, `undefined` when absent, or null when invalid.
+ */
+function parseOptionalBuilder(
+  value: unknown,
+  feature: ExclusionFeatureId
+): BuilderFact | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return null;
+  let fact: BuilderFact;
+  if (keys[0] === 'off') {
+    const off = value['off'];
+    if (off !== 'feature' && off !== 'page') return null;
+    fact = { off };
+  } else if (keys[0] === 'excluded') {
+    const excluded = value['excluded'];
+    if (
+      typeof excluded !== 'number' ||
+      !Number.isSafeInteger(excluded) ||
+      excluded < 1 ||
+      excluded > LIMITS.builderExcluded
+    ) {
+      return null;
+    }
+    fact = { excluded };
+  } else {
+    return null;
+  }
+  return isBuilderFactAllowed(feature, fact) ? fact : null;
+}
+
+/** The keys an optional `builder` field adds to its row (0 or 1). */
+function builderKeys(builder: BuilderFact | undefined): 0 | 1 {
+  return builder === undefined ? 0 : 1;
+}
+
+/** The field to spread into a rebuilt row (empty when absent). */
+function builderOf(builder: BuilderFact | undefined): { builder?: BuilderFact } {
+  return builder === undefined ? {} : { builder };
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
 function parsePresenceRow(
   input: unknown
@@ -569,7 +624,10 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'delay_js');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
   const delayedScripts = row['delayedScripts'];
@@ -636,7 +694,8 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     version: row['version'],
     delayedScripts,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -651,7 +710,10 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'defer_all_js');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const scripts = row['scripts'];
   if (!Array.isArray(scripts)) return reject('scripts');
@@ -674,7 +736,8 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
     scripts: [...(scripts as string[])],
     deferredScripts,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -689,7 +752,10 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'lazyload');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const rawImages = row['images'];
   if (!Array.isArray(rawImages)) return reject('images');
@@ -716,7 +782,8 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     present: row['present'],
     images,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -802,7 +869,9 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
   if (!isRecord(input)) return null;
   const row = { ...input };
   const source = parseOptionalSource(row['source']);
-  if (source === null || Object.keys(row).length !== featureRowKeyCount(4, source)) return null;
+  const builder = parseOptionalBuilder(row['builder'], 'automatic_lazy_rendering');
+  if (source === null || builder === null) return null;
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + builderKeys(builder)) return null;
   const present = row['present'];
   const inlineCssPresent = row['inlineCssPresent'];
   if (typeof present !== 'boolean' || typeof inlineCssPresent !== 'boolean') return null;
@@ -819,6 +888,7 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
     locationHashes
   };
   if (source !== undefined) parsed.source = source;
+  if (builder !== undefined) parsed.builder = builder;
   return parsed;
 }
 
