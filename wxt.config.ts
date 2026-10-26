@@ -5,6 +5,18 @@ import { URL_PATTERNS } from './lib/wp-rocket/constants';
 // Extension name rendered in the browser UI.
 const NAME = 'WPR Front Debugging Tool';
 
+/**
+ * Firefox add-on identity (owner-chosen GUID: no control over a wp-media
+ * domain for an `id@domain` form). A stable id is what gives the add-on
+ * `storage.sync` (Firefox refuses it to a temporary add-on without one) and
+ * keeps users' synced settings across updates; it is permanent once
+ * published on AMO — never change it.
+ */
+export const FIREFOX_ADDON_ID = '{f6991cc9-09e3-43d0-a6dd-4aae5f676452}';
+
+/** Explicit supported Firefox floor (owner-chosen). */
+export const FIREFOX_MIN_VERSION = '150.0';
+
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
   vite: () => ({
@@ -17,10 +29,13 @@ export default defineConfig({
     // `description` and `version` are filled from package.json by default.
     // Chromium floor per project policy; see AGENTS.md (Chromium-based primary target).
     minimum_chrome_version: '145',
-    // Explicit supported Firefox floor (owner-chosen): without it any old Firefox
-    // could install a build it was never verified on.
+    // Firefox only: the add-on id (see FIREFOX_ADDON_ID) and the supported
+    // floor — without it any old Firefox could install a build it was never
+    // verified on.
     ...(browser === 'firefox' && {
-      browser_specific_settings: { gecko: { strict_min_version: '150.0' } }
+      browser_specific_settings: {
+        gecko: { id: FIREFOX_ADDON_ID, strict_min_version: FIREFOX_MIN_VERSION }
+      }
     }),
     // Least privilege — every permission has a concrete consumer somewhere in the
     // ported feature set; each is added/removed by the phase that owns that feature.
