@@ -16,7 +16,12 @@
  * acronym the plugin does not print.
  */
 
-import type { FeatureEvidenceSource, FeatureMetaRow, WprDetections } from '../wp-rocket/types';
+import type {
+  BuilderFact,
+  FeatureEvidenceSource,
+  FeatureMetaRow,
+  WprDetections
+} from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
 import {
@@ -297,6 +302,12 @@ export interface HudReading {
   readonly source: FeatureEvidenceSource | null;
   /** The amber "why" for an unsure verdict (collecting / unknown), else null. */
   readonly why: string | null;
+  /**
+   * The Exclusion Builder's effect on this feature in this tab (the marker
+   * the rewrite left in the displayed document) — a modifier on top of the
+   * verdict, never part of it. Present only when the document states one.
+   */
+  readonly builder?: BuilderFact;
 }
 
 /** The collecting state's explanation (the family is enabled, nothing applied yet). */
@@ -325,12 +336,26 @@ export function readHudFeature(
     source === null &&
     feature.undecided !== null;
   const verdict: HudVerdict = unknown ? 'unknown' : state;
+  const builder = builderFactOf(detections, feature.row);
   return {
     verdict,
     count: feature.count === null ? null : feature.count(report),
     source,
-    why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null
+    why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
+    ...(builder === null ? {} : { builder })
   };
+}
+
+/**
+ * A row's Exclusion Builder fact, or null (only the builder's four rows can
+ * carry one; every other row never does).
+ *
+ * @param detections The engine rows.
+ * @param row The detection row.
+ */
+function builderFactOf(detections: WprDetections, row: FeatureMetaRow): BuilderFact | null {
+  const entry = detections[row];
+  return 'builder' in entry && entry.builder !== undefined ? entry.builder : null;
 }
 
 /**
@@ -341,6 +366,24 @@ export function readHudFeature(
  * @param reading The feature's reading.
  */
 export function hudStateLine(feature: HudFeature, reading: HudReading): string {
+  const served = servedStateLine(feature, reading);
+  if (reading.builder === undefined) return served;
+  const sentence = builderModifierCopy(feature, reading.builder).sentence;
+  if ('excluded' in reading.builder) return `${served} ${sentence}`;
+  // Turned off in this tab: the served line's counts describe the rewritten
+  // page ("applied on this page: 0 …"), so the modifier replaces it — after
+  // saying WP Rocket served the feature only when the verdict proves it did.
+  const modifier = lowerFirst(sentence);
+  return reading.verdict === 'applied' ? `${BUILDER_SERVED_LEAD}; ${modifier}` : modifier;
+}
+
+/**
+ * The verdict's own line, as WP Rocket served the page (no builder modifier).
+ *
+ * @param feature The HUD row.
+ * @param reading The feature's reading.
+ */
+function servedStateLine(feature: HudFeature, reading: HudReading): string {
   switch (reading.verdict) {
     case 'applied':
       return reading.count !== null && feature.unit !== null
@@ -381,3 +424,100 @@ export const SOURCE_REPORT_TEXT: Readonly<Record<FeatureEvidenceSource, string>>
   meta: 'Generator meta',
   footprint: 'Page footprint'
 };
+
+/** The state line's lead for a feature WP Rocket served that the builder turned off. */
+export const BUILDER_SERVED_LEAD = 'served by WP Rocket';
+
+/** The strip's tab-level line title: the page shown is the builder's rewrite. */
+export const BUILDER_TAB_LINE_TITLE = 'Exclusion Builder rewrote this page';
+
+/** One builder fact's on-screen renderings, beside {@link SOURCE_COPY}. */
+export interface BuilderModifierCopy {
+  /** The chip/badge text (short). */
+  readonly chip: string;
+  /** The full sentence: tooltip, card and report wording. */
+  readonly sentence: string;
+  /** The strip tab-level line's hint for this feature (names it). */
+  readonly hint: string;
+}
+
+/**
+ * The modifier copy of one builder fact — the single declaring site the
+ * panel cards, the strip chips and tab-level line and the support report
+ * render from. Never claims WP Rocket served the feature (the verdict says
+ * that); an excluded count names its unit.
+ *
+ * @param feature The HUD row (its compact name and unit).
+ * @param fact The fact the document's builder marker states.
+ */
+export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): BuilderModifierCopy {
+  if ('excluded' in fact) {
+    const counted = countedUnit(fact.excluded, feature.unit);
+    return {
+      chip: `${String(fact.excluded)} excluded`,
+      sentence: `${counted} excluded by the Exclusion Builder.`,
+      hint: `${feature.shortLabel}: ${counted} excluded`
+    };
+  }
+  return fact.off === 'feature'
+    ? {
+        chip: 'Disabled in this tab',
+        sentence: 'Disabled in this tab by the Exclusion Builder.',
+        hint: `${feature.shortLabel} off`
+      }
+    : {
+        chip: 'Off on this page',
+        sentence: 'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.',
+        hint: `${feature.shortLabel} off on this page`
+      };
+}
+
+/** The strip's tab-level line: the title and one hint per feature the builder changed. */
+export interface BuilderTabLine {
+  readonly title: string;
+  /** Hints in registry order (never empty). */
+  readonly hints: readonly string[];
+  /** The whole line as one text (`<title> — <hint> · <hint>`). */
+  readonly text: string;
+}
+
+/**
+ * The tab-level line for a page, from the same facts and copy as the
+ * per-feature modifier; null when the document states no builder fact (a
+ * rewrite that only removed a served marker changed no feature: no line).
+ *
+ * @param detections The engine rows.
+ */
+export function builderTabLine(detections: WprDetections): BuilderTabLine | null {
+  const hints = HUD_FEATURES.flatMap((feature) => {
+    const fact = builderFactOf(detections, feature.row);
+    return fact === null ? [] : [builderModifierCopy(feature, fact).hint];
+  });
+  if (hints.length === 0) return null;
+  return {
+    title: BUILDER_TAB_LINE_TITLE,
+    hints,
+    text: `${BUILDER_TAB_LINE_TITLE} — ${hints.join(' · ')}`
+  };
+}
+
+/**
+ * A count with its unit, singular for one (every HUD unit is a regular
+ * plural); just the count when the feature has no unit.
+ *
+ * @param count The count (≥ 1).
+ * @param unit The plural unit word, or null.
+ */
+function countedUnit(count: number, unit: string | null): string {
+  if (unit === null) return String(count);
+  return `${String(count)} ${count === 1 ? unit.replace(/s$/, '') : unit}`;
+}
+
+/**
+ * Lower-case a sentence's first character (it then reads after a lead).
+ *
+ * @param text The sentence.
+ */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
