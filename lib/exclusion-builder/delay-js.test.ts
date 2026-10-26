@@ -6,7 +6,7 @@
  * when nothing matches, and the feature-wide disable's removal of the
  * plugin's three controller scripts.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { delayJsTransform, delayScriptMatch, wpBodyStart } from './delay-js';
 import { delayMaskedRegions } from './delay-js-mask';
 import { ExclusionValidationError } from './errors';
@@ -16,6 +16,59 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseParityTable, type ParityRow } from './wp-rocket-parity-table';
+import { ID_PROBE_LIMITS, type ProbeBudget } from './pcre/id-probe';
+import type * as IdProbe from './pcre/id-probe';
+
+/**
+ * The id-probe work a transform does, observed through the real functions
+ * (pass-through wrappers): each script budget handed out (`share` = its
+ * steps at hand-out, `budget.left` = what is left after the run) and how
+ * many row probes were compiled. Work, unlike wall clock, is the same on
+ * every machine.
+ */
+const probeWork = {
+  budgets: [] as { readonly share: number; readonly budget: ProbeBudget }[],
+  compiles: 0
+};
+
+vi.mock('./pcre/id-probe', async (original) => {
+  const actual = await original<typeof IdProbe>();
+  return {
+    ...actual,
+    scriptProbeBudget: (...args: Parameters<typeof actual.scriptProbeBudget>): ProbeBudget => {
+      const budget = actual.scriptProbeBudget(...args);
+      probeWork.budgets.push({ share: budget.left, budget });
+      return budget;
+    },
+    compileIdProbe: (...args: Parameters<typeof actual.compileIdProbe>) => {
+      probeWork.compiles++;
+      return actual.compileIdProbe(...args);
+    }
+  };
+});
+
+/**
+ * Run `transform` with the probe work recorded from zero.
+ *
+ * @param transform The run to observe.
+ * @returns Its result, the budgets handed out, and each one's steps spent.
+ */
+function withProbeWork<T>(transform: () => T): {
+  readonly result: T;
+  readonly shares: readonly number[];
+  readonly spent: readonly number[];
+  readonly compiles: number;
+} {
+  probeWork.budgets.length = 0;
+  probeWork.compiles = 0;
+  const result = transform();
+  return {
+    result,
+    shares: probeWork.budgets.map(({ share }) => share),
+    spent: probeWork.budgets.map(({ share, budget }) => share - budget.left),
+    compiles: probeWork.compiles
+  };
+}
 
 /** A match row of the WP Rocket parity table (outputs derived from the real plugin). */
 function parityRow(id: string): Extract<ParityRow, { kind: 'match' }> {
@@ -630,9 +683,16 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     const rows = Array.from({ length: 500 }, (_, n) =>
       n % 2 === 0 ? `jquery-ui-${String(n)}` : `/wp-content/plugins/p${String(n)}/[a-z]*\\.js`
     );
-    const started = performance.now();
-    expect(delayJsTransform(served, setWithRows(rows)).report.undetermined).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(2000);
+    const { result, shares, spent, compiles } = withProbeWork(() =>
+      delayJsTransform(served, setWithRows(rows))
+    );
+    expect(result.report.undetermined).toBeUndefined();
+    // Work, not wall clock: the probing path ran (budgets were handed out),
+    // each row's probe was built once for the document (not once per
+    // script), and no row stepped through an id (not one step spent).
+    expect(shares.length).toBeGreaterThan(0);
+    expect(compiles).toBeLessThanOrEqual(rows.length);
+    expect(Math.max(...spent)).toBe(0);
   });
 
   it('caps the id runs per document: costly rows leave scripts undetermined, never guessed', () => {
@@ -646,9 +706,24 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
       { length: 500 },
       (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`
     );
-    const started = performance.now();
-    const result = delayJsTransform(served, setWithRows(rows));
-    expect(performance.now() - started).toBeLessThan(2000);
+    const { result, shares, spent } = withProbeWork(() =>
+      delayJsTransform(served, setWithRows(rows))
+    );
+    // Work, not wall clock (uncapped, this input ran ~55 s; capped, ~0.3 s):
+    // one budget per masked script, each its even share of the document's...
+    const share = ID_PROBE_LIMITS.documentSteps / 1000;
+    expect(shares).toEqual(Array.from({ length: 1000 }, () => share));
+    // ...each spent to its end (these rows outlast any share)...
+    expect(Math.min(...spent)).toBeGreaterThanOrEqual(share);
+    // ...and past it by at most one subject byte's work of one row (the
+    // probe checks its budget between bytes; 140 steps measured), so the
+    // document stays within its cap.
+    const overrun = share / 20;
+    expect(Math.max(...spent)).toBeLessThanOrEqual(share + overrun);
+    expect(spent.reduce((total, steps) => total + steps, 0)).toBeLessThanOrEqual(
+      ID_PROBE_LIMITS.documentSteps + 1000 * overrun
+    );
+    // Out of work, a script is left undetermined, never guessed.
     expect(result.report.undetermined).toBeGreaterThan(0);
     expect(result.report.rewritten).toBe(0);
   });
