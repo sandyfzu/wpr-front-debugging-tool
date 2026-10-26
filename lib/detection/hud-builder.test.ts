@@ -13,6 +13,7 @@ import {
   BUILDER_TAB_LINE_TITLE,
   builderModifierCopy,
   builderTabLine,
+  builderTurnsOff,
   hudFeatureOf,
   hudStateLine,
   readHudFeature,
@@ -53,6 +54,23 @@ function detectionsOf(html: string): WprDetections {
 function reading(verdict: HudVerdict, count: number | null, builder?: BuilderFact): HudReading {
   return { verdict, count, source: null, why: null, ...(builder === undefined ? {} : { builder }) };
 }
+
+describe('builderTurnsOff — the one "off in this tab" rule', () => {
+  it('is true for the feature-wide disable and the Defer page-off', () => {
+    expect(builderTurnsOff({ off: 'feature' })).toBe(true);
+    expect(builderTurnsOff({ off: 'page' })).toBe(true);
+  });
+
+  it('is false for excluded rows, whatever the count', () => {
+    expect(builderTurnsOff({ excluded: 1 })).toBe(false);
+    expect(builderTurnsOff({ excluded: 9999 })).toBe(false);
+  });
+
+  it('is false without a fact', () => {
+    expect(builderTurnsOff(undefined)).toBe(false);
+    expect(builderTurnsOff()).toBe(false);
+  });
+});
 
 describe('builderModifierCopy — the declared words', () => {
   it('pins the feature-wide disable', () => {

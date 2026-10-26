@@ -4,6 +4,7 @@
  * verdict → vocabulary mapping and the relative cache-age line.
  */
 import type { StatusKind as Tone } from '../../../../components/ui/status-badge';
+import { builderTurnsOff } from '../../../../lib/detection/hud';
 import type { StatusItemId, StatusKind } from '../../../../lib/panel/detections-view-model';
 import type { BuilderFact } from '../../../../lib/wp-rocket/types';
 import { relativeAge } from '../../../../utils/relative-age';
@@ -43,7 +44,7 @@ export type BuilderBadgeKind = 'off' | 'excluded';
  * @param fact The card's builder fact.
  */
 export function builderBadgeKind(fact: BuilderFact): BuilderBadgeKind {
-  return 'off' in fact ? 'off' : 'excluded';
+  return builderTurnsOff(fact) ? 'off' : 'excluded';
 }
 
 /**

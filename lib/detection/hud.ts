@@ -312,6 +312,22 @@ export interface HudReading {
   readonly builder?: BuilderFact;
 }
 
+/** A builder fact that turns its feature off in this tab (feature-wide, or Defer for the page). */
+export type BuilderOffFact = Extract<BuilderFact, { readonly off: unknown }>;
+
+/**
+ * Whether a builder fact turns its feature off in this tab (`off` feature-wide
+ * or page-off) rather than excluding rows — the one rule every surface that
+ * counts, colours or words the modifier branches on. An absent fact turns
+ * nothing off.
+ *
+ * @param fact The row's builder fact, if the document states one.
+ * @returns True for `off`, false for `excluded` or no fact.
+ */
+export function builderTurnsOff(fact?: BuilderFact): fact is BuilderOffFact {
+  return fact !== undefined && 'off' in fact;
+}
+
 /** The collecting state's explanation (the family is enabled, nothing applied yet). */
 export const COLLECTING_WHY = 'enabled, not yet applied on this page.';
 
@@ -371,7 +387,7 @@ export function hudStateLine(feature: HudFeature, reading: HudReading): string {
   const served = servedStateLine(feature, reading);
   if (reading.builder === undefined) return served;
   const sentence = builderModifierCopy(feature, reading.builder).sentence;
-  if ('excluded' in reading.builder) return `${served} ${sentence}`;
+  if (!builderTurnsOff(reading.builder)) return `${served} ${sentence}`;
   // Turned off in this tab: the served line's counts describe the rewritten
   // page ("applied on this page: 0 …"), so the modifier replaces it — after
   // saying WP Rocket served the feature only when the verdict proves it did.
@@ -453,7 +469,7 @@ export interface BuilderModifierCopy {
  * @param fact The fact the document's builder marker states.
  */
 export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): BuilderModifierCopy {
-  if ('excluded' in fact) {
+  if (!builderTurnsOff(fact)) {
     const phrase = counted(fact.excluded, feature.unit);
     return {
       chip: `${String(fact.excluded)} excluded`,

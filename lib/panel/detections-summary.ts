@@ -12,6 +12,7 @@ import { buildStatusItems } from './detections-view-model';
 import type { CacheState } from '../detection/cache-context';
 import { cacheLayerHint, cacheStateFromFdtData } from '../detection/cache-context';
 import { formatCacheTimestamp, isRepresentableCacheStamp } from '../detection/cache-time';
+import { builderTurnsOff } from '../detection/hud';
 import type { FdtData } from '../wp-rocket/types';
 
 /** The status words every Detections surface prints (badges, report) — sentence case. */
@@ -97,7 +98,7 @@ export function isOptimizationCard(id: StatusItemId): boolean {
  * @param item The card.
  */
 export function isActiveInTab(item: StatusItem): boolean {
-  return item.status === 'active' && !(item.builder !== undefined && 'off' in item.builder);
+  return item.status === 'active' && !builderTurnsOff(item.builder);
 }
 
 /**
