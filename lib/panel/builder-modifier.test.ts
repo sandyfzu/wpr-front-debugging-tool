@@ -9,7 +9,7 @@ import { runDetection } from '../detection/run-detection';
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import { buildStatusItems, type StatusItem } from './detections-view-model';
 import { buildSupportReport, type SupportReportContext } from './support-report';
-import { makeReportData } from './support-report.fixtures';
+import { emptyDetections, makeReportData } from './support-report.fixtures';
 
 const CONTEXT: SupportReportContext = {
   generatedAt: Date.UTC(2026, 9, 26, 12, 0, 0),
@@ -101,6 +101,26 @@ describe('the support report row', () => {
     // No declaration: the disabled feature reads not active; only the modifier explains it.
     expect(reportRow(page('', 'v1 delay_js=off'), 'Delay JavaScript execution')).toBe(
       '| Delay JavaScript execution | Not active | — | Disabled in this tab by the Exclusion Builder. |'
+    );
+  });
+
+  it('orders the Details cell as facts; why; modifier', () => {
+    // Automatic Lazy Rendering still collecting (render hashes on the page,
+    // nothing converted) while its rows excluded one element: the card has
+    // both the unsure why and the modifier.
+    const detections = emptyDetections();
+    detections.wpr = { ...detections.wpr, present: true };
+    detections.automatic_lazy_rendering = {
+      present: false,
+      lazyRenderElements: 0,
+      inlineCssPresent: false,
+      locationHashes: 2,
+      builder: { excluded: 1 }
+    };
+    const report = buildSupportReport(makeReportData({ wprDetections: detections }), CONTEXT);
+    const row = report.split('\n').find((line) => line.startsWith('| Automatic Lazy Rendering |'));
+    expect(row).toBe(
+      '| Automatic Lazy Rendering | Collecting | — | Enabled, not yet applied on this page.; 1 element excluded by the Exclusion Builder. |'
     );
   });
 
