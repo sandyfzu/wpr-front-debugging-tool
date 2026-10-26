@@ -536,8 +536,6 @@ export interface BuilderTabLine {
   readonly title: string;
   /** Hints in registry order (never empty). */
   readonly hints: readonly string[];
-  /** The whole line as one text (`<title> — <hint> · <hint>`). */
-  readonly text: string;
   /** The line as assistive tech hears it: commas where the eye sees the dot. */
   readonly spoken: string;
 }
@@ -565,7 +563,6 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
   return {
     title: BUILDER_TAB_LINE_TITLE,
     hints,
-    text: `${lead}${hints.join(LIST_JOINER)}`,
     spoken: `${lead}${hints.join(SPOKEN_JOINER)}`
   };
 }

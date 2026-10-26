@@ -11,12 +11,13 @@ import {
   builderModifierCopy,
   builderTabLine,
   hudFeatureOf,
+  LIST_JOINER,
   type HudFeature
 } from '../../../lib/detection/hud';
 import { runDetection } from '../../../lib/detection/run-detection';
 import { cacheStateForPage } from '../../../lib/detection/cache-context';
 import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
-import type { FeatureMetaRow } from '../../../lib/wp-rocket/types';
+import type { FeatureMetaRow, WprDetections } from '../../../lib/wp-rocket/types';
 import {
   buildStripCardModel,
   INSPECTOR_BUILDER_LINE_ID,
@@ -36,16 +37,26 @@ const MANY_LINE =
   'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded';
 
 /**
+ * The engine's rows for a WP Rocket page with an optional builder marker.
+ *
+ * @param marker The marker content, or null for none.
+ * @param generator The generator meta (default: declares Delay/Defer/LazyLoad).
+ */
+function markedDetections(marker: string | null, generator = DECLARING_GENERATOR): WprDetections {
+  const note =
+    marker === null ? '' : `<meta name="${BUILDER_MARKER_META_NAME}" content="${marker}">`;
+  const html = `<!doctype html><html><head>${generator}${note}</head><body><img src="p.gif" data-lazy-src="r.jpg"></body></html>`;
+  return runDetection(html).detections;
+}
+
+/**
  * The strip's card model for a WP Rocket page with an optional builder marker.
  *
  * @param marker The marker content, or null for none.
  * @param generator The generator meta (default: declares Delay/Defer/LazyLoad).
  */
 function model(marker: string | null, generator = DECLARING_GENERATOR): StripCardModel {
-  const note =
-    marker === null ? '' : `<meta name="${BUILDER_MARKER_META_NAME}" content="${marker}">`;
-  const html = `<!doctype html><html><head>${generator}${note}</head><body><img src="p.gif" data-lazy-src="r.jpg"></body></html>`;
-  const { detections } = runDetection(html);
+  const detections = markedDetections(marker, generator);
   return buildStripCardModel({
     snapshot: {
       phase: 'ready',
@@ -120,12 +131,14 @@ describe('the strip model — tab-level line', () => {
   it('one: names the one feature turned off', () => {
     const card = model('v1 delay_js=off');
     expect(card.builderLine?.hints).toEqual(['Delay JS off']);
-    expect(card.builderLine?.text).toBe('Exclusion Builder rewrote this page — Delay JS off');
+    expect(card.builderLine?.spoken).toBe('Exclusion Builder rewrote this page — Delay JS off');
   });
 
   it('many: the owner’s line, in registry order, the panel’s shared copy', () => {
     const card = model('v1 delay_js=off defer_all_js=page-off lazyload=excluded:3');
-    expect(card.builderLine?.text).toBe(MANY_LINE);
+    // Read as shown: the title, then the hints with the gutter dot between them.
+    const line = card.builderLine;
+    expect(line && `${line.title} — ${line.hints.join(LIST_JOINER)}`).toBe(MANY_LINE);
     expect(card.builderLine?.hints).toEqual([
       'Delay JS off',
       'Defer JS off on this page',
@@ -135,15 +148,17 @@ describe('the strip model — tab-level line', () => {
 
   it('excluded only: the line names the count, nothing is called off', () => {
     const card = model('v1 lazyload=excluded:1');
-    expect(card.builderLine?.text).toBe(
+    expect(card.builderLine?.spoken).toBe(
       'Exclusion Builder rewrote this page — Lazyload Images: 1 excluded'
     );
   });
 
-  it('is absent while the pass runs or failed', () => {
+  it('is absent while the pass runs or failed, even over marked rows', () => {
+    // Real marked rows: only the phase gate can keep the line out.
+    const detections = markedDetections('v1 delay_js=off lazyload=excluded:3');
     for (const phase of ['running', 'failed'] as const) {
       const card = buildStripCardModel({
-        snapshot: { phase, detections: null, cacheState: null },
+        snapshot: { phase, detections, cacheState: null },
         wordpressVersion: null,
         fdtVersion: '0.0.0'
       });
@@ -291,11 +306,24 @@ describe('the rendered card', () => {
       expect(badge?.textContent).toBe(chip);
       // Not colour alone: every badge carries its kind's icon.
       expect(badge?.querySelectorAll('svg')).toHaveLength(1);
+      // The kind's own glyph (lucide circle-off / list-x): a swapped icon table fails here.
+      const paths = Array.from(badge?.querySelectorAll('path') ?? [], (path) =>
+        path.getAttribute('d')
+      );
+      expect(paths).toContain(kind === 'off' ? 'm2 2 20 20' : 'm15.5 9.5 5 5');
+      expect(paths).not.toContain(kind === 'off' ? 'm15.5 9.5 5 5' : 'm2 2 20 20');
       const line = entry.querySelector<HTMLElement>('[data-fdt-strip-modifier-line]');
       expect(line && visibleText(line)).toBe(sentence);
       const spoken = spokenText(entry);
       expect(spoken.split(sentence)).toHaveLength(2);
+      // No row tooltip: it would repeat the visible sentence as the row's description.
+      expect(entry.hasAttribute('title')).toBe(false);
     });
+    // Rows without a modifier keep their explaining tooltip.
+    const plain = Array.from(root.querySelectorAll<HTMLElement>('.ins-row')).find(
+      (entry) => entry.querySelector('.ins-chip')?.textContent === 'Minify JS'
+    );
+    expect(plain?.getAttribute('title')).toMatch(/^Minify JavaScript files — /);
     // Off rows show no count; the excluded row keeps its value chip.
     const values = rows.map((entry) => entry.querySelector('.ins-value')?.textContent ?? null);
     expect(values).toEqual([null, null, '1 image']);

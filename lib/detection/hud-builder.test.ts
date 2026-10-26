@@ -268,7 +268,6 @@ describe('builderTabLine — the strip’s tab-level line', () => {
         'Lazyload Images: 3 excluded',
         'Automatic Lazy Rendering: 1 excluded'
       ],
-      text: 'Exclusion Builder rewrote this page — Delay JS off · Defer JS off on this page · Lazyload Images: 3 excluded · Automatic Lazy Rendering: 1 excluded',
       spoken:
         'Exclusion Builder rewrote this page — Delay JS off, Defer JS off on this page, Lazyload Images: 3 excluded, Automatic Lazy Rendering: 1 excluded'
     });
@@ -284,7 +283,7 @@ describe('builderTabLine — the strip’s tab-level line', () => {
     for (const [content, entry, fact] of cases) {
       const line = builderTabLine(detectionsOf(markedPage(content)));
       expect(line?.hints, content).toEqual([builderModifierCopy(entry, fact).hint]);
-      expect(line?.text, content).toBe(
+      expect(line?.spoken, content).toBe(
         `${BUILDER_TAB_LINE_TITLE} — ${builderModifierCopy(entry, fact).hint}`
       );
     }
