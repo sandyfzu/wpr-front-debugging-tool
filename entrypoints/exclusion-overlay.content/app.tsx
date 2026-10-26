@@ -53,7 +53,8 @@ import {
   withoutRepeatedActions,
   type BannerAction
 } from './banner-model';
-import { TOOL_TITLE, saveStateWords, sessionIndicator } from './copy';
+import { DRAFT_TOO_LARGE_WORDS, TOOL_TITLE, sessionIndicator } from './copy';
+import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph } from './glyph';
@@ -161,6 +162,11 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   const [pickMessage, setPickMessage] = createSignal<string | null>(null);
   const [highlight, setHighlight] = createSignal<HighlightTarget | null>(null);
   const [announcement, setAnnouncement] = createSignal('');
+  /** Say a line once, politely (the sr-only status below). */
+  const announce = createAnnouncer(setAnnouncement, (run) => {
+    // eslint-disable-next-line solid/reactivity -- a frame callback: reads the seam when it runs, untracked
+    props.requestFrame(run);
+  });
   const [geometryTick, setGeometryTick] = createSignal(0);
   let heading: HTMLHeadingElement | undefined;
   let pill: HTMLButtonElement | undefined;
@@ -329,10 +335,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     createVirtualizer: props.createVirtualizer,
     pick: beginPicking,
     highlight: setHighlight,
-    announce: createAnnouncer(setAnnouncement, (run) => {
-      // eslint-disable-next-line solid/reactivity -- a frame callback: reads the seam when it runs, untracked
-      props.requestFrame(run);
-    })
+    announce
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -439,23 +442,25 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     setHighlight(null);
   });
 
-  const footerLine = createMemo((): { text: string; tone: 'muted' | 'error' } | null => {
-    const invalid = c.invalidCount();
-    if (invalid > 0)
-      return {
-        text: `${String(invalid)} ${invalid === 1 ? 'row needs' : 'rows need'} fixing`,
-        tone: 'error'
-      };
+  const footerLine = createMemo(() => {
     const view = c.view();
-    if (view?.kind === 'unavailable' && !view.retryable) {
-      return { text: 'Applying again won’t help until the cause above is fixed', tone: 'muted' };
-    }
-    if (c.dirty()) return { text: 'Edits not applied yet', tone: 'muted' };
-    const words = saveStateWords(c.saveState());
-    return words === null
-      ? null
-      : { text: words, tone: c.saveState().kind === 'not-saved' ? 'error' : 'muted' };
+    return footerLineFor({
+      invalid: c.invalidCount(),
+      stuck: view?.kind === 'unavailable' && !view.retryable,
+      dirty: c.dirty(),
+      save: c.saveState()
+    });
   });
+  // A draft that can no longer be kept is said once, as it becomes so (the
+  // footer line is not a live region: it changes on every edit).
+  createEffect(
+    on(
+      () => draftTooLarge(c.saveState()),
+      (tooLarge, before) => {
+        if (tooLarge && before !== true) announce(DRAFT_TOO_LARGE_WORDS);
+      }
+    )
+  );
 
   const applyLabel = (): string => {
     // An Apply waiting for its set readings is under way already.

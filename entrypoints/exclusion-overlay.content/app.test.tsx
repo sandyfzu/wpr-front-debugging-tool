@@ -133,6 +133,7 @@ function mount(
   const stopPicker = vi.fn();
   let setPageModal: (value: boolean) => void = () => undefined;
   let setModalNow: (value: boolean) => void = () => undefined;
+  let made: ReturnType<typeof createOverlayController> | null = null;
   const result = render(() => {
     const page = pageTools(modalAtStart);
     setPageModal = page.setPageModal;
@@ -149,6 +150,7 @@ function mount(
       log: { warn: vi.fn() }
     });
     controller.start();
+    made = controller;
     return (
       <OverlayApp
         controller={controller}
@@ -196,6 +198,10 @@ function mount(
       timers.splice(0).forEach((run) => {
         run();
       });
+    },
+    controller: () => {
+      if (made === null) throw new Error('the overlay made no controller');
+      return made;
     }
   };
 }
@@ -685,6 +691,53 @@ describe('stored-form announcements', () => {
     expect(
       screen.getByText('Delay JavaScript execution row 1: WP Rocket stores it as jquery-(.*).js.')
     ).toBeTruthy();
+  });
+});
+
+describe('a draft over the set cap', () => {
+  afterEach(cleanup);
+
+  /** Valid rows, each under the row cap, together over the set's 65,536 characters. */
+  const overCap = Array.from({ length: 45 }, (_, n) => `p${String(n)}-${'a'.repeat(1500)}.jpg`);
+  const footer = (container: HTMLElement): string =>
+    container.querySelector('.xo-footer-status')?.textContent ?? '';
+  const status = (container: HTMLElement): string =>
+    container.querySelector('.xo-sr-only[role="status"]')?.textContent ?? '';
+
+  it('says it is not kept — over unapplied edits and rows to fix — and announces it once', async () => {
+    // An active session: the added rows are edits not applied yet.
+    const view = mount(port(activeRecord()), null, undefined, false, true);
+    await screen.findByRole('button', { name: /Stop/ });
+    const controller = view.controller();
+    controller.insertRows('lazyload', overCap, null);
+    view.fireTimers();
+    await waitFor(() => {
+      expect(controller.saveState()).toEqual({ kind: 'not-saved', reason: 'too-large' });
+    });
+    // Valid and unapplied: the cap is the line, not "Edits not applied yet".
+    expect(controller.invalidCount()).toBe(0);
+    expect(controller.dirty()).toBe(true);
+    expect(footer(view.container)).toMatch(/^Draft not saved: it is over 65,536 characters/);
+    await waitFor(() => {
+      expect(status(view.container)).toBe(footer(view.container));
+    });
+    // A row to fix as well: the cap still leads (the row shows its own problem).
+    controller.insertRows('lazyload', ['b'.repeat(2049)], null);
+    view.fireTimers();
+    await waitFor(() => {
+      expect(controller.invalidCount()).toBe(1);
+    });
+    expect(footer(view.container)).toMatch(/^Draft not saved: it is over/);
+    // Still over the cap: not announced again (a new announcement clears the region first).
+    expect(status(view.container)).toMatch(/^Draft not saved: it is over/);
+    // Back under the cap: the other lines return.
+    for (const row of controller.draft().rows.lazyload.slice(0, 40)) {
+      controller.removeRow('lazyload', row.id);
+    }
+    view.fireTimers();
+    await waitFor(() => {
+      expect(footer(view.container)).toBe('1 row needs fixing');
+    });
   });
 });
 
