@@ -30,6 +30,7 @@ import {
 import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag, ScannedTag } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
+import { scriptProbeBudget, type ProbeBudget } from './pcre/id-probe';
 import {
   delayMaskedRegions,
   firstRegionFrom,
@@ -248,7 +249,8 @@ interface InlineReading {
  * @param element The served script element (WP Rocket's match, unmasked).
  * @param pass The inline pass's outcome under the set.
  * @param spanned The element read without a spanning wrapper's part, or `null`.
- * @param masks Whether the match holds masked regions.
+ * @param budget The script's id-probe budget when its match holds masked
+ *   regions (shared by all its readings), else `null`.
  * @returns The verdict (`null` when undetermined).
  */
 function verdictAfterInlinePass(
@@ -256,7 +258,7 @@ function verdictAfterInlinePass(
   element: string,
   pass: InlinePass,
   spanned: string | null,
-  masks: boolean
+  budget: ProbeBudget | null
 ): DelayVerdict {
   const readings = pass === 'runs' ? [element] : [];
   if (pass !== 'runs') {
@@ -265,9 +267,9 @@ function verdictAfterInlinePass(
     if (spanned !== null) readings.push(spanned);
   }
   const subjects = [...new Set(readings)].map((reading) =>
-    masks ? asDelayJsReadIt(reading) : { text: reading, ids: [] }
+    budget === null ? { text: reading, ids: [] } : asDelayJsReadIt(reading)
   );
-  return agreedAcross(subjects.map(({ text, ids }) => matchRow(text, ids)));
+  return agreedAcross(subjects.map(({ text, ids }) => matchRow(text, ids, budget ?? undefined)));
 }
 
 /**
@@ -382,12 +384,18 @@ function delayAfterInlinePass(
   let afterOpening = false;
   // The regions Delay JS read as placeholders (see `./delay-js-mask`).
   const regions = delayMaskedRegions(servedHtml);
-  for (const tag of scanTags(servedHtml)) {
-    // A delayed script is read as WP Rocket's regex matched it (see `delayScriptMatch`).
-    const match: DelayScriptMatch =
-      tag.name === 'script' && isDelayedScript(tag)
-        ? delayScriptMatch(servedHtml, tag, regions)
-        : { contentEnd: tag.contentEnd, end: tag.end, regions: [] };
+  const tags = [...scanTags(servedHtml)];
+  // A delayed script is read as WP Rocket's regex matched it (see `delayScriptMatch`).
+  const matches = tags.map((tag): DelayScriptMatch =>
+    tag.name === 'script' && isDelayedScript(tag)
+      ? delayScriptMatch(servedHtml, tag, regions)
+      : { contentEnd: tag.contentEnd, end: tag.end, regions: [] }
+  );
+  // Each masked script gets an even share of the id-probe work: its answer
+  // never depends on the other scripts or their order.
+  const maskedScripts = matches.filter((match) => match.regions.length > 0).length;
+  for (const [index, tag] of tags.entries()) {
+    const match = matches[index] ?? { contentEnd: tag.contentEnd, end: tag.end, regions: [] };
     // A spanning wrapper's other reading of the body: its range in the page.
     let spannedBody: readonly [number, number] | null = null;
     // Where WP Rocket's script match reads the body from: the opening tag's
@@ -443,7 +451,7 @@ function delayAfterInlinePass(
         servedHtml.slice(tag.start, match.end),
         inline.pass,
         spanned,
-        match.regions.length > 0
+        match.regions.length > 0 ? scriptProbeBudget(maskedScripts) : null
       );
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {

@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { analyzeRow, emitRow, isEmitted, saveOutcome, toByteString } from './translate';
+import {
+  analyzeRow,
+  emitRow,
+  existenceSource,
+  isEmitted,
+  saveOutcome,
+  toByteString
+} from './translate';
 
 const D = 'delay_js';
 const F = 'defer_all_js';
@@ -954,5 +961,37 @@ describe('analyzeRow', () => {
   it('marks a row whose \\Q runs to the end', () => {
     expect(analyzeRow(F, 'a\\Qb').breaksJoin).toBe(true);
     expect(analyzeRow(F, 'a\\Qb\\E').breaksJoin).toBe(false);
+  });
+});
+
+describe('existenceSource — a row for "matches somewhere" only', () => {
+  /** Whether a JS source matches a text (as the byte matcher runs it). */
+  const matches = (source: string | null, text: string): boolean =>
+    source !== null && new RegExp(source).test(toByteString(text));
+
+  it('drops free edges, keeping every answer of the row', () => {
+    const subjects = ['', 'plugin1', 'a plugin1 b', 'plugin', 'x\nplugin1\n', 'PLUGIN1()'];
+    for (const row of ['.*plugin1', '.*plugin1.*', '.*?plugin1\\s*', '(?:ab)?plugin1']) {
+      const own = emitRow(D, row);
+      if (!isEmitted(own)) throw new Error(row);
+      const trimmed = existenceSource(D, row);
+      expect(trimmed, row).not.toBe(own.source);
+      for (const subject of subjects) {
+        expect(matches(trimmed, subject), `${row} on ${JSON.stringify(subject)}`).toBe(
+          matches(own.source, subject)
+        );
+      }
+    }
+  });
+
+  it('keeps rows whose edges are not free unchanged', () => {
+    for (const row of ['^.*x', 'x.{1,}', '(.*)x\\1']) {
+      const own = emitRow(D, row);
+      expect(existenceSource(D, row)).toBe(isEmitted(own) ? own.source : null);
+    }
+  });
+
+  it('is null where the row does not translate', () => {
+    expect(existenceSource(D, '(?>a)b')).toBeNull();
   });
 });

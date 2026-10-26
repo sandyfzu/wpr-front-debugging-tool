@@ -14,16 +14,17 @@ import {
   compileFirstMatch,
   translateRegexRows,
   translationRowProblems,
+  type PcreMatcher,
   type TranslatedRow
 } from './pcre/rows';
 import {
   compileIdProbe,
-  documentProbeBudget,
+  scriptProbeBudget,
   idBytesAt,
   type IdOutcome,
   type ProbeBudget
 } from './pcre/id-probe';
-import { runtimeParse, toByteString } from './pcre/translate';
+import { existenceSource, runtimeParse, toByteString } from './pcre/translate';
 import { MASK_ID_SENTINEL } from './delay-js-mask';
 import { pcreFeatureProblems } from './validate';
 import { escapeRegex } from '../../utils/regex';
@@ -225,7 +226,11 @@ export type DelayVerdict = { readonly row: number; readonly approximate: boolean
  * the caller wrote mask placeholder ids into it (the sentinel,
  * `MASK_ID_SENTINEL`; see {@link readDelayRows}), none by default.
  */
-export type DelayRowMatch = (region: string, ids?: readonly number[]) => DelayVerdict;
+export type DelayRowMatch = (
+  region: string,
+  ids?: readonly number[],
+  budget?: ProbeBudget
+) => DelayVerdict;
 
 /** Delay JS rows read for matching. */
 export interface DelayRowSet {
@@ -254,14 +259,21 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
     translationRowProblems('delay_js', translation)
   );
   throwIfBlocking(entries);
-  const first = compileFirstMatch(translation.rows.map((row) => row.matcher));
-  const masked = maskedFirstMatch(translation.rows);
-  const match: DelayRowMatch = (region, ids = []) => {
+  // Only whether a row matches is asked: its free edges are dropped (a
+  // leading `.*` costs a backtracking regex quadratic time; same answers).
+  const matchers = translation.rows.map((row): PcreMatcher | null =>
+    row.matcher === null || row.matcher.source === ''
+      ? row.matcher
+      : { source: existenceSource('delay_js', row.row) ?? row.matcher.source, flags: '' }
+  );
+  const first = compileFirstMatch(matchers);
+  const masked = maskedFirstMatch(translation.rows, matchers);
+  const match: DelayRowMatch = (region, ids = [], budget = scriptProbeBudget()) => {
     // Only the caller's placeholders hold ids: a page spelling one itself is page text.
     const firstOf = (text: string): number | null => {
       if (ids.length === 0) return first(text);
       const at = idsIn(region, text, ids);
-      return at === null ? null : masked(text, at);
+      return at === null ? null : masked(text, at, budget);
     };
     const reading = undoDelayRenames(region);
     if (reading.kind === 'approximate' || reading.kind === 'not-delayed') {
@@ -282,19 +294,20 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
  * undetermined — except that a later certain match still settles that the
  * script matched (its credit then goes to that row).
  *
- * The probes share one work budget per row set (one document): past it a
- * row answers `unknown`, so costly rows on a page of masked scripts leave
- * those scripts undetermined instead of running long.
+ * The probes of one script share its work budget (`scriptProbeBudget`):
+ * past it a row answers `unknown`, so costly rows on a page of masked
+ * scripts leave those scripts undetermined instead of running long.
  *
  * @param rows The translated rows, in order.
- * @returns Over a subject and its ids' start offsets (text offsets): the
- *   row index, `-1` for none, `null` when undetermined.
+ * @param matchers Their matchers (as {@link readDelayRows} runs them).
+ * @returns Over a subject, its ids' start offsets (text offsets) and the
+ *   script's budget: the row index, `-1` for none, `null` when undetermined.
  */
 function maskedFirstMatch(
-  rows: readonly TranslatedRow[]
-): (text: string, ids: readonly number[]) => number | null {
-  const tests = rows.map((row) => (row.matcher === null ? null : compileByteMatcher(row.matcher)));
-  const budget = documentProbeBudget();
+  rows: readonly TranslatedRow[],
+  matchers: readonly (PcreMatcher | null)[]
+): (text: string, ids: readonly number[], budget: ProbeBudget) => number | null {
+  const tests = matchers.map((matcher) => (matcher === null ? null : compileByteMatcher(matcher)));
   // Built on first use: only scripts holding masked regions need them.
   const probes: (IdProbe | null | undefined)[] = [];
   const probeOf = (index: number): IdProbe | null => {
@@ -306,7 +319,7 @@ function maskedFirstMatch(
     }
     return probe;
   };
-  return (text, ids) => {
+  return (text, ids, budget) => {
     const bytes = toByteString(text);
     // Text offsets to byte offsets (a non-ASCII character is several bytes).
     const idAt = idBytesAt(

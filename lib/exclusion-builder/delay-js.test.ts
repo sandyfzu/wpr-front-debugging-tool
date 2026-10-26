@@ -653,6 +653,48 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     expect(result.report.rewritten).toBe(0);
   });
 
+  /** `count` delayed scripts, each `size` bytes holding an svg string; every 7th names `name`. */
+  const svgScripts = (count: number, size: number, name: (n: number) => string): string[] =>
+    Array.from({ length: count }, (_, n) => {
+      const filler = 'el.cls="btn-a1";'.repeat(Math.ceil(size / 16));
+      const named = n % 7 === 3 ? `${name(n)}();` : '';
+      return `<script type="text/rocketlazyloadscript" id="s${String(n)}">var icon='<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>';${filler}${named}go(${String(n)});</script>`;
+    });
+
+  it.each([
+    ['60 × 3 KB, 10 `.*pluginN`', 60, 3000, 10, (n: number) => `.*plugin${String(n)}`],
+    ['30 × 20 KB, 5 `.*pluginN.*`', 30, 20_000, 5, (n: number) => `.*plugin${String(n)}.*`],
+    ['1 000 × 500 B, 1 `.*plugin0.*`', 1000, 500, 1, (n: number) => `.*plugin${String(n)}.*`]
+  ])(
+    'answers `.*`-edged rows on large masked pages exactly: %s',
+    (_, count, size, rowCount, row) => {
+      const rows = Array.from({ length: rowCount }, (_unused, n) => row(n));
+      const scripts = svgScripts(count, size, (n) => `plugin${String(n % rowCount)}`);
+      const started = performance.now();
+      const result = delayJsTransform(scripts.join('\n'), setWithRows(rows));
+      expect(performance.now() - started).toBeLessThan(2000);
+      expect(result.report.undetermined).toBeUndefined();
+      // Exactly the scripts naming a row's plugin are restored.
+      expect(result.report.rewritten).toBe(scripts.filter((_s, n) => n % 7 === 3).length);
+    }
+  );
+
+  it('answers each masked script the same whatever the order of the others', () => {
+    // Rows that step through ids, over small and large masked scripts in turn:
+    // each script gets the same share of the probe work, so the large ones
+    // (and only they) run out of it — wherever they stand on the page.
+    const rows = Array.from({ length: 5 }, (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`);
+    const scripts = Array.from(
+      { length: 300 },
+      (_, n) => svgScripts(1, n % 2 === 0 ? 6400 : 300, () => '')[0] ?? ''
+    );
+    const undetermined = (order: readonly string[]): number | undefined =>
+      delayJsTransform(order.join('\n'), setWithRows(rows)).report.undetermined;
+    expect(undetermined(scripts)).toBe(150);
+    expect(undetermined([...scripts].reverse())).toBe(150);
+    expect(undetermined([...scripts.slice(150), ...scripts.slice(0, 150)])).toBe(150);
+  });
+
   it('answers rows that read no id byte, or match for every id', () => {
     const served = parityRow('match-delay-mask-svg-string-unclosed').served;
     expect(delayJsTransform(served, setWithRows(['gtag'])).report.undetermined).toBeUndefined();

@@ -5,11 +5,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   compileIdProbe,
-  documentProbeBudget,
+  scriptProbeBudget,
   idBytesAt,
   ID_PROBE_LIMITS,
   type IdOutcome
 } from './id-probe';
+import { withoutFreeEdges } from './free-edges';
 import { runtimeParse } from './translate';
 
 const SENTINEL = '\0'.repeat(13);
@@ -22,7 +23,7 @@ const idStarts = (subject: string): number[] =>
   [...subject.matchAll(/WPR_(?:SVG|XMP)_\0{13} -->/g)].map((found) => found.index + 8);
 
 /** The probe's outcome for a Delay JS row over a subject. */
-const outcome = (row: string, subject = SUBJECT, budget = documentProbeBudget()): IdOutcome =>
+const outcome = (row: string, subject = SUBJECT, budget = scriptProbeBudget()): IdOutcome =>
   compileIdProbe(runtimeParse('delay_js', row))(
     subject,
     idBytesAt(subject.length, idStarts(subject)),
@@ -79,12 +80,13 @@ describe('compileIdProbe', () => {
     expect(outcome('WPR_SVG_\\K[0-9]')).toBe('depends');
     expect(outcome('6a?d')).toBe('depends');
     expect(outcome('(?i)6adf')).toBe('depends');
-    // A row matching the empty string matches every subject.
-    expect(outcome('[0-9]*')).toBe('all');
+    // A row matching the empty string matches every subject (a free edge is trimmed: blind).
+    expect(outcome('(?:[0-9]|)')).toBe('all');
+    expect(outcome('[0-9]*')).toBe('blind');
     // `(?s)` changes matching: widened, so only unknown when it can touch an id.
     expect(outcome('(?s)6.df')).toBe('unknown');
     // Past 64 copies a repeat is widened to `+`.
-    expect(outcome('6[0-9a-f]{0,100}')).toBe('unknown');
+    expect(outcome('6[0-9a-f]{0,100} ')).toBe('unknown');
     // Widened to one copy then `*`: it may end inside an id (a safe over-flag).
     expect(outcome('[0-9]{70,}')).toBe('unknown');
     // `\R` reads no hex byte: nothing after `6` continues inside an id.
@@ -129,7 +131,43 @@ describe('the document budget', () => {
     expect(budget.left).toBeLessThan(0);
   });
 
-  it('is shared: a fresh one holds the document limit', () => {
-    expect(documentProbeBudget().left).toBe(ID_PROBE_LIMITS.documentSteps);
+  it('splits the document limit evenly over its masked scripts', () => {
+    expect(scriptProbeBudget().left).toBe(ID_PROBE_LIMITS.documentSteps);
+    expect(scriptProbeBudget(4).left).toBe(ID_PROBE_LIMITS.documentSteps / 4);
+    expect(scriptProbeBudget(0).left).toBe(ID_PROBE_LIMITS.documentSteps);
+  });
+});
+
+describe('withoutFreeEdges', () => {
+  /** A row's trimmed alternatives, as their node types. */
+  const trimmed = (row: string): string[][] =>
+    withoutFreeEdges(runtimeParse('delay_js', row)).alternatives.map((branch) =>
+      branch.map((node) => node.type)
+    );
+
+  it('drops leading and trailing repeats that may repeat zero times', () => {
+    expect(trimmed('.*plugin')).toEqual([['set', 'set', 'set', 'set', 'set', 'set']]);
+    expect(trimmed('.*?x.*')).toEqual([['set']]);
+    expect(trimmed('\\s*x(?:ab)?')).toEqual([['set']]);
+    expect(trimmed('a.*|.*b')).toEqual([['set'], ['set']]);
+    // The whole row free: the empty row, which matches every subject as `.*` does.
+    expect(trimmed('.*')).toEqual([[]]);
+  });
+
+  it('keeps what bounds or numbers the match: inner repeats, anchors, captures, options', () => {
+    expect(trimmed('x.*y')).toEqual([['set', 'repeat', 'set']]);
+    expect(trimmed('^.*x')).toEqual([['assert', 'repeat', 'set']]);
+    expect(trimmed('(.*)x\\1')).toEqual([['group', 'set', 'backref']]);
+    expect(trimmed('x.{1,}')).toEqual([['set', 'repeat']]);
+    expect(trimmed('(?:(?i)a)*x')).toEqual([['repeat', 'set']]);
+    expect(trimmed('(?:(a)?)*x\\1')).toEqual([['repeat', 'set', 'backref']]);
+  });
+
+  it('makes `.*`-edged rows blind to ids (the probe no longer runs them)', () => {
+    for (const row of ['.*plugin1', '.*jquery.*', '.*plugin2.*']) {
+      expect(outcome(row), row).toBe('blind');
+    }
+    // A row that really reads ids stays decided by the probe.
+    expect(outcome('.*6adf')).toBe('depends');
   });
 });

@@ -16,6 +16,8 @@
 import { regexBacktrackingRisk, type BacktrackingRisk } from '../regex-risk';
 import type { ExclusionFeatureId } from '../set';
 import { intersects, byteRanges, setSource, unionOf, type ByteSet } from './byte-set';
+import { withoutFreeEdges } from './free-edges';
+import { createBoundedMemo, stringBytes } from '../../../utils/bounded-memo';
 import {
   parsePcre,
   sequenceLength,
@@ -562,6 +564,36 @@ function runtimePattern(feature: RegexFeatureId, row: string): string {
 export function runtimeParse(feature: RegexFeatureId, row: string): ParsedPattern {
   return parsePcre(runtimePattern(feature, row), true);
 }
+
+/**
+ * The JS source of a row's runtime pattern with its free edges dropped
+ * (`withoutFreeEdges`): it matches somewhere in a subject exactly when the
+ * row does, without a leading `.*`'s quadratic backtracking — for callers
+ * that only ask whether a row matches (Delay JS). `null` when it does not
+ * translate (the caller keeps the row's own source).
+ *
+ * @param feature The row's feature.
+ * @param row The stored row.
+ */
+export function existenceSource(feature: RegexFeatureId, row: string): string | null {
+  return existenceMemo.get(`${feature}\n${row}`, () => {
+    const pattern = runtimePattern(feature, row);
+    const emitted =
+      delimiterProblem(pattern) ?? emitParsed(withoutFreeEdges(parsePcre(pattern, true)), {});
+    return { source: isEmitted(emitted) ? emitted.source : null };
+  }).source;
+}
+
+/**
+ * {@link existenceSource} by feature + row (parsing is the costly part;
+ * rows repeat across applies), bounded by entries and bytes like the
+ * other translation memos.
+ */
+const existenceMemo = createBoundedMemo<{ readonly source: string | null }>({
+  maxEntries: 2048,
+  maxWeight: 4 * 1024 * 1024,
+  weigh: (key, value) => stringBytes(key) + (value.source === null ? 0 : stringBytes(value.source))
+});
 
 /** WP Rocket's runtime escapes applied to a row's byte string. */
 function runtimeEscapes(feature: RegexFeatureId, bytes: string): string {

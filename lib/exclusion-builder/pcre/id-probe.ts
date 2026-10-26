@@ -20,6 +20,7 @@
  * Any budget overrun answers `unknown` — never a guess.
  */
 import { byteRanges, intersects, type ByteSet } from './byte-set';
+import { withoutFreeEdges } from './free-edges';
 import type { ParsedPattern, PatternNode } from './parse';
 
 /** Bytes an id byte can be: lowercase hex. */
@@ -47,22 +48,28 @@ export const ID_PROBE_LIMITS = {
   /** State visits per subject. */
   steps: 4_000_000,
   /**
-   * State visits per document, over all its subjects and rows (see
-   * {@link ProbeBudget}): what keeps a set of costly rows on a page of
-   * masked scripts inside the transform's time; past it, rows answer
-   * `unknown` (their scripts are left undetermined — never guessed).
+   * State visits per document, split evenly over its scripts holding
+   * masked regions (see {@link scriptProbeBudget}): what keeps a set of
+   * costly rows on a page of masked scripts inside the transform's time;
+   * past its share, a script's rows answer `unknown` (it is left
+   * undetermined — never guessed). An even split keeps each script's
+   * answer independent of the others and of their order.
    */
   documentSteps: 8_000_000
 } as const;
 
-/** The state visits a document has left for its probes (shared, spent as they run). */
+/** The state visits one script has left for its probes (all its readings and rows; spent as they run). */
 export interface ProbeBudget {
   left: number;
 }
 
-/** A fresh document budget. */
-export function documentProbeBudget(): ProbeBudget {
-  return { left: ID_PROBE_LIMITS.documentSteps };
+/**
+ * One script's budget: its even share of the document's.
+ *
+ * @param maskedScripts How many of the document's scripts hold masked regions (≥ 1 counted).
+ */
+export function scriptProbeBudget(maskedScripts = 1): ProbeBudget {
+  return { left: ID_PROBE_LIMITS.documentSteps / Math.max(1, maskedScripts) };
 }
 
 /**
@@ -477,11 +484,13 @@ export function idBytesAt(length: number, starts: readonly number[]): Uint8Array
  *
  * @param parsed The row's runtime parse.
  * @returns The probe over a subject's bytes, its id bytes ({@link idBytesAt})
- *   and the document's remaining work ({@link documentProbeBudget}).
+ *   and the script's remaining work ({@link scriptProbeBudget}).
  */
 export function compileIdProbe(
-  parsed: ParsedPattern
+  row: ParsedPattern
 ): (subject: string, idAt: Uint8Array, budget: ProbeBudget) => IdOutcome {
+  // Same answer on every subject, every id included (see `withoutFreeEdges`).
+  const parsed = withoutFreeEdges(row);
   const automaton = automatonOf(parsed);
   const readsHex = parsed.alternatives.some((branch) => branch.some(readsIdByte));
   // Decided once per row: most rows cannot step into an id from its context.
