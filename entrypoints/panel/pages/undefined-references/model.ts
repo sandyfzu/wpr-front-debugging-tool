@@ -7,6 +7,8 @@
  */
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
+import { countNoun } from '../../../../utils/format-count';
 
 /** Why a script scan failed — each maps to its own user-facing remedy. */
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
@@ -262,7 +264,7 @@ export function wordVerdict(
 export function verdictText(verdict: WordVerdict): string {
   switch (verdict.kind) {
     case 'found':
-      return `In ${String(verdict.count)} ${verdict.count === 1 ? 'script' : 'scripts'}`;
+      return `In ${String(verdict.count)} ${countNoun(verdict.count, SCRIPT_NOUN)}`;
     case 'not-found':
       return verdict.partial
         ? 'No definition found in the readable scripts'
@@ -386,7 +388,7 @@ export function summaryFacts(
   if (searched && unreadable > 0) {
     facts.push({
       count: unreadable,
-      label: unreadable === 1 ? 'script could not be read' : 'scripts could not be read'
+      label: `${countNoun(unreadable, SCRIPT_NOUN)} could not be read`
     });
   }
   if (searched && inlineCut) facts.push({ label: INLINE_CUT_FACT });
