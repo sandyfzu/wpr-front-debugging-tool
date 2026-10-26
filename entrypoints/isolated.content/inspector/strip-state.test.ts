@@ -342,7 +342,9 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     const lazyRow = model.groups
       .flatMap((group) => group.rows)
       .find((row) => row.id === 'lazyload');
-    expect(lazyRow?.count).toBe(detections.lazyload.images.length);
+    // Only the images actually lazy-loaded count (owner decision O-N6).
+    const lazyLoaded = detections.lazyload.images.filter((image) => image.lazyloadDetected);
+    expect(lazyRow?.count).toBe(lazyLoaded.length);
   });
 
   it('a versionless present page renders the unknown-version identity in every slot', () => {
