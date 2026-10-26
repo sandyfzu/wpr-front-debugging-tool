@@ -16,7 +16,13 @@ import {
   translationRowProblems,
   type TranslatedRow
 } from './pcre/rows';
-import { compileIdProbe, idBytesOf, type IdOutcome } from './pcre/id-probe';
+import {
+  compileIdProbe,
+  documentProbeBudget,
+  idBytesAt,
+  type IdOutcome,
+  type ProbeBudget
+} from './pcre/id-probe';
 import { runtimeParse, toByteString } from './pcre/translate';
 import { MASK_ID_SENTINEL } from './delay-js-mask';
 import { pcreFeatureProblems } from './validate';
@@ -214,8 +220,12 @@ function withoutAttribute(text: string, attr: { attrStart: number; attrEnd: numb
  */
 export type DelayVerdict = { readonly row: number; readonly approximate: boolean } | null;
 
-/** A compiled Delay JS row set over a served script element. */
-export type DelayRowMatch = (region: string) => DelayVerdict;
+/**
+ * A compiled Delay JS row set over a served script element; `ids` = where
+ * the caller wrote mask placeholder ids into it (the sentinel,
+ * `MASK_ID_SENTINEL`; see {@link readDelayRows}), none by default.
+ */
+export type DelayRowMatch = (region: string, ids?: readonly number[]) => DelayVerdict;
 
 /** Delay JS rows read for matching. */
 export interface DelayRowSet {
@@ -246,9 +256,13 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
   throwIfBlocking(entries);
   const first = compileFirstMatch(translation.rows.map((row) => row.matcher));
   const masked = maskedFirstMatch(translation.rows);
-  const firstOf = (text: string): number | null =>
-    text.includes(MASK_ID_SENTINEL) ? masked(text) : first(text);
-  const match: DelayRowMatch = (region) => {
+  const match: DelayRowMatch = (region, ids = []) => {
+    // Only the caller's placeholders hold ids: a page spelling one itself is page text.
+    const firstOf = (text: string): number | null => {
+      if (ids.length === 0) return first(text);
+      const at = idsIn(region, text, ids);
+      return at === null ? null : masked(text, at);
+    };
     const reading = undoDelayRenames(region);
     if (reading.kind === 'approximate' || reading.kind === 'not-delayed') {
       const row = firstOf(reading.kind === 'approximate' ? reading.text : region);
@@ -268,14 +282,22 @@ export function readDelayRows(rows: readonly string[]): DelayRowSet {
  * undetermined — except that a later certain match still settles that the
  * script matched (its credit then goes to that row).
  *
+ * The probes share one work budget per row set (one document): past it a
+ * row answers `unknown`, so costly rows on a page of masked scripts leave
+ * those scripts undetermined instead of running long.
+ *
  * @param rows The translated rows, in order.
- * @returns The row index, `-1` for none, `null` when undetermined.
+ * @returns Over a subject and its ids' start offsets (text offsets): the
+ *   row index, `-1` for none, `null` when undetermined.
  */
-function maskedFirstMatch(rows: readonly TranslatedRow[]): (text: string) => number | null {
+function maskedFirstMatch(
+  rows: readonly TranslatedRow[]
+): (text: string, ids: readonly number[]) => number | null {
   const tests = rows.map((row) => (row.matcher === null ? null : compileByteMatcher(row.matcher)));
+  const budget = documentProbeBudget();
   // Built on first use: only scripts holding masked regions need them.
-  const probes: (((subject: string, idAt: Uint8Array) => IdOutcome) | null | undefined)[] = [];
-  const probeOf = (index: number): ((subject: string, idAt: Uint8Array) => IdOutcome) | null => {
+  const probes: (IdProbe | null | undefined)[] = [];
+  const probeOf = (index: number): IdProbe | null => {
     let probe = probes[index];
     if (probe === undefined) {
       const row = rows[index];
@@ -284,9 +306,13 @@ function maskedFirstMatch(rows: readonly TranslatedRow[]): (text: string) => num
     }
     return probe;
   };
-  return (text) => {
+  return (text, ids) => {
     const bytes = toByteString(text);
-    const idAt = idBytesOf(bytes);
+    // Text offsets to byte offsets (a non-ASCII character is several bytes).
+    const idAt = idBytesAt(
+      bytes.length,
+      ids.map((id) => toByteString(text.slice(0, id)).length)
+    );
     // Any id stands in for all where a row is blind to them.
     const sample = bytes.replace(/\0/g, (zero, at: number) => (idAt[at] === 1 ? '0' : zero));
     let uncertain = false;
@@ -294,7 +320,7 @@ function maskedFirstMatch(rows: readonly TranslatedRow[]): (text: string) => num
       const test = tests[index];
       const probe = probeOf(index);
       if (test == null || probe === null) continue;
-      const outcome = probe(bytes, idAt);
+      const outcome = probe(bytes, idAt, budget);
       const matched = outcome === 'blind' ? test(sample) : outcome === 'all';
       if (matched) return index;
       if (outcome === 'depends' || outcome === 'unknown') uncertain = true;
@@ -302,6 +328,55 @@ function maskedFirstMatch(rows: readonly TranslatedRow[]): (text: string) => num
     return uncertain ? null : -1;
   };
 }
+
+/** A row's id probe (see `./pcre/id-probe`). */
+type IdProbe = (subject: string, idAt: Uint8Array, budget: ProbeBudget) => IdOutcome;
+
+/**
+ * Where the ids written into `original` stand in `text`, a reading of it
+ * whose only change is the opening tag rebuilt (renames undone): ids in
+ * the unchanged tail move by the length difference; ids in the rebuilt
+ * part are found again by their placeholders there, which must be exactly
+ * as many (else the page spells one there too: unknown).
+ *
+ * @param original The masked text the ids were written into.
+ * @param text The reading.
+ * @param ids Their start offsets in `original`.
+ * @returns Their start offsets in `text`, or `null` when they cannot be told.
+ */
+export function idsIn(
+  original: string,
+  text: string,
+  ids: readonly number[]
+): readonly number[] | null {
+  if (text === original) return ids;
+  let same = 0;
+  const most = Math.min(original.length, text.length);
+  while (
+    same < most &&
+    original.charCodeAt(original.length - 1 - same) === text.charCodeAt(text.length - 1 - same)
+  ) {
+    same++;
+  }
+  const tail = original.length - same;
+  const shift = text.length - original.length;
+  const moved = ids.filter((id) => id >= tail).map((id) => id + shift);
+  const rebuilt = ids.length - moved.length;
+  if (rebuilt === 0) return moved;
+  const found = [...text.slice(0, tail + shift + ID_RUN.length).matchAll(PLACEHOLDER_ID)]
+    .map((placeholder) => placeholder.index + PLACEHOLDER_PREFIX.length)
+    .filter((id) => id < tail + shift);
+  return found.length === rebuilt ? [...found, ...moved] : null;
+}
+
+/** A sentinel placeholder's text before its id. */
+const PLACEHOLDER_PREFIX = 'WPR_SVG_';
+
+/** A sentinel placeholder's id and what follows it. */
+const ID_RUN = `${MASK_ID_SENTINEL} -->`;
+
+/** A sentinel placeholder (its `WPR_…_` and id). */
+const PLACEHOLDER_ID = new RegExp(`WPR_(?:SVG|XMP)_${MASK_ID_SENTINEL} -->`, 'g');
 
 /**
  * Compile Delay JS rows for matching (see {@link readDelayRows}).

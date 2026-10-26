@@ -206,3 +206,30 @@ export function maskedSlice(
   }
   return text + html.slice(at, to);
 }
+
+/** Where a placeholder's id starts within it (`<!-- WPR_SVG_`). */
+const ID_OFFSET = maskPlaceholder('svg', '').indexOf(' -->');
+
+/**
+ * A match's text as Delay JS read it, for matching: each region a
+ * placeholder whose id is the sentinel, and where those ids are — known
+ * from writing them, never found by searching (the page may spell one).
+ *
+ * @param text The match's text (from its `<script`).
+ * @returns The masked text and its ids' start offsets, in order.
+ */
+export function maskedForMatching(text: string): {
+  readonly text: string;
+  readonly ids: readonly number[];
+} {
+  let masked = '';
+  let at = 0;
+  const ids: number[] = [];
+  for (const region of delayMaskedRegions(text)) {
+    masked += text.slice(at, region.start);
+    ids.push(masked.length + ID_OFFSET);
+    masked += maskPlaceholder(region.kind, MASK_ID_SENTINEL);
+    at = region.end;
+  }
+  return { text: masked + text.slice(at), ids };
+}

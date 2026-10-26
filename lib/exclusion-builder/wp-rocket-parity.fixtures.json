@@ -3032,6 +3032,42 @@
       "excluded": ["a"]
     },
     {
+      "id": "match-delay-mask-page-spells-placeholder-nul",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["\\x00"],
+      "note": "the page itself spells `WPR_SVG_` + 13 NULs + ` -->` before a real svg region: page text, not an id — the row matches its NULs",
+      "html": "<html><body><script id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html>",
+      "served": "<html><body><script type=\"text/rocketlazyloadscript\" id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html><!-- wpr_delay_js -->",
+      "subjects": ["a"],
+      "candidates": ["a"],
+      "excluded": ["a"]
+    },
+    {
+      "id": "match-delay-mask-page-spells-placeholder-nul-run",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["_\\x00"],
+      "note": "the same page, a row on `_` then a NUL",
+      "html": "<html><body><script id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html>",
+      "served": "<html><body><script type=\"text/rocketlazyloadscript\" id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html><!-- wpr_delay_js -->",
+      "subjects": ["a"],
+      "candidates": ["a"],
+      "excluded": ["a"]
+    },
+    {
+      "id": "match-delay-mask-page-spells-placeholder-non-hex-run",
+      "kind": "match",
+      "feature": "delay_js",
+      "rows": ["[[:^xdigit:]]{40}"],
+      "note": "the same page, 40 non-hex bytes: the NULs count",
+      "html": "<html><body><script id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html>",
+      "served": "<html><body><script type=\"text/rocketlazyloadscript\" id=\"a\">q='WPR_SVG_\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000 --><svg></svg>';</script></body></html><!-- wpr_delay_js -->",
+      "subjects": ["a"],
+      "candidates": ["a"],
+      "excluded": ["a"]
+    },
+    {
       "id": "match-delay-wrapper-in-attribute-skipped",
       "kind": "match",
       "feature": "delay_js",

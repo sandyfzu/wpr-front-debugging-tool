@@ -3,7 +3,13 @@
  * Subjects hold placeholders whose ids are the 13-NUL sentinel.
  */
 import { describe, expect, it } from 'vitest';
-import { compileIdProbe, idBytesOf, ID_PROBE_LIMITS, type IdOutcome } from './id-probe';
+import {
+  compileIdProbe,
+  documentProbeBudget,
+  idBytesAt,
+  ID_PROBE_LIMITS,
+  type IdOutcome
+} from './id-probe';
 import { runtimeParse } from './translate';
 
 const SENTINEL = '\0'.repeat(13);
@@ -11,9 +17,17 @@ const SENTINEL = '\0'.repeat(13);
 /** A delayed script whose match holds one svg placeholder. */
 const SUBJECT = `<script type="text/rocketlazyloadscript" id="a">el.innerHTML='<!-- WPR_SVG_${SENTINEL} -->';jQuery(1);</script>`;
 
+/** The id starts of a test subject's placeholders (the caller knows them; tests find them). */
+const idStarts = (subject: string): number[] =>
+  [...subject.matchAll(/WPR_(?:SVG|XMP)_\0{13} -->/g)].map((found) => found.index + 8);
+
 /** The probe's outcome for a Delay JS row over a subject. */
-const outcome = (row: string, subject = SUBJECT): IdOutcome =>
-  compileIdProbe(runtimeParse('delay_js', row))(subject, idBytesOf(subject));
+const outcome = (row: string, subject = SUBJECT, budget = documentProbeBudget()): IdOutcome =>
+  compileIdProbe(runtimeParse('delay_js', row))(
+    subject,
+    idBytesAt(subject.length, idStarts(subject)),
+    budget
+  );
 
 describe('compileIdProbe', () => {
   it('finds rows that match for some ids only, however short the hex fragment', () => {
@@ -95,15 +109,27 @@ describe('compileIdProbe', () => {
   });
 });
 
-describe('idBytesOf', () => {
-  it('marks the 13 id bytes of each placeholder, nothing else', () => {
-    const subject = `a\0<!-- WPR_XMP_${SENTINEL} --><!-- WPR_SVG_${SENTINEL} -->`;
-    const marked = [...idBytesOf(subject)].flatMap((bit, at) => (bit === 1 ? [at] : []));
-    const first = subject.indexOf('WPR_XMP_') + 8;
-    const second = subject.indexOf('WPR_SVG_') + 8;
+describe('idBytesAt', () => {
+  it('marks the 13 bytes from each given start, nothing else', () => {
+    const marked = [...idBytesAt(40, [2, 20])].flatMap((bit, at) => (bit === 1 ? [at] : []));
     expect(marked).toEqual([
-      ...Array.from({ length: 13 }, (_, n) => first + n),
-      ...Array.from({ length: 13 }, (_, n) => second + n)
+      ...Array.from({ length: 13 }, (_, n) => 2 + n),
+      ...Array.from({ length: 13 }, (_, n) => 20 + n)
     ]);
+  });
+});
+
+describe('the document budget', () => {
+  it('answers unknown for a row needing a run once the document’s work is spent', () => {
+    expect(outcome('6adf', SUBJECT, { left: 0 })).toBe('unknown');
+    // A blind row needs no run: it answers whatever is left.
+    expect(outcome('gtag', SUBJECT, { left: 0 })).toBe('blind');
+    const budget = { left: 50 };
+    expect(outcome('6adf', SUBJECT, budget)).toBe('unknown');
+    expect(budget.left).toBeLessThan(0);
+  });
+
+  it('is shared: a fresh one holds the document limit', () => {
+    expect(documentProbeBudget().left).toBe(ID_PROBE_LIMITS.documentSteps);
   });
 });

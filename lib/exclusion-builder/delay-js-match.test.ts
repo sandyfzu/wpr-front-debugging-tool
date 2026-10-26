@@ -8,10 +8,44 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RENAME_CHOICES,
   agreedVerdict,
+  idsIn,
   readDelayRows,
   compileDelayRows,
   undoDelayRenames
 } from './delay-js-match';
+import { MASK_ID_SENTINEL } from './delay-js-mask';
+
+describe('idsIn — mask ids carried through a rebuilt opening tag', () => {
+  const placeholder = `<!-- WPR_SVG_${MASK_ID_SENTINEL} -->`;
+
+  it('moves ids in the unchanged tail by the length change', () => {
+    const original = `<script type="text/rocketlazyloadscript" data-rocket-type="x">a=${placeholder}</script>`;
+    const text = `<script type="x">a=${placeholder}</script>`;
+    const id = original.indexOf(MASK_ID_SENTINEL);
+    expect(idsIn(original, text, [id])).toEqual([text.indexOf(MASK_ID_SENTINEL)]);
+    expect(idsIn(original, original, [id])).toEqual([id]);
+  });
+
+  it('finds ids in the rebuilt part again, only when exactly as many are there', () => {
+    const original = `<script data-rocket-type="x" data-i="${placeholder}">a()</script>`;
+    const text = `<script type="x" data-i="${placeholder}">a()</script>`;
+    expect(idsIn(original, text, [original.indexOf(MASK_ID_SENTINEL)])).toEqual([
+      text.indexOf(MASK_ID_SENTINEL)
+    ]);
+    // The page spells another sentinel placeholder there too: the ids cannot be told.
+    const spelling = `data-j="WPR_XMP_${MASK_ID_SENTINEL} -->" data-i="${placeholder}"`;
+    const before = `<script ${spelling} data-rocket-type="x">a()</script>`;
+    const after = `<script ${spelling} type="x">a()</script>`;
+    expect(idsIn(before, after, [before.lastIndexOf(MASK_ID_SENTINEL)])).toBeNull();
+  });
+});
+
+describe('readDelayRows — page text spelling a sentinel placeholder', () => {
+  it('reads it as page text when the match holds no placeholder of ours', () => {
+    const script = `<script type="text/rocketlazyloadscript">q='WPR_SVG_${MASK_ID_SENTINEL} -->';</script>`;
+    expect(readDelayRows(['\\x00']).match(script)).toEqual({ row: 0, approximate: false });
+  });
+});
 import { ExclusionValidationError } from './errors';
 
 /** The readings' texts (`rebuilt`), or the one text (`approximate`), or `null` (`not-delayed`). */

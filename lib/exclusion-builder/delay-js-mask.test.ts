@@ -10,9 +10,29 @@ import {
   delayMaskedRegions,
   firstRegionFrom,
   maskPlaceholder,
+  maskedForMatching,
   maskedSlice,
   type MaskedRegion
 } from './delay-js-mask';
+
+describe('maskedForMatching', () => {
+  it('writes sentinel placeholders and knows where their ids are', () => {
+    const { text, ids } = maskedForMatching(`<script>a='<svg>1</svg>';b='<xmp>2</xmp>'</script>`);
+    expect(text).toBe(
+      `<script>a='${maskPlaceholder('svg', MASK_ID_SENTINEL)}';b='${maskPlaceholder('xmp', MASK_ID_SENTINEL)}'</script>`
+    );
+    expect(ids.map((id) => text.slice(id - 8, id + 17))).toEqual([
+      `WPR_SVG_${MASK_ID_SENTINEL} -->`,
+      `WPR_XMP_${MASK_ID_SENTINEL} -->`
+    ]);
+  });
+
+  it('never takes the page’s own spelling of a placeholder for one', () => {
+    const page = `<script>q='WPR_SVG_${MASK_ID_SENTINEL} --><svg></svg>';</script>`;
+    const { text, ids } = maskedForMatching(page);
+    expect(ids).toEqual([text.lastIndexOf(MASK_ID_SENTINEL)]);
+  });
+});
 
 /** The page's regions as their text and kind. */
 const regionsOf = (html: string): string[] =>

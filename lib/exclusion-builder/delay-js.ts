@@ -31,10 +31,9 @@ import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag, ScannedTag } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import {
-  MASK_ID_SENTINEL,
   delayMaskedRegions,
   firstRegionFrom,
-  maskedSlice,
+  maskedForMatching,
   type MaskedRegion
 } from './delay-js-mask';
 import {
@@ -266,28 +265,30 @@ function verdictAfterInlinePass(
     if (spanned !== null) readings.push(spanned);
   }
   const subjects = [...new Set(readings)].map((reading) =>
-    masks ? asDelayJsReadIt(reading) : reading
+    masks ? asDelayJsReadIt(reading) : { text: reading, ids: [] }
   );
-  return agreedVerdict(matchRow, subjects);
+  return agreedAcross(subjects.map(({ text, ids }) => matchRow(text, ids)));
 }
 
 /**
  * A match's text as Delay JS read it: each masked region a placeholder
- * whose id is the unknowable sentinel. The regions are found on the text
- * itself: none straddles a delayed match's ends (it would have hidden its
- * opening or its end tag), so they are the page's within it.
+ * whose id is the unknowable sentinel, with where the ids are. The regions
+ * are found on the text itself: none straddles a delayed match's ends (it
+ * would have hidden its opening or its end tag), so they are the page's
+ * within it.
  *
  * @param text The match's text (from its `<script`).
  */
-function asDelayJsReadIt(text: string): string {
-  return maskedSlice(text, 0, text.length, delayMaskedRegions(text), MASK_ID_SENTINEL);
+function asDelayJsReadIt(text: string): { readonly text: string; readonly ids: readonly number[] } {
+  return maskedForMatching(text);
 }
 
 /**
- * The verdict several readings of one script agree on (see {@link agreedVerdict}).
+ * The verdict several readings of one script agree on — matched or not —
+ * with the first reading's row, approximate when any reading is.
  *
  * @param verdicts The readings' verdicts (≥ 1).
- * @returns The first one when all agree on matched or not, else `null`.
+ * @returns That verdict, or `null` (undetermined) when any is or they disagree.
  */
 function agreedAcross(verdicts: readonly DelayVerdict[]): DelayVerdict {
   const [first] = verdicts;
@@ -298,18 +299,6 @@ function agreedAcross(verdicts: readonly DelayVerdict[]): DelayVerdict {
     approximate ||= verdict.approximate;
   }
   return { row: first.row, approximate };
-}
-
-/**
- * The verdict every reading agrees on — matched or not — with the first
- * reading's row, approximate when any reading is; `null` (undetermined)
- * when any reading is undetermined or they disagree.
- *
- * @param matchRow The compiled rows.
- * @param readings The element's possible texts (≥ 1).
- */
-function agreedVerdict(matchRow: DelayRowMatch, readings: readonly string[]): DelayVerdict {
-  return agreedAcross(readings.map((reading) => matchRow(reading)));
 }
 
 /**

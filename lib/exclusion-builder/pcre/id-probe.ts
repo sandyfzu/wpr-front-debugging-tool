@@ -45,8 +45,25 @@ export const ID_PROBE_LIMITS = {
   /** Distinct automaton state sets followed at once over the id choices. */
   configurations: 256,
   /** State visits per subject. */
-  steps: 4_000_000
+  steps: 4_000_000,
+  /**
+   * State visits per document, over all its subjects and rows (see
+   * {@link ProbeBudget}): what keeps a set of costly rows on a page of
+   * masked scripts inside the transform's time; past it, rows answer
+   * `unknown` (their scripts are left undetermined — never guessed).
+   */
+  documentSteps: 8_000_000
 } as const;
+
+/** The state visits a document has left for its probes (shared, spent as they run). */
+export interface ProbeBudget {
+  left: number;
+}
+
+/** A fresh document budget. */
+export function documentProbeBudget(): ProbeBudget {
+  return { left: ID_PROBE_LIMITS.documentSteps };
+}
 
 /**
  * A row's match on a subject over every id:
@@ -273,7 +290,10 @@ function automatonOf(parsed: ParsedPattern): Automaton | null {
 /** A run of the automaton over a subject, counting its work. */
 class Run {
   steps = 0;
-  constructor(private readonly automaton: Automaton) {}
+  constructor(
+    private readonly automaton: Automaton,
+    private readonly budget: ProbeBudget = { left: Infinity }
+  ) {}
 
   /** Add `state` and everything it reaches by epsilon moves to `into`. */
   close(state: number, into: Set<number>): void {
@@ -283,6 +303,7 @@ class Run {
       if (into.has(at)) continue;
       into.add(at);
       this.steps++;
+      this.budget.left--;
       for (const next of this.automaton.epsilons[at] ?? []) stack.push(next);
     }
   }
@@ -292,6 +313,7 @@ class Run {
     const next = new Set<number>();
     for (const state of states) {
       this.steps++;
+      this.budget.left--;
       if (this.automaton.sets[state]?.[byte] === 1)
         this.close(this.automaton.targets[state] ?? 0, next);
     }
@@ -301,7 +323,7 @@ class Run {
 
   /** Whether the work budget is spent. */
   get spent(): boolean {
-    return this.steps > ID_PROBE_LIMITS.steps;
+    return this.steps > ID_PROBE_LIMITS.steps || this.budget.left < 0;
   }
 }
 
@@ -316,13 +338,15 @@ function keyOf(states: ReadonlySet<number>): string {
  * @param automaton The row's automaton.
  * @param subject The subject's bytes.
  * @param idAt Which bytes are id bytes.
+ * @param budget The document's remaining work.
  */
 function everyChoice(
   automaton: Automaton,
   subject: string,
-  idAt: Uint8Array
+  idAt: Uint8Array,
+  budget: ProbeBudget
 ): 'all' | 'none' | 'depends' | 'unknown' {
-  const run = new Run(automaton);
+  const run = new Run(automaton, budget);
   const initial = new Set<number>();
   run.close(automaton.start, initial);
   if (initial.has(automaton.accept)) return 'all';
@@ -353,9 +377,15 @@ function everyChoice(
  * @param automaton The row's automaton.
  * @param subject The subject's bytes.
  * @param idAt Which bytes are id bytes.
+ * @param budget The document's remaining work.
  */
-function touchesId(automaton: Automaton, subject: string, idAt: Uint8Array): boolean | null {
-  const run = new Run(automaton);
+function touchesId(
+  automaton: Automaton,
+  subject: string,
+  idAt: Uint8Array,
+  budget: ProbeBudget
+): boolean | null {
+  const run = new Run(automaton, budget);
   const size = automaton.sets.length;
   let states = new Set<number>();
   run.close(automaton.start, states);
@@ -365,6 +395,7 @@ function touchesId(automaton: Automaton, subject: string, idAt: Uint8Array): boo
     const byte = subject.charCodeAt(at);
     for (const marked of states) {
       run.steps++;
+      budget.left--;
       const state = marked % size;
       const set = automaton.sets[state];
       if (set == null) continue;
@@ -428,18 +459,16 @@ function mayTouchId(automaton: Automaton): boolean {
 }
 
 /**
- * The placeholder id bytes of a subject: each `WPR_SVG_` / `WPR_XMP_`
- * placeholder whose 13 id bytes are the sentinel NUL (the caller writes
- * them so; a real NUL elsewhere stays a NUL).
+ * The id bytes of a subject: 13 from each given start (where the caller
+ * wrote its placeholders' ids — never found by searching the subject, which
+ * may spell a placeholder itself).
  *
- * @param subject The subject's bytes.
+ * @param length The subject's length in bytes.
+ * @param starts Each id's first byte.
  */
-export function idBytesOf(subject: string): Uint8Array {
-  const idAt = new Uint8Array(subject.length);
-  for (const placeholder of subject.matchAll(/WPR_(?:SVG|XMP)_(\0{13}) -->/g)) {
-    const start = placeholder.index + placeholder[0].indexOf('\0');
-    idAt.fill(1, start, start + 13);
-  }
+export function idBytesAt(length: number, starts: readonly number[]): Uint8Array {
+  const idAt = new Uint8Array(length);
+  for (const start of starts) idAt.fill(1, start, start + 13);
   return idAt;
 }
 
@@ -447,23 +476,25 @@ export function idBytesOf(subject: string): Uint8Array {
  * Compile a row's id probe (see the module doc).
  *
  * @param parsed The row's runtime parse.
- * @returns The probe over a subject's bytes and its id bytes ({@link idBytesOf}).
+ * @returns The probe over a subject's bytes, its id bytes ({@link idBytesAt})
+ *   and the document's remaining work ({@link documentProbeBudget}).
  */
 export function compileIdProbe(
   parsed: ParsedPattern
-): (subject: string, idAt: Uint8Array) => IdOutcome {
+): (subject: string, idAt: Uint8Array, budget: ProbeBudget) => IdOutcome {
   const automaton = automatonOf(parsed);
   const readsHex = parsed.alternatives.some((branch) => branch.some(readsIdByte));
   // Decided once per row: most rows cannot step into an id from its context.
   const reachesId = readsHex && (automaton === null || automaton.peeks || mayTouchId(automaton));
-  return (subject, idAt) => {
+  return (subject, idAt, budget) => {
     if (!idAt.includes(1)) return 'blind';
     // Nothing in the row can consume or read a hex byte, or reach one past
     // a placeholder's `_`: no match sees an id.
     if (!reachesId) return 'blind';
     if (automaton === null || automaton.peeks) return 'unknown';
-    if (automaton.exact) return everyChoice(automaton, subject, idAt);
-    const touches = touchesId(automaton, subject, idAt);
+    if (budget.left <= 0) return 'unknown';
+    if (automaton.exact) return everyChoice(automaton, subject, idAt, budget);
+    const touches = touchesId(automaton, subject, idAt, budget);
     return touches === false ? 'blind' : 'unknown';
   };
 }

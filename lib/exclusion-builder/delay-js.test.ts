@@ -635,6 +635,24 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     expect(performance.now() - started).toBeLessThan(2000);
   });
 
+  it('caps the id runs per document: costly rows leave scripts undetermined, never guessed', () => {
+    // Every row here can step through an id, so each runs over every masked match.
+    const served = Array.from(
+      { length: 1000 },
+      (_, n) =>
+        `<script type="text/rocketlazyloadscript" id="s${String(n)}">var q='<svg><path/></svg>';${'a1b2c3'.repeat(10)}x(${String(n)});</script>`
+    ).join('');
+    const rows = Array.from(
+      { length: 500 },
+      (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`
+    );
+    const started = performance.now();
+    const result = delayJsTransform(served, setWithRows(rows));
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(result.report.undetermined).toBeGreaterThan(0);
+    expect(result.report.rewritten).toBe(0);
+  });
+
   it('answers rows that read no id byte, or match for every id', () => {
     const served = parityRow('match-delay-mask-svg-string-unclosed').served;
     expect(delayJsTransform(served, setWithRows(['gtag'])).report.undetermined).toBeUndefined();
