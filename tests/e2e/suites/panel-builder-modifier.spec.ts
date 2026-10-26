@@ -371,8 +371,15 @@ test('the modifier follows the displayed document: kept on re-read, gone after a
     const headline = root.locator('[data-fdt-summary-headline]');
     await expect(badges).toHaveCount(CASES.length);
 
-    // Re-read of the same rewritten document: the modifier stays.
+    // Re-read of the rewritten document (marker intact). The re-read serves a
+    // distinguishable version stamp, so the panel is proven to show the fresh
+    // payload — not the pre-reload DOM — before the modifier is checked.
+    body = MARKED_PAGE.replace('WP Rocket 3.23.5.1', 'WP Rocket 3.23.5.2');
+    expect(body).toContain(BUILDER_MARKER_META_NAME);
     await fixture.page.reload();
+    await expect(root.locator('[data-fdt-card-id="wpr"]')).toContainText('3.23.5.2', {
+      timeout: 15_000
+    });
     await expect(badges).toHaveCount(CASES.length);
     await expect(lines).toHaveCount(CASES.length);
     await expect(headline).toHaveText(MARKED_HEADLINE);
