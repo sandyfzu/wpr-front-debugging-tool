@@ -31,6 +31,12 @@ import { scanTags, parseTagAt } from './html-scan';
 import type { ParsedTag, ScannedTag } from './html-scan';
 import { PCRE_SPACE_CHARS } from './pcre/byte-set';
 import {
+  MASK_ID_SAMPLES,
+  delayMaskedRegions,
+  maskedSlice,
+  type MaskedRegion
+} from './delay-js-mask';
+import {
   readDelayRows,
   DELAY_TYPE_ATTRIBUTE,
   type DelayRowMatch,
@@ -97,25 +103,53 @@ const DELAY_SCRIPT_END = new RegExp(
  * to a later end tag, so its match — the text a row is tested against, and
  * what an excluded match leaves as it was — takes in the scripts until
  * then (it delays the first one's opening tag only, so the served page
- * keeps the odd end tag and those scripts undelayed). Otherwise the match
- * is the HTML element.
+ * keeps the odd end tag and those scripts undelayed). Delay JS reads the
+ * page with its masked regions as placeholders (`./delay-js-mask`): an end
+ * tag inside one does not end the match, and a region starting before the
+ * opening tag's first `>` ends the opening with its placeholder's `-->`.
+ * Otherwise the match is the HTML element.
  *
  * @param html The served page.
  * @param tag A script the served page delays (its match started there).
- * @returns Where the match's content ends and where it ends.
+ * @param regions The page's masked regions, in page order.
+ * @returns Where the match's content ends, where it ends, and the regions it holds.
  */
 export function delayScriptMatch(
   html: string,
-  tag: ScannedTag
-): { readonly contentEnd: number; readonly end: number } {
+  tag: ScannedTag,
+  regions: readonly MaskedRegion[] = []
+): DelayScriptMatch {
   const element = { contentEnd: tag.contentEnd, end: tag.end };
-  const openingEnd = html.indexOf('>', tag.start);
-  DELAY_SCRIPT_END.lastIndex = openingEnd === -1 ? tag.openingEnd : openingEnd + 1;
-  const match = DELAY_SCRIPT_END.exec(html);
+  const gt = html.indexOf('>', tag.start);
+  const opening = regions.find(
+    (region) => region.start > tag.start && (gt === -1 || region.start < gt)
+  );
+  let from = opening?.end ?? (gt === -1 ? tag.openingEnd : gt + 1);
+  let match: RegExpExecArray | null = null;
+  for (;;) {
+    DELAY_SCRIPT_END.lastIndex = from;
+    match = DELAY_SCRIPT_END.exec(html);
+    const at = match?.index ?? -1;
+    const hidden = match === null ? undefined : regions.find((r) => r.start <= at && at < r.end);
+    if (hidden === undefined) break;
+    from = hidden.end;
+  }
   // The served end tag of a delayed script is one WP Rocket wrote (`</script>`):
   // a match ending before it would mean the page was not delayed this way.
-  if (match === null || match.index < tag.contentEnd) return element;
-  return { contentEnd: match.index, end: match.index + match[0].length };
+  const span =
+    match === null || match.index < tag.contentEnd
+      ? element
+      : { contentEnd: match.index, end: match.index + match[0].length };
+  const inside = regions.filter((region) => region.start > tag.start && region.end <= span.end);
+  return { ...span, regions: inside };
+}
+
+/** A delayed script as WP Rocket's Delay JS matched it (see {@link delayScriptMatch}). */
+export interface DelayScriptMatch {
+  readonly contentEnd: number;
+  readonly end: number;
+  /** The masked regions the match holds (read as placeholders). */
+  readonly regions: readonly MaskedRegion[];
 }
 
 /**
@@ -206,15 +240,12 @@ function verdictAfterInlinePass(
 }
 
 /**
- * The verdict every reading agrees on — matched or not — with the first
- * reading's row, approximate when any reading is; `null` (undetermined)
- * when any reading is undetermined or they disagree.
+ * The verdict several readings of one script agree on (see {@link agreedVerdict}).
  *
- * @param matchRow The compiled rows.
- * @param readings The element's possible texts (≥ 1).
+ * @param verdicts The readings' verdicts (≥ 1).
+ * @returns The first one when all agree on matched or not, else `null`.
  */
-function agreedVerdict(matchRow: DelayRowMatch, readings: readonly string[]): DelayVerdict {
-  const verdicts = readings.map((reading) => matchRow(reading));
+function agreedAcross(verdicts: readonly DelayVerdict[]): DelayVerdict {
   const [first] = verdicts;
   if (first == null) return null;
   let approximate = false;
@@ -223,6 +254,18 @@ function agreedVerdict(matchRow: DelayRowMatch, readings: readonly string[]): De
     approximate ||= verdict.approximate;
   }
   return { row: first.row, approximate };
+}
+
+/**
+ * The verdict every reading agrees on — matched or not — with the first
+ * reading's row, approximate when any reading is; `null` (undetermined)
+ * when any reading is undetermined or they disagree.
+ *
+ * @param matchRow The compiled rows.
+ * @param readings The element's possible texts (≥ 1).
+ */
+function agreedVerdict(matchRow: DelayRowMatch, readings: readonly string[]): DelayVerdict {
+  return agreedAcross(readings.map((reading) => matchRow(reading)));
 }
 
 /**
@@ -304,22 +347,28 @@ function delayAfterInlinePass(
   let elementorScriptRemoved = false;
   // Whether an earlier script opens the wrapper (a later one may hold its closing).
   let afterOpening = false;
+  // The regions Delay JS read as placeholders (see `./delay-js-mask`).
+  const regions = delayMaskedRegions(servedHtml);
   for (const tag of scanTags(servedHtml)) {
     // A delayed script is read as WP Rocket's regex matched it (see `delayScriptMatch`).
-    const match =
+    const match: DelayScriptMatch =
       tag.name === 'script' && isDelayedScript(tag)
-        ? delayScriptMatch(servedHtml, tag)
-        : { contentEnd: tag.contentEnd, end: tag.end };
-    let spanned: string | null = null;
+        ? delayScriptMatch(servedHtml, tag, regions)
+        : { contentEnd: tag.contentEnd, end: tag.end, regions: [] };
+    /** The match's text from `from` to `to`, its regions as placeholders with `id`. */
+    const text = (from: number, to: number, id: string): string =>
+      maskedSlice(servedHtml, from, to, match.regions, id);
+    // A spanning wrapper's other reading of the body: its range in the page.
+    let spannedBody: readonly [number, number] | null = null;
     if (inline.spanning && tag.name === 'script') {
       const body = servedHtml.slice(tag.openingEnd, match.contentEnd);
       const reading = spanningWrapperReading(body, afterOpening);
       afterOpening ||= body.startsWith(INLINE_WRAP_OPEN);
       if (reading !== null) {
-        spanned =
-          servedHtml.slice(tag.start, tag.openingEnd) +
-          reading +
-          servedHtml.slice(match.contentEnd, match.end);
+        spannedBody =
+          reading.length < body.length && body.startsWith(INLINE_WRAP_OPEN)
+            ? [tag.openingEnd + INLINE_WRAP_OPEN.length, match.contentEnd]
+            : [tag.openingEnd, tag.openingEnd + reading.length];
       }
     }
     if (featureWide && tag.name === 'script') {
@@ -347,9 +396,21 @@ function delayAfterInlinePass(
     candidates++;
     if (!featureWide) {
       // The whole match is the target, as WP Rocket saw it before delaying
-      // it (rows may also match body text).
-      const element = servedHtml.slice(tag.start, match.end);
-      const verdict = verdictAfterInlinePass(matchRow, element, inline.pass, spanned);
+      // it (rows may also match body text), its masked regions as
+      // placeholders whose id is unknowable: every sampled id must agree.
+      const ids = match.regions.length === 0 ? MASK_ID_SAMPLES.slice(0, 1) : MASK_ID_SAMPLES;
+      const verdict = agreedAcross(
+        ids.map((id) => {
+          const element = text(tag.start, match.end, id);
+          const spanned =
+            spannedBody === null
+              ? null
+              : text(tag.start, tag.openingEnd, id) +
+                text(spannedBody[0], spannedBody[1], id) +
+                text(match.contentEnd, match.end, id);
+          return verdictAfterInlinePass(matchRow, element, inline.pass, spanned);
+        })
+      );
       // Its possible originals disagree: left as served, counted undetermined.
       if (verdict === null) {
         undetermined++;

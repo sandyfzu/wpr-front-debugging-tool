@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { delayJsTransform, delayScriptMatch } from './delay-js';
+import { delayMaskedRegions } from './delay-js-mask';
 import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 import { scanTags } from './html-scan';
@@ -528,5 +529,65 @@ describe('delayScriptMatch — the script as WP Rocket’s Delay JS regex matche
 
   it('is the HTML element when the regex finds no end', () => {
     expect(matched('<script>x()</script/>tail')).toBe('<script>x()|</script/>');
+  });
+});
+
+describe('delayScriptMatch — over the regions Delay JS masks', () => {
+  /** The match of the first script of `html` over its masked regions, and how many it holds. */
+  const matched = (html: string): string => {
+    const tag = scanTags(html).find((candidate) => candidate.name === 'script');
+    if (tag === undefined) throw new Error('no script');
+    const { contentEnd, end, regions } = delayScriptMatch(html, tag, delayMaskedRegions(html));
+    return `${html.slice(tag.start, contentEnd)}|${html.slice(contentEnd, end)}|${String(regions.length)}`;
+  };
+
+  it('skips an end tag a region hides and holds that region', () => {
+    expect(matched(`<script>a='<svg>';</script><script>b='</svg>';</script>`)).toBe(
+      `<script>a='<svg>';</script><script>b='</svg>';|</script>|1`
+    );
+  });
+
+  it('skips every hidden end tag, across several regions', () => {
+    const html = `<script>a='<svg>';</script>b='</svg>'<xmp></script></xmp>`;
+    expect(matched(`${html}</script>`)).toBe(`${html}|</script>|2`);
+  });
+
+  it('ends the opening tag at a region starting inside it (its placeholder’s `-->`)', () => {
+    expect(matched(`<script data-x="<svg>">x()</script><i>'</svg>'</i></script>`)).toBe(
+      `<script data-x="<svg>">x()</script><i>'</svg>'</i>|</script>|1`
+    );
+  });
+
+  it('is the HTML element, holding nothing, when no region touches it', () => {
+    expect(matched('<script>x()</script><svg>1</svg>')).toBe('<script>x()|</script>|0');
+  });
+});
+
+describe('delayJsTransform — rows over a masked region’s placeholder', () => {
+  // As served: a's match held the svg region (a's end tag and b's opening),
+  // so Delay JS rewrote a's opening only and b kept its own.
+  const SERVED =
+    `<script type="text/rocketlazyloadscript" id="a">var q='<svg>';</script>` +
+    `<script id="b">var r='</svg>';</script>`;
+
+  it('answers a row matching the placeholder whatever its id', () => {
+    const result = delayJsTransform(SERVED, setWithRows(['WPR_SVG_']));
+    expect(result.report.undetermined).toBeUndefined();
+    expect(result.report.matchedRows).toEqual([
+      { row: 'WPR_SVG_', rowKind: 'pattern', matches: 1 }
+    ]);
+  });
+
+  it('is undetermined for a row that matches some ids only (the id is unknowable)', () => {
+    const result = delayJsTransform(SERVED, setWithRows(['WPR_SVG_0']));
+    expect(result.html).toBe(SERVED);
+    expect(result.report).toMatchObject({ rewritten: 0, undetermined: 1 });
+  });
+
+  it('never tests a row against the region’s own text', () => {
+    const result = delayJsTransform(SERVED, setWithRows(["q='.svg"]));
+    expect(result.html).toBe(SERVED);
+    expect(result.report.undetermined).toBeUndefined();
+    expect(result.report.unmatchedRows).toEqual(["q='.svg"]);
   });
 });
