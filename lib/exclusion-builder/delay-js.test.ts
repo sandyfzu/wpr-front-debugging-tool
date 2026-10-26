@@ -6,7 +6,7 @@
  * when nothing matches, and the feature-wide disable's removal of the
  * plugin's three controller scripts.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { delayJsTransform, delayScriptMatch, wpBodyStart } from './delay-js';
 import { delayMaskedRegions } from './delay-js-mask';
 import { ExclusionValidationError } from './errors';
@@ -16,6 +16,59 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseParityTable, type ParityRow } from './wp-rocket-parity-table';
+import { ID_PROBE_LIMITS, type ProbeBudget } from './pcre/id-probe';
+import type * as IdProbe from './pcre/id-probe';
+
+/**
+ * The id-probe work a transform does, observed through the real functions
+ * (pass-through wrappers): each script budget handed out (`share` = its
+ * steps at hand-out, `budget.left` = what is left after the run) and how
+ * many row probes were compiled. Work, unlike wall clock, is the same on
+ * every machine.
+ */
+const probeWork = {
+  budgets: [] as { readonly share: number; readonly budget: ProbeBudget }[],
+  compiles: 0
+};
+
+vi.mock('./pcre/id-probe', async (original) => {
+  const actual = await original<typeof IdProbe>();
+  return {
+    ...actual,
+    scriptProbeBudget: (...args: Parameters<typeof actual.scriptProbeBudget>): ProbeBudget => {
+      const budget = actual.scriptProbeBudget(...args);
+      probeWork.budgets.push({ share: budget.left, budget });
+      return budget;
+    },
+    compileIdProbe: (...args: Parameters<typeof actual.compileIdProbe>) => {
+      probeWork.compiles++;
+      return actual.compileIdProbe(...args);
+    }
+  };
+});
+
+/**
+ * Run `transform` with the probe work recorded from zero.
+ *
+ * @param transform The run to observe.
+ * @returns Its result, the budgets handed out, and each one's steps spent.
+ */
+function withProbeWork<T>(transform: () => T): {
+  readonly result: T;
+  readonly shares: readonly number[];
+  readonly spent: readonly number[];
+  readonly compiles: number;
+} {
+  probeWork.budgets.length = 0;
+  probeWork.compiles = 0;
+  const result = transform();
+  return {
+    result,
+    shares: probeWork.budgets.map(({ share }) => share),
+    spent: probeWork.budgets.map(({ share, budget }) => share - budget.left),
+    compiles: probeWork.compiles
+  };
+}
 
 /** A match row of the WP Rocket parity table (outputs derived from the real plugin). */
 function parityRow(id: string): Extract<ParityRow, { kind: 'match' }> {
@@ -572,15 +625,32 @@ describe('delayScriptMatch — over the regions Delay JS masks', () => {
     );
   });
 
-  it('stays linear over many regions and scripts (regions are found by binary search)', () => {
-    const html = Array.from(
-      { length: 5000 },
-      (_, n) =>
-        `<script type="text/rocketlazyloadscript" id="s${String(n)}">x()</script><svg><use/></svg>`
-    ).join('');
-    const started = performance.now();
-    expect(delayJsTransform(html, setWithRows(['WPR_SVG'])).report.undetermined).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(250);
+  it('stays near-linear over many regions and scripts (ratio-bounded: regions are found by binary search)', () => {
+    /** `count` delayed scripts, each followed by an svg region. */
+    const page = (count: number): string =>
+      Array.from(
+        { length: count },
+        (_, n) =>
+          `<script type="text/rocketlazyloadscript" id="s${String(n)}">x()</script><svg><use/></svg>`
+      ).join('');
+    /** Best of three transforms (ms), so one scheduler or GC hiccup cannot decide. */
+    const best = (html: string): number => {
+      let fastest = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run++) {
+        const started = performance.now();
+        expect(
+          delayJsTransform(html, setWithRows(['WPR_SVG'])).report.undetermined
+        ).toBeUndefined();
+        fastest = Math.min(fastest, performance.now() - started);
+      }
+      return fastest;
+    };
+    const small = best(page(1000));
+    const large = best(page(16_000));
+    // 16× the scripts and regions: n log n is ~22×, a scan per script ~256×.
+    // A ratio, not a ceiling, so a slow machine slows both alike (a 5 ms
+    // floor absorbs timer noise on the small page).
+    expect(large).toBeLessThan(48 * Math.max(small, 5));
   });
 
   it('is the HTML element, holding nothing, when no region touches it', () => {
@@ -630,9 +700,16 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     const rows = Array.from({ length: 500 }, (_, n) =>
       n % 2 === 0 ? `jquery-ui-${String(n)}` : `/wp-content/plugins/p${String(n)}/[a-z]*\\.js`
     );
-    const started = performance.now();
-    expect(delayJsTransform(served, setWithRows(rows)).report.undetermined).toBeUndefined();
-    expect(performance.now() - started).toBeLessThan(2000);
+    const { result, shares, spent, compiles } = withProbeWork(() =>
+      delayJsTransform(served, setWithRows(rows))
+    );
+    expect(result.report.undetermined).toBeUndefined();
+    // Work, not wall clock: the probing path ran (budgets were handed out),
+    // each row's probe was built once for the document (not once per
+    // script), and no row stepped through an id (not one step spent).
+    expect(shares.length).toBeGreaterThan(0);
+    expect(compiles).toBeLessThanOrEqual(rows.length);
+    expect(Math.max(...spent)).toBe(0);
   });
 
   it('caps the id runs per document: costly rows leave scripts undetermined, never guessed', () => {
@@ -646,9 +723,24 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
       { length: 500 },
       (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`
     );
-    const started = performance.now();
-    const result = delayJsTransform(served, setWithRows(rows));
-    expect(performance.now() - started).toBeLessThan(2000);
+    const { result, shares, spent } = withProbeWork(() =>
+      delayJsTransform(served, setWithRows(rows))
+    );
+    // Work, not wall clock (uncapped, this input ran ~55 s; capped, ~0.3 s):
+    // one budget per masked script, each its even share of the document's...
+    const share = ID_PROBE_LIMITS.documentSteps / 1000;
+    expect(shares).toEqual(Array.from({ length: 1000 }, () => share));
+    // ...each spent to its end (these rows outlast any share)...
+    expect(Math.min(...spent)).toBeGreaterThanOrEqual(share);
+    // ...and past it by at most one subject byte's work of one row (the
+    // probe checks its budget between bytes; 140 steps measured), so the
+    // document stays within its cap.
+    const overrun = share / 20;
+    expect(Math.max(...spent)).toBeLessThanOrEqual(share + overrun);
+    expect(spent.reduce((total, steps) => total + steps, 0)).toBeLessThanOrEqual(
+      ID_PROBE_LIMITS.documentSteps + 1000 * overrun
+    );
+    // Out of work, a script is left undetermined, never guessed.
     expect(result.report.undetermined).toBeGreaterThan(0);
     expect(result.report.rewritten).toBe(0);
   });
@@ -680,19 +772,32 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
   );
 
   it('answers each masked script the same whatever the order of the others', () => {
-    // Rows that step through ids, over small and large masked scripts in turn:
-    // each script gets the same share of the probe work, so the large ones
-    // (and only they) run out of it — wherever they stand on the page.
+    // Rows that step through ids, over small and large masked scripts: each
+    // script gets the same share of the probe work, so the large ones (and
+    // only they) run out of it — wherever they stand on the page. Uncapped,
+    // the large ones alone outrun the document's budget, so a budget spent
+    // first-come would answer differently by order. Few large scripts keep
+    // the work spent (≈ a quarter of the document's budget per order) small.
     const rows = Array.from({ length: 5 }, (_, n) => `_[0-9a-f]{0,13} -->[^z]{0,40}q${String(n)}`);
+    const large = (n: number): boolean => n % 6 === 0;
     const scripts = Array.from(
-      { length: 300 },
-      (_, n) => svgScripts(1, n % 2 === 0 ? 6400 : 300, () => '')[0] ?? ''
+      { length: 42 },
+      (_, n) => svgScripts(1, large(n) ? 64_000 : 300, () => '')[0] ?? ''
     );
-    const undetermined = (order: readonly string[]): number | undefined =>
-      delayJsTransform(order.join('\n'), setWithRows(rows)).report.undetermined;
-    expect(undetermined(scripts)).toBe(150);
-    expect(undetermined([...scripts].reverse())).toBe(150);
-    expect(undetermined([...scripts.slice(150), ...scripts.slice(0, 150)])).toBe(150);
+    const share = ID_PROBE_LIMITS.documentSteps / scripts.length;
+    /** Undetermined scripts over `order`; each large one spends its share, each small one less. */
+    const undetermined = (order: readonly number[]): number | undefined => {
+      const { result, spent } = withProbeWork(() =>
+        delayJsTransform(order.map((n) => scripts[n]).join('\n'), setWithRows(rows))
+      );
+      expect(spent).toHaveLength(order.length);
+      expect(order.filter((n, at) => large(n) !== (spent[at] ?? 0) >= share)).toEqual([]);
+      return result.report.undetermined;
+    };
+    const order = scripts.map((_, n) => n);
+    expect(undetermined(order)).toBe(7);
+    expect(undetermined([...order].reverse())).toBe(7);
+    expect(undetermined([...order.slice(21), ...order.slice(0, 21)])).toBe(7);
   });
 
   it('answers rows that read no id byte, or match for every id', () => {
