@@ -267,7 +267,12 @@ function engineRekeyed(row: MatchRow): string[] | null {
  */
 function engineMatch(row: MatchRow): MatchOutcome {
   try {
-    const set = setFor(row.feature, row.rows);
+    const featureSet = setFor(row.feature, row.rows);
+    // A Delay JS row with Defer JS rows: the engine reads the inline pass under them.
+    const set =
+      row.deferRows === undefined
+        ? featureSet
+        : { ...featureSet, rows: { ...featureSet.rows, deferJs: row.deferRows } };
     const run = runStepResult(row.feature, row.served, set);
     const excluded = markedKeys(run.html, row.feature);
     const candidates = engineCandidates(row);

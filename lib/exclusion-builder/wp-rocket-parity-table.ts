@@ -182,6 +182,12 @@ export interface MatchInput extends RowBase {
    * scripts it delays, end tags included.
    */
   readonly throughDelayJs?: true;
+  /**
+   * Delay JS only: both runs go through Defer JS first, the served one
+   * with no rows and the other with these stored Defer JS rows (the engine
+   * gets them in its set) — Delay JS then sees the page its inline pass left.
+   */
+  readonly deferRows?: readonly string[];
   readonly html: string;
 }
 
@@ -257,6 +263,7 @@ export const MATCH_INPUT_KEYS = [
   'engine',
   'inlineUndetermined',
   'throughDelayJs',
+  'deferRows',
   'html'
 ] as const;
 
@@ -549,6 +556,11 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
   if (throughDelayJs !== undefined && (throughDelayJs !== true || feature !== 'defer_all_js')) {
     fail(id, '"throughDelayJs" is either true on a Defer JS row or absent');
   }
+  const deferRows =
+    record.deferRows === undefined ? undefined : stringList(id, record, 'deferRows');
+  if (deferRows !== undefined && feature !== 'delay_js') {
+    fail(id, '"deferRows" applies to Delay JS rows only');
+  }
   const html = stringField(id, record, 'html');
   if (html === '') fail(id, '"html" must not be empty');
   return {
@@ -561,6 +573,7 @@ function matchInput(id: string, record: Record<string, unknown>): MatchInput {
     ...(engine === undefined ? {} : { engine }),
     ...(inlineUndetermined === undefined ? {} : { inlineUndetermined }),
     ...(throughDelayJs === true ? { throughDelayJs } : {}),
+    ...(deferRows === undefined ? {} : { deferRows }),
     html
   };
 }

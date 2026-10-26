@@ -235,6 +235,20 @@ describe('matchCases', () => {
     expect(plain).not.toHaveProperty('throughDelayJs');
   });
 
+  it('passes deferRows on to the harness base64-encoded, only when set', () => {
+    const input: ParityInput = {
+      id: 'match-f',
+      kind: 'match',
+      feature: 'delay_js',
+      rows: [],
+      deferRows: ['jquery', 'x'],
+      html: 'h'
+    };
+    const [withDefer, plain] = matchCases([input, INPUTS[3] as ParityInput], new Map());
+    expect(withDefer).toMatchObject({ deferRows: ['anF1ZXJ5', 'eA=='] });
+    expect(plain).not.toHaveProperty('deferRows');
+  });
+
   it('fails when a from row has no stored result', () => {
     expect(() => matchCases(INPUTS, new Map())).toThrow('match-a: no stored rows for "save-a"');
   });

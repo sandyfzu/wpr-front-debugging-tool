@@ -406,6 +406,22 @@ describe('parseParityTable', () => {
       }).rows[2]
     ).toMatchObject({ throughDelayJs: true });
     rejects(
+      (table) => (row(table, 'match-b').deferRows = ['jquery']),
+      '"deferRows" applies to Delay JS rows only'
+    );
+    rejects(
+      (table) => (row(table, 'match-a').deferRows = 'jquery'),
+      '"deferRows" must be an array'
+    );
+    expect(
+      parseParityTable({
+        ...validTable(),
+        rows: validTable().rows.map((entry) =>
+          entry.id === 'match-a' ? { ...entry, deferRows: ['jquery', 'app.js'] } : entry
+        )
+      }).rows[1]
+    ).toMatchObject({ deferRows: ['jquery', 'app.js'] });
+    rejects(
       (table) => (row(table, 'match-a').hashed = []),
       '"hashed"/"rekeyed" are present exactly'
     );

@@ -305,6 +305,8 @@ interface MatchCase {
   readonly rows: readonly string[];
   /** Run Delay JS (no rows) after Defer JS (see `MatchInput.throughDelayJs`). */
   readonly throughDelayJs?: true;
+  /** Defer JS rows run before Delay JS, base64 (see `MatchInput.deferRows`). */
+  readonly deferRows?: readonly string[];
   readonly html: string;
 }
 
@@ -423,6 +425,9 @@ export function matchCases(
         feature: input.feature,
         rows: rows.map((row) => lineBase64(row)),
         ...(input.throughDelayJs === true ? { throughDelayJs: true as const } : {}),
+        ...(input.deferRows === undefined
+          ? {}
+          : { deferRows: input.deferRows.map((row) => lineBase64(row)) }),
         html: input.html
       };
     });

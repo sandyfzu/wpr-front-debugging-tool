@@ -513,10 +513,13 @@ function match_case(array $case): array {
 	switch ($case['feature']) {
 		case 'delay_js':
 			$isDelayed = static fn(string $tag): bool => (bool) preg_match('#\stype="(?:text/)?rocketlazyloadscript"#', $tag);
-			$served    = delay_pass([], $html);
+			// Defer JS (with its inline pass) first, when the row gives Defer rows.
+			$deferRows = isset($case['deferRows']) ? array_map('base64_decode', $case['deferRows']) : null;
+			$defer     = static fn(array $with): string => $deferRows === null ? $html : defer_pass($with, $html);
+			$served    = delay_pass([], $defer([]));
 			$subjects  = array_column(subject_tags($id, $served, 'script'), 0);
 			$base      = optimized_keys($id, $served, 'script', $isDelayed);
-			$after     = optimized_keys($id, delay_pass($rows, $html), 'script', $isDelayed);
+			$after     = optimized_keys($id, delay_pass($rows, $defer($deferRows ?? [])), 'script', $isDelayed);
 			break;
 		case 'defer_all_js':
 			$isDeferred = static fn(string $tag): bool => strpos($tag, 'data-rocket-defer') !== false;
