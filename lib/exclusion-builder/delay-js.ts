@@ -147,6 +147,21 @@ export function delayScriptMatch(
   return { ...span, regions: regions.slice(first, last) };
 }
 
+/**
+ * Where WP Rocket's script regexes start a script's body: just past the
+ * opening tag's first `>`, quoted or not (`<script[^>]*>`) — inside an
+ * attribute value when one holds a `>`. The HTML body start when that `>`
+ * is past the match's content end (not WP Rocket's reading of this tag).
+ *
+ * @param html The page.
+ * @param tag The script.
+ * @param contentEnd Where its match's content ends.
+ */
+export function wpBodyStart(html: string, tag: ScannedTag, contentEnd: number): number {
+  const gt = html.indexOf('>', tag.start);
+  return gt === -1 || gt + 1 > contentEnd ? tag.openingEnd : gt + 1;
+}
+
 /** A delayed script as WP Rocket's Delay JS matched it (see {@link delayScriptMatch}). */
 export interface DelayScriptMatch {
   readonly contentEnd: number;
@@ -386,15 +401,19 @@ function delayAfterInlinePass(
         : { contentEnd: tag.contentEnd, end: tag.end, regions: [] };
     // A spanning wrapper's other reading of the body: its range in the page.
     let spannedBody: readonly [number, number] | null = null;
+    // Where WP Rocket's script match reads the body from: the opening tag's
+    // first `>`, quoted or not — a wrapper written into an attribute value
+    // (its page-wide replace reaches attribute copies) opens the body there.
+    const bodyStart = wpBodyStart(servedHtml, tag, match.contentEnd);
     if (inline.spanning && tag.name === 'script') {
-      const body = servedHtml.slice(tag.openingEnd, match.contentEnd);
+      const body = servedHtml.slice(bodyStart, match.contentEnd);
       const reading = spanningWrapperReading(body, afterOpening);
       afterOpening ||= body.startsWith(INLINE_WRAP_OPEN);
       if (reading !== null) {
         spannedBody =
           reading.length < body.length && body.startsWith(INLINE_WRAP_OPEN)
-            ? [tag.openingEnd + INLINE_WRAP_OPEN.length, match.contentEnd]
-            : [tag.openingEnd, tag.openingEnd + reading.length];
+            ? [bodyStart + INLINE_WRAP_OPEN.length, match.contentEnd]
+            : [bodyStart, bodyStart + reading.length];
       }
     }
     if (featureWide && tag.name === 'script') {
@@ -427,7 +446,7 @@ function delayAfterInlinePass(
       const spanned =
         spannedBody === null
           ? null
-          : servedHtml.slice(tag.start, tag.openingEnd) +
+          : servedHtml.slice(tag.start, bodyStart) +
             servedHtml.slice(spannedBody[0], spannedBody[1]) +
             servedHtml.slice(match.contentEnd, match.end);
       const verdict = verdictAfterInlinePass(

@@ -7,7 +7,7 @@
  * plugin's three controller scripts.
  */
 import { describe, expect, it } from 'vitest';
-import { delayJsTransform, delayScriptMatch } from './delay-js';
+import { delayJsTransform, delayScriptMatch, wpBodyStart } from './delay-js';
 import { delayMaskedRegions } from './delay-js-mask';
 import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
@@ -491,6 +491,20 @@ describe('delayJsTransform — a Defer JS wrapper spanning scripts (WP Rocket 3.
   });
 });
 
+describe('wpBodyStart', () => {
+  /** The body as WP Rocket's script regexes read it, for the first script of `html`. */
+  const body = (html: string): string => {
+    const tag = scanTags(html).find((candidate) => candidate.name === 'script');
+    if (tag === undefined) throw new Error('no script');
+    return html.slice(wpBodyStart(html, tag, tag.contentEnd), tag.contentEnd);
+  };
+
+  it('starts past the opening tag’s first `>`, inside an attribute value when it holds one', () => {
+    expect(body('<script id="a">x()</script>')).toBe('x()');
+    expect(body('<script data-x="a>b">x()</script>')).toBe('b">x()');
+  });
+});
+
 describe('delayScriptMatch — the script as WP Rocket’s Delay JS regex matched it', () => {
   /** The match of the first script of `html`, as text. */
   const matched = (html: string): string => {
@@ -627,6 +641,20 @@ describe('delayJsTransform — rows over a masked region’s placeholder', () =>
     const all = delayJsTransform(served, setWithRows(['WPR_SVG_[0-9a-f]{13} --']));
     expect(all.report).toMatchObject({ rewritten: 1 });
     expect(all.report.undetermined).toBeUndefined();
+  });
+
+  it('reads a wrapper opening written into an attribute value as spanning (run)', () => {
+    // i1's `>` in an attribute: WP Rocket wrote the opening there; f holds the closing.
+    const served = parityRow('match-delay-wrapper-in-attribute-skipped').served;
+    for (const deferJs of [['jquery.min.js'], ['foo.js']]) {
+      const set: ExclusionSet = {
+        rows: { ...EMPTY_EXCLUSION_SET.rows, delayJs: ['\\}\\);'], deferJs },
+        disable: EMPTY_EXCLUSION_SET.disable
+      };
+      const result = delayJsTransform(served, set);
+      expect(result.html, deferJs.join()).toBe(served);
+      expect(result.report, deferJs.join()).toMatchObject({ rewritten: 0, undetermined: 1 });
+    }
   });
 
   it('reads the inline pass before masking: a wrapper opening inside a region (run)', () => {
