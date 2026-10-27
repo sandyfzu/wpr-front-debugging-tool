@@ -4,6 +4,7 @@
  * says, and how far the list scrolls to keep the highlight in view. Kept out
  * of the component so every rule is unit-tested without a DOM.
  */
+import { platformName, type PlatformFacts } from '../../utils/platform';
 
 /** The row facts the highlight rules read. */
 export interface HighlightRow {
@@ -173,14 +174,6 @@ export function paletteAnnouncement(
   return row === null ? count : `${count}, ${row}`;
 }
 
-/** The navigator facts the Apple-platform check reads (tests pass doubles). */
-export interface PlatformFacts {
-  /** `navigator.platform` (deprecated, still the one value every engine fills). */
-  readonly platform?: string;
-  /** `navigator.userAgentData.platform` where the engine exposes it (`macOS`). */
-  readonly userAgentData?: { readonly platform?: string };
-}
-
 /**
  * Whether the platform is an Apple one (macOS, iOS, iPadOS — the last
  * reports a Mac platform) — where VoiceOver runs. An assistive-technology
@@ -189,8 +182,7 @@ export interface PlatformFacts {
  * @param facts The navigator (or a test double).
  */
 export function isApplePlatform(facts: PlatformFacts): boolean {
-  const platform = facts.userAgentData?.platform ?? facts.platform ?? '';
-  return /^(mac|iphone|ipad)/i.test(platform);
+  return /^(mac|iphone|ipad)/i.test(platformName(facts));
 }
 
 /** A vertical box (a `DOMRect`'s top and bottom). */

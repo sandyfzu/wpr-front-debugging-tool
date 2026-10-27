@@ -2,22 +2,77 @@
  * The modal dialog's render tests: the accessible naming (title → labelled,
  * description → described), the mount-driven open (fresh per mount, gone on
  * close), every dismissal seam (Escape, the explicit close control, an
- * outside pointerdown), the mount-time autofocus on the first focusable, and
- * the mounted mode (shadow-root render node, nothing written into the host
- * document, Escape on the panel, outside pointer dismissal) —
+ * outside pointerdown; a context-menu press ignored on a modal scrim), the
+ * mount-time autofocus on the first focusable, and the mounted mode
+ * (shadow-root render node, nothing written into the host document, Escape
+ * on the panel, outside pointer dismissal, context-menu presses included) —
  * asserted on roles/attributes, never on pixel geometry (the resource-less
  * DOM gives no layout).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Show, createSignal } from 'solid-js';
-import { ModalDialog } from './dialog';
+import { isContextMenuPress, ModalDialog } from './dialog';
 import { Button } from './button';
 import { isolateUiEvents } from '../injected-ui/event-isolation';
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
+});
+
+/** Report `platform` as the navigator's platform (the library reads the same value). */
+function stubPlatform(platform: string): void {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+}
+
+/** The modal dialog's scrim (the document body's overlay). */
+function modalScrim(): HTMLElement {
+  return document.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+}
+
+/** Press the scrim: a `pointerdown` with these facts, then (unless a right press) its `click`. */
+function pressScrim(scrim: HTMLElement, init: PointerEventInit): void {
+  scrim.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, ...init }));
+  if (init.button !== 2) {
+    scrim.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, ...init }));
+  }
+}
+
+/** Let the library arm its deferred outside-pointer listener. */
+async function armLibrary(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe('isContextMenuPress', () => {
+  const press = (button: number, ctrlKey = false, metaKey = false) => ({
+    button,
+    ctrlKey,
+    metaKey
+  });
+
+  it('is the secondary button, whatever the modifiers and platform', () => {
+    expect(isContextMenuPress(press(2), false)).toBe(true);
+    expect(isContextMenuPress(press(2), true)).toBe(true);
+    expect(isContextMenuPress(press(2, true, true), false)).toBe(true);
+  });
+
+  it('is a primary press with Ctrl alone off macOS, Cmd alone on macOS', () => {
+    expect(isContextMenuPress(press(0, true), false)).toBe(true);
+    expect(isContextMenuPress(press(0, false, true), false)).toBe(false);
+    expect(isContextMenuPress(press(0, true, true), false)).toBe(false);
+    expect(isContextMenuPress(press(0, false, true), true)).toBe(true);
+    expect(isContextMenuPress(press(0, true), true)).toBe(false);
+    expect(isContextMenuPress(press(0, true, true), true)).toBe(false);
+  });
+
+  it('is never a plain primary or a middle press', () => {
+    expect(isContextMenuPress(press(0), false)).toBe(false);
+    expect(isContextMenuPress(press(0), true)).toBe(false);
+    expect(isContextMenuPress(press(1, true), false)).toBe(false);
+    expect(isContextMenuPress(press(1, false, true), true)).toBe(false);
+  });
 });
 
 /** Mount-driven rendering like the shells do: a Show per open state. */
@@ -129,6 +184,46 @@ describe('ModalDialog dismissals', () => {
     scrim.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
     expect(onClose).not.toHaveBeenCalled();
     scrim.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a right press on the scrim, before and after the library arms', async () => {
+    const { onClose } = renderDialog();
+    pressScrim(modalScrim(), { button: 2, pointerType: 'mouse' });
+    await armLibrary();
+    pressScrim(modalScrim(), { button: 2, pointerType: 'mouse' });
+    expect(onClose).not.toHaveBeenCalled();
+    // Not stuck: the next plain press still closes.
+    pressScrim(modalScrim(), { button: 0, pointerType: 'mouse' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a Ctrl-press (primary) on the scrim off macOS, before and after arming', async () => {
+    stubPlatform('Win32');
+    const { onClose } = renderDialog();
+    pressScrim(modalScrim(), { button: 0, ctrlKey: true, pointerType: 'mouse' });
+    await armLibrary();
+    pressScrim(modalScrim(), { button: 0, ctrlKey: true, pointerType: 'mouse' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('ignores a Cmd-press (primary) and its click on the scrim on macOS, before and after arming', async () => {
+    stubPlatform('MacIntel');
+    const { onClose } = renderDialog();
+    pressScrim(modalScrim(), { button: 0, metaKey: true, pointerType: 'mouse' });
+    await armLibrary();
+    pressScrim(modalScrim(), { button: 0, metaKey: true, pointerType: 'mouse' });
+    expect(onClose).not.toHaveBeenCalled();
+    // Ctrl is no context-menu modifier there: a Ctrl-press closes.
+    pressScrim(modalScrim(), { button: 0, ctrlKey: true, pointerType: 'mouse' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on a pen press on the scrim at its pointerdown', () => {
+    const { onClose } = renderDialog();
+    modalScrim().dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'pen' })
+    );
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -317,6 +412,42 @@ describe('ModalDialog mounted mode (an injected shadow root)', () => {
     const scrim = shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
     scrim.dispatchEvent(
       new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'mouse' })
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on a right press on the scrim, as the library does outside a non-modal dialog', async () => {
+    const first = renderMounted();
+    const scrim = (): HTMLElement =>
+      first.shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    pressScrim(scrim(), { button: 2, pointerType: 'mouse' });
+    expect(first.onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+    const second = renderMounted();
+    await armLibrary();
+    pressScrim(second.shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement, {
+      button: 2,
+      pointerType: 'mouse'
+    });
+    expect(second.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a touch tap on the scrim on its click, the root keeping the click from the page', () => {
+    const { shadow, onClose } = renderMounted();
+    const scrim = shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'touch' })
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    scrim.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on a pen press on the scrim at its pointerdown', () => {
+    const { shadow, onClose } = renderMounted();
+    const scrim = shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'pen' })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -19,8 +19,13 @@
  * the library arms its outside-pointer listener a task after mount, and the
  * browser runs input ahead of timers, so a press in that gap (a quick click,
  * or any click while a busy host page holds the timer back) would otherwise
- * be ignored. Every dismissal seam funnels into one guard, so a press both
- * seams see closes once.
+ * be ignored. A modal dialog ignores a context-menu press there (as the
+ * library does outside it); a mounted one dismisses on it (as the library
+ * does there too). Every seam the dialog owns (Escape, the scrim, the
+ * library's outside checks, the close control) funnels into one guard, so a
+ * press two of them see closes once; exits the caller wires itself (a key in
+ * {@link ModalDialogProps.onKeyDownCapture}, its own Cancel) call its own
+ * handler directly — no dialog seam sees those gestures too.
  *
  * Focus on close is the caller's contract: nothing here remembers what to
  * restore, because only the caller knows its trigger (and a command that
@@ -42,6 +47,7 @@ import { onCleanup, Show } from 'solid-js';
 import { Dialog as KobalteDialog } from '@kobalte/core';
 import X from 'lucide-solid/icons/x';
 import { cn } from '../../utils/cn';
+import { isMacPlatform } from '../../utils/platform';
 import { FOCUS_RING } from './classes';
 
 export interface ModalDialogProps {
@@ -118,26 +124,62 @@ function focusInitial(target: HTMLElement, panel: HTMLElement): void {
   if (root.activeElement !== target) panel.focus({ preventScroll: true });
 }
 
+/** The button and modifier facts of a press (a pointer event, or a test double). */
+export interface PressFacts {
+  readonly button: number;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+}
+
+/**
+ * Whether a press opens the context menu — the secondary button, or a primary
+ * press with the platform's Ctrl alone (Cmd without Ctrl on macOS, Ctrl
+ * without Meta elsewhere): the presses a modal dialog's outside dismissal
+ * ignores, the same set the library ignores.
+ *
+ * @param press The press's button and modifiers.
+ * @param mac Whether the platform is macOS.
+ */
+export function isContextMenuPress(press: PressFacts, mac: boolean): boolean {
+  const ctrl = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+  return press.button === 2 || (ctrl && press.button === 0);
+}
+
 /**
  * Dismiss on a press on the scrim — mouse and pen on `pointerdown` (the
- * library's own moment), touch on `click` (a tap dismissed on its
- * pointerdown would let its click land on the page below the scrim).
- * Native listeners on the element itself: an injected root stops pointer
- * events at its host, before a document-delegated handler would see them.
+ * library's own moment), touch on the tap's `click` (a tap dismissed on its
+ * pointerdown would let its click land on the page below the scrim). A
+ * modal dialog ignores a context-menu press, judged on its `pointerdown`
+ * (a touch one too), so a Cmd-click's own `click` never dismisses either.
+ * Native listeners on the element itself, so the seam works under any
+ * delegation setup: a mounted dialog's events stop at its shadow root, where
+ * Solid handlers run only because the injected UI's isolation re-delegates
+ * them there.
  *
  * @param scrim The dialog's scrim.
+ * @param modal Whether the dialog is modal (context-menu presses ignored).
  * @param dismiss The dialog's guarded dismissal.
  * @returns Removes the listeners.
  */
-function dismissOnScrimPress(scrim: HTMLElement, dismiss: () => void): () => void {
+function dismissOnScrimPress(scrim: HTMLElement, modal: boolean, dismiss: () => void): () => void {
+  /** Set by a dismissing touch `pointerdown`: its tap's `click` dismisses. */
+  let tapPending = false;
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.pointerType !== 'touch') dismiss();
+    const dismissing = !(modal && isContextMenuPress(event, isMacPlatform(globalThis.navigator)));
+    const touch = event.pointerType === 'touch';
+    tapPending = touch && dismissing;
+    if (!touch && dismissing) dismiss();
+  };
+  const onClick = (): void => {
+    if (!tapPending) return;
+    tapPending = false;
+    dismiss();
   };
   scrim.addEventListener('pointerdown', onPointerDown);
-  scrim.addEventListener('click', dismiss);
+  scrim.addEventListener('click', onClick);
   return () => {
     scrim.removeEventListener('pointerdown', onPointerDown);
-    scrim.removeEventListener('click', dismiss);
+    scrim.removeEventListener('click', onClick);
   };
 }
 
@@ -182,7 +224,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
           data-fdt="dialog-overlay"
           class={OVERLAY_CLASSES}
           ref={(element) => {
-            onCleanup(dismissOnScrimPress(element, dismiss));
+            onCleanup(dismissOnScrimPress(element, props.mount === undefined, dismiss));
           }}
         />
         <KobalteDialog.Content

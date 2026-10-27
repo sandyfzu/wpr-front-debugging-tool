@@ -56,8 +56,8 @@
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.0,
-      "gzip": 40.2
+      "raw": 116.3,
+      "gzip": 40.4
     }
   },
   {
@@ -65,8 +65,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 116.0,
-      "gzip": 40.2
+      "raw": 116.3,
+      "gzip": 40.4
     }
   },
   {
@@ -139,7 +139,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1606.9
+      "raw": 1607.5
     }
   }
 ]
