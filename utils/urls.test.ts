@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHttpOrigin, isHttpUrl, parseUrl } from './urls';
+import { isHttpOrigin, isHttpUrl, parseHttpUrl, parseUrl } from './urls';
 
 describe('parseUrl', () => {
   it('parses absolute URLs', () => {
@@ -16,6 +16,30 @@ describe('parseUrl', () => {
 
   it('ignores leading/trailing whitespace (WHATWG rules)', () => {
     expect(parseUrl('  https://example.com  ')?.pathname).toBe('/');
+  });
+});
+
+describe('parseHttpUrl', () => {
+  it('returns the parsed URL for http and https (scheme case does not matter)', () => {
+    expect(parseHttpUrl('http://example.com/a?b=1#f')).toEqual(
+      new URL('http://example.com/a?b=1#f')
+    );
+    expect(parseHttpUrl('HTTPS://example.com/path')?.href).toBe('https://example.com/path');
+  });
+
+  it('returns null for non-HTTP(S) schemes and anything that is not an absolute URL', () => {
+    for (const raw of [
+      'javascript:alert(1)',
+      'data:text/html,<h1>x</h1>',
+      'chrome://settings',
+      'file:///tmp/page.html',
+      'ftp://example.com',
+      '/relative?a=1',
+      'not a url',
+      ''
+    ]) {
+      expect(parseHttpUrl(raw), raw).toBeNull();
+    }
   });
 });
 

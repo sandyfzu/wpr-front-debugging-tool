@@ -60,6 +60,7 @@ import {
   RUCSS_STYLE_SELECTOR,
   URL_PATTERNS,
   WPR_DEFER_ATTRIBUTE,
+  withCacheBypass,
   INLINE_WRAP_OPEN,
   INLINE_WRAP_CLOSE
 } from './constants';
@@ -251,6 +252,7 @@ describe('platforms and ids', () => {
     expect(Object.values(CONTEXT_MENU_IDS).sort()).toEqual(
       [
         'exclusionBuilder',
+        'openNowProcket',
         'psiSideBySide',
         'toggleDetectionWidget',
         'updateKnownConflictsDB',
@@ -274,6 +276,49 @@ describe('platforms and ids', () => {
     // An unparsable URL cannot attest a bypass, and must not throw on boot.
     expect(isCacheBypassUrl('/relative?nowprocket=1')).toBe(false);
     expect(isCacheBypassUrl('not a url')).toBe(false);
+  });
+
+  it('adds the bare bypass parameter, keeping the query bytes and the fragment', () => {
+    const cases: Array<[string, string]> = [
+      ['https://example.test/', 'https://example.test/?nowprocket'],
+      ['https://example.test/path', 'https://example.test/path?nowprocket'],
+      ['https://example.test/?a=b', 'https://example.test/?a=b&nowprocket'],
+      ['https://example.test/?a=b#h', 'https://example.test/?a=b&nowprocket#h'],
+      ['https://example.test/p#h', 'https://example.test/p?nowprocket#h'],
+      // A fragment spelling a bypass is not one: the query still gets it.
+      ['https://example.test/#nowprocket', 'https://example.test/?nowprocket#nowprocket'],
+      // Bare `?`/`#` (empty `search`/`hash`) and a trailing `&` keep their text.
+      ['https://example.test/?', 'https://example.test/?nowprocket'],
+      ['https://example.test/?#', 'https://example.test/?nowprocket#'],
+      ['https://example.test/?a=b&', 'https://example.test/?a=b&nowprocket'],
+      // Encoded, valueless and `+` parameters are never re-serialized.
+      ['https://example.test/?q=a%20b&flag', 'https://example.test/?q=a%20b&flag&nowprocket'],
+      ['https://example.test/?q=a+b&x=%2F', 'https://example.test/?q=a+b&x=%2F&nowprocket'],
+      ['https://example.test/?nowprocketx=1', 'https://example.test/?nowprocketx=1&nowprocket'],
+      ['http://127.0.0.1:8493/fdt/?a[]=1', 'http://127.0.0.1:8493/fdt/?a[]=1&nowprocket']
+    ];
+    for (const [input, expected] of cases) {
+      expect(withCacheBypass(new URL(input)), input).toBe(expected);
+    }
+  });
+
+  it('leaves an already-bypassed URL exactly as it is, in every accepted form', () => {
+    for (const href of [
+      'https://example.test/?nowprocket',
+      'https://example.test/?nowprocket=1',
+      'https://example.test/?a=b&nowprocket=0#h',
+      'https://example.test/?nowprocket[]=1',
+      'https://example.test/?nowprocket%5Bx%5D=1'
+    ]) {
+      const url = new URL(href);
+      expect(withCacheBypass(url), href).toBe(url.href);
+    }
+  });
+
+  it('answers a URL its own bypass check accepts', () => {
+    for (const href of ['https://example.test/', 'https://example.test/?a=1#x']) {
+      expect(isCacheBypassUrl(withCacheBypass(new URL(href))), href).toBe(true);
+    }
   });
 
   it('reads the bypass where URLSearchParams method iterators are not iterable', () => {
