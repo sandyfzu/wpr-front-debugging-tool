@@ -90,7 +90,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 - **Apply modes:** Apply arms an interception session for the tab and reloads it; the served HTML is rewritten before parse — Chromium: `debugger` + CDP `Fetch` (in-process engine, 2 s budget between steps), Firefox: `webRequest.filterResponseData` (engine in `exclusion-transform-worker`, preempted at the budget). Unavailable interception (attach denied, debugging policy, cancelled infobar, detached, unsupported page or browser, session limit) is a warning state naming cause + remedy (Retry when transient) — there is **no fallback**. A session lasts across the tab's navigations until Stop, tab close or extension reload.
 - **DevTools interplay:** the mode is decided by attempting the attach, never assumed; on Chromium the attach worked with DevTools open (CDP is multi-client; stable-Chrome manual check open in P15B). The panel shows the session in its status strip and detection cards ("Disabled in this tab by the Exclusion Builder").
 - **Reset / Stop:** Reset is held while the draft equals the applied set; with edits it discards them and re-applies the session's stored set. Stop ends the session without navigating (the rewritten page and the draft stay); the next load is served as WP Rocket serves it.
-- Plan + receipts: [`docs/plans/11-phase-10-exclusion-builder.md`](docs/plans/11-phase-10-exclusion-builder.md).
+- Decisions, limits + open items: [`docs/plans/completed-exclusion-builder.md`](docs/plans/completed-exclusion-builder.md).
 
 ## Commands
 

@@ -34,7 +34,7 @@ Chosen train slot: after P11 (P19 → P12). P19A–C and E have nothing to edit 
 | Background already watches options storage to apply a binary toggle live (toolbar badge)                                                        | `entrypoints/background/badge.ts` pattern                                                            |
 | The isolated content script is budgeted as one surface                                                                                          | `scripts/budgets.json` row "isolated content script" (122 raw / 42 gzip)                             |
 | P12 remaining owns the widget's Alt+H visibility chord, `capture: false`, no `document.onkeydown` clobber, plus P12M mount hardening            | `docs/plans/13-phase-12-on-page-inspector.md` (remaining scope + P12M)                               |
-| P10 owns the in-page builder session and the DevTools-attach conflict degradation                                                               | `docs/plans/11-phase-10-exclusion-builder.md` (re-plan TLDR, G-3)                                    |
+| P10 owns the in-page builder session and the DevTools-attach conflict degradation                                                               | `docs/plans/completed-exclusion-builder.md` (TLDR, G-3)                                              |
 
 ## Design: one command vocabulary, three consumers
 
