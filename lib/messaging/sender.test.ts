@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isExtensionPageSender,
+  isOwnExtensionPageSender,
   numericTabId,
   resolveSenderTabId,
   resolveSenderUrl,
@@ -143,5 +144,57 @@ describe('isExtensionPageSender', () => {
     expect(isExtensionPageSender({ id: 'other' }, ours)).toBe(false);
     expect(isExtensionPageSender({}, ours)).toBe(false);
     expect(isExtensionPageSender(undefined, ours)).toBe(false);
+  });
+});
+
+const ID = 'own-extension-id';
+const ROOT = 'moz-extension://5f1d2c3b-aaaa-bbbb-cccc-123456789abc/';
+const PANEL = { id: ID, url: `${ROOT}panel.html` };
+
+describe('isOwnExtensionPageSender — the tab-relay sender gate', () => {
+  it('admits our own tab-less extension page (Firefox and Chromium URL shapes)', () => {
+    expect(isOwnExtensionPageSender(PANEL, ID, ROOT)).toBe(true);
+    expect(
+      isOwnExtensionPageSender(
+        { id: ID, url: 'chrome-extension://abcdefghijklmnop/panel.html' },
+        ID,
+        'chrome-extension://abcdefghijklmnop/'
+      )
+    ).toBe(true);
+  });
+
+  it('refuses a content-script sender (it carries a tab), even with our id and URL', () => {
+    expect(isOwnExtensionPageSender({ ...PANEL, tab: { id: 3 } }, ID, ROOT)).toBe(false);
+    expect(isOwnExtensionPageSender({ ...PANEL, tab: { id: 3 }, frameId: 0 }, ID, ROOT)).toBe(
+      false
+    );
+  });
+
+  it('refuses a foreign extension id', () => {
+    expect(isOwnExtensionPageSender({ ...PANEL, id: 'other-extension' }, ID, ROOT)).toBe(false);
+    expect(isOwnExtensionPageSender({ url: PANEL.url }, ID, ROOT)).toBe(false);
+  });
+
+  it('refuses a document outside our pages (foreign origin)', () => {
+    for (const url of [
+      'moz-extension://00000000-0000-0000-0000-000000000000/panel.html',
+      'chrome-extension://5f1d2c3b-aaaa-bbbb-cccc-123456789abc/panel.html',
+      'https://example.com/panel.html',
+      'about:blank',
+      'not a url',
+      undefined,
+      42
+    ]) {
+      expect(isOwnExtensionPageSender({ id: ID, url }, ID, ROOT), String(url)).toBe(false);
+    }
+  });
+
+  it('refuses everything when our own root URL is unusable', () => {
+    expect(isOwnExtensionPageSender(PANEL, ID, 'garbage')).toBe(false);
+    expect(isOwnExtensionPageSender({ id: ID, url: 'about:blank' }, ID, 'about:blank')).toBe(false);
+  });
+
+  it('refuses a missing sender', () => {
+    expect(isOwnExtensionPageSender(undefined, ID, ROOT)).toBe(false);
   });
 });

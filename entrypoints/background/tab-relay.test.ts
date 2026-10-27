@@ -5,7 +5,7 @@ import type { TabAsks } from '../../lib/messaging/tab-asks';
 const { onMessage } = vi.hoisted(() => ({ onMessage: vi.fn() }));
 vi.mock('../../lib/messaging', () => ({ onMessage }));
 
-const { answerTabRelay, isTabRelaySender, registerTabRelay } = await import('./tab-relay');
+const { answerTabRelay, registerTabRelay } = await import('./tab-relay');
 type Deps = Parameters<typeof answerTabRelay>[2];
 
 const ID = 'own-extension-id';
@@ -44,52 +44,6 @@ function deps(
     ...overrides
   };
 }
-
-describe('isTabRelaySender — the sender gate', () => {
-  it('admits our own tab-less extension page (Firefox and Chromium URL shapes)', () => {
-    expect(isTabRelaySender(PANEL, ID, ROOT)).toBe(true);
-    expect(
-      isTabRelaySender(
-        { id: ID, url: 'chrome-extension://abcdefghijklmnop/panel.html' },
-        ID,
-        'chrome-extension://abcdefghijklmnop/'
-      )
-    ).toBe(true);
-  });
-
-  it('refuses a content-script sender (it carries a tab), even with our id and URL', () => {
-    expect(isTabRelaySender({ ...PANEL, tab: { id: 3 } }, ID, ROOT)).toBe(false);
-    expect(isTabRelaySender({ ...PANEL, tab: { id: 3 }, frameId: 0 }, ID, ROOT)).toBe(false);
-  });
-
-  it('refuses a foreign extension id', () => {
-    expect(isTabRelaySender({ ...PANEL, id: 'other-extension' }, ID, ROOT)).toBe(false);
-    expect(isTabRelaySender({ url: PANEL.url }, ID, ROOT)).toBe(false);
-  });
-
-  it('refuses a document outside our pages (foreign origin)', () => {
-    for (const url of [
-      'moz-extension://00000000-0000-0000-0000-000000000000/panel.html',
-      'chrome-extension://5f1d2c3b-aaaa-bbbb-cccc-123456789abc/panel.html',
-      'https://example.com/panel.html',
-      'about:blank',
-      'not a url',
-      undefined,
-      42
-    ]) {
-      expect(isTabRelaySender({ id: ID, url }, ID, ROOT), String(url)).toBe(false);
-    }
-  });
-
-  it('refuses everything when our own root URL is unusable', () => {
-    expect(isTabRelaySender(PANEL, ID, 'garbage')).toBe(false);
-    expect(isTabRelaySender({ id: ID, url: 'about:blank' }, ID, 'about:blank')).toBe(false);
-  });
-
-  it('refuses a missing sender', () => {
-    expect(isTabRelaySender(undefined, ID, ROOT)).toBe(false);
-  });
-});
 
 describe('answerTabRelay — the typed answers', () => {
   it('forwards an allowed ask to the named tab and returns the answer', async () => {

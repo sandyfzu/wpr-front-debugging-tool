@@ -9,18 +9,13 @@
 import { createLogger, type Logger } from '../../lib/logger';
 import { onMessage } from '../../lib/messaging';
 import { isNoReceiverError } from '../../lib/messaging/no-receiver';
-import {
-  isExtensionPageSender,
-  resolveSenderUrl,
-  type LooseMessageSender
-} from '../../lib/messaging/sender';
+import { isOwnExtensionPageSender, type LooseMessageSender } from '../../lib/messaging/sender';
 import { DIRECT_TAB_ASKS, type TabAsks } from '../../lib/messaging/tab-asks';
 import {
   parseTabRelayRequest,
   type TabRelayFailure,
   type TabRelayReply
 } from '../../lib/messaging/tab-relay';
-import { parseUrl } from '../../utils/urls';
 import { tabExists } from './tab-exists';
 
 const log = createLogger('tab-relay');
@@ -36,41 +31,6 @@ export interface TabRelayDeps {
   /** The transport the ask is forwarded over (production: the direct tab send). */
   readonly asks: TabAsks;
   readonly log: Logger;
-}
-
-/**
- * Whether a URL is a page of the extension rooted at `rootUrl`: same scheme
- * and host. (Not `URL.origin`: extension schemes are non-special, and the
- * URL standard gives them an opaque `"null"` origin.)
- *
- * @param url The parsed sender URL.
- * @param rootUrl The extension's root URL.
- */
-function isOwnPageUrl(url: URL, rootUrl: string): boolean {
-  const root = parseUrl(rootUrl);
-  return (
-    root !== null && root.host !== '' && url.protocol === root.protocol && url.host === root.host
-  );
-}
-
-/**
- * The relay's sender gate: one of this extension's tab-less pages
- * (`isExtensionPageSender`: no runtime tab, our id) whose document URL is
- * one of our pages — so a content script (always carries a tab), another
- * extension (foreign id) and a document outside our pages are all refused.
- *
- * @param sender The runtime sender, untrusted.
- * @param extensionId This extension's id.
- * @param extensionRootUrl This extension's root URL.
- */
-export function isTabRelaySender(
-  sender: LooseMessageSender | undefined,
-  extensionId: string,
-  extensionRootUrl: string
-): boolean {
-  if (!isExtensionPageSender(sender, extensionId)) return false;
-  const url = resolveSenderUrl(sender);
-  return url !== null && isOwnPageUrl(url, extensionRootUrl);
 }
 
 /** A typed failure reply. */
@@ -91,7 +51,7 @@ export async function answerTabRelay(
   data: unknown,
   deps: TabRelayDeps
 ): Promise<TabRelayReply> {
-  if (!isTabRelaySender(sender, deps.extensionId, deps.extensionRootUrl)) {
+  if (!isOwnExtensionPageSender(sender, deps.extensionId, deps.extensionRootUrl)) {
     deps.log.warn('Relay refused — only this extension’s tab-less pages may name a tab');
     return failed('refused');
   }

@@ -98,3 +98,39 @@ export function isExtensionPageSender(
 ): boolean {
   return sender !== undefined && sender.tab === undefined && sender.id === extensionId;
 }
+
+/**
+ * Whether a URL is a page of the extension rooted at `rootUrl`: same scheme
+ * and host. (Not `URL.origin`: extension schemes are non-special, and the
+ * URL standard gives them an opaque `"null"` origin.)
+ *
+ * @param url The parsed sender URL.
+ * @param rootUrl The extension's root URL.
+ */
+function isOwnPageUrl(url: URL, rootUrl: string): boolean {
+  const root = parseUrl(rootUrl);
+  return (
+    root !== null && root.host !== '' && url.protocol === root.protocol && url.host === root.host
+  );
+}
+
+/**
+ * The gate for rows that act on a tab the sender names (the tab relays):
+ * one of this extension's tab-less pages ({@link isExtensionPageSender}: no
+ * runtime tab, our id) whose document URL is one of our pages — so a
+ * content script (always carries a tab), another extension (foreign id) and
+ * a document outside our pages are all refused.
+ *
+ * @param sender The runtime sender (message or port), untrusted.
+ * @param extensionId This extension's id (`runtime.id`).
+ * @param extensionRootUrl This extension's root URL (`runtime.getURL('/')`).
+ */
+export function isOwnExtensionPageSender(
+  sender: LooseMessageSender | undefined,
+  extensionId: string,
+  extensionRootUrl: string
+): boolean {
+  if (!isExtensionPageSender(sender, extensionId)) return false;
+  const url = resolveSenderUrl(sender);
+  return url !== null && isOwnPageUrl(url, extensionRootUrl);
+}
