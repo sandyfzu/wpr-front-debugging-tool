@@ -4,8 +4,8 @@
  *
  * The state machine is pure: callers hand in already-validated summaries and
  * tab ids, and receive the display effects (set/dot by color, or clear) they
- * must apply through `browser.action`. Keeping the mapping out of the
- * `browser.action` calls makes the toggle, navigation, and cleanup behavior
+ * must apply through the toolbar button's API (`./toolbar-action`). Keeping
+ * the mapping out of those calls makes the toggle, navigation, and cleanup behavior
  * fully unit-testable while the entrypoint glue stays a few awaited calls.
  *
  * Ordering guarantees (why the state exists at all):
@@ -28,6 +28,7 @@ import { onMessage } from '../../lib/messaging';
 import { resolveSenderTabId } from '../../lib/messaging/sender';
 import { parseDetectionSummary, type DetectionSummary } from '../../lib/messaging/validate';
 import { getOptions, optionsStore } from '../../lib/storage/options';
+import { TOOLBAR_NAMESPACE, toolbarBadgeApi, type ToolbarBadgeApi } from './toolbar-action';
 
 const log = createLogger('badge');
 
@@ -100,7 +101,7 @@ export function badgeFor(summary: DetectionSummary | null): BadgeDisplay | null 
 /**
  * The pure badge state machine over per-tab summaries. Instances are created
  * per runtime glue; the glue applies returned effects and owes nothing to
- * this class (which stays free of `browser.action` for testability).
+ * this class (which stays free of browser calls for testability).
  *
  * State kept per tab: the latest reported summary + whether a badge is
  * currently applied, so every transition knows both what to render next and
@@ -169,16 +170,25 @@ class BadgeStateModelImpl implements BadgeStateModel {
 }
 
 /**
- * Apply one effect to the browser action — resolves (never rejects: every
+ * Apply one effect to the toolbar button — resolves (never rejects: every
  * call is awaited and caught) so callers can `void` it safely.
  * @param effect Effect to apply, or null (no-op).
+ * @param api The toolbar badge API to write through (this build's by
+ *   default); null — a browser without it — is logged, never thrown.
  */
-export async function applyBadgeEffect(effect: BadgeEffect | null): Promise<void> {
+export async function applyBadgeEffect(
+  effect: BadgeEffect | null,
+  api: ToolbarBadgeApi | null = toolbarBadgeApi()
+): Promise<void> {
   if (effect === null) return;
+  if (api === null) {
+    log.warn('Badge update ignored: no toolbar button API', effect.kind, effect.tabId);
+    return;
+  }
   try {
     if (effect.kind === 'clear') {
       // An empty text removes the badge; no color touch, the tab default stays.
-      await browser.action.setBadgeText({ tabId: effect.tabId, text: '' });
+      await api.setBadgeText({ tabId: effect.tabId, text: '' });
       return;
     }
     // The dot is the glyph itself in its state color, over a transparent
@@ -187,12 +197,12 @@ export async function applyBadgeEffect(effect: BadgeEffect | null): Promise<void
     // transparent tile is a fixed browser-chrome value, outside theme
     // resolution. The text lands last, so any earlier failure leaves nothing
     // rendered rather than a half-applied badge; the next report re-runs all.
-    await browser.action.setBadgeBackgroundColor({
+    await api.setBadgeBackgroundColor({
       tabId: effect.tabId,
       color: TRANSPARENT_TILE
     });
-    await browser.action.setBadgeTextColor({ tabId: effect.tabId, color: effect.display.color });
-    await browser.action.setBadgeText({ tabId: effect.tabId, text: effect.display.text });
+    await api.setBadgeTextColor({ tabId: effect.tabId, color: effect.display.color });
+    await api.setBadgeText({ tabId: effect.tabId, text: effect.display.text });
     return;
   } catch (cause) {
     log.warn('Badge update ignored', effect.kind, effect.tabId, cause);
@@ -209,13 +219,19 @@ export function createBadgeState(): BadgeStateModel {
 
 /**
  * Runtime wiring for the badge feature. Must run once: it creates the state
- * machine, binds its `browser.action` applier, and listens for content
+ * machine, binds its toolbar-button applier, and listens for content
  * pushes with sender (not payload-borne) tab resolution.
  *
+ * @param api The toolbar badge API (this build's by default).
  * @returns Runtime callbacks for the header capture (navigation clears) and
  *   the feature gate (options are resolved after this, see `watchBadgeGate`).
+ * @throws {@link Error} When `api` is null: the browser exposes no toolbar
+ *   button API for this build, so no badge could ever render.
  */
-export function initBadge(): BadgeRuntime {
+export function initBadge(api: ToolbarBadgeApi | null = toolbarBadgeApi()): BadgeRuntime {
+  if (api === null) {
+    throw new Error(`No toolbar button API (browser.${TOOLBAR_NAMESPACE}) in this browser`);
+  }
   const state = new BadgeStateModelImpl();
 
   onMessage('reportDetectionSummary', ({ data, sender }) => {
@@ -231,7 +247,7 @@ export function initBadge(): BadgeRuntime {
       log.warn('Detection summary from a tabless sender ignored');
       return true;
     }
-    void applyBadgeEffect(state.processSummary(tabId, summary));
+    void applyBadgeEffect(state.processSummary(tabId, summary), api);
     return true;
   });
 
@@ -242,7 +258,7 @@ export function initBadge(): BadgeRuntime {
       state.tabRemoved(tabId);
     },
     setFeatureEnabled: (enabled) => state.setFeatureEnabled(enabled),
-    apply: applyBadgeEffect
+    apply: (effect) => applyBadgeEffect(effect, api)
   };
 }
 
@@ -275,10 +291,13 @@ export function createDisabledBadgeRuntime(): BadgeRuntime {
  * nothing else.
  */
 async function sweepRenderedBadges(): Promise<void> {
+  const api = toolbarBadgeApi();
+  // No toolbar button API: no badge can exist, and boot already reported why.
+  if (api === null) return;
   const ids = (await browser.tabs.query({}))
     .map((tab) => tab.id)
     .filter((id): id is number => typeof id === 'number');
-  await Promise.allSettled(ids.map((id) => applyBadgeEffect({ kind: 'clear', tabId: id })));
+  await Promise.allSettled(ids.map((id) => applyBadgeEffect({ kind: 'clear', tabId: id }, api)));
 }
 
 /**

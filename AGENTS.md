@@ -178,6 +178,7 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 - **Chromium-based browsers are the primary target** (Chrome/Chromium, Edge, Brave, Arc, …): every feature must work there; size/perf budgets are measured on Chromium.
 - **Firefox is a first-class secondary:** keep it compatible whenever that costs Chromium nothing. Where an API or capability differs, the Chromium path wins and Firefox degrades explicitly — feature-detect, then hide or disable with a message — never a half-working feature.
 - **One codebase.** Write against WXT's auto-imported `browser.*` (never `chrome.*`); branch on feature detection (`'x' in api`), never user-agent sniffing; per-browser manifest differences live in `wxt.config.ts` (WXT generates per-browser output), not source forks. `pnpm build:firefox` stays green for whatever it currently builds.
+- **The Firefox build is Manifest V2** (`.output/firefox-mv2`): manifest-versioned APIs (menu context `'action'` MV3 / `'browser_action'` MV2 — Firefox throws on the other; namespace `action` MV3 / `browserAction` MV2) branch on WXT's build-time `import.meta.env.MANIFEST_VERSION` (Vite `define` = the shipped manifest's version), so MV3 (Chromium) bundles never contain the MV2 path — see `entrypoints/background/menu-contexts.ts`, `toolbar-action.ts`; registries stay browser-agnostic. Vitest serves the define as the string `'3'`.
 
 ### UI themes: light & dark
 

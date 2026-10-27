@@ -236,7 +236,7 @@ describe('captureChord', () => {
   });
 
   it('round-trips: a captured chord parses and matches the press that made it', () => {
-    const press = key('Digit3', { altKey: true, shiftKey: true });
+    const press = key('KeyK', { altKey: true, shiftKey: true });
     const result = captureChord(press, 'other');
     if (!result.ok) throw new Error('expected a chord');
     expect(parsePaletteChord(result.chord)).toEqual(result.chord);
@@ -300,7 +300,39 @@ describe('reserved chords', () => {
       ...mods(['KeyZ'], { shift: true }),
       { code: 'F10', alt: true },
       ...mods(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
-      ...mods(['Comma'], { shift: true })
+      ...mods(['Comma', 'Backslash'], { shift: true }),
+      ...mods(['KeyT', 'KeyY', 'KeyM', 'KeyF'], { alt: true, shift: true }),
+      ...(
+        [
+          'KeyO',
+          'KeyZ',
+          'KeyP',
+          'KeyH',
+          'Digit0',
+          'Digit1',
+          'Digit2',
+          'Digit3',
+          'Digit4',
+          'Digit5',
+          'Digit6',
+          'Digit7',
+          'Digit8',
+          'Digit9',
+          'KeyX',
+          'KeyD',
+          'KeyC',
+          'KeyR',
+          'KeyL',
+          'KeyJ',
+          'KeyQ',
+          'KeyU',
+          'KeyM',
+          'KeyS',
+          'KeyW'
+        ] as const
+      ).map((code): PaletteChord => ({ code, alt: true, shift: true })),
+      ...(['KeyL', 'F8', 'F9', 'F11'] as const).map((code): PaletteChord => ({ code, alt: true })),
+      ...mods(['F9'])
     ],
     browser: [
       ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
@@ -336,7 +368,12 @@ describe('reserved chords', () => {
       ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { shift: true }),
       ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
     ],
-    system: [...mods(['KeyQ', 'KeyM']), { code: 'F4', alt: true }, { code: 'F11' }]
+    system: [
+      ...mods(['KeyQ', 'KeyM', 'Backquote']),
+      ...mods(['Backquote'], { shift: true }),
+      { code: 'F4', alt: true },
+      { code: 'F11' }
+    ]
   };
 
   for (const [group, chords] of Object.entries(expected) as Array<
@@ -377,7 +414,6 @@ describe('reserved chords', () => {
       { code: 'F10', shift: true },
       { code: 'KeyR', alt: true },
       { code: 'KeyW', alt: true },
-      { code: 'KeyW', alt: true, shift: true },
       { code: 'Comma', mod: true, alt: true }
     ] satisfies PaletteChord[]) {
       expect(reservedChordGroup(free)).toBeNull();

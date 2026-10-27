@@ -243,16 +243,68 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * the WordPress block editor). `mod` + B and + U also carry browser
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
      * Block editor: Alt+F10 nearest toolbar; `mod` + Alt + T/Y insert a
-     * block before/after, + V paste styles, + X inline code (Ctrl+Alt on
-     * Windows, ⌘⌥ on macOS); `mod` + Shift + `,` settings sidebar (its
-     * `mod` + G group block sits under browser: find next).
+     * block before/after, + V paste styles, + X inline code as the published
+     * shortcuts page documents it (the editor itself binds Shift + Alt + X,
+     * below); `mod` + Shift + `,` settings sidebar, + `\` distraction-free
+     * mode (its `mod` + G group block sits under browser: find next).
+     * WordPress editors' own registrations (block editor `core/*` shortcuts,
+     * classic editor TinyMCE `access` keys): `mod` + Shift + Alt + T/Y move
+     * block up/down, + M visual/code editor, + F full screen (Ctrl+Shift+Alt
+     * on Windows, ⇧⌥⌘ on macOS); Shift + Alt + O list view (classic:
+     * numbered list), + Z remove block (classic: toolbar toggle), + P
+     * previous editor part (classic: page break), + H shortcut help, + 1–6
+     * heading level, + 0 heading to paragraph, + 7 paragraph, + X inline
+     * code, + D strikethrough; classic only: + 8/9 div/address, + C/R/L/J
+     * align center/right/left/justify, + Q blockquote, + U bulleted list,
+     * + M media, + S remove link, + W distraction-free mode (+ T read more
+     * and + A insert link are browser rows). Alt + L collapse list view.
+     * Classic toolbar focus: Alt + F8 inline toolbar, + F9 menu bar, + F11
+     * element path; `mod` + F9 contextual toolbar (TinyMCE's literal Ctrl —
+     * its macOS ⌃F9 cannot be bound). WordPress's macOS form of the
+     * Shift + Alt chords is Ctrl+Option — Ctrl is outside the macOS chord
+     * vocabulary, so only the Windows/Linux form needs a row. Rows are
+     * physical key positions while WordPress matches by the deprecated `keyCode`
+     * (the block editor when Alt is held, the classic editor always), which
+     * follows the layout — so the protection is exact on US/QWERTY only.
      */
     editing: Object.freeze([
       ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...withMod(['KeyZ'], { shift: true }),
       canonicalChord('F10', { alt: true }),
       ...withMod(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
-      ...withMod(['Comma'], { shift: true })
+      ...withMod(['Comma', 'Backslash'], { shift: true }),
+      ...withMod(['KeyT', 'KeyY', 'KeyM', 'KeyF'], { alt: true, shift: true }),
+      ...(
+        [
+          'KeyO',
+          'KeyZ',
+          'KeyP',
+          'KeyH',
+          'Digit0',
+          'Digit1',
+          'Digit2',
+          'Digit3',
+          'Digit4',
+          'Digit5',
+          'Digit6',
+          'Digit7',
+          'Digit8',
+          'Digit9',
+          'KeyX',
+          'KeyD',
+          'KeyC',
+          'KeyR',
+          'KeyL',
+          'KeyJ',
+          'KeyQ',
+          'KeyU',
+          'KeyM',
+          'KeyS',
+          'KeyW'
+        ] as const
+      ).map((code) => canonicalChord(code, { alt: true, shift: true })),
+      ...(['KeyL', 'F8', 'F9', 'F11'] as const).map((code) => canonicalChord(code, { alt: true })),
+      ...withMod(['F9'])
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
@@ -306,10 +358,14 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
     ]),
     /**
      * OS window commands: quit (⌘Q; Ctrl+Q on Linux), hide (⌘H), minimize
-     * (⌘M), close window (Alt+F4, Windows/Linux), full screen (F11).
+     * (⌘M), close window (Alt+F4, Windows/Linux), full screen (F11);
+     * `mod` + `` ` `` and `mod` + Shift + `` ` `` cycle the app's windows on
+     * macOS, and are the WordPress editors' next/previous region (Ctrl) on
+     * Windows/Linux.
      */
     system: Object.freeze([
-      ...withMod(['KeyQ', 'KeyM']),
+      ...withMod(['KeyQ', 'KeyM', 'Backquote']),
+      ...withMod(['Backquote'], { shift: true }),
       canonicalChord('F4', { alt: true }),
       canonicalChord('F11', {})
     ])
