@@ -36,7 +36,7 @@ describe('the closed push list', () => {
     for (const value of [
       'panelSearch',
       'getFdtData',
-      'relayTabAsk',
+      'getPageHeaders',
       'toString',
       'constructor',
       '',
