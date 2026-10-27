@@ -28,7 +28,7 @@ import { onMessage } from '../../lib/messaging';
 import { resolveSenderTabId } from '../../lib/messaging/sender';
 import { parseDetectionSummary, type DetectionSummary } from '../../lib/messaging/validate';
 import { getOptions, optionsStore } from '../../lib/storage/options';
-import { toolbarBadgeApi, type ToolbarBadgeApi } from './toolbar-action';
+import { TOOLBAR_NAMESPACE, toolbarBadgeApi, type ToolbarBadgeApi } from './toolbar-action';
 
 const log = createLogger('badge');
 
@@ -230,8 +230,7 @@ export function createBadgeState(): BadgeStateModel {
  */
 export function initBadge(api: ToolbarBadgeApi | null = toolbarBadgeApi()): BadgeRuntime {
   if (api === null) {
-    const expected = import.meta.env.MANIFEST_VERSION === 2 ? 'browserAction' : 'action';
-    throw new Error(`No toolbar button API (browser.${expected}) in this browser`);
+    throw new Error(`No toolbar button API (browser.${TOOLBAR_NAMESPACE}) in this browser`);
   }
   const state = new BadgeStateModelImpl();
 

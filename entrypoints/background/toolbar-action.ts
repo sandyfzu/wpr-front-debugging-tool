@@ -8,6 +8,14 @@
 import type { Browser } from 'wxt/browser';
 
 /**
+ * This build's toolbar button namespace name — the one declaring site of the
+ * manifest-version rule. A build-time constant, so each bundle folds it to its
+ * own literal and never carries the other name.
+ */
+export const TOOLBAR_NAMESPACE: 'browserAction' | 'action' =
+  import.meta.env.MANIFEST_VERSION === 2 ? 'browserAction' : 'action';
+
+/**
  * The badge writes the toolbar badge makes, in their promise forms. Both
  * namespaces expose these per tab (`tabId`) on every supported platform:
  * Firefox declares `browserAction` as an import of `action`'s schema.
@@ -44,7 +52,6 @@ export function asToolbarBadgeApi(candidate: unknown): ToolbarBadgeApi | null {
 export function toolbarBadgeApi(): ToolbarBadgeApi | null {
   // Build-time constant: the dead namespace is eliminated from each bundle.
   // Read through `unknown` — the typings mark both namespaces as always present.
-  const candidate: unknown =
-    import.meta.env.MANIFEST_VERSION === 2 ? browser.browserAction : browser.action;
+  const candidate: unknown = browser[TOOLBAR_NAMESPACE];
   return asToolbarBadgeApi(candidate);
 }

@@ -193,7 +193,7 @@ describe('the applier on an injected toolbar API (the Manifest V2 namespace shap
     return { api, calls };
   }
 
-  it('writes the same per-tab sequence the default namespace gets: tile, color, text last', async () => {
+  it('writes tile, text color, text (last), clear = empty text, through the injected API', async () => {
     const { api, calls } = recordingApi();
     await applyBadgeEffect({ kind: 'set', tabId: 4, display: dotFor(UNCACHED_WPR) }, api);
     await applyBadgeEffect({ kind: 'clear', tabId: 4 }, api);
