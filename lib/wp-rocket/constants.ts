@@ -565,7 +565,11 @@ export const CONTEXT_MENU_IDS = {
   /** Toggles the on-page detection widget for the clicked page's origin. */
   toggleDetectionWidget: 'toggleDetectionWidget',
   /** Opens the clicked page in a new tab with the cache bypass parameter. */
-  openNowProcket: 'openNowProcket'
+  openNowProcket: 'openNowProcket',
+  /** Opens the on-page command palette on the clicked page. */
+  openCommandPalette: 'openCommandPalette',
+  /** Turns all on-page UI off — or, while it is off, back on (the rescue). */
+  pageUiGate: 'pageUiGate'
 } as const;
 
 /**

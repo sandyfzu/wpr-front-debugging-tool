@@ -14,28 +14,55 @@
 
 import type { Browser } from 'wxt/browser';
 
-/** Where a registry entry may show: every page context, or the toolbar button's menu only. */
-export type MenuContext = 'all' | 'action';
+/**
+ * Every in-page context a right-click can report — the page itself, a frame,
+ * a selection, a link, an editable field, an image, a video, an audio — and
+ * nothing outside the page. Unlike `'all'`, none of these names includes the
+ * toolbar button's own menu (capped at 6 top-level rows by Chromium and
+ * Firefox alike), so page-only rows never compete for those slots. Both
+ * browsers declare every name, with the same meaning, on both manifest
+ * versions; Firefox also reports a password field as `'editable'` unless it
+ * is read-only.
+ */
+export const PAGE_CONTENT_CONTEXTS = [
+  'page',
+  'frame',
+  'selection',
+  'link',
+  'editable',
+  'image',
+  'video',
+  'audio'
+] as const;
+
+/** One in-page context name (see {@link PAGE_CONTENT_CONTEXTS}). */
+export type PageContentContext = (typeof PAGE_CONTENT_CONTEXTS)[number];
+
+/**
+ * Where a registry entry may show: every context (page and toolbar button
+ * menu), the toolbar button's menu only, or named in-page contexts.
+ */
+export type MenuContext = 'all' | 'action' | PageContentContext;
 
 /**
  * A context name `contextMenus.create` accepts on some supported manifest
  * version — picked from the browser API's own enum: a name the API does not
- * declare drops out of the union, so the table below stops type-checking.
+ * declare drops out of the union, so the registry stops type-checking.
  */
 export type PlatformMenuContext = Extract<
   `${Browser.contextMenus.ContextType}`,
-  'all' | 'action' | 'browser_action'
+  MenuContext | 'browser_action'
 >;
 
 /** A nonempty context list, as `contextMenus.create` requires. */
 export type NonEmpty<T> = [T, ...T[]];
 
 /**
- * The Manifest V2 spelling of each registry context (`'all'` keeps its name;
- * on both versions it already includes the toolbar button's menu).
+ * The registry contexts Manifest V2 spells differently; every other name
+ * (`'all'` — which already includes the toolbar button's menu on both
+ * versions — and the in-page names) keeps its spelling.
  */
-const MV2_CONTEXT_NAMES: Readonly<Record<MenuContext, PlatformMenuContext>> = {
-  all: 'all',
+const MV2_RENAMED_CONTEXTS: Readonly<Partial<Record<MenuContext, PlatformMenuContext>>> = {
   action: 'browser_action'
 };
 
@@ -59,7 +86,9 @@ export function platformMenuContext(
   if (!Number.isInteger(manifestVersion) || manifestVersion < 2) {
     throw new RangeError(`Unsupported manifest version: ${String(manifestVersion)}`);
   }
-  return manifestVersion >= ACTION_CONTEXT_MANIFEST_VERSION ? context : MV2_CONTEXT_NAMES[context];
+  return manifestVersion >= ACTION_CONTEXT_MANIFEST_VERSION
+    ? context
+    : (MV2_RENAMED_CONTEXTS[context] ?? context);
 }
 
 /**

@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Browser } from 'wxt/browser';
 import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { PAGE_CONTENT_CONTEXTS } from './menu-contexts';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import {
   dispatchMenuClickEvent,
@@ -17,6 +18,7 @@ import {
   createMenuRows,
   buildMenuCreateParams,
   menuCreateParams,
+  menuGateUpdates,
   menuTabPlacement,
   platformMenuCreateParams,
   reportMenuCreateFailure,
@@ -35,6 +37,35 @@ const SITE = 'http://127.0.0.1:8493';
  * installed declaration's literal: a changed cap fails compilation.
  */
 const ACTION_MENU_TOP_LEVEL_LIMIT: typeof Browser.contextMenus.ACTION_MENU_TOP_LEVEL_LIMIT = 6;
+
+/** The page-only rows' contexts as the browser receives them (both manifest versions). */
+const PAGE_ONLY = [...PAGE_CONTENT_CONTEXTS];
+
+/** The two page-only rows appended after the six shipped ones, gate on. */
+const PAGE_ONLY_ROWS_ON = [
+  {
+    id: CONTEXT_MENU_IDS.openCommandPalette,
+    title: 'Open command palette',
+    contexts: PAGE_ONLY,
+    documentUrlPatterns: [...URL_PATTERNS]
+  },
+  {
+    id: CONTEXT_MENU_IDS.pageUiGate,
+    title: 'Turn off all on-page UI',
+    contexts: PAGE_ONLY,
+    documentUrlPatterns: [...URL_PATTERNS]
+  }
+];
+
+/**
+ * Whether a row shows in the toolbar button's own menu (`'all'` includes it
+ * on both browsers).
+ *
+ * @param contexts A creation row's contexts.
+ */
+function reachesActionMenu(contexts: readonly string[]): boolean {
+  return contexts.some((context) => ['all', 'action', 'browser_action'].includes(context));
+}
 
 describe('resolveMenuClickInfo', () => {
   it("keeps the event's own pageUrl over the tab URL", () => {
@@ -156,6 +187,8 @@ describe('menuActionFor', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.updateKnownConflictsDB)).toBe('refresh-database');
     expect(menuActionFor(CONTEXT_MENU_IDS.toggleDetectionWidget)).toBe('toggle-detection-widget');
     expect(menuActionFor(CONTEXT_MENU_IDS.openNowProcket)).toBe('open-nowprocket');
+    expect(menuActionFor(CONTEXT_MENU_IDS.openCommandPalette)).toBe('open-command-palette');
+    expect(menuActionFor(CONTEXT_MENU_IDS.pageUiGate)).toBe('page-ui-gate');
   });
 
   it('leaves foreign or numeric ids unrouted', () => {
@@ -234,14 +267,148 @@ describe('menuCreateParams', () => {
         title: 'Open ?nowprocket',
         contexts: ['all'],
         documentUrlPatterns: [...URL_PATTERNS]
-      }
+      },
+      ...PAGE_ONLY_ROWS_ON
     ]);
   });
 
-  it("keeps the action menu's top-level rows within Chromium's cap", () => {
-    // Every row reaches it: the registry admits only 'all' (which includes
-    // the action menu) and 'action' contexts, all top-level.
-    expect(menuCreateParams().length).toBeLessThanOrEqual(ACTION_MENU_TOP_LEVEL_LIMIT);
+  it("keeps the action menu's top-level rows within the browsers' cap", () => {
+    // All rows are top-level; only 'all'/'action' ones reach the action menu.
+    for (const rows of [menuCreateParams(), platformMenuCreateParams(2)]) {
+      const reaching = rows.filter((row) => reachesActionMenu(row.contexts));
+      expect(reaching.length).toBeLessThanOrEqual(ACTION_MENU_TOP_LEVEL_LIMIT);
+    }
+  });
+
+  it('keeps the page-only rows out of the action menu on both manifest versions', () => {
+    const pageOnly: string[] = [CONTEXT_MENU_IDS.openCommandPalette, CONTEXT_MENU_IDS.pageUiGate];
+    for (const rows of [menuCreateParams(), platformMenuCreateParams(2), menuCreateParams(false)]) {
+      for (const row of rows.filter((entry) => pageOnly.includes(entry.id))) {
+        expect(row.contexts, row.id).toEqual(PAGE_ONLY);
+        expect(reachesActionMenu(row.contexts), row.id).toBe(false);
+      }
+    }
+  });
+
+  it('creates the rows in the gate-off state: page UI rows disabled, the rescue retitled', () => {
+    // Pinned literally: what a recreation while on-page UI is off creates.
+    expect(menuCreateParams(false)).toEqual([
+      {
+        id: CONTEXT_MENU_IDS.wprSideBySide,
+        title: 'Open Side By Side',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS],
+        enabled: false
+      },
+      {
+        id: CONTEXT_MENU_IDS.psiSideBySide,
+        title: 'Open Side By Side Performance',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS],
+        enabled: false
+      },
+      {
+        id: CONTEXT_MENU_IDS.exclusionBuilder,
+        title: 'Exclusion Builder',
+        contexts: ['action'],
+        documentUrlPatterns: [...URL_PATTERNS],
+        enabled: false
+      },
+      {
+        id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
+        title: 'Update Known Conflicts Database',
+        contexts: ['action']
+      },
+      {
+        id: CONTEXT_MENU_IDS.toggleDetectionWidget,
+        title: 'Toggle the detection widget on this site',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS],
+        enabled: false
+      },
+      {
+        id: CONTEXT_MENU_IDS.openNowProcket,
+        title: 'Open ?nowprocket',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.openCommandPalette,
+        title: 'Open command palette',
+        contexts: PAGE_ONLY,
+        documentUrlPatterns: [...URL_PATTERNS],
+        enabled: false
+      },
+      {
+        id: CONTEXT_MENU_IDS.pageUiGate,
+        title: 'Turn on all on-page UI',
+        contexts: PAGE_ONLY,
+        documentUrlPatterns: [...URL_PATTERNS]
+      }
+    ]);
+    // Enabled is the API's default: gate-on rows never carry the key.
+    expect(menuCreateParams(true).some((row) => 'enabled' in row)).toBe(false);
+    expect(menuCreateParams()).toEqual(menuCreateParams(true));
+  });
+
+  it('leaves only the rescue row enabled among the on-page UI rows while off', () => {
+    const enabledIds = menuCreateParams(false)
+      .filter((row) => row.enabled !== false)
+      .map((row) => row.id);
+    // The refresh and the cache-bypassed tab open no on-page UI: the gate keeps them.
+    expect(enabledIds).toEqual([
+      CONTEXT_MENU_IDS.updateKnownConflictsDB,
+      CONTEXT_MENU_IDS.openNowProcket,
+      CONTEXT_MENU_IDS.pageUiGate
+    ]);
+  });
+});
+
+describe('menuGateUpdates', () => {
+  it('turning off disables the on-page UI rows and retitles the gate row to the rescue', () => {
+    expect(menuGateUpdates(false)).toEqual([
+      { id: CONTEXT_MENU_IDS.wprSideBySide, props: { enabled: false } },
+      { id: CONTEXT_MENU_IDS.psiSideBySide, props: { enabled: false } },
+      { id: CONTEXT_MENU_IDS.exclusionBuilder, props: { enabled: false } },
+      { id: CONTEXT_MENU_IDS.toggleDetectionWidget, props: { enabled: false } },
+      { id: CONTEXT_MENU_IDS.openCommandPalette, props: { enabled: false } },
+      { id: CONTEXT_MENU_IDS.pageUiGate, props: { title: 'Turn on all on-page UI' } }
+    ]);
+  });
+
+  it('turning on re-enables the same rows and restores the gate row title', () => {
+    expect(menuGateUpdates(true)).toEqual([
+      { id: CONTEXT_MENU_IDS.wprSideBySide, props: { enabled: true } },
+      { id: CONTEXT_MENU_IDS.psiSideBySide, props: { enabled: true } },
+      { id: CONTEXT_MENU_IDS.exclusionBuilder, props: { enabled: true } },
+      { id: CONTEXT_MENU_IDS.toggleDetectionWidget, props: { enabled: true } },
+      { id: CONTEXT_MENU_IDS.openCommandPalette, props: { enabled: true } },
+      { id: CONTEXT_MENU_IDS.pageUiGate, props: { title: 'Turn off all on-page UI' } }
+    ]);
+  });
+
+  it("never touches the rows the gate keeps, nor the rescue row's enabled state", () => {
+    for (const uiEnabled of [true, false]) {
+      const updates = menuGateUpdates(uiEnabled);
+      const ids = updates.map((update) => update.id);
+      expect(ids).not.toContain(CONTEXT_MENU_IDS.updateKnownConflictsDB);
+      expect(ids).not.toContain(CONTEXT_MENU_IDS.openNowProcket);
+      const rescue = updates.find((update) => update.id === CONTEXT_MENU_IDS.pageUiGate);
+      expect(rescue?.props).not.toHaveProperty('enabled');
+    }
+  });
+
+  it('ends in the state a recreation with the same gate creates', () => {
+    for (const uiEnabled of [true, false]) {
+      const created = menuCreateParams(uiEnabled);
+      for (const update of menuGateUpdates(uiEnabled)) {
+        const row = created.find((entry) => entry.id === update.id);
+        if (update.props.title !== undefined) expect(row?.title).toBe(update.props.title);
+        if (update.props.enabled !== undefined) {
+          expect(row?.enabled ?? true).toBe(update.props.enabled);
+        }
+      }
+    }
   });
 });
 
@@ -285,7 +452,8 @@ describe('platformMenuCreateParams', () => {
         title: 'Open ?nowprocket',
         contexts: ['all'],
         documentUrlPatterns: [...URL_PATTERNS]
-      }
+      },
+      ...PAGE_ONLY_ROWS_ON
     ]);
     expect(rows).toEqual(menuCreateParams());
     expect(rows.map((row) => Object.keys(row))).toEqual(
@@ -307,6 +475,18 @@ describe('platformMenuCreateParams', () => {
     expect(JSON.stringify(rows)).not.toContain('"action"');
   });
 
+  it('carries the gate state through the Manifest V2 translation', () => {
+    const rows = platformMenuCreateParams(2, false);
+    // Same titles and enabled states row by row; only toolbar contexts are renamed.
+    expect(rows.map((row) => [row.id, row.title, row.enabled])).toEqual(
+      menuCreateParams(false).map((row) => [row.id, row.title, row.enabled])
+    );
+    expect(rows.find((row) => row.id === CONTEXT_MENU_IDS.pageUiGate)?.title).toBe(
+      'Turn on all on-page UI'
+    );
+    expect(platformMenuCreateParams(3, false)).toEqual(menuCreateParams(false));
+  });
+
   it('refuses an unsupported manifest version', () => {
     expect(() => platformMenuCreateParams(1)).toThrow(RangeError);
   });
@@ -318,6 +498,7 @@ describe('buildMenuCreateParams', () => {
     // Vitest serves `import.meta.env` defines as strings; builds inline the number.
     expect(String(import.meta.env.MANIFEST_VERSION)).toBe('3');
     expect(buildMenuCreateParams()).toEqual(menuCreateParams());
+    expect(buildMenuCreateParams(false)).toEqual(menuCreateParams(false));
   });
 });
 
@@ -429,6 +610,10 @@ interface Recorded {
   openedUrls: Array<{ url: string; windowId: number | undefined }>;
   /** Each opened tab's full placement, in open order. */
   placements: MenuTabPlacement[];
+  /** Gate entry clicks that reached the toggle. */
+  gateToggles: number;
+  /** The rejection the next gate toggle throws (undefined: it resolves `false`). */
+  gateFailure?: Error;
 }
 
 function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
@@ -438,7 +623,8 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
     refreshes: 0,
     toggles: [],
     openedUrls: [],
-    placements: []
+    placements: [],
+    gateToggles: 0
   };
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => {
@@ -466,6 +652,12 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
       recorded.openedUrls.push({ url, windowId: placement.windowId });
       recorded.placements.push(placement);
       return Promise.resolve({ id: 100 });
+    },
+    togglePageUiGate: () => {
+      recorded.gateToggles += 1;
+      return recorded.gateFailure === undefined
+        ? Promise.resolve(false)
+        : Promise.reject(recorded.gateFailure);
     }
   };
   return { deps, recorded };
@@ -820,6 +1012,67 @@ describe('dispatchMenuClickEvent', () => {
       expect(JSON.stringify([warn.mock.calls, error.mock.calls])).not.toContain(SECRET);
     } finally {
       warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it('the command palette entry sends its request to the clicked tab', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openCommandPalette, pageUrl: `${SITE}/fdt/` },
+      { id: 6 },
+      deps
+    );
+    expect(recorded.sent).toEqual([{ type: 'openCommandPalette', target: { tabId: 6 } }]);
+    expect(recorded.gateToggles).toBe(0);
+    expect(recorded.opened).toHaveLength(0);
+  });
+
+  it('a palette send without a receiver (gate off, no script) logs and resolves', async () => {
+    const { deps } = recordingDeps();
+    const failure = new Error('Could not establish connection. Receiving end does not exist.');
+    deps.sendToTab = (): Promise<never> => Promise.reject(failure);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(
+        dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.openCommandPalette }, { id: 6 }, deps)
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(
+        '[WPR FDT] [context-menus] Command palette send failed — content script absent or on-page UI off on this page',
+        { action: 'open-command-palette', tabId: 6, cause: failure }
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the gate entry flips on-page UI once and sends nothing', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.pageUiGate, pageUrl: `${SITE}/fdt/` },
+      { id: 6 },
+      deps
+    );
+    expect(recorded.gateToggles).toBe(1);
+    expect(recorded.sent).toHaveLength(0);
+    expect(recorded.toggles).toHaveLength(0);
+  });
+
+  it('a failed gate write is an error-level branch, never an escaping rejection', async () => {
+    const { deps, recorded } = recordingDeps();
+    recorded.gateFailure = new Error('QUOTA_BYTES_PER_ITEM quota exceeded');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(
+        dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.pageUiGate }, { id: 6 }, deps)
+      ).resolves.toBeUndefined();
+      expect(error).toHaveBeenCalledWith('[WPR FDT] [context-menus] Switching on-page UI failed', {
+        action: 'page-ui-gate',
+        tabId: 6,
+        cause: recorded.gateFailure
+      });
+    } finally {
       error.mockRestore();
     }
   });
