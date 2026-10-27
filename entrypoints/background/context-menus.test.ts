@@ -14,12 +14,16 @@ import {
   menuActionFor,
   menuBypassUrl,
   menuClickOrigin,
+  createMenuRows,
+  buildMenuCreateParams,
   menuCreateParams,
   menuTabPlacement,
+  platformMenuCreateParams,
   reportMenuCreateFailure,
   resolveMenuClickInfo,
   type MenuClickDeps,
-  type MenuTabPlacement
+  type MenuTabPlacement,
+  type PlatformMenuCreateParams
 } from './context-menus';
 
 /** The dockerized site's origin (the e2e site's URL host form in unit tests). */
@@ -238,6 +242,177 @@ describe('menuCreateParams', () => {
     // Every row reaches it: the registry admits only 'all' (which includes
     // the action menu) and 'action' contexts, all top-level.
     expect(menuCreateParams().length).toBeLessThanOrEqual(ACTION_MENU_TOP_LEVEL_LIMIT);
+  });
+});
+
+describe('platformMenuCreateParams', () => {
+  it('hands a Manifest V3 browser exactly the registry rows (Chromium unchanged)', () => {
+    // Pinned literally, not derived: ids, titles, contexts, patterns, order
+    // and key order are what the Chromium build has always created.
+    const rows = platformMenuCreateParams(3);
+    expect(rows).toEqual([
+      {
+        id: CONTEXT_MENU_IDS.wprSideBySide,
+        title: 'Open Side By Side',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.psiSideBySide,
+        title: 'Open Side By Side Performance',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.exclusionBuilder,
+        title: 'Exclusion Builder',
+        contexts: ['action'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.updateKnownConflictsDB,
+        title: 'Update Known Conflicts Database',
+        contexts: ['action']
+      },
+      {
+        id: CONTEXT_MENU_IDS.toggleDetectionWidget,
+        title: 'Toggle the detection widget on this site',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.openNowProcket,
+        title: 'Open ?nowprocket',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
+      }
+    ]);
+    expect(rows).toEqual(menuCreateParams());
+    expect(rows.map((row) => Object.keys(row))).toEqual(
+      menuCreateParams().map((row) => Object.keys(row))
+    );
+    expect(JSON.stringify(rows)).not.toContain('browser_action');
+  });
+
+  it("names the toolbar rows 'browser_action' on Manifest V2, all else unchanged", () => {
+    const rows = platformMenuCreateParams(2);
+    const expected = menuCreateParams().map((row) => ({
+      ...row,
+      contexts: row.contexts.map((context) => (context === 'action' ? 'browser_action' : context))
+    }));
+    expect(rows).toEqual(expected);
+    expect(
+      rows.filter((row) => row.contexts.includes('browser_action')).map((row) => row.id)
+    ).toEqual([CONTEXT_MENU_IDS.exclusionBuilder, CONTEXT_MENU_IDS.updateKnownConflictsDB]);
+    expect(JSON.stringify(rows)).not.toContain('"action"');
+  });
+
+  it('refuses an unsupported manifest version', () => {
+    expect(() => platformMenuCreateParams(1)).toThrow(RangeError);
+  });
+});
+
+describe('buildMenuCreateParams', () => {
+  it('hands a Manifest V3 build the registry rows untouched', () => {
+    // The test build is the Chromium (MV3) one: this pins its creation wiring.
+    // Vitest serves `import.meta.env` defines as strings; builds inline the number.
+    expect(String(import.meta.env.MANIFEST_VERSION)).toBe('3');
+    expect(buildMenuCreateParams()).toEqual(menuCreateParams());
+  });
+});
+
+describe('createMenuRows', () => {
+  /** A create stub recording each call; `throwFor` ids throw synchronously. */
+  function stubCreate(throwFor: readonly string[] = []): {
+    create: (params: PlatformMenuCreateParams, callback: () => void) => void;
+    created: string[];
+    callbacks: Array<() => void>;
+  } {
+    const created: string[] = [];
+    const callbacks: Array<() => void> = [];
+    return {
+      created,
+      callbacks,
+      create: (params, callback) => {
+        if (throwFor.includes(params.id)) throw new Error(`Bad context for ${params.id}`);
+        created.push(params.id);
+        callbacks.push(callback);
+      }
+    };
+  }
+
+  it('creates every row in order and reports nothing refused', () => {
+    const stub = stubCreate();
+    const rows = platformMenuCreateParams(3);
+    expect(createMenuRows(rows, stub.create, {})).toEqual([]);
+    expect(stub.created).toEqual(rows.map((row) => row.id));
+  });
+
+  it('keeps creating the rows after one that throws, logging its id and cause', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const rows = platformMenuCreateParams(3);
+      const stub = stubCreate([CONTEXT_MENU_IDS.exclusionBuilder]);
+      expect(createMenuRows(rows, stub.create, {})).toEqual([CONTEXT_MENU_IDS.exclusionBuilder]);
+      expect(stub.created).toEqual(
+        rows.map((row) => row.id).filter((id) => id !== CONTEXT_MENU_IDS.exclusionBuilder)
+      );
+      expect(error).toHaveBeenCalledOnce();
+      expect(error).toHaveBeenCalledWith('[WPR FDT] [context-menus] Menu entry creation refused', {
+        id: CONTEXT_MENU_IDS.exclusionBuilder,
+        cause: new Error(`Bad context for ${CONTEXT_MENU_IDS.exclusionBuilder}`)
+      });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  /** Registry ids in order: the cases below name rows by position. */
+  const ids = platformMenuCreateParams(3).map((row) => row.id);
+
+  it.each([
+    { name: 'the first row', throwing: [0] },
+    { name: 'the last row', throwing: [ids.length - 1] },
+    { name: 'every row', throwing: ids.map((_, index) => index) },
+    { name: 'two non-adjacent rows', throwing: [1, 4] }
+  ])('isolates $name throwing: refused in order, the rest created', ({ throwing }) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const refusedIds = throwing.map((index) => ids[index] ?? '');
+      const stub = stubCreate(refusedIds);
+      let refused: string[] = [];
+      expect(() => {
+        refused = createMenuRows(platformMenuCreateParams(3), stub.create, {});
+      }).not.toThrow();
+      expect(refused).toEqual(refusedIds);
+      expect(stub.created).toEqual(ids.filter((id) => !refusedIds.includes(id)));
+      expect(error).toHaveBeenCalledTimes(refusedIds.length);
+      expect(error.mock.calls.map((call) => (call[1] as { id: string }).id)).toEqual(refusedIds);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("reads each row's lastError in its own callback, with that row's id", () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const runtime: { lastError?: { message: string } | null } = {};
+      const stub = stubCreate();
+      const rows = platformMenuCreateParams(2);
+      createMenuRows(rows, stub.create, runtime);
+      // Success on Firefox's spelling stays silent.
+      runtime.lastError = null;
+      stub.callbacks[0]?.();
+      expect(warn).not.toHaveBeenCalled();
+      runtime.lastError = { message: 'Duplicate id' };
+      stub.callbacks[3]?.();
+      expect(warn).toHaveBeenCalledWith('[WPR FDT] [context-menus] Menu entry creation skipped', {
+        id: rows[3]?.id,
+        message: 'Duplicate id'
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
