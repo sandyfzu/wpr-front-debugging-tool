@@ -223,6 +223,26 @@ describe('lifetime — lazy listeners, no leaks', () => {
     expect(first.posted).toHaveLength(0);
   });
 
+  it('refuses (closes) a subscribing port when the push listeners fail to start, mapping nothing', () => {
+    const w = relayWorld();
+    w.listen.mockImplementationOnce(() => {
+      throw new Error('cannot register');
+    });
+    const port = w.panel(4);
+    expect(port.disconnects).toBe(1);
+    expect(port.listenerCounts()).toEqual({ message: 0, disconnect: 0 });
+    expect(w.relay.subscriberCount()).toBe(0);
+    expect(w.relay.isListening()).toBe(false);
+    expect(w.log.error).toHaveBeenCalledWith('Push listeners failed to start', expect.any(Error));
+    // The next subscription starts them afresh and is served.
+    const next = w.panel(4);
+    expect(next.disconnects).toBe(0);
+    expect(w.listen).toHaveBeenCalledTimes(2);
+    w.push('notifyPanelReload', page(4));
+    expect(next.posted).toEqual([{ tabId: 4, push: 'notifyPanelReload' }]);
+    expect(port.posted).toHaveLength(0);
+  });
+
   it('a connected-then-closed port that never subscribed leaves nothing behind', () => {
     const w = relayWorld();
     const port = portDouble({ sender: PANEL });

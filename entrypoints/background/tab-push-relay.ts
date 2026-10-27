@@ -79,11 +79,17 @@ export function createTabPushRelay(deps: TabPushRelayDeps): TabPushRelay {
     return count;
   };
 
+  /**
+   * Map `port` under `tabId`, starting the push listeners first: a start that
+   * throws leaves nothing mapped (no subscriber without listeners behind it).
+   *
+   * @throws {@link Error} The listener start's error; the caller refuses the port.
+   */
   const subscribe = (tabId: number, port: IncomingPushPort): void => {
+    stopListening ??= deps.listen(forward);
     const ports = subscribers.get(tabId) ?? new Set<IncomingPushPort>();
     ports.add(port);
     subscribers.set(tabId, ports);
-    stopListening ??= deps.listen(forward);
   };
 
   const unsubscribe = (tabId: number, port: IncomingPushPort): void => {
@@ -157,8 +163,15 @@ export function createTabPushRelay(deps: TabPushRelayDeps): TabPushRelay {
           refuse('malformed subscription');
           return;
         }
+        try {
+          subscribe(subscribed, port);
+        } catch (cause) {
+          // Refused, so the panel's far-side close reports it (never a silent dead port).
+          deps.log.error('Push listeners failed to start', cause);
+          refuse('the push listeners could not start');
+          return;
+        }
         tabId = subscribed;
-        subscribe(subscribed, port);
       } catch (cause) {
         deps.log.error('Push subscription failed', cause);
       }
@@ -182,7 +195,7 @@ export function createTabPushRelay(deps: TabPushRelayDeps): TabPushRelay {
  *
  * @param forward Where each received push goes.
  * @returns The stop handle (unregisters all three).
- * @throws The failed registration's error, after the rollback.
+ * @throws {@link Error} The failed registration's error, after the rollback.
  */
 export function listenForTabPushes(forward: PushForward): () => void {
   const removers: (() => void)[] = [];
