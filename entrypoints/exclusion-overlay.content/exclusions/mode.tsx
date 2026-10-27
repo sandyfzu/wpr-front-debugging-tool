@@ -8,7 +8,7 @@ import { createEffect, createMemo, createSignal, For, on, Show, type JSX } from 
 import ChevronDown from 'lucide-solid/icons/chevron-down';
 import Crosshair from 'lucide-solid/icons/crosshair';
 import List from 'lucide-solid/icons/list';
-import { LANE_COPY, commitAnnouncement, viewCopy } from '../copy';
+import { LANE_COPY, candidateAnnouncement, commitAnnouncement, viewCopy } from '../copy';
 import type { OverlayModePanelProps } from '../modes';
 import { Candidates } from './candidates';
 import { laneReport } from './counts';
@@ -102,11 +102,13 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
     shell.pick(pickButton, {
       label: (pick) => LANE_COPY[pick.candidate.lane].label,
       onPick: (pick) => {
-        const added = c.addCandidate(pick.candidate.lane, pick.candidate.row, true);
+        const outcome = c.addCandidate(pick.candidate.lane, pick.candidate.row, true);
         shell.announce(
-          added
-            ? `Added ${pick.candidate.subject} to ${LANE_COPY[pick.candidate.lane].label}`
-            : `${pick.candidate.subject} is already in ${LANE_COPY[pick.candidate.lane].label}`
+          candidateAnnouncement(
+            outcome,
+            pick.candidate.subject,
+            LANE_COPY[pick.candidate.lane].label
+          )
         );
       }
     });
@@ -118,9 +120,10 @@ export function ExclusionsConfig(props: OverlayModePanelProps): JSX.Element {
       c.addCandidate(candidate.lane, candidate.row, true);
       return;
     }
-    if (c.addCandidate(candidate.lane, candidate.row, false)) {
-      shell.announce(`Added ${candidate.subject} to ${LANE_COPY[candidate.lane].label}`);
-    }
+    const outcome = c.addCandidate(candidate.lane, candidate.row, false);
+    shell.announce(
+      candidateAnnouncement(outcome, candidate.subject, LANE_COPY[candidate.lane].label)
+    );
   };
 
   return (

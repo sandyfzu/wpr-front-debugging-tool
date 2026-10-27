@@ -16,6 +16,7 @@ import {
   UNAVAILABLE_COPY,
   appliedRowWarningNote,
   appliedWarningLine,
+  candidateAnnouncement,
   commitAnnouncement,
   noteToText,
   rowWarningNote,
@@ -208,6 +209,27 @@ describe('sessionIndicator', () => {
       'Not intercepted',
       'Can’t verify'
     ]);
+  });
+});
+
+describe('candidateAnnouncement', () => {
+  const words = (outcome: Parameters<typeof candidateAnnouncement>[0]): string =>
+    candidateAnnouncement(outcome, 'gtag.js', 'Delay JavaScript');
+
+  it('says "already in" only when a row holds the candidate', () => {
+    expect(words('added')).toBe('Added gtag.js to Delay JavaScript');
+    expect(words('present')).toBe('gtag.js is already in Delay JavaScript');
+  });
+
+  it('names the real reason when nothing was added', () => {
+    expect(words('dropped')).toBe(
+      "gtag.js not added: WP Rocket's save would drop it from Delay JavaScript"
+    );
+    expect(words('full')).toBe('gtag.js not added: Delay JavaScript holds 500 rows at most');
+    expect(words('held')).toBe("gtag.js not added: the exclusions can't be edited right now");
+    for (const outcome of ['dropped', 'full', 'held'] as const) {
+      expect(words(outcome)).not.toMatch(/already in/);
+    }
   });
 });
 

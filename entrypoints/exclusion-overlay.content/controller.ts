@@ -41,6 +41,7 @@ import {
   sameSet,
   setDisable,
   updateRow,
+  type CandidateOutcome,
   type Committed,
   type Draft,
   type DraftRow,
@@ -77,6 +78,9 @@ export const AUTOSAVE_DELAY_MS = 800;
  * reload, so the reload normally starts within a frame or two).
  */
 export const RELOAD_STALL_MS = 8_000;
+
+/** What adding a candidate did, or `held`: the draft is not editable now (nothing done). */
+export type CandidateAddOutcome = CandidateOutcome | 'held';
 
 /** The draft's save state, as the footer shows it. */
 export type SaveState =
@@ -325,9 +329,9 @@ export interface OverlayController {
    *
    * @param focus Move focus to its row (a pointer pick) or leave focus where
    *   it is (adding from the page list, several in a row).
-   * @returns Whether a row was added (false: already there, or the lane is full).
+   * @returns What happened to it; `held` when the draft is not editable now.
    */
-  addCandidate(lane: LaneKey, row: string, focus: boolean): boolean;
+  addCandidate(lane: LaneKey, row: string, focus: boolean): CandidateAddOutcome;
   /** Stop timers (call on teardown). */
   dispose(): void;
 }
@@ -1170,10 +1174,10 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
       setDraft(setDisable(draft(), key, value));
     },
     addCandidate: (lane, row, focus) => {
-      if (!editable()) return false;
+      if (!editable()) return 'held';
       const added = addCandidate(draft(), lane, row, nextId);
       const id = added.id;
-      if (added.added && id !== null) {
+      if (added.outcome === 'added' && id !== null) {
         const at = added.draft.rows[lane].findIndex((candidate) => candidate.id === id);
         batch(() => {
           noteEdit(lane, null);
@@ -1184,7 +1188,7 @@ export function createOverlayController(deps: OverlayControllerDeps): OverlayCon
         });
       }
       if (focus && added.id !== null) setFocusRequest({ lane, id: added.id });
-      return added.added;
+      return added.outcome;
     },
     dispose: () => {
       disposed = true;

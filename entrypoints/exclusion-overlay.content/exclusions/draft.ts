@@ -634,13 +634,19 @@ export function setDisable(draft: Draft, key: ToggleKey, value: boolean): Draft 
     : { ...draft, disable: { ...draft.disable, [key]: value } };
 }
 
+/**
+ * What adding a candidate did: `added` (a new row), `present` (a row
+ * already holds its stored form), `dropped` (WP Rocket's save drops it),
+ * `full` (the lane is at its row cap).
+ */
+export type CandidateOutcome = 'added' | 'present' | 'dropped' | 'full';
+
 /** The result of adding a picked candidate. */
 export interface CandidateAdded {
   readonly draft: Draft;
   /** The row holding the candidate (new, or the one already holding it); null when none. */
   readonly id: string | null;
-  /** `false` when the row already existed, the save drops it, or the lane is full. */
-  readonly added: boolean;
+  readonly outcome: CandidateOutcome;
   /** What WP Rocket's save does with the candidate (its row note). */
   readonly diff: StoredRowDiff;
 }
@@ -686,7 +692,8 @@ function laneKeys(draft: Draft, lane: LaneKey): Map<string, string> {
 
 /**
  * Add a candidate row to a lane in its stored form, unless the lane already
- * holds it once stored (picking twice never duplicates) or the save drops it.
+ * holds it once stored (picking twice never duplicates), the save drops it,
+ * or the lane is full.
  *
  * @param draft The draft.
  * @param lane The lane the candidate belongs to.
@@ -706,12 +713,12 @@ export function addCandidate(
   // (Automatic Lazy Rendering), yet a candidate is never added twice.
   const key = storedRowKey(feature, text);
   const holder = key === null ? undefined : keys.get(key);
-  if (holder !== undefined) return { draft, id: holder, added: false, diff };
+  if (holder !== undefined) return { draft, id: holder, outcome: 'present', diff };
   const stored = storedText(diff);
-  if (stored === null) return { draft, id: null, added: false, diff };
+  if (stored === null) return { draft, id: null, outcome: 'dropped', diff };
   const inserted = insertRows(draft, lane, [stored], null, nextId);
   const id = inserted.ids[0] ?? null;
-  return { draft: inserted.draft, id, added: id !== null, diff };
+  return { draft: inserted.draft, id, outcome: id === null ? 'full' : 'added', diff };
 }
 
 /**

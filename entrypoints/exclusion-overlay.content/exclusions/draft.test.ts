@@ -194,18 +194,24 @@ describe('row edits', () => {
 
   it('adds a candidate once', () => {
     const added = addCandidate(start, 'lazyload', 'logo.png', nextId);
-    expect(added).toMatchObject({ added: true, diff: { state: 'unchanged', typed: 'logo.png' } });
+    expect(added).toMatchObject({
+      outcome: 'added',
+      diff: { state: 'unchanged', typed: 'logo.png' }
+    });
     const again = addCandidate(added.draft, 'lazyload', 'logo.png', nextId);
-    expect(again).toMatchObject({ draft: added.draft, id: added.id, added: false });
+    expect(again).toMatchObject({ draft: added.draft, id: added.id, outcome: 'present' });
     expect(again.diff).toMatchObject({ state: 'dropped', reason: 'duplicate' });
   });
 
   it('adds an Automatic Lazy Rendering candidate once, though its save keeps duplicates', () => {
     const added = addCandidate(start, 'lazyRender', 'alr-two', nextId);
-    expect(added).toMatchObject({ added: true, diff: { state: 'unchanged', typed: 'alr-two' } });
+    expect(added).toMatchObject({
+      outcome: 'added',
+      diff: { state: 'unchanged', typed: 'alr-two' }
+    });
     // WP Rocket keeps a duplicate lazy-render row; picking it again still finds the first.
     const again = addCandidate(added.draft, 'lazyRender', 'alr-two', nextId);
-    expect(again).toMatchObject({ draft: added.draft, id: added.id, added: false });
+    expect(again).toMatchObject({ draft: added.draft, id: added.id, outcome: 'present' });
     expect(again.draft.rows.lazyRender.filter((row) => row.text === 'alr-two')).toHaveLength(1);
   });
 
@@ -214,23 +220,47 @@ describe('row edits', () => {
     expect(added.draft.rows.lazyload.at(-1)?.text).toBe('hero.webp');
     const typed = updateRow(start, 'lazyload', start.rows.lazyload[0]?.id ?? '', 'logo.png  ');
     const again = addCandidate(typed, 'lazyload', 'logo.png', nextId);
-    expect(again).toMatchObject({ draft: typed, id: start.rows.lazyload[0]?.id, added: false });
+    expect(again).toMatchObject({
+      draft: typed,
+      id: start.rows.lazyload[0]?.id,
+      outcome: 'present'
+    });
   });
 
   it('adds a candidate in its stored form, never one the save drops, never twice once stored', () => {
     const typed = insertRows(start, 'delayJs', ['x%41y.js'], null, nextId).draft;
     // `xy.js` is how WP Rocket stores `x%41y.js` (the row is still typed).
     const held = addCandidate(typed, 'delayJs', 'xy.js', nextId);
-    expect(held).toMatchObject({ draft: typed, added: false });
+    expect(held).toMatchObject({ draft: typed, outcome: 'present' });
     expect(held.id).toBe(typed.rows.delayJs.at(-1)?.id);
     const star = addCandidate(start, 'delayJs', 'a.*', nextId);
     expect(star.draft.rows.delayJs.at(-1)?.text).toBe('a(.*)');
-    expect(addCandidate(star.draft, 'delayJs', 'a*', nextId).added).toBe(false);
+    expect(addCandidate(star.draft, 'delayJs', 'a*', nextId).outcome).toBe('present');
     const literal = addCandidate(start, 'lazyload', 'a.*', nextId);
-    expect(addCandidate(literal.draft, 'lazyload', 'a*', nextId).added).toBe(true);
+    expect(addCandidate(literal.draft, 'lazyload', 'a*', nextId).outcome).toBe('added');
     const dropped = addCandidate(start, 'delayJs', '(', nextId);
-    expect(dropped).toMatchObject({ draft: start, id: null, added: false });
+    expect(dropped).toMatchObject({ draft: start, id: null, outcome: 'dropped' });
     expect(dropped.diff).toMatchObject({ state: 'dropped', reason: 'invalid-pattern' });
+  });
+
+  it('adds nothing to a full lane, saying so (`full`), yet still finds a held row there', () => {
+    const rows = Array.from(
+      { length: EXCLUSION_SET_LIMITS.rowsPerFeature },
+      (_, n) => `r${String(n)}`
+    );
+    const full = insertRows(
+      draftFromSet(EMPTY_EXCLUSION_SET, nextId),
+      'lazyload',
+      rows,
+      null,
+      nextId
+    ).draft;
+    expect(addCandidate(full, 'lazyload', 'new.png', nextId)).toMatchObject({
+      draft: full,
+      id: null,
+      outcome: 'full'
+    });
+    expect(addCandidate(full, 'lazyload', 'r7', nextId).outcome).toBe('present');
   });
 
   it('answers "already held" per lane by the candidate\'s stored form', () => {

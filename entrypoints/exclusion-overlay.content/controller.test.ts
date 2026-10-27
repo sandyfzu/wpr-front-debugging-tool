@@ -734,9 +734,9 @@ describe('editing and autosave', () => {
 
   it('adds a candidate once, focusing its row only when asked', async () => {
     const { controller } = await started(fakePort({ state: 'inactive' }).port);
-    expect(controller.addCandidate('delayJs', 'gtag', false)).toBe(true);
+    expect(controller.addCandidate('delayJs', 'gtag', false)).toBe('added');
     expect(controller.focusRequest()).toBeNull();
-    expect(controller.addCandidate('delayJs', 'gtag', true)).toBe(false);
+    expect(controller.addCandidate('delayJs', 'gtag', true)).toBe('present');
     expect(controller.draft().rows.delayJs).toHaveLength(1);
     expect(controller.focusRequest()?.lane).toBe('delayJs');
   });
@@ -826,7 +826,7 @@ describe('editing and autosave', () => {
       'b(.*)',
       'c*'
     ]);
-    expect(controller.addCandidate('delayJs', 'x%41.js', false)).toBe(true);
+    expect(controller.addCandidate('delayJs', 'x%41.js', false)).toBe('added');
     expect(controller.draft().rows.delayJs.at(-1)?.text).toBe('x.js');
     expect(controller.notes().latest?.news).toEqual([
       expect.objectContaining({ diff: { state: 'stored-as', stored: 'x.js', typed: 'x%41.js' } })
@@ -1126,7 +1126,7 @@ describe('audit round 1', () => {
     controller.removeRow('delayJs', id ?? '');
     controller.setDisable('delayJs', true);
     controller.pasteRows('delayJs', id ?? '', 'a\nb', { start: 0, end: 0 });
-    expect(controller.addCandidate('delayJs', 'x', false)).toBe(false);
+    expect(controller.addCandidate('delayJs', 'x', false)).toBe('held');
     expect(controller.draft().rows.delayJs.map((row) => row.text)).toEqual(['gtag']);
     expect(controller.draft().disable.delayJs).toBe(false);
     finish({ kind: 'problem', problem: 'timeout' });
@@ -1324,7 +1324,7 @@ describe('stored-form notes and undo', () => {
     const fresh = await started(fakePort({ state: 'inactive' }).port);
     fresh.controller.addCandidate('lazyload', 'logo.png', false);
     const before = fresh.controller.notes();
-    expect(fresh.controller.addCandidate('lazyload', 'logo.png', false)).toBe(false);
+    expect(fresh.controller.addCandidate('lazyload', 'logo.png', false)).toBe('present');
     expect(fresh.controller.notes()).toBe(before);
     expect(fresh.controller.notes().lanes.lazyload.removed).toEqual([]);
   });

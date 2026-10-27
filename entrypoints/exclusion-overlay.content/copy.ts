@@ -34,7 +34,7 @@ import {
 import type { SessionProblem } from './session/port';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
-import type { SaveState } from './controller';
+import type { CandidateAddOutcome, SaveState } from './controller';
 
 /** The tool's name (the overlay's heading). */
 export const TOOL_TITLE = 'Exclusion builder';
@@ -517,6 +517,33 @@ export const PASTE_COPY = {
   dropped: (lines: number, max: number): string =>
     `${String(lines)} pasted ${lines === 1 ? 'line was' : 'lines were'} not added: a lane holds ${String(max)} rows at most.`
 } as const;
+
+/**
+ * What adding a candidate (a pick on the page, or the page list) announces,
+ * per outcome — the real reason when nothing was added.
+ *
+ * @param outcome What the add did.
+ * @param subject The candidate as the page names it.
+ * @param lane The lane's label.
+ */
+export function candidateAnnouncement(
+  outcome: CandidateAddOutcome,
+  subject: string,
+  lane: string
+): string {
+  switch (outcome) {
+    case 'added':
+      return `Added ${subject} to ${lane}`;
+    case 'present':
+      return `${subject} is already in ${lane}`;
+    case 'dropped':
+      return `${subject} not added: WP Rocket's save would drop it from ${lane}`;
+    case 'full':
+      return `${subject} not added: ${lane} holds ${String(EXCLUSION_SET_LIMITS.rowsPerFeature)} rows at most`;
+    case 'held':
+      return `${subject} not added: the exclusions can't be edited right now`;
+  }
+}
 
 /** The per-lane copy-all control's words. */
 export const COPY_ALL_COPY = {
