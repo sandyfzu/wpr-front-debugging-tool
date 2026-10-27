@@ -23,6 +23,7 @@ import {
   reservedChordGroup,
   readPaletteChord,
   setPaletteChord,
+  textKeystrokeKind,
   watchPaletteChord,
   type ChordKeystroke,
   type PaletteChord,
@@ -166,6 +167,20 @@ describe('matchesChord', () => {
     // Firefox on macOS reports AltGraph for every Option press.
     const option = key('KeyK', { altKey: true, getModifierState: altGraph });
     expect(matchesChord(option, altK, 'mac')).toBe(true);
+  });
+
+  it('names why a keystroke is text input (the shared predicate)', () => {
+    const altGraph = (held: string): boolean => held === 'AltGraph';
+    expect(textKeystrokeKind(key('KeyK', { altKey: true, repeat: true }), 'mac')).toBe('repeat');
+    expect(textKeystrokeKind(key('KeyK', { isComposing: true }), 'other')).toBe('composition');
+    expect(textKeystrokeKind(key('KeyK', { keyCode: 229 }), 'mac')).toBe('composition');
+    const altGr = key('KeyK', { ctrlKey: true, altKey: true, getModifierState: altGraph });
+    expect(textKeystrokeKind(altGr, 'other')).toBe('altgraph');
+    // macOS: Firefox's AltGraph is the chord's own Option.
+    expect(textKeystrokeKind(altGr, 'mac')).toBeNull();
+    // A probe-less keystroke (plain object) and a command keystroke.
+    expect(textKeystrokeKind(key('KeyK', { ctrlKey: true, altKey: true }), 'other')).toBeNull();
+    expect(textKeystrokeKind(key('KeyK', { altKey: true, keyCode: 75 }), 'other')).toBeNull();
   });
 
   it('matches a lone function key only with no modifier held', () => {

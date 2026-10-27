@@ -2,11 +2,12 @@
  * The options rows that apply the moment they change (registry kinds
  * `page-ui-gate` and `chord`): each renders its instant setting's state
  * matrix — loading (a skeleton the control's shape), failed (the reason +
- * Retry), ready — and hands edits to the page's writers, which toast the
+ * Retry), retrying (the reason held, Retry busy), ready — and hands edits to the page's writers, which toast the
  * outcome. Neither row touches the page's draft.
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch as Branch } from 'solid-js';
+import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
@@ -51,24 +52,43 @@ function descriptionId(rowId: string): string {
 }
 
 /**
- * A failed instant read: the reason and a Retry (never a dead end).
+ * A failed instant read: the reason and a Retry (never a dead end). While a
+ * retry is in flight the line says so and Retry is held busy — `aria-disabled`,
+ * never native `disabled`, so keyboard focus stays on it through the attempt.
  *
+ * @param props.retrying A retry is in flight.
  * @param props.onRetry Re-runs the read.
  */
-function ReadFailure(props: { onRetry: () => void }): JSX.Element {
+function ReadFailure(props: { retrying: boolean; onRetry: () => void }): JSX.Element {
   return (
     <div data-fdt="option-read-failure" class="flex flex-wrap items-center gap-1.5">
-      <p class="text-2xs text-status-error">This setting could not be read.</p>
+      <p class="text-2xs text-status-error">
+        {props.retrying ? 'Reading the setting again…' : 'This setting could not be read.'}
+      </p>
       <Button
         size="sm"
+        aria-disabled={props.retrying || undefined}
+        aria-busy={props.retrying || undefined}
         onClick={() => {
-          props.onRetry();
+          if (!props.retrying) props.onRetry();
         }}
       >
+        <Show when={props.retrying}>
+          <LoaderCircle size={14} class="shrink-0 animate-spin" aria-hidden="true" />
+        </Show>
         Retry
       </Button>
     </div>
   );
+}
+
+/**
+ * Whether an instant read shows its failure line (failed, or retrying it).
+ *
+ * @param snapshot The setting's snapshot.
+ */
+function readFailed(snapshot: InstantSettingSnapshot<unknown>): boolean {
+  return snapshot.status === 'failed' || snapshot.status === 'retrying';
 }
 
 /** The row's description (shared shape with the drafted rows). */
@@ -97,9 +117,12 @@ export function PageUiGateRow(props: {
   return (
     <div data-fdt="option-row" data-fdt-option={props.row.id} class="px-0.5 py-2">
       <Branch>
-        <Match when={props.scope.gate().status === 'failed'}>
+        <Match when={readFailed(props.scope.gate())}>
           <span class="text-xs font-medium text-fg-primary">{props.row.label}</span>
-          <ReadFailure onRetry={props.scope.retryGate} />
+          <ReadFailure
+            retrying={props.scope.gate().status === 'retrying'}
+            onRetry={props.scope.retryGate}
+          />
         </Match>
         <Match when={ready()}>
           {(gate) => (
@@ -167,12 +190,22 @@ export function ChordRow(props: {
       data-fdt-option={props.row.id}
       class="flex flex-col gap-1.5 px-0.5 py-2"
     >
-      <label for={`option-${props.row.id}-field`} class="text-xs font-medium text-fg-primary">
+      {/* Once the field renders, its name carries the label (aria-label, label
+          first) and this text is its render twin, hidden from readers — never
+          a <label for>, whose click would start a recording. Before that it
+          names the loading/failed row for everyone. */}
+      <span
+        aria-hidden={ready() === null ? undefined : 'true'}
+        class="text-xs font-medium text-fg-primary"
+      >
         {props.row.label}
-      </label>
+      </span>
       <Branch>
-        <Match when={props.scope.chord().status === 'failed'}>
-          <ReadFailure onRetry={props.scope.retryChord} />
+        <Match when={readFailed(props.scope.chord())}>
+          <ReadFailure
+            retrying={props.scope.chord().status === 'retrying'}
+            onRetry={props.scope.retryChord}
+          />
         </Match>
         <Match when={ready()}>
           {(current) => (
@@ -215,7 +248,7 @@ export function ChordRow(props: {
             </div>
           )}
         </Match>
-        <Match when={props.scope.chord().status !== 'failed'}>
+        <Match when={!readFailed(props.scope.chord())}>
           <Skeleton class="h-6 w-24" />
         </Match>
       </Branch>

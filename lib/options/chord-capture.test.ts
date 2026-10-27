@@ -66,6 +66,29 @@ describe('classifyCaptureKey', () => {
     });
   });
 
+  it('refuses an AltGr keystroke outside macOS; Ctrl+Alt without AltGraph still captures', () => {
+    const altGraph = (held: string): boolean => held === 'AltGraph';
+    const altGr = key('KeyP', { ctrlKey: true, altKey: true, getModifierState: altGraph });
+    expect(classifyCaptureKey(altGr, 'other')).toEqual({
+      kind: 'rejected',
+      reason: 'altgraph',
+      chord: { code: 'KeyP', mod: true, alt: true }
+    });
+    // The AltGr key itself (AltRight + AltGraph) is a lone modifier: it waits.
+    expect(
+      classifyCaptureKey(key('AltRight', { altKey: true, getModifierState: altGraph }), 'other')
+    ).toEqual({ kind: 'wait' });
+    // Ctrl+Alt the keyboard reports as plain modifiers: saved (with the caveat).
+    expect(classifyCaptureKey(key('KeyP', { ctrlKey: true, altKey: true }), 'other')).toEqual({
+      kind: 'captured',
+      chord: { code: 'KeyP', mod: true, alt: true }
+    });
+    // macOS: Firefox's AltGraph on every Option press is the chord's own alt.
+    expect(
+      classifyCaptureKey(key('KeyP', { altKey: true, getModifierState: altGraph }), 'mac')
+    ).toEqual({ kind: 'captured', chord: { code: 'KeyP', alt: true } });
+  });
+
   it('refuses with the reason and the pressed chord when it spells one', () => {
     expect(classifyCaptureKey(key('KeyC', { metaKey: true }), 'mac')).toEqual({
       kind: 'rejected',
@@ -135,6 +158,22 @@ describe('captureRejectionMessage', () => {
     const unbindable = rejected(classifyCaptureKey(key('Space', { altKey: true }), 'other'));
     expect(captureRejectionMessage(unbindable, 'other', usLegend)).toContain(
       'That key cannot be part of the shortcut'
+    );
+  });
+
+  it('explains an AltGr refusal with its own line', () => {
+    const altGr = rejected(
+      classifyCaptureKey(
+        key('KeyP', {
+          ctrlKey: true,
+          altKey: true,
+          getModifierState: (held) => held === 'AltGraph'
+        }),
+        'other'
+      )
+    );
+    expect(captureRejectionMessage(altGr, 'other', usLegend)).toBe(
+      "This key combination reads as AltGr on this keyboard, so it can't open the palette — choose another one"
     );
   });
 

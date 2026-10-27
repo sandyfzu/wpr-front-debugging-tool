@@ -397,7 +397,7 @@ export interface ChordKeystroke {
 }
 
 /** The `keyCode` every engine reports for a keystroke an IME is processing. */
-export const IME_PROCESS_KEY_CODE = 229;
+const IME_PROCESS_KEY_CODE = 229;
 
 /**
  * Split Ctrl/Meta into the platform's command modifier and the one outside
@@ -417,24 +417,46 @@ function commandModifiers(
 }
 
 /**
- * Whether a keystroke is text input rather than a command: an auto-repeat,
- * an IME composition (flag or key code 229), or — outside macOS — an AltGr
- * press (Windows reports AltGr as Ctrl+Alt). On macOS Firefox reports
- * `AltGraph` for every Option press, so there it is the chord's own `alt`,
- * not a reason to refuse.
+ * Why a keystroke is text input rather than a command (see
+ * {@link textKeystrokeKind}).
+ */
+export type TextKeystrokeKind =
+  /** An auto-repeat of a held key. */
+  | 'repeat'
+  /** IME input: the composition flag, or key code 229. */
+  | 'composition'
+  /** AltGr (character-level; Windows reports it as Ctrl+Alt) — never on macOS. */
+  | 'altgraph';
+
+/**
+ * Whether — and why — a keystroke is text input rather than a command: an
+ * auto-repeat, an IME composition (flag or key code 229), or — outside
+ * macOS — an AltGr press (Windows reports AltGr as Ctrl+Alt). On macOS
+ * Firefox reports `AltGraph` for every Option press, so there it is the
+ * chord's own `alt`, not text input. The single declaring site of the rule:
+ * the page listener never matches such a keystroke, the capture field never
+ * binds one.
  *
  * @param keystroke The keystroke.
  * @param platform The keyboard convention.
+ * @returns The reason, or null for a command keystroke.
  */
-function isTextKeystroke(keystroke: ChordKeystroke, platform: ChordPlatform): boolean {
-  if (keystroke.repeat === true || keystroke.isComposing === true) return true;
-  if (keystroke.keyCode === IME_PROCESS_KEY_CODE) return true;
-  return platform !== 'mac' && keystroke.getModifierState?.('AltGraph') === true;
+export function textKeystrokeKind(
+  keystroke: ChordKeystroke,
+  platform: ChordPlatform
+): TextKeystrokeKind | null {
+  if (keystroke.repeat === true) return 'repeat';
+  if (keystroke.isComposing === true || keystroke.keyCode === IME_PROCESS_KEY_CODE) {
+    return 'composition';
+  }
+  return platform !== 'mac' && keystroke.getModifierState?.('AltGraph') === true
+    ? 'altgraph'
+    : null;
 }
 
 /**
  * Whether a keystroke fires the chord: same physical key, exactly the
- * chord's modifiers, and not text input (see {@link isTextKeystroke}).
+ * chord's modifiers, and not text input (see {@link textKeystrokeKind}).
  * Editable targets are the listener's call — see {@link chordMayTypeText}.
  *
  * @param keystroke The keydown (or a keystroke-shaped object).
@@ -446,7 +468,7 @@ export function matchesChord(
   chord: PaletteChord,
   platform: ChordPlatform
 ): boolean {
-  if (isTextKeystroke(keystroke, platform)) return false;
+  if (textKeystrokeKind(keystroke, platform) !== null) return false;
   const [command, foreign] = commandModifiers(keystroke, platform);
   return (
     keystroke.code === chord.code &&

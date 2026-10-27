@@ -70,10 +70,12 @@ export async function openOptionsPage(
 }
 
 /**
- * Wait for the page's ready state: the registry's first row renders, the
- * skeleton's loading line is gone, and the instant rows' own reads landed
- * (the shortcut field renders). Storage reads are fast; this is a settle,
- * never an assertion of timing.
+ * Wait for the page's ready state: the registry's first row renders, no
+ * live status is up except the shortcut field's own (permanent, usually
+ * empty) region — so the loading line and any stray announcement are gone,
+ * whatever their copy — and the instant rows' own reads landed (the
+ * shortcut field renders). Storage reads are fast; this is a settle, never
+ * an assertion of timing.
  *
  * @param page The options page.
  */
@@ -81,7 +83,7 @@ export async function optionsReady(page: Page): Promise<void> {
   await expect(
     page.locator('[data-fdt="option-row"][data-fdt-option="wp-dashboard-dbugger-entry"]')
   ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole('status').filter({ hasText: 'Loading the options' })).toHaveCount(0);
+  await expect(page.locator('[role="status"]:not(#option-palette-chord-status)')).toHaveCount(0);
   await expect(page.locator('[data-fdt="chord-field"]')).toBeVisible();
 }
 

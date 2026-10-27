@@ -6,7 +6,9 @@
  * `./instant-rows`; every label+description pair is wired
  * (labelled/described) keyboard-complete. The gate cascade is data-driven:
  * a row carrying the registry's `onPage` marker disables with its note
- * while the gate is off.
+ * while the gate is off. Drafted rows render only once the draft is loaded;
+ * the instant rows never wait on it (a failed `sync:options` read must not
+ * hide the gate's switch) — a card left with no row is not rendered.
  */
 
 import type { JSX } from 'solid-js';
@@ -16,6 +18,7 @@ import { Switch } from '../../components/ui/switch';
 import { ChoiceGroup, type ChoiceOption } from '../../components/ui/choice-group';
 import { APPEARANCES, type Appearance } from '../../utils/theme';
 import {
+  isDraftedOptionRow,
   onPageDisabledNote,
   optionRowsIn,
   OPTION_SECTIONS,
@@ -183,25 +186,34 @@ function OptionRowView(props: {
  *
  * @param props.scope The drafted rows' scope.
  * @param props.instant The instant rows' scope.
+ * @param props.drafted Whether the draft is loaded (drafted rows render only then).
  */
 export function OptionSections(props: {
   scope: OptionRowScope;
   instant: InstantRowsScope;
+  drafted: boolean;
 }): JSX.Element {
   return (
     <For each={OPTION_SECTIONS}>
-      {(section) => (
-        <Card
-          level={1}
-          header={<SectionHeader title={section.title} description={section.description} />}
-        >
-          <div class="divide-y divide-line-1">
-            <For each={optionRowsIn(section.id)}>
-              {(row) => <OptionRowView row={row} scope={props.scope} instant={props.instant} />}
-            </For>
-          </div>
-        </Card>
-      )}
+      {(section) => {
+        // Same row objects on every pass, so `For` keeps the mounted rows.
+        const rows = (): readonly OptionRow[] =>
+          optionRowsIn(section.id).filter((row) => props.drafted || !isDraftedOptionRow(row));
+        return (
+          <Show when={rows().length > 0}>
+            <Card
+              level={1}
+              header={<SectionHeader title={section.title} description={section.description} />}
+            >
+              <div class="divide-y divide-line-1">
+                <For each={rows()}>
+                  {(row) => <OptionRowView row={row} scope={props.scope} instant={props.instant} />}
+                </For>
+              </div>
+            </Card>
+          </Show>
+        );
+      }}
     </For>
   );
 }

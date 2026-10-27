@@ -15,6 +15,7 @@ import { App, type OptionsPageProps } from './App';
 import { toast, toastItems } from '../../components/ui/toast-store';
 import { describeAxeViolations, runAxeAudit } from '../../components/ui/a11y-audit';
 import { optionsStore } from '../../lib/storage/options';
+import { createStorageOptionsPageIO } from '../../lib/options/page-model';
 import { readPageUiEnabled, setPageUiGate } from '../../lib/storage/page-ui-gate';
 import {
   DEFAULT_PALETTE_CHORD,
@@ -89,6 +90,25 @@ async function record(): Promise<HTMLButtonElement> {
 /** A keydown on the field; returns whether the field consumed it. */
 function press(control: HTMLElement, init: KeyboardEventInit): boolean {
   return !fireEvent.keyDown(control, init);
+}
+
+/**
+ * A keydown with an explicit AltGraph state — happy-dom's `getModifierState`
+ * mirrors `altKey` for AltGraph, unlike browsers, where only a real AltGr
+ * press (or an engine reading Ctrl+Alt as one) reports it.
+ *
+ * @returns Whether the field consumed it.
+ */
+function pressWithAltGraph(
+  control: HTMLElement,
+  init: KeyboardEventInit,
+  altGraph: boolean
+): boolean {
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  Object.defineProperty(event, 'getModifierState', {
+    value: (held: string) => (held === 'AltGraph' ? altGraph : false)
+  });
+  return !fireEvent(control, event);
 }
 
 /** The toast titles currently queued. */
@@ -182,6 +202,69 @@ describe('the on-page UI gate row', () => {
   });
 });
 
+describe('read failures', () => {
+  it('a retry holds the failure line busy, and a failed retry is visibly a new attempt', async () => {
+    const io = createPageUiGateIO(quiet);
+    const reads: Array<{ resolve: (v: boolean) => void; reject: (e: unknown) => void }> = [];
+    mount({
+      pageUiIO: {
+        ...io,
+        read: () =>
+          new Promise<boolean>((resolve, reject) => {
+            reads.push({ resolve, reject });
+          })
+      }
+    });
+    const failure = (): HTMLElement | null =>
+      document.querySelector('[data-fdt-option="page-ui-gate"] [data-fdt="option-read-failure"]');
+    await waitFor(() => {
+      expect(reads).toHaveLength(1);
+    });
+    reads[0]?.reject(new Error('gone'));
+    await waitFor(() => {
+      expect(failure()?.textContent).toContain('This setting could not be read.');
+    });
+    const retry = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Retry' })[0];
+    if (retry === undefined) throw new Error('no Retry');
+    retry.focus();
+    fireEvent.click(retry);
+    // Busy, never natively disabled: focus stays on Retry through the attempt.
+    expect(failure()?.textContent).toContain('Reading the setting again');
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    expect(retry.disabled).toBe(false);
+    expect(document.activeElement).toBe(retry);
+    // A click while busy starts nothing.
+    fireEvent.click(retry);
+    expect(reads).toHaveLength(2);
+    reads[1]?.reject(new Error('still gone'));
+    await waitFor(() => {
+      expect(failure()?.textContent).toContain('This setting could not be read.');
+    });
+    expect(retry.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(retry);
+    reads[2]?.resolve(false);
+    expect((await gateSwitch()).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('a failed options read keeps the instant rows reachable (the gate rescue)', async () => {
+    await setPageUiGate(false);
+    mount({
+      io: { ...createStorageOptionsPageIO(quiet), read: () => Promise.reject(new Error('gone')) }
+    });
+    await screen.findByText("Couldn't load the options");
+    const gate = await gateSwitch();
+    expect(gate.getAttribute('aria-checked')).toBe('false');
+    // Drafted rows wait for the draft; their cards are not rendered empty.
+    expect(screen.queryByRole('switch', { name: BADGE_ROW })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Appearance' })).toBeNull();
+    fireEvent.click(screen.getByText(GATE_ROW));
+    await waitFor(async () => {
+      expect(await readPageUiEnabled()).toBe(true);
+    });
+  });
+});
+
 describe('the cascade against the watched gate', () => {
   it('disables the on-page rows with the note while the gate is off, and only them', async () => {
     mount();
@@ -239,8 +322,9 @@ describe('the shortcut field', () => {
     await waitFor(() => {
       expect(toastTitles()).toContain('Palette shortcut saved');
     });
+    // Spelled in words (toasts are read aloud; glyphs read poorly).
     expect(toastItems().at(-1)?.description).toBe(
-      '⌥P opens the command palette on inspected pages.'
+      'Option+P opens the command palette on inspected pages.'
     );
   });
 
@@ -305,6 +389,52 @@ describe('the shortcut field', () => {
     expect(fireEvent.keyUp(control, { code: 'Space' })).toBe(true);
     fireEvent.click(control, { detail: 0 });
     expect(fireEvent.keyUp(control, { code: 'Space' })).toBe(false);
+  });
+
+  it('keeps its name while recording; the prompt is the one announcement', async () => {
+    mount();
+    const control = await record();
+    expect(control.getAttribute('aria-label')).toBe('Command palette shortcut: Option+K');
+    expect(fieldStatus().textContent).toContain('Press the new shortcut');
+  });
+
+  it('a click on the row label never starts a recording', async () => {
+    mount();
+    const control = await field();
+    const label = screen.getByText('Command palette shortcut', { selector: 'span' });
+    expect(label.getAttribute('aria-hidden')).toBe('true');
+    fireEvent.click(label);
+    expect(control.getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelector('label[for="option-palette-chord-field"]')).toBeNull();
+  });
+
+  it('re-pressing the bound chord ends with "Shortcut unchanged" and writes nothing', async () => {
+    const write = vi.fn(() => Promise.resolve());
+    mount({ chordIO: { ...createPaletteChordIO(quiet), write } });
+    const control = await record();
+    expect(press(control, { code: 'KeyK', altKey: true })).toBe(true);
+    expect(control.getAttribute('aria-pressed')).toBe('false');
+    expect(fieldStatus().textContent).toBe('Shortcut unchanged');
+    expect(write).not.toHaveBeenCalled();
+    expect(toastTitles()).not.toContain('Palette shortcut saved');
+  });
+
+  it('turning the gate off mid-recording stops the recording', async () => {
+    mount();
+    const control = await record();
+    await setPageUiGate(false);
+    await waitFor(() => {
+      expect(control.disabled).toBe(true);
+    });
+    expect(control.getAttribute('aria-pressed')).toBe('false');
+    expect(fieldStatus().textContent).toBe('Shortcut unchanged');
+    await setPageUiGate(true);
+    await waitFor(() => {
+      expect(control.disabled).toBe(false);
+    });
+    // Back to idle: a keystroke is the platform's again.
+    expect(press(control, { code: 'KeyP', altKey: true })).toBe(false);
+    expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
   });
 
   it('shows layout-true legends when the layout map is known', async () => {
@@ -381,7 +511,7 @@ describe('the Ctrl+Alt caveat', () => {
   it('outside macOS: captured Ctrl+Alt saves and shows the persistent warning', async () => {
     mount({ platform: 'other' });
     const control = await record();
-    press(control, { code: 'KeyP', ctrlKey: true, altKey: true });
+    pressWithAltGraph(control, { code: 'KeyP', ctrlKey: true, altKey: true }, false);
     await waitFor(async () => {
       expect(await readPaletteChord()).toEqual({ code: 'KeyP', mod: true, alt: true });
     });
@@ -394,6 +524,17 @@ describe('the Ctrl+Alt caveat', () => {
     expect(control.getAttribute('aria-describedby')?.split(' ')).toContain(
       'option-palette-chord-caveat'
     );
+  });
+
+  it('outside macOS: a keystroke the keyboard reports as AltGr is refused with its reason', async () => {
+    mount({ platform: 'other' });
+    const control = await record();
+    expect(pressWithAltGraph(control, { code: 'KeyP', ctrlKey: true, altKey: true }, true)).toBe(
+      true
+    );
+    expect(fieldStatus().textContent).toContain('reads as AltGr on this keyboard');
+    expect(control.getAttribute('aria-pressed')).toBe('true');
+    expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
   });
 
   it('on macOS: a Command+Option binding warns with its synced Windows chord', async () => {

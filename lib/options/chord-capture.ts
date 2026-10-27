@@ -9,13 +9,13 @@
 import {
   captureChord,
   formatChord,
-  IME_PROCESS_KEY_CODE,
   keystrokeChord,
   type ChordCaptureRejection,
   type ChordKeystroke,
   type PaletteChord,
   type ReservedChordGroup,
-  reservedChordGroup
+  reservedChordGroup,
+  textKeystrokeKind
 } from '../storage/palette-chord';
 import type { ChordPlatform } from '../storage/palette-chord-platform';
 
@@ -41,6 +41,13 @@ const WAITING_CODES: ReadonlySet<string> = new Set([
   'FnLock'
 ]);
 
+/**
+ * Why the field refuses a keystroke: the chord contract's reasons, plus
+ * `altgraph` — the keyboard reports the press as AltGr (character input),
+ * which the page listener never matches, so binding it would be dead.
+ */
+export type CaptureRejectionReason = ChordCaptureRejection | 'altgraph';
+
 /** What one keydown means while the field records. */
 export type CaptureVerdict =
   /** Escape: stop recording, keep the current shortcut. */
@@ -57,7 +64,7 @@ export type CaptureVerdict =
    */
   | {
       readonly kind: 'rejected';
-      readonly reason: ChordCaptureRejection;
+      readonly reason: CaptureRejectionReason;
       readonly chord: PaletteChord | null;
     };
 
@@ -73,14 +80,13 @@ export function classifyCaptureKey(
 ): CaptureVerdict {
   if (keystroke.code === 'Escape') return { kind: 'cancel' };
   if (keystroke.code === 'Tab') return { kind: 'pass' };
-  if (
-    keystroke.repeat === true ||
-    keystroke.isComposing === true ||
-    keystroke.keyCode === IME_PROCESS_KEY_CODE ||
-    WAITING_CODES.has(keystroke.code)
-  ) {
-    return { kind: 'wait' };
+  // A lone modifier waits first: the AltGr key itself reports AltGraph.
+  if (WAITING_CODES.has(keystroke.code)) return { kind: 'wait' };
+  const text = textKeystrokeKind(keystroke, platform);
+  if (text === 'altgraph') {
+    return { kind: 'rejected', reason: 'altgraph', chord: keystrokeChord(keystroke, platform) };
   }
+  if (text !== null) return { kind: 'wait' }; // Auto-repeat or IME input.
   const result = captureChord(keystroke, platform);
   if (result.ok) return { kind: 'captured', chord: result.chord };
   return { kind: 'rejected', reason: result.reason, chord: keystrokeChord(keystroke, platform) };
@@ -134,6 +140,8 @@ export function captureRejectionMessage(
         : 'The Windows or Super key cannot be part of the shortcut — use Alt or Ctrl';
     case 'needs-modifier':
       return `Hold ${modifierWords(platform)} with the key, or use F1–F12 alone`;
+    case 'altgraph':
+      return "This key combination reads as AltGr on this keyboard, so it can't open the palette — choose another one";
     case 'reserved': {
       const chord = verdict.chord;
       const group = chord === null ? null : reservedChordGroup(chord);

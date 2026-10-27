@@ -5,12 +5,17 @@
  * survives every write here untouched.
  *
  * States: `loading` (the boot read is in flight) → `ready` (value known) or
- * `failed` (the read rejected; `load` is the retry). While ready:
+ * `failed` (the read rejected); `load` from `failed` is the retry, shown as
+ * `retrying` (so a retry that fails again is visibly a new attempt) → `ready`
+ * or `failed`. While ready:
  *
  * - **Optimistic write:** `set` shows the new value at once and awaits the
  *   write; a rejection restores the last confirmed value and reports
- *   `'failed'` (the caller toasts the remedy). Overlapping writes: only the
- *   latest one settles the state — an earlier one resolves `'superseded'`.
+ *   `'failed'` (the caller toasts the remedy). Overlapping writes: the
+ *   latest request decides the shown value — an earlier one resolves
+ *   `'superseded'`, though its success still confirms its value unless a
+ *   later write already settled — and `writing` clears only once the last
+ *   in-flight write settles, in whatever order they settle.
  * - **Live follow:** the item's watch is armed before the boot read, so a
  *   write from another surface (the context menu, another options tab) lands
  *   live; while a write of ours is in flight the watched value only moves
@@ -38,6 +43,8 @@ export interface InstantSettingIO<T> {
 export type InstantSettingSnapshot<T> =
   | { readonly status: 'loading' }
   | { readonly status: 'failed' }
+  /** A retry of the failed read is in flight (the failure stays explained). */
+  | { readonly status: 'retrying' }
   | {
       readonly status: 'ready';
       /** The value the control shows (an in-flight write's target included). */
@@ -83,6 +90,9 @@ const LOADING: InstantSettingSnapshot<never> = Object.freeze({ status: 'loading'
 /** The failed snapshot (one shape, shared). */
 const FAILED: InstantSettingSnapshot<never> = Object.freeze({ status: 'failed' });
 
+/** The retrying snapshot (one shape, shared). */
+const RETRYING: InstantSettingSnapshot<never> = Object.freeze({ status: 'retrying' });
+
 /**
  * Create an instant setting's machine. The watch is armed at creation, so
  * nothing written between creation and the boot read is lost.
@@ -100,8 +110,10 @@ export function createInstantSettingModel<T>(
   /** The last value storage confirmed (read, watch or our settled write). */
   let confirmed: { value: T } | null = null;
   let reading = false;
-  /** Increments per `set`; only the latest request settles the state. */
+  /** Increments per `set`; the latest request decides the shown value. */
   let latestWrite = 0;
+  /** The newest request whose write succeeded (an older success never re-confirms). */
+  let newestWritten = 0;
   let inFlight = 0;
 
   /** Publish a new snapshot. */
@@ -128,6 +140,7 @@ export function createInstantSettingModel<T>(
     async load(): Promise<void> {
       if (reading || current.status === 'ready') return;
       reading = true;
+      if (current.status === 'failed') publish(RETRYING);
       try {
         const value = await io.read();
         // A watched write that landed while the read was in flight is newer.
@@ -151,22 +164,26 @@ export function createInstantSettingModel<T>(
       const request = ++latestWrite;
       inFlight += 1;
       publish(ready(next));
+      let outcome: InstantWriteOutcome;
       try {
         await io.write(next);
+        if (request > newestWritten) {
+          newestWritten = request;
+          confirmed = { value: next };
+        }
+        outcome = request === latestWrite ? 'written' : 'superseded';
       } catch (cause) {
-        inFlight -= 1;
         io.log.error('Writing the setting failed — the stored value is shown again', cause);
-        if (request !== latestWrite) return 'superseded';
-        // Ready implies a confirmed value (the boot read set it); the
-        // fallback keeps the type total.
-        publish(ready(confirmed === null ? next : confirmed.value));
-        return 'failed';
+        outcome = request === latestWrite ? 'failed' : 'superseded';
       }
       inFlight -= 1;
-      if (request !== latestWrite) return 'superseded';
-      confirmed = { value: next };
-      publish(ready(next));
-      return 'written';
+      // The latest request decides; the last settle (any order) clears `writing`.
+      // Ready implies a confirmed value (the boot read set it); the fallback
+      // keeps the type total.
+      if (request === latestWrite || inFlight === 0) {
+        publish(ready(confirmed === null ? next : confirmed.value));
+      }
+      return outcome;
     },
 
     dispose(): void {

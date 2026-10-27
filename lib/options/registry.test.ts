@@ -154,6 +154,12 @@ describe('the on-page UI cascade', () => {
     }
   });
 
+  it('the shortcut row warns that browser-owned shortcuts never reach the field', () => {
+    // The browser acts on them before the page sees a keydown: no refusal can explain it.
+    expect(anyRow('palette-chord').description).toContain('Browser-owned shortcuts');
+    expect(anyRow('palette-chord').description).toContain("can't be recorded");
+  });
+
   it('is data-driven: any row kind carrying the marker inherits it', () => {
     // A future marked boolean row (the chip default's shape) needs no code.
     const marked: OptionRow = {

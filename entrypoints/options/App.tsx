@@ -244,29 +244,40 @@ export function App(props: OptionsPageProps): JSX.Element {
     platform,
     legend: (value) => keyLegend(value.code, layout()),
     setGate: (next) => {
-      void gate.model.set(next).then((outcome) => {
-        announceInstant(
-          outcome,
-          next
-            ? { title: PAGE_UI_ON_TITLE }
-            : { title: PAGE_UI_OFF_TITLE, description: PAGE_UI_OFF_DESCRIPTION },
-          PAGE_UI_FAILURE_TITLE
-        );
-      });
+      void gate.model
+        .set(next)
+        .then((outcome) => {
+          announceInstant(
+            outcome,
+            next
+              ? { title: PAGE_UI_ON_TITLE }
+              : { title: PAGE_UI_OFF_TITLE, description: PAGE_UI_OFF_DESCRIPTION },
+            PAGE_UI_FAILURE_TITLE
+          );
+        })
+        .catch((cause: unknown) => {
+          log.error('Applying the on-page UI gate failed unexpectedly', cause);
+        });
     },
     setChord: (next) => {
-      void chord.model.set(next).then((outcome) => {
-        const current = platform() ?? 'other';
-        const shown = formatChord(next, current, 'symbols', keyLegend(next.code, layout()));
-        announceInstant(
-          outcome,
-          {
-            title: CHORD_SAVED_TITLE,
-            description: `${shown} opens the command palette on inspected pages.`
-          },
-          CHORD_FAILURE_TITLE
-        );
-      });
+      void chord.model
+        .set(next)
+        .then((outcome) => {
+          // Spelled in words: toasts are read aloud, and glyphs read poorly.
+          const current = platform() ?? 'other';
+          const shown = formatChord(next, current, 'words', keyLegend(next.code, layout()));
+          announceInstant(
+            outcome,
+            {
+              title: CHORD_SAVED_TITLE,
+              description: `${shown} opens the command palette on inspected pages.`
+            },
+            CHORD_FAILURE_TITLE
+          );
+        })
+        .catch((cause: unknown) => {
+          log.error('Applying the palette shortcut failed unexpectedly', cause);
+        });
     },
     retryGate: () => {
       void gate.model.load();
@@ -346,22 +357,20 @@ export function App(props: OptionsPageProps): JSX.Element {
               </div>
             }
           >
-            <Show
-              when={snapshot().status === 'ready'}
-              fallback={
-                <ErrorState
-                  title="Couldn't load the options"
-                  message={failedMessage() ?? undefined}
-                  onRetry={() => {
-                    void model.load();
-                  }}
-                />
-              }
-            >
-              <div data-fdt="options-sections" class={cn(MOTION_REVEAL, 'flex flex-col gap-3')}>
-                <OptionSections scope={scope} instant={instant} />
-              </div>
+            <Show when={failedMessage() !== null}>
+              <ErrorState
+                title="Couldn't load the options"
+                message={failedMessage() ?? undefined}
+                onRetry={() => {
+                  void model.load();
+                }}
+              />
             </Show>
+            {/* The instant rows ride their own reads: a failed draft load keeps
+                the gate's switch (the on-page UI rescue) reachable. */}
+            <div data-fdt="options-sections" class={cn(MOTION_REVEAL, 'flex flex-col gap-3')}>
+              <OptionSections scope={scope} instant={instant} drafted={ready() !== null} />
+            </div>
             <KnownConflictsFreshness />
           </Show>
         </div>

@@ -64,7 +64,7 @@ describe('the cascade over a marked boolean row', () => {
       retryChord: vi.fn(),
       refreshLayout: vi.fn()
     };
-    render(() => <OptionSections scope={scope} instant={instant} />);
+    render(() => <OptionSections scope={scope} instant={instant} drafted />);
     const marked = screen.getByRole<HTMLInputElement>('switch', { name: MARKED.label });
     const badge = screen.getByRole<HTMLInputElement>('switch', { name: 'Show the toolbar badge' });
     expect(marked.disabled).toBe(false);

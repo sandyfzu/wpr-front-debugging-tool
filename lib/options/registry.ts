@@ -176,7 +176,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     onPage: true,
     label: 'Command palette shortcut',
     description:
-      'Opens the command palette on inspected pages — select the field, then press the new combination; applies immediately'
+      "Opens the command palette on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them"
   },
   {
     kind: 'boolean',

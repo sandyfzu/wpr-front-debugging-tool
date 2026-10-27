@@ -1,7 +1,8 @@
 /**
- * The instant-setting machine: boot read (populated, failed + retry, a
- * watched write during the read wins), optimistic writes (written,
- * unchanged, failed → revert, overlapping → superseded), live follow (idle
+ * The instant-setting machine: boot read (populated, failed + retry shown
+ * as retrying, a watched write during the read wins), optimistic writes
+ * (written, unchanged, failed → revert, overlapping → superseded, settles in
+ * any order, a superseded success confirming its value), live follow (idle
  * vs mid-write), the not-ready guard, and the idempotent dispose — over
  * controllable seams, plus one leg over the real (fake-browser) gate item.
  */
@@ -121,6 +122,23 @@ describe('the boot read', () => {
     expect(model.snapshot()).toEqual({ status: 'ready', value: true, writing: false });
   });
 
+  it('a retry shows retrying; a retry that fails again returns to failed', async () => {
+    const seams = controllableIO();
+    const { model, seen } = fixture(seams.io);
+    const first = model.load();
+    seams.reads[0]?.reject(new Error('gone'));
+    await first;
+    const retry = model.load();
+    expect(model.snapshot()).toEqual({ status: 'retrying' });
+    expect(Object.isFrozen(model.snapshot())).toBe(true);
+    // One read at a time while retrying too.
+    void model.load();
+    expect(seams.reads).toHaveLength(2);
+    seams.reads[1]?.reject(new Error('still gone'));
+    await retry;
+    expect(seen.map((snapshot) => snapshot.status)).toEqual(['failed', 'retrying', 'failed']);
+  });
+
   it('runs without an observer (the default no-op)', async () => {
     const seams = controllableIO();
     const model = createInstantSettingModel(seams.io, Object.is);
@@ -216,6 +234,43 @@ describe('writes', () => {
     expect(await second).toBe('failed');
     // The confirmed value (the boot read) is shown again.
     expect(model.snapshot()).toMatchObject({ value: true, writing: false });
+  });
+
+  it('settles out of order: the last settle clears writing on the latest value', async () => {
+    const { model, seams } = await readyFixture(true);
+    const first = model.set(false);
+    const second = model.set(true);
+    seams.writes[1]?.settle.resolve(undefined);
+    expect(await second).toBe('written');
+    // The earlier write is still in flight: shown value decided, still writing.
+    expect(model.snapshot()).toEqual({ status: 'ready', value: true, writing: true });
+    seams.writes[0]?.settle.resolve(undefined);
+    expect(await first).toBe('superseded');
+    // An older success never re-confirms over the newer one.
+    expect(model.snapshot()).toEqual({ status: 'ready', value: true, writing: false });
+  });
+
+  it('settles out of order with the earlier write rejecting: writing still clears', async () => {
+    const { model, seams } = await readyFixture(true);
+    const first = model.set(false);
+    const second = model.set(true);
+    seams.writes[1]?.settle.resolve(undefined);
+    expect(await second).toBe('written');
+    seams.writes[0]?.settle.reject(new Error('quota'));
+    expect(await first).toBe('superseded');
+    expect(model.snapshot()).toEqual({ status: 'ready', value: true, writing: false });
+  });
+
+  it('a superseded success confirms its value: the latest rejecting shows it', async () => {
+    const { model, seams } = await readyFixture(true);
+    const first = model.set(false); // A
+    const second = model.set(true); // B — back to the boot value, still a request.
+    seams.writes[0]?.settle.resolve(undefined);
+    expect(await first).toBe('superseded');
+    seams.writes[1]?.settle.reject(new Error('quota'));
+    expect(await second).toBe('failed');
+    // Storage holds A, so A is what the control shows — never the stale boot value.
+    expect(model.snapshot()).toEqual({ status: 'ready', value: false, writing: false });
   });
 
   it('refuses writes before it is ready — a wiring bug, named', async () => {

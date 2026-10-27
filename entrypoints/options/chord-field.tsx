@@ -9,13 +9,17 @@
  * refused one stays recording and announces why (live region, polite);
  * Escape cancels; Tab passes through and leaving the field (blur) cancels;
  * lone modifiers, auto-repeats and IME keystrokes keep waiting. A pointer
- * click while recording cancels too. Nothing outside the field ever listens.
+ * click while recording cancels too, and so does the field turning disabled
+ * (the gate switched off elsewhere). Re-pressing the bound chord ends with
+ * the cancel line — nothing to write. Nothing outside the field ever listens.
  *
- * Accessible name: the row label plus the chord in words (glyphs are read
- * poorly); the visible chip shows the platform's glyphs.
+ * Accessible name: the row label plus the bound chord in words (glyphs are
+ * read poorly), stable while recording — the prompt in the live region is
+ * the one announcement recording makes (besides the pressed state); the
+ * visible chip shows the platform's glyphs.
  */
 import type { JSX } from 'solid-js';
-import { createSignal, Show } from 'solid-js';
+import { createEffect, createSignal, Show } from 'solid-js';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../utils/cn';
 import {
@@ -24,7 +28,7 @@ import {
   captureRejectionMessage,
   classifyCaptureKey
 } from '../../lib/options/chord-capture';
-import { formatChord, type PaletteChord } from '../../lib/storage/palette-chord';
+import { chordsEqual, formatChord, type PaletteChord } from '../../lib/storage/palette-chord';
 import type { ChordPlatform } from '../../lib/storage/palette-chord-platform';
 
 /** The field's inputs. */
@@ -80,6 +84,12 @@ export function ChordField(props: ChordFieldProps): JSX.Element {
     setAnnouncement(message);
   };
 
+  // A field disabled mid-recording (the gate turned off elsewhere, a late
+  // gate read) can no longer capture: stop, never leave a dead recording.
+  createEffect(() => {
+    if (props.disabled && recording()) stop(CAPTURE_CANCELLED);
+  });
+
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!recording()) return;
     const verdict = classifyCaptureKey(event, props.platform);
@@ -94,6 +104,11 @@ export function ChordField(props: ChordFieldProps): JSX.Element {
       case 'wait':
         return;
       case 'captured':
+        // The bound chord again: nothing to write, and the user hears so.
+        if (chordsEqual(verdict.chord, props.chord)) {
+          stop(CAPTURE_CANCELLED);
+          return;
+        }
         stop('');
         props.onCapture(verdict.chord);
         return;
@@ -118,10 +133,7 @@ export function ChordField(props: ChordFieldProps): JSX.Element {
     if (event.detail > 0) stop(CAPTURE_CANCELLED);
   };
 
-  const accessibleName = (): string =>
-    recording()
-      ? `${props.label}: recording — press the new shortcut`
-      : `${props.label}: ${shown(props.chord, 'words')}`;
+  const accessibleName = (): string => `${props.label}: ${shown(props.chord, 'words')}`;
 
   return (
     <div class="flex min-w-0 flex-col gap-1">
