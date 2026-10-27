@@ -65,7 +65,8 @@
  * Anchored bottom-right; when the card opens the pill departs downward on
  * the same beat, then stops receiving input; closing hands the anchor back.
  * Locked under the host's viewport (max-width `100vw - 32px`: the anchor's
- * two 16 px margins), so narrow hosts drop the stamp text, never the identity.
+ * two 16 px margins), so narrow hosts drop the stamp text first and only then
+ * ellipsize the identity (narrowing order below).
  * The pill is a drag handle too (P12A.5): its cursor stays the button's
  * pointer (the card toggle is its primary affordance), and touch-action none
  * keeps a touch drag from becoming a page pan (SB-D16). */
@@ -77,6 +78,10 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  /* Sized to its content's max-content (the chrome is a zero-width fixed
+   * box, so shrink-to-fit would fall back to min-content, which the chip's
+   * stamp column deliberately does not count). */
+  width: max-content;
   max-width: calc(100vw - 32px);
   height: 36px;
   padding: 0 12px 0 11px;
@@ -213,19 +218,34 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Narrow hosts drop the chip's stamp first, never the identity (version) or
- * the chip's state word: in the pill only the stamp gives way. */
-.ins-pill .ins-identity,
-.ins-pill .ins-cache-text {
-  flex: none;
-}
-.ins-pill .ins-cache {
+/* Narrowing order in the pill: the chip's stamp gives way first, then the
+ * identity ellipsizes as a last resort; the chip's state word never shrinks.
+ * The chip is a grid whose stamp column is `minmax(0, auto)`: its min-content
+ * width is the state word alone (a flex row would count the whole stamp), so
+ * the chip's automatic minimum stops at the word. Flex shrink is shared in
+ * proportion, so the chip's 100000x weight keeps the identity's share below a
+ * layout unit (a 100x weight still cut a fraction of a pixel off the version)
+ * until the stamp is spent and the chip freezes at the word. No cap at rest:
+ * a wide host shows the stamp whole. */
+.ins-pill .ins-identity {
   flex: 0 1 auto;
   min-width: 0;
 }
+.ins-pill .ins-cache {
+  display: inline-grid;
+  grid-template-columns: auto;
+  grid-auto-columns: minmax(0, auto);
+  grid-auto-flow: column;
+  flex: 0 100000 auto;
+  max-width: none;
+}
+/* The word's clip box would otherwise zero its grid minimum. */
+.ins-pill .ins-cache-text {
+  min-width: max-content;
+}
 /* The Exclusion Builder hint after the version: the page shown is the
  * builder's rewrite. A shape (the card badges' glyph), never colour alone;
- * fixed size, so a narrow pill truncates the identity, never the glyph. */
+ * fixed size, so a narrow pill ellipsizes the identity, never the glyph. */
 .ins-pill-builder {
   display: inline-flex;
   flex: none;
