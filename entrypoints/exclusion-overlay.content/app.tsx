@@ -70,6 +70,7 @@ import { viewportRect, type PageTools, type PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { createLogger } from '../../lib/logger';
+import { showInTopLayer } from '../../components/injected-ui/top-layer';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 const log = createLogger('exclusion-overlay');
@@ -80,27 +81,6 @@ const LABEL_GAP_PX = 4;
 const LABEL_HEIGHT_PX = 22;
 /** Frames a focus move is attempted on before it gives up (see `focusSoon`). */
 const FOCUS_TRIES = 3;
-
-/**
- * Put the layer in the browser's top layer (a manual popover: no light
- * dismiss, no focus move), above every page stacking context — again on
- * each call, which moves it above whatever the page opened since. Without
- * popover support the layer stays a fixed element on the highest z-index.
- *
- * @param layer The overlay's root element.
- */
-function showInTopLayer(layer: HTMLElement): void {
-  if (typeof layer.showPopover !== 'function') return;
-  layer.setAttribute('popover', 'manual');
-  try {
-    if (layer.matches(':popover-open')) layer.hidePopover();
-    layer.showPopover();
-  } catch (cause) {
-    // The host document refused (e.g. detached): the fixed fallback renders it.
-    log.warn('Showing the overlay in the top layer failed; using the fixed fallback', cause);
-    layer.removeAttribute('popover');
-  }
-}
 
 /** Props of {@link OverlayApp}. */
 export interface OverlayAppProps {
@@ -394,7 +374,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     on(
       () => props.page.pageTopLayerOpened(),
       () => {
-        if (layer !== undefined && !paused()) showInTopLayer(layer);
+        if (layer !== undefined && !paused()) showInTopLayer(layer, log);
       },
       { defer: true }
     )
@@ -428,7 +408,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   onMount(() => {
     props.listen(window, 'scroll', queueGeometry);
     props.listen(window, 'resize', queueGeometry);
-    if (layer !== undefined) showInTopLayer(layer);
+    if (layer !== undefined) showInTopLayer(layer, log);
     // A re-open follows a page load: the page keeps its focus.
     if (props.presentation == null) focusSoon(() => heading);
     // An event-time call (an explicit open of this live overlay), never tracked.

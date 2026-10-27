@@ -72,6 +72,14 @@ export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> 
   onRun: (command: T) => void;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
+  /**
+   * Render into this node — an injected UI's shadow-root container (the
+   * dialog's mounted mode: non-modal toward the host page, Escape handled
+   * on the panel).
+   */
+  mount?: HTMLElement;
+  /** The dialog's accessible description (default: the panel's wording). */
+  description?: string;
 }
 
 /**
@@ -213,6 +221,8 @@ function HighlightGuard(props: {
  * @param props.filter The caller's matcher (raw query → ordered rows).
  * @param props.onRun The chosen command's execution callback.
  * @param props.class Extra panel classes.
+ * @param props.mount The injected UI's render node (the dialog's mounted mode).
+ * @param props.description The accessible description override.
  */
 export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
   props: CommandPaletteProps<T>
@@ -221,8 +231,9 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
     <ModalDialog
       onClose={props.onClose}
       title="Command palette"
-      description="Filter the pages and actions, run the highlighted one"
+      description={props.description ?? 'Filter the pages and actions, run the highlighted one'}
       class={cn('pt-1.5', props.class)}
+      mount={props.mount}
       onKeyDownCapture={(event) => {
         // Tab = dismiss: the combobox's own Tab completion (close + reset
         // input) cannot finish inside this modal — its focus trap returns to
@@ -354,18 +365,18 @@ function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
           scheduleArm();
         }}
       />
-      <Show
-        when={ranked().length > 0}
-        fallback={
-          <p data-fdt="palette-empty" class={EMPTY_CLASSES}>
-            No commands match “{query()}”
-          </p>
-        }
-      >
-        <KobalteCombobox.Listbox
-          data-fdt="palette-list"
-          class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
-        />
+      {/* The listbox stays mounted (hidden while empty): the expanded field's
+          `aria-controls` must always name it — unmounting it would drop the
+          attribute the APG combobox requires. */}
+      <KobalteCombobox.Listbox
+        data-fdt="palette-list"
+        class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
+        hidden={ranked().length === 0}
+      />
+      <Show when={ranked().length === 0}>
+        <p data-fdt="palette-empty" class={EMPTY_CLASSES}>
+          No commands match “{query()}”
+        </p>
       </Show>
       <HighlightGuard
         options={ranked()}

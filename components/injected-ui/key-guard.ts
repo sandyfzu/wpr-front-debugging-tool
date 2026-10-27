@@ -1,12 +1,13 @@
 /**
- * Keeps keystrokes typed into the exclusion builder overlay away from the
- * page. Pages register window-capture key handlers (a `/` search shortcut, a
+ * Keeps keystrokes typed into an injected text surface (the exclusion
+ * builder overlay, the command palette view) away from the page — one
+ * guard per surface host. Pages register window-capture key handlers (a `/` search shortcut, a
  * hotkey library) that run before any listener inside the overlay can stop
  * them; only a window-capture listener registered *before* the page's own
  * beats them — the isolated content script installs this one at
  * `document_start`.
  *
- * For a key, input or clipboard event whose path runs through the overlay's
+ * For a key, input or clipboard event whose path runs through the guarded
  * shadow host, the guard stops the event at the window (no page listener
  * sees it) and re-dispatches a non-composed copy at its target, so the
  * overlay's own handlers still run and never leak back out (a copy the
@@ -18,6 +19,9 @@
 
 /** The overlay's shadow host tag name (declared once: the overlay mounts under it). */
 export const OVERLAY_HOST_NAME = 'wpr-fdt-exclusion-builder';
+
+/** The on-page command palette view's shadow host tag name (guarded the same way). */
+export const COMMAND_PALETTE_HOST_NAME = 'wpr-fdt-command-palette';
 
 /** The events the guard keeps from the page. */
 const GUARDED_EVENTS = [

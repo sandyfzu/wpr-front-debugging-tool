@@ -17,6 +17,17 @@
  * Focus on close is the caller's contract: nothing here remembers what to
  * restore, because only the caller knows its trigger (and a command that
  * navigates elsewhere wants to land focus there instead).
+ *
+ * Mounted mode ({@link ModalDialogProps.mount}) is for UI injected into a
+ * host page's shadow root: the dialog renders into the given node, and it is
+ * non-modal toward the host document — a modal dialog would `aria-hide`
+ * the page's body, lock its scroll and block its pointer events, which are
+ * writes into the page being debugged (and would hide the shadow host
+ * itself from assistive tech). The surface stays dismissable all the same:
+ * an outside pointer or focus move dismisses (the library's outside checks
+ * read composed paths, so they see through the shadow root), and Escape is
+ * handled on the panel itself, since an injected root keeps its key events
+ * from the document listener the library's Escape relies on.
  */
 import type { JSX } from 'solid-js';
 import { onCleanup, Show } from 'solid-js';
@@ -47,6 +58,11 @@ export interface ModalDialogProps {
   closeButton?: boolean;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
+  /**
+   * Render into this node instead of the document body (an injected UI's
+   * shadow-root container) — mounted mode, see the module TSDoc.
+   */
+  mount?: HTMLElement;
   children: JSX.Element;
 }
 
@@ -78,12 +94,14 @@ const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
  * @param props.description The accessible description (optional, hidden).
  * @param props.closeButton Whether the explicit dismissal control renders.
  * @param props.class Extra classes on the panel.
+ * @param props.mount The injected UI's render node (mounted mode).
  * @param props.children The dialog's content (fields, lists, texts).
  */
 export function ModalDialog(props: ModalDialogProps): JSX.Element {
   return (
     <KobalteDialog.Root
-      modal
+      // Mounted (injected) dialogs never write into the host document.
+      modal={props.mount === undefined}
       // Mount-driven: the caller renders the dialog only while it is open, so
       // it starts open on every mount (a fresh surface per open) and its only
       // transitions are the dismissals funneled into one branch below.
@@ -92,7 +110,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
         if (!open) props.onClose();
       }}
     >
-      <KobalteDialog.Portal>
+      <KobalteDialog.Portal mount={props.mount}>
         <KobalteDialog.Overlay data-fdt="dialog-overlay" class={OVERLAY_CLASSES} />
         <KobalteDialog.Content
           data-fdt="dialog"
@@ -101,12 +119,22 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
             // The capture-phase keydown hook: an addEventListener-capture
             // binding (a delegated Solid handler could never order itself
             // ahead of the content's own target-phase listeners), released
-            // with the surface.
+            // with the surface. Mounted dialogs add their own Escape there.
             const capture = props.onKeyDownCapture;
-            if (capture === undefined) return;
-            element.addEventListener('keydown', capture, true);
+            const mounted = props.mount !== undefined;
+            if (capture === undefined && !mounted) return;
+            const onKeyDown = (event: KeyboardEvent): void => {
+              if (mounted && event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onClose();
+                return;
+              }
+              capture?.(event);
+            };
+            element.addEventListener('keydown', onKeyDown, true);
             onCleanup(() => {
-              element.removeEventListener('keydown', capture, true);
+              element.removeEventListener('keydown', onKeyDown, true);
             });
           }}
           onCloseAutoFocus={(event) => {

@@ -4,8 +4,8 @@
  * navigation with wrap, Home/End jumps, Enter running the highlighted
  * command, click running, the disabled row rendered-but-skipped, the
  * injected matcher driving the list per keystroke, the no-match empty
- * state, Escape dismissing the dialog, and the mount-time autofocus on the
- * field.
+ * state (its listbox kept, hidden), Escape dismissing the dialog, the
+ * mount-time autofocus on the field, and the mounted (shadow-root) mode.
  *
  * Idiom note: static imports (the lucide-heavy tree hangs under
  * `vi.resetModules()`), and assertions on roles/attributes — never on pixel
@@ -215,6 +215,54 @@ describe('CommandPalette filtering', () => {
     });
     fireEvent.keyDown(field, { key: 'Enter' });
     expect(onRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps the expanded field owning its (hidden) listbox in the empty state', async () => {
+    const { field } = await mountPalette();
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No commands match/)).toBeTruthy();
+    });
+    const list = document.querySelector<HTMLElement>('[role="listbox"]');
+    expect(list).not.toBeNull();
+    expect(list?.hidden).toBe(true);
+    expect(field.getAttribute('aria-expanded')).toBe('true');
+    expect(field.getAttribute('aria-controls')).toBe(list?.id);
+    // A matching query shows it again.
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    await waitFor(() => {
+      expect(list?.hidden).toBe(false);
+    });
+  });
+});
+
+describe('CommandPalette mounted mode (an injected shadow root)', () => {
+  it('renders into the given node with the caller’s description, and dismisses on Escape', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const container = document.createElement('div');
+    host.attachShadow({ mode: 'open' }).append(container);
+    const onClose = vi.fn();
+    render(() => (
+      <CommandPalette
+        commands={ROWS}
+        filter={identityFilter}
+        onRun={vi.fn()}
+        onClose={onClose}
+        mount={container}
+        description="Filter the on-page actions, run the highlighted one"
+      />
+    ));
+    await waitFor(() => {
+      expect(container.querySelector('[data-fdt="palette-input"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[data-fdt="dialog-description"]')?.textContent).toBe(
+      'Filter the on-page actions, run the highlighted one'
+    );
+    const field = container.querySelector('[data-fdt="palette-input"]') as HTMLInputElement;
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

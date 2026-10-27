@@ -1,0 +1,119 @@
+/*
+ * The palette module's page notice: one at-rest message, top-centre over
+ * the page, in its own shadow root and the browser's top layer.
+ *
+ * Contract against hostile pages: sizes in px (the page owns the root font
+ * size); the layer is an inert full-viewport frame (`pointer-events: none`)
+ * and only the notice takes input; the tool never mirrors on RTL hosts.
+ * Motion: the notice enters on the floating-chrome moment (`--motion-slow`,
+ * entrance easing, opacity + a 6 px drop) through `@starting-style`, and
+ * leaves instantly (the state never waits on a transition); reduced motion
+ * is collapsed by the token stylesheet.
+ */
+
+.pn-layer {
+  /* Override the UA popover box: a transparent, full-viewport, inert frame. */
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  /* Only matters where the top layer is unavailable (the fixed fallback). */
+  z-index: 2147483647;
+  direction: ltr;
+  text-align: left;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fg-primary);
+}
+
+.pn-notice {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(380px, calc(100% - 32px));
+  padding: 10px 6px 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-elev-3);
+  pointer-events: auto;
+  transform: translateX(-50%);
+  opacity: 1;
+  transition:
+    opacity var(--motion-slow) var(--ease-entrance),
+    transform var(--motion-slow) var(--ease-entrance);
+}
+
+@starting-style {
+  .pn-notice {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+.pn-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pn-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fg-primary);
+}
+
+.pn-body {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
+}
+
+.pn-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pn-close:hover {
+  background: var(--surface-4);
+  color: var(--fg-primary);
+}
+
+.pn-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pn-close svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}

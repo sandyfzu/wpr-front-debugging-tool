@@ -51,6 +51,10 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
 │   │                          #   costs pages nothing until then; the background re-opens it on a
 │   │                          #   session tab's loaded pages (`lib/exclusion-session/overlay-reopen`)
+│   ├── command-palette.content/ # runtime content script (`registration: 'runtime'`): the on-page
+│   │                          #   command palette's view (combobox + dialog), injected into the top
+│   │                          #   frame on the first open (asked by `isolated.content/palette/`, which
+│   │                          #   keeps the gate, the receiver and the executors) — pages pay nothing until then
 │   ├── exclusion-transform-worker.ts # Firefox-only unlisted script: the exclusion engine's Web Worker
 │   │                          #   (the background preempts a runaway row by terminating it)
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
@@ -60,7 +64,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │                              #   `navigator.userAgent` shadowed per the sim state (`ua-identity/`)
 ├── components/                # Solid components shared by ≥2 entrypoints
 │   ├── ui/                    # design-system primitives
-│   └── injected-ui/           # shadow-root mount, live appearance + input-event isolation for UIs injected into host pages
+│   └── injected-ui/           # shadow-root mount, live appearance, input-event isolation, key guard, top-layer z-order + runtime-overlay mount for UIs injected into host pages
 ├── lib/                       # domain modules — logic + types + data, pure and testable
 │   ├── messaging/             # typed message contracts + boundary validation
 │   ├── storage/               # typed storage items (storage.defineItem)
@@ -69,6 +73,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   four transforms, one pipeline (+ PHP parity table and fixtures)
 │   ├── exclusion-session/     # backend-agnostic interception session: controller, state machines,
 │   │                          #   charset round trip, budgeted document step, CDP + stream backends
+│   ├── page-commands/         # the on-page command vocabulary (labels the menu + palette share), the
+│   │                          #   palette's executor contract and the view↔module bridge
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
 ├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table

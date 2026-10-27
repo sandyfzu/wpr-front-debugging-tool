@@ -1,0 +1,294 @@
+/*
+ * The on-page command palette: the shared palette primitive (dialog +
+ * combobox) styled for a host page's shadow root. The primitive's Tailwind
+ * classes mean nothing here (no utility layer is injected into a page), so
+ * the rules target its stable `data-fdt` hooks and the library's state
+ * attributes (`data-highlighted`, `data-disabled`) instead.
+ *
+ * Contract against hostile pages: sizes in px (the page owns the root font
+ * size); everything renders inside one `popover="manual"` layer in the
+ * browser's top layer, an inert full-viewport frame where only the scrim
+ * and the dialog take input; the tool never mirrors on RTL hosts.
+ * Motion: the dialog enters on the floating-chrome moment (`--motion-slow`,
+ * entrance easing, opacity + a 4 px drop via `@starting-style`) and leaves
+ * instantly (the view unmounts); reduced motion is collapsed by the token
+ * stylesheet.
+ */
+
+/* ---- Layer ------------------------------------------------------------------ */
+
+.cp-layer {
+  /* Override the UA popover box: a transparent, full-viewport, inert frame. */
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  /* Only matters where the top layer is unavailable (the fixed fallback). */
+  z-index: 2147483647;
+  direction: ltr;
+  text-align: left;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--fg-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.cp-layer *,
+.cp-layer *::before,
+.cp-layer *::after {
+  box-sizing: border-box;
+}
+
+.cp-layer :where(button, input) {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+.cp-layer :where(p, ul, li, h2) {
+  margin: 0;
+  padding: 0;
+}
+
+.cp-layer :where(svg) {
+  flex: none;
+  display: block;
+}
+
+/* The primitive's visually hidden title/description (`sr-only`). */
+.cp-layer .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Dialog ----------------------------------------------------------------- */
+
+.cp-layer [data-fdt='dialog-overlay'] {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  pointer-events: auto;
+}
+
+.cp-layer [data-fdt='dialog'] {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, calc(100% - 24px));
+  max-height: calc(100dvh - 80px);
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-elev-3);
+  pointer-events: auto;
+  outline: none;
+  transform: translateX(-50%);
+  opacity: 1;
+  transition:
+    opacity var(--motion-slow) var(--ease-entrance),
+    transform var(--motion-slow) var(--ease-entrance);
+}
+
+@starting-style {
+  .cp-layer [data-fdt='dialog'] {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+
+/* The combobox root (its `role="group"` wrapper). */
+.cp-layer [data-fdt='dialog'] > [role='group'] {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+/* ---- Field ------------------------------------------------------------------ */
+
+.cp-layer [data-fdt='palette-input'] {
+  width: 100%;
+  height: 32px;
+  flex: none;
+  padding: 0 10px;
+  border: 1px solid var(--line-3);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--fg-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.cp-layer [data-fdt='palette-input']::placeholder {
+  color: var(--fg-muted);
+  opacity: 1;
+}
+
+.cp-layer [data-fdt='palette-input']:hover {
+  border-color: var(--line-4);
+}
+
+.cp-layer [data-fdt='palette-input']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- List ------------------------------------------------------------------- */
+
+.cp-layer [data-fdt='palette-list'] {
+  flex: 1;
+  min-height: 0;
+  max-height: 288px;
+  margin: 0;
+  padding: 2px 0 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.cp-layer [data-fdt='palette-command'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.cp-layer [data-fdt='palette-command'][data-highlighted] {
+  background: var(--surface-3);
+  color: var(--fg-primary);
+}
+
+.cp-layer [data-fdt='palette-command'][data-disabled] {
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+.cp-layer [data-fdt='palette-command'] svg {
+  width: 14px;
+  height: 14px;
+  color: var(--fg-muted);
+}
+
+.cp-layer [data-fdt='palette-command'] > span:not([data-fdt]) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-layer [data-fdt='palette-command-hint'] {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.cp-layer [data-fdt='palette-empty'] {
+  padding: 6px 8px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Confirm step ----------------------------------------------------------- */
+
+/* The confirm shows its title and consequence (the primitive hides them). */
+.cp-layer .cp-confirm {
+  padding: 14px 14px 12px;
+}
+
+.cp-layer .cp-confirm [data-fdt='dialog-title'],
+.cp-layer .cp-confirm [data-fdt='dialog-description'] {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+
+.cp-layer .cp-confirm [data-fdt='dialog-title'] {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.cp-layer .cp-confirm [data-fdt='dialog-description'] {
+  margin-top: 4px;
+  color: var(--fg-secondary);
+}
+
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--fg-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.cp-button:hover {
+  background: var(--surface-3);
+  border-color: var(--line-3);
+}
+
+.cp-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cp-button-primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+.cp-button-primary:hover {
+  background: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+  border-color: color-mix(in srgb, var(--accent-strong) 92%, var(--fg-primary));
+}

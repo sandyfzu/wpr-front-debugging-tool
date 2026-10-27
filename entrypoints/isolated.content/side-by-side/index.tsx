@@ -65,6 +65,7 @@ import {
   type FrameFitRecord
 } from './presentation';
 import { SideBySideOverlay } from './ui';
+import { provideSideBySideTriggers } from '../palette/side-by-side-triggers';
 import './side-by-side.css';
 
 const log = createLogger('side-by-side');
@@ -512,6 +513,22 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     }
   };
 
+  /**
+   * The PageSpeed Insights flow's entry: the analysis tab for this page.
+   * On the analysis host itself it is a no-op (analysis flows start from a
+   * site, never from PSI).
+   */
+  const openPerformanceFlow = (): void => {
+    if (ctx.isInvalid) return;
+    if (isPsiHost(new URL(window.location.href))) return;
+    const entryUrl = psiEntryUrl(new URL(window.location.href));
+    if (entryUrl !== null) window.open(entryUrl, '_blank', 'noopener');
+  };
+
+  // The menu's receivers and the on-page palette call the same two
+  // triggers: one open path per flow, whatever asked for it.
+  provideSideBySideTriggers(ctx, { open: openOverlay, openPerformance: openPerformanceFlow });
+
   ctx.onInvalidated(
     // Imperative page-lifecycle call — the reactivity lint cannot see that.
     // eslint-disable-next-line solid/reactivity
@@ -523,12 +540,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
 
   ctx.onInvalidated(
     onMessage('openSideBySidePerformance', (): true => {
-      if (ctx.isInvalid) return true;
-      // On the analysis host itself the entry is a no-op (analysis flows
-      // start from a site, never from PSI).
-      if (isPsiHost(new URL(window.location.href))) return true;
-      const entryUrl = psiEntryUrl(new URL(window.location.href));
-      if (entryUrl !== null) window.open(entryUrl, '_blank', 'noopener');
+      openPerformanceFlow();
       return true;
     })
   );

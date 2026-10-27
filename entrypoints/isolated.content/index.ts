@@ -23,6 +23,7 @@ import { setupImprovements } from './improvements';
 import { setupKnownConflicts } from './known-conflicts';
 import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
+import { setupCommandPalette } from './palette';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
 import { OVERLAY_HOST_NAME, installKeyGuard } from '../../components/injected-ui/key-guard';
 import { recordNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
@@ -73,7 +74,9 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
   { name: 'improvements', setup: setupImprovements },
   { name: 'known-conflicts', setup: setupKnownConflicts },
   { name: 'side-by-side', setup: setupSideBySide },
-  { name: 'inspector', setup: setupInspectorWidget }
+  { name: 'inspector', setup: setupInspectorWidget },
+  // Last: its executors call the compare module's triggers (provided above).
+  { name: 'command-palette', setup: setupCommandPalette }
 ];
 
 /**

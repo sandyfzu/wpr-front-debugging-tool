@@ -110,6 +110,23 @@ export interface ProtocolMap {
    */
   openCommandPalette(): true;
   /**
+   * Palette module (top frame) → background (sender-resolved, no payload):
+   * inject the palette's view — a runtime content script, so pages carry
+   * none of its code until the first open — into the sender tab's top
+   * frame. Only a top-frame http(s) sender is answered (anything else is
+   * refused); resolves once the script ran, rejects when the injection
+   * failed (the module surfaces it).
+   */
+  loadCommandPaletteView(): true;
+  /**
+   * Palette module (top frame) → background (sender-resolved, no payload):
+   * open the exclusion builder overlay on the sender's own tab (the menu
+   * entry's opener: a live overlay is revealed, never replaced). Only a
+   * top-frame http(s) sender is answered; a content script can never name
+   * another tab.
+   */
+  openExclusionOverlayOnSenderTab(): ExclusionOverlayOpenOutcome;
+  /**
    * Content script → background (no payload): the palette chord's keyboard
    * convention. Content scripts cannot call `runtime.getPlatformInfo`, so
    * the background answers from it; the reply is a closed literal, and a

@@ -2,7 +2,9 @@
  * The modal dialog's render tests: the accessible naming (title → labelled,
  * description → described), the mount-driven open (fresh per mount, gone on
  * close), every dismissal seam (Escape, the explicit close control, an
- * outside pointerdown), and the mount-time autofocus on the first focusable —
+ * outside pointerdown), the mount-time autofocus on the first focusable, and
+ * the mounted mode (shadow-root render node, nothing written into the host
+ * document, Escape on the panel, outside pointer dismissal) —
  * asserted on roles/attributes, never on pixel geometry (the resource-less
  * DOM gives no layout).
  */
@@ -11,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Show, createSignal } from 'solid-js';
 import { ModalDialog } from './dialog';
 import { Button } from './button';
+import { isolateUiEvents } from '../injected-ui/event-isolation';
 
 afterEach(() => {
   cleanup();
@@ -118,5 +121,70 @@ describe('ModalDialog focus management', () => {
       expect(screen.getByRole('button', { name: 'First control' })).toBe(document.activeElement);
     });
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe('ModalDialog mounted mode (an injected shadow root)', () => {
+  /** A shadow-root container like the injected UIs mount into, events isolated. */
+  function renderMounted() {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadow.append(container);
+    isolateUiEvents(shadow);
+    const onClose = vi.fn();
+    render(() => (
+      <ModalDialog title="Command palette" mount={container} onClose={onClose}>
+        <Button>First control</Button>
+      </ModalDialog>
+    ));
+    return { shadow, container, onClose };
+  }
+
+  it('renders into the given node, never into the document body', async () => {
+    const { shadow } = renderMounted();
+    await waitFor(() => {
+      expect(shadow.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('writes nothing into the host document (no aria-hiding, scroll lock or pointer block)', async () => {
+    const sibling = document.createElement('main');
+    document.body.prepend(sibling);
+    const { shadow } = renderMounted();
+    await waitFor(() => {
+      expect(shadow.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sibling.hasAttribute('aria-hidden')).toBe(false);
+    expect(document.body.getAttribute('style') ?? '').toBe('');
+    expect(document.documentElement.getAttribute('style') ?? '').toBe('');
+  });
+
+  it('closes on Escape inside the panel although the root keeps keys from the document', async () => {
+    const { shadow, onClose } = renderMounted();
+    await waitFor(() => {
+      expect(shadow.querySelector('button')).not.toBeNull();
+    });
+    const button = shadow.querySelector('button') as HTMLButtonElement;
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // Other keys pass through untouched.
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on a pointerdown on the host page outside the panel', async () => {
+    const { shadow, onClose } = renderMounted();
+    await waitFor(() => {
+      expect(shadow.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const outside = document.createElement('p');
+    document.body.append(outside);
+    outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
