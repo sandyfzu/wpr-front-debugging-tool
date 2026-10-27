@@ -27,6 +27,7 @@ Depends:implementation complete. Parallel:—.
 - [ ] `pnpm bench:detection` checks median ratio≤0.70 table; real same-machine/source+port at least5 page loads each, timing medians, counts and source-compiled normalization comparison. happy-dom fixture parity alone not absolute browser count/perf proof.
 - [ ]5000-row view/filter/search/navigation gate no task>50ms/TBT<200ms; worker-only highlight/on-demand network, byte/timeout/abort/cache boundaries. Startup listener registration/no blocking top-level await; measure CS document-start and disclose cold-start pre-mark import cost.
 - [ ] CI common gates/build/budgets+**add/verify Firefox build** on release revision, green run link. E2E and machine benchmark remain local-only.
+- [ ] P10 carry-overs ([list](./11-phase-10-exclusion-builder.md#p10-follow-ups-open-after-p10j--each-with-its-owner)): drop the ~30 KiB duplicate exclusion engine from the Firefox background (planned there, M); re-measure the Defer set reading (> 50 ms ⇒ slice/off-thread) and the inner-`.*` matcher cost before any change.
 
 DoD: current measured table/protocol/CI evidence and all ceilings green, stretch explicitly accounted.
 
@@ -39,6 +40,7 @@ Depends:A baseline and all boundaries. Parallel:—.
 - [ ] Reload extension10×/navigate20×: unique menus/admin entries, observer cleanup/HS heap. Panel50 navigations memory stable/header LRU bounded. Native reload limitation/race distinguished from profile relaunch proxy; no retry masking.
 - [ ] Tooltip first cold-import test can approach Vitest5s (observed0.88–3.8s). Reproduce/warm import once if needed, **never raise timeout** just to hide it; pull forward if CI fails. No unrelated test weakening.
 - [ ] Installed Firefox every surface inclMAIN/message/mount/DNR/badge/clipboard/FSA fallback/host grants; [Firefox workstream](./17-firefox-runtime-parity.md) may close named rows only with actual results. `web-ext lint` clean or explicit exceptions; current floor150 vs MAIN API128 distinct. Gecko ID/data-collection declarations remain AMO gates.
+- [ ] P10 open verification ([list](./11-phase-10-exclusion-builder.md#p10-follow-ups-open-after-p10j--each-with-its-owner)), manual/owner: `DeveloperToolsAvailability = 2` policy block (deferred, owner 2026-10-21; how-to: P10 owner feedback round, "Policy-block check"); a real DevTools window on an intercepted tab on stable Chrome + the debugger infobar text/persistence across an attached reload (P10A); 2.5–4.3 MiB retained after the overlay closes (profile retainers first); Chromium DevTools panel `sender.url` shape before any Chromium relay.
 - [ ] Both built HTML trees reference real emitted CSS; no silent dropped source links. Chrome145 floor, Windows native high contrast, touch/RTL/AT/native popup/docking/undocked/find-bar limits from UI acceptance either verified or explicitly dispositioned.
 
 DoD: all required security/reliability/runtime rows pass or owner-approved scoped disposition, no false build=runtime/store acceptance.
@@ -49,6 +51,7 @@ Depends:B. Parallel:—.
 
 - [ ] Every surface/state keyboard-complete, visible focus, one truthful h1/page, strict axe0 violations; incomplete results fail unless exact evidence-reviewed target allowance. UI bar D1–D7: required widths/dockings, live System/Light/Dark (System under both OS palettes), reduce, state recovery/refresh, perf.
 - [ ] All **six** quality checks: axe, full keyboard, large-list gate, approved token motion only, palette tokens+committed screenshots, design-craft hierarchy/spacing/type/icons/async states. Current bar wins over old literal-zero-animation/bare-transition grep wording; real-wait busy motion/finished animation objects documented, no idle theater.
+- [ ] P10 UI carry-overs: global `line-*` tokens < 3:1 as component boundaries (WCAG 1.4.11, every surface; P10F); the strip pill below 320 px and single-long-word ellipsis (accepted in P10J, revisit only with the visual audit).
 - [ ] Copy sweep: no source suffix/Trucated/ocurred/Know conflict/Resouces/double periods, inconsistent Non-delayed/Non-Deferred, “in there are any,” garbled D-bugger label; product/native names consistent. Header freshness **captured vs fetched** wording from P6F explicitly resolved here. No accidental new abbreviated feature names.
 - [ ] Ledger every master extension/second-baseline integration and completed/active plan enhancement **DELIVERED/DEFERRED/DROPPED+test/measurement/runtime evidence+reason**. Include badge/log/report/headers/exclusion bridge/element inventory/KC/CI/appearance/SBS/strip/testers/CWV/coverage tools. Cross-phase deferrals can't disappear; required owning-phase work needs explicit scope decision, not automatic P15 backlog.
 

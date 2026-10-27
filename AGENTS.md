@@ -51,6 +51,8 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
 │   │                          #   costs pages nothing until then; the background re-opens it on a
 │   │                          #   session tab's loaded pages (`lib/exclusion-session/overlay-reopen`)
+│   ├── exclusion-transform-worker.ts # Firefox-only unlisted script: the exclusion engine's Web Worker
+│   │                          #   (the background preempts a runaway row by terminating it)
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
@@ -63,6 +65,10 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── messaging/             # typed message contracts + boundary validation
 │   ├── storage/               # typed storage items (storage.defineItem)
 │   ├── detection/             # WP Rocket footprint detection
+│   ├── exclusion-builder/     # pure exclusion engine: WP Rocket's row save + match semantics, the
+│   │                          #   four transforms, one pipeline (+ PHP parity table and fixtures)
+│   ├── exclusion-session/     # backend-agnostic interception session: controller, state machines,
+│   │                          #   charset round trip, budgeted document step, CDP + stream backends
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
 ├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
@@ -78,6 +84,13 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 - **`lib/` modules are self-contained:** each owns its logic, types, and data. No shared grab-bag files (`Globals.ts`/`Types.ts` are legacy patterns — don't port them). Cross-surface types are contracts in `lib/messaging/` and `lib/storage/`. Constants live with the module that owns the concept.
 - **Tests:** unit tests colocated as `*.test.ts` next to the code they test; the browser tier (`*.spec.ts`) lives in `tests/e2e/` (see its README).
 - `public/` is copied as-is; `assets/` is imported and bundled.
+
+### Exclusion Builder sessions (runbook)
+
+- **Apply modes:** Apply arms an interception session for the tab and reloads it; the served HTML is rewritten before parse — Chromium: `debugger` + CDP `Fetch` (in-process engine, 2 s budget between steps), Firefox: `webRequest.filterResponseData` (engine in `exclusion-transform-worker`, preempted at the budget). Unavailable interception (attach denied, debugging policy, cancelled infobar, detached, unsupported page or browser, session limit) is a warning state naming cause + remedy (Retry when transient) — there is **no fallback**. A session lasts across the tab's navigations until Stop, tab close or extension reload.
+- **DevTools interplay:** the mode is decided by attempting the attach, never assumed; on Chromium the attach worked with DevTools open (CDP is multi-client; stable-Chrome manual check open in P15B). The panel shows the session in its status strip and detection cards ("Disabled in this tab by the Exclusion Builder").
+- **Reset / Stop:** Reset is held while the draft equals the applied set; with edits it discards them and re-applies the session's stored set. Stop ends the session without navigating (the rewritten page and the draft stay); the next load is served as WP Rocket serves it.
+- Plan + receipts: [`docs/plans/11-phase-10-exclusion-builder.md`](docs/plans/11-phase-10-exclusion-builder.md).
 
 ## Commands
 
@@ -124,7 +137,7 @@ Do not guess, suppose, or assume. Always verify, validate, confirm, and fact-che
 The project must be stable, reliable, secure, safe, production-ready, well documented, and well tested:
 
 - **No half-finished paths.** Handle edge cases and errors explicitly; fail fast with actionable messages that name the offending input.
-- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case". (`declarativeNetRequestWithHostAccess` is the deliberate variant choice for the simulated-device sessions: same capabilities as the base permission, no install-time warning, and its rules act only within the already-declared host permissions.)
+- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case". (`declarativeNetRequestWithHostAccess` is the deliberate variant choice for the simulated-device sessions: same capabilities as the base permission, no install-time warning, and its rules act only within the already-declared host permissions. `debugger` — Chromium build only — is the one way to rewrite a top-level document before parse (CDP `Fetch`) for the Exclusion Builder; install warnings "Access the page debugger backend" + "Read and change all your data on all websites", plus Chrome's debugging infobar while attached; owner-accepted while store review allows it.)
 - **Dependencies: latest stable.** Any dependency added to the project MUST be the latest stable version (`latest` dist-tag) unless it is incompatible with the installed stack — verify `engines` and peer ranges before adding. Never add outdated versions "just in case".
 - **Security.** Never log or persist sensitive data. Validate untrusted input — page DOM, `storage`, message payloads — at the boundary before use.
 - **Content scripts must never break the host page.** They run on sites being debugged: wrap risky work, clean up listeners/observers, and keep main-world vs isolated-world responsibilities explicit.
