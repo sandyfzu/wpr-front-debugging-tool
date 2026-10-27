@@ -3,35 +3,28 @@
  * content scripts need for the palette chord, read from
  * `runtime.getPlatformInfo` (an API content scripts cannot reach).
  */
-import { createLogger, type Logger } from '../../lib/logger';
+import { createLogger } from '../../lib/logger';
 import { onMessage } from '../../lib/messaging';
-import { chordPlatformFromOs, type ChordPlatform } from '../../lib/storage/palette-chord-platform';
+import {
+  resolveChordPlatform,
+  type ChordPlatform,
+  type ChordPlatformSource
+} from '../../lib/storage/palette-chord-platform';
 
 const log = createLogger('chord-platform');
 
 /** What the answer runs against (tests inject doubles). */
-export interface ChordPlatformDeps {
-  /** Production: `browser.runtime.getPlatformInfo`. */
-  readonly getPlatformInfo: () => Promise<{ readonly os: string }>;
-  readonly log: Logger;
-}
+export type ChordPlatformDeps = ChordPlatformSource;
 
 /**
- * Resolve the keyboard convention. Never rejects: a platform-info failure
- * is logged and answers `'other'` — Ctrl-based notation is the majority
- * convention, and a wrong guess only mislabels the chord, never breaks
- * the page.
+ * Resolve the keyboard convention for the asking content script. Never
+ * rejects: a platform-info failure is logged and answers `'other'` (see
+ * {@link resolveChordPlatform}).
  *
- * @param deps See {@link ChordPlatformDeps}.
+ * @param deps See {@link ChordPlatformSource}.
  */
-export async function answerChordPlatform(deps: ChordPlatformDeps): Promise<ChordPlatform> {
-  try {
-    const info = await deps.getPlatformInfo();
-    return chordPlatformFromOs(info.os);
-  } catch (cause) {
-    deps.log.warn('Platform info unavailable — answering the Ctrl convention', cause);
-    return 'other';
-  }
+export function answerChordPlatform(deps: ChordPlatformDeps): Promise<ChordPlatform> {
+  return resolveChordPlatform(deps);
 }
 
 /** Register the channel (once per background start). */

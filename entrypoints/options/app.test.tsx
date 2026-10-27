@@ -23,10 +23,14 @@ import type { OptionsPageIO } from '../../lib/options/page-model';
 beforeEach(() => {
   fakeBrowser.reset();
   toast.clear();
+  // The fake browser leaves platform info unimplemented; the page's default
+  // seam asks it for the shortcut's keyboard convention.
+  vi.spyOn(browser.runtime, 'getPlatformInfo').mockResolvedValue({ os: 'mac' } as never);
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.useRealTimers();
   // The appearance tests arm the real storage watch over the shared document
   // root; neither of its attributes may leak into the next test's renders.
@@ -40,6 +44,7 @@ const PROPS = { name: 'WPR Front Debugging Tool', version: '0.9.0' } as const;
 /** The dbugger switch row's label (its registry copy, pinned verbatim here). */
 const DBUGGER_ROW = "Add an entry to access the D-bugger to WP Rocket's menu";
 const BADGE_ROW = 'Show the toolbar badge';
+const GATE_ROW = 'Show on-page UI';
 
 /**
  * A whole-shape options value with one choice (the documented defaults
@@ -392,11 +397,14 @@ describe('draft merge (unknown and pre-existing fields survive a page save)', ()
 });
 
 describe('keyboard reachability (structure) and the state matrix', () => {
-  it('every control is keyboard-reachable in reading order (Save, switches, radios, refresh)', async () => {
+  it('every control is keyboard-reachable in reading order (Save, switches, radios, shortcut, refresh)', async () => {
     render(() => <App {...PROPS} />);
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: BADGE_ROW })).toBeTruthy();
     });
+    // The instant rows render once their own reads (and the platform) land.
+    await screen.findByRole('switch', { name: GATE_ROW });
+    await screen.findByRole('button', { name: /^Command palette shortcut:/ });
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Refresh now' })).toBeTruthy();
     });
@@ -414,8 +422,10 @@ describe('keyboard reachability (structure) and the state matrix', () => {
           !element.disabled && !(element instanceof HTMLInputElement && element.type === 'radio')
       )
       .map((element) => (element.tagName === 'BUTTON' ? 'button' : 'switch'));
-    // Save first (header), then the two switches, then the refresh control.
-    expect(focusables).toEqual(['button', 'switch', 'switch', 'button']);
+    // Save first (header), the dbugger switch, (the radio group), the gate
+    // switch, the shortcut field (a button), the badge switch, then the
+    // refresh control — the default shortcut shows no Reset button.
+    expect(focusables).toEqual(['button', 'switch', 'switch', 'button', 'switch', 'button']);
     // The choice group's radios share the native roving contract: all of this
     // page's radios carry ONE name — per-instance, never a hardcoded literal
     // that would merge with another group's set.

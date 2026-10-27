@@ -14,13 +14,16 @@ import {
   RESERVED_CHORDS,
   captureChord,
   chordMayTypeText,
+  chordsEqual,
   formatChord,
+  keystrokeChord,
   matchesChord,
   paletteChordStore,
   parsePaletteChord,
   reservedChordGroup,
   readPaletteChord,
   setPaletteChord,
+  textKeystrokeKind,
   watchPaletteChord,
   type ChordKeystroke,
   type PaletteChord,
@@ -166,6 +169,20 @@ describe('matchesChord', () => {
     expect(matchesChord(option, altK, 'mac')).toBe(true);
   });
 
+  it('names why a keystroke is text input (the shared predicate)', () => {
+    const altGraph = (held: string): boolean => held === 'AltGraph';
+    expect(textKeystrokeKind(key('KeyK', { altKey: true, repeat: true }), 'mac')).toBe('repeat');
+    expect(textKeystrokeKind(key('KeyK', { isComposing: true }), 'other')).toBe('composition');
+    expect(textKeystrokeKind(key('KeyK', { keyCode: 229 }), 'mac')).toBe('composition');
+    const altGr = key('KeyK', { ctrlKey: true, altKey: true, getModifierState: altGraph });
+    expect(textKeystrokeKind(altGr, 'other')).toBe('altgraph');
+    // macOS: Firefox's AltGraph is the chord's own Option.
+    expect(textKeystrokeKind(altGr, 'mac')).toBeNull();
+    // A probe-less keystroke (plain object) and a command keystroke.
+    expect(textKeystrokeKind(key('KeyK', { ctrlKey: true, altKey: true }), 'other')).toBeNull();
+    expect(textKeystrokeKind(key('KeyK', { altKey: true, keyCode: 75 }), 'other')).toBeNull();
+  });
+
   it('matches a lone function key only with no modifier held', () => {
     const f2: PaletteChord = { code: 'F2' };
     expect(matchesChord(key('F2'), f2, 'other')).toBe(true);
@@ -224,6 +241,40 @@ describe('captureChord', () => {
     if (!result.ok) throw new Error('expected a chord');
     expect(parsePaletteChord(result.chord)).toEqual(result.chord);
     expect(matchesChord(press, result.chord, 'other')).toBe(true);
+  });
+});
+
+describe('chordsEqual', () => {
+  it('compares key and flags, treating an absent flag as false', () => {
+    expect(
+      chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyK', alt: true, shift: false })
+    ).toBe(true);
+    expect(chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyK', alt: true, shift: true })).toBe(
+      false
+    );
+    expect(chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyJ', alt: true })).toBe(false);
+    expect(chordsEqual({ code: 'KeyK', mod: true }, { code: 'KeyK', alt: true })).toBe(false);
+  });
+});
+
+describe('keystrokeChord', () => {
+  it('spells the canonical chord of a press before the rules run (reserved and bare keys included)', () => {
+    expect(keystrokeChord(key('KeyC', { metaKey: true }), 'mac')).toEqual({
+      code: 'KeyC',
+      mod: true
+    });
+    expect(keystrokeChord(key('KeyC', { ctrlKey: true }), 'other')).toEqual({
+      code: 'KeyC',
+      mod: true
+    });
+    expect(keystrokeChord(key('KeyK'), 'other')).toEqual({ code: 'KeyK' });
+    expect(Object.isFrozen(keystrokeChord(key('KeyK', { altKey: true }), 'mac'))).toBe(true);
+  });
+
+  it('is null for an unbindable key or a modifier outside the vocabulary', () => {
+    expect(keystrokeChord(key('Escape', { altKey: true }), 'other')).toBeNull();
+    expect(keystrokeChord(key('KeyK', { ctrlKey: true }), 'mac')).toBeNull();
+    expect(keystrokeChord(key('KeyK', { metaKey: true }), 'other')).toBeNull();
   });
 });
 
@@ -374,6 +425,11 @@ describe('formatChord', () => {
     expect(formatChord(all, 'other')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord(all, 'other', 'words')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord({ code: 'Slash', mod: true }, 'other')).toBe('Ctrl+/');
+  });
+
+  it('writes a caller-supplied key legend in place of the US one', () => {
+    expect(formatChord({ code: 'KeyQ', alt: true }, 'mac', 'symbols', 'A')).toBe('⌥A');
+    expect(formatChord({ code: 'KeyQ', alt: true }, 'other', 'words', 'A')).toBe('Alt+A');
   });
 });
 

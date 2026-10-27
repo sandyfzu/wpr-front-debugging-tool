@@ -31,6 +31,9 @@ import { choiceTile, openOptionsPage, resetStoredOptions } from '../helpers/opti
 /** The badge row's storage id (the walk's dirty-making toggle). */
 const BADGE_ROW_ID = 'toolbarBadge';
 
+/** The default shortcut as the field shows it on this machine (the harness runs the host OS). */
+const DEFAULT_CHORD_TEXT = process.platform === 'darwin' ? '⌥K' : 'Alt+K';
+
 /** The widths the walk covers: the L-2 floor, regular, wide, and the D-1 top. */
 const WALK_WIDTHS = [320, 480, 768, 1280] as const;
 /** The walk viewport's height (the short-height canvas balance is a panel leg). */
@@ -75,6 +78,9 @@ const EXPECTED_STOPS: Array<{
   { tag: 'INPUT', row: 'appearance', choice: 'system', text: null },
   { tag: 'INPUT', row: 'appearance', choice: 'dark', text: null, arrow: true },
   { tag: 'INPUT', row: 'appearance', choice: 'light', text: null, arrow: true },
+  { tag: 'INPUT', row: 'page-ui-gate', choice: null, text: null },
+  // The shortcut field shows the default chord in the host OS's notation.
+  { tag: 'BUTTON', row: 'palette-chord', choice: null, text: DEFAULT_CHORD_TEXT },
   { tag: 'INPUT', row: 'toolbarBadge', choice: null, text: null },
   { tag: 'BUTTON', row: null, choice: null, text: 'Refresh now' }
 ];
