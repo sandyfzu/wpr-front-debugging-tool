@@ -1,9 +1,12 @@
 /**
- * The panel's "feature absent" view: this DevTools panel has no way to the
- * page at all (no `tabs` API and no runtime send for the background relay),
- * so no page data can load here. A title, the one sentence naming why and
- * what still works, and no retry — nothing the panel could retry would
- * change the answer.
+ * The panel's terminal "no page data here" view, for two causes the store
+ * names in its reason: this DevTools panel has no way to the page at all
+ * (no `tabs` API and no runtime send for the background relay —
+ * `NO_PAGE_TRANSPORT_REASON`), or the background relay itself failed (it
+ * refused the request, could not be reached, or answered outside its
+ * contract — `RELAY_UNAVAILABLE_REASON`, which says to reopen DevTools). A
+ * title, the one sentence naming why and what still works, and no retry —
+ * nothing the panel could retry would change the answer.
  */
 import type { JSX } from 'solid-js';
 import Info from 'lucide-solid/icons/info';

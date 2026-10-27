@@ -5,10 +5,12 @@
  * contract lives in `lib/messaging/tab-pushes`.
  *
  * Lazy by design: the three push listeners exist only while at least one
- * port is subscribed. A context that never subscribes (every Chromium
- * panel) therefore leaves the pushes exactly as they were — no background
- * receiver, so a push with no panel open still fails as "no receiver", and
- * no push ever wakes the service worker.
+ * port is subscribed. The background's messenger already has its one root
+ * `runtime.onMessage` listener for its other channels, so laziness changes
+ * nothing about delivery or service-worker wakes; it only keeps the
+ * background from answering a push it has no handler for. A context that
+ * never subscribes (every Chromium panel) therefore keeps today's result:
+ * a push with no panel open still fails as "no receiver".
  */
 import { createLogger, type Logger } from '../../lib/logger';
 import { onMessage } from '../../lib/messaging';
