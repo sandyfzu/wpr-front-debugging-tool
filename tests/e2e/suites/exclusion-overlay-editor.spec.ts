@@ -309,7 +309,10 @@ test.describe('exclusion builder editor', () => {
     await typeRow(page, DELAY, 'jquery-ui');
     await page.keyboard.press('Tab');
     expect(await reloadThroughSession(page, () => applyButton(page).click())).toBe('Applied');
-    // The fulfilled bytes were re-encoded as windows-1252: the text reads as served.
+    // The fulfilled bytes still read as the served windows-1252 text: a lossy
+    // round trip (re-encoded as UTF-8) fails here. A wrong decode that maps
+    // every byte back to itself (Latin-1, C1 controls kept as-is) round-trips
+    // the same bytes and passes; the decoding label is pinned by the unit tests.
     await expect
       .poll(read)
       .toEqual({ text: WINDOWS_1252_TEXT, charset: 'windows-1252', type: null, ran: true });

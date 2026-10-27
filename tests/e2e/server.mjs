@@ -233,7 +233,8 @@ async function handle(request, response) {
     // A main frame served as windows-1252 (header only, no `<meta>`), its
     // text holding bytes that differ from Latin-1 and UTF-8 (0x80 = €,
     // 0xE9 = é) and a script as Delay JavaScript execution serves it: an
-    // applied session must decode and re-encode the page in its own charset.
+    // applied session must serve the page back in its own charset, those
+    // bytes intact.
     response.writeHead(200, {
       'content-type': 'text/html; charset=windows-1252',
       'cache-control': 'no-store'
