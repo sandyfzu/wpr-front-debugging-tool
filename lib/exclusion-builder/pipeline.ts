@@ -39,26 +39,48 @@ export interface CompositionOutput<R> {
   readonly reports: readonly R[];
 }
 
+/** Hooks a host passes to {@link composeSteps}: observe each step, or stop the run after one. */
+export interface StepHooks<Id extends string = string> {
+  /** Called with each step's id as the step starts. */
+  readonly onStepStart?: (id: Id) => void;
+  /**
+   * Called with each step's id after the step ran: `true` discards its
+   * output and stops the run there (a host's budget check between steps).
+   */
+  readonly stopAfter?: (id: Id) => boolean;
+}
+
+/** A composition: completed (the html and every report), or stopped by the host after a step. */
+export type Composition<R, Id extends string = string> =
+  | ({ readonly completed: true } & CompositionOutput<R>)
+  | { readonly completed: false; readonly stoppedAt: Id };
+
 /**
  * Compose steps left-to-right: each step consumes its predecessor's html,
- * and every report is collected in step order — the mechanics any consumer
- * (the exclusion pipeline, a fixture tester) rides.
+ * and every report is collected in step order — the one loop every
+ * consumer rides (the exclusion pipeline, a fixture tester). Without a
+ * `stopAfter` hook it always completes.
  *
  * @param html The input html.
  * @param steps The steps, in execution order.
+ * @param hooks The host's step hooks.
+ * @returns The completed composition, or the step the host stopped it at.
  */
-export function composeSteps<R>(
+export function composeSteps<R, Id extends string>(
   html: string,
-  steps: readonly PipelineStep<R>[]
-): CompositionOutput<R> {
+  steps: readonly PipelineStep<R, Id>[],
+  hooks: StepHooks<Id> = {}
+): Composition<R, Id> {
   let current = html;
   const reports: R[] = [];
   for (const step of steps) {
+    hooks.onStepStart?.(step.id);
     const result = step.apply(current);
+    if (hooks.stopAfter?.(step.id) === true) return { completed: false, stoppedAt: step.id };
     current = result.html;
     reports.push(result.report);
   }
-  return { html: current, reports };
+  return { completed: true, html: current, reports };
 }
 
 /**
@@ -208,25 +230,16 @@ export function pipelineSetProblems(set: ExclusionSet): readonly InvalidExclusio
 }
 
 /** Optional hooks a bounded host passes to {@link runExclusionPipeline}. */
-export interface PipelineRunHooks {
+export interface PipelineRunHooks extends StepHooks<ExclusionFeatureId> {
   /** How the session decoded the page, when known (see {@link exclusionPipelineSteps}). */
   readonly bytes?: DocumentBytes;
-  /** Called with each step's feature as the step starts. */
-  readonly onStepStart?: (feature: ExclusionFeatureId) => void;
-  /**
-   * Called with each step's feature after the step ran: `true` discards its
-   * output and stops the run there (a host's budget check between steps).
-   */
-  readonly stopAfter?: (feature: ExclusionFeatureId) => boolean;
 }
 
 /**
  * One pipeline run: completed (rewritten html, marker step included, and
  * one report per feature), or stopped by the host after a step.
  */
-export type PipelineRun =
-  | ({ readonly completed: true } & CompositionOutput<TransformReport>)
-  | { readonly completed: false; readonly stoppedAt: ExclusionFeatureId };
+export type PipelineRun = Composition<TransformReport, ExclusionFeatureId>;
 
 /**
  * The exclusion pipeline, the one path every caller runs: validate the
@@ -256,22 +269,18 @@ export function runExclusionPipeline(
 ): PipelineRun {
   const problems = pipelineSetProblems(set);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
-  let current = html;
-  const reports: TransformReport[] = [];
-  for (const step of exclusionPipelineSteps(set, hooks.bytes)) {
-    hooks.onStepStart?.(step.id);
-    const result = step.apply(current);
-    if (hooks.stopAfter?.(step.id) === true) return { completed: false, stoppedAt: step.id };
-    current = result.html;
-    if (result.report !== null) reports.push(result.report);
-  }
-  return { completed: true, html: markBuilderEffects(current, reports), reports };
+  const run = composeSteps(html, exclusionPipelineSteps(set, hooks.bytes), hooks);
+  if (!run.completed) return run;
+  const reports = featureReports(run.reports);
+  return { completed: true, html: markBuilderEffects(run.html, reports), reports };
 }
 
 /**
  * {@link runExclusionPipeline} unbounded (no hooks, so it always
  * completes): served html + set → rewritten html and one report per
- * feature, in pipeline order.
+ * feature, in pipeline order. A convenience for callers that need no
+ * budget (tests, fixture oracles); a session host runs
+ * {@link runExclusionPipeline} with its budget as `stopAfter`.
  *
  * @param html The served document (decoded text).
  * @param set The exclusion set.

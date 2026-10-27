@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPipeline,
   composeSteps,
+  type Composition,
+  type CompositionOutput,
   EXCLUSION_PIPELINE_IDS,
   EXCLUSION_PIPELINE_STEP_IDS,
   exclusionPipelineSteps,
@@ -33,6 +35,15 @@ function setWith(
   };
 }
 
+/**
+ * The completed composition's output (an unhooked composition always
+ * completes — anything else fails the test).
+ */
+function completed<R>(run: Composition<R>): CompositionOutput<R> {
+  if (!run.completed) throw new Error(`composition stopped at ${run.stoppedAt}`);
+  return { html: run.html, reports: run.reports };
+}
+
 describe('composeSteps', () => {
   /** A fixture transform: strips one `<!--FIDX-->` comment per apply. */
   const fixtureStep = (report: { stripped: number }): PipelineStep<{ stripped: number }> => ({
@@ -52,7 +63,7 @@ describe('composeSteps', () => {
       { id: 'upper', apply: (html) => ({ html: html.replace('b', 'B'), report: { uppered: 1 } }) },
       fixtureStep(report)
     ];
-    const result = composeSteps('a<!--FIDX-->b<!--FIDX-->c', steps);
+    const result = completed(composeSteps('a<!--FIDX-->b<!--FIDX-->c', steps));
     // The renamed `B` proves the rename ran first; both markers stripped proves the
     // fixture step consumed its predecessor's output.
     expect(result.html).toBe('aBc');
@@ -68,13 +79,13 @@ describe('composeSteps', () => {
         apply: (html) => ({ html, report: html.includes('two') ? 'saw-two' : 'missed' })
       }
     ];
-    const result = composeSteps('<p>one</p>', steps);
+    const result = completed(composeSteps('<p>one</p>', steps));
     expect(result.reports).toEqual([null, 'saw-two']);
   });
 
   it('is the identity for an empty step list', () => {
     const html = '<p>x</p>';
-    expect(composeSteps(html, [])).toEqual({ html, reports: [] });
+    expect(composeSteps(html, [])).toEqual({ completed: true, html, reports: [] });
   });
 });
 
@@ -222,9 +233,11 @@ describe('applyPipeline', () => {
     };
     // Heterogeneous reports — the seam is generic over the report type.
     const steps: PipelineStep<unknown>[] = [fixtureStep, delayStep];
-    const result = composeSteps(
-      '<style>gone</style><script type="rocketlazyloadscript" data-rocket-src="combo.js"></script>',
-      steps
+    const result = completed(
+      composeSteps(
+        '<style>gone</style><script type="rocketlazyloadscript" data-rocket-src="combo.js"></script>',
+        steps
+      )
     );
     expect(result.html).toBe('<script src="combo.js" data-wpr-fdt-excluded="delay_js"></script>');
     expect(result.reports[0]).toEqual({ stripped: 1 });
@@ -279,7 +292,7 @@ describe('exclusionPipelineSteps', () => {
   it('composes to exactly what applyPipeline returns', () => {
     const html = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>';
     const set = setWith({ delayJs: ['a\\.js'] });
-    const composed = composeSteps(html, exclusionPipelineSteps(set));
+    const composed = completed(composeSteps(html, exclusionPipelineSteps(set)));
     expect({ html: composed.html, reports: featureReports(composed.reports) }).toEqual(
       applyPipeline(html, set)
     );
@@ -288,7 +301,7 @@ describe('exclusionPipelineSteps', () => {
   it('matches Defer JS rows against the raw src, never a resolved URL (as WP Rocket does)', () => {
     const resolvedRow = setWith({ deferJs: ['^https://s\\.tld/js/a\\.js$'] });
     const steps = exclusionPipelineSteps(resolvedRow);
-    expect(composeSteps(RELATIVE, steps).reports[1]?.rewritten).toBe(0);
+    expect(completed(composeSteps(RELATIVE, steps)).reports[1]?.rewritten).toBe(0);
     expect(applyPipeline(RELATIVE, resolvedRow).reports[1]?.rewritten).toBe(0);
     const rawRow = setWith({ deferJs: ['^js/a\\.js$'] });
     expect(applyPipeline(RELATIVE, rawRow).reports[1]?.rewritten).toBe(1);
@@ -411,5 +424,64 @@ describe('runExclusionPipeline (the one path applyPipeline and the session run)'
       })
     ).toThrow(ExclusionValidationError);
     expect(started).toEqual([]);
+  });
+});
+
+describe('composeSteps under a host budget (a clock that advances inside each step)', () => {
+  const BUDGET_MS = 100;
+
+  /**
+   * Steps that each advance a fake clock by their cost while they run,
+   * composed with the budget check a session host passes as `stopAfter`.
+   */
+  function budgetedRun(costs: readonly number[]): Composition<null> {
+    let clockMs = 0;
+    const steps: PipelineStep<null>[] = costs.map((cost, index) => ({
+      id: `step-${String(index)}`,
+      apply: (html) => {
+        clockMs += cost;
+        return { html: `${html}${String(index)}`, report: null };
+      }
+    }));
+    return composeSteps('', steps, { stopAfter: () => clockMs > BUDGET_MS });
+  }
+
+  it('names the step whose own work crosses the budget, never the next one', () => {
+    // Cumulative 10, 40, 110: step 2 crosses it (a check before the step would name step 3).
+    expect(budgetedRun([10, 30, 70, 5])).toEqual({ completed: false, stoppedAt: 'step-2' });
+  });
+
+  it('reports an overrun in the last step (no later check exists to catch it)', () => {
+    expect(budgetedRun([10, 10, 10, 90])).toEqual({ completed: false, stoppedAt: 'step-3' });
+  });
+
+  it('completes a run that ends exactly at the budget', () => {
+    expect(budgetedRun([25, 25, 25, 25])).toEqual({
+      completed: true,
+      html: '0123',
+      reports: [null, null, null, null]
+    });
+  });
+});
+
+describe('runExclusionPipeline — decoding facts', () => {
+  // A non-stamped parent is matched as libxml re-serializes it: UTF-8 bytes
+  // without a BOM (no charset meta) read as Latin-1 (`été` → `Ã©tÃ©`, no
+  // match); after a UTF-8 BOM libxml reads UTF-8 and the row matches.
+  const html =
+    '<html><body><div class="été"><div data-wpr-lazyrender="1">x</div></div></body></html>';
+  const set = setWith({ lazyRender: ['été'] });
+  const lazyRenderRewritten = (reports: readonly TransformReport[]): number | undefined =>
+    reports.find((report) => report.feature === 'automatic_lazy_rendering')?.rewritten;
+
+  it('reads the page through `bytes`: a BOM changes what the rows match', () => {
+    const plain = completed(runExclusionPipeline(html, set));
+    const bom = completed(
+      runExclusionPipeline(html, set, { bytes: { encoding: 'utf-8', bom: true } })
+    );
+    expect(lazyRenderRewritten(plain.reports)).toBe(0);
+    expect(plain.html).toBe(html);
+    expect(lazyRenderRewritten(bom.reports)).toBe(1);
+    expect(bom.html).not.toContain('data-wpr-lazyrender');
   });
 });
