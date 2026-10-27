@@ -17,7 +17,7 @@ DoD: committed decisions here, each owner friction mapped to acceptance check, s
 
 ## P5J.B — Implement final form
 
-Depends:A. Parallel:—shared geometry. One route table, no duplicate DOM registries; group AT names/aria-current/reserved note. Tooltips right/no sibling occlusion,≥24px controls/visible focus. Header/status remain outside content scroller; crash/loading/soft-refresh/canvas contracts intact.
+Depends:A. Parallel:—shared geometry. One route table, no duplicate DOM registries; group names/aria-current/reserved note as the shipped primitives give them (new AT-naming work dropped — owner 2026-10-27: no screen-reader support). Tooltips right/no sibling occlusion,≥24px controls/visible focus. Header/status remain outside content scroller; crash/loading/soft-refresh/canvas contracts intact.
 
 Height contract persists: measured fitting prefix+More pages suffix, no scrolling rail,32px pitch/separator breathing, pointer-reachable trigger (current z10 guarantee). Menu can internally scroll under clamp, no phantom stable gutter. Reuse same fit rule for any returning wide form; don't delete rail affordance without revising study. Status footer spans shell width.
 

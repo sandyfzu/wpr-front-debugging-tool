@@ -38,7 +38,7 @@ Actual attached DevTools **is programmatically reachable** on installed Chromium
 
 Additional retained standalone coverage:320/480/768/1280/1920/3440px, shallow220px states, genuine200% zoom,5000 real captured scripts/<100 mounted rows, sampled search/clear/route actions no long task>50ms; broader P6.1 matrix still required.144 run includes site/refresh/theme/cold-start/strict fallback states; no blanket universal-performance claim.
 
-Residual limits: Firefox extension runtime/clipboard/native auto-hide; Windows High Contrast (forced colors emulated on macOS); Chrome145 floor runtime; touch/RTL/exhaustive AT and actual speech; native popup envelope (built document tested in tab); every native fallback/docking/keyboard combination. No allowance for these becomes a claimed pass.
+Residual limits: Firefox extension runtime/clipboard/native auto-hide; Chrome145 floor runtime; touch/RTL; Windows High Contrast + exhaustive AT/actual speech dropped — owner 2026-10-27: no screen-reader support; native popup envelope (built document tested in tab); every native fallback/docking/keyboard combination. No allowance for these becomes a claimed pass.
 
 ### Evidence locator
 

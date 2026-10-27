@@ -47,7 +47,8 @@ AGENTS owns coding/error/security/testing/appearance rules; [design decisions](.
 - Fixture/reference/snapshot plus actual engine-output→boundary contracts; compiled-source normalization audit and real same-page builds. happy-dom parse/count limitation retained in core record, so no browser parity inferred from runner alone.
 - Checks benchmark local≤0.70 aggregate, release actual-page≥5 loads/build; no machine speed bench/e2e in CI. CI common gates/build/budgets every PR, Firefox build added/verifiedP15.
 - Raw/gzip/perf receipts with source revision/context/known limits,5000-row no-task>50ms/TBT<200ms; cold-start500ms measured from entry execution (imports earlier). Worker no main-thread fallback; shared-chunk/whole-build accounting audited.
-- UI changes receipt bar D1–D7; zero axe violations and named reviewed incomplete exceptions only, keyboard/themes/reduced motion/hostile CSS/native topology distinct from standalone shim. Actual native docking now proven reachable; old impossibility claims superseded.
+- UI changes receipt bar D1–D7 (D-3/D-4 dropped, see next line); existing axe assertions stay at zero violations + named reviewed incomplete exceptions; themes/reduced motion/hostile CSS/native topology distinct from standalone shim.
+- **Accessibility (owner 2026-10-27):** zero screen-reader support, effort-free a11y only (semantic HTML + what `components/ui` primitives give) — no live regions, SR/real-AT checks, keyboard walks or new axe assertions in any phase; shipped a11y code and existing axe assertions stay. Rule: AGENTS.md + [UI bar §K](../ui-ux-bar.md#k--keyboard-focus-aria-ux-d3); any open plan item asking for that work is dropped. Actual native docking now proven reachable; old impossibility claims superseded.
 - Every requirement/enhancement delivered or **explicitly dispositioned** with evidence/reason at owning phase/P15; manual/open checks stay open, no build=runtime/store approval. Current-tree final gates not historical-run reuse.
 
 ## 6. Stable source defect IDs
@@ -108,7 +109,7 @@ IDs retained for tests/old references; these describe **source defects, not all 
 
 ## 7. Residual risks
 
-Read owning records only when relevant: core manual120-tab/HS/in-place reload/baseline timing; SBS permanent dual-origin/UA-copy and external/Firefox runtime; P6 search/copy candidates/stretch; P12 touch/host CSS/persistence; Firefox ID/MV2 namespace/mount/panel cause; RUCSS endpoint/API availability; package internal churn/lazy IIFE build seam; P15 native/high-contrast/minimum-browser/AT/long-session checks. “Collecting”/applied-empty/unknown is normal honest evidence, not automatically an error.
+Read owning records only when relevant: core manual120-tab/HS/in-place reload/baseline timing; SBS permanent dual-origin/UA-copy and external/Firefox runtime; P6 search/copy candidates/stretch; P12 touch/host CSS/persistence; Firefox ID/MV2 namespace/mount/panel cause; RUCSS endpoint/API availability; package internal churn/lazy IIFE build seam; P15 native/minimum-browser/long-session checks (AT + high-contrast dropped — owner 2026-10-27: no screen-reader support). “Collecting”/applied-empty/unknown is normal honest evidence, not automatically an error.
 
 ## 8. Committed extensions
 
