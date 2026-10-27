@@ -5,7 +5,7 @@
  * `undefinedReferencesUpdated`). Such a panel opens one port named
  * {@link TAB_PUSH_PORT_NAME}, subscribes it to its inspected tab, and the
  * background re-sends each push from that tab's top frame down the port as
- * one {@link TabPushEnvelope}.
+ * one {@link TabPushEnvelope}. Both ends hold the port as a {@link TabPushPort}.
  *
  * Closed by construction: only the pushes in {@link TAB_PUSHES} travel,
  * each payload passes the same check the panel's direct receivers apply,
@@ -17,6 +17,20 @@ import { parseErrorWords } from './validate';
 
 /** The port name a panel subscribes with (the background ignores any other). */
 export const TAB_PUSH_PORT_NAME = 'tab-pushes';
+
+/** One port event as both ends touch it (structural: the runtime's `Port` fits). */
+export interface PortEvent<Listener> {
+  addListener(listener: Listener): void;
+  removeListener(listener: Listener): void;
+}
+
+/** The runtime port slice the relay uses on either end. */
+export interface TabPushPort {
+  postMessage(message: unknown): void;
+  disconnect(): void;
+  readonly onMessage: PortEvent<(message: unknown) => void>;
+  readonly onDisconnect: PortEvent<() => void>;
+}
 
 /** The payload each relayed push carries (`undefined`: none). */
 export interface TabPushPayloads {

@@ -14,22 +14,9 @@ import {
   TAB_PUSH_PORT_NAME,
   parseTabPushEnvelope,
   type TabPushEnvelope,
+  type TabPushPort,
   type TabPushSubscription
 } from './tab-pushes';
-
-/** One port event as both ends touch it (structural: the runtime's `Port` fits). */
-export interface PortEvent<Listener> {
-  addListener(listener: Listener): void;
-  removeListener(listener: Listener): void;
-}
-
-/** The runtime port slice the relay uses on either end. */
-export interface TabPushPort {
-  postMessage(message: unknown): void;
-  disconnect(): void;
-  readonly onMessage: PortEvent<(message: unknown) => void>;
-  readonly onDisconnect: PortEvent<() => void>;
-}
 
 /** Open the push port (production: `runtime.connect` with the contract's name). */
 export type ConnectTabPushes = () => TabPushPort;

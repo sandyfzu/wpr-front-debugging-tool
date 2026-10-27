@@ -5,7 +5,7 @@
  * the live listener counts so leaks are assertable.
  */
 import type { LooseMessageSender } from './sender';
-import type { PortEvent, TabPushPort } from './tab-push-client';
+import type { PortEvent, TabPushPort } from './tab-pushes';
 
 /** A port double (see the module header). */
 export interface PortDouble extends TabPushPort {

@@ -17,12 +17,12 @@ import {
   resolveTopFrameSender,
   type LooseMessageSender
 } from '../../lib/messaging/sender';
-import type { TabPushPort } from '../../lib/messaging/tab-push-client';
 import {
   TAB_PUSH_PORT_NAME,
   parseTabPushSubscription,
   tabPushEnvelope,
-  type TabPush
+  type TabPush,
+  type TabPushPort
 } from '../../lib/messaging/tab-pushes';
 
 const log = createLogger('tab-push-relay');
