@@ -10,6 +10,14 @@
  * read, and once the watch has delivered a value the (possibly older) read
  * result is dropped — no write is lost between the two. All browser and
  * storage effects are injected, so the ordering is unit-testable.
+ *
+ * Rows may not exist when the first gate value arrives: a fresh install, an
+ * update adding rows, or a browser that keeps no menus across restarts (a
+ * persistent background page) only gets them from the lifecycle recreation,
+ * whose event can come after the boot read. Until rows are known to exist in
+ * this lifetime, a refused edit is therefore expected: the follower recreates
+ * every row in the gate's state instead of warning. Once rows are known, a
+ * refused edit is a real degradation and warns.
  */
 
 import { createLogger } from '../../lib/logger';
@@ -43,14 +51,16 @@ export interface MenuGateDeps {
 export interface MenuGateFollower {
   /**
    * Arm the watch, then read the gate and apply it. Never rejects: a failed
-   * read is logged and the rows keep their state until a write arrives.
+   * watch or read is logged; without a read the rows keep their state until
+   * a write arrives.
    */
   start(): Promise<void>;
   /** Queue a recreation of every row in the newest known gate's state. */
   recreate(): void;
   /**
-   * Write the opposite of the gate the rows show (read first when it is
-   * still unknown).
+   * Write the opposite of what the rows show — the last gate applied to them,
+   * so a click between a gate change and its row edit still does what the
+   * clicked title offered; falls back to the newest known gate, then a read.
    *
    * @returns The written value.
    * @throws When the read or the write rejects — the click logs it.
@@ -62,22 +72,25 @@ export interface MenuGateFollower {
 
 /**
  * Apply one gate value to the created rows. Each edit settles on its own:
- * one refused row (e.g. a create the browser rejected) never stops the
- * others, and every refusal is logged with its id.
+ * one refused row never stops the others.
  *
  * @param deps The injected effects.
  * @param uiEnabled The gate to reflect.
+ * @returns The refused edits with their causes (empty when all applied).
  */
-async function applyGate(deps: MenuGateDeps, uiEnabled: boolean): Promise<void> {
+async function applyGate(
+  deps: MenuGateDeps,
+  uiEnabled: boolean
+): Promise<{ id: string; cause: unknown }[]> {
   const updates = deps.updatesFor(uiEnabled);
   const results = await Promise.allSettled(
     updates.map((update) => deps.update(update.id, update.props))
   );
-  results.forEach((result, index) => {
-    if (result.status === 'rejected') {
-      const cause: unknown = result.reason;
-      log.warn('Menu entry update failed', { id: updates[index]?.id, cause });
-    }
+  return updates.flatMap((update, index) => {
+    const result = results[index];
+    return result?.status === 'rejected'
+      ? [{ id: update.id, cause: result.reason as unknown }]
+      : [];
   });
 }
 
@@ -88,9 +101,14 @@ async function applyGate(deps: MenuGateDeps, uiEnabled: boolean): Promise<void> 
  * @param deps The injected effects.
  */
 export function createMenuGateFollower(deps: MenuGateDeps): MenuGateFollower {
+  // Newest gate value known (watch or boot read); null until one arrives.
   let gate: boolean | null = null;
+  // The gate the rows last received (set only once an apply/recreation ran).
+  let shown: boolean | null = null;
   // Set by the first watch delivery: from then on a boot read is stale.
   let watched = false;
+  // Set once a recreation ran or every edit landed: rows exist this lifetime.
+  let rowsKnown = false;
   let tail: Promise<void> = Promise.resolve();
 
   /** Append one operation to the serial queue; its failure is logged, never thrown. */
@@ -100,18 +118,51 @@ export function createMenuGateFollower(deps: MenuGateDeps): MenuGateFollower {
     });
   };
 
+  /** Recreate every row in a gate's state and record what they now show. */
+  const recreateIn = async (uiEnabled: boolean): Promise<void> => {
+    await deps.recreate(uiEnabled);
+    rowsKnown = true;
+    shown = uiEnabled;
+  };
+
+  /**
+   * Reflect a gate value in the rows. Before rows are known to exist, a
+   * refused edit means they are absent: recreate them (in the newest gate)
+   * in this same queued step instead of warning.
+   */
+  const reflect = async (uiEnabled: boolean): Promise<void> => {
+    const refused = await applyGate(deps, uiEnabled);
+    if (refused.length === 0) {
+      rowsKnown = true;
+      shown = uiEnabled;
+      return;
+    }
+    if (!rowsKnown) {
+      log.debug('Menu rows absent — recreating', { ids: refused.map((entry) => entry.id) });
+      await recreateIn(gate ?? uiEnabled);
+      return;
+    }
+    // Rows exist but some refused: the rest now show this value.
+    shown = uiEnabled;
+    for (const entry of refused) log.warn('Menu entry update failed', entry);
+  };
+
   /** Adopt a gate value and queue its reflection in the rows. */
   const adopt = (uiEnabled: boolean): void => {
     gate = uiEnabled;
-    enqueue('gate update', () => applyGate(deps, uiEnabled));
+    enqueue('gate update', () => reflect(uiEnabled));
   };
 
   return {
     async start(): Promise<void> {
-      deps.watchGate((uiEnabled) => {
-        watched = true;
-        adopt(uiEnabled);
-      });
+      try {
+        deps.watchGate((uiEnabled) => {
+          watched = true;
+          adopt(uiEnabled);
+        });
+      } catch (cause) {
+        log.error('On-page UI gate unwatched — menu entries follow only the boot read', cause);
+      }
       try {
         const uiEnabled = await deps.readGate();
         if (!watched) adopt(uiEnabled);
@@ -121,10 +172,10 @@ export function createMenuGateFollower(deps: MenuGateDeps): MenuGateFollower {
     },
     recreate(): void {
       // Read at run time, not at queue time: the newest gate wins.
-      enqueue('recreation', () => deps.recreate(gate ?? PAGE_UI_GATE_DEFAULT));
+      enqueue('recreation', () => recreateIn(gate ?? PAGE_UI_GATE_DEFAULT));
     },
     async toggle(): Promise<boolean> {
-      const next = !(gate ?? (await deps.readGate()));
+      const next = !(shown ?? gate ?? (await deps.readGate()));
       await deps.writeGate(next);
       return next;
     },
