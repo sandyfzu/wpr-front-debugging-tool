@@ -31,6 +31,7 @@ import {
   extractWprVersion,
   FEATURE_COMMENT_PATTERN,
   FDT_EXCLUDED_RESOURCE,
+  BUILDER_MARKER_META_NAME,
   GENERATOR_META_SELECTOR,
   WPR_FEATURES_ATTRIBUTE,
   WPR_FEATURES_META_SELECTOR,
@@ -58,7 +59,9 @@ import {
   ROCKET_PRECONNECT_ATTRIBUTE,
   RUCSS_STYLE_SELECTOR,
   URL_PATTERNS,
-  WPR_DEFER_ATTRIBUTE
+  WPR_DEFER_ATTRIBUTE,
+  INLINE_WRAP_OPEN,
+  INLINE_WRAP_CLOSE
 } from './constants';
 import { PANEL_SEARCH_ACTIONS } from './types';
 
@@ -247,7 +250,7 @@ describe('platforms and ids', () => {
     expect(ALARM_ID_UPDATE_KNOWN_CONFLICTS_DB).toBe('update-known-conflicts-db');
     expect(Object.values(CONTEXT_MENU_IDS).sort()).toEqual(
       [
-        'exclusionBuilderPage',
+        'exclusionBuilder',
         'psiSideBySide',
         'toggleDetectionWidget',
         'updateKnownConflictsDB',
@@ -290,11 +293,18 @@ describe('platforms and ids', () => {
     expect(isCacheBypassUrl(sandboxed('https://example.test/?nowprocketx=1'))).toBe(false);
   });
 
+  it("names the Exclusion Builder's document marker in this extension's namespace", () => {
+    expect(BUILDER_MARKER_META_NAME).toBe('wpr-fdt-exclusion-builder');
+    expect(GENERATOR_META_SELECTOR).not.toContain(BUILDER_MARKER_META_NAME);
+  });
+
   it('single-sources the url patterns and search action ids', () => {
     expect(URL_PATTERNS).toEqual(['https://*/*', 'http://*/*']);
     expect(DELAY_JS_SRC).toBe('data-rocket-src');
     expect(FDT_EXCLUDED_RESOURCE).toBe('data-wpr-fdt-excluded');
     expect(WPR_DEFER_ATTRIBUTE).toBe('data-rocket-defer');
+    expect(INLINE_WRAP_OPEN).toBe("window.addEventListener('DOMContentLoaded', function() {");
+    expect(INLINE_WRAP_CLOSE).toBe('});');
     expect(Object.values(PANEL_SEARCH_ACTIONS).sort()).toEqual(
       ['cancelSearch', 'nextSearchResult', 'performSearch', 'previousSearchResult'].sort()
     );

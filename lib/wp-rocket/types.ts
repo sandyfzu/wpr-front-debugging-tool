@@ -119,7 +119,7 @@ export interface OptimizeCriticalImagesDetection extends TruncationMark {
  * surfaces through `locationHashes` > 0 with `present: false` — the view
  * model composes "collecting" with the beacon row's status map.
  */
-export interface AutomaticLazyRenderingDetection {
+export interface AutomaticLazyRenderingDetection extends BuilderFactField {
   /** The feature verdict (meta declaration included). */
   present: boolean;
   /** The evidence class that decided the verdict, when one did. */
@@ -239,6 +239,37 @@ export interface PriorityElementsBeaconDetection {
 export type FeatureEvidenceSource = 'meta' | 'footprint';
 
 /**
+ * What the Exclusion Builder's rewrite did to one feature on the displayed
+ * document, read from the marker the rewrite left in it (never inferred):
+ * turned off feature-wide (`off: 'feature'`), turned off for this page by
+ * rows that make WP Rocket run it on nothing (`off: 'page'`, Defer JS only),
+ * or `excluded` elements (1–9999) restored by its rows. The served verdict
+ * (`present`/`source`) stays what WP Rocket served; this is the in-tab
+ * modifier on top of it.
+ */
+export type BuilderFact =
+  | { readonly off: 'feature' | 'page' }
+  | {
+      /** Elements the rows restored (1–9999; the marker clamps larger counts). */
+      readonly excluded: number;
+    };
+
+/**
+ * The detection rows an Exclusion Builder fact can annotate — exactly the
+ * builder's features, whose ids are these row keys.
+ */
+export type BuilderFactRow = 'delay_js' | 'defer_all_js' | 'automatic_lazy_rendering' | 'lazyload';
+
+/**
+ * The additive builder field of a {@link BuilderFactRow}: absent unless the
+ * document carries a valid builder marker naming the feature.
+ */
+export interface BuilderFactField {
+  /** The builder's effect on this feature in this tab, when the document states one. */
+  builder?: BuilderFact;
+}
+
+/**
  * The complete page classification. Structural keys are fixed; extend only
  * additively (new optimizations ship with their own key + validators + tests).
  */
@@ -262,40 +293,43 @@ export interface WprDetections {
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
-  delay_js: TruncationMark & {
-    present: boolean;
-    scripts: DelayedScriptRecord[];
-    version: string | null;
-    delayedScripts: number;
-    /** The evidence class that decided the verdict, when one did. */
-    source?: FeatureEvidenceSource;
-  };
-  defer_all_js: TruncationMark & {
-    /** ≥ 1 script carries `data-rocket-defer` (inline/no-src scripts included). */
-    present: boolean;
-    /**
-     * `data-rocket-src` or `src` of every WP Rocket-deferred script that
-     * carries a URL, document order. Inline/no-src attributed scripts prove
-     * presence but contribute no URL — `deferredScripts` counts them.
-     */
-    scripts: string[];
-    /** Every attributed script, URL-bearing or not. */
-    deferredScripts: number;
-    /** The evidence class that decided the verdict, when one did. */
-    source?: FeatureEvidenceSource;
-  };
+  delay_js: TruncationMark &
+    BuilderFactField & {
+      present: boolean;
+      scripts: DelayedScriptRecord[];
+      version: string | null;
+      delayedScripts: number;
+      /** The evidence class that decided the verdict, when one did. */
+      source?: FeatureEvidenceSource;
+    };
+  defer_all_js: TruncationMark &
+    BuilderFactField & {
+      /** ≥ 1 script carries `data-rocket-defer` (inline/no-src scripts included). */
+      present: boolean;
+      /**
+       * `data-rocket-src` or `src` of every WP Rocket-deferred script that
+       * carries a URL, document order. Inline/no-src attributed scripts prove
+       * presence but contribute no URL — `deferredScripts` counts them.
+       */
+      scripts: string[];
+      /** Every attributed script, URL-bearing or not. */
+      deferredScripts: number;
+      /** The evidence class that decided the verdict, when one did. */
+      source?: FeatureEvidenceSource;
+    };
   async_css: {
     present: boolean;
     /** The evidence class that decided the verdict, when one did. */
     source?: FeatureEvidenceSource;
   };
-  lazyload: TruncationMark & {
-    present: boolean;
-    /** One record per <img> element, document order. */
-    images: LazyloadImageRecord[];
-    /** The evidence class that decided the verdict, when one did. */
-    source?: FeatureEvidenceSource;
-  };
+  lazyload: TruncationMark &
+    BuilderFactField & {
+      present: boolean;
+      /** One record per <img> element, document order. */
+      images: LazyloadImageRecord[];
+      /** The evidence class that decided the verdict, when one did. */
+      source?: FeatureEvidenceSource;
+    };
   lazyload_iframes: {
     present: boolean;
     /** The iframe-to-preview-image replacement script is present too. */

@@ -63,7 +63,7 @@ import {
   type UndefinedReferencesDeps,
   type UndefinedReferencesStore
 } from './store';
-import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
 import { WordCard } from './word-card';
 
 /** The page title (the route's nav label). */

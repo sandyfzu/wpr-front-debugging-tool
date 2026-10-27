@@ -18,19 +18,33 @@ export interface DebouncedFunction<TArgs extends unknown[]> {
  * as an uncaught exception in the calling context (whose global handlers report it),
  * never swallowed by this wrapper.
  *
+ * With `maxWaitMs`, a burst that never goes quiet still runs `fn` at least
+ * that often (with the latest arguments) — a continuously mutating page must
+ * not starve its observer forever.
+ *
  * @param fn The function to debounce. No result is preserved (ignore return values).
  * @param waitMs Quiet period before `fn` runs; negative values are clamped to 0.
+ * @param options `maxWaitMs`: the longest a pending call may wait (unset: unbounded).
  * @returns The debounced function with a {@link DebouncedFunction.cancel | cancel} handle.
  */
 export function debounce<TArgs extends unknown[]>(
   fn: (...args: TArgs) => void,
-  waitMs: number
+  waitMs: number,
+  options: { readonly maxWaitMs?: number } = {}
 ): DebouncedFunction<TArgs> {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
   let latestArgs: TArgs = [] as unknown as TArgs;
 
-  const run = (): void => {
+  const clearTimers = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    if (maxTimer !== null) clearTimeout(maxTimer);
     timer = null;
+    maxTimer = null;
+  };
+
+  const run = (): void => {
+    clearTimers();
     fn(...latestArgs);
   };
 
@@ -38,12 +52,13 @@ export function debounce<TArgs extends unknown[]>(
     latestArgs = args;
     if (timer !== null) clearTimeout(timer);
     timer = setTimeout(run, Math.max(0, waitMs));
+    if (options.maxWaitMs !== undefined && maxTimer === null) {
+      maxTimer = setTimeout(run, Math.max(0, options.maxWaitMs));
+    }
   };
 
   debounced.cancel = (): void => {
-    if (timer === null) return;
-    clearTimeout(timer);
-    timer = null;
+    clearTimers();
   };
 
   return debounced;

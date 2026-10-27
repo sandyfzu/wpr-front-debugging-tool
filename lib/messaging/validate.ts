@@ -20,6 +20,7 @@
 import { isScriptSnapshotId } from './script-source';
 import type {
   BeaconFeatureStatus,
+  BuilderFact,
   DiagnoserDocData,
   FdtData,
   FeatureEvidenceSource,
@@ -48,6 +49,8 @@ import { numericTabId } from './sender';
 // site, no second limit.
 import { MAX_REPRESENTABLE_MS } from '../detection/describe';
 import { PAYLOAD_LIMITS } from './payload-bounds';
+import { isBuilderFactAllowed } from '../exclusion-builder/builder-marker';
+import type { ExclusionFeatureId } from '../exclusion-builder/set';
 
 /**
  * Count/length caps per structure. Generous by design (real pages sit orders
@@ -74,9 +77,19 @@ const LIMITS = {
   searchQuery: 200
 } as const;
 
-/** All members are strings. */
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+/**
+ * A list of at most `maxCount` strings. The cap is checked before any member
+ * is read, so the work is bounded by the cap, never by the declared `length`
+ * (a structured-cloned sparse array can claim 2^32−1 members in a few bytes).
+ * Every index is visited, so a hole reads as `undefined` and rejects.
+ *
+ * @param value The untrusted list.
+ * @param maxCount The largest member count the field allows.
+ */
+function isStringArray(value: unknown, maxCount: number): value is string[] {
+  if (!Array.isArray(value) || value.length > maxCount) return false;
+  for (const item of value) if (typeof item !== 'string') return false;
+  return true;
 }
 
 /**
@@ -265,7 +278,7 @@ export function parsePageCookies(input: unknown): PageCookies | null {
     return null;
   }
   const rawNames = input['names'];
-  if (!isStringArray(rawNames) || rawNames.length > LIMITS.cookies.count) return null;
+  if (!isStringArray(rawNames, LIMITS.cookies.count)) return null;
   const names: string[] = [];
   const seen = new Set<string>();
   for (const name of rawNames) {
@@ -535,6 +548,53 @@ function featureRowKeyCount(baseKeys: number, source: FeatureEvidenceSource | un
   return baseKeys + (source === undefined ? 0 : 1);
 }
 
+/**
+ * A builder row's optional `builder` field (the Exclusion Builder's in-tab
+ * fact): absent (the document stated none — every payload predating the
+ * field), or exactly one fact the row's feature can have — `{ off:
+ * 'feature' | 'page' }` or `{ excluded: 1…9999 }` (the grammar's own bounds,
+ * via `isBuilderFactAllowed`: one declaring site). Anything else (another
+ * key, an extra key, a state the feature cannot have, an out-of-range
+ * count) is not engine output.
+ *
+ * @param value The raw `builder` value.
+ * @param feature The row's feature.
+ * @returns The validated fact, `undefined` when absent, or null when invalid.
+ */
+function parseOptionalBuilder(
+  value: unknown,
+  feature: ExclusionFeatureId
+): BuilderFact | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return null;
+  let fact: BuilderFact;
+  if (keys[0] === 'off') {
+    const off = value['off'];
+    if (off !== 'feature' && off !== 'page') return null;
+    fact = { off };
+  } else if (keys[0] === 'excluded') {
+    const excluded = value['excluded'];
+    if (typeof excluded !== 'number') return null;
+    // The count's range (1…9999, an integer) is the grammar's, checked below.
+    fact = { excluded };
+  } else {
+    return null;
+  }
+  return isBuilderFactAllowed(feature, fact) ? fact : null;
+}
+
+/** The keys an optional `builder` field adds to its row (0 or 1). */
+function builderKeys(builder: BuilderFact | undefined): 0 | 1 {
+  return builder === undefined ? 0 : 1;
+}
+
+/** The field to spread into a rebuilt row (empty when absent). */
+function builderOf(builder: BuilderFact | undefined): { builder?: BuilderFact } {
+  return builder === undefined ? {} : { builder };
+}
+
 /** `{ present }`-shaped row with exactly that key, own keys only. */
 function parsePresenceRow(
   input: unknown
@@ -559,7 +619,10 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'delay_js');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   if (!isBoundedNullableString(row['version'], LIMITS.versions)) return reject('version');
   const delayedScripts = row['delayedScripts'];
@@ -626,7 +689,8 @@ function parseDelayJsRow(input: unknown): WprDetections['delay_js'] | null {
     version: row['version'],
     delayedScripts,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -641,7 +705,10 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'defer_all_js');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(3, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const scripts = row['scripts'];
   if (!Array.isArray(scripts)) return reject('scripts');
@@ -664,7 +731,8 @@ function parseDeferRow(input: unknown): WprDetections['defer_all_js'] | null {
     scripts: [...(scripts as string[])],
     deferredScripts,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -679,7 +747,10 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
   if (mark === null) return reject('truncated');
   const source = parseOptionalSource(row['source']);
   if (source === null) return reject('source');
-  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark) return reject('keys');
+  const builder = parseOptionalBuilder(row['builder'], 'lazyload');
+  if (builder === null) return reject('builder');
+  if (Object.keys(row).length !== featureRowKeyCount(2, source) + mark + builderKeys(builder))
+    return reject('keys');
   if (typeof row['present'] !== 'boolean') return reject('present');
   const rawImages = row['images'];
   if (!Array.isArray(rawImages)) return reject('images');
@@ -694,7 +765,7 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     if (typeof item['lazyloadDetected'] !== 'boolean')
       return reject('images', at(index), 'lazyloadDetected');
     const reasons = item['excludedReasonsFound'];
-    if (!isStringArray(reasons) || reasons.length > LAZYLOAD_REASON_LIMIT)
+    if (!isStringArray(reasons, LAZYLOAD_REASON_LIMIT))
       return reject('images', at(index), 'excludedReasonsFound');
     images.push({
       src: item['src'],
@@ -706,7 +777,8 @@ function parseLazyloadRow(input: unknown): WprDetections['lazyload'] | null {
     present: row['present'],
     images,
     ...truncationOf(mark),
-    ...(source === undefined ? {} : { source })
+    ...(source === undefined ? {} : { source }),
+    ...builderOf(builder)
   };
 }
 
@@ -764,14 +836,18 @@ function parseOptimizeCriticalImagesRow(
   if (mark === 1 && !hasImages) return reject('truncated');
   const parsed: WprDetections['rocket_above_the_fold_optimization'] = { present, lcpComment };
   if (hasImages) {
-    const images = row['preloadedImages'];
-    if (!isStringArray(images)) return reject('preloadedImages');
-    if (images.length < 1) return reject('preloadedImages', 'length');
-    if (images.length > LIMITS.preloadedImages.count) return reject('preloadedImages', 'length');
-    for (const [index, url] of images.entries()) {
-      if (url.length > LIMITS.preloadedImages.chars) return reject('preloadedImages', at(index));
+    const rawImages = row['preloadedImages'];
+    if (!Array.isArray(rawImages)) return reject('preloadedImages');
+    // Count bounds before any member is read (bounded work on a sparse list).
+    if (rawImages.length < 1 || rawImages.length > LIMITS.preloadedImages.count)
+      return reject('preloadedImages', 'length');
+    const preloadedImages: string[] = [];
+    for (const [index, url] of rawImages.entries()) {
+      if (typeof url !== 'string' || url.length > LIMITS.preloadedImages.chars)
+        return reject('preloadedImages', at(index));
+      preloadedImages.push(url);
     }
-    parsed.preloadedImages = [...images];
+    parsed.preloadedImages = preloadedImages;
   }
   if (mark === 1) parsed.truncated = true;
   if (source !== undefined) parsed.source = source;
@@ -788,7 +864,9 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
   if (!isRecord(input)) return null;
   const row = { ...input };
   const source = parseOptionalSource(row['source']);
-  if (source === null || Object.keys(row).length !== featureRowKeyCount(4, source)) return null;
+  const builder = parseOptionalBuilder(row['builder'], 'automatic_lazy_rendering');
+  if (source === null || builder === null) return null;
+  if (Object.keys(row).length !== featureRowKeyCount(4, source) + builderKeys(builder)) return null;
   const present = row['present'];
   const inlineCssPresent = row['inlineCssPresent'];
   if (typeof present !== 'boolean' || typeof inlineCssPresent !== 'boolean') return null;
@@ -805,6 +883,7 @@ function parseLazyRenderRow(input: unknown): WprDetections['automatic_lazy_rende
     locationHashes
   };
   if (source !== undefined) parsed.source = source;
+  if (builder !== undefined) parsed.builder = builder;
   return parsed;
 }
 
@@ -986,17 +1065,26 @@ function isBoundedStatusPrimitive(value: unknown): boolean {
   return false;
 }
 
-/** An array of non-empty bounded strings, rebuilt fresh (rejects wholesale on violation). */
+/**
+ * An array of non-empty bounded strings, rebuilt fresh (rejects wholesale on
+ * violation). The count cap is checked before any member is read; a bad
+ * member — wrong type, hole, empty or too long — rejects at its index.
+ *
+ * @returns The rebuilt list, or null (a non-array records no segment; the
+ *   caller names the field).
+ */
 function parseCappedStringList(
   value: unknown,
   limits: { count: number; chars: number }
 ): string[] | null {
-  if (!isStringArray(value)) return null;
+  if (!Array.isArray(value)) return null;
   if (value.length > limits.count) return reject('length');
+  const list: string[] = [];
   for (const [index, item] of value.entries()) {
-    if (item.length < 1 || item.length > limits.chars) return reject(at(index));
+    if (!isUsableString(item, limits.chars)) return reject(at(index));
+    list.push(item);
   }
-  return [...value];
+  return list;
 }
 
 /** Full panel payload. Every part is validated; any miss rejects the payload. */

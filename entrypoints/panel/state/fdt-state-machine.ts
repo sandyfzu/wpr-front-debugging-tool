@@ -2,11 +2,12 @@
  * The panel's data-state machine — the pure half of the data layer.
  *
  * States are one typed discriminated union (`idle / fetching / ready /
- * refreshing / error` — never symbol-keyed). The events are the shell's
- * controls: `fetch` (the boot flow or the retry control), `refresh` (the
- * in-tab reload notification — this is the soft refresh, which refetches in
- * place rather than reloading the page), and `settled` (the request outcome,
- * parsed and classified by the caller).
+ * refreshing / error / unavailable` — never symbol-keyed). The events are the
+ * shell's controls: `fetch` (the boot flow or the retry control), `refresh`
+ * (the in-tab reload notification — this is the soft refresh, which refetches
+ * in place rather than reloading the page), `settled` (the request outcome,
+ * parsed and classified by the caller) and `unavailable` (this context cannot
+ * message tabs at all — terminal: nothing a retry or a refresh could change).
  *
  * The transition table is total: every (state, event) pair has a defined
  * result, and every trigger that cannot apply resolves to the current state.
@@ -36,7 +37,9 @@ export type DataEvent =
   /** The in-tab reload notification (the soft-refresh trigger). */
   | { readonly type: 'refresh' }
   /** The in-flight request finished with a parsed-and-classified outcome. */
-  | { readonly type: 'settled'; readonly outcome: FetchOutcome };
+  | { readonly type: 'settled'; readonly outcome: FetchOutcome }
+  /** This context has no way to message the page (feature-detected once). */
+  | { readonly type: 'unavailable'; readonly reason: string };
 
 /** The panel's data state as every surface reads it. */
 export type DataState =
@@ -49,7 +52,9 @@ export type DataState =
   /** Soft refresh in flight — the previous data stays on screen until the swap. */
   | { readonly status: 'refreshing'; readonly data: FdtData; readonly requestedAt: number }
   /** The request failed (or the data broke its contract; `hardReload` flags that). */
-  | { readonly status: 'error'; readonly cause: string; readonly hardReload: boolean };
+  | { readonly status: 'error'; readonly cause: string; readonly hardReload: boolean }
+  /** The context cannot reach the page at all (terminal; `reason` says why). */
+  | { readonly status: 'unavailable'; readonly reason: string };
 
 /**
  * The transition table — pure, total, and entirely testable without a DOM.
@@ -67,7 +72,11 @@ export type DataState =
  * @returns The next state (the same object when nothing changed).
  */
 export function transitionDataState(state: DataState, event: DataEvent, nowMs: number): DataState {
+  // Terminal: no fetch, refresh or late settle can make the page reachable.
+  if (state.status === 'unavailable') return state;
   switch (event.type) {
+    case 'unavailable':
+      return { status: 'unavailable', reason: event.reason };
     case 'fetch': {
       // While a flight runs, the fetch is a no-op (dedup); from `ready` a
       // plain fetch trigger is not a control the shell exposes (it would

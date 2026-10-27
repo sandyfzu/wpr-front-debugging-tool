@@ -1,13 +1,13 @@
 /**
- * The Automatic Lazy Rendering transform: rows are LITERAL substrings of
- * the child-cleared markup (the opening tag plus its end tag; void elements
- * have none), the rewrite removes the lazyrender attribute, and the
+ * The Automatic Lazy Rendering transform: rows are LITERAL,
+ * ASCII-case-insensitive substrings of the opening tag WP Rocket's hash pass
+ * saw (re-serialized, stamp-free, no end tag); a match excludes the element's
+ * subtree; the rewrite removes the lazyrender attribute, and the
  * feature-wide disable de-stamps every element and removes the inline CSS
  * block only — the plugin serves no runner script for this feature.
  */
 import { describe, expect, it } from 'vitest';
 import { lazyRenderTransform } from './lazy-render';
-import { ExclusionValidationError } from './errors';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from './set';
 
 function setWithRows(rows: string[], disableLazyRender = false): ExclusionSet {
@@ -46,7 +46,7 @@ describe('lazyRenderTransform — identity arms', () => {
 });
 
 describe('lazyRenderTransform — de-stamping a matched element', () => {
-  it('matches the child-cleared markup (opening tag + end tag) and removes the attribute', () => {
+  it('matches the opening tag and removes the attribute', () => {
     const html =
       '<section data-wpr-lazyrender="1" class="below-fold"><p>deep child text</p></section>';
     const result = lazyRenderTransform(html, setWithRows(['below-fold']));
@@ -64,17 +64,19 @@ describe('lazyRenderTransform — de-stamping a matched element', () => {
     });
   });
 
-  it('matches rows anchored at the closing bracket — the clone serializes with its end tag', () => {
+  it('never matches an end tag — WP Rocket cuts the element at its first `>`', () => {
     const html = '<div data-wpr-lazyrender="1" class="a"><p>x</p></div>';
-    const result = lazyRenderTransform(html, setWithRows(['></div>']));
-    expect(result.report.rewritten).toBe(1);
+    expect(lazyRenderTransform(html, setWithRows(['></div>'])).report.rewritten).toBe(0);
+    expect(lazyRenderTransform(html, setWithRows(['</div>'])).report.rewritten).toBe(0);
+    // A row anchored at the opening tag's own closing bracket matches.
+    expect(lazyRenderTransform(html, setWithRows(['class="a">'])).report.rewritten).toBe(1);
   });
 
-  it('does not fabricate an end tag for a void element', () => {
+  it('matches the tag as WP Rocket saw it — the stamp it added later is not part of it', () => {
     const html = '<img src="a.jpg" data-wpr-lazyrender="1">';
     expect(lazyRenderTransform(html, setWithRows(['></img>'])).report.rewritten).toBe(0);
-    // A row anchored at the tag's own closing bracket still matches.
-    expect(lazyRenderTransform(html, setWithRows(['lazyrender="1">'])).report.rewritten).toBe(1);
+    expect(lazyRenderTransform(html, setWithRows(['lazyrender="1">'])).report.rewritten).toBe(0);
+    expect(lazyRenderTransform(html, setWithRows(['src="a.jpg">'])).report.rewritten).toBe(1);
   });
 
   it('does not match a row naming the child content — the match target is child-cleared', () => {
@@ -91,8 +93,7 @@ describe('lazyRenderTransform — de-stamping a matched element', () => {
       lazyRenderTransform(html, setWithRows(['(pagination|alternate)'])).report.rewritten
     ).toBe(0);
     expect(
-      lazyRenderTransform(html, setWithRows(['data-wpr-lazyrender="1" class="pagination"'])).report
-        .rewritten
+      lazyRenderTransform(html, setWithRows(['<div class="pagination">'])).report.rewritten
     ).toBe(1);
   });
 
@@ -150,22 +151,28 @@ describe('lazyRenderTransform — feature-wide disable', () => {
     expect(result.html.match(/data-wpr-fdt-excluded="automatic_lazy_rendering"/g)?.length).toBe(2);
   });
 
-  it('rejects an empty row of a disabled feature — but never compiles literal rows', () => {
-    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows([''], true))).toThrow(
-      ExclusionValidationError
-    );
+  it('applies an empty row next to others on a disabled feature as the disable — and never compiles literal rows', () => {
+    // The disable consults no row: the match-all row is not reported.
+    const wide = lazyRenderTransform(STYLED_PAGE, setWithRows(['', 'x'], true));
+    expect(wide.report).toMatchObject({ featureWide: true, rewritten: 1 });
+    expect(wide.report).not.toHaveProperty('matchAllRows');
+    // A lone empty row is WP Rocket's own no-op, not a problem.
+    expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows([''], true))).not.toThrow();
     // Regex metacharacters are plain text for a literal feature.
     expect(() => lazyRenderTransform(STYLED_PAGE, setWithRows(['(bad['], true))).not.toThrow();
   });
 });
 
 describe('lazyRenderTransform — matching details', () => {
-  it('is case-sensitive in row values and tolerant of the attribute spelling in the doc', () => {
+  it('folds ASCII case only, and tolerates the attribute spelling in the doc', () => {
     const html = '<DIV DATA-WPR-LAZYRENDER="1" CLASS="pagination">x</DIV>';
-    // The scanner lowercases names; the row value matches case-sensitively.
+    // PCRE's `i` without `u`: A–Z fold, both ways.
     const result = lazyRenderTransform(html, setWithRows(['CLASS="pagination"']));
     expect(result.report.rewritten).toBe(1);
-    expect(lazyRenderTransform(html, setWithRows(['class="pagination"'])).report.rewritten).toBe(0);
+    expect(lazyRenderTransform(html, setWithRows(['class="PAGINATION"'])).report.rewritten).toBe(1);
+    const accented = '<div data-wpr-lazyrender="1" class="été">x</div>';
+    expect(lazyRenderTransform(accented, setWithRows(['ÉTÉ'])).report.rewritten).toBe(0);
+    expect(lazyRenderTransform(accented, setWithRows(['été'])).report.rewritten).toBe(1);
   });
 
   it('preserves the doctype and passes non-ASCII and lone surrogates through unchanged', () => {
@@ -174,5 +181,46 @@ describe('lazyRenderTransform — matching details', () => {
     expect(result.html.startsWith('<!doctype html>')).toBe(true);
     expect(result.html).toContain('class="préférences"');
     expect(result.html).toContain('\uD800');
+  });
+});
+
+describe('lazyRenderTransform — WP Rocket hash-pass semantics', () => {
+  const PAGE = [
+    '<html><head><meta charset="utf-8"></head><body>',
+    '<div data-wpr-lazyrender="1" id="outer"><div data-wpr-lazyrender="1" id="inner">x</div></div>',
+    `<div CLASS='Hero' id="hero"><div data-wpr-lazyrender="1" id="hero-child">y</div></div>`,
+    '<div data-wpr-lazyrender="1" id="last">z</div>',
+    '</body></html>'
+  ].join('');
+
+  it("excludes a matched element's whole subtree, counted for the outermost match's row", () => {
+    const result = lazyRenderTransform(PAGE, setWithRows(['zzz', 'id="outer"', 'id="inner"']));
+    expect(result.html).toContain('<div id="outer" data-wpr-fdt-excluded');
+    expect(result.html).toContain('<div id="inner" data-wpr-fdt-excluded');
+    expect(result.html).toContain('<div data-wpr-lazyrender="1" id="last">');
+    expect(result.report.matchedRows).toEqual([
+      { row: 'id="outer"', rowKind: 'literal', matches: 2 }
+    ]);
+    expect(result.report.unmatchedRows).toEqual(['zzz', 'id="inner"']);
+  });
+
+  it('matches an unstamped ancestor by its re-serialized tag, never as written', () => {
+    // libxml serializes `CLASS='Hero'` as `class="Hero"`; WP Rocket never hashes
+    // the hero itself, but a row matching it still skips its child.
+    expect(lazyRenderTransform(PAGE, setWithRows(['class="Hero"'])).report.matchedRows).toEqual([
+      { row: 'class="Hero"', rowKind: 'literal', matches: 1 }
+    ]);
+    expect(lazyRenderTransform(PAGE, setWithRows(["class='Hero'"])).report.rewritten).toBe(0);
+  });
+
+  it('ignores a lone empty or "0" row, and applies an empty row next to others as match-all', () => {
+    expect(lazyRenderTransform(PAGE, setWithRows([''])).report.rewritten).toBe(0);
+    expect(lazyRenderTransform(PAGE, setWithRows(['0'])).report.rewritten).toBe(0);
+    const all = lazyRenderTransform(PAGE, setWithRows(['0', '']));
+    const stamped = lazyRenderTransform(PAGE, setWithRows([], true)).report.rewritten;
+    // Every stamped element is excluded, as WP Rocket's empty alternative does.
+    expect(all.report.rewritten).toBe(stamped);
+    expect(all.report.matchAllRows).toEqual(['']);
+    expect(all.report.featureWide).toBe(false);
   });
 });

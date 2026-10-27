@@ -24,7 +24,7 @@
 
 import type { PageHeaders } from '../wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../messaging/payload-bounds';
-import { formatCount } from '../../utils/format-count';
+import { countNoun, formatCount, type CountNoun } from '../../utils/format-count';
 
 /**
  * The status-vocabulary kinds a verdict hint can carry (rendered through the
@@ -125,6 +125,9 @@ function cacheControlVerdict(value: string): VerdictHint | null {
   return null;
 }
 
+/** The `age` counter's unit. */
+const SECOND_NOUN: CountNoun = { one: 'second', other: 'seconds' };
+
 /**
  * The `age` reading: the cache's own seconds-since-served counter. A
  * positive age is middle-cache evidence (the response was served by one);
@@ -135,7 +138,7 @@ function ageVerdict(value: string): VerdictHint | null {
   const seconds = Number.parseInt(value, 10);
   return seconds > 0
     ? {
-        text: `Served from an intermediate cache ${seconds.toString()} second${seconds === 1 ? '' : 's'} ago (the cache's own counter).`,
+        text: `Served from an intermediate cache ${seconds.toString()} ${countNoun(seconds, SECOND_NOUN)} ago (the cache's own counter).`,
         tone: 'ok'
       }
     : null;

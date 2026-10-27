@@ -11,6 +11,8 @@
  */
 
 import { FEATURE_COMMENT_PATTERN } from '../wp-rocket/constants';
+import { parseBuilderMarker } from './builder-fact';
+import type { BuilderNote } from '../exclusion-builder/builder-marker';
 import { parseFeatureMeta } from './feature-meta';
 import type { FeatureMetaEvidence } from './feature-meta';
 
@@ -34,6 +36,12 @@ export interface ParsedPage {
    * their own footprint reads.
    */
   featureMeta: FeatureMetaEvidence;
+  /**
+   * The Exclusion Builder's note on this document (what its rewrite turned
+   * off or excluded), parsed once here; null when the page carries no valid
+   * builder marker.
+   */
+  builderNote: BuilderNote | null;
 }
 
 /**
@@ -79,6 +87,7 @@ export function parsePage(html: string): ParsedPage {
     scripts: [...document.querySelectorAll('script')],
     links: [...document.querySelectorAll('link')],
     comments,
-    featureMeta: parseFeatureMeta(document)
+    featureMeta: parseFeatureMeta(document),
+    builderNote: parseBuilderMarker(document)
   };
 }

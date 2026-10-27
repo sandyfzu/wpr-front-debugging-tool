@@ -131,7 +131,10 @@ export function ChoiceGroup<T extends string>(props: ChoiceGroupProps<T>): JSX.E
                   'flex h-7 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded border px-2 text-xs font-medium',
                   checked()
                     ? 'border-transparent bg-accent-strong text-on-accent'
-                    : 'border-line-2 bg-surface-2 text-fg-primary hover:border-line-3 hover:bg-surface-3',
+                    : 'border-line-2 bg-surface-2 text-fg-primary',
+                  // Pointer feedback only while the group can change (a
+                  // disabled tile keeps its resting look).
+                  !checked() && props.disabled !== true && 'hover:border-line-3 hover:bg-surface-3',
                   // The item label also carries `data-disabled` from Kobalte's
                   // dataset; the variant's specificity beats `cursor-pointer`.
                   'data-disabled:opacity-50 data-disabled:cursor-not-allowed'

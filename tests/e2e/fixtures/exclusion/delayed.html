@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Delayed scripts fixture</title>
+  </head>
+  <body>
+    <h1>Two scripts as WP Rocket's Delay JavaScript execution serves them</h1>
+    <p>
+      The exclusion builder's notes suite: a lower-case jQuery UI file (matched by a row typed in
+      upper case) and a file whose name holds a <code>+</code> (picked from the page list).
+    </p>
+    <script
+      type="rocketlazyloadscript"
+      data-rocket-src="/exclusion/lib/jquery-ui.js"
+      id="jquery-ui-js"
+    ></script>
+    <script type="rocketlazyloadscript" data-rocket-src="/exclusion/lib/a+b.js" id="ab-js"></script>
+  </body>
+</html>

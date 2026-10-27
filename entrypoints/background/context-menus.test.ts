@@ -40,7 +40,7 @@ describe('menuActionFor', () => {
   it('routes each registered entry to its action and its action only', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.wprSideBySide)).toBe('side-by-side');
     expect(menuActionFor(CONTEXT_MENU_IDS.psiSideBySide)).toBe('psi-side-by-side');
-    expect(menuActionFor(CONTEXT_MENU_IDS.exclusionBuilderPage)).toBe('exclusion-builder');
+    expect(menuActionFor(CONTEXT_MENU_IDS.exclusionBuilder)).toBe('exclusion-builder');
     expect(menuActionFor(CONTEXT_MENU_IDS.updateKnownConflictsDB)).toBe('refresh-database');
     expect(menuActionFor(CONTEXT_MENU_IDS.toggleDetectionWidget)).toBe('toggle-detection-widget');
   });
@@ -100,7 +100,7 @@ describe('menuCreateParams', () => {
         documentUrlPatterns: [...URL_PATTERNS]
       },
       {
-        id: CONTEXT_MENU_IDS.exclusionBuilderPage,
+        id: CONTEXT_MENU_IDS.exclusionBuilder,
         title: 'Exclusion Builder',
         contexts: ['action'],
         documentUrlPatterns: [...URL_PATTERNS]
@@ -123,7 +123,8 @@ describe('menuCreateParams', () => {
 /** The recording deps: every glue effect lands in one of these observables. */
 interface Recorded {
   sent: Array<{ type: string; target: { tabId: number } }>;
-  opened: string[];
+  /** Tabs the exclusion builder overlay was opened on. */
+  opened: number[];
   refreshes: number;
   toggles: string[];
   /** The rejection the next toggle inside throws (undefined: it resolves). */
@@ -137,9 +138,9 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
       recorded.sent.push({ type, target });
       return Promise.resolve(true);
     },
-    openTab: (pagePath) => {
-      recorded.opened.push(pagePath);
-      return Promise.resolve(null);
+    openExclusionBuilder: (tabId) => {
+      recorded.opened.push(tabId);
+      return Promise.resolve('injected');
     },
     refreshDatabase: (): Promise<DbUpdateResult | null> => {
       recorded.refreshes += 1;
@@ -208,28 +209,40 @@ describe('dispatchMenuClickEvent', () => {
     }
   });
 
-  it('the exclusion builder entry opens its own page in a new tab', async () => {
+  it('the exclusion builder entry opens the overlay on the clicked tab', async () => {
     const { deps, recorded } = recordingDeps();
     await dispatchMenuClickEvent(
-      { menuItemId: CONTEXT_MENU_IDS.exclusionBuilderPage },
+      { menuItemId: CONTEXT_MENU_IDS.exclusionBuilder },
       { id: 7 },
       deps
     );
-    expect(recorded.opened).toEqual(['exclusion-builder.html']);
+    expect(recorded.opened).toEqual([7]);
     expect(recorded.sent).toHaveLength(0);
     expect(recorded.refreshes).toBe(0);
+  });
+
+  it('a page the browser refuses to script resolves quietly (no overlay, no throw)', async () => {
+    const { deps, recorded } = recordingDeps();
+    deps.openExclusionBuilder = (tabId) => {
+      recorded.opened.push(tabId);
+      return Promise.resolve('unsupported-page');
+    };
+    await expect(
+      dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.exclusionBuilder }, { id: 4 }, deps)
+    ).resolves.toBeUndefined();
+    expect(recorded.opened).toEqual([4]);
   });
 
   it('the exclusion builder opens from private windows too (owner ditched the skip)', async () => {
     const { deps, recorded } = recordingDeps();
     await dispatchMenuClickEvent(
-      { menuItemId: CONTEXT_MENU_IDS.exclusionBuilderPage },
+      { menuItemId: CONTEXT_MENU_IDS.exclusionBuilder },
       { id: 7, incognito: true },
       deps
     );
-    // The builder is a standalone extension page: an owner decision (2026-10-08)
-    // ditched the legacy parity skip for private windows — it opens like any tab.
-    expect(recorded.opened).toEqual(['exclusion-builder.html']);
+    // An owner decision (2026-10-08) ditched the parity skip for private
+    // windows — the overlay opens on a private window's page like any other.
+    expect(recorded.opened).toEqual([7]);
     expect(recorded.sent).toHaveLength(0);
     expect(recorded.refreshes).toBe(0);
   });

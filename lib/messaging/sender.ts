@@ -9,25 +9,30 @@
  * malformed tab reference would serve one context's data to another.
  */
 
-import { parseUrl } from '../../utils/urls';
+import { isHttpOrigin, parseUrl } from '../../utils/urls';
 
 /** A sender tab reference and page URL as the runtime actually delivers them. */
 export interface LooseMessageSender {
   tab?: { id?: unknown } | undefined;
-  /** The sending document's URL: present on content-script senders, not on extension ones. */
+  /** The sending document's URL (extension pages included). */
   url?: unknown;
+  /** The sending frame: `0` for a top-level frame; only set when `tab` is. */
+  frameId?: unknown;
+  /** The sending extension's id. */
+  id?: unknown;
 }
 
 /**
- * A numeric, non-negative integer tab id — the only usable identity a tab
- * reference can carry. Anything else (strings, zero-decimal floats,
- * negatives, `null`) is junk by the runtime's own id conventions.
+ * A numeric, non-negative safe-integer tab id — the only usable identity a
+ * tab reference can carry. Anything else (strings, fractions, negatives,
+ * integers past 2^53 that no longer round-trip, `null`) is junk by the
+ * runtime's own id conventions.
  *
  * @param value An unknown tab id as found on a message, a click event, or a
  *   storage revisit.
  */
 export function numericTabId(value: unknown): number | null {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 /**
@@ -51,4 +56,81 @@ export function resolveSenderTabId(sender: LooseMessageSender | undefined): numb
 export function resolveSenderUrl(sender: LooseMessageSender | undefined): URL | null {
   const raw = sender?.url;
   return typeof raw === 'string' ? parseUrl(raw) : null;
+}
+
+/** A content-script sender in a tab's top frame, resolved to its tab and page origin. */
+export interface TopFrameSender {
+  readonly tabId: number;
+  /** The page's canonical http(s) origin. */
+  readonly origin: string;
+}
+
+/**
+ * Resolve a sender that may act for a tab's page as a whole: a content
+ * script in the top frame (`frameId` 0) of an http(s) page. A subframe, an
+ * extension page, a non-http(s) page or a malformed sender yields `null`,
+ * and the handler refuses it — a frame must never act for its embedder.
+ *
+ * @param sender Runtime sender as delivered on a received message, or undefined.
+ */
+export function resolveTopFrameSender(
+  sender: LooseMessageSender | undefined
+): TopFrameSender | null {
+  const tabId = resolveSenderTabId(sender);
+  if (tabId === null || sender?.frameId !== 0) return null;
+  const origin = resolveSenderUrl(sender)?.origin;
+  return origin !== undefined && isHttpOrigin(origin) ? { tabId, origin } : null;
+}
+
+/**
+ * Whether a sender is one of this extension's tab-less pages (e.g. the
+ * devtools panel): no runtime tab, and our extension id. Content scripts
+ * always carry a tab, so a web page can never pass (nor can an extension
+ * page open in a tab — conservative) — the gate for rows that name a tab
+ * by payload.
+ *
+ * @param sender Runtime sender as delivered on a received message, or undefined.
+ * @param extensionId This extension's id (`browser.runtime.id`), injected for tests.
+ */
+export function isExtensionPageSender(
+  sender: LooseMessageSender | undefined,
+  extensionId: string
+): boolean {
+  return sender !== undefined && sender.tab === undefined && sender.id === extensionId;
+}
+
+/**
+ * Whether a URL is a page of the extension rooted at `rootUrl`: same scheme
+ * and host. (Not `URL.origin`: extension schemes are non-special, and the
+ * URL standard gives them an opaque `"null"` origin.)
+ *
+ * @param url The parsed sender URL.
+ * @param rootUrl The extension's root URL.
+ */
+function isOwnPageUrl(url: URL, rootUrl: string): boolean {
+  const root = parseUrl(rootUrl);
+  return (
+    root !== null && root.host !== '' && url.protocol === root.protocol && url.host === root.host
+  );
+}
+
+/**
+ * The gate for rows that act on a tab the sender names (the tab relays):
+ * one of this extension's tab-less pages ({@link isExtensionPageSender}: no
+ * runtime tab, our id) whose document URL is one of our pages — so a
+ * content script (always carries a tab), another extension (foreign id) and
+ * a document outside our pages are all refused.
+ *
+ * @param sender The runtime sender (message or port), untrusted.
+ * @param extensionId This extension's id (`runtime.id`).
+ * @param extensionRootUrl This extension's root URL (`runtime.getURL('/')`).
+ */
+export function isOwnExtensionPageSender(
+  sender: LooseMessageSender | undefined,
+  extensionId: string,
+  extensionRootUrl: string
+): boolean {
+  if (!isExtensionPageSender(sender, extensionId)) return false;
+  const url = resolveSenderUrl(sender);
+  return url !== null && isOwnPageUrl(url, extensionRootUrl);
 }

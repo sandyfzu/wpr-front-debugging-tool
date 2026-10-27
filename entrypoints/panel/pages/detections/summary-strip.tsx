@@ -1,7 +1,9 @@
 /**
  * The Detections summary strip — the one answer the status bar does not
  * give: how much of WP Rocket is working on this page ("N of M
- * optimizations active", with a small accent meter right after it), plus
+ * optimizations active", with a small accent meter right after it — and,
+ * when the Exclusion Builder turned served features off in this tab, the
+ * reason suffix "· N off in this tab"), plus
  * the facts the bar lacks or only labels: the cache's absolute generation
  * time (the bar shows its age); for every non-cached state, the same cache
  * label the bar's segment shows, here as the focusable trigger of the
@@ -15,18 +17,25 @@
  * come from the same summary the support report prints. Secondary facts sit
  * on one wrapping line of `·`-separated items whose separators are clipped
  * at line starts (each dot lives in the item's hidden inline-start gutter,
- * with empty CSS alt text so it never reaches the accessibility tree).
+ * with empty CSS alt text so it never reaches the accessibility tree); the
+ * headline's reason suffix uses the same gutter dot, so a wrapped suffix
+ * starts at its figure.
  */
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
 import { Card } from '../../../../components/ui/card';
 import { Tooltip } from '../../../../components/ui/tooltip';
 import { cacheCopy, cacheLayerCopy, type CacheCopy } from '../../../../lib/detection/cache-context';
+import { builderOffSummary, LIST_JOINER_CONTENT } from '../../../../lib/detection/hud';
 import type { DetectionsSummary } from '../../../../lib/panel/detections-summary';
 
-/** One secondary fact, its separator dot in the clipped gutter. */
-const FACT =
-  "relative ms-3 min-w-0 max-w-full before:absolute before:-start-2 before:text-fg-muted before:content-['·'_/_'']";
+/**
+ * A secondary fact (or the headline's suffix) whose separator dot sits in the inline-start gutter its container
+ * clips (`-ms-3` inside `overflow-hidden`): the dot shows between items on a
+ * line and disappears at a line start.
+ */
+const GUTTER_DOT =
+  'relative ms-3 min-w-0 max-w-full before:absolute before:-start-2 before:text-fg-muted before:content-(--fdt-joiner)';
 
 /**
  * A fact-as-tooltip-trigger: reads as text (dotted underline hints the
@@ -102,15 +111,37 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
 
   return (
     <Card level={1}>
-      <div data-fdt="detections-summary" class="flex flex-col gap-2">
+      <div
+        data-fdt="detections-summary"
+        class="flex flex-col gap-2"
+        // Set once on the root; every gutter dot reads it.
+        style={{ '--fdt-joiner': LIST_JOINER_CONTENT }}
+      >
         {/* The meter sits right after the headline (under it when the line
             is full), sized to read as part of the sentence, not as a bar. */}
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <p data-fdt-summary-headline class="text-sm text-fg-primary">
-            <span class="font-semibold tabular-nums">{counts().active}</span>
-            <span class="text-fg-secondary">
-              {' '}
-              of <span class="tabular-nums">{counts().total}</span> optimizations active
+          {/* The clip hides the suffix's gutter dot when it wraps to a line start. */}
+          <p data-fdt-summary-headline class="min-w-0 overflow-hidden text-sm text-fg-primary">
+            <span class="-ms-3 flex flex-wrap">
+              <span class="ms-3 min-w-0">
+                <span class="font-semibold tabular-nums">{counts().active}</span>
+                <span class="text-fg-secondary">
+                  {' '}
+                  of <span class="tabular-nums">{counts().total}</span> optimizations active
+                </span>
+              </span>
+              <Show when={builderOffSummary(counts().offInTab)}>
+                {(suffix) => (
+                  // One unit: wraps whole onto the next line, never mid-phrase.
+                  <span
+                    data-fdt-summary-off
+                    class={`${GUTTER_DOT} whitespace-nowrap text-fg-secondary`}
+                  >
+                    <span class="sr-only">, </span>
+                    {suffix()}
+                  </span>
+                )}
+              </Show>
             </span>
           </p>
           {/* Decorative: the sentence beside it states the same numbers. */}
@@ -132,13 +163,13 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
               class="-ms-3 flex flex-wrap gap-y-1 text-2xs text-fg-secondary"
             >
               <Show when={!props.summary.wpr.present}>
-                <li class={FACT} data-fdt-summary-fact="wpr">
+                <li class={GUTTER_DOT} data-fdt-summary-fact="wpr">
                   WP Rocket was not detected on this page.
                 </li>
               </Show>
               <Show when={stamp()}>
                 {(cache) => (
-                  <li class={FACT} data-fdt-summary-fact="cache">
+                  <li class={GUTTER_DOT} data-fdt-summary-fact="cache">
                     Cache generated{' '}
                     <time
                       class="whitespace-nowrap tabular-nums text-fg-primary"
@@ -151,7 +182,7 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
               </Show>
               <Show when={explained()}>
                 {(copy) => (
-                  <li class={FACT} data-fdt-summary-fact="cache">
+                  <li class={GUTTER_DOT} data-fdt-summary-fact="cache">
                     <Tooltip content={copy().tooltip} class={FACT_TRIGGER}>
                       {copy().chip}
                     </Tooltip>
@@ -160,21 +191,21 @@ export function SummaryStrip(props: SummaryStripProps): JSX.Element {
               </Show>
               <Show when={props.summary.cacheLayer}>
                 {(layer) => (
-                  <li class={FACT} data-fdt-summary-fact="cache-layer">
+                  <li class={GUTTER_DOT} data-fdt-summary-fact="cache-layer">
                     {cacheLayerCopy(layer()).fact}
                   </li>
                 )}
               </Show>
               <Show when={props.summary.wordpressVersion}>
                 {(version) => (
-                  <li class={FACT} data-fdt-summary-fact="wordpress">
+                  <li class={GUTTER_DOT} data-fdt-summary-fact="wordpress">
                     WordPress <span class="font-mono break-all text-fg-primary">{version()}</span>
                   </li>
                 )}
               </Show>
               <Show when={props.summary.platform}>
                 {(platform) => (
-                  <li class={FACT} data-fdt-summary-fact="platform">
+                  <li class={GUTTER_DOT} data-fdt-summary-fact="platform">
                     <span class="text-fg-primary">{platform().name}</span> via{' '}
                     <span class="font-mono break-all text-fg-primary">{platform().header}</span>
                   </li>

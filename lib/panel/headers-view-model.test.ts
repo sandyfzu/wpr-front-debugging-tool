@@ -86,8 +86,12 @@ describe('buildHeadersViewModel — the verdict copy', () => {
       '57 seconds ago'
     );
     expect(buildHeadersViewModel([{ name: 'Age', value: '1' }]).caching[0]?.hint?.text).toContain(
-      '1 second'
+      '1 second ago'
     );
+    // The raw counter, ungrouped (it is the header's own value).
+    expect(
+      buildHeadersViewModel([{ name: 'Age', value: '1234' }]).caching[0]?.hint?.text
+    ).toContain('1234 seconds ago');
     expect(buildHeadersViewModel([{ name: 'Age', value: '0' }]).caching[0]?.hint).toBeNull();
     expect(buildHeadersViewModel([{ name: 'Age' }]).caching[0]?.hint).toBeNull();
   });

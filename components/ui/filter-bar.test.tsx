@@ -121,6 +121,20 @@ describe('FilterBar', () => {
     }
   });
 
+  it('gives hover feedback only to live chips, selected or not', () => {
+    render(() => <FilterBar chips={CHIPS} selected="all" />);
+    const hover = (chip: HTMLElement): string[] =>
+      chip.className.split(/\s+/).filter((token) => token.startsWith('hover:'));
+    const chips = getChips();
+    const disabled = chips.find((chip) => (chip as HTMLButtonElement).disabled) ?? throwAt(0);
+    const selected =
+      chips.find((chip) => chip.getAttribute('aria-pressed') === 'true') ?? throwAt(0);
+    const live = chips.find((chip) => chip !== selected && chip !== disabled) ?? throwAt(0);
+    expect(hover(selected)).toEqual(['hover:brightness-110']);
+    expect(hover(live)).toEqual(['hover:border-line-3', 'hover:text-fg-primary']);
+    expect(hover(disabled)).toEqual([]);
+  });
+
   it('wires the embedded search field through the controlled loop', () => {
     // The page owns the query signal; changes are recorded through a plain local.
     const [query] = createSignal('delay');

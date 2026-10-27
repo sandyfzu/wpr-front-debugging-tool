@@ -23,6 +23,8 @@ import {
   type StatusKind
 } from '../../../../components/ui/status-badge';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
+import { countNoun } from '../../../../utils/format-count';
 import { cn } from '../../../../utils/cn';
 import { recoverOriginalScript } from '../../../../lib/wp-rocket/minify-url-recovery';
 import { COMBINED_EXCLUSION_NOTE, ExclusionCopyButton } from './copy-exclusion';
@@ -76,7 +78,7 @@ export function notFoundExplanation(unreadable: number, inlineCut = false): stri
   }
   const head =
     "No declaration or assignment of this name was found in the page's readable scripts.";
-  const skipped = unreadable === 1 ? '1 script' : `${String(unreadable)} scripts`;
+  const skipped = `${String(unreadable)} ${countNoun(unreadable, SCRIPT_NOUN)}`;
   if (!inlineCut) {
     return `${head} ${skipped} could not be read, so a definition may still be in one of them.`;
   }

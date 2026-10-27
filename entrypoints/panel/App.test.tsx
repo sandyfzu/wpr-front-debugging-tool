@@ -15,7 +15,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PanelApp } from './App';
 import { createSearchStore, type SearchStore } from './state/search';
-import { createFdtDataStore, type FdtDataStore } from './state/use-fdt-data';
+import {
+  NO_PAGE_TRANSPORT_REASON,
+  createFdtDataStore,
+  type FdtDataStore
+} from './state/use-fdt-data';
+import { DATA_UNAVAILABLE_TITLE } from './data-unavailable';
 import type { PanelReceivers } from './state/edges';
 import { makeFdtData, makeHardReloadBudget } from './state/fixtures';
 import { PAGES } from './pages';
@@ -46,7 +51,7 @@ interface ShellParts {
  * a fixed inspected tab; the registered receivers are captured so tests can
  * deliver events exactly like the transport does.
  */
-function makeShell(): ShellParts {
+function makeShell(canRequest = true): ShellParts {
   let settle!: (payload: unknown) => void;
   let failFlight!: (cause: unknown) => void;
   let requestCount = 0;
@@ -69,6 +74,7 @@ function makeShell(): ShellParts {
     },
     search,
     reload: vi.fn(),
+    canRequest: () => canRequest,
     hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
@@ -153,6 +159,24 @@ describe('PanelApp boot states', () => {
     }
   );
 
+  it('renders the explicit unavailable view (no retry, no request) when tabs cannot be messaged', () => {
+    const shell = makeShell(false);
+    render(() => <PanelApp search={shell.search} data={shell.data} />);
+    const view = document.querySelector('[data-fdt="data-unavailable"]');
+    expect(view).not.toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: DATA_UNAVAILABLE_TITLE })).toBeTruthy();
+    expect(view?.textContent).toContain(NO_PAGE_TRANSPORT_REASON);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByText("Couldn't load page data")).toBeNull();
+    expect(document.querySelector('[data-fdt="error-state"]')).toBeNull();
+    expect(document.querySelector('[data-fdt="panel-status"]')?.textContent).toBe(
+      DATA_UNAVAILABLE_TITLE
+    );
+    expect(shell.requests()).toBe(0);
+    hashTo('javascript');
+    expect(document.querySelector('[data-fdt="data-unavailable"]')).not.toBeNull();
+  });
+
   it('updates the loading and error canvas when the route changes before data arrives', async () => {
     const shell = makeShell();
     render(() => <PanelApp search={shell.search} data={shell.data} />);
@@ -177,6 +201,36 @@ describe('PanelApp boot states', () => {
     shell.settle(pageData());
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Detections' })).toBeTruthy();
+    });
+  });
+
+  it('ends the status strip with the exclusion builder entry, even before page data', async () => {
+    const shell = makeShell();
+    const askStatus = vi.fn(() =>
+      Promise.resolve({ kind: 'reply', reply: { state: 'inactive' } } as const)
+    );
+    render(() => (
+      <PanelApp
+        search={shell.search}
+        data={shell.data}
+        builderEntry={{
+          inspectedTabId: () => 77,
+          askStatus,
+          open: () => Promise.resolve({ kind: 'reply', reply: 'injected' } as const),
+          listen: () => () => undefined
+        }}
+      />
+    ));
+    const strip = screen.getByRole('contentinfo', { name: 'Page status' });
+    const control = await waitFor(() => {
+      const found = strip.querySelector('[data-fdt="builder-entry"]');
+      if (found === null) throw new Error('no builder entry');
+      return found;
+    });
+    expect(strip.lastElementChild).toBe(control);
+    expect(askStatus).toHaveBeenCalledWith(77);
+    await waitFor(() => {
+      expect(control.textContent).toContain('Off');
     });
   });
 

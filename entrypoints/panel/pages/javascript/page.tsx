@@ -22,12 +22,13 @@
  * here — the platform has no setter. A route change unmounts the page
  * (resetting chip and expanded rows) and the shell resets the search.
  */
-import { sendMessage } from '../../../../lib/messaging';
 import {
   loadScriptSource,
   type ScriptSourceRequest
 } from '../../../../lib/messaging/script-source';
+import { selectTabAsks } from '../../../../lib/messaging/tab-asks';
 import { devtoolsInspectedTabId } from '../../state/edges';
+import { createSourceChunkReader } from './source-chunk-reader';
 import type { Accessor, JSX } from 'solid-js';
 import { createComputed, createMemo, createSignal, on, Show } from 'solid-js';
 import FileCode from 'lucide-solid/icons/file-code';
@@ -35,6 +36,7 @@ import { EmptyState } from '../../../../components/ui/empty-state';
 import { FilterBar } from '../../../../components/ui/filter-bar';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import { VirtualList, type VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
   buildScriptRows,
@@ -63,7 +65,6 @@ import {
   buildChips,
   estimateRowSize,
   pruneRowFlags,
-  SCRIPTS_NOUN,
   toggleRowFlag,
   type ScriptRowView
 } from './script-view';
@@ -160,7 +161,7 @@ export function JavaScriptView(props: JavaScriptViewProps): JSX.Element {
   const { text: announcement, live } = createResultsAnnouncement({
     rows: views,
     visible: filtered,
-    noun: SCRIPTS_NOUN,
+    noun: SCRIPT_NOUN,
     actions: [selected, () => query()]
   });
   const selectedLabel = (): string | undefined =>
@@ -361,32 +362,17 @@ function ScriptSummary(props: ScriptSummaryProps): JSX.Element {
         )}
       </Show>
       <span data-fdt="script-total" class="ms-auto ps-2 text-fg-secondary tabular-nums">
-        {countLabel(props.total, SCRIPTS_NOUN, props.partial)}
+        {countLabel(props.total, SCRIPT_NOUN, props.partial)}
       </span>
     </div>
   );
 }
 
 /**
- * Read one bounded segment from the inspected main frame, with a finite wait.
- * @param request The captured script identity and segment offset.
- * @returns The untrusted transport reply, validated by the source assembler.
- * @throws {@link Error} when no inspected tab exists or the read cannot finish.
+ * The production segment reader: the inspected main frame over the panel's
+ * tab transport (chosen per read — the probe is a property check).
  */
-async function requestSourceChunk(request: ScriptSourceRequest): Promise<unknown> {
-  const tabId = devtoolsInspectedTabId();
-  if (tabId === null) throw new Error('No inspected tab for script copy.');
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      sendMessage('getScriptSourceChunk', request, { tabId, frameId: 0 }),
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-          reject(new Error('Script source read timed out.'));
-        }, 5000);
-      })
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+const requestSourceChunk = createSourceChunkReader({
+  asks: () => selectTabAsks(browser),
+  inspectedTabId: devtoolsInspectedTabId
+});

@@ -18,16 +18,10 @@ import { createLogger } from '../../lib/logger';
 import { Button } from './button';
 import { STATUS_TEXT_CLASSES } from './status-badge';
 import { toast } from './toast-store';
+import { COPIED_FLASH_MS } from './copy-flash';
 
 /** The logger for copy degradations — the toast is the user feedback, this is the operational record. */
 const logger = createLogger('copy-button');
-
-/**
- * How long the check confirmation state lingers after a successful copy (ms).
- * The shared flash's one declaring site — every flash consumer times with it,
- * so confirmation feedback keeps one rhythm everywhere.
- */
-export const COPIED_FLASH_MS = 1600;
 
 /** The error toast's title — the copy mechanism, not the copied thing, failed. */
 const COPY_FAILED_TITLE = 'Copy failed';

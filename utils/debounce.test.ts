@@ -73,4 +73,28 @@ describe('debounce', () => {
 
     expect(fn).toHaveBeenCalledWith('tick');
   });
+
+  it('runs at least every maxWait under a continuous burst', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 100, { maxWaitMs: 250 });
+    // A call every 50 ms never leaves a 100 ms quiet period.
+    for (let elapsed = 0; elapsed < 600; elapsed += 50) {
+      debounced(elapsed);
+      vi.advanceTimersByTime(50);
+    }
+    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(fn).toHaveBeenNthCalledWith(1, 200);
+  });
+
+  it('restarts the max wait after each run and cancels both timers', () => {
+    const fn = vi.fn();
+    const debounced = debounce(fn, 100, { maxWaitMs: 250 });
+    debounced('a');
+    vi.advanceTimersByTime(100);
+    expect(fn).toHaveBeenCalledTimes(1);
+    debounced('b');
+    debounced.cancel();
+    vi.advanceTimersByTime(500);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
 });

@@ -23,8 +23,13 @@ import { HIGHLIGHT_MAX_CHARS } from '../../../../components/ui/code-block';
 import type { CodeBlockSeams } from './script-row';
 import {
   readScriptSourceChunk,
+  SCRIPT_SOURCE_CHUNK_CHARS,
   type ScriptSourceRequest
 } from '../../../../lib/messaging/script-source';
+import type { TabAsks } from '../../../../lib/messaging/tab-asks';
+import { parseTabRelayRequest, type TabRelayRequest } from '../../../../lib/messaging/tab-relay';
+import { relayTabAsks } from '../../../../lib/messaging/tab-relay-client';
+import { createSourceChunkReader } from './source-chunk-reader';
 import { boundWprDetections } from '../../../../lib/messaging/payload-bounds';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 
@@ -764,6 +769,52 @@ describe('JavaScriptView — copy', () => {
 });
 
 describe('JavaScriptView — complete snapshot copy', () => {
+  it('copies a multi-chunk source through the background relay (no tabs API)', async () => {
+    const snapshotId = 'fedcba98765432100123456789abcdef';
+    // Three chunks: the relay carries every segment, the last one partial.
+    const source = 'x'.repeat(2 * SCRIPT_SOURCE_CHUNK_CHARS + 123);
+    const raw = [makeDelayScript({ inline: true, src: undefined, content: source })];
+    const data = dataWith(raw);
+    const bounded = {
+      ...data,
+      scriptSnapshotId: snapshotId,
+      wprDetections: boundWprDetections(data.wprDetections)
+    };
+    // The background's side, contract-true: validate, then forward to the tab.
+    const tab: TabAsks = {
+      processPageData: () => Promise.resolve(true),
+      getFdtData: () => Promise.resolve(null),
+      getScriptSourceChunk: (_tabId, request) =>
+        Promise.resolve(readScriptSourceChunk(raw, snapshotId, request))
+    };
+    const relayed: TabRelayRequest[] = [];
+    const reader = createSourceChunkReader({
+      asks: () =>
+        relayTabAsks(async (request) => {
+          relayed.push(request);
+          const valid = parseTabRelayRequest(request);
+          return valid === null
+            ? { ok: false, failure: 'invalid-request' }
+            : { ok: true, answer: await valid.forward(tab) };
+        }),
+      inspectedTabId: () => 9
+    });
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderView(bounded, reader);
+    fireEvent.click(
+      within(rows()[0] as HTMLElement).getByRole('button', { name: 'Inline script — copy' })
+    );
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(source);
+    });
+    expect(relayed.map((request) => [request.tabId, request.ask])).toEqual([
+      [9, 'getScriptSourceChunk'],
+      [9, 'getScriptSourceChunk'],
+      [9, 'getScriptSourceChunk']
+    ]);
+  });
+
   it('copies the complete captured inline content and URL after real upstream truncation', async () => {
     const snapshotId = '12345678123412341234123456789abc';
     const source =

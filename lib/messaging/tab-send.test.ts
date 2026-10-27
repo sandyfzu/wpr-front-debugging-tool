@@ -11,7 +11,7 @@ import { preventUncheckedLastError } from './tab-send';
 let lastErrorReads: number;
 
 /** Install a `chrome.runtime.lastError` getter stub over the real global. */
-function stubLastError(value: { message: string } | undefined): void {
+function stubLastError(value: { message: string } | null | undefined): void {
   Object.defineProperty(chrome.runtime, 'lastError', {
     configurable: true,
     get: () => {
@@ -64,31 +64,6 @@ describe('preventUncheckedLastError', () => {
     expect(originalCallback).toHaveBeenCalledWith(response);
   });
 
-  it("forwards the response when lastError is Firefox's null success value", () => {
-    lastErrorReads = 0;
-    Object.defineProperty(chrome.runtime, 'lastError', {
-      configurable: true,
-      get: () => {
-        lastErrorReads += 1;
-        return null;
-      }
-    });
-    const response = { res: 'ok' };
-    const send = preventUncheckedLastError(((
-      _tabId: number,
-      _message: unknown,
-      _options: unknown,
-      callback: (r: unknown) => void
-    ) => {
-      callback(response);
-    }) as unknown as typeof chrome.tabs.sendMessage);
-    const originalCallback = vi.fn();
-    // A throwing read would surface here and leave the callback uncalled.
-    send(4, { type: 'x' }, undefined, originalCallback);
-    expect(lastErrorReads).toBe(1);
-    expect(originalCallback).toHaveBeenCalledWith(response);
-  });
-
   it('handles the 3-arity call (callback in the options slot)', () => {
     lastErrorReads = 0;
     stubLastError(undefined);
@@ -132,5 +107,26 @@ describe('preventUncheckedLastError', () => {
     const originalCallback = vi.fn();
     send(9, { type: 'x' }, undefined, originalCallback);
     expect(originalCallback).toHaveBeenCalledWith(undefined);
+  });
+
+  it('forwards a successful send when the platform sets lastError to null (Firefox)', () => {
+    // Firefox leaves `runtime.lastError` null (not undefined) after a
+    // successful send; the guard must neither throw nor swallow the response.
+    lastErrorReads = 0;
+    stubLastError(null);
+    const response = { res: 'ok' };
+    const send = preventUncheckedLastError(((
+      _tabId: number,
+      _message: unknown,
+      _options: unknown,
+      callback: (r: unknown) => void
+    ) => {
+      callback(response);
+    }) as unknown as typeof chrome.tabs.sendMessage);
+    const originalCallback = vi.fn();
+    // A throwing read would surface here and leave the callback uncalled.
+    send(4, { type: 'x' }, undefined, originalCallback);
+    expect(lastErrorReads).toBe(1);
+    expect(originalCallback).toHaveBeenCalledWith(response);
   });
 });

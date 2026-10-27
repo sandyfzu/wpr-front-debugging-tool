@@ -12,9 +12,8 @@ import type { EntryMaskHandle } from './virtual-list-entry';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import type { VirtualItem } from '@tanstack/solid-virtual';
 import { createLogger } from '../../lib/logger';
-import { cn } from '../../utils/cn';
 import { attachEntryMask } from './virtual-list-entry';
-import { preserveMovedFocus } from './virtual-list-focus';
+import { focusedElementOf, preserveMovedFocus } from './virtual-list-focus';
 
 /** The virtual row type the wrapper renders (re-exported for consumers/tests). */
 export type { VirtualItem };
@@ -346,7 +345,7 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
     on(
       windowKeys,
       () => {
-        if (scroller !== undefined && scroller.contains(scroller.ownerDocument.activeElement)) {
+        if (scroller !== undefined && scroller.contains(focusedElementOf(scroller))) {
           cancelFocusRestore?.();
           cancelFocusRestore = preserveMovedFocus(scroller);
         }
@@ -403,7 +402,14 @@ export function VirtualList(props: VirtualListProps): JSX.Element {
       }}
       data-fdt="virtual-list"
       role={own.scrollerRole}
-      class={cn('relative overflow-y-auto', own.class)}
+      // A plain join, not a class merge: the wrapper's two utilities never
+      // conflict with a caller's (callers own sizing/borders), and a merge
+      // library would ride along into every consumer, Tailwind or not.
+      class={
+        own.class === undefined
+          ? 'relative overflow-y-auto'
+          : `relative overflow-y-auto ${own.class}`
+      }
       {...rest}
     >
       <div

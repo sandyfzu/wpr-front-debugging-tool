@@ -146,4 +146,29 @@ describe('Switch', () => {
     expect(root.className).toContain('disabled:opacity-50');
     expect(root.className).not.toContain('pointer-events-none');
   });
+
+  it('hovers checked on a fill surface with a lifted pill, unchecked on the raised halo', () => {
+    /** The pointer-state utilities of an element's class list. */
+    const pointer = (element: Element): string[] =>
+      element.className.split(/\s+/).filter((token) => /(^|:)(group-)?hover/.test(token));
+    render(() => <Switch label="Live" />);
+    const thumb = rootOf().querySelector('[data-fdt-switch-thumb]') as Element;
+    // Unchecked: the halo rises to surface-3 and the pill's border firms up.
+    expect(pointer(trackOf())).toContain('hover:bg-surface-3');
+    // Checked: the halo stays on surface-2 (the accent pill keeps 3:1 against
+    // it — surface-3/4 would not, in dark), and the pill lifts instead.
+    expect(pointer(trackOf())).toContain('data-checked:hover:bg-surface-2');
+    expect(
+      pointer(trackOf()).filter(
+        (token) => /surface-[34]$/.test(token) && token.includes('data-checked')
+      )
+    ).toEqual([]);
+    expect(pointer(thumb)).toContain('data-checked:group-hover/switch:brightness-110');
+    expect(trackOf().className.split(/\s+/)).toContain('group/switch');
+    cleanup();
+    render(() => <Switch label="Locked" disabled />);
+    const lockedThumb = rootOf().querySelector('[data-fdt-switch-thumb]') as Element;
+    expect(pointer(trackOf())).toEqual([]);
+    expect(pointer(lockedThumb)).toEqual([]);
+  });
 });

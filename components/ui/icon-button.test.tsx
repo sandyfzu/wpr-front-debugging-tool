@@ -59,4 +59,28 @@ describe('IconButton', () => {
       'text-fg-secondary'
     );
   });
+
+  it('keeps the hover surface live and drops it when held (disabled or aria-disabled)', () => {
+    render(() => (
+      <div>
+        <IconButton label="Live">
+          <RefreshCw size={12} />
+        </IconButton>
+        <IconButton label="Disabled" disabled>
+          <RefreshCw size={12} />
+        </IconButton>
+        <IconButton label="Held" aria-disabled="true">
+          <RefreshCw size={12} />
+        </IconButton>
+      </div>
+    ));
+    const hover = (name: string): string[] =>
+      screen
+        .getByRole('button', { name })
+        .className.split(/\s+/)
+        .filter((token) => token.startsWith('hover:'));
+    expect(hover('Live')).toEqual(['hover:bg-surface-3', 'hover:text-fg-primary']);
+    expect(hover('Disabled')).toEqual([]);
+    expect(hover('Held')).toEqual([]);
+  });
 });

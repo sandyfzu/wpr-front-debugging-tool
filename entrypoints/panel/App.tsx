@@ -30,6 +30,8 @@ import { ErrorState } from '../../components/ui/error-state';
 import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
+import { selectTabAsks } from '../../lib/messaging/tab-asks';
+import { selectTabPushConnect } from '../../lib/messaging/tab-push-client';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
@@ -37,7 +39,13 @@ import { AdaptiveNav } from './nav/adaptive-nav';
 import { createHashRoute } from './router';
 import { navRoute, type RouteId } from './routes';
 import { PageCanvas } from './pages/page-frame';
+import { DATA_UNAVAILABLE_TITLE, DataUnavailable } from './data-unavailable';
 import { StatusBar } from './status-bar/status-bar';
+import {
+  BuilderEntry,
+  realBuilderEntryDeps,
+  type BuilderEntryDeps
+} from './status-bar/builder-entry';
 import { PAGES } from './pages';
 import { focusRouteHeading } from './palette/focus';
 import { PaletteTrigger } from './palette/palette-trigger';
@@ -51,7 +59,8 @@ import {
   type FdtDataStore
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
-import { devtoolsInspectedTabId, realMessagingEdges } from './state/edges';
+import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
+import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
 
 const log = createLogger('panel');
@@ -74,6 +83,11 @@ export type AppProps = {
    * document itself reloads — the DevTools window re-attaches it.
    */
   readonly reload?: () => void;
+  /**
+   * The exclusion builder entry's transport (tests inject doubles); absent,
+   * the real messenger over the DevTools-inspected tab.
+   */
+  readonly builderEntry?: BuilderEntryDeps;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -128,7 +142,7 @@ const BOTTOM_EDGE = 'flex min-h-0 min-w-0 flex-1 flex-col';
 const STACK_ROW = 'flex min-h-0 flex-1';
 
 export function PanelApp(props: AppProps): JSX.Element {
-  // All three store injections below are deliberate once-per-mount builds
+  // All the store injections below are deliberate once-per-mount builds
   // (the component body runs once; a store is never reactively rebuilt), so
   // the `solid/reactivity` warning's concern does not apply to any of them —
   // silenced uniformly rather than by exception.
@@ -139,10 +153,15 @@ export function PanelApp(props: AppProps): JSX.Element {
     // eslint-disable-next-line solid/reactivity
     props.data ??
     ((): FdtDataStore => {
-      const edges = realMessagingEdges();
+      // Pushes arrive directly where the panel has the `tabs` API; elsewhere
+      // (Firefox) the same receivers are also fed through the background.
+      const edges = withRelayedPushes(realMessagingEdges(), {
+        connect: selectTabPushConnect(browser),
+        inspectedTabId: devtoolsInspectedTabId
+      });
       return createFdtDataStore({
         inspectedTabId: devtoolsInspectedTabId,
-        request: (tabId) => edges.request(tabId),
+        ...fdtRequestEdges(selectTabAsks(browser)),
         receive: (receivers) => edges.receive(receivers),
         search,
         reload: () => {
@@ -162,6 +181,8 @@ export function PanelApp(props: AppProps): JSX.Element {
     })();
   // eslint-disable-next-line solid/reactivity
   const overlays = props.overlays ?? createOverlayStore();
+  // eslint-disable-next-line solid/reactivity
+  const builderEntryDeps = props.builderEntry ?? realBuilderEntryDeps(devtoolsInspectedTabId);
   const router = createHashRoute();
 
   // The shell — and only the shell — owns the mount lifecycle: every
@@ -215,6 +236,12 @@ export function PanelApp(props: AppProps): JSX.Element {
     return current.status === 'error' ? { cause: current.cause } : null;
   });
 
+  /** The unavailable branch's reason (typed narrowing for the view). */
+  const unavailableReason = createMemo((): string | null => {
+    const current = data.state();
+    return current.status === 'unavailable' ? current.reason : null;
+  });
+
   /** The machine-state announcement (never the data pushes themselves). */
   const statusLine = createMemo((): string => {
     const current = data.state();
@@ -226,6 +253,8 @@ export function PanelApp(props: AppProps): JSX.Element {
         return 'Refreshing page data';
       case 'error':
         return 'Page data could not load';
+      case 'unavailable':
+        return DATA_UNAVAILABLE_TITLE;
       case 'ready':
         return `${navRoute(router.route())?.label ?? 'Page'} loaded`;
     }
@@ -320,6 +349,15 @@ export function PanelApp(props: AppProps): JSX.Element {
                         </PageCanvas>
                       )}
                     </Match>
+                    {/* No way to message the page here (feature-detected): an
+                        explicit state naming what still works — no retry. */}
+                    <Match when={unavailableReason()} keyed>
+                      {(reason) => (
+                        <PageCanvas id={router.route()}>
+                          <DataUnavailable reason={reason} />
+                        </PageCanvas>
+                      )}
+                    </Match>
                     {/* `ready` and `refreshing` render the same body — the data
                         swap is the only change a soft refresh makes. */}
                     <Match
@@ -331,7 +369,7 @@ export function PanelApp(props: AppProps): JSX.Element {
                 </ErrorBoundary>
               </main>
             </div>
-            <StatusBar />
+            <StatusBar trailing={<BuilderEntry deps={builderEntryDeps} />} />
           </div>
           <div role="status" class="sr-only" aria-live="polite" data-fdt="panel-status">
             {statusLine()}

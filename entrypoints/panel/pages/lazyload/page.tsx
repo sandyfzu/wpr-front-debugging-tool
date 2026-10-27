@@ -34,6 +34,7 @@ import { Badge } from '../../../../components/ui/badge';
 import { EmptyState } from '../../../../components/ui/empty-state';
 import { StatusBadge } from '../../../../components/ui/status-badge';
 import type { VirtualizerFactory } from '../../../../components/ui/virtual-list';
+import { IMAGE_NOUN } from '../../../../lib/detection/count-nouns';
 import { PAYLOAD_LIMITS } from '../../../../lib/messaging/payload-bounds';
 import { getRealOptionName } from '../../../../lib/options-map/get-real-option-name';
 import {
@@ -100,7 +101,7 @@ export function LazyloadPage(props: LazyloadPageProps): JSX.Element {
       notes={notesFor(lazyload())}
       featureLabel={getRealOptionName('lazyload')}
       featurePresent={lazyload()?.present ?? false}
-      noun={{ one: 'image', other: 'images' }}
+      noun={IMAGE_NOUN}
       listLabel="Images"
       searchLabel="Search image URLs"
       searchPlaceholder="Search image URLs…"

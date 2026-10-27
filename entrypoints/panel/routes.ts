@@ -17,6 +17,7 @@ import ShieldCheck from 'lucide-solid/icons/shield-check';
 import Stethoscope from 'lucide-solid/icons/stethoscope';
 import Zap from 'lucide-solid/icons/zap';
 import type { StatusKind } from '../../components/ui/status-badge';
+import { IMAGE_NOUN } from '../../lib/detection/count-nouns';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { PAYLOAD_LIMITS } from '../../lib/messaging/payload-bounds';
 import { listCapped, countLabel } from '../../lib/panel/list-behavior';
@@ -141,7 +142,7 @@ export const NAV_ROUTES: readonly NavRoute[] = [
       const count = images.length;
       const partial = listCapped(truncated, count, PAYLOAD_LIMITS.images.count);
       return count > 0
-        ? { text: countLabel(count, { one: 'image', other: 'images' }, partial), tone: 'info' }
+        ? { text: countLabel(count, IMAGE_NOUN, partial), tone: 'info' }
         : { text: 'No images', tone: 'neutral' };
     }
   },

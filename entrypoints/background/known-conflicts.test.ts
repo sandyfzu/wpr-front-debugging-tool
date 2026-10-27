@@ -83,10 +83,12 @@ function fakeFetch() {
     Promise.reject(new RangeError('no payload queued'));
   const requestedUrls: unknown[] = [];
   const requestSignals: unknown[] = [];
+  const requestCacheModes: unknown[] = [];
   const fetch: typeof globalThis.fetch = (url: unknown, init?: RequestInit): Promise<Response> => {
     callCount += 1;
     requestedUrls.push(url);
     requestSignals.push(init?.signal);
+    requestCacheModes.push(init?.cache);
     if (queuedError !== null) throw queuedError;
     const json = queuedJson ?? noPayloadSupplier;
     return Promise.resolve(stubResponse(json, queuedOk));
@@ -96,6 +98,7 @@ function fakeFetch() {
     calls: (): number => callCount,
     urls: requestedUrls,
     signals: requestSignals,
+    cacheModes: requestCacheModes,
     queueJson(json: PromiseSupplier<unknown>): void {
       queuedJson = json;
       queuedError = null;
@@ -167,6 +170,13 @@ describe('fetchAndStoreKnownConflicts', () => {
     expect(DB_ENDPOINT).toBe('https://apps.wpr-support.com/kc/known-conflicts.json');
     expect(fetcher.signals[0]).toBeInstanceOf(AbortSignal);
     expect(DB_FETCH_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it('revalidates with the server instead of reusing an HTTP-cache copy', async () => {
+    const { deps, fetcher } = makeDeps({});
+    fetcher.queueJson((): Promise<unknown> => Promise.resolve(SAMPLE_ROWS));
+    await fetchAndStoreKnownConflicts(deps);
+    expect(fetcher.cacheModes).toEqual(['no-cache']);
   });
 
   it('reports a distinct http-error outcome without touching storage', async () => {

@@ -9,7 +9,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
 import { toastItems } from '../../../../components/ui/toast-store';
 import type { ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';

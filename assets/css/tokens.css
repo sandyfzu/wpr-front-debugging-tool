@@ -66,10 +66,15 @@
 /* ---- Palette-agnostic tokens --------------------------------------------- */
 /* Values switch with the color scheme above; names never mention a palette.
  * NOTE on ordering: `light-dark(lightValue, darkValue)` — the light palette is
- * always the first argument per the CSS Color 5 spec. */
+ * always the first argument per the CSS Color 5 spec.
+ * `[data-fdt-tokens]` re-declares the same values on an element inside an
+ * injected UI's shadow root: a page rule such as `* { --surface-1: … }`
+ * reaches the shadow host (and beats `:host`), but never an element inside
+ * the shadow tree. */
 
 :root,
-:host {
+:host,
+[data-fdt-tokens] {
   /* Surfaces: 5-level elevation scale (darkest at the bottom in the dark palette,
    * light gray base with white panels in the light palette). */
   --surface-0: light-dark(#f4f5f8, #0b0d10);
@@ -93,10 +98,12 @@
 
   /* Accent: blue→violet ramp (headings, links, focus, primary actions).
    * - `accent`        interactive text/icons/links and the focus ring;
-   * - `accent-strong` solid fill under light text (buttons, badges);
+   * - `accent-strong` solid fill under light text (buttons, badges) and the
+   *   pressed/checked/open state fill: tuned so white text stays ≥ 4.5:1 on
+   *   it and its hover lifts while the fill keeps 3:1 against surfaces 0–2;
    * - `accent-from/to` decorative gradient, mainly as gradient-clipped text. */
   --accent: light-dark(#2f56e8, #7d9bff);
-  --accent-strong: light-dark(#4338ca, #4f46e5);
+  --accent-strong: light-dark(#4338ca, #5b54ea);
   --accent-from: light-dark(#3554e8, #6390ff);
   --accent-to: light-dark(#7c3aed, #a78bfa);
   --on-accent: light-dark(#ffffff, #ffffff);

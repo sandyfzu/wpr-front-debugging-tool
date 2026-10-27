@@ -12,7 +12,7 @@ export interface ExclusionRowMatch {
   readonly row: string;
   /** How the row matches (its feature's kind). */
   readonly rowKind: ExclusionRowKind;
-  /** Elements this row matched (first matching row wins per element — this tool's semantics). */
+  /** Elements this row matched (first matching row in list order wins per element; see {@link TransformReport.rowCountsBestEffort}). */
   readonly matches: number;
 }
 
@@ -37,6 +37,57 @@ export interface TransformReport {
   readonly matchedRows: readonly ExclusionRowMatch[];
   /** Rows that matched nothing — the honest no-match signal for status. */
   readonly unmatchedRows: readonly string[];
+  /**
+   * Candidates whose outcome the engine cannot determine (left as served);
+   * present only when non-zero.
+   */
+  readonly undetermined?: number;
+  /**
+   * Candidates matched against a rebuilt, approximate subject (WP Rocket's
+   * original could not be read off the page); present only when non-zero.
+   */
+  readonly approximate?: number;
+  /**
+   * Defer JS: inline scripts whose WP Rocket jQuery wrapping (a
+   * `DOMContentLoaded` listener around the body) was undone, because the set
+   * certainly turns that pass off. Wrapped scripts are Defer JS candidates
+   * and each undone one a rewrite (so this is ≤ `rewritten`); present only
+   * when non-zero.
+   */
+  readonly inlineUnwrapped?: number;
+  /**
+   * Defer JS: wrapped inline scripts left as served because whether WP
+   * Rocket's inline-jQuery pass runs depends on rows the page cannot show
+   * (its live exclusions): part of `undetermined`; present only when non-zero.
+   */
+  readonly inlineUndetermined?: number;
+  /**
+   * WP Rocket's own run of the feature on this page, when not plainly on
+   * (Defer JS: its joined-pattern pre-check decides whether it defers
+   * anything at all). `unknown` — it could not be determined: the row
+   * matches are reported as if it runs. `off` — the rows make it run on
+   * nothing: every candidate is restored, no row is credited (matched and
+   * unmatched rows are empty), and `pageOffRows` names the rows behind it.
+   */
+  readonly pageState?: 'unknown' | 'off';
+  /**
+   * The rows behind a page `off`, in row order; present only then (and
+   * only when the reading names them).
+   */
+  readonly pageOffRows?: readonly string[];
+  /**
+   * Rows that match every candidate (WP Rocket stores them and excludes
+   * everything with them), in row order; present only when non-empty, on a
+   * row-driven run whose page is not `off`.
+   */
+  readonly matchAllRows?: readonly string[];
+  /**
+   * The per-row counts are best effort: WP Rocket matches the rows as one
+   * pattern, so which row matched is not observable there; the first
+   * matching row in list order is credited. Present only then (Defer JS,
+   * more than one row).
+   */
+  readonly rowCountsBestEffort?: true;
 }
 
 /** One transform's output: the rewritten html plus its report. */
@@ -58,12 +109,70 @@ export interface TransformCounters {
   /** Whole-region removals (see {@link TransformReport.regionRemovals}). */
   readonly regionRemovals: number;
   readonly featureWide: boolean;
+  /** See {@link TransformReport.undetermined} (0 when omitted). */
+  readonly undetermined?: number;
+  /** See {@link TransformReport.approximate} (0 when omitted). */
+  readonly approximate?: number;
+  /** See {@link TransformReport.inlineUnwrapped} (0 when omitted). */
+  readonly inlineUnwrapped?: number;
+  /** See {@link TransformReport.inlineUndetermined} (0 when omitted). */
+  readonly inlineUndetermined?: number;
+  /** See {@link TransformReport.pageState} (WP Rocket runs the feature when omitted). */
+  readonly pageState?: 'unknown' | 'off';
+  /** See {@link TransformReport.pageOffRows} (read only with a page `off`). */
+  readonly pageOffRows?: readonly string[];
+  /** See {@link TransformReport.matchAllRows} (none when omitted). */
+  readonly matchAllRows?: readonly string[];
+  /** See {@link TransformReport.rowCountsBestEffort} (exact when omitted). */
+  readonly rowCountsBestEffort?: boolean;
+}
+
+/**
+ * The optional counts of a report, each only when non-zero.
+ *
+ * @param counters The transform's counters.
+ */
+function optionalCounts(
+  counters: TransformCounters
+): Pick<
+  TransformReport,
+  'undetermined' | 'approximate' | 'inlineUnwrapped' | 'inlineUndetermined'
+> {
+  return {
+    ...(counters.undetermined ? { undetermined: counters.undetermined } : {}),
+    ...(counters.approximate ? { approximate: counters.approximate } : {}),
+    ...(counters.inlineUnwrapped ? { inlineUnwrapped: counters.inlineUnwrapped } : {}),
+    ...(counters.inlineUndetermined ? { inlineUndetermined: counters.inlineUndetermined } : {})
+  };
+}
+
+/**
+ * The row-driven caveats of a report, each only when set (a feature-wide
+ * run consults no rows, so it never carries them; a page-off run credits
+ * no row, so it carries only its page state and rows).
+ *
+ * @param counters The transform's counters.
+ */
+function rowCaveats(
+  counters: TransformCounters
+): Pick<TransformReport, 'pageState' | 'pageOffRows' | 'matchAllRows' | 'rowCountsBestEffort'> {
+  if (counters.pageState === 'off') {
+    const rows = counters.pageOffRows ?? [];
+    return { pageState: 'off', ...(rows.length > 0 ? { pageOffRows: [...rows] } : {}) };
+  }
+  const matchAll = counters.matchAllRows ?? [];
+  return {
+    ...(counters.pageState === 'unknown' ? { pageState: 'unknown' as const } : {}),
+    ...(matchAll.length > 0 ? { matchAllRows: [...matchAll] } : {}),
+    ...(counters.rowCountsBestEffort === true ? { rowCountsBestEffort: true as const } : {})
+  };
 }
 
 /**
  * Build the report from a transform's counters: rows split into matched
  * (count > 0) and unmatched, both in row order. A feature-wide run reports
- * no row attributions — the disable, not a row, matched.
+ * no row attributions or row caveats — the disable, not a row, matched; a
+ * page-off run reports no row attributions — no row was matched.
  *
  * @param counters The transform's collected counters.
  * @returns The report.
@@ -87,12 +196,15 @@ export function transformReport(counters: TransformCounters): TransformReport {
       rewritten,
       regionRemovals,
       matchedRows: [],
-      unmatchedRows: []
+      unmatchedRows: [],
+      ...optionalCounts(counters)
     };
   }
   const matchedRows: ExclusionRowMatch[] = [];
   const unmatchedRows: string[] = [];
+  const pageOff = counters.pageState === 'off';
   rows.forEach((row, index) => {
+    if (pageOff) return;
     const matches = matchCounts[index] ?? 0;
     if (matches > 0) matchedRows.push({ row, rowKind, matches });
     else unmatchedRows.push(row);
@@ -104,6 +216,8 @@ export function transformReport(counters: TransformCounters): TransformReport {
     rewritten,
     regionRemovals,
     matchedRows,
-    unmatchedRows
+    unmatchedRows,
+    ...optionalCounts(counters),
+    ...rowCaveats(counters)
   };
 }

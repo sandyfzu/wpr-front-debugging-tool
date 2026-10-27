@@ -16,9 +16,16 @@
  * acronym the plugin does not print.
  */
 
-import type { FeatureEvidenceSource, FeatureMetaRow, WprDetections } from '../wp-rocket/types';
+import type {
+  BuilderFact,
+  FeatureEvidenceSource,
+  FeatureMetaRow,
+  WprDetections
+} from '../wp-rocket/types';
 import type { FeatureState, PageAnalysisReport } from './describe';
 import type { FeatureLabel, LABEL_PRIORITY_ELEMENTS_BEACON } from './labels';
+import { countNoun, formatCount, type CountNoun } from '../../utils/format-count';
+import { DOMAIN_NOUN, ELEMENT_NOUN, FONT_NOUN, IMAGE_NOUN, SCRIPT_NOUN } from './count-nouns';
 import {
   LABEL_ADD_MISSING_IMAGE_DIMENSIONS,
   LABEL_AUTOMATIC_LAZY_RENDERING,
@@ -70,8 +77,8 @@ export interface HudFeature {
   readonly shortLabel: string;
   /** The group the feature renders under (strip heading; registry order within it). */
   readonly group: HudGroupId;
-  /** The count's unit word when the engine measures one, else null. */
-  readonly unit: string | null;
+  /** The count's noun (both count forms) when the engine measures one, else null. */
+  readonly unit: CountNoun | null;
   /** The feature's evidence count from the report, when `unit` is set. */
   readonly count: ((report: PageAnalysisReport) => number) | null;
   /**
@@ -102,7 +109,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_DELAY_JAVASCRIPT_EXECUTION,
     shortLabel: 'Delay JS',
     group: 'file-optimization',
-    unit: 'scripts',
+    unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_DELAY_JAVASCRIPT_EXECUTION]['delayed scripts'],
     undecided: null
   },
@@ -111,7 +118,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_LOAD_JAVASCRIPT_DEFERRED,
     shortLabel: 'Defer JS',
     group: 'file-optimization',
-    unit: 'scripts',
+    unit: SCRIPT_NOUN,
     count: (report) => report[LABEL_LOAD_JAVASCRIPT_DEFERRED]['deferred scripts'],
     undecided: null
   },
@@ -147,7 +154,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_IMAGE_LAZYLOAD,
     shortLabel: 'Lazyload Images',
     group: 'media',
-    unit: 'images',
+    unit: IMAGE_NOUN,
     count: (report) => report[LABEL_IMAGE_LAZYLOAD]['lazy-loaded images'],
     undecided: null
   },
@@ -215,7 +222,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_OPTIMIZE_CRITICAL_IMAGES,
     shortLabel: 'Critical Images',
     group: 'features',
-    unit: 'images',
+    unit: IMAGE_NOUN,
     count: (report) => report[LABEL_OPTIMIZE_CRITICAL_IMAGES]['preloaded images'],
     undecided: null
   },
@@ -224,7 +231,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_AUTOMATIC_LAZY_RENDERING,
     shortLabel: 'Automatic Lazy Rendering',
     group: 'features',
-    unit: 'elements',
+    unit: ELEMENT_NOUN,
     count: (report) => report[LABEL_AUTOMATIC_LAZY_RENDERING]['converted elements'],
     undecided: null
   },
@@ -233,7 +240,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRELOAD_FONTS,
     shortLabel: 'Preload Fonts',
     group: 'features',
-    unit: 'fonts',
+    unit: FONT_NOUN,
     count: (report) => report[LABEL_PRELOAD_FONTS]['preloaded fonts'],
     undecided: null
   },
@@ -242,7 +249,7 @@ export const HUD_FEATURES: readonly HudFeature[] = [
     label: LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS,
     shortLabel: 'Preconnect to External Domains',
     group: 'features',
-    unit: 'domains',
+    unit: DOMAIN_NOUN,
     count: (report) => report[LABEL_PRECONNECT_TO_EXTERNAL_DOMAINS]['domains hinted'],
     undecided: null
   }
@@ -297,6 +304,42 @@ export interface HudReading {
   readonly source: FeatureEvidenceSource | null;
   /** The amber "why" for an unsure verdict (collecting / unknown), else null. */
   readonly why: string | null;
+  /**
+   * The Exclusion Builder's effect on this feature in this tab (the marker
+   * the rewrite left in the displayed document) — a modifier on top of the
+   * verdict, never part of it. Present only when the document states one.
+   */
+  readonly builder?: BuilderFact;
+}
+
+/** A builder fact that turns its feature off in this tab (feature-wide, or Defer for the page). */
+export type BuilderOffFact = Extract<BuilderFact, { readonly off: unknown }>;
+
+/**
+ * Whether a builder fact turns its feature off in this tab (`off` feature-wide
+ * or page-off) rather than excluding rows — the one rule every surface that
+ * counts, colours or words the modifier branches on. An absent fact turns
+ * nothing off.
+ *
+ * @param fact The row's builder fact, if the document states one.
+ * @returns True for `off`, false for `excluded` or no fact.
+ */
+export function builderTurnsOff(fact?: BuilderFact): fact is BuilderOffFact {
+  return fact !== undefined && 'off' in fact;
+}
+
+/** What the Exclusion Builder did to a feature, as its modifier badge reads it. */
+export type BuilderBadgeKind = 'off' | 'excluded';
+
+/**
+ * The modifier badge's kind for a builder fact: turned off (feature-wide or
+ * for the page) or rows excluded — every surface's badge icon follows it, so
+ * no badge states its meaning by colour alone.
+ *
+ * @param fact The feature's builder fact.
+ */
+export function builderBadgeKind(fact: BuilderFact): BuilderBadgeKind {
+  return builderTurnsOff(fact) ? 'off' : 'excluded';
 }
 
 /** The collecting state's explanation (the family is enabled, nothing applied yet). */
@@ -325,12 +368,26 @@ export function readHudFeature(
     source === null &&
     feature.undecided !== null;
   const verdict: HudVerdict = unknown ? 'unknown' : state;
+  const builder = builderFactOf(detections, feature.row);
   return {
     verdict,
     count: feature.count === null ? null : feature.count(report),
     source,
-    why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null
+    why: unknown ? feature.undecided : verdict === 'collecting' ? COLLECTING_WHY : null,
+    ...(builder === null ? {} : { builder })
   };
+}
+
+/**
+ * A row's Exclusion Builder fact, or null (only the builder's four rows can
+ * carry one; every other row never does).
+ *
+ * @param detections The engine rows.
+ * @param row The detection row.
+ */
+function builderFactOf(detections: WprDetections, row: FeatureMetaRow): BuilderFact | null {
+  const entry = detections[row];
+  return 'builder' in entry && entry.builder !== undefined ? entry.builder : null;
 }
 
 /**
@@ -341,10 +398,28 @@ export function readHudFeature(
  * @param reading The feature's reading.
  */
 export function hudStateLine(feature: HudFeature, reading: HudReading): string {
+  const served = servedStateLine(feature, reading);
+  if (reading.builder === undefined) return served;
+  const sentence = builderModifierCopy(feature, reading.builder).sentence;
+  if (!builderTurnsOff(reading.builder)) return `${served} ${sentence}`;
+  // Turned off in this tab: the served line's counts describe the rewritten
+  // page ("applied on this page: 0 …"), so the modifier replaces it — after
+  // saying WP Rocket served the feature only when the verdict proves it did.
+  const modifier = lowerFirst(sentence);
+  return reading.verdict === 'applied' ? `${BUILDER_SERVED_LEAD}; ${modifier}` : modifier;
+}
+
+/**
+ * The verdict's own line, as WP Rocket served the page (no builder modifier).
+ *
+ * @param feature The HUD row.
+ * @param reading The feature's reading.
+ */
+function servedStateLine(feature: HudFeature, reading: HudReading): string {
   switch (reading.verdict) {
     case 'applied':
       return reading.count !== null && feature.unit !== null
-        ? `applied on this page: ${String(reading.count)} ${feature.unit}.`
+        ? `applied on this page: ${counted(reading.count, feature.unit)}.`
         : 'applied on this page.';
     case 'collecting':
       return COLLECTING_WHY;
@@ -381,3 +456,175 @@ export const SOURCE_REPORT_TEXT: Readonly<Record<FeatureEvidenceSource, string>>
   meta: 'Generator meta',
   footprint: 'Page footprint'
 };
+
+/** The state line's lead for a feature WP Rocket served that the builder turned off. */
+export const BUILDER_SERVED_LEAD = 'served by WP Rocket';
+
+/**
+ * The inline list joiner every surface shares between short phrases (the
+ * tab-level hints, the summary's reason suffix, the report line). Text form;
+ * the panel draws its glyph as a clipped gutter dot, never spoken.
+ */
+export const LIST_JOINER = ' · ';
+
+/**
+ * The joiner's glyph as a CSS `content` value with empty alt text: surfaces
+ * that draw it as a gutter dot set it as a custom property, so the dot is
+ * painted but never reaches the accessibility tree.
+ */
+export const LIST_JOINER_CONTENT = `'${LIST_JOINER.trim()}' / ''`;
+
+/** The strip's tab-level line title: the page shown is the builder's rewrite. */
+export const BUILDER_TAB_LINE_TITLE = 'Exclusion Builder rewrote this page';
+
+/**
+ * The summary's reason suffix: how many served features the Exclusion
+ * Builder turned off in this tab ({@link builderTurnsOff}) — appended to
+ * "N of M optimizations active" so the gap between served and active reads
+ * as the builder's doing. Excluded rows never count (the feature still runs).
+ *
+ * @param count The served features turned off in this tab.
+ * @returns e.g. "2 off in this tab" ("1 off in this tab" for one), or null for none.
+ */
+export function builderOffSummary(count: number): string | null {
+  return count > 0 ? `${formatCount(count)} off in this tab` : null;
+}
+
+/** One builder fact's on-screen renderings, beside {@link SOURCE_COPY}. */
+export interface BuilderModifierCopy {
+  /** The chip/badge text (short). */
+  readonly chip: string;
+  /** The full sentence: tooltip, card and report wording. */
+  readonly sentence: string;
+  /** The strip tab-level line's hint for this feature (names it). */
+  readonly hint: string;
+}
+
+/**
+ * The modifier copy of one builder fact — the single declaring site the
+ * panel cards, the strip chips and tab-level line and the support report
+ * render from. Never claims WP Rocket served the feature (the verdict says
+ * that); an excluded count names its unit.
+ *
+ * @param feature The HUD row (its compact name and unit).
+ * @param fact The fact the document's builder marker states.
+ */
+export function builderModifierCopy(feature: HudFeature, fact: BuilderFact): BuilderModifierCopy {
+  if (!builderTurnsOff(fact)) {
+    const phrase = counted(fact.excluded, feature.unit);
+    return {
+      chip: `${String(fact.excluded)} excluded`,
+      sentence: `${phrase} excluded by the Exclusion Builder.`,
+      hint: `${feature.shortLabel}: ${String(fact.excluded)} excluded`
+    };
+  }
+  return fact.off === 'feature'
+    ? {
+        chip: 'Disabled in this tab',
+        sentence: 'Disabled in this tab by the Exclusion Builder.',
+        hint: `${feature.shortLabel} off`
+      }
+    : {
+        chip: 'Off on this page',
+        sentence: 'Off in this tab: an Exclusion Builder row stops WP Rocket deferring.',
+        hint: `${feature.shortLabel} off on this page`
+      };
+}
+
+/** The strip's tab-level line: the title and one hint per feature the builder changed. */
+export interface BuilderTabLine {
+  readonly title: string;
+  /** Hints in registry order (never empty). */
+  readonly hints: readonly string[];
+  /** The line as assistive tech hears it: commas where the eye sees the dot. */
+  readonly spoken: string;
+}
+
+/** The tab-level line's title/hints separator. */
+const TAB_LINE_DASH = ' — ';
+
+/** The joiner assistive tech hears where the eye sees {@link LIST_JOINER}. */
+const SPOKEN_JOINER = ', ';
+
+/** One HUD feature with the builder fact the document states for it. */
+interface FeatureBuilderFact {
+  readonly feature: HudFeature;
+  readonly fact: BuilderFact;
+}
+
+/**
+ * The page's builder facts, in HUD order: the single read both the card's
+ * tab-level line and the closed pill's glyph derive from, so they are
+ * present together by construction.
+ *
+ * @param detections The engine rows.
+ * @returns One entry per HUD feature the document states a fact for.
+ */
+function builderFacts(detections: WprDetections): FeatureBuilderFact[] {
+  return HUD_FEATURES.flatMap((feature) => {
+    const fact = builderFactOf(detections, feature.row);
+    return fact === null ? [] : [{ feature, fact }];
+  });
+}
+
+/**
+ * The tab-level line for a page, from the same facts and copy as the
+ * per-feature modifier; null when the document states no builder fact (a
+ * rewrite that only removed a served marker changed no feature: no line).
+ *
+ * @param detections The engine rows.
+ */
+export function builderTabLine(detections: WprDetections): BuilderTabLine | null {
+  const hints = builderFacts(detections).map(
+    ({ feature, fact }) => builderModifierCopy(feature, fact).hint
+  );
+  if (hints.length === 0) return null;
+  const lead = `${BUILDER_TAB_LINE_TITLE}${TAB_LINE_DASH}`;
+  return {
+    title: BUILDER_TAB_LINE_TITLE,
+    hints,
+    spoken: `${lead}${hints.join(SPOKEN_JOINER)}`
+  };
+}
+
+/**
+ * The closed strip pill's builder hint as assistive tech hears it: appended
+ * once to the pill's own name. Its glyph beside the version is never spoken.
+ */
+export const BUILDER_PILL_HINT_SPOKEN = ', rewritten by the Exclusion Builder';
+
+/**
+ * The page's leading builder effect, drawn as the closed pill's one glyph:
+ * `off` when any feature is turned off in this tab (it changes what runs, so
+ * it outranks exclusions), else `excluded` — each fact's own badge kind.
+ * Read from the same facts as {@link builderTabLine}.
+ *
+ * @param detections The engine rows.
+ * @returns The glyph kind, or null when the document states no builder fact.
+ */
+export function builderPageKind(detections: WprDetections): BuilderBadgeKind | null {
+  const kinds = builderFacts(detections).map(({ fact }) => builderBadgeKind(fact));
+  if (kinds.length === 0) return null;
+  return kinds.includes('off') ? 'off' : 'excluded';
+}
+
+/**
+ * A count with its noun, singular for one (the shared `countNoun` rule);
+ * the plain figure when the feature has no noun. Ungrouped digits, as the
+ * strip renders the figure.
+ *
+ * @param count A non-negative count.
+ * @param noun The feature's count noun, or null.
+ */
+function counted(count: number, noun: CountNoun | null): string {
+  return noun === null ? String(count) : `${String(count)} ${countNoun(count, noun)}`;
+}
+
+/**
+ * Lower-case a sentence's first character (it then reads after a lead).
+ *
+ * @param text The sentence.
+ */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}

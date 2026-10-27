@@ -20,7 +20,7 @@ import {
   parsePreloadedResources,
   parseWprDetections
 } from './validate';
-import { minimalDetections, validFdt, validFdtPayload } from './validate.fixtures';
+import { minimalDetections, validDetections, validFdt, validFdtPayload } from './validate.fixtures';
 import { PAYLOAD_LIMITS } from './payload-bounds';
 import { COOKIE_NAME_LIMITS, sampleCookieNames } from '../wp-rocket/cookies';
 import { MAX_REPRESENTABLE_MS } from '../detection/describe';
@@ -842,9 +842,14 @@ describe('parseFdtDataExplained — the first failing field, by path', () => {
       'x'.repeat(5000)
     ],
     [
-      'wprDetections.auto_preload_fonts.fonts',
+      'wprDetections.auto_preload_fonts.fonts[0]',
       ['wprDetections', 'auto_preload_fonts', 'fonts'],
       [1]
+    ],
+    [
+      'wprDetections.auto_preload_fonts.fonts',
+      ['wprDetections', 'auto_preload_fonts', 'fonts'],
+      'not a list'
     ],
     ['wprDetections.rocket_cdn', ['wprDetections', 'rocket_cdn'], { present: 1 }],
     [
@@ -953,5 +958,153 @@ describe('Delay JS inline content: the list-wide budget', () => {
       ok: false,
       path: `wprDetections.delay_js.scripts[${String(full)}].content`
     });
+  });
+});
+
+/**
+ * Sparse arrays: structured-clone runtime messaging (Firefox; Chrome only when
+ * the manifest opts into structured-clone serialization) carries holes and a
+ * declared `length` intact, where Chrome's default JSON transport turns holes
+ * into `null`. Every string-list guard must reject a hole (never throw on it
+ * or copy it as `undefined`) and check its count cap before reading a member,
+ * so a list claiming 2^32−1 members costs nothing.
+ */
+describe('sparse arrays: holes reject, count caps bound the work', () => {
+  /** The detections payload with `patch` merged into one row (uncloned). */
+  const withRow = (row: string, patch: Record<string, unknown>): Record<string, unknown> => {
+    const payload = validDetections();
+    payload[row] = { ...(payload[row] as Record<string, unknown>), ...patch };
+    return payload;
+  };
+
+  /** Every capped string-list field, as "put `list` there and parse". */
+  const LIST_FIELDS: [string, (list: unknown) => unknown][] = [
+    ['cookies.names', (list) => parsePageCookies({ names: list, capturedAt: 1 })],
+    [
+      'lazyload.images[].excludedReasonsFound',
+      (list) =>
+        parseWprDetections(
+          withRow('lazyload', {
+            images: [{ src: '/a.jpg', lazyloadDetected: false, excludedReasonsFound: list }]
+          })
+        )
+    ],
+    [
+      'rocket_above_the_fold_optimization.preloadedImages',
+      (list) =>
+        parseWprDetections(withRow('rocket_above_the_fold_optimization', { preloadedImages: list }))
+    ],
+    [
+      'auto_preload_fonts.fonts (present)',
+      (list) => parseWprDetections(withRow('auto_preload_fonts', { present: true, fonts: list }))
+    ],
+    [
+      'auto_preload_fonts.fonts (absent)',
+      (list) => parseWprDetections(withRow('auto_preload_fonts', { present: false, fonts: list }))
+    ],
+    [
+      'preconnect_external_domains.domains (present)',
+      (list) =>
+        parseWprDetections(withRow('preconnect_external_domains', { present: true, domains: list }))
+    ],
+    [
+      'preconnect_external_domains.domains (absent)',
+      (list) =>
+        parseWprDetections(
+          withRow('preconnect_external_domains', { present: false, domains: list })
+        )
+    ],
+    [
+      'priority_elements_beacon.processed_extensions',
+      (list) =>
+        parseWprDetections(withRow('priority_elements_beacon', { processed_extensions: list }))
+    ]
+  ];
+
+  /**
+   * A list claiming `length` members (none stored) that counts member
+   * touches — reads and presence checks (`every` probes holes with `has`) —
+   * so a test can prove a guard rejected before scanning.
+   */
+  const countingList = (length: number): { list: unknown[]; touches: () => number } => {
+    let touches = 0;
+    /** Count `key` when it is an array index. */
+    const touch = (key: string | symbol): void => {
+      if (typeof key === 'string' && /^\d+$/.test(key)) touches += 1;
+    };
+    const list = new Proxy(new Array<unknown>(length), {
+      get(target, key, receiver): unknown {
+        touch(key);
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+      has(target, key): boolean {
+        touch(key);
+        return Reflect.has(target, key);
+      }
+    });
+    return { list, touches: () => touches };
+  };
+
+  it.each(LIST_FIELDS)('%s: an over-cap list rejects before any member is touched', (_, parse) => {
+    // Over every field's cap (largest: 1,000), small enough that a scanning
+    // guard fails here in milliseconds instead of hanging the run.
+    const { list, touches } = countingList(100_000);
+    expect(parse(list)).toBeNull();
+    expect(touches()).toBe(0);
+  });
+
+  it.each(LIST_FIELDS)('%s: a cloned 2^29-length sparse list rejects at once', (_, parse) => {
+    // A few bytes on the wire (the clone keeps the hole and the length).
+    const sparse: string[] = ['x'];
+    sparse.length = 2 ** 29;
+    const cloned = structuredClone(sparse);
+    const start = performance.now();
+    expect(parse(cloned)).toBeNull();
+    // Cap-first is O(1) (well under 1 ms); an index walk over 2^29 slots
+    // takes seconds — 1 s sits far from both, so it cannot flake, and a
+    // regression fails here instead of hanging (2^32−1 would take ~1 min).
+    expect(performance.now() - start).toBeLessThan(1_000);
+  });
+
+  it.each([
+    ['rocket_above_the_fold_optimization', 'preloadedImages'],
+    ['auto_preload_fonts', 'fonts'],
+    ['preconnect_external_domains', 'domains'],
+    ['priority_elements_beacon', 'processed_extensions']
+  ])('%s.%s with a hole rejects', (row, field) => {
+    const payload = structuredClone(withRow(row, { [field]: [, 'https://s.com/x'] }));
+    expect(() => parseWprDetections(payload)).not.toThrow();
+    expect(parseWprDetections(payload)).toBeNull();
+  });
+
+  it('lazyload excludedReasonsFound with a hole rejects (never copied as undefined)', () => {
+    const images = [
+      { src: '/a.jpg', lazyloadDetected: false, excludedReasonsFound: [, 'data-src'] }
+    ];
+    expect(parseWprDetections(structuredClone(withRow('lazyload', { images })))).toBeNull();
+  });
+
+  it.each([
+    ['auto_preload_fonts', 'fonts', ['https://s.com/a.woff2', ,], '[1]'],
+    ['auto_preload_fonts', 'fonts', ['https://s.com/a.woff2', 5], '[1]'],
+    ['rocket_above_the_fold_optimization', 'preloadedImages', [, '/a.jpg'], '[0]']
+  ])('the explained path names the bad member of %s.%s (%j)', (row, field, list, index) => {
+    const wprDetections = structuredClone(withRow(row, { [field]: list }));
+    expect(parseFdtDataExplained({ ...validFdt(), wprDetections })).toEqual({
+      ok: false,
+      path: `wprDetections.${row}.${field}${index}`
+    });
+  });
+
+  it('control: the dense payload passes the clone (the rejection is the hole, not the shape)', () => {
+    expect(parseWprDetections(structuredClone(validDetections()))).not.toBeNull();
+  });
+
+  it('pin: cookie names, error words, headers, known conflicts reject a hole too', () => {
+    // These guards already visited every index; pinned so they stay that way.
+    expect(parsePageCookies(structuredClone({ names: [, 'wprocket'], capturedAt: 1 }))).toBeNull();
+    expect(parseErrorWords(structuredClone(['jQuery', , 'x']))).toBeNull();
+    expect(parsePageHeaders(structuredClone([{ name: 'X-Cache' }, ,]))).toBeNull();
+    expect(parseKnownConflicts(structuredClone([,]))).toBeNull();
   });
 });

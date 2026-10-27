@@ -20,13 +20,19 @@
 
 import { createStore } from 'solid-js/store';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import {
+  WINDOW_FRAMES,
+  WINDOW_TIMERS,
+  contextFrames,
+  contextScheduler
+} from '../../../utils/context-timers';
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 import { findKnownConflicts } from '../../../lib/known-conflicts/match';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { isHttpUrl } from '../../../utils/urls';
 import { debounce } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
-import { mountShadowUi } from '../ui/mount';
+import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
@@ -72,6 +78,9 @@ function initialUiState(): KnownConflictsUiState {
  * @param ctx The content script's context; everything registers through it.
  */
 export function setupKnownConflicts(ctx: ContentScriptContext): void {
+  // Frames and timers that let go of their callbacks (see utils/context-timers).
+  const nextFrame = contextFrames(ctx, WINDOW_FRAMES);
+  const later = contextScheduler(ctx, WINDOW_TIMERS);
   const initialUrl = new URL(window.location.href);
   const initialMode = scanModeForUrl(initialUrl);
   if (initialMode === 'none') return;
@@ -117,7 +126,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   /** The focus choreography rides this context's frames (ui/focus's contract). */
   const focusDeps: FocusChoreographyDeps = {
     requestFrame: (callback) => {
-      ctx.requestAnimationFrame(callback);
+      nextFrame(callback);
     },
     isInvalid: () => ctx.isInvalid,
     log
@@ -176,12 +185,11 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       shadowUi = await createShadowRootUi(ctx, {
         name: UI_NAME,
         position: 'inline',
-        isolateEvents: true,
         // The render tree is disposed exactly once (when the shadow host
         // leaves the page) through the onRemove handle; a mount failure is
         // logged, not an unhandled rejection.
-        onMount: (container) => {
-          void mountShadowUi(container, () => (
+        onMount: (container, shadow) => {
+          void mountShadowUi(container, shadow, () => (
             <KnownConflictsView state={state} actions={actions} />
           ))
             .then((dispose) => {
@@ -223,7 +231,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   /** Brief collapsed pass, so the badge re-runs its slide-in transition. */
   const slideBadgeIn = (): void => {
     setState('badgeCollapsed', true);
-    ctx.requestAnimationFrame(() => {
+    nextFrame(() => {
       if (ctx.isInvalid) return;
       setState('badgeCollapsed', false);
     });
@@ -276,7 +284,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       if (ctx.isInvalid) return;
       runScan();
       if (wpPassesSettled) return;
-      ctx.setTimeout(() => {
+      later(() => {
         // Invalidation-cancelled: the flow stays unsettled (nothing scans,
         // nothing shows a final verdict).
         if (ctx.isInvalid) return;

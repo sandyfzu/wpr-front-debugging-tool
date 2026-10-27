@@ -115,7 +115,14 @@ describe('describeDetections', () => {
     page.remove_unused_css = { present: true };
     page.delay_js = { present: true, scripts: [{} as never], version: '1.2.3', delayedScripts: 4 };
     page.defer_all_js = { present: true, scripts: ['a', 'b', 'c'], deferredScripts: 3 };
-    page.lazyload = { present: true, images: [{} as never, {} as never] };
+    // Two lazy-loaded images and one the plugin left eager: only the first
+    // two count (owner decision O-N6).
+    const image = (lazyloadDetected: boolean) => ({
+      src: 'a.jpg',
+      lazyloadDetected,
+      excludedReasonsFound: []
+    });
+    page.lazyload = { present: true, images: [image(true), image(false), image(true)] };
     page.minify_css = { present: true };
     page.rocket_cdn = { present: true };
     const report: PageAnalysisReport = describeDetections(page);

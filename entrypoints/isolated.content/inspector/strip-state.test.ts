@@ -342,7 +342,9 @@ describe('buildStripCardModel over the real engine (the docker-site shape)', () 
     const lazyRow = model.groups
       .flatMap((group) => group.rows)
       .find((row) => row.id === 'lazyload');
-    expect(lazyRow?.count).toBe(detections.lazyload.images.length);
+    // Only the images actually lazy-loaded count (owner decision O-N6).
+    const lazyLoaded = detections.lazyload.images.filter((image) => image.lazyloadDetected);
+    expect(lazyRow?.count).toBe(lazyLoaded.length);
   });
 
   it('a versionless present page renders the unknown-version identity in every slot', () => {
@@ -483,5 +485,28 @@ describe('the strip reads the HUD registry (one feature list)', () => {
     expect(dims?.chipState).toBe('neutral');
     expect(dims?.tooltip).toContain("WP Rocket's generator meta does not declare it");
     expect(dims?.tooltip).not.toContain('predate');
+  });
+});
+
+describe('buildStripCardModel — count nouns', () => {
+  it('renders one counted element with the singular noun, more with the plural', () => {
+    /** The delay row of a page with `scripts` delayed scripts. */
+    const delayRow = (scripts: number) => {
+      const delayed = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>'.repeat(
+        scripts
+      );
+      const { detections } = runDetection(
+        `<html><head><meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js"></head><body>${delayed}</body></html>`
+      );
+      const model = buildStripCardModel({
+        snapshot: ready(detections),
+        wordpressVersion: null,
+        fdtVersion: '0.0.0'
+      });
+      return model.groups.flatMap((group) => group.rows).find((row) => row.id === 'delay_js');
+    };
+    expect(delayRow(1)).toMatchObject({ count: 1, unit: 'script' });
+    expect(delayRow(2)).toMatchObject({ count: 2, unit: 'scripts' });
+    expect(delayRow(1)?.tooltip).toContain('applied on this page: 1 script.');
   });
 });

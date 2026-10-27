@@ -15,11 +15,21 @@
 
 import type { JSX, JSXElement } from 'solid-js';
 import { For, Show } from 'solid-js';
-import type { StripCardModel } from './strip-state';
-import { CARD_ARIA_LABEL, INSPECTOR_CARD_ID, PILL_LABEL_STEM } from './strip-state';
+import {
+  BUILDER_PILL_HINT_SPOKEN,
+  LIST_JOINER_CONTENT,
+  type BuilderTabLine
+} from '../../../lib/detection/hud';
+import type { StripCardModel, StripRowModifier } from './strip-state';
+import {
+  CARD_ARIA_LABEL,
+  INSPECTOR_BUILDER_LINE_ID,
+  INSPECTOR_CARD_ID,
+  PILL_LABEL_STEM
+} from './strip-state';
 import type { InspectorMood } from './strip-state';
 import type { StripIconGlyph } from './icons';
-import { PRESENT_ICON_PATHS } from './icons';
+import { BUILDER_ICONS, PRESENT_ICON_PATHS } from './icons';
 import { StrokeIcon, CLOSE_ICON_PATHS } from '../ui/icons';
 import { TOOL_EYEBROW } from '../ui/copies';
 
@@ -67,6 +77,64 @@ const GroupGlyph = (props: { glyph: StripIconGlyph }): JSXElement => (
   />
 );
 
+/**
+ * The tab-level line: the displayed page is the Exclusion Builder's rewrite,
+ * with one hint per feature it changed. Visible text in neutral colours (a
+ * statement, not a link); the hints' joiner dot sits in a clipped gutter so
+ * a wrapped line never starts with it. Assistive tech hears the shared
+ * spoken sentence once (commas, never the dot) — also the card dialog's
+ * description, so opening the card announces it.
+ *
+ * @param props.line The shared tab-level line.
+ * @returns The line block.
+ */
+const BuilderLine = (props: { line: BuilderTabLine }): JSXElement => (
+  <div class="ins-builder" data-fdt-strip-builder style={{ '--ins-joiner': LIST_JOINER_CONTENT }}>
+    {/* Spoken once, as one sentence: the laid-out pieces below are flex
+     * items, whose accessible text would gain stray spaces around commas. */}
+    <span id={INSPECTOR_BUILDER_LINE_ID} class="ins-sr">
+      {props.line.spoken}
+    </span>
+    <div class="ins-builder-shown" aria-hidden="true">
+      <p class="ins-builder-title">{props.line.title}</p>
+      <p class="ins-builder-hints">
+        <span class="ins-builder-list">
+          <For each={props.line.hints}>
+            {(hint) => (
+              <span class="ins-builder-hint" data-fdt-strip-builder-hint>
+                {hint}
+              </span>
+            )}
+          </For>
+        </span>
+      </p>
+    </div>
+  </div>
+);
+
+/**
+ * A row's Exclusion Builder modifier: the badge (icon + short words, the
+ * at-a-glance cue; hidden from assistive tech) and the full sentence as
+ * visible text on its own line (never hover-only), spoken once.
+ *
+ * @param props.modifier The row's modifier.
+ * @returns The badge + sentence pair.
+ */
+const RowModifier = (props: { modifier: StripRowModifier }): JSXElement => (
+  <>
+    <span class="ins-mod" data-fdt-strip-modifier={props.modifier.kind} aria-hidden="true">
+      <span class="ins-mod-icon">
+        <GroupGlyph glyph={BUILDER_ICONS[props.modifier.kind]} />
+      </span>
+      {props.modifier.chip}
+    </span>
+    <span class="ins-mod-line" data-fdt-strip-modifier-line>
+      <span class="ins-sr">, </span>
+      {props.modifier.sentence}
+    </span>
+  </>
+);
+
 /** One group's header: scent, not controls (never focusable). */
 const GroupHead = (props: { heading: string; icon: StripIconGlyph }): JSXElement => (
   <div class="ins-group-head">
@@ -105,9 +173,14 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         class="ins-card"
         role="dialog"
         aria-label={CARD_ARIA_LABEL}
+        aria-describedby={
+          props.model().builderLine === null ? undefined : INSPECTOR_BUILDER_LINE_ID
+        }
         tabIndex={-1}
       >
-        <header class="ins-card-head">
+        {/* Plain blocks, not header/footer: inside the dialog they would
+         * duplicate the host page's banner/contentinfo landmarks. */}
+        <div class="ins-card-head">
           <div class="ins-titles">
             <span class="ins-eyebrow">{TOOL_EYEBROW}</span>
             <div class="ins-titlerow">
@@ -140,9 +213,11 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           >
             <StrokeIcon paths={CLOSE_ICON_PATHS} />
           </button>
-        </header>
+        </div>
 
-        <div class="ins-card-body">
+        {/* The single scroll region holds no control, so it is its own tab
+         * stop: keyboard users can scroll it. */}
+        <div class="ins-card-body" tabIndex={0}>
           {/* The pending/failed body copies (no grouped rows in these). */}
           <Show when={props.model().stateCopy !== null}>
             <div class="ins-state">
@@ -152,6 +227,7 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
               </Show>
             </div>
           </Show>
+          <Show when={props.model().builderLine}>{(line) => <BuilderLine line={line()} />}</Show>
           <For each={props.model().groups}>
             {(group) => (
               <div class="ins-group">
@@ -159,12 +235,20 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
                 <div class="ins-group-rows">
                   <For each={group.rows}>
                     {(row) => (
-                      <div class="ins-row" title={row.tooltip}>
+                      <div
+                        class="ins-row"
+                        // A modified row already shows its sentence; the tooltip would
+                        // repeat it as the row's accessible description.
+                        title={row.modifier === null ? row.tooltip : undefined}
+                      >
                         <span class={`ins-chip ins-chip-${row.chipState}`}>{row.label}</span>
                         <Show when={row.count !== null && row.unit !== null}>
                           <span class="ins-value">
                             {String(row.count)} {row.unit}
                           </span>
+                        </Show>
+                        <Show when={row.modifier}>
+                          {(modifier) => <RowModifier modifier={modifier()} />}
                         </Show>
                       </div>
                     )}
@@ -175,9 +259,9 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
           </For>
         </div>
 
-        <footer class="ins-card-foot">
+        <div class="ins-card-foot">
           <span>{props.model().footer}</span>
-        </footer>
+        </div>
       </section>
 
       {/* The marker pill: presence icon + identity + status chip, anchored
@@ -210,7 +294,26 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         <span class="ins-mark" aria-hidden="true">
           <StrokeIcon paths={PRESENT_ICON_PATHS} />
         </span>
-        <span class="ins-identity">{props.model().identity}</span>
+        <span class="ins-identity">
+          {/* Rewritten page: the identity and the hint are spoken as one run
+           * (an sr-only piece of its own would gain a stray space before the
+           * comma in Chromium's name), so the shown identity is hidden from
+           * assistive tech and heard once. */}
+          <Show when={props.model().builderPill !== null} fallback={props.model().identity}>
+            <span aria-hidden="true">{props.model().identity}</span>
+            <span class="ins-sr" data-fdt-strip-pill-builder-spoken>
+              {`${props.model().identity}${BUILDER_PILL_HINT_SPOKEN}`}
+            </span>
+          </Show>
+        </span>
+        {/* The builder hint's glyph after the version: a shape, not colour alone. */}
+        <Show when={props.model().builderPill}>
+          {(kind) => (
+            <span class="ins-pill-builder" data-fdt-strip-pill-builder={kind()} aria-hidden="true">
+              <GroupGlyph glyph={BUILDER_ICONS[kind()]} />
+            </span>
+          )}
+        </Show>
         <Show when={props.model().cacheChip}>
           {(chip) => (
             <span class={`ins-cache ins-cache-${chip().state}`}>

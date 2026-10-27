@@ -5,13 +5,8 @@
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  COPIED_FLASH_MS,
-  CopyButton,
-  performCopy,
-  type ClipboardLike,
-  type CopyOutcomeSink
-} from './copy-button';
+import { CopyButton, performCopy, type ClipboardLike, type CopyOutcomeSink } from './copy-button';
+import { COPIED_FLASH_MS } from './copy-flash';
 import { toast, toastItems } from './toast-store';
 
 beforeEach(() => {

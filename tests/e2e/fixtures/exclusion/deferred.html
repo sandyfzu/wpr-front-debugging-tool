@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deferred scripts fixture</title>
+  </head>
+  <body>
+    <h1>Two scripts as WP Rocket's Load JavaScript deferred serves them</h1>
+    <p>
+      The exclusion builder's notes suite: a Defer JS set that makes WP Rocket defer nothing on the
+      page is applied as such — both scripts come back undeferred.
+    </p>
+    <script
+      src="/exclusion/lib/deferred-one.js"
+      id="deferred-one-js"
+      data-rocket-defer
+      defer
+    ></script>
+    <script
+      src="/exclusion/lib/deferred-two.js"
+      id="deferred-two-js"
+      data-rocket-defer
+      defer
+    ></script>
+  </body>
+</html>

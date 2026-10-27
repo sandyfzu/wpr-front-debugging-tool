@@ -7,7 +7,11 @@
  * redaction rules for page-derived strings.
  */
 import { describe, expect, it } from 'vitest';
-import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../wp-rocket/constants';
+import {
+  BUILDER_MARKER_META_NAME,
+  UNDEFINED_REFERENCE_EXTERNAL_ERROR
+} from '../wp-rocket/constants';
+import { runDetection } from '../detection/run-detection';
 import type { FdtData } from '../wp-rocket/types';
 import {
   buildSupportReport,
@@ -663,3 +667,17 @@ describe('buildSupportReport — the HUD registry feeds the detections table', (
 function lines(data: FdtData): string[] {
   return buildSupportReport(data, CONTEXT).split('\n');
 }
+
+describe('the builder marker in the report', () => {
+  it('is never dumped: the report lists no marker meta nor its content', () => {
+    const content = 'v1 delay_js=off defer_all_js=page-off lazyload=excluded:3';
+    const html = `<html><head><meta name="generator" content="WP Rocket 3.23.5.1" data-wpr-features="wpr_delay_js wpr_defer_js"><meta name="${BUILDER_MARKER_META_NAME}" content="${content}"></head><body></body></html>`;
+    const { detections } = runDetection(html);
+    // The page's fact did reach the payload the report reads…
+    expect(detections.delay_js.builder).toEqual({ off: 'feature' });
+    const report = buildSupportReport(makeReportData({ wprDetections: detections }), CONTEXT);
+    // …yet the marker itself is never part of the dump.
+    expect(report).not.toContain(BUILDER_MARKER_META_NAME);
+    expect(report).not.toContain(content);
+  });
+});

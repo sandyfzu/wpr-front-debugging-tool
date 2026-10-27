@@ -48,5 +48,8 @@ docker/state/
 # Machine-local spike harness/evidence (untracked scratch tooling; referenced by phase docs' manual steps)
 .scratch/
 
+# WP Rocket parity harness download cache (pinned WordPress zip; scripts/wp-rocket-parity.ts)
+.cache/
+
 # Local agent worktrees — machine state, never part of the repo
 .claude/worktrees/

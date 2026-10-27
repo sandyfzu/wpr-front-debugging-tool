@@ -18,8 +18,25 @@ export const DATA_ROCKET_STATUS = 'data-rocket-status';
 /** Attribute marking resources excluded from local tooling processing. */
 export const FDT_EXCLUDED_RESOURCE = 'data-wpr-fdt-excluded';
 
+/**
+ * `name` of the one `<meta>` the Exclusion Builder's rewrite adds to a
+ * document it changed, stating per feature what it turned off or excluded
+ * (content grammar: `lib/exclusion-builder/builder-marker`). This
+ * extension's own `wpr-fdt-` namespace — never WP Rocket's `generator` meta.
+ */
+export const BUILDER_MARKER_META_NAME = 'wpr-fdt-exclusion-builder';
+
 /** Attribute WP Rocket adds to scripts it defers. */
 export const WPR_DEFER_ATTRIBUTE = 'data-rocket-defer';
+
+/**
+ * What WP Rocket's Defer JS puts before the body of an inline jQuery script
+ * (its inline pass); {@link INLINE_WRAP_CLOSE} goes after it.
+ */
+export const INLINE_WRAP_OPEN = "window.addEventListener('DOMContentLoaded', function() {";
+
+/** The closing of WP Rocket's inline-jQuery wrapper (see {@link INLINE_WRAP_OPEN}). */
+export const INLINE_WRAP_CLOSE = '});';
 
 /** Attribute marking WP Rocket-preloaded subresources on `link` elements. */
 export const WPR_PRELOAD_ATTRIBUTE = 'data-rocket-preload';
@@ -510,17 +527,11 @@ export const CONTEXT_MENU_IDS = {
   wprSideBySide: 'wprSideBySide',
   psiSideBySide: 'psiSideBySide',
   updateKnownConflictsDB: 'updateKnownConflictsDB',
-  exclusionBuilderPage: 'exclusionBuilderPage',
+  /** Opens the exclusion builder overlay on the tab's page. */
+  exclusionBuilder: 'exclusionBuilder',
   /** Toggles the on-page detection widget for the clicked page's origin. */
   toggleDetectionWidget: 'toggleDetectionWidget'
 } as const;
-
-/**
- * The exclusion builder's packaged page path — the tab both its openers
- * (the background's context-menu entry and the panel's palette action)
- * resolve; a second caller re-typing it would be the re-typed-value defect.
- */
-export const EXCLUSION_BUILDER_PAGE = 'exclusion-builder.html';
 
 /**
  * URL patterns the header capture listeners and content-script declarations

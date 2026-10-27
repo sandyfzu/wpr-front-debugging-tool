@@ -11,7 +11,7 @@ import { createSignal, onCleanup } from 'solid-js';
 import Check from 'lucide-solid/icons/check';
 import ClipboardCopy from 'lucide-solid/icons/clipboard-copy';
 import { Button } from '../../../../components/ui/button';
-import { COPIED_FLASH_MS } from '../../../../components/ui/copy-button';
+import { COPIED_FLASH_MS } from '../../../../components/ui/copy-flash';
 import { createLogger } from '../../../../lib/logger';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { copySupportReport, type CopyReportOutcome } from '../../report/copy-report';

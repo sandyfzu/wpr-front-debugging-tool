@@ -59,6 +59,7 @@ import {
   headersTruncationNote
 } from '../../../../lib/panel/headers-view-model';
 import { fallbackRowKey, normalizeQuery } from '../../../../lib/panel/list-behavior';
+import { countNoun } from '../../../../utils/format-count';
 import type { FdtData } from '../../../../lib/wp-rocket/types';
 import { cn } from '../../../../utils/cn';
 import { useFdtData, useSearch } from '../../state/use-fdt-data';
@@ -87,6 +88,7 @@ import {
   INVENTORY_NOUN,
   inventoryItemName,
   isoStamp,
+  SECTION_NOUNS,
   SECTION_TITLES,
   shownStamp,
   type InventoryRow,
@@ -557,8 +559,7 @@ interface SectionHeadingProps {
  */
 function SectionHeading(props: SectionHeadingProps): JSX.Element {
   const noun = (): string => {
-    const singular = props.section === 'cookies' ? 'cookie' : 'header';
-    return props.count === 1 ? singular : `${singular}s`;
+    return countNoun(props.count, SECTION_NOUNS[props.section]);
   };
   return (
     <div class={cn('px-1 pb-1.5', props.first ? 'pt-0.5' : 'pt-5')}>

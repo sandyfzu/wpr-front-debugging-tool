@@ -7,6 +7,14 @@
  */
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
+import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
+import { countNoun, type CountNoun } from '../../../../utils/format-count';
+
+/** The page's own noun, in its two count forms. */
+const UNDEFINED_REFERENCE_NOUN: CountNoun = {
+  one: 'undefined reference',
+  other: 'undefined references'
+};
 
 /** Why a script scan failed — each maps to its own user-facing remedy. */
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
@@ -262,7 +270,7 @@ export function wordVerdict(
 export function verdictText(verdict: WordVerdict): string {
   switch (verdict.kind) {
     case 'found':
-      return `In ${String(verdict.count)} ${verdict.count === 1 ? 'script' : 'scripts'}`;
+      return `In ${String(verdict.count)} ${countNoun(verdict.count, SCRIPT_NOUN)}`;
     case 'not-found':
       return verdict.partial
         ? 'No definition found in the readable scripts'
@@ -283,7 +291,7 @@ export function verdictText(verdict: WordVerdict): string {
  * @returns The sentence for the page's status region.
  */
 export function newReferencesAnnouncement(added: number): string {
-  return added === 1 ? '1 new undefined reference' : `${String(added)} new undefined references`;
+  return `${String(added)} new ${countNoun(added, UNDEFINED_REFERENCE_NOUN)}`;
 }
 
 /**
@@ -377,7 +385,7 @@ export function summaryFacts(
   if (names > 0) {
     facts.push({
       count: names,
-      label: names === 1 ? 'undefined reference' : 'undefined references'
+      label: countNoun(names, UNDEFINED_REFERENCE_NOUN)
     });
     if (searched)
       facts.push({ count: summary.withDefinition, label: 'with a possible definition' });
@@ -386,7 +394,7 @@ export function summaryFacts(
   if (searched && unreadable > 0) {
     facts.push({
       count: unreadable,
-      label: unreadable === 1 ? 'script could not be read' : 'scripts could not be read'
+      label: `${countNoun(unreadable, SCRIPT_NOUN)} could not be read`
     });
   }
   if (searched && inlineCut) facts.push({ label: INLINE_CUT_FACT });
@@ -534,8 +542,9 @@ export function scriptLocation(parts: ScriptUrlParts): string {
  * How a raw (unencoded) URL character is written into an exclusion, when it
  * is not a plain literal. Exclusions are read by `new RegExp(…)` and by WP
  * Rocket, which saves them through `sanitize_text_field` (drops `%XX`,
- * strips anything after a `<`) and `rocket_clean_wildcards` (turns any `*`
- * into `(.*)`), then escapes `+`, `?ver` and `#`. So:
+ * escapes or strips `<…` runs) and `rocket_clean_wildcards` (turns any `*`
+ * into `(.*)`) — the save `lib/exclusion-builder/field-text` declares —
+ * then escapes `+`, `?ver` and `#` at runtime. So:
  * - regex syntax becomes a one-character class (`[+]`, `[(]`…) that
  *   matches only itself under both readers (`[+]` escaped to `[\+]` still
  *   means `+`);

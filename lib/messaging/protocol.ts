@@ -16,7 +16,12 @@
  *   internal send with no runtime sender tab, so its payload carries the
  *   relaying devtools page's inspected tab id — the receiver's only scoping
  *   basis; without it every open DevTools window would act on every other's
- *   searches.)
+ *   searches. The exclusion-session panel rows share the reason: the
+ *   background has no runtime tab when it pushes to the panel, and the
+ *   panel has none when it asks — both carry the inspected tab id, and the
+ *   background answers the ask only for senders without a runtime tab. The
+ *   tab relay row `relayTabAsk` is the same case: it names the tab to
+ *   forward to, answered for those senders only.)
  * - Push channels are typed to return `true`: the typed acknowledgement
  *   forces every push handler to mark itself as handled on purpose (the
  *   library resolves the sender's promise with whatever the handler returns —
@@ -47,6 +52,18 @@ import type { KnownConflict } from '../storage/known-conflicts';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
+import type {
+  ExclusionApplyReply,
+  ExclusionOverlayPresentation,
+  ExclusionSaveReply,
+  ExclusionSessionStatus,
+  ExclusionSessionTabQuery,
+  ExclusionSessionTabStatus,
+  ExclusionSetPayload,
+  SavedExclusionSetReply
+} from './exclusion-session';
+import type { ExclusionOverlayOpenOutcome } from './exclusion-panel';
+import type { TabRelayReply, TabRelayRequest } from './tab-relay';
 
 export interface ProtocolMap {
   /**
@@ -95,4 +112,67 @@ export interface ProtocolMap {
   deviceSimulationChanged(data: DeviceSimState): true;
   /** Background → tab (probe, sweep): ack coming from a live isolated world. */
   reportDeviceSimulationLiveness(): true;
+  /**
+   * Builder overlay → background. Every overlay row resolves its tab and
+   * origin with `resolveTopFrameSender` (top frame only; anything else is
+   * refused) and is asked through `boundedAsk` with its
+   * `EXCLUSION_SESSION_DEADLINES_MS` entry — an internal background failure
+   * surfaces to the sender as the `failed` outcome.
+   *
+   * Apply the set — arm interception, then reload the tab; saves the set
+   * for the origin only when answering `applying`.
+   */
+  applyExclusionSession(data: ExclusionSetPayload): ExclusionApplyReply;
+  /** Builder overlay → background (sender-resolved): end the tab's session; answers the new status. */
+  stopExclusionSession(): ExclusionSessionStatus;
+  /** Builder overlay → background (sender-resolved): the tab's session status. */
+  getExclusionSession(): ExclusionSessionStatus;
+  /**
+   * Builder overlay → background (sender-resolved): the origin's saved set —
+   * the editor's restore source, readable before any session exists.
+   */
+  getSavedExclusionSet(): SavedExclusionSetReply;
+  /**
+   * Builder overlay → background (sender-resolved): save the set for the
+   * origin (the background is the only writer of the saved sets).
+   */
+  saveExclusionSet(data: ExclusionSetPayload): ExclusionSaveReply;
+  /**
+   * Background → tab (push, sent with `frameId: 0` — the overlay lives in
+   * the top frame only): the tab's session status changed (e.g.
+   * interception ended).
+   */
+  exclusionSessionChanged(data: ExclusionSessionStatus): true;
+  /**
+   * Panel → background: one tab's session status. Carries the inspected tab
+   * id (the panel has no runtime tab — see the tabId rule's exceptions);
+   * answered only for `isExtensionPageSender` senders.
+   */
+  getExclusionSessionForTab(data: ExclusionSessionTabQuery): ExclusionSessionStatus;
+  /**
+   * Background → panel (push): a tab's session status changed — the
+   * builder-active signal. Carries the tab id it describes; the panel drops
+   * it from senders with a runtime tab and acts only for its inspected tab.
+   */
+  exclusionSessionUpdated(data: ExclusionSessionTabStatus): true;
+  /**
+   * Panel → background: open the builder overlay on the inspected tab's
+   * page. Carries the inspected tab id like `getExclusionSessionForTab`
+   * (answered only for `isExtensionPageSender` senders).
+   */
+  openExclusionOverlay(data: ExclusionSessionTabQuery): ExclusionOverlayOpenOutcome;
+  /**
+   * Builder overlay → background (push, sender-resolved top frame): how the
+   * user left the overlay, so the session tab's next pages bring it back
+   * the same way.
+   */
+  exclusionOverlayPresented(data: ExclusionOverlayPresentation): true;
+  /**
+   * Panel/devtools page → background: forward one registry-listed tab ask
+   * (`./tab-relay`) for a context without the `tabs` API. Carries the
+   * target tab id (the asking page has no runtime tab — see the tabId
+   * rule's exceptions); answered only for this extension's tab-less pages,
+   * every failure as a typed reply.
+   */
+  relayTabAsk(data: TabRelayRequest): TabRelayReply;
 }

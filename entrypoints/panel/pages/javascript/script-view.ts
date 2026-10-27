@@ -14,9 +14,9 @@ import type {
   ResourcePageDefinition
 } from '../../../../lib/panel/resources-view-model';
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
-import { buildFilterChips, type CountNoun } from '../../../../lib/panel/list-behavior';
+import { buildFilterChips } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
-import { formatCount } from '../../../../utils/format-count';
+import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
 
 /** One state chip on a script row: its words and its vocabulary kind. */
 export interface ScriptBadge {
@@ -276,12 +276,6 @@ export const JS_VIEW_RESOURCES: ResourcePageDefinition<ScriptRowView, JsFilterId
 };
 
 /**
- * The JavaScript page's rows' noun (its count-phrasing vocabulary, shared
- * phrasing rules live in `lib/panel/list-behavior`).
- */
-export const SCRIPTS_NOUN: CountNoun = { one: 'script', other: 'scripts' };
-
-/**
  * The chip bar's data. A chip with nothing to select is disabled (no
  * dead-end click) — except the "all" chip and the selected chip: a refresh
  * that empties the selected filter keeps it selected (and reachable) so the
@@ -364,13 +358,16 @@ export function toggleRowFlag(states: ReadonlySet<string>, key: string): Readonl
   return next;
 }
 
+/** Code lines, in their two count forms. */
+const LINE_NOUN: CountNoun = { one: 'line', other: 'lines' };
+
 /**
  * Count phrase for code lines ("1 line", "1,040 lines").
  *
  * @param count The number of lines.
  */
 export function lineCount(count: number): string {
-  return `${formatCount(count)} ${count === 1 ? 'line' : 'lines'}`;
+  return countLabel(count, LINE_NOUN);
 }
 
 /**

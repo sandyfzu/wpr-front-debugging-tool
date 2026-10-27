@@ -12,6 +12,7 @@ import { buildStatusItems } from './detections-view-model';
 import type { CacheState } from '../detection/cache-context';
 import { cacheLayerHint, cacheStateFromFdtData } from '../detection/cache-context';
 import { formatCacheTimestamp, isRepresentableCacheStamp } from '../detection/cache-time';
+import { builderTurnsOff } from '../detection/hud';
 import type { FdtData } from '../wp-rocket/types';
 
 /** The status words every Detections surface prints (badges, report) — sentence case. */
@@ -49,8 +50,16 @@ export interface DetectionsSummary {
   readonly server: string | null;
   /** The known platform and the captured header that identified it, or null. */
   readonly platform: { readonly name: string; readonly header: string } | null;
-  /** How many optimization cards are active, of how many. */
-  readonly optimizations: { readonly active: number; readonly total: number };
+  /**
+   * How many optimization cards are active in this tab ({@link isActiveInTab}),
+   * of how many, and how many WP Rocket served that the Exclusion Builder
+   * turned off here (`builderTurnsOff`) — the gap's reason.
+   */
+  readonly optimizations: {
+    readonly active: number;
+    readonly total: number;
+    readonly offInTab: number;
+  };
   /** The WordPress core version the page declared; null when undeclared. */
   readonly wordpressVersion: string | null;
   /**
@@ -84,6 +93,20 @@ const NON_OPTIMIZATION_ROWS: ReadonlySet<DetectionRow> = new Set([
 export function isOptimizationCard(id: StatusItemId): boolean {
   if (DERIVED_CARD_IDS.has(id)) return false;
   return !NON_OPTIMIZATION_ROWS.has(id as DetectionRow);
+}
+
+/**
+ * Whether an optimization card counts as active in this tab: WP Rocket
+ * served it (`active`) and the Exclusion Builder did not turn it off here
+ * (`off` feature-wide or page-off). Excluded rows leave it active — the
+ * feature still runs on the rest of the page. The card itself keeps the
+ * served verdict; this is the counting rule the summary (and any status
+ * filter) shares.
+ *
+ * @param item The card.
+ */
+export function isActiveInTab(item: StatusItem): boolean {
+  return item.status === 'active' && !builderTurnsOff(item.builder);
 }
 
 /**
@@ -140,10 +163,13 @@ export function summarizeDetections(
 
   let active = 0;
   let total = 0;
+  let offInTab = 0;
   for (const item of items) {
     if (!isOptimizationCard(item.id)) continue;
     total += 1;
-    if (item.status === 'active') active += 1;
+    if (isActiveInTab(item)) active += 1;
+    // Served, yet not counted active only because the builder turned it off.
+    else if (item.status === 'active' && builderTurnsOff(item.builder)) offInTab += 1;
   }
 
   return {
@@ -154,7 +180,7 @@ export function summarizeDetections(
       platformDetail?.kind === 'platform'
         ? { name: platformDetail.name, header: platformDetail.header }
         : null,
-    optimizations: { active, total },
+    optimizations: { active, total, offInTab },
     wordpressVersion: facts.wordpressVersion ?? null,
     // A host layer is a cache question only on a page WP Rocket handled.
     cacheLayer: wpr.present ? (facts.cacheLayer ?? null) : null

@@ -35,6 +35,7 @@ function bootShellWithData(): { data: ReturnType<typeof createFdtDataStore> } {
     receive: () => () => undefined,
     search: createSearchStore(),
     reload: vi.fn(),
+    canRequest: () => true,
     hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
@@ -108,6 +109,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
@@ -232,6 +234,7 @@ describe('the keyboard overlays in the shell', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });
@@ -261,7 +264,7 @@ describe('the keyboard overlays in the shell', () => {
     // so adding a page or an action row keeps this pin true in any merge order.
     const expectedRows =
       NAV_ROUTES.length +
-      createPanelActions(productionActionDeps(() => data, createOverlayStore, null)).length;
+      createPanelActions(productionActionDeps(() => data, createOverlayStore)).length;
     expect(document.querySelectorAll('[data-fdt="palette-command"]').length).toBe(expectedRows);
     expect(document.body.contains(exportRow)).toBe(true);
 
@@ -355,6 +358,7 @@ describe('focus on route switch', () => {
       receive: () => () => undefined,
       search: createSearchStore(),
       reload: vi.fn(),
+      canRequest: () => true,
       hardReloadBudget: makeHardReloadBudget(),
       now: () => 1727000000000
     });

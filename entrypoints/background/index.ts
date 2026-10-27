@@ -13,7 +13,12 @@
  * - the toolbar badge (`./badge`) — the per-tab action badge state machine
  *   and its option gate,
  * - the simulated-device sessions (`./device-simulation`) — the compare
- *   overlay's tab-scoped UA rules and their lifecycle.
+ *   overlay's tab-scoped UA rules and their lifecycle,
+ * - the exclusion-builder sessions (`./exclusion-sessions`) — the session
+ *   channels, the interception backend (`./interception-backends`) and the
+ *   session cleanup paths,
+ * - the tab relay (`./tab-relay`) — tab asks forwarded for extension pages
+ *   without the `tabs` API.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -33,6 +38,9 @@ import {
   initDeviceSimSessions,
   type DeviceSimSessions
 } from './device-simulation';
+import { initExclusionSessions } from './exclusion-sessions';
+import { registerTabPushRelay } from './tab-push-relay';
+import { registerTabRelay } from './tab-relay';
 
 const log = createLogger('background');
 
@@ -116,6 +124,19 @@ function bootDeviceSimSessions(): DeviceSimSessions {
 }
 
 /**
+ * Boot the exclusion-builder sessions with a degrade path: if their wiring
+ * cannot start, their channels stay unregistered (the overlay's asks see
+ * no receiver and render that state) — no page is ever rewritten.
+ */
+function bootExclusionSessions(): void {
+  try {
+    initExclusionSessions();
+  } catch (cause) {
+    log.error('Exclusion sessions init failed — builder sessions disabled', cause);
+  }
+}
+
+/**
  * Boot all subsystems. Every registration is synchronous (it can never fall
  * behind an incoming event); the remaining bootstrap steps resolve and
  * branch independently, and a subsystem whose boot fails degrades to a
@@ -124,6 +145,23 @@ function bootDeviceSimSessions(): DeviceSimSessions {
 async function main(): Promise<void> {
   const badge = bootBadge();
   const simSessions = bootDeviceSimSessions();
+  bootExclusionSessions();
+
+  try {
+    registerTabRelay();
+  } catch (cause) {
+    // Only contexts without the `tabs` API ask through the relay; they then
+    // see no receiver and their panel reports it.
+    log.error('Tab relay init failed — tab-less pages cannot reach tabs', cause);
+  }
+
+  try {
+    registerTabPushRelay();
+  } catch (cause) {
+    // Only panels that never receive the page's pushes directly subscribe;
+    // they then keep loading data but stop refreshing on their own.
+    log.error('Tab-push relay init failed — tab-less panels get no live page updates', cause);
+  }
 
   try {
     initHeaderCapture(badge, simSessions);

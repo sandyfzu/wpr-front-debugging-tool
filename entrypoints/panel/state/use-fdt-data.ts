@@ -24,6 +24,7 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import { parseFdtDataExplained } from '../../../lib/messaging/validate';
 import { isNoReceiverError } from '../../../lib/messaging/no-receiver';
+import { isRelayUnavailableError } from '../../../lib/messaging/tab-relay-client';
 import { numericTabId } from '../../../lib/messaging/sender';
 import { createLogger } from '../../../lib/logger';
 import type { FdtData, PanelSearchAction } from '../../../lib/wp-rocket/types';
@@ -45,6 +46,13 @@ export interface FdtDataDeps {
    * nothing to request from.
    */
   inspectedTabId: () => number | null;
+  /**
+   * Whether this context can reach the tab at all (production: a tab
+   * transport was selected — direct or the background relay). False ⇒ the
+   * store enters the terminal `unavailable` state at start and never sends
+   * a request.
+   */
+  canRequest: () => boolean;
   /** One request flight: ask the content script for the full page data. */
   request: (tabId: number | undefined) => Promise<unknown>;
   /** Register the receivers at mount; returns the stop handle for unload. */
@@ -65,7 +73,7 @@ export interface FdtDataDeps {
 
 /** What the shell and the pages read once this store exists. */
 export interface FdtDataStore {
-  /** The machine state (fetching / ready / refreshing / error / idle). */
+  /** The machine state (fetching / ready / refreshing / error / idle / unavailable). */
   readonly state: Accessor<DataState>;
   /**
    * Boot: register every receiver, then run the first fetch — in that order,
@@ -92,6 +100,24 @@ const NO_RECEIVER_CAUSE =
 
 /** The cause for a request that failed in transit (or its own side). */
 const REQUEST_FAILURE_CAUSE = 'The page could not be reached for its data.';
+
+/**
+ * The reason the unavailable view renders when this DevTools panel has no
+ * way to the page at all — neither the `tabs` API nor the runtime send the
+ * background relay rides on — naming what still works instead of offering
+ * a retry that cannot.
+ */
+export const NO_PAGE_TRANSPORT_REASON =
+  'This browser gives this panel no way to reach the page, so page data can’t load here. The on-page widget still works.';
+
+/**
+ * The reason the unavailable view renders when the background relay itself
+ * cannot carry the panel's asks (it refused them, answered unreadably, or is
+ * not there) — the extension's fault, never the page's, and nothing a retry
+ * of the same ask changes; reopening DevTools starts a fresh panel.
+ */
+export const RELAY_UNAVAILABLE_REASON =
+  'The extension couldn’t pass this panel’s request on to the page, so page data can’t load here. Close and reopen DevTools to try again; the on-page widget still works.';
 
 /** The cause when the content script answered `null` (its processing failed). */
 const EMPTY_RESPONSE_CAUSE = 'The page produced no data — its content script could not process it.';
@@ -284,6 +310,12 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
         drainBufferedPatches();
       })
       .catch((cause: unknown) => {
+        if (isRelayUnavailableError(cause)) {
+          // The relay, not the page, failed: terminal and named, no retry.
+          log.warn('Page-data relay unavailable', { reason: cause.reason });
+          applyEvent({ type: 'unavailable', reason: RELAY_UNAVAILABLE_REASON });
+          return;
+        }
         applyEvent({ type: 'settled', outcome: outcomeForFailure(cause) });
         drainBufferedPatches();
       });
@@ -359,6 +391,11 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
       // channels — strictly before the flight below (see the header's mount
       // discipline).
       stopReceivers = deps.receive(receivers);
+      if (!deps.canRequest()) {
+        // Terminal: every later fetch/refresh/retry is a no-op by the table.
+        applyEvent({ type: 'unavailable', reason: NO_PAGE_TRANSPORT_REASON });
+        return;
+      }
       runFlight('fetch');
     },
     stop() {

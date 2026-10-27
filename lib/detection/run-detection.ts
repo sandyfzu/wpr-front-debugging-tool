@@ -29,6 +29,7 @@ import {
   detectRocketCdn,
   detectSelfHostedFonts
 } from './detect-optimizations';
+import { applyBuilderFacts } from './builder-fact';
 import { applyFeatureMetaAuthority } from './feature-meta';
 import {
   detectAutoPreloadFonts,
@@ -66,7 +67,8 @@ export function runDetection(html: string): DetectionResult {
 
 /**
  * Run every check once over an already-parsed page, then apply the generator
- * declaration's authority (it rewrites mapped rows and stamps `source`).
+ * declaration's authority (it rewrites mapped rows and stamps `source`),
+ * then the Exclusion Builder's facts (the additive `builder` field).
  * Single-sourced so the bench and the orchestrator can never drift apart. The
  * beacon config is parsed once here and fed to the beacon row's check
  * (pending-state composition stays out of the engine entirely — the four
@@ -100,6 +102,8 @@ export function runChecks(page: ParsedPage): WprDetections {
     rocket_cdn: detectRocketCdn(page)
   };
   applyFeatureMetaAuthority(detections, page.featureMeta);
+  // The builder's in-tab facts annotate the served verdicts, never change them.
+  applyBuilderFacts(detections, page.builderNote);
   return detections;
 }
 

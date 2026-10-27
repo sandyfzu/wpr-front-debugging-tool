@@ -17,7 +17,7 @@ import type { DataState } from './fdt-state-machine';
 import type { PanelSearchAction } from '../../../lib/wp-rocket/types';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import { SEARCH_DEBOUNCE_MS, createSearchStore, type SearchStore } from './search';
-import { createFdtDataStore, type FdtDataStore } from './use-fdt-data';
+import { NO_PAGE_TRANSPORT_REASON, createFdtDataStore, type FdtDataStore } from './use-fdt-data';
 import { makeFdtData, makeHardReloadBudget, makeLazyImage, makeMemoryStorage } from './fixtures';
 import { createHardReloadBudget, type HardReloadBudget } from './hard-reload-budget';
 
@@ -116,10 +116,12 @@ function loadedData(state: DataState): FdtData {
 function makeStore(
   world: ReturnType<typeof fakeWorld>,
   search: SearchStore = createSearchStore(),
-  hardReloadBudget: HardReloadBudget = makeHardReloadBudget()
+  hardReloadBudget: HardReloadBudget = makeHardReloadBudget(),
+  canRequest = true
 ): FdtDataStore {
   return createFdtDataStore({
     inspectedTabId: () => world.inspectedTabId,
+    canRequest: () => canRequest,
     request: world.request,
     receive: world.receive,
     search,
@@ -128,6 +130,46 @@ function makeStore(
     now: () => 1727000000000
   });
 }
+
+describe('a context with no tab transport (neither tabs nor the relay)', () => {
+  it('enters the terminal unavailable state with its reason, never requesting', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world, undefined, undefined, false);
+    store.start();
+    await drained();
+    expect(store.state()).toEqual({ status: 'unavailable', reason: NO_PAGE_TRANSPORT_REASON });
+    expect(world.request).not.toHaveBeenCalled();
+    // The receivers still register (search relay and pushes stay wired).
+    expect(world.receiversArmed).toBe(true);
+  });
+
+  it('stays unavailable through retry, reload and a panel-reload push', async () => {
+    const world = fakeWorld({ request: Promise.resolve(makeFdtData()) });
+    const store = makeStore(world, undefined, undefined, false);
+    store.start();
+    store.retry();
+    store.reload();
+    world.deliverPanelReload();
+    await drained();
+    expect(store.state().status).toBe('unavailable');
+    expect(world.request).not.toHaveBeenCalled();
+  });
+
+  it('names what still works, without offering a retry', () => {
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('on-page widget');
+    expect(NO_PAGE_TRANSPORT_REASON.toLowerCase()).not.toContain('retry');
+  });
+
+  it('blames the panel’s missing way to the page in plain words, never a "not yet"', () => {
+    // Shown only when neither the tabs API nor the relay's runtime send
+    // exists — the Exclusions entry rides on that same runtime send, so the
+    // copy must not promise it.
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('gives this panel no way to reach the page');
+    expect(NO_PAGE_TRANSPORT_REASON).not.toMatch(/tab messaging|relay|transport|\bAPI\b/);
+    expect(NO_PAGE_TRANSPORT_REASON).not.toMatch(/\byet\b/);
+    expect(NO_PAGE_TRANSPORT_REASON).not.toContain('Exclusions entry');
+  });
+});
 
 describe('registration + boot flight', () => {
   it('registers the receivers at mount, then runs the first fetch', async () => {

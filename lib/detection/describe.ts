@@ -216,7 +216,10 @@ export function describeDetections(
     [LABEL_LOAD_CSS_ASYNCHRONOUSLY]: { state: simpleState(detections.async_css.present) },
     [LABEL_IMAGE_LAZYLOAD]: {
       state: simpleState(detections.lazyload.present),
-      'lazy-loaded images': detections.lazyload.images.length
+      // Only the images actually lazy-loaded: an image the plugin (or the
+      // Exclusion Builder) left eager is not evidence of the feature.
+      'lazy-loaded images': detections.lazyload.images.filter((image) => image.lazyloadDetected)
+        .length
     },
     [LABEL_IFRAMES_AND_VIDEOS_LAZYLOAD]: {
       state: simpleState(detections.lazyload_iframes.present),

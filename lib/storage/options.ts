@@ -13,6 +13,7 @@
 
 import { storage } from 'wxt/utils/storage';
 import { isAppearance, nextAppearance, type Appearance } from '../../utils/theme';
+import { createWriteQueue } from './write-queue';
 
 /**
  * Canonical storage keys, declared once and reused by every slot below —
@@ -172,16 +173,13 @@ export async function getOptions(): Promise<StoredOptions> {
   return storedOptionsOrFallback(await optionsStore.getValue());
 }
 
+/** The options item's write queue (see `./write-queue`). */
+const enqueueOptionsWrite = createWriteQueue();
+
 /**
- * The whole-shape read-modify-write queue.
- *
- * Every writer here reads and writes the WHOLE options shape; two
- * unsynchronized read-modify-writes interleave (the later one's read sees the
- * older stored value and writes it back), silently reverting the earlier
- * writer's fields. One module-scope promise chain serializes the closures —
- * a queued mutation's validated read only starts after the previous
- * mutation's write settled, so a later writer always reads what the earlier
- * one wrote.
+ * Whole-shape read-modify-write over the validated options, serialized by
+ * the item's write queue — a later writer always reads what an earlier one
+ * wrote, so concurrent writers cannot revert each other's fields.
  *
  * @param apply The whole-shape transformation (pure; called once, with the
  *   validated stored options — a sync closure, or a thenable-returning one
@@ -191,12 +189,10 @@ export async function getOptions(): Promise<StoredOptions> {
  *   caller branches on it; the queue itself keeps flowing, so a rejecting
  *   mutation never stalls the next one.
  */
-let mutationQueue: Promise<unknown> = Promise.resolve();
-
 export function mutateOptions(
   apply: (options: StoredOptions) => StoredOptions | Promise<StoredOptions>
 ): Promise<StoredOptions> {
-  const run = mutationQueue.then(async () => {
+  return enqueueOptionsWrite(async () => {
     const current = storedOptionsOrFallback(await optionsStore.getValue());
     // `await` covers both closure kinds; a sync return passes through — and
     // an unawaited async closure would otherwise hand setValue a Promise,
@@ -205,10 +201,6 @@ export function mutateOptions(
     await optionsStore.setValue(written);
     return written;
   });
-  // The chain forgets this mutation's outcome: its rejection propagates to
-  // this mutation's own caller (above), never into the next queued one.
-  mutationQueue = run.catch(() => undefined);
-  return run;
 }
 
 /**

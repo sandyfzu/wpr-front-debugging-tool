@@ -4,7 +4,7 @@ Operating guide for AI agents (and humans) working in this repository. Keep it a
 
 ## Project Overview
 
-Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder`, `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
+Browser extension for debugging the [WP Rocket](https://wp-rocket.me) WordPress plugin on the front end. This repo is a **modernized port** of the legacy project [wpr-front-debugging-tool-legacy](https://github.com/wp-media/wpr-front-debugging-tool-legacy) (you might find it at `../wpr-front-debugging-tool-legacy`, check) (WXT + React 18): same feature set + new features, rebuilt on a faster stack (WXT + SolidJS). Legacy entrypoints being ported: `background`, `devtools`, `exclusion-builder` (re-planned as the in-page overlay `exclusion-overlay.content/`), `fdt` (main UI, shown as the devtools panel — ported as `panel/`), `options`, `popup`, and two content scripts (isolated world + main world — ported as `isolated.content.ts` / `main-world.content.ts`).
 
 A **second behavioral baseline** is also being integrated: the features of [wpr-inspector](https://github.com/wp-media/wpr-inspector) (you might find it at `../wpr-inspector`, check) — WP Rocket feature detection via the `data-wpr-features` generator meta, an on-page detection strip, the RUCSS live tester, and the runtime analysis tools (beacon/LCP/script views). Same rules apply: port behavior, improve and enhance, never copy; that baseline is planned as phases P11–P14 in `docs/plans/`.
 
@@ -25,7 +25,7 @@ A **second behavioral baseline** is also being integrated: the features of [wpr-
 | Code/JSON | **`shiki`** (4.5.x, fine-grained `shiki/core` + JS regex engine + the `javascript`/`json` grammars and the `github-light`/`github-dark` pair — statically imported only by `components/ui/code-block-highlighter`, which runs **only in the highlight Web Worker** (`components/ui/code-block-highlight.worker.ts`, spawned via `new Worker(new URL(…, import.meta.url), { type: 'module' })`; `components/ui/code-block` talks to it through the shiki-free `code-block-worker-client`, which time-boxes each block and terminates a runaway worker; pages import the language table from the shiki-free `components/ui/code-block-langs`) and **`@tanstack/solid-virtual`** (3.13.x) for the `components/ui/virtual-list` wrapper — so all of shiki ships as the worker bundle (`assets/code-block-highlight.worker-*.js`, its own `scripts/budgets.json` row), never in a consumer's chunk nor on the main thread; `@solid-primitives/intersection-observer` deliberately not taken (a ~10-line gate util is the dependency-lighter fix for master #24) |
 | Styling   | **Tailwind CSS v4** — design tokens in `assets/css/tokens.css` (`@theme inline` over `light-dark()` values in `theme.css`; appearance = `system`/`dark`/`light` via `[data-theme]`; `tokens.css` is the module injected UIs import so shadow roots get the same values)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Tests     | **Vitest 5** + `@solidjs/testing-library` + `happy-dom` (+ `vite-plugin-solid` compiles Solid JSX in the test runner — declared in `vitest.config.ts`, since WXT's vitest plugin does not merge the solid module's vite config); coverage thresholds gate `lib/**` + `utils/**` (see [Commands](#commands)). Browser tier: **@playwright/test** in `tests/e2e/` — headless Chromium with the unpacked extension (`E2E_HEADED=1` for headed), `*.spec.ts`, **local-only, never in CI** (see `tests/e2e/README.md`), with **axe-core** as the dev-time a11y engine the `panel-a11y` spec injects into the page under test (never a bundle input)                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary, `strict_min_version: 150.0` (owner-chosen explicit floor, Firefox build only) — see Cross-browser compatibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Targets   | Chromium-based browsers (primary; Manifest V3, `minimum_chrome_version: 145`); Firefox secondary, `strict_min_version: 150.0` (owner-chosen explicit floor) + add-on id `{f6991cc9-09e3-43d0-a6dd-4aae5f676452}` (owner-chosen GUID, permanent once on AMO; both Firefox build only, `wxt.config.ts`) — see Cross-browser compatibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Messaging | **`@webext-core/messaging` v4** (extension-wide) + its `page` subpath for the MAIN↔isolated-world window bridge — contracts live in `lib/messaging/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Build     | Vite (via WXT)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
@@ -42,22 +42,33 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │   ├── popup/                 # browser-action popup
 │   ├── devtools/              # registers the devtools panel (points at panel.html)
 │   ├── panel/                 # main debugging UI, shown as the devtools panel (panel.html)
-│   ├── exclusion-builder/     # unlisted page (exclusion-builder.html)
 │   ├── options/               # options page
 │   ├── isolated.content.ts    # content script — isolated world
 │   │   │                      #   (WXT folder form: `isolated.content/index.ts` entry +
 │   │   │                      #    colocated feature modules; see docs/plans for the list)
+│   ├── exclusion-overlay.content/ # runtime content script (`registration: 'runtime'`, never in the
+│   │                          #   manifest): the in-page exclusion builder overlay, injected into a
+│   │                          #   tab's top frame on open (`scripting.executeScript`) so its code
+│   │                          #   costs pages nothing until then; the background re-opens it on a
+│   │                          #   session tab's loaded pages (`lib/exclusion-session/overlay-reopen`)
+│   ├── exclusion-transform-worker.ts # Firefox-only unlisted script: the exclusion engine's Web Worker
+│   │                          #   (the background preempts a runaway row by terminating it)
 │   ├── main-world.content.ts  # content script — MAIN world (undefined-references capture)
 │   ├── ua-relay.content.ts    # content script — isolated world, all frames;
 │   │   │                      #   device-sim relay: cached boot ask + live pushes (`ua-relay/`)
 │   └── ua-identity.content.ts # content script — MAIN world, all frames;
 │                              #   `navigator.userAgent` shadowed per the sim state (`ua-identity/`)
 ├── components/                # Solid components shared by ≥2 entrypoints
-│   └── ui/                    # design-system primitives
+│   ├── ui/                    # design-system primitives
+│   └── injected-ui/           # shadow-root mount, live appearance + input-event isolation for UIs injected into host pages
 ├── lib/                       # domain modules — logic + types + data, pure and testable
 │   ├── messaging/             # typed message contracts + boundary validation
 │   ├── storage/               # typed storage items (storage.defineItem)
 │   ├── detection/             # WP Rocket footprint detection
+│   ├── exclusion-builder/     # pure exclusion engine: WP Rocket's row save + match semantics, the
+│   │                          #   four transforms, one pipeline (+ PHP parity table and fixtures)
+│   ├── exclusion-session/     # backend-agnostic interception session: controller, state machines,
+│   │                          #   charset round trip, budgeted document step, CDP + stream backends
 │   └── <domain>/              # one folder per feature; its data files colocated
 ├── utils/                     # generic, feature-agnostic pure helpers
 ├── scripts/                   # repo tooling (budget gate etc.); `scripts/budgets.json` is the committed budget table
@@ -73,6 +84,13 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 - **`lib/` modules are self-contained:** each owns its logic, types, and data. No shared grab-bag files (`Globals.ts`/`Types.ts` are legacy patterns — don't port them). Cross-surface types are contracts in `lib/messaging/` and `lib/storage/`. Constants live with the module that owns the concept.
 - **Tests:** unit tests colocated as `*.test.ts` next to the code they test; the browser tier (`*.spec.ts`) lives in `tests/e2e/` (see its README).
 - `public/` is copied as-is; `assets/` is imported and bundled.
+
+### Exclusion Builder sessions (runbook)
+
+- **Apply modes:** Apply arms an interception session for the tab and reloads it; the served HTML is rewritten before parse — Chromium: `debugger` + CDP `Fetch` (in-process engine, 2 s budget between steps), Firefox: `webRequest.filterResponseData` (engine in `exclusion-transform-worker`, preempted at the budget). Unavailable interception (attach denied, debugging policy, cancelled infobar, detached, unsupported page or browser, session limit) is a warning state naming cause + remedy (Retry when transient) — there is **no fallback**. A session lasts across the tab's navigations until Stop, tab close or extension reload.
+- **DevTools interplay:** the mode is decided by attempting the attach, never assumed; on Chromium the attach worked with DevTools open (CDP is multi-client; stable-Chrome manual check open in P15B). The panel shows the session in its status strip and detection cards ("Disabled in this tab by the Exclusion Builder").
+- **Reset / Stop:** Reset is held while the draft equals the applied set; with edits it discards them and re-applies the session's stored set. Stop ends the session without navigating (the rewritten page and the draft stay); the next load is served as WP Rocket serves it.
+- Decisions, limits + open items: [`docs/plans/completed-exclusion-builder.md`](docs/plans/completed-exclusion-builder.md).
 
 ## Commands
 
@@ -91,12 +109,18 @@ pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
 pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chromium + the unpacked extension; E2E_HEADED=1 for headed, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
 pnpm bench:detection # checks-phase speed gate: port vs reference engine over the fixture corpus (local only, never CI)
-pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build
+pnpm check:budgets   # measures built surfaces against scripts/budgets.json — run after pnpm build, on the
+                     #   .nvmrc Node (gzip sizes depend on its zlib: another major is refused)
+pnpm parity:wp-rocket # WP Rocket parity table (lib/exclusion-builder/wp-rocket-parity.fixtures.json): re-derives its
+                     #   expected outputs with the real plugin under `php -n` (needs PHP >= 8.1 + ext-dom/mbstring,
+                     #   compiled in or shared, `unzip`, docker/wpr/wpr-rocket.zip; network on the first run only — the
+                     #   pinned WordPress zip is then cached in .cache/) — fails when stale; --write regenerates;
+                     #   --ci / --compare [--zip <zip>] are the parity workflow's modes (see its header)
 docker/scripts/up.sh # local WordPress debugging site lifecycle — up / down.sh / reset.sh; URLs, credentials
                      #   location, reset semantics, scenario flags, apvm build path: docs/local-site-runbook.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`).
+CI (`.github/workflows/ci.yml`) runs `compile` + `lint` + `format:check` + `test` + `build` + `build:firefox` + `check:budgets` on every PR and push to `main`/`develop`, and on demand via `workflow_dispatch` (Actions tab, or `gh workflow run ci.yml --ref <branch>`; `-f ref=<branch|tag|sha>` tests a different ref). `test:e2e` is deliberately **never wired into CI** (it needs this machine's real Chrome build and the docker site — the owner's environment contract; see `tests/e2e/README.md`); `bench:detection` stays local too. A separate, informational workflow (`.github/workflows/wp-rocket-parity.yml`, not a required check) builds WP Rocket with a pinned APVM and runs `parity:wp-rocket --ci` against the table's reference tag (fails on a stale table or reference drift) and `--compare` against the latest stable tag (warnings only) — on PRs and pushes to `main`/`develop`/`feat/**` touching the parity files, weekly, and on dispatch (`gh workflow run wp-rocket-parity.yml --ref <branch>`; cron and dispatch work only once the file is on `develop`, GitHub's default branch).
 
 ## Non-negotiable rules
 
@@ -113,7 +137,7 @@ Do not guess, suppose, or assume. Always verify, validate, confirm, and fact-che
 The project must be stable, reliable, secure, safe, production-ready, well documented, and well tested:
 
 - **No half-finished paths.** Handle edge cases and errors explicitly; fail fast with actionable messages that name the offending input.
-- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case". (`declarativeNetRequestWithHostAccess` is the deliberate variant choice for the simulated-device sessions: same capabilities as the base permission, no install-time warning, and its rules act only within the already-declared host permissions.)
+- **Least privilege.** Request only the manifest permissions and host permissions actually used; each one gets a comment in `wxt.config.ts` explaining why. Never add permissions "just in case". (`declarativeNetRequestWithHostAccess` is the deliberate variant choice for the simulated-device sessions: same capabilities as the base permission, no install-time warning, and its rules act only within the already-declared host permissions. `debugger` — Chromium build only — is the one way to rewrite a top-level document before parse (CDP `Fetch`) for the Exclusion Builder; install warnings "Access the page debugger backend" + "Read and change all your data on all websites", plus Chrome's debugging infobar while attached; owner-accepted while store review allows it.)
 - **Dependencies: latest stable.** Any dependency added to the project MUST be the latest stable version (`latest` dist-tag) unless it is incompatible with the installed stack — verify `engines` and peer ranges before adding. Never add outdated versions "just in case".
 - **Security.** Never log or persist sensitive data. Validate untrusted input — page DOM, `storage`, message payloads — at the boundary before use.
 - **Content scripts must never break the host page.** They run on sites being debugged: wrap risky work, clean up listeners/observers, and keep main-world vs isolated-world responsibilities explicit.
@@ -151,7 +175,7 @@ Extension surfaces fail differently from web apps (asynchronous API errors, list
 
 ### UI themes: light & dark
 
-- **Every user-facing surface supports both palettes** — panel, popup, options, exclusion-builder, and every injected UI (strips, badges, overlays): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
+- **Every user-facing surface supports both palettes** — panel, popup, options, and every injected UI (strips, badges, overlays — the exclusion builder included): token-based theming only; tokens are palette-agnostic; no hardcoded palette colors anywhere else.
 - **The appearance setting has exactly three options — System (default), Dark, Light.** System follows `prefers-color-scheme`; an explicit Dark/Light always wins over it. The choice persists across surfaces (one synced option) and is resolved before the UI renders — no wrong-palette flash.
 - **Real time** — changing the appearance setting updates all surfaces immediately, including injected UIs, without a reload. The panel and options pages are the only surfaces that can change the setting; injected UIs and the popup only read it.
 
@@ -186,7 +210,7 @@ Requirements, not suggestions:
 
 ## Git & releases
 
-- **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files. Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
+- **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files with `--no-stash`: worktrees share one `refs/stash` and lint-staged drops its backup by stash index, so a concurrent commit elsewhere could drop the wrong entry; partially staged files stay protected by its patch in the per-worktree git dir (trade-off: a failing task no longer auto-reverts the tree). Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
 - **Semantic Versioning** — bump `package.json` version for every store upload.
 - **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the `known-conflicts DB seed asset` ceiling in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising that one row is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).

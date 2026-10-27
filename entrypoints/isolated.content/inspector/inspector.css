@@ -65,7 +65,8 @@
  * Anchored bottom-right; when the card opens the pill departs downward on
  * the same beat, then stops receiving input; closing hands the anchor back.
  * Locked under the host's viewport (max-width `100vw - 32px`: the anchor's
- * two 16 px margins), so narrow hosts drop the stamp text, never the identity.
+ * two 16 px margins), so narrow hosts drop the stamp text first and only then
+ * ellipsize the identity (narrowing order below).
  * The pill is a drag handle too (P12A.5): its cursor stays the button's
  * pointer (the card toggle is its primary affordance), and touch-action none
  * keeps a touch drag from becoming a page pan (SB-D16). */
@@ -77,6 +78,10 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  /* Sized to its content's max-content (the chrome is a zero-width fixed
+   * box, so shrink-to-fit would fall back to min-content, which the chip's
+   * stamp column deliberately does not count). */
+  width: max-content;
   max-width: calc(100vw - 32px);
   height: 36px;
   padding: 0 12px 0 11px;
@@ -120,6 +125,11 @@
 .ins-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* The scroll region's ring sits inside it (the card clips its overflow). */
+.ins-card-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* The status chip: mono, tabular, mood-tinted; pending pulses. */
@@ -207,6 +217,46 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Narrowing order in the pill: the chip's stamp gives way first, then the
+ * identity ellipsizes as a last resort; the chip's state word never shrinks.
+ * The chip is a grid whose stamp column is `minmax(0, auto)`: its min-content
+ * width is the state word alone (a flex row would count the whole stamp), so
+ * the chip's automatic minimum stops at the word. Flex shrink is shared in
+ * proportion, so the chip's 100000x weight keeps the identity's share below a
+ * layout unit (a 100x weight still cut a fraction of a pixel off the version)
+ * until the stamp is spent and the chip freezes at the word. No cap at rest:
+ * a wide host shows the stamp whole. */
+.ins-pill .ins-identity {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ins-pill .ins-cache {
+  display: inline-grid;
+  grid-template-columns: auto;
+  grid-auto-columns: minmax(0, auto);
+  grid-auto-flow: column;
+  flex: 0 100000 auto;
+  max-width: none;
+}
+/* The word's clip box would otherwise zero its grid minimum. */
+.ins-pill .ins-cache-text {
+  min-width: max-content;
+}
+/* The Exclusion Builder hint after the version: the page shown is the
+ * builder's rewrite. A shape (the card badges' glyph), never colour alone;
+ * fixed size, so a narrow pill ellipsizes the identity, never the glyph. */
+.ins-pill-builder {
+  display: inline-flex;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--status-info);
+}
+.ins-pill-builder svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* Textually present, never painted (the pill's accessible name rides with
@@ -457,6 +507,92 @@
   color: var(--status-info);
   font: 500 10px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* The Exclusion Builder modifier on a row: the badge (icon + short words,
+ * the informational pair — never colour alone) beside the chips, and the
+ * full sentence on its own line below them, wrapping inside the card. The
+ * sentence is neutral secondary text: a statement, not a link. */
+.ins-mod {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--status-info-soft);
+  color: var(--status-info);
+  font: 500 10px/1 var(--font-mono);
+  white-space: nowrap;
+}
+.ins-mod-icon {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+}
+.ins-mod-icon svg {
+  width: 10px;
+  height: 10px;
+}
+.ins-mod-line {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 0 2px 2px;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The tab-level builder line: a quiet raised note above the groups (title,
+ * then the hints). Each hint wraps whole when it can; the joiner dot sits
+ * in the inline-start gutter the hints' box clips, so it shows between
+ * hints on a line and never at a line start (drawn with empty alt text:
+ * never spoken). */
+.ins-builder {
+  /* The joiner glyph: the view sets the shared one inline; declared here so
+   * the injected chain defines every property it consumes (none: no dot). */
+  --ins-joiner: none;
+  position: relative;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--surface-3);
+}
+.ins-builder-shown {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ins-builder p {
+  margin: 0;
+}
+.ins-builder-title {
+  font: 600 11px/1.4 var(--font-mono);
+  color: var(--fg-primary);
+}
+.ins-builder-hints {
+  overflow: hidden;
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--fg-secondary);
+}
+.ins-builder-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -14px;
+}
+.ins-builder-hint {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 14px;
+  overflow-wrap: anywhere;
+}
+.ins-builder-hint::before {
+  position: absolute;
+  left: -10px;
+  content: var(--ins-joiner);
+  color: var(--fg-muted);
 }
 
 /* The pending/failed body copies (the KC state-lines pattern). */
