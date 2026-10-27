@@ -70,14 +70,16 @@ export const EXTENSION_PATH = path.resolve(
 const FIXTURE_PORT = Number(process.env.E2E_FIXTURE_PORT ?? 8891);
 export const ORIGIN_A = `http://localhost:${String(FIXTURE_PORT)}`;
 
-/** The six menu ids the background's registry creates (the parity probe's list). */
+/** The eight menu ids the background's registry creates (the parity probe's list). */
 export const MENU_PARITY_IDS = [
   'wprSideBySide',
   'psiSideBySide',
   'updateKnownConflictsDB',
   'exclusionBuilder',
   'toggleDetectionWidget',
-  'openNowProcket'
+  'openNowProcket',
+  'openCommandPalette',
+  'pageUiGate'
 ] as const;
 
 /** Probe id outside the registry: proves the probe can answer "absent". */

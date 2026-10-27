@@ -5,14 +5,46 @@
  */
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  PAGE_CONTENT_CONTEXTS,
   platformMenuContext,
   platformMenuContexts,
   type PlatformMenuContext
 } from './menu-contexts';
 
 describe('PlatformMenuContext', () => {
-  it('keeps all three names the browser API declares', () => {
-    expectTypeOf<PlatformMenuContext>().toEqualTypeOf<'all' | 'action' | 'browser_action'>();
+  it('keeps every name the registry uses, all declared by the browser API', () => {
+    // The union grew with the in-page names: an undeclared one would drop out.
+    expectTypeOf<PlatformMenuContext>().toEqualTypeOf<
+      | 'all'
+      | 'action'
+      | 'browser_action'
+      | 'page'
+      | 'frame'
+      | 'selection'
+      | 'link'
+      | 'editable'
+      | 'image'
+      | 'video'
+      | 'audio'
+    >();
+  });
+});
+
+describe('PAGE_CONTENT_CONTEXTS', () => {
+  it('names the in-page contexts only: never the toolbar button menu nor a catch-all', () => {
+    expect([...PAGE_CONTENT_CONTEXTS]).toEqual([
+      'page',
+      'frame',
+      'selection',
+      'link',
+      'editable',
+      'image',
+      'video',
+      'audio'
+    ]);
+    for (const outside of ['all', 'action', 'browser_action', 'page_action', 'launcher', 'tab']) {
+      expect(PAGE_CONTENT_CONTEXTS as readonly string[]).not.toContain(outside);
+    }
   });
 });
 
@@ -27,6 +59,13 @@ describe('platformMenuContext', () => {
     expect(platformMenuContext('action', 2)).toBe('browser_action');
     // 'all' already covers the toolbar menu on both versions.
     expect(platformMenuContext('all', 2)).toBe('all');
+  });
+
+  it('keeps every in-page name on both manifest versions', () => {
+    for (const context of PAGE_CONTENT_CONTEXTS) {
+      expect(platformMenuContext(context, 2)).toBe(context);
+      expect(platformMenuContext(context, 3)).toBe(context);
+    }
   });
 
   it('refuses manifest versions no platform reports, naming the input', () => {
