@@ -15,6 +15,21 @@ export function parseUrl(raw: string): URL | null {
 }
 
 /**
+ * Parse a URL string, keeping it only when it is a plain HTTP(S) URL.
+ *
+ * The parsed form of the {@link isHttpUrl} gate, for callers that go on to use
+ * the URL (no second parse, no second scheme check).
+ *
+ * @param raw The URL string to parse.
+ * @returns The parsed URL when `raw` is an absolute `http:`/`https:` URL (scheme
+ *   case-insensitive), otherwise `null`.
+ */
+export function parseHttpUrl(raw: string): URL | null {
+  const url = parseUrl(raw);
+  return url !== null && (url.protocol === 'http:' || url.protocol === 'https:') ? url : null;
+}
+
+/**
  * Check whether a URL string points at a plain HTTP(S) resource.
  *
  * Gate for anything the extension opens or fetches (Known Conflicts links, resource
@@ -25,8 +40,7 @@ export function parseUrl(raw: string): URL | null {
  * @returns `true` only when `raw` is an absolute `http:` or `https:` URL (scheme case-insensitive).
  */
 export function isHttpUrl(raw: string): boolean {
-  const url = parseUrl(raw);
-  return url !== null && (url.protocol === 'http:' || url.protocol === 'https:');
+  return parseHttpUrl(raw) !== null;
 }
 
 /**
@@ -42,8 +56,5 @@ export function isHttpUrl(raw: string): boolean {
  * @returns `true` only when `raw` is an `http:`/`https:` origin in canonical form.
  */
 export function isHttpOrigin(raw: string): boolean {
-  const url = parseUrl(raw);
-  return (
-    url !== null && (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === raw
-  );
+  return parseHttpUrl(raw)?.origin === raw;
 }

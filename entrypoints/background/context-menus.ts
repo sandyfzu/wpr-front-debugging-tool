@@ -12,7 +12,10 @@
  *   database refresh (whose trigger used to live in two places);
  * - the click event's own `tab` is the target — NOT a re-query of the
  *   active tab, which describes the service worker's current window, not
- *   the window the user was pointing at.
+ *   the window the user was pointing at;
+ * - `'all'` includes the toolbar action's own menu, where Firefox sends no
+ *   `pageUrl`: page-reading arms fall back to the click tab's `url` (host
+ *   permissions expose it), so the action-menu click is never a dead end.
  *
  * The mapping and dispatch are injected-deps functions: the registry's
  * creation rows (`menuCreateParams`) and a click's branch tree
@@ -25,7 +28,7 @@ import { createLogger } from '../../lib/logger';
 import { sendMessage } from '../../lib/messaging';
 import { numericTabId } from '../../lib/messaging/sender';
 import { CONTEXT_MENU_IDS, URL_PATTERNS, withCacheBypass } from '../../lib/wp-rocket/constants';
-import { parseUrl } from '../../utils/urls';
+import { parseHttpUrl } from '../../utils/urls';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { readLastError, type LastErrorSlot } from '../../utils/last-error';
@@ -56,7 +59,9 @@ interface MenuEntry {
 
 /**
  * The complete menu registry — adding an entry is one row here plus its
- * action arm, nothing else.
+ * action arm, nothing else. Chromium shows at most 6 top-level rows in the
+ * action menu (`ACTION_MENU_TOP_LEVEL_LIMIT`) and drops the rest; the rows
+ * reaching it (`'all'` + `'action'`) are exactly 6 — test-pinned.
  */
 const MENU_ENTRIES: readonly MenuEntry[] = [
   {
@@ -178,10 +183,71 @@ export interface MenuClickDeps {
    */
   toggleDetectionWidget(origin: string): Promise<boolean>;
   /**
-   * Open a URL in a new, active tab of the given window (the browser's
-   * current window when undefined); rejects when the browser refuses.
+   * Open a URL in a new, active tab at the given placement (the browser
+   * decides each absent key); rejects when the browser refuses.
    */
-  openUrl(url: string, windowId: number | undefined): Promise<unknown>;
+  openUrl(url: string, placement: MenuTabPlacement): Promise<unknown>;
+}
+
+/** The click information the dispatch reads (the page-scoped part only). */
+export interface MenuClickInfo {
+  menuItemId: string | number;
+  /** The clicked document's URL; absent in the action's own menu on Firefox. */
+  pageUrl?: string;
+}
+
+/** The click event's tab, as far as the dispatch reads it. */
+export interface MenuClickTab {
+  id?: number;
+  incognito?: boolean;
+  windowId?: number;
+  /** The tab's position in its window (new tabs open right after it). */
+  index?: number;
+  /** The tab's top-level URL (present with host permissions on the page). */
+  url?: string;
+}
+
+/**
+ * The click information with its document URL resolved: the event's own
+ * `pageUrl`, else the click tab's `url` — the action-menu click on Firefox
+ * carries no `pageUrl`, while the tab's top-level URL is the same document a
+ * page click reports. Link/frame URLs are never consulted.
+ *
+ * @param info The click's menu information.
+ * @param tab The click event's own tab.
+ * @returns The same information, `pageUrl` filled from the tab when absent.
+ */
+export function resolveMenuClickInfo(
+  info: MenuClickInfo,
+  tab: MenuClickTab | undefined
+): MenuClickInfo {
+  const pageUrl = info.pageUrl ?? tab?.url;
+  return { menuItemId: info.menuItemId, ...(pageUrl === undefined ? {} : { pageUrl }) };
+}
+
+/** Where a menu-opened tab is created: beside its source, in its window. */
+export interface MenuTabPlacement {
+  windowId?: number;
+  index?: number;
+  /** The source tab; always known (the dispatch has validated its id). */
+  openerTabId: number;
+}
+
+/**
+ * The new tab's placement from the click tab: its window, the slot right
+ * after it, and the tab as its opener (same window by construction, as
+ * `tabs.create` requires). Absent values are omitted so the browser decides.
+ *
+ * @param tabId The click tab's validated id.
+ * @param tab The click event's own tab.
+ * @returns The `tabs.create` placement keys that are known.
+ */
+export function menuTabPlacement(tabId: number, tab: MenuClickTab | undefined): MenuTabPlacement {
+  return {
+    ...(tab?.windowId === undefined ? {} : { windowId: tab.windowId }),
+    ...(tab?.index === undefined ? {} : { index: tab.index + 1 }),
+    openerTabId: tabId
+  };
 }
 
 /**
@@ -213,10 +279,8 @@ export function menuClickOrigin(info: {
  *   the document URL is absent, malformed, or not http(s).
  */
 export function menuBypassUrl(pageUrl: string | undefined): string | null {
-  if (pageUrl === undefined) return null;
-  const url = parseUrl(pageUrl);
-  if (url === null || (url.protocol !== 'http:' && url.protocol !== 'https:')) return null;
-  return withCacheBypass(url);
+  const url = pageUrl === undefined ? null : parseHttpUrl(pageUrl);
+  return url === null ? null : withCacheBypass(url);
 }
 
 /**
@@ -225,16 +289,16 @@ export function menuBypassUrl(pageUrl: string | undefined): string | null {
  * a real, contextual log line — never a swallowed rejection on the floor.
  *
  * @param action The click's resolved action.
- * @param info The click's menu information (its document URL).
+ * @param info The click's menu information, document URL resolved.
  * @param tabId The click event's own tab (validated by the dispatcher).
  * @param tab The same tab object, for properties beyond the id.
  * @param deps The injected browser effects.
  */
 async function dispatchMenuClick(
   action: MenuAction,
-  info: { menuItemId: string | number; pageUrl?: string },
+  info: MenuClickInfo,
   tabId: number,
-  tab: { incognito?: boolean; windowId?: number } | undefined,
+  tab: MenuClickTab | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   switch (action) {
@@ -295,8 +359,9 @@ async function dispatchMenuClick(
         return;
       }
       try {
-        // The click's own window, not the service worker's current one.
-        await deps.openUrl(url, tab?.windowId);
+        // The click's own window (not the service worker's current one),
+        // right after the source tab.
+        await deps.openUrl(url, menuTabPlacement(tabId, tab));
       } catch (cause) {
         log.error('Opening the cache-bypassed page failed', { action, tabId, cause });
       }
@@ -310,13 +375,15 @@ async function dispatchMenuClick(
  * target, and dispatch — with every uninstructable click (foreign ids,
  * tabless events) answered here instead of falling into the dispatch.
  *
- * @param info The click's menu information (only the id matters here).
+ * @param info The click's menu information: its id routes; its `pageUrl`
+ *   (resolved against the tab, see {@link resolveMenuClickInfo}) feeds the
+ *   page-reading arms.
  * @param tab The click event's own tab.
  * @param deps The injected browser effects.
  */
 export async function dispatchMenuClickEvent(
-  info: { menuItemId: string | number; pageUrl?: string },
-  tab: { id?: number; incognito?: boolean; windowId?: number } | undefined,
+  info: MenuClickInfo,
+  tab: MenuClickTab | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   const action = menuActionFor(info.menuItemId);
@@ -327,7 +394,7 @@ export async function dispatchMenuClickEvent(
     log.warn('Menu click ignored: no tab', { action });
     return;
   }
-  await dispatchMenuClick(action, info, tabId, tab, deps);
+  await dispatchMenuClick(action, resolveMenuClickInfo(info, tab), tabId, tab, deps);
 }
 
 /**
@@ -389,8 +456,7 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     // module's one toggle — the menu row is the page-context writer; the
     // popup and the options row write the same item later.
     toggleDetectionWidget: toggleInspectorOrigin,
-    openUrl: (url, windowId) =>
-      browser.tabs.create({ url, ...(windowId === undefined ? {} : { windowId }) })
+    openUrl: (url, placement) => browser.tabs.create({ url, ...placement })
   };
 
   browser.contextMenus.onClicked.addListener((info, tab) => {

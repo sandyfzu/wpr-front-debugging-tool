@@ -6,6 +6,7 @@
  * and are never reached by these tests).
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { Browser } from 'wxt/browser';
 import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import {
@@ -14,12 +15,70 @@ import {
   menuBypassUrl,
   menuClickOrigin,
   menuCreateParams,
+  menuTabPlacement,
   reportMenuCreateFailure,
-  type MenuClickDeps
+  resolveMenuClickInfo,
+  type MenuClickDeps,
+  type MenuTabPlacement
 } from './context-menus';
 
 /** The dockerized site's origin (the e2e site's URL host form in unit tests). */
 const SITE = 'http://127.0.0.1:8493';
+
+/**
+ * Chromium's action-menu cap on top-level rows (it drops the rest). Not
+ * reachable at runtime here (no extension context), so it is typed by the
+ * installed declaration's literal: a changed cap fails compilation.
+ */
+const ACTION_MENU_TOP_LEVEL_LIMIT: typeof Browser.contextMenus.ACTION_MENU_TOP_LEVEL_LIMIT = 6;
+
+describe('resolveMenuClickInfo', () => {
+  it("keeps the event's own pageUrl over the tab URL", () => {
+    expect(
+      resolveMenuClickInfo(
+        { menuItemId: 1, pageUrl: `${SITE}/page/` },
+        { id: 4, url: `${SITE}/other/` }
+      )
+    ).toEqual({ menuItemId: 1, pageUrl: `${SITE}/page/` });
+  });
+
+  it("falls back to the tab URL when the event has none (Firefox's action menu)", () => {
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, { id: 4, url: `${SITE}/tab/` })).toEqual({
+      menuItemId: 1,
+      pageUrl: `${SITE}/tab/`
+    });
+  });
+
+  it('leaves pageUrl absent when neither carries one, and drops link/frame URLs', () => {
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, { id: 4 })).toEqual({ menuItemId: 1 });
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, undefined)).toEqual({ menuItemId: 1 });
+    const info = { menuItemId: 1, linkUrl: `${SITE}/link/`, frameUrl: `${SITE}/frame/` };
+    expect(resolveMenuClickInfo(info, { id: 4 })).toEqual({ menuItemId: 1 });
+  });
+});
+
+describe('menuTabPlacement', () => {
+  it('opens right after the source tab, in its window, with it as opener', () => {
+    expect(menuTabPlacement(4, { id: 4, windowId: 12, index: 2 })).toEqual({
+      windowId: 12,
+      index: 3,
+      openerTabId: 4
+    });
+    // The first slot's neighbor is index 1, not a falsy-skipped 0.
+    expect(menuTabPlacement(4, { id: 4, windowId: 0, index: 0 })).toEqual({
+      windowId: 0,
+      index: 1,
+      openerTabId: 4
+    });
+  });
+
+  it('omits unknown keys so the browser decides them', () => {
+    const placement = menuTabPlacement(4, { id: 4 });
+    expect(placement).toEqual({ openerTabId: 4 });
+    expect(Object.keys(placement)).toEqual(['openerTabId']);
+    expect(Object.keys(menuTabPlacement(4, undefined))).toEqual(['openerTabId']);
+  });
+});
 
 describe('menuClickOrigin', () => {
   it('derives the origin from the click document URL, without the path', () => {
@@ -44,6 +103,12 @@ describe('menuBypassUrl', () => {
     expect(menuBypassUrl('https://example.test/?q=a%20b')).toBe(
       'https://example.test/?q=a%20b&nowprocket'
     );
+  });
+
+  it('appends the bypass when only a look-alike parameter is present', () => {
+    // Parameter names are case-sensitive and matched whole.
+    expect(menuBypassUrl(`${SITE}/?NOWPROCKET=1`)).toBe(`${SITE}/?NOWPROCKET=1&nowprocket`);
+    expect(menuBypassUrl(`${SITE}/?xnowprocket=1`)).toBe(`${SITE}/?xnowprocket=1&nowprocket`);
   });
 
   it('opens an already-bypassed document unchanged (=0 and array forms included)', () => {
@@ -162,6 +227,12 @@ describe('menuCreateParams', () => {
       }
     ]);
   });
+
+  it("keeps the action menu's top-level rows within Chromium's cap", () => {
+    // Every row reaches it: the registry admits only 'all' (which includes
+    // the action menu) and 'action' contexts, all top-level.
+    expect(menuCreateParams().length).toBeLessThanOrEqual(ACTION_MENU_TOP_LEVEL_LIMIT);
+  });
 });
 
 /** The recording deps: every glue effect lands in one of these observables. */
@@ -175,10 +246,19 @@ interface Recorded {
   toggleFailure?: Error;
   /** URLs opened in a new tab, with the window they targeted. */
   openedUrls: Array<{ url: string; windowId: number | undefined }>;
+  /** Each opened tab's full placement, in open order. */
+  placements: MenuTabPlacement[];
 }
 
 function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
-  const recorded: Recorded = { sent: [], opened: [], refreshes: 0, toggles: [], openedUrls: [] };
+  const recorded: Recorded = {
+    sent: [],
+    opened: [],
+    refreshes: 0,
+    toggles: [],
+    openedUrls: [],
+    placements: []
+  };
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => {
       recorded.sent.push({ type, target });
@@ -201,8 +281,9 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
       // regression shape: an unknown origin's first flip enables.
       return Promise.resolve(true);
     },
-    openUrl: (url, windowId) => {
-      recorded.openedUrls.push({ url, windowId });
+    openUrl: (url, placement) => {
+      recorded.openedUrls.push({ url, windowId: placement.windowId });
+      recorded.placements.push(placement);
       return Promise.resolve({ id: 100 });
     }
   };
@@ -478,6 +559,64 @@ describe('dispatchMenuClickEvent', () => {
       });
     } finally {
       spy.mockRestore();
+    }
+  });
+  it('the nowprocket copy opens right after its source tab, which is its opener', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/fdt/` },
+      { id: 4, windowId: 12, index: 2 },
+      deps
+    );
+    expect(recorded.placements).toEqual([{ windowId: 12, index: 3, openerTabId: 4 }]);
+  });
+
+  it('only the page URL opens: link and frame URLs under the pointer are ignored', async () => {
+    const { deps, recorded } = recordingDeps();
+    const info = {
+      menuItemId: CONTEXT_MENU_IDS.openNowProcket,
+      pageUrl: `${SITE}/page/`,
+      linkUrl: `${SITE}/link/`,
+      frameUrl: `${SITE}/frame/`
+    };
+    await dispatchMenuClickEvent(info, { id: 4, windowId: 12, url: `${SITE}/tab/` }, deps);
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/page/?nowprocket`, windowId: 12 }]);
+  });
+
+  it("an action-menu click (no pageUrl, Firefox) uses the tab's URL for both page arms", async () => {
+    const { deps, recorded } = recordingDeps();
+    const tab = { id: 4, windowId: 12, index: 0, url: `${SITE}/fdt/?a=b` };
+    await dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.openNowProcket }, tab, deps);
+    await dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget }, tab, deps);
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/fdt/?a=b&nowprocket`, windowId: 12 }]);
+    expect(recorded.toggles).toEqual([SITE]);
+  });
+
+  it('no nowprocket log line ever carries the page URL (it can hold secrets)', async () => {
+    const SECRET = 'tok-5ecr3t';
+    const { deps } = recordingDeps();
+    deps.openUrl = (): Promise<never> => Promise.reject(new Error('refused'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      // Rejected create (error branch) and non-http page (warn branch), with
+      // the secret in the event URL and in the tab fallback URL.
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?token=${SECRET}` },
+        { id: 4 },
+        deps
+      );
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.openNowProcket },
+        { id: 4, url: `chrome://settings/?token=${SECRET}` },
+        deps
+      );
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify([warn.mock.calls, error.mock.calls])).not.toContain(SECRET);
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
     }
   });
 });
