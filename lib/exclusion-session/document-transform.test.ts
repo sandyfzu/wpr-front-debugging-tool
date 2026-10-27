@@ -4,7 +4,11 @@
  * rewrite (size guard, charset round trip, unchanged runs, runner faults).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { applyPipeline, EXCLUSION_PIPELINE_STEP_IDS } from '../exclusion-builder/pipeline';
+import {
+  applyPipeline,
+  EXCLUSION_PIPELINE_STEP_IDS,
+  runExclusionPipeline
+} from '../exclusion-builder/pipeline';
 import { EMPTY_EXCLUSION_SET, type ExclusionSet } from '../exclusion-builder/set';
 import { BUILDER_MARKER_META_NAME } from '../wp-rocket/constants';
 import {
@@ -82,6 +86,20 @@ describe('runDocumentPipeline', () => {
       });
     }
   );
+
+  it("hands the engine the request's decoding facts (a BOM changes what the rows match)", () => {
+    // Without a BOM libxml reads the parent's UTF-8 `été` as Latin-1 and the row misses it.
+    const html =
+      '<html><body><div class="été"><div data-wpr-lazyrender="1">x</div></div></body></html>';
+    const set = setWith({ lazyRender: ['été'] });
+    const bytes = { encoding: 'utf-8', bom: true };
+    const withBom = runDocumentPipeline({ ...request(html, set), bytes }, clock(0));
+    const plain = runDocumentPipeline(request(html, set), clock(0));
+    const engine = runExclusionPipeline(html, set, { bytes });
+    expect(engine.completed && engine.html).not.toBe(html);
+    expect(withBom).toMatchObject({ ok: true, html: engine.completed && engine.html });
+    expect(plain).toMatchObject({ ok: true, html });
+  });
 
   it('treats exactly-at-budget as within budget', () => {
     expect(runDocumentPipeline(request(DELAYED), clock(0, 100)).ok).toBe(true);
