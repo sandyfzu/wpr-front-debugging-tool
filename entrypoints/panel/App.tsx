@@ -31,6 +31,7 @@ import { PageHeader } from '../../components/ui/page-header';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Toasts } from '../../components/ui/toast';
 import { selectTabAsks } from '../../lib/messaging/tab-asks';
+import { selectTabPushConnect } from '../../lib/messaging/tab-push-client';
 import { createLogger } from '../../lib/logger';
 import type { FdtData } from '../../lib/wp-rocket/types';
 import { panelColdStart } from './cold-start';
@@ -59,6 +60,7 @@ import {
 } from './state/use-fdt-data';
 import { createSearchStore, type SearchStore } from './state/search';
 import { devtoolsInspectedTabId, fdtRequestEdges, realMessagingEdges } from './state/edges';
+import { withRelayedPushes } from './state/relayed-pushes';
 import { createHardReloadBudget } from './state/hard-reload-budget';
 
 const log = createLogger('panel');
@@ -151,7 +153,12 @@ export function PanelApp(props: AppProps): JSX.Element {
     // eslint-disable-next-line solid/reactivity
     props.data ??
     ((): FdtDataStore => {
-      const edges = realMessagingEdges();
+      // Pushes arrive directly where the panel has the `tabs` API; elsewhere
+      // (Firefox) the same receivers are also fed through the background.
+      const edges = withRelayedPushes(realMessagingEdges(), {
+        connect: selectTabPushConnect(browser),
+        inspectedTabId: devtoolsInspectedTabId
+      });
       return createFdtDataStore({
         inspectedTabId: devtoolsInspectedTabId,
         ...fdtRequestEdges(selectTabAsks(browser)),
