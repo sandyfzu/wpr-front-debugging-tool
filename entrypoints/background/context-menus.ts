@@ -34,6 +34,12 @@ import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { readLastError, type LastErrorSlot } from '../../utils/last-error';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import { openExclusionOverlay } from './exclusion-overlay';
+import {
+  platformMenuContexts,
+  type MenuContext,
+  type NonEmpty,
+  type PlatformMenuContext
+} from './menu-contexts';
 
 const log = createLogger('context-menus');
 
@@ -51,17 +57,21 @@ interface MenuEntry {
   action: MenuAction;
   id: string;
   title: string;
-  /** Contexts, nonempty as the API requires (all pages or the action icon only). */
-  contexts: readonly ['all' | 'action', ...('all' | 'action')[]];
+  /**
+   * Contexts, nonempty as the API requires (all pages or the action icon
+   * only) — browser-agnostic names, translated at creation.
+   */
+  contexts: readonly [MenuContext, ...MenuContext[]];
   /** Document URL restriction, required for everything page-scoped. */
   documentUrlPatterns?: readonly string[];
 }
 
 /**
  * The complete menu registry — adding an entry is one row here plus its
- * action arm, nothing else. Chromium shows at most 6 top-level rows in the
- * action menu (`ACTION_MENU_TOP_LEVEL_LIMIT`) and drops the rest; the rows
- * reaching it (`'all'` + `'action'`) are exactly 6 — test-pinned.
+ * action arm, nothing else. Chromium and Firefox both show at most 6
+ * top-level rows in the action menu (`ACTION_MENU_TOP_LEVEL_LIMIT`) and drop
+ * the rest; the rows reaching it (`'all'` + `'action'`) are exactly 6 —
+ * test-pinned.
  */
 const MENU_ENTRIES: readonly MenuEntry[] = [
   {
@@ -122,8 +132,13 @@ export interface MenuCreateParams {
   id: string;
   title: string;
   /** Fresh arrays: the browser keeps its own copy of every list. */
-  contexts: ['all' | 'action', ...Array<'all' | 'action'>];
+  contexts: NonEmpty<MenuContext>;
   documentUrlPatterns?: string[];
+}
+
+/** A creation row with its contexts named as the running platform expects. */
+export interface PlatformMenuCreateParams extends Omit<MenuCreateParams, 'contexts'> {
+  contexts: NonEmpty<PlatformMenuContext>;
 }
 
 /**
@@ -139,6 +154,22 @@ export function menuCreateParams(): MenuCreateParams[] {
     ...(entry.documentUrlPatterns !== undefined
       ? { documentUrlPatterns: [...entry.documentUrlPatterns] }
       : {})
+  }));
+}
+
+/**
+ * The creation rows as the running platform receives them: registry order
+ * and shape, contexts translated for the manifest version (identity on
+ * Manifest V3 — those rows equal {@link menuCreateParams}).
+ *
+ * @param manifestVersion The running manifest's `manifest_version`.
+ * @returns One row per registry entry.
+ * @throws {@link RangeError} For an unsupported manifest version.
+ */
+export function platformMenuCreateParams(manifestVersion: number): PlatformMenuCreateParams[] {
+  return menuCreateParams().map((params) => ({
+    ...params,
+    contexts: platformMenuContexts(params.contexts, manifestVersion)
   }));
 }
 
@@ -411,6 +442,39 @@ export function reportMenuCreateFailure(id: string, runtime: LastErrorSlot): str
   return failure;
 }
 
+/** The browser's `contextMenus.create`, as far as row creation calls it. */
+export type MenuCreateFn = (params: PlatformMenuCreateParams, callback: () => void) => unknown;
+
+/**
+ * Create each row independently: a row the browser refuses synchronously
+ * (e.g. a context name it rejects) is logged with its id and cause and never
+ * stops the rows after it; asynchronous failures arrive through the create
+ * callback's `lastError`, read by {@link reportMenuCreateFailure}.
+ *
+ * @param rows The creation rows, in registry order.
+ * @param create The browser's create call.
+ * @param runtime The runtime whose `lastError` each callback reads.
+ * @returns The ids of the rows whose create threw (empty when none did).
+ */
+export function createMenuRows(
+  rows: readonly PlatformMenuCreateParams[],
+  create: MenuCreateFn,
+  runtime: LastErrorSlot
+): string[] {
+  const refused: string[] = [];
+  for (const params of rows) {
+    try {
+      create(params, () => {
+        reportMenuCreateFailure(params.id, runtime);
+      });
+    } catch (cause) {
+      refused.push(params.id);
+      log.error('Menu entry creation refused', { id: params.id, cause });
+    }
+  }
+  return refused;
+}
+
 /**
  * Create all registered entries, after clearing whatever exists.
  *
@@ -424,11 +488,20 @@ async function createMenuEntries(): Promise<void> {
   } catch (cause) {
     log.warn('Clearing existing menu entries failed', cause);
   }
-  for (const params of menuCreateParams()) {
-    browser.contextMenus.create(params, () => {
-      reportMenuCreateFailure(params.id, browser.runtime);
-    });
-  }
+  // The manifest the browser actually loaded names the toolbar context.
+  const rows = platformMenuCreateParams(browser.runtime.getManifest().manifest_version);
+  createMenuRows(
+    rows,
+    (params, callback) => browser.contextMenus.create(params, callback),
+    browser.runtime
+  );
+}
+
+/** Run one (re)creation pass; any failure is logged, never an unhandled rejection. */
+function recreateMenuEntries(): void {
+  createMenuEntries().catch((cause: unknown) => {
+    log.error('Creating the menu entries failed', cause);
+  });
 }
 
 /**
@@ -440,12 +513,8 @@ async function createMenuEntries(): Promise<void> {
  *   update entry routes through it; the service owns the actual update).
  */
 export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResult | null>): void {
-  browser.runtime.onInstalled.addListener(() => {
-    void createMenuEntries();
-  });
-  browser.runtime.onStartup.addListener(() => {
-    void createMenuEntries();
-  });
+  browser.runtime.onInstalled.addListener(recreateMenuEntries);
+  browser.runtime.onStartup.addListener(recreateMenuEntries);
 
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => sendMessage(type, data, target),
