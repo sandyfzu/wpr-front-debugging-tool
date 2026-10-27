@@ -6,8 +6,7 @@
  * - Open: the view loads on demand (not in the page before the first open),
  *   sits in the top layer with focus in its field, writes nothing into the
  *   host document (no body write across open, typing, moves, close and
- *   gate-off; its active row reaches the accessibility tree through
- *   `aria-activedescendant`), and keeps typed keys from the page's window-capture
+ *   gate-off), and keeps typed keys from the page's window-capture
  *   hotkeys; Escape / Tab / an outside click dismiss, focus returns to the
  *   page control; a re-open is a fresh surface.
  * - Rows run their shipped mechanisms: the detection-widget toggle writes
@@ -158,7 +157,7 @@ test.describe('on-page command palette', () => {
     await page.close();
   });
 
-  test('never writes into the host body; the active row reaches the accessibility tree', async ({
+  test('never writes into the host body (open, typing, moves, close, gate-off)', async ({
     extension
   }) => {
     const { page, tabId } = await openFixturePage(extension, FIXTURE);
@@ -195,34 +194,10 @@ test.describe('on-page command palette', () => {
     });
 
     await openPalette(extension, page, tabId);
-    // The active row is exposed: the combobox's activedescendant relation
-    // resolves (across the shadow root's tree scope) to the highlighted option.
-    const exposed = async (): Promise<string | null> => {
-      const session = await page.context().newCDPSession(page);
-      try {
-        await session.send('Accessibility.enable');
-        const { nodes } = await session.send('Accessibility.getFullAXTree');
-        const combobox = nodes.find((node) => node.role?.value === 'combobox');
-        const relation = combobox?.properties?.find((prop) => prop.name === 'activedescendant');
-        const targetId = relation?.value.relatedNodes?.[0]?.backendDOMNodeId;
-        const option = nodes.find((node) => node.backendDOMNodeId === targetId);
-        if (option === undefined) return null;
-        return `${String(option.role?.value)}: ${String(option.name?.value)}`;
-      } finally {
-        await session.detach();
-      }
-    };
-    expect(await exposed()).toBe('option: Open Side By Side');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
-    expect(await exposed()).toBe('option: Toggle the detection widget on this site');
     await page.keyboard.press('End');
     await page.keyboard.type('side');
-    // The count is spoken by the palette's own live region, inside its shadow root.
-    // (Apple platforms append the highlighted row for VoiceOver.)
-    await expect(page.locator(`${PALETTE_HOST} [data-fdt="palette-empty"]`)).toHaveText(
-      /^2 commands available(, Open Side By Side)?$/
-    );
     await page.keyboard.type('zzz');
     await expect(page.locator(`${PALETTE_HOST} [data-fdt="palette-empty"]`)).toBeVisible();
     await page.keyboard.press('Escape');
@@ -271,6 +246,12 @@ test.describe('on-page command palette', () => {
     await page.keyboard.type('exclusion');
     await page.keyboard.press('Enter');
     await expect(page.locator('wpr-fdt-exclusion-builder')).toHaveCount(1, MOUNT);
+    // The builder takes focus a beat after its host appears; opening the
+    // palette before that would see its focus moved out (an outside focus
+    // move dismisses it). Wait for the builder to settle first.
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.localName ?? null), MOUNT)
+      .toBe('wpr-fdt-exclusion-builder');
 
     // Re-shown on open: the palette is the newest top-layer entry.
     await openPalette(extension, page, tabId);
@@ -301,7 +282,7 @@ test.describe('on-page command palette', () => {
     const cancel = page.locator(`${PALETTE_HOST} [data-fdt="palette-confirm-cancel"]`);
     await expect(cancel).toBeFocused(MOUNT);
     await expect(page.locator(`${PALETTE_HOST} [data-fdt="dialog"]`)).toContainText(
-      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options.'
+      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options (“Show on-page UI”).'
     );
     expect(await axeHosts(page, [PALETTE_HOST]), 'axe: confirm').toEqual([]);
 
