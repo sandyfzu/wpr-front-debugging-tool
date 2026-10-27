@@ -18,6 +18,12 @@ export interface LooseMessageSender {
   url?: unknown;
   /** The sending frame: `0` for a top-level frame; only set when `tab` is. */
   frameId?: unknown;
+  /**
+   * The sending document's id (Chromium 106+, Firefox 153+): names that one
+   * document, so an injection aimed at it never lands in the next page the
+   * frame navigates to.
+   */
+  documentId?: unknown;
   /** The sending extension's id. */
   id?: unknown;
 }
@@ -56,6 +62,17 @@ export function resolveSenderTabId(sender: LooseMessageSender | undefined): numb
 export function resolveSenderUrl(sender: LooseMessageSender | undefined): URL | null {
   const raw = sender?.url;
   return typeof raw === 'string' ? parseUrl(raw) : null;
+}
+
+/**
+ * The sending document's id, or null where the browser sends none (older
+ * engines) or a junk one — callers then fall back to the frame.
+ *
+ * @param sender Runtime sender as delivered on a received message, or undefined.
+ */
+export function resolveSenderDocumentId(sender: LooseMessageSender | undefined): string | null {
+  const raw = sender?.documentId;
+  return typeof raw === 'string' && raw !== '' ? raw : null;
 }
 
 /** A content-script sender in a tab's top frame, resolved to its tab and page origin. */

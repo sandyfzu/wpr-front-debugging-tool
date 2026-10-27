@@ -30,7 +30,7 @@ import {
 } from '../../utils/context-timers';
 import { createOverlayController } from './controller';
 import { createPageTools } from './page-tools';
-import { mountOverlay } from './mount-overlay';
+import { mountOverlay } from '../../components/injected-ui/mount-overlay';
 import { startPicking } from './picker';
 import { createMessagingSessionPort, type SessionTransport } from './session/port';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';

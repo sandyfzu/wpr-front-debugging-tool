@@ -8,6 +8,7 @@ import {
   isOwnExtensionPageSender,
   numericTabId,
   resolveSenderTabId,
+  resolveSenderDocumentId,
   resolveSenderUrl,
   resolveTopFrameSender
 } from './sender';
@@ -68,6 +69,21 @@ describe('resolveSenderUrl', () => {
     expect(resolveSenderUrl({ url: undefined })).toBeNull();
     expect(resolveSenderUrl({ url: 42 })).toBeNull();
     expect(resolveSenderUrl({ url: 'not-a-url' })).toBeNull();
+  });
+});
+
+describe('resolveSenderDocumentId', () => {
+  it('reads a document id the browser sent', () => {
+    expect(resolveSenderDocumentId({ documentId: '1F2E3D' })).toBe('1F2E3D');
+  });
+
+  it.each<[string, unknown]>([
+    ['absent', undefined],
+    ['empty', ''],
+    ['not a string', 42]
+  ])('yields null for an id that is %s', (_label, documentId) => {
+    expect(resolveSenderDocumentId({ documentId })).toBeNull();
+    expect(resolveSenderDocumentId(undefined)).toBeNull();
   });
 });
 

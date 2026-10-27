@@ -40,6 +40,7 @@ import {
   type NonEmpty,
   type PlatformMenuContext
 } from './menu-contexts';
+import { pageCommandLabel } from '../../lib/page-commands/commands';
 
 const log = createLogger('context-menus');
 
@@ -52,7 +53,11 @@ export type MenuAction =
   | 'toggle-detection-widget'
   | 'open-nowprocket';
 
-/** One registered entry: id, label, and where the browser may show it. */
+/**
+ * One registered entry: id, label, and where the browser may show it. The
+ * on-page commands' labels come from their one declaring site
+ * (`lib/page-commands`); the menu-native fields stay here.
+ */
 interface MenuEntry {
   action: MenuAction;
   id: string;
@@ -77,21 +82,21 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
   {
     action: 'side-by-side',
     id: CONTEXT_MENU_IDS.wprSideBySide,
-    title: 'Open Side By Side',
+    title: pageCommandLabel('side-by-side'),
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   },
   {
     action: 'psi-side-by-side',
     id: CONTEXT_MENU_IDS.psiSideBySide,
-    title: 'Open Side By Side Performance',
+    title: pageCommandLabel('psi-side-by-side'),
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   },
   {
     action: 'exclusion-builder',
     id: CONTEXT_MENU_IDS.exclusionBuilder,
-    title: 'Exclusion Builder',
+    title: pageCommandLabel('exclusion-builder'),
     // Only from the action's own menu: it opens the builder overlay on the
     // tab's page (a tool for the page as a whole, not for what was clicked).
     contexts: ['action'],
@@ -112,7 +117,7 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     // so every right-click changes the site's visible state.
     action: 'toggle-detection-widget',
     id: CONTEXT_MENU_IDS.toggleDetectionWidget,
-    title: 'Toggle the detection widget on this site',
+    title: pageCommandLabel('toggle-detection-widget'),
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   },
@@ -121,7 +126,7 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     // link or image under the pointer.
     action: 'open-nowprocket',
     id: CONTEXT_MENU_IDS.openNowProcket,
-    title: 'Open ?nowprocket',
+    title: pageCommandLabel('open-nowprocket'),
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   }

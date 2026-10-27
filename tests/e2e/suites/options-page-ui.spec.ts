@@ -111,7 +111,7 @@ test.describe('options instant rows', () => {
           code: 'KeyP',
           alt: true
         });
-      await expectToast(page, 'success', 'Palette shortcut saved');
+      await expectToast(page, 'success', 'Command palette shortcut saved');
       await expect(page.locator('#option-palette-chord-caveat')).toHaveCount(0);
 
       // A Ctrl+Alt binding saves and keeps the caveat up.

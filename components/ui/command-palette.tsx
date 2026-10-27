@@ -2,47 +2,47 @@
  * The command palette's combobox — the APG combobox the study's keyboard
  * contract commits to, shaped for command execution rather than form values.
  *
- * Why wrapping Kobalte's `Combobox` and not a bespoke field+list: the library
- * already implements the exact APG surface this needs — `role="combobox"`
- * input with `aria-expanded`/`aria-controls`/`aria-activedescendant` (caret
- * focus stays in the field), arrow/Home/End navigation with optional wrap,
- * Enter accepting the highlighted option, Escape closing — all per its own
- * test suite. The value-oriented selection is defused for actions: every
- * selection (Enter or click) resolves to one command run, non-command clear
- * events report `null` and are dropped, and the palette unmounts on run, so
- * the text-echo of a selection is never seen.
+ * The surface: a `role="combobox"` field (`aria-expanded`, `aria-controls`,
+ * `aria-autocomplete="list"`, `aria-activedescendant` — caret focus stays in
+ * the field) over its `role="listbox"`; arrows move the highlight with wrap
+ * (disabled rows rendered but never rested on), Home/End jump to the enabled
+ * ends, Enter runs the highlighted row, a click runs a row, Tab and Escape
+ * dismiss. The highlight starts on the top-ranked enabled row and re-arms on
+ * every query, so Enter runs the best match without an arrow key.
  *
- * Montage notes (why the pieces look as they do):
- * - Mount-driven like the dialog it sits in: the caller renders it only while
- *   open; the combobox boots open (`defaultOpen`) and the whole surface is
- *   gone at close.
- * - The list is NOT rendered through `Combobox.Content` — that piece exists
- *   to popper-position a popup above the page, which a dialog-inside layout
- *   fights. Rendering the bare `Listbox` (same state wiring, minus the
- *   positioning layer) keeps the input+list as one flow inside the dialog,
- *   where the dialog itself supplies focus trapping and dismissals.
- * - Matching/ranking is injected ({@link CommandPaletteProps.filter}); the
- *   wrapper only feeds the ordered result to the collection (its own filter
- *   is therefore a pass-through).
- * - Enter works without a preceding arrow key because the highlight starts
- *   on the top-ranked row and re-arms on every query change (Kobalte clears
- *   the focus key when the input value changes — the highlight guard child
- *   restores it against the fresh list).
+ * Why its own combobox and not the UI library's: the library's combobox
+ * speaks through a page-global live announcer it creates in `document.body`
+ * — for an injected palette, a write into the host page being debugged,
+ * outside the shadow root and never removed. This one writes only inside
+ * its own render tree; its single polite live region (the always-mounted
+ * `role="status"`) carries the result count, the no-match line and, on
+ * Apple platforms, the highlighted row.
+ *
+ * Matching/ranking is injected ({@link CommandPaletteProps.filter}): the
+ * component renders the ranked result as given. The dialog shell supplies
+ * focus handling and dismissals.
  */
 import type { JSX } from 'solid-js';
-import { Show, createEffect, createMemo, createSignal, on } from 'solid-js';
-import { Combobox as KobalteCombobox } from '@kobalte/core/combobox';
-import { useComboboxContext } from '@kobalte/core/combobox';
-import type { CollectionNode } from '@kobalte/core';
+import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
 import type { LucideIcon } from 'lucide-solid';
 import { Dynamic } from 'solid-js/web';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
+import {
+  fieldHighlightMove,
+  highlightAfterRank,
+  isApplePlatform,
+  moveHighlight,
+  noMatchText,
+  paletteAnnouncement,
+  scrollDeltaToReveal,
+  type AnnouncementCause
+} from './command-palette-model';
 import { ModalDialog } from './dialog';
 
 /** One runnable entry of the palette: a page or an action. */
 export interface PaletteCommand {
-  /** Stable identity — the combobox item key and the consumer's dispatch key. */
+  /** Stable identity — the row's key and the consumer's dispatch key. */
   id: string;
   /** The row's primary text (and the matcher's first vocabulary). */
   label: string;
@@ -59,7 +59,7 @@ export interface PaletteCommand {
 }
 
 export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> {
-  /** Called with the dismissed palette's close request (Escape / outside click). */
+  /** Called with the dismissed palette's close request (Escape / Tab / outside click). */
   onClose: () => void;
   /** Every command, in registry order (before matching). */
   commands: readonly T[];
@@ -72,6 +72,14 @@ export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> 
   onRun: (command: T) => void;
   /** Extra classes on the dialog panel, merged last so callers win. */
   class?: string;
+  /**
+   * Render into this node — an injected UI's shadow-root container (the
+   * dialog's mounted mode: non-modal toward the host page, Escape handled
+   * on the panel).
+   */
+  mount?: HTMLElement;
+  /** The dialog's accessible description (default: the panel's wording). */
+  description?: string;
 }
 
 /**
@@ -94,142 +102,54 @@ const ROW_CLASSES =
 const EMPTY_CLASSES = 'px-2 py-1.5 text-xs text-fg-muted';
 
 /**
- * Render one option row out of a ranked command: icon, label, hint — the
- * disabled row's hint slot carries its explanation instead.
- *
- * @param props.item The collection node (its `rawValue` is the command).
+ * The element ids. Static: one palette renders per document or shadow
+ * root at a time (it is mount-driven), and audits key on these shapes.
  */
-function CommandRow(props: { item: CollectionNode<PaletteCommand> }): JSX.Element {
-  const command = (): PaletteCommand => props.item.rawValue;
-  return (
-    <KobalteCombobox.Item
-      item={props.item}
-      class={cn(ROW_CLASSES, FOCUS_RING)}
-      data-fdt="palette-command"
-    >
-      <Show when={command().icon}>
-        <Dynamic
-          component={command().icon}
-          size={14}
-          class="shrink-0 text-fg-muted"
-          aria-hidden="true"
-        />
-      </Show>
-      <span class="min-w-0 flex-1 truncate">{command().label}</span>
-      <span data-fdt="palette-command-hint" class="shrink-0 text-2xs">
-        {command().disabled ? command().disabledNote : command().hint}
-      </span>
-    </KobalteCombobox.Item>
-  );
-}
+const FIELD_ID = 'fdt-command-palette-input';
+const LIST_ID = 'fdt-command-palette-listbox';
 
 /**
- * Keep the combobox highlight on the top-ranked row whenever it is unset —
- * at open, after every query change (the library clears the focus key while
- * the input value changes), and after caret moves (its input keydown clears
- * it for left/right, too). This is what makes Enter run something without a
- * preceding arrow key, and what walks the highlight down as the user filters.
+ * A row's element id (the field's active-descendant target).
  *
- * @param props.options The current ranked list (each change re-arms the guard).
- * @param props.registerArm Receives the arm action so the input's keydown
- *   can arm the highlight after the library's own key handling (caret moves
- *   clear it without changing the ranked list).
+ * @param commandId The row's command id.
  */
-function HighlightGuard(props: {
-  options: readonly PaletteCommand[];
-  registerArm?: (armTopEnabled: () => void) => void;
-}): JSX.Element {
-  const context = useComboboxContext();
-  let disposed = false;
-  /** The one coalesced re-arm tick (declared first: cleanup references it). */
-  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  onCleanup(() => {
-    disposed = true;
-    if (pendingTimer !== null) clearTimeout(pendingTimer);
-  });
-
-  /**
-   * Arm the highlight onto the first enabled row (never merely the first row:
-   * a future registry order putting a disabled row on top must not arm a
-   * dead key), only when the highlight is unset — an armed guard never
-   * clobbers a user-moved position.
-   */
-  const armTopEnabled = (): void => {
-    if (disposed) return;
-    const listState = context.listState();
-    if (listState.selectionManager().focusedKey() != null) return;
-    for (const key of listState.collection().getKeys()) {
-      const item = listState.collection().getItem(key);
-      if (item !== undefined && !item.disabled) {
-        listState.selectionManager().setFocusedKey(key);
-        break;
-      }
-    }
-  };
-  // The registration is a once-per-mount wiring read (the component body
-  // runs once; the callback is fixed at build time), so the rule's concern
-  // does not apply.
-  // eslint-disable-next-line solid/reactivity
-  props.registerArm?.(armTopEnabled);
-
-  // One coalesced tick: every arm trigger schedules the same re-arm, so the
-  // field's writes have settled first and no burst double-arms.
-  const schedule = (): void => {
-    if (disposed) return;
-    if (pendingTimer !== null) clearTimeout(pendingTimer);
-    pendingTimer = setTimeout(() => {
-      pendingTimer = null;
-      armTopEnabled();
-    }, 0);
-  };
-  // Ranked-list changes (every query write clears the key)…
-  createEffect(
-    on(
-      () => props.options,
-      () => {
-        schedule();
-      }
-    )
-  );
-  // …and the collection's own availability: the library builds its option
-  // nodes asynchronously, so the mount's first tick can land before the
-  // rows exist — the collection's first real build is the arm's authority.
-  createEffect(() => {
-    void context.listState().collection();
-    schedule();
-  });
-  return <></>;
+function rowId(commandId: string): string {
+  return `${LIST_ID}-item-${commandId}`;
 }
 
 /**
  * Render the command palette surface: the combobox field over its ranked
  * list, inside the shared modal dialog. Mount-driven — render inside a
- * `<Show>` while it should be open; the input takes focus on mount, arrows
- * move the highlight (with wrap), Home/End jump to the ends, Enter runs the
- * highlighted command, Escape and an outside click dismiss.
+ * `<Show>` while it should be open; the field takes focus on mount, in the
+ * same task (another UI's frame callback never finds focus unclaimed and
+ * takes it, which a mounted palette would read as an outside focus and
+ * dismiss on).
  *
  * @param props.onClose The dismissal callback.
  * @param props.commands The ranked source rows, in registry order.
  * @param props.filter The caller's matcher (raw query → ordered rows).
  * @param props.onRun The chosen command's execution callback.
  * @param props.class Extra panel classes.
+ * @param props.mount The injected UI's render node (the dialog's mounted mode).
+ * @param props.description The accessible description override.
  */
 export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
   props: CommandPaletteProps<T>
 ): JSX.Element {
+  /** The field, focused as the dialog mounts (no task gap another UI could take focus in). */
+  let field: HTMLInputElement | undefined;
   return (
     <ModalDialog
       onClose={props.onClose}
+      initialFocus={() => field}
       title="Command palette"
-      description="Filter the pages and actions, run the highlighted one"
+      description={props.description ?? 'Filter the pages and actions, run the highlighted one'}
       class={cn('pt-1.5', props.class)}
+      mount={props.mount}
       onKeyDownCapture={(event) => {
-        // Tab = dismiss: the combobox's own Tab completion (close + reset
-        // input) cannot finish inside this modal — its focus trap returns to
-        // this field, so the library's close leaves a wiped query and a
-        // rendered list under a closed `aria-expanded`. Dismissing the whole
-        // palette is the same decision in one step (and the cursor's focus
-        // returns to the trigger).
+        // Tab = dismiss: the field is the dialog's only stop (the list never
+        // takes focus), so Tab would cycle back into the same field — ending
+        // the palette is the single-stop combobox's natural Tab.
         if (event.key !== 'Tab') return;
         event.preventDefault();
         event.stopPropagation();
@@ -240,139 +160,236 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
         commands={props.commands}
         filter={props.filter}
         onRun={props.onRun}
-        onDismiss={props.onClose}
+        fieldRef={(element) => {
+          field = element;
+        }}
       />
     </ModalDialog>
   );
 }
 
-export interface PaletteComboboxProps<T extends PaletteCommand = PaletteCommand> {
+/** Props of {@link PaletteCombobox}. */
+interface PaletteComboboxProps<T extends PaletteCommand> {
   /** The commands, in registry order (before matching). */
   commands: readonly T[];
   /** The caller's matcher (raw query → ordered rows). */
   filter: (commands: readonly T[], query: string) => readonly T[];
   /** The chosen command's execution callback. */
   onRun: (command: T) => void;
-  /**
-   * The dismissal callback — the input's Tab intercepts here: the library's
-   * own Tab semantics (close + reset input) cannot complete inside a modal
-   * whose field is the only focus stop (its close leaves the dialog open and
-   * wipes the query), so Tab dismisses the palette, exactly how the key
-   * would end a single-focusable combobox activation.
-   */
-  onDismiss: () => void;
+  /** Receives the field element (the dialog focuses it on mount). */
+  fieldRef: (element: HTMLInputElement) => void;
 }
 
 /**
- * The library's announcement vocabulary, retitled for the palette ("Commands"
- * — the default names the list "Suggestions"). The count announcement keeps
- * the library's own literal contract, replicated structurally: inform only a
- * single-result open, stay silent on larger counts (each row carries its own
- * accessible text).
- */
-interface PaletteTranslations {
-  /** The list's accessible name. */
-  listboxLabel: string;
-  /** The trigger's label (no trigger renders in the palette). */
-  triggerLabel: string;
-  /** Announced when the highlight moves on Apple screen readers. */
-  focusAnnouncement(optionText: string, isSelected: boolean): string;
-  /** Announced when an option is selected on Apple screen readers. */
-  selectedAnnouncement(optionText: string): string;
-  /** Announced on open/option-count change — single-result Opens only. */
-  countAnnouncement(optionCount: number): 'one option available' | undefined;
-}
-
-/** The palette's translation table (the label stay the one retitled pair). */
-const PALETTE_TRANSLATIONS: PaletteTranslations = {
-  listboxLabel: 'Commands',
-  triggerLabel: 'Search commands',
-  focusAnnouncement: (text, isSelected) => `${text}${isSelected ? ', selected' : ''}`,
-  selectedAnnouncement: (text) => `${text}, selected`,
-  countAnnouncement: (count) => (count === 1 ? 'one option available' : undefined)
-};
-
-/**
- * The palette's combobox (split from the dialog shell so the query state and
- * the highlight guard stay one component deep).
+ * The palette's combobox: query, ranked rows, highlight and live region in
+ * one component (split from the dialog shell only).
  *
- * @param props.commands Registry-ordered commands.
- * @param props.filter The caller's matcher.
- * @param props.onRun The execution callback.
+ * @param props See {@link PaletteComboboxProps}.
  */
-function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
-  props: PaletteComboboxProps<T>
-): JSX.Element {
+function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T>): JSX.Element {
+  const speakActiveRow = isApplePlatform(globalThis.navigator);
   const [query, setQuery] = createSignal('');
   const ranked = createMemo(() => props.filter(props.commands, query()));
-  const rankedOptions = createMemo(() => [...ranked()]);
+  const [activeId, setActiveId] = createSignal<string | null>(null);
+  /** The live region's sentence (empty until the first change worth speaking). */
+  const [announcement, setAnnouncement] = createSignal('');
+  const empty = (): boolean => ranked().length === 0;
+  const active = (): T | undefined => ranked().find((command) => command.id === activeId());
+  let list: HTMLUListElement | undefined;
 
-  /** The guard's arm action, registered by the child on mount. */
-  let arm: (() => void) | null = null;
-  /** The coalesced post-library tick (caret moves clear the highlight key
-      without changing the ranked list, so the guard's own effect never
-      fires for them; this tick arms once the key handling has settled). */
-  let pendingArm: ReturnType<typeof setTimeout> | null = null;
-  onCleanup(() => {
-    if (pendingArm !== null) clearTimeout(pendingArm);
-  });
-  const scheduleArm = (): void => {
-    if (pendingArm !== null) clearTimeout(pendingArm);
-    pendingArm = setTimeout(() => {
-      pendingArm = null;
-      arm?.();
-    }, 0);
+  /**
+   * Update the live region after one change (unchanged text stays silent).
+   *
+   * @param cause What changed.
+   */
+  const announce = (cause: AnnouncementCause): void => {
+    const next = paletteAnnouncement(cause, {
+      query: query(),
+      count: ranked().length,
+      activeLabel: active()?.label ?? null,
+      speakActiveRow
+    });
+    if (next !== null) setAnnouncement(next);
+  };
+
+  // Every re-rank re-places the highlight (a new query re-arms the top row);
+  // only a query change is spoken — the open itself is named by the dialog.
+  let lastQuery = ''; // the field starts empty on every mount
+  createEffect(
+    on(ranked, (rows) => {
+      const queryChanged = query() !== lastQuery;
+      lastQuery = query();
+      setActiveId((current) => highlightAfterRank(rows, current, queryChanged));
+      if (queryChanged) announce('query');
+    })
+  );
+
+  // Keep the highlighted row in view by scrolling the list alone.
+  createEffect(
+    on(activeId, (id) => {
+      if (id === null || list === undefined || list.hidden) return;
+      const row = [...list.children].find((child) => child.id === rowId(id));
+      if (row === undefined) return;
+      list.scrollTop += scrollDeltaToReveal(
+        row.getBoundingClientRect(),
+        list.getBoundingClientRect()
+      );
+    })
+  );
+
+  /**
+   * Run a row when it is enabled (disabled rows are inert).
+   *
+   * @param command The chosen row.
+   */
+  const run = (command: T | undefined): void => {
+    if (command === undefined || command.disabled === true) return;
+    props.onRun(command);
+  };
+
+  /**
+   * The field's keys: highlight moves, Enter runs (Escape and Tab belong to
+   * the dialog shell).
+   *
+   * @param event The field's keydown.
+   */
+  const onFieldKeyDown = (event: KeyboardEvent): void => {
+    // An IME composition owns its keys (Enter commits the composition).
+    if (event.isComposing) return;
+    const move = fieldHighlightMove(event);
+    if (move !== null) {
+      event.preventDefault();
+      setActiveId((current) => moveHighlight(ranked(), current, move));
+      announce('move');
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      run(active());
+    }
+  };
+
+  /** The field's active-descendant (unset while no row is highlighted). */
+  const activeDescendant = (): string | undefined => {
+    const command = active();
+    return command === undefined ? undefined : rowId(command.id);
   };
 
   return (
-    <KobalteCombobox
-      id="fdt-command-palette"
-      class="flex min-h-0 flex-1 flex-col gap-1"
-      defaultOpen
-      options={rankedOptions()}
-      optionValue={(command) => command.id}
-      optionTextValue={(command) => command.label}
-      optionLabel={(command) => command.label}
-      optionDisabled={(command) => command.disabled ?? false}
-      // Ranking/filtering is the caller's: everything ranked renders.
-      defaultFilter={() => true}
-      itemComponent={CommandRow}
-      shouldFocusWrap
-      allowsEmptyCollection
-      onInputChange={(next) => setQuery(next)}
-      onChange={(command: T | null) => {
-        if (command !== null) props.onRun(command);
-      }}
-      translations={PALETTE_TRANSLATIONS}
-    >
-      <KobalteCombobox.Input
+    <div data-fdt="palette" class="flex min-h-0 flex-1 flex-col gap-1">
+      <input
+        ref={(element) => {
+          props.fieldRef(element);
+        }}
+        id={FIELD_ID}
         data-fdt="palette-input"
+        type="text"
+        role="combobox"
         class={cn(FIELD_CLASSES, FOCUS_RING)}
         placeholder="Type a command…"
         aria-label="Search commands"
-        onKeyDown={() => {
-          scheduleArm();
-        }}
+        aria-haspopup="listbox"
+        aria-autocomplete="list"
+        aria-controls={LIST_ID}
+        // Expanded only while the list has rows to show (it stays mounted,
+        // hidden, while empty — `aria-controls` keeps naming it).
+        aria-expanded={!empty()}
+        aria-activedescendant={activeDescendant()}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck={false}
+        onInput={(event) => setQuery(event.currentTarget.value)}
+        onKeyDown={onFieldKeyDown}
       />
-      <Show
-        when={ranked().length > 0}
-        fallback={
-          <p data-fdt="palette-empty" class={EMPTY_CLASSES}>
-            No commands match “{query()}”
-          </p>
-        }
+      <ul
+        ref={(element) => {
+          list = element;
+        }}
+        id={LIST_ID}
+        role="listbox"
+        aria-label="Commands"
+        data-fdt="palette-list"
+        class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
+        hidden={empty()}
+        // Pressing a row must not move focus out of the field (the field is
+        // the combobox; a blur would also read as an outside focus move).
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
       >
-        <KobalteCombobox.Listbox
-          data-fdt="palette-list"
-          class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
-        />
+        <For each={ranked()}>
+          {(command) => (
+            <CommandRow
+              command={command}
+              highlighted={command.id === activeId()}
+              onHover={() => {
+                if (command.disabled !== true) setActiveId(command.id);
+              }}
+              onRun={() => {
+                run(command);
+              }}
+            />
+          )}
+        </For>
+      </ul>
+      {/* Always mounted (a live region must exist before its text changes):
+          the visible no-match line while nothing matches — derived from the
+          current query, so it is never blank or stale (an empty command set,
+          a re-rank without a query change) — visually hidden (counts, and the
+          highlighted row on Apple platforms) otherwise. */}
+      <p data-fdt="palette-empty" role="status" class={empty() ? EMPTY_CLASSES : 'sr-only'}>
+        {empty() ? noMatchText(query()) : announcement()}
+      </p>
+    </div>
+  );
+}
+
+/** Props of {@link CommandRow}. */
+interface CommandRowProps {
+  /** The ranked row. */
+  command: PaletteCommand;
+  /** Whether the highlight rests on this row. */
+  highlighted: boolean;
+  /** A mouse moved over the row. */
+  onHover: () => void;
+  /** The row was clicked. */
+  onRun: () => void;
+}
+
+/**
+ * Render one option row: icon, label, hint — the disabled row's hint slot
+ * carries its explanation instead. The highlighted row is the selected
+ * option (the APG list-autocomplete combobox marks its active descendant
+ * `aria-selected`).
+ *
+ * @param props See {@link CommandRowProps}.
+ */
+function CommandRow(props: CommandRowProps): JSX.Element {
+  const disabled = (): boolean => props.command.disabled === true;
+  return (
+    <li
+      id={rowId(props.command.id)}
+      role="option"
+      class={cn(ROW_CLASSES, FOCUS_RING)}
+      data-fdt="palette-command"
+      aria-selected={props.highlighted}
+      aria-disabled={disabled()}
+      data-highlighted={props.highlighted ? '' : undefined}
+      data-disabled={disabled() ? '' : undefined}
+      onPointerMove={(event) => {
+        if (event.pointerType === 'mouse' && !props.highlighted) props.onHover();
+      }}
+      onClick={() => {
+        props.onRun();
+      }}
+    >
+      <Show when={props.command.icon}>
+        {(icon) => (
+          <Dynamic component={icon()} size={14} class="shrink-0 text-fg-muted" aria-hidden="true" />
+        )}
       </Show>
-      <HighlightGuard
-        options={ranked()}
-        registerArm={(registered) => {
-          arm = registered;
-        }}
-      />
-    </KobalteCombobox>
+      <span class="min-w-0 flex-1 truncate">{props.command.label}</span>
+      <span data-fdt="palette-command-hint" class="shrink-0 text-2xs">
+        {disabled() ? props.command.disabledNote : props.command.hint}
+      </span>
+    </li>
   );
 }

@@ -20,7 +20,9 @@
  * - the tab relay (`./tab-relay`) — tab asks forwarded for extension pages
  *   without the `tabs` API,
  * - the chord platform (`./chord-platform`) — the OS keyboard convention
- *   content scripts cannot read themselves.
+ *   content scripts cannot read themselves,
+ * - the command palette (`./command-palette`) — the on-page palette's view
+ *   injection and its builder open for the asking tab.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -44,6 +46,7 @@ import { initExclusionSessions } from './exclusion-sessions';
 import { registerTabPushRelay } from './tab-push-relay';
 import { registerTabRelay } from './tab-relay';
 import { registerChordPlatform } from './chord-platform';
+import { registerCommandPalette } from './command-palette';
 
 const log = createLogger('background');
 
@@ -171,6 +174,13 @@ async function main(): Promise<void> {
   } catch (cause) {
     // The palette's ask then sees no receiver and keeps its fallback notation.
     log.error('Chord platform init failed — on-page chords use the Ctrl convention', cause);
+  }
+
+  try {
+    registerCommandPalette();
+  } catch (cause) {
+    // The palette module's asks then see no receiver and report the open failure.
+    log.error('Command palette init failed — the on-page palette cannot open', cause);
   }
 
   try {

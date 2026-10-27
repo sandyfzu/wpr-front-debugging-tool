@@ -1,6 +1,7 @@
 /**
- * The overlay's mount lifecycle, separate from WXT's UI factory so its
- * races are testable: creating the shadow-root UI awaits the stylesheet,
+ * The mount lifecycle of a runtime-injected overlay (the exclusion builder,
+ * the command palette view), separate from WXT's UI factory so its races
+ * are testable: creating the shadow-root UI awaits the stylesheet,
  * and a newer injection can invalidate this instance's context during that
  * wait. WXT registers its removal on the context only after the wait — an
  * abort that already happened never fires it — so this instance must check

@@ -1,0 +1,10 @@
+/*
+ * The command palette view's stylesheet: the shared design tokens once, then
+ * the view's own rules. WXT fetches it (`cssInjectionMode: "ui"`) into the
+ * view's shadow root only; page CSS cannot pierce the `all: initial` reset
+ * WXT prepends, and nothing here reaches the page.
+ */
+
+@import '../../assets/css/tokens.css';
+
+@import './palette.css';

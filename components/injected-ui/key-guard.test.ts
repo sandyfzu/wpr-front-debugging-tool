@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OVERLAY_HOST_NAME, installKeyGuard } from './key-guard';
+import {
+  COMMAND_PALETTE_HOST_NAME,
+  GUARDED_HOST_NAMES,
+  OVERLAY_HOST_NAME,
+  installKeyGuard
+} from './key-guard';
 
 /** Guards installed by a case (window listeners must not leak across cases). */
 const guards: AbortController[] = [];
@@ -10,12 +15,17 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** A guarded page: the overlay host with an input in its shadow root, and a page listener registered after the guard. */
-function setup() {
+/**
+ * A guarded page: one guard over every guarded host, a host with an input in
+ * its shadow root, and a page listener registered after the guard.
+ *
+ * @param hostName The host the input sits under (default: the overlay's).
+ */
+function setup(hostName: string = OVERLAY_HOST_NAME) {
   const guard = new AbortController();
   guards.push(guard);
-  installKeyGuard(window, OVERLAY_HOST_NAME, guard.signal);
-  const host = document.createElement(OVERLAY_HOST_NAME);
+  installKeyGuard(window, GUARDED_HOST_NAMES, guard.signal);
+  const host = document.createElement(hostName);
   const shadow = host.attachShadow({ mode: 'open' });
   const input = document.createElement('input');
   shadow.append(input);
@@ -191,6 +201,22 @@ describe('installKeyGuard', () => {
   it('stops with its signal', () => {
     const { guard, input, page } = setup();
     guard.abort();
+    input.dispatchEvent(keydown('/'));
+    expect(page).toHaveBeenCalledTimes(1);
+  });
+
+  it('guards every listed host with the one install (the command palette view too)', () => {
+    expect(GUARDED_HOST_NAMES).toEqual([OVERLAY_HOST_NAME, COMMAND_PALETTE_HOST_NAME]);
+    const { input, page } = setup(COMMAND_PALETTE_HOST_NAME);
+    const inside = vi.fn();
+    input.addEventListener('keydown', inside);
+    input.dispatchEvent(keydown('k'));
+    expect(page).not.toHaveBeenCalled();
+    expect(inside).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a shadow host outside the list alone', () => {
+    const { input, page } = setup('wpr-fdt-unlisted');
     input.dispatchEvent(keydown('/'));
     expect(page).toHaveBeenCalledTimes(1);
   });

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FDT e2e — page with window-capture hotkeys</title>
+  </head>
+  <body>
+    <main>
+      <h1>A page with its own keyboard shortcuts</h1>
+      <p>
+        A window-capture keydown listener records every key it sees, the way hotkey libraries
+        listen; the command palette's typed keys must never reach it.
+      </p>
+      <button type="button" id="page-focus">Page control</button>
+    </main>
+    <script>
+      window.__pageKeys = [];
+      window.addEventListener(
+        'keydown',
+        (event) => {
+          window.__pageKeys.push(event.key);
+        },
+        true
+      );
+    </script>
+  </body>
+</html>

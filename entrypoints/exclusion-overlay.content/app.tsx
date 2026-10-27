@@ -58,6 +58,7 @@ import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph } from './glyph';
+import { retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
   OVERLAY_MODES,
@@ -70,6 +71,8 @@ import { viewportRect, type PageTools, type PointedPick } from './page-tools';
 import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { createLogger } from '../../lib/logger';
+import { showInTopLayer } from '../../components/injected-ui/top-layer';
+import { COMMAND_PALETTE_HOST_NAME } from '../../components/injected-ui/key-guard';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 const log = createLogger('exclusion-overlay');
@@ -80,27 +83,6 @@ const LABEL_GAP_PX = 4;
 const LABEL_HEIGHT_PX = 22;
 /** Frames a focus move is attempted on before it gives up (see `focusSoon`). */
 const FOCUS_TRIES = 3;
-
-/**
- * Put the layer in the browser's top layer (a manual popover: no light
- * dismiss, no focus move), above every page stacking context — again on
- * each call, which moves it above whatever the page opened since. Without
- * popover support the layer stays a fixed element on the highest z-index.
- *
- * @param layer The overlay's root element.
- */
-function showInTopLayer(layer: HTMLElement): void {
-  if (typeof layer.showPopover !== 'function') return;
-  layer.setAttribute('popover', 'manual');
-  try {
-    if (layer.matches(':popover-open')) layer.hidePopover();
-    layer.showPopover();
-  } catch (cause) {
-    // The host document refused (e.g. detached): the fixed fallback renders it.
-    log.warn('Showing the overlay in the top layer failed; using the fixed fallback', cause);
-    layer.removeAttribute('popover');
-  }
-}
 
 /** Props of {@link OverlayApp}. */
 export interface OverlayAppProps {
@@ -231,20 +213,61 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     return target === null ? null : viewportRect(target.element);
   });
 
-  /** Move focus once the target is visible (next frame: visibility flips first). */
-  const focusSoon = (element: () => HTMLElement | undefined, tries = FOCUS_TRIES): void => {
-    props.requestFrame(() => {
-      const target = element();
-      if (target === undefined) return;
-      target.focus({ preventScroll: true });
-      // A just-revealed panel can stay hidden for a frame (reduced motion
-      // turns its instant visibility switch into a 0.01 ms transition), so
-      // the focus does not take: try again on the next frame. Not keyed on
-      // `transitionend`: without reduced motion the switch is no transition
-      // at all (no event would come), and the frames bound the wait either way.
-      const root = target.getRootNode() as Document | ShadowRoot;
-      if (root.activeElement !== target && tries > 1) focusSoon(element, tries - 1);
-    });
+  /**
+   * Whether the page's focused element is free for the overlay to take:
+   * nothing focused, or focus already inside the overlay (its shadow host
+   * when mounted in one).
+   *
+   * @param active The document's focused element.
+   * @returns `true` when the overlay may take focus from it.
+   */
+  const focusIsFree = (active: Element | null): boolean => {
+    if (active === null || active === document.body || layer === undefined) return true;
+    const root = layer.getRootNode();
+    return layer.contains(active) || (root instanceof ShadowRoot && active === root.host);
+  };
+  /**
+   * Whether the command palette holds focus: the overlay never takes it from
+   * the palette — not even when it already held focus as the overlay
+   * mounted, since the overlay's host is inserted before it renders and the
+   * palette can open in that gap — because the palette dismisses on any
+   * outside focus. Other injected surfaces (the detection strip, the
+   * known-conflicts card) never dismiss on focus loss, so an explicitly
+   * opened overlay takes focus from them like from any page control.
+   *
+   * @param active The document's focused element (the palette's focus reads as its shadow host).
+   * @returns `true` when the palette's host holds focus.
+   */
+  const focusIsClaimed = (active: Element | null): boolean =>
+    active?.localName === COMMAND_PALETTE_HOST_NAME;
+  /**
+   * Move focus once the target is visible (next frame: visibility flips
+   * first). A just-revealed panel can stay hidden for a frame (reduced motion
+   * turns its instant visibility switch into a 0.01 ms transition), so a move
+   * that does not take is tried again on the next frames — never once another
+   * UI (e.g. a palette opened meanwhile) claimed focus. Not keyed on
+   * `transitionend`: without reduced motion the switch is no transition at
+   * all (no event would come), and the frames bound the wait either way.
+   *
+   * @param element The control to focus, read on each attempt (`undefined` gives up).
+   */
+  const focusSoon = (element: () => HTMLElement | undefined): void => {
+    retryFocus(
+      {
+        requestFrame: props.requestFrame,
+        active: () => document.activeElement,
+        isFree: focusIsFree,
+        isClaimed: focusIsClaimed,
+        attempt: () => {
+          const target = element();
+          if (target === undefined) return undefined;
+          target.focus({ preventScroll: true });
+          const root = target.getRootNode() as Document | ShadowRoot;
+          return root.activeElement === target;
+        }
+      },
+      FOCUS_TRIES
+    );
   };
 
   const collapse = (): void => {
@@ -394,7 +417,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     on(
       () => props.page.pageTopLayerOpened(),
       () => {
-        if (layer !== undefined && !paused()) showInTopLayer(layer);
+        if (layer !== undefined && !paused()) showInTopLayer(layer, log);
       },
       { defer: true }
     )
@@ -428,7 +451,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
   onMount(() => {
     props.listen(window, 'scroll', queueGeometry);
     props.listen(window, 'resize', queueGeometry);
-    if (layer !== undefined) showInTopLayer(layer);
+    if (layer !== undefined) showInTopLayer(layer, log);
     // A re-open follows a page load: the page keeps its focus.
     if (props.presentation == null) focusSoon(() => heading);
     // An event-time call (an explicit open of this live overlay), never tracked.

@@ -4,14 +4,15 @@
  * navigation with wrap, Home/End jumps, Enter running the highlighted
  * command, click running, the disabled row rendered-but-skipped, the
  * injected matcher driving the list per keystroke, the no-match empty
- * state, Escape dismissing the dialog, and the mount-time autofocus on the
- * field.
+ * state (its listbox kept, hidden), Escape dismissing the dialog, the
+ * mount-time autofocus on the field, and the mounted (shadow-root) mode.
  *
  * Idiom note: static imports (the lucide-heavy tree hangs under
  * `vi.resetModules()`), and assertions on roles/attributes — never on pixel
  * geometry (the resource-less DOM gives none).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import { Show, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import Rocket from 'lucide-solid/icons/rocket';
 import Zap from 'lucide-solid/icons/zap';
@@ -216,6 +217,165 @@ describe('CommandPalette filtering', () => {
     fireEvent.keyDown(field, { key: 'Enter' });
     expect(onRun).not.toHaveBeenCalled();
   });
+
+  it('collapses the field over its kept (hidden) listbox in the empty state, and re-expands', async () => {
+    const { field } = await mountPalette();
+    expect(field.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No commands match/)).toBeTruthy();
+    });
+    const list = document.querySelector<HTMLElement>('[role="listbox"]');
+    expect(list).not.toBeNull();
+    expect(list?.hidden).toBe(true);
+    expect(field.getAttribute('aria-expanded')).toBe('false');
+    expect(field.getAttribute('aria-controls')).toBe(list?.id);
+    // A matching query shows it again.
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    await waitFor(() => {
+      expect(list?.hidden).toBe(false);
+    });
+    expect(field.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('announces the no-match line through a polite status kept mounted', async () => {
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
+    expect(status.classList.contains('sr-only')).toBe(true);
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zzz”');
+    });
+    expect(status.classList.contains('sr-only')).toBe(false);
+    // The same node all along: assistive tech hears the change.
+    expect(screen.getByRole('status')).toBe(status);
+    // Rows again: the same region speaks the count, visually hidden.
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('1 command available');
+    });
+    expect(status.classList.contains('sr-only')).toBe(true);
+  });
+
+  it('keeps the visible no-match line on the current query, and clears it when rows return', async () => {
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    fireEvent.input(field, { target: { value: 'zz' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zz”');
+    });
+    fireEvent.input(field, { target: { value: 'zzq' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zzq”');
+    });
+    // Cleared: every row is back, the line is hidden again.
+    fireEvent.input(field, { target: { value: '' } });
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[role="listbox"]')?.hidden).toBe(false);
+    });
+    expect(status.classList.contains('sr-only')).toBe(true);
+    expect(status.textContent).not.toMatch(/No commands match/);
+  });
+
+  it('shows the no-match line when the rows go away without a query change (never stale)', async () => {
+    const [rows, setRows] = createSignal<readonly PaletteCommand[]>(ROWS);
+    render(() => (
+      <CommandPalette commands={rows()} filter={identityFilter} onRun={vi.fn()} onClose={vi.fn()} />
+    ));
+    const field = await screen.findByRole('combobox');
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    const status = screen.getByRole('status');
+    await waitFor(() => {
+      expect(status.textContent).toBe('1 command available');
+    });
+    setRows([]);
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “lazy”');
+    });
+    expect(status.classList.contains('sr-only')).toBe(false);
+  });
+
+  it('names an empty command set with nothing typed (never a quoted blank query)', async () => {
+    render(() => (
+      <CommandPalette commands={[]} filter={identityFilter} onRun={vi.fn()} onClose={vi.fn()} />
+    ));
+    await screen.findByRole('combobox');
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('No commands available');
+    expect(status.classList.contains('sr-only')).toBe(false);
+  });
+
+  it('speaks the result count per query, and stays silent at open and on arrow moves', async () => {
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(status.textContent).toBe('');
+    fireEvent.input(field, { target: { value: 'o' } });
+    await waitFor(() => {
+      // "Detections", "Lazyload", "Export JSON", "Diagnoser" all contain an "o".
+      expect(status.textContent).toBe('4 commands available');
+    });
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(status.textContent).toBe('4 commands available');
+  });
+});
+
+describe('CommandPalette mounted mode (an injected shadow root)', () => {
+  it('renders into the given node with the caller’s description, and dismisses on Escape', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const container = document.createElement('div');
+    host.attachShadow({ mode: 'open' }).append(container);
+    const onClose = vi.fn();
+    render(() => (
+      <CommandPalette
+        commands={ROWS}
+        filter={identityFilter}
+        onRun={vi.fn()}
+        onClose={onClose}
+        mount={container}
+        description="Filter the on-page actions, run the highlighted one"
+      />
+    ));
+    await waitFor(() => {
+      expect(container.querySelector('[data-fdt="palette-input"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[data-fdt="dialog-description"]')?.textContent).toBe(
+      'Filter the on-page actions, run the highlighted one'
+    );
+    const field = container.querySelector('[data-fdt="palette-input"]') as HTMLInputElement;
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CommandPalette mount-time focus', () => {
+  it('focuses the field in the same task it is inserted (no gap another UI could take focus in)', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadow.append(container);
+    const [open, setOpen] = createSignal(false);
+    render(() => (
+      <Show when={open()}>
+        <CommandPalette
+          commands={ROWS}
+          filter={identityFilter}
+          onRun={vi.fn()}
+          onClose={vi.fn()}
+          mount={container}
+        />
+      </Show>
+    ));
+    setOpen(true);
+    // A microtask checkpoint, no task boundary: no frame or timer ran yet.
+    await Promise.resolve();
+    expect(document.activeElement).toBe(host);
+    expect(shadow.activeElement?.getAttribute('data-fdt')).toBe('palette-input');
+  });
 });
 
 describe('CommandPalette disabled rows', () => {
@@ -242,5 +402,146 @@ describe('CommandPalette dismissal', () => {
     const { onClose, field } = await mountPalette();
     fireEvent.keyDown(field, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CommandPalette on Apple platforms (VoiceOver)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('also speaks the highlighted row: with the count per query, alone per arrow move', async () => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    expect(status.textContent).toBe('Lazyload');
+    fireEvent.input(field, { target: { value: 'export' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('1 command available, Export JSON');
+    });
+  });
+});
+
+describe('CommandPalette pointer', () => {
+  it('moves the highlight onto a hovered enabled row, never onto a disabled one', async () => {
+    const { field } = await mountPalette();
+    const exportRow = screen.getByRole('option', { name: /Export JSON/ });
+    fireEvent.pointerMove(exportRow, { pointerType: 'mouse' });
+    expect(field.getAttribute('aria-activedescendant')).toBe(exportRow.id);
+    expect(exportRow.getAttribute('aria-selected')).toBe('true');
+    expect(exportRow.hasAttribute('data-highlighted')).toBe(true);
+    fireEvent.pointerMove(screen.getByRole('option', { name: /Diagnoser/ }), {
+      pointerType: 'mouse'
+    });
+    expect(field.getAttribute('aria-activedescendant')).toBe(exportRow.id);
+  });
+
+  it('ignores touch/pen moves (no hover highlight without a mouse)', async () => {
+    const { field } = await mountPalette();
+    const before = field.getAttribute('aria-activedescendant');
+    fireEvent.pointerMove(screen.getByRole('option', { name: /Export JSON/ }), {
+      pointerType: 'touch'
+    });
+    expect(field.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('keeps focus in the field when a row is pressed (mousedown default prevented)', async () => {
+    await mountPalette();
+    const pressed = fireEvent.mouseDown(screen.getByRole('option', { name: /Export JSON/ }));
+    expect(pressed).toBe(false);
+  });
+});
+
+describe('CommandPalette keys', () => {
+  it('leaves keys to an active IME composition (Enter commits it, runs nothing)', async () => {
+    const { field, onRun } = await mountPalette();
+    const before = field.getAttribute('aria-activedescendant');
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(field, { key: 'ArrowDown', isComposing: true });
+    expect(onRun).not.toHaveBeenCalled();
+    expect(field.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('leaves Shift/Alt/Meta + Arrow/Home/End to the field (text selection), moving nothing', async () => {
+    const { field } = await mountPalette();
+    const before = field.getAttribute('aria-activedescendant');
+    for (const modifier of ['shiftKey', 'altKey', 'metaKey'] as const) {
+      for (const key of ['ArrowDown', 'End']) {
+        const notCancelled = fireEvent.keyDown(field, { key, [modifier]: true });
+        expect(notCancelled).toBe(true);
+      }
+    }
+    expect(field.getAttribute('aria-activedescendant')).toBe(before);
+    // Bare, the same key still moves the highlight.
+    expect(fireEvent.keyDown(field, { key: 'ArrowDown' })).toBe(false);
+    expect(field.getAttribute('aria-activedescendant')).not.toBe(before);
+  });
+
+  it('dismisses on Tab instead of cycling focus back into the field', async () => {
+    const { field, onClose } = await mountPalette();
+    fireEvent.keyDown(field, { key: 'Tab' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('scrolls the list (never the document) to keep the highlighted row in view', async () => {
+    const { field } = await mountPalette();
+    const list = document.querySelector<HTMLElement>('[role="listbox"]');
+    if (list === null) throw new Error('listbox missing');
+    const rows = [...list.querySelectorAll<HTMLElement>('[role="option"]')];
+    // A 64 px list window; each row 32 px tall, stacked from the list's top.
+    list.getBoundingClientRect = () => new DOMRect(0, 0, 100, 64);
+    rows.forEach((row, index) => {
+      row.getBoundingClientRect = () => new DOMRect(0, index * 32 - list.scrollTop, 100, 32);
+    });
+    fireEvent.keyDown(field, { key: 'ArrowDown' }); // row 1: 32–64, in view
+    expect(list.scrollTop).toBe(0);
+    fireEvent.keyDown(field, { key: 'ArrowDown' }); // row 2: 64–96 → 32 down
+    expect(list.scrollTop).toBe(32);
+  });
+});
+
+describe('CommandPalette host-document isolation (mounted mode)', () => {
+  it('never writes into document.body across open, typing, moves, run-less close and dispose', async () => {
+    const host = document.createElement('div');
+    document.documentElement.append(host);
+    const container = document.createElement('div');
+    host.attachShadow({ mode: 'open' }).append(container);
+    const bodyBefore = [...document.body.childNodes];
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => writes.push(...records));
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    const onClose = vi.fn();
+    const { unmount } = render(
+      () => (
+        <CommandPalette
+          commands={ROWS}
+          filter={identityFilter}
+          onRun={vi.fn()}
+          onClose={onClose}
+          mount={container}
+        />
+      ),
+      { container: document.createElement('div') }
+    );
+    const field = await waitFor(() => {
+      const found = container.querySelector<HTMLInputElement>('[data-fdt="palette-input"]');
+      expect(found?.getAttribute('aria-activedescendant')).not.toBeNull();
+      return found as HTMLInputElement;
+    });
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    fireEvent.input(field, { target: { value: '' } });
+    fireEvent.keyDown(field, { key: 'ArrowDown' });
+    fireEvent.keyDown(field, { key: 'End' });
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    unmount();
+    await Promise.resolve();
+    observer.disconnect();
+    expect(writes).toEqual([]);
+    expect([...document.body.childNodes]).toEqual(bodyBefore);
+    expect(document.querySelector('[data-live-announcer]')).toBeNull();
+    host.remove();
   });
 });

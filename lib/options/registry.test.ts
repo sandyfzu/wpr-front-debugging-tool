@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { FALLBACK, storedOptionsOrFallback, type StoredOptions } from '../storage/options';
+import { PAGE_UI_GATE_OPTION_LABEL, PAGE_UI_MENU_RESCUE } from '../page-commands/commands';
 import {
   DRAFTED_OPTION_ROWS,
   isDraftedOptionRow,
@@ -152,6 +153,22 @@ describe('the on-page UI cascade', () => {
     for (const id of ['page-ui-gate', 'wp-dashboard-dbugger-entry', 'appearance', 'toolbarBadge']) {
       expect(onPageDisabledNote(anyRow(id), false)).toBeNull();
     }
+  });
+
+  it('words the gate and shortcut rows from the on-page vocabulary (the page copy quotes them)', () => {
+    const gate = anyRow('page-ui-gate');
+    expect(gate.label).toBe(PAGE_UI_GATE_OPTION_LABEL);
+    expect(gate.description).toBe(
+      'The detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette on inspected pages — off closes them on every open page at once; turn them back on here or from the page’s right-click menu (“Turn on all on-page UI”)'
+    );
+    expect(gate.description).toContain(PAGE_UI_MENU_RESCUE);
+    expect(ON_PAGE_UI_OFF_NOTE).toBe(
+      'On-page UI is off — turn on “Show on-page UI” to change this'
+    );
+    expect(anyRow('palette-chord').label).toBe('Command palette shortcut');
+    expect(anyRow('palette-chord').description).toMatch(
+      /^Opens the command palette on inspected pages/
+    );
   });
 
   it('the shortcut row warns that browser-owned shortcuts never reach the field', () => {
