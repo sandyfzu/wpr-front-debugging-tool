@@ -62,7 +62,10 @@ describe('parsePaletteChord', () => {
   });
 
   it('returns frozen chords', () => {
-    expect(Object.isFrozen(parsePaletteChord({ code: 'KeyP', mod: true }))).toBe(true);
+    const chord = parsePaletteChord({ code: 'KeyK', mod: true });
+    // `Object.isFrozen(null)` is true too — pin that the chord parsed first.
+    expect(chord).toEqual({ code: 'KeyK', mod: true });
+    expect(Object.isFrozen(chord)).toBe(true);
   });
 
   it('binds the ISO key like any other punctuation key', () => {
@@ -75,8 +78,8 @@ describe('parsePaletteChord', () => {
 
   it('drops false flags and ignores unknown fields (canonical, additive-tolerant)', () => {
     expect(
-      parsePaletteChord({ code: 'KeyP', mod: true, alt: false, shift: true, future: 1 })
-    ).toEqual({ code: 'KeyP', mod: true, shift: true });
+      parsePaletteChord({ code: 'KeyL', mod: true, alt: false, shift: true, future: 1 })
+    ).toEqual({ code: 'KeyL', mod: true, shift: true });
   });
 
   it('allows a function key alone', () => {
@@ -176,9 +179,9 @@ describe('captureChord', () => {
       ok: true,
       chord: { code: 'KeyK', alt: true }
     });
-    expect(captureChord(key('KeyP', { metaKey: true, shiftKey: true }), 'mac')).toEqual({
+    expect(captureChord(key('KeyL', { metaKey: true, shiftKey: true }), 'mac')).toEqual({
       ok: true,
-      chord: { code: 'KeyP', mod: true, shift: true }
+      chord: { code: 'KeyL', mod: true, shift: true }
     });
     expect(captureChord(key('Slash', { ctrlKey: true }), 'other')).toEqual({
       ok: true,
@@ -242,12 +245,14 @@ function mods(codes: readonly PaletteChord['code'][], extra: Partial<PaletteChor
 describe('reserved chords', () => {
   const expected: Record<ReservedChordGroup, readonly PaletteChord[]> = {
     editing: [
-      ...mods(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY']),
+      ...mods(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...mods(['KeyZ'], { shift: true })
     ],
     browser: [
       ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
+      ...mods(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
       ...mods(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
+      ...mods(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...mods([
         'Digit1',
         'Digit2',
@@ -259,7 +264,7 @@ describe('reserved chords', () => {
         'Digit8',
         'Digit9'
       ]),
-      { code: 'F5' }
+      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F10'] as const).map((code): PaletteChord => ({ code }))
     ],
     zoom: [...mods(['Equal', 'Minus', 'Digit0']), ...mods(['Equal'], { shift: true })],
     devtools: [
@@ -300,7 +305,7 @@ describe('reserved chords', () => {
       DEFAULT_PALETTE_CHORD,
       { code: 'KeyK', mod: true },
       { code: 'KeyK', alt: true, shift: true },
-      { code: 'KeyP', mod: true, shift: true },
+      { code: 'KeyL', mod: true, shift: true },
       { code: 'Digit1', mod: true, shift: true },
       { code: 'F2' },
       { code: 'F4' }
@@ -360,28 +365,28 @@ describe('the chord store', () => {
       await fakeBrowser.storage.sync.set({ [SYNC_KEY]: corrupt });
       expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
     }
-    await setPaletteChord({ code: 'KeyJ', mod: true });
+    await setPaletteChord({ code: 'KeyL', mod: true, shift: true });
     await paletteChordStore.removeValue();
     expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
   });
 
   it('stores the canonical form and reads it back', async () => {
-    await setPaletteChord({ code: 'KeyJ', mod: true, alt: false });
+    await setPaletteChord({ code: 'KeyL', mod: true, alt: false, shift: true });
     expect(await fakeBrowser.storage.sync.get(SYNC_KEY)).toEqual({
-      [SYNC_KEY]: { code: 'KeyJ', mod: true }
+      [SYNC_KEY]: { code: 'KeyL', mod: true, shift: true }
     });
-    expect(await readPaletteChord()).toEqual({ code: 'KeyJ', mod: true });
+    expect(await readPaletteChord()).toEqual({ code: 'KeyL', mod: true, shift: true });
   });
 
   it('refuses to write an invalid chord, leaving the stored one untouched', async () => {
-    await setPaletteChord({ code: 'KeyJ', mod: true });
+    await setPaletteChord({ code: 'KeyL', mod: true, shift: true });
     await expect(setPaletteChord({ code: 'KeyK' })).rejects.toThrow(
       'Refused an invalid palette chord: {"code":"KeyK"}'
     );
     await expect(setPaletteChord({ code: 'KeyC', mod: true })).rejects.toThrow(
       'Refused an invalid palette chord: {"code":"KeyC","mod":true}'
     );
-    expect(await readPaletteChord()).toEqual({ code: 'KeyJ', mod: true });
+    expect(await readPaletteChord()).toEqual({ code: 'KeyL', mod: true, shift: true });
   });
 
   it('names hostile input without throwing while describing it', async () => {
@@ -403,19 +408,19 @@ describe('the chord store', () => {
   it('watches validated writes (corrupt and removed as the default) until unsubscribed', async () => {
     const onChange = vi.fn<(chord: PaletteChord) => void>();
     const unwatch = watchPaletteChord(onChange);
-    await setPaletteChord({ code: 'KeyJ', mod: true });
+    await setPaletteChord({ code: 'KeyL', mod: true, shift: true });
     await fakeBrowser.storage.sync.set({ [SYNC_KEY]: { code: 'KeyJ' } });
     await setPaletteChord({ code: 'F2' });
     await paletteChordStore.removeValue();
     expect(onChange.mock.calls).toEqual([
-      [{ code: 'KeyJ', mod: true }],
+      [{ code: 'KeyL', mod: true, shift: true }],
       [DEFAULT_PALETTE_CHORD],
       [{ code: 'F2' }],
       [DEFAULT_PALETTE_CHORD]
     ]);
     unwatch();
     unwatch();
-    await setPaletteChord({ code: 'KeyJ', mod: true });
+    await setPaletteChord({ code: 'KeyL', mod: true, shift: true });
     expect(onChange).toHaveBeenCalledTimes(4);
   });
 });

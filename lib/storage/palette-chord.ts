@@ -226,21 +226,33 @@ function withMod(
  */
 export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly PaletteChord[]>> =
   Object.freeze({
-    /** Clipboard, select-all, undo/redo — every field on the page needs them. */
+    /**
+     * Clipboard, select-all, undo/redo — every field on the page needs them —
+     * and bold/italic/underline in rich-text editors (contenteditable, e.g.
+     * the WordPress block editor). `mod` + B and + U also carry browser
+     * commands (Firefox bookmarks sidebar, page source); one owner per chord.
+     */
     editing: Object.freeze([
-      ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY']),
+      ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...withMod(['KeyZ'], { shift: true })
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
-     * windows (new/close/reopen/private), tab switching by number, F5
-     * reload, Ctrl+F4 tab close (Windows/Linux), Ctrl+H history.
+     * windows (new/close/reopen/private), tab switching by number, Ctrl+F4
+     * tab close (Windows/Linux), Ctrl+H history; bookmark page (D), open
+     * file (O), downloads (J), find next/previous (G, Shift+G), settings
+     * (⌘,); Shift + A add-ons, B bookmarks bar, O bookmarks manager/library,
+     * P private window (Firefox). Lone keys: F1 help, F3 find next, F5
+     * reload, F6 focus toolbars/address bar, F7 caret browsing, F10 menu
+     * bar/toolbar focus.
      */
     browser: Object.freeze([
       ...withMod(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
+      ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
       ...withMod(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
+      ...withMod(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...withMod(DIGITS.filter((digit) => digit !== '0').map((digit) => `Digit${digit}` as const)),
-      canonicalChord('F5', {})
+      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F10'] as const).map((code) => canonicalChord(code, {}))
     ]),
     /** Page zoom in/out/reset (`mod` + `=`, `+` via Shift on US, `-`, `0`). */
     zoom: Object.freeze([
