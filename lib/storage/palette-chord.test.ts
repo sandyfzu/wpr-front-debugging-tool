@@ -258,6 +258,12 @@ describe('reserved chords', () => {
       ...mods(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...mods(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
       ...mods(['KeyR'], { alt: true }),
+      ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code): PaletteChord => ({ code, alt: true })),
+      ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code): PaletteChord => ({
+        code,
+        alt: true,
+        shift: true
+      })),
       ...mods([
         'Digit1',
         'Digit2',
@@ -319,8 +325,8 @@ describe('reserved chords', () => {
       { code: 'F8' },
       { code: 'F10', shift: true },
       { code: 'KeyR', alt: true },
-      { code: 'KeyE', alt: true },
-      { code: 'KeyT', alt: true, shift: true },
+      { code: 'KeyW', alt: true },
+      { code: 'KeyW', alt: true, shift: true },
       { code: 'Comma', mod: true, alt: true }
     ] satisfies PaletteChord[]) {
       expect(reservedChordGroup(free)).toBeNull();
