@@ -2,7 +2,7 @@
  * The exclusion pipeline: the four transforms composed in their one
  * declared order (the set registry's — `EXCLUSION_FEATURES`), plus the
  * generic composition seam a session backend (or a later tester mode)
- * plugs other operations into. `applyPipeline` is the engine's front door:
+ * plugs other operations into. `runExclusionPipeline` is the engine's one path:
  * served html + exclusion set → rewritten html and a combined per-transform
  * report for UI/status consumption. After the feature steps, the final
  * step (`markBuilderEffects`) leaves the builder marker stating what they
@@ -136,13 +136,12 @@ export const EXCLUSION_PIPELINE_STEP_IDS: readonly ExclusionFeatureId[] = [
 
 /**
  * The exclusion pipeline's feature steps for one set, in execution order —
- * what {@link applyPipeline} composes before its final marker step (no
- * feature's work, so not one of these keyed, per-feature steps: a consumer
- * runs `markBuilderEffects` over the last step's output and the reports). Exposed for consumers that must observe
- * the run step by step (e.g. to bound its wall time between steps and name
- * the feature that overran); they must check {@link pipelineSetProblems}
- * first, exactly as `applyPipeline` does, or a step throws its feature's
- * validation error mid-run (or reads rows WP Rocket would never run).
+ * what {@link runExclusionPipeline} runs before its final marker step (no
+ * feature's work, so not one of these keyed, per-feature steps). Hosts
+ * that observe a run step by step use that function's hooks; a direct
+ * caller must check {@link pipelineSetProblems} first, as it does, or a
+ * step throws its feature's validation error mid-run (or reads rows WP
+ * Rocket would never run).
  *
  * WP Rocket's Defer JS inline-jQuery pass ran after its deferral and before
  * Delay JS, so the first step replays it on the served page (before any
@@ -208,27 +207,80 @@ export function pipelineSetProblems(set: ExclusionSet): readonly InvalidExclusio
   return notStored.length > 0 ? notStored : prevalidateExclusionSet(set).invalid;
 }
 
+/** Optional hooks a bounded host passes to {@link runExclusionPipeline}. */
+export interface PipelineRunHooks {
+  /** How the session decoded the page, when known (see {@link exclusionPipelineSteps}). */
+  readonly bytes?: DocumentBytes;
+  /** Called with each step's feature as the step starts. */
+  readonly onStepStart?: (feature: ExclusionFeatureId) => void;
+  /**
+   * Called with each step's feature after the step ran: `true` discards its
+   * output and stops the run there (a host's budget check between steps).
+   */
+  readonly stopAfter?: (feature: ExclusionFeatureId) => boolean;
+}
+
 /**
- * The exclusion pipeline: validate the whole set up front (every invalid
- * row named at once, before anything runs — {@link pipelineSetProblems}),
- * then apply the four transforms in their declared order, then the final
- * step: the builder marker for what they changed (`markBuilderEffects`).
+ * One pipeline run: completed (rewritten html, marker step included, and
+ * one report per feature), or stopped by the host after a step.
+ */
+export type PipelineRun =
+  | ({ readonly completed: true } & CompositionOutput<TransformReport>)
+  | { readonly completed: false; readonly stoppedAt: ExclusionFeatureId };
+
+/**
+ * The exclusion pipeline, the one path every caller runs: validate the
+ * whole set up front (every invalid row named at once, before anything
+ * runs: {@link pipelineSetProblems}), then the steps of
+ * {@link exclusionPipelineSteps} in order, then the final step: the
+ * builder marker for what they changed (`markBuilderEffects`). The marker
+ * step is no feature's work (no feature to stop at), so `stopAfter` never
+ * sees it: it is one linear scan of the document.
  *
  * Each transform rescans the (linear) document, so the whole pipeline stays
  * linear in the document size times the feature count; pattern compilation
  * is memoized across calls.
  *
- * @param html The served document (decoded text — byte handling is the
+ * @param html The served document (decoded text; byte handling is the
  *   session backends' job, never the engine's).
  * @param set The exclusion set (rows + feature-wide disables).
- * @returns The rewritten html and one report per transform, in pipeline order.
+ * @param hooks Decoding facts and the host's step hooks.
+ * @returns The completed run, or where the host stopped it.
  * @throws {@link ExclusionValidationError} naming every row outside the
- *   stored form, else every invalid row, before any transform runs.
+ *   stored form, else every invalid row, before any step runs.
  */
-export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
+export function runExclusionPipeline(
+  html: string,
+  set: ExclusionSet,
+  hooks: PipelineRunHooks = {}
+): PipelineRun {
   const problems = pipelineSetProblems(set);
   if (problems.length > 0) throw new ExclusionValidationError(problems);
-  const composed = composeSteps(html, exclusionPipelineSteps(set));
-  const reports = featureReports(composed.reports);
-  return { html: markBuilderEffects(composed.html, reports), reports };
+  let current = html;
+  const reports: TransformReport[] = [];
+  for (const step of exclusionPipelineSteps(set, hooks.bytes)) {
+    hooks.onStepStart?.(step.id);
+    const result = step.apply(current);
+    if (hooks.stopAfter?.(step.id) === true) return { completed: false, stoppedAt: step.id };
+    current = result.html;
+    if (result.report !== null) reports.push(result.report);
+  }
+  return { completed: true, html: markBuilderEffects(current, reports), reports };
+}
+
+/**
+ * {@link runExclusionPipeline} unbounded (no hooks, so it always
+ * completes): served html + set → rewritten html and one report per
+ * feature, in pipeline order.
+ *
+ * @param html The served document (decoded text).
+ * @param set The exclusion set.
+ * @returns The rewritten html and the feature reports.
+ * @throws {@link ExclusionValidationError} as {@link runExclusionPipeline}.
+ */
+export function applyPipeline(html: string, set: ExclusionSet): CompositionOutput<TransformReport> {
+  const run = runExclusionPipeline(html, set);
+  // Unreachable: without a `stopAfter` hook nothing stops the run.
+  if (!run.completed) throw new Error(`[WPR FDT] unbounded pipeline stopped at ${run.stoppedAt}`);
+  return { html: run.html, reports: run.reports };
 }

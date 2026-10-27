@@ -41,7 +41,7 @@ export function matchAllRows(entries: readonly InvalidExclusionRow[]): string[] 
 
 /**
  * Thrown when an exclusion set carries invalid rows — from
- * `applyPipeline` (every feature's problems at once, before any transform
+ * `runExclusionPipeline` (every feature's problems at once, before any transform
  * runs) or from a directly-called transform (that feature's problems).
  */
 export class ExclusionValidationError extends Error {

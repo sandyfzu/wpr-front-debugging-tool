@@ -12,6 +12,7 @@ import {
   EXCLUSION_PIPELINE_STEP_IDS,
   exclusionPipelineSteps,
   featureReports,
+  runExclusionPipeline,
   type PipelineStep
 } from './pipeline';
 import { delayJsTransform } from './delay-js';
@@ -363,5 +364,52 @@ describe('the Defer JS inline pass across Delay JS (WP Rocket 3.23.5.1, run)', (
     );
     // No lane flags it: a confident answer.
     expect(reports.every((report) => (report.undetermined ?? 0) === 0)).toBe(true);
+  });
+});
+
+describe('runExclusionPipeline (the one path applyPipeline and the session run)', () => {
+  const html = '<script type="rocketlazyloadscript" data-rocket-src="a.js"></script>';
+  const set = setWith({ delayJs: ['a\\.js'] });
+
+  it('completes unhooked with exactly what applyPipeline returns', () => {
+    expect(runExclusionPipeline(html, set)).toEqual({
+      completed: true,
+      ...applyPipeline(html, set)
+    });
+  });
+
+  it('calls onStepStart then stopAfter once per step, in step order', () => {
+    const calls: string[] = [];
+    runExclusionPipeline(html, set, {
+      onStepStart: (id) => calls.push(`start:${id}`),
+      stopAfter: (id) => {
+        calls.push(`after:${id}`);
+        return false;
+      }
+    });
+    expect(calls).toEqual(
+      EXCLUSION_PIPELINE_STEP_IDS.flatMap((id) => [`start:${id}`, `after:${id}`])
+    );
+  });
+
+  it('stops at the step stopAfter first answers true for, running no later step', () => {
+    const started: string[] = [];
+    let after = 0;
+    const run = runExclusionPipeline(html, set, {
+      onStepStart: (id) => started.push(id),
+      stopAfter: () => ++after === 3
+    });
+    expect(run).toEqual({ completed: false, stoppedAt: EXCLUSION_PIPELINE_STEP_IDS[2] });
+    expect(started).toEqual(EXCLUSION_PIPELINE_STEP_IDS.slice(0, 3));
+  });
+
+  it('throws every invalid row before any step starts', () => {
+    const started: string[] = [];
+    expect(() =>
+      runExclusionPipeline('<p>x</p>', setWith({ delayJs: ['(bad['] }), {
+        onStepStart: (id) => started.push(id)
+      })
+    ).toThrow(ExclusionValidationError);
+    expect(started).toEqual([]);
   });
 });

@@ -13,11 +13,8 @@
  * that preempts a runaway step (`./transform-worker`). Both name the
  * overrunning feature.
  */
-import { ExclusionValidationError } from '../exclusion-builder/errors';
-import { exclusionPipelineSteps, pipelineSetProblems } from '../exclusion-builder/pipeline';
-import { markBuilderEffects } from '../exclusion-builder/builder-marker-write';
+import { runExclusionPipeline } from '../exclusion-builder/pipeline';
 import type { DocumentBytes } from '../exclusion-builder/libxml/charset';
-import type { TransformReport } from '../exclusion-builder/report';
 import {
   EXCLUSION_FEATURES,
   type ExclusionFeatureId,
@@ -118,7 +115,7 @@ export function engineFailed(cause: unknown): DocumentTransformResult {
 }
 
 /**
- * Run the exclusion pipeline step by step, checking the cumulative wall
+ * Run the exclusion pipeline (`runExclusionPipeline`), checking the cumulative wall
  * time after each step: the step that crosses the budget is the overrun
  * (its output is discarded, nothing is served rewritten). A run within the
  * budget ends with the builder marker step.
@@ -138,29 +135,21 @@ export function runDocumentPipeline(
 ): DocumentTransformResult {
   try {
     const started = now();
-    const problems = pipelineSetProblems(request.set);
-    if (problems.length > 0) return engineFailed(new ExclusionValidationError(problems));
-    let html = request.html;
-    const reports: TransformReport[] = [];
-    const steps = exclusionPipelineSteps(request.set, request.bytes);
-    for (const step of steps) {
-      onStepStart?.(step.id);
-      const result = step.apply(html);
-      if (now() - started > request.budgetMs) {
-        return { ok: false, outcome: overBudgetOutcome(request.set, step.id, request.budgetMs) };
-      }
-      html = result.html;
-      if (result.report !== null) reports.push(result.report);
+    // An invalid set throws (the apply gate should have refused it): engine-failed below.
+    const run = runExclusionPipeline(request.html, request.set, {
+      ...(request.bytes === undefined ? {} : { bytes: request.bytes }),
+      ...(onStepStart === undefined ? {} : { onStepStart }),
+      stopAfter: () => now() - started > request.budgetMs
+    });
+    if (!run.completed) {
+      return {
+        ok: false,
+        outcome: overBudgetOutcome(request.set, run.stoppedAt, request.budgetMs)
+      };
     }
-    // The final step (the builder marker) is no feature's work (no feature to
-    // name in an overrun), so it runs after the budget checks, unbudgeted:
-    // it is one linear scan of the document, but nothing here bounds its
-    // wall time (only a preempting runner's deadline would).
-    return {
-      ok: true,
-      html: markBuilderEffects(html, reports),
-      outcome: { outcome: 'rewritten', reports }
-    };
+    // The marker step ran after the last budget check, unbudgeted: one
+    // linear scan; only a preempting runner's deadline bounds it.
+    return { ok: true, html: run.html, outcome: { outcome: 'rewritten', reports: run.reports } };
   } catch (cause) {
     return engineFailed(cause);
   }
