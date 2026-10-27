@@ -24,7 +24,10 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { writeBuilderMarker } from '../../../lib/exclusion-builder/builder-marker-write';
-import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
+import {
+  BUILDER_MARKER_META_NAME,
+  CACHE_BYPASS_QUERY_PARAM
+} from '../../../lib/wp-rocket/constants';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
 import {
@@ -91,6 +94,64 @@ const AA_SMALL_TEXT = 4.5;
 /** The AA floor for a meaningful non-text glyph (WCAG 1.4.11). */
 const AA_NON_TEXT = 3;
 
+/** The identity's longest form: the generator meta carries no version. */
+const UNKNOWN_IDENTITY = 'WPR (unknown version)';
+
+/** Drop the generator meta's version, keeping the WP Rocket generator itself. */
+function unversioned(html: string): string {
+  const out = html.replace(/(<meta name="generator" content="WP Rocket) [^"]*"/, '$1"');
+  if (out === html) throw new Error('the served /fdt/ page lost its WP Rocket generator meta');
+  return out;
+}
+
+/** Remove one required piece of the served page, failing loudly when it is absent. */
+function without(html: string, piece: RegExp, name: string): string {
+  const out = html.replace(piece, '');
+  if (out === html) throw new Error(`the served /fdt/ page lost its ${name}`);
+  return out;
+}
+
+/** WP Rocket's footer comment: its cache signature (and the debug stamp inside it). */
+const FOOTER_COMMENT = /<!-- This website is like a Rocket[^>]*-->/;
+
+/** The footer's debug stamp alone: without it the signature is not proof of a cached visit. */
+const DEBUG_STAMP = / - Debug: cached@\d+/;
+
+/**
+ * The pill's worst cases: the longest identity next to each long chip state
+ * word (and the cached chip's long stamp), each served plain and rewritten.
+ */
+const PILL_WORST_CASES: readonly {
+  label: string;
+  chip: string;
+  make: (html: string) => string;
+  serve?: ServeOptions;
+}[] = [
+  { label: 'cached', chip: '✓ Cached', make: unversioned },
+  {
+    label: 'not-detected',
+    chip: 'Cache not detected',
+    make: (html) => without(unversioned(html), FOOTER_COMMENT, 'footer comment')
+  },
+  {
+    label: 'not-proven',
+    chip: 'Cache not proven',
+    make: (html) => without(unversioned(html), DEBUG_STAMP, 'debug stamp')
+  },
+  {
+    label: 'bypass',
+    chip: 'Bypass requested',
+    make: (html) => without(unversioned(html), FOOTER_COMMENT, 'footer comment'),
+    serve: { query: `${CACHE_BYPASS_QUERY_PARAM}=1` }
+  },
+  {
+    label: 'possibly',
+    chip: 'Possibly cached',
+    make: (html) => without(unversioned(html), FOOTER_COMMENT, 'footer comment'),
+    serve: { headers: { 'cf-cache-status': 'HIT' } }
+  }
+];
+
 /** The real `/fdt/` HTML, as the site serves it. */
 async function servedFdtHtml(extension: ExtensionDriver): Promise<string> {
   const response = await extension.browserContext.request.get(`${SITE_URL}/fdt/`);
@@ -114,6 +175,12 @@ async function setWidget(extension: ExtensionDriver, enabled: boolean | null): P
   );
 }
 
+/** Extra request shape for a served case: query parameters and response headers. */
+interface ServeOptions {
+  readonly query?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
 /**
  * Serve `body()` at a unique site URL (re-read per request, so a reload can
  * serve a different document) and open it.
@@ -121,11 +188,18 @@ async function setWidget(extension: ExtensionDriver, enabled: boolean | null): P
 async function openServed(
   extension: ExtensionDriver,
   label: string,
-  body: () => string
+  body: () => string,
+  options: ServeOptions = {}
 ): Promise<{ page: Page; url: string }> {
-  const url = `${SITE_URL}/fdt/?fdt-strip-builder=${label}-${String(Date.now())}`;
+  const extra = options.query === undefined ? '' : `&${options.query}`;
+  const url = `${SITE_URL}/fdt/?fdt-strip-builder=${label}-${String(Date.now())}${extra}`;
   await extension.browserContext.route(url, async (route) => {
-    await route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: body() });
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: body(),
+      ...(options.headers === undefined ? {} : { headers: { ...options.headers } })
+    });
   });
   const { page } = await openSitePage(extension, url);
   return { page, url };
@@ -334,12 +408,23 @@ interface PillLayout {
   pillInside: boolean;
   /** The pill's own horizontal overflow (its content wider than its box). */
   pillOverflow: number;
-  glyphInside: boolean;
-  glyphWidth: number;
+  /** The chip box's own overflow (a clip with no ellipsis of its own). */
+  chipOverflow: number;
+  /** The builder glyph's facts; null on a page with no hint. */
+  glyphInside: boolean | null;
+  glyphWidth: number | null;
+  /** The glyph follows the identity on the same row. */
+  glyphAfterIdentity: boolean | null;
   /** How much of the identity (the version) its ellipsis hides. */
   identityClipped: number;
-  /** The glyph follows the identity on the same row. */
-  glyphAfterIdentity: boolean;
+  /** The chip's state word, and how much of it is hidden. */
+  chipText: string;
+  chipTextClipped: number;
+  /** The stamp's shown width and hidden part; null when the chip has no stamp. */
+  stampWidth: number | null;
+  stampClipped: number | null;
+  /** Pill text parts cut without an ellipsis (each must ellipsize or show whole). */
+  unellipsized: string[];
   /** The horizontal document overflow the strip adds (the theme's own excluded). */
   documentOverflow: number;
 }
@@ -349,13 +434,33 @@ async function pillLayout(page: Page): Promise<PillLayout> {
   return await page.evaluate((host) => {
     const root = document.querySelector(host)?.shadowRoot;
     if (root === undefined || root === null) throw new Error('no strip');
-    const pill = root.querySelector<HTMLElement>('.ins-pill');
-    const glyph = root.querySelector<HTMLElement>('[data-fdt-strip-pill-builder]');
-    const identity = root.querySelector<HTMLElement>('.ins-pill .ins-identity');
-    if (pill === null || glyph === null || identity === null) throw new Error('no pill hint');
+    const part = (selector: string): HTMLElement | null =>
+      root.querySelector<HTMLElement>(selector);
+    const pill = part('.ins-pill');
+    const identity = part('.ins-pill .ins-identity');
+    const chip = part('.ins-pill .ins-cache');
+    const chipText = part('.ins-pill .ins-cache-text');
+    const stamp = part('.ins-pill .ins-cache-stamp');
+    const glyph = part('[data-fdt-strip-pill-builder]');
+    if (pill === null || identity === null || chip === null || chipText === null) {
+      throw new Error('no pill identity/chip');
+    }
+    const clipped = (element: HTMLElement): number => element.scrollWidth - element.clientWidth;
+    const unellipsized = (
+      [
+        ['identity', identity],
+        ['chip text', chipText],
+        ['stamp', stamp]
+      ] as const
+    )
+      .filter(([, element]) => element !== null && clipped(element) > 0)
+      .filter(
+        ([, element]) => element !== null && getComputedStyle(element).textOverflow !== 'ellipsis'
+      )
+      .map(([name]) => name);
     const pillBox = pill.getBoundingClientRect();
-    const glyphBox = glyph.getBoundingClientRect();
     const identityBox = identity.getBoundingClientRect();
+    const glyphBox = glyph?.getBoundingClientRect() ?? null;
     const middle = (box: DOMRect): number => box.top + box.height / 2;
     const overflow = (): number =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth;
@@ -366,16 +471,42 @@ async function pillLayout(page: Page): Promise<PillLayout> {
     hostElement?.style.removeProperty('display');
     return {
       pillInside: pillBox.left >= -0.5 && pillBox.right <= window.innerWidth + 0.5,
-      pillOverflow: pill.scrollWidth - pill.clientWidth,
-      glyphInside: glyphBox.left >= pillBox.left - 0.5 && glyphBox.right <= pillBox.right + 0.5,
-      glyphWidth: Math.round(glyphBox.width * 10) / 10,
-      identityClipped: identity.scrollWidth - identity.clientWidth,
+      pillOverflow: clipped(pill),
+      chipOverflow: clipped(chip),
+      glyphInside:
+        glyphBox === null
+          ? null
+          : glyphBox.left >= pillBox.left - 0.5 && glyphBox.right <= pillBox.right + 0.5,
+      glyphWidth: glyphBox === null ? null : Math.round(glyphBox.width * 10) / 10,
       glyphAfterIdentity:
-        glyphBox.left >= identityBox.right - 0.5 &&
-        Math.abs(middle(glyphBox) - middle(identityBox)) < 2,
+        glyphBox === null
+          ? null
+          : glyphBox.left >= identityBox.right - 0.5 &&
+            Math.abs(middle(glyphBox) - middle(identityBox)) < 2,
+      identityClipped: clipped(identity),
+      chipText: chipText.textContent,
+      chipTextClipped: clipped(chipText),
+      stampWidth: stamp === null ? null : stamp.clientWidth,
+      stampClipped: stamp === null ? null : clipped(stamp),
+      unellipsized,
       documentOverflow: withStrip - withoutStrip
     };
   }, STRIP_HOST);
+}
+
+/**
+ * The pill's narrowing contract at one width: it fits (no pill, chip or
+ * document overflow), the state word is never cut, every cut part shows an
+ * ellipsis, and the identity gives way only once the stamp is spent.
+ */
+function expectPillFits(layout: PillLayout, at: string): void {
+  expect(layout.pillInside, at).toBe(true);
+  expect(layout.pillOverflow, at).toBe(0);
+  expect(layout.chipOverflow, at).toBe(0);
+  expect(layout.chipTextClipped, at).toBe(0);
+  expect(layout.unellipsized, at).toEqual([]);
+  if (layout.identityClipped > 0) expect(layout.stampWidth ?? 0, `${at} stamp spent`).toBe(0);
+  expect(layout.documentOverflow, at).toBe(0);
 }
 
 /** Run axe over the strip only (the host page's own markup is not ours). */
@@ -569,7 +700,13 @@ test.describe('strip builder line + modifiers', () => {
         expect(await words.evaluate((element) => getComputedStyle(element).clipPath)).toBe(
           'inset(50%)'
         );
-        expect(await words.boundingBox()).toMatchObject({ width: 1, height: 1 });
+        // The layout box, not the painted one: the pill's entrance scales it.
+        expect(
+          await words.evaluate((element: HTMLElement) => [
+            element.offsetWidth,
+            element.offsetHeight
+          ])
+        ).toEqual([1, 1]);
 
         for (const width of WIDTHS) {
           await page.setViewportSize({ width, height: 900 });
@@ -577,14 +714,15 @@ test.describe('strip builder line + modifiers', () => {
           const layout = await pillLayout(page);
           console.log(`[pill] ${colorScheme} ${String(width)} px ${JSON.stringify(layout)}`);
           const at = `${colorScheme} ${String(width)} px`;
-          expect(layout.pillInside, at).toBe(true);
-          expect(layout.pillOverflow, at).toBe(0);
+          expectPillFits(layout, at);
           expect(layout.glyphInside, at).toBe(true);
           expect(layout.glyphWidth, at).toBe(13);
-          // The chip's stamp gives way first: the version is never cut.
+          // The real page: the chip's stamp gives way first, the version is never cut.
           expect(layout.identityClipped, at).toBe(0);
+          expect(layout.chipText, at).toBe('✓ Cached');
+          // A wide host shows the stamp whole (no chip cap at rest).
+          if (width === 1280) expect(layout.stampClipped, at).toBe(0);
           expect(layout.glyphAfterIdentity, at).toBe(true);
-          expect(layout.documentOverflow, at).toBe(0);
           // The overflow probe re-showed the host: let any restyle settle first.
           await settle(page);
           const measured = await builderContrast(page, '.ins-pill-builder');
@@ -613,10 +751,11 @@ test.describe('strip builder line + modifiers', () => {
         }
         await page.mouse.move(0, 0);
         await settle(page);
-        // Closed, the pill is in the tree with `aria-controls` → the card's id
-        // inside the same shadow root: axe cannot resolve an id across the
-        // shadow boundary, so it reports that one check as needing review
-        // (on any page, hint or not). The reference itself is proven here.
+        // Closed, the pill carries `aria-haspopup` with `aria-controls` → the
+        // card's id: axe's `aria-valid-attr-value` marks any such pair as
+        // needing review (`controlsWithinPopup` — it cannot tell whether the
+        // id should name the popup), on any page, hint or not. The reference
+        // itself is proven here: it resolves to the dialog.
         expect(
           await page.evaluate((host) => {
             const root = document.querySelector(host)?.shadowRoot;
@@ -631,6 +770,63 @@ test.describe('strip builder line + modifiers', () => {
       } finally {
         await page.close();
         await extension.browserContext.unroute(url);
+      }
+    });
+  }
+
+  for (const colorScheme of ['light', 'dark'] as const) {
+    test(`the closed pill narrows without cutting words, worst cases (${colorScheme})`, async ({
+      extension
+    }) => {
+      test.setTimeout(240_000);
+      await setWidget(extension, true);
+      const served = await servedFdtHtml(extension);
+      for (const pillCase of PILL_WORST_CASES) {
+        for (const rewritten of [false, true]) {
+          const variant = `${pillCase.label}-${rewritten ? 'rewritten' : 'plain'}`;
+          const html = pillCase.make(served);
+          const body = rewritten ? writeBuilderMarker(html, NOTE) : html;
+          const { page, url } = await openServed(
+            extension,
+            `worst-${variant}-${colorScheme}`,
+            () => body,
+            pillCase.serve
+          );
+          try {
+            await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+            const pill = page.locator(`${STRIP_HOST} .ins-pill`);
+            await expect(pill, variant).toContainText(UNKNOWN_IDENTITY, { timeout: 15_000 });
+            await expect(pill.locator('.ins-cache-text'), variant).toHaveText(pillCase.chip);
+            await expect(page.locator(PILL_GLYPH), variant).toHaveCount(rewritten ? 1 : 0);
+            for (const width of WIDTHS) {
+              await page.setViewportSize({ width, height: 900 });
+              await settle(page);
+              const layout = await pillLayout(page);
+              const at = `${variant} ${colorScheme} ${String(width)} px`;
+              console.log(`[pill worst] ${at} ${JSON.stringify(layout)}`);
+              expectPillFits(layout, at);
+              if (rewritten) {
+                expect(layout.glyphInside, at).toBe(true);
+                expect(layout.glyphWidth, at).toBe(13);
+              }
+              // Past the narrowest width nothing gives way.
+              if (width >= 480) {
+                expect(layout.identityClipped, at).toBe(0);
+                expect(layout.stampClipped ?? 0, at).toBe(0);
+              }
+              const shots = process.env['FDT_SHOTS_DIR'];
+              if (shots !== undefined && shots !== '') {
+                mkdirSync(shots, { recursive: true });
+                await pill.screenshot({
+                  path: join(shots, `pill-worst-${variant}-${colorScheme}-${String(width)}.png`)
+                });
+              }
+            }
+          } finally {
+            await page.close();
+            await extension.browserContext.unroute(url);
+          }
+        }
       }
     });
   }
