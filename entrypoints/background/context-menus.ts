@@ -1,10 +1,10 @@
 /**
- * The context-menu feature: four entries, one click router, and the
+ * The context-menu feature: six entries, one click router, and the
  * create-recreate lifecycle that keeps the menus existing across installs,
  * updates, and browser restarts.
  *
  * Owned details other values depend on:
- * - the three page-scoped entries restrict themselves to http/https
+ * - the five page-scoped entries restrict themselves to http/https
  *   documents with the single-sourced URL patterns, so the menus never
  *   surface on browser-internal pages (where the panel features would only
  *   fail anyway);
@@ -24,7 +24,8 @@
 import { createLogger } from '../../lib/logger';
 import { sendMessage } from '../../lib/messaging';
 import { numericTabId } from '../../lib/messaging/sender';
-import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { CONTEXT_MENU_IDS, URL_PATTERNS, withCacheBypass } from '../../lib/wp-rocket/constants';
+import { parseUrl } from '../../utils/urls';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { readLastError, type LastErrorSlot } from '../../utils/last-error';
@@ -39,7 +40,8 @@ export type MenuAction =
   | 'psi-side-by-side'
   | 'exclusion-builder'
   | 'refresh-database'
-  | 'toggle-detection-widget';
+  | 'toggle-detection-widget'
+  | 'open-nowprocket';
 
 /** One registered entry: id, label, and where the browser may show it. */
 interface MenuEntry {
@@ -96,6 +98,15 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     action: 'toggle-detection-widget',
     id: CONTEXT_MENU_IDS.toggleDetectionWidget,
     title: 'Toggle the detection widget on this site',
+    contexts: ['all'],
+    documentUrlPatterns: URL_PATTERNS
+  },
+  {
+    // Page-scoped: the click's document is what opens bypassed, never the
+    // link or image under the pointer.
+    action: 'open-nowprocket',
+    id: CONTEXT_MENU_IDS.openNowProcket,
+    title: 'Open ?nowprocket',
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   }
@@ -166,6 +177,11 @@ export interface MenuClickDeps {
    * persisted truth.
    */
   toggleDetectionWidget(origin: string): Promise<boolean>;
+  /**
+   * Open a URL in a new, active tab of the given window (the browser's
+   * current window when undefined); rejects when the browser refuses.
+   */
+  openUrl(url: string, windowId: number | undefined): Promise<unknown>;
 }
 
 /**
@@ -188,21 +204,37 @@ export function menuClickOrigin(info: {
 }
 
 /**
+ * The cache-bypassed URL a click opens, from the click's own document URL.
+ * Only http(s) documents qualify (the menu's URL patterns already restrict
+ * it; this gate keeps the decision honest on its own).
+ *
+ * @param pageUrl The click's document URL, when the event carries one.
+ * @returns The URL to open (unchanged when already bypassed), or null when
+ *   the document URL is absent, malformed, or not http(s).
+ */
+export function menuBypassUrl(pageUrl: string | undefined): string | null {
+  if (pageUrl === undefined) return null;
+  const url = parseUrl(pageUrl);
+  if (url === null || (url.protocol !== 'http:' && url.protocol !== 'https:')) return null;
+  return withCacheBypass(url);
+}
+
+/**
  * One click handler for every entry: the per-entry branch tree, awaiting the
  * content-script pushes so a missing or not-yet-injected script reports as
  * a real, contextual log line — never a swallowed rejection on the floor.
  *
  * @param action The click's resolved action.
- * @param origin The click's document origin, when page-scoped and usable.
+ * @param info The click's menu information (its document URL).
  * @param tabId The click event's own tab (validated by the dispatcher).
  * @param tab The same tab object, for properties beyond the id.
  * @param deps The injected browser effects.
  */
 async function dispatchMenuClick(
   action: MenuAction,
-  origin: string | null,
+  info: { menuItemId: string | number; pageUrl?: string },
   tabId: number,
-  tab: { incognito?: boolean } | undefined,
+  tab: { incognito?: boolean; windowId?: number } | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   switch (action) {
@@ -239,6 +271,7 @@ async function dispatchMenuClick(
       return;
     }
     case 'toggle-detection-widget': {
+      const origin = menuClickOrigin(info);
       if (origin === null) {
         log.warn('Detection-widget toggle could not resolve the page origin', { tabId });
         return;
@@ -250,6 +283,22 @@ async function dispatchMenuClick(
         // A rejected toggle is abnormal (the context is alive): the user's
         // click produced no effect, so it must not vanish at debug level.
         log.error('Toggling the detection widget failed', { origin, cause });
+      }
+      return;
+    }
+    case 'open-nowprocket': {
+      // The page URL can carry secrets (tokens in the query): logs name the
+      // action and tab only.
+      const url = menuBypassUrl(info.pageUrl);
+      if (url === null) {
+        log.warn('Open ?nowprocket ignored: no usable page URL', { action, tabId });
+        return;
+      }
+      try {
+        // The click's own window, not the service worker's current one.
+        await deps.openUrl(url, tab?.windowId);
+      } catch (cause) {
+        log.error('Opening the cache-bypassed page failed', { action, tabId, cause });
       }
       return;
     }
@@ -267,7 +316,7 @@ async function dispatchMenuClick(
  */
 export async function dispatchMenuClickEvent(
   info: { menuItemId: string | number; pageUrl?: string },
-  tab: { id?: number; incognito?: boolean } | undefined,
+  tab: { id?: number; incognito?: boolean; windowId?: number } | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   const action = menuActionFor(info.menuItemId);
@@ -278,7 +327,7 @@ export async function dispatchMenuClickEvent(
     log.warn('Menu click ignored: no tab', { action });
     return;
   }
-  await dispatchMenuClick(action, menuClickOrigin(info), tabId, tab, deps);
+  await dispatchMenuClick(action, info, tabId, tab, deps);
 }
 
 /**
@@ -339,7 +388,9 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     // The on-page widget's per-origin override writes through the storage
     // module's one toggle — the menu row is the page-context writer; the
     // popup and the options row write the same item later.
-    toggleDetectionWidget: toggleInspectorOrigin
+    toggleDetectionWidget: toggleInspectorOrigin,
+    openUrl: (url, windowId) =>
+      browser.tabs.create({ url, ...(windowId === undefined ? {} : { windowId }) })
   };
 
   browser.contextMenus.onClicked.addListener((info, tab) => {

@@ -11,6 +11,7 @@ import type { DbUpdateResult } from '../../lib/messaging/validate';
 import {
   dispatchMenuClickEvent,
   menuActionFor,
+  menuBypassUrl,
   menuClickOrigin,
   menuCreateParams,
   reportMenuCreateFailure,
@@ -36,6 +37,42 @@ describe('menuClickOrigin', () => {
   });
 });
 
+describe('menuBypassUrl', () => {
+  it('adds the bypass to the click document URL, query and fragment kept', () => {
+    expect(menuBypassUrl(`${SITE}/fdt/`)).toBe(`${SITE}/fdt/?nowprocket`);
+    expect(menuBypassUrl(`${SITE}/fdt/?a=b#h`)).toBe(`${SITE}/fdt/?a=b&nowprocket#h`);
+    expect(menuBypassUrl('https://example.test/?q=a%20b')).toBe(
+      'https://example.test/?q=a%20b&nowprocket'
+    );
+  });
+
+  it('opens an already-bypassed document unchanged (=0 and array forms included)', () => {
+    for (const href of [
+      `${SITE}/?nowprocket`,
+      `${SITE}/?nowprocket=1#h`,
+      `${SITE}/?nowprocket=0`,
+      `${SITE}/?a=1&nowprocket[]=1`
+    ]) {
+      expect(menuBypassUrl(href), href).toBe(href);
+    }
+  });
+
+  it('answers null for absent, relative, malformed or non-http(s) document URLs', () => {
+    for (const pageUrl of [
+      undefined,
+      '',
+      '/relative?a=1',
+      'not a url ?%',
+      'chrome://extensions/',
+      'file:///tmp/page.html',
+      'javascript:alert(1)',
+      'data:text/html,hi'
+    ]) {
+      expect(menuBypassUrl(pageUrl), String(pageUrl)).toBeNull();
+    }
+  });
+});
+
 describe('menuActionFor', () => {
   it('routes each registered entry to its action and its action only', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.wprSideBySide)).toBe('side-by-side');
@@ -43,6 +80,7 @@ describe('menuActionFor', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.exclusionBuilder)).toBe('exclusion-builder');
     expect(menuActionFor(CONTEXT_MENU_IDS.updateKnownConflictsDB)).toBe('refresh-database');
     expect(menuActionFor(CONTEXT_MENU_IDS.toggleDetectionWidget)).toBe('toggle-detection-widget');
+    expect(menuActionFor(CONTEXT_MENU_IDS.openNowProcket)).toBe('open-nowprocket');
   });
 
   it('leaves foreign or numeric ids unrouted', () => {
@@ -115,6 +153,12 @@ describe('menuCreateParams', () => {
         title: 'Toggle the detection widget on this site',
         contexts: ['all'],
         documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.openNowProcket,
+        title: 'Open ?nowprocket',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
       }
     ]);
   });
@@ -129,10 +173,12 @@ interface Recorded {
   toggles: string[];
   /** The rejection the next toggle inside throws (undefined: it resolves). */
   toggleFailure?: Error;
+  /** URLs opened in a new tab, with the window they targeted. */
+  openedUrls: Array<{ url: string; windowId: number | undefined }>;
 }
 
 function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
-  const recorded: Recorded = { sent: [], opened: [], refreshes: 0, toggles: [] };
+  const recorded: Recorded = { sent: [], opened: [], refreshes: 0, toggles: [], openedUrls: [] };
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => {
       recorded.sent.push({ type, target });
@@ -154,6 +200,10 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
       // The storage module owns the flip; the recording answers its
       // regression shape: an unknown origin's first flip enables.
       return Promise.resolve(true);
+    },
+    openUrl: (url, windowId) => {
+      recorded.openedUrls.push({ url, windowId });
+      return Promise.resolve({ id: 100 });
     }
   };
   return { deps, recorded };
@@ -352,6 +402,80 @@ describe('dispatchMenuClickEvent', () => {
       expect(errors.some((line) => line.includes('Toggling the detection widget failed'))).toBe(
         true
       );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('the nowprocket entry opens the bypassed document in the click window', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/fdt/?a=b#h` },
+      { id: 4, windowId: 12 },
+      deps
+    );
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/fdt/?a=b&nowprocket#h`, windowId: 12 }]);
+    expect(recorded.sent).toHaveLength(0);
+    expect(recorded.opened).toHaveLength(0);
+    expect(recorded.toggles).toHaveLength(0);
+    expect(recorded.refreshes).toBe(0);
+  });
+
+  it('an already-bypassed document opens unchanged; a windowless tab defers to the browser', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?nowprocket=0` },
+      { id: 4 },
+      deps
+    );
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/?nowprocket=0`, windowId: undefined }]);
+  });
+
+  it('a nowprocket click without a usable page URL opens nothing and never logs a URL', async () => {
+    const { deps, recorded } = recordingDeps();
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      for (const pageUrl of [undefined, 'chrome://settings/?token=secret', '%']) {
+        await dispatchMenuClickEvent(
+          {
+            menuItemId: CONTEXT_MENU_IDS.openNowProcket,
+            ...(pageUrl === undefined ? {} : { pageUrl })
+          },
+          { id: 4, windowId: 1 },
+          deps
+        );
+      }
+      expect(recorded.openedUrls).toHaveLength(0);
+      expect(spy).toHaveBeenCalledTimes(3);
+      for (const call of spy.mock.calls) {
+        expect(String(call[0])).toContain('Open ?nowprocket ignored');
+        expect(call[1]).toEqual({ action: 'open-nowprocket', tabId: 4 });
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a rejected tab create is an error-level branch without the page URL', async () => {
+    const { deps } = recordingDeps();
+    const failure = new Error('No window with id: 12.');
+    deps.openUrl = (): Promise<never> => Promise.reject(failure);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(
+        dispatchMenuClickEvent(
+          { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?token=secret` },
+          { id: 4, windowId: 12 },
+          deps
+        )
+      ).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0]?.[0])).toContain('Opening the cache-bypassed page failed');
+      expect(spy.mock.calls[0]?.[1]).toEqual({
+        action: 'open-nowprocket',
+        tabId: 4,
+        cause: failure
+      });
     } finally {
       spy.mockRestore();
     }
