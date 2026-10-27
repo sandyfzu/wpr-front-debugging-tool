@@ -229,6 +229,30 @@ async function handle(request, response) {
     );
     return;
   }
+  if (url.pathname === '/__e2e/windows-1252') {
+    // A main frame served as windows-1252 (header only, no `<meta>`), its
+    // text holding bytes that differ from Latin-1 and UTF-8 (0x80 = €,
+    // 0xE9 = é) and a script as Delay JavaScript execution serves it: an
+    // applied session must decode and re-encode the page in its own charset.
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=windows-1252',
+      'cache-control': 'no-store'
+    });
+    response.end(
+      Buffer.concat([
+        Buffer.from(
+          '<!doctype html><html lang="fr"><head><title>windows-1252</title></head><body><p id="w1252-text">Caf',
+          'ascii'
+        ),
+        Buffer.from([0xe9, 0x20, 0x80]),
+        Buffer.from(
+          ' 5</p><script type="rocketlazyloadscript" data-rocket-src="/exclusion/lib/jquery-ui.js" id="jquery-ui-js"></script></body></html>',
+          'ascii'
+        )
+      ])
+    );
+    return;
+  }
   if (url.pathname === '/favicon.ico') {
     // Browsers always request this; answering 204 keeps the fixture pages'
     // console baseline clean (a 404 would surface as error-level noise the

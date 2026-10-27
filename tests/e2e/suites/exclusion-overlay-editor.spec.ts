@@ -39,6 +39,12 @@ const DELAYED = '/exclusion/delayed.html';
 /** Three sections served as Automatic Lazy Rendering stamps them. */
 const LAZY_RENDERED = '/exclusion/lazy-render.html';
 
+/** A page served as windows-1252 (the server's own route: the static files are UTF-8). */
+const WINDOWS_1252 = '/__e2e/windows-1252';
+
+/** That page's text: `é` and `€` are bytes 0xE9 and 0x80 there (0x80 is no Latin-1 letter). */
+const WINDOWS_1252_TEXT = 'Café € 5';
+
 /** The page's navigation count since it opened (a reload adds one). */
 async function navigations(page: Page): Promise<number> {
   return await page.evaluate(() => {
@@ -274,6 +280,39 @@ test.describe('exclusion builder editor', () => {
         )
       )
       .toEqual([true, false, false]);
+    await page.getByRole('button', { name: 'Stop' }).click();
+    await page.close();
+  });
+
+  test('a windows-1252 page: applied, it keeps its own charset and text, and the matched script runs', async ({
+    extension
+  }) => {
+    const { page } = await openBuilder(extension, WINDOWS_1252);
+    const read = (): Promise<{
+      text: string;
+      charset: string;
+      type: string | null;
+      ran: boolean;
+    }> =>
+      page.evaluate(() => ({
+        text: document.getElementById('w1252-text')?.textContent ?? '',
+        charset: document.characterSet,
+        type: document.getElementById('jquery-ui-js')?.getAttribute('type') ?? null,
+        ran: document.documentElement.dataset.jqueryUiRan === 'true'
+      }));
+    expect(await read()).toEqual({
+      text: WINDOWS_1252_TEXT,
+      charset: 'windows-1252',
+      type: 'rocketlazyloadscript',
+      ran: false
+    });
+    await typeRow(page, DELAY, 'jquery-ui');
+    await page.keyboard.press('Tab');
+    expect(await reloadThroughSession(page, () => applyButton(page).click())).toBe('Applied');
+    // The fulfilled bytes were re-encoded as windows-1252: the text reads as served.
+    await expect
+      .poll(read)
+      .toEqual({ text: WINDOWS_1252_TEXT, charset: 'windows-1252', type: null, ran: true });
     await page.getByRole('button', { name: 'Stop' }).click();
     await page.close();
   });
