@@ -546,6 +546,27 @@ const TAB_LINE_DASH = ' — ';
 /** The joiner assistive tech hears where the eye sees {@link LIST_JOINER}. */
 const SPOKEN_JOINER = ', ';
 
+/** One HUD feature with the builder fact the document states for it. */
+interface FeatureBuilderFact {
+  readonly feature: HudFeature;
+  readonly fact: BuilderFact;
+}
+
+/**
+ * The page's builder facts, in HUD order: the single read both the card's
+ * tab-level line and the closed pill's glyph derive from, so they are
+ * present together by construction.
+ *
+ * @param detections The engine rows.
+ * @returns One entry per HUD feature the document states a fact for.
+ */
+function builderFacts(detections: WprDetections): FeatureBuilderFact[] {
+  return HUD_FEATURES.flatMap((feature) => {
+    const fact = builderFactOf(detections, feature.row);
+    return fact === null ? [] : [{ feature, fact }];
+  });
+}
+
 /**
  * The tab-level line for a page, from the same facts and copy as the
  * per-feature modifier; null when the document states no builder fact (a
@@ -554,10 +575,9 @@ const SPOKEN_JOINER = ', ';
  * @param detections The engine rows.
  */
 export function builderTabLine(detections: WprDetections): BuilderTabLine | null {
-  const hints = HUD_FEATURES.flatMap((feature) => {
-    const fact = builderFactOf(detections, feature.row);
-    return fact === null ? [] : [builderModifierCopy(feature, fact).hint];
-  });
+  const hints = builderFacts(detections).map(
+    ({ feature, fact }) => builderModifierCopy(feature, fact).hint
+  );
   if (hints.length === 0) return null;
   const lead = `${BUILDER_TAB_LINE_TITLE}${TAB_LINE_DASH}`;
   return {
@@ -576,19 +596,16 @@ export const BUILDER_PILL_HINT_SPOKEN = ', rewritten by the Exclusion Builder';
 /**
  * The page's leading builder effect, drawn as the closed pill's one glyph:
  * `off` when any feature is turned off in this tab (it changes what runs, so
- * it outranks exclusions), else `excluded`. Same facts as
- * {@link builderTabLine}, so the two are present together.
+ * it outranks exclusions), else `excluded` — each fact's own badge kind.
+ * Read from the same facts as {@link builderTabLine}.
  *
  * @param detections The engine rows.
  * @returns The glyph kind, or null when the document states no builder fact.
  */
 export function builderPageKind(detections: WprDetections): BuilderBadgeKind | null {
-  const facts = HUD_FEATURES.flatMap((feature) => {
-    const fact = builderFactOf(detections, feature.row);
-    return fact === null ? [] : [fact];
-  });
-  if (facts.length === 0) return null;
-  return facts.some((fact) => builderTurnsOff(fact)) ? 'off' : 'excluded';
+  const kinds = builderFacts(detections).map(({ fact }) => builderBadgeKind(fact));
+  if (kinds.length === 0) return null;
+  return kinds.includes('off') ? 'off' : 'excluded';
 }
 
 /**
