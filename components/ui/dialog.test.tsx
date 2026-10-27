@@ -104,6 +104,34 @@ describe('ModalDialog dismissals', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('closes on a scrim press right after mount, before the library arms its outside listener', () => {
+    // The browser runs input ahead of timers: a press can land before the
+    // library's deferred document listener exists.
+    const { onClose } = renderDialog();
+    const scrim = document.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes exactly once when the scrim and the armed library both see the press', async () => {
+    const { onClose } = renderDialog();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const scrim = document.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    scrim.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a touch press on the scrim on its click, not its pointerdown', () => {
+    // A touch dismissal on pointerdown would let the tap's click land on the page below.
+    const { onClose } = renderDialog();
+    const scrim = document.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+    expect(onClose).not.toHaveBeenCalled();
+    scrim.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('closes through the explicit close control when the caller renders one', async () => {
     const { onClose } = renderDialog({ closeButton: true });
     await waitFor(() => {
@@ -281,6 +309,15 @@ describe('ModalDialog mounted mode (an injected shadow root)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     // Other keys pass through untouched.
     button.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes on a scrim press right after mount, the root keeping events from the page', () => {
+    const { shadow, onClose } = renderMounted();
+    const scrim = shadow.querySelector('[data-fdt="dialog-overlay"]') as HTMLElement;
+    scrim.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: 'mouse' })
+    );
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

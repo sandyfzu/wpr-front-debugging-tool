@@ -15,6 +15,13 @@
  * every open a fresh surface (autofocus runs per open, transient state never
  * outlives a close).
  *
+ * The scrim is the dialog's outside, and a press on it dismisses at once:
+ * the library arms its outside-pointer listener a task after mount, and the
+ * browser runs input ahead of timers, so a press in that gap (a quick click,
+ * or any click while a busy host page holds the timer back) would otherwise
+ * be ignored. Every dismissal seam funnels into one guard, so a press both
+ * seams see closes once.
+ *
  * Focus on close is the caller's contract: nothing here remembers what to
  * restore, because only the caller knows its trigger (and a command that
  * navigates elsewhere wants to land focus there instead).
@@ -38,7 +45,7 @@ import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
 
 export interface ModalDialogProps {
-  /** Called once when the dialog is dismissed by Escape or an outside pointer. */
+  /** Called once per mount when the dialog is dismissed (Escape, an outside pointer, the close control). */
   onClose: () => void;
   /**
    * A keydown handler on the panel's capture phase — it runs before the
@@ -112,6 +119,29 @@ function focusInitial(target: HTMLElement, panel: HTMLElement): void {
 }
 
 /**
+ * Dismiss on a press on the scrim — mouse and pen on `pointerdown` (the
+ * library's own moment), touch on `click` (a tap dismissed on its
+ * pointerdown would let its click land on the page below the scrim).
+ * Native listeners on the element itself: an injected root stops pointer
+ * events at its host, before a document-delegated handler would see them.
+ *
+ * @param scrim The dialog's scrim.
+ * @param dismiss The dialog's guarded dismissal.
+ * @returns Removes the listeners.
+ */
+function dismissOnScrimPress(scrim: HTMLElement, dismiss: () => void): () => void {
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType !== 'touch') dismiss();
+  };
+  scrim.addEventListener('pointerdown', onPointerDown);
+  scrim.addEventListener('click', dismiss);
+  return () => {
+    scrim.removeEventListener('pointerdown', onPointerDown);
+    scrim.removeEventListener('click', dismiss);
+  };
+}
+
+/**
  * Render the modal dialog (mount-driven — render inside a `<Show>` while open).
  *
  * The title is visually hidden: devtools-grade overlays present their own
@@ -128,6 +158,13 @@ function focusInitial(target: HTMLElement, panel: HTMLElement): void {
  * @param props.children The dialog's content (fields, lists, texts).
  */
 export function ModalDialog(props: ModalDialogProps): JSX.Element {
+  /** Set by the first dismissal: later seams (one press seen twice) are no-ops. */
+  let dismissed = false;
+  const dismiss = (): void => {
+    if (dismissed) return;
+    dismissed = true;
+    props.onClose();
+  };
   return (
     <KobalteDialog.Root
       // Mounted (injected) dialogs never write into the host document.
@@ -137,11 +174,17 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
       // transitions are the dismissals funneled into one branch below.
       defaultOpen
       onOpenChange={(open) => {
-        if (!open) props.onClose();
+        if (!open) dismiss();
       }}
     >
       <KobalteDialog.Portal mount={props.mount}>
-        <KobalteDialog.Overlay data-fdt="dialog-overlay" class={OVERLAY_CLASSES} />
+        <KobalteDialog.Overlay
+          data-fdt="dialog-overlay"
+          class={OVERLAY_CLASSES}
+          ref={(element) => {
+            onCleanup(dismissOnScrimPress(element, dismiss));
+          }}
+        />
         <KobalteDialog.Content
           data-fdt="dialog"
           class={cn(DIALOG_PANEL_CLASSES, props.class)}
@@ -157,7 +200,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
               if (mounted && event.key === 'Escape') {
                 event.preventDefault();
                 event.stopPropagation();
-                props.onClose();
+                dismiss();
                 return;
               }
               capture?.(event);
