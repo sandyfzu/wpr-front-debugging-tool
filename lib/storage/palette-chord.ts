@@ -263,7 +263,7 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * its macOS ⌃F9 cannot be bound). WordPress's macOS form of the
      * Shift + Alt chords is Ctrl+Option — Ctrl is outside the macOS chord
      * vocabulary, so only the Windows/Linux form needs a row. Rows are
-     * physical key positions while WordPress matches by legacy `keyCode`
+     * physical key positions while WordPress matches by the deprecated `keyCode`
      * (the block editor when Alt is held, the classic editor always), which
      * follows the layout — so the protection is exact on US/QWERTY only.
      */
