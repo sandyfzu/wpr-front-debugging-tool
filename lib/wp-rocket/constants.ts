@@ -484,6 +484,39 @@ export function isCacheBypassUrl(url: string | URL): boolean {
   return bypass;
 }
 
+/**
+ * The URL with WP Rocket's cache bypass added: the bare `nowprocket`
+ * parameter (presence is the bypass, so no value is needed) appended after
+ * the existing query and before the fragment. The query is extended by
+ * string, never re-serialized through `URLSearchParams`, which would
+ * re-encode the page's own parameters (`%20` → `+`, `a` → `a=`) and so
+ * request a different URL than the one being debugged.
+ *
+ * @param url The page URL (absolute).
+ * @returns `url.href` unchanged when it already bypasses (any form
+ *   {@link isCacheBypassUrl} accepts, `nowprocket=0` included); otherwise the
+ *   href with the parameter added.
+ */
+export function withCacheBypass(url: URL): string {
+  const href = url.href;
+  if (isCacheBypassUrl(url)) return href;
+  // A serialized URL's first `#` is its fragment delimiter: the query and
+  // path percent-encode a literal `#`. `url.hash` is unusable here — it
+  // reads empty for a bare trailing `#`.
+  const hashAt = href.indexOf('#');
+  const beforeHash = hashAt === -1 ? href : href.slice(0, hashAt);
+  const fragment = hashAt === -1 ? '' : href.slice(hashAt);
+  // `url.search` reads empty for a bare trailing `?`, so the separator is
+  // decided from the serialized text: no `?` opens the query, a query
+  // already ending in a separator (`?`, `&`) takes the parameter as is.
+  const separator = !beforeHash.includes('?')
+    ? '?'
+    : beforeHash.endsWith('?') || beforeHash.endsWith('&')
+      ? ''
+      : '&';
+  return `${beforeHash}${separator}${CACHE_BYPASS_QUERY_PARAM}${fragment}`;
+}
+
 /** One platform distinguishable by response headers. */
 export interface KnownPlatformHeader {
   headerName: string;
@@ -530,7 +563,9 @@ export const CONTEXT_MENU_IDS = {
   /** Opens the exclusion builder overlay on the tab's page. */
   exclusionBuilder: 'exclusionBuilder',
   /** Toggles the on-page detection widget for the clicked page's origin. */
-  toggleDetectionWidget: 'toggleDetectionWidget'
+  toggleDetectionWidget: 'toggleDetectionWidget',
+  /** Opens the clicked page in a new tab with the cache bypass parameter. */
+  openNowProcket: 'openNowProcket'
 } as const;
 
 /**

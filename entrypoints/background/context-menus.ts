@@ -1,10 +1,10 @@
 /**
- * The context-menu feature: four entries, one click router, and the
+ * The context-menu feature: six entries, one click router, and the
  * create-recreate lifecycle that keeps the menus existing across installs,
  * updates, and browser restarts.
  *
  * Owned details other values depend on:
- * - the three page-scoped entries restrict themselves to http/https
+ * - the five page-scoped entries restrict themselves to http/https
  *   documents with the single-sourced URL patterns, so the menus never
  *   surface on browser-internal pages (where the panel features would only
  *   fail anyway);
@@ -12,7 +12,10 @@
  *   database refresh (whose trigger used to live in two places);
  * - the click event's own `tab` is the target — NOT a re-query of the
  *   active tab, which describes the service worker's current window, not
- *   the window the user was pointing at.
+ *   the window the user was pointing at;
+ * - `'all'` includes the toolbar action's own menu, where Firefox sends no
+ *   `pageUrl`: page-reading arms fall back to the click tab's `url` (host
+ *   permissions expose it), so the action-menu click is never a dead end.
  *
  * The mapping and dispatch are injected-deps functions: the registry's
  * creation rows (`menuCreateParams`) and a click's branch tree
@@ -24,7 +27,8 @@
 import { createLogger } from '../../lib/logger';
 import { sendMessage } from '../../lib/messaging';
 import { numericTabId } from '../../lib/messaging/sender';
-import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
+import { CONTEXT_MENU_IDS, URL_PATTERNS, withCacheBypass } from '../../lib/wp-rocket/constants';
+import { parseHttpUrl } from '../../utils/urls';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
 import { readLastError, type LastErrorSlot } from '../../utils/last-error';
@@ -39,7 +43,8 @@ export type MenuAction =
   | 'psi-side-by-side'
   | 'exclusion-builder'
   | 'refresh-database'
-  | 'toggle-detection-widget';
+  | 'toggle-detection-widget'
+  | 'open-nowprocket';
 
 /** One registered entry: id, label, and where the browser may show it. */
 interface MenuEntry {
@@ -54,7 +59,9 @@ interface MenuEntry {
 
 /**
  * The complete menu registry — adding an entry is one row here plus its
- * action arm, nothing else.
+ * action arm, nothing else. Chromium shows at most 6 top-level rows in the
+ * action menu (`ACTION_MENU_TOP_LEVEL_LIMIT`) and drops the rest; the rows
+ * reaching it (`'all'` + `'action'`) are exactly 6 — test-pinned.
  */
 const MENU_ENTRIES: readonly MenuEntry[] = [
   {
@@ -96,6 +103,15 @@ const MENU_ENTRIES: readonly MenuEntry[] = [
     action: 'toggle-detection-widget',
     id: CONTEXT_MENU_IDS.toggleDetectionWidget,
     title: 'Toggle the detection widget on this site',
+    contexts: ['all'],
+    documentUrlPatterns: URL_PATTERNS
+  },
+  {
+    // Page-scoped: the click's document is what opens bypassed, never the
+    // link or image under the pointer.
+    action: 'open-nowprocket',
+    id: CONTEXT_MENU_IDS.openNowProcket,
+    title: 'Open ?nowprocket',
     contexts: ['all'],
     documentUrlPatterns: URL_PATTERNS
   }
@@ -166,25 +182,104 @@ export interface MenuClickDeps {
    * persisted truth.
    */
   toggleDetectionWidget(origin: string): Promise<boolean>;
+  /**
+   * Open a URL in a new, active tab at the given placement (the browser
+   * decides each absent key); rejects when the browser refuses.
+   */
+  openUrl(url: string, placement: MenuTabPlacement): Promise<unknown>;
+}
+
+/** The click information the dispatch reads (the page-scoped part only). */
+export interface MenuClickInfo {
+  menuItemId: string | number;
+  /** The clicked document's URL; absent in the action's own menu on Firefox. */
+  pageUrl?: string;
+}
+
+/** The click event's tab, as far as the dispatch reads it. */
+export interface MenuClickTab {
+  id?: number;
+  incognito?: boolean;
+  windowId?: number;
+  /** The tab's position in its window (new tabs open right after it). */
+  index?: number;
+  /** The tab's top-level URL (present with host permissions on the page). */
+  url?: string;
+}
+
+/**
+ * The click information with its document URL resolved: the event's own
+ * `pageUrl`, else the click tab's `url` — the action-menu click on Firefox
+ * carries no `pageUrl`, while the tab's top-level URL is the same document a
+ * page click reports. Link/frame URLs are never consulted.
+ *
+ * @param info The click's menu information.
+ * @param tab The click event's own tab.
+ * @returns The same information, `pageUrl` filled from the tab when absent.
+ */
+export function resolveMenuClickInfo(
+  info: MenuClickInfo,
+  tab: MenuClickTab | undefined
+): MenuClickInfo {
+  const pageUrl = info.pageUrl ?? tab?.url;
+  return { menuItemId: info.menuItemId, ...(pageUrl === undefined ? {} : { pageUrl }) };
+}
+
+/** Where a menu-opened tab is created: beside its source, in its window. */
+export interface MenuTabPlacement {
+  windowId?: number;
+  index?: number;
+  /** The source tab; always known (the dispatch has validated its id). */
+  openerTabId: number;
+}
+
+/**
+ * The new tab's placement from the click tab: its window, the slot right
+ * after it, and the tab as its opener (same window by construction, as
+ * `tabs.create` requires). Absent values are omitted so the browser decides.
+ *
+ * @param tabId The click tab's validated id.
+ * @param tab The click event's own tab.
+ * @returns The `tabs.create` placement keys that are known.
+ */
+export function menuTabPlacement(tabId: number, tab: MenuClickTab | undefined): MenuTabPlacement {
+  return {
+    ...(tab?.windowId === undefined ? {} : { windowId: tab.windowId }),
+    ...(tab?.index === undefined ? {} : { index: tab.index + 1 }),
+    openerTabId: tabId
+  };
 }
 
 /**
  * The origin a click targets, from the click's own document URL (page-scoped
- * menus carry it). Unresolvable (absent, malformed) is null — the caller
- * answers visibly instead of guessing a site.
+ * menus carry it; the tab-URL fallback can be any scheme). Only http(s)
+ * qualifies: other schemes serialize an opaque origin as the string "null",
+ * which must never become a stored site key. Unresolvable (absent, malformed,
+ * not http(s)) is null — the caller answers visibly instead of guessing a site.
  *
  * @param info The click's menu information.
+ * @returns The page's http(s) origin, or null.
  */
 export function menuClickOrigin(info: {
   menuItemId: string | number;
   pageUrl?: string;
 }): string | null {
-  if (info.pageUrl === undefined) return null;
-  try {
-    return new URL(info.pageUrl).origin;
-  } catch {
-    return null;
-  }
+  const url = info.pageUrl === undefined ? null : parseHttpUrl(info.pageUrl);
+  return url === null ? null : url.origin;
+}
+
+/**
+ * The cache-bypassed URL a click opens, from the click's own document URL.
+ * Only http(s) documents qualify (the menu's URL patterns already restrict
+ * it; this gate keeps the decision honest on its own).
+ *
+ * @param pageUrl The click's document URL, when the event carries one.
+ * @returns The URL to open (unchanged when already bypassed), or null when
+ *   the document URL is absent, malformed, or not http(s).
+ */
+export function menuBypassUrl(pageUrl: string | undefined): string | null {
+  const url = pageUrl === undefined ? null : parseHttpUrl(pageUrl);
+  return url === null ? null : withCacheBypass(url);
 }
 
 /**
@@ -193,16 +288,16 @@ export function menuClickOrigin(info: {
  * a real, contextual log line — never a swallowed rejection on the floor.
  *
  * @param action The click's resolved action.
- * @param origin The click's document origin, when page-scoped and usable.
+ * @param info The click's menu information, document URL resolved.
  * @param tabId The click event's own tab (validated by the dispatcher).
  * @param tab The same tab object, for properties beyond the id.
  * @param deps The injected browser effects.
  */
 async function dispatchMenuClick(
   action: MenuAction,
-  origin: string | null,
+  info: MenuClickInfo,
   tabId: number,
-  tab: { incognito?: boolean } | undefined,
+  tab: MenuClickTab | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   switch (action) {
@@ -239,6 +334,7 @@ async function dispatchMenuClick(
       return;
     }
     case 'toggle-detection-widget': {
+      const origin = menuClickOrigin(info);
       if (origin === null) {
         log.warn('Detection-widget toggle could not resolve the page origin', { tabId });
         return;
@@ -253,6 +349,23 @@ async function dispatchMenuClick(
       }
       return;
     }
+    case 'open-nowprocket': {
+      // The page URL can carry secrets (tokens in the query): logs name the
+      // action and tab only.
+      const url = menuBypassUrl(info.pageUrl);
+      if (url === null) {
+        log.warn('Open ?nowprocket ignored: no usable page URL', { action, tabId });
+        return;
+      }
+      try {
+        // The click's own window (not the service worker's current one),
+        // right after the source tab.
+        await deps.openUrl(url, menuTabPlacement(tabId, tab));
+      } catch (cause) {
+        log.error('Opening the cache-bypassed page failed', { action, tabId, cause });
+      }
+      return;
+    }
   }
 }
 
@@ -261,13 +374,15 @@ async function dispatchMenuClick(
  * target, and dispatch — with every uninstructable click (foreign ids,
  * tabless events) answered here instead of falling into the dispatch.
  *
- * @param info The click's menu information (only the id matters here).
+ * @param info The click's menu information: its id routes; its `pageUrl`
+ *   (resolved against the tab, see {@link resolveMenuClickInfo}) feeds the
+ *   page-reading arms.
  * @param tab The click event's own tab.
  * @param deps The injected browser effects.
  */
 export async function dispatchMenuClickEvent(
-  info: { menuItemId: string | number; pageUrl?: string },
-  tab: { id?: number; incognito?: boolean } | undefined,
+  info: MenuClickInfo,
+  tab: MenuClickTab | undefined,
   deps: MenuClickDeps
 ): Promise<void> {
   const action = menuActionFor(info.menuItemId);
@@ -278,7 +393,7 @@ export async function dispatchMenuClickEvent(
     log.warn('Menu click ignored: no tab', { action });
     return;
   }
-  await dispatchMenuClick(action, menuClickOrigin(info), tabId, tab, deps);
+  await dispatchMenuClick(action, resolveMenuClickInfo(info, tab), tabId, tab, deps);
 }
 
 /**
@@ -339,7 +454,8 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     // The on-page widget's per-origin override writes through the storage
     // module's one toggle — the menu row is the page-context writer; the
     // popup and the options row write the same item later.
-    toggleDetectionWidget: toggleInspectorOrigin
+    toggleDetectionWidget: toggleInspectorOrigin,
+    openUrl: (url, placement) => browser.tabs.create({ url, ...placement })
   };
 
   browser.contextMenus.onClicked.addListener((info, tab) => {

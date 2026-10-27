@@ -70,13 +70,14 @@ export const EXTENSION_PATH = path.resolve(
 const FIXTURE_PORT = Number(process.env.E2E_FIXTURE_PORT ?? 8891);
 export const ORIGIN_A = `http://localhost:${String(FIXTURE_PORT)}`;
 
-/** The five menu ids the background's registry creates (P2 + P12A parity). */
+/** The six menu ids the background's registry creates (the parity probe's list). */
 export const MENU_PARITY_IDS = [
   'wprSideBySide',
   'psiSideBySide',
   'updateKnownConflictsDB',
   'exclusionBuilder',
-  'toggleDetectionWidget'
+  'toggleDetectionWidget',
+  'openNowProcket'
 ] as const;
 
 /** Probe id outside the registry: proves the probe can answer "absent". */
@@ -369,7 +370,7 @@ export class ExtensionDriver {
     );
   }
 
-  /** All four registered menu ids at once. */
+  /** Every registered menu id at once. */
   async probeRegisteredMenus(): Promise<MenuExists[]> {
     const results: MenuExists[] = [];
     for (const id of MENU_PARITY_IDS) results.push(await this.probeMenuId(id, false));

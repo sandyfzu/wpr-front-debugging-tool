@@ -10,9 +10,7 @@
 
 import { parseUrl } from '../../../utils/urls';
 import { isPsiHost, PSI_HOST } from '../../../lib/side-by-side/analysis-host';
-
-/** The query parameter that bypasses WP Rocket's cache for one request. */
-export const NOW_PROCKET_PARAM = 'nowprocket';
+import { CACHE_BYPASS_QUERY_PARAM } from '../../../lib/wp-rocket/constants';
 /** The query parameter this tool uses to hand a site URL to PageSpeed Insights. */
 export const SIDE_BY_SITE_PARAM = 'wpr-sbs';
 
@@ -33,11 +31,11 @@ export interface CompareUrls {
  */
 export function getSiteUrls(siteUrl: URL): CompareUrls {
   const working = new URL(siteUrl.href);
-  if (!working.searchParams.has(NOW_PROCKET_PARAM)) {
-    working.searchParams.append(NOW_PROCKET_PARAM, '1');
+  if (!working.searchParams.has(CACHE_BYPASS_QUERY_PARAM)) {
+    working.searchParams.append(CACHE_BYPASS_QUERY_PARAM, '1');
     return { cached: siteUrl.href, bypassed: working.href };
   }
-  working.searchParams.delete(NOW_PROCKET_PARAM);
+  working.searchParams.delete(CACHE_BYPASS_QUERY_PARAM);
   return { bypassed: siteUrl.href, cached: working.href };
 }
 
@@ -98,7 +96,7 @@ export function getOverlayUrls(pageUrl: URL): CompareUrls {
 export function psiEntryUrl(siteUrl: URL): string | null {
   const pageSpeed = new URL(`https://${PSI_HOST}/`);
   const working = new URL(siteUrl.href);
-  working.searchParams.delete(NOW_PROCKET_PARAM);
+  working.searchParams.delete(CACHE_BYPASS_QUERY_PARAM);
   working.searchParams.delete(SIDE_BY_SITE_PARAM);
   pageSpeed.searchParams.append(SIDE_BY_SITE_PARAM, working.href);
   return pageSpeed.href;

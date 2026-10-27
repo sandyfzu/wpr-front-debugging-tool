@@ -6,19 +6,79 @@
  * and are never reached by these tests).
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { Browser } from 'wxt/browser';
 import { CONTEXT_MENU_IDS, URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
 import {
   dispatchMenuClickEvent,
   menuActionFor,
+  menuBypassUrl,
   menuClickOrigin,
   menuCreateParams,
+  menuTabPlacement,
   reportMenuCreateFailure,
-  type MenuClickDeps
+  resolveMenuClickInfo,
+  type MenuClickDeps,
+  type MenuTabPlacement
 } from './context-menus';
 
 /** The dockerized site's origin (the e2e site's URL host form in unit tests). */
 const SITE = 'http://127.0.0.1:8493';
+
+/**
+ * Chromium's action-menu cap on top-level rows (it drops the rest). Not
+ * reachable at runtime here (no extension context), so it is typed by the
+ * installed declaration's literal: a changed cap fails compilation.
+ */
+const ACTION_MENU_TOP_LEVEL_LIMIT: typeof Browser.contextMenus.ACTION_MENU_TOP_LEVEL_LIMIT = 6;
+
+describe('resolveMenuClickInfo', () => {
+  it("keeps the event's own pageUrl over the tab URL", () => {
+    expect(
+      resolveMenuClickInfo(
+        { menuItemId: 1, pageUrl: `${SITE}/page/` },
+        { id: 4, url: `${SITE}/other/` }
+      )
+    ).toEqual({ menuItemId: 1, pageUrl: `${SITE}/page/` });
+  });
+
+  it("falls back to the tab URL when the event has none (Firefox's action menu)", () => {
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, { id: 4, url: `${SITE}/tab/` })).toEqual({
+      menuItemId: 1,
+      pageUrl: `${SITE}/tab/`
+    });
+  });
+
+  it('leaves pageUrl absent when neither carries one, and drops link/frame URLs', () => {
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, { id: 4 })).toEqual({ menuItemId: 1 });
+    expect(resolveMenuClickInfo({ menuItemId: 1 }, undefined)).toEqual({ menuItemId: 1 });
+    const info = { menuItemId: 1, linkUrl: `${SITE}/link/`, frameUrl: `${SITE}/frame/` };
+    expect(resolveMenuClickInfo(info, { id: 4 })).toEqual({ menuItemId: 1 });
+  });
+});
+
+describe('menuTabPlacement', () => {
+  it('opens right after the source tab, in its window, with it as opener', () => {
+    expect(menuTabPlacement(4, { id: 4, windowId: 12, index: 2 })).toEqual({
+      windowId: 12,
+      index: 3,
+      openerTabId: 4
+    });
+    // The first slot's neighbor is index 1, not a falsy-skipped 0.
+    expect(menuTabPlacement(4, { id: 4, windowId: 0, index: 0 })).toEqual({
+      windowId: 0,
+      index: 1,
+      openerTabId: 4
+    });
+  });
+
+  it('omits unknown keys so the browser decides them', () => {
+    const placement = menuTabPlacement(4, { id: 4 });
+    expect(placement).toEqual({ openerTabId: 4 });
+    expect(Object.keys(placement)).toEqual(['openerTabId']);
+    expect(Object.keys(menuTabPlacement(4, undefined))).toEqual(['openerTabId']);
+  });
+});
 
 describe('menuClickOrigin', () => {
   it('derives the origin from the click document URL, without the path', () => {
@@ -34,6 +94,54 @@ describe('menuClickOrigin', () => {
     expect(menuClickOrigin({ menuItemId: 42 })).toBeNull();
     expect(menuClickOrigin({ menuItemId: 42, pageUrl: 'not a url ?%' })).toBeNull();
   });
+
+  it('answers null for non-http(s) documents (their origin serializes as "null")', () => {
+    for (const pageUrl of ['chrome://extensions/', 'about:blank', 'moz-extension://abc/p.html']) {
+      expect(menuClickOrigin({ menuItemId: 42, pageUrl })).toBeNull();
+    }
+  });
+});
+
+describe('menuBypassUrl', () => {
+  it('adds the bypass to the click document URL, query and fragment kept', () => {
+    expect(menuBypassUrl(`${SITE}/fdt/`)).toBe(`${SITE}/fdt/?nowprocket`);
+    expect(menuBypassUrl(`${SITE}/fdt/?a=b#h`)).toBe(`${SITE}/fdt/?a=b&nowprocket#h`);
+    expect(menuBypassUrl('https://example.test/?q=a%20b')).toBe(
+      'https://example.test/?q=a%20b&nowprocket'
+    );
+  });
+
+  it('appends the bypass when only a look-alike parameter is present', () => {
+    // Parameter names are case-sensitive and matched whole.
+    expect(menuBypassUrl(`${SITE}/?NOWPROCKET=1`)).toBe(`${SITE}/?NOWPROCKET=1&nowprocket`);
+    expect(menuBypassUrl(`${SITE}/?xnowprocket=1`)).toBe(`${SITE}/?xnowprocket=1&nowprocket`);
+  });
+
+  it('opens an already-bypassed document unchanged (=0 and array forms included)', () => {
+    for (const href of [
+      `${SITE}/?nowprocket`,
+      `${SITE}/?nowprocket=1#h`,
+      `${SITE}/?nowprocket=0`,
+      `${SITE}/?a=1&nowprocket[]=1`
+    ]) {
+      expect(menuBypassUrl(href), href).toBe(href);
+    }
+  });
+
+  it('answers null for absent, relative, malformed or non-http(s) document URLs', () => {
+    for (const pageUrl of [
+      undefined,
+      '',
+      '/relative?a=1',
+      'not a url ?%',
+      'chrome://extensions/',
+      'file:///tmp/page.html',
+      'javascript:alert(1)',
+      'data:text/html,hi'
+    ]) {
+      expect(menuBypassUrl(pageUrl), String(pageUrl)).toBeNull();
+    }
+  });
 });
 
 describe('menuActionFor', () => {
@@ -43,6 +151,7 @@ describe('menuActionFor', () => {
     expect(menuActionFor(CONTEXT_MENU_IDS.exclusionBuilder)).toBe('exclusion-builder');
     expect(menuActionFor(CONTEXT_MENU_IDS.updateKnownConflictsDB)).toBe('refresh-database');
     expect(menuActionFor(CONTEXT_MENU_IDS.toggleDetectionWidget)).toBe('toggle-detection-widget');
+    expect(menuActionFor(CONTEXT_MENU_IDS.openNowProcket)).toBe('open-nowprocket');
   });
 
   it('leaves foreign or numeric ids unrouted', () => {
@@ -115,8 +224,20 @@ describe('menuCreateParams', () => {
         title: 'Toggle the detection widget on this site',
         contexts: ['all'],
         documentUrlPatterns: [...URL_PATTERNS]
+      },
+      {
+        id: CONTEXT_MENU_IDS.openNowProcket,
+        title: 'Open ?nowprocket',
+        contexts: ['all'],
+        documentUrlPatterns: [...URL_PATTERNS]
       }
     ]);
+  });
+
+  it("keeps the action menu's top-level rows within Chromium's cap", () => {
+    // Every row reaches it: the registry admits only 'all' (which includes
+    // the action menu) and 'action' contexts, all top-level.
+    expect(menuCreateParams().length).toBeLessThanOrEqual(ACTION_MENU_TOP_LEVEL_LIMIT);
   });
 });
 
@@ -129,10 +250,21 @@ interface Recorded {
   toggles: string[];
   /** The rejection the next toggle inside throws (undefined: it resolves). */
   toggleFailure?: Error;
+  /** URLs opened in a new tab, with the window they targeted. */
+  openedUrls: Array<{ url: string; windowId: number | undefined }>;
+  /** Each opened tab's full placement, in open order. */
+  placements: MenuTabPlacement[];
 }
 
 function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
-  const recorded: Recorded = { sent: [], opened: [], refreshes: 0, toggles: [] };
+  const recorded: Recorded = {
+    sent: [],
+    opened: [],
+    refreshes: 0,
+    toggles: [],
+    openedUrls: [],
+    placements: []
+  };
   const deps: MenuClickDeps = {
     sendToTab: (type, data, target) => {
       recorded.sent.push({ type, target });
@@ -154,6 +286,11 @@ function recordingDeps(): { deps: MenuClickDeps; recorded: Recorded } {
       // The storage module owns the flip; the recording answers its
       // regression shape: an unknown origin's first flip enables.
       return Promise.resolve(true);
+    },
+    openUrl: (url, placement) => {
+      recorded.openedUrls.push({ url, windowId: placement.windowId });
+      recorded.placements.push(placement);
+      return Promise.resolve({ id: 100 });
     }
   };
   return { deps, recorded };
@@ -354,6 +491,161 @@ describe('dispatchMenuClickEvent', () => {
       );
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  it('the nowprocket entry opens the bypassed document in the click window', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/fdt/?a=b#h` },
+      { id: 4, windowId: 12 },
+      deps
+    );
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/fdt/?a=b&nowprocket#h`, windowId: 12 }]);
+    expect(recorded.sent).toHaveLength(0);
+    expect(recorded.opened).toHaveLength(0);
+    expect(recorded.toggles).toHaveLength(0);
+    expect(recorded.refreshes).toBe(0);
+  });
+
+  it('an already-bypassed document opens unchanged; a windowless tab defers to the browser', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?nowprocket=0` },
+      { id: 4 },
+      deps
+    );
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/?nowprocket=0`, windowId: undefined }]);
+  });
+
+  it('a nowprocket click without a usable page URL opens nothing and never logs a URL', async () => {
+    const { deps, recorded } = recordingDeps();
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      for (const pageUrl of [undefined, 'chrome://settings/?token=secret', '%']) {
+        await dispatchMenuClickEvent(
+          {
+            menuItemId: CONTEXT_MENU_IDS.openNowProcket,
+            ...(pageUrl === undefined ? {} : { pageUrl })
+          },
+          { id: 4, windowId: 1 },
+          deps
+        );
+      }
+      expect(recorded.openedUrls).toHaveLength(0);
+      expect(spy).toHaveBeenCalledTimes(3);
+      for (const call of spy.mock.calls) {
+        expect(String(call[0])).toContain('Open ?nowprocket ignored');
+        expect(call[1]).toEqual({ action: 'open-nowprocket', tabId: 4 });
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a rejected tab create is an error-level branch without the page URL', async () => {
+    const { deps } = recordingDeps();
+    const failure = new Error('No window with id: 12.');
+    deps.openUrl = (): Promise<never> => Promise.reject(failure);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(
+        dispatchMenuClickEvent(
+          { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?token=secret` },
+          { id: 4, windowId: 12 },
+          deps
+        )
+      ).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0]?.[0])).toContain('Opening the cache-bypassed page failed');
+      expect(spy.mock.calls[0]?.[1]).toEqual({
+        action: 'open-nowprocket',
+        tabId: 4,
+        cause: failure
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('the nowprocket copy opens right after its source tab, which is its opener', async () => {
+    const { deps, recorded } = recordingDeps();
+    await dispatchMenuClickEvent(
+      { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/fdt/` },
+      { id: 4, windowId: 12, index: 2 },
+      deps
+    );
+    expect(recorded.placements).toEqual([{ windowId: 12, index: 3, openerTabId: 4 }]);
+  });
+
+  it('only the page URL opens: link and frame URLs under the pointer are ignored', async () => {
+    const { deps, recorded } = recordingDeps();
+    const info = {
+      menuItemId: CONTEXT_MENU_IDS.openNowProcket,
+      pageUrl: `${SITE}/page/`,
+      linkUrl: `${SITE}/link/`,
+      frameUrl: `${SITE}/frame/`
+    };
+    await dispatchMenuClickEvent(info, { id: 4, windowId: 12, url: `${SITE}/tab/` }, deps);
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/page/?nowprocket`, windowId: 12 }]);
+  });
+
+  it("an action-menu click (no pageUrl, Firefox) uses the tab's URL for both page arms", async () => {
+    const { deps, recorded } = recordingDeps();
+    const tab = { id: 4, windowId: 12, index: 0, url: `${SITE}/fdt/?a=b` };
+    await dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.openNowProcket }, tab, deps);
+    await dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget }, tab, deps);
+    expect(recorded.openedUrls).toEqual([{ url: `${SITE}/fdt/?a=b&nowprocket`, windowId: 12 }]);
+    expect(recorded.toggles).toEqual([SITE]);
+  });
+
+  it('an action-menu toggle on a non-http(s) tab stores nothing and warns without the URL', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { deps, recorded } = recordingDeps();
+    const urls = ['chrome://settings/?tok=s3cr3t', 'about:blank', 'moz-extension://abc/p.html'];
+    try {
+      for (const url of urls) {
+        await dispatchMenuClickEvent(
+          { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget },
+          { id: 4, url },
+          deps
+        );
+      }
+      expect(recorded.toggles).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(urls.length);
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain('could not resolve the page origin');
+      for (const url of urls) expect(logged).not.toContain(url);
+      expect(logged).not.toContain('s3cr3t');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('no nowprocket log line ever carries the page URL (it can hold secrets)', async () => {
+    const SECRET = 'tok-5ecr3t';
+    const { deps } = recordingDeps();
+    deps.openUrl = (): Promise<never> => Promise.reject(new Error('refused'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      // Rejected create (error branch) and non-http page (warn branch), with
+      // the secret in the event URL and in the tab fallback URL.
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.openNowProcket, pageUrl: `${SITE}/?token=${SECRET}` },
+        { id: 4 },
+        deps
+      );
+      await dispatchMenuClickEvent(
+        { menuItemId: CONTEXT_MENU_IDS.openNowProcket },
+        { id: 4, url: `chrome://settings/?token=${SECRET}` },
+        deps
+      );
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify([warn.mock.calls, error.mock.calls])).not.toContain(SECRET);
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
     }
   });
 });

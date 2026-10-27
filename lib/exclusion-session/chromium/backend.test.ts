@@ -990,10 +990,18 @@ describe('defaults', () => {
     );
     const backend = createChromiumInterceptionBackend({ port, host });
     await expect(backend.arm(TAB, 1)).resolves.toEqual({ armed: true });
-    const before = Date.now();
+    // Each field against its own time base: `receivedAt` is the monotonic
+    // stamp (time origin + `performance.now()`), `wallAt` is `Date.now()`.
+    // The two bases drift apart within a process (wall-clock slewing), so
+    // comparing across them fails whenever the wall clock runs ahead.
+    const stampBefore = Math.floor(performance.timeOrigin + performance.now());
+    const wallBefore = Date.now();
     port.handlers.event({ tabId: TAB }, 'Fetch.requestPaused', pauseEvent());
     await flush();
-    expect(host.documents[0]?.identity?.receivedAt).toBeGreaterThanOrEqual(before);
+    const identity = host.documents[0]?.identity;
+    expect(identity?.receivedAt).toBeGreaterThanOrEqual(stampBefore);
+    expect(identity?.wallAt).toBeGreaterThanOrEqual(wallBefore);
+    expect(identity?.wallAt).toBeLessThanOrEqual(Date.now());
   });
 });
 
