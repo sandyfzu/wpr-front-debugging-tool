@@ -20,19 +20,19 @@ Chosen train slot: after P11 (P19 → P12). P19A–C and E have nothing to edit 
 - **G-2 (owner, resolved 2026-10-20):** chord mechanism and default — **(a)** the content-script capture chord (rebound from this extension's options page, fully gate-integrated, zero manifest changes; the chosen chord is ours to police — it intercepts the host page for that one combination), default **Alt+K** (⌘K was rejected as the default: GitHub, Notion, Slack, Linear, Gmail and the WordPress 6.4+ editor own it in their own palettes; ⌘K stays selectable).
 - **G-3 (owner, resolved 2026-10-20):** capture validation — **modifiers mandatory**: at least one modifier or an F-key, so a bare letter can never hijack typing into the page.
 
-## Grounded in this repo (verified 2026-10-20)
+## Grounded in this repo (verified 2026-10-20, re-verified 2026-10-27 by P19A)
 
 | Fact                                                                                                                                            | Anchor                                                                                               |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | In-page features are registry rows with ctx-owned cleanup (`setup(ctx)`)                                                                        | `entrypoints/isolated.content/index.ts` (`ISOLATED_WORLD_MODULES`) — adding the palette is one row   |
 | The menu already owns the action vocabulary (ids, titles, URL patterns, click router)                                                           | `entrypoints/background/context-menus.ts` (`MENU_ENTRIES`, `menuActionFor`, `dispatchMenuClick`)     |
-| The SBS overlays open via the tab-targeted rows `openSideBySide`/`openSideBySidePerformance`; the receive side is the palette's exact call path | `lib/messaging/protocol.ts:81-83`, `entrypoints/isolated.content/side-by-side/index.tsx:519-526`     |
+| The SBS overlays open via the tab-targeted rows `openSideBySide`/`openSideBySidePerformance`; the receive side is the palette's exact call path | `lib/messaging/protocol.ts:97-100`, `entrypoints/isolated.content/side-by-side/index.tsx:518-526`    |
 | The chip's per-site toggle mechanics exist (entry-over-default precedence, RMW, byte budget)                                                    | `lib/storage/inspector-origins.ts` (`toggleInspectorOrigin`, `effectiveInspectorEnabled`)            |
 | The palette combobox primitive is surface-agnostic (injected matcher, dialog focus trap/Escape, mount-driven)                                   | `components/ui/command-palette.tsx` (APG combobox over Kobalte)                                      |
-| The matcher/focus logic is panel-local and promote-worthy                                                                                       | `entrypoints/panel/palette/matcher.ts`, `focus.ts`                                                   |
+| The matcher is shared (promoted by P19A); focus logic stays panel-local                                                                         | `components/ui/command-matcher.ts`, `entrypoints/panel/palette/focus.ts`                             |
 | Options = registry rows over storage contracts; the chip's global-default row deliberately joins through P12 (`features.onPageInspector`)       | `lib/options/registry.ts`, `docs/plans/10-phase-9-options.md` (§ Receipts), `lib/storage/options.ts` |
 | Background already watches options storage to apply a binary toggle live (toolbar badge)                                                        | `entrypoints/background/badge.ts` pattern                                                            |
-| The isolated content script is budgeted as one surface                                                                                          | `scripts/budgets.json` row "isolated content script" (122 raw / 42 gzip)                             |
+| The isolated content script is budgeted as one surface                                                                                          | `scripts/budgets.json` row "isolated content script" (140.1 raw / 48.0 gzip)                         |
 | P12 remaining owns the widget's Alt+H visibility chord, `capture: false`, no `document.onkeydown` clobber, plus P12M mount hardening            | `docs/plans/13-phase-12-on-page-inspector.md` (remaining scope + P12M)                               |
 | P10 owns the in-page builder session and the DevTools-attach conflict degradation                                                               | `docs/plans/completed-exclusion-builder.md` (TLDR, G-3)                                              |
 
@@ -50,11 +50,11 @@ Chosen train slot: after P11 (P19 → P12). P19A–C and E have nothing to edit 
 
 Depends: —. Parallel: P19B groundwork, P13/P14, P12 pure work. Size: S.
 
-- [ ] `lib/storage/page-ui-gate.ts` (+ tests): item, validator (non-boolean → default), `readPageUiEnabled`, `setPageUiGate`, watch; TSDoc carries the precedence rule and the gate-off consequences.
-- [ ] If G-2(a): `lib/storage/palette-chord.ts` (+ tests): shape `{ code, mod?, shift?, alt? }` (`mod` = Cmd on macOS / Ctrl elsewhere; `alt` is the browser's `altKey` — Option on macOS, Alt elsewhere — a single flag, not per-OS codes), validator (G-3 baked in: at least one modifier or an F-key), default `alt+k`, watch. Matching rides `event.code` + the effective modifier **flags**, so an OS-level modifier remap (System Settings → Modifier keys) is transparent: the chord follows the remap's meaning, never a physical label.
-- [ ] Promote the panel matcher to `components/ui/command-matcher.ts` (+ its tests re-homed; the panel palette re-points, behavior identical); `focus.ts` stays panel.
-- [ ] `lib/messaging/protocol.ts`: additive row `openCommandPalette(): true` (background → tab, tab-targeted, no payload) with the boundary note; no other channel — everything else is two storage items.
-- [ ] `wxt.config.ts`: nothing — G-2 resolved to the capture chord, no `commands` row and no new manifest permission.
+- [x] `lib/storage/page-ui-gate.ts` (+ tests): item, validator (non-boolean → default), `readPageUiEnabled`, `setPageUiGate`, watch; TSDoc carries the precedence rule and the gate-off consequences.
+- [x] If G-2(a): `lib/storage/palette-chord.ts` (+ tests): shape `{ code, mod?, shift?, alt? }` (`mod` = Cmd on macOS / Ctrl elsewhere; `alt` is the browser's `altKey` — Option on macOS, Alt elsewhere — a single flag, not per-OS codes), validator (G-3 baked in: at least one modifier or an F-key), default `alt+k`, watch. Matching rides `event.code` + the effective modifier **flags**, so an OS-level modifier remap (System Settings → Modifier keys) is transparent: the chord follows the remap's meaning, never a physical label.
+- [x] Promote the panel matcher to `components/ui/command-matcher.ts` (+ its tests re-homed; the panel palette re-points, behavior identical); `focus.ts` stays panel.
+- [x] `lib/messaging/protocol.ts`: additive row `openCommandPalette(): true` (background → tab, tab-targeted, no payload) with the boundary note; no other channel — everything else is two storage items.
+- [x] `wxt.config.ts`: nothing — G-2 resolved to the capture chord, no `commands` row and no new manifest permission.
 
 DoD: unit suites green; compiler/lint/format green; no menu/panel/page behavior change; budgets untouched.
 

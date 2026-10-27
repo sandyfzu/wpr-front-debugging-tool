@@ -98,6 +98,13 @@ export interface ProtocolMap {
   openSideBySide(): true;
   /** Background → tab content script: open the PSI side-by-side flow. */
   openSideBySidePerformance(): true;
+  /**
+   * Background → tab content script (tab-targeted, no payload): open the
+   * on-page command palette. Its receiver answers only in the top frame and
+   * only while the on-page UI gate is on; a tab without a live receiver
+   * rejects like every push (the expected no-receiver case).
+   */
+  openCommandPalette(): true;
   /** Content script → background: known-conflicts rows (storage or seed fallback). */
   getKnownConflictsDb(): KnownConflict[];
   /** Content script → background (push): toolbar badge input, per sender tab. */

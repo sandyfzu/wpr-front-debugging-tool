@@ -7,7 +7,7 @@
  * engine-dependent sorting noise.
  */
 import { describe, expect, it } from 'vitest';
-import { rankCommands, type MatchableCommand } from './matcher';
+import { rankCommands, type MatchableCommand } from './command-matcher';
 
 /** The sample registry rows (labels + keywords, nothing else). */
 const ROWS: readonly MatchableCommand[] = [

@@ -1,5 +1,7 @@
 /**
- * The command palette's command matcher — pure, deterministic, unit-tested.
+ * The command palette's command matcher — pure, deterministic, unit-tested,
+ * shared by every surface that mounts `./command-palette` (it is that
+ * primitive's `filter` seam, so palettes rank alike wherever they render).
  *
  * The model is substring token scoring, not subsequence fuzzy matching: the
  * query splits into whitespace tokens; every token must match somewhere in
