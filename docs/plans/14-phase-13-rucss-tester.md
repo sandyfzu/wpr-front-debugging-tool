@@ -53,6 +53,6 @@ Depends:A–C/P4.1/P4.2; parallel independent P14. Size:S–M.
 
 - [ ] Fixture default/variants safelist/mobile/home, style ID/sheet size/affected count, repeated-test-mode/reload lifecycle. Mock non200/shape/network **at documented harness boundary**; styles unchanged on failure; invalid replacement blocked pre-run, message/retry honest.
 - [ ] Current endpoint live contract: query-containing page, literal second?, mobile/home parse, empty body accepted/non200 behavior. Record authorized real-service result separately from local fixture; source-build same-page CSS visual+sheet-size comparison, no synthetic-local-license claim.
-- [ ] TEST MODE Detections/strip once across repeat, reload reset; background fetch works despite page CSP/CORS; Firefox installed-extension fetch/flags manual; full keyboard/axe/themes/reduce.
+- [ ] TEST MODE Detections/strip once across repeat, reload reset; background fetch works despite page CSP/CORS; Firefox installed-extension fetch/flags manual; themes/reduce (full keyboard/new axe dropped — owner 2026-10-27: no screen-reader support).
 
 DoD: gates/build/current raw+gzip tables, local green+manual annotations, endpoint contract either evidenced or named blocker. README user-trigger external data disclosure, permission rationale/AGENTS actual triggers, index status updated. Production service/source visual judgments and Firefox are not silently counted automated.

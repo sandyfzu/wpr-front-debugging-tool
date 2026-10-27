@@ -47,16 +47,18 @@
 
 ## K — Keyboard, focus, ARIA (`UX-D3`)
 
-- **K-1** Keyboard-complete: every action reachable, Tab order = reading order; Esc closes overlays and clears search.
-- **K-2** Every interactive element carries `FOCUS_RING` (`components/ui/classes.ts`); focus never moves on data changes; a collapse keeps focus on its toggle; route/view switches land on the `h1`.
-- **K-3** Patterns: disclosures `button[aria-expanded][aria-controls]`; tabs/menus/combobox/dialog via the `components/ui` APG wrappers only; virtual lists `scrollerRole="list"` + `aria-label`, rows `role="listitem"` with `aria-setsize`/`aria-posinset`; sequential Tab must traverse ≥ 200 consecutive virtual rows without escaping (raise `overscan`; never a bespoke roving model).
-- **K-4** Result-count changes announce once, politely (`sr-only role="status"`), after the committed query — never per keystroke.
-- **K-5** Status is never color alone (vocabulary icon or text, `UX-D7`); external links open in a new tab with `rel="noopener noreferrer"`, an icon and "(opens in a new tab)" in the accessible name; controls are never hover-revealed only.
+**Scope (owner 2026-10-27): accessibility is minimal and effort-free — zero screen-reader support** (internal support-team tool). Required only where free: semantic HTML (real `button`/`a`/headings/labels) and what `components/ui` primitives ship (native/Kobalte keyboard behavior, `FOCUS_RING`, the virtual list's built-in roles). No new a11y work: no live regions/announcements, SR/real-AT (NVDA/JAWS/VoiceOver) checks, ARIA research, keyboard walks or new axe assertions. Shipped a11y code and existing axe assertions stay as they are (never removed or weakened). Rules below marked _dropped_ are not required for new work; ids stay for references.
+
+- **K-1** Native controls and primitives give keyboard reach; Esc closes overlays (dialog primitives) and clears search. Full keyboard-completeness and Tab-order audits: _dropped (owner 2026-10-27)_.
+- **K-2** Every interactive element carries `FOCUS_RING` (`components/ui/classes.ts`); focus never moves on data changes. Collapse-keeps-focus and route-switch-lands-on-`h1`: shipped behavior kept, not required for new work (owner 2026-10-27).
+- **K-3** Patterns: tabs/menus/combobox/dialog via the `components/ui` wrappers only (they carry their ARIA for free); hand-written ARIA (disclosure `aria-expanded`/`aria-controls`, virtual-row `aria-setsize`/`aria-posinset`) and the ≥ 200-row sequential-Tab traversal: _dropped (owner 2026-10-27)_ — kept where shipped.
+- **K-4** _Dropped (owner 2026-10-27: no screen-reader support)._ Was: result-count changes announce once via `sr-only role="status"`; the shipped announcement code stays, no new announcements.
+- **K-5** Status is never color alone (vocabulary icon or text, `UX-D7`); external links open in a new tab with `rel="noopener noreferrer"` and an icon (the "(opens in a new tab)" accessible-name suffix: _dropped_ for new links, owner 2026-10-27); controls are never hover-revealed only.
 - **K-6** Hover affordances only on controls: a non-interactive card never lifts, changes cursor or takes a tab stop.
 
 ## C — Color, contrast, themes
 
-- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `*-soft` background in both palettes, so a token pair passes by construction and anything else is unverified.
+- **C-1 Tokens only** — no hex/`rgb()`, no `opacity-*`/`/NN` alpha on text, no gradient text on data. `assets/css/theme.test.ts` pins every `fg-*`/`accent`/`status-*` text token at AA 4.5:1 on every `surface-*` and `*-soft` background in both palettes, so a token pair passes by construction; contrast audits beyond the tokens are not required (owner 2026-10-27).
 - **C-2 One status vocabulary** (`UX-D7`) through `StatusBadge`/`Badge` and the `STATUS_*` tables; an optional feature being off is `neutral`, never `error`.
 - **C-3 Themes:** verified in `system`, `dark`, `light`, switched live (AGENTS.md UI-themes rule); injected UIs honor it inside their shadow roots.
 
@@ -76,8 +78,8 @@
 
 - **D-1 Widths:** the surface's floor, 480, 768 and a wide size (panel: 320 / 480 / 768 / 1280 px, docked right and bottom): the content region never scrolls horizontally (`scrollWidth === clientWidth`), every control reachable.
 - **D-2 Themes + motion:** `system`/dark/light, then `prefers-reduced-motion: reduce` emulated — `document.getAnimations()` (or the shadow root's) empty after mount.
-- **D-3 Keyboard-only walk** of every state; focus always visible.
-- **D-4 axe:** 0 violations per state (by hand, automated in the phase's browser-suite sub-phase).
+- **D-3** _Keyboard-only walk: dropped (owner 2026-10-27)._ New controls show `FOCUS_RING` (K-2).
+- **D-4** _New axe audits: dropped (owner 2026-10-27)._ Existing axe assertions (`panel-a11y` and the suites that already audit) stay green and unweakened.
 - **D-5 Refresh** keeps UI state (S-2).
 - **D-6 Grep gate** over the change's own files, empty: `rg -n "#[0-9a-fA-F]{3,8}\b|rgba?\(|transition-all|animate-|duration-[0-9]|\b(sm|md|lg|xl):|behavior: 'smooth'" <files>` (shadow-root CSS: the colour and `transition-all`/smooth terms apply; hits on token definitions themselves are out of scope).
 - **D-7 Performance:** where the surface lists rows, the P-3 check on the 5k fixture; budget delta receipted.
@@ -91,3 +93,4 @@
 - 2026-10-14 — `L-3` copy-controls clause aligned with what ships: icon-only only where it truly saves title-row space; primary actions keep their label (Detections `Copy report`) — P6B verification round.
 - 2026-10-14 — `P-3` names where code highlighting runs: off the main thread in a time-boxed worker (no grammar-cost model on the main thread) — P6C verification round; no value moved.
 - 2026-10-21 — `L-2` drops the retired exclusion-builder tab (the builder is the in-page overlay, an injected UI) — P10G; no value moved.
+- 2026-10-27 — owner: zero screen-reader support, a11y effort-free only — §K scope line; `K-1`–`K-5`, `C-1`, `D-3`, `D-4` narrowed/dropped (ids kept); shipped a11y code and existing axe assertions stay.
