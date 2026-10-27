@@ -2,7 +2,7 @@
 
 ## TLDR
 
-Keep first answers glanceable, keyboard-complete and honest; preserve context on refresh. `UX-D1`–`UX-D16` and `SB-D1`–`SB-D16` retain their original IDs. This consolidates P5's 2026-10-12 study/strip brief, later owner revisions and isolation clarifications. P12's recorded early-widget deviations remain intentional, not permission to invent more.
+Keep first answers glanceable, keyboard as the primitives give it, and honest; preserve context on refresh. `UX-D1`–`UX-D16` and `SB-D1`–`SB-D16` retain their original IDs. This consolidates P5's 2026-10-12 study/strip brief, later owner revisions and isolation clarifications. P12's recorded early-widget deviations remain intentional, not permission to invent more.
 
 Precedence: plugin/settings/KB names → these decisions → [UI/UX bar](../ui-ux-bar.md) → phase details. Change an affected decision here, dated, before contradicting it. The bar alone owns shared layout/motion/contrast/performance values; code/tokens own implementations. Do not restore retired specifications from historical receipts.
 
