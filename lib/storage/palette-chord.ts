@@ -242,33 +242,47 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * and bold/italic/underline in rich-text editors (contenteditable, e.g.
      * the WordPress block editor). `mod` + B and + U also carry browser
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
-     * Alt+F10 moves focus to the block editor's nearest toolbar.
+     * Block editor: Alt+F10 nearest toolbar; `mod` + Alt + T/Y insert a
+     * block before/after, + V paste styles, + X inline code (Ctrl+Alt on
+     * Windows, ⌘⌥ on macOS); `mod` + Shift + `,` settings sidebar (its
+     * `mod` + G group block sits under browser: find next).
      */
     editing: Object.freeze([
       ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...withMod(['KeyZ'], { shift: true }),
-      canonicalChord('F10', { alt: true })
+      canonicalChord('F10', { alt: true }),
+      ...withMod(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
+      ...withMod(['Comma'], { shift: true })
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
      * windows (new/close/reopen/private), tab switching by number, Ctrl+F4
      * tab close (Windows/Linux), Ctrl+H history; bookmark page (D), open
      * file (O), downloads (J), find next/previous (G, Shift+G), settings
-     * (⌘,); Shift + A add-ons, B bookmarks bar, O bookmarks manager/library,
-     * P private window (Firefox), D bookmark all tabs (also the block
-     * editor's duplicate block), H history library (Firefox), Y downloads
-     * (Firefox, Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R,
-     * ⌘⌥R). Lone keys: F1 help, F3 find next, F5 reload, F6 focus
-     * toolbars/address bar, F7 caret browsing, F9 reader view (Firefox),
-     * F10 menu bar/toolbar focus.
+     * (⌘,), E (Ctrl+E search from the page on Windows/Linux; ⌘E use the
+     * selection for find, with the Find bar open, on macOS); Shift + A
+     * add-ons, B bookmarks bar, O bookmarks manager/library, P private
+     * window (Firefox), D bookmark all tabs (also the block editor's
+     * duplicate block), H history library (Firefox), Y downloads (Firefox,
+     * Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R, ⌘⌥R).
+     * Chrome on Windows/Linux, without `mod`: Alt + E/F Chrome menu, Alt + D
+     * address bar; Shift + Alt + T focus toolbar, + A focus inactive
+     * dialogs, + N split view (also the block editor's next editor part),
+     * + I feedback form. Lone keys: F1 help, F3 find next, F5 reload, F6
+     * focus toolbars/address bar, F7 caret browsing, F9 reader view
+     * (Firefox), F10 menu bar/toolbar focus.
      */
     browser: Object.freeze([
       ...withMod(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
-      ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
+      ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma', 'KeyE']),
       ...withMod(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...withMod(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...withMod(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
       ...withMod(['KeyR'], { alt: true }),
+      ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code) => canonicalChord(code, { alt: true })),
+      ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code) =>
+        canonicalChord(code, { alt: true, shift: true })
+      ),
       ...withMod(DIGITS.filter((digit) => digit !== '0').map((digit) => `Digit${digit}` as const)),
       ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code) =>
         canonicalChord(code, {})

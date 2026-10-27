@@ -298,15 +298,23 @@ describe('reserved chords', () => {
     editing: [
       ...mods(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...mods(['KeyZ'], { shift: true }),
-      { code: 'F10', alt: true }
+      { code: 'F10', alt: true },
+      ...mods(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
+      ...mods(['Comma'], { shift: true })
     ],
     browser: [
       ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
-      ...mods(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
+      ...mods(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma', 'KeyE']),
       ...mods(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...mods(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...mods(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
       ...mods(['KeyR'], { alt: true }),
+      ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code): PaletteChord => ({ code, alt: true })),
+      ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code): PaletteChord => ({
+        code,
+        alt: true,
+        shift: true
+      })),
       ...mods([
         'Digit1',
         'Digit2',
@@ -367,7 +375,10 @@ describe('reserved chords', () => {
       { code: 'F4' },
       { code: 'F8' },
       { code: 'F10', shift: true },
-      { code: 'KeyR', alt: true }
+      { code: 'KeyR', alt: true },
+      { code: 'KeyW', alt: true },
+      { code: 'KeyW', alt: true, shift: true },
+      { code: 'Comma', mod: true, alt: true }
     ] satisfies PaletteChord[]) {
       expect(reservedChordGroup(free)).toBeNull();
       expect(parsePaletteChord(free)).toEqual(free);
