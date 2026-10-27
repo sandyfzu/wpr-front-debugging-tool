@@ -22,6 +22,7 @@ import {
   DEFER,
   DELAY,
   LAZY_RENDER,
+  OVERLAY_HOST,
   applyButton,
   reloadThroughSession,
   lane,
@@ -197,7 +198,7 @@ test.describe('exclusion builder editor', () => {
     await pickButton.click();
     await page.locator('#alr-two').hover();
     // The highlight names the lane and the element.
-    await expect(page.locator(`${OVERLAY_SELECTOR} .xo-highlight-lane`)).toHaveText(LAZY_RENDER);
+    await expect(page.locator(`${OVERLAY_HOST} .xo-highlight-lane`)).toHaveText(LAZY_RENDER);
     await page.locator('#alr-two').click();
     await expect(bar).toHaveCount(0);
     const row = laneRow(page, LAZY_RENDER, 1);
@@ -278,9 +279,6 @@ test.describe('exclusion builder editor', () => {
   });
 });
 
-/** The overlay host's selector (pierced with a descendant combinator). */
-const OVERLAY_SELECTOR = 'wpr-fdt-exclusion-builder';
-
 /** The overlay's polite announcer (the last live status in its tree). */
 const announcer = (page: Page): ReturnType<Page['locator']> =>
-  page.locator(`${OVERLAY_SELECTOR} p.xo-sr-only[role="status"]`);
+  page.locator(`${OVERLAY_HOST} p.xo-sr-only[role="status"]`);

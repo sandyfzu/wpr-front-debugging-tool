@@ -10,11 +10,15 @@
  *   root animates after mount nor across a fold/unfold (and it does without
  *   the preference — the check bites).
  * - D-3: a keyboard-only Tab walk reaches every control (held ones included) of the panel
- *   in order, each with a visible focus ring.
- * - D-4: axe reports no violation in each state (editor with notes and a
- *   refused row, applied with counts, unavailable, armed, stopped, page
- *   list open, picking, folded pill); its one unresolved rule, contrast in
- *   the top layer, is measured here instead (every painted text run ≥ AA).
+ *   in order, each with a visible focus ring — once over the editor, once
+ *   with "On this page" open (chips, Add and Added buttons); the folded
+ *   pill shows its ring after Escape.
+ * - D-4: axe reports no violation in each state (empty editor, blank row,
+ *   notes and a refused row, page list open, picking, picking with the
+ *   highlight on an element, applied with counts, stopped, armed,
+ *   unavailable, folded pill); its one unresolved rule, contrast in the top
+ *   layer, is measured here instead (every painted text run and placeholder
+ *   ≥ AA, ancestor opacity included).
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -38,6 +42,8 @@ import {
   applyButton,
   clearDrafts,
   injectOverlay,
+  lane,
+  laneRow,
   pushStatus,
   readBanners,
   reloadThroughSession,
@@ -52,6 +58,9 @@ const AXE_SOURCE = readFileSync(
 
 /** Two scripts served as Delay JavaScript execution delays them. */
 const DELAYED = '/exclusion/delayed.html';
+
+/** Three sections served as Automatic Lazy Rendering stamps them (pickable on the page). */
+const LAZY_RENDERED = '/exclusion/lazy-render.html';
 
 /** D-1's checkpoints (the overlay's floor, then the shared tiers and a wide size). */
 const WIDTHS = [320, 480, 768, 1280] as const;
@@ -68,10 +77,11 @@ const SET: ExclusionSet = {
  */
 async function openBuilderWith(
   extension: ExtensionDriver,
-  media: Parameters<Page['emulateMedia']>[0]
+  media: Parameters<Page['emulateMedia']>[0],
+  path: string = DELAYED
 ): Promise<DriverPage> {
   await clearDrafts(extension);
-  const opened = await openFixturePage(extension, DELAYED);
+  const opened = await openFixturePage(extension, path);
   await opened.page.emulateMedia(media);
   await injectOverlay(extension, opened);
   return opened;
@@ -201,16 +211,24 @@ interface ContrastMiss {
   readonly floor: number;
 }
 
+/** What one backstop pass measured. */
+interface ContrastReading {
+  /** The measured runs' words (an input's value, or its placeholder when empty). */
+  readonly texts: string[];
+  readonly misses: ContrastMiss[];
+}
+
 /**
  * The backstop for axe's unresolved `color-contrast` (it cannot read
  * backgrounds in the top layer): every rendered text run of the overlay —
- * text nodes and filled inputs — painted over its stacked ancestor fills,
- * against its AA floor (4.5:1, 3:1 for large text). Held (`aria-disabled`)
- * controls are inactive UI, exempt as WCAG 1.4.3 says.
+ * text nodes, filled inputs, and empty inputs' `::placeholder` — painted
+ * over its stacked ancestor fills, its colour's alpha multiplied by every
+ * ancestor's `opacity`, against its AA floor (4.5:1, 3:1 for large text).
+ * Held (`aria-disabled`) controls are inactive UI, exempt as WCAG 1.4.3 says.
  *
- * @returns The runs under their floor, and how many were measured.
+ * @returns The runs measured, and those under their floor.
  */
-async function contrastMisses(page: Page): Promise<{ measured: number; misses: ContrastMiss[] }> {
+async function contrastMisses(page: Page): Promise<ContrastReading> {
   return await page.evaluate((host) => {
     const root = document.querySelector(host)?.shadowRoot;
     if (root === undefined || root === null) throw new Error('the overlay has no shadow root');
@@ -218,12 +236,15 @@ async function contrastMisses(page: Page): Promise<{ measured: number; misses: C
     canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (context === null) throw new Error('no 2d context');
-    const paint = (layers: string[]): number[] => {
+    /** Paint layers bottom-up (each with its alpha factor) and read the pixel. */
+    const paint = (layers: readonly (readonly [string, number])[]): number[] => {
       context.clearRect(0, 0, 1, 1);
-      for (const layer of layers) {
-        context.fillStyle = layer;
+      for (const [fill, alpha] of layers) {
+        context.globalAlpha = alpha;
+        context.fillStyle = fill;
         context.fillRect(0, 0, 1, 1);
       }
+      context.globalAlpha = 1;
       return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
     };
     const luminance = (rgb: number[]): number => {
@@ -233,24 +254,9 @@ async function contrastMisses(page: Page): Promise<{ measured: number; misses: C
       });
       return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     };
-    const holders = new Set<Element>();
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if ((node.textContent ?? '').trim() !== '' && node.parentElement !== null) {
-        holders.add(node.parentElement);
-      }
-    }
-    for (const input of root.querySelectorAll('input')) if (input.value !== '') holders.add(input);
-    const misses: { text: string; ratio: number; floor: number }[] = [];
-    let measured = 0;
-    for (const element of holders) {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      // Not painted: hidden, folded away, or visually hidden words (1 px, clipped).
-      if (rect.width <= 1 || rect.height <= 1 || style.visibility !== 'visible') continue;
-      if (element.closest('[aria-disabled="true"], [inert], [aria-hidden="true"] svg') !== null)
-        continue;
-      const fills: string[] = [];
+    /** The element's ancestors, itself first, across the shadow boundary. */
+    const lineage = (element: Element): Element[] => {
+      const chain: Element[] = [];
       for (
         let node: Element | null = element;
         node !== null;
@@ -258,25 +264,93 @@ async function contrastMisses(page: Page): Promise<{ measured: number; misses: C
           node.parentElement ??
           (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null)
       ) {
-        fills.unshift(getComputedStyle(node).backgroundColor);
+        chain.push(node);
       }
-      const layers = ['#fff', ...fills];
+      return chain;
+    };
+    /** Each painted run: its holder, its words, and the colour they paint in. */
+    const runs: { element: Element; text: string; color: string }[] = [];
+    const holders = new Set<Element>();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if ((node.textContent ?? '').trim() !== '' && node.parentElement !== null) {
+        holders.add(node.parentElement);
+      }
+    }
+    for (const element of holders) {
+      runs.push({ element, text: element.textContent, color: getComputedStyle(element).color });
+    }
+    for (const input of root.querySelectorAll('input')) {
+      if (input.value !== '') {
+        runs.push({ element: input, text: input.value, color: getComputedStyle(input).color });
+      } else if (input.placeholder !== '') {
+        runs.push({
+          element: input,
+          text: input.placeholder,
+          color: getComputedStyle(input, '::placeholder').color
+        });
+      }
+    }
+    const texts: string[] = [];
+    const misses: { text: string; ratio: number; floor: number }[] = [];
+    for (const run of runs) {
+      const rect = run.element.getBoundingClientRect();
+      const style = getComputedStyle(run.element);
+      // Not painted: hidden, folded away, or visually hidden words (1 px, clipped).
+      if (rect.width <= 1 || rect.height <= 1 || style.visibility !== 'visible') continue;
+      if (run.element.closest('[aria-disabled="true"], [inert], [aria-hidden="true"] svg') !== null)
+        continue;
+      const chain = lineage(run.element);
+      const opacity = chain.reduce(
+        (product, node) => product * Number(getComputedStyle(node).opacity),
+        1
+      );
+      const layers = [
+        ['#fff', 1] as const,
+        ...chain.reverse().map((node) => [getComputedStyle(node).backgroundColor, 1] as const)
+      ];
       const [light = 0, dark = 0] = [
-        luminance(paint([...layers, style.color])),
+        luminance(paint([...layers, [run.color, opacity]])),
         luminance(paint(layers))
       ].sort((a, b) => b - a);
       const ratio = Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
       const size = Number.parseFloat(style.fontSize);
       const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
       const floor = large ? 3 : 4.5;
-      measured += 1;
-      if (ratio < floor) {
-        const text = element instanceof HTMLInputElement ? element.value : element.textContent;
-        misses.push({ text: text.trim().slice(0, 60), ratio, floor });
-      }
+      const text = run.text.trim().slice(0, 60);
+      texts.push(text);
+      if (ratio < floor) misses.push({ text, ratio, floor });
     }
-    return { measured, misses };
+    return { texts, misses };
   }, OVERLAY_HOST);
+}
+
+/**
+ * One state's D-4 audit: axe over the overlay (no violation; only
+ * `color-contrast` may stay unresolved, as axe cannot read the top layer's
+ * backgrounds), then the computed AA backstop over every painted run.
+ *
+ * @param page The page under test, in the state to audit.
+ * @param state The state's name (palette included), for the log and messages.
+ */
+async function auditState(page: Page, state: string): Promise<void> {
+  await settle(page);
+  const result = await axeOverlay(page);
+  console.log(`[axe] ${state} ${JSON.stringify(result)}`);
+  expect(result.violations, state).toEqual([]);
+  expect(
+    result.incomplete.filter((id) => id !== 'color-contrast'),
+    state
+  ).toEqual([]);
+  const contrast = await contrastMisses(page);
+  console.log(`[contrast] ${state} measured ${String(contrast.texts.length)}`);
+  expect(contrast.texts.length, state).toBeGreaterThan(0);
+  expect(contrast.misses, state).toEqual([]);
+}
+
+/** The words of every run the AA backstop measures right now. */
+async function contrastTexts(page: Page): Promise<string[]> {
+  return (await contrastMisses(page)).texts;
 }
 
 /** The focused element inside the overlay: its name and whether a 2 px+ ring shows. */
@@ -323,6 +397,28 @@ async function panelControls(page: Page): Promise<string[]> {
 }
 
 /**
+ * D-3's walk: from the panel heading, Tab through every panel control
+ * ({@link panelControls}) in DOM order, asserting each one's ring.
+ *
+ * @returns The controls visited, in order (equal to the expectation).
+ */
+async function tabWalk(page: Page): Promise<string[]> {
+  await page.getByRole('heading', { name: 'Exclusion builder' }).focus();
+  const expected = await panelControls(page);
+  const visited: string[] = [];
+  for (let step = 0; step < expected.length + 5; step += 1) {
+    await page.keyboard.press('Tab');
+    const focused = await focusedControl(page);
+    if (focused === null || !focused.inside) break;
+    expect(focused.ring, `ring on ${focused.name}`).toBe(true);
+    visited.push(focused.name);
+    if (visited.length === expected.length) break;
+  }
+  expect(visited).toEqual(expected);
+  return visited;
+}
+
+/**
  * Compose the populated editor: a stored-form note and a long no-match row,
  * plus (unless `refused` is false) a row the preview refuses.
  */
@@ -365,19 +461,30 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const { page } = await openBuilderWith(extension, { colorScheme, reducedMotion: 'reduce' });
       await populate(page, false);
       expect(await reloadThroughSession(page, () => applyButton(page).click())).not.toBe('');
-      await page.getByRole('heading', { name: 'Exclusion builder' }).focus();
-      const expected = await panelControls(page);
-      const visited: string[] = [];
-      for (let step = 0; step < expected.length + 5; step += 1) {
-        await page.keyboard.press('Tab');
-        const focused = await focusedControl(page);
-        if (focused === null || !focused.inside) break;
-        expect(focused.ring, `ring on ${focused.name}`).toBe(true);
-        visited.push(focused.name);
-        if (visited.length === expected.length) break;
-      }
-      expect(visited).toEqual(expected);
+      await tabWalk(page);
       await page.getByRole('button', { name: 'Stop' }).click();
+      await page.close();
+    });
+
+    test('D-3: with "On this page" open the walk rings its chips and Add/Added buttons; the folded pill rings too', async ({
+      extension
+    }) => {
+      const { page } = await openBuilderWith(extension, { colorScheme, reducedMotion: 'reduce' });
+      await page.getByRole('button', { name: /^On this page/ }).click();
+      const list = page.getByRole('list', { name: 'Elements on this page' });
+      // One entry added, so the walk crosses both an "Add" and an "Added" button.
+      await list.getByRole('button', { name: /^Add / }).first().click();
+      await expect(list.getByRole('button', { name: /^Added: / }).first()).toBeVisible();
+      const visited = await tabWalk(page);
+      expect(visited.filter((name) => name.startsWith('button All'))).toHaveLength(1);
+      expect(visited.some((name) => name.startsWith('button Add '))).toBe(true);
+      expect(visited.some((name) => name.startsWith('button Added: '))).toBe(true);
+      await page.keyboard.press('Escape');
+      const pill = page.getByRole('button', { name: /open the exclusion builder$/ });
+      await expect(pill).toBeFocused();
+      const focused = await focusedControl(page);
+      expect(focused?.name, 'the folded pill').toMatch(/open the exclusion builder$/);
+      expect(focused?.ring, 'ring on the folded pill').toBe(true);
       await page.close();
     });
 
@@ -386,23 +493,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
         colorScheme,
         reducedMotion: 'reduce'
       });
-      const audit = async (state: string): Promise<void> => {
-        await settle(page);
-        const result = await axeOverlay(page);
-        console.log(`[axe] ${colorScheme} ${state} ${JSON.stringify(result)}`);
-        expect(result.violations, `${colorScheme} ${state}`).toEqual([]);
-        // axe cannot resolve backgrounds in the top layer: contrast stays
-        // unresolved there, nothing else may.
-        expect(
-          result.incomplete.filter((id) => id !== 'color-contrast'),
-          `${colorScheme} ${state}`
-        ).toEqual([]);
-        const contrast = await contrastMisses(page);
-        console.log(`[contrast] ${colorScheme} ${state} measured ${String(contrast.measured)}`);
-        expect(contrast.measured, `${colorScheme} ${state}`).toBeGreaterThan(0);
-        expect(contrast.misses, `${colorScheme} ${state}`).toEqual([]);
-      };
+      const audit = (state: string): Promise<void> => auditState(page, `${colorScheme} ${state}`);
       await audit('empty editor');
+      // A blank row paints its placeholder (measured as `::placeholder`).
+      await lane(page, DELAY).getByRole('button', { name: 'Add row' }).click();
+      const placeholder = (await laneRow(page, DELAY, 1).getAttribute('placeholder')) ?? '';
+      expect(placeholder).not.toBe('');
+      await audit('blank row');
+      expect(await contrastTexts(page)).toContain(placeholder.trim().slice(0, 60));
+      await page.getByRole('button', { name: `Remove ${DELAY} row 1` }).click();
+      await expect(laneRow(page, DELAY, 1)).toHaveCount(0);
       await populate(page);
       await applyButton(page).click();
       await expect.poll(async () => (await readBanners(page))[0]?.title).toMatch(/^Fix 1 row/);
@@ -435,6 +535,25 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await audit('unavailable');
       await page.keyboard.press('Escape');
       await audit('folded pill');
+      await page.close();
+    });
+
+    test('D-4: picking with the highlight on an element passes axe and the AA backstop', async ({
+      extension
+    }) => {
+      const { page } = await openBuilderWith(
+        extension,
+        { colorScheme, reducedMotion: 'reduce' },
+        LAZY_RENDERED
+      );
+      await page.getByRole('button', { name: 'Pick on page' }).click();
+      await page.locator('#alr-two').hover();
+      const label = page.locator(`${OVERLAY_HOST} .xo-highlight-lane`);
+      await expect(label).toBeVisible();
+      await auditState(page, `${colorScheme} picking with the highlight`);
+      // The highlight's lane label was among the runs measured.
+      expect(await contrastTexts(page)).toContain((await label.textContent())?.trim());
+      await page.keyboard.press('Escape');
       await page.close();
     });
   });
