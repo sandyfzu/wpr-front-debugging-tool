@@ -6,7 +6,14 @@
  * the always-loaded isolated script; ids and labels stay in `./commands`.
  */
 import { isPsiHost } from '../side-by-side/analysis-host';
-import { PAGE_UI_GATE_RESCUE_LABEL, paletteCommands, type PaletteCommandId } from './commands';
+import {
+  PAGE_SURFACE_NAMES,
+  PAGE_UI_MENU_RESCUE,
+  PAGE_UI_OPTIONS_RESCUE,
+  pageCommandLabel,
+  paletteCommands,
+  type PaletteCommandId
+} from './commands';
 
 /** The page facts a row's availability reads. */
 export interface PageCommandFacts {
@@ -53,8 +60,8 @@ const PALETTE_ROW_DETAILS: Readonly<Record<PaletteCommandId, PaletteRowDetail>> 
   'page-ui-gate': {
     keywords: ['disable', 'hide', 'gate', 'master', 'off', 'everything'],
     confirm: {
-      title: 'Turn off all on-page UI?',
-      body: `This also turns off this command palette. Turn it back on from the page’s right-click menu (“${PAGE_UI_GATE_RESCUE_LABEL}”) or the extension’s options.`,
+      title: `${pageCommandLabel('page-ui-gate')}?`,
+      body: `This also turns off this ${PAGE_SURFACE_NAMES.commandPalette}. Turn it back on from ${PAGE_UI_MENU_RESCUE} or ${PAGE_UI_OPTIONS_RESCUE}.`,
       action: 'Turn off'
     }
   }

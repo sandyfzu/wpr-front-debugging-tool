@@ -321,7 +321,7 @@ describe('the shortcut field', () => {
     });
     expect(control.getAttribute('aria-label')).toBe('Command palette shortcut: Option+P');
     await waitFor(() => {
-      expect(toastTitles()).toContain('Palette shortcut saved');
+      expect(toastTitles()).toContain('Command palette shortcut saved');
     });
     // Spelled in words (toasts are read aloud; glyphs read poorly).
     expect(toastItems().at(-1)?.description).toBe(
@@ -443,7 +443,7 @@ describe('the shortcut field', () => {
     expect(control.getAttribute('aria-pressed')).toBe('false');
     expect(fieldStatus().textContent).toBe('Shortcut unchanged');
     expect(write).not.toHaveBeenCalled();
-    expect(toastTitles()).not.toContain('Palette shortcut saved');
+    expect(toastTitles()).not.toContain('Command palette shortcut saved');
   });
 
   it('turning the gate off mid-recording stops the recording', async () => {
@@ -504,7 +504,7 @@ describe('the shortcut field', () => {
     const control = await record();
     press(control, { code: 'KeyP', altKey: true });
     await waitFor(() => {
-      expect(toastTitles()).toContain('The palette shortcut could not be saved');
+      expect(toastTitles()).toContain('The command palette shortcut could not be saved');
     });
     expect(control.textContent).toBe('⌥K');
   });

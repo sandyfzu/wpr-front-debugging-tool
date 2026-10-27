@@ -45,7 +45,7 @@ describe('paletteRowViews', () => {
     expect(confirming.map((row) => row.id)).toEqual(['page-ui-gate']);
     expect(confirming[0]?.confirm).toEqual({
       title: 'Turn off all on-page UI?',
-      body: 'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options.',
+      body: 'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options (“Show on-page UI”).',
       action: 'Turn off'
     });
     expect(confirming[0]?.confirm?.body).toContain(PAGE_UI_GATE_RESCUE_LABEL);

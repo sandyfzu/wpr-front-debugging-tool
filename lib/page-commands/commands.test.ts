@@ -6,7 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAGE_COMMANDS,
+  PAGE_UI_GATE_OPTION_LABEL,
   PAGE_UI_GATE_RESCUE_LABEL,
+  PAGE_UI_MENU_RESCUE,
+  PAGE_UI_OPTIONS_RESCUE,
+  PAGE_UI_SURFACES_PROSE,
   isPaletteCommandId,
   pageCommand,
   pageCommandLabel,
@@ -39,6 +43,17 @@ describe('PAGE_COMMANDS', () => {
       'open-command-palette',
       'open-nowprocket'
     ]);
+  });
+});
+
+describe('on-page surface names and gate wording', () => {
+  it('pins the gated surfaces list, the options label and both ways back on', () => {
+    expect(PAGE_UI_SURFACES_PROSE).toBe(
+      'the detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette'
+    );
+    expect(PAGE_UI_GATE_OPTION_LABEL).toBe('Show on-page UI');
+    expect(PAGE_UI_MENU_RESCUE).toBe('the page’s right-click menu (“Turn on all on-page UI”)');
+    expect(PAGE_UI_OPTIONS_RESCUE).toBe('the extension’s options (“Show on-page UI”)');
   });
 });
 

@@ -29,7 +29,9 @@ import {
   type OptionsPageIO,
   type OptionsPageSnapshot
 } from '../../lib/options/page-model';
+import { capitalize } from '../../utils/text';
 import { isAppearance, type Appearance } from '../../utils/theme';
+import { PAGE_SURFACE_NAMES, PAGE_UI_MENU_RESCUE } from '../../lib/page-commands/commands';
 import { setAppearanceOption } from '../../lib/storage/options';
 import { createLogger } from '../../lib/logger';
 import {
@@ -61,11 +63,10 @@ const APPEARANCE_WRITE_FAILURE_TITLE = 'The color theme could not be saved';
 const APPEARANCE_WRITE_FAILURE_DESCRIPTION = 'The theme choice is kept as unsaved — try Save.';
 const PAGE_UI_ON_TITLE = 'On-page UI turned on';
 const PAGE_UI_OFF_TITLE = 'On-page UI turned off';
-const PAGE_UI_OFF_DESCRIPTION =
-  "Open pages close it now; the page's right-click menu turns it back on.";
+const PAGE_UI_OFF_DESCRIPTION = `Open pages close it now; turn it back on here or from ${PAGE_UI_MENU_RESCUE}.`;
 const PAGE_UI_FAILURE_TITLE = 'The on-page UI setting could not be saved';
-const CHORD_SAVED_TITLE = 'Palette shortcut saved';
-const CHORD_FAILURE_TITLE = 'The palette shortcut could not be saved';
+const CHORD_SAVED_TITLE = `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shortcut saved`;
+const CHORD_FAILURE_TITLE = `The ${PAGE_SURFACE_NAMES.commandPalette} shortcut could not be saved`;
 const INSTANT_FAILURE_DESCRIPTION =
   'The previous value stays — check that the extension is still enabled, then try again.';
 
@@ -270,7 +271,7 @@ export function App(props: OptionsPageProps): JSX.Element {
             outcome,
             {
               title: CHORD_SAVED_TITLE,
-              description: `${shown} opens the command palette on inspected pages.`
+              description: `${shown} opens the ${PAGE_SURFACE_NAMES.commandPalette} on inspected pages.`
             },
             CHORD_FAILURE_TITLE
           );

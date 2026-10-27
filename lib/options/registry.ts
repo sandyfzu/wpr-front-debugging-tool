@@ -19,7 +19,14 @@
  * ({@link onPageDisabledNote}).
  */
 
+import { capitalize } from '../../utils/text';
 import { isAppearance, type Appearance } from '../../utils/theme';
+import {
+  PAGE_SURFACE_NAMES,
+  PAGE_UI_GATE_OPTION_LABEL,
+  PAGE_UI_MENU_RESCUE,
+  PAGE_UI_SURFACES_PROSE
+} from '../page-commands/commands';
 import {
   storedOptionsOrFallback,
   TOOLBAR_BADGE,
@@ -165,18 +172,16 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     kind: 'page-ui-gate',
     id: 'page-ui-gate',
     section: 'features',
-    label: 'Show on-page UI',
-    description:
-      "The detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette on inspected pages — off closes them on every open page at once; the page's right-click menu turns them back on"
+    label: PAGE_UI_GATE_OPTION_LABEL,
+    description: `${capitalize(PAGE_UI_SURFACES_PROSE)} on inspected pages — off closes them on every open page at once; turn them back on here or from ${PAGE_UI_MENU_RESCUE}`
   },
   {
     kind: 'chord',
     id: 'palette-chord',
     section: 'features',
     onPage: true,
-    label: 'Command palette shortcut',
-    description:
-      "Opens the command palette on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them"
+    label: `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shortcut`,
+    description: `Opens the ${PAGE_SURFACE_NAMES.commandPalette} on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them`
   },
   {
     kind: 'boolean',
@@ -250,7 +255,7 @@ export const DRAFTED_OPTION_ROWS: readonly DraftedOptionRow[] = Object.freeze(
 );
 
 /** Shown under every `onPage` row while the gate is off — names the way back. */
-export const ON_PAGE_UI_OFF_NOTE = 'On-page UI is off — turn on “Show on-page UI” to change this';
+export const ON_PAGE_UI_OFF_NOTE = `On-page UI is off — turn on “${PAGE_UI_GATE_OPTION_LABEL}” to change this`;
 
 /**
  * The cascade: why a row is disabled by the on-page UI gate, if it is.

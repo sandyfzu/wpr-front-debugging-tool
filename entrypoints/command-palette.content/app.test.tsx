@@ -134,7 +134,7 @@ describe('PaletteApp', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).toContain('Turn off all on-page UI?');
     expect(dialog.textContent).toContain(
-      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options.'
+      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options (“Show on-page UI”).'
     );
     fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
     expect(view.onRun).toHaveBeenCalledWith('page-ui-gate');
