@@ -28,12 +28,18 @@ import type { Locator, Page } from '@playwright/test';
 
 import {
   expect,
-  openFixturePage,
   ORIGIN_A,
   test,
   type DriverPage,
   type ExtensionDriver
 } from '../helpers/extension';
+import {
+  APPLIED,
+  DEFER,
+  DELAY,
+  LAZY_RENDER,
+  openBuilder as openBuilderOn
+} from '../helpers/exclusion-overlay';
 
 /** The fixture page: two scripts served as Delay JavaScript execution delays them. */
 const FIXTURE = '/exclusion/delayed.html';
@@ -41,44 +47,15 @@ const FIXTURE = '/exclusion/delayed.html';
 /** The fixture page: two scripts served as Load JavaScript deferred defers them. */
 const DEFERRED_FIXTURE = '/exclusion/deferred.html';
 
-/** The Delay lane's label (the verified feature name). */
-const DELAY = 'Delay JavaScript execution';
-
-/** The Defer lane's label (the verified feature name). */
-const DEFER = 'Load JavaScript deferred';
-
-/** The Automatic Lazy Rendering lane's label. */
-const LAZY_RENDER = 'Automatic Lazy Rendering';
-
-/** `chrome.storage.local` key of the per-origin saved drafts (WXT `local:exclusion-sets`). */
-const SAVED_DRAFTS_KEY = 'exclusion-sets';
-
-/** Bounded waits for the overlay mount and the applied reload. */
-const MOUNT = { timeout: 15_000 };
-const APPLIED = { timeout: 30_000 };
-
 /**
- * Open the fixture and the exclusion builder in it (the background's own
- * injection: the overlay's runtime content script into the top frame).
+ * Open the fixture with the exclusion builder in it (drafts cleared: every
+ * leg starts empty).
  *
  * @param extension The driver.
  * @param fixture The fixture page's path.
  */
 async function openBuilder(extension: ExtensionDriver, fixture = FIXTURE): Promise<DriverPage> {
-  // The overlay reopens on the origin's autosaved draft: every leg starts empty.
-  await extension.evaluateInWorker(async (key: string) => {
-    await chrome.storage.local.remove(key);
-  }, SAVED_DRAFTS_KEY);
-  const opened = await openFixturePage(extension, fixture);
-  await extension.evaluateInWorker(async (tabId: number) => {
-    await chrome.scripting.executeScript({
-      target: { tabId, frameIds: [0] },
-      files: ['/content-scripts/exclusion-overlay.js']
-    });
-  }, opened.tabId);
-  await expect(opened.page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
-  await expect(opened.page.getByRole('button', { name: /^Apply$/ })).toBeVisible(MOUNT);
-  return opened;
+  return await openBuilderOn(extension, fixture);
 }
 
 /** The Delay lane region. */

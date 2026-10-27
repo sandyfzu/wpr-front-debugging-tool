@@ -42,6 +42,16 @@ import {
   type ExtensionDriver
 } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
+import {
+  APPLIED,
+  DEFER,
+  DELAY,
+  LAZY_RENDER,
+  LAZYLOAD,
+  MOUNT,
+  clearDrafts,
+  injectOverlay
+} from '../helpers/exclusion-overlay';
 import { openSitePage, SITE_URL } from '../helpers/site';
 import { expectPillHint, STRIP_HOST } from '../helpers/strip-pill';
 
@@ -57,21 +67,10 @@ type FactRow = BuilderFactRow;
 /** `chrome.storage.sync` key of the per-origin widget map. */
 const ORIGINS_KEY = 'inspector-origins';
 
-/** `chrome.storage.local` key of the per-origin saved drafts (reopened by the overlay). */
-const SAVED_DRAFTS_KEY = 'exclusion-sets';
-
 /** The tab-level line's title. */
 const LINE_TITLE = 'Exclusion Builder rewrote this page';
 
-/** Lane labels (the verified feature names). */
-const DELAY = 'Delay JavaScript execution';
-const DEFER = 'Load JavaScript deferred';
-const LAZYLOAD = 'LazyLoad for images';
-const LAZY_RENDER = 'Automatic Lazy Rendering';
-
-/** Bounded waits: overlay mount, the applied reload, a fresh payload. */
-const MOUNT = { timeout: 15_000 };
-const APPLIED = { timeout: 30_000 };
+/** Bounded wait for a fresh payload. */
 const FRESH = { timeout: 15_000, intervals: [100, 250, 500] };
 
 /** One changed row as every surface shows it. */
@@ -288,13 +287,6 @@ async function clearWidgetMap(extension: ExtensionDriver): Promise<void> {
   }, ORIGINS_KEY);
 }
 
-/** Drop every origin's saved draft (the overlay reopens on it). */
-async function clearDrafts(extension: ExtensionDriver): Promise<void> {
-  await extension.evaluateInWorker(async (key: string) => {
-    await chrome.storage.local.remove(key);
-  }, SAVED_DRAFTS_KEY);
-}
-
 /** Open a case's page. */
 async function openCasePage(
   extension: ExtensionDriver,
@@ -312,17 +304,6 @@ async function openPanel(extension: ExtensionDriver, tabId: number): Promise<Pag
   await panel.addInitScript(devtoolsShim(tabId));
   await panel.goto(`${await panelPageUrl(extension)}#/detections`, { waitUntil: 'load' });
   return panel;
-}
-
-/** Inject the overlay into the tab's top frame, as the background opens it. */
-async function openBuilder(extension: ExtensionDriver, opened: DriverPage): Promise<void> {
-  await extension.evaluateInWorker(async (tabId: number) => {
-    await chrome.scripting.executeScript({
-      target: { tabId, frameIds: [0] },
-      files: ['/content-scripts/exclusion-overlay.js']
-    });
-  }, opened.tabId);
-  await expect(opened.page.getByRole('heading', { name: 'Exclusion builder' })).toBeVisible(MOUNT);
 }
 
 /** Apply the composed set and wait for the rewritten page (reloaded) and its active session. */
@@ -513,7 +494,7 @@ test.describe('builder state across surfaces over real sessions', () => {
         const served = await activeFigures(panel);
         await expectPillHint(opened.page, null);
 
-        await openBuilder(extension, opened);
+        await injectOverlay(extension, opened);
         await syncCase.compose(opened.page);
         await apply(opened.page);
 
@@ -571,7 +552,7 @@ test.describe('builder state across surfaces over real sessions', () => {
       await expect(stripRow(opened.page, 'Delay JS')).toBeVisible();
       await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
 
-      await openBuilder(extension, opened);
+      await injectOverlay(extension, opened);
       await disable(opened.page, DELAY);
       await apply(opened.page);
       // Both served copies are gone; the one marker is the rewrite's.
