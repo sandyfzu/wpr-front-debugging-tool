@@ -699,16 +699,16 @@ export function addCandidate(
   text: string,
   nextId: IdSource
 ): CandidateAdded {
+  const feature = laneFeature(lane).id;
   const keys = laneKeys(draft, lane);
-  const diff = saveExclusionRow(laneFeature(lane).id, text, new Set(keys.keys()));
+  const diff = saveExclusionRow(feature, text, new Set(keys.keys()));
+  // The lane's own check, not the save's dedupe: some saves keep duplicates
+  // (Automatic Lazy Rendering), yet a candidate is never added twice.
+  const key = storedRowKey(feature, text);
+  const holder = key === null ? undefined : keys.get(key);
+  if (holder !== undefined) return { draft, id: holder, added: false, diff };
   const stored = storedText(diff);
-  if (stored === null) {
-    const key =
-      diff.state === 'dropped' && diff.reason === 'duplicate'
-        ? storedRowKey(laneFeature(lane).id, text)
-        : null;
-    return { draft, id: key === null ? null : (keys.get(key) ?? null), added: false, diff };
-  }
+  if (stored === null) return { draft, id: null, added: false, diff };
   const inserted = insertRows(draft, lane, [stored], null, nextId);
   const id = inserted.ids[0] ?? null;
   return { draft: inserted.draft, id, added: id !== null, diff };

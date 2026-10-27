@@ -200,6 +200,15 @@ describe('row edits', () => {
     expect(again.diff).toMatchObject({ state: 'dropped', reason: 'duplicate' });
   });
 
+  it('adds an Automatic Lazy Rendering candidate once, though its save keeps duplicates', () => {
+    const added = addCandidate(start, 'lazyRender', 'alr-two', nextId);
+    expect(added).toMatchObject({ added: true, diff: { state: 'unchanged', typed: 'alr-two' } });
+    // WP Rocket keeps a duplicate lazy-render row; picking it again still finds the first.
+    const again = addCandidate(added.draft, 'lazyRender', 'alr-two', nextId);
+    expect(again).toMatchObject({ draft: added.draft, id: added.id, added: false });
+    expect(again.draft.rows.lazyRender.filter((row) => row.text === 'alr-two')).toHaveLength(1);
+  });
+
   it('adds a candidate stored, and finds it again whatever its surrounding whitespace', () => {
     const added = addCandidate(start, 'lazyload', ' hero.webp\t', nextId);
     expect(added.draft.rows.lazyload.at(-1)?.text).toBe('hero.webp');
