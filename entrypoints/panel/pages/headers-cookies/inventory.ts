@@ -27,6 +27,13 @@ export const SECTION_TITLES: Readonly<Record<InventorySectionId, string>> = {
   cookies: 'Cookies'
 };
 
+/** What each section's heading count counts. */
+export const SECTION_NOUNS: Readonly<Record<InventorySectionId, CountNoun>> = {
+  caching: { one: 'header', other: 'headers' },
+  other: { one: 'header', other: 'headers' },
+  cookies: { one: 'cookie', other: 'cookies' }
+};
+
 /** The caching section's line when the response carried no caching-relevant header. */
 export const NO_CACHING_HEADERS_NOTE =
   'No caching-relevant headers in this response — nothing here says a cache handled it.';

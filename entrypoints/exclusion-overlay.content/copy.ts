@@ -20,6 +20,7 @@ import {
 import { LAZY_RENDER_EXCLUSIONS_FILTER } from '../../lib/exclusion-builder/copy-form';
 import { storedText, trimExclusionRow } from '../../lib/exclusion-builder/field-text';
 import { capText } from '../../utils/cap-text';
+import { countNoun, type CountNoun } from '../../utils/format-count';
 import { differenceExcerpts } from '../../utils/difference-excerpt';
 import type { LaneCounts } from './exclusions/counts';
 import type { LaneKey } from './exclusions/draft';
@@ -35,6 +36,21 @@ import type { SessionProblem } from './session/port';
 import type { OverlayState, SessionAction } from './session/machine';
 import type { AppliedWarning, SessionView, UnmodifiedReason } from './session/session-view';
 import type { CandidateAddOutcome, SaveState } from './controller';
+
+/**
+ * The words the overlay's sentences agree with a count, each in its two
+ * count forms (`countNoun` picks one) — nouns, and noun + verb pairs.
+ */
+export const COUNT_WORDS = {
+  row: { one: 'row', other: 'rows' },
+  thisRow: { one: 'this row', other: 'these rows' },
+  it: { one: 'it', other: 'them' },
+  lineWas: { one: 'line was', other: 'lines were' },
+  exclusion: { one: 'exclusion', other: 'exclusions' },
+  rowMatches: { one: 'row matches', other: 'rows match' },
+  rowNeeds: { one: 'row needs', other: 'rows need' },
+  match: { one: 'match', other: 'matches' }
+} as const satisfies Readonly<Record<string, CountNoun>>;
 
 /** The tool's name (the overlay's heading). */
 export const TOOL_TITLE = 'Exclusion builder';
@@ -107,7 +123,7 @@ export const PAGE_OFF_COPY = {
    *
    * @param count Rows not named (≥ 1).
    */
-  more: (count: number): string => `And ${String(count)} more ${count === 1 ? 'row' : 'rows'}.`
+  more: (count: number): string => `And ${String(count)} more ${countNoun(count, COUNT_WORDS.row)}.`
 } as const;
 
 /** The settings-field hint shared by the lanes WP Rocket has a field for. */
@@ -140,9 +156,9 @@ export const LANE_COPY: Readonly<Record<LaneKey, LaneCopy>> = {
       'WP Rocket’s remote exclusion lists and any custom code filters aren’t read here (assumed unused: rocket_exclude_defer_js, rocket_defer_jquery_patterns, rocket_defer_inline_exclusions).',
     page: {
       offLead: (rows) =>
-        `WP Rocket defers no script on this page because of ${rows === 1 ? 'this row' : 'these rows'}:`,
+        `WP Rocket defers no script on this page because of ${countNoun(rows, COUNT_WORDS.thisRow)}:`,
       offOutcome: (rows) =>
-        `Apply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove ${rows === 1 ? 'it' : 'them'} to defer scripts again.`,
+        `Apply still runs and previews the page as WP Rocket serves it, with no script deferred. Edit or remove ${countNoun(rows, COUNT_WORDS.it)} to defer scripts again.`,
       countsOff: (rows) =>
         `WP Rocket defers no script on this page because of ${rows === '' ? 'the applied rows' : rows}, so every deferred script is restored.`,
       unknown: 'WP Rocket may defer no script on this page with these rows — not checked here.',
@@ -215,7 +231,7 @@ export function rowsPhrase(refs: readonly RowRef[]): string {
       : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}`;
   const positions = refs.flatMap((ref) => ('position' in ref ? [String(ref.position)] : []));
   if (positions.length === refs.length) {
-    return `${positions.length === 1 ? 'row' : 'rows'} ${join(positions)}`;
+    return `${countNoun(positions.length, COUNT_WORDS.row)} ${join(positions)}`;
   }
   return join(
     refs.map((ref) =>
@@ -278,7 +294,7 @@ export const COUNT_COPY = {
     if (counts.pageUnknown && page !== undefined) lines.push(page.countsUnknown);
     if (counts.undetermined > 0)
       lines.push(
-        `${String(counts.undetermined)} left as served: how WP Rocket matched ${counts.undetermined === 1 ? 'it' : 'them'} can’t be read from this page.`
+        `${String(counts.undetermined)} left as served: how WP Rocket matched ${countNoun(counts.undetermined, COUNT_WORDS.it)} can’t be read from this page.`
       );
     if (counts.approximate > 0)
       lines.push(
@@ -448,7 +464,7 @@ export const ROW_NOTE_COPY = {
    * @param count Rows not listed (≥ 1).
    */
   moreRemoved: (count: number): string =>
-    `${String(count)} more ${count === 1 ? 'row' : 'rows'} removed.`,
+    `${String(count)} more ${countNoun(count, COUNT_WORDS.row)} removed.`,
   /**
    * A batch's count (paste, restored draft, apply).
    *
@@ -457,7 +473,7 @@ export const ROW_NOTE_COPY = {
   summary: (summary: BatchSummary): string => {
     const noun = BATCH_NOUNS[summary.source];
     const rows = (count: number): string =>
-      `${String(count)} ${noun}${count === 1 ? 'row' : 'rows'}`;
+      `${String(count)} ${noun}${countNoun(count, COUNT_WORDS.row)}`;
     if (summary.changed === 0)
       return `${rows(summary.removed)} removed: WP Rocket drops them when saving.`;
     const removed = summary.removed === 0 ? '' : `, ${String(summary.removed)} removed`;
@@ -515,7 +531,7 @@ export const PASTE_COPY = {
    * @param max The lane's row cap.
    */
   dropped: (lines: number, max: number): string =>
-    `${String(lines)} pasted ${lines === 1 ? 'line was' : 'lines were'} not added: a lane holds ${String(max)} rows at most.`
+    `${String(lines)} pasted ${countNoun(lines, COUNT_WORDS.lineWas)} not added: a lane holds ${String(max)} rows at most.`
 } as const;
 
 /**
@@ -569,7 +585,7 @@ export const COPY_ALL_COPY = {
    * @param as What they were copied as (the lane's `copiedAs`; empty: field text).
    */
   copied: (count: number, as = ''): string =>
-    `Copied ${String(count)} ${count === 1 ? 'exclusion' : 'exclusions'}${as}`,
+    `Copied ${String(count)} ${countNoun(count, COUNT_WORDS.exclusion)}${as}`,
   /** Why the control does nothing on an empty lane. */
   empty: 'Nothing to copy yet: add an exclusion to this lane first.',
   /** A refused copy, with the way forward. */
@@ -707,7 +723,7 @@ function appliedCopy(view: Extract<SessionView, { kind: 'applied' }>): StateCopy
   if (view.unmatched > 0) {
     return {
       title: 'Applied, with rows that matched nothing',
-      body: `${String(view.unmatched)} ${view.unmatched === 1 ? 'row matches' : 'rows match'} no element on this page. Check the rows marked “No match”.${tail}`
+      body: `${String(view.unmatched)} ${countNoun(view.unmatched, COUNT_WORDS.rowMatches)} no element on this page. Check the rows marked “No match”.${tail}`
     };
   }
   return warnings.length === 0

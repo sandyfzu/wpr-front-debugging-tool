@@ -5,7 +5,8 @@
  * need fixing, an unavailability Apply cannot fix, unapplied edits, and the
  * draft's save state.
  */
-import { DRAFT_TOO_LARGE_WORDS, saveStateWords } from './copy';
+import { countNoun } from '../../utils/format-count';
+import { COUNT_WORDS, DRAFT_TOO_LARGE_WORDS, saveStateWords } from './copy';
 import type { SaveState } from './controller';
 
 /** What the footer line is chosen from. */
@@ -42,7 +43,7 @@ export function draftTooLarge(save: SaveState): boolean {
 export function footerLine(facts: FooterFacts): FooterLine | null {
   if (draftTooLarge(facts.save)) return { text: DRAFT_TOO_LARGE_WORDS, tone: 'error' };
   if (facts.invalid > 0) {
-    const rows = facts.invalid === 1 ? 'row needs' : 'rows need';
+    const rows = countNoun(facts.invalid, COUNT_WORDS.rowNeeds);
     return { text: `${String(facts.invalid)} ${rows} fixing`, tone: 'error' };
   }
   if (facts.stuck) {

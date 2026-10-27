@@ -16,7 +16,7 @@ import type {
 import { JS_PAGE_RESOURCES } from '../../../../lib/panel/resources-view-model';
 import { buildFilterChips } from '../../../../lib/panel/list-behavior';
 import type { WprDetections } from '../../../../lib/wp-rocket/types';
-import { formatCount } from '../../../../utils/format-count';
+import { countLabel, formatCount, type CountNoun } from '../../../../utils/format-count';
 
 /** One state chip on a script row: its words and its vocabulary kind. */
 export interface ScriptBadge {
@@ -358,13 +358,16 @@ export function toggleRowFlag(states: ReadonlySet<string>, key: string): Readonl
   return next;
 }
 
+/** Code lines, in their two count forms. */
+const LINE_NOUN: CountNoun = { one: 'line', other: 'lines' };
+
 /**
  * Count phrase for code lines ("1 line", "1,040 lines").
  *
  * @param count The number of lines.
  */
 export function lineCount(count: number): string {
-  return `${formatCount(count)} ${count === 1 ? 'line' : 'lines'}`;
+  return countLabel(count, LINE_NOUN);
 }
 
 /**

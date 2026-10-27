@@ -8,7 +8,13 @@
 import { UNDEFINED_REFERENCE_EXTERNAL_ERROR } from '../../../../lib/wp-rocket/constants';
 import type { ScriptAsset, ScriptOrigin } from '../../../../lib/panel/undefined-refs';
 import { SCRIPT_NOUN } from '../../../../lib/detection/count-nouns';
-import { countNoun } from '../../../../utils/format-count';
+import { countNoun, type CountNoun } from '../../../../utils/format-count';
+
+/** The page's own noun, in its two count forms. */
+const UNDEFINED_REFERENCE_NOUN: CountNoun = {
+  one: 'undefined reference',
+  other: 'undefined references'
+};
 
 /** Why a script scan failed — each maps to its own user-facing remedy. */
 export type ScanFailure = 'list-failed' | 'timed-out' | 'context-invalidated';
@@ -285,7 +291,7 @@ export function verdictText(verdict: WordVerdict): string {
  * @returns The sentence for the page's status region.
  */
 export function newReferencesAnnouncement(added: number): string {
-  return added === 1 ? '1 new undefined reference' : `${String(added)} new undefined references`;
+  return `${String(added)} new ${countNoun(added, UNDEFINED_REFERENCE_NOUN)}`;
 }
 
 /**
@@ -379,7 +385,7 @@ export function summaryFacts(
   if (names > 0) {
     facts.push({
       count: names,
-      label: names === 1 ? 'undefined reference' : 'undefined references'
+      label: countNoun(names, UNDEFINED_REFERENCE_NOUN)
     });
     if (searched)
       facts.push({ count: summary.withDefinition, label: 'with a possible definition' });

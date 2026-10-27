@@ -43,6 +43,7 @@ import { createLogger } from '../../../lib/logger';
 import { pageClipboardWriter, type ClipboardWriter } from '../clipboard';
 import {
   COUNT_COPY,
+  COUNT_WORDS,
   INVISIBLE_ROW_NOTE,
   LANE_COPY,
   NOTE_ROW_MAX,
@@ -56,6 +57,7 @@ import {
   type NoteText,
   type RowRef
 } from '../copy';
+import { countNoun } from '../../../utils/format-count';
 import type { OverlayController, SettledPasteOutcome } from '../controller';
 import { capText } from '../../../utils/cap-text';
 import { CopyAll } from './copy-all';
@@ -710,7 +712,7 @@ function PageOffMessage(props: PageOffMessageProps): JSX.Element {
 /** A row's match badge words. */
 function matchLabel(count: number): string {
   if (count === 0) return 'No match';
-  return `${String(count)} ${count === 1 ? 'match' : 'matches'}`;
+  return `${String(count)} ${countNoun(count, COUNT_WORDS.match)}`;
 }
 
 /** Props of {@link LaneRow}. */

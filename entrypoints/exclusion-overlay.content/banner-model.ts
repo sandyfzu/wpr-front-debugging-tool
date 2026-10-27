@@ -10,6 +10,7 @@ import {
 } from '../../lib/messaging/exclusion-session';
 import {
   ACTION_FAILED_TITLE,
+  COUNT_WORDS,
   PROBLEM_COPY,
   SESSION_ON_NOTE,
   SESSION_PERSISTS_NOTE,
@@ -17,6 +18,7 @@ import {
   type Indicator,
   type IndicatorTone
 } from './copy';
+import { countNoun } from '../../utils/format-count';
 import type { ActionNotice, OverlayState } from './session/machine';
 import type { SessionView } from './session/session-view';
 
@@ -174,7 +176,7 @@ export function noticeBanner(notice: ActionNotice): Banner {
       return {
         tone: 'warn',
         glyph: 'alert',
-        title: `Fix ${String(notice.rows)} ${notice.rows === 1 ? 'row' : 'rows'} before applying`,
+        title: `Fix ${String(notice.rows)} ${countNoun(notice.rows, COUNT_WORDS.row)} before applying`,
         body: 'Each marked row says what is wrong with it.',
         notes: [],
         actions: ['dismiss']
