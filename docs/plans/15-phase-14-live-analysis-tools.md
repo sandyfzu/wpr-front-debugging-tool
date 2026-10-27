@@ -46,7 +46,7 @@ Depends:B/P5/P6/P12. Parallel:— shared routes/strip owned serially. Size:M; sp
 - [ ] JavaScript **Runtime states** section: executed/failed/pending/not-delayed filters + Theme/Plugins/Inline/Other groups, id/source/classes/preview/full detail. Label **Live DOM state (not the snapshot passed to detection)**; rerun after interaction reflects real state.
 - [ ] Strip tool outcomes banner/configure-first hints, no host dumps. No tool-specific copy of P13 config/parser/state machinery.
 
-DoD: component/state/filter/accessibility tests, UI bar §D/budgets, actual lazy bundle+network receipt.
+DoD: component/state/filter tests (accessibility tests dropped — owner 2026-10-27: no screen-reader support), UI bar §D/budgets, actual lazy bundle+network receipt.
 
 ## P14.1 — Browser acceptance
 
@@ -55,6 +55,6 @@ Depends:A–C/P4.1/P4.2/P13; parallelP14.5 technical decision work, not closure 
 - [ ] Network no beacon bytes before run, on-run lazy load; no real generated-before/save POST. Pre/post gate DOM **no new beacon-completed**, no harness logs; with/without gate, empty/timeout/bail/config errors.
 - [ ] LCP golden/live parts/candidates, optional highlight applied→exact restored5s/invalidation; per-metric unsupported/reducer states. Source same-page comparison counts/depth differences explicit, not all values forced equal across timing-varying visits.
 - [ ] Real delayed fixture pending→interaction→executed/failed ground truth, rerun; Other/structured data/groups retained.
-- [ ] Chromium keyboard/axe/themes/motion, chunk/perf budgets; Firefox actual supported-entry outcome/beacon lazy loading/runtime manual. Never call build-only evidence runtime.
+- [ ] Chromium themes/motion (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support), chunk/perf budgets; Firefox actual supported-entry outcome/beacon lazy loading/runtime manual. Never call build-only evidence runtime.
 
 DoD: local suites green, all parent acceptance annotated, real second-baseline/service depth judgment recorded; new dependency+adapter/permission rationale/layout in AGENTS, README rationale, index status. P14.5 viewer/metrics are later extensions, not second implementations.

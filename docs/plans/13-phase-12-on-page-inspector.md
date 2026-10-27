@@ -83,7 +83,7 @@ Depends:B. Parallel:independent tool executors. Size:S.
 - [ ] Persist on settled drop; restore/reclamp through **existing** resting containment seam for current viewport/shape, sane finite coordinates. Session reset only until this lands; no new geometry engine.
 - [ ] Reconcile every SB-D ID against owner-approved KC pill/card/width/value-chip/motion deviations above; controls≥24, one scroll region/header/footer, no host styles/cookies/scroll lock or console narration. Hostile CSS computed diffs both directions, source-class no-copy grep.
 
-DoD: persistence/reload/new viewport/card growth/right-cancel/capture-loss/first Enter, no host text selection/link activation/page-scroll break, touch/multitouch tests+hardware limitation named. Style/focus/palettes/reduce/axe and budgets green.
+DoD: persistence/reload/new viewport/card growth/right-cancel/capture-loss/first Enter, no host text selection/link activation/page-scroll break, touch/multitouch tests+hardware limitation named. Style/focus/palettes/reduce and budgets green (new axe dropped — owner 2026-10-27: no screen-reader support).
 
 ### P12D — Tool hooks/banner
 
@@ -92,7 +92,7 @@ Depends:B/C; configs/executorsP13/P14 as available. Parallel:their internals, no
 - [ ] RUCSS/beacon/LCP/script overview controls; unavailable/configure-in-panel explanation until executable. Delay-only check-scripts affordance. Panel owns forms, strip calls **same** protocol/executors/persisted config, no second runtime.
 - [ ] Latest single outcome banner as sibling of transformed chrome, top-center,5s pause/close/details per brief. Real route signal only when panel is already open; platform cannot open/focus DevTools, so otherwise location hint, never fake link. Tools/results not draggable. Footer versions/no Notion link; cache age/exclusion evidence shared formatter.
 
-DoD: config/run/timeout/error/unavailable/state→banner tests, no duplicate test-mode copy, renderer-boundary guards, clean teardown/theme/reduce/keyboard/axe/budgets. FullP12 not declared done before these integrations or explicit named blockers.
+DoD: config/run/timeout/error/unavailable/state→banner tests, no duplicate test-mode copy, renderer-boundary guards, clean teardown/theme/reduce/budgets (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support). FullP12 not declared done before these integrations or explicit named blockers.
 
 ## P12.1 — Browser acceptance
 
@@ -100,7 +100,7 @@ Depends: P12M/B–D/P4.1/P4.2; parallel P13/P14 independent work.
 
 - [ ] Default on for unconfigured origins; per-origin entries override the global default in both directions and the toggle surfaces live mount/hide/reload per origin, other origin unaffected; persisted drag/restore+clamp, right cancel, no text/link/pan side effects, touch-emulated narrow screen.
 - [ ] Alt+H enabled only; host editor-like keydown handler still fires. Hostile reset/high-specificity page: identical strip, no unscoped style, host computed diff none.
-- [ ] System/Dark/Light live Options writes+OS flips; reduced motion, keyboard/axe shadow UI; zero-marker honest states/tooltips; tool/banner states.
+- [ ] System/Dark/Light live Options writes+OS flips; reduced motion shadow UI (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support); zero-marker honest states/tooltips; tool/banner states.
 - [ ] Brief deviation receipt/size delta and UI bar D1–D7; keep early20 cases, not replace with shallow smoke.
 
 Manual/open: native context-menu clicks, incognito origin sharing, glance≤2s/perceptual resettle at real60/120Hz, real touch/multitouch, Firefox installed-extension smoke. Build-only parity is not runtime. Update privacy README/AGENTS when adding real option/state structure, and index only to actual verification level.

@@ -2,13 +2,13 @@
 
 ## TLDR
 
-Start here, then read **only the owning active plan**. [Master](./00-master-port-plan.md) owns order/common gates/stable defect IDs; [design decisions](./design-decisions.md) and [UI bar](../ui-ux-bar.md) own binding UX. Completed records are lookup references, not prerequisite reading for every task. Code/lockfile/budgets/runbooks override historical measurements.
+Start here, then read **only the owning active plan**. **Accessibility (owner 2026-10-27): zero screen-reader support, effort-free a11y only** — open SR/real-AT/keyboard-walk/new-axe items in any plan are dropped ([UI bar §K](../ui-ux-bar.md#k--keyboard-focus-aria-ux-d3)). [Master](./00-master-port-plan.md) owns order/common gates/stable defect IDs; [design decisions](./design-decisions.md) and [UI bar](../ui-ux-bar.md) own binding UX. Completed records are lookup references, not prerequisite reading for every task. Code/lockfile/budgets/runbooks override historical measurements.
 
 Consolidated2026-10-16: implementation plans and their X.1 suites now share files; completed proposals/implementation/audit/fix/verification rounds become final decisions/evidence+explicit limits. Superseded instructions removed; detailed chronology remains in Git. No implementation or new completion claim follows from this edit.
 
 ## Active work
 
-- **P6 closed** (2026-10-20): [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.11 shipped (G.10 closed — owner's native-DevTools find-bar live-check, 2026-10-19, no issue); **P6.1 closed** (2026-10-20 receipt: three acceptance suites + harness helpers, full tier 178/178, rows 1–5 annotated) — remaining owner rows: native dock geometry + real AT. **P6G.12–.13 planned** (owner 2026-10-21): Detections optimization filter (All/Active/Inactive) + Adaptive/List layout modes — two small slices (P6G.13 after P6G.12); P6 stays closed for everything else. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
+- **P6 closed** (2026-10-20): [panel](./07-phase-6-panel-pages.md). A/A.1/B–F and G.1–G.11 shipped (G.10 closed — owner's native-DevTools find-bar live-check, 2026-10-19, no issue); **P6.1 closed** (2026-10-20 receipt: three acceptance suites + harness helpers, full tier 178/178, rows 1–5 annotated) — remaining owner row: native dock geometry (real AT dropped — owner 2026-10-27: no screen-reader support). **P6G.12–.13 planned** (owner 2026-10-21): Detections optimization filter (All/Active/Inactive) + Adaptive/List layout modes — two small slices (P6G.13 after P6G.12); P6 stays closed for everything else. Source/history in completed pages; current work does not restore removed headers preview or solved layout/copy defects.
 - **P9 closed** (2026-10-20): [options+9.1](./10-phase-9-options.md). P9A registry/model + P9B page + P9.1 suites shipped (receipts 2026-10-19/20) — options surface complete (persistence/palettes/badge/dbugger/KC/width+motion/a11y receipted); open owner items carried: model-save RMW window, KC `null`-outcome conflation, P15 visual polish, Firefox runtime release matrix.
 - **P8 deferred** (owner2026-10-19: popup not settled): [popup+8.1](./09-phase-8-popup.md) moves to the **last phase beforeP15** — afterP5J, immediately before release; no longer parallel withP6/P9.
 - **P10 closed 2026-10-27** (owner Chrome + Firefox checks passed): [record](./completed-exclusion-builder.md). Merged into `develop` 2026-10-27 (`515691d`). Follow-ups → P15A/B/C, doc 17 F2.1/F8, master LazyLoad gate.
@@ -35,7 +35,7 @@ Chosen train: ~~P6/P9~~ done (P6G.12–.13 independent, may run any time; P6G.13
 - [Shell P5A–I/P5.1](./completed-shell.md): delivered stores/nav/palette/status/primitives/tests; native/input/manual limits, root audit resolutions. P5J remains separate active work.
 - [Pages P6A–F/G.1](./completed-panel-pages.md): final behavior/security algorithms/parity/budget rationale, candidate evidence. Not fullP6 completion.
 - [Exclusion Builder P10–P10.1](./completed-exclusion-builder.md): in-page overlay on one interception session (Chromium CDP `Fetch`, Firefox `filterResponseData` + worker), WP Rocket save/match mirrored (306-row parity table, CI job), cross-surface sync, Firefox panel relays; closed and merged into `develop` 2026-10-27.
-- [UI acceptance](./completed-ui-acceptance.md): combined copy/toast/canvas/headings/scrollbars accepted for **primary Chromium**,144 clean browser tests plus native ready-docking smoke on the recorded tree. Firefox autohide/extension runtime and remaining native/AT limits explicit.
+- [UI acceptance](./completed-ui-acceptance.md): combined copy/toast/canvas/headings/scrollbars accepted for **primary Chromium**,144 clean browser tests plus native ready-docking smoke on the recorded tree. Firefox autohide/extension runtime and remaining native limits explicit (AT limits dropped — owner 2026-10-27).
 
 ## Maintenance
 
