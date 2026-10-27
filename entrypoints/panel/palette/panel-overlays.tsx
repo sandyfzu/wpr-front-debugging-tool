@@ -12,6 +12,7 @@
  * the moment of use.
  */
 import { Show, createMemo, untrack, type JSX } from 'solid-js';
+import { rankCommands } from '../../../components/ui/command-matcher';
 import { CommandPalette, type PaletteCommand } from '../../../components/ui/command-palette';
 import { defaultClipboard } from '../../../components/ui/copy-button';
 import { cycleAppearanceOption } from '../../../lib/storage/options';
@@ -25,7 +26,6 @@ import {
 } from './actions';
 import { exportPageDataJson, type JsonExportResult } from './export-json';
 import type { OverlayStore } from './overlays';
-import { rankCommands } from './matcher';
 import { ShortcutsOverlay } from './shortcuts-overlay';
 import type { RouteId } from '../routes';
 
