@@ -39,6 +39,7 @@ import {
   type DeviceSimSessions
 } from './device-simulation';
 import { initExclusionSessions } from './exclusion-sessions';
+import { registerTabPushRelay } from './tab-push-relay';
 import { registerTabRelay } from './tab-relay';
 
 const log = createLogger('background');
@@ -152,6 +153,14 @@ async function main(): Promise<void> {
     // Only contexts without the `tabs` API ask through the relay; they then
     // see no receiver and their panel reports it.
     log.error('Tab relay init failed — tab-less pages cannot reach tabs', cause);
+  }
+
+  try {
+    registerTabPushRelay();
+  } catch (cause) {
+    // Only panels that never receive the page's pushes directly subscribe;
+    // they then keep loading data but stop refreshing on their own.
+    log.error('Tab-push relay init failed — tab-less panels get no live page updates', cause);
   }
 
   try {
