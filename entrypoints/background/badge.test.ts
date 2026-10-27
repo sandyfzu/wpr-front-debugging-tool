@@ -7,17 +7,19 @@
  * didn't ask for — including the stranded ones a restart left behind.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyBadgeEffect,
   badgeFor,
   createBadgeState,
+  initBadge,
   watchBadgeGate,
   type BadgeEffect,
   type BadgeRuntime
 } from './badge';
 import { optionsStore } from '../../lib/storage/options';
 import type { DetectionSummary } from '../../lib/messaging/validate';
+import type { ToolbarBadgeApi } from './toolbar-action';
 
 const CACHED_WPR = { wprPresent: true, cached: true } satisfies DetectionSummary;
 const UNCACHED_WPR = { wprPresent: true, cached: false } satisfies DetectionSummary;
@@ -170,6 +172,54 @@ describe('the applier (the browser seam behind the effects)', () => {
     expect(await fakeBrowser.action.getBadgeBackgroundColor({ tabId })).toEqual([0, 0, 0, 0]);
     await applyBadgeEffect({ kind: 'clear', tabId });
     expect(await fakeBrowser.action.getBadgeText({ tabId })).toBe('');
+  });
+});
+
+describe('the applier on an injected toolbar API (the Manifest V2 namespace shape)', () => {
+  /** A toolbar API recording each write as `[method, details]`, in call order. */
+  function recordingApi(): { api: ToolbarBadgeApi; calls: Array<[string, unknown]> } {
+    const calls: Array<[string, unknown]> = [];
+    const record =
+      (method: string) =>
+      (details: unknown): Promise<void> => {
+        calls.push([method, details]);
+        return Promise.resolve();
+      };
+    const api = {
+      setBadgeText: record('setBadgeText'),
+      setBadgeBackgroundColor: record('setBadgeBackgroundColor'),
+      setBadgeTextColor: record('setBadgeTextColor')
+    } as unknown as ToolbarBadgeApi;
+    return { api, calls };
+  }
+
+  it('writes tile, text color, text (last), clear = empty text, through the injected API', async () => {
+    const { api, calls } = recordingApi();
+    await applyBadgeEffect({ kind: 'set', tabId: 4, display: dotFor(UNCACHED_WPR) }, api);
+    await applyBadgeEffect({ kind: 'clear', tabId: 4 }, api);
+    expect(calls).toEqual([
+      ['setBadgeBackgroundColor', { tabId: 4, color: [0, 0, 0, 0] }],
+      ['setBadgeTextColor', { tabId: 4, color: '#0969da' }],
+      ['setBadgeText', { tabId: 4, text: '●' }],
+      ['setBadgeText', { tabId: 4, text: '' }]
+    ]);
+  });
+
+  it('logs and resolves when the browser has no toolbar API (never throws per update)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(applyBadgeEffect({ kind: 'clear', tabId: 9 }, null)).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0]?.[0]).toBe(
+        '[WPR FDT] [badge] Badge update ignored: no toolbar button API'
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('refuses to boot without a toolbar API, naming the namespace this build expects', () => {
+    expect(() => initBadge(null)).toThrow('No toolbar button API (browser.action) in this browser');
   });
 });
 
