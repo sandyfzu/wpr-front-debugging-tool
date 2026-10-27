@@ -94,6 +94,12 @@ describe('menuClickOrigin', () => {
     expect(menuClickOrigin({ menuItemId: 42 })).toBeNull();
     expect(menuClickOrigin({ menuItemId: 42, pageUrl: 'not a url ?%' })).toBeNull();
   });
+
+  it('answers null for non-http(s) documents (their origin serializes as "null")', () => {
+    for (const pageUrl of ['chrome://extensions/', 'about:blank', 'moz-extension://abc/p.html']) {
+      expect(menuClickOrigin({ menuItemId: 42, pageUrl })).toBeNull();
+    }
+  });
 });
 
 describe('menuBypassUrl', () => {
@@ -590,6 +596,29 @@ describe('dispatchMenuClickEvent', () => {
     await dispatchMenuClickEvent({ menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget }, tab, deps);
     expect(recorded.openedUrls).toEqual([{ url: `${SITE}/fdt/?a=b&nowprocket`, windowId: 12 }]);
     expect(recorded.toggles).toEqual([SITE]);
+  });
+
+  it('an action-menu toggle on a non-http(s) tab stores nothing and warns without the URL', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { deps, recorded } = recordingDeps();
+    const urls = ['chrome://settings/?tok=s3cr3t', 'about:blank', 'moz-extension://abc/p.html'];
+    try {
+      for (const url of urls) {
+        await dispatchMenuClickEvent(
+          { menuItemId: CONTEXT_MENU_IDS.toggleDetectionWidget },
+          { id: 4, url },
+          deps
+        );
+      }
+      expect(recorded.toggles).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(urls.length);
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain('could not resolve the page origin');
+      for (const url of urls) expect(logged).not.toContain(url);
+      expect(logged).not.toContain('s3cr3t');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('no nowprocket log line ever carries the page URL (it can hold secrets)', async () => {

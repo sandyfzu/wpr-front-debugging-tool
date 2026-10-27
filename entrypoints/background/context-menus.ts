@@ -252,21 +252,20 @@ export function menuTabPlacement(tabId: number, tab: MenuClickTab | undefined): 
 
 /**
  * The origin a click targets, from the click's own document URL (page-scoped
- * menus carry it). Unresolvable (absent, malformed) is null — the caller
- * answers visibly instead of guessing a site.
+ * menus carry it; the tab-URL fallback can be any scheme). Only http(s)
+ * qualifies: other schemes serialize an opaque origin as the string "null",
+ * which must never become a stored site key. Unresolvable (absent, malformed,
+ * not http(s)) is null — the caller answers visibly instead of guessing a site.
  *
  * @param info The click's menu information.
+ * @returns The page's http(s) origin, or null.
  */
 export function menuClickOrigin(info: {
   menuItemId: string | number;
   pageUrl?: string;
 }): string | null {
-  if (info.pageUrl === undefined) return null;
-  try {
-    return new URL(info.pageUrl).origin;
-  } catch {
-    return null;
-  }
+  const url = info.pageUrl === undefined ? null : parseHttpUrl(info.pageUrl);
+  return url === null ? null : url.origin;
 }
 
 /**
