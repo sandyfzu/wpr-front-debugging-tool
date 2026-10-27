@@ -379,6 +379,37 @@ describe('OverlayApp', () => {
     }
   });
 
+  it('an explicit open never takes focus from another extension surface focused before it mounted', async () => {
+    // The palette's shadow host holds focus while the overlay host renders.
+    const palette = document.createElement('wpr-fdt-command-palette');
+    palette.tabIndex = 0;
+    document.body.append(palette);
+    palette.focus();
+    try {
+      mount(port({ state: 'inactive' }), null, undefined, false, true);
+      await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
+      // Past every frame a focus move would take.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(document.activeElement).toBe(palette);
+    } finally {
+      palette.remove();
+    }
+  });
+
+  it('an explicit open still takes over a page control focused before it mounted', async () => {
+    const control = document.createElement('button');
+    document.body.append(control);
+    control.focus();
+    try {
+      mount(port({ state: 'inactive' }), null, undefined, false, true);
+      await waitFor(() => {
+        expect(document.activeElement?.textContent).toBe('Exclusion builder');
+      });
+    } finally {
+      control.remove();
+    }
+  });
+
   it('a folded re-open starts as the pill and leaves the page’s focus alone', async () => {
     const outside = document.createElement('button');
     document.body.append(outside);

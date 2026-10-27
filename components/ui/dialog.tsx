@@ -5,8 +5,9 @@
  * Wraps Kobalte's APG dialog: modal = focus trapped inside the content (the
  * outside is pointer-inert and `aria-hidden`), `role="dialog"` titled via the
  * required title, Escape and outside-pointerdown dismissed, and mount-time
- * autofocus on the content's first focusable element — so callers keep their
- * first tab stop meaningful (the palette's field, the overlay's close
+ * autofocus on the content's first focusable element (or, synchronously,
+ * the caller's {@link ModalDialogProps.initialFocus}) — so callers keep
+ * their first tab stop meaningful (the palette's field, the overlay's close
  * control).
  *
  * The dialog is mount-driven: callers render it inside a `<Show>` while open
@@ -63,6 +64,15 @@ export interface ModalDialogProps {
    * shadow-root container) — mounted mode, see the module TSDoc.
    */
   mount?: HTMLElement;
+  /**
+   * The element focused as the dialog mounts — in the same task as its
+   * insertion, where the library's own autofocus waits a task (any frame or
+   * timer callback in that gap would see focus unclaimed and could take it,
+   * which a mounted dialog then reads as an outside focus and dismisses
+   * on). Read once, at mount; when it is missing or refuses focus, the
+   * library's deferred autofocus on the first focusable runs instead.
+   */
+  initialFocus?: () => HTMLElement | undefined;
   children: JSX.Element;
 }
 
@@ -95,6 +105,7 @@ const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
  * @param props.closeButton Whether the explicit dismissal control renders.
  * @param props.class Extra classes on the panel.
  * @param props.mount The injected UI's render node (mounted mode).
+ * @param props.initialFocus The element focused synchronously on mount (optional).
  * @param props.children The dialog's content (fields, lists, texts).
  */
 export function ModalDialog(props: ModalDialogProps): JSX.Element {
@@ -136,6 +147,14 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
             onCleanup(() => {
               element.removeEventListener('keydown', onKeyDown, true);
             });
+          }}
+          onOpenAutoFocus={(event) => {
+            const target = props.initialFocus?.();
+            if (target === undefined) return;
+            target.focus({ preventScroll: true });
+            // Focus took: the library's deferred autofocus is not needed.
+            const root = target.getRootNode() as Document | ShadowRoot;
+            if (root.activeElement === target) event.preventDefault();
           }}
           onCloseAutoFocus={(event) => {
             // No `<Dialog.Trigger>` exists (the caller opens the dialog itself

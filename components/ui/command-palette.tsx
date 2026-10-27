@@ -120,7 +120,10 @@ function rowId(commandId: string): string {
 /**
  * Render the command palette surface: the combobox field over its ranked
  * list, inside the shared modal dialog. Mount-driven — render inside a
- * `<Show>` while it should be open; the field takes focus on mount.
+ * `<Show>` while it should be open; the field takes focus on mount, in the
+ * same task (another UI's frame callback never finds focus unclaimed and
+ * takes it, which a mounted palette would read as an outside focus and
+ * dismiss on).
  *
  * @param props.onClose The dismissal callback.
  * @param props.commands The ranked source rows, in registry order.
@@ -133,9 +136,12 @@ function rowId(commandId: string): string {
 export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
   props: CommandPaletteProps<T>
 ): JSX.Element {
+  /** The field, focused as the dialog mounts (no task gap another UI could take focus in). */
+  let field: HTMLInputElement | undefined;
   return (
     <ModalDialog
       onClose={props.onClose}
+      initialFocus={() => field}
       title="Command palette"
       description={props.description ?? 'Filter the pages and actions, run the highlighted one'}
       class={cn('pt-1.5', props.class)}
@@ -150,7 +156,14 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
         props.onClose();
       }}
     >
-      <PaletteCombobox commands={props.commands} filter={props.filter} onRun={props.onRun} />
+      <PaletteCombobox
+        commands={props.commands}
+        filter={props.filter}
+        onRun={props.onRun}
+        fieldRef={(element) => {
+          field = element;
+        }}
+      />
     </ModalDialog>
   );
 }
@@ -163,6 +176,8 @@ interface PaletteComboboxProps<T extends PaletteCommand> {
   filter: (commands: readonly T[], query: string) => readonly T[];
   /** The chosen command's execution callback. */
   onRun: (command: T) => void;
+  /** Receives the field element (the dialog focuses it on mount). */
+  fieldRef: (element: HTMLInputElement) => void;
 }
 
 /**
@@ -261,6 +276,9 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
   return (
     <div data-fdt="palette" class="flex min-h-0 flex-1 flex-col gap-1">
       <input
+        ref={(element) => {
+          props.fieldRef(element);
+        }}
         id={FIELD_ID}
         data-fdt="palette-input"
         type="text"

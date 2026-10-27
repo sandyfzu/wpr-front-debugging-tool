@@ -113,6 +113,14 @@ describe('paletteAnnouncement', () => {
     ).toBe('No commands match “ex”');
   });
 
+  it('names an empty command set instead of quoting a blank query', () => {
+    expect(noMatchText('')).toBe('No commands available');
+    expect(noMatchText('  ')).toBe('No commands available');
+    expect(paletteAnnouncement('query', { ...facts, query: '', count: 0, activeLabel: null })).toBe(
+      'No commands available'
+    );
+  });
+
   it('leaves the region alone on moves unless the row is spoken', () => {
     expect(paletteAnnouncement('move', facts)).toBeNull();
     expect(paletteAnnouncement('move', { ...facts, speakActiveRow: true })).toBe('Export JSON');
@@ -171,7 +179,7 @@ describe('scrollDeltaToReveal', () => {
 });
 
 describe('fieldHighlightMove', () => {
-  const bare = { shiftKey: false, altKey: false, metaKey: false };
+  const bare = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false };
 
   it('maps the bare arrow / Home / End keys to their moves', () => {
     expect(fieldHighlightMove({ ...bare, key: 'ArrowDown' })).toBe('next');
@@ -180,7 +188,7 @@ describe('fieldHighlightMove', () => {
     expect(fieldHighlightMove({ ...bare, key: 'End' })).toBe('last');
   });
 
-  it.each(['shiftKey', 'altKey', 'metaKey'] as const)(
+  it.each(['shiftKey', 'altKey', 'ctrlKey', 'metaKey'] as const)(
     'leaves the keys to the field while %s is held (text selection / caret)',
     (modifier) => {
       for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {

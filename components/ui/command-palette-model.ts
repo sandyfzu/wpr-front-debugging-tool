@@ -101,18 +101,21 @@ export interface FieldKeyFacts {
   readonly key: string;
   readonly shiftKey: boolean;
   readonly altKey: boolean;
+  readonly ctrlKey: boolean;
   readonly metaKey: boolean;
 }
 
 /**
  * The highlight move a field key requests, or `null` when the key belongs to
- * the field: with Shift, Alt or Meta held, Arrow/Home/End select or move the
- * text caret (e.g. Shift+Home selects to the start, ⌘← goes to line start).
+ * the field: with any modifier held, Arrow/Home/End select or move the text
+ * caret (Shift+Home selects to the start; ⌘↑/⌘↓ on macOS and Ctrl+Home/End
+ * on Windows/Linux jump the caret to the start/end).
  *
  * @param event The field's keydown.
+ * @returns The requested move, or `null` when the key is the field's.
  */
 export function fieldHighlightMove(event: FieldKeyFacts): HighlightMove | null {
-  if (event.shiftKey || event.altKey || event.metaKey) return null;
+  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return null;
   return MOVE_KEYS.get(event.key) ?? null;
 }
 
@@ -141,12 +144,15 @@ export interface AnnouncementFacts {
 }
 
 /**
- * The no-match line, rendered visibly and spoken by the live region.
+ * The empty-result line, rendered visibly and spoken by the live region:
+ * the no-match line for a query, or — with nothing typed (blank) — the
+ * empty command set's own line (never a quoted empty query).
  *
  * @param query The query nothing matched.
+ * @returns The line to show.
  */
 export function noMatchText(query: string): string {
-  return `No commands match “${query}”`;
+  return query.trim() === '' ? 'No commands available' : `No commands match “${query}”`;
 }
 
 /**

@@ -40,7 +40,7 @@
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
       "raw": 264.5,
-      "gzip": 89.5
+      "gzip": 89.6
     }
   },
   {
@@ -49,15 +49,15 @@
     "globs": ["content-scripts/exclusion-overlay.js"],
     "maxKb": {
       "raw": 264.5,
-      "gzip": 89.5
+      "gzip": 89.6
     }
   },
   {
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 115.4,
-      "gzip": 40.1
+      "raw": 115.6,
+      "gzip": 40.2
     }
   },
   {
@@ -65,8 +65,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 115.4,
-      "gzip": 40.1
+      "raw": 115.6,
+      "gzip": 40.2
     }
   },
   {
@@ -139,7 +139,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1604.5
+      "raw": 1605.1
     }
   }
 ]

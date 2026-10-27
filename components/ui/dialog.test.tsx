@@ -124,6 +124,61 @@ describe('ModalDialog focus management', () => {
   });
 });
 
+describe('ModalDialog initial focus (synchronous, in the mount task)', () => {
+  /** A shadow-root dialog opened later, its initial focus target chosen by the test. */
+  function renderLaterOpen(
+    initialFocus: (field: HTMLInputElement | undefined) => HTMLElement | undefined
+  ) {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadow.append(container);
+    const [open, setOpen] = createSignal(false);
+    const onClose = vi.fn();
+    let field: HTMLInputElement | undefined;
+    render(() => (
+      <Show when={open()}>
+        <ModalDialog
+          title="Command palette"
+          mount={container}
+          onClose={onClose}
+          initialFocus={() => initialFocus(field)}
+        >
+          <Button>First control</Button>
+          <input
+            aria-label="Field"
+            ref={(element) => {
+              field = element;
+            }}
+          />
+        </ModalDialog>
+      </Show>
+    ));
+    return { shadow, host, onClose, open: () => setOpen(true) };
+  }
+
+  it('focuses the caller’s element in the same task the dialog is inserted', async () => {
+    const { shadow, host, onClose, open } = renderLaterOpen((field) => field);
+    open();
+    // No task boundary yet: a frame or timer callback could not have run.
+    expect(document.activeElement).toBe(host);
+    expect(shadow.activeElement?.getAttribute('aria-label')).toBe('Field');
+    // The library's deferred autofocus does not move it afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shadow.activeElement?.getAttribute('aria-label')).toBe('Field');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the deferred autofocus on the first focusable when the target is missing', async () => {
+    const { shadow, open } = renderLaterOpen(() => undefined);
+    open();
+    await waitFor(() => {
+      expect(shadow.activeElement?.textContent).toBe('First control');
+    });
+  });
+});
+
 describe('ModalDialog mounted mode (an injected shadow root)', () => {
   /** A shadow-root container like the injected UIs mount into, events isolated. */
   function renderMounted() {

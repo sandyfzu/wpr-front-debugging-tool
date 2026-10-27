@@ -72,6 +72,7 @@ import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { createLogger } from '../../lib/logger';
 import { showInTopLayer } from '../../components/injected-ui/top-layer';
+import { INJECTED_HOST_PREFIX } from '../../components/injected-ui/key-guard';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 const log = createLogger('exclusion-overlay');
@@ -216,12 +217,27 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
    * Whether the page's focused element is free for the overlay to take:
    * nothing focused, or focus already inside the overlay (its shadow host
    * when mounted in one).
+   *
+   * @param active The document's focused element.
+   * @returns `true` when the overlay may take focus from it.
    */
   const focusIsFree = (active: Element | null): boolean => {
     if (active === null || active === document.body || layer === undefined) return true;
     const root = layer.getRootNode();
     return layer.contains(active) || (root instanceof ShadowRoot && active === root.host);
   };
+  /**
+   * Whether another of the extension's injected surfaces (e.g. the command
+   * palette) holds focus: the overlay never takes it from one — not even
+   * when it already held focus as the overlay mounted, since the overlay's
+   * host is inserted before it renders and a surface can take focus in that
+   * gap. Focus inside the overlay itself is free, never claimed.
+   *
+   * @param active The document's focused element (a surface's focus reads as its shadow host).
+   * @returns `true` when another surface's host holds focus.
+   */
+  const focusIsClaimed = (active: Element | null): boolean =>
+    active !== null && active.localName.startsWith(INJECTED_HOST_PREFIX) && !focusIsFree(active);
   /**
    * Move focus once the target is visible (next frame: visibility flips
    * first). A just-revealed panel can stay hidden for a frame (reduced motion
@@ -230,6 +246,8 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
    * UI (e.g. a palette opened meanwhile) claimed focus. Not keyed on
    * `transitionend`: without reduced motion the switch is no transition at
    * all (no event would come), and the frames bound the wait either way.
+   *
+   * @param element The control to focus, read on each attempt (`undefined` gives up).
    */
   const focusSoon = (element: () => HTMLElement | undefined): void => {
     retryFocus(
@@ -237,6 +255,7 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
         requestFrame: props.requestFrame,
         active: () => document.activeElement,
         isFree: focusIsFree,
+        isClaimed: focusIsClaimed,
         attempt: () => {
           const target = element();
           if (target === undefined) return undefined;

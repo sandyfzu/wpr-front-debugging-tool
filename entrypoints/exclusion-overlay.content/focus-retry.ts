@@ -20,6 +20,12 @@ export interface FocusRetryDeps<T> {
    * already inside the UI making the move.
    */
   readonly isFree: (active: T) => boolean;
+  /**
+   * Whether `active` is held by another UI that never yields focus (another
+   * extension surface, e.g. a palette): the move stops even when focus sat
+   * there at call time.
+   */
+  readonly isClaimed: (active: T) => boolean;
 }
 
 /**
@@ -27,7 +33,8 @@ export interface FocusRetryDeps<T> {
  * Stops early once focus moved since the call to somewhere that is neither
  * free nor where it was then — someone else claimed it, and it stays there.
  * Focus where it already was at call time (e.g. a page control the move is
- * meant to take over) does not stop it.
+ * meant to take over) does not stop it — unless it is claimed (checked on
+ * every frame, call-time focus included).
  *
  * @param deps - Frame scheduling, the attempt, and the focus probe.
  * @param tries - Frames to try on (≥ 1); the move is dropped after them.
@@ -40,7 +47,7 @@ export function retryFocus<T>(deps: FocusRetryDeps<T>, tries: number): void {
   const step = (left: number): void => {
     deps.requestFrame(() => {
       const now = deps.active();
-      if (now !== before && !deps.isFree(now)) return;
+      if (deps.isClaimed(now) || (now !== before && !deps.isFree(now))) return;
       if (deps.attempt() === false && left > 1) step(left - 1);
     });
   };

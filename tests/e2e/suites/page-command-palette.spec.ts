@@ -161,14 +161,15 @@ test.describe('on-page command palette', () => {
     extension
   }) => {
     const { page, tabId } = await openFixturePage(extension, FIXTURE);
-    // Record every host-document write from now on: the body subtree, the
-    // head's children, <html>'s attributes and its direct children. Sanctioned:
+    // Record every host-document write from now on: the body and head
+    // subtrees (children, attributes, text), <html>'s attributes and its
+    // direct children. Sanctioned:
     // our own `wpr-fdt-*` hosts inserted/removed as direct <html> children
     // (palette, notice), and the detection widget's host `wpr-fdt-inspector`
     // (a sibling surface, mounted on its own schedule) as a body child.
-    const bodyBefore = await page.evaluate(() => {
-      const scope = window as unknown as { __bodyWrites: string[] };
-      scope.__bodyWrites = [];
+    const bodyChildrenBefore = await page.evaluate(() => {
+      const scope = window as unknown as { __hostWrites: string[] };
+      scope.__hostWrites = [];
       const html = document.documentElement;
       const isHtmlHost = (node: Node): boolean =>
         node instanceof Element && node.localName.startsWith('wpr-fdt-');
@@ -190,7 +191,7 @@ test.describe('on-page command palette', () => {
             .map((node) => node.nodeName)
             .join(',');
           const attribute = record.attributeName === null ? '' : `[${record.attributeName}]`;
-          scope.__bodyWrites.push(
+          scope.__hostWrites.push(
             `${record.type}${attribute} on ${record.target.nodeName} ${names}`
           );
         }
@@ -201,7 +202,12 @@ test.describe('on-page command palette', () => {
         attributes: true,
         characterData: true
       });
-      observer.observe(document.head, { subtree: true, childList: true });
+      observer.observe(document.head, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true
+      });
       // <html> itself: its attributes and direct children (not the subtrees).
       observer.observe(html, { childList: true, attributes: true });
       return [...document.body.children].filter((child) => !isBodyHost(child)).length;
@@ -217,7 +223,7 @@ test.describe('on-page command palette', () => {
     await page.keyboard.press('Escape');
     await expect(field(page)).toHaveCount(0);
 
-    // Gate-off from the palette (confirm, notice, teardown) writes nothing into the body either.
+    // Gate-off from the palette (confirm, notice, teardown) writes nothing into the host document either.
     await openPalette(extension, page, tabId);
     await page.keyboard.type('turn off');
     await page.keyboard.press('Enter');
@@ -227,13 +233,13 @@ test.describe('on-page command palette', () => {
 
     expect(
       await page.evaluate(() => ({
-        writes: (window as unknown as { __bodyWrites: string[] }).__bodyWrites,
+        writes: (window as unknown as { __hostWrites: string[] }).__hostWrites,
         children: [...document.body.children].filter(
           (child) => child.localName !== 'wpr-fdt-inspector'
         ).length,
         announcers: document.querySelectorAll('[data-live-announcer]').length
       }))
-    ).toEqual({ writes: [], children: bodyBefore, announcers: 0 });
+    ).toEqual({ writes: [], children: bodyChildrenBefore, announcers: 0 });
     await page.close();
   });
 
@@ -358,22 +364,29 @@ test.describe('on-page command palette', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openPalette(extension, page, tabId);
     // Reduced motion collapses transitions to 0.01 ms rather than removing
-    // them: let those finish (two frames) before asserting none remain.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
+    // them, and a collapsed transition can chain for a few frames (an inherited
+    // color reaches a child a frame later): sample ten frames — every
+    // animation seen is a collapsed one, and the last four frames have none.
+    const motion = await page.locator(PALETTE_HOST).evaluate(async (host) => {
+      const frame = (): Promise<void> =>
+        new Promise((resolve) => {
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              resolve();
-            });
+            resolve();
           });
-        })
-    );
-    expect(
-      await page
-        .locator(PALETTE_HOST)
-        .evaluate((host) => host.shadowRoot?.getAnimations().length ?? -1)
-    ).toBe(0);
+        });
+      let longest = 0;
+      const counts: number[] = [];
+      for (let i = 0; i < 10; i += 1) {
+        const animations = host.shadowRoot?.getAnimations() ?? [];
+        counts.push(animations.length);
+        for (const animation of animations)
+          longest = Math.max(longest, Number(animation.effect?.getComputedTiming().duration ?? 0));
+        await frame();
+      }
+      return { longest, settled: counts.slice(-4).every((count) => count === 0) };
+    });
+    expect(motion.longest).toBeLessThanOrEqual(0.01);
+    expect(motion.settled).toBe(true);
     await page.keyboard.press('Escape');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     expect(await sendOpen(extension, tabId)).toBe('true');

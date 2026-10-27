@@ -12,7 +12,7 @@
  * geometry (the resource-less DOM gives none).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
+import { Show, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import Rocket from 'lucide-solid/icons/rocket';
 import Zap from 'lucide-solid/icons/zap';
@@ -296,6 +296,16 @@ describe('CommandPalette filtering', () => {
     expect(status.classList.contains('sr-only')).toBe(false);
   });
 
+  it('names an empty command set with nothing typed (never a quoted blank query)', async () => {
+    render(() => (
+      <CommandPalette commands={[]} filter={identityFilter} onRun={vi.fn()} onClose={vi.fn()} />
+    ));
+    await screen.findByRole('combobox');
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('No commands available');
+    expect(status.classList.contains('sr-only')).toBe(false);
+  });
+
   it('speaks the result count per query, and stays silent at open and on arrow moves', async () => {
     const { field } = await mountPalette();
     const status = screen.getByRole('status');
@@ -338,6 +348,31 @@ describe('CommandPalette mounted mode (an injected shadow root)', () => {
     const field = container.querySelector('[data-fdt="palette-input"]') as HTMLInputElement;
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CommandPalette mount-time focus', () => {
+  it('focuses the field in the same task it is inserted (no gap another UI could take focus in)', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const shadow = host.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadow.append(container);
+    const [open, setOpen] = createSignal(false);
+    render(() => (
+      <Show when={open()}>
+        <CommandPalette
+          commands={ROWS}
+          filter={identityFilter}
+          onRun={vi.fn()}
+          onClose={vi.fn()}
+          mount={container}
+        />
+      </Show>
+    ));
+    setOpen(true);
+    expect(document.activeElement).toBe(host);
+    expect(shadow.activeElement?.getAttribute('data-fdt')).toBe('palette-input');
   });
 });
 

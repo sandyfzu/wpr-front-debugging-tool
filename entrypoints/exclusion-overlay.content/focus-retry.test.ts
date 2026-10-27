@@ -1,3 +1,7 @@
+/**
+ * The overlay's frame-retried focus move: when it retries, when it gives up,
+ * and that it never takes focus from someone who claimed it.
+ */
 import { describe, expect, it, vi } from 'vitest';
 import { retryFocus, type FocusRetryDeps } from './focus-retry';
 
@@ -14,7 +18,8 @@ function harness(outcomes: (boolean | undefined)[], startActive = 'body') {
     requestFrame: (run) => frames.push(run),
     attempt,
     active: () => world.active,
-    isFree: (el) => el === 'body' || el === 'builder'
+    isFree: (el) => el === 'body' || el === 'builder',
+    isClaimed: (el) => el === 'palette-host'
   };
   /** Runs queued frames until none are left; returns how many ran. */
   const flush = (): number => {
@@ -88,6 +93,28 @@ describe('retryFocus', () => {
     retryFocus(h.deps, 3);
     expect(h.flush()).toBe(2);
     expect(h.world.active).toBe('builder');
+  });
+
+  it('never attempts when another surface held focus at call time', () => {
+    const h = harness([true], 'palette-host');
+    retryFocus(h.deps, 3);
+    expect(h.flush()).toBe(1);
+    expect(h.attempt).not.toHaveBeenCalled();
+    expect(h.world.active).toBe('palette-host');
+  });
+
+  it('stops when another surface holds focus on a retry frame, even back at its call-time baseline', () => {
+    const h = harness([false, true], 'palette-host');
+    retryFocus(h.deps, 3);
+    // Free on the first frame: the attempt runs (and is refused)…
+    h.world.active = 'body';
+    h.frames.shift()?.();
+    expect(h.attempt).toHaveBeenCalledTimes(1);
+    // …then the surface holds focus again before the retry frame.
+    h.world.active = 'palette-host';
+    expect(h.flush()).toBe(1);
+    expect(h.attempt).toHaveBeenCalledTimes(1);
+    expect(h.world.active).toBe('palette-host');
   });
 
   it.each([0, -1, 1.5, Number.NaN])('refuses %s tries', (tries) => {
