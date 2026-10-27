@@ -3,8 +3,18 @@
  * the toolbar button's Manifest V2 name below it, and a loud refusal of
  * manifest versions no platform reports.
  */
-import { describe, expect, it } from 'vitest';
-import { platformMenuContext, platformMenuContexts } from './menu-contexts';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+  platformMenuContext,
+  platformMenuContexts,
+  type PlatformMenuContext
+} from './menu-contexts';
+
+describe('PlatformMenuContext', () => {
+  it('keeps all three names the browser API declares', () => {
+    expectTypeOf<PlatformMenuContext>().toEqualTypeOf<'all' | 'action' | 'browser_action'>();
+  });
+});
 
 describe('platformMenuContext', () => {
   it('keeps every registry name on Manifest V3 (and later)', () => {

@@ -8,14 +8,24 @@
  * synchronously on the other one, so the registry names the place abstractly
  * and the creation boundary translates it here. On Manifest V3 the
  * translation is the identity — those rows reach the browser exactly as the
- * registry spells them.
+ * registry spells them. Callers pass the version in (pure); the runtime
+ * reaches this module only from Manifest V2 builds.
  */
+
+import type { Browser } from 'wxt/browser';
 
 /** Where a registry entry may show: every page context, or the toolbar button's menu only. */
 export type MenuContext = 'all' | 'action';
 
-/** A context name `contextMenus.create` accepts on some supported manifest version. */
-export type PlatformMenuContext = 'all' | 'action' | 'browser_action';
+/**
+ * A context name `contextMenus.create` accepts on some supported manifest
+ * version — picked from the browser API's own enum: a name the API does not
+ * declare drops out of the union, so the table below stops type-checking.
+ */
+export type PlatformMenuContext = Extract<
+  `${Browser.contextMenus.ContextType}`,
+  'all' | 'action' | 'browser_action'
+>;
 
 /** A nonempty context list, as `contextMenus.create` requires. */
 export type NonEmpty<T> = [T, ...T[]];

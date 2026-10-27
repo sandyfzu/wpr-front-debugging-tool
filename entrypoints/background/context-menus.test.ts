@@ -15,6 +15,7 @@ import {
   menuBypassUrl,
   menuClickOrigin,
   createMenuRows,
+  buildMenuCreateParams,
   menuCreateParams,
   menuTabPlacement,
   platformMenuCreateParams,
@@ -311,6 +312,15 @@ describe('platformMenuCreateParams', () => {
   });
 });
 
+describe('buildMenuCreateParams', () => {
+  it('hands a Manifest V3 build the registry rows untouched', () => {
+    // The test build is the Chromium (MV3) one: this pins its creation wiring.
+    // Vitest serves `import.meta.env` defines as strings; builds inline the number.
+    expect(String(import.meta.env.MANIFEST_VERSION)).toBe('3');
+    expect(buildMenuCreateParams()).toEqual(menuCreateParams());
+  });
+});
+
 describe('createMenuRows', () => {
   /** A create stub recording each call; `throwFor` ids throw synchronously. */
   function stubCreate(throwFor: readonly string[] = []): {
@@ -352,6 +362,32 @@ describe('createMenuRows', () => {
         id: CONTEXT_MENU_IDS.exclusionBuilder,
         cause: new Error(`Bad context for ${CONTEXT_MENU_IDS.exclusionBuilder}`)
       });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  /** Registry ids in order: the cases below name rows by position. */
+  const ids = platformMenuCreateParams(3).map((row) => row.id);
+
+  it.each([
+    { name: 'the first row', throwing: [0] },
+    { name: 'the last row', throwing: [ids.length - 1] },
+    { name: 'every row', throwing: ids.map((_, index) => index) },
+    { name: 'two non-adjacent rows', throwing: [1, 4] }
+  ])('isolates $name throwing: refused in order, the rest created', ({ throwing }) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const refusedIds = throwing.map((index) => ids[index] ?? '');
+      const stub = stubCreate(refusedIds);
+      let refused: string[] = [];
+      expect(() => {
+        refused = createMenuRows(platformMenuCreateParams(3), stub.create, {});
+      }).not.toThrow();
+      expect(refused).toEqual(refusedIds);
+      expect(stub.created).toEqual(ids.filter((id) => !refusedIds.includes(id)));
+      expect(error).toHaveBeenCalledTimes(refusedIds.length);
+      expect(error.mock.calls.map((call) => (call[1] as { id: string }).id)).toEqual(refusedIds);
     } finally {
       error.mockRestore();
     }

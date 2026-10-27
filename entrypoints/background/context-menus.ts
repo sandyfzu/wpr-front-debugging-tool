@@ -158,11 +158,13 @@ export function menuCreateParams(): MenuCreateParams[] {
 }
 
 /**
- * The creation rows as the running platform receives them: registry order
- * and shape, contexts translated for the manifest version (identity on
- * Manifest V3 — those rows equal {@link menuCreateParams}).
+ * The creation rows translated for a manifest version: registry order and
+ * shape, contexts renamed per {@link platformMenuContexts} (identity on
+ * Manifest V3 — those rows equal {@link menuCreateParams}). Pure; the
+ * runtime calls it only from Manifest V2 builds (see
+ * {@link buildMenuCreateParams}).
  *
- * @param manifestVersion The running manifest's `manifest_version`.
+ * @param manifestVersion The target manifest's `manifest_version`.
  * @returns One row per registry entry.
  * @throws {@link RangeError} For an unsupported manifest version.
  */
@@ -171,6 +173,18 @@ export function platformMenuCreateParams(manifestVersion: number): PlatformMenuC
     ...params,
     contexts: platformMenuContexts(params.contexts, manifestVersion)
   }));
+}
+
+/**
+ * The creation rows this build hands the browser. The manifest version is a
+ * build-time constant equal to the shipped manifest's, so the Manifest V2
+ * translation (and its context table) exists only in Manifest V2 bundles;
+ * Manifest V3 bundles create the registry rows untouched.
+ *
+ * @returns One row per registry entry, contexts named for this build.
+ */
+export function buildMenuCreateParams(): PlatformMenuCreateParams[] {
+  return import.meta.env.MANIFEST_VERSION === 2 ? platformMenuCreateParams(2) : menuCreateParams();
 }
 
 /**
@@ -488,10 +502,8 @@ async function createMenuEntries(): Promise<void> {
   } catch (cause) {
     log.warn('Clearing existing menu entries failed', cause);
   }
-  // The manifest the browser actually loaded names the toolbar context.
-  const rows = platformMenuCreateParams(browser.runtime.getManifest().manifest_version);
   createMenuRows(
-    rows,
+    buildMenuCreateParams(),
     (params, callback) => browser.contextMenus.create(params, callback),
     browser.runtime
   );
