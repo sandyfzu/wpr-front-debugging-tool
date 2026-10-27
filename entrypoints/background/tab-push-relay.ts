@@ -174,29 +174,43 @@ export function createTabPushRelay(deps: TabPushRelayDeps): TabPushRelay {
 
 /**
  * The production push listeners: one receiver per relayed push on the
- * shared messenger, each answering the protocol's `true`.
+ * shared messenger, each answering the protocol's `true`. All or none: if
+ * one registration throws, the ones already made are removed before the
+ * error propagates, so a failed start never leaves a push answered.
  *
  * @param forward Where each received push goes.
  * @returns The stop handle (unregisters all three).
+ * @throws The failed registration's error, after the rollback.
  */
-function listenForTabPushes(forward: PushForward): () => void {
-  const removers = [
-    onMessage('notifyPanelReload', ({ sender, data }) => {
-      forward('notifyPanelReload', sender, data);
-      return true;
-    }),
-    onMessage('allScriptsLoaded', ({ sender, data }) => {
-      forward('allScriptsLoaded', sender, data);
-      return true;
-    }),
-    onMessage('undefinedReferencesUpdated', ({ sender, data }) => {
-      forward('undefinedReferencesUpdated', sender, data);
-      return true;
-    })
-  ];
-  return () => {
-    for (const remove of removers) remove();
+export function listenForTabPushes(forward: PushForward): () => void {
+  const removers: (() => void)[] = [];
+  const stopAll = (): void => {
+    for (const remove of removers.splice(0).reverse()) remove();
   };
+  try {
+    removers.push(
+      onMessage('notifyPanelReload', ({ sender, data }) => {
+        forward('notifyPanelReload', sender, data);
+        return true;
+      })
+    );
+    removers.push(
+      onMessage('allScriptsLoaded', ({ sender, data }) => {
+        forward('allScriptsLoaded', sender, data);
+        return true;
+      })
+    );
+    removers.push(
+      onMessage('undefinedReferencesUpdated', ({ sender, data }) => {
+        forward('undefinedReferencesUpdated', sender, data);
+        return true;
+      })
+    );
+  } catch (cause) {
+    stopAll();
+    throw cause;
+  }
+  return stopAll;
 }
 
 /** Register the relay's port listener (once per background start). */
