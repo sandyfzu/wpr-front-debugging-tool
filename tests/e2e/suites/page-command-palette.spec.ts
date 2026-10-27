@@ -5,7 +5,9 @@
  *
  * - Open: the view loads on demand (not in the page before the first open),
  *   sits in the top layer with focus in its field, writes nothing into the
- *   host document, and keeps typed keys from the page's window-capture
+ *   host document (no body write across open, typing, moves, close and
+ *   gate-off; its active row reaches the accessibility tree through
+ *   `aria-activedescendant`), and keeps typed keys from the page's window-capture
  *   hotkeys; Escape / Tab / an outside click dismiss, focus returns to the
  *   page control; a re-open is a fresh surface.
  * - Rows run their shipped mechanisms: the detection-widget toggle writes
@@ -156,6 +158,96 @@ test.describe('on-page command palette', () => {
     await page.close();
   });
 
+  test('never writes into the host body; the active row reaches the accessibility tree', async ({
+    extension
+  }) => {
+    const { page, tabId } = await openFixturePage(extension, FIXTURE);
+    // Record every body-subtree write from now on. The palette's and the
+    // notice's hosts hang off <html>; the detection widget's own shadow host
+    // (a sibling surface, mounted on its own schedule) is a sanctioned body
+    // child, so `wpr-fdt-*` host insertions/removals are not page writes.
+    const bodyBefore = await page.evaluate(() => {
+      const scope = window as unknown as { __bodyWrites: string[] };
+      scope.__bodyWrites = [];
+      const isOwnHost = (node: Node): boolean =>
+        node instanceof Element && node.localName.startsWith('wpr-fdt-');
+      new MutationObserver((records) => {
+        for (const record of records) {
+          const touched = [...record.addedNodes, ...record.removedNodes];
+          if (
+            record.type === 'childList' &&
+            record.target === document.body &&
+            touched.length > 0 &&
+            touched.every(isOwnHost)
+          ) {
+            continue;
+          }
+          const names = touched.map((node) => node.nodeName).join(',');
+          scope.__bodyWrites.push(`${record.type} on ${record.target.nodeName} ${names}`);
+        }
+      }).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true
+      });
+      return [...document.body.children].filter((child) => !isOwnHost(child)).length;
+    });
+
+    await openPalette(extension, page, tabId);
+    // The active row is exposed: the combobox's activedescendant relation
+    // resolves (across the shadow root's tree scope) to the highlighted option.
+    const exposed = async (): Promise<string | null> => {
+      const session = await page.context().newCDPSession(page);
+      try {
+        await session.send('Accessibility.enable');
+        const { nodes } = await session.send('Accessibility.getFullAXTree');
+        const combobox = nodes.find((node) => node.role?.value === 'combobox');
+        const relation = combobox?.properties?.find((prop) => prop.name === 'activedescendant');
+        const targetId = relation?.value.relatedNodes?.[0]?.backendDOMNodeId;
+        const option = nodes.find((node) => node.backendDOMNodeId === targetId);
+        if (option === undefined) return null;
+        return `${String(option.role?.value)}: ${String(option.name?.value)}`;
+      } finally {
+        await session.detach();
+      }
+    };
+    expect(await exposed()).toBe('option: Open Side By Side');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    expect(await exposed()).toBe('option: Toggle the detection widget on this site');
+    await page.keyboard.press('End');
+    await page.keyboard.type('side');
+    // The count is spoken by the palette's own live region, inside its shadow root.
+    // (Apple platforms append the highlighted row for VoiceOver.)
+    await expect(page.locator(`${PALETTE_HOST} [data-fdt="palette-empty"]`)).toHaveText(
+      /^2 commands available(, Open Side By Side)?$/
+    );
+    await page.keyboard.type('zzz');
+    await expect(page.locator(`${PALETTE_HOST} [data-fdt="palette-empty"]`)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(field(page)).toHaveCount(0);
+
+    // Gate-off from the palette (confirm, notice, teardown) writes nothing into the body either.
+    await openPalette(extension, page, tabId);
+    await page.keyboard.type('turn off');
+    await page.keyboard.press('Enter');
+    await page.locator(`${PALETTE_HOST} [data-fdt="palette-confirm-action"]`).click();
+    await expect(page.locator(PALETTE_HOST)).toHaveCount(0, MOUNT);
+    await expect(page.locator(`${NOTICE_HOST} [data-fdt="page-notice"]`)).toBeVisible(MOUNT);
+
+    expect(
+      await page.evaluate(() => ({
+        writes: (window as unknown as { __bodyWrites: string[] }).__bodyWrites,
+        children: [...document.body.children].filter(
+          (child) => !child.localName.startsWith('wpr-fdt-')
+        ).length,
+        announcers: document.querySelectorAll('[data-live-announcer]').length
+      }))
+    ).toEqual({ writes: [], children: bodyBefore, announcers: 0 });
+    await page.close();
+  });
+
   test('rows run the shipped mechanisms; the palette paints above the builder', async ({
     extension
   }) => {
@@ -275,6 +367,18 @@ test.describe('on-page command palette', () => {
     // D-2: nothing animates after mount under reduced motion — and the check bites without it.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await openPalette(extension, page, tabId);
+    // Reduced motion collapses transitions to 0.01 ms rather than removing
+    // them: let those finish (two frames) before asserting none remain.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              resolve();
+            });
+          });
+        })
+    );
     expect(
       await page
         .locator(PALETTE_HOST)

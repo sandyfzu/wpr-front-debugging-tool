@@ -2,7 +2,7 @@
  * The on-page command palette: the shared palette primitive (dialog +
  * combobox) styled for a host page's shadow root. The primitive's Tailwind
  * classes mean nothing here (no utility layer is injected into a page), so
- * the rules target its stable `data-fdt` hooks and the library's state
+ * the rules target its stable `data-fdt` hooks and its row state
  * attributes (`data-highlighted`, `data-disabled`) instead.
  *
  * Contract against hostile pages: sizes in px (the page owns the root font
@@ -114,8 +114,8 @@
   }
 }
 
-/* The combobox root (its `role="group"` wrapper). */
-.cp-layer [data-fdt='dialog'] > [role='group'] {
+/* The combobox root (field, list, live region). */
+.cp-layer [data-fdt='palette'] {
   display: flex;
   flex: 1;
   flex-direction: column;
