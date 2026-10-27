@@ -7,10 +7,10 @@
  * Side-by-Side overlay, the exclusion builder overlay and the on-page
  * command palette itself neither mount at boot nor survive a live off-write
  * (open pages unmount them). Their own settings (per-origin chip entries,
- * feature flags) are kept untouched and simply lose their consumers until
- * the gate is back on; nothing resurrects a surface the gate closed. Page
- * behavior that is not injected UI (device simulation, the UA relay,
- * improvements) never reads it.
+ * feature flags) are kept untouched: while the gate is off, nothing
+ * re-mounts a closed surface; turning it back on restores each surface per
+ * its own settings. Page behavior that is not injected UI (device
+ * simulation, the UA relay, improvements) never reads it.
  *
  * Turning the gate off therefore also turns off the on-page palette — the
  * browser's context menu (outside the page, outside the gate) is the way

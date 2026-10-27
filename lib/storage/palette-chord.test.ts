@@ -1,9 +1,9 @@
 /**
  * The palette chord contract: validation (no-typing-theft rule, bindable
- * keys, wrong-typed flags, canonical form), capture from keystrokes, exact
- * per-platform matching (repeat/IME refused), notation, platform detection,
- * and the storage item's default-tolerant reads, guarded writes and
- * validated watch.
+ * keys, reserved chords, wrong-typed flags, canonical form), capture from
+ * keystrokes, exact per-platform matching (repeat/IME/AltGr refused), the
+ * typing-safety predicate, notation, and the storage item's
+ * default-tolerant reads, guarded writes and validated watch.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,18 +11,22 @@ import {
   CHORD_KEY_LABELS,
   DEFAULT_PALETTE_CHORD,
   PALETTE_CHORD_KEY,
+  RESERVED_CHORDS,
   captureChord,
-  detectChordPlatform,
+  chordMayTypeText,
   formatChord,
   matchesChord,
   paletteChordStore,
   parsePaletteChord,
+  reservedChordGroup,
   readPaletteChord,
   setPaletteChord,
   watchPaletteChord,
   type ChordKeystroke,
-  type PaletteChord
+  type PaletteChord,
+  type ReservedChordGroup
 } from './palette-chord';
+import type { ChordPlatform } from './palette-chord-platform';
 
 /** The bare key under the sync area. */
 const SYNC_KEY = PALETTE_CHORD_KEY.replace(/^sync:/, '');
@@ -37,13 +41,14 @@ beforeEach(() => {
 });
 
 describe('the bindable key table', () => {
-  it('covers letters, digits, F1–F12 and US punctuation, and nothing that navigates', () => {
+  it('covers letters, digits, F1–F12, US punctuation + the ISO key, and nothing that navigates', () => {
     expect(CHORD_KEY_LABELS.KeyA).toBe('A');
     expect(CHORD_KEY_LABELS.KeyZ).toBe('Z');
     expect(CHORD_KEY_LABELS.Digit0).toBe('0');
     expect(CHORD_KEY_LABELS.F12).toBe('F12');
     expect(CHORD_KEY_LABELS.Slash).toBe('/');
-    expect(Object.keys(CHORD_KEY_LABELS)).toHaveLength(26 + 10 + 12 + 11);
+    expect(CHORD_KEY_LABELS.IntlBackslash).toBe('\\ (ISO)');
+    expect(Object.keys(CHORD_KEY_LABELS)).toHaveLength(26 + 10 + 12 + 12);
     for (const excluded of ['Escape', 'Tab', 'Enter', 'Space', 'ArrowUp', 'F13', 'AltLeft']) {
       expect(Object.hasOwn(CHORD_KEY_LABELS, excluded)).toBe(false);
     }
@@ -56,6 +61,18 @@ describe('parsePaletteChord', () => {
     expect(parsePaletteChord(DEFAULT_PALETTE_CHORD)).toEqual({ code: 'KeyK', alt: true });
   });
 
+  it('returns frozen chords', () => {
+    expect(Object.isFrozen(parsePaletteChord({ code: 'KeyP', mod: true }))).toBe(true);
+  });
+
+  it('binds the ISO key like any other punctuation key', () => {
+    expect(parsePaletteChord({ code: 'IntlBackslash', alt: true })).toEqual({
+      code: 'IntlBackslash',
+      alt: true
+    });
+    expect(formatChord({ code: 'IntlBackslash', mod: true }, 'other')).toBe('Ctrl+\\ (ISO)');
+  });
+
   it('drops false flags and ignores unknown fields (canonical, additive-tolerant)', () => {
     expect(
       parsePaletteChord({ code: 'KeyP', mod: true, alt: false, shift: true, future: 1 })
@@ -64,7 +81,7 @@ describe('parsePaletteChord', () => {
 
   it('allows a function key alone', () => {
     expect(parsePaletteChord({ code: 'F2' })).toEqual({ code: 'F2' });
-    expect(parsePaletteChord({ code: 'F12', shift: false })).toEqual({ code: 'F12' });
+    expect(parsePaletteChord({ code: 'F9', shift: false })).toEqual({ code: 'F9' });
   });
 
   it('refuses a bare key or Shift alone (they would steal typing)', () => {
@@ -127,9 +144,23 @@ describe('matchesChord', () => {
     expect(matchesChord(both, modShiftP, 'other')).toBe(false);
   });
 
-  it('refuses auto-repeats and IME compositions', () => {
+  it('refuses auto-repeats and IME compositions (flag or key code 229)', () => {
     expect(matchesChord(key('KeyK', { altKey: true, repeat: true }), altK, 'other')).toBe(false);
     expect(matchesChord(key('KeyK', { altKey: true, isComposing: true }), altK, 'mac')).toBe(false);
+    expect(matchesChord(key('KeyK', { altKey: true, keyCode: 229 }), altK, 'mac')).toBe(false);
+    expect(matchesChord(key('KeyK', { altKey: true, keyCode: 75 }), altK, 'mac')).toBe(true);
+  });
+
+  it('refuses AltGr outside macOS, but not Option reported as AltGraph on macOS', () => {
+    const ctrlAltK: PaletteChord = { code: 'KeyK', mod: true, alt: true };
+    const altGraph = (held: string): boolean => held === 'AltGraph';
+    const none = (): boolean => false;
+    const altGr = key('KeyK', { ctrlKey: true, altKey: true, getModifierState: altGraph });
+    expect(matchesChord(altGr, ctrlAltK, 'other')).toBe(false);
+    expect(matchesChord({ ...altGr, getModifierState: none }, ctrlAltK, 'other')).toBe(true);
+    // Firefox on macOS reports AltGraph for every Option press.
+    const option = key('KeyK', { altKey: true, getModifierState: altGraph });
+    expect(matchesChord(option, altK, 'mac')).toBe(true);
   });
 
   it('matches a lone function key only with no modifier held', () => {
@@ -149,9 +180,9 @@ describe('captureChord', () => {
       ok: true,
       chord: { code: 'KeyP', mod: true, shift: true }
     });
-    expect(captureChord(key('KeyP', { ctrlKey: true }), 'other')).toEqual({
+    expect(captureChord(key('Slash', { ctrlKey: true }), 'other')).toEqual({
       ok: true,
-      chord: { code: 'KeyP', mod: true }
+      chord: { code: 'Slash', mod: true }
     });
     expect(captureChord(key('F4'), 'other')).toEqual({ ok: true, chord: { code: 'F4' } });
   });
@@ -177,6 +208,11 @@ describe('captureChord', () => {
       ok: false,
       reason: 'unsupported-modifier'
     });
+    expect(captureChord(key('KeyC', { metaKey: true }), 'mac')).toEqual({
+      ok: false,
+      reason: 'reserved'
+    });
+    expect(captureChord(key('F12'), 'other')).toEqual({ ok: false, reason: 'reserved' });
   });
 
   it('round-trips: a captured chord parses and matches the press that made it', () => {
@@ -185,6 +221,117 @@ describe('captureChord', () => {
     if (!result.ok) throw new Error('expected a chord');
     expect(parsePaletteChord(result.chord)).toEqual(result.chord);
     expect(matchesChord(press, result.chord, 'other')).toBe(true);
+  });
+});
+
+/** The keystroke that presses a chord on a platform. */
+function press(chord: PaletteChord, platform: ChordPlatform): ChordKeystroke {
+  const command = chord.mod === true;
+  return key(chord.code, {
+    altKey: chord.alt === true,
+    shiftKey: chord.shift === true,
+    ...(platform === 'mac' ? { metaKey: command } : { ctrlKey: command })
+  });
+}
+
+/** `mod` chords over several keys (test-local spelling of the expectations). */
+function mods(codes: readonly PaletteChord['code'][], extra: Partial<PaletteChord> = {}) {
+  return codes.map((code): PaletteChord => ({ code, mod: true, ...extra }));
+}
+
+describe('reserved chords', () => {
+  const expected: Record<ReservedChordGroup, readonly PaletteChord[]> = {
+    editing: [
+      ...mods(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY']),
+      ...mods(['KeyZ'], { shift: true })
+    ],
+    browser: [
+      ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
+      ...mods(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
+      ...mods([
+        'Digit1',
+        'Digit2',
+        'Digit3',
+        'Digit4',
+        'Digit5',
+        'Digit6',
+        'Digit7',
+        'Digit8',
+        'Digit9'
+      ]),
+      { code: 'F5' }
+    ],
+    zoom: [...mods(['Equal', 'Minus', 'Digit0']), ...mods(['Equal'], { shift: true })],
+    devtools: [
+      { code: 'F12' },
+      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { shift: true }),
+      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { alt: true })
+    ],
+    system: [...mods(['KeyQ', 'KeyM']), { code: 'F4', alt: true }, { code: 'F11' }]
+  };
+
+  for (const [group, chords] of Object.entries(expected) as Array<
+    [ReservedChordGroup, readonly PaletteChord[]]
+  >) {
+    it(`refuses every ${group} chord in parse and in capture on both platforms`, () => {
+      for (const chord of chords) {
+        expect(reservedChordGroup(chord)).toBe(group);
+        expect(parsePaletteChord(chord)).toBeNull();
+        for (const platform of ['mac', 'other'] as const) {
+          expect(captureChord(press(chord, platform), platform)).toEqual({
+            ok: false,
+            reason: 'reserved'
+          });
+        }
+      }
+    });
+  }
+
+  it('is exactly the expected table: one owner per chord, every row otherwise bindable', () => {
+    expect(RESERVED_CHORDS).toEqual(expected);
+    const identities = Object.values(RESERVED_CHORDS)
+      .flat()
+      .map((chord) => JSON.stringify(chord));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
+
+  it('keeps the default, Cmd/Ctrl+K and other free chords valid', () => {
+    for (const free of [
+      DEFAULT_PALETTE_CHORD,
+      { code: 'KeyK', mod: true },
+      { code: 'KeyK', alt: true, shift: true },
+      { code: 'KeyP', mod: true, shift: true },
+      { code: 'Digit1', mod: true, shift: true },
+      { code: 'F2' },
+      { code: 'F4' }
+    ] satisfies PaletteChord[]) {
+      expect(reservedChordGroup(free)).toBeNull();
+      expect(parsePaletteChord(free)).toEqual(free);
+    }
+  });
+});
+
+describe('chordMayTypeText', () => {
+  it('flags chords without mod (Option/Alt + key types on many layouts)', () => {
+    for (const platform of ['mac', 'other'] as const) {
+      expect(chordMayTypeText(DEFAULT_PALETTE_CHORD, platform)).toBe(true);
+      expect(chordMayTypeText({ code: 'KeyK', alt: true, shift: true }, platform)).toBe(true);
+    }
+  });
+
+  it('flags Ctrl+Alt outside macOS only (AltGr), never Command+Option', () => {
+    const modAlt: PaletteChord = { code: 'KeyE', mod: true, alt: true };
+    expect(chordMayTypeText(modAlt, 'other')).toBe(true);
+    expect(chordMayTypeText(modAlt, 'mac')).toBe(false);
+  });
+
+  it('clears mod chords and function keys', () => {
+    for (const platform of ['mac', 'other'] as const) {
+      expect(chordMayTypeText({ code: 'KeyK', mod: true }, platform)).toBe(false);
+      expect(chordMayTypeText({ code: 'KeyK', mod: true, shift: true }, platform)).toBe(false);
+      expect(chordMayTypeText({ code: 'F2' }, platform)).toBe(false);
+      expect(chordMayTypeText({ code: 'F2', alt: true }, platform)).toBe(false);
+    }
   });
 });
 
@@ -203,19 +350,6 @@ describe('formatChord', () => {
     expect(formatChord(all, 'other')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord(all, 'other', 'words')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord({ code: 'Slash', mod: true }, 'other')).toBe('Ctrl+/');
-  });
-});
-
-describe('detectChordPlatform', () => {
-  it('prefers client hints, falls back to the platform string', () => {
-    expect(detectChordPlatform({ userAgentData: { platform: 'macOS' } })).toBe('mac');
-    expect(detectChordPlatform({ userAgentData: { platform: 'Windows' } })).toBe('other');
-    expect(detectChordPlatform({ userAgentData: { platform: '' }, platform: 'MacIntel' })).toBe(
-      'mac'
-    );
-    expect(detectChordPlatform({ platform: 'Linux x86_64' })).toBe('other');
-    expect(detectChordPlatform({ platform: 'iPad' })).toBe('mac');
-    expect(detectChordPlatform({})).toBe('other');
   });
 });
 
@@ -244,7 +378,26 @@ describe('the chord store', () => {
     await expect(setPaletteChord({ code: 'KeyK' })).rejects.toThrow(
       'Refused an invalid palette chord: {"code":"KeyK"}'
     );
+    await expect(setPaletteChord({ code: 'KeyC', mod: true })).rejects.toThrow(
+      'Refused an invalid palette chord: {"code":"KeyC","mod":true}'
+    );
     expect(await readPaletteChord()).toEqual({ code: 'KeyJ', mod: true });
+  });
+
+  it('names hostile input without throwing while describing it', async () => {
+    const circular: Record<string, unknown> = { code: 'Escape' };
+    circular.self = circular;
+    await expect(setPaletteChord(circular as unknown as PaletteChord)).rejects.toThrow(
+      'Refused an invalid palette chord: [unserializable value]'
+    );
+    await expect(setPaletteChord(undefined as unknown as PaletteChord)).rejects.toThrow(
+      'Refused an invalid palette chord: undefined'
+    );
+  });
+
+  it('reads a stored reserved chord as the default', async () => {
+    await fakeBrowser.storage.sync.set({ [SYNC_KEY]: { code: 'KeyV', mod: true } });
+    expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
   });
 
   it('watches validated writes (corrupt and removed as the default) until unsubscribed', async () => {

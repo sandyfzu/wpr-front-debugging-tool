@@ -49,6 +49,7 @@ import type {
   WprDetections
 } from '../wp-rocket/types';
 import type { KnownConflict } from '../storage/known-conflicts';
+import type { ChordPlatform } from '../storage/palette-chord-platform';
 import type { DeviceSimState, DeviceSimUpdate } from '../device-simulation/state';
 import type { ScriptSourceRequest, ScriptSourceReply } from './script-source';
 import type { DbUpdateResult, DetectionSummary } from './validate';
@@ -102,9 +103,19 @@ export interface ProtocolMap {
    * Background → tab content script (tab-targeted, no payload): open the
    * on-page command palette. Its receiver answers only in the top frame and
    * only while the on-page UI gate is on; a tab without a live receiver
-   * rejects like every push (the expected no-receiver case).
+   * rejects like every push (the expected no-receiver case). The handler is
+   * registered by the top-frame palette module only and torn down with it
+   * on gate-off, so a send racing a gate-off write reads as no-receiver —
+   * acceptable, since the menu disables its row while the gate is off.
    */
   openCommandPalette(): true;
+  /**
+   * Content script → background (no payload): the palette chord's keyboard
+   * convention. Content scripts cannot call `runtime.getPlatformInfo`, so
+   * the background answers from it; the reply is a closed literal, and a
+   * platform-info failure answers `'other'` (logged) rather than rejecting.
+   */
+  getChordPlatform(): ChordPlatform;
   /** Content script → background: known-conflicts rows (storage or seed fallback). */
   getKnownConflictsDb(): KnownConflict[];
   /** Content script → background (push): toolbar badge input, per sender tab. */

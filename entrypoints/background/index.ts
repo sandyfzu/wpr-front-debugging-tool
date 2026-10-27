@@ -18,7 +18,9 @@
  *   channels, the interception backend (`./interception-backends`) and the
  *   session cleanup paths,
  * - the tab relay (`./tab-relay`) — tab asks forwarded for extension pages
- *   without the `tabs` API.
+ *   without the `tabs` API,
+ * - the chord platform (`./chord-platform`) — the OS keyboard convention
+ *   content scripts cannot read themselves.
  *
  * Every subsystem registration happens inside `main()` (nothing at import
  * time beyond constants), the global error handlers are attached first, and
@@ -41,6 +43,7 @@ import {
 import { initExclusionSessions } from './exclusion-sessions';
 import { registerTabPushRelay } from './tab-push-relay';
 import { registerTabRelay } from './tab-relay';
+import { registerChordPlatform } from './chord-platform';
 
 const log = createLogger('background');
 
@@ -161,6 +164,13 @@ async function main(): Promise<void> {
     // Only panels that never receive the page's pushes directly subscribe;
     // they then keep loading data but stop refreshing on their own.
     log.error('Tab-push relay init failed — tab-less panels get no live page updates', cause);
+  }
+
+  try {
+    registerChordPlatform();
+  } catch (cause) {
+    // The palette's ask then sees no receiver and keeps its fallback notation.
+    log.error('Chord platform init failed — on-page chords use the Ctrl convention', cause);
   }
 
   try {
