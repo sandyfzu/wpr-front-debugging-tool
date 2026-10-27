@@ -379,7 +379,7 @@ describe('OverlayApp', () => {
     }
   });
 
-  it('an explicit open never takes focus from another extension surface focused before it mounted', async () => {
+  it('an explicit open never takes focus from the command palette focused before it mounted', async () => {
     // The palette's shadow host holds focus while the overlay host renders.
     const palette = document.createElement('wpr-fdt-command-palette');
     palette.tabIndex = 0;
@@ -393,6 +393,22 @@ describe('OverlayApp', () => {
       expect(document.activeElement).toBe(palette);
     } finally {
       palette.remove();
+    }
+  });
+
+  it('an explicit open takes focus from another extension surface that keeps no dialog open', async () => {
+    // The detection strip's host held focus (e.g. the palette returned it there).
+    const strip = document.createElement('wpr-fdt-inspector');
+    strip.tabIndex = 0;
+    document.body.append(strip);
+    strip.focus();
+    try {
+      mount(port({ state: 'inactive' }), null, undefined, false, true);
+      await waitFor(() => {
+        expect(document.activeElement?.textContent).toBe('Exclusion builder');
+      });
+    } finally {
+      strip.remove();
     }
   });
 

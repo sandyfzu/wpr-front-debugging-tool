@@ -72,7 +72,7 @@ import type { PickerEvents } from './picker';
 import type { VirtualizerFactory } from '../../components/ui/virtual-list';
 import { createLogger } from '../../lib/logger';
 import { showInTopLayer } from '../../components/injected-ui/top-layer';
-import { INJECTED_HOST_PREFIX } from '../../components/injected-ui/key-guard';
+import { COMMAND_PALETTE_HOST_NAME } from '../../components/injected-ui/key-guard';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
 
 const log = createLogger('exclusion-overlay');
@@ -227,17 +227,19 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     return layer.contains(active) || (root instanceof ShadowRoot && active === root.host);
   };
   /**
-   * Whether another of the extension's injected surfaces (e.g. the command
-   * palette) holds focus: the overlay never takes it from one — not even
-   * when it already held focus as the overlay mounted, since the overlay's
-   * host is inserted before it renders and a surface can take focus in that
-   * gap. Focus inside the overlay itself is free, never claimed.
+   * Whether the command palette holds focus: the overlay never takes it from
+   * the palette — not even when it already held focus as the overlay
+   * mounted, since the overlay's host is inserted before it renders and the
+   * palette can open in that gap — because the palette dismisses on any
+   * outside focus. Other injected surfaces (the detection strip, the
+   * known-conflicts card) never dismiss on focus loss, so an explicitly
+   * opened overlay takes focus from them like from any page control.
    *
-   * @param active The document's focused element (a surface's focus reads as its shadow host).
-   * @returns `true` when another surface's host holds focus.
+   * @param active The document's focused element (the palette's focus reads as its shadow host).
+   * @returns `true` when the palette's host holds focus.
    */
   const focusIsClaimed = (active: Element | null): boolean =>
-    active !== null && active.localName.startsWith(INJECTED_HOST_PREFIX) && !focusIsFree(active);
+    active?.localName === COMMAND_PALETTE_HOST_NAME;
   /**
    * Move focus once the target is visible (next frame: visibility flips
    * first). A just-revealed panel can stay hidden for a frame (reduced motion

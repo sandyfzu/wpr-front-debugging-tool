@@ -5,7 +5,7 @@
  * Wraps Kobalte's APG dialog: modal = focus trapped inside the content (the
  * outside is pointer-inert and `aria-hidden`), `role="dialog"` titled via the
  * required title, Escape and outside-pointerdown dismissed, and mount-time
- * autofocus on the content's first focusable element (or, synchronously,
+ * autofocus on the content's first focusable element (or, in the mount task,
  * the caller's {@link ModalDialogProps.initialFocus}) — so callers keep
  * their first tab stop meaningful (the palette's field, the overlay's close
  * control).
@@ -65,12 +65,15 @@ export interface ModalDialogProps {
    */
   mount?: HTMLElement;
   /**
-   * The element focused as the dialog mounts — in the same task as its
-   * insertion, where the library's own autofocus waits a task (any frame or
-   * timer callback in that gap would see focus unclaimed and could take it,
-   * which a mounted dialog then reads as an outside focus and dismisses
-   * on). Read once, at mount; when it is missing or refuses focus, the
-   * library's deferred autofocus on the first focusable runs instead.
+   * The element focused as the dialog mounts — in a microtask of the same
+   * task as its insertion, where the library's own autofocus waits a task
+   * (any frame or timer callback in that gap would see focus unclaimed and
+   * could take it, which a mounted dialog then reads as an outside focus and
+   * dismisses on). The microtask runs after the modal focus trap is armed, so
+   * the trap records the target and pulls later outside focus moves back to
+   * it. Read once, at mount: when it is missing or detached, the library's
+   * deferred autofocus on the first focusable runs instead; when it refuses
+   * focus, the dialog panel takes it (focus stays inside the dialog).
    */
   initialFocus?: () => HTMLElement | undefined;
   children: JSX.Element;
@@ -93,6 +96,22 @@ export const DIALOG_PANEL_CLASSES =
 const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
 
 /**
+ * Focus the caller's initial target, or the dialog panel when the target
+ * refuses focus (hidden, disabled, inert) — the library's autofocus is
+ * already prevented by then, and the panel (`tabindex=-1`, the library's own
+ * last resort) keeps focus inside the dialog: the modal trap records it and a
+ * mounted dialog does not read the miss as an outside focus.
+ *
+ * @param target The caller's initial focus element.
+ * @param panel The dialog panel (the fallback).
+ */
+function focusInitial(target: HTMLElement, panel: HTMLElement): void {
+  target.focus({ preventScroll: true });
+  const root = target.getRootNode() as Document | ShadowRoot;
+  if (root.activeElement !== target) panel.focus({ preventScroll: true });
+}
+
+/**
  * Render the modal dialog (mount-driven — render inside a `<Show>` while open).
  *
  * The title is visually hidden: devtools-grade overlays present their own
@@ -105,7 +124,7 @@ const OVERLAY_CLASSES = 'fixed inset-0 z-40 bg-[var(--scrim)]';
  * @param props.closeButton Whether the explicit dismissal control renders.
  * @param props.class Extra classes on the panel.
  * @param props.mount The injected UI's render node (mounted mode).
- * @param props.initialFocus The element focused synchronously on mount (optional).
+ * @param props.initialFocus The element focused on mount, same task (optional).
  * @param props.children The dialog's content (fields, lists, texts).
  */
 export function ModalDialog(props: ModalDialogProps): JSX.Element {
@@ -150,11 +169,12 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
           }}
           onOpenAutoFocus={(event) => {
             const target = props.initialFocus?.();
-            if (target === undefined) return;
-            target.focus({ preventScroll: true });
-            // Focus took: the library's deferred autofocus is not needed.
-            const root = target.getRootNode() as Document | ShadowRoot;
-            if (root.activeElement === target) event.preventDefault();
+            if (target === undefined || !target.isConnected) return;
+            event.preventDefault();
+            const panel = event.currentTarget as HTMLElement;
+            queueMicrotask(() => {
+              focusInitial(target, panel);
+            });
           }}
           onCloseAutoFocus={(event) => {
             // No `<Dialog.Trigger>` exists (the caller opens the dialog itself

@@ -352,7 +352,7 @@ describe('CommandPalette mounted mode (an injected shadow root)', () => {
 });
 
 describe('CommandPalette mount-time focus', () => {
-  it('focuses the field in the same task it is inserted (no gap another UI could take focus in)', () => {
+  it('focuses the field in the same task it is inserted (no gap another UI could take focus in)', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const shadow = host.attachShadow({ mode: 'open' });
@@ -371,6 +371,8 @@ describe('CommandPalette mount-time focus', () => {
       </Show>
     ));
     setOpen(true);
+    // A microtask checkpoint, no task boundary: no frame or timer ran yet.
+    await Promise.resolve();
     expect(document.activeElement).toBe(host);
     expect(shadow.activeElement?.getAttribute('data-fdt')).toBe('palette-input');
   });

@@ -147,24 +147,33 @@ interface ConfirmStepProps {
 
 /**
  * The inline confirm a row asks for: its title (the dialog's visible name),
- * the consequence sentence, Cancel first (the dialog's autofocus lands on
- * the safe choice) and the confirming action.
+ * the consequence sentence, Cancel first and the confirming action. Cancel
+ * (the safe choice) takes focus in the task the step replaces the list, so
+ * focus never sits on the page between the two dialogs (another UI could
+ * take it there, which the non-modal confirm would read as an outside focus
+ * and dismiss on).
  *
  * @param props See {@link ConfirmStepProps}.
  */
 function ConfirmStep(props: ConfirmStepProps): JSX.Element {
   const confirm = (): NonNullable<PaletteRowView['confirm']> =>
     props.row.confirm ?? { title: props.row.label, body: '', action: props.row.label };
+  /** The Cancel control, the step's initial focus. */
+  let cancel: HTMLButtonElement | undefined;
   return (
     <ModalDialog
       mount={props.mount}
       title={confirm().title}
       description={confirm().body}
       onClose={props.onDismiss}
+      initialFocus={() => cancel}
       class="cp-confirm"
     >
       <div class="cp-actions" data-fdt="palette-confirm">
         <button
+          ref={(element) => {
+            cancel = element;
+          }}
           type="button"
           class="cp-button"
           data-fdt="palette-confirm-cancel"

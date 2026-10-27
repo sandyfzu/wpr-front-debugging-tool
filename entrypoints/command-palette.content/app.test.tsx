@@ -140,6 +140,22 @@ describe('PaletteApp', () => {
     expect(view.onRun).toHaveBeenCalledWith('page-ui-gate');
   });
 
+  it('focuses the confirm’s Cancel in the task the confirm replaces the list', async () => {
+    const view = mountView();
+    view.setOpen(true);
+    const field = await readyField();
+    fireEvent.input(field, { target: { value: 'turn off' } });
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-fdt="palette-command"]')).toHaveLength(1);
+      expect(field.getAttribute('aria-activedescendant')).not.toBeNull();
+    });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    // A microtask checkpoint, no task boundary: no frame or timer ran yet.
+    await Promise.resolve();
+    expect(document.activeElement?.getAttribute('data-fdt')).toBe('palette-confirm-cancel');
+    expect(view.onDismiss).not.toHaveBeenCalled();
+  });
+
   it('dismisses from the confirm’s Cancel and re-opens on the command list', async () => {
     const view = mountView();
     view.setOpen(true);

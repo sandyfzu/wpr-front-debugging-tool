@@ -21,9 +21,9 @@ export interface FocusRetryDeps<T> {
    */
   readonly isFree: (active: T) => boolean;
   /**
-   * Whether `active` is held by another UI that never yields focus (another
-   * extension surface, e.g. a palette): the move stops even when focus sat
-   * there at call time.
+   * Whether `active` is held by another UI that must keep focus (e.g. a
+   * palette that dismisses on outside focus): the move stops even when focus
+   * sat there at call time.
    */
   readonly isClaimed: (active: T) => boolean;
 }

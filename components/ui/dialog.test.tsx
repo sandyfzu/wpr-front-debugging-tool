@@ -124,7 +124,7 @@ describe('ModalDialog focus management', () => {
   });
 });
 
-describe('ModalDialog initial focus (synchronous, in the mount task)', () => {
+describe('ModalDialog initial focus (in the mount task)', () => {
   /** A shadow-root dialog opened later, its initial focus target chosen by the test. */
   function renderLaterOpen(
     initialFocus: (field: HTMLInputElement | undefined) => HTMLElement | undefined
@@ -161,7 +161,9 @@ describe('ModalDialog initial focus (synchronous, in the mount task)', () => {
   it('focuses the caller’s element in the same task the dialog is inserted', async () => {
     const { shadow, host, onClose, open } = renderLaterOpen((field) => field);
     open();
-    // No task boundary yet: a frame or timer callback could not have run.
+    // A microtask checkpoint, no task boundary: a frame or timer callback
+    // could not have run yet.
+    await Promise.resolve();
     expect(document.activeElement).toBe(host);
     expect(shadow.activeElement?.getAttribute('aria-label')).toBe('Field');
     // The library's deferred autofocus does not move it afterwards.
@@ -176,6 +178,57 @@ describe('ModalDialog initial focus (synchronous, in the mount task)', () => {
     await waitFor(() => {
       expect(shadow.activeElement?.textContent).toBe('First control');
     });
+  });
+
+  it('falls back to the deferred autofocus when the target is detached', async () => {
+    const { shadow, open } = renderLaterOpen(() => document.createElement('input'));
+    open();
+    await waitFor(() => {
+      expect(shadow.activeElement?.textContent).toBe('First control');
+    });
+  });
+
+  it('focuses the dialog panel, in the same task, when the target refuses focus', async () => {
+    const { shadow, host, onClose, open } = renderLaterOpen((field) => {
+      if (field !== undefined) field.disabled = true;
+      return field;
+    });
+    open();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(host);
+    expect(shadow.activeElement?.getAttribute('role')).toBe('dialog');
+    // The prevented library autofocus never moves it afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shadow.activeElement?.getAttribute('role')).toBe('dialog');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('arms the modal focus trap with the target: an outside focus move is pulled back', async () => {
+    const outside = document.createElement('button');
+    outside.textContent = 'Outside';
+    document.body.append(outside);
+    const [open, setOpen] = createSignal(false);
+    let field: HTMLInputElement | undefined;
+    render(() => (
+      <Show when={open()}>
+        <ModalDialog title="Palette" onClose={vi.fn()} initialFocus={() => field}>
+          <Button>First control</Button>
+          <input
+            aria-label="Field"
+            ref={(element) => {
+              field = element;
+            }}
+          />
+        </ModalDialog>
+      </Show>
+    ));
+    setOpen(true);
+    await Promise.resolve();
+    expect(document.activeElement).toBe(field);
+    // Past the library's deferred work, no in-dialog focus move since open.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    outside.focus();
+    expect(document.activeElement).toBe(field);
   });
 });
 
