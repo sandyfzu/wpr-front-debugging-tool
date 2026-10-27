@@ -13,7 +13,8 @@
  * `builder` fact (and no other), the panel card (served verdict kept,
  * modifier badge + visible sentence, the summary's "N off in this tab"
  * where a feature is off), the strip (served chip kept, row modifier +
- * sentence, tab-level line) and the support report row. Then Stop: no
+ * sentence, tab-level line, the closed pill's glyph + spoken hint) and the
+ * support report row. Then Stop: no
  * reload, so the rewritten page and every surface's modifier stay; then a
  * reload serves WP Rocket's page again and every surface is back to the
  * served verdict.
@@ -42,6 +43,7 @@ import {
 } from '../helpers/extension';
 import { devtoolsShim, panelPageUrl } from '../helpers/panel-data';
 import { openSitePage, SITE_URL } from '../helpers/site';
+import { expectPillHint, STRIP_HOST } from '../helpers/strip-pill';
 
 /** The rows a builder fact can sit on (the payload's contract). */
 const FACT_ROWS: readonly FactRow[] = [
@@ -51,9 +53,6 @@ const FACT_ROWS: readonly FactRow[] = [
   'lazyload'
 ];
 type FactRow = BuilderFactRow;
-
-/** The widget's shadow-root host. */
-const STRIP_HOST = 'wpr-fdt-inspector';
 
 /** `chrome.storage.sync` key of the per-origin widget map. */
 const ORIGINS_KEY = 'inspector-origins';
@@ -471,6 +470,7 @@ async function expectServed(
   await expect(root.locator('[data-fdt-card-modifier-line]')).toHaveCount(0);
   await expect(card(panel, changed.row).locator('[data-fdt="status-badge"]')).toHaveText('Active');
   expect(await activeFigures(panel)).toEqual(served);
+  await expectPillHint(opened.page, null);
   await openStripCard(opened.page);
   await expect(stripRow(opened.page, changed.chipLabel)).toBeVisible();
   await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
@@ -511,6 +511,7 @@ test.describe('builder state across surfaces over real sessions', () => {
           FRESH
         );
         const served = await activeFigures(panel);
+        await expectPillHint(opened.page, null);
 
         await openBuilder(extension, opened);
         await syncCase.compose(opened.page);
@@ -522,6 +523,7 @@ test.describe('builder state across surfaces over real sessions', () => {
           .poll(() => payloadFacts(extension, opened.tabId), FRESH)
           .toEqual({ [changed.row]: changed.fact });
         await expectPanelModifier(panel, changed, served);
+        await expectPillHint(opened.page, changed.kind);
         await expectStripModifier(opened.page, changed);
         await expectReport(panel, changed, served);
 
@@ -534,6 +536,7 @@ test.describe('builder state across surfaces over real sessions', () => {
           .poll(() => payloadFacts(extension, opened.tabId), FRESH)
           .toEqual({ [changed.row]: changed.fact });
         await expectPanelModifier(panel, changed, served);
+        await expectPillHint(opened.page, changed.kind);
         await expectStripModifier(opened.page, changed);
         // Still the same document: Stop did not navigate.
         expect(await opened.page.evaluate(() => performance.timeOrigin)).toBe(rewrittenOrigin);
@@ -563,6 +566,7 @@ test.describe('builder state across surfaces over real sessions', () => {
       );
       const served = await activeFigures(panel);
       await expect(panel.locator('[data-fdt-card-modifier]')).toHaveCount(0);
+      await expectPillHint(opened.page, null);
       await openStripCard(opened.page);
       await expect(stripRow(opened.page, 'Delay JS')).toBeVisible();
       await expect(opened.page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
@@ -576,6 +580,7 @@ test.describe('builder state across surfaces over real sessions', () => {
         .poll(() => payloadFacts(extension, opened.tabId), FRESH)
         .toEqual({ delay_js: { off: 'feature' } });
       await expectPanelModifier(panel, DELAY_OFF, served);
+      await expectPillHint(opened.page, 'off');
       await expectStripModifier(opened.page, DELAY_OFF);
       await expectReport(panel, DELAY_OFF, served);
       await opened.page.getByRole('button', { name: 'Stop' }).click();

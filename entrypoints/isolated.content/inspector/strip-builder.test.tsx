@@ -2,12 +2,14 @@
  * The Exclusion Builder on the on-page strip: each changed row's modifier
  * (badge + visible sentence, the panel card's words) and the tab-level
  * "Exclusion Builder rewrote this page" line — none, one, many, excluded
- * only, and a fact on a row WP Rocket did not serve — over the real engine,
- * in the model and in the rendered card.
+ * only, and a fact on a row WP Rocket did not serve — and the closed pill's
+ * builder hint (glyph + spoken suffix), over the real engine, in the model
+ * and in the rendered widget.
  */
 import { cleanup, render } from '@solidjs/testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  BUILDER_PILL_HINT_SPOKEN,
   builderModifierCopy,
   builderTabLine,
   hudFeatureOf,
@@ -336,5 +338,104 @@ describe('the rendered card', () => {
     expect(root.querySelector('[data-fdt-strip-modifier-line]')).toBeNull();
     expect(root.textContent).not.toContain('Exclusion Builder');
     expect(root.querySelector('[role="dialog"]')?.hasAttribute('aria-describedby')).toBe(false);
+  });
+});
+
+/** The pill's exact spoken suffix, pinned literally (the copy's one owner is `hud.ts`). */
+const PILL_SUFFIX = ', rewritten by the Exclusion Builder';
+
+describe('the strip model — closed pill hint', () => {
+  it('is absent without a fact', () => {
+    expect(model(null).builderPill).toBeNull();
+  });
+
+  it('turned off wins over excluded; excluded alone draws the excluded glyph', () => {
+    const cases: [string, 'off' | 'excluded'][] = [
+      ['v1 delay_js=off', 'off'],
+      ['v1 defer_all_js=page-off', 'off'],
+      ['v1 delay_js=off lazyload=excluded:3', 'off'],
+      ['v1 delay_js=excluded:2 defer_all_js=page-off', 'off'],
+      ['v1 lazyload=excluded:1', 'excluded'],
+      ['v1 delay_js=excluded:2 lazyload=excluded:3', 'excluded']
+    ];
+    for (const [marker, kind] of cases) {
+      const card = model(marker);
+      expect(card.builderPill, marker).toBe(kind);
+      // The same facts as the card line: present together.
+      expect(card.builderLine, marker).not.toBeNull();
+    }
+  });
+
+  it('is absent while the pass runs or failed, even over marked rows', () => {
+    const detections = markedDetections('v1 delay_js=off lazyload=excluded:3');
+    for (const phase of ['running', 'failed'] as const) {
+      const card = buildStripCardModel({
+        snapshot: { phase, detections, cacheState: null },
+        wordpressVersion: null,
+        fdtVersion: '0.0.0'
+      });
+      expect(card.builderPill, phase).toBeNull();
+    }
+  });
+});
+
+describe('the rendered pill', () => {
+  /** The pill button of a rendered widget. */
+  function pillOf(root: HTMLElement): HTMLElement {
+    const pill = root.querySelector<HTMLElement>('.ins-pill');
+    if (pill === null) throw new Error('no pill');
+    return pill;
+  }
+
+  it('shows the builder glyph after the version, hidden from assistive tech', () => {
+    for (const [marker, kind] of [
+      ['v1 delay_js=off lazyload=excluded:3', 'off'],
+      ['v1 lazyload=excluded:3', 'excluded']
+    ] as const) {
+      const pill = pillOf(renderCard(model(marker)));
+      const glyph = pill.querySelector<HTMLElement>('[data-fdt-strip-pill-builder]');
+      expect(glyph?.dataset['fdtStripPillBuilder'], marker).toBe(kind);
+      expect(glyph?.getAttribute('aria-hidden'), marker).toBe('true');
+      // Right after the identity (the version), before the status chip.
+      expect(glyph?.previousElementSibling?.classList.contains('ins-identity'), marker).toBe(true);
+      expect(glyph?.querySelectorAll('svg'), marker).toHaveLength(1);
+      // The card badge's own glyph for that kind (lucide circle-off / list-x).
+      const paths = Array.from(glyph?.querySelectorAll('path') ?? [], (path) =>
+        path.getAttribute('d')
+      );
+      expect(paths, marker).toContain(kind === 'off' ? 'm2 2 20 20' : 'm15.5 9.5 5 5');
+      expect(paths, marker).not.toContain(kind === 'off' ? 'm15.5 9.5 5 5' : 'm2 2 20 20');
+      cleanup();
+    }
+  });
+
+  it('names the rewrite once, right after the version (where the glyph sits)', () => {
+    const plain = pillOf(renderCard(model(null)));
+    const plainName = spokenText(plain);
+    const plainTitle = plain.getAttribute('title');
+    cleanup();
+    const pill = pillOf(renderCard(model('v1 delay_js=off')));
+    expect(BUILDER_PILL_HINT_SPOKEN).toBe(PILL_SUFFIX);
+    expect(plainName).toContain('WPR 3.23.5.1');
+    expect(spokenText(pill)).toBe(plainName.replace('WPR 3.23.5.1', `WPR 3.23.5.1${PILL_SUFFIX}`));
+    expect(spokenText(pill).split('Exclusion Builder')).toHaveLength(2);
+    // Words for assistive tech only; the eye reads the glyph.
+    expect(visibleText(pill)).not.toContain('Exclusion Builder');
+    // One spoken run with the identity (an sr piece of its own would gain a
+    // space before the comma in Chromium); the shown identity is hidden, heard once.
+    const spoken = pill.querySelector('[data-fdt-strip-pill-builder-spoken]');
+    expect(spoken?.textContent).toBe(`WPR 3.23.5.1${PILL_SUFFIX}`);
+    expect(spoken?.classList.contains('ins-sr')).toBe(true);
+    const shown = pill.querySelector('.ins-identity > [aria-hidden="true"]');
+    expect(shown?.textContent).toBe('WPR 3.23.5.1');
+    // Never repeated as the pill's description: the tooltip is unchanged.
+    expect(pill.getAttribute('title')).toBe(plainTitle);
+  });
+
+  it('an untouched page: no glyph, no words', () => {
+    const pill = pillOf(renderCard(model(null)));
+    expect(pill.querySelector('[data-fdt-strip-pill-builder]')).toBeNull();
+    expect(pill.querySelector('[data-fdt-strip-pill-builder-spoken]')).toBeNull();
+    expect(pill.textContent).not.toContain('Exclusion Builder');
   });
 });

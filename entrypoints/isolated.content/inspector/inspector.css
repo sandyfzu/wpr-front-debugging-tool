@@ -213,6 +213,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Narrow hosts drop the chip's stamp first, never the identity (version) or
+ * the chip's state word: in the pill only the stamp gives way. */
+.ins-pill .ins-identity,
+.ins-pill .ins-cache-text {
+  flex: none;
+}
+.ins-pill .ins-cache {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* The Exclusion Builder hint after the version: the page shown is the
+ * builder's rewrite. A shape (the card badges' glyph), never colour alone;
+ * fixed size, so a narrow pill truncates the identity, never the glyph. */
+.ins-pill-builder {
+  display: inline-flex;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--status-info);
+}
+.ins-pill-builder svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 
 /* Textually present, never painted (the pill's accessible name rides with
  * the probe-visible text; the chip follows it in text order). */

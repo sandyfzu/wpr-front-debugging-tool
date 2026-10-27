@@ -31,6 +31,7 @@ import type { CacheState } from '../../../lib/detection/cache-context';
 import {
   builderBadgeKind,
   builderModifierCopy,
+  builderPageKind,
   builderTabLine,
   builderTurnsOff,
   hudGroupedFeatures,
@@ -133,6 +134,11 @@ export interface StripCardModel {
    * only), or null when the displayed document states no builder fact.
    */
   builderLine: BuilderTabLine | null;
+  /**
+   * The closed pill's builder glyph kind ({@link builderPageKind}): present
+   * exactly when {@link StripCardModel.builderLine} is, null otherwise.
+   */
+  builderPill: BuilderBadgeKind | null;
   /** The body's state copy while the pass is pending or failed. */
   stateCopy: { title: string; hint: string } | null;
   /** The footer stamp (`WPR x · WP y · FDT z`). */
@@ -349,6 +355,10 @@ export function buildStripCardModel(input: {
           )
         }));
 
+  // The builder line and the pill hint read the same in-band facts, only
+  // over a ready answer (a pending or failed pass states nothing).
+  const rewritten = report !== null && detections !== null;
+
   const stateCopy =
     snapshot.phase === 'running'
       ? { title: CARD_LOADING_TITLE, hint: '' }
@@ -361,7 +371,8 @@ export function buildStripCardModel(input: {
     identity: identityText(snapshot),
     cacheChip: cacheChip(snapshot),
     groups,
-    builderLine: report === null || detections === null ? null : builderTabLine(detections),
+    builderLine: rewritten ? builderTabLine(detections) : null,
+    builderPill: rewritten ? builderPageKind(detections) : null,
     stateCopy,
     footer,
     cacheTooltip: cacheTooltip(snapshot)

@@ -14,6 +14,7 @@ import {
   builderBadgeKind,
   builderModifierCopy,
   builderOffSummary,
+  builderPageKind,
   builderTabLine,
   builderTurnsOff,
   hudFeatureOf,
@@ -287,5 +288,32 @@ describe('builderTabLine — the strip’s tab-level line', () => {
         `${BUILDER_TAB_LINE_TITLE} — ${builderModifierCopy(entry, fact).hint}`
       );
     }
+  });
+});
+
+describe('builderPageKind — the closed pill’s one glyph', () => {
+  it('is null without a fact', () => {
+    expect(builderPageKind(detectionsOf(markedPage(null)))).toBeNull();
+  });
+
+  it('is off when any feature is turned off, else excluded', () => {
+    const cases: [string, 'off' | 'excluded'][] = [
+      ['v1 delay_js=off', 'off'],
+      ['v1 defer_all_js=page-off', 'off'],
+      ['v1 automatic_lazy_rendering=off', 'off'],
+      ['v1 delay_js=excluded:2 lazyload=excluded:1', 'excluded'],
+      ['v1 automatic_lazy_rendering=excluded:4', 'excluded'],
+      // An off fact after excluded ones still wins (registry order is not the rule).
+      ['v1 delay_js=excluded:2 defer_all_js=off lazyload=excluded:1', 'off']
+    ];
+    for (const [content, kind] of cases) {
+      const detections = detectionsOf(markedPage(content));
+      expect(builderPageKind(detections), content).toBe(kind);
+      expect(builderTabLine(detections), content).not.toBeNull();
+    }
+  });
+
+  it('is null when the marker is malformed (no fact, never a partial one)', () => {
+    expect(builderPageKind(detectionsOf(markedPage('v1 delay_js=bogus')))).toBeNull();
   });
 });

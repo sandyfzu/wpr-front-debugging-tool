@@ -27,9 +27,15 @@ import { writeBuilderMarker } from '../../../lib/exclusion-builder/builder-marke
 import { BUILDER_MARKER_META_NAME } from '../../../lib/wp-rocket/constants';
 import { expect, test, type ExtensionDriver } from '../helpers/extension';
 import { openSitePage, SITE_ORIGIN, SITE_URL } from '../helpers/site';
-
-/** The widget's shadow-root host. */
-const STRIP_HOST = 'wpr-fdt-inspector';
+import {
+  announcedNamesWith,
+  answeredPillName,
+  hasPillHint,
+  PILL_GLYPH,
+  pillNames,
+  STRIP_HOST,
+  withPillHint
+} from '../helpers/strip-pill';
 
 /** The WXT storage key under `chrome.storage.sync` for the per-origin widget map. */
 const ORIGINS_KEY = 'inspector-origins';
@@ -81,6 +87,9 @@ const WIDTHS = [320, 480, 768, 1280] as const;
 
 /** The AA floor for the strip's small text. */
 const AA_SMALL_TEXT = 4.5;
+
+/** The AA floor for a meaningful non-text glyph (WCAG 1.4.11). */
+const AA_NON_TEXT = 3;
 
 /** The real `/fdt/` HTML, as the site serves it. */
 async function servedFdtHtml(extension: ExtensionDriver): Promise<string> {
@@ -173,56 +182,60 @@ interface MeasuredContrast {
  * it is painted over, from computed colours composited in a 1 px canvas
  * (translucent soft fills count), walking out of the shadow root.
  */
-async function builderContrast(page: Page): Promise<MeasuredContrast[]> {
-  return await page.evaluate((host) => {
-    const root = document.querySelector(host)?.shadowRoot;
-    if (root === undefined || root === null) throw new Error('no strip');
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (context === null) throw new Error('no 2d context');
-    const paint = (layers: string[]): number[] => {
-      context.clearRect(0, 0, 1, 1);
-      for (const layer of layers) {
-        context.fillStyle = layer;
-        context.fillRect(0, 0, 1, 1);
-      }
-      return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
-    };
-    const luminance = (rgb: number[]): number => {
-      const [r = 0, g = 0, b = 0] = rgb.map((value) => {
-        const channel = value / 255;
-        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    const parts = root.querySelectorAll<HTMLElement>(
-      '.ins-builder-title, .ins-builder-hint, .ins-mod, .ins-mod-line'
-    );
-    return Array.from(parts, (element) => {
-      const fills: string[] = [];
-      for (
-        let node: Element | null = element;
-        node !== null;
-        node =
-          node.parentElement ??
-          (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null)
-      ) {
-        fills.unshift(getComputedStyle(node).backgroundColor);
-      }
-      const layers = ['#fff', ...fills];
-      const background = paint(layers);
-      const foreground = paint([...layers, getComputedStyle(element).color]);
-      const [light = 0, dark = 0] = [luminance(foreground), luminance(background)].sort(
-        (a, b) => b - a
-      );
-      return {
-        part: element.className,
-        text: element.textContent,
-        ratio: Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100
+async function builderContrast(
+  page: Page,
+  selector = '.ins-builder-title, .ins-builder-hint, .ins-mod, .ins-mod-line'
+): Promise<MeasuredContrast[]> {
+  return await page.evaluate(
+    ({ host, selector }) => {
+      const root = document.querySelector(host)?.shadowRoot;
+      if (root === undefined || root === null) throw new Error('no strip');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (context === null) throw new Error('no 2d context');
+      const paint = (layers: string[]): number[] => {
+        context.clearRect(0, 0, 1, 1);
+        for (const layer of layers) {
+          context.fillStyle = layer;
+          context.fillRect(0, 0, 1, 1);
+        }
+        return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
       };
-    });
-  }, STRIP_HOST);
+      const luminance = (rgb: number[]): number => {
+        const [r = 0, g = 0, b = 0] = rgb.map((value) => {
+          const channel = value / 255;
+          return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const parts = root.querySelectorAll<HTMLElement>(selector);
+      return Array.from(parts, (element) => {
+        const fills: string[] = [];
+        for (
+          let node: Element | null = element;
+          node !== null;
+          node =
+            node.parentElement ??
+            (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null)
+        ) {
+          fills.unshift(getComputedStyle(node).backgroundColor);
+        }
+        const layers = ['#fff', ...fills];
+        const background = paint(layers);
+        const foreground = paint([...layers, getComputedStyle(element).color]);
+        const [light = 0, dark = 0] = [luminance(foreground), luminance(background)].sort(
+          (a, b) => b - a
+        );
+        return {
+          part: element.className,
+          text: element.textContent,
+          ratio: Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100
+        };
+      });
+    },
+    { host: STRIP_HOST, selector }
+  );
 }
 
 /** The card's layout facts at the current width (overflow + the hints' gutter dots). */
@@ -314,6 +327,55 @@ async function accessibleDescriptions(page: Page): Promise<string[]> {
   } finally {
     await session.detach();
   }
+}
+
+/** The closed pill's layout facts at the current width. */
+interface PillLayout {
+  pillInside: boolean;
+  /** The pill's own horizontal overflow (its content wider than its box). */
+  pillOverflow: number;
+  glyphInside: boolean;
+  glyphWidth: number;
+  /** How much of the identity (the version) its ellipsis hides. */
+  identityClipped: number;
+  /** The glyph follows the identity on the same row. */
+  glyphAfterIdentity: boolean;
+  /** The horizontal document overflow the strip adds (the theme's own excluded). */
+  documentOverflow: number;
+}
+
+/** Read the closed pill's layout facts. */
+async function pillLayout(page: Page): Promise<PillLayout> {
+  return await page.evaluate((host) => {
+    const root = document.querySelector(host)?.shadowRoot;
+    if (root === undefined || root === null) throw new Error('no strip');
+    const pill = root.querySelector<HTMLElement>('.ins-pill');
+    const glyph = root.querySelector<HTMLElement>('[data-fdt-strip-pill-builder]');
+    const identity = root.querySelector<HTMLElement>('.ins-pill .ins-identity');
+    if (pill === null || glyph === null || identity === null) throw new Error('no pill hint');
+    const pillBox = pill.getBoundingClientRect();
+    const glyphBox = glyph.getBoundingClientRect();
+    const identityBox = identity.getBoundingClientRect();
+    const middle = (box: DOMRect): number => box.top + box.height / 2;
+    const overflow = (): number =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth;
+    const withStrip = overflow();
+    const hostElement = document.querySelector<HTMLElement>(host);
+    hostElement?.style.setProperty('display', 'none', 'important');
+    const withoutStrip = overflow();
+    hostElement?.style.removeProperty('display');
+    return {
+      pillInside: pillBox.left >= -0.5 && pillBox.right <= window.innerWidth + 0.5,
+      pillOverflow: pill.scrollWidth - pill.clientWidth,
+      glyphInside: glyphBox.left >= pillBox.left - 0.5 && glyphBox.right <= pillBox.right + 0.5,
+      glyphWidth: Math.round(glyphBox.width * 10) / 10,
+      identityClipped: identity.scrollWidth - identity.clientWidth,
+      glyphAfterIdentity:
+        glyphBox.left >= identityBox.right - 0.5 &&
+        Math.abs(middle(glyphBox) - middle(identityBox)) < 2,
+      documentOverflow: withStrip - withoutStrip
+    };
+  }, STRIP_HOST);
 }
 
 /** Run axe over the strip only (the host page's own markup is not ours). */
@@ -463,12 +525,125 @@ test.describe('strip builder line + modifiers', () => {
     });
   }
 
+  for (const colorScheme of ['light', 'dark'] as const) {
+    test(`the closed pill hints the rewrite (${colorScheme})`, async ({ extension }) => {
+      await setWidget(extension, true);
+      const served = await servedFdtHtml(extension);
+      const marked = writeBuilderMarker(served, NOTE);
+      // The untouched page's pill name: the rewritten one adds the suffix, nothing else.
+      const plain = await openServed(extension, `pill-plain-${colorScheme}`, () => served);
+      let plainName: string;
+      try {
+        plainName = await answeredPillName(plain.page);
+        expect(plainName).not.toContain('Exclusion Builder');
+        await expect(plain.page.locator(PILL_GLYPH)).toHaveCount(0);
+      } finally {
+        await plain.page.close();
+        await extension.browserContext.unroute(plain.url);
+      }
+
+      const { page, url } = await openServed(extension, `pill-${colorScheme}`, () => marked);
+      try {
+        await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
+        await answeredPillName(page);
+        // Spoken once, right after the version; never the pill's description too.
+        await expect.poll(() => pillNames(page)).toEqual([withPillHint(plainName)]);
+        await expect
+          .poll(() => announcedNamesWith(page, 'Exclusion Builder'))
+          .toEqual([withPillHint(plainName)]);
+        await expect
+          .poll(async () =>
+            (await accessibleDescriptions(page)).filter((text) =>
+              text.includes('Exclusion Builder')
+            )
+          )
+          .toEqual([]);
+        const glyph = page.locator(PILL_GLYPH);
+        await expect(glyph).toBeVisible();
+        await expect(glyph).toHaveAttribute('aria-hidden', 'true');
+        // Delay JS and Defer JS are off on this page: the turned-off glyph.
+        await expect(glyph).toHaveAttribute('data-fdt-strip-pill-builder', 'off');
+        await expect(glyph.locator('svg')).toHaveCount(1);
+        // The words are for assistive tech only: their run is visually hidden (1 px, clipped).
+        const words = page.locator(`${STRIP_HOST} [data-fdt-strip-pill-builder-spoken]`);
+        expect(await words.evaluate((element) => getComputedStyle(element).clipPath)).toBe(
+          'inset(50%)'
+        );
+        expect(await words.boundingBox()).toMatchObject({ width: 1, height: 1 });
+
+        for (const width of WIDTHS) {
+          await page.setViewportSize({ width, height: 900 });
+          await settle(page);
+          const layout = await pillLayout(page);
+          console.log(`[pill] ${colorScheme} ${String(width)} px ${JSON.stringify(layout)}`);
+          const at = `${colorScheme} ${String(width)} px`;
+          expect(layout.pillInside, at).toBe(true);
+          expect(layout.pillOverflow, at).toBe(0);
+          expect(layout.glyphInside, at).toBe(true);
+          expect(layout.glyphWidth, at).toBe(13);
+          // The chip's stamp gives way first: the version is never cut.
+          expect(layout.identityClipped, at).toBe(0);
+          expect(layout.glyphAfterIdentity, at).toBe(true);
+          expect(layout.documentOverflow, at).toBe(0);
+          // The overflow probe re-showed the host: let any restyle settle first.
+          await settle(page);
+          const measured = await builderContrast(page, '.ins-pill-builder');
+          console.log(`[pill contrast] ${at} ${JSON.stringify(measured)}`);
+          expect(measured, at).toHaveLength(1);
+          for (const entry of measured) {
+            expect(entry.ratio, `${at} pill glyph`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+          }
+          const shots = process.env['FDT_SHOTS_DIR'];
+          if (shots !== undefined && shots !== '') {
+            mkdirSync(shots, { recursive: true });
+            await page.locator(`${STRIP_HOST} .ins-pill`).screenshot({
+              path: join(shots, `pill-${colorScheme}-${String(width)}.png`)
+            });
+          }
+        }
+        // Hovered, the pill's fill steps up a layer: the glyph keeps its contrast.
+        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await settle(page);
+        const hovered = await builderContrast(page, '.ins-pill-builder');
+        console.log(`[pill contrast] ${colorScheme} hovered ${JSON.stringify(hovered)}`);
+        for (const entry of hovered) {
+          expect(entry.ratio, `${colorScheme} hovered pill glyph`).toBeGreaterThanOrEqual(
+            AA_NON_TEXT
+          );
+        }
+        await page.mouse.move(0, 0);
+        await settle(page);
+        // Closed, the pill is in the tree with `aria-controls` → the card's id
+        // inside the same shadow root: axe cannot resolve an id across the
+        // shadow boundary, so it reports that one check as needing review
+        // (on any page, hint or not). The reference itself is proven here.
+        expect(
+          await page.evaluate((host) => {
+            const root = document.querySelector(host)?.shadowRoot;
+            const id = root?.querySelector('.ins-pill')?.getAttribute('aria-controls') ?? '';
+            return root?.getElementById(id)?.getAttribute('role') ?? null;
+          }, STRIP_HOST)
+        ).toBe('dialog');
+        expect(await axeStrip(page)).toEqual({
+          violations: [],
+          incomplete: ['aria-valid-attr-value']
+        });
+      } finally {
+        await page.close();
+        await extension.browserContext.unroute(url);
+      }
+    });
+  }
+
   test('without a fact the card has no line and no modifier', async ({ extension }) => {
     await setWidget(extension, true);
     const served = await servedFdtHtml(extension);
     expect(served).not.toContain(BUILDER_MARKER_META_NAME);
     const { page, url } = await openServed(extension, 'plain', () => served);
     try {
+      // The closed pill: no glyph, no builder words in its name.
+      expect(await answeredPillName(page)).not.toContain('Exclusion Builder');
+      await expect(page.locator(PILL_GLYPH)).toHaveCount(0);
       await openCardByKeyboard(page);
       await expect(page.locator(`${STRIP_HOST} .ins-row`).first()).toBeVisible();
       await expect(page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`)).toHaveCount(0);
@@ -498,6 +673,8 @@ test.describe('strip builder line + modifiers', () => {
     const line = page.locator(`${STRIP_HOST} [data-fdt-strip-builder]`);
     const title = page.locator(`${STRIP_HOST} .ins-title`);
     try {
+      await expect(page.locator(PILL_GLYPH)).toBeVisible({ timeout: 15_000 });
+      expect(hasPillHint(await answeredPillName(page))).toBe(true);
       await openCardByKeyboard(page);
       await expect(line).toBeVisible();
 
@@ -508,6 +685,11 @@ test.describe('strip builder line + modifiers', () => {
         NOTE
       );
       await page.reload();
+      await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toContainText(`WPR ${bumped}`, {
+        timeout: 15_000
+      });
+      await expect(page.locator(PILL_GLYPH)).toBeVisible();
+      expect(hasPillHint(await answeredPillName(page))).toBe(true);
       await openCardByKeyboard(page);
       await expect(title).toHaveText(`WPR ${bumped}`, { timeout: 15_000 });
       await expect(line).toBeVisible();
@@ -516,6 +698,11 @@ test.describe('strip builder line + modifiers', () => {
       // A reload that serves WP Rocket's own page again: no marker, no line.
       body = served;
       await page.reload();
+      await expect(page.locator(`${STRIP_HOST} .ins-pill`)).toContainText(`WPR ${version}`, {
+        timeout: 15_000
+      });
+      await expect(page.locator(PILL_GLYPH)).toHaveCount(0);
+      expect(await answeredPillName(page)).not.toContain('Exclusion Builder');
       await openCardByKeyboard(page);
       await expect(title).toHaveText(`WPR ${version}`, { timeout: 15_000 });
       await expect(line).toHaveCount(0);

@@ -568,6 +568,30 @@ export function builderTabLine(detections: WprDetections): BuilderTabLine | null
 }
 
 /**
+ * The closed strip pill's builder hint as assistive tech hears it: appended
+ * once to the pill's own name. Its glyph beside the version is never spoken.
+ */
+export const BUILDER_PILL_HINT_SPOKEN = ', rewritten by the Exclusion Builder';
+
+/**
+ * The page's leading builder effect, drawn as the closed pill's one glyph:
+ * `off` when any feature is turned off in this tab (it changes what runs, so
+ * it outranks exclusions), else `excluded`. Same facts as
+ * {@link builderTabLine}, so the two are present together.
+ *
+ * @param detections The engine rows.
+ * @returns The glyph kind, or null when the document states no builder fact.
+ */
+export function builderPageKind(detections: WprDetections): BuilderBadgeKind | null {
+  const facts = HUD_FEATURES.flatMap((feature) => {
+    const fact = builderFactOf(detections, feature.row);
+    return fact === null ? [] : [fact];
+  });
+  if (facts.length === 0) return null;
+  return facts.some((fact) => builderTurnsOff(fact)) ? 'off' : 'excluded';
+}
+
+/**
  * A count with its noun, singular for one (the shared `countNoun` rule);
  * the plain figure when the feature has no noun. Ungrouped digits, as the
  * strip renders the figure.

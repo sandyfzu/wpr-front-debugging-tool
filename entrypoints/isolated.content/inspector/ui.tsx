@@ -15,7 +15,11 @@
 
 import type { JSX, JSXElement } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { LIST_JOINER_CONTENT, type BuilderTabLine } from '../../../lib/detection/hud';
+import {
+  BUILDER_PILL_HINT_SPOKEN,
+  LIST_JOINER_CONTENT,
+  type BuilderTabLine
+} from '../../../lib/detection/hud';
 import type { StripCardModel, StripRowModifier } from './strip-state';
 import {
   CARD_ARIA_LABEL,
@@ -290,7 +294,26 @@ export function InspectorView(props: InspectorViewProps): JSX.Element {
         <span class="ins-mark" aria-hidden="true">
           <StrokeIcon paths={PRESENT_ICON_PATHS} />
         </span>
-        <span class="ins-identity">{props.model().identity}</span>
+        <span class="ins-identity">
+          {/* Rewritten page: the identity and the hint are spoken as one run
+           * (an sr-only piece of its own would gain a stray space before the
+           * comma in Chromium's name), so the shown identity is hidden from
+           * assistive tech and heard once. */}
+          <Show when={props.model().builderPill !== null} fallback={props.model().identity}>
+            <span aria-hidden="true">{props.model().identity}</span>
+            <span class="ins-sr" data-fdt-strip-pill-builder-spoken>
+              {`${props.model().identity}${BUILDER_PILL_HINT_SPOKEN}`}
+            </span>
+          </Show>
+        </span>
+        {/* The builder hint's glyph after the version: a shape, not colour alone. */}
+        <Show when={props.model().builderPill}>
+          {(kind) => (
+            <span class="ins-pill-builder" data-fdt-strip-pill-builder={kind()} aria-hidden="true">
+              <GroupGlyph glyph={BUILDER_ICONS[kind()]} />
+            </span>
+          )}
+        </Show>
         <Show when={props.model().cacheChip}>
           {(chip) => (
             <span class={`ins-cache ins-cache-${chip().state}`}>
