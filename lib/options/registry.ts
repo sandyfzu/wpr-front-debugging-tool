@@ -8,6 +8,15 @@
  *
  * Adding an option is one row here (plus its storage slot when the shape
  * grows), never consumer branching: the page maps over these rows.
+ *
+ * Two row families: **drafted** rows (boolean switches, the appearance
+ * choice) live in the `sync:options` shape and ride the page model's
+ * draft/Save cycle; **instant** rows (the on-page UI gate, the palette
+ * shortcut) own their storage items and apply the moment they change — they
+ * never enter the draft, so a pending edit elsewhere on the page survives
+ * them untouched. Any row may carry the `onPage` marker: it belongs to UI
+ * injected into inspected pages, so it disables while the gate is off
+ * ({@link onPageDisabledNote}).
  */
 
 import { isAppearance, type Appearance } from '../../utils/theme';
@@ -31,18 +40,32 @@ export interface OptionSection {
   readonly description: string;
 }
 
+/** The fields every row kind shares. */
+interface OptionRowBase {
+  /** Stable row identity — the storage key for drafted rows; unique across the registry. */
+  readonly id: string;
+  /** The card the row renders in. */
+  readonly section: OptionSectionId;
+  /** The control's label. */
+  readonly label: string;
+  /** The control's description. */
+  readonly description: string;
+  /**
+   * The cascade marker: the row configures UI this tool injects into
+   * inspected pages, so the page disables it while the on-page UI gate is
+   * off. Absent = unaffected by the gate.
+   */
+  readonly onPage?: true;
+}
+
 /** A boolean option stored as `options[section][id]`. */
-export interface BooleanOptionRow {
+export interface BooleanOptionRow extends OptionRowBase {
   /** Row discriminator: a two-state switch. */
   readonly kind: 'boolean';
   /** The storage key inside the section's group — stable across releases. */
   readonly id: string;
   /** The group the key lives in (the storage shape's boolean maps). */
   readonly section: Exclude<OptionSectionId, 'appearance'>;
-  /** The switch's label. */
-  readonly label: string;
-  /** The switch's description. */
-  readonly description: string;
 }
 
 /**
@@ -50,21 +73,46 @@ export interface BooleanOptionRow {
  * a three-way choice (`system`/`dark`/`light`), not a boolean switch, so it
  * is its own row kind rendered as a tri-state control.
  */
-export interface AppearanceOptionRow {
+export interface AppearanceOptionRow extends OptionRowBase {
   /** Row discriminator: the three-way appearance choice. */
   readonly kind: 'appearance';
   /** The storage slot the choice lives in. */
   readonly id: 'appearance';
   /** The card the control renders in. */
   readonly section: 'appearance';
-  /** The control's label. */
-  readonly label: string;
-  /** The control's description. */
-  readonly description: string;
 }
 
+/**
+ * The on-page UI master gate (`sync:page-ui-gate`): an instant switch — the
+ * master the `onPage` rows cascade from, so never marked itself.
+ */
+export interface PageUiGateOptionRow extends OptionRowBase {
+  /** Row discriminator: the instant master switch. */
+  readonly kind: 'page-ui-gate';
+  /** Row identity (the item owns its own key). */
+  readonly id: 'page-ui-gate';
+  /** The card the switch renders in. */
+  readonly section: 'features';
+}
+
+/** The on-page command palette's shortcut (`sync:palette-chord`): an instant capture field. */
+export interface ChordOptionRow extends OptionRowBase {
+  /** Row discriminator: the press-a-combination field. */
+  readonly kind: 'chord';
+  /** Row identity (the item owns its own key). */
+  readonly id: 'palette-chord';
+  /** The card the field renders in. */
+  readonly section: 'features';
+}
+
+/** The rows the page model drafts (stored in the `sync:options` shape). */
+export type DraftedOptionRow = BooleanOptionRow | AppearanceOptionRow;
+
+/** The rows that own their storage item and apply instantly. */
+export type InstantOptionRow = PageUiGateOptionRow | ChordOptionRow;
+
 /** Any registry row — the union the page's controls render from. */
-export type OptionRow = BooleanOptionRow | AppearanceOptionRow;
+export type OptionRow = DraftedOptionRow | InstantOptionRow;
 
 /**
  * Freeze a table and each of its rows — the registry is immutable data, never
@@ -114,6 +162,23 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
       "Follows your system's dark or light preference, or pins one palette — every open surface updates immediately"
   },
   {
+    kind: 'page-ui-gate',
+    id: 'page-ui-gate',
+    section: 'features',
+    label: 'Show on-page UI',
+    description:
+      "The detection widget, the Known Conflicts card, Side By Side, the Exclusion Builder and the command palette on inspected pages — off closes them on every open page at once; the page's right-click menu turns them back on"
+  },
+  {
+    kind: 'chord',
+    id: 'palette-chord',
+    section: 'features',
+    onPage: true,
+    label: 'Command palette shortcut',
+    description:
+      "Opens the command palette on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them"
+  },
+  {
     kind: 'boolean',
     id: TOOLBAR_BADGE,
     section: 'features',
@@ -137,7 +202,7 @@ const DEFAULT_FEATURES: StoredOptions['features'] = DOCUMENTED_DEFAULTS.features
  * @returns The row's value; the storage contract's documented default when
  *   the slot is somehow absent.
  */
-export function readOption(row: OptionRow, options: StoredOptions): boolean | Appearance {
+export function readOption(row: DraftedOptionRow, options: StoredOptions): boolean | Appearance {
   if (row.kind === 'appearance') return options.appearance;
   // Reads go through the group's own alias, indexed by the row's storage key.
   if (row.section === 'improvements') {
@@ -165,7 +230,40 @@ export function optionRowsIn(sectionId: OptionSectionId): readonly OptionRow[] {
  * @param row The row the value targets.
  * @param value The value offered for it.
  */
-export function isValidOptionValue(row: OptionRow, value: boolean | Appearance): boolean {
+export function isValidOptionValue(row: DraftedOptionRow, value: boolean | Appearance): boolean {
   if (row.kind === 'appearance') return isAppearance(value);
   return typeof value === 'boolean';
+}
+
+/**
+ * Whether a row rides the page model's draft (stored in `sync:options`).
+ *
+ * @param row Any registry row.
+ */
+export function isDraftedOptionRow(row: OptionRow): row is DraftedOptionRow {
+  return row.kind === 'boolean' || row.kind === 'appearance';
+}
+
+/** The drafted rows, in display order — the page model's whole row set. */
+export const DRAFTED_OPTION_ROWS: readonly DraftedOptionRow[] = Object.freeze(
+  OPTION_ROWS.filter(isDraftedOptionRow)
+);
+
+/** Shown under every `onPage` row while the gate is off — names the way back. */
+export const ON_PAGE_UI_OFF_NOTE = 'On-page UI is off — turn on “Show on-page UI” to change this';
+
+/**
+ * The cascade: why a row is disabled by the on-page UI gate, if it is.
+ * Data-driven — any row carrying `onPage` inherits it, whatever its kind.
+ *
+ * @param row Any registry row.
+ * @param pageUiEnabled The watched gate; `null` while it is unknown (still
+ *   loading or unreadable) — an unknown gate disables nothing, so a slow
+ *   read never flashes rows disabled.
+ * @returns The note to render under the disabled row, or null when the row
+ *   stays editable.
+ */
+export function onPageDisabledNote(row: OptionRow, pageUiEnabled: boolean | null): string | null {
+  if (row.onPage !== true || pageUiEnabled !== false) return null;
+  return ON_PAGE_UI_OFF_NOTE;
 }

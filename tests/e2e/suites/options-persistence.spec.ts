@@ -169,11 +169,17 @@ test.describe('options persistence', () => {
     try {
       // Three section cards, each carrying exactly its registry rows; every
       // control described by its row's sentence (the aria-describedby wire).
-      await expect(page.locator('[data-fdt="option-row"]')).toHaveCount(3);
+      await expect(page.locator('[data-fdt="option-row"]')).toHaveCount(5);
       await expect(page.getByRole('heading', { name: 'Improvements' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Features' })).toBeVisible();
-      for (const rowId of [DBUGGER_ROW_ID, 'appearance', BADGE_ROW_ID]) {
+      for (const rowId of [
+        DBUGGER_ROW_ID,
+        'appearance',
+        'page-ui-gate',
+        'palette-chord',
+        BADGE_ROW_ID
+      ]) {
         const row = page.locator(`[data-fdt="option-row"][data-fdt-option="${rowId}"]`);
         await expect(row).toBeVisible();
         const describedBy = await row

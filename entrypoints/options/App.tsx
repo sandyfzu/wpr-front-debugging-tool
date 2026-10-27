@@ -1,9 +1,10 @@
 /**
  * The options page: the P9A page model mounted with its real storage IO, its
- * registry-driven section cards, and the two supplemental behaviors the
- * settings surface owns — the appearance choice (persisting instantly so
- * every open surface restyles through their existing storage watches) and the
- * Known Conflicts freshness row.
+ * registry-driven section cards, and the supplemental behaviors the settings
+ * surface owns — the appearance choice (persisting instantly so every open
+ * surface restyles through their existing storage watches), the instant rows
+ * (the on-page UI gate and the palette shortcut, each over its own storage
+ * item, outside the draft) and the Known Conflicts freshness row.
  *
  * The page is a **writer**: only it and the panel drive the appearance
  * setting; the popup and injected UIs only read. The Save flow is the model's
@@ -11,7 +12,7 @@
  * with no artificial delay anywhere.
  */
 import type { JSX } from 'solid-js';
-import { createEffect, createSignal } from 'solid-js';
+import { createEffect, createSignal, onCleanup } from 'solid-js';
 import { For, Show } from 'solid-js';
 import { PageHeader } from '../../components/ui/page-header';
 import { Badge } from '../../components/ui/badge';
@@ -31,7 +32,24 @@ import {
 import { isAppearance, type Appearance } from '../../utils/theme';
 import { setAppearanceOption } from '../../lib/storage/options';
 import { createLogger } from '../../lib/logger';
+import {
+  createInstantSettingModel,
+  type InstantSettingIO,
+  type InstantSettingModel,
+  type InstantSettingSnapshot,
+  type InstantWriteOutcome
+} from '../../lib/options/instant-setting';
+import { createPageUiGateIO, createPaletteChordIO } from '../../lib/options/instant-io';
+import {
+  keyLegend,
+  readKeyboardLayout,
+  type KeyboardNavigator,
+  type KeyLayoutLookup
+} from '../../lib/options/keyboard-layout';
+import { chordsEqual, formatChord, type PaletteChord } from '../../lib/storage/palette-chord';
+import { resolveChordPlatform, type ChordPlatform } from '../../lib/storage/palette-chord-platform';
 import { OptionSections, type OptionRowScope } from './sections';
+import type { InstantRowsScope } from './instant-rows';
 import { KnownConflictsFreshness } from './kc-freshness';
 
 const log = createLogger('options');
@@ -41,6 +59,15 @@ const SAVE_SUCCESS_TITLE = 'Options saved';
 const SAVE_FAILURE_TITLE = 'Saving the options failed';
 const APPEARANCE_WRITE_FAILURE_TITLE = 'The color theme could not be saved';
 const APPEARANCE_WRITE_FAILURE_DESCRIPTION = 'The theme choice is kept as unsaved — try Save.';
+const PAGE_UI_ON_TITLE = 'On-page UI turned on';
+const PAGE_UI_OFF_TITLE = 'On-page UI turned off';
+const PAGE_UI_OFF_DESCRIPTION =
+  "Open pages close it now; the page's right-click menu turns it back on.";
+const PAGE_UI_FAILURE_TITLE = 'The on-page UI setting could not be saved';
+const CHORD_SAVED_TITLE = 'Palette shortcut saved';
+const CHORD_FAILURE_TITLE = 'The palette shortcut could not be saved';
+const INSTANT_FAILURE_DESCRIPTION =
+  'The previous value stays — check that the extension is still enabled, then try again.';
 
 export interface OptionsPageProps {
   /** The extension's product name, as the manifest declares it (the h1). */
@@ -55,6 +82,36 @@ export interface OptionsPageProps {
    * (Default: {@link setAppearanceOption}; rejections never throw here.)
    */
   writeAppearance?: (next: Appearance) => Promise<void>;
+  /** The on-page UI gate's seams (default: its storage item). */
+  pageUiIO?: InstantSettingIO<boolean>;
+  /** The palette shortcut's seams (default: its storage item). */
+  chordIO?: InstantSettingIO<PaletteChord>;
+  /** The keyboard convention (default: `runtime.getPlatformInfo`, `'other'` on failure). */
+  resolvePlatform?: () => Promise<ChordPlatform>;
+  /** The active keyboard layout (default: the Keyboard Map API, feature-detected). */
+  readLayout?: () => Promise<KeyLayoutLookup | null>;
+}
+
+/**
+ * Mount one instant setting's machine for the page's lifetime: a signal
+ * mirrors its snapshot, the boot read starts now, the watch ends with the page.
+ *
+ * @param io The setting's seams.
+ * @param equals Value equality.
+ */
+function mountInstantSetting<T>(
+  io: InstantSettingIO<T>,
+  equals: (a: T, b: T) => boolean
+): { model: InstantSettingModel<T>; snapshot: () => InstantSettingSnapshot<T> } {
+  const [snapshot, setSnapshot] = createSignal<InstantSettingSnapshot<T>>({ status: 'loading' });
+  const model = createInstantSettingModel(io, equals, (next) => {
+    setSnapshot(() => next);
+  });
+  onCleanup(() => {
+    model.dispose();
+  });
+  void model.load();
+  return { model, snapshot };
 }
 
 /**
@@ -133,6 +190,104 @@ export function App(props: OptionsPageProps): JSX.Element {
     }
   };
 
+  // One-shot seams, like the model's IO above (never swapped mid-life).
+  /* eslint-disable solid/reactivity */
+  const gate = mountInstantSetting(props.pageUiIO ?? createPageUiGateIO(log), Object.is);
+  const chord = mountInstantSetting(props.chordIO ?? createPaletteChordIO(log), chordsEqual);
+  const resolvePlatform =
+    props.resolvePlatform ??
+    (() => resolveChordPlatform({ getPlatformInfo: () => browser.runtime.getPlatformInfo(), log }));
+  const readLayout =
+    props.readLayout ?? (() => readKeyboardLayout(navigator as KeyboardNavigator, log));
+  /* eslint-enable solid/reactivity */
+  const [platform, setPlatform] = createSignal<ChordPlatform | null>(null);
+  void resolvePlatform()
+    .catch((cause: unknown) => {
+      log.warn('The keyboard convention could not be resolved — using Ctrl notation', cause);
+      return 'other' as const;
+    })
+    .then(setPlatform);
+  const [layout, setLayout] = createSignal<KeyLayoutLookup | null>(null);
+  /** (Re-)read the layout: at mount, and whenever recording starts (it may have changed). */
+  const refreshLayout = (): void => {
+    void readLayout()
+      .catch((cause: unknown) => {
+        log.debug('The keyboard layout could not be read — showing US key legends', cause);
+        return null;
+      })
+      .then((next) => setLayout(() => next));
+  };
+  refreshLayout();
+
+  /**
+   * Toast an instant write's outcome (superseded/unchanged writes stay quiet —
+   * the latest request answers).
+   *
+   * @param outcome The write's outcome.
+   * @param success The success toast, when written.
+   * @param failureTitle The failure toast's title.
+   */
+  const announceInstant = (
+    outcome: InstantWriteOutcome,
+    success: { title: string; description?: string },
+    failureTitle: string
+  ): void => {
+    if (outcome === 'written') toast.success(success.title, { description: success.description });
+    else if (outcome === 'failed') {
+      toast.error(failureTitle, { description: INSTANT_FAILURE_DESCRIPTION });
+    }
+  };
+
+  const instant: InstantRowsScope = {
+    gate: gate.snapshot,
+    chord: chord.snapshot,
+    platform,
+    legend: (value) => keyLegend(value.code, layout()),
+    setGate: (next) => {
+      void gate.model
+        .set(next)
+        .then((outcome) => {
+          announceInstant(
+            outcome,
+            next
+              ? { title: PAGE_UI_ON_TITLE }
+              : { title: PAGE_UI_OFF_TITLE, description: PAGE_UI_OFF_DESCRIPTION },
+            PAGE_UI_FAILURE_TITLE
+          );
+        })
+        .catch((cause: unknown) => {
+          log.error('Applying the on-page UI gate failed unexpectedly', cause);
+        });
+    },
+    setChord: (next) => {
+      void chord.model
+        .set(next)
+        .then((outcome) => {
+          // Spelled in words: toasts are read aloud, and glyphs read poorly.
+          const current = platform() ?? 'other';
+          const shown = formatChord(next, current, 'words', keyLegend(next.code, layout()));
+          announceInstant(
+            outcome,
+            {
+              title: CHORD_SAVED_TITLE,
+              description: `${shown} opens the command palette on inspected pages.`
+            },
+            CHORD_FAILURE_TITLE
+          );
+        })
+        .catch((cause: unknown) => {
+          log.error('Applying the palette shortcut failed unexpectedly', cause);
+        });
+    },
+    retryGate: () => {
+      void gate.model.load();
+    },
+    retryChord: () => {
+      void chord.model.load();
+    },
+    refreshLayout
+  };
+
   const ready = (): Extract<OptionsPageSnapshot, { status: 'ready' }> | null => {
     const current = snapshot();
     return current.status === 'ready' ? current : null;
@@ -202,22 +357,20 @@ export function App(props: OptionsPageProps): JSX.Element {
               </div>
             }
           >
-            <Show
-              when={snapshot().status === 'ready'}
-              fallback={
-                <ErrorState
-                  title="Couldn't load the options"
-                  message={failedMessage() ?? undefined}
-                  onRetry={() => {
-                    void model.load();
-                  }}
-                />
-              }
-            >
-              <div data-fdt="options-sections" class={cn(MOTION_REVEAL, 'flex flex-col gap-3')}>
-                <OptionSections scope={scope} />
-              </div>
+            <Show when={failedMessage() !== null}>
+              <ErrorState
+                title="Couldn't load the options"
+                message={failedMessage() ?? undefined}
+                onRetry={() => {
+                  void model.load();
+                }}
+              />
             </Show>
+            {/* The instant rows ride their own reads: a failed draft load keeps
+                the gate's switch (the on-page UI rescue) reachable. */}
+            <div data-fdt="options-sections" class={cn(MOTION_REVEAL, 'flex flex-col gap-3')}>
+              <OptionSections scope={scope} instant={instant} drafted={ready() !== null} />
+            </div>
             <KnownConflictsFreshness />
           </Show>
         </div>

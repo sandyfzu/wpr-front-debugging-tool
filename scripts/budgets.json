@@ -3,7 +3,7 @@
     "surface": "background service worker",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 207.8
+      "raw": 207.4
     }
   },
   {
@@ -56,8 +56,8 @@
     "surface": "command palette view (runtime content script, loaded on open)",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 181.6,
-      "gzip": 60.6
+      "raw": 114.7,
+      "gzip": 39.8
     }
   },
   {
@@ -65,8 +65,8 @@
     "build": "firefox-mv2",
     "globs": ["content-scripts/command-palette.js"],
     "maxKb": {
-      "raw": 181.6,
-      "gzip": 60.6
+      "raw": 114.7,
+      "gzip": 39.8
     }
   },
   {
@@ -123,7 +123,7 @@
     "build": "firefox-mv2",
     "globs": ["background.js"],
     "maxKb": {
-      "raw": 203.9
+      "raw": 203.5
     }
   },
   {
@@ -139,7 +139,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1675.8
+      "raw": 1602.2
     }
   }
 ]

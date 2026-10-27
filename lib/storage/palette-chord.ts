@@ -200,6 +200,17 @@ function chordIdentity(chord: PaletteChord): string {
   return `${chord.code}:${flag(chord.mod)}${flag(chord.alt)}${flag(chord.shift)}`;
 }
 
+/**
+ * Whether two chords are the same binding (key + the three flags; absent and
+ * `false` flags are one state).
+ *
+ * @param a A chord.
+ * @param b Another chord.
+ */
+export function chordsEqual(a: PaletteChord, b: PaletteChord): boolean {
+  return chordIdentity(a) === chordIdentity(b);
+}
+
 /** Why a reserved chord group is off-limits (see {@link RESERVED_CHORDS}). */
 export type ReservedChordGroup = 'editing' | 'browser' | 'zoom' | 'devtools' | 'system';
 
@@ -231,33 +242,47 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * and bold/italic/underline in rich-text editors (contenteditable, e.g.
      * the WordPress block editor). `mod` + B and + U also carry browser
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
-     * Alt+F10 moves focus to the block editor's nearest toolbar.
+     * Block editor: Alt+F10 nearest toolbar; `mod` + Alt + T/Y insert a
+     * block before/after, + V paste styles, + X inline code (Ctrl+Alt on
+     * Windows, ⌘⌥ on macOS); `mod` + Shift + `,` settings sidebar (its
+     * `mod` + G group block sits under browser: find next).
      */
     editing: Object.freeze([
       ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...withMod(['KeyZ'], { shift: true }),
-      canonicalChord('F10', { alt: true })
+      canonicalChord('F10', { alt: true }),
+      ...withMod(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
+      ...withMod(['Comma'], { shift: true })
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
      * windows (new/close/reopen/private), tab switching by number, Ctrl+F4
      * tab close (Windows/Linux), Ctrl+H history; bookmark page (D), open
      * file (O), downloads (J), find next/previous (G, Shift+G), settings
-     * (⌘,); Shift + A add-ons, B bookmarks bar, O bookmarks manager/library,
-     * P private window (Firefox), D bookmark all tabs (also the block
-     * editor's duplicate block), H history library (Firefox), Y downloads
-     * (Firefox, Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R,
-     * ⌘⌥R). Lone keys: F1 help, F3 find next, F5 reload, F6 focus
-     * toolbars/address bar, F7 caret browsing, F9 reader view (Firefox),
-     * F10 menu bar/toolbar focus.
+     * (⌘,), E (Ctrl+E search from the page on Windows/Linux; ⌘E use the
+     * selection for find, with the Find bar open, on macOS); Shift + A
+     * add-ons, B bookmarks bar, O bookmarks manager/library, P private
+     * window (Firefox), D bookmark all tabs (also the block editor's
+     * duplicate block), H history library (Firefox), Y downloads (Firefox,
+     * Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R, ⌘⌥R).
+     * Chrome on Windows/Linux, without `mod`: Alt + E/F Chrome menu, Alt + D
+     * address bar; Shift + Alt + T focus toolbar, + A focus inactive
+     * dialogs, + N split view (also the block editor's next editor part),
+     * + I feedback form. Lone keys: F1 help, F3 find next, F5 reload, F6
+     * focus toolbars/address bar, F7 caret browsing, F9 reader view
+     * (Firefox), F10 menu bar/toolbar focus.
      */
     browser: Object.freeze([
       ...withMod(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
-      ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
+      ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma', 'KeyE']),
       ...withMod(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...withMod(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...withMod(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
       ...withMod(['KeyR'], { alt: true }),
+      ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code) => canonicalChord(code, { alt: true })),
+      ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code) =>
+        canonicalChord(code, { alt: true, shift: true })
+      ),
       ...withMod(DIGITS.filter((digit) => digit !== '0').map((digit) => `Digit${digit}` as const)),
       ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code) =>
         canonicalChord(code, {})
@@ -379,13 +404,13 @@ export interface ChordKeystroke {
   readonly shiftKey: boolean;
   readonly repeat?: boolean;
   readonly isComposing?: boolean;
-  /** Legacy key code: 229 marks a keystroke an IME is processing. */
+  /** Deprecated key code: 229 marks a keystroke an IME is processing. */
   readonly keyCode?: number;
   /** Modifier-state probe (`AltGraph` marks a character-level keystroke). */
   getModifierState?(key: string): boolean;
 }
 
-/** The legacy `keyCode` every engine reports for a keystroke an IME is processing. */
+/** The `keyCode` every engine reports for a keystroke an IME is processing. */
 const IME_PROCESS_KEY_CODE = 229;
 
 /**
@@ -406,24 +431,46 @@ function commandModifiers(
 }
 
 /**
- * Whether a keystroke is text input rather than a command: an auto-repeat,
- * an IME composition (flag or key code 229), or — outside macOS — an AltGr
- * press (Windows reports AltGr as Ctrl+Alt). On macOS Firefox reports
- * `AltGraph` for every Option press, so there it is the chord's own `alt`,
- * not a reason to refuse.
+ * Why a keystroke is text input rather than a command (see
+ * {@link textKeystrokeKind}).
+ */
+export type TextKeystrokeKind =
+  /** An auto-repeat of a held key. */
+  | 'repeat'
+  /** IME input: the composition flag, or key code 229. */
+  | 'composition'
+  /** AltGr (character-level; Windows reports it as Ctrl+Alt) — never on macOS. */
+  | 'altgraph';
+
+/**
+ * Whether — and why — a keystroke is text input rather than a command: an
+ * auto-repeat, an IME composition (flag or key code 229), or — outside
+ * macOS — an AltGr press (Windows reports AltGr as Ctrl+Alt). On macOS
+ * Firefox reports `AltGraph` for every Option press, so there it is the
+ * chord's own `alt`, not text input. The single declaring site of the rule:
+ * the page listener never matches such a keystroke, the capture field never
+ * binds one.
  *
  * @param keystroke The keystroke.
  * @param platform The keyboard convention.
+ * @returns The reason, or null for a command keystroke.
  */
-function isTextKeystroke(keystroke: ChordKeystroke, platform: ChordPlatform): boolean {
-  if (keystroke.repeat === true || keystroke.isComposing === true) return true;
-  if (keystroke.keyCode === IME_PROCESS_KEY_CODE) return true;
-  return platform !== 'mac' && keystroke.getModifierState?.('AltGraph') === true;
+export function textKeystrokeKind(
+  keystroke: ChordKeystroke,
+  platform: ChordPlatform
+): TextKeystrokeKind | null {
+  if (keystroke.repeat === true) return 'repeat';
+  if (keystroke.isComposing === true || keystroke.keyCode === IME_PROCESS_KEY_CODE) {
+    return 'composition';
+  }
+  return platform !== 'mac' && keystroke.getModifierState?.('AltGraph') === true
+    ? 'altgraph'
+    : null;
 }
 
 /**
  * Whether a keystroke fires the chord: same physical key, exactly the
- * chord's modifiers, and not text input (see {@link isTextKeystroke}).
+ * chord's modifiers, and not text input (see {@link textKeystrokeKind}).
  * Editable targets are the listener's call — see {@link chordMayTypeText}.
  *
  * @param keystroke The keydown (or a keystroke-shaped object).
@@ -435,7 +482,7 @@ export function matchesChord(
   chord: PaletteChord,
   platform: ChordPlatform
 ): boolean {
-  if (isTextKeystroke(keystroke, platform)) return false;
+  if (textKeystrokeKind(keystroke, platform) !== null) return false;
   const [command, foreign] = commandModifiers(keystroke, platform);
   return (
     keystroke.code === chord.code &&
@@ -481,15 +528,34 @@ export function captureChord(
   platform: ChordPlatform
 ): ChordCaptureResult {
   if (!isChordKey(keystroke.code)) return { ok: false, reason: 'unsupported-key' };
+  const chord = keystrokeChord(keystroke, platform);
+  if (chord === null) return { ok: false, reason: 'unsupported-modifier' };
+  const reason = chordRejection(chord);
+  return reason === null ? { ok: true, chord } : { ok: false, reason };
+}
+
+/**
+ * The canonical chord a keystroke spells, before the typing-safety and
+ * reserved rules run — what a capture field names when it explains a
+ * refusal (e.g. which reserved group owns the pressed chord).
+ *
+ * @param keystroke The keydown.
+ * @param platform The keyboard convention.
+ * @returns The chord, or null when the key is not bindable or a modifier
+ *   outside the vocabulary is held (Ctrl on macOS, Meta elsewhere).
+ */
+export function keystrokeChord(
+  keystroke: ChordKeystroke,
+  platform: ChordPlatform
+): PaletteChord | null {
+  if (!isChordKey(keystroke.code)) return null;
   const [command, foreign] = commandModifiers(keystroke, platform);
-  if (foreign) return { ok: false, reason: 'unsupported-modifier' };
-  const chord = canonicalChord(keystroke.code, {
+  if (foreign) return null;
+  return canonicalChord(keystroke.code, {
     mod: command,
     alt: keystroke.altKey,
     shift: keystroke.shiftKey
   });
-  const reason = chordRejection(chord);
-  return reason === null ? { ok: true, chord } : { ok: false, reason };
 }
 
 /** How {@link formatChord} writes modifiers. */
@@ -504,14 +570,16 @@ export type ChordNotation = 'symbols' | 'words';
  * @param chord A validated chord.
  * @param platform The keyboard convention.
  * @param notation Glyphs (default) or spelled-out modifier names.
+ * @param key The key's label — default its US legend; a surface that can
+ *   read the active keyboard layout passes the layout's own legend.
  * @returns The display string.
  */
 export function formatChord(
   chord: PaletteChord,
   platform: ChordPlatform,
-  notation: ChordNotation = 'symbols'
+  notation: ChordNotation = 'symbols',
+  key: string = CHORD_KEY_LABELS[chord.code]
 ): string {
-  const key = CHORD_KEY_LABELS[chord.code];
   if (platform === 'mac') {
     const modifiers: Array<[boolean, string, string]> = [
       [chord.alt === true, '⌥', 'Option'],
