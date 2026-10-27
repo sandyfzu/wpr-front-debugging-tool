@@ -217,8 +217,9 @@ describe('CommandPalette filtering', () => {
     expect(onRun).not.toHaveBeenCalled();
   });
 
-  it('keeps the expanded field owning its (hidden) listbox in the empty state', async () => {
+  it('collapses the field over its kept (hidden) listbox in the empty state, and re-expands', async () => {
     const { field } = await mountPalette();
+    expect(field.getAttribute('aria-expanded')).toBe('true');
     fireEvent.input(field, { target: { value: 'zzz' } });
     await waitFor(() => {
       expect(screen.getByText(/No commands match/)).toBeTruthy();
@@ -226,12 +227,31 @@ describe('CommandPalette filtering', () => {
     const list = document.querySelector<HTMLElement>('[role="listbox"]');
     expect(list).not.toBeNull();
     expect(list?.hidden).toBe(true);
-    expect(field.getAttribute('aria-expanded')).toBe('true');
+    expect(field.getAttribute('aria-expanded')).toBe('false');
     expect(field.getAttribute('aria-controls')).toBe(list?.id);
     // A matching query shows it again.
     fireEvent.input(field, { target: { value: 'lazy' } });
     await waitFor(() => {
       expect(list?.hidden).toBe(false);
+    });
+    expect(field.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('announces the no-match line through a polite status kept mounted', async () => {
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('');
+    expect(status.classList.contains('sr-only')).toBe(true);
+    fireEvent.input(field, { target: { value: 'zzz' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zzz”');
+    });
+    expect(status.classList.contains('sr-only')).toBe(false);
+    // The same node all along: assistive tech hears the change.
+    expect(screen.getByRole('status')).toBe(status);
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('');
     });
   });
 });

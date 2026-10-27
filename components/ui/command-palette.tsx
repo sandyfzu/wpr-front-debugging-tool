@@ -304,6 +304,32 @@ const PALETTE_TRANSLATIONS: PaletteTranslations = {
 };
 
 /**
+ * The palette's field: the combobox input, whose `aria-expanded` stays
+ * truthful — expanded only while the library's list is open *and* has rows
+ * to show (the library alone would report an empty, hidden list as
+ * expanded).
+ *
+ * @param props.empty Whether the ranked list is empty.
+ * @param props.onKeyDown Runs after each key the field receives.
+ */
+function PaletteField(props: { empty: boolean; onKeyDown: () => void }): JSX.Element {
+  const context = useComboboxContext();
+  return (
+    <KobalteCombobox.Input
+      data-fdt="palette-input"
+      class={cn(FIELD_CLASSES, FOCUS_RING)}
+      placeholder="Type a command…"
+      aria-label="Search commands"
+      // Spread after the library's own attributes, so this one wins.
+      aria-expanded={context.isOpen() && !props.empty}
+      onKeyDown={() => {
+        props.onKeyDown();
+      }}
+    />
+  );
+}
+
+/**
  * The palette's combobox (split from the dialog shell so the query state and
  * the highlight guard stay one component deep).
  *
@@ -356,28 +382,30 @@ function PaletteCombobox<T extends PaletteCommand = PaletteCommand>(
       }}
       translations={PALETTE_TRANSLATIONS}
     >
-      <KobalteCombobox.Input
-        data-fdt="palette-input"
-        class={cn(FIELD_CLASSES, FOCUS_RING)}
-        placeholder="Type a command…"
-        aria-label="Search commands"
+      <PaletteField
+        empty={ranked().length === 0}
         onKeyDown={() => {
           scheduleArm();
         }}
       />
-      {/* The listbox stays mounted (hidden while empty): the expanded field's
-          `aria-controls` must always name it — unmounting it would drop the
-          attribute the APG combobox requires. */}
+      {/* The listbox stays mounted (hidden while empty): the field's
+          `aria-controls` keeps naming it, and a matching query shows it
+          again in place. */}
       <KobalteCombobox.Listbox
         data-fdt="palette-list"
         class={cn(LIST_CLASSES, 'flex-1 min-h-0')}
         hidden={ranked().length === 0}
       />
-      <Show when={ranked().length === 0}>
-        <p data-fdt="palette-empty" class={EMPTY_CLASSES}>
-          No commands match “{query()}”
-        </p>
-      </Show>
+      {/* Always mounted (a live region must exist before its text changes):
+          visually hidden and silent while rows show; the no-match line,
+          announced politely, while none do. */}
+      <p
+        data-fdt="palette-empty"
+        role="status"
+        class={ranked().length === 0 ? EMPTY_CLASSES : 'sr-only'}
+      >
+        {ranked().length === 0 ? `No commands match “${query()}”` : ''}
+      </p>
       <HighlightGuard
         options={ranked()}
         registerArm={(registered) => {

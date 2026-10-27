@@ -24,7 +24,7 @@ import { rankCommands } from '../../components/ui/command-matcher';
 import { hideFromTopLayer, showInTopLayer } from '../../components/injected-ui/top-layer';
 import type { Logger } from '../../lib/logger';
 import type { PaletteCommandId } from '../../lib/page-commands/commands';
-import type { PaletteRowView } from '../../lib/page-commands/palette-bridge';
+import type { PaletteRowView } from '../../lib/page-commands/palette-rows';
 
 /** Each palette command's leading icon (the compiler checks every row has one). */
 const ROW_ICONS: Readonly<Record<PaletteCommandId, LucideIcon>> = {
@@ -47,12 +47,11 @@ type PageRowCommand = PaletteCommand & { readonly row: PaletteRowView };
  * @param row The listed row.
  */
 export function toPaletteCommand(row: PaletteRowView): PageRowCommand {
-  const icon = (ROW_ICONS as Readonly<Record<string, LucideIcon>>)[row.id];
   return {
     id: row.id,
     label: row.label,
     keywords: row.keywords,
-    ...(icon === undefined ? {} : { icon }),
+    icon: ROW_ICONS[row.id],
     ...(row.disabledNote === null ? {} : { disabled: true, disabledNote: row.disabledNote }),
     row
   };
@@ -65,7 +64,7 @@ export interface PaletteAppProps {
   /** The rows to list (read once per open). */
   readonly rows: () => readonly PaletteRowView[];
   /** Run a row (the view closes first). */
-  readonly onRun: (id: string) => void;
+  readonly onRun: (id: PaletteCommandId) => void;
   /** Dismiss (Escape, Tab, an outside pointer or focus move, Cancel). */
   readonly onDismiss: () => void;
   readonly log: Logger;

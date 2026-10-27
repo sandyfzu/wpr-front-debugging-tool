@@ -209,7 +209,7 @@ test.describe('on-page command palette', () => {
     const cancel = page.locator(`${PALETTE_HOST} [data-fdt="palette-confirm-cancel"]`);
     await expect(cancel).toBeFocused(MOUNT);
     await expect(page.locator(`${PALETTE_HOST} [data-fdt="dialog"]`)).toContainText(
-      'This also turns off this command palette — the context menu turns on-page UI back on.'
+      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options.'
     );
     expect(await axeHosts(page, [PALETTE_HOST]), 'axe: confirm').toEqual([]);
 

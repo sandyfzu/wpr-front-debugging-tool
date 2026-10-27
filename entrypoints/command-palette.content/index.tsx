@@ -7,8 +7,10 @@
  *
  * It finds the module through the palette bridge in the shared isolated
  * world, hands over its handle (open / dispose) and mounts; a page without
- * a live module (or a module that refuses — the gate turned off meanwhile)
- * gets nothing. Later opens only re-show the mounted view. Closing returns
+ * a live module (or a module that refuses — the gate turned off meanwhile,
+ * or no open waits for a view) gets nothing, and a failed mount reports
+ * itself so the module tells the user. It lists the rows itself, from the
+ * vocabulary and the page's own URL. Later opens only re-show the mounted view. Closing returns
  * focus to what the page had focused before the open; a run closes first,
  * then the module runs the command.
  *
@@ -33,21 +35,15 @@ import {
 import { mountShadowUi } from '../../components/injected-ui/mount';
 import { mountOverlay } from '../../components/injected-ui/mount-overlay';
 import { COMMAND_PALETTE_HOST_NAME } from '../../components/injected-ui/key-guard';
+import { pageCommandFacts, paletteRowViews } from '../../lib/page-commands/palette-rows';
 import { PaletteApp } from './app';
+import { returnFocusTarget } from './return-focus';
 import './styles.css';
 
 const log = createLogger('command-palette');
 
 /** The extension's isolated world (where the palette bridge lives). */
 const ISOLATED_WORLD = globalThis as unknown as IsolatedWorld;
-
-/** The page's focused element, if it can take focus back (not the body, not ours). */
-function pageFocus(): HTMLElement | null {
-  const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || active === document.body) return null;
-  if (active.localName === COMMAND_PALETTE_HOST_NAME) return null;
-  return active;
-}
 
 /**
  * Bind the view to its module and mount it.
@@ -59,6 +55,8 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
   const [open, setOpen] = createSignal(false);
   /** Where focus goes back when the palette closes. */
   let returnFocus: HTMLElement | null = null;
+  /** Set when the mount failed: the departure then tells the module the open never showed. */
+  let mountFailed = false;
 
   const close = (restoreFocus: boolean): void => {
     if (!open()) return;
@@ -73,7 +71,7 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
       if (ctx.isInvalid) return;
       // An open of an open palette keeps its state (and its return target).
       if (open()) return;
-      returnFocus = pageFocus();
+      returnFocus = returnFocusTarget(document);
       setOpen(true);
     },
     dispose: () => {
@@ -83,7 +81,7 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
 
   ctx.onInvalidated(() => {
     try {
-      bridge.detach(handle);
+      bridge.detach(handle, mountFailed ? 'failed' : 'ended');
     } catch (cause) {
       // A dead module throws here; the view is going away either way.
       log.debug('Detaching from the palette module failed', cause);
@@ -91,10 +89,18 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
   });
 
   if (!bridge.attach(handle)) {
-    // The module refused (the gate turned off while the view loaded).
+    // The module refused: the gate turned off while the view loaded, or no
+    // open waits for a view (a stale or misdirected injection).
     ctx.abort('Command palette refused');
     return;
   }
+
+  /** Mount failed: tear the view down (the departure reports the failure). */
+  const failMount = (cause: unknown): void => {
+    log.error('Mounting the command palette failed', cause);
+    mountFailed = true;
+    ctx.abort('Command palette mount failed');
+  };
 
   mountOverlay({
     isInvalid: () => ctx.isInvalid,
@@ -112,7 +118,7 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
       mountShadowUi(container, shadow, () => (
         <PaletteApp
           open={open}
-          rows={() => bridge.rows()}
+          rows={() => paletteRowViews(pageCommandFacts(new URL(window.location.href)))}
           onRun={(id) => {
             // Focus goes back first: a command that opens a surface (the
             // compare overlay, the builder) then takes it from there.
@@ -125,14 +131,8 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
           log={log}
         />
       )),
-    onError: (cause) => {
-      log.error('Mounting the command palette failed', cause);
-      ctx.abort('Command palette mount failed');
-    }
-  }).catch((cause: unknown) => {
-    log.error('Mounting the command palette failed', cause);
-    ctx.abort('Command palette mount failed');
-  });
+    onError: failMount
+  }).catch(failMount);
 }
 
 export default defineContentScript({

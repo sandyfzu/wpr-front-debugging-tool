@@ -10,7 +10,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-li
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../../lib/logger';
-import { paletteRowViews } from '../../lib/page-commands/palette-bridge';
+import type { PaletteCommandId } from '../../lib/page-commands/commands';
+import { paletteRowViews } from '../../lib/page-commands/palette-rows';
 import { PaletteApp, toPaletteCommand } from './app';
 
 afterEach(() => {
@@ -24,7 +25,7 @@ const LOG: Logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn
 /** Mount the view (closed) and hand out its seams. */
 function mountView(options: { analysisHost?: boolean } = {}) {
   const [open, setOpen] = createSignal(false);
-  const onRun = vi.fn<(id: string) => void>(() => {
+  const onRun = vi.fn<(id: PaletteCommandId) => void>(() => {
     setOpen(false);
   });
   const onDismiss = vi.fn(() => {
@@ -65,17 +66,6 @@ describe('toPaletteCommand', () => {
       disabled: true,
       disabledNote: 'Starts from a site, not from PageSpeed Insights'
     });
-  });
-
-  it('renders an unknown row without an icon rather than failing', () => {
-    const command = toPaletteCommand({
-      id: 'future',
-      label: 'Future',
-      keywords: [],
-      disabledNote: null,
-      confirm: null
-    });
-    expect(command.icon).toBeUndefined();
   });
 });
 
@@ -144,7 +134,7 @@ describe('PaletteApp', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).toContain('Turn off all on-page UI?');
     expect(dialog.textContent).toContain(
-      'This also turns off this command palette — the context menu turns on-page UI back on.'
+      'This also turns off this command palette. Turn it back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options.'
     );
     fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
     expect(view.onRun).toHaveBeenCalledWith('page-ui-gate');

@@ -2,8 +2,9 @@
  * The palette's background asks: both answer only a top-frame http(s)
  * sender and act on that sender's own tab — a sub-frame, a tabless sender
  * or a non-web page is refused before anything is injected or opened; the
- * view load injects the built view script into that tab's top frame and
- * rejects (logged) when the injection fails; the builder open passes the
+ * view load injects the built view script into the sending document when
+ * the browser names it (else the tab's top frame) and rejects (logged) when
+ * the injection fails; the builder open passes the
  * opener's outcome through.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -25,11 +26,21 @@ const REFUSED = [
 ] as const;
 
 describe('answerPaletteViewLoad', () => {
-  it('injects the view script into the sender tab’s top frame', async () => {
+  it('injects the view script into the sender tab’s top frame when no document is named', async () => {
     const inject = vi.fn(() => Promise.resolve());
     await expect(answerPaletteViewLoad(PAGE, inject)).resolves.toBe(true);
-    expect(inject).toHaveBeenCalledWith(7, [COMMAND_PALETTE_VIEW_SCRIPT]);
+    expect(inject).toHaveBeenCalledWith({ tabId: 7, documentId: null }, [
+      COMMAND_PALETTE_VIEW_SCRIPT
+    ]);
     expect(COMMAND_PALETTE_VIEW_SCRIPT).toBe('/content-scripts/command-palette.js');
+  });
+
+  it('aims the injection at the sending document when the browser names it', async () => {
+    const inject = vi.fn(() => Promise.resolve());
+    await answerPaletteViewLoad({ ...PAGE, documentId: 'DOC-1' }, inject);
+    expect(inject).toHaveBeenCalledWith({ tabId: 7, documentId: 'DOC-1' }, [
+      COMMAND_PALETTE_VIEW_SCRIPT
+    ]);
   });
 
   it.each(REFUSED)('refuses %s without injecting', async (_label, sender) => {

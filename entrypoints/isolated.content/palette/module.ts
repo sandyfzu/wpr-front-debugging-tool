@@ -12,18 +12,13 @@
  * seam is logged and degrades its own step, never the page or the module.
  */
 import type { Logger } from '../../../lib/logger';
-import {
-  isPaletteCommandId,
-  pageCommand,
-  type PageCommandFacts
-} from '../../../lib/page-commands/commands';
+import { isPaletteCommandId, pageCommand } from '../../../lib/page-commands/commands';
 import {
   runPageCommand,
   type PageCommandExecutors,
   type PageCommandPage
 } from '../../../lib/page-commands/executors';
 import {
-  paletteRowViews,
   publishPaletteBridge,
   retractPaletteBridge,
   type IsolatedWorld,
@@ -53,8 +48,6 @@ export interface PaletteModuleDeps {
   loadView(): Promise<unknown>;
   /** The bound executors. */
   readonly executors: PageCommandExecutors;
-  /** The page facts the rows' availability reads (read per listing). */
-  facts(): PageCommandFacts;
   /** The page a run acts on. */
   page(): PageCommandPage;
   /** The page notices. */
@@ -110,22 +103,24 @@ export function startPaletteModule(deps: PaletteModuleDeps): PaletteModule {
       case 'disarm-receiver':
         disarm();
         return;
-      case 'load-view':
+      case 'load-view': {
+        const { load } = effect;
         deps
           .loadView()
           .catch((cause: unknown) => {
             log.error('Loading the command palette view failed', cause);
           })
           .finally(() => {
-            dispatch({ type: 'load-settled' });
+            dispatch({ type: 'load-settled', load });
           });
         return;
+      }
       case 'open-view':
         try {
           effect.view.open();
         } catch (cause) {
           log.error('Opening the command palette view failed', cause);
-          dispatch({ type: 'detach', view: effect.view });
+          dispatch({ type: 'detach', view: effect.view, reason: 'failed' });
         }
         return;
       case 'dispose-view':
@@ -164,14 +159,14 @@ export function startPaletteModule(deps: PaletteModuleDeps): PaletteModule {
 
   const bridge: PaletteBridge = {
     alive: () => !deps.isInvalid(),
-    rows: () => paletteRowViews(deps.facts()),
     run,
     attach: (view: PaletteViewHandle): boolean => {
       dispatch({ type: 'attach', view });
       return holdsView(state, view);
     },
-    detach: (view: PaletteViewHandle): void => {
-      dispatch({ type: 'detach', view });
+    detach: (view: PaletteViewHandle, reason: unknown): void => {
+      // Two bundles meet here: anything but an explicit failure is an end.
+      dispatch({ type: 'detach', view, reason: reason === 'failed' ? 'failed' : 'ended' });
     }
   };
 

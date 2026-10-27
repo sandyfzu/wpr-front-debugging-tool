@@ -1,7 +1,8 @@
 /**
  * The palette module's choreography over fake seams: watch-first boot
  * (a watch delivery beats a late read), receiver arming, the open → load →
- * attach → open-view path, the view the bridge hands back, gate-off
+ * attach → open-view path, the view the bridge hands back (refused with no
+ * open pending), a failed mount noticed, a stale load's late settle, gate-off
  * teardown (receiver removed, view disposed, notice shown), gate-on
  * re-arming, run validation and failure notices, a failed boot read, and
  * the invalidation cleanup (unwatch, retract, dispose).
@@ -14,7 +15,6 @@ import type {
 } from '../../../lib/page-commands/executors';
 import {
   PALETTE_BRIDGE_GLOBAL,
-  paletteRowViews,
   readPaletteBridge,
   type IsolatedWorld,
   type PaletteBridge,
@@ -96,7 +96,6 @@ function harness(options: { gate?: boolean | Error; loadAttaches?: boolean } = {
     },
     loadView: () => loadView(),
     executors,
-    facts: () => ({ analysisHost: false }),
     page: () => ({ origin: 'https://example.test' }),
     notices: {
       show: (notice) => {
@@ -181,11 +180,9 @@ describe('boot', () => {
     expect(h.receiverArmed()).toBe(true);
   });
 
-  it('publishes a live bridge listing the palette rows', () => {
+  it('publishes a live bridge', () => {
     const h = harness();
-    const bridge = readPaletteBridge(h.world);
-    expect(bridge).not.toBeNull();
-    expect(bridge?.rows()).toEqual(paletteRowViews({ analysisHost: false }));
+    expect(readPaletteBridge(h.world)).toBe(h.bridge());
   });
 });
 
@@ -229,7 +226,7 @@ describe('opening', () => {
     expect(h.show).toHaveBeenCalledWith(LOAD_FAILED_NOTICE);
   });
 
-  it('detaches a view whose open throws', async () => {
+  it('drops a view whose open throws and notices the failed open', async () => {
     const h = harness();
     h.loadedView.open.mockImplementation(() => {
       throw new Error('dead view');
@@ -238,7 +235,71 @@ describe('opening', () => {
     await settle();
     h.open();
     expect(h.error).toHaveBeenCalled();
+    await settle();
     expect(h.module.state().kind).toBe('idle');
+    expect(h.show).toHaveBeenCalledWith(LOAD_FAILED_NOTICE);
+  });
+
+  it('notices a view that attached but could not mount', async () => {
+    const h = harness();
+    h.resolveRead(true);
+    await settle();
+    h.open();
+    await settle();
+    expect(h.loadedView.open).toHaveBeenCalledTimes(1);
+    h.bridge().detach(h.loadedView.handle, 'failed');
+    expect(h.show).toHaveBeenCalledWith(LOAD_FAILED_NOTICE);
+    expect(h.module.state().kind).toBe('idle');
+  });
+
+  it('reads any other detach reason from the view as a quiet end', async () => {
+    const h = harness();
+    h.resolveRead(true);
+    await settle();
+    h.open();
+    await settle();
+    h.bridge().detach(h.loadedView.handle, 'bogus' as 'ended');
+    expect(h.show).not.toHaveBeenCalled();
+    expect(h.module.state().kind).toBe('idle');
+  });
+
+  it('refuses a view attaching with no open pending (a misdirected injection)', async () => {
+    const h = harness();
+    h.resolveRead(true);
+    await settle();
+    expect(h.bridge().attach(view().handle)).toBe(false);
+    expect(h.module.state().kind).toBe('idle');
+  });
+
+  it('ignores a stale load’s late settle after a gate off/on, then opens the newer view', async () => {
+    const h = harness({ loadAttaches: false });
+    const settles: Array<() => void> = [];
+    h.loadView.mockImplementation(
+      () =>
+        new Promise<unknown>((resolve) => {
+          settles.push(() => {
+            resolve(true);
+          });
+        })
+    );
+    h.resolveRead(true);
+    await settle();
+    h.open();
+    h.gate(false);
+    h.gate(true);
+    h.open();
+    expect(h.loadView).toHaveBeenCalledTimes(2);
+    // The first load settles late: no failure notice for the pending second.
+    settles[0]?.();
+    await settle();
+    expect(h.show).not.toHaveBeenCalledWith(LOAD_FAILED_NOTICE);
+    const newer = view();
+    expect(h.bridge().attach(newer.handle)).toBe(true);
+    expect(newer.open).toHaveBeenCalledTimes(1);
+    settles[1]?.();
+    await settle();
+    expect(h.module.state().kind).toBe('ready');
+    expect(h.show).not.toHaveBeenCalledWith(LOAD_FAILED_NOTICE);
   });
 
   it('answers the attach with whether the view is held', async () => {

@@ -9,43 +9,15 @@
  * module publishes the bridge on that world's global and the view picks it
  * up — the page can neither read nor spoof it. The view validates what it
  * finds (two bundles meet here) and refuses anything dead or malformed.
+ * The view lists its rows itself (`./palette-rows`): the bridge carries
+ * only the lifecycle and the run.
  */
-
-import { commandDisabledNote, paletteCommands, type PageCommandFacts } from './commands';
 
 /** The bridge's global name in the isolated world. */
 export const PALETTE_BRIDGE_GLOBAL = '__wprFdtCommandPalette';
 
-/** One row as the view renders it (labels from the vocabulary, availability resolved). */
-export interface PaletteRowView {
-  readonly id: string;
-  readonly label: string;
-  readonly keywords: readonly string[];
-  /** Why the row cannot run here, or null. */
-  readonly disabledNote: string | null;
-  /** The confirm step the row asks for before running, or null. */
-  readonly confirm: {
-    readonly title: string;
-    readonly body: string;
-    readonly action: string;
-  } | null;
-}
-
-/**
- * The rows the view lists for a page: the vocabulary's palette rows, their
- * availability resolved against the page facts.
- *
- * @param facts The page facts.
- */
-export function paletteRowViews(facts: PageCommandFacts): PaletteRowView[] {
-  return paletteCommands().map((row) => ({
-    id: row.id,
-    label: row.label,
-    keywords: row.keywords,
-    disabledNote: commandDisabledNote(row, facts),
-    confirm: row.confirm ?? null
-  }));
-}
+/** Why a view went away (see {@link PaletteBridge.detach}). */
+export type PaletteDetachReason = 'failed' | 'ended';
 
 /** What the view hands the module once it runs. */
 export interface PaletteViewHandle {
@@ -59,23 +31,27 @@ export interface PaletteViewHandle {
 export interface PaletteBridge {
   /** Whether the publishing module still runs (its context valid). */
   alive(): boolean;
-  /** The rows to list right now. */
-  rows(): readonly PaletteRowView[];
   /**
    * Run one row; the view has already closed. Failures surface through the
    * module (it owns the page notices), so the call never throws.
    */
   run(id: string): void;
   /**
-   * Hand the module the view's handle; the module opens it right away when
-   * an open is pending.
+   * Hand the module the view's handle; the module opens it right away.
    *
-   * @returns False when the module refuses (dead, or the gate turned off):
-   *   the view must remove itself.
+   * @returns False when the module refuses — dead, the gate turned off, or
+   *   no open waits for a view (a stale or misdirected injection): the
+   *   view must remove itself.
    */
   attach(view: PaletteViewHandle): boolean;
-  /** The view went away on its own (its context ended). */
-  detach(view: PaletteViewHandle): void;
+  /**
+   * The view went away on its own (its context ended).
+   *
+   * @param view The departing view.
+   * @param reason `failed` when it could not mount (the user's open never
+   *   showed: the module says so), `ended` otherwise.
+   */
+  detach(view: PaletteViewHandle, reason: PaletteDetachReason): void;
 }
 
 /** The isolated world's global object, as the bridge reads and writes it. */
@@ -103,7 +79,7 @@ export function retractPaletteBridge(world: IsolatedWorld, bridge: PaletteBridge
 }
 
 /** The bridge's methods (each must be a function). */
-const BRIDGE_METHODS = ['alive', 'rows', 'run', 'attach', 'detach'] as const;
+const BRIDGE_METHODS = ['alive', 'run', 'attach', 'detach'] as const;
 
 /**
  * Find the live bridge.

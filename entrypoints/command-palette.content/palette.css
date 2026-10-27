@@ -213,7 +213,7 @@
   color: var(--fg-muted);
 }
 
-.cp-layer [data-fdt='palette-empty'] {
+.cp-layer [data-fdt='palette-empty']:not(.sr-only) {
   padding: 6px 8px;
   color: var(--fg-muted);
   overflow-wrap: anywhere;

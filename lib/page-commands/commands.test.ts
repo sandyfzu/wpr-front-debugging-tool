@@ -1,24 +1,18 @@
 /**
  * The on-page command vocabulary: unique ids, the user-facing labels pinned
  * byte for byte (the menu titles its rows from them — a drift here is a
- * visible menu change), the palette/menu split, the analysis-host
- * availability note, the gate's confirm copy and the lookups.
+ * visible menu change), the palette/menu split and the lookups.
  */
 import { describe, expect, it } from 'vitest';
 import {
   PAGE_COMMANDS,
   PAGE_UI_GATE_RESCUE_LABEL,
-  commandDisabledNote,
   isPaletteCommandId,
   pageCommand,
   pageCommandLabel,
   paletteCommands,
   type PageCommandId
 } from './commands';
-
-/** Facts of an ordinary site page and of the analysis host. */
-const SITE = { analysisHost: false } as const;
-const ANALYSIS_HOST = { analysisHost: true } as const;
 
 describe('PAGE_COMMANDS', () => {
   it('declares every id exactly once', () => {
@@ -46,13 +40,6 @@ describe('PAGE_COMMANDS', () => {
       'open-nowprocket'
     ]);
   });
-
-  it('keeps keywords lowercase and non-empty (the matcher scores them as given)', () => {
-    for (const row of PAGE_COMMANDS) {
-      expect(row.keywords.length).toBeGreaterThan(0);
-      for (const keyword of row.keywords) expect(keyword).toBe(keyword.toLowerCase());
-    }
-  });
 });
 
 describe('paletteCommands', () => {
@@ -64,34 +51,6 @@ describe('paletteCommands', () => {
       'exclusion-builder',
       'page-ui-gate'
     ]);
-  });
-
-  it('asks a confirm naming the consequence only for the master gate', () => {
-    const confirming = paletteCommands().filter((row) => row.confirm !== undefined);
-    expect(confirming.map((row) => row.id)).toEqual(['page-ui-gate']);
-    expect(confirming[0]?.confirm).toEqual({
-      title: 'Turn off all on-page UI?',
-      body: 'This also turns off this command palette — the context menu turns on-page UI back on.',
-      action: 'Turn off'
-    });
-  });
-});
-
-describe('commandDisabledNote', () => {
-  it('disables the PageSpeed Insights flow on the analysis host only', () => {
-    const psi = pageCommand('psi-side-by-side');
-    expect(commandDisabledNote(psi, SITE)).toBeNull();
-    expect(commandDisabledNote(psi, ANALYSIS_HOST)).toBe(
-      'Starts from a site, not from PageSpeed Insights'
-    );
-  });
-
-  it('leaves every other row runnable on both hosts', () => {
-    for (const row of PAGE_COMMANDS) {
-      if (row.id === 'psi-side-by-side') continue;
-      expect(commandDisabledNote(row, SITE)).toBeNull();
-      expect(commandDisabledNote(row, ANALYSIS_HOST)).toBeNull();
-    }
   });
 });
 

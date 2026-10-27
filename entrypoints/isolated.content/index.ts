@@ -25,7 +25,7 @@ import { setupSideBySide } from './side-by-side';
 import { setupInspectorWidget } from './inspector';
 import { setupCommandPalette } from './palette';
 import { onUnhandledRejection, onUncaughtError } from '../../lib/uncaught-errors';
-import { OVERLAY_HOST_NAME, installKeyGuard } from '../../components/injected-ui/key-guard';
+import { GUARDED_HOST_NAMES, installKeyGuard } from '../../components/injected-ui/key-guard';
 import { recordNavigationAnchor } from '../../lib/exclusion-session/navigation-anchor';
 import './styles.css';
 
@@ -63,11 +63,12 @@ const ISOLATED_WORLD_MODULES: readonly IsolatedWorldModule[] = [
     }
   },
   // Then at document_start: its window-capture listeners must precede the
-  // page's own to keep keys typed in the exclusion builder overlay from it.
+  // page's own to keep keys typed in our injected text surfaces (the
+  // exclusion builder overlay, the command palette view) from it.
   {
-    name: 'overlay-key-guard',
+    name: 'key-guard',
     setup: (ctx) => {
-      installKeyGuard(window, OVERLAY_HOST_NAME, ctx.signal);
+      installKeyGuard(window, GUARDED_HOST_NAMES, ctx.signal);
     }
   },
   { name: 'data-hub', setup: setupDataHub },

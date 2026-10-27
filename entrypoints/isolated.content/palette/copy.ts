@@ -8,7 +8,7 @@ import type { PageNotice } from './notice';
 /** Shown on every open page when the on-page UI gate turns off. */
 export const GATE_OFF_NOTICE: PageNotice = {
   title: 'On-page UI is off',
-  body: `The command palette and the other on-page tools stay hidden on every page. To bring them back, right-click a page and choose “${PAGE_UI_GATE_RESCUE_LABEL}”.`
+  body: `The command palette and the other on-page tools stay hidden on every page. Turn them back on from the page’s right-click menu (“${PAGE_UI_GATE_RESCUE_LABEL}”) or the extension’s options.`
 };
 
 /** Shown when the palette's view could not be loaded into the page. */

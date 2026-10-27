@@ -4,8 +4,8 @@
  * page notices. The palette's view — the combobox and its dialog — is a
  * runtime content script the background injects on the first open
  * (`entrypoints/command-palette.content`), so a page that never opens the
- * palette pays only this module: one storage read, one watch, one message
- * listener and a key guard.
+ * palette pays only this module: one storage read, one watch and one
+ * message listener (the content script's key guard covers the view's host).
  *
  * The palette dies with the on-page UI gate: a gate-off write (from the
  * palette's own row, the menu or the options page) disposes the view,
@@ -21,11 +21,6 @@ import {
   STORAGE_MECHANISMS,
   createPageCommandExecutors
 } from '../../../lib/page-commands/executors';
-import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
-import {
-  COMMAND_PALETTE_HOST_NAME,
-  installKeyGuard
-} from '../../../components/injected-ui/key-guard';
 import { startPaletteModule } from './module';
 import { createNoticeHost } from './notice';
 import { sideBySideTriggers } from './side-by-side-triggers';
@@ -40,9 +35,6 @@ const log = createLogger('command-palette');
  */
 export function setupCommandPalette(ctx: ContentScriptContext): void {
   if (window.top !== window) return;
-  // At document_start, before the page's own listeners: keys typed into the
-  // palette's field never reach the page's window-capture shortcuts.
-  installKeyGuard(window, COMMAND_PALETTE_HOST_NAME, ctx.signal);
   const executors = createPageCommandExecutors({
     ...STORAGE_MECHANISMS,
     openSideBySide: () => sideBySideTriggers().open(),
@@ -69,7 +61,6 @@ export function setupCommandPalette(ctx: ContentScriptContext): void {
       }),
     loadView: () => sendMessage('loadCommandPaletteView'),
     executors,
-    facts: () => ({ analysisHost: isPsiHost(new URL(window.location.href)) }),
     page: () => ({ origin: window.location.origin }),
     notices: createNoticeHost(ctx, log),
     // The extension's isolated world: the injected view finds the bridge here.
