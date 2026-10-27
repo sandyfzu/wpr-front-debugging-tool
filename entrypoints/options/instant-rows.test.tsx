@@ -309,7 +309,8 @@ describe('the shortcut field', () => {
     const control = await record();
     expect(fieldStatus().getAttribute('role')).toBe('status');
     expect(fieldStatus().textContent).toContain('hold Option or Command');
-    expect(control.textContent).toContain('Press keys');
+    // The bound chord stays the visible content (it is bound until replaced).
+    expect(control.textContent).toBe('⌥K');
     expect(press(control, { code: 'KeyP', altKey: true })).toBe(true);
     await waitFor(async () => {
       expect(await readPaletteChord()).toEqual({ code: 'KeyP', alt: true });
@@ -398,6 +399,32 @@ describe('the shortcut field', () => {
     expect(fieldStatus().textContent).toContain('Press the new shortcut');
   });
 
+  it('keeps its visible text inside its name in every state (WCAG 2.5.3)', async () => {
+    /** Visible text vs name, compared on letters and digits only (glyphs read as words). */
+    const comparable = (text: string | null): string =>
+      (text ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const assertIncluded = (control: HTMLElement, state: string): void => {
+      const visible = comparable(control.textContent);
+      expect(visible, state).not.toBe('');
+      expect(comparable(control.getAttribute('aria-label')), state).toContain(visible);
+    };
+    for (const platform of ['mac', 'other'] as const) {
+      mount({ platform });
+      const control = await field();
+      assertIncluded(control, `${platform} idle`);
+      fireEvent.click(control, { detail: 0 });
+      expect(control.getAttribute('aria-pressed')).toBe('true');
+      assertIncluded(control, `${platform} recording`);
+      press(control, { code: 'KeyK' });
+      expect(fieldStatus().textContent).not.toContain('Press the new shortcut');
+      assertIncluded(control, `${platform} refused`);
+      press(control, { code: 'Escape', key: 'Escape' });
+      expect(fieldStatus().textContent).toBe('Shortcut unchanged');
+      assertIncluded(control, `${platform} unchanged`);
+      cleanup();
+    }
+  });
+
   it('a click on the row label never starts a recording', async () => {
     mount();
     const control = await field();
@@ -451,14 +478,14 @@ describe('the shortcut field', () => {
   it('Reset returns to the default and disappears with it', async () => {
     await setPaletteChord({ code: 'KeyP', alt: true });
     mount();
-    const reset = await screen.findByRole('button', { name: 'Reset the shortcut to Option+K' });
-    expect(reset.textContent).toBe('Reset to ⌥K');
+    const reset = await screen.findByRole('button', { name: 'Reset to default (Option+K)' });
+    expect(reset.textContent).toBe('Reset to default (⌥K)');
     fireEvent.click(reset);
     await waitFor(async () => {
       expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
     });
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /^Reset the shortcut/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Reset to default/ })).toBeNull();
     });
   });
 

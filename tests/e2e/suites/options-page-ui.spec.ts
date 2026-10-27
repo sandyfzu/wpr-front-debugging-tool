@@ -132,7 +132,7 @@ test.describe('options instant rows', () => {
       expect(audit.incomplete, audit.detail.join('\n')).toEqual([]);
 
       // Reset returns to the default.
-      await page.getByRole('button', { name: /^Reset the shortcut to/ }).click();
+      await page.getByRole('button', { name: /^Reset to default/ }).click();
       await expect
         .poll(async () => (await readInstantRows(extension)).chord)
         .toEqual({

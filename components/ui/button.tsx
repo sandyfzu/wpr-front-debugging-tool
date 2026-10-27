@@ -89,7 +89,38 @@ export type ButtonProps = {
   size?: ButtonSize;
   /** Busy state: disables the control and shows the spinner. */
   loading?: boolean;
+  /**
+   * Busy state that keeps focus: `aria-disabled` + `aria-busy` + the spinner,
+   * clicks swallowed — never native `disabled`, which would drop keyboard
+   * focus from a control the user just activated (e.g. Retry mid-attempt).
+   */
+  busy?: boolean;
 } & ComponentProps<'button'>;
+
+/** The click handler shape a Solid button accepts (plain or `[handler, data]`). */
+type ButtonClickHandler = JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent>;
+
+/** The event a Solid click handler receives. */
+type ButtonClickEvent = Parameters<JSX.EventHandler<HTMLButtonElement, MouseEvent>>[0];
+
+/**
+ * Invoke a Solid click handler in either of its forms.
+ *
+ * @param handler The caller's handler (absent = nothing to run).
+ * @param event The click.
+ */
+export function invokeClickHandler(
+  handler: ButtonClickHandler | undefined,
+  event: ButtonClickEvent
+): void {
+  if (handler === undefined) return;
+  if (typeof handler === 'function') {
+    handler(event);
+    return;
+  }
+  // Bound form: `[fn, data]` calls `fn(data, event)`.
+  handler[0](handler[1], event);
+}
 
 /**
  * Render the button used by every surface (shell and pages).
@@ -98,12 +129,16 @@ export type ButtonProps = {
  * no headless wrapper needed for this mechanism. While `loading`, the control
  * disables itself (native single-submit guard) and labels the busy state for
  * assistive tech via `aria-busy`; the spinner is decorative (`aria-hidden`).
- * A held button (disabled, loading or `aria-disabled`) keeps its resting
+ * While `busy`, it stays focusable instead: `aria-disabled` + `aria-busy`,
+ * the same spinner, and clicks never reach `onClick`.
+ * A held button (disabled, loading, busy or `aria-disabled`) keeps its resting
  * look under the pointer — no hover lift promising an action it won't take.
  *
  * @param props.variant See {@link BUTTON_VARIANTS} (default `secondary`).
  * @param props.size See {@link BUTTON_SIZES} (default `md`).
  * @param props.loading Disables the button and swaps a spinner in front of the content.
+ * @param props.busy Holds the button focusable (`aria-disabled`), with the spinner; clicks are swallowed.
+ * @param props.onClick Runs on a click unless the button is busy.
  * @param props.class Extra classes, merged last so callers win.
  * @param props.children The label (and optional leading icon); spaced automatically.
  */
@@ -112,7 +147,10 @@ export function Button(props: ButtonProps): JSX.Element {
     'variant',
     'size',
     'loading',
+    'busy',
     'disabled',
+    'onClick',
+    'aria-disabled',
     'class',
     'children'
   ]);
@@ -120,24 +158,30 @@ export function Button(props: ButtonProps): JSX.Element {
     <button
       type="button"
       data-fdt="button"
-      data-fdt-loading={own.loading ? '' : undefined}
-      aria-busy={own.loading || undefined}
-      // Native single-submit guard: a busy button cannot be clicked again.
+      data-fdt-loading={own.loading || own.busy ? '' : undefined}
+      aria-busy={own.loading || own.busy || undefined}
+      // Native single-submit guard: a loading button cannot be clicked again.
       disabled={own.disabled || own.loading}
+      // A busy button is held for assistive tech yet keeps focus.
+      aria-disabled={own.busy || own['aria-disabled']}
+      onClick={(event) => {
+        if (own.busy) return;
+        invokeClickHandler(own.onClick, event);
+      }}
       class={cn(
         'inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded border font-medium',
         FOCUS_RING,
         DISABLED,
         buttonVariantClasses(
           own.variant ?? 'secondary',
-          isHeld(own.disabled || own.loading, rest['aria-disabled'])
+          isHeld(own.disabled || own.loading, own.busy || own['aria-disabled'])
         ),
         BUTTON_SIZE_CLASSES[own.size ?? 'md'],
         own.class
       )}
       {...rest}
     >
-      <Show when={own.loading}>
+      <Show when={own.loading || own.busy}>
         <LoaderCircle size={14} class="animate-spin shrink-0" aria-hidden="true" data-fdt-spinner />
       </Show>
       {own.children}

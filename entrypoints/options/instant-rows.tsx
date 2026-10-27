@@ -7,7 +7,6 @@
  */
 import type { JSX } from 'solid-js';
 import { Match, Show, Switch as Branch } from 'solid-js';
-import LoaderCircle from 'lucide-solid/icons/loader-circle';
 import TriangleAlert from 'lucide-solid/icons/triangle-alert';
 import { Switch } from '../../components/ui/switch';
 import { Button } from '../../components/ui/button';
@@ -53,8 +52,8 @@ function descriptionId(rowId: string): string {
 
 /**
  * A failed instant read: the reason and a Retry (never a dead end). While a
- * retry is in flight the line says so and Retry is held busy — `aria-disabled`,
- * never native `disabled`, so keyboard focus stays on it through the attempt.
+ * retry is in flight the line says so and Retry is held `busy` — focusable,
+ * so keyboard focus stays on it through the attempt.
  *
  * @param props.retrying A retry is in flight.
  * @param props.onRetry Re-runs the read.
@@ -67,15 +66,11 @@ function ReadFailure(props: { retrying: boolean; onRetry: () => void }): JSX.Ele
       </p>
       <Button
         size="sm"
-        aria-disabled={props.retrying || undefined}
-        aria-busy={props.retrying || undefined}
+        busy={props.retrying}
         onClick={() => {
-          if (!props.retrying) props.onRetry();
+          props.onRetry();
         }}
       >
-        <Show when={props.retrying}>
-          <LoaderCircle size={14} class="shrink-0 animate-spin" aria-hidden="true" />
-        </Show>
         Retry
       </Button>
     </div>
@@ -227,22 +222,26 @@ export function ChordRow(props: {
                 }}
               />
               <Show when={!chordsEqual(current().chord, DEFAULT_PALETTE_CHORD)}>
+                {/* The chord rides in parentheses in both the visible text
+                    (glyphs) and the name (words), so the visible words stay
+                    the start of the name (WCAG 2.5.3: say "Reset to default"). */}
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={props.disabledNote !== null}
-                  aria-label={`Reset the shortcut to ${formatChord(DEFAULT_PALETTE_CHORD, current().platform, 'words', props.scope.legend(DEFAULT_PALETTE_CHORD))}`}
+                  aria-label={`Reset to default (${formatChord(DEFAULT_PALETTE_CHORD, current().platform, 'words', props.scope.legend(DEFAULT_PALETTE_CHORD))})`}
                   onClick={() => {
                     props.scope.setChord(DEFAULT_PALETTE_CHORD);
                   }}
                 >
-                  Reset to{' '}
+                  Reset to default (
                   {formatChord(
                     DEFAULT_PALETTE_CHORD,
                     current().platform,
                     'symbols',
                     props.scope.legend(DEFAULT_PALETTE_CHORD)
                   )}
+                  )
                 </Button>
               </Show>
             </div>

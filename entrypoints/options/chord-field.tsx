@@ -14,12 +14,15 @@
  * the cancel line — nothing to write. Nothing outside the field ever listens.
  *
  * Accessible name: the row label plus the bound chord in words (glyphs are
- * read poorly), stable while recording — the prompt in the live region is
- * the one announcement recording makes (besides the pressed state); the
- * visible chip shows the platform's glyphs.
+ * read poorly). The button's visible content is the bound chord in every
+ * state (the chord stays bound until a capture replaces it), so the visible
+ * text is always part of the name (WCAG 2.5.3) and the name never changes.
+ * Recording shows as the pressed state (accent ring) and the prompt in the
+ * visible live region under the field — the one announcement recording
+ * makes besides the pressed state.
  */
 import type { JSX } from 'solid-js';
-import { createEffect, createSignal, Show } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../utils/cn';
 import {
@@ -143,7 +146,10 @@ export function ChordField(props: ChordFieldProps): JSX.Element {
         data-fdt-recording={recording() ? '' : undefined}
         variant="secondary"
         size="sm"
-        class={cn('min-w-24 self-start font-mono tabular-nums', recording() && 'border-accent')}
+        class={cn(
+          'min-w-24 self-start font-mono tabular-nums',
+          recording() && 'border-accent ring-1 ring-accent'
+        )}
         aria-label={accessibleName()}
         aria-describedby={props.describedBy}
         aria-pressed={recording()}
@@ -160,15 +166,11 @@ export function ChordField(props: ChordFieldProps): JSX.Element {
           if (recording()) stop('');
         }}
       >
-        <Show
-          when={recording()}
-          fallback={<kbd class="font-mono">{shown(props.chord, 'symbols')}</kbd>}
-        >
-          <span class="font-sans">Press keys…</span>
-        </Show>
+        <kbd class="font-mono">{shown(props.chord, 'symbols')}</kbd>
       </Button>
-      {/* The live region: prompt, refusal reasons and the cancel line, read
-          politely once each (never per keystroke — only verdicts write it). */}
+      {/* The live region, visible: the recording prompt, refusal reasons and
+          the cancel line, read politely once each (never per keystroke —
+          only verdicts write it). */}
       <p
         id={`option-${props.idBase}-status`}
         role="status"

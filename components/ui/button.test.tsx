@@ -5,7 +5,7 @@
  * never pixel output.
  */
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { For } from 'solid-js';
+import { createSignal, For } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   Button,
@@ -13,6 +13,7 @@ import {
   BUTTON_VARIANT_CLASSES,
   BUTTON_VARIANT_HOVER_CLASSES,
   BUTTON_VARIANTS,
+  invokeClickHandler,
   isHeld
 } from './button';
 
@@ -68,6 +69,63 @@ describe('Button', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it('holds a busy button focusable: aria-disabled, aria-busy, spinner, clicks swallowed', () => {
+    const onClick = vi.fn();
+    const [busy, setBusy] = createSignal(true);
+    render(() => (
+      <Button busy={busy()} onClick={onClick}>
+        Retry
+      </Button>
+    ));
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Retry' });
+    button.focus();
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.dataset.fdtLoading).toBe('');
+    expect(button.querySelector('[data-fdt-spinner]')).toBeTruthy();
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button);
+    // Leaving busy restores the live button without remounting.
+    setBusy(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(button.getAttribute('aria-busy')).toBeNull();
+    expect(button.querySelector('[data-fdt-spinner]')).toBeNull();
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a caller aria-disabled when not busy', () => {
+    render(() => (
+      <Button aria-disabled="true" busy={false}>
+        Held
+      </Button>
+    ));
+    expect(screen.getByRole('button').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('invokes plain and bound click handlers, and tolerates none', () => {
+    const event = new MouseEvent('click') as Parameters<typeof invokeClickHandler>[1];
+    const plain = vi.fn();
+    invokeClickHandler(plain, event);
+    expect(plain).toHaveBeenCalledWith(event);
+    const bound = vi.fn();
+    invokeClickHandler([bound, 'row-1'], event);
+    expect(bound).toHaveBeenCalledWith('row-1', event);
+    expect(() => {
+      invokeClickHandler(undefined, event);
+    }).not.toThrow();
+  });
+
+  it('runs a bound click handler from JSX', () => {
+    const bound = vi.fn();
+    render(() => <Button onClick={[bound, 7]}>Bound</Button>);
+    fireEvent.click(screen.getByRole('button'));
+    expect(bound).toHaveBeenCalledTimes(1);
+    expect(bound.mock.calls[0]?.[0]).toBe(7);
+  });
+
   it('fires clicks while enabled and stops when disabled', () => {
     const onClick = vi.fn();
     render(() => <Button onClick={onClick}>Reload data</Button>);
@@ -97,6 +155,9 @@ describe('Button', () => {
           <Button variant={variant} loading>
             loading
           </Button>
+          <Button variant={variant} busy>
+            busy
+          </Button>
           <Button variant={variant} aria-disabled="true">
             held
           </Button>
@@ -116,7 +177,7 @@ describe('Button', () => {
       expect(pointerTokens(screen.getByRole('button', { name: 'not held' }).className)).toEqual(
         pointerTokens(live)
       );
-      for (const name of ['disabled', 'loading', 'held']) {
+      for (const name of ['disabled', 'loading', 'busy', 'held']) {
         const held = screen.getByRole('button', { name }).className;
         expect(pointerTokens(held), `${variant} ${name}`).toEqual([]);
         for (const token of BUTTON_VARIANT_CLASSES[variant].split(' ')) {
