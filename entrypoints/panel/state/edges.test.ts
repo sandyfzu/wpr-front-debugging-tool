@@ -11,7 +11,11 @@ import { relayTabAsks } from '../../../lib/messaging/tab-relay-client';
 import { fdtRequestEdges, type FdtRequestEdges } from './edges';
 import { makeFdtData, makeHardReloadBudget } from './fixtures';
 import { createSearchStore } from './search';
-import { createFdtDataStore, NO_PAGE_TRANSPORT_REASON } from './use-fdt-data';
+import {
+  createFdtDataStore,
+  NO_PAGE_TRANSPORT_REASON,
+  RELAY_UNAVAILABLE_REASON
+} from './use-fdt-data';
 import type { DataState } from './fdt-state-machine';
 
 const TAB = 31;
@@ -99,22 +103,72 @@ describe('the data store on the relay path', () => {
     }
   });
 
-  it('lands refused / invalid / failed / unreadable replies on the direct path’s failure state', async () => {
+  it('lands a failed forward on the direct path’s (retryable) failure state', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const direct = await settledState(
       fdtRequestEdges(asksAnswering(Promise.reject(new Error('boom'))))
     );
     expect(direct.status).toBe('error');
+    expect(await settledState(relayAnswering({ ok: false, failure: 'failed' }).edges)).toEqual(
+      direct
+    );
+  });
+
+  it('lands the relay’s own failures on the named unavailable state, never blaming the page', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const unavailable = { status: 'unavailable', reason: RELAY_UNAVAILABLE_REASON };
     for (const reply of [
       { ok: false, failure: 'refused' },
       { ok: false, failure: 'invalid-request' },
-      { ok: false, failure: 'failed' },
       'junk'
     ]) {
       expect(await settledState(relayAnswering(reply).edges), JSON.stringify(reply)).toEqual(
-        direct
+        unavailable
       );
     }
+    // No relay listener in the background: the round trip itself rejects.
+    const unreachable = fdtRequestEdges(
+      relayTabAsks(() =>
+        Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'))
+      )
+    );
+    expect(await settledState(unreachable)).toEqual(unavailable);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('turns a soft refresh the relay refuses into the terminal unavailable state', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const replies: unknown[] = [
+      { ok: true, answer: makeFdtData() },
+      { ok: false, failure: 'refused' }
+    ];
+    const send = vi.fn(() => Promise.resolve(replies.shift() ?? { ok: true, answer: null }));
+    const store = createFdtDataStore({
+      inspectedTabId: () => TAB,
+      ...fdtRequestEdges(relayTabAsks(send)),
+      receive: () => () => undefined,
+      search: createSearchStore(),
+      reload: vi.fn(),
+      hardReloadBudget: makeHardReloadBudget(),
+      now: () => 1727000000000
+    });
+    store.start();
+    await flush();
+    expect(store.state().status).toBe('ready');
+    store.reload();
+    await flush();
+    expect(store.state()).toEqual({ status: 'unavailable', reason: RELAY_UNAVAILABLE_REASON });
+    store.retry();
+    store.reload();
+    await flush();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the relay-unavailable copy honest: the extension’s fault, no retry, what still works', () => {
+    expect(RELAY_UNAVAILABLE_REASON).toContain('The extension couldn’t');
+    expect(RELAY_UNAVAILABLE_REASON).toContain('reopen DevTools');
+    expect(RELAY_UNAVAILABLE_REASON).toContain('on-page widget still works');
+    expect(RELAY_UNAVAILABLE_REASON.toLowerCase()).not.toMatch(/\bretry\b|reload the page/);
   });
 
   it('lands the content script’s null answer on the direct path’s empty-response state', async () => {

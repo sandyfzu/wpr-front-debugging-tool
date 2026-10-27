@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { isNoReceiverError } from './no-receiver';
 import { TAB_RELAY_FAILURES, type TabRelayRequest } from './tab-relay';
-import { relayFailureError, relayTabAsks, type RelaySend } from './tab-relay-client';
+import {
+  isRelayUnavailableError,
+  relayFailureError,
+  relayTabAsks,
+  RelayUnavailableError,
+  type RelaySend
+} from './tab-relay-client';
 
 const CHUNK = { snapshotId: '0123456789abcdef0123456789abcdef', scriptIndex: 0, offset: 0 };
 
@@ -60,30 +66,50 @@ describe('relayTabAsks — replies', () => {
     }
   });
 
-  it('maps every other failure onto a real (loud) failure', async () => {
-    for (const failure of ['refused', 'invalid-request', 'failed'] as const) {
+  it('maps a refusal onto the relay’s own unavailable error (never a page miss)', async () => {
+    for (const failure of ['refused', 'invalid-request'] as const) {
       const cause = await relayTabAsks(sendAnswering({ ok: false, failure }))
         .getFdtData(1)
         .catch((error: unknown) => error);
-      expect(cause).toBeInstanceOf(Error);
+      expect(isRelayUnavailableError(cause), failure).toBe(true);
+      expect(cause instanceof RelayUnavailableError ? cause.reason : null).toBe(failure);
       expect(isNoReceiverError(cause), failure).toBe(false);
     }
   });
 
-  it('treats an unreadable reply as a real failure', async () => {
+  it('maps a failed forward onto a real (loud, retryable) failure', async () => {
+    const cause = await relayTabAsks(sendAnswering({ ok: false, failure: 'failed' }))
+      .getFdtData(1)
+      .catch((error: unknown) => error);
+    expect(cause).toBeInstanceOf(Error);
+    expect(isRelayUnavailableError(cause)).toBe(false);
+    expect(isNoReceiverError(cause)).toBe(false);
+  });
+
+  it('treats an unreadable reply as the relay being unavailable', async () => {
     for (const reply of [undefined, null, { ok: false, failure: 'mystery' }, 'ok']) {
       const cause = await relayTabAsks(sendAnswering(reply))
         .getFdtData(1)
         .catch((error: unknown) => error);
-      expect(cause).toBeInstanceOf(Error);
+      expect(cause instanceof RelayUnavailableError ? cause.reason : null).toBe('unreadable-reply');
       expect(isNoReceiverError(cause)).toBe(false);
     }
   });
 
-  it('passes a rejected round trip through (no background listener → no-receiver)', async () => {
+  it('treats a rejected round trip (no background listener) as the relay being unreachable', async () => {
     const miss = new Error('Could not establish connection. Receiving end does not exist.');
     const send: RelaySend = () => Promise.reject(miss);
-    await expect(relayTabAsks(send).getFdtData(1)).rejects.toBe(miss);
+    for (const ask of [
+      relayTabAsks(send).getFdtData(1),
+      relayTabAsks(send).processPageData(1),
+      relayTabAsks(send).getScriptSourceChunk(1, CHUNK)
+    ]) {
+      const cause = await ask.catch((error: unknown) => error);
+      expect(cause instanceof RelayUnavailableError ? cause.reason : null).toBe('unreachable');
+      expect(cause instanceof Error ? cause.cause : null).toBe(miss);
+      // The transport's wording rides as `cause` only: no page-miss misfiling.
+      expect(isNoReceiverError(cause)).toBe(false);
+    }
   });
 });
 
@@ -95,8 +121,20 @@ describe('relayFailureError', () => {
     expect(misses).toEqual(['no-receiver']);
   });
 
+  it('maps exactly the refusals onto the relay’s own error', () => {
+    expect(
+      TAB_RELAY_FAILURES.filter((failure) =>
+        isRelayUnavailableError(relayFailureError(failure, 'getFdtData'))
+      )
+    ).toEqual(['refused', 'invalid-request']);
+    expect(isRelayUnavailableError(new Error('x'))).toBe(false);
+    expect(isRelayUnavailableError('refused')).toBe(false);
+  });
+
   it('names the ask and the failure', () => {
-    expect(relayFailureError('refused', 'getFdtData').message).toContain('getFdtData');
-    expect(relayFailureError('refused', 'getFdtData').message).toContain('refused');
+    for (const failure of TAB_RELAY_FAILURES) {
+      expect(relayFailureError(failure, 'getFdtData').message, failure).toContain('getFdtData');
+      expect(relayFailureError(failure, 'getFdtData').message, failure).toContain(failure);
+    }
   });
 });

@@ -24,6 +24,7 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import { parseFdtDataExplained } from '../../../lib/messaging/validate';
 import { isNoReceiverError } from '../../../lib/messaging/no-receiver';
+import { isRelayUnavailableError } from '../../../lib/messaging/tab-relay-client';
 import { numericTabId } from '../../../lib/messaging/sender';
 import { createLogger } from '../../../lib/logger';
 import type { FdtData, PanelSearchAction } from '../../../lib/wp-rocket/types';
@@ -107,7 +108,16 @@ const REQUEST_FAILURE_CAUSE = 'The page could not be reached for its data.';
  * a retry that cannot.
  */
 export const NO_PAGE_TRANSPORT_REASON =
-  'This browser gives this panel no way to reach the page — neither tab messaging nor the background relay is available. The on-page widget still works.';
+  'This browser gives this panel no way to reach the page, so page data can’t load here. The on-page widget still works.';
+
+/**
+ * The reason the unavailable view renders when the background relay itself
+ * cannot carry the panel's asks (it refused them, answered unreadably, or is
+ * not there) — the extension's fault, never the page's, and nothing a retry
+ * of the same ask changes; reopening DevTools starts a fresh panel.
+ */
+export const RELAY_UNAVAILABLE_REASON =
+  'The extension couldn’t pass this panel’s request on to the page, so page data can’t load here. Close and reopen DevTools to try again; the on-page widget still works.';
 
 /** The cause when the content script answered `null` (its processing failed). */
 const EMPTY_RESPONSE_CAUSE = 'The page produced no data — its content script could not process it.';
@@ -300,6 +310,12 @@ export function createFdtDataStore(deps: FdtDataDeps): FdtDataStore {
         drainBufferedPatches();
       })
       .catch((cause: unknown) => {
+        if (isRelayUnavailableError(cause)) {
+          // The relay, not the page, failed: terminal and named, no retry.
+          log.warn('Page-data relay unavailable', { reason: cause.reason });
+          applyEvent({ type: 'unavailable', reason: RELAY_UNAVAILABLE_REASON });
+          return;
+        }
         applyEvent({ type: 'settled', outcome: outcomeForFailure(cause) });
         drainBufferedPatches();
       });

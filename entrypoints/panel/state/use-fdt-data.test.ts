@@ -160,12 +160,12 @@ describe('a context with no tab transport (neither tabs nor the relay)', () => {
     expect(NO_PAGE_TRANSPORT_REASON.toLowerCase()).not.toContain('retry');
   });
 
-  it('blames the missing transports (direct and relay), never a "not yet" or the page', () => {
+  it('blames the panel’s missing way to the page in plain words, never a "not yet"', () => {
     // Shown only when neither the tabs API nor the relay's runtime send
     // exists — the Exclusions entry rides on that same runtime send, so the
     // copy must not promise it.
-    expect(NO_PAGE_TRANSPORT_REASON).toContain('tab messaging');
-    expect(NO_PAGE_TRANSPORT_REASON).toContain('background relay');
+    expect(NO_PAGE_TRANSPORT_REASON).toContain('gives this panel no way to reach the page');
+    expect(NO_PAGE_TRANSPORT_REASON).not.toMatch(/tab messaging|relay|transport|\bAPI\b/);
     expect(NO_PAGE_TRANSPORT_REASON).not.toMatch(/\byet\b/);
     expect(NO_PAGE_TRANSPORT_REASON).not.toContain('Exclusions entry');
   });
