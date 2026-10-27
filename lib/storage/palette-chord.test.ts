@@ -14,7 +14,9 @@ import {
   RESERVED_CHORDS,
   captureChord,
   chordMayTypeText,
+  chordsEqual,
   formatChord,
+  keystrokeChord,
   matchesChord,
   paletteChordStore,
   parsePaletteChord,
@@ -227,6 +229,40 @@ describe('captureChord', () => {
   });
 });
 
+describe('chordsEqual', () => {
+  it('compares key and flags, treating an absent flag as false', () => {
+    expect(
+      chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyK', alt: true, shift: false })
+    ).toBe(true);
+    expect(chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyK', alt: true, shift: true })).toBe(
+      false
+    );
+    expect(chordsEqual({ code: 'KeyK', alt: true }, { code: 'KeyJ', alt: true })).toBe(false);
+    expect(chordsEqual({ code: 'KeyK', mod: true }, { code: 'KeyK', alt: true })).toBe(false);
+  });
+});
+
+describe('keystrokeChord', () => {
+  it('spells the canonical chord of a press before the rules run (reserved and bare keys included)', () => {
+    expect(keystrokeChord(key('KeyC', { metaKey: true }), 'mac')).toEqual({
+      code: 'KeyC',
+      mod: true
+    });
+    expect(keystrokeChord(key('KeyC', { ctrlKey: true }), 'other')).toEqual({
+      code: 'KeyC',
+      mod: true
+    });
+    expect(keystrokeChord(key('KeyK'), 'other')).toEqual({ code: 'KeyK' });
+    expect(Object.isFrozen(keystrokeChord(key('KeyK', { altKey: true }), 'mac'))).toBe(true);
+  });
+
+  it('is null for an unbindable key or a modifier outside the vocabulary', () => {
+    expect(keystrokeChord(key('Escape', { altKey: true }), 'other')).toBeNull();
+    expect(keystrokeChord(key('KeyK', { ctrlKey: true }), 'mac')).toBeNull();
+    expect(keystrokeChord(key('KeyK', { metaKey: true }), 'other')).toBeNull();
+  });
+});
+
 /** The keystroke that presses a chord on a platform. */
 function press(chord: PaletteChord, platform: ChordPlatform): ChordKeystroke {
   const command = chord.mod === true;
@@ -363,6 +399,11 @@ describe('formatChord', () => {
     expect(formatChord(all, 'other')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord(all, 'other', 'words')).toBe('Ctrl+Alt+Shift+K');
     expect(formatChord({ code: 'Slash', mod: true }, 'other')).toBe('Ctrl+/');
+  });
+
+  it('writes a caller-supplied key legend in place of the US one', () => {
+    expect(formatChord({ code: 'KeyQ', alt: true }, 'mac', 'symbols', 'A')).toBe('⌥A');
+    expect(formatChord({ code: 'KeyQ', alt: true }, 'other', 'words', 'A')).toBe('Alt+A');
   });
 });
 

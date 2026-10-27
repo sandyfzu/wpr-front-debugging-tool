@@ -21,7 +21,7 @@
 import { createLogger, type Logger } from '../logger';
 import { getOptions, optionsStore, type StoredOptions } from '../storage/options';
 import { isAppearance, type Appearance } from '../../utils/theme';
-import { isValidOptionValue, OPTION_ROWS, readOption } from './registry';
+import { DRAFTED_OPTION_ROWS, isValidOptionValue, readOption } from './registry';
 
 /** The actionable message the page renders when the initial load fails. */
 const LOAD_FAILURE_MESSAGE =
@@ -32,21 +32,24 @@ const SAVE_FAILURE_MESSAGE =
   'Saving the options failed — your changes are kept as unsaved; try again.';
 
 /**
- * The page's edit buffer: every registry row's pending value, keyed by row
- * id (ids are unique across the registry). Built by {@link draftFromOptions},
- * edited per row by the machine.
+ * The page's edit buffer: every drafted registry row's pending value, keyed
+ * by row id (ids are unique across the registry). Built by
+ * {@link draftFromOptions}, edited per row by the machine.
  */
 export type OptionsDraft = Readonly<Record<string, boolean | Appearance>>;
 
 /**
- * Build a draft from options: every registry row's current value.
+ * Build a draft from options: every drafted registry row's current value
+ * (instant rows own their storage items and never enter it).
  *
  * @param options Validated options (as the storage contract returns them).
  * @returns The frozen draft — one entry per registry row, nothing else.
  */
 export function draftFromOptions(options: StoredOptions): OptionsDraft {
   return Object.freeze(
-    Object.fromEntries(OPTION_ROWS.map((row) => [row.id, readOption(row, options)] as const))
+    Object.fromEntries(
+      DRAFTED_OPTION_ROWS.map((row) => [row.id, readOption(row, options)] as const)
+    )
   );
 }
 
@@ -58,7 +61,7 @@ export function draftFromOptions(options: StoredOptions): OptionsDraft {
  * @param draft The page's edit buffer.
  */
 export function isDraftDirty(options: StoredOptions, draft: OptionsDraft): boolean {
-  return OPTION_ROWS.some((row) => readOption(row, options) !== draft[row.id]);
+  return DRAFTED_OPTION_ROWS.some((row) => readOption(row, options) !== draft[row.id]);
 }
 
 /**
@@ -80,7 +83,7 @@ export function optionsWithDraft(base: StoredOptions, draft: OptionsDraft): Stor
   const improvements: StoredOptions['improvements'] = { ...base.improvements };
   let appearance: Appearance = base.appearance;
   const features: StoredOptions['features'] = { ...base.features };
-  for (const row of OPTION_ROWS) {
+  for (const row of DRAFTED_OPTION_ROWS) {
     const value = draft[row.id];
     if (value === undefined) continue; // Belt: a draft always carries every row.
     if (row.kind === 'appearance') {
@@ -190,7 +193,7 @@ export interface OptionsPageModel {
    * Edit one row's pending value. Editing is what marks the page dirty and
    * clears the previous save's toast.
    *
-   * @param rowId A registry row id.
+   * @param rowId A drafted registry row id (an instant row id is unknown here).
    * @param value The new value — must be legal for the row (boolean rows
    *   demand a boolean, the appearance row a legal choice).
    * @throws {@link Error} When the page is not ready (no controls exist
@@ -294,7 +297,7 @@ export function createOptionsPageModel(
           `setOption: the options page is not ready (status '${status}') — no control may edit yet.`
         );
       }
-      const row = OPTION_ROWS.find((candidate) => candidate.id === rowId);
+      const row = DRAFTED_OPTION_ROWS.find((candidate) => candidate.id === rowId);
       if (row === undefined) {
         throw new Error(`setOption: unknown option row '${rowId}'.`);
       }

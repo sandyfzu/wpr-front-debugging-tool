@@ -200,6 +200,17 @@ function chordIdentity(chord: PaletteChord): string {
   return `${chord.code}:${flag(chord.mod)}${flag(chord.alt)}${flag(chord.shift)}`;
 }
 
+/**
+ * Whether two chords are the same binding (key + the three flags; absent and
+ * `false` flags are one state).
+ *
+ * @param a A chord.
+ * @param b Another chord.
+ */
+export function chordsEqual(a: PaletteChord, b: PaletteChord): boolean {
+  return chordIdentity(a) === chordIdentity(b);
+}
+
 /** Why a reserved chord group is off-limits (see {@link RESERVED_CHORDS}). */
 export type ReservedChordGroup = 'editing' | 'browser' | 'zoom' | 'devtools' | 'system';
 
@@ -379,14 +390,14 @@ export interface ChordKeystroke {
   readonly shiftKey: boolean;
   readonly repeat?: boolean;
   readonly isComposing?: boolean;
-  /** Legacy key code: 229 marks a keystroke an IME is processing. */
+  /** Deprecated key code: 229 marks a keystroke an IME is processing. */
   readonly keyCode?: number;
   /** Modifier-state probe (`AltGraph` marks a character-level keystroke). */
   getModifierState?(key: string): boolean;
 }
 
-/** The legacy `keyCode` every engine reports for a keystroke an IME is processing. */
-const IME_PROCESS_KEY_CODE = 229;
+/** The `keyCode` every engine reports for a keystroke an IME is processing. */
+export const IME_PROCESS_KEY_CODE = 229;
 
 /**
  * Split Ctrl/Meta into the platform's command modifier and the one outside
@@ -481,15 +492,34 @@ export function captureChord(
   platform: ChordPlatform
 ): ChordCaptureResult {
   if (!isChordKey(keystroke.code)) return { ok: false, reason: 'unsupported-key' };
+  const chord = keystrokeChord(keystroke, platform);
+  if (chord === null) return { ok: false, reason: 'unsupported-modifier' };
+  const reason = chordRejection(chord);
+  return reason === null ? { ok: true, chord } : { ok: false, reason };
+}
+
+/**
+ * The canonical chord a keystroke spells, before the typing-safety and
+ * reserved rules run — what a capture field names when it explains a
+ * refusal (e.g. which reserved group owns the pressed chord).
+ *
+ * @param keystroke The keydown.
+ * @param platform The keyboard convention.
+ * @returns The chord, or null when the key is not bindable or a modifier
+ *   outside the vocabulary is held (Ctrl on macOS, Meta elsewhere).
+ */
+export function keystrokeChord(
+  keystroke: ChordKeystroke,
+  platform: ChordPlatform
+): PaletteChord | null {
+  if (!isChordKey(keystroke.code)) return null;
   const [command, foreign] = commandModifiers(keystroke, platform);
-  if (foreign) return { ok: false, reason: 'unsupported-modifier' };
-  const chord = canonicalChord(keystroke.code, {
+  if (foreign) return null;
+  return canonicalChord(keystroke.code, {
     mod: command,
     alt: keystroke.altKey,
     shift: keystroke.shiftKey
   });
-  const reason = chordRejection(chord);
-  return reason === null ? { ok: true, chord } : { ok: false, reason };
 }
 
 /** How {@link formatChord} writes modifiers. */
@@ -504,14 +534,16 @@ export type ChordNotation = 'symbols' | 'words';
  * @param chord A validated chord.
  * @param platform The keyboard convention.
  * @param notation Glyphs (default) or spelled-out modifier names.
+ * @param key The key's label — default its US legend; a surface that can
+ *   read the active keyboard layout passes the layout's own legend.
  * @returns The display string.
  */
 export function formatChord(
   chord: PaletteChord,
   platform: ChordPlatform,
-  notation: ChordNotation = 'symbols'
+  notation: ChordNotation = 'symbols',
+  key: string = CHORD_KEY_LABELS[chord.code]
 ): string {
-  const key = CHORD_KEY_LABELS[chord.code];
   if (platform === 'mac') {
     const modifiers: Array<[boolean, string, string]> = [
       [chord.alt === true, '⌥', 'Option'],

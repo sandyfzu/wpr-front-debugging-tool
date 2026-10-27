@@ -24,6 +24,7 @@ import type { ExtensionDriver } from './extension';
 export const DBUGGER_ROW_LABEL = "Add an entry to access the D-bugger to WP Rocket's menu";
 export const BADGE_ROW_LABEL = 'Show the toolbar badge';
 export const APPEARANCE_ROW_LABEL = 'Color theme';
+export const PAGE_UI_GATE_ROW_LABEL = 'Show on-page UI';
 /** The choice tiles' labels, in the vocabulary's registry order. */
 export const CHOICE_LABELS = { system: 'System default', dark: 'Dark', light: 'Light' } as const;
 export type ChoiceValue = keyof typeof CHOICE_LABELS;
@@ -69,9 +70,10 @@ export async function openOptionsPage(
 }
 
 /**
- * Wait for the page's ready state: the registry's first row renders (the
- * skeleton's only role=status line is gone). A storage read is fast; this is
- * a settle, never an assertion of timing.
+ * Wait for the page's ready state: the registry's first row renders, the
+ * skeleton's loading line is gone, and the instant rows' own reads landed
+ * (the shortcut field renders). Storage reads are fast; this is a settle,
+ * never an assertion of timing.
  *
  * @param page The options page.
  */
@@ -79,7 +81,8 @@ export async function optionsReady(page: Page): Promise<void> {
   await expect(
     page.locator('[data-fdt="option-row"][data-fdt-option="wp-dashboard-dbugger-entry"]')
   ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Loading the options' })).toHaveCount(0);
+  await expect(page.locator('[data-fdt="chord-field"]')).toBeVisible();
 }
 
 /**
@@ -218,4 +221,21 @@ export async function readDocumentTheme(page: Page): Promise<{
     dataTheme: document.documentElement.getAttribute('data-theme'),
     background: getComputedStyle(document.documentElement).backgroundColor
   }));
+}
+
+/** Remove the instant rows' items (gate + shortcut): reads degrade to their defaults. */
+export async function resetInstantRows(driver: ExtensionDriver): Promise<void> {
+  await driver.evaluateInWorker(async () => {
+    await chrome.storage.sync.remove(['page-ui-gate', 'palette-chord']);
+  }, undefined);
+}
+
+/** Read the raw instant items (`page-ui-gate`, `palette-chord`) from the service worker. */
+export async function readInstantRows(
+  driver: ExtensionDriver
+): Promise<{ gate: unknown; chord: unknown }> {
+  return await driver.evaluateInWorker(async () => {
+    const stored = await chrome.storage.sync.get(['page-ui-gate', 'palette-chord']);
+    return { gate: stored['page-ui-gate'], chord: stored['palette-chord'] };
+  }, undefined);
 }
