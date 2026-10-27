@@ -63,6 +63,7 @@ Validation: the unit tier green with the origin-store suite retargeted to the ne
 Depends: P3/P5H/shared mount. Parallel: P11 pure detection work; serialize injected-UI edits. Size: S. Goal: removal during the awaited appearance read cannot leave detached render work or a live watcher.
 
 - [ ] Harden `components/injected-ui/mount.ts` and its callers: `onRemove` may run before `mountShadowUi` resolves and before its disposer is assigned. Stop a late follow/render immediately; dispose exactly once, preserve the original failure and run remaining cleanup even if one step throws. Cover KC, SBS and widget, not only the widget's host-creation guards.
+- P19D landed first (2026-10-27): KC/SBS/widget mounts are now also driven by the on-page UI gate (`lib/page-ui/` gated surface; start/stop hooks in each module), KC gained an in-flight mount guard, KC/widget mount listeners ride a per-mount abort signal. Integrate with that shape; open residual: WXT's `createShadowRootUi` keeps `ctx.onInvalidated(remove)` per host, so every hide → show cycle retains one removed host until the page ends.
 
 DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-theme tests; no leaked tree/watch or remount, UI bar/gates/browser regression green. This is the open P5H lifecycle requirement, not a new feature.
 

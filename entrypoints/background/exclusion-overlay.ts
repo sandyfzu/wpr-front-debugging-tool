@@ -11,10 +11,15 @@
  * - a re-open on a session tab's newly loaded page leaves a live or pending
  *   overlay be, and skips a page that moved to another origin or is not
  *   HTML.
+ *
+ * Both first consult the on-page UI gate: while it is off nothing is
+ * injected (an explicit open answers `page-ui-off`; the overlay checks the
+ * gate again itself before mounting, for a write racing the injection).
  */
 import { createLogger } from '../../lib/logger';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import type { OverlayPresentation } from '../../lib/exclusion-session/overlay-reopen';
+import { readPageUiEnabled } from '../../lib/storage/page-ui-gate';
 import {
   OVERLAY_CLAIM_TTL_MS,
   OVERLAY_SLOT_GLOBAL,
@@ -85,6 +90,9 @@ const UNSUPPORTED_PAGE_ERRORS = [
 
 /** An open that did not reach the page. */
 type OpenFailure = 'unsupported-page' | 'tab-gone' | 'failed';
+
+/** Reads the on-page UI gate (validated; rejects as storage does). */
+export type PageUiGateRead = () => Promise<boolean>;
 
 /**
  * Classify an injection failure.
@@ -167,13 +175,19 @@ async function injectClaimed(
  *
  * @param tabId The tab.
  * @param injector The scripting seam (the real `browser.scripting` by default).
+ * @param pageUiEnabled The on-page UI gate's read (the stored gate by default).
  * @returns How it ended (never rejects).
  */
 export async function openExclusionOverlay(
   tabId: number,
-  injector: ScriptInjector = browserScriptInjector()
+  injector: ScriptInjector = browserScriptInjector(),
+  pageUiEnabled: PageUiGateRead = readPageUiEnabled
 ): Promise<ExclusionOverlayOpenOutcome> {
   try {
+    if (!(await pageUiEnabled())) {
+      log.info('Exclusion builder not opened: on-page UI is off', { tabId });
+      return 'page-ui-off';
+    }
     const token = injector.newToken();
     const verdict = await claimSlot(injector, tabId, {
       mode: 'open',
@@ -214,9 +228,12 @@ export async function openExclusionOverlay(
 /**
  * How a re-open ended: `reopened` (injected), `already-open` (the
  * document has its overlay, or one on its way), `skipped` (the page moved
- * to another origin, or is not HTML), or an open failure.
+ * to another origin, or is not HTML), `page-ui-off` (the on-page UI gate
+ * is off: the session goes on, its overlay comes back on a gate-on), or an
+ * open failure.
  */
-export type OverlayReopenOutcome = 'reopened' | 'already-open' | 'skipped' | OpenFailure;
+export type OverlayReopenOutcome =
+  'reopened' | 'already-open' | 'skipped' | 'page-ui-off' | OpenFailure;
 
 /**
  * Re-open the overlay on a session tab's newly loaded page, unless that
@@ -226,15 +243,18 @@ export type OverlayReopenOutcome = 'reopened' | 'already-open' | 'skipped' | Ope
  * @param presentation How the overlay starts.
  * @param origin The session's origin (the page must still be of it).
  * @param injector The scripting seam (the real `browser.scripting` by default).
+ * @param pageUiEnabled The on-page UI gate's read (the stored gate by default).
  * @returns How it ended (never rejects).
  */
 export async function reopenExclusionOverlay(
   tabId: number,
   presentation: OverlayPresentation,
   origin: string,
-  injector: ScriptInjector = browserScriptInjector()
+  injector: ScriptInjector = browserScriptInjector(),
+  pageUiEnabled: PageUiGateRead = readPageUiEnabled
 ): Promise<OverlayReopenOutcome> {
   try {
+    if (!(await pageUiEnabled())) return 'page-ui-off';
     const token = injector.newToken();
     const verdict = await claimSlot(injector, tabId, {
       mode: 'reopen',

@@ -160,3 +160,48 @@ export function createOverlayReopener(deps: OverlayReopenerDeps): OverlayReopene
     }
   };
 }
+
+/** What bringing every session tab's overlay back needs. */
+export interface SessionOverlayRestoreDeps {
+  /** The stored session records, keyed by decimal tab id (may reject). */
+  records(): Promise<Readonly<Record<string, { readonly state: string }>>>;
+  /** A tab's committed URL (rejects for a closed tab). */
+  tabUrl(tabId: number): Promise<string | undefined>;
+  readonly reopener: Pick<OverlayReopener, 'pageLoaded'>;
+  readonly log: Pick<Logger, 'warn'>;
+}
+
+/**
+ * Bring the overlay back on every tab with an active session — the
+ * on-page UI gate turned on again, and the overlays it removed come back
+ * the way their pages would have shown them (the re-opener's own checks:
+ * session state, origin, the remembered presentation). Never rejects.
+ *
+ * @param deps The records, the tabs and the re-opener.
+ */
+export async function restoreSessionOverlays(deps: SessionOverlayRestoreDeps): Promise<void> {
+  let records: Readonly<Record<string, { readonly state: string }>>;
+  try {
+    records = await deps.records();
+  } catch (cause) {
+    deps.log.warn('Session overlays not restored: the sessions could not be read', { cause });
+    return;
+  }
+  const tabIds = Object.entries(records)
+    .filter(([, record]) => record.state === 'active')
+    .map(([key]) => Number(key))
+    .filter((tabId) => Number.isSafeInteger(tabId) && tabId >= 0);
+  await Promise.all(
+    tabIds.map(async (tabId) => {
+      let url: string | undefined;
+      try {
+        url = await deps.tabUrl(tabId);
+      } catch (cause) {
+        // The tab closed meanwhile: its own cleanup forgets the session.
+        deps.log.warn('Session overlay not restored: the tab is gone', { tabId, cause });
+        return;
+      }
+      await deps.reopener.pageLoaded(tabId, url);
+    })
+  );
+}

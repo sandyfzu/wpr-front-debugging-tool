@@ -3,8 +3,10 @@
  * controller over the real stores, pushes and tabs, the selected
  * interception backend, the six session channels, the overlay's opener
  * channels (the panel's open, the overlay's presentation) with the overlay
- * re-open on a session tab's loaded pages, and the cleanup hooks (tab
- * close, extension update, wake re-validation). Lifecycle logic lives in
+ * re-open on a session tab's loaded pages (and on every session tab when
+ * the on-page UI gate turns back on — while it is off, no overlay is
+ * injected and the sessions go on), and the cleanup hooks (tab close,
+ * extension update, wake re-validation). Lifecycle logic lives in
  * `lib/exclusion-session/`; this module only binds it to `browser.*`.
  */
 import { createLogger } from '../../lib/logger';
@@ -26,8 +28,10 @@ import {
 import { getSavedExclusionSet, saveExclusionSet } from '../../lib/storage/exclusion-sets';
 import {
   createOverlayReopener,
+  restoreSessionOverlays,
   type OverlayReopener
 } from '../../lib/exclusion-session/overlay-reopen';
+import { watchPageUiGate } from '../../lib/storage/page-ui-gate';
 import {
   getOverlayPresentation,
   removeOverlayPresentation,
@@ -203,6 +207,19 @@ export function initExclusionSessions(
   onMessage('exclusionOverlayPresented', ({ sender, data }) => {
     answerOverlayPresented(sender, data, reopener);
     return true;
+  });
+
+  // The on-page UI gate turned back on: the overlays it removed (or kept
+  // from loading) come back on every session tab. Registered at start like
+  // every listener here, so the write wakes this worker.
+  watchPageUiGate((enabled) => {
+    if (!enabled) return;
+    void restoreSessionOverlays({
+      records: getExclusionSessionRecords,
+      tabUrl: async (tabId) => (await browser.tabs.get(tabId)).url,
+      reopener,
+      log
+    });
   });
 
   // A session tab's page finished loading: bring the overlay back (once

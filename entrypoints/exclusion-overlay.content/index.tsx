@@ -12,6 +12,11 @@
  * (scan, geometry), never written; every listener, observer and timer
  * rides the content-script context or the view's cleanup, and an
  * invalidated context (extension reload) removes the whole overlay.
+ *
+ * The on-page UI gate: the background injects nothing while it is off,
+ * and this instance follows it from its first moment — a gate-off (a
+ * write racing the injection, or a later one) ends it like a close. The
+ * session goes on; the background brings the overlay back on a gate-on.
  */
 import { onCleanup, onMount } from 'solid-js';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -40,6 +45,7 @@ import {
   holdStartingOverlay,
   type StartingOverlay
 } from '../../lib/exclusion-session/overlay-slot';
+import { PAGE_UI_GATE_SOURCE, followPageUiGate } from '../../lib/page-ui/gate-follower';
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
@@ -199,6 +205,21 @@ export default defineContentScript({
     ctx.onInvalidated(() => {
       slot.release();
     });
+    followPageUiGate(
+      {
+        source: PAGE_UI_GATE_SOURCE,
+        isInvalid: () => ctx.isInvalid,
+        onInvalidated: (cleanup) => {
+          ctx.onInvalidated(cleanup);
+        },
+        log
+      },
+      (enabled) => {
+        // Ends this instance (UI, listeners, slot) without reporting a fold:
+        // the session tab's remembered presentation is what comes back.
+        if (!enabled) ctx.abort('On-page UI turned off');
+      }
+    );
     const reportFailure = (cause: unknown): void => {
       // A failed mount must not hold opens up: leave the slot.
       slot.release();

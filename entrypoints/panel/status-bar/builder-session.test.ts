@@ -106,6 +106,13 @@ describe('openFeedback', () => {
     expect(openFeedback({ kind: 'reply', reply: 'tab-gone' }).description).toBe(
       'The inspected tab is gone.'
     );
+    // The on-page UI gate is off: both ways back are named, the open is not retried blindly.
+    expect(openFeedback({ kind: 'reply', reply: 'page-ui-off' })).toEqual({
+      tone: 'error',
+      title: 'On-page UI is off',
+      description:
+        'The builder lives on the page. Turn on-page UI back on from the page’s right-click menu (“Turn on all on-page UI”) or the extension’s options (“Show on-page UI”), then open it again.'
+    });
     for (const outcome of [
       { kind: 'reply', reply: 'failed' },
       { kind: 'no-receiver' },

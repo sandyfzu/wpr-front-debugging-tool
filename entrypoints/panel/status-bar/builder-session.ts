@@ -15,6 +15,7 @@ import type {
   ExclusionSessionTabSummary
 } from '../../../lib/messaging/exclusion-panel';
 import type { StatusKind } from '../../../components/ui/status-badge';
+import { PAGE_UI_MENU_RESCUE, PAGE_UI_OPTIONS_RESCUE } from '../../../lib/page-commands/commands';
 
 /**
  * - `checking` — the first answer has not arrived.
@@ -158,6 +159,12 @@ export function openFeedback(outcome: AskOutcome<ExclusionOverlayOpenOutcome>): 
         tone: 'error',
         title: 'The exclusion builder didn’t open',
         description: 'The inspected tab is gone.'
+      };
+    case 'page-ui-off':
+      return {
+        tone: 'error',
+        title: 'On-page UI is off',
+        description: `The builder lives on the page. Turn on-page UI back on from ${PAGE_UI_MENU_RESCUE} or ${PAGE_UI_OPTIONS_RESCUE}, then open it again.`
       };
     case 'failed':
       return { tone: 'error', title: 'The exclusion builder didn’t open', description: OPEN_RETRY };

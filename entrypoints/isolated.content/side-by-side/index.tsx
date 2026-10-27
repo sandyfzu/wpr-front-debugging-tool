@@ -28,6 +28,13 @@
  * rescale presenter — the phone's device viewport, or the desktop dress's
  * 1280px-floor content box. Its lifecycle bindings are here; the judgment
  * is the machine's.
+ *
+ * The on-page UI gate outranks every trigger: while it is off nothing opens
+ * the overlay (menu, palette, the auto-open, the reload restore — a gate-off
+ * boot consumes the restore record without opening); a gate-off write
+ * closes an open overlay (scroll restored, simulation retracted, restore
+ * record cleared) and removes its host; a gate-on write re-opens it if it
+ * was open (or opening) when the gate closed.
  */
 
 import { createSignal, createMemo } from 'solid-js';
@@ -52,11 +59,14 @@ import {
 } from '../../../lib/side-by-side/presentation-state';
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
+import { PAGE_UI_GATE_SOURCE } from '../../../lib/page-ui/gate-follower';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
 import type { CompareUrls } from './urls';
 import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
 import { createScrollSyncSession } from './sync-session';
-import { consumeBootOpenState, markOverlayClosed, markOverlayOpen } from './session-open';
+import { markOverlayClosed, markOverlayOpen } from './session-open';
+import { createOverlayGate } from './page-ui-gate';
 import {
   createFramePresenter,
   engineRescaleFactory,
@@ -341,6 +351,40 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     }
   };
 
+  /**
+   * Bumped by every host removal: an open in flight across one (a gate
+   * off, even if it is already back on) is stale — its view is gone.
+   */
+  let viewEpoch = 0;
+
+  /**
+   * Remove the overlay's host (the gate closed): the next open mounts a
+   * fresh view, re-measures and loads the halves again; the URL pair and
+   * the page's scroll baseline are kept (same page).
+   */
+  const unmountView = (): void => {
+    viewEpoch += 1;
+    ui?.remove();
+    ui = null;
+    viewMounted = Promise.resolve(false);
+    for (const side of COMPARE_SIDES) {
+      frames[side] = undefined;
+      columns[side] = undefined;
+    }
+    setSimFits({});
+  };
+
+  /**
+   * An open the gate closed mid-flight: retract the simulation session it
+   * may have established and remove a host it may have created; nothing
+   * shows.
+   */
+  const abandonOpen = async (): Promise<void> => {
+    await simMachine.close();
+    unmountView();
+    log.info('The Side-by-Side open was dropped: on-page UI turned off');
+  };
+
   /** The single open path for both the context menu and the auto-open. */
   let openInFlight = false;
   const openOverlay = async (): Promise<void> => {
@@ -348,7 +392,16 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     // the context menu can fire close together: the guard serializes them
     // to exactly one open.
     if (isOpen() || openInFlight) return;
+    if (!pageUi.running()) {
+      // Off (or not known yet): the gate outranks every trigger.
+      log.info('Side-by-Side not opened: on-page UI is off on this page');
+      return;
+    }
     openInFlight = true;
+    const epoch = viewEpoch;
+    /** Whether the gate closed (and maybe re-opened) since this open began. */
+    const cut = (): boolean => !pageUi.running() || epoch !== viewEpoch;
+    let abandoned = false;
     try {
       // First open: capture the scroll baseline and resolve the URL pair once.
       if (urls === null) {
@@ -382,15 +435,30 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       // The simulation's ask — and any rule transition it commands — settles
       // BEFORE the view can mount: a first open's halves navigate only after
       // the rule exists, exactly the machine's rule-before-refresh ordering.
+      if (cut()) {
+        abandoned = true;
+        return;
+      }
       const psi = isAutoFlowPage();
       await simMachine.open(psi, simTarget, desktopTarget);
+      if (cut()) {
+        abandoned = true;
+        await abandonOpen();
+        return;
+      }
       await ensureUi(urls);
       // The engine must not outrun its halves: `registerFrame`'s slots fill
       // during the render that `ensureUi` started but did not await. Starting
       // from an unregistered slot attaches nothing — and the session's start
       // guard would then keep a "running" engine deaf to the halves until a
       // switch cycle re-armed it (the reported default-on regression).
-      if (!(await viewMounted)) {
+      const mounted = await viewMounted;
+      if (cut()) {
+        abandoned = true;
+        await abandonOpen();
+        return;
+      }
+      if (!mounted) {
         // A dead view must not become a dead-end: no show (no scroll lock),
         // no continuity record, and a simulation session this open already
         // established is retracted — a rule without its overlay UI would
@@ -418,6 +486,14 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       show();
     } finally {
       openInFlight = false;
+      // The gate closed and is already back on: the gate-on's re-open met
+      // this open in flight and was absorbed, so the dropped open starts
+      // afresh (its view was removed with the gate-off).
+      if (abandoned && pageUi.running() && !ctx.isInvalid) {
+        openOverlay().catch((cause: unknown) => {
+          log.error('Re-opening the overlay after the gate came back failed', cause);
+        });
+      }
     }
   };
 
@@ -570,30 +646,43 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     })
   );
 
-  /**
-   * The boot's open trigger, shared by the two carriers: the PageSpeed
-   * Insights auto-flow page (its own entry design) and the reload restore —
-   * a document that had the overlay open on this exact URL and reloaded on
-   * itself continues the compare instead of dropping the user into a
-   * closed page.
-   */
-  const bootOpen = (): void => {
+  // The gate's start/stop (`./page-ui-gate`): the boot's open trigger (the
+  // PageSpeed Insights auto-flow page, the reload restore), the close and
+  // host removal on a gate-off, the re-open on a gate-on.
+  const overlayGate = createOverlayGate({
+    win: window,
+    href: () => window.location.href,
+    autoFlowPage: isAutoFlowPage,
+    isOpen,
+    opening: () => openInFlight,
+    open: openOverlay,
+    close,
+    unmount: unmountView,
+    isInvalid: () => ctx.isInvalid,
+    log
+  });
+  const pageUi = followGatedSurface(
+    {
+      source: PAGE_UI_GATE_SOURCE,
+      isInvalid: () => ctx.isInvalid,
+      onInvalidated: (cleanup) => {
+        ctx.onInvalidated(cleanup);
+      },
+      log
+    },
+    overlayGate
+  );
+
+  /** The boot moment: the restore record is consumed, then the gate decides. */
+  const bootReady = (): void => {
     if (ctx.isInvalid) return;
-    if (consumeBootOpenState(window, window.location.href) || isAutoFlowPage()) {
-      // The belt catch keeps the never-fire-and-forget guarantee local even
-      // though every open path resolves (a future rejecting await must not
-      // surface as an unhandled boot rejection).
-      openOverlay().catch((cause: unknown) => {
-        log.error('The boot open failed unexpectedly', cause);
-      });
-    }
+    overlayGate.consumeRestore();
+    pageUi.pageReady();
   };
   if (document.readyState === 'loading') {
-    // eslint-disable-next-line solid/reactivity -- imperative page-lifecycle call
-    ctx.addEventListener(window, 'DOMContentLoaded', bootOpen);
+    ctx.addEventListener(window, 'DOMContentLoaded', bootReady);
   } else {
-    // eslint-disable-next-line solid/reactivity -- imperative page-lifecycle call
-    bootOpen();
+    bootReady();
   }
 
   // An extension reload while the overlay is up must not leave the page

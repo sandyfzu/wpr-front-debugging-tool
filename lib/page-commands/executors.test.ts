@@ -90,6 +90,7 @@ describe('trigger rows', () => {
     ],
     ['not-html', { ok: false, failure: 'This page is not an HTML page.' }],
     ['tab-gone', { ok: false, failure: 'The tab closed before it opened.' }],
+    ['page-ui-off', { ok: false, failure: 'On-page UI is off.' }],
     [
       'failed',
       { ok: false, failure: 'Opening it failed. Try again from the toolbar button’s menu.' }

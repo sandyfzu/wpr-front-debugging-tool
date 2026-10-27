@@ -19,6 +19,8 @@ import { isRecord, ownValue } from '../../utils/is-record';
  * - `unsupported-page` — the browser does not let extensions script the page,
  * - `not-html` — the page is not an HTML page (an image, a feed, a file),
  * - `tab-gone` — the tab closed first,
+ * - `page-ui-off` — the on-page UI gate is off: nothing is injected into
+ *   pages until it is turned back on,
  * - `failed` — anything else (logged by the background).
  */
 export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
@@ -27,6 +29,7 @@ export const EXCLUSION_OVERLAY_OPEN_OUTCOMES = [
   'unsupported-page',
   'not-html',
   'tab-gone',
+  'page-ui-off',
   'failed'
 ] as const;
 
