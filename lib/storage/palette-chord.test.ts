@@ -236,7 +236,7 @@ describe('captureChord', () => {
   });
 
   it('round-trips: a captured chord parses and matches the press that made it', () => {
-    const press = key('Digit3', { altKey: true, shiftKey: true });
+    const press = key('Digit1', { ctrlKey: true, shiftKey: true });
     const result = captureChord(press, 'other');
     if (!result.ok) throw new Error('expected a chord');
     expect(parsePaletteChord(result.chord)).toEqual(result.chord);
@@ -300,7 +300,24 @@ describe('reserved chords', () => {
       ...mods(['KeyZ'], { shift: true }),
       { code: 'F10', alt: true },
       ...mods(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
-      ...mods(['Comma'], { shift: true })
+      ...mods(['Comma'], { shift: true }),
+      ...mods(['KeyT', 'KeyY', 'KeyM', 'KeyF'], { alt: true, shift: true }),
+      ...(
+        [
+          'KeyO',
+          'KeyZ',
+          'KeyP',
+          'KeyH',
+          'Digit0',
+          'Digit1',
+          'Digit2',
+          'Digit3',
+          'Digit4',
+          'Digit5',
+          'Digit6'
+        ] as const
+      ).map((code): PaletteChord => ({ code, alt: true, shift: true })),
+      { code: 'KeyL', alt: true }
     ],
     browser: [
       ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),

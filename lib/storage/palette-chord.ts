@@ -246,13 +246,40 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * block before/after, + V paste styles, + X inline code (Ctrl+Alt on
      * Windows, ⌘⌥ on macOS); `mod` + Shift + `,` settings sidebar (its
      * `mod` + G group block sits under browser: find next).
+     * WordPress editors' own registrations (block editor `core/*` shortcuts,
+     * classic editor TinyMCE `access` keys): `mod` + Shift + Alt + T/Y move
+     * block up/down, + M visual/code editor, + F full screen (Ctrl+Shift+Alt
+     * on Windows, ⇧⌥⌘ on macOS); Shift + Alt + O list view (classic:
+     * numbered list), + Z remove block (classic: toolbar toggle), + P
+     * previous editor part (classic: page break), + H shortcut help, + 1–6
+     * heading level, + 0 heading to paragraph; Alt + L collapse list view.
+     * WordPress's macOS form of the Shift + Alt chords is Ctrl+Option — Ctrl
+     * is outside the macOS chord vocabulary, so only the Windows/Linux form
+     * needs a row.
      */
     editing: Object.freeze([
       ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
       ...withMod(['KeyZ'], { shift: true }),
       canonicalChord('F10', { alt: true }),
       ...withMod(['KeyT', 'KeyY', 'KeyV', 'KeyX'], { alt: true }),
-      ...withMod(['Comma'], { shift: true })
+      ...withMod(['Comma'], { shift: true }),
+      ...withMod(['KeyT', 'KeyY', 'KeyM', 'KeyF'], { alt: true, shift: true }),
+      ...(
+        [
+          'KeyO',
+          'KeyZ',
+          'KeyP',
+          'KeyH',
+          'Digit0',
+          'Digit1',
+          'Digit2',
+          'Digit3',
+          'Digit4',
+          'Digit5',
+          'Digit6'
+        ] as const
+      ).map((code) => canonicalChord(code, { alt: true, shift: true })),
+      canonicalChord('KeyL', { alt: true })
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
