@@ -124,18 +124,11 @@ export function parseTabRelayRequest(input: unknown): ValidTabRelayRequest | nul
  * Why a relay produced no answer:
  * - `refused` — the sender may not name a tab (not our tab-less extension page),
  * - `invalid-request` — the request broke the contract,
- * - `tab-gone` — no tab has that id (closed),
- * - `no-receiver` — the tab's content script did not answer (not injected yet,
- *   navigating, a page outside the host permissions),
+ * - `no-receiver` — nothing in the tab answered (content script not injected
+ *   yet, navigating, a page outside the host permissions, or the tab closed),
  * - `failed` — anything else (logged by the background).
  */
-export const TAB_RELAY_FAILURES = [
-  'refused',
-  'invalid-request',
-  'tab-gone',
-  'no-receiver',
-  'failed'
-] as const;
+export const TAB_RELAY_FAILURES = ['refused', 'invalid-request', 'no-receiver', 'failed'] as const;
 
 /** One relay failure (see {@link TAB_RELAY_FAILURES}). */
 export type TabRelayFailure = (typeof TAB_RELAY_FAILURES)[number];

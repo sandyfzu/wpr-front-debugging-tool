@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../../lib/logger';
+import { isNoReceiverError } from '../../lib/messaging/no-receiver';
 import type { TabAsks } from '../../lib/messaging/tab-asks';
+import { relayTabAsks } from '../../lib/messaging/tab-relay-client';
 
 const { onMessage } = vi.hoisted(() => ({ onMessage: vi.fn() }));
 vi.mock('../../lib/messaging', () => ({ onMessage }));
@@ -34,11 +36,9 @@ function deps(
     getScriptSourceChunk: vi.fn(() => Promise.resolve(answer)),
     ...asks
   };
-  const tabExists = vi.fn(() => Promise.resolve(true));
   return {
     extensionId: ID,
     extensionRootUrl: ROOT,
-    tabExists,
     asks: tabAsks,
     log,
     ...overrides
@@ -57,7 +57,6 @@ describe('answerTabRelay — the typed answers', () => {
       ok: true,
       answer: { status: 'ok', text: 'x'.repeat(65536), total: 140_000 }
     });
-    expect(d.tabExists).toHaveBeenCalledWith(5);
     expect(d.asks.getScriptSourceChunk).toHaveBeenCalledWith(5, CHUNK);
   });
 
@@ -69,7 +68,6 @@ describe('answerTabRelay — the typed answers', () => {
       d
     );
     expect(reply).toEqual({ ok: false, failure: 'refused' });
-    expect(d.tabExists).not.toHaveBeenCalled();
     expect(d.asks.getFdtData).not.toHaveBeenCalled();
     expect(d.log.warn).toHaveBeenCalledOnce();
   });
@@ -87,16 +85,24 @@ describe('answerTabRelay — the typed answers', () => {
         failure: 'invalid-request'
       });
     }
-    expect(d.tabExists).not.toHaveBeenCalled();
+    expect(d.asks.getFdtData).not.toHaveBeenCalled();
+    expect(d.asks.processPageData).not.toHaveBeenCalled();
   });
 
-  it('answers tab-gone when no tab has the id', async () => {
-    const d = deps({ tabExists: vi.fn(() => Promise.resolve(false)) });
-    expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'getFdtData' }, d)).toEqual({
-      ok: false,
-      failure: 'tab-gone'
+  it('answers a closed tab as no-receiver — the miss the asking page needs, no probe first', async () => {
+    // Firefox 158, observed: a tab send to a closed tab calls back empty with
+    // "Could not establish connection…", which the transport folds into "No response".
+    const d = deps({}, undefined, {
+      getFdtData: vi.fn(() => Promise.reject(new Error('No response')))
     });
-    expect(d.asks.getFdtData).not.toHaveBeenCalled();
+    const reply = await answerTabRelay(PANEL, { tabId: 99_999, ask: 'getFdtData' }, d);
+    expect(reply).toEqual({ ok: false, failure: 'no-receiver' });
+    expect(d.asks.getFdtData).toHaveBeenCalledWith(99_999);
+    const cause = await relayTabAsks(() => Promise.resolve(reply))
+      .getFdtData(99_999)
+      .catch((error: unknown) => error);
+    expect(isNoReceiverError(cause)).toBe(true);
+    expect(d.log.warn).not.toHaveBeenCalled();
   });
 
   it('answers no-receiver for the transport’s expected misses', async () => {
@@ -115,7 +121,7 @@ describe('answerTabRelay — the typed answers', () => {
     }
   });
 
-  it('answers failed (and warns) for any other forward or probe failure', async () => {
+  it('answers failed (and warns) for any other forward failure', async () => {
     const d = deps({}, undefined, {
       processPageData: vi.fn(() => Promise.reject(new Error('boom')))
     });
@@ -124,11 +130,6 @@ describe('answerTabRelay — the typed answers', () => {
       failure: 'failed'
     });
     expect(d.log.warn).toHaveBeenCalledOnce();
-    const probe = deps({ tabExists: vi.fn(() => Promise.reject(new Error('probe'))) });
-    expect(await answerTabRelay(PANEL, { tabId: 5, ask: 'getFdtData' }, probe)).toEqual({
-      ok: false,
-      failure: 'failed'
-    });
   });
 });
 

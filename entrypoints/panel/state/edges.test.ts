@@ -87,12 +87,12 @@ describe('the data store on the relay path', () => {
     expect(relay.requests).toEqual([{ tabId: TAB, ask: 'getFdtData' }]);
   });
 
-  it('lands no-receiver and tab-gone on the direct path’s no-receiver state', async () => {
+  it('lands no-receiver (a closed tab included) on the direct path’s no-receiver state', async () => {
     const direct = await settledState(
       fdtRequestEdges(asksAnswering(Promise.reject(new Error('No response'))))
     );
     expect(direct.status).toBe('error');
-    for (const failure of ['no-receiver', 'tab-gone']) {
+    for (const failure of ['no-receiver']) {
       expect(await settledState(relayAnswering({ ok: false, failure }).edges), failure).toEqual(
         direct
       );

@@ -16,7 +16,6 @@ import {
   type TabRelayFailure,
   type TabRelayReply
 } from '../../lib/messaging/tab-relay';
-import { tabExists } from './tab-exists';
 
 const log = createLogger('tab-relay');
 
@@ -26,8 +25,6 @@ export interface TabRelayDeps {
   readonly extensionId: string;
   /** This extension's root URL (`runtime.getURL('/')`) — the sender-page origin check. */
   readonly extensionRootUrl: string;
-  /** Whether a tab with this id exists. */
-  readonly tabExists: (tabId: number) => Promise<boolean>;
   /** The transport the ask is forwarded over (production: the direct tab send). */
   readonly asks: TabAsks;
   readonly log: Logger;
@@ -62,14 +59,13 @@ export async function answerTabRelay(
   }
   const { ask, tabId } = request;
   try {
-    if (!(await deps.tabExists(tabId))) {
-      deps.log.debug('Relay target tab is gone', { ask, tabId });
-      return failed('tab-gone');
-    }
+    // No tab probe first: a send to a closed tab is the transport's own
+    // no-response miss, answered as `no-receiver` below — the same reply the
+    // asking page needs for a tab that is gone.
     return { ok: true, answer: await request.forward(deps.asks) };
   } catch (cause) {
     if (isNoReceiverError(cause)) {
-      // Expected: the tab's content script is not there (yet).
+      // Expected: the tab's content script is not there (yet), or the tab closed.
       deps.log.debug('Relay found no receiver in the tab', { ask, tabId });
       return failed('no-receiver');
     }
@@ -87,7 +83,6 @@ export function registerTabRelay(): void {
   const deps: TabRelayDeps = {
     extensionId: browser.runtime.id,
     extensionRootUrl: browser.runtime.getURL('/'),
-    tabExists: (tabId) => tabExists(tabId, log),
     asks: DIRECT_TAB_ASKS,
     log
   };

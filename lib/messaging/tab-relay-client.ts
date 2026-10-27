@@ -13,10 +13,10 @@ export type RelaySend = (request: TabRelayRequest) => Promise<unknown>;
 
 /**
  * The failures that mean "nothing answered in the tab" — the direct
- * transport's no-receiver case (a closed tab is one too: a direct send to
- * it resolves empty and the transport folds that into "No response").
+ * transport's no-receiver case (a closed tab included: a direct send to it
+ * resolves empty and the transport folds that into "No response").
  */
-const NO_RECEIVER_FAILURES: ReadonlySet<TabRelayFailure> = new Set(['no-receiver', 'tab-gone']);
+const NO_RECEIVER_FAILURES: ReadonlySet<TabRelayFailure> = new Set(['no-receiver']);
 
 /**
  * The rejection for a relay failure. A no-receiver-class failure carries

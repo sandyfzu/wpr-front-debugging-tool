@@ -51,8 +51,8 @@ describe('relayTabAsks — replies', () => {
     ).resolves.toBeNull();
   });
 
-  it('maps tab-gone and no-receiver onto the direct path’s no-receiver miss', async () => {
-    for (const failure of ['no-receiver', 'tab-gone'] as const) {
+  it('maps no-receiver (a closed tab included) onto the direct path’s no-receiver miss', async () => {
+    for (const failure of ['no-receiver'] as const) {
       const cause = await relayTabAsks(sendAnswering({ ok: false, failure }))
         .getFdtData(1)
         .catch((error: unknown) => error);
@@ -88,11 +88,11 @@ describe('relayTabAsks — replies', () => {
 });
 
 describe('relayFailureError', () => {
-  it('classifies exactly the two "nothing answered in the tab" failures as misses', () => {
+  it('classifies exactly the "nothing answered in the tab" failure as a miss', () => {
     const misses = TAB_RELAY_FAILURES.filter((failure) =>
       isNoReceiverError(relayFailureError(failure, 'getFdtData'))
     );
-    expect(misses).toEqual(['tab-gone', 'no-receiver']);
+    expect(misses).toEqual(['no-receiver']);
   });
 
   it('names the ask and the failure', () => {
