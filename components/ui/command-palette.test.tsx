@@ -12,6 +12,7 @@
  * geometry (the resource-less DOM gives none).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import Rocket from 'lucide-solid/icons/rocket';
 import Zap from 'lucide-solid/icons/zap';
@@ -257,6 +258,44 @@ describe('CommandPalette filtering', () => {
     expect(status.classList.contains('sr-only')).toBe(true);
   });
 
+  it('keeps the visible no-match line on the current query, and clears it when rows return', async () => {
+    const { field } = await mountPalette();
+    const status = screen.getByRole('status');
+    fireEvent.input(field, { target: { value: 'zz' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zz”');
+    });
+    fireEvent.input(field, { target: { value: 'zzq' } });
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “zzq”');
+    });
+    // Cleared: every row is back, the line is hidden again.
+    fireEvent.input(field, { target: { value: '' } });
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[role="listbox"]')?.hidden).toBe(false);
+    });
+    expect(status.classList.contains('sr-only')).toBe(true);
+    expect(status.textContent).not.toMatch(/No commands match/);
+  });
+
+  it('shows the no-match line when the rows go away without a query change (never stale)', async () => {
+    const [rows, setRows] = createSignal<readonly PaletteCommand[]>(ROWS);
+    render(() => (
+      <CommandPalette commands={rows()} filter={identityFilter} onRun={vi.fn()} onClose={vi.fn()} />
+    ));
+    const field = await screen.findByRole('combobox');
+    fireEvent.input(field, { target: { value: 'lazy' } });
+    const status = screen.getByRole('status');
+    await waitFor(() => {
+      expect(status.textContent).toBe('1 command available');
+    });
+    setRows([]);
+    await waitFor(() => {
+      expect(status.textContent).toBe('No commands match “lazy”');
+    });
+    expect(status.classList.contains('sr-only')).toBe(false);
+  });
+
   it('speaks the result count per query, and stays silent at open and on arrow moves', async () => {
     const { field } = await mountPalette();
     const status = screen.getByRole('status');
@@ -385,6 +424,21 @@ describe('CommandPalette keys', () => {
     fireEvent.keyDown(field, { key: 'ArrowDown', isComposing: true });
     expect(onRun).not.toHaveBeenCalled();
     expect(field.getAttribute('aria-activedescendant')).toBe(before);
+  });
+
+  it('leaves Shift/Alt/Meta + Arrow/Home/End to the field (text selection), moving nothing', async () => {
+    const { field } = await mountPalette();
+    const before = field.getAttribute('aria-activedescendant');
+    for (const modifier of ['shiftKey', 'altKey', 'metaKey'] as const) {
+      for (const key of ['ArrowDown', 'End']) {
+        const notCancelled = fireEvent.keyDown(field, { key, [modifier]: true });
+        expect(notCancelled).toBe(true);
+      }
+    }
+    expect(field.getAttribute('aria-activedescendant')).toBe(before);
+    // Bare, the same key still moves the highlight.
+    expect(fireEvent.keyDown(field, { key: 'ArrowDown' })).toBe(false);
+    expect(field.getAttribute('aria-activedescendant')).not.toBe(before);
   });
 
   it('dismisses on Tab instead of cycling focus back into the field', async () => {

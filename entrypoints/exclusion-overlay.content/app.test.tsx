@@ -363,6 +363,22 @@ describe('OverlayApp', () => {
     });
   });
 
+  it('an explicit open never takes focus back from a UI that claimed it in its first frames', async () => {
+    const other = document.createElement('button');
+    document.body.append(other);
+    try {
+      mount(port({ state: 'inactive' }), null, undefined, false, true);
+      // Another UI (a palette) claims focus before the overlay's first frame.
+      other.focus();
+      await screen.findByRole('heading', { level: 2, name: 'LazyLoad for images' });
+      // Past every frame a focus move would take.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(document.activeElement).toBe(other);
+    } finally {
+      other.remove();
+    }
+  });
+
   it('a folded re-open starts as the pill and leaves the page’s focus alone', async () => {
     const outside = document.createElement('button');
     document.body.append(outside);

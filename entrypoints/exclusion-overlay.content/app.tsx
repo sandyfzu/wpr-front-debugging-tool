@@ -58,6 +58,7 @@ import { draftTooLarge, footerLine as footerLineFor } from './footer-line';
 import type { OverlayController } from './controller';
 import { LANE_ORDER } from './exclusions/draft';
 import { Glyph } from './glyph';
+import { retryFocus } from './focus-retry';
 import { createAnnouncer } from './announcer';
 import {
   OVERLAY_MODES,
@@ -211,20 +212,41 @@ export function OverlayApp(props: OverlayAppProps): JSX.Element {
     return target === null ? null : viewportRect(target.element);
   });
 
-  /** Move focus once the target is visible (next frame: visibility flips first). */
-  const focusSoon = (element: () => HTMLElement | undefined, tries = FOCUS_TRIES): void => {
-    props.requestFrame(() => {
-      const target = element();
-      if (target === undefined) return;
-      target.focus({ preventScroll: true });
-      // A just-revealed panel can stay hidden for a frame (reduced motion
-      // turns its instant visibility switch into a 0.01 ms transition), so
-      // the focus does not take: try again on the next frame. Not keyed on
-      // `transitionend`: without reduced motion the switch is no transition
-      // at all (no event would come), and the frames bound the wait either way.
-      const root = target.getRootNode() as Document | ShadowRoot;
-      if (root.activeElement !== target && tries > 1) focusSoon(element, tries - 1);
-    });
+  /**
+   * Whether the page's focused element is free for the overlay to take:
+   * nothing focused, or focus already inside the overlay (its shadow host
+   * when mounted in one).
+   */
+  const focusIsFree = (active: Element | null): boolean => {
+    if (active === null || active === document.body || layer === undefined) return true;
+    const root = layer.getRootNode();
+    return layer.contains(active) || (root instanceof ShadowRoot && active === root.host);
+  };
+  /**
+   * Move focus once the target is visible (next frame: visibility flips
+   * first). A just-revealed panel can stay hidden for a frame (reduced motion
+   * turns its instant visibility switch into a 0.01 ms transition), so a move
+   * that does not take is tried again on the next frames — never once another
+   * UI (e.g. a palette opened meanwhile) claimed focus. Not keyed on
+   * `transitionend`: without reduced motion the switch is no transition at
+   * all (no event would come), and the frames bound the wait either way.
+   */
+  const focusSoon = (element: () => HTMLElement | undefined): void => {
+    retryFocus(
+      {
+        requestFrame: props.requestFrame,
+        active: () => document.activeElement,
+        isFree: focusIsFree,
+        attempt: () => {
+          const target = element();
+          if (target === undefined) return undefined;
+          target.focus({ preventScroll: true });
+          const root = target.getRootNode() as Document | ShadowRoot;
+          return root.activeElement === target;
+        }
+      },
+      FOCUS_TRIES
+    );
   };
 
   const collapse = (): void => {

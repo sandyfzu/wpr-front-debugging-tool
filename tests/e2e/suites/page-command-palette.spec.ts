@@ -5,7 +5,7 @@
  *
  * - Open: the view loads on demand (not in the page before the first open),
  *   sits in the top layer with focus in its field, writes nothing into the
- *   host document (no body write across open, typing, moves, close and
+ *   host document (no body, head or <html> write across open, typing, moves, close and
  *   gate-off), and keeps typed keys from the page's window-capture
  *   hotkeys; Escape / Tab / an outside click dismiss, focus returns to the
  *   page control; a re-open is a fresh surface.
@@ -157,40 +157,54 @@ test.describe('on-page command palette', () => {
     await page.close();
   });
 
-  test('never writes into the host body (open, typing, moves, close, gate-off)', async ({
+  test('never writes into the host document (open, typing, moves, close, gate-off)', async ({
     extension
   }) => {
     const { page, tabId } = await openFixturePage(extension, FIXTURE);
-    // Record every body-subtree write from now on. The palette's and the
-    // notice's hosts hang off <html>; the detection widget's own shadow host
-    // (a sibling surface, mounted on its own schedule) is a sanctioned body
-    // child, so `wpr-fdt-*` host insertions/removals are not page writes.
+    // Record every host-document write from now on: the body subtree, the
+    // head's children, <html>'s attributes and its direct children. Sanctioned:
+    // our own `wpr-fdt-*` hosts inserted/removed as direct <html> children
+    // (palette, notice), and the detection widget's host `wpr-fdt-inspector`
+    // (a sibling surface, mounted on its own schedule) as a body child.
     const bodyBefore = await page.evaluate(() => {
       const scope = window as unknown as { __bodyWrites: string[] };
       scope.__bodyWrites = [];
-      const isOwnHost = (node: Node): boolean =>
+      const html = document.documentElement;
+      const isHtmlHost = (node: Node): boolean =>
         node instanceof Element && node.localName.startsWith('wpr-fdt-');
-      new MutationObserver((records) => {
+      const isBodyHost = (node: Node): boolean =>
+        node instanceof Element && node.localName === 'wpr-fdt-inspector';
+      /** Whether a record only adds/removes our sanctioned hosts at its level. */
+      const sanctioned = (record: MutationRecord): boolean => {
+        if (record.type !== 'childList') return false;
+        const touched = [...record.addedNodes, ...record.removedNodes];
+        if (touched.length === 0) return false;
+        if (record.target === html) return touched.every(isHtmlHost);
+        if (record.target === document.body) return touched.every(isBodyHost);
+        return false;
+      };
+      const observer = new MutationObserver((records) => {
         for (const record of records) {
-          const touched = [...record.addedNodes, ...record.removedNodes];
-          if (
-            record.type === 'childList' &&
-            record.target === document.body &&
-            touched.length > 0 &&
-            touched.every(isOwnHost)
-          ) {
-            continue;
-          }
-          const names = touched.map((node) => node.nodeName).join(',');
-          scope.__bodyWrites.push(`${record.type} on ${record.target.nodeName} ${names}`);
+          if (sanctioned(record)) continue;
+          const names = [...record.addedNodes, ...record.removedNodes]
+            .map((node) => node.nodeName)
+            .join(',');
+          const attribute = record.attributeName === null ? '' : `[${record.attributeName}]`;
+          scope.__bodyWrites.push(
+            `${record.type}${attribute} on ${record.target.nodeName} ${names}`
+          );
         }
-      }).observe(document.body, {
+      });
+      observer.observe(document.body, {
         subtree: true,
         childList: true,
         attributes: true,
         characterData: true
       });
-      return [...document.body.children].filter((child) => !isOwnHost(child)).length;
+      observer.observe(document.head, { subtree: true, childList: true });
+      // <html> itself: its attributes and direct children (not the subtrees).
+      observer.observe(html, { childList: true, attributes: true });
+      return [...document.body.children].filter((child) => !isBodyHost(child)).length;
     });
 
     await openPalette(extension, page, tabId);
@@ -215,7 +229,7 @@ test.describe('on-page command palette', () => {
       await page.evaluate(() => ({
         writes: (window as unknown as { __bodyWrites: string[] }).__bodyWrites,
         children: [...document.body.children].filter(
-          (child) => !child.localName.startsWith('wpr-fdt-')
+          (child) => child.localName !== 'wpr-fdt-inspector'
         ).length,
         announcers: document.querySelectorAll('[data-live-announcer]').length
       }))
@@ -246,12 +260,7 @@ test.describe('on-page command palette', () => {
     await page.keyboard.type('exclusion');
     await page.keyboard.press('Enter');
     await expect(page.locator('wpr-fdt-exclusion-builder')).toHaveCount(1, MOUNT);
-    // The builder takes focus a beat after its host appears; opening the
-    // palette before that would see its focus moved out (an outside focus
-    // move dismisses it). Wait for the builder to settle first.
-    await expect
-      .poll(() => page.evaluate(() => document.activeElement?.localName ?? null), MOUNT)
-      .toBe('wpr-fdt-exclusion-builder');
+    // Opened at once: the builder's first-frame focus move yields to the palette.
 
     // Re-shown on open: the palette is the newest top-layer entry.
     await openPalette(extension, page, tabId);

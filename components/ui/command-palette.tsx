@@ -29,13 +29,14 @@ import { Dynamic } from 'solid-js/web';
 import { cn } from '../../utils/cn';
 import { FOCUS_RING } from './classes';
 import {
+  fieldHighlightMove,
   highlightAfterRank,
   isApplePlatform,
   moveHighlight,
+  noMatchText,
   paletteAnnouncement,
   scrollDeltaToReveal,
-  type AnnouncementCause,
-  type HighlightMove
+  type AnnouncementCause
 } from './command-palette-model';
 import { ModalDialog } from './dialog';
 
@@ -115,14 +116,6 @@ const LIST_ID = 'fdt-command-palette-listbox';
 function rowId(commandId: string): string {
   return `${LIST_ID}-item-${commandId}`;
 }
-
-/** The field's keys → the highlight move each requests. */
-const MOVE_KEYS: ReadonlyMap<string, HighlightMove> = new Map([
-  ['ArrowDown', 'next'],
-  ['ArrowUp', 'previous'],
-  ['Home', 'first'],
-  ['End', 'last']
-]);
 
 /**
  * Render the command palette surface: the combobox field over its ranked
@@ -248,8 +241,8 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
   const onFieldKeyDown = (event: KeyboardEvent): void => {
     // An IME composition owns its keys (Enter commits the composition).
     if (event.isComposing) return;
-    const move = MOVE_KEYS.get(event.key);
-    if (move !== undefined) {
+    const move = fieldHighlightMove(event);
+    if (move !== null) {
       event.preventDefault();
       setActiveId((current) => moveHighlight(ranked(), current, move));
       announce('move');
@@ -320,10 +313,12 @@ function PaletteCombobox<T extends PaletteCommand>(props: PaletteComboboxProps<T
         </For>
       </ul>
       {/* Always mounted (a live region must exist before its text changes):
-          the visible no-match line while nothing matches, visually hidden
-          (counts, and the highlighted row on Apple platforms) otherwise. */}
+          the visible no-match line while nothing matches — derived from the
+          current query, so it is never blank or stale (an empty command set,
+          a re-rank without a query change) — visually hidden (counts, and the
+          highlighted row on Apple platforms) otherwise. */}
       <p data-fdt="palette-empty" role="status" class={empty() ? EMPTY_CLASSES : 'sr-only'}>
-        {announcement()}
+        {empty() ? noMatchText(query()) : announcement()}
       </p>
     </div>
   );

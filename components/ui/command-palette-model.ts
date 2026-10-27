@@ -88,6 +88,34 @@ export function highlightAfterRank(
   return firstEnabledId(rows);
 }
 
+/** The field's keys → the highlight move each requests. */
+const MOVE_KEYS: ReadonlyMap<string, HighlightMove> = new Map([
+  ['ArrowDown', 'next'],
+  ['ArrowUp', 'previous'],
+  ['Home', 'first'],
+  ['End', 'last']
+]);
+
+/** The keydown facts {@link fieldHighlightMove} reads. */
+export interface FieldKeyFacts {
+  readonly key: string;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+}
+
+/**
+ * The highlight move a field key requests, or `null` when the key belongs to
+ * the field: with Shift, Alt or Meta held, Arrow/Home/End select or move the
+ * text caret (e.g. Shift+Home selects to the start, ⌘← goes to line start).
+ *
+ * @param event The field's keydown.
+ */
+export function fieldHighlightMove(event: FieldKeyFacts): HighlightMove | null {
+  if (event.shiftKey || event.altKey || event.metaKey) return null;
+  return MOVE_KEYS.get(event.key) ?? null;
+}
+
 /** What changed, for the live region's next sentence. */
 export type AnnouncementCause =
   /** The query changed (the ranked list is new). */

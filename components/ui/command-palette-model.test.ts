@@ -1,10 +1,11 @@
 /**
  * The palette combobox model's rules: highlight moves (wrap, disabled rows
  * skipped, enabled ends), the re-rank placement, the live-region sentence,
- * the Apple-platform check and the list scroll delta.
+ * the field's key → move map, the Apple-platform check and the list scroll delta.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  fieldHighlightMove,
   firstEnabledId,
   highlightAfterRank,
   isApplePlatform,
@@ -138,7 +139,7 @@ describe('isApplePlatform', () => {
     expect(isApplePlatform({ platform: 'Win32', userAgentData: { platform: 'macOS' } })).toBe(true);
   });
 
-  it('prefers the client-hints platform over the legacy one', () => {
+  it('prefers the client-hints platform over the deprecated one', () => {
     expect(isApplePlatform({ platform: 'MacIntel', userAgentData: { platform: 'Windows' } })).toBe(
       false
     );
@@ -166,5 +167,31 @@ describe('scrollDeltaToReveal', () => {
 
   it('aligns a row taller than the list to its top', () => {
     expect(scrollDeltaToReveal({ top: 150, bottom: 300 }, list)).toBe(50);
+  });
+});
+
+describe('fieldHighlightMove', () => {
+  const bare = { shiftKey: false, altKey: false, metaKey: false };
+
+  it('maps the bare arrow / Home / End keys to their moves', () => {
+    expect(fieldHighlightMove({ ...bare, key: 'ArrowDown' })).toBe('next');
+    expect(fieldHighlightMove({ ...bare, key: 'ArrowUp' })).toBe('previous');
+    expect(fieldHighlightMove({ ...bare, key: 'Home' })).toBe('first');
+    expect(fieldHighlightMove({ ...bare, key: 'End' })).toBe('last');
+  });
+
+  it.each(['shiftKey', 'altKey', 'metaKey'] as const)(
+    'leaves the keys to the field while %s is held (text selection / caret)',
+    (modifier) => {
+      for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+        expect(fieldHighlightMove({ ...bare, key, [modifier]: true })).toBeNull();
+      }
+    }
+  );
+
+  it('is null for every other key', () => {
+    for (const key of ['Enter', 'ArrowLeft', 'PageDown', 'a', 'Tab']) {
+      expect(fieldHighlightMove({ ...bare, key })).toBeNull();
+    }
   });
 });
