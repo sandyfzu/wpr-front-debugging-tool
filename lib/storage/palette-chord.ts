@@ -231,10 +231,12 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * and bold/italic/underline in rich-text editors (contenteditable, e.g.
      * the WordPress block editor). `mod` + B and + U also carry browser
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
+     * Alt+F10 moves focus to the block editor's nearest toolbar.
      */
     editing: Object.freeze([
       ...withMod(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
-      ...withMod(['KeyZ'], { shift: true })
+      ...withMod(['KeyZ'], { shift: true }),
+      canonicalChord('F10', { alt: true })
     ]),
     /**
      * Browser commands: find, save, print, reload, address bar, tabs and
@@ -242,17 +244,24 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * tab close (Windows/Linux), Ctrl+H history; bookmark page (D), open
      * file (O), downloads (J), find next/previous (G, Shift+G), settings
      * (⌘,); Shift + A add-ons, B bookmarks bar, O bookmarks manager/library,
-     * P private window (Firefox). Lone keys: F1 help, F3 find next, F5
-     * reload, F6 focus toolbars/address bar, F7 caret browsing, F10 menu
-     * bar/toolbar focus.
+     * P private window (Firefox), D bookmark all tabs (also the block
+     * editor's duplicate block), H history library (Firefox), Y downloads
+     * (Firefox, Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R,
+     * ⌘⌥R). Lone keys: F1 help, F3 find next, F5 reload, F6 focus
+     * toolbars/address bar, F7 caret browsing, F9 reader view (Firefox),
+     * F10 menu bar/toolbar focus.
      */
     browser: Object.freeze([
       ...withMod(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
       ...withMod(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
       ...withMod(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...withMod(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
+      ...withMod(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
+      ...withMod(['KeyR'], { alt: true }),
       ...withMod(DIGITS.filter((digit) => digit !== '0').map((digit) => `Digit${digit}` as const)),
-      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F10'] as const).map((code) => canonicalChord(code, {}))
+      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code) =>
+        canonicalChord(code, {})
+      )
     ]),
     /** Page zoom in/out/reset (`mod` + `=`, `+` via Shift on US, `-`, `0`). */
     zoom: Object.freeze([
@@ -261,13 +270,14 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
     ]),
     /**
      * Developer tools: F12; Ctrl+Shift+I/J/C (Chromium, Windows/Linux) and
-     * ⌘⌥I/J/C + ⌘⇧C (Chromium, macOS); the console and responsive-design
-     * chords K/M (Firefox: Ctrl+Shift on Windows/Linux, ⌘⌥ on macOS).
+     * ⌘⌥I/J/C + ⌘⇧C (Chromium, macOS); the console, responsive-design and
+     * network chords K/M/E (Firefox: Ctrl+Shift on Windows/Linux, ⌘⌥ on
+     * macOS).
      */
     devtools: Object.freeze([
       canonicalChord('F12', {}),
-      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { shift: true }),
-      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { alt: true })
+      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { shift: true }),
+      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
     ]),
     /**
      * OS window commands: quit (⌘Q; Ctrl+Q on Linux), hide (⌘H), minimize

@@ -84,7 +84,7 @@ describe('parsePaletteChord', () => {
 
   it('allows a function key alone', () => {
     expect(parsePaletteChord({ code: 'F2' })).toEqual({ code: 'F2' });
-    expect(parsePaletteChord({ code: 'F9', shift: false })).toEqual({ code: 'F9' });
+    expect(parsePaletteChord({ code: 'F8', shift: false })).toEqual({ code: 'F8' });
   });
 
   it('refuses a bare key or Shift alone (they would steal typing)', () => {
@@ -246,13 +246,16 @@ describe('reserved chords', () => {
   const expected: Record<ReservedChordGroup, readonly PaletteChord[]> = {
     editing: [
       ...mods(['KeyC', 'KeyV', 'KeyX', 'KeyA', 'KeyZ', 'KeyY', 'KeyB', 'KeyI', 'KeyU']),
-      ...mods(['KeyZ'], { shift: true })
+      ...mods(['KeyZ'], { shift: true }),
+      { code: 'F10', alt: true }
     ],
     browser: [
       ...mods(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
       ...mods(['KeyD', 'KeyO', 'KeyJ', 'KeyG', 'Comma']),
       ...mods(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...mods(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
+      ...mods(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
+      ...mods(['KeyR'], { alt: true }),
       ...mods([
         'Digit1',
         'Digit2',
@@ -264,13 +267,15 @@ describe('reserved chords', () => {
         'Digit8',
         'Digit9'
       ]),
-      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F10'] as const).map((code): PaletteChord => ({ code }))
+      ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code): PaletteChord => ({
+        code
+      }))
     ],
     zoom: [...mods(['Equal', 'Minus', 'Digit0']), ...mods(['Equal'], { shift: true })],
     devtools: [
       { code: 'F12' },
-      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { shift: true }),
-      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM'], { alt: true })
+      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { shift: true }),
+      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
     ],
     system: [...mods(['KeyQ', 'KeyM']), { code: 'F4', alt: true }, { code: 'F11' }]
   };
@@ -308,7 +313,10 @@ describe('reserved chords', () => {
       { code: 'KeyL', mod: true, shift: true },
       { code: 'Digit1', mod: true, shift: true },
       { code: 'F2' },
-      { code: 'F4' }
+      { code: 'F4' },
+      { code: 'F8' },
+      { code: 'F10', shift: true },
+      { code: 'KeyR', alt: true }
     ] satisfies PaletteChord[]) {
       expect(reservedChordGroup(free)).toBeNull();
       expect(parsePaletteChord(free)).toEqual(free);
@@ -325,7 +333,7 @@ describe('chordMayTypeText', () => {
   });
 
   it('flags Ctrl+Alt outside macOS only (AltGr), never Command+Option', () => {
-    const modAlt: PaletteChord = { code: 'KeyE', mod: true, alt: true };
+    const modAlt: PaletteChord = { code: 'KeyL', mod: true, alt: true };
     expect(chordMayTypeText(modAlt, 'other')).toBe(true);
     expect(chordMayTypeText(modAlt, 'mac')).toBe(false);
   });
