@@ -535,6 +535,8 @@ const RESTORE_FRAMES = 30;
 
 /** One translate change {@link recordRestoreFrames} saw, as the user saw it. */
 interface RestoreFrame {
+  /** The frame index since the chrome first existed (0 = its first frame). */
+  readonly frame: number;
   readonly x: number;
   readonly y: number;
   /** Whether the smooth re-settle class rode the frame (a restore never does). */
@@ -573,6 +575,7 @@ async function recordRestoreFrames(page: Page): Promise<void> {
             const boxLeft = corner.left + pill.offsetLeft;
             const boxTop = corner.top + pill.offsetTop;
             seen.push({
+              frame: payload.frames - left,
               x,
               y,
               resettle: chrome.classList.contains('ins-resettle'),
@@ -632,6 +635,8 @@ async function expectRestorePainted(
   }
   const restored = frames[lostRace ? 1 : 0];
   if (restored === undefined) throw new Error('the restore never painted');
+  // A lost race costs exactly one anchor frame: the restore lands on the next.
+  expect(restored.frame, 'the frame the restore painted in').toBe(lostRace ? 1 : 0);
   expect(restored.resettle, 'the restore rides no re-settle leg').toBe(false);
   for (const [edge, air] of Object.entries(restored.air)) {
     expect(air, `the restored pose is clamped inside (${edge})`).toBeGreaterThanOrEqual(
@@ -968,7 +973,7 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
-    'the pill drags beneath the pointer and a reload restores the dropped position (stored per origin, before first paint)',
+    'the pill drags beneath the pointer and a reload restores the dropped position (stored per origin; first paint on the fast path, one instant move otherwise)',
     async ({ extension }) => {
       await setWidgetEnabled(extension, true);
       const { page } = await openSitePage(extension, FDT_PAGE_URL);
@@ -1030,8 +1035,8 @@ siteTest.describe('site detection widget', () => {
             y: Math.round(dropped.y)
           });
 
-        // A reload restores it — already in the first frame the chrome exists
-        // in (the restore lands in the render's own task, no anchor flash).
+        // A reload restores it: in the first frame the chrome exists in on the
+        // fast path (the read settled before the render), one instant move otherwise.
         await recordRestoreFrames(page);
         await page.reload({ waitUntil: 'load' });
         await settleWidget(page);
