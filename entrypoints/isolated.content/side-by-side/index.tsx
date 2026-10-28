@@ -58,7 +58,10 @@ import {
   type PresentationStateIO
 } from '../../../lib/side-by-side/presentation-state';
 import { isHttpUrl } from '../../../utils/urls';
-import { mountShadowUi } from '../../../components/injected-ui/mount';
+import {
+  createShadowSurface,
+  type ShadowSurface
+} from '../../../components/injected-ui/shadow-surface';
 import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
 import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
@@ -105,10 +108,8 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   const [simFits, setSimFits] = createSignal<FrameFitRecord>({});
   /** The overlay's URL pair, resolved at first open and never re-resolved. */
   let urls: CompareUrls | null = null;
-  /** The mounted UI handle; created at first open. */
-  let ui: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
-  /** The Solid disposer, once the render has completed. */
-  let disposeRoot: (() => void) | null = null;
+  /** The overlay's shadow surface; built at first open (see `ensureUi`). */
+  let surface: ShadowSurface | null = null;
   /**
    * The view's settled mount: the frame slots register through its render,
    * so every engine start must follow this promise — starting earlier arms
@@ -368,8 +369,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    */
   const unmountView = (): void => {
     openGuard.viewRemoved();
-    ui?.remove();
-    ui = null;
+    surface?.hide();
     viewMounted = Promise.resolve(false);
     for (const side of COMPARE_SIDES) {
       frames[side] = undefined;
@@ -456,12 +456,10 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
         // no continuity record, and a simulation session this open already
         // established is retracted — a rule without its overlay UI would
         // rewrite the tab's document requests invisibly. The half-mounted
-        // shadow host is torn down so the guard at `ensureUi` releases and
-        // the next open really does retry the whole path (a surviving host
-        // would fail the same way forever).
+        // host leaves the page, so the next open mounts and renders afresh
+        // (a surviving mount would keep its dead view forever).
         await simMachine.close();
-        ui?.remove();
-        ui = null;
+        surface?.hide();
         log.warn('The overlay view failed to mount — the open degraded, nothing shown');
         return;
       }
@@ -512,72 +510,79 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     setOpen(false);
   };
 
-  /** Mount the overlay (once); shadow-host cleanup is WXT's own. */
+  /**
+   * The overlay's shadow surface for the page's URL pair: built at the first
+   * open (a page that never opens the compare pays neither the view nor the
+   * stylesheet fetch) and cycled across gate hide → show (one host for the
+   * page's life). The iframes stay unsandboxed (no `sandbox`/
+   * `credentialless`): the feature compares real pages with their real
+   * cookies and requests, so a sandboxed pair would not show what the user
+   * is comparing. (Security note: the frames load the user's own session.)
+   *
+   * @param pair The URL pair (resolved once per page, never re-resolved).
+   * @returns The surface.
+   */
+  const createOverlaySurface = (pair: CompareUrls): ShadowSurface =>
+    createShadowSurface({
+      create: (hooks) =>
+        createShadowRootUi(ctx, {
+          name: UI_NAME,
+          position: 'inline',
+          onMount: hooks.onMount,
+          onRemove: hooks.onRemove
+        }),
+      view: () => (
+        <SideBySideOverlay
+          urls={() => pair}
+          open={isOpen}
+          psiMode={isAutoFlowPage}
+          registerFrame={(side, frame) => {
+            // A null settles a re-render; an undefined slot means "no
+            // frame" for the refresh guard.
+            frames[side] = frame ?? undefined;
+          }}
+          registerColumn={(side, column) => {
+            columns[side] = column ?? undefined;
+          }}
+          refresh={refreshFrame}
+          close={close}
+          syncEnabled={syncOn}
+          syncBlocked={(side) => syncBlocked()[side] === true}
+          onToggleSync={onToggleSync}
+          sim={sim}
+          simFits={simFits}
+          sizeGateOpen={sizeGateOpen}
+          onToggleSim={onToggleSim}
+          onToggleDesktop={onToggleDesktop}
+        />
+      ),
+      isInvalid: () => ctx.isInvalid,
+      onRenderError: (cause) => {
+        log.error(
+          'Mounting the side-by-side overlay view into the shadow root failed',
+          cause instanceof Error ? cause.message : cause
+        );
+      }
+    });
+
+  /**
+   * Show the overlay's host (once per open) and expose its render as
+   * `viewMounted`: the open path awaits it before starting the sync engine,
+   * and a false result keeps the open from showing a dead overlay (the
+   * degrade branch there). A gate-off during the first creation refuses the
+   * show (the open's own cut check then abandons it).
+   */
   const ensureUi = async (pair: CompareUrls): Promise<void> => {
-    if (ui !== null) return;
+    surface ??= createOverlaySurface(pair);
     try {
-      // The iframes stay unsandboxed (no `sandbox`/`credentialless`): the
-      // feature compares real pages with their real cookies and requests,
-      // so a sandboxed pair would not show what the user is comparing.
-      // (Security note: the frames load the user's own session.)
-      ui = await createShadowRootUi(ctx, {
-        name: UI_NAME,
-        position: 'inline',
-        onMount: (container, shadow) => {
-          // The mount promise is owned, not fire-and-forget: the open path
-          // awaits it before starting the sync engine, and its value states
-          // whether the view is really up — a false result keeps the open
-          // from showing a dead overlay (the degrade branch there).
-          viewMounted = mountShadowUi(container, shadow, () => (
-            <SideBySideOverlay
-              urls={() => pair}
-              open={isOpen}
-              psiMode={isAutoFlowPage}
-              registerFrame={(side, frame) => {
-                // A null settles a re-render; an undefined slot means "no
-                // frame" for the refresh guard.
-                frames[side] = frame ?? undefined;
-              }}
-              registerColumn={(side, column) => {
-                columns[side] = column ?? undefined;
-              }}
-              refresh={refreshFrame}
-              close={close}
-              syncEnabled={syncOn}
-              syncBlocked={(side) => syncBlocked()[side] === true}
-              onToggleSync={onToggleSync}
-              sim={sim}
-              simFits={simFits}
-              sizeGateOpen={sizeGateOpen}
-              onToggleSim={onToggleSim}
-              onToggleDesktop={onToggleDesktop}
-            />
-          ))
-            .then((dispose) => {
-              disposeRoot = dispose;
-              return true;
-            })
-            .catch((cause: unknown) => {
-              log.error(
-                'Mounting the side-by-side overlay view into the shadow root failed',
-                cause instanceof Error ? cause.message : cause
-              );
-              return false;
-            });
-        },
-        onRemove: () => {
-          disposeRoot?.();
-          disposeRoot = null;
-        }
-      });
-      ui.mount();
+      await surface.show(() => pageUi.running());
     } catch (error) {
-      ui = null;
       log.error(
         'Mounting the side-by-side overlay failed',
         error instanceof Error ? error.message : error
       );
     }
+    viewMounted = surface.rendered();
   };
 
   /**

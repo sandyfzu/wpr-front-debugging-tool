@@ -15,7 +15,7 @@ import { Show, createSignal, onMount, type Accessor, type JSX } from 'solid-js';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import type { Logger } from '../../../lib/logger';
-import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { createShadowSurface } from '../../../components/injected-ui/shadow-surface';
 import { showInTopLayer } from '../../../components/injected-ui/top-layer';
 import { CLOSE_ICON_PATHS, StrokeIcon } from '../ui/icons';
 
@@ -186,15 +186,13 @@ export interface NoticeHost {
  */
 export function createNoticeHost(ctx: ContentScriptContext, log: Logger): NoticeHost {
   const [notice, setNotice] = createSignal<PageNotice>({ title: '', body: '' });
-  let ui: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
-  /** A mount in flight (the stylesheet wait): later shows only swap the text. */
+  /** A first show in flight (the host creation): later shows only swap the text. */
   let mounting = false;
-  let disposeView: (() => void) | null = null;
 
+  /** Dismiss the shown notice: countdown off, host off the page. */
   const remove = (): void => {
     timer.cancel();
-    ui?.remove();
-    ui = null;
+    surface.hide();
   };
   const timer = createDismissTimer(
     {
@@ -207,52 +205,49 @@ export function createNoticeHost(ctx: ContentScriptContext, log: Logger): Notice
     remove
   );
 
-  const mount = async (): Promise<void> => {
-    mounting = true;
-    try {
-      const created = await createShadowRootUi(ctx, {
+  /** One host for the page's life, cycled across notices. */
+  const surface = createShadowSurface({
+    create: (hooks) =>
+      createShadowRootUi(ctx, {
         name: NOTICE_HOST_NAME,
         position: 'inline',
         // The documentElement: a page transform on <body> must not become the
         // containing block (the top layer escapes it anyway).
         anchor: 'html',
         append: 'last',
-        onMount: (container, shadow) => {
-          mountShadowUi(container, shadow, () => (
-            <NoticeView
-              notice={notice}
-              onDismiss={remove}
-              onHold={(held) => {
-                timer.hold(held);
-              }}
-              registerLayer={(layer) => {
-                // Shown once connected: the top layer needs a rendered element.
-                ctx.requestAnimationFrame(() => {
-                  showInTopLayer(layer, log);
-                });
-              }}
-              requestFrame={(run) => {
-                ctx.requestAnimationFrame(run);
-              }}
-            />
-          ))
-            .then((dispose) => {
-              disposeView = dispose;
-            })
-            .catch((cause: unknown) => {
-              log.error('Mounting the page notice failed', cause);
-            });
-        },
-        onRemove: () => {
-          disposeView?.();
-          disposeView = null;
-        }
-      });
-      if (ctx.isInvalid) return;
-      ui = created;
-      ui.mount();
+        onMount: hooks.onMount,
+        onRemove: hooks.onRemove
+      }),
+    view: () => (
+      <NoticeView
+        notice={notice}
+        onDismiss={remove}
+        onHold={(held) => {
+          timer.hold(held);
+        }}
+        registerLayer={(layer) => {
+          // Shown once connected: the top layer needs a rendered element.
+          ctx.requestAnimationFrame(() => {
+            showInTopLayer(layer, log);
+          });
+        }}
+        requestFrame={(run) => {
+          ctx.requestAnimationFrame(run);
+        }}
+      />
+    ),
+    isInvalid: () => ctx.isInvalid,
+    onRenderError: (cause) => {
+      log.error('Mounting the page notice failed', cause);
+    }
+  });
+
+  /** Put the notice's host on the page (created on the first show). */
+  const mount = async (): Promise<void> => {
+    mounting = true;
+    try {
       // The countdown starts once the notice is on the page.
-      timer.restart();
+      if ((await surface.show(() => true)) === 'shown') timer.restart();
     } catch (cause) {
       log.error('Creating the page notice failed', cause);
     } finally {
@@ -264,7 +259,7 @@ export function createNoticeHost(ctx: ContentScriptContext, log: Logger): Notice
     show: (next) => {
       if (ctx.isInvalid) return;
       setNotice(next);
-      if (ui !== null) timer.restart();
+      if (surface.isShown()) timer.restart();
       // A mount in flight starts the countdown itself once it lands.
       else if (!mounting) void mount();
     }

@@ -68,8 +68,8 @@ export interface StripDataSnapshot {
 }
 
 /**
- * The chip state vocabulary the card renders (the P0 status pairs the brief
- * distributes; `info` would appear with tools).
+ * The chip state vocabulary the card renders (the shared status pairs;
+ * `info` would appear with tools).
  */
 export type StripChipState = 'ok' | 'warn' | 'attention' | 'error' | 'neutral';
 

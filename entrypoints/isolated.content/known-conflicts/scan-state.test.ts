@@ -12,9 +12,11 @@ import {
   loadingCopyVisible,
   markerMood,
   mergeFindings,
+  pageChurned,
   passSettled,
   scanStartPlan,
-  surfaceChanged
+  surfaceChanged,
+  type ChildListChange
 } from './scan-state';
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 
@@ -158,5 +160,39 @@ describe('latePassDue', () => {
     expect(latePassDue(false, false)).toBe(true);
     expect(latePassDue(false, true)).toBe(false);
     expect(latePassDue(true, false)).toBe(false);
+  });
+});
+
+describe('pageChurned', () => {
+  /** A childList record from plain node lists. */
+  const change = (added: Node[], removed: Node[] = []): ChildListChange => {
+    const list = (nodes: Node[]): NodeList => {
+      const holder = document.createDocumentFragment();
+      // A fragment's childNodes is a real NodeList.
+      for (const node of nodes) holder.append(node);
+      return holder.childNodes;
+    };
+    return { addedNodes: list(added), removedNodes: list(removed) };
+  };
+  const OWN = 'wpr-fdt-known-conflicts';
+  const isOwn = (node: Node): boolean => node.nodeName.toLowerCase() === OWN;
+  const el = (tag: string): Node => document.createElement(tag);
+
+  it('ignores the card host joining or leaving, alone or in a burst', () => {
+    expect(pageChurned([change([el(OWN)])], isOwn)).toBe(false);
+    expect(pageChurned([change([], [el(OWN)]), change([el(OWN)])], isOwn)).toBe(false);
+  });
+
+  it('reports any foreign node, added or removed, even beside the host', () => {
+    expect(pageChurned([change([el('table')])], isOwn)).toBe(true);
+    expect(pageChurned([change([], [el('div')])], isOwn)).toBe(true);
+    expect(pageChurned([change([el(OWN)]), change([document.createTextNode('x')])], isOwn)).toBe(
+      true
+    );
+  });
+
+  it('reports nothing for no records or records without child changes', () => {
+    expect(pageChurned([], isOwn)).toBe(false);
+    expect(pageChurned([change([])], isOwn)).toBe(false);
   });
 });

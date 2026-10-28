@@ -108,4 +108,18 @@ describe('mountShadowUi teardown contracts', () => {
     // The follow's stop ran exactly once: the failed mount left no subscription.
     expect(stopFollowing).toHaveBeenCalledTimes(1);
   });
+  it('a removed mount stops its follow quietly in a dead context and renders nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { container, shadow } = shadowContainer();
+    const removal = new AbortController();
+    const mounting = mountShadowUi(container, shadow, probeView, removal.signal);
+    removal.abort();
+    const dispose = await mounting;
+    expect(container.querySelector('.teardown-probe')).toBeNull();
+    expect(stopFollowing).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('[WPR FDT]');
+    expect(() => {
+      dispose();
+    }).not.toThrow();
+  });
 });

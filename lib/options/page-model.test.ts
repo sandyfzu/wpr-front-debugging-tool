@@ -36,7 +36,8 @@ const STORED_NONDEFAULT: StoredOptions = {
     toolbarBadge: false,
     sbsScrollSync: true,
     sbsMobileSim: true,
-    sbsDesktopWidth: true
+    sbsDesktopWidth: true,
+    detectionWidget: true
   }
 };
 
@@ -93,6 +94,7 @@ describe('the pure draft core', () => {
     expect(draft).toEqual({
       'wp-dashboard-dbugger-entry': false,
       appearance: 'dark',
+      detectionWidget: true,
       toolbarBadge: false
     });
     expect(isDraftDirty(STORED_NONDEFAULT, draft)).toBe(false);
@@ -117,7 +119,8 @@ describe('the pure draft core', () => {
         toolbarBadge: true,
         sbsScrollSync: false,
         sbsMobileSim: true,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     };
     const merged = optionsWithDraft(base, {
@@ -134,7 +137,8 @@ describe('the pure draft core', () => {
       toolbarBadge: false,
       sbsScrollSync: false,
       sbsMobileSim: true,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
     // The base is never mutated.
     expect(base.improvements).toEqual({
@@ -384,7 +388,8 @@ describe('save', () => {
       toolbarBadge: true,
       sbsScrollSync: false,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
     // Concurrent, non-registry options: preserved from the fresh read, not
     // clobbered by the page's stale load-time values.

@@ -172,3 +172,24 @@ export function scanStartPlan(
 export function latePassDue(latePassRan: boolean, latePassScheduled: boolean): boolean {
   return !latePassRan && !latePassScheduled;
 }
+
+/** The part of a `MutationRecord` the churn filter reads. */
+export type ChildListChange = Pick<MutationRecord, 'addedNodes' | 'removedNodes'>;
+
+/**
+ * Whether DOM churn came from the page rather than from the card itself:
+ * the card's own host joining or leaving `<body>` must never trigger a
+ * rescan (a mount → unmount → rescan → mount loop otherwise; the shadow
+ * tree's own changes never reach a light-DOM observer).
+ *
+ * @param records One observer callback's records.
+ * @param isOwnHost Whether a node is the card's host element.
+ * @returns `true` when any added or removed node is not the card's host.
+ */
+export function pageChurned(
+  records: readonly ChildListChange[],
+  isOwnHost: (node: Node) => boolean
+): boolean {
+  const foreign = (nodes: NodeList): boolean => Array.from(nodes).some((node) => !isOwnHost(node));
+  return records.some((record) => foreign(record.addedNodes) || foreign(record.removedNodes));
+}

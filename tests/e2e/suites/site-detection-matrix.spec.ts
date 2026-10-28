@@ -42,7 +42,7 @@ import {
 const STRIP_HOST = 'wpr-fdt-inspector';
 
 /** The WXT storage key under `chrome.storage.sync` for the per-origin widget map. */
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 
 /** Settle window for the strip mount + header-resolved cache chip. */
 const SETTLE = { timeout: 15_000, intervals: [250, 500] };

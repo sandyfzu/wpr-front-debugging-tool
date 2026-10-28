@@ -36,14 +36,20 @@ import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { isHttpUrl } from '../../../utils/urls';
 import { debounce, type DebouncedFunction } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
-import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { createShadowSurface } from '../../../components/injected-ui/shadow-surface';
 import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
 import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
 import { createScanFlow } from './scan-flow';
-import { dbRowsUsable, emptyStateVisible, mergeFindings, surfaceChanged } from './scan-state';
+import {
+  dbRowsUsable,
+  emptyStateVisible,
+  mergeFindings,
+  pageChurned,
+  surfaceChanged
+} from './scan-state';
 import { KnownConflictsView, type KnownConflictsUiState } from './ui';
 import './known-conflicts.css';
 
@@ -105,11 +111,6 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
    */
   let dbResolved = false;
 
-  let shadowUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
-  /** Whether a shadow-root mount is in flight (double-mount + gate race guard). */
-  let mountPending = false;
-  /** The Solid disposer, once the shadow-root render has completed. */
-  let disposeRoot: (() => void) | null = null;
   let hsObserver: MutationObserver | null = null;
   /** The HelpScout mode's debounced rescan (null in the plugins-screen mode). */
   let rescanDebounced: DebouncedFunction<[]> | null = null;
@@ -181,55 +182,26 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
     );
   };
 
-  /** Mount the badge once; later passes only move reactive state. */
-  const mountIntoShadow = async (): Promise<void> => {
-    if (shadowUi !== null || mountPending) return;
-    mountPending = true;
-    try {
-      // The mount's own listener scope: a gate-off removal releases its
-      // listeners at once instead of keeping them on the context.
-      const scope = new AbortController();
-      const created = await createShadowRootUi(ctx, {
+  /**
+   * The card's shadow UI: created at the first show and cycled across gate
+   * and navigation hide → show (one host for the page's life).
+   */
+  const surface = createShadowSurface({
+    create: (hooks) =>
+      createShadowRootUi(ctx, {
         name: UI_NAME,
         position: 'inline',
-        // The render tree is disposed exactly once (when the shadow host
-        // leaves the page) through the onRemove handle; a mount failure is
-        // logged, not an unhandled rejection.
-        onMount: (container, shadow) => {
-          void mountShadowUi(container, shadow, () => (
-            <KnownConflictsView state={state} actions={actions} />
-          ))
-            .then((dispose) => {
-              disposeRoot = dispose;
-            })
-            .catch((cause: unknown) => {
-              log.error(
-                'Mounting the Known Conflicts view into the shadow root failed',
-                cause instanceof Error ? cause.message : cause
-              );
-            });
-        },
-        onRemove: () => {
-          scope.abort();
-          disposeRoot?.();
-          disposeRoot = null;
-          panelElement = null;
-          badgeElement = null;
-        }
-      });
-      if (ctx.isInvalid || !pageUi.running()) {
-        // The world died or the on-page UI gate closed while the host was
-        // being built: it never reaches the page.
-        created.remove();
-        return;
-      }
-      shadowUi = created;
-      created.mount();
+        onMount: hooks.onMount,
+        onRemove: hooks.onRemove
+      }),
+    view: () => <KnownConflictsView state={state} actions={actions} />,
+    isInvalid: () => ctx.isInvalid,
+    onMounted: ({ shadow, signal }) => {
       // Escape closes the card with the focus inside it. Key events never
       // reach the host page from this shadow root (the injection isolates
       // them at the root); the listener lives as long as this mount and
       // the context.
-      created.shadow.addEventListener(
+      shadow.addEventListener(
         'keydown',
         (event) => {
           if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
@@ -237,15 +209,41 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
             actions.closeList();
           }
         },
-        { signal: AbortSignal.any([ctx.signal, scope.signal]) }
+        { signal: AbortSignal.any([ctx.signal, signal]) }
       );
+    },
+    onRemoved: () => {
+      panelElement = null;
+      badgeElement = null;
+    },
+    onRenderError: (cause) => {
+      log.error(
+        'Mounting the Known Conflicts view into the shadow root failed',
+        cause instanceof Error ? cause.message : cause
+      );
+    }
+  });
+
+  /**
+   * Whether the card may show now: the on-page UI gate is on and the page
+   * is still in one of the scan modes (an SPA navigation may have left).
+   */
+  const showAllowed = (): boolean =>
+    pageUi.running() && scanModeForUrl(new URL(window.location.href)) !== 'none';
+
+  /**
+   * Show the badge unless it is up; the gate and the scan scope are
+   * re-checked after the first show's host creation (a gate-off or a
+   * navigation out of scope may have won it).
+   */
+  const mountIntoShadow = async (): Promise<void> => {
+    try {
+      await surface.show(showAllowed);
     } catch (error) {
       log.error(
         'Mounting the Known Conflicts badge failed',
         error instanceof Error ? error.message : error
       );
-    } finally {
-      mountPending = false;
     }
   };
 
@@ -276,8 +274,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       if (scanModeForUrl(url) === 'none') {
         hsObserver?.disconnect();
         hsObserver = null;
-        shadowUi?.remove();
-        shadowUi = null;
+        surface.hide();
         setState({ findings: [], scannedEmpty: false });
         return;
       }
@@ -292,13 +289,12 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       findings: accumulated,
       scannedEmpty: emptyStateVisible(accumulated, flow.settled(), !dbResolved)
     });
-    if (shadowUi === null) void mountIntoShadow();
+    if (!surface.isShown()) void mountIntoShadow();
   };
 
   /** Remove the card (the gate closed) and reset it for the next show. */
   const removeCard = (): void => {
-    shadowUi?.remove();
-    shadowUi = null;
+    surface.hide();
     navigationReset();
   };
 
@@ -349,12 +345,13 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       if (!ctx.isInvalid) runScan();
     }, HS_RESCAN_DEBOUNCE_MS);
     rescanDebounced = debounced;
-    hsObserver = new MutationObserver(() => {
+    hsObserver = new MutationObserver((records) => {
       if (ctx.isInvalid) {
         hsObserver?.disconnect();
         return;
       }
-      debounced();
+      // The card's own mount/unmount is not page churn.
+      if (pageChurned(records, (node) => node.nodeName.toLowerCase() === UI_NAME)) debounced();
     });
     const afterLoad = (): void => {
       if (!ctx.isInvalid) pageUi.pageReady();

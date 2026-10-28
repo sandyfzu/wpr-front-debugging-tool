@@ -24,10 +24,12 @@ import { isAppearance, type Appearance } from '../../utils/theme';
 import {
   PAGE_SURFACE_NAMES,
   PAGE_UI_GATE_OPTION_LABEL,
+  pageCommandLabel,
   PAGE_UI_MENU_RESCUE,
   PAGE_UI_SURFACES_PROSE
 } from '../page-commands/commands';
 import {
+  DETECTION_WIDGET,
   storedOptionsOrFallback,
   TOOLBAR_BADGE,
   WP_DASHBOARD_DBUGGER_ENTRY,
@@ -182,6 +184,14 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
     onPage: true,
     label: `${capitalize(PAGE_SURFACE_NAMES.commandPalette)} shortcut`,
     description: `Opens the ${PAGE_SURFACE_NAMES.commandPalette} on inspected pages — select the field, then press the new combination; applies immediately. Browser-owned shortcuts (Ctrl/⌘ + W, T, N, Q…) can't be recorded: the browser acts on them before the page sees them`
+  },
+  {
+    kind: 'boolean',
+    id: DETECTION_WIDGET,
+    section: 'features',
+    onPage: true,
+    label: `Show the ${PAGE_SURFACE_NAMES.detectionWidget} on pages by default`,
+    description: `Shows the WP Rocket ${PAGE_SURFACE_NAMES.detectionWidget} on every inspected page. A site you switched with “${pageCommandLabel('toggle-detection-widget')}” (right-click menu or ${PAGE_SURFACE_NAMES.commandPalette}) keeps its own choice — applies to open pages as soon as it is saved`
   },
   {
     kind: 'boolean',

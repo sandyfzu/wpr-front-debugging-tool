@@ -43,7 +43,7 @@ const SBS_HOST = 'wpr-fdt-side-by-side';
 const PALETTE_HOST = 'wpr-fdt-command-palette';
 /** The sync keys the suite drives. */
 const GATE_KEY = 'page-ui-gate';
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 /** The SBS reload-restore record (tab `sessionStorage`). */
 const SBS_RESTORE_KEY = 'wpr-fdt-sbs-open';
 /** A cached front-end page and the plugins screen (Known Conflicts' wp-admin mode). */
