@@ -3,6 +3,9 @@
  * the open requests and the lazily injected view in, the effects the
  * wiring performs out. No I/O here — the wiring (`./module`) owns the
  * receiver, the background ask, the notices and the view handle calls.
+ * "Receiver" stands for both open triggers: the `openCommandPalette`
+ * message receiver and the keyboard chord's listener, armed and disarmed
+ * together.
  *
  * States:
  * - `booting` — the gate's first value is not known yet: nothing is armed;
@@ -52,7 +55,7 @@ export type PaletteState =
 export type PaletteEvent =
   /** A validated gate value (the boot read or a watch delivery). */
   | { readonly type: 'gate'; readonly enabled: boolean }
-  /** Something asked for the palette (the menu's message; later the chord). */
+  /** Something asked for the palette (the menu's message or the chord). */
   | { readonly type: 'open' }
   /** An injected view handed over its handle. */
   | { readonly type: 'attach'; readonly view: PaletteViewHandle }

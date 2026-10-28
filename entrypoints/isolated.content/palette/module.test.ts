@@ -79,6 +79,7 @@ function harness(options: { gate?: boolean | Error; loadAttaches?: boolean } = {
   const warn: LogMock = vi.fn();
   const error: LogMock = vi.fn();
   const show = vi.fn<(notice: PageNotice) => void>();
+  const chordHint = vi.fn<() => string | null>(() => '⌥K');
   // The injected view attaches synchronously while the script runs.
   const loadView = vi.fn((): Promise<unknown> => {
     if (options.loadAttaches ?? true) readPaletteBridge(world)?.attach(loadedView.handle);
@@ -103,6 +104,7 @@ function harness(options: { gate?: boolean | Error; loadAttaches?: boolean } = {
       }
     },
     world,
+    chordHint: () => chordHint(),
     isInvalid: () => invalid,
     onInvalidated: (cleanup) => {
       invalidation.push(cleanup);
@@ -128,6 +130,7 @@ function harness(options: { gate?: boolean | Error; loadAttaches?: boolean } = {
     world,
     runSideBySide,
     loadedView,
+    chordHint,
     unwatch,
     removeReceiver,
     bridge: (): PaletteBridge => world[PALETTE_BRIDGE_GLOBAL] as PaletteBridge,
@@ -393,6 +396,24 @@ describe('running commands', () => {
     h.bridge().run('side-by-side');
     await settle();
     expect(h.runSideBySide).not.toHaveBeenCalled();
+  });
+});
+
+describe('chord hint', () => {
+  it('hands the view the trigger’s hint through the bridge', () => {
+    const h = harness();
+    expect(h.bridge().chordHint()).toBe('⌥K');
+    h.chordHint.mockReturnValue(null);
+    expect(h.bridge().chordHint()).toBeNull();
+  });
+
+  it('answers null and logs when reading the hint throws', () => {
+    const h = harness();
+    h.chordHint.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    expect(h.bridge().chordHint()).toBeNull();
+    expect(h.warn).toHaveBeenCalledWith('Reading the palette chord hint failed', new Error('boom'));
   });
 });
 

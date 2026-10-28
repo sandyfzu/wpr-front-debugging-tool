@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>FDT e2e — page with editable fields and a key recorder</title>
+  </head>
+  <body>
+    <main>
+      <h1>A page with editable fields</h1>
+      <p>
+        A document-capture keydown recorder notes every keystroke that reaches the page past the
+        window: the palette chord is consumed at the window, every other keystroke arrives here.
+      </p>
+      <button type="button" id="page-focus">Page control</button>
+      <input id="text-field" type="text" aria-label="Text field" />
+      <textarea id="text-area" aria-label="Text area"></textarea>
+      <div id="rich" contenteditable="true"><p id="rich-child">Editable text</p></div>
+      <x-field id="shadow-host"></x-field>
+    </main>
+    <script>
+      // An input inside an open shadow root (a web component's field).
+      const root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+      const field = document.createElement('input');
+      field.id = 'shadow-field';
+      field.setAttribute('aria-label', 'Shadow field');
+      root.append(field);
+      window.__pageKeys = [];
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          // Modifier presses on their own are not keystrokes worth recording.
+          if (['Alt', 'Control', 'Meta', 'Shift'].includes(event.key)) return;
+          const mods = ['ctrlKey', 'metaKey', 'altKey', 'shiftKey']
+            .filter((name) => event[name])
+            .map((name) => name.replace('Key', ''))
+            .join('+');
+          window.__pageKeys.push(`${mods === '' ? '' : `${mods}+`}${event.code}`);
+        },
+        true
+      );
+    </script>
+  </body>
+</html>

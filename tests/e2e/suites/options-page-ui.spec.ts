@@ -1,5 +1,5 @@
 /**
- * P19E — the options page's instant rows on the real build: the on-page UI
+ * The options page's instant rows on the real build: the on-page UI
  * gate (instant write, the pending draft surviving it, live follow of a
  * write from elsewhere) with its cascade over the shortcut row, and the
  * shortcut field driven by real key presses (capture → stored + toast, a

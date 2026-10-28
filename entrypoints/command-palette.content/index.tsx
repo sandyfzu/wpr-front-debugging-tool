@@ -27,6 +27,7 @@ import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { URL_PATTERNS } from '../../lib/wp-rocket/constants';
 import { createLogger } from '../../lib/logger';
 import {
+  readChordHint,
   readPaletteBridge,
   type IsolatedWorld,
   type PaletteBridge,
@@ -119,6 +120,7 @@ function startView(ctx: ContentScriptContext, bridge: PaletteBridge): void {
         <PaletteApp
           open={open}
           rows={() => paletteRowViews(pageCommandFacts(new URL(window.location.href)))}
+          chordHint={() => readChordHint(bridge)}
           onRun={(id) => {
             // Focus goes back first: a command that opens a surface (the
             // compare overlay, the builder) then takes it from there.

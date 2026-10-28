@@ -45,6 +45,8 @@ export interface MenuGateDeps {
   updatesFor(uiEnabled: boolean): MenuRowUpdate[];
   /** Edit one created row (rejects when the browser refuses, e.g. a missing id). */
   update(id: string, props: MenuRowUpdate['props']): Promise<unknown>;
+  /** The gate entry's row id: its title is what {@link MenuGateFollower.toggle} reads back. */
+  readonly gateRowId: string;
 }
 
 /** The follower's surface for the menu runtime. */
@@ -103,7 +105,8 @@ async function applyGate(
 export function createMenuGateFollower(deps: MenuGateDeps): MenuGateFollower {
   // Newest gate value known (watch or boot read); null until one arrives.
   let gate: boolean | null = null;
-  // The gate the rows last received (set only once an apply/recreation ran).
+  // The gate the gate row's title last received (set only once an
+  // apply/recreation reached that row).
   let shown: boolean | null = null;
   // Set by the first watch delivery: from then on a boot read is stale.
   let watched = false;
@@ -142,8 +145,9 @@ export function createMenuGateFollower(deps: MenuGateDeps): MenuGateFollower {
       await recreateIn(gate ?? uiEnabled);
       return;
     }
-    // Rows exist but some refused: the rest now show this value.
-    shown = uiEnabled;
+    // Rows exist but some refused: the gate row shows this value unless its
+    // own edit was refused (a click must write what its title still offers).
+    if (!refused.some((entry) => entry.id === deps.gateRowId)) shown = uiEnabled;
     for (const entry of refused) log.warn('Menu entry update failed', entry);
   };
 

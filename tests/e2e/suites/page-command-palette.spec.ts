@@ -1,5 +1,5 @@
 /**
- * The on-page command palette (P19B), opened the way the context menu will:
+ * The on-page command palette, opened the way the context menu will:
  * the background's `openCommandPalette` row sent from the service worker to
  * the fixture tab (native menus are not Playwright-reachable).
  *
@@ -11,7 +11,8 @@
  *   page control; a re-open is a fresh surface.
  * - Rows run their shipped mechanisms: the detection-widget toggle writes
  *   the per-origin entry, Side-by-Side opens its overlay, the builder opens
- *   its overlay — and a later open paints above it (top-layer order).
+ *   its overlay — and a later open paints above it (top-layer order); the
+ *   PageSpeed row opens the analysis tab for this page; the gate row below.
  * - Gate-off from the palette: the inline confirm (Cancel focused), then the
  *   gate is stored off, the view leaves the page, the notice names the way
  *   back, and the receiver is gone (the menu send finds no receiver); a
@@ -282,6 +283,31 @@ test.describe('on-page command palette', () => {
     await page.keyboard.type('side by side');
     await page.keyboard.press('Enter');
     await expect(page.locator('wpr-fdt-side-by-side .sbs-overlay--open')).toHaveCount(1, MOUNT);
+    await page.close();
+  });
+
+  test('the PageSpeed row opens the analysis tab for this page', async ({ extension }) => {
+    const { page, tabId } = await openFixturePage(extension, FIXTURE);
+    // The analysis host is external: served empty here, only the open is under test.
+    await extension.browserContext.route('https://pagespeed.web.dev/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>PSI</title>' })
+    );
+    try {
+      await openPalette(extension, page, tabId);
+      await page.keyboard.type('performance');
+      await expect(rows(page)).toHaveText(['Open Side By Side Performance']);
+      const opened = extension.browserContext.waitForEvent('page');
+      await page.keyboard.press('Enter');
+      const analysis = await opened;
+      const url = new URL(analysis.url());
+      expect(url.hostname).toBe('pagespeed.web.dev');
+      expect(new URL(url.searchParams.get('wpr-sbs') ?? '').origin).toBe(
+        new URL(page.url()).origin
+      );
+      await analysis.close();
+    } finally {
+      await extension.browserContext.unroute('https://pagespeed.web.dev/**');
+    }
     await page.close();
   });
 

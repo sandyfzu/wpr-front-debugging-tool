@@ -1,5 +1,5 @@
 /**
- * P19D — the on-page UI gate over every gated surface on the real docker
+ * The on-page UI gate over every gated surface on the real docker
  * site: the detection widget (front page + plugins screen), the Known
  * Conflicts card (plugins screen), the Side-by-Side overlay and the
  * exclusion builder overlay.
@@ -16,6 +16,10 @@
  * - Per-site widget opt-outs hold across gate off → on.
  * - The SBS reload restore cannot survive a gate-off boot (record consumed,
  *   nothing opens, and a later gate-on does not resurrect it).
+ * - The command palette: on a gate-off boot (pressed after several times a
+ *   measured gate-on arm, so the module has settled) neither its chord
+ *   (Alt+K reaches the page) nor the menu's send opens it; a gate-on arms
+ *   both live, a live off removes the view and frees the chord again.
  * - The builder overlay: a live off ends it, and an injection racing a
  *   gate-off write never stays (observed for several times the measured
  *   gate-on mount time — the positive control); the background opener's
@@ -36,6 +40,7 @@ import { SITE_ORIGIN, SITE_URL, openSitePage, siteTest } from '../helpers/site';
 const STRIP_HOST = 'wpr-fdt-inspector';
 const KC_HOST = 'wpr-fdt-known-conflicts';
 const SBS_HOST = 'wpr-fdt-side-by-side';
+const PALETTE_HOST = 'wpr-fdt-command-palette';
 /** The sync keys the suite drives. */
 const GATE_KEY = 'page-ui-gate';
 const ORIGINS_KEY = 'inspector-origins';
@@ -181,6 +186,46 @@ async function expectWorldAlive(driver: ExtensionDriver, tabId: number): Promise
 /** Read the SBS reload-restore record. */
 async function restoreRecord(page: Page): Promise<string | null> {
   return await page.evaluate((key: string) => sessionStorage.getItem(key), SBS_RESTORE_KEY);
+}
+
+/**
+ * Install a document-capture keydown recorder on the page (modifier presses
+ * alone skipped): a keystroke the palette chord consumes stops at the window
+ * and never lands here.
+ *
+ * @param page The page.
+ */
+async function recordKeys(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const scope = window as unknown as { __fdtKeys: string[] };
+    scope.__fdtKeys = [];
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (['Alt', 'Control', 'Meta', 'Shift'].includes(event.key)) return;
+        const mods = (['ctrlKey', 'metaKey', 'altKey', 'shiftKey'] as const)
+          .filter((name) => event[name])
+          .map((name) => name.replace('Key', ''));
+        scope.__fdtKeys.push([...mods, event.code].join('+'));
+      },
+      true
+    );
+  });
+}
+
+/**
+ * Read and clear the page's key recorder.
+ *
+ * @param page The page.
+ * @returns The keystrokes that reached the document (`alt+KeyK`, …).
+ */
+async function takeKeys(page: Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    const scope = window as unknown as { __fdtKeys: string[] };
+    const keys = scope.__fdtKeys;
+    scope.__fdtKeys = [];
+    return keys;
+  });
 }
 
 /** The SBS overlay's open state. */
@@ -381,6 +426,77 @@ siteTest.describe('on-page UI gate', () => {
         ).toBe(raced.filter((entry) => entry.startsWith('-')).length);
       } finally {
         await front.page.close();
+      }
+    }
+  );
+
+  siteTest(
+    'the palette follows the gate on a real page: chord and menu open, both die while off',
+    async ({ extension }) => {
+      // Calibration (gate on): how long a fresh page takes until the chord
+      // opens the palette — the gate read, then the chord's read and platform
+      // ask, more than a gate-off boot does. The boot-off press below waits
+      // several times that, so it lands in the settled `off` state, never
+      // while the module still boots (where the chord is inert too).
+      await setGate(extension, null);
+      const calibration = await openSitePage(extension, FRONT_URL);
+      let armMs: number;
+      try {
+        const started = Date.now();
+        const openField = calibration.page.locator(`${PALETTE_HOST} [data-fdt="palette-input"]`);
+        await expect
+          .poll(async () => {
+            if ((await openField.count()) === 0) await calibration.page.keyboard.press('Alt+KeyK');
+            return await openField.count();
+          }, SETTLE)
+          .toBe(1);
+        armMs = Date.now() - started;
+      } finally {
+        await calibration.page.close();
+      }
+
+      await setGate(extension, false);
+      const front = await openSitePage(extension, FRONT_URL);
+      const page = front.page;
+      const field = page.locator(`${PALETTE_HOST} [data-fdt="palette-input"]`);
+      try {
+        await expectWorldAlive(extension, front.tabId);
+        await recordKeys(page);
+        await stayQuiet(page, Math.max(3 * armMs, QUIET_WINDOW_MS));
+        // Boot off: the chord is an ordinary keystroke, the menu's send finds no receiver.
+        await page.keyboard.press('Alt+KeyK');
+        expect(await takeKeys(page), 'not consumed on a gate-off boot').toEqual(['alt+KeyK']);
+        await expect(
+          extension.sendToTab<boolean>(front.tabId, 'openCommandPalette')
+        ).rejects.toThrow();
+        expect(await hosts(page, PALETTE_HOST)).toBe(0);
+
+        // Gate on (no reload): the chord arms and opens the palette — the
+        // module behind the boot-off press was alive and settled.
+        await setGate(extension, true);
+        await expect
+          .poll(async () => {
+            if ((await field.count()) === 0) await page.keyboard.press('Alt+KeyK');
+            return await field.count();
+          }, SETTLE)
+          .toBe(1);
+        await expect(field).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(field).toHaveCount(0);
+        // The menu's send opens it too.
+        expect(await extension.sendToTab<boolean>(front.tabId, 'openCommandPalette')).toBe(true);
+        await expect(field).toBeFocused({ timeout: SETTLE.timeout });
+        await page.keyboard.press('Escape');
+
+        // Live off: the view leaves and the chord passes to the page again.
+        await setGate(extension, false);
+        await expect.poll(() => hosts(page, PALETTE_HOST), SETTLE).toBe(0);
+        await takeKeys(page);
+        await page.keyboard.press('Alt+KeyK');
+        expect(await takeKeys(page), 'not consumed after a live off').toEqual(['alt+KeyK']);
+        expect(await hosts(page, PALETTE_HOST)).toBe(0);
+      } finally {
+        await page.close();
       }
     }
   );

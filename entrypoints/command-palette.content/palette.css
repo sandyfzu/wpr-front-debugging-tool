@@ -219,6 +219,37 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- Shortcut hint ---------------------------------------------------------- */
+
+/* The chord that opens the palette, under the list (quiet, right-aligned). */
+.cp-layer .cp-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 4px 0;
+  border-top: 1px solid var(--line-1);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--fg-muted);
+}
+
+.cp-layer .cp-kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--line-3);
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--fg-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 /* ---- Confirm step ----------------------------------------------------------- */
 
 /* The confirm shows its title and consequence (the primitive hides them). */

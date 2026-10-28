@@ -10,7 +10,7 @@
  * up — the page can neither read nor spoof it. The view validates what it
  * finds (two bundles meet here) and refuses anything dead or malformed.
  * The view lists its rows itself (`./palette-rows`): the bridge carries
- * only the lifecycle and the run.
+ * only the lifecycle, the run and the chord hint.
  */
 
 /** The bridge's global name in the isolated world. */
@@ -52,6 +52,12 @@ export interface PaletteBridge {
    *   showed: the module says so), `ended` otherwise.
    */
   detach(view: PaletteViewHandle, reason: PaletteDetachReason): void;
+  /**
+   * The keyboard chord that opens the palette, in the platform's notation
+   * (read per open: a rebinding shows on the next open), or null while it is
+   * not resolved yet.
+   */
+  chordHint(): string | null;
 }
 
 /** The isolated world's global object, as the bridge reads and writes it. */
@@ -79,7 +85,7 @@ export function retractPaletteBridge(world: IsolatedWorld, bridge: PaletteBridge
 }
 
 /** The bridge's methods (each must be a function). */
-const BRIDGE_METHODS = ['alive', 'run', 'attach', 'detach'] as const;
+const BRIDGE_METHODS = ['alive', 'run', 'attach', 'detach', 'chordHint'] as const;
 
 /**
  * Find the live bridge.
@@ -98,6 +104,23 @@ export function readPaletteBridge(world: IsolatedWorld): PaletteBridge | null {
     return bridge.alive() ? bridge : null;
   } catch {
     // A liveness check that throws is a dead module (its context is gone).
+    return null;
+  }
+}
+
+/**
+ * Read the module's chord hint at the view's side of the boundary: anything
+ * but a non-empty string (a throwing call included) is no hint.
+ *
+ * @param bridge The live bridge.
+ * @returns The formatted chord, or null.
+ */
+export function readChordHint(bridge: PaletteBridge): string | null {
+  try {
+    const hint: unknown = bridge.chordHint();
+    return typeof hint === 'string' && hint !== '' ? hint : null;
+  } catch {
+    // A dead module throws here; the palette simply shows no hint.
     return null;
   }
 }

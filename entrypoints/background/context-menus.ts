@@ -685,7 +685,8 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     updatesFor: menuGateUpdates,
     // Promise form on both browsers: a missing id rejects (the follower
     // recreates rows not yet known to exist, else warns per row).
-    update: (id, props) => browser.contextMenus.update(id, props)
+    update: (id, props) => browser.contextMenus.update(id, props),
+    gateRowId: CONTEXT_MENU_IDS.pageUiGate
   });
   const recreate = (): void => {
     gate.recreate();

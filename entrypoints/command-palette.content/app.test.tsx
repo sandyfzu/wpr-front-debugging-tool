@@ -4,7 +4,8 @@
  * focus in the field; Enter runs the highlighted row; Escape dismisses; the
  * master gate's row swaps to the inline confirm (visible title and
  * consequence, Cancel focused first), whose Cancel dismisses and whose
- * action runs the row; a re-open starts again from the command list.
+ * action runs the row; a re-open starts again from the command list; the
+ * opening chord's hint renders per open (none while unresolved).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
@@ -23,7 +24,7 @@ afterEach(() => {
 const LOG: Logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 /** Mount the view (closed) and hand out its seams. */
-function mountView(options: { analysisHost?: boolean } = {}) {
+function mountView(options: { analysisHost?: boolean; chordHint?: () => string | null } = {}) {
   const [open, setOpen] = createSignal(false);
   const onRun = vi.fn<(id: PaletteCommandId) => void>(() => {
     setOpen(false);
@@ -35,6 +36,7 @@ function mountView(options: { analysisHost?: boolean } = {}) {
     <PaletteApp
       open={open}
       rows={() => paletteRowViews({ analysisHost: options.analysisHost ?? false })}
+      chordHint={options.chordHint ?? (() => '⌥K')}
       onRun={onRun}
       onDismiss={onDismiss}
       log={LOG}
@@ -174,5 +176,29 @@ describe('PaletteApp', () => {
     view.setOpen(true);
     await readyField();
     expect(document.querySelector('[data-fdt="palette-confirm"]')).toBeNull();
+  });
+
+  it('shows the opening chord under the list, read again on every open', async () => {
+    let hint: string | null = '⌥K';
+    const view = mountView({ chordHint: () => hint });
+    view.setOpen(true);
+    await readyField();
+    const shown = (): string | null =>
+      document.querySelector('[data-fdt="palette-hint"]')?.textContent ?? null;
+    expect(shown()).toBe('Open with ⌥K');
+    // A rebinding while open shows on the next open, never mid-surface.
+    hint = '⌥⇧⌘P';
+    expect(shown()).toBe('Open with ⌥K');
+    view.setOpen(false);
+    view.setOpen(true);
+    await readyField();
+    expect(shown()).toBe('Open with ⌥⇧⌘P');
+  });
+
+  it('renders no hint while the chord is unresolved', async () => {
+    const view = mountView({ chordHint: () => null });
+    view.setOpen(true);
+    await readyField();
+    expect(document.querySelector('[data-fdt="palette-hint"]')).toBeNull();
   });
 });
