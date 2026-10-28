@@ -5,7 +5,7 @@
  * - Side-by-Side and its PageSpeed Insights flow: the compare module's own
  *   open triggers (the functions its `openSideBySide` /
  *   `openSideBySidePerformance` tab-message receivers call);
- * - the detection widget: `toggleInspectorOrigin` (the menu's writer; the
+ * - the detection widget: `toggleDetectionWidgetSite` (the menu's writer; the
  *   widget follows the store live);
  * - the master gate: `setPageUiGate(false)` (every open page — this one
  *   included — follows the gate's watch);
@@ -16,7 +16,7 @@
  * an expected failure is a result the palette surfaces to the user.
  */
 import type { ExclusionOverlayOpenOutcome } from '../messaging/exclusion-panel';
-import { toggleInspectorOrigin } from '../storage/inspector-origins';
+import { toggleDetectionWidgetSite } from '../storage/detection-widget-sites';
 import { setPageUiGate } from '../storage/page-ui-gate';
 import { isHttpOrigin } from '../../utils/urls';
 import type { PaletteCommandId } from './commands';
@@ -40,7 +40,7 @@ export const STORAGE_MECHANISMS: Pick<
   PageCommandMechanisms,
   'toggleDetectionWidget' | 'setPageUiGate'
 > = {
-  toggleDetectionWidget: toggleInspectorOrigin,
+  toggleDetectionWidget: toggleDetectionWidgetSite,
   setPageUiGate
 };
 

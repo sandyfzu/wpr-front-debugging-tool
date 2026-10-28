@@ -35,7 +35,7 @@ import { numericTabId } from '../../lib/messaging/sender';
 import { CONTEXT_MENU_IDS, URL_PATTERNS, withCacheBypass } from '../../lib/wp-rocket/constants';
 import { parseHttpUrl } from '../../utils/urls';
 import type { DbUpdateResult } from '../../lib/messaging/validate';
-import { toggleInspectorOrigin } from '../../lib/storage/inspector-origins';
+import { toggleDetectionWidgetSite } from '../../lib/storage/detection-widget-sites';
 import { readLastError, type LastErrorSlot } from '../../utils/last-error';
 import type { ExclusionOverlayOpenOutcome } from '../../lib/messaging/exclusion-panel';
 import { openExclusionOverlay } from './exclusion-overlay';
@@ -701,7 +701,7 @@ export function registerContextMenus(refreshDatabase: () => Promise<DbUpdateResu
     // The on-page widget's per-origin override writes through the storage
     // module's one toggle — the menu row is the page-context writer; the
     // popup and the options row write the same item later.
-    toggleDetectionWidget: toggleInspectorOrigin,
+    toggleDetectionWidget: toggleDetectionWidgetSite,
     openUrl: (url, placement) => browser.tabs.create({ url, ...placement }),
     togglePageUiGate: () => gate.toggle()
   };

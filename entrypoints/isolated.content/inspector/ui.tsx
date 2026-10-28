@@ -1,15 +1,15 @@
 /**
  * The detection widget's view: the mood-driven marker pill (presence icon +
  * identity + status chip, bottom-right) and the report card it opens — the
- * Known Conflicts shell's two shapes over one anchor, adapted to the strip
- * brief's header-row semantics and static evidence chips.
+ * Known Conflicts shell's two shapes over one anchor, adapted to a
+ * header-row layout and static evidence chips.
  *
  * State never depends on a transition: open/close is class-based (CSS owns
  * opacity/transform/visibility), a click can never strand a container
  * mid-transition. Rows are static evidence chips — no pointer cursor, no
  * hover/press response, full feature name + one-line why in tooltips. The
  * pill and the close control are the only interactive elements; the drag
- * rides the chrome (its non-interactive regions grabbed, `P12A.5`), whose
+ * rides the chrome (its non-interactive regions grabbed), whose
  * listeners live in the owner module, not here.
  */
 

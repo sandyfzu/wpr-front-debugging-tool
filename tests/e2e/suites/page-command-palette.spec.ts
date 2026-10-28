@@ -41,7 +41,7 @@ const PALETTE_HOST = 'wpr-fdt-command-palette';
 const NOTICE_HOST = 'wpr-fdt-page-notice';
 /** The two storage keys the suite drives (sync area). */
 const GATE_KEY = 'page-ui-gate';
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 /** Generous mount wait (the view is injected on demand). */
 const MOUNT = { timeout: 10_000 };
 
@@ -261,7 +261,7 @@ test.describe('on-page command palette', () => {
           ORIGINS_KEY
         )
       )
-      .toEqual({ [origin]: { enabled: false } });
+      .toEqual({ [origin]: { enabled: false, used: 1 } });
 
     await openPalette(extension, page, tabId);
     await page.keyboard.type('exclusion');

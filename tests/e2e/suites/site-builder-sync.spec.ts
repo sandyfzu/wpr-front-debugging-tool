@@ -65,7 +65,7 @@ const FACT_ROWS: readonly FactRow[] = [
 type FactRow = BuilderFactRow;
 
 /** `chrome.storage.sync` key of the per-origin widget map. */
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 
 /** The tab-level line's title. */
 const LINE_TITLE = 'Exclusion Builder rewrote this page';

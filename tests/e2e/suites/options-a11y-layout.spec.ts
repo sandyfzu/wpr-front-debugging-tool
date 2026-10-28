@@ -81,6 +81,7 @@ const EXPECTED_STOPS: Array<{
   { tag: 'INPUT', row: 'page-ui-gate', choice: null, text: null },
   // The shortcut field shows the default chord in the host OS's notation.
   { tag: 'BUTTON', row: 'palette-chord', choice: null, text: DEFAULT_CHORD_TEXT },
+  { tag: 'INPUT', row: 'detectionWidget', choice: null, text: null },
   { tag: 'INPUT', row: 'toolbarBadge', choice: null, text: null },
   { tag: 'BUTTON', row: null, choice: null, text: 'Refresh now' }
 ];

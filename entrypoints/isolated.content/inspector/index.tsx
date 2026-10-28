@@ -3,18 +3,20 @@
  * default-on gate, the hub's already-cached single pass feeds it, and the
  * Known Conflicts shell carries its motion and focus choreography.
  *
- * Gate: one validated storage item read + armed watch (arm-first, the
+ * Gate: two validated storage items (the per-origin overrides and the
+ * options' global default), each read once + armed watch (arm-first, the
  * live-theme lesson — a write landing inside the read window is applied by
  * the watch, and the read result is skipped in its favor). Origins without
- * an explicit entry show the widget by default (the owner's 2026-10-17
- * turn-on: the chip mounts on a fresh install with no opt-in step); a
- * per-origin entry stored by the context menu overrides that default in
- * both directions. A state change mounts or removes the widget on this
- * page with no reload; other origins' entries cannot touch this page. A
- * hidden page costs one invalidated-safe storage read at boot, nothing
- * mounted. The on-page UI gate outranks the opt-in: the widget shows only
- * while both say so (`./visibility`), and a gate write mounts or removes it
- * live like an opt-in write.
+ * an explicit entry follow the default option (on unless the user turned it
+ * off); a per-origin entry stored by the context menu or the palette
+ * overrides that default in both directions. A state change — either item —
+ * mounts or removes the widget on this page with no reload; other origins'
+ * entries cannot touch this page. A hidden page costs the boot reads and
+ * the two armed watches, nothing mounted and no other listener. The on-page
+ * UI gate outranks the opt-in: the widget shows only while both say so
+ * (`./visibility`), and a gate write mounts or removes it live like an
+ * opt-in write. The card's open state (the collapse) is session-local: a
+ * hide closes it and nothing about it is stored.
  *
  * Data: the widget reads the hub's cached pass result for this page through
  * the hub's same-context reader — a running pass is joined, never
@@ -35,6 +37,19 @@
  * tokens; still under reduced motion, where the collapse is the honest
  * instant); a starting drag clears it — direct manipulation never moves
  * through a transition.
+ *
+ * Position persistence: a settled moved drop stores the chrome's
+ * drag translate for this origin in the device-local positions item (one
+ * write per drop; cancels never write). The translate is an offset from the
+ * bottom-right stylesheet anchor, which both shapes (pill and card) share,
+ * so one stored value serves either shape and stays edge-anchored to the
+ * default corner when the viewport changes. The page reads it once (first
+ * show) and every mount restores it after its first render, before paint
+ * when the read already landed, then re-clamps it at once through the drag
+ * machine's resting re-clamp — the stored value is a hint the current
+ * viewport and shape decide. A failed or corrupt read is the anchor. The
+ * page's own drops update the remembered value, so a hide → show re-mounts
+ * where the user left it; other tabs pick a drop up at their next load.
  */
 
 import { createMemo } from 'solid-js';
@@ -46,12 +61,23 @@ import { createLogger } from '../../../lib/logger';
 import type { PageDataSnapshot } from '../data-hub';
 import { pageDataFor } from '../data-hub';
 import {
-  effectiveInspectorEnabled,
-  parseInspectorOrigins,
-  isInspectorOriginEnabled,
-  inspectorOriginsStore
-} from '../../../lib/storage/inspector-origins';
-import { mountShadowUi } from '../../../components/injected-ui/mount';
+  effectiveDetectionWidgetEnabled,
+  getDetectionWidgetSites,
+  detectionWidgetDefaultEnabled,
+  detectionWidgetSitesStore,
+  parseDetectionWidgetSites,
+  type DetectionWidgetSites
+} from '../../../lib/storage/detection-widget-sites';
+import { getOptions, optionsStore, storedOptionsOrFallback } from '../../../lib/storage/options';
+import {
+  getDetectionWidgetPosition,
+  saveDetectionWidgetPosition,
+  type DetectionWidgetPosition
+} from '../../../lib/storage/detection-widget-positions';
+import {
+  createShadowSurface,
+  type ShadowMount
+} from '../../../components/injected-ui/shadow-surface';
 import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
 import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
@@ -114,15 +140,12 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     log.error('The page-data hub is unavailable — the widget cannot report');
   }
 
-  let shadowUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
-  /** The Solid disposer, once the shadow-root render has completed. */
-  let disposeRoot: (() => void) | null = null;
-  /** Whether a shadow-root mount is in flight (double-mount + race guard). */
-  let mountPending = false;
   /** Whether the widget should show now, mirrored for the mount's race re-check. */
   let visibleNow = false;
   /** This origin's effective opt-in; null until its first read or write. */
   let siteEnabled: boolean | null = null;
+  /** Whether the opt-in resolved yet (a read through a call: closures assign it). */
+  const siteResolved = (): boolean => siteEnabled !== null;
   /** The card's root element, registered by the view (focus choreography). */
   let cardElement: HTMLElement | null = null;
   /** The pill, registered by the view (the focus hand-back on close). */
@@ -134,9 +157,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   let chromeElement: HTMLElement | null = null;
   /**
    * The current mount's drag controller. One controller exists per mount —
-   * a fresh mount (gate enable or a reload) starts at the stylesheet anchor,
-   * so the drag position resets by construction: session-local, P12A.5's
-   * recorded no-persistence shape. Null while nothing is mounted.
+   * a fresh mount starts at the stylesheet anchor until the remembered
+   * position restores into it. Null while nothing is mounted.
    */
   let dragController: DragController | null = null;
   /**
@@ -151,6 +173,69 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * reader below, so this hold is capture-only.
    */
   let grabbedShape: HTMLElement | null = null;
+
+  /**
+   * This origin's remembered drag translate: the stored one once the page's
+   * read lands, then every drop of this page's own. Null = the anchor.
+   */
+  let rememberedPosition: DetectionWidgetPosition | null = null;
+  /** Whether a drop of this page already set {@link rememberedPosition} (a late read yields). */
+  let droppedThisPage = false;
+  /** The page's one stored-position read (first show); null until then. */
+  let positionRead: Promise<void> | null = null;
+
+  /**
+   * Read the stored position once per page. A failure is logged and leaves
+   * the anchor (no retry: the next load reads again); a drop that landed
+   * while the read was in flight wins over the read.
+   */
+  const readStoredPosition = (): Promise<void> => {
+    positionRead ??= getDetectionWidgetPosition(pageOrigin).then(
+      (stored) => {
+        if (!droppedThisPage) rememberedPosition = stored;
+      },
+      (cause: unknown) => {
+        if (ctx.isInvalid) return;
+        log.warn(
+          'Reading the widget\u2019s stored position failed — it rests at its anchor',
+          cause
+        );
+      }
+    );
+    return positionRead;
+  };
+
+  /**
+   * Persist a settled drop's translate for this origin (fire-and-forget by
+   * design, never unhandled): the chrome already stands there, so a failed
+   * write is logged and changes nothing on the page — only the next load
+   * starts at the previous stored value.
+   *
+   * @param position The committed drag translate.
+   */
+  const persistDrop = (position: DetectionWidgetPosition): void => {
+    rememberedPosition = position;
+    droppedThisPage = true;
+    saveDetectionWidgetPosition(pageOrigin, position).catch((cause: unknown) => {
+      if (ctx.isInvalid) return;
+      log.warn('Saving the widget\u2019s dragged position failed — kept for this page only', {
+        position,
+        cause
+      });
+    });
+  };
+
+  /**
+   * Settle the drag's own pointer and persist a moved drop (pointerup and
+   * the capture-loss ender share it; the machine answers a commit at most
+   * once per drag, so the release-then-loss pair writes once).
+   *
+   * @param pointerId The ending pointer.
+   */
+  const settleDrag = (pointerId: number): void => {
+    const committed = dragController?.settle(pointerId) ?? null;
+    if (committed !== null) persistDrop(committed);
+  };
 
   /** The focus choreography rides this context's frames (ui/focus's contract). */
   const focusDeps: FocusChoreographyDeps = {
@@ -177,7 +262,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // count above zero) that belonged to a moved drag is consumed here; a
       // keyboard activation never reads the pointer path's flag, so a drag
       // whose release click landed consumer-less cannot dead-end the
-      // keyboard's Enter (SB-D9's no-dead-ends). One truth lives in the
+      // keyboard's Enter (no dead ends). One truth lives in the
       // machine: pointer state, pointer consumers — `isPointerInitiatedClick`
       // is the verified `detail === 0` keyboard discriminator.
       if (
@@ -313,10 +398,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * The containment triggers, bound once per widget (never per mount): a
-   * viewport change (window resize, zoom) and — on the mounts themselves —
-   * the box-growth beats (card open/close, data landing) and the drag's
-   * settle/cancel. Every trigger routes through the one re-settle cycle;
+   * The containment triggers, all per mount: a viewport change (window
+   * resize, zoom), the box-growth beats (card open/close, data landing) and
+   * the drag's settle/cancel. Every trigger routes through the one re-settle cycle;
    * the cycle samples until the chrome stands still and the re-clamp clamps
    * the resting layout box, so mid-choreography triggers (and equality
    * ties) target the choreography's end geometry, not the pose its
@@ -340,7 +424,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * never keeps the removed mount's elements alive through listeners still
    * registered on the context. Null at no-mount.
    */
-  let mountScope: AbortController | null = null;
+  let mountSignal: AbortSignal | null = null;
 
   /**
    * Listen on an element of the current mount until the mount ends or the
@@ -355,9 +439,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     type: string,
     handler: (event: Event) => void
   ): void => {
-    if (mountScope === null) return;
+    if (mountSignal === null) return;
     target.addEventListener(type, handler, {
-      signal: AbortSignal.any([ctx.signal, mountScope.signal])
+      signal: AbortSignal.any([ctx.signal, mountSignal])
     });
   };
 
@@ -377,10 +461,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // Direct manipulation takes over the moment a pointer presses the
       // chrome: an in-flight smooth re-settle ends right here (removal snaps
       // its position leg to the settled value) — a drag is 1:1, never a
-      // transitioned follow (SB-D12).
+      // transitioned follow.
       chrome.classList.remove('ins-resettle');
       // Any press while a drag is live cancels it first: a right-press (the
-      // brief's cancel nicety) and a second pointer's press must not be
+      // cancel nicety) and a second pointer's press must not be
       // subject to the primary-button guard below — cancel beats grab.
       if (dragController?.isDragging() === true) {
         dragController.cancel();
@@ -426,7 +510,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     });
     listenWhileMounted(chrome, 'pointerup', (event) => {
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
-      dragController?.settle(event.pointerId);
+      settleDrag(event.pointerId);
       // Drop re-settle: the committed position is re-clamped against the
       // live viewport (and moves smoothly when it moved — the owner's
       // "at drop" leg).
@@ -452,13 +536,13 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // foreign pointer's loss is a stray release — the machine ignores
       // it). The pointer-id discipline needs the PointerEvent shape.
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
-      dragController?.settle(event.pointerId);
+      settleDrag(event.pointerId);
       startContainmentCycle(); // the dropped position is re-clamped like any release
     });
     listenWhileMounted(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button
       // pressed while the left pointer is captured delivers NO pointerdown —
-      // the chrome gets `contextmenu` alone. The brief's right-click cancel
+      // the chrome gets `contextmenu` alone. The right-click cancel
       // rides it (no preventDefault: the host keeps its native menu).
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
@@ -541,14 +625,17 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   const bodyOrNull = (): HTMLElement | null => document.body;
 
-  /** Mount the widget once; later enable beats only move reactive state. */
-  const mountIntoShadow = async (): Promise<void> => {
-    if (shadowUi !== null || mountPending) return;
-    mountPending = true;
-    // One controller + its containment watcher per mount: a fresh mount
-    // starts at the stylesheet anchor, so navigation/reload resets the
-    // session-local drag position (P12A.5's no-persistence shape — nothing
-    // is stored anywhere).
+  /**
+   * A mount's host just landed: one drag controller + containment watcher
+   * per mount (a fresh mount starts at the stylesheet anchor; the
+   * remembered position restores after the render), and the mount-scoped
+   * Escape listener.
+   *
+   * @param mount The mount's shadow root and listener scope.
+   */
+  const beginMount = (mount: ShadowMount): void => {
+    mountSignal = mount.signal;
+    grabbedShape = null;
     dragController = createDragController(dragDeps);
     containmentWatch = createContainmentWatch({
       // Offset through an arrow: the watch's seam never holds the deps
@@ -566,111 +653,140 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       reform: reformContainment,
       log
     });
+    // The viewport-side containment trigger, live only while mounted (a
+    // hidden widget keeps no page listener): a window resize or a zoom step
+    // re-reads the layout viewport and may strand a parked chrome outside
+    // the full-containment bound. The cycle samples the settled box, so a
+    // resize burst coalesces into one re-clamp.
+    listenWhileMounted(window, 'resize', () => {
+      if (!ctx.isInvalid) startContainmentCycle();
+    });
+    // Escape closes the card with the focus inside it, or cancels a live
+    // drag first (restore the pre-drag position). Key events never reach
+    // the host page from this shadow root (the injection isolates them at
+    // the root).
+    listenWhileMounted(mount.shadow, 'keydown', (event) => {
+      // The same trust gate: a synthetic Escape must not close or cancel a
+      // mounted widget's state (real key input is always trusted here).
+      if (
+        isTrustedUserEvent(event) &&
+        event instanceof KeyboardEvent &&
+        event.key === 'Escape' &&
+        !ctx.isInvalid
+      ) {
+        event.stopPropagation();
+        if (dragController?.isDragging() === true) {
+          dragController.cancel();
+          startContainmentCycle();
+          return;
+        }
+        actions.closeCard();
+      }
+    });
+  };
+
+  /** The mount's host left the page: its per-mount state goes with it. */
+  const endMount = (): void => {
+    mountSignal = null;
+    cardElement = null;
+    pillElement = null;
+    chromeElement = null;
     grabbedShape = null;
-    try {
-      // The page's anchor must exist first: the CS boots at document_start,
-      // where the body is still null and WXT's inline shadow UI has no
-      // anchor to attach to (the audited unmountable-boot — intermittent with
-      // boot speed). Wait for it behind the context's own lifecycle.
-      if (bodyOrNull() === null) {
-        await new Promise<void>((resolve) => {
-          ctx.addEventListener(document, 'DOMContentLoaded', () => {
-            if (!ctx.isInvalid) resolve();
-          });
-        });
-      }
-      if (invalidNow()) {
-        // A page whose world ended before its body settled: nothing mounts.
-        dragController = null;
-        containmentWatch = null;
-        mountPending = false;
-        return;
-      }
-      const scope = new AbortController();
-      mountScope = scope;
-      const created = await createShadowRootUi(ctx, {
+    dragController = null;
+    containmentWatch?.stop();
+    containmentWatch = null;
+  };
+
+  /**
+   * The widget's shadow UI: created at the first show and cycled across
+   * every hide → show (one host for the page's life).
+   */
+  const surface = createShadowSurface({
+    create: (hooks) =>
+      createShadowRootUi(ctx, {
         name: INSPECTOR_UI_NAME,
         position: 'inline',
-        onMount: (container, shadow) => {
-          void mountShadowUi(container, shadow, () => (
-            <InspectorView
-              model={model}
-              mood={mood}
-              cardOpen={() => state.cardOpen}
-              actions={actions}
-            />
-          ))
-            .then((dispose) => {
-              disposeRoot = dispose;
-            })
-            .catch((cause: unknown) => {
-              log.error(
-                'Mounting the detection widget view into the shadow root failed',
-                cause instanceof Error ? cause.message : cause
-              );
-            });
-        },
-        onRemove: () => {
-          scope.abort();
-          if (mountScope === scope) mountScope = null;
-          disposeRoot?.();
-          disposeRoot = null;
-          cardElement = null;
-          pillElement = null;
-          chromeElement = null;
-          grabbedShape = null;
-          dragController = null;
-          containmentWatch?.stop();
-          containmentWatch = null;
-        }
+        onMount: hooks.onMount,
+        onRemove: hooks.onRemove
+      }),
+    view: () => (
+      <InspectorView model={model} mood={mood} cardOpen={() => state.cardOpen} actions={actions} />
+    ),
+    isInvalid: invalidNow,
+    onMounted: beginMount,
+    onRemoved: endMount,
+    onRenderError: (cause) => {
+      log.error(
+        'Mounting the detection widget view into the shadow root failed',
+        cause instanceof Error ? cause.message : cause
+      );
+    }
+  });
+
+  /**
+   * Restore the remembered position into the mount that just showed: once
+   * its view rendered and the page's read settled, apply the translate and
+   * re-clamp it synchronously — the resting re-clamp reads layout offsets,
+   * which are valid mid-entrance, so the corrected position lands in the
+   * same task as the render (no frame at the anchor, no visible snap) when
+   * the read already settled.
+   *
+   * Ordering: the read is issued the moment the widget is decided visible,
+   * before the body wait, the shadow host's creation (its stylesheet fetch)
+   * and the appearance read the render itself awaits — so it settles first
+   * in practice, and the restore then runs in the render's own microtasks.
+   * Nothing orders two storage areas' replies, so a read that still loses
+   * moves the chrome once, instantly, after the first paint; the render is
+   * never held for it (a stored hint must not delay the widget). A later
+   * shape change (rows landing, the card opening) re-clamps through the
+   * ordinary containment cycle.
+   */
+  const restoreRememberedPosition = async (): Promise<void> => {
+    const controller = dragController;
+    const [rendered] = await Promise.all([surface.rendered(), readStoredPosition()]);
+    // Removed, failed, or replaced by a newer mount meanwhile: nothing to restore.
+    if (!rendered || ctx.isInvalid || controller === null || controller !== dragController) return;
+    const position = rememberedPosition;
+    if (position === null || !controller.restore(position)) return;
+    controller.reclamp();
+    startContainmentCycle();
+  };
+
+  /** Whether the page's body wait is in flight (one waiter per page). */
+  let bodyWait: Promise<void> | null = null;
+
+  /**
+   * The page's anchor: the CS boots at document_start, where the body is
+   * still null and WXT's inline shadow UI has no anchor to attach to (the
+   * audited unmountable-boot — intermittent with boot speed). Waits for it
+   * behind the context's own lifecycle (a dead context never resolves).
+   */
+  const bodyReady = (): Promise<void> => {
+    if (bodyOrNull() !== null) return Promise.resolve();
+    bodyWait ??= new Promise<void>((resolve) => {
+      ctx.addEventListener(document, 'DOMContentLoaded', () => {
+        if (!ctx.isInvalid) resolve();
       });
-      if (invalidNow()) {
-        // The mount resolved after invalidation: the short-lived host must
-        // not outlive it (a dead context never keeps page DOM).
-        created.remove();
-        return;
-      }
-      if (!visibleNow) {
-        // A hide (site opt-out or the on-page UI gate) won the mount race:
-        // remove the host before it ever shows.
-        created.remove();
-        return;
-      }
-      shadowUi = created;
-      created.mount();
-      // Escape closes the card with the focus inside it, or cancels a live
-      // drag first (restore the pre-drag position). Key events never reach
-      // the host page from this shadow root (the injection isolates them at
-      // the root), and the listener lives as long as this mount (and the
-      // context).
-      listenWhileMounted(created.shadow, 'keydown', (event) => {
-        // The same trust gate: a synthetic Escape must not close or cancel a
-        // mounted widget's state (real key input is always trusted here).
-        if (
-          isTrustedUserEvent(event) &&
-          event instanceof KeyboardEvent &&
-          event.key === 'Escape' &&
-          !ctx.isInvalid
-        ) {
-          event.stopPropagation();
-          if (dragController?.isDragging() === true) {
-            dragController.cancel();
-            startContainmentCycle();
-            return;
-          }
-          actions.closeCard();
-        }
-      });
+    });
+    return bodyWait;
+  };
+
+  /**
+   * Show the widget unless it is up; visibility and the context are
+   * re-checked after the body wait and the first show's host creation (a
+   * hide may have won either race).
+   */
+  const mountIntoShadow = async (): Promise<void> => {
+    try {
+      // Issued first, ahead of every await the render sits behind (see the restore).
+      void readStoredPosition();
+      await bodyReady();
+      if ((await surface.show(() => visibleNow)) === 'shown') await restoreRememberedPosition();
     } catch (error) {
       log.error(
         'Mounting the detection widget failed',
         error instanceof Error ? error.message : error
       );
-      shadowUi = null;
-      dragController = null;
-      containmentWatch = null;
-    } finally {
-      mountPending = false;
     }
   };
 
@@ -679,7 +795,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * foreign origin's write (or a same-value rewrite) must not re-run the
    * data read, whose only worthwhile input is this origin's entry — the
    * equality is the equivalence. A show re-runs the boot path (fresh data
-   * read, fresh mount at the anchor); a hide removes the host.
+   * read, fresh mount restored to the remembered position); a hide removes
+   * the host.
    *
    * @param visible Whether the widget shows (see {@link widgetVisible}).
    */
@@ -691,22 +808,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       void mountIntoShadow();
       return;
     }
-    shadowUi?.remove();
-    shadowUi = null;
+    surface.hide();
     setState('cardOpen', false);
   };
-
-  /**
-   * The viewport-side containment trigger, bound once per widget (never per
-   * mount): a window resize or a zoom step re-reads the layout viewport and
-   * may strand a parked chrome outside the full-containment bound. The
-   * cycle samples the settled box, so a resize burst coalesces into one
-   * re-clamp (browser-triggered and trusted; no page writes either way).
-   */
-  ctx.addEventListener(window, 'resize', () => {
-    if (ctx.isInvalid) return;
-    startContainmentCycle();
-  });
 
   /**
    * The on-page UI gate outranks the per-site opt-in (`widgetVisible`):
@@ -732,35 +836,66 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Arm-first boot: the watch is the opt-in's authority once armed, so the
-   * initial read applies only when no write raced it (the live-theme
-   * pattern's counter — read-then-arm would drop exactly that write).
+   * The opt-in's two inputs: this origin's override map and the global
+   * default option. Each is null until its first read or write; the
+   * effective state resolves only once both are known.
    */
-  let siteWrites = 0;
-  const unwatch = inspectorOriginsStore.watch((raw: unknown) => {
-    siteWrites += 1;
+  let origins: DetectionWidgetSites | null = null;
+  let defaultEnabled: boolean | null = null;
+
+  /** Re-resolve the effective opt-in once both inputs are known. */
+  const resolveSiteEnabled = (): void => {
+    if (origins === null || defaultEnabled === null) return;
+    applySiteEnabled(effectiveDetectionWidgetEnabled(origins, pageOrigin, defaultEnabled));
+  };
+
+  /**
+   * Arm-first boot: each item's watch is its authority once armed, so a
+   * boot read applies only when no write to that item raced it (the
+   * live-theme pattern's counter — read-then-arm would drop exactly that
+   * write). Options writes that leave the default unchanged (appearance,
+   * other flags) re-resolve to the same value, which `applyVisible` skips.
+   */
+  let originWrites = 0;
+  let optionWrites = 0;
+  const unwatchOrigins = detectionWidgetSitesStore.watch((raw: unknown) => {
+    originWrites += 1;
     if (ctx.isInvalid) return;
-    const parsed = parseInspectorOrigins(raw);
-    // One resolution for every opt-in read: no explicit entry here means
-    // the global default on; only a stored entry — either polarity —
-    // overrides it. Corrupt raw degrades to the same unconfigured shape.
-    applySiteEnabled(effectiveInspectorEnabled(parsed ?? {}, pageOrigin));
+    // Corrupt raw degrades to the unconfigured shape: every origin follows the default.
+    origins = parseDetectionWidgetSites(raw) ?? {};
+    resolveSiteEnabled();
   });
-  ctx.onInvalidated(unwatch);
+  const unwatchOptions = optionsStore.watch((raw: unknown) => {
+    optionWrites += 1;
+    if (ctx.isInvalid) return;
+    defaultEnabled = detectionWidgetDefaultEnabled(storedOptionsOrFallback(raw));
+    resolveSiteEnabled();
+  });
+  ctx.onInvalidated(() => {
+    unwatchOrigins();
+    unwatchOptions();
+  });
 
   void (async () => {
-    const seen = siteWrites;
-    let answer: boolean;
-    try {
-      answer = await isInspectorOriginEnabled(pageOrigin);
-    } catch (cause) {
-      if (ctx.isInvalid) return;
-      log.error('Reading the widget opt-in failed — the widget stays hidden', cause);
-      answer = false;
-    }
+    const seenOrigins = originWrites;
+    const seenOptions = optionWrites;
+    // Each item settles on its own: one failed read never discards the
+    // other's good one, so a later write to the failed item alone resolves.
+    const [map, options] = await Promise.allSettled([getDetectionWidgetSites(), getOptions()]);
     if (ctx.isInvalid) return;
-    if (siteWrites === seen) {
-      applySiteEnabled(answer);
+    if (map.status === 'fulfilled' && originWrites === seenOrigins) origins = map.value;
+    if (options.status === 'fulfilled' && optionWrites === seenOptions) {
+      defaultEnabled = detectionWidgetDefaultEnabled(options.value);
     }
+    resolveSiteEnabled();
+    for (const failed of [map, options]) {
+      if (failed.status === 'fulfilled') continue;
+      log.error(
+        'Reading the widget opt-in failed — hidden until that setting is next written',
+        failed.reason
+      );
+    }
+    // Unresolved after a failure: hide explicitly until a write delivers the missing input.
+    if (!siteResolved()) applySiteEnabled(false);
   })();
 }

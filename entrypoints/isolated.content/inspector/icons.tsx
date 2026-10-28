@@ -4,7 +4,7 @@
  * geometry verified against the lucide package the panel surfaces ship
  * (an icon runtime is not justified inside this bundle's budget).
  *
- * The set is the strip brief's glyph family: one glyph per group (Tools
+ * The set is the widget's glyph family: one glyph per group (Tools
  * lands with the tool phases and is declared against that landing now), the
  * Exclusion Builder modifier pair and the pill's presence marker.
  */

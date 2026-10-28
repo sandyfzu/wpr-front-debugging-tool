@@ -33,7 +33,8 @@ describe('optionsStore', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
   });
@@ -46,7 +47,8 @@ describe('optionsStore', () => {
         toolbarBadge: false,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: false
+        sbsDesktopWidth: false,
+        detectionWidget: true
       }
     });
     expect(await getOptions()).toEqual({
@@ -56,7 +58,8 @@ describe('optionsStore', () => {
         toolbarBadge: false,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: false
+        sbsDesktopWidth: false,
+        detectionWidget: true
       }
     });
     // Absence must resolve to defaults, not falsy values.
@@ -80,7 +83,8 @@ describe('optionsStore', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: true,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
     const readBack = await getOptions();
@@ -98,7 +102,8 @@ describe('optionsStore', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: false
+        sbsDesktopWidth: false,
+        detectionWidget: true
       }
     });
     expect((await getOptions()).features.sbsDesktopWidth).toBe(false);
@@ -127,7 +132,8 @@ describe('cycleAppearanceOption (the keyboard appearance cycle)', () => {
         toolbarBadge: false,
         sbsScrollSync: true,
         sbsMobileSim: true,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
     await cycleAppearanceOption();
@@ -158,7 +164,8 @@ describe("setAppearanceOption (the options page's choice seam)", () => {
         toolbarBadge: false,
         sbsScrollSync: false,
         sbsMobileSim: true,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
     await setAppearanceOption('system');
@@ -182,7 +189,8 @@ describe('mutateOptions (the whole-shape RMW queue)', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
     // Two mutations enter the queue before either resolves; both closures run
@@ -255,7 +263,8 @@ describe('parseStoredOptions', () => {
         toolbarBadge: false,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        detectionWidget: true
       }
     });
     expect(parseStoredOptions(null)).toBeNull();
@@ -272,14 +281,16 @@ describe('parseStoredOptions', () => {
           toolbarBadge: false,
           sbsScrollSync: true,
           sbsMobileSim: true,
-          sbsDesktopWidth: false
+          sbsDesktopWidth: false,
+          detectionWidget: true
         }
       })?.features
     ).toEqual({
       toolbarBadge: false,
       sbsScrollSync: true,
       sbsMobileSim: true,
-      sbsDesktopWidth: false
+      sbsDesktopWidth: false,
+      detectionWidget: true
     });
     // Wrong-typed scroll sync → documented default (on); the sibling flag keeps its value.
     expect(
@@ -292,7 +303,8 @@ describe('parseStoredOptions', () => {
       toolbarBadge: false,
       sbsScrollSync: true,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
     // Wrong-typed mobile sim → documented default (off); the sibling flags keep theirs.
     expect(
@@ -305,7 +317,8 @@ describe('parseStoredOptions', () => {
       toolbarBadge: false,
       sbsScrollSync: true,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
     // Wrong-typed desktop width → documented default (on); the sibling flags keep theirs.
     expect(
@@ -323,7 +336,8 @@ describe('parseStoredOptions', () => {
       toolbarBadge: false,
       sbsScrollSync: true,
       sbsMobileSim: true,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
     // A corrupt features slot self-heals all four known flags (the improvements slot's twin rule).
     expect(
@@ -332,7 +346,8 @@ describe('parseStoredOptions', () => {
       toolbarBadge: true,
       sbsScrollSync: true,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
   });
 
@@ -356,6 +371,7 @@ describe('parseStoredOptions', () => {
       sbsScrollSync: false,
       sbsMobileSim: true,
       sbsDesktopWidth: false,
+      detectionWidget: true,
       'future-feature': true
     });
     // Non-boolean future ids are not engine output — dropped, not trusted,
@@ -370,7 +386,8 @@ describe('parseStoredOptions', () => {
       toolbarBadge: true,
       sbsScrollSync: true,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      detectionWidget: true
     });
   });
 });
