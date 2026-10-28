@@ -8,7 +8,7 @@ import { DEFAULT_PALETTE_CHORD, type PaletteChord } from '../storage/palette-cho
 import { followPaletteChord, navigatorChordPlatform, type ChordSource } from './follow';
 
 const ALT_P: PaletteChord = { code: 'KeyP', alt: true };
-const MOD_J: PaletteChord = { code: 'KeyJ', mod: true, alt: true };
+const MOD_ALT_O: PaletteChord = { code: 'KeyO', mod: true, alt: true };
 
 /** Wait for queued promise callbacks. */
 async function settle(): Promise<void> {
@@ -43,8 +43,8 @@ describe('followPaletteChord', () => {
     expect(s.order).toEqual(['watch', 'read']);
     await settle();
     expect(apply).toHaveBeenLastCalledWith(ALT_P);
-    s.write(MOD_J);
-    expect(apply).toHaveBeenLastCalledWith(MOD_J);
+    s.write(MOD_ALT_O);
+    expect(apply).toHaveBeenLastCalledWith(MOD_ALT_O);
     stop();
     expect(s.unwatch).toHaveBeenCalledOnce();
   });
@@ -54,10 +54,10 @@ describe('followPaletteChord', () => {
     const s = source(new Promise((resolve) => (resolveRead = resolve)));
     const apply = vi.fn();
     followPaletteChord(s.deps, apply);
-    s.write(MOD_J);
+    s.write(MOD_ALT_O);
     resolveRead(ALT_P);
     await settle();
-    expect(apply.mock.calls).toEqual([[MOD_J]]);
+    expect(apply.mock.calls).toEqual([[MOD_ALT_O]]);
   });
 
   it('a failed read applies the default and logs', async () => {
@@ -77,10 +77,10 @@ describe('followPaletteChord', () => {
     const s = source(new Promise((_resolve, reject) => (rejectRead = reject)));
     const apply = vi.fn();
     followPaletteChord(s.deps, apply);
-    s.write(MOD_J);
+    s.write(MOD_ALT_O);
     rejectRead(new Error('dead'));
     await settle();
-    expect(apply.mock.calls).toEqual([[MOD_J]]);
+    expect(apply.mock.calls).toEqual([[MOD_ALT_O]]);
   });
 
   it('a throwing watch is logged; the read still applies and the stop is a no-op', async () => {

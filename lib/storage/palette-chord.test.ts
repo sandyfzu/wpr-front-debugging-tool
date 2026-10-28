@@ -382,8 +382,9 @@ describe('reserved chords', () => {
     zoom: [...mods(['Equal', 'Minus', 'Digit0']), ...mods(['Equal'], { shift: true })],
     devtools: [
       { code: 'F12' },
+      { code: 'F12', shift: true },
       ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { shift: true }),
-      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
+      ...mods(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE', 'KeyW'], { alt: true })
     ],
     system: [
       ...mods(['KeyQ', 'KeyM', 'Backquote']),

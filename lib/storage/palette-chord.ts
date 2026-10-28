@@ -249,8 +249,9 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
      * Block editor: Alt+F10 nearest toolbar; `mod` + Alt + T/Y insert a
      * block before/after, + V paste styles, + X inline code as the published
-     * shortcuts page documents it (also Firefox's AI chatbot sidebar) (the editor itself binds Shift + Alt + X,
-     * below); `mod` + Shift + `,` settings sidebar, + `\` distraction-free
+     * shortcuts page documents it (the editor itself binds Shift + Alt + X,
+     * below; also Firefox's AI chatbot sidebar); `mod` + Shift + `,` settings
+     * sidebar, + `\` distraction-free
      * mode (its `mod` + G group block sits under browser: find next).
      * WordPress editors' own registrations (block editor `core/*` shortcuts,
      * classic editor TinyMCE `access` keys): `mod` + Shift + Alt + T/Y move
@@ -372,12 +373,14 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * Developer tools: F12; Ctrl+Shift+I/J/C (Chromium, Windows/Linux) and
      * ⌘⌥I/J/C + ⌘⇧C (Chromium, macOS); the console, responsive-design and
      * network chords K/M/E (Firefox: Ctrl+Shift on Windows/Linux, ⌘⌥ on
-     * macOS).
+     * macOS); Firefox's DOM panel ⌘⌥W (macOS; its Ctrl+Shift+W form is the
+     * browser's close window) and accessibility panel Shift + F12.
      */
     devtools: Object.freeze([
       canonicalChord('F12', {}),
+      canonicalChord('F12', { shift: true }),
       ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { shift: true }),
-      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
+      ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE', 'KeyW'], { alt: true })
     ]),
     /**
      * OS window commands: quit (⌘Q; Ctrl+Q on Linux), hide (⌘H), hide others

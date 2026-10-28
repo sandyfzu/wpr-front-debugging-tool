@@ -14,8 +14,9 @@
  * shared decision the page trigger runs, so a may-type chord types inside
  * fields instead. A chord DevTools itself claims never toggles here: in
  * Chrome, the script DevTools injects into every extension frame (at frame
- * creation, so its document `keydown` listener precedes ours)
- * default-prevents and forwards its global chords, and the shared decision
+ * creation, so its document `keydown` listener presumably precedes ours —
+ * inferred, not observed) default-prevents and forwards its global chords,
+ * and the shared decision
  * passes a handled key, so DevTools acts alone. Chords the browser or
  * DevTools own are refused at capture (the reserved table), so a stored
  * binding rarely meets one.
