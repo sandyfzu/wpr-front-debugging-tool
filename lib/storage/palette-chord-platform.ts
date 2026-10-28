@@ -31,13 +31,33 @@ export interface ChordPlatformSource {
   readonly getPlatformInfo: () => Promise<{ readonly os: string }>;
   /** Receives the degrade warning. */
   readonly log: Pick<Logger, 'warn'>;
+  /**
+   * The stand-in convention when platform info fails (a surface whose
+   * listener must match ⌘ chords passes the navigator's); absent, `'other'`.
+   */
+  readonly fallback?: () => ChordPlatform;
+}
+
+/**
+ * The source's stand-in convention, `'other'` when it has none or its read
+ * throws (the resolver never rejects).
+ *
+ * @param source See {@link ChordPlatformSource}.
+ */
+function fallbackConvention(source: ChordPlatformSource): ChordPlatform {
+  try {
+    return source.fallback?.() ?? 'other';
+  } catch (cause) {
+    source.log.warn('Fallback keyboard convention unreadable — using the Ctrl convention', cause);
+    return 'other';
+  }
 }
 
 /**
  * Resolve the keyboard convention. Never rejects: a platform-info failure is
- * logged and resolves `'other'` — Ctrl-based notation is the majority
- * convention, and a wrong guess only mislabels the chord, never breaks a
- * surface.
+ * logged and resolves the source's fallback, else `'other'` — Ctrl-based
+ * notation is the majority convention, and for a surface that only labels
+ * the chord a wrong guess mislabels it, never breaks it.
  *
  * @param source See {@link ChordPlatformSource}.
  */
@@ -46,7 +66,11 @@ export async function resolveChordPlatform(source: ChordPlatformSource): Promise
     const info = await source.getPlatformInfo();
     return chordPlatformFromOs(info.os);
   } catch (cause) {
-    source.log.warn('Platform info unavailable — using the Ctrl convention', cause);
-    return 'other';
+    const fallback = fallbackConvention(source);
+    source.log.warn(
+      `Platform info unavailable — using the ${fallback === 'mac' ? 'Command' : 'Ctrl'} convention`,
+      cause
+    );
+    return fallback;
   }
 }

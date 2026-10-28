@@ -21,14 +21,22 @@ import { NAV_ROUTES } from '../routes';
 import { createPanelActions } from './actions';
 import { createOverlayStore } from './overlays';
 import { productionActionDeps } from './panel-overlays';
+import type { PanelChordDeps } from './chord-binding';
+import type { PaletteChord } from '../../../lib/storage/palette-chord';
 
 afterEach(() => {
   cleanup();
   window.location.hash = '';
 });
 
-/** One settled boot: the store's flight resolves with real page data. */
-function bootShellWithData(): { data: ReturnType<typeof createFdtDataStore> } {
+/**
+ * One settled boot: the store's flight resolves with real page data.
+ *
+ * @param paletteChord The chosen-chord seams (absent: the real store).
+ */
+function bootShellWithData(paletteChord?: PanelChordDeps): {
+  data: ReturnType<typeof createFdtDataStore>;
+} {
   const data = createFdtDataStore({
     inspectedTabId: () => 42,
     request: () => Promise.resolve(makeFdtData()),
@@ -39,7 +47,7 @@ function bootShellWithData(): { data: ReturnType<typeof createFdtDataStore> } {
     hardReloadBudget: makeHardReloadBudget(),
     now: () => 1727000000000
   });
-  render(() => <PanelApp data={data} />);
+  render(() => <PanelApp data={data} paletteChord={paletteChord} />);
   return { data };
 }
 
@@ -154,6 +162,34 @@ describe('the keyboard overlays in the shell', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+    });
+  });
+
+  it('the palette row names the chosen chord, live on a rebinding', async () => {
+    // A box, so the watch's assignment survives control-flow narrowing.
+    const watcher: { write: ((chord: PaletteChord) => void) | null } = { write: null };
+    bootShellWithData({
+      readChord: () => Promise.resolve({ code: 'KeyK', alt: true }),
+      watchChord: (onChange) => {
+        watcher.write = onChange;
+        return () => undefined;
+      },
+      getPlatformInfo: () => Promise.resolve({ os: 'mac' }),
+      fallbackPlatform: () => 'other',
+      log: { warn: vi.fn() }
+    });
+    fireEvent.keyDown(document.body, { key: '/', bubbles: true, cancelable: true });
+    const paletteKeys = (): string | null | undefined =>
+      [...document.querySelectorAll('[data-fdt="shortcut-row"]')]
+        .find((row) => row.textContent.includes('Open or close the command palette'))
+        ?.querySelector('kbd')?.textContent;
+    await waitFor(() => {
+      expect(paletteKeys()).toBe('Ctrl / ⌘ K or ⌥K');
+    });
+    expect(watcher.write).not.toBeNull();
+    watcher.write?.({ code: 'KeyO', mod: true, alt: true });
+    await waitFor(() => {
+      expect(paletteKeys()).toBe('Ctrl / ⌘ K or ⌥⌘O');
     });
   });
 

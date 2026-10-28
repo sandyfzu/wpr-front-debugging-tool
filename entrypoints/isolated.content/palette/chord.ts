@@ -3,7 +3,7 @@
  * listener (top frame, wired by the palette module) that opens the palette
  * on exactly the bound chord and leaves every other keystroke to the page.
  *
- * Decisions are pure ({@link chordKeydownAction}, {@link isEditableTarget},
+ * Decisions are pure (the shared keydown decision and typed-text read, and
  * {@link narrowChordPlatform}); {@link startChordTrigger} binds them to the
  * page and the extension:
  * - the binding (the stored chord + the keyboard convention) resolves on the
@@ -33,100 +33,14 @@ import {
   type AskOutcome,
   type ScheduleTimer
 } from '../../../lib/messaging/bounded-ask';
+import { followPaletteChord } from '../../../lib/palette-chord/follow';
 import {
-  DEFAULT_PALETTE_CHORD,
-  chordMayTypeText,
-  formatChord,
-  matchesChord,
-  type ChordKeystroke,
-  type PaletteChord
-} from '../../../lib/storage/palette-chord';
+  chordKeydownAction,
+  takesTypedText,
+  type ChordBinding
+} from '../../../lib/palette-chord/keydown';
+import { formatChord, type PaletteChord } from '../../../lib/storage/palette-chord';
 import type { ChordPlatform } from '../../../lib/storage/palette-chord-platform';
-
-/** A resolved binding: what fires, in which keyboard convention. */
-export interface ChordBinding {
-  readonly chord: PaletteChord;
-  readonly platform: ChordPlatform;
-}
-
-/** The keydown fields the decision reads (a `KeyboardEvent` satisfies it). */
-export interface ChordKeydownFacts extends ChordKeystroke {
-  /** False for script-dispatched events: a page can never fake the chord. */
-  readonly isTrusted: boolean;
-  /** Set when an earlier listener already handled the keystroke. */
-  readonly defaultPrevented: boolean;
-}
-
-/** What the listener does with one keydown. */
-export type ChordKeydownAction = 'open' | 'pass';
-
-/**
- * Decide one keydown: open only for a trusted, not yet handled keystroke
- * that matches the binding exactly (repeats, IME and AltGr input never
- * match) — and, for a chord that may type a character, only outside an
- * editable field, where the keystroke types as usual.
- *
- * @param event The keydown.
- * @param binding The resolved binding.
- * @param inEditable Whether the event's target is editable (asked only when
- *   it decides the outcome — reading the event path is the costly part).
- * @returns `open` to consume the keystroke and open the palette, else `pass`.
- */
-export function chordKeydownAction(
-  event: ChordKeydownFacts,
-  binding: ChordBinding,
-  inEditable: () => boolean
-): ChordKeydownAction {
-  if (!event.isTrusted || event.defaultPrevented) return 'pass';
-  if (!matchesChord(event, binding.chord, binding.platform)) return 'pass';
-  if (chordMayTypeText(binding.chord, binding.platform) && inEditable()) return 'pass';
-  return 'open';
-}
-
-/** `<input>` types that never take typed text (everything else does, `text` by default). */
-const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'hidden',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit'
-]);
-
-/** The element fields {@link isEditableTarget} reads (an `Element` satisfies it). */
-interface EditableFacts {
-  readonly nodeType: number;
-  readonly localName?: string;
-  readonly type?: unknown;
-  readonly isContentEditable?: boolean;
-  readonly ownerDocument?: { readonly designMode?: string } | null;
-}
-
-/**
- * Whether a keydown's target takes typed text: the deepest element on its
- * composed path (inside open shadow roots too) is a `<textarea>`, a text-like
- * `<input>` or editable content (`contenteditable`, inherited by descendants,
- * or a whole `designMode` document — read directly, since engines disagree
- * on `isContentEditable` there).
- *
- * @param path The event's `composedPath()` (deepest target first).
- */
-export function isEditableTarget(path: readonly EventTarget[]): boolean {
-  const target = path.find(
-    (entry): entry is EventTarget & EditableFacts =>
-      (entry as Partial<EditableFacts>).nodeType === Node.ELEMENT_NODE
-  );
-  if (target === undefined) return false;
-  if (target.isContentEditable === true || target.localName === 'textarea') return true;
-  if (target.ownerDocument?.designMode === 'on') return true;
-  if (target.localName !== 'input') return false;
-  const type = typeof target.type === 'string' ? target.type.toLowerCase() : 'text';
-  return !NON_TEXT_INPUT_TYPES.has(type);
-}
 
 /**
  * Narrow the background's platform answer at the boundary (two bundles meet
@@ -212,7 +126,7 @@ export function startChordTrigger(deps: ChordTriggerDeps): ChordTrigger {
     try {
       const keydown = event as KeyboardEvent;
       const action = chordKeydownAction(keydown, current, () =>
-        isEditableTarget(keydown.composedPath())
+        takesTypedText(keydown.composedPath())
       );
       if (action !== 'open') return;
       // An orphaned script must not take the page's keystroke for nothing.
@@ -229,30 +143,13 @@ export function startChordTrigger(deps: ChordTriggerDeps): ChordTrigger {
     }
   };
 
-  /** Watch first (a write during the read wins), then read and ask. */
+  /** Follow the chord (watch first, then read) and ask for the convention. */
   const resolve = (): void => {
     if (resolving) return;
     resolving = true;
-    // An object, so the read's closure sees the watch's write.
-    const watch = { delivered: false };
-    try {
-      unwatch = deps.watchChord((next) => {
-        watch.delivered = true;
-        chord = next;
-      });
-    } catch (cause) {
-      log.warn('Palette chord unwatched — a rebinding applies after a reload', cause);
-    }
-    // Async bodies: a seam throwing synchronously lands in the same catch.
-    void (async (): Promise<void> => {
-      try {
-        const read = await deps.readChord();
-        if (!watch.delivered) chord = read;
-      } catch (cause) {
-        log.warn('Palette chord unread — using the default', cause);
-        if (!watch.delivered) chord = DEFAULT_PALETTE_CHORD;
-      }
-    })();
+    unwatch = followPaletteChord(deps, (next) => {
+      chord = next;
+    });
     void (async (): Promise<void> => {
       try {
         platform = platformFromOutcome(

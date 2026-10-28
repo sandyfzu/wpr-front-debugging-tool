@@ -8,21 +8,32 @@
  */
 import { For, Show, type JSX } from 'solid-js';
 import { ModalDialog } from '../../../components/ui/dialog';
-import { PANEL_SHORTCUTS } from './shortcuts';
+import type { ChordBinding } from '../../../lib/palette-chord/keydown';
+import { PANEL_SHORTCUTS, shortcutKeys, type ShortcutRow } from './shortcuts';
 
 export interface ShortcutsOverlayProps {
   /** The dismissal callback (the caller's close + focus restore). */
   onClose: () => void;
+  /** The live chosen palette chord (the palette row names it); null while unresolved. */
+  paletteChord: () => ChordBinding | null;
 }
 
 /** The keys column: the shared mono chip treatment. */
 const KEYS_CLASSES = 'font-mono text-2xs text-fg-primary';
 
-/** One overlay row: keys chip · action, with its context tag when present. */
-function ShortcutEntry(props: { row: (typeof PANEL_SHORTCUTS)[number] }): JSX.Element {
+/**
+ * One overlay row: keys chip · action, with its context tag when present.
+ *
+ * @param props.row The table row.
+ * @param props.paletteChord The live chosen chord (the palette row's keys follow it).
+ */
+function ShortcutEntry(props: {
+  row: ShortcutRow;
+  paletteChord: () => ChordBinding | null;
+}): JSX.Element {
   return (
     <div class="flex items-center gap-2.5" data-fdt="shortcut-row">
-      <kbd class={KEYS_CLASSES}>{props.row.keys}</kbd>
+      <kbd class={KEYS_CLASSES}>{shortcutKeys(props.row, props.paletteChord())}</kbd>
       <span class="min-w-0 flex-1 text-xs text-fg-secondary">{props.row.action}</span>
       <Show when={props.row.context}>
         {(context) => <span class="shrink-0 text-2xs text-fg-muted">{context()}</span>}
@@ -40,6 +51,7 @@ function ShortcutEntry(props: { row: (typeof PANEL_SHORTCUTS)[number] }): JSX.El
  * control.
  *
  * @param props.onClose The dismissal callback.
+ * @param props.paletteChord The live chosen palette chord.
  */
 export function ShortcutsOverlay(props: ShortcutsOverlayProps): JSX.Element {
   return (
@@ -51,7 +63,9 @@ export function ShortcutsOverlay(props: ShortcutsOverlayProps): JSX.Element {
       class="top-24 p-4"
     >
       <div class="grid gap-2">
-        <For each={PANEL_SHORTCUTS}>{(row) => <ShortcutEntry row={row} />}</For>
+        <For each={PANEL_SHORTCUTS}>
+          {(row) => <ShortcutEntry row={row} paletteChord={props.paletteChord} />}
+        </For>
       </div>
     </ModalDialog>
   );

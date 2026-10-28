@@ -21,13 +21,18 @@
  * - the unshifted `'` — the reported layout's glyph on `/`'s key —
  *   matches nothing.
  *
+ * The palette also answers the user's chosen page-palette chord (Alt+K by
+ * default; ⌥K on macOS), live on a rebinding, with Ctrl/⌘ K unchanged; a
+ * may-type chord types inside the palette field instead of toggling.
+ *
  * The 2026-10-13 audit round corrected this header's own earlier claim
  * that the `?`-alias keydown "cannot be synthesized": the probes above are
  * this suite's own legs now — a negative capability claim gets probed
  * before it ships, not asserted.
  */
-import type { Page } from '@playwright/test';
-import { expect, panelPageUrl, test } from '../helpers/extension';
+import type { Locator, Page } from '@playwright/test';
+import { expect, panelPageUrl, test, type ExtensionDriver } from '../helpers/extension';
+import { resetInstantRows } from '../helpers/options';
 
 /** The overlay's dialog role/name (the shortcut table's modal). */
 const SHORTCUTS_DIALOG = { role: 'dialog' as const, name: 'Keyboard shortcuts' };
@@ -57,6 +62,144 @@ async function installKeyRecorder(page: Page): Promise<void> {
 async function recordedKeys(page: Page): Promise<string[]> {
   return await page.evaluate((): string[] => (window as { __e2eKeys?: string[] }).__e2eKeys ?? []);
 }
+
+/** Whether the runner (and so the extension's platform) is macOS. */
+const MAC = process.platform === 'darwin';
+
+/**
+ * Write the chosen palette chord through the service worker (the options
+ * page's store), so the open panel must follow it live.
+ *
+ * @param driver The extension driver.
+ * @param chord The raw stored chord.
+ */
+async function writeChord(driver: ExtensionDriver, chord: unknown): Promise<void> {
+  await driver.evaluateInWorker(async (value: unknown) => {
+    await chrome.storage.sync.set({ 'palette-chord': value });
+  }, chord);
+}
+
+/** The shortcuts overlay's palette row keys chip. */
+function paletteRowKeys(page: Page): Locator {
+  return page
+    .getByRole('dialog', SHORTCUTS_DIALOG)
+    .locator('[data-fdt="shortcut-row"]', { hasText: 'Open or close the command palette' })
+    .locator('kbd');
+}
+
+test.describe('panel palette: the chosen chord', () => {
+  test.beforeEach(async ({ extension }) => {
+    await resetInstantRows(extension);
+  });
+  test.afterEach(async ({ extension }) => {
+    await resetInstantRows(extension);
+  });
+
+  test('the default chosen chord toggles the palette; Ctrl/⌘ K still does', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
+      // The binding resolves asynchronously (chord read + platform report):
+      // the overlay row naming it is the observable "armed" point.
+      await page.keyboard.press('/');
+      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥K' : 'Alt+K'}`);
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+
+      await page.keyboard.press('Alt+KeyK');
+      await expect(page.getByRole('combobox')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('combobox')).toHaveCount(0);
+
+      await page.keyboard.press('ControlOrMeta+k');
+      await expect(page.getByRole('combobox')).toBeVisible();
+      await page.keyboard.press('ControlOrMeta+k');
+      await expect(page.getByRole('combobox')).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('a rebinding applies live: the new chord toggles, the old one passes, the row follows', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      // The narrowest width the bar holds (§D): the longer row never scrolls.
+      await page.setViewportSize({ width: 320, height: 800 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await expect(page.getByRole('link', { name: 'Detections' })).toBeVisible();
+      await page.keyboard.press('/');
+      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥K' : 'Alt+K'}`);
+
+      await writeChord(extension, { code: 'KeyO', mod: true, alt: true });
+      // The open overlay re-renders from the live binding (no reload).
+      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥⌘O' : 'Ctrl+Alt+O'}`);
+      // A fixed dialog never widens the document, so measure the boxes: the
+      // dialog fits the viewport and every row stays inside it (no clipping).
+      const fit = await page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        if (dialog === null) return null;
+        const box = dialog.getBoundingClientRect();
+        const rows = [...dialog.querySelectorAll('[data-fdt="shortcut-row"]')].map((row) =>
+          row.getBoundingClientRect()
+        );
+        return {
+          dialogFits: box.left >= 0 && box.right <= window.innerWidth,
+          rowsFit: rows.every((row) => row.left >= box.left && row.right <= box.right),
+          dialogScrolls: dialog.scrollWidth > dialog.clientWidth
+        };
+      });
+      expect(fit, 'no horizontal overflow at 320 px').toEqual({
+        dialogFits: true,
+        rowsFit: true,
+        dialogScrolls: false
+      });
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', SHORTCUTS_DIALOG)).toHaveCount(0);
+
+      await page.keyboard.press('Alt+KeyK');
+      await expect(page.getByRole('combobox')).toHaveCount(0);
+      await page.keyboard.press('ControlOrMeta+Alt+KeyO');
+      await expect(page.getByRole('combobox')).toBeVisible();
+      await page.keyboard.press('ControlOrMeta+Alt+KeyO');
+      await expect(page.getByRole('combobox')).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('a may-type chosen chord types inside the palette field (no toggle there)', async ({
+    extension
+  }) => {
+    const page = await extension.browserContext.newPage();
+    try {
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto(await panelPageUrl(extension), { waitUntil: 'load' });
+      await page.keyboard.press('/');
+      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥K' : 'Alt+K'}`);
+      await page.keyboard.press('Escape');
+
+      await page.keyboard.press('ControlOrMeta+k');
+      const field = page.getByRole('combobox');
+      await expect(field).toBeVisible();
+      await page.waitForFunction(
+        (): boolean => document.activeElement?.getAttribute('role') === 'combobox'
+      );
+      await page.keyboard.press('Alt+KeyK');
+      // Still open: the keystroke belonged to the field.
+      await expect(field).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(field).toHaveCount(0);
+    } finally {
+      await page.close();
+    }
+  });
+});
 
 test.describe('panel shortcuts (the re-owned overlay chord)', () => {
   test('the command palette stays reachable (Ctrl+K opens; Esc closes)', async ({ extension }) => {

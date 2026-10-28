@@ -116,16 +116,16 @@ test.describe('options instant rows', () => {
 
       // A Ctrl+Alt binding saves and keeps the caveat up.
       await page.keyboard.press('Enter');
-      await page.keyboard.press(`${MOD}+Alt+KeyP`);
+      await page.keyboard.press(`${MOD}+Alt+KeyO`);
       await expect
         .poll(async () => (await readInstantRows(extension)).chord)
         .toEqual({
-          code: 'KeyP',
+          code: 'KeyO',
           mod: true,
           alt: true
         });
       await expect(page.locator('#option-palette-chord-caveat')).toContainText(
-        IS_MAC ? 'On Windows this shortcut is Ctrl+Alt+P' : 'Ctrl+Alt shortcuts may never fire'
+        IS_MAC ? 'On Windows this shortcut is Ctrl+Alt+O' : 'Ctrl+Alt shortcuts may never fire'
       );
       audit = await runPanelAxe(page);
       expect(audit.violations, audit.detail.join('\n')).toEqual([]);

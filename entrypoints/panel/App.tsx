@@ -53,6 +53,11 @@ import { PanelOverlays } from './palette/panel-overlays';
 import { createOverlayStore, type OverlayStore } from './palette/overlays';
 import { registerPanelShortcuts } from './palette/shortcuts';
 import {
+  createPanelChordBinding,
+  realPanelChordDeps,
+  type PanelChordDeps
+} from './palette/chord-binding';
+import {
   createFdtDataStore,
   FdtDataContext,
   SearchContext,
@@ -88,6 +93,11 @@ export type AppProps = {
    * the real messenger over the DevTools-inspected tab.
    */
   readonly builderEntry?: BuilderEntryDeps;
+  /**
+   * The chosen palette chord's seams (tests inject doubles); absent, the
+   * real chord store and platform report.
+   */
+  readonly paletteChord?: PanelChordDeps;
 };
 
 /** The error branch's payload (the error state's fields the view reads). */
@@ -184,6 +194,8 @@ export function PanelApp(props: AppProps): JSX.Element {
   // eslint-disable-next-line solid/reactivity
   const builderEntryDeps = props.builderEntry ?? realBuilderEntryDeps(devtoolsInspectedTabId);
   const router = createHashRoute();
+  // eslint-disable-next-line solid/reactivity
+  const paletteChord = createPanelChordBinding(props.paletteChord ?? realPanelChordDeps(log));
 
   // The shell — and only the shell — owns the mount lifecycle: every
   // message receiver registers inside `start()`, the global keyboard
@@ -193,10 +205,11 @@ export function PanelApp(props: AppProps): JSX.Element {
   let stopShortcuts: (() => void) | undefined;
   onMount(() => {
     data.start();
-    stopShortcuts = registerPanelShortcuts(overlays);
+    stopShortcuts = registerPanelShortcuts(overlays, paletteChord.binding);
   });
   onCleanup(() => {
     stopShortcuts?.();
+    paletteChord.stop();
     data.stop();
     router.stop();
     search.cancel();
@@ -382,6 +395,7 @@ export function PanelApp(props: AppProps): JSX.Element {
               router.navigate(route);
             }}
             focusRouteHeading={focusRouteHeading}
+            paletteChord={paletteChord.binding}
           />
           <Toasts />
         </div>
