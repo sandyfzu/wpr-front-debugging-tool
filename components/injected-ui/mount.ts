@@ -23,6 +23,24 @@ import { followStoredAppearance } from './live-theme';
 const log = createLogger('injected-ui');
 
 /**
+ * Stop an appearance follow without letting a dead-context throw escape:
+ * the unwatch is an extension-API call that throws once the extension
+ * reloaded under a mounted view, and the teardown step after it (the view's
+ * disposal, WXT's shadow-host cleanup, a rethrown mount failure) must still
+ * run.
+ *
+ * @param stop The follow's stop handle.
+ * @param moment The teardown moment, for the warning.
+ */
+function stopFollowQuietly(stop: () => void, moment: string): void {
+  try {
+    stop();
+  } catch (cause) {
+    log.warn(`Stopping the appearance follow failed during ${moment}`, cause);
+  }
+}
+
+/**
  * Mount a Solid component tree into a shadow-root UI container once the
  * stored appearance is on the container. The palette is applied before the
  * view renders, so no frame ever paints in the wrong palette; the shadow
@@ -32,9 +50,11 @@ const log = createLogger('injected-ui');
  * @param container The UI container inside the shadow root.
  * @param shadow The shadow root holding the container.
  * @param view Solid component returning the UI's root element.
+ * @param signal The mount's removal signal: aborted while the appearance
+ *   read is in flight (the host left the page first), nothing renders, the
+ *   follow stops at once and a no-op disposer resolves.
  * @returns The disposer — removes the render tree and stops the appearance
- *   follow; the caller invokes it exactly once, when the whole shadow host
- *   leaves the page (WXT's `onRemove` wiring owns that moment).
+ *   follow; the caller invokes it exactly once, when the host leaves the page.
  * @throws {@link Error} when the render itself fails — the appearance
  *   follow is unwound before the error rethrows, so a failed mount never
  *   leaves a storage subscription behind. A refused options read does not
@@ -43,36 +63,37 @@ const log = createLogger('injected-ui');
 export async function mountShadowUi(
   container: HTMLElement,
   shadow: ShadowRoot,
-  view: () => JSX.Element
+  view: () => JSX.Element,
+  signal?: AbortSignal
 ): Promise<() => void> {
   // The page never sees the UI's input (a delay runtime would replay it).
   isolateUiEvents(shadow);
+  // A call, re-read per check: the await below is exactly where it flips.
+  const removed = (): boolean => signal?.aborted === true;
+  if (removed()) return noRender;
   const stopFollowingTheme = await followStoredAppearance(container);
+  if (removed()) {
+    // Removed during the read: no render work for a host already gone.
+    stopFollowQuietly(stopFollowingTheme, 'a removed mount');
+    return noRender;
+  }
   try {
     const disposeView = render(view, container);
     return () => {
       disposeView();
-      // The unwatch is an extension-API call that can throw in a dead context
-      // (extension reloaded while the view was mounted). It must not
-      // short-circuit the rest of the teardown: WXT's remove runs this
-      // disposer BEFORE its own shadow-host cleanup, so a throw here would
-      // leave the detached shadow host stranded in the host page.
-      try {
-        stopFollowingTheme();
-      } catch (cause) {
-        log.warn('Stopping the appearance follow failed during teardown', cause);
-      }
+      // Never short-circuits the rest: WXT's remove runs this disposer BEFORE
+      // its own shadow-host cleanup.
+      stopFollowQuietly(stopFollowingTheme, 'teardown');
     };
   } catch (cause) {
-    // Same dead-context caveat as the disposer, folded for the unwind: the
-    // original mount failure has priority — the follow must be stopped
-    // (best-effort, logged loudly when it cannot be) and the real error
-    // rethrown, never replaced by a secondary teardown failure.
-    try {
-      stopFollowingTheme();
-    } catch (unwindFailure) {
-      log.warn('Stopping the appearance follow failed during unwind', unwindFailure);
-    }
+    // The original mount failure has priority: the follow is stopped
+    // (best-effort) and the real error rethrown, never replaced.
+    stopFollowQuietly(stopFollowingTheme, 'unwind');
     throw cause;
   }
+}
+
+/** The disposer of a mount that never rendered (nothing to undo). */
+function noRender(): void {
+  // Intentionally empty: the aborted mount armed nothing that outlives it.
 }

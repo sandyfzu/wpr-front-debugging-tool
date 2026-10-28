@@ -139,4 +139,46 @@ describe('mountShadowUi', () => {
     dispose();
     warn.mockRestore();
   });
+  it('renders nothing and arms no follow for a mount already removed', async () => {
+    const watch = vi.spyOn(optionsStore, 'watch');
+    const { container, shadow } = shadowContainer();
+    const removed = new AbortController();
+    removed.abort();
+    const dispose = await mountShadowUi(
+      container,
+      shadow,
+      () => probeView('never'),
+      removed.signal
+    );
+    expect(watch).not.toHaveBeenCalled();
+    expect(container.childElementCount).toBe(0);
+    dispose(); // the no-op disposer
+    watch.mockRestore();
+  });
+
+  it('a removal during the appearance read stops the follow and skips the render', async () => {
+    await optionsStore.setValue(storedOptions('dark'));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = optionsStore.getValue.bind(optionsStore);
+    vi.spyOn(optionsStore, 'getValue').mockImplementationOnce(async () => {
+      await gate;
+      return read();
+    });
+    const { container, shadow } = shadowContainer();
+    const removal = new AbortController();
+    const mounting = mountShadowUi(container, shadow, () => probeView('late'), removal.signal);
+    removal.abort();
+    release();
+    const dispose = await mounting;
+    expect(container.querySelector('.late')).toBeNull();
+    // The follow is gone: a later appearance write restyles nothing.
+    const themed = container.dataset.theme;
+    await optionsStore.setValue(storedOptions('light'));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(container.dataset.theme).toBe(themed);
+    dispose();
+  });
 });
