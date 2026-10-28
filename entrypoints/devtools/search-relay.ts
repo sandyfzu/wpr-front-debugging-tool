@@ -3,7 +3,7 @@
  * FDT panel, Chrome fires `panel.onSearch` on the devtools page, and every
  * action is relayed to the panel page as one typed `panelSearch` message
  * (the shell side consumes it from there — routes/pages never touch the
- * browser API).
+ * browser API). Feature-detected: a panel without `onSearch` gets no relay.
  */
 import { sendMessage } from '../../lib/messaging/index';
 import { isNoReceiverError } from '../../lib/messaging/no-receiver';
@@ -43,16 +43,43 @@ export function toPanelSearchPayload(
   return null;
 }
 
+/** The registration shape of the panel's search-action event. */
+interface SearchEvent {
+  /** Registers the callback fired on perform/cancel/next/prev. */
+  addListener: (callback: (action: string, queryString?: string) => void) => void;
+}
+
 /**
- * The part of a created panel the relay wiring touches, narrowed to the
- * search event's registration shape: the dependency seam is what the wiring
- * reads, so tests inject panel doubles without carrying the full API type.
+ * The part of a created panel the relay wiring touches: the dependency seam
+ * is what the wiring reads, so tests inject panel doubles without carrying
+ * the full API type. `onSearch` is `unknown` because not every browser's
+ * DevTools panel has it (Firefox's `ExtensionPanel` lacks it) — it is
+ * narrowed by {@link hasSearchEvent} before use.
  */
 interface SearchEventSource {
-  /** The panel's search-action event (fires on perform/cancel/next/prev). */
-  onSearch: {
-    addListener: (callback: (action: string, queryString?: string) => void) => void;
-  };
+  /** The panel's search-action event, when this browser provides one. */
+  readonly onSearch?: unknown;
+}
+
+/** What {@link registerSearchRelay} came to. */
+export type SearchRelayRegistration = 'registered' | 'unsupported';
+
+/**
+ * Whether the panel exposes a usable search event (an object with an
+ * `addListener` function) — feature detection, never browser sniffing.
+ *
+ * @param panel The created panel.
+ * @returns True when `panel.onSearch.addListener` is callable.
+ */
+function hasSearchEvent(
+  panel: SearchEventSource
+): panel is SearchEventSource & { readonly onSearch: SearchEvent } {
+  const event = panel.onSearch;
+  return (
+    typeof event === 'object' &&
+    event !== null &&
+    typeof (event as { addListener?: unknown }).addListener === 'function'
+  );
 }
 
 /**
@@ -87,14 +114,25 @@ function detectedRelayTabId(): number | null {
  * becoming an unhandled rejection. With no usable inspected tab the send is
  * refused entirely: an unscoped search can never be validated on arrival.
  *
- * @param panel The panel Chrome created (its `onSearch` event).
+ * Browsers whose panel has no search event (Firefox) get no relay: DevTools'
+ * own search shortcut then never reaches the panel, whose in-page search
+ * fields keep working. That is an expected capability gap, so it logs one
+ * debug line per registration instead of throwing out of the devtools page.
+ *
+ * @param panel The created panel (its `onSearch` event, when present).
  * @param inspectedTabId The inspected-tab accessor the sends carry
  *   (tests inject; production reads the devtools context, feature-detected).
+ * @returns `'registered'` when the listener was added, `'unsupported'` when
+ *   the panel has no search event.
  */
 export function registerSearchRelay(
   panel: SearchEventSource,
   inspectedTabId: () => number | null = detectedRelayTabId
-): void {
+): SearchRelayRegistration {
+  if (!hasSearchEvent(panel)) {
+    log.debug('DevTools panel search relay skipped — this browser has no panel onSearch event');
+    return 'unsupported';
+  }
   panel.onSearch.addListener((action, queryString) => {
     try {
       const payload = toPanelSearchPayload(action, queryString);
@@ -130,4 +168,5 @@ export function registerSearchRelay(
       log.error('Search relay failed', { action, queryString, cause });
     }
   });
+  return 'registered';
 }

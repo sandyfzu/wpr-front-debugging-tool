@@ -234,3 +234,39 @@ describe('registerSearchRelay', () => {
     expect(debug).not.toHaveBeenCalled();
   });
 });
+
+describe('registerSearchRelay without a panel search event', () => {
+  it.each([
+    ['absent', {}],
+    ['undefined', { onSearch: undefined }],
+    ['null', { onSearch: null }],
+    ['without addListener', { onSearch: {} }],
+    ['with a non-function addListener', { onSearch: { addListener: 'nope' } }]
+  ])('skips registration when onSearch is %s — one debug line, no throw', (_label, panel) => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const inspectedTabId = vi.fn(() => TEST_TAB_ID);
+    let outcome: string | undefined;
+    expect(() => {
+      outcome = registerSearchRelay(panel, inspectedTabId);
+    }).not.toThrow();
+    expect(outcome).toBe('unsupported');
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(String(debug.mock.calls[0]?.join(' '))).toContain('onSearch');
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    expect(inspectedTabId).not.toHaveBeenCalled();
+  });
+
+  it('reports registered and adds exactly one listener when onSearch exists', () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const addListener = vi.fn();
+    expect(registerSearchRelay({ onSearch: { addListener } }, () => TEST_TAB_ID)).toBe(
+      'registered'
+    );
+    expect(addListener).toHaveBeenCalledTimes(1);
+    expect(addListener).toHaveBeenCalledWith(expect.any(Function));
+    expect(debug).not.toHaveBeenCalled();
+  });
+});
