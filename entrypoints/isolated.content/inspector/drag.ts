@@ -3,14 +3,14 @@
  * follow → settle/cancel) over injected seams, so the pointer semantics are
  * unit-pinned without a DOM and the runtime wiring stays thin.
  *
- * Persistence (`SB-D12`): the machine stays storage-free. A settle that
+ * Persistence: the machine stays storage-free. A settle that
  * ended a moved drag hands back the committed translate (the wiring stores
  * it per origin — one write per drop); cancels hand back nothing, so a
  * restored pre-drag position is never stored. A stored translate re-enters
  * through `restore`, after which the wiring re-clamps it like any resting
  * position (the stored value is a hint, never a promise of fit).
  *
- * Owner binding (P12A feedback round, 2026-10-14): the chrome is FULLY
+ * Owner binding (2026-10-14): the chrome is FULLY
  * contained in the viewport, in both states, at rest and during a drag — no
  * strip of anything may sit offscreen. Hiding is the context-menu toggle's
  * (and the coming shortcut's) job; nothing needs to be parked past the edge.
@@ -31,7 +31,7 @@
  * `reclamp` source, since a clamp must target the choreography's end
  * geometry, not the pose a mid-entrance sample happens to present).
  *
- * Scroll stance (`SB-D16`): positions are viewport numbers re-clamped
+ * Scroll stance: positions are viewport numbers re-clamped
  * against the live viewport on every move — a wheel/scroll during a drag
  * needs no handling at all (clamp-and-follow; the fixed chrome holds its
  * viewport position), and the machine never calls `preventDefault`.
@@ -68,10 +68,9 @@ export const DRAG_TUNING = Object.freeze({
    * Full-visibility air margin (px): the whole box stays this far inside
    * every viewport edge, always. Full visibility is the owner binding ("not
    * outside at all"); the small air keeps the chrome's elevation shadow and
-   * its grab affordances off the viewport's own hem, and it is exactly the
-   * brief's "clamped 4 px inside the viewport" (SB-D12) — with the strip
-   * figure gone, the drag-time clamp and the brief's drop clamp are one
-   * geometry.
+   * its grab affordances off the viewport's own hem — and one figure serves
+   * both the drag-time clamp and the drop clamp (a dropped chrome rests 4 px
+   * inside the viewport), so they are one geometry.
    */
   containmentMarginPx: 4,
   /**
@@ -157,7 +156,7 @@ export interface DragMachineDeps {
 export interface DragController {
   /**
    * A pointer pressed a grab handle. While a drag is live, ANY press cancels
-   * it (a right-press = `SB-D12`'s cancel nicety; a second pointer = the
+   * it (a right-press = the cancel nicety; a second pointer = the
    * multi-touch conflict) and never regrabs — a new drag needs a fresh press.
    * No-op on a dead chrome (null box).
    */

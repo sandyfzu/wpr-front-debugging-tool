@@ -38,7 +38,7 @@
  * instant); a starting drag clears it — direct manipulation never moves
  * through a transition.
  *
- * Position persistence (`SB-D12`): a settled moved drop stores the chrome's
+ * Position persistence: a settled moved drop stores the chrome's
  * drag translate for this origin in the device-local positions item (one
  * write per drop; cancels never write). The translate is an offset from the
  * bottom-right stylesheet anchor, which both shapes (pill and card) share,
@@ -262,7 +262,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // count above zero) that belonged to a moved drag is consumed here; a
       // keyboard activation never reads the pointer path's flag, so a drag
       // whose release click landed consumer-less cannot dead-end the
-      // keyboard's Enter (SB-D9's no-dead-ends). One truth lives in the
+      // keyboard's Enter (no dead ends). One truth lives in the
       // machine: pointer state, pointer consumers — `isPointerInitiatedClick`
       // is the verified `detail === 0` keyboard discriminator.
       if (
@@ -461,10 +461,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // Direct manipulation takes over the moment a pointer presses the
       // chrome: an in-flight smooth re-settle ends right here (removal snaps
       // its position leg to the settled value) — a drag is 1:1, never a
-      // transitioned follow (SB-D12).
+      // transitioned follow.
       chrome.classList.remove('ins-resettle');
       // Any press while a drag is live cancels it first: a right-press (the
-      // brief's cancel nicety) and a second pointer's press must not be
+      // cancel nicety) and a second pointer's press must not be
       // subject to the primary-button guard below — cancel beats grab.
       if (dragController?.isDragging() === true) {
         dragController.cancel();
@@ -542,7 +542,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     listenWhileMounted(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button
       // pressed while the left pointer is captured delivers NO pointerdown —
-      // the chrome gets `contextmenu` alone. The brief's right-click cancel
+      // the chrome gets `contextmenu` alone. The right-click cancel
       // rides it (no preventDefault: the host keeps its native menu).
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();

@@ -17,7 +17,7 @@ import { optionsStore, FALLBACK, type StoredOptions } from '../../lib/storage/op
  * view rendered into the container, disposer removes it. Vitest resolves
  * `solid-js/web` to Solid's server build, and the mount's own contract —
  * palette before render, disposer joins the two cleanups — is what this file
- * pins; the renderer itself is Solid's domain (component tests in P5B/P12).
+ * pins; the renderer itself is Solid's domain (the surfaces' component tests).
  * The disposer clears the whole container, as Solid's does
  * (`element.textContent = ""`): the container is shared across mounts.
  */
