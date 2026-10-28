@@ -16,7 +16,9 @@
  *
  * Test order is load-bearing inside this worker profile: every leg cleans up
  * its own override writes so no leg's explicit entry leaks into the later
- * legs — nothing here reads back an entry a previous leg wrote.
+ * legs — nothing here reads back an entry a previous leg wrote. The stored
+ * drag positions (device-local item) are wiped before every leg and after
+ * the file, so every leg starts at the resting anchor.
  */
 
 import type { Page } from '@playwright/test';
@@ -33,6 +35,9 @@ const SITE_ORIGIN = new URL(SITE_URL).origin;
 
 /** Settle window: the mount + the hub's pass answer after enablement. */
 const MOUNT_SETTLE = { timeout: 15_000, intervals: [250, 500] };
+
+/** The WXT storage key under `chrome.storage.local` for the per-origin drag positions. */
+const POSITIONS_KEY = 'detection-widget-positions';
 
 /** The containment margin the drag clamp keeps (`DRAG_TUNING.containmentMarginPx`). */
 const DRAG_CONTAINMENT_MARGIN = 4;
@@ -470,6 +475,89 @@ async function clearWidgetOptIn(driver: ExtensionDriver): Promise<void> {
   }, ORIGINS_KEY);
 }
 
+/** Remove every stored drag position (each leg starts at the resting anchor). */
+async function clearWidgetPositions(driver: ExtensionDriver): Promise<void> {
+  await driver.evaluateInWorker(async (key: string) => {
+    await chrome.storage.local.remove([key]);
+  }, POSITIONS_KEY);
+}
+
+/**
+ * The site origin's stored drag translate (`{ x, y }` only — the recency
+ * rank is the store's business), or null when none is stored.
+ */
+async function storedWidgetPosition(
+  driver: ExtensionDriver
+): Promise<{ x: number; y: number } | null> {
+  return await driver.evaluateInWorker(
+    async (payload: { key: string; origin: string }) => {
+      const map = (await chrome.storage.local.get([payload.key]))[payload.key] as
+        Record<string, { x: number; y: number }> | undefined;
+      const entry = map?.[payload.origin];
+      return entry === undefined ? null : { x: entry.x, y: entry.y };
+    },
+    { key: POSITIONS_KEY, origin: SITE_ORIGIN }
+  );
+}
+
+/** The chrome's applied drag translate (its custom properties; unset = the anchor). */
+async function chromeTranslate(page: Page): Promise<{ x: number; y: number }> {
+  return await page.evaluate((host: string) => {
+    const chrome = document
+      .querySelector(host)
+      ?.shadowRoot?.querySelector<HTMLElement>('.ins-chrome');
+    if (chrome === null || chrome === undefined) throw new Error('the widget chrome is missing');
+    return {
+      x: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0,
+      y: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0
+    };
+  }, STRIP_HOST);
+}
+
+/**
+ * Record, from the page's main world, the chrome's drag translate at the
+ * first animation frame the widget's chrome exists in — the frame the user
+ * first sees. Installed before a navigation (init script), read with
+ * {@link firstFrameTranslate}: equal to the final translate means the
+ * restore never painted the resting anchor first.
+ *
+ * @param page The page about to (re)load.
+ */
+async function recordFirstFrameTranslate(page: Page): Promise<void> {
+  await page.addInitScript((host: string) => {
+    const tick = (): void => {
+      const chrome = document
+        .querySelector(host)
+        ?.shadowRoot?.querySelector<HTMLElement>('.ins-chrome');
+      if (chrome === null || chrome === undefined) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      (window as unknown as { fdtFirstFrame: unknown }).fdtFirstFrame = {
+        x: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0,
+        y: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0
+      };
+    };
+    requestAnimationFrame(tick);
+  }, STRIP_HOST);
+}
+
+/** The translate {@link recordFirstFrameTranslate} saw, or null when not yet recorded. */
+async function firstFrameTranslate(page: Page): Promise<{ x: number; y: number } | null> {
+  return await page.evaluate(
+    () => (window as unknown as { fdtFirstFrame?: { x: number; y: number } }).fdtFirstFrame ?? null
+  );
+}
+
+/** Wait for the mounted widget's scan verdict and a still chrome (drag-ready). */
+async function settleWidget(page: Page): Promise<void> {
+  await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+  await expect
+    .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
+    .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
+  await waitForChoreographySettle(page);
+}
+
 /** Reset the stored appearance (the palette legs pin their own per test). */
 async function resetAppearance(driver: ExtensionDriver): Promise<void> {
   await driver.evaluateInWorker(async (appearance: string): Promise<void> => {
@@ -538,7 +626,13 @@ siteTest.describe('site detection widget', () => {
     await extension.browserContext.clearCookies({ domain: new URL(SITE_URL).hostname });
   });
 
-  siteTest.afterAll(async ({ adminPage }) => {
+  // Drops persist per origin on this device: no leg inherits another's position.
+  siteTest.beforeEach(async ({ extension }) => {
+    await clearWidgetPositions(extension);
+  });
+
+  siteTest.afterAll(async ({ adminPage, extension }) => {
+    await clearWidgetPositions(extension);
     await loginAdminPage(adminPage);
   });
 
@@ -780,7 +874,7 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
-    'the pill drags beneath the pointer and reload returns it to the resting anchor (position is never stored)',
+    'the pill drags beneath the pointer and a reload restores the dropped position (stored per origin, before first paint)',
     async ({ extension }) => {
       await setWidgetEnabled(extension, true);
       const { page } = await openSitePage(extension, FDT_PAGE_URL);
@@ -833,24 +927,35 @@ siteTest.describe('site detection widget', () => {
         // The same press must never open the card (its click belonged to the drag).
         expect((await readStrip(page)).cardOpen).toBe(false);
 
-        // Session-local by decision: a reload never reads a position back.
-        await page.reload({ waitUntil: 'load' });
-        await expect.poll(async () => (await readStrip(page)).mounted, MOUNT_SETTLE).toBe(true);
+        // The drop is stored for the origin: the chrome's translate, once.
+        const dropped = await chromeTranslate(page);
         await expect
-          .poll(async () => (await readStrip(page)).pillText, MOUNT_SETTLE)
-          .toMatch(/✓ Cached|Cache not proven|Possibly cached|Cache not detected|Bypass requested/);
-        await waitForChoreographySettle(page);
+          .poll(async () => await storedWidgetPosition(extension))
+          .toEqual({
+            x: Math.round(dropped.x),
+            y: Math.round(dropped.y)
+          });
+
+        // A reload restores it — already in the first frame the chrome exists
+        // in (the restore lands in the render's own task, no anchor flash).
+        await recordFirstFrameTranslate(page);
+        await page.reload({ waitUntil: 'load' });
+        await settleWidget(page);
         const after = await stripGeometry(page);
         const againShape = after.shape;
         if (againShape === null) throw new Error('the repainted pill lost its shape');
         expect(
-          Math.abs(againShape.right - (after.viewport.width - 16)),
-          'the reload rested the pill back at the right anchor'
+          Math.abs(againShape.left - draggedShape.left),
+          'the reload restored the dropped left'
         ).toBeLessThan(2);
         expect(
-          Math.abs(againShape.bottom - (after.viewport.height - 16)),
-          'the reload rested the pill back at the bottom anchor'
+          Math.abs(againShape.top - draggedShape.top),
+          'the reload restored the dropped top'
         ).toBeLessThan(2);
+        expect(
+          await firstFrameTranslate(page),
+          'the first frame already showed the restored position'
+        ).toEqual(await chromeTranslate(page));
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
@@ -1169,6 +1274,23 @@ siteTest.describe('site detection widget', () => {
           Math.abs(shape.left - startShape.left) + Math.abs(shape.top - startShape.top),
           'the chrome did not snap back to the resting anchor'
         ).toBeGreaterThan(100);
+        // The capture-loss settle persisted the clamped commit (one drop, one
+        // stored value), and a reload restores it.
+        const commitTranslate = await chromeTranslate(page);
+        await expect
+          .poll(async () => await storedWidgetPosition(extension))
+          .toEqual({
+            x: Math.round(commitTranslate.x),
+            y: Math.round(commitTranslate.y)
+          });
+        await page.reload({ waitUntil: 'load' });
+        await settleWidget(page);
+        const restored = (await stripGeometry(page)).shape;
+        if (restored === null) throw new Error('the restored pill lost its shape');
+        expect(Math.abs(restored.left - committed.left), 'reload restores the commit').toBeLessThan(
+          3
+        );
+        expect(Math.abs(restored.top - committed.top)).toBeLessThan(3);
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
@@ -1616,7 +1738,7 @@ siteTest.describe('site detection widget', () => {
   );
 
   siteTest(
-    'Escape mid-drag cancels it and restores the pre-drag position',
+    'Escape mid-drag cancels it and restores the pre-drag position (neither cancel is stored)',
     async ({ extension }) => {
       await setWidgetEnabled(extension, true);
       const { page } = await openSitePage(extension, FDT_PAGE_URL);
@@ -1639,6 +1761,13 @@ siteTest.describe('site detection widget', () => {
         const settled = await stripGeometry(page);
         const atRest = settled.shape;
         if (atRest === null) throw new Error('the settled pill lost its shape');
+        const committed = await chromeTranslate(page);
+        await expect
+          .poll(async () => await storedWidgetPosition(extension))
+          .toEqual({
+            x: Math.round(committed.x),
+            y: Math.round(committed.y)
+          });
 
         // Second drag: Escape mid-press cancels (P12A.5's recorded semantics),
         // the release stays a click and is suppressed — the card never opens.
@@ -1693,12 +1822,410 @@ siteTest.describe('site detection widget', () => {
           'the right-press cancel restored the pre-drag left position'
         ).toBeLessThan(2);
         expect(Math.abs(rightShape.top - backShape.top)).toBeLessThan(2);
+
+        // Neither cancel wrote: the store still holds the first drop, and a
+        // reload rests the pill there (not at a canceled drag's last point).
+        expect(await storedWidgetPosition(extension), 'the cancels stored nothing').toEqual({
+          x: Math.round(committed.x),
+          y: Math.round(committed.y)
+        });
+        await page.reload({ waitUntil: 'load' });
+        await settleWidget(page);
+        const reloaded = (await stripGeometry(page)).shape;
+        if (reloaded === null) throw new Error('the reloaded pill lost its shape');
+        expect(
+          Math.abs(reloaded.left - atRest.left),
+          'reload rests at the first drop'
+        ).toBeLessThan(2);
+        expect(Math.abs(reloaded.top - atRest.top)).toBeLessThan(2);
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
       }
     }
   );
+  siteTest(
+    'a position stored on a wide viewport restores fully on-screen on a narrower one',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await settleWidget(page);
+        // Park far top-left on the wide viewport.
+        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await page.mouse.down();
+        await page.mouse.move(2, 2, { steps: 12 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+        const wide = await chromeTranslate(page);
+        await expect
+          .poll(async () => await storedWidgetPosition(extension))
+          .toEqual({
+            x: Math.round(wide.x),
+            y: Math.round(wide.y)
+          });
+
+        // A narrower screen: the stored offset reaches past the left/top
+        // edges; the restore re-clamps it in the render's task (first frame
+        // already inside), and the stored hint stays untouched.
+        await page.setViewportSize({ width: 480, height: 520 });
+        await recordFirstFrameTranslate(page);
+        await page.reload({ waitUntil: 'load' });
+        await settleWidget(page);
+        const narrow = await stripGeometry(page);
+        const shape = narrow.shape;
+        if (shape === null) throw new Error('the restored pill lost its shape');
+        expect(shape.left, 'the left edge keeps its air').toBeGreaterThanOrEqual(
+          DRAG_CONTAINMENT_MARGIN - 2
+        );
+        expect(shape.top, 'the top edge keeps its air').toBeGreaterThanOrEqual(
+          DRAG_CONTAINMENT_MARGIN - 2
+        );
+        expect(shape.right).toBeLessThanOrEqual(
+          narrow.viewport.width - DRAG_CONTAINMENT_MARGIN + 2
+        );
+        expect(shape.bottom).toBeLessThanOrEqual(
+          narrow.viewport.height - DRAG_CONTAINMENT_MARGIN + 2
+        );
+        expect(
+          await firstFrameTranslate(page),
+          'the first frame was already the re-clamped position'
+        ).toEqual(await chromeTranslate(page));
+        expect(await storedWidgetPosition(extension), 'a restore never rewrites the hint').toEqual({
+          x: Math.round(wide.x),
+          y: Math.round(wide.y)
+        });
+        // Opening the card from the clamped corner keeps it inside too.
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const opened = await stripGeometry(page);
+        const card = opened.shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        expect(card.left).toBeGreaterThanOrEqual(DRAG_CONTAINMENT_MARGIN - 2);
+        expect(card.top).toBeGreaterThanOrEqual(DRAG_CONTAINMENT_MARGIN - 2);
+        expect(card.right).toBeLessThanOrEqual(opened.viewport.width - DRAG_CONTAINMENT_MARGIN + 2);
+        expect(card.bottom).toBeLessThanOrEqual(
+          opened.viewport.height - DRAG_CONTAINMENT_MARGIN + 2
+        );
+      } finally {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a drag over host text and a link selects nothing, activates nothing and scrolls nothing',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await settleWidget(page);
+        // Host furniture under the drag path: a selectable paragraph, a link
+        // counting its clicks, and a page tall enough to scroll.
+        await page.evaluate(() => {
+          const probe = document.createElement('div');
+          probe.id = 'fdt-drag-probe';
+          probe.style.cssText =
+            'position:fixed;left:40px;top:40px;width:640px;z-index:1;background:#fff;color:#000';
+          const text = document.createElement('p');
+          text.textContent = 'Selectable host copy '.repeat(40);
+          const link = document.createElement('a');
+          link.id = 'fdt-drag-link';
+          link.href = '#fdt-link-activated';
+          link.textContent = 'Host link';
+          link.style.cssText = 'display:block;height:60px';
+          (window as unknown as { fdtLinkClicks: number }).fdtLinkClicks = 0;
+          link.addEventListener('click', () => {
+            (window as unknown as { fdtLinkClicks: number }).fdtLinkClicks += 1;
+          });
+          probe.append(text, link);
+          document.body.append(probe);
+          const spacer = document.createElement('div');
+          spacer.style.height = '3000px';
+          document.body.append(spacer);
+          window.scrollTo(0, 200);
+        });
+        const before = await stripGeometry(page);
+        const linkBox = await page.locator('#fdt-drag-link').boundingBox();
+        if (linkBox === null) throw new Error('the host link has no box');
+        const hash = await page.evaluate(() => window.location.hash);
+
+        // Press the pill, sweep across the host copy, release over the link.
+        await page.locator(`${STRIP_HOST} .ins-pill`).hover();
+        await page.mouse.down();
+        await page.mouse.move(300, 60, { steps: 12 });
+        await page.mouse.move(linkBox.x + 20, linkBox.y + 20, { steps: 8 });
+        await page.mouse.up();
+        await waitForChoreographySettle(page);
+
+        const host = await page.evaluate(() => ({
+          selection: window.getSelection()?.toString() ?? '',
+          hash: window.location.hash,
+          clicks: (window as unknown as { fdtLinkClicks: number }).fdtLinkClicks
+        }));
+        expect(host.selection, 'no host text was selected').toBe('');
+        expect(host.clicks, 'the link never received the release click').toBe(0);
+        expect(host.hash, 'the link never navigated').toBe(hash);
+        const after = await stripGeometry(page);
+        expect(after.scroll.x).toBe(before.scroll.x);
+        expect(after.scroll.y, 'the page did not scroll').toBe(before.scroll.y);
+        expect(await storedWidgetPosition(extension), 'the drop itself persisted').not.toBeNull();
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'a touch drag on a narrow screen moves and persists the pill without panning; a second finger cancels',
+    async ({ extension }) => {
+      await setWidgetEnabled(extension, true);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      // Emulated touch (CDP): real touch/multitouch hardware is not reachable here.
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        await page.setViewportSize({ width: 375, height: 667 });
+        await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+        await settleWidget(page);
+        await page.evaluate(() => {
+          const spacer = document.createElement('div');
+          spacer.style.height = '3000px';
+          document.body.append(spacer);
+          window.scrollTo(0, 100);
+        });
+        const before = await stripGeometry(page);
+        const pill = before.shape;
+        if (pill === null) throw new Error('the pill is missing its shape');
+        const start = { x: pill.left + pill.width / 2, y: pill.top + pill.height / 2 };
+        const touch = async (
+          type: 'touchStart' | 'touchMove' | 'touchEnd',
+          points: Array<{ x: number; y: number; id: number }>
+        ): Promise<void> => {
+          await cdp.send('Input.dispatchTouchEvent', {
+            type,
+            touchPoints: points.map((point) => ({ x: point.x, y: point.y, id: point.id }))
+          });
+        };
+
+        // One finger: a vertical-and-left sweep moves the pill 1:1, never the page.
+        await touch('touchStart', [{ ...start, id: 1 }]);
+        for (let step = 1; step <= 10; step += 1) {
+          await touch('touchMove', [{ x: start.x - 12 * step, y: start.y - 30 * step, id: 1 }]);
+        }
+        await touch('touchEnd', []);
+        await waitForChoreographySettle(page);
+        const moved = await stripGeometry(page);
+        const movedShape = moved.shape;
+        if (movedShape === null) throw new Error('the touch-dragged pill lost its shape');
+        expect(
+          Math.abs(movedShape.top - (pill.top - 300)),
+          'the pill followed the finger'
+        ).toBeLessThan(3);
+        expect(moved.scroll.y, 'the page did not pan').toBe(before.scroll.y);
+        const committed = await chromeTranslate(page);
+        await expect
+          .poll(async () => await storedWidgetPosition(extension))
+          .toEqual({
+            x: Math.round(committed.x),
+            y: Math.round(committed.y)
+          });
+
+        // Two fingers: a second contact on the pill mid-drag cancels the
+        // drag (pre-drag position restored, nothing stored).
+        const second = {
+          x: movedShape.left + movedShape.width / 2,
+          y: movedShape.top + movedShape.height / 2
+        };
+        await touch('touchStart', [{ ...second, id: 3 }]);
+        await touch('touchMove', [{ x: second.x - 40, y: second.y + 60, id: 3 }]);
+        await touch('touchMove', [{ x: second.x - 60, y: second.y + 90, id: 3 }]);
+        await touch('touchStart', [
+          { x: second.x - 60, y: second.y + 90, id: 3 },
+          { x: second.x - 55, y: second.y + 90, id: 4 }
+        ]);
+        await touch('touchEnd', []);
+        await waitForChoreographySettle(page);
+        const canceled = (await stripGeometry(page)).shape;
+        if (canceled === null) throw new Error('the canceled pill lost its shape');
+        expect(
+          Math.abs(canceled.left - movedShape.left),
+          'the second finger canceled'
+        ).toBeLessThan(2);
+        expect(Math.abs(canceled.top - movedShape.top)).toBeLessThan(2);
+        expect(await storedWidgetPosition(extension), 'the canceled drag stored nothing').toEqual({
+          x: Math.round(committed.x),
+          y: Math.round(committed.y)
+        });
+      } finally {
+        await cdp
+          .send('Emulation.setTouchEmulationEnabled', { enabled: false })
+          .catch(() => undefined);
+        await cdp.detach().catch(() => undefined);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
+  siteTest(
+    'hostile host CSS cannot restyle the widget, and the widget leaves no style, cookie or storage on the host',
+    async ({ extension }) => {
+      // Start hidden: the host's own styles are measured without the widget.
+      await setWidgetEnabled(extension, false);
+      const { page } = await openSitePage(extension, FDT_PAGE_URL);
+      try {
+        await expect(page.locator(STRIP_HOST)).toHaveCount(0);
+        /** Every computed property of a few host elements, plus host-visible state. */
+        const hostSnapshot = async (): Promise<unknown> =>
+          await page.evaluate(() => {
+            const pick = (selector: string): Record<string, string> => {
+              const element = document.querySelector(selector);
+              if (element === null) return {};
+              const style = getComputedStyle(element);
+              const out: Record<string, string> = {};
+              for (const name of Array.from(style)) out[name] = style.getPropertyValue(name);
+              return out;
+            };
+            return {
+              styles: ['html', 'body', 'h1', 'p', 'a', 'header', 'footer', 'main'].map(pick),
+              htmlStyle: document.documentElement.getAttribute('style'),
+              bodyStyle: document.body.getAttribute('style'),
+              cookie: document.cookie,
+              local: Object.keys(localStorage).sort(),
+              session: Object.keys(sessionStorage).sort(),
+              documentStyles: document.querySelectorAll('style[wxt-shadow-root-document-styles]')
+                .length,
+              scroll: [window.scrollX, window.scrollY]
+            };
+          });
+        const consoleNarration: string[] = [];
+        page.on('console', (message) => {
+          if (message.text().includes('[WPR FDT]')) {
+            consoleNarration.push(`${message.type()}: ${message.text()}`);
+          }
+        });
+        const hostBefore = await hostSnapshot();
+
+        // Widget → host: mount live, open, drag, close — the host is unchanged.
+        await setWidgetEnabled(extension, true);
+        await settleWidget(page);
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const card = (await stripGeometry(page)).shape;
+        if (card === null) throw new Error('the open card lost its shape');
+        await page.mouse.move(card.left + 24, card.top + 12);
+        await page.mouse.down();
+        await page.mouse.move(card.left - 60, card.top + 40, { steps: 6 });
+        await page.mouse.up();
+        await page.keyboard.press('Escape');
+        await waitForChoreographySettle(page);
+        expect(await hostSnapshot(), 'the host computed styles and state are unchanged').toEqual(
+          hostBefore
+        );
+        expect(consoleNarration, 'no console narration from a healthy mount/drag').toEqual([]);
+
+        /**
+         * Every computed property of the widget's parts, plus their boxes —
+         * both measured against the layout viewport's bottom-right corner
+         * (the anchor): the hostile sheet re-flows the HOST page, which may
+         * add a classic scrollbar and shrink the viewport, and a fixed
+         * element's resolved `top`/`left` follow the viewport by
+         * definition. The pointer rests off the widget first (`:hover` is
+         * state, not style leakage).
+         */
+        const widgetSnapshot = async (): Promise<unknown> => {
+          await page.mouse.move(1, 1);
+          return await page.evaluate((host: string) => {
+            const root = document.querySelector(host)?.shadowRoot ?? null;
+            if (root === null) throw new Error('the widget is missing');
+            const parts = [
+              '.ins-chrome',
+              '.ins-pill',
+              '.ins-card',
+              '.ins-card-head',
+              '.ins-close',
+              '.ins-card-foot',
+              '.ins-chip',
+              '.ins-group-label'
+            ];
+            return parts.map((selector) => {
+              const element = root.querySelector(selector);
+              if (element === null) return { selector, missing: true };
+              const style = getComputedStyle(element);
+              const viewportResolved = new Set([
+                'top',
+                'left',
+                'inset-block-start',
+                'inset-inline-start'
+              ]);
+              const out: Record<string, string> = {};
+              for (const name of Array.from(style)) {
+                if (!viewportResolved.has(name)) out[name] = style.getPropertyValue(name);
+              }
+              const rect = element.getBoundingClientRect();
+              const layout = document.documentElement;
+              return {
+                selector,
+                style: out,
+                box: [
+                  layout.clientWidth - rect.right,
+                  layout.clientHeight - rect.bottom,
+                  rect.width,
+                  rect.height
+                ].map(Math.round)
+              };
+            });
+          }, STRIP_HOST);
+        };
+        const widgetClosed = await widgetSnapshot();
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        const widgetOpen = await widgetSnapshot();
+        await page.keyboard.press('Escape');
+        await waitForChoreographySettle(page);
+
+        // Host → widget: a reset-plus-high-specificity hostile sheet (the
+        // universal reset, element/class/host-tag targets, token overrides).
+        await page.addStyleTag({
+          content: `
+            *, *::before, *::after { all: unset !important; font: 31px/3 serif !important;
+              color: rgb(255, 0, 0) !important; background: rgb(0, 255, 0) !important;
+              border: 5px solid rgb(0, 0, 255) !important; padding: 13px !important;
+              margin: 11px !important; letter-spacing: 3px !important;
+              cursor: crosshair !important; transition: all 9s !important;
+              box-sizing: content-box !important; }
+            html body wpr-fdt-inspector, wpr-fdt-inspector[style], wpr-fdt-inspector * {
+              display: block !important; position: static !important; opacity: 0.1 !important;
+              z-index: -1 !important; width: 10px !important; height: 10px !important; }
+            .ins-chrome, .ins-pill, .ins-card, .ins-chip, button, section, div {
+              display: none !important; }
+            :root { --surface-2: red; --fg-primary: red; --font-mono: serif; --motion-slow: 9s; }
+          `
+        });
+        await waitForChoreographySettle(page);
+        expect(await widgetSnapshot(), 'the closed widget is identical under hostile CSS').toEqual(
+          widgetClosed
+        );
+        await page.locator(`${STRIP_HOST} .ins-pill`).click();
+        await expect(page.locator(`${STRIP_HOST} .ins-card`)).toBeVisible();
+        await waitForChoreographySettle(page);
+        expect(await widgetSnapshot(), 'the open widget is identical under hostile CSS').toEqual(
+          widgetOpen
+        );
+      } finally {
+        await page.close();
+        await clearWidgetOptIn(extension);
+      }
+    }
+  );
+
   siteTest(
     'KC and the strip coexist — their anchors never overlap',
     async ({ extension, adminPage }) => {
@@ -1813,10 +2340,10 @@ siteTest.describe('site detection widget', () => {
   );
 
   /**
-   * The drag legs (P12A.5): session-local repositioning, SB-D12's semantics
-   * minus persistence. Every drag goes through Playwright's real input
-   * (trusted events — the synthetic-click gate must not block them), and
-   * every leg cleans up its own override writes so no leg's explicit
-   * entry leaks into the later legs.
+   * The drag legs: SB-D12's semantics with the per-origin position stored
+   * on drop. Every drag goes through Playwright's real input (trusted
+   * events — the synthetic-click gate must not block them); every leg
+   * cleans up its own override writes, and the suite wipes stored
+   * positions before each leg.
    */
 });
