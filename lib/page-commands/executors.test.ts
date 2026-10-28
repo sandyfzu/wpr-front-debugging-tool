@@ -41,9 +41,9 @@ describe('storage-backed rows (the real writers)', () => {
   it('toggles the detection widget for the page origin, flipping on every run', async () => {
     const { executors } = mechanisms();
     await expect(executors['toggle-detection-widget'](SITE)).resolves.toEqual({ ok: true });
-    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: false } });
+    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: false, used: 1 } });
     await executors['toggle-detection-widget'](SITE);
-    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: true } });
+    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: true, used: 2 } });
   });
 
   it('refuses an opaque origin instead of writing a "null" site key', async () => {

@@ -3,18 +3,20 @@
  * default-on gate, the hub's already-cached single pass feeds it, and the
  * Known Conflicts shell carries its motion and focus choreography.
  *
- * Gate: one validated storage item read + armed watch (arm-first, the
+ * Gate: two validated storage items (the per-origin overrides and the
+ * options' global default), each read once + armed watch (arm-first, the
  * live-theme lesson — a write landing inside the read window is applied by
  * the watch, and the read result is skipped in its favor). Origins without
- * an explicit entry show the widget by default (the owner's 2026-10-17
- * turn-on: the chip mounts on a fresh install with no opt-in step); a
- * per-origin entry stored by the context menu overrides that default in
- * both directions. A state change mounts or removes the widget on this
- * page with no reload; other origins' entries cannot touch this page. A
- * hidden page costs one invalidated-safe storage read at boot, nothing
- * mounted. The on-page UI gate outranks the opt-in: the widget shows only
- * while both say so (`./visibility`), and a gate write mounts or removes it
- * live like an opt-in write.
+ * an explicit entry follow the default option (on unless the user turned it
+ * off); a per-origin entry stored by the context menu or the palette
+ * overrides that default in both directions. A state change — either item —
+ * mounts or removes the widget on this page with no reload; other origins'
+ * entries cannot touch this page. A hidden page costs the boot reads and
+ * the two armed watches, nothing mounted and no other listener. The on-page
+ * UI gate outranks the opt-in: the widget shows only while both say so
+ * (`./visibility`), and a gate write mounts or removes it live like an
+ * opt-in write. The card's open state (the collapse) is session-local: a
+ * hide closes it and nothing about it is stored.
  *
  * Data: the widget reads the hub's cached pass result for this page through
  * the hub's same-context reader — a running pass is joined, never
@@ -47,10 +49,13 @@ import type { PageDataSnapshot } from '../data-hub';
 import { pageDataFor } from '../data-hub';
 import {
   effectiveInspectorEnabled,
+  getInspectorOrigins,
+  inspectorDefaultEnabled,
+  inspectorOriginsStore,
   parseInspectorOrigins,
-  isInspectorOriginEnabled,
-  inspectorOriginsStore
+  type InspectorOrigins
 } from '../../../lib/storage/inspector-origins';
+import { getOptions, optionsStore, storedOptionsOrFallback } from '../../../lib/storage/options';
 import {
   createShadowSurface,
   type ShadowMount
@@ -121,6 +126,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   let visibleNow = false;
   /** This origin's effective opt-in; null until its first read or write. */
   let siteEnabled: boolean | null = null;
+  /** Whether the opt-in resolved yet (a read through a call: closures assign it). */
+  const siteResolved = (): boolean => siteEnabled !== null;
   /** The card's root element, registered by the view (focus choreography). */
   let cardElement: HTMLElement | null = null;
   /** The pill, registered by the view (the focus hand-back on close). */
@@ -311,10 +318,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * The containment triggers, bound once per widget (never per mount): a
-   * viewport change (window resize, zoom) and — on the mounts themselves —
-   * the box-growth beats (card open/close, data landing) and the drag's
-   * settle/cancel. Every trigger routes through the one re-settle cycle;
+   * The containment triggers, all per mount: a viewport change (window
+   * resize, zoom), the box-growth beats (card open/close, data landing) and
+   * the drag's settle/cancel. Every trigger routes through the one re-settle cycle;
    * the cycle samples until the chrome stands still and the re-clamp clamps
    * the resting layout box, so mid-choreography triggers (and equality
    * ties) target the choreography's end geometry, not the pose its
@@ -567,6 +573,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       reform: reformContainment,
       log
     });
+    // The viewport-side containment trigger, live only while mounted (a
+    // hidden widget keeps no page listener): a window resize or a zoom step
+    // re-reads the layout viewport and may strand a parked chrome outside
+    // the full-containment bound. The cycle samples the settled box, so a
+    // resize burst coalesces into one re-clamp.
+    listenWhileMounted(window, 'resize', () => {
+      if (!ctx.isInvalid) startContainmentCycle();
+    });
     // Escape closes the card with the focus inside it, or cancels a live
     // drag first (restore the pre-drag position). Key events never reach
     // the host page from this shadow root (the injection isolates them at
@@ -687,18 +701,6 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * The viewport-side containment trigger, bound once per widget (never per
-   * mount): a window resize or a zoom step re-reads the layout viewport and
-   * may strand a parked chrome outside the full-containment bound. The
-   * cycle samples the settled box, so a resize burst coalesces into one
-   * re-clamp (browser-triggered and trusted; no page writes either way).
-   */
-  ctx.addEventListener(window, 'resize', () => {
-    if (ctx.isInvalid) return;
-    startContainmentCycle();
-  });
-
-  /**
    * The on-page UI gate outranks the per-site opt-in (`widgetVisible`):
    * while it is off the widget never mounts and a live off-write removes
    * it; turning it back on shows it again per the site's opt-in, which the
@@ -722,35 +724,64 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Arm-first boot: the watch is the opt-in's authority once armed, so the
-   * initial read applies only when no write raced it (the live-theme
-   * pattern's counter — read-then-arm would drop exactly that write).
+   * The opt-in's two inputs: this origin's override map and the global
+   * default option. Each is null until its first read or write; the
+   * effective state resolves only once both are known.
    */
-  let siteWrites = 0;
-  const unwatch = inspectorOriginsStore.watch((raw: unknown) => {
-    siteWrites += 1;
+  let origins: InspectorOrigins | null = null;
+  let defaultEnabled: boolean | null = null;
+
+  /** Re-resolve the effective opt-in once both inputs are known. */
+  const resolveSiteEnabled = (): void => {
+    if (origins === null || defaultEnabled === null) return;
+    applySiteEnabled(effectiveInspectorEnabled(origins, pageOrigin, defaultEnabled));
+  };
+
+  /**
+   * Arm-first boot: each item's watch is its authority once armed, so a
+   * boot read applies only when no write to that item raced it (the
+   * live-theme pattern's counter — read-then-arm would drop exactly that
+   * write). Options writes that leave the default unchanged (appearance,
+   * other flags) re-resolve to the same value, which `applyVisible` skips.
+   */
+  let originWrites = 0;
+  let optionWrites = 0;
+  const unwatchOrigins = inspectorOriginsStore.watch((raw: unknown) => {
+    originWrites += 1;
     if (ctx.isInvalid) return;
-    const parsed = parseInspectorOrigins(raw);
-    // One resolution for every opt-in read: no explicit entry here means
-    // the global default on; only a stored entry — either polarity —
-    // overrides it. Corrupt raw degrades to the same unconfigured shape.
-    applySiteEnabled(effectiveInspectorEnabled(parsed ?? {}, pageOrigin));
+    // Corrupt raw degrades to the unconfigured shape: every origin follows the default.
+    origins = parseInspectorOrigins(raw) ?? {};
+    resolveSiteEnabled();
   });
-  ctx.onInvalidated(unwatch);
+  const unwatchOptions = optionsStore.watch((raw: unknown) => {
+    optionWrites += 1;
+    if (ctx.isInvalid) return;
+    defaultEnabled = inspectorDefaultEnabled(storedOptionsOrFallback(raw));
+    resolveSiteEnabled();
+  });
+  ctx.onInvalidated(() => {
+    unwatchOrigins();
+    unwatchOptions();
+  });
 
   void (async () => {
-    const seen = siteWrites;
-    let answer: boolean;
+    const seenOrigins = originWrites;
+    const seenOptions = optionWrites;
+    let read: [InspectorOrigins, boolean];
     try {
-      answer = await isInspectorOriginEnabled(pageOrigin);
+      const [map, options] = await Promise.all([getInspectorOrigins(), getOptions()]);
+      read = [map, inspectorDefaultEnabled(options)];
     } catch (cause) {
       if (ctx.isInvalid) return;
       log.error('Reading the widget opt-in failed — the widget stays hidden', cause);
-      answer = false;
+      // A write that already resolved both inputs is the truth; otherwise
+      // hide until the watches deliver both.
+      if (!siteResolved()) applySiteEnabled(false);
+      return;
     }
     if (ctx.isInvalid) return;
-    if (siteWrites === seen) {
-      applySiteEnabled(answer);
-    }
+    if (originWrites === seenOrigins) origins = read[0];
+    if (optionWrites === seenOptions) defaultEnabled = read[1];
+    resolveSiteEnabled();
   })();
 }

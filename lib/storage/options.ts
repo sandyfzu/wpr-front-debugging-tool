@@ -25,6 +25,7 @@ export const TOOLBAR_BADGE = 'toolbarBadge';
 const SBS_SCROLL_SYNC = 'sbsScrollSync';
 const SBS_MOBILE_SIM = 'sbsMobileSim';
 const SBS_DESKTOP_WIDTH = 'sbsDesktopWidth';
+export const ON_PAGE_INSPECTOR = 'onPageInspector';
 
 /**
  * Registered option storage.
@@ -43,6 +44,10 @@ const SBS_DESKTOP_WIDTH = 'sbsDesktopWidth';
  * - `features.sbsDesktopWidth` — the compare overlay's desktop-width dress
  *   (default on — the owner's 2026-10-12 directive; the overlay's own header
  *   switch writes it).
+ * - `features.onPageInspector` — the on-page detection widget's global
+ *   default for origins without a per-origin entry (default on — the owner's
+ *   2026-10-17 turn-on); a per-origin entry
+ *   (`./inspector-origins`) wins over it in both directions.
  */
 export interface StoredOptions {
   improvements: {
@@ -56,6 +61,7 @@ export interface StoredOptions {
     [SBS_SCROLL_SYNC]: boolean;
     [SBS_MOBILE_SIM]: boolean;
     [SBS_DESKTOP_WIDTH]: boolean;
+    [ON_PAGE_INSPECTOR]: boolean;
     /** Future feature ids land here as additive boolean keys. */
     [key: string]: boolean | undefined;
   };
@@ -75,7 +81,8 @@ export const FALLBACK: Readonly<StoredOptions> = Object.freeze({
     [TOOLBAR_BADGE]: true,
     [SBS_SCROLL_SYNC]: true,
     [SBS_MOBILE_SIM]: false,
-    [SBS_DESKTOP_WIDTH]: true
+    [SBS_DESKTOP_WIDTH]: true,
+    [ON_PAGE_INSPECTOR]: true
   })
 });
 
@@ -96,6 +103,7 @@ export const optionsStore = storage.defineItem<StoredOptions>('sync:options', {
  * - `features.sbsScrollSync` must be boolean, else default (on).
  * - `features.sbsMobileSim` must be boolean, else default (off).
  * - `features.sbsDesktopWidth` must be boolean, else default (on).
+ * - `features.onPageInspector` must be boolean, else default (on).
  * - `features` keeps every own boolean-valued key — known ids and future
  *   ones alike (tolerant read, like `improvements`): shapes are written
  *   read-modify-write, so a later writer reading through this validator
@@ -129,7 +137,8 @@ export function parseStoredOptions(input: unknown): StoredOptions | null {
     [TOOLBAR_BADGE]: FALLBACK.features[TOOLBAR_BADGE],
     [SBS_SCROLL_SYNC]: FALLBACK.features[SBS_SCROLL_SYNC],
     [SBS_MOBILE_SIM]: FALLBACK.features[SBS_MOBILE_SIM],
-    [SBS_DESKTOP_WIDTH]: FALLBACK.features[SBS_DESKTOP_WIDTH]
+    [SBS_DESKTOP_WIDTH]: FALLBACK.features[SBS_DESKTOP_WIDTH],
+    [ON_PAGE_INSPECTOR]: FALLBACK.features[ON_PAGE_INSPECTOR]
   };
   const features = value['features'];
   if (typeof features === 'object' && features !== null && !Array.isArray(features)) {

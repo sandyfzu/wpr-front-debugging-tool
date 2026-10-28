@@ -4,7 +4,8 @@
  * Save flow with its busy/clean guards and typed toast outcomes (draft merges
  * preserve unknown and concurrent fields), the appearance choice's instant
  * write and its live restyle through the real storage watch, the toolbar
- * badge toggle's write, keyboard reachability, and the axe runs per state.
+ * badge and detection-widget default toggles' writes (the latter's gate
+ * cascade), keyboard reachability, and the axe runs per state.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
@@ -17,7 +18,8 @@ import { toast, toastItems } from '../../components/ui/toast-store';
 import { describeAxeViolations, runAxeAudit } from '../../components/ui/a11y-audit';
 import { applyStoredAppearance } from '../../lib/appearance/appearance';
 import { getOptions, optionsStore, type StoredOptions } from '../../lib/storage/options';
-import { OPTION_ROWS } from '../../lib/options/registry';
+import { ON_PAGE_UI_OFF_NOTE, OPTION_ROWS } from '../../lib/options/registry';
+import { setPageUiGate } from '../../lib/storage/page-ui-gate';
 import type { OptionsPageIO } from '../../lib/options/page-model';
 
 beforeEach(() => {
@@ -45,6 +47,7 @@ const PROPS = { name: 'WPR Front Debugging Tool', version: '0.9.0' } as const;
 const DBUGGER_ROW = "Add an entry to access the D-bugger to WP Rocket's menu";
 const BADGE_ROW = 'Show the toolbar badge';
 const GATE_ROW = 'Show on-page UI';
+const WIDGET_DEFAULT_ROW = 'Show the detection widget on pages by default';
 
 /**
  * A whole-shape options value with one choice (the documented defaults
@@ -70,7 +73,8 @@ function storedDefaults(): StoredOptions {
       toolbarBadge: true,
       sbsScrollSync: true,
       sbsMobileSim: false,
-      sbsDesktopWidth: true
+      sbsDesktopWidth: true,
+      onPageInspector: true
     }
   };
 }
@@ -369,6 +373,28 @@ describe('the toolbar badge toggle', () => {
   });
 });
 
+describe('the detection widget default toggle', () => {
+  it('is on by default, saves off through the model, and disables while on-page UI is off', async () => {
+    render(() => <App {...PROPS} />);
+    const row = await screen.findByRole<HTMLInputElement>('switch', { name: WIDGET_DEFAULT_ROW });
+    expect(row.checked).toBe(true);
+    fireEvent.click(screen.getByText(WIDGET_DEFAULT_ROW));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(getOptions()).resolves.toMatchObject({ features: { onPageInspector: false } })
+    );
+    await setPageUiGate(false);
+    await waitFor(() => {
+      expect(
+        screen.getByRole<HTMLInputElement>('switch', { name: WIDGET_DEFAULT_ROW }).disabled
+      ).toBe(true);
+    });
+    expect(document.getElementById('option-onPageInspector-note')?.textContent).toBe(
+      ON_PAGE_UI_OFF_NOTE
+    );
+  });
+});
+
 describe('draft merge (unknown and pre-existing fields survive a page save)', () => {
   it('a future improvement id and the overlay flags ride a saved draft untouched', async () => {
     await optionsStore.setValue({
@@ -423,9 +449,18 @@ describe('keyboard reachability (structure) and the state matrix', () => {
       )
       .map((element) => (element.tagName === 'BUTTON' ? 'button' : 'switch'));
     // Save first (header), the dbugger switch, (the radio group), the gate
-    // switch, the shortcut field (a button), the badge switch, then the
-    // refresh control — the default shortcut shows no Reset button.
-    expect(focusables).toEqual(['button', 'switch', 'switch', 'button', 'switch', 'button']);
+    // switch, the shortcut field (a button), the detection widget default
+    // switch, the badge switch, then the refresh control — the default
+    // shortcut shows no Reset button.
+    expect(focusables).toEqual([
+      'button',
+      'switch',
+      'switch',
+      'button',
+      'switch',
+      'switch',
+      'button'
+    ]);
     // The choice group's radios share the native roving contract: all of this
     // page's radios carry ONE name — per-instance, never a hardcoded literal
     // that would merge with another group's set.

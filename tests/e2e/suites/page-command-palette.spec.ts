@@ -261,7 +261,7 @@ test.describe('on-page command palette', () => {
           ORIGINS_KEY
         )
       )
-      .toEqual({ [origin]: { enabled: false } });
+      .toEqual({ [origin]: { enabled: false, used: 1 } });
 
     await openPalette(extension, page, tabId);
     await page.keyboard.type('exclusion');

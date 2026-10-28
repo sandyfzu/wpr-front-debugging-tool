@@ -21,7 +21,8 @@ describe('getOptions with corrupt storage', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        onPageInspector: true
       }
     });
   });
@@ -59,7 +60,8 @@ describe('getOptions with corrupt storage', () => {
         toolbarBadge: true,
         sbsScrollSync: true,
         sbsMobileSim: false,
-        sbsDesktopWidth: true
+        sbsDesktopWidth: true,
+        onPageInspector: true
       }
     });
   });
@@ -91,7 +93,8 @@ describe('storedOptionsOrFallback', () => {
           toolbarBadge: true,
           sbsScrollSync: true,
           sbsMobileSim: false,
-          sbsDesktopWidth: true
+          sbsDesktopWidth: true,
+          onPageInspector: true
         }
       });
     }

@@ -80,6 +80,7 @@ describe('option registry integrity', () => {
     expect(optionRowsIn('features').map((row) => row.id)).toEqual([
       'page-ui-gate',
       'palette-chord',
+      'onPageInspector',
       'toolbarBadge'
     ]);
     const grouped = OPTION_SECTIONS.flatMap((section) => optionRowsIn(section.id));
@@ -115,6 +116,7 @@ describe('drafted and instant rows', () => {
     expect(DRAFTED_OPTION_ROWS.map((row) => row.id)).toEqual([
       'wp-dashboard-dbugger-entry',
       'appearance',
+      'onPageInspector',
       'toolbarBadge'
     ]);
     expect(Object.isFrozen(DRAFTED_OPTION_ROWS)).toBe(true);
@@ -135,11 +137,12 @@ describe('the on-page UI cascade', () => {
   }
 
   it('marks exactly the rows that configure injected page UI', () => {
-    // Today: the palette shortcut. The gate itself is the master (never
+    // Today: the palette shortcut and the detection widget's default. The gate itself is the master (never
     // marked); the D-bugger entry (wp-admin menu), the appearance choice and
     // the toolbar badge are not on-page UI.
     expect(OPTION_ROWS.filter((row) => row.onPage === true).map((row) => row.id)).toEqual([
-      'palette-chord'
+      'palette-chord',
+      'onPageInspector'
     ]);
   });
 
@@ -189,5 +192,15 @@ describe('the on-page UI cascade', () => {
     };
     expect(onPageDisabledNote(marked, false)).toBe(ON_PAGE_UI_OFF_NOTE);
     expect(onPageDisabledNote(marked, true)).toBeNull();
+  });
+
+  it('the detection widget default row: on by default, cascades from the gate, worded from the page vocabulary', () => {
+    const row = rowOf('onPageInspector');
+    expect(row.kind).toBe('boolean');
+    expect(readOption(row, FALLBACK)).toBe(true);
+    expect(onPageDisabledNote(row, false)).toBe(ON_PAGE_UI_OFF_NOTE);
+    expect(row.label).toBe('Show the detection widget on pages by default');
+    // Names the per-site override by its exact menu/palette label.
+    expect(row.description).toContain('“Toggle the detection widget on this site”');
   });
 });
