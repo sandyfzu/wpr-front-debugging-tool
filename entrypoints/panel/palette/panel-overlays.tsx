@@ -16,6 +16,7 @@ import { rankCommands } from '../../../components/ui/command-matcher';
 import { CommandPalette, type PaletteCommand } from '../../../components/ui/command-palette';
 import { defaultClipboard } from '../../../components/ui/copy-button';
 import { cycleAppearanceOption } from '../../../lib/storage/options';
+import type { ChordBinding } from '../../../lib/palette-chord/keydown';
 import type { FdtData } from '../../../lib/wp-rocket/types';
 import type { FdtDataStore } from '../state/use-fdt-data';
 import {
@@ -40,6 +41,8 @@ export interface PanelOverlaysProps {
   navigate: (route: RouteId) => void;
   /** The route-switch focus move (the palette's same-page landing). */
   focusRouteHeading: () => void;
+  /** The live chosen palette chord (the shortcuts overlay names it); null while unresolved. */
+  paletteChord: () => ChordBinding | null;
 }
 
 /** The panel document's production anchor download: a Blob and one-shot click. */
@@ -159,6 +162,7 @@ export function PanelOverlays(props: PanelOverlaysProps): JSX.Element {
       </Show>
       <Show when={props.overlays.shortcutsOpen()}>
         <ShortcutsOverlay
+          paletteChord={props.paletteChord}
           onClose={() => {
             props.overlays.closeShortcuts();
           }}

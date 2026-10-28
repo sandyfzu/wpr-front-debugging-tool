@@ -5,14 +5,19 @@
  * as the unadvertised alias — but yields to editable targets, Escape is
  * deliberately never handled here (the dialogs own it; the search-Esc rule
  * stays the data layer's), and the returned stop handle takes the listener
- * down.
+ * down. The user's chosen chord toggles the palette too (live, by the
+ * shared decision): may-type chords yield to typed-text fields, a chosen
+ * chord equal to the fixed one toggles once, and the overlay's palette row
+ * names it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ChordBinding } from '../../../lib/palette-chord/keydown';
 import {
   PANEL_SHORTCUTS,
   SHORTCUTS_OVERLAY_BINDING,
   isEditableTarget,
-  registerPanelShortcuts
+  registerPanelShortcuts,
+  shortcutKeys
 } from './shortcuts';
 
 /** A keystroke dispatched on a target the test controls. */
@@ -188,5 +193,181 @@ describe('registerPanelShortcuts', () => {
     expect(toggles.palette).toBe(0);
     // A second stop still terminates cleanly.
     stop();
+  });
+});
+
+/**
+ * A trusted keydown carrying a physical key (the chosen-chord decision reads
+ * `code` and ignores script-dispatched events, so the test marks it trusted
+ * the way real input arrives).
+ */
+function pressChord(
+  code: string,
+  options: KeyboardEventInit & { target?: HTMLElement; key?: string } = {}
+): boolean {
+  const target = options.target ?? document.body;
+  const event = new KeyboardEvent('keydown', {
+    key: options.key ?? code.replace(/^Key/, '').toLowerCase(),
+    code,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    ctrlKey: options.ctrlKey,
+    metaKey: options.metaKey,
+    altKey: options.altKey,
+    shiftKey: options.shiftKey
+  });
+  Object.defineProperty(event, 'isTrusted', { value: true });
+  // happy-dom reports AltGraph whenever Alt is held; a real Alt press does
+  // not (AltGr is its own key), so the double answers like a browser.
+  const modifierState = event.getModifierState.bind(event);
+  Object.defineProperty(event, 'getModifierState', {
+    value: (key: string): boolean => key !== 'AltGraph' && modifierState(key)
+  });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+/** {@link wire} with a chosen binding the test can swap (the live rebinding). */
+function wireChosen(initial: ChordBinding | null) {
+  const chosen = { current: initial };
+  const toggles = { palette: 0, shortcuts: 0 };
+  const stop = registerPanelShortcuts(
+    {
+      togglePalette: () => {
+        toggles.palette += 1;
+      },
+      toggleShortcuts: () => {
+        toggles.shortcuts += 1;
+      }
+    },
+    () => chosen.current
+  );
+  return { toggles, stop, chosen };
+}
+
+const MAC_ALT_K: ChordBinding = { chord: { code: 'KeyK', alt: true }, platform: 'mac' };
+const OTHER_ALT_K: ChordBinding = { chord: { code: 'KeyK', alt: true }, platform: 'other' };
+
+describe('registerPanelShortcuts — the chosen chord', () => {
+  it('toggles the palette on the chosen chord (and consumes it), both ways', () => {
+    const { toggles, stop } = wireChosen(OTHER_ALT_K);
+    expect(pressChord('KeyK', { altKey: true })).toBe(true);
+    expect(pressChord('KeyK', { altKey: true })).toBe(true);
+    expect(toggles.palette).toBe(2);
+    expect(toggles.shortcuts).toBe(0);
+    stop();
+  });
+
+  it('follows a rebinding live: the new chord toggles, the old one passes', () => {
+    const { toggles, stop, chosen } = wireChosen(OTHER_ALT_K);
+    chosen.current = { chord: { code: 'KeyJ', alt: true }, platform: 'other' };
+    expect(pressChord('KeyK', { altKey: true })).toBe(false);
+    expect(toggles.palette).toBe(0);
+    expect(pressChord('KeyJ', { altKey: true })).toBe(true);
+    expect(toggles.palette).toBe(1);
+    stop();
+  });
+
+  it('matches nothing while unresolved (the fixed chord still works)', () => {
+    const { toggles, stop } = wireChosen(null);
+    expect(pressChord('KeyK', { altKey: true })).toBe(false);
+    expect(pressChord('KeyK', { ctrlKey: true })).toBe(true);
+    expect(toggles.palette).toBe(1);
+    stop();
+  });
+
+  it('a may-type chord types in a field (never consumed there); outside it toggles', () => {
+    const { toggles, stop } = wireChosen(MAC_ALT_K);
+    const field = document.createElement('input');
+    document.body.append(field);
+    expect(pressChord('KeyK', { altKey: true, key: '˚', target: field })).toBe(false);
+    expect(toggles.palette).toBe(0);
+    expect(pressChord('KeyK', { altKey: true, key: '˚' })).toBe(true);
+    expect(toggles.palette).toBe(1);
+    stop();
+  });
+
+  it('a command-modifier chosen chord toggles from inside a field too', () => {
+    const { toggles, stop } = wireChosen({
+      chord: { code: 'KeyP', mod: true, alt: true },
+      platform: 'mac'
+    });
+    const field = document.createElement('textarea');
+    document.body.append(field);
+    expect(pressChord('KeyP', { metaKey: true, altKey: true, target: field })).toBe(true);
+    expect(toggles.palette).toBe(1);
+    stop();
+  });
+
+  it('a chosen chord equal to Ctrl/⌘ K toggles once, not twice', () => {
+    for (const binding of [
+      { chord: { code: 'KeyK', mod: true }, platform: 'other' },
+      { chord: { code: 'KeyK', mod: true }, platform: 'mac' }
+    ] as const satisfies readonly ChordBinding[]) {
+      const { toggles, stop } = wireChosen(binding);
+      pressChord('KeyK', binding.platform === 'mac' ? { metaKey: true } : { ctrlKey: true });
+      expect(toggles.palette).toBe(1);
+      stop();
+    }
+  });
+
+  it('ignores an untrusted or already handled keystroke (the shared decision)', () => {
+    const { toggles, stop } = wireChosen(OTHER_ALT_K);
+    const untrusted = new KeyboardEvent('keydown', {
+      code: 'KeyK',
+      key: 'k',
+      altKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    document.body.dispatchEvent(untrusted);
+    const handled = new KeyboardEvent('keydown', {
+      code: 'KeyK',
+      key: 'k',
+      altKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    Object.defineProperty(handled, 'isTrusted', { value: true });
+    handled.preventDefault();
+    document.body.dispatchEvent(handled);
+    expect(toggles.palette).toBe(0);
+    stop();
+  });
+
+  it('the stop handle takes the chosen chord down with the rest', () => {
+    const { toggles, stop } = wireChosen(OTHER_ALT_K);
+    stop();
+    pressChord('KeyK', { altKey: true });
+    expect(toggles.palette).toBe(0);
+  });
+});
+
+describe('shortcutKeys (the overlay row text)', () => {
+  const paletteRow = PANEL_SHORTCUTS.find((row) => row.opensPalette === true);
+  if (paletteRow === undefined) throw new Error('the table lost its palette row');
+
+  it('names the fixed chord alone until the chosen one resolves', () => {
+    expect(shortcutKeys(paletteRow, null)).toBe('Ctrl / ⌘ K');
+  });
+
+  it('adds the chosen chord in the platform notation', () => {
+    expect(shortcutKeys(paletteRow, MAC_ALT_K)).toBe('Ctrl / ⌘ K or ⌥K');
+    expect(shortcutKeys(paletteRow, OTHER_ALT_K)).toBe('Ctrl / ⌘ K or Alt+K');
+  });
+
+  it('never repeats the fixed chord when it is the chosen one', () => {
+    for (const platform of ['mac', 'other'] as const) {
+      expect(shortcutKeys(paletteRow, { chord: { code: 'KeyK', mod: true }, platform })).toBe(
+        'Ctrl / ⌘ K'
+      );
+    }
+  });
+
+  it('leaves every other row as declared', () => {
+    for (const row of PANEL_SHORTCUTS.filter((entry) => entry !== paletteRow)) {
+      expect(shortcutKeys(row, MAC_ALT_K)).toBe(row.keys);
+    }
   });
 });

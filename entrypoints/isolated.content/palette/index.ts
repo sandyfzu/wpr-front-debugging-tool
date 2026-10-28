@@ -18,6 +18,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createLogger } from '../../../lib/logger';
 import { onMessage, sendMessage } from '../../../lib/messaging';
 import { parseExclusionOverlayOpenOutcome } from '../../../lib/messaging/exclusion-panel';
+import { navigatorChordPlatform } from '../../../lib/palette-chord/follow';
 import { readPageUiEnabled, watchPageUiGate } from '../../../lib/storage/page-ui-gate';
 import { readPaletteChord, watchPaletteChord } from '../../../lib/storage/palette-chord';
 import {
@@ -25,7 +26,6 @@ import {
   createPageCommandExecutors
 } from '../../../lib/page-commands/executors';
 import { WINDOW_TIMERS, contextScheduler } from '../../../utils/context-timers';
-import { isMacPlatform } from '../../../utils/platform';
 import { startChordTrigger } from './chord';
 import { startPaletteModule } from './module';
 import { createNoticeHost } from './notice';
@@ -63,7 +63,7 @@ export function setupCommandPalette(ctx: ContentScriptContext): void {
     watchChord: watchPaletteChord,
     isLive: () => !ctx.isInvalid,
     askPlatform: () => sendMessage('getChordPlatform'),
-    fallbackPlatform: () => (isMacPlatform(navigator) ? 'mac' : 'other'),
+    fallbackPlatform: () => navigatorChordPlatform(navigator),
     schedule: contextScheduler(ctx, WINDOW_TIMERS),
     onInvalidated: (cleanup) => {
       ctx.onInvalidated(cleanup);

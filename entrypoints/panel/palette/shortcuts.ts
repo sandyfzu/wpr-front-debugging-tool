@@ -9,12 +9,25 @@
  * the panel's protocol receiver, so its rows name the DevTools surface that
  * produces them.
  *
+ * The palette also answers the user's chosen page-palette chord (the
+ * options' rebindable shortcut, Alt+K by default), followed live: the same
+ * shared decision the page trigger runs, so a may-type chord types inside
+ * fields instead. A chord DevTools itself claims (its window-level shortcuts)
+ * may be handled by DevTools too, or never reach the panel — the binding is
+ * the user's, so it is followed, not second-guessed.
+ *
  * Esc handling is deliberately NOT here: the dialogs dismiss themselves
  * (topmost first — they never stack), and the search-Esc clearing stays the
  * data layer's single rule (the protocol's `cancelSearch`). This listener
  * ignores Escape entirely.
  */
 import { createLogger } from '../../../lib/logger';
+import {
+  chordKeydownAction,
+  takesTypedText,
+  type ChordBinding
+} from '../../../lib/palette-chord/keydown';
+import { chordsEqual, formatChord, type PaletteChord } from '../../../lib/storage/palette-chord';
 import type { OverlayStore } from './overlays';
 
 const log = createLogger('panel');
@@ -50,7 +63,12 @@ export interface ShortcutRow {
   action: string;
   /** Where they apply (chip copy; absent = the panel itself). */
   context?: string;
+  /** The palette's toggle row: its keys also name the chosen chord (see {@link shortcutKeys}). */
+  opensPalette?: true;
 }
+
+/** The fixed palette toggle as a chord (`mod` is Command on macOS, Ctrl elsewhere). */
+const FIXED_PALETTE_CHORD: PaletteChord = Object.freeze({ code: 'KeyK', mod: true });
 
 /**
  * The overlay's rows, in read order. The DevTools rows mirror the browser's
@@ -58,7 +76,7 @@ export interface ShortcutRow {
  * stream); the appearance cycle has no direct key — it is a palette row.
  */
 export const PANEL_SHORTCUTS: readonly ShortcutRow[] = [
-  { keys: 'Ctrl / ⌘ K', action: 'Open or close the command palette' },
+  { keys: 'Ctrl / ⌘ K', action: 'Open or close the command palette', opensPalette: true },
   { keys: '↑ ↓', action: 'Highlight the previous / next command', context: 'Command palette' },
   { keys: 'Home / End', action: 'First / last command', context: 'Command palette' },
   { keys: 'Enter', action: 'Run the highlighted command', context: 'Command palette' },
@@ -79,6 +97,20 @@ export const PANEL_SHORTCUTS: readonly ShortcutRow[] = [
 ];
 
 /**
+ * A row's keys as the overlay shows them: the palette row adds the chosen
+ * chord in the platform's notation ("Ctrl / ⌘ K or ⌥K") once it is known —
+ * unless it is the fixed chord itself, which the row already names.
+ *
+ * @param row An overlay row.
+ * @param chosen The live binding, or null while unresolved.
+ */
+export function shortcutKeys(row: ShortcutRow, chosen: ChordBinding | null): string {
+  if (row.opensPalette !== true || chosen === null) return row.keys;
+  if (chordsEqual(chosen.chord, FIXED_PALETTE_CHORD)) return row.keys;
+  return `${row.keys} or ${formatChord(chosen.chord, chosen.platform)}`;
+}
+
+/**
  * Whether the event's target must receive its keystrokes instead of the
  * shell (the palette field, the search inputs, any editable surface).
  *
@@ -95,7 +127,10 @@ export function isEditableTarget(target: EventTarget | null): boolean {
  * Register the shell's global shortcuts.
  *
  * `Ctrl/⌘ K` toggles the palette from anywhere in the panel — including out
- * of the palette's own field. The shortcuts overlay answers its declared
+ * of the palette's own field. The chosen chord toggles it too, by the shared
+ * decision (trusted, unhandled, exact match; a may-type chord is left to
+ * typed-text fields); it is checked after `Ctrl/⌘ K`, so a chosen chord
+ * equal to it toggles once. The shortcuts overlay answers its declared
  * binding (`/`, `?` alias) on an **unmodified** key: `Ctrl/⌘/Alt + /` are
  * not our chord — the palette branch already requires that exactness, the
  * overlay branch mirrors it. `Shift` is deliberately ungated: the binding is
@@ -107,13 +142,16 @@ export function isEditableTarget(target: EventTarget | null): boolean {
  * preventDefault so the browser's own handler does not race.
  *
  * @param handlers The overlay store (only its toggles are consumed).
+ * @param chosenChord The live chosen binding (null while unresolved); absent,
+ *   only the fixed chord opens the palette.
  * @returns The stop handle (the shell's cleanup).
  */
 export function registerPanelShortcuts(
-  handlers: Pick<OverlayStore, 'togglePalette' | 'toggleShortcuts'>
+  handlers: Pick<OverlayStore, 'togglePalette' | 'toggleShortcuts'>,
+  chosenChord: () => ChordBinding | null = () => null
 ): () => void {
   const onKeyDown = (event: KeyboardEvent): void => {
-    // One listener body carries both chords; a wiring bug in one branch must
+    // One listener body carries every chord; a wiring bug in one branch must
     // not skip or break the other (a store toggle cannot throw by contract,
     // so this guard is containment for the impossible, not error handling).
     try {
@@ -122,6 +160,15 @@ export function registerPanelShortcuts(
         !event.shiftKey &&
         (event.ctrlKey || event.metaKey) &&
         (event.key === 'k' || event.key === 'K')
+      ) {
+        event.preventDefault();
+        handlers.togglePalette();
+        return;
+      }
+      const chosen = chosenChord();
+      if (
+        chosen !== null &&
+        chordKeydownAction(event, chosen, () => takesTypedText(event.composedPath())) === 'open'
       ) {
         event.preventDefault();
         handlers.togglePalette();
