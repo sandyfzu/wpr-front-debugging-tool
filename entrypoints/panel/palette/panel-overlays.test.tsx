@@ -174,7 +174,7 @@ describe('the keyboard overlays in the shell', () => {
         watcher.write = onChange;
         return () => undefined;
       },
-      getPlatformInfo: () => Promise.resolve({ os: 'mac' }),
+      askPlatform: () => Promise.resolve('mac'),
       fallbackPlatform: () => 'other',
       log: { warn: vi.fn() }
     });

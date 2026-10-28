@@ -1,35 +1,37 @@
 /**
  * The user's chosen palette chord, as the panel follows it: the stored chord
  * (watched first, then read — live on every rebinding) and the keyboard
- * convention from the runtime's platform report (the navigator's on
- * failure), exposed as one reactive binding the keyboard layer and the
+ * convention, exposed as one reactive binding the keyboard layer and the
  * shortcuts overlay read.
+ *
+ * The convention comes from the background (the page trigger's bounded ask;
+ * the navigator's convention when unanswered), never from
+ * `runtime.getPlatformInfo` here: Firefox gives DevTools pages only the
+ * content-script API set plus `devtools.*`, so the panel cannot call it
+ * there. One path for every browser — the answer is the same one.
  */
 import { createSignal, type Accessor } from 'solid-js';
 import type { Logger } from '../../../lib/logger';
+import { sendMessage } from '../../../lib/messaging';
 import {
   followPaletteChord,
   navigatorChordPlatform,
   type ChordSource
 } from '../../../lib/palette-chord/follow';
+import { askChordPlatform, type ChordPlatformAsk } from '../../../lib/palette-chord/platform-ask';
 import type { ChordBinding } from '../../../lib/palette-chord/keydown';
 import {
   readPaletteChord,
   watchPaletteChord,
   type PaletteChord
 } from '../../../lib/storage/palette-chord';
-import {
-  resolveChordPlatform,
-  type ChordPlatform
-} from '../../../lib/storage/palette-chord-platform';
+import type { ChordPlatform } from '../../../lib/storage/palette-chord-platform';
 
-/** The binding's seams (tests inject doubles; {@link realPanelChordDeps} in production). */
-export interface PanelChordDeps extends ChordSource {
-  /** The runtime's platform report (may reject). */
-  getPlatformInfo(): Promise<{ readonly os: string }>;
-  /** The navigator's convention: the stand-in when the report fails. */
-  fallbackPlatform(): ChordPlatform;
-}
+/**
+ * The binding's seams: the chord store and the platform ask (tests inject
+ * doubles; {@link realPanelChordDeps} in production).
+ */
+export interface PanelChordDeps extends ChordSource, ChordPlatformAsk {}
 
 /** The followed binding plus its teardown. */
 export interface PanelChordBinding {
@@ -53,11 +55,7 @@ export function createPanelChordBinding(deps: PanelChordDeps): PanelChordBinding
   const unwatch = followPaletteChord(deps, (next) => {
     if (!stopped) setChord(next);
   });
-  void resolveChordPlatform({
-    getPlatformInfo: () => deps.getPlatformInfo(),
-    fallback: () => deps.fallbackPlatform(),
-    log: deps.log
-  }).then((resolved) => {
+  void askChordPlatform(deps).then((resolved) => {
     if (!stopped) setPlatform(resolved);
   });
 
@@ -82,8 +80,9 @@ export function createPanelChordBinding(deps: PanelChordDeps): PanelChordBinding
 }
 
 /**
- * The production seams: the validated chord store, the runtime's platform
- * report (extension pages may call it directly) and the navigator stand-in.
+ * The production seams: the validated chord store, the background's
+ * `getChordPlatform` answer (`runtime.sendMessage`, which DevTools pages
+ * have in every browser) and the navigator stand-in.
  *
  * @param log The panel's logger.
  */
@@ -91,7 +90,7 @@ export function realPanelChordDeps(log: Pick<Logger, 'warn'>): PanelChordDeps {
   return {
     readChord: readPaletteChord,
     watchChord: watchPaletteChord,
-    getPlatformInfo: () => browser.runtime.getPlatformInfo(),
+    askPlatform: () => sendMessage('getChordPlatform'),
     fallbackPlatform: () => navigatorChordPlatform(navigator),
     log
   };
