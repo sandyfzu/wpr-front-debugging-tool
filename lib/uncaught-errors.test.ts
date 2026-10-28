@@ -9,7 +9,9 @@
  */
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import {
+  RESIZE_OBSERVER_LOOP_MESSAGE,
   isOwnScriptSource,
+  isResizeObserverLoopNotice,
   onUncaughtError,
   onUnhandledRejection,
   type UncaughtErrorListenerOptions
@@ -59,6 +61,33 @@ describe('isOwnScriptSource', () => {
     expect(isOwnScriptSource(PREFIX, 'https://page.test/script.js')).toBe(false);
     expect(isOwnScriptSource(PREFIX, '')).toBe(false);
     expect(isOwnScriptSource(PREFIX, undefined)).toBe(false);
+  });
+});
+
+describe('isResizeObserverLoopNotice', () => {
+  it('matches exactly the browser notice: its message and no thrown value', () => {
+    expect(isResizeObserverLoopNotice({ message: RESIZE_OBSERVER_LOOP_MESSAGE, error: null })).toBe(
+      true
+    );
+    expect(
+      isResizeObserverLoopNotice({ message: RESIZE_OBSERVER_LOOP_MESSAGE, error: undefined })
+    ).toBe(true);
+  });
+
+  it('a thrown value or any other message stays an error', () => {
+    expect(
+      isResizeObserverLoopNotice({
+        message: RESIZE_OBSERVER_LOOP_MESSAGE,
+        error: new Error(RESIZE_OBSERVER_LOOP_MESSAGE)
+      })
+    ).toBe(false);
+    expect(
+      isResizeObserverLoopNotice({ message: RESIZE_OBSERVER_LOOP_MESSAGE, error: 'thrown text' })
+    ).toBe(false);
+    expect(isResizeObserverLoopNotice({ message: 'ResizeObserver loop', error: null })).toBe(false);
+    expect(
+      isResizeObserverLoopNotice({ message: ` ${RESIZE_OBSERVER_LOOP_MESSAGE}`, error: null })
+    ).toBe(false);
   });
 });
 
@@ -277,5 +306,56 @@ describe('onUnhandledRejection', () => {
     }).not.toThrow();
     expect(swallowed.preventDefault).toHaveBeenCalledTimes(1);
     expect(String(firstArg(error))).toContain('plain thrown value');
+  });
+});
+
+describe('onUncaughtError — resize-observer loop notice', () => {
+  /** The notice as browsers fire it: message only, no source, no error object. */
+  const notice = (): ErrorEvent =>
+    new ErrorEvent('error', { message: RESIZE_OBSERVER_LOOP_MESSAGE, cancelable: false });
+
+  it('is never reported as an error: one debug line per listener, then silence', () => {
+    const debug = vi.fn();
+    const error = vi.fn();
+    const listener = onUncaughtError({ log: { debug, info: vi.fn(), warn: vi.fn(), error } });
+    const first = notice();
+    const preventDefault = vi.spyOn(first, 'preventDefault');
+    listener(first);
+    listener(notice());
+    listener(notice());
+    expect(error).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(String(debug.mock.calls[0]?.[0])).toContain('Resize observer');
+    // Not claimed: the browser's own handling of the notice stays as it was.
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('each listener logs its own first notice', () => {
+    const debug = vi.fn();
+    const log: Logger = { debug, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    onUncaughtError({ log })(notice());
+    onUncaughtError({ log })(notice());
+    expect(debug).toHaveBeenCalledTimes(2);
+  });
+
+  it('an own script throwing that text is still reported', () => {
+    const { log, error } = fakeLogger();
+    onUncaughtError({ log })(
+      new ErrorEvent('error', {
+        filename: OWN_SOURCE,
+        message: RESIZE_OBSERVER_LOOP_MESSAGE,
+        error: new Error(RESIZE_OBSERVER_LOOP_MESSAGE)
+      })
+    );
+    expect(String(firstArg(error))).toBe(`Uncaught error: ${RESIZE_OBSERVER_LOOP_MESSAGE}`);
+  });
+
+  it('a sourced listener still skips the notice as foreign before matching it', () => {
+    const debug = vi.fn();
+    const error = vi.fn();
+    const log: Logger = { debug, info: vi.fn(), warn: vi.fn(), error };
+    onUncaughtError({ log, ownPrefix: PREFIX })(notice());
+    expect(error).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
   });
 });
