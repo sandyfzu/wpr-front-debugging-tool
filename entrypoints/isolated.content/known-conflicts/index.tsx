@@ -16,6 +16,10 @@
  *   loading state holds until a usable DB verdict (`dbRowsUsable`) and the
  *   corrected empty state renders only for a settled zero-finding scan on a
  *   served database (`emptyStateVisible`).
+ * - The on-page UI gate decides whether any of it runs: the scans start at
+ *   the page's first scan moment only while the gate is on; a gate-off
+ *   write removes the card and stops the observer and pending rescans, a
+ *   gate-on write rescans at once and shows the card again.
  */
 
 import { createStore } from 'solid-js/store';
@@ -30,19 +34,16 @@ import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 import { findKnownConflicts } from '../../../lib/known-conflicts/match';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import { isHttpUrl } from '../../../utils/urls';
-import { debounce } from '../../../utils/debounce';
+import { debounce, type DebouncedFunction } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
+import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
-import {
-  dbRowsUsable,
-  emptyStateVisible,
-  mergeFindings,
-  passSettled,
-  surfaceChanged
-} from './scan-state';
+import { createScanFlow } from './scan-flow';
+import { dbRowsUsable, emptyStateVisible, mergeFindings, surfaceChanged } from './scan-state';
 import { KnownConflictsView, type KnownConflictsUiState } from './ui';
 import './known-conflicts.css';
 
@@ -97,8 +98,6 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   let accumulated: readonly KnownConflict[] = [];
   /** Most recent pathname; a change re-baselines the scan state. */
   let currentPathname = initialUrl.pathname;
-  /** True once the plugins screen's bounded late pass has run. */
-  let wpPassesSettled = initialMode === 'helpscout';
   /**
    * Whether a usable DB verdict has landed (the scan machine's plain fact,
    * mirrored to the view's `loading` state at the same write sites — the
@@ -107,9 +106,13 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   let dbResolved = false;
 
   let shadowUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
+  /** Whether a shadow-root mount is in flight (double-mount + gate race guard). */
+  let mountPending = false;
   /** The Solid disposer, once the shadow-root render has completed. */
   let disposeRoot: (() => void) | null = null;
   let hsObserver: MutationObserver | null = null;
+  /** The HelpScout mode's debounced rescan (null in the plugins-screen mode). */
+  let rescanDebounced: DebouncedFunction<[]> | null = null;
   /** The card's root element, registered by the view (focus choreography). */
   let panelElement: HTMLElement | null = null;
   /** The marker pill, registered by the view (focus hand-back on close). */
@@ -180,9 +183,13 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
 
   /** Mount the badge once; later passes only move reactive state. */
   const mountIntoShadow = async (): Promise<void> => {
-    if (shadowUi !== null) return;
+    if (shadowUi !== null || mountPending) return;
+    mountPending = true;
     try {
-      shadowUi = await createShadowRootUi(ctx, {
+      // The mount's own listener scope: a gate-off removal releases its
+      // listeners at once instead of keeping them on the context.
+      const scope = new AbortController();
+      const created = await createShadowRootUi(ctx, {
         name: UI_NAME,
         position: 'inline',
         // The render tree is disposed exactly once (when the shadow host
@@ -203,28 +210,42 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
             });
         },
         onRemove: () => {
+          scope.abort();
           disposeRoot?.();
           disposeRoot = null;
           panelElement = null;
           badgeElement = null;
         }
       });
-      shadowUi.mount();
+      if (ctx.isInvalid || !pageUi.running()) {
+        // The world died or the on-page UI gate closed while the host was
+        // being built: it never reaches the page.
+        created.remove();
+        return;
+      }
+      shadowUi = created;
+      created.mount();
       // Escape closes the card with the focus inside it. Key events never
       // reach the host page from this shadow root (the injection isolates
-      // them at the root), and the listener rides `ctx` so teardown rides
-      // the same abort signal every other callback here does.
-      ctx.addEventListener(shadowUi.shadow, 'keydown', (event) => {
-        if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
-          event.stopPropagation();
-          actions.closeList();
-        }
-      });
+      // them at the root); the listener lives as long as this mount and
+      // the context.
+      created.shadow.addEventListener(
+        'keydown',
+        (event) => {
+          if (!ctx.isInvalid && event instanceof KeyboardEvent && event.key === 'Escape') {
+            event.stopPropagation();
+            actions.closeList();
+          }
+        },
+        { signal: AbortSignal.any([ctx.signal, scope.signal]) }
+      );
     } catch (error) {
       log.error(
         'Mounting the Known Conflicts badge failed',
         error instanceof Error ? error.message : error
       );
+    } finally {
+      mountPending = false;
     }
   };
 
@@ -238,13 +259,14 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   };
 
   /**
-   * One scan pass against the current URL's surface. A pathname change
-   * re-baselines first: accumulated findings clear (the previous ticket's
-   * rows must not bleed into the next one) and the widget resets to its
-   * fresh-opened shape; leaving both modes unmounts the UI entirely and
-   * disconnects the observer.
+   * One scan pass against the current URL's surface (only ever reached
+   * through the flow's gated `scan`). A pathname change re-baselines first:
+   * accumulated findings clear (the previous ticket's rows must not bleed
+   * into the next one) and the widget resets to its fresh-opened shape;
+   * leaving both modes unmounts the UI entirely and disconnects the
+   * observer.
    */
-  const runScan = (): void => {
+  const scanPass = (): void => {
     const url = new URL(window.location.href);
     const pathnameChanged = surfaceChanged(currentPathname, url.pathname);
     currentPathname = url.pathname;
@@ -268,61 +290,80 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
     accumulated = mergeFindings(accumulated, found);
     setState({
       findings: accumulated,
-      scannedEmpty: emptyStateVisible(accumulated, passSettled(mode, wpPassesSettled), !dbResolved)
+      scannedEmpty: emptyStateVisible(accumulated, flow.settled(), !dbResolved)
     });
     if (shadowUi === null) void mountIntoShadow();
   };
 
+  /** Remove the card (the gate closed) and reset it for the next show. */
+  const removeCard = (): void => {
+    shadowUi?.remove();
+    shadowUi = null;
+    navigationReset();
+  };
+
+  const flow = createScanFlow({
+    mode: initialMode,
+    latePassDelayMs: WP_RESCAN_DELAY_MS,
+    running: () => pageUi.running(),
+    isInvalid: () => ctx.isInvalid,
+    pass: scanPass,
+    later,
+    observe: () => {
+      hsObserver?.observe(document.body, { subtree: true, childList: true });
+    },
+    disconnect: () => {
+      hsObserver?.disconnect();
+    },
+    rescanSoon: () => {
+      rescanDebounced?.();
+    },
+    cancelRescan: () => {
+      rescanDebounced?.cancel();
+    },
+    removeCard
+  });
+  const runScan = flow.scan;
+
+  const pageUi = followGatedSurface(pageUiGateDeps(ctx, log), {
+    start: flow.start,
+    stop: flow.stop
+  });
+
   void bootstrap();
 
   if (initialMode === 'wp-admin') {
-    // Bounded two-pass flow: the `load` pass plus one late pass. The empty
-    // state is shown as final only once the late pass has RUN — settling
-    // when the pass is scheduled would let a DB write in that window render
-    // it before the late pass had its chance.
-    const initialWpScan = (): void => {
-      if (ctx.isInvalid) return;
-      runScan();
-      if (wpPassesSettled) return;
-      later(() => {
-        // Invalidation-cancelled: the flow stays unsettled (nothing scans,
-        // nothing shows a final verdict).
-        if (ctx.isInvalid) return;
-        wpPassesSettled = true;
-        runScan();
-      }, WP_RESCAN_DELAY_MS);
-    };
+    // The page's first scan moment is `load` (or now, past it).
     if (document.readyState === 'complete') {
-      initialWpScan();
+      pageUi.pageReady();
     } else {
       ctx.addEventListener(window, 'load', () => {
-        if (!ctx.isInvalid) initialWpScan();
+        if (!ctx.isInvalid) pageUi.pageReady();
       });
     }
   } else {
     // HelpScout is a SPA: rescan on DOM churn and on history-API navigation,
     // both debounced; leaving the mode disconnects the observer. The first
     // pass follows the fully-rendered moment like every scan here.
-    const rescanDebounced = debounce(() => {
+    const debounced = debounce(() => {
       if (!ctx.isInvalid) runScan();
     }, HS_RESCAN_DEBOUNCE_MS);
+    rescanDebounced = debounced;
     hsObserver = new MutationObserver(() => {
       if (ctx.isInvalid) {
         hsObserver?.disconnect();
         return;
       }
-      rescanDebounced();
+      debounced();
     });
     const afterLoad = (): void => {
-      if (ctx.isInvalid) return;
-      hsObserver?.observe(document.body, { subtree: true, childList: true });
-      rescanDebounced();
+      if (!ctx.isInvalid) pageUi.pageReady();
     };
     ctx.addEventListener(window, 'load', afterLoad);
     // History-API navigations can change the URL without body-level DOM
-    // mutations; URL tracking re-baselines those too.
+    // mutations; URL tracking re-baselines those too (only while scanning).
     ctx.addEventListener(window, 'wxt:locationchange', () => {
-      if (!ctx.isInvalid) rescanDebounced();
+      if (!ctx.isInvalid && pageUi.running()) debounced();
     });
     if (document.readyState !== 'loading') afterLoad();
     ctx.onInvalidated(() => {
@@ -331,7 +372,7 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       // through ctx cleans itself.
       hsObserver?.disconnect();
       hsObserver = null;
-      rescanDebounced.cancel();
+      debounced.cancel();
     });
   }
 

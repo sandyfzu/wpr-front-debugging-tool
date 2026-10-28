@@ -3,6 +3,7 @@ import { EMPTY_EXCLUSION_SET } from '../exclusion-builder/set';
 import type { ExclusionSessionStatus } from '../messaging/exclusion-session';
 import {
   createOverlayReopener,
+  restoreSessionOverlays,
   shouldReopenOverlay,
   type OverlayPresentation,
   type PresentationMemory
@@ -192,5 +193,64 @@ describe('createOverlayReopener', () => {
     await expect(reopener.tabClosed(1)).resolves.toBeUndefined();
     expect(reopened[0]?.[1]).toBe('open');
     expect(log.warn).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('restoreSessionOverlays', () => {
+  /** Recording deps over the given records and tab URLs. */
+  function deps(
+    records: () => Promise<Record<string, { state: string }>>,
+    urls: Record<number, string>
+  ) {
+    const pageLoaded = vi.fn<(tabId: number, url: string | undefined) => Promise<void>>(() =>
+      Promise.resolve()
+    );
+    const warn = vi.fn();
+    return {
+      pageLoaded,
+      warn,
+      value: {
+        records,
+        tabUrl: (tabId: number) => {
+          const url = urls[tabId];
+          return url === undefined ? Promise.reject(new Error('No tab')) : Promise.resolve(url);
+        },
+        reopener: { pageLoaded },
+        log: { warn }
+      }
+    };
+  }
+
+  it('re-runs the page-load re-open for every active session tab only', async () => {
+    const d = deps(
+      () =>
+        Promise.resolve({
+          '3': { state: 'active' },
+          '4': { state: 'unavailable' },
+          '5': { state: 'active' }
+        }),
+      { 3: 'https://a.test/', 5: 'https://b.test/x' }
+    );
+    await restoreSessionOverlays(d.value);
+    expect(d.pageLoaded.mock.calls).toEqual([
+      [3, 'https://a.test/'],
+      [5, 'https://b.test/x']
+    ]);
+  });
+
+  it('skips a closed tab and a malformed key, warning for the closed tab', async () => {
+    const d = deps(
+      () => Promise.resolve({ '7': { state: 'active' }, 'x': { state: 'active' } }),
+      {}
+    );
+    await restoreSessionOverlays(d.value);
+    expect(d.pageLoaded).not.toHaveBeenCalled();
+    expect(d.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('never rejects on an unreadable session store', async () => {
+    const d = deps(() => Promise.reject(new Error('storage down')), {});
+    await expect(restoreSessionOverlays(d.value)).resolves.toBeUndefined();
+    expect(d.warn).toHaveBeenCalledTimes(1);
   });
 });

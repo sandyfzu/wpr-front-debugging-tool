@@ -7,11 +7,13 @@
  * teardown, failures) is testable without a browser; `./index` binds the
  * real ones.
  *
- * The gate is armed watch-first (a write landing during the boot read wins;
- * the read result is then dropped), and every effect is guarded: a failing
+ * The gate is followed through the shared follower (`lib/page-ui`):
+ * watch-first, so a write landing during the boot read wins and the read
+ * result is dropped. Every effect is guarded: a failing
  * seam is logged and degrades its own step, never the page or the module.
  */
 import type { Logger } from '../../../lib/logger';
+import { followPageUiGate } from '../../../lib/page-ui/gate-follower';
 import { isPaletteCommandId, pageCommand } from '../../../lib/page-commands/commands';
 import {
   runPageCommand,
@@ -170,35 +172,25 @@ export function startPaletteModule(deps: PaletteModuleDeps): PaletteModule {
     }
   };
 
-  // Watch first: a write landing during the boot read wins over the read.
-  let watched = false;
-  let unwatch: (() => void) | null = null;
-  try {
-    unwatch = deps.watchGate((enabled) => {
-      watched = true;
+  // The shared follower: watch first (a write during the boot read wins),
+  // a failed read waits for the next write, late deliveries are dropped.
+  followPageUiGate(
+    {
+      source: { watch: (onChange) => deps.watchGate(onChange), read: () => deps.readGate() },
+      isInvalid: () => deps.isInvalid(),
+      onInvalidated: (cleanup) => {
+        deps.onInvalidated(cleanup);
+      },
+      log
+    },
+    (enabled) => {
       dispatch({ type: 'gate', enabled });
-    });
-  } catch (cause) {
-    log.error('Watching the on-page UI gate failed', cause);
-  }
-  deps
-    .readGate()
-    .then((enabled) => {
-      if (!watched) dispatch({ type: 'gate', enabled });
-    })
-    .catch((cause: unknown) => {
-      // The palette stays unarmed until the gate's next write.
-      log.warn('Reading the on-page UI gate failed — the palette waits for its next change', cause);
-    });
+    }
+  );
 
   publishPaletteBridge(deps.world, bridge);
 
   deps.onInvalidated(() => {
-    try {
-      unwatch?.();
-    } catch (cause) {
-      log.warn('Stopping the gate watch failed during teardown', cause);
-    }
     disarm();
     if (state.kind === 'ready') runEffect({ type: 'dispose-view', view: state.view });
     state = { kind: 'off' };

@@ -12,7 +12,9 @@
  * both directions. A state change mounts or removes the widget on this
  * page with no reload; other origins' entries cannot touch this page. A
  * hidden page costs one invalidated-safe storage read at boot, nothing
- * mounted.
+ * mounted. The on-page UI gate outranks the opt-in: the widget shows only
+ * while both say so (`./visibility`), and a gate write mounts or removes it
+ * live like an opt-in write.
  *
  * Data: the widget reads the hub's cached pass result for this page through
  * the hub's same-context reader — a running pass is joined, never
@@ -50,6 +52,8 @@ import {
   inspectorOriginsStore
 } from '../../../lib/storage/inspector-origins';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
+import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
+import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
@@ -57,6 +61,7 @@ import { createContainmentWatch, type ContainmentWatch } from './containment';
 import type { StripDataSnapshot } from './strip-state';
 import { buildStripCardModel, INSPECTOR_UI_NAME, insMood } from './strip-state';
 import { InspectorView, type InspectorUiActions } from './ui';
+import { widgetVisible } from './visibility';
 import './inspector.css';
 
 const log = createLogger('inspector');
@@ -114,8 +119,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   let disposeRoot: (() => void) | null = null;
   /** Whether a shadow-root mount is in flight (double-mount + race guard). */
   let mountPending = false;
-  /** The gate's current truth, mirrored for the mount's race re-check. */
-  let enabledNow = false;
+  /** Whether the widget should show now, mirrored for the mount's race re-check. */
+  let visibleNow = false;
+  /** This origin's effective opt-in; null until its first read or write. */
+  let siteEnabled: boolean | null = null;
   /** The card's root element, registered by the view (focus choreography). */
   let cardElement: HTMLElement | null = null;
   /** The pill, registered by the view (the focus hand-back on close). */
@@ -328,16 +335,43 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   const isTrustedUserEvent = (event: Event): boolean => event.isTrusted;
 
   /**
+   * The current mount's listener scope: aborted when the host leaves the
+   * page, so a hidden-then-shown widget (site opt-out, the on-page UI gate)
+   * never keeps the removed mount's elements alive through listeners still
+   * registered on the context. Null at no-mount.
+   */
+  let mountScope: AbortController | null = null;
+
+  /**
+   * Listen on an element of the current mount until the mount ends or the
+   * context dies, whichever comes first (no-op without a mount).
+   *
+   * @param target The mount's element (or its shadow root).
+   * @param type The event type.
+   * @param handler The listener.
+   */
+  const listenWhileMounted = (
+    target: EventTarget,
+    type: string,
+    handler: (event: Event) => void
+  ): void => {
+    if (mountScope === null) return;
+    target.addEventListener(type, handler, {
+      signal: AbortSignal.any([ctx.signal, mountScope.signal])
+    });
+  };
+
+  /**
    * Bind the drag's pointer listeners to the chrome (their element dies with
-   * the shadow host; teardown also rides the context): trusted primary
+   * the shadow host; teardown rides the mount's scope): trusted primary
    * presses decide a handle and the capture routes the whole gesture back
    * here by bubbling, so no page-scoped listener ever exists.
    *
    * @param chrome The view's chrome root.
    */
   function bindChromeDrag(chrome: HTMLElement): void {
-    ctx.addEventListener(chrome, 'pointerdown', (event) => {
-      // WXT's ctx overload stays at the `Event` level for element targets —
+    listenWhileMounted(chrome, 'pointerdown', (event) => {
+      // The listener is typed at the `Event` level for element targets —
       // `instanceof` is the boundary narrowing (the shipped keydown idiom).
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       // Direct manipulation takes over the moment a pointer presses the
@@ -383,14 +417,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
         pointerId: event.pointerId
       });
     });
-    ctx.addEventListener(chrome, 'pointermove', (event) => {
+    listenWhileMounted(chrome, 'pointermove', (event) => {
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       dragController?.trackMove({
         point: { x: event.clientX, y: event.clientY },
         pointerId: event.pointerId
       });
     });
-    ctx.addEventListener(chrome, 'pointerup', (event) => {
+    listenWhileMounted(chrome, 'pointerup', (event) => {
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
       dragController?.settle(event.pointerId);
       // Drop re-settle: the committed position is re-clamped against the
@@ -398,12 +432,12 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // "at drop" leg).
       startContainmentCycle();
     });
-    ctx.addEventListener(chrome, 'pointercancel', (event) => {
+    listenWhileMounted(chrome, 'pointercancel', (event) => {
       if (!isTrustedUserEvent(event)) return;
       dragController?.cancel();
       startContainmentCycle();
     });
-    ctx.addEventListener(chrome, 'lostpointercapture', (event) => {
+    listenWhileMounted(chrome, 'lostpointercapture', (event) => {
       // Capture loss ENDS the gesture, it does not cancel it: an engine may
       // drop the capture mid-gesture with neither release nor OS cancel (the
       // pointer leaving the window during a quick release does this on
@@ -421,7 +455,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       dragController?.settle(event.pointerId);
       startContainmentCycle(); // the dropped position is re-clamped like any release
     });
-    ctx.addEventListener(chrome, 'contextmenu', (event) => {
+    listenWhileMounted(chrome, 'contextmenu', (event) => {
       // The right-press route (verbatim from this machine): a second button
       // pressed while the left pointer is captured delivers NO pointerdown —
       // the chrome gets `contextmenu` alone. The brief's right-click cancel
@@ -430,7 +464,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       dragController?.cancel();
       startContainmentCycle();
     });
-    ctx.addEventListener(chrome, 'transitionend', (event) => {
+    listenWhileMounted(chrome, 'transitionend', (event) => {
       // The smooth re-settle's end: exactly the CHROME's own position leg
       // (child transitions bubble here and must not clear it). Synthetic
       // events are ignored with the shared trust gate. No transitioncancel
@@ -552,6 +586,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
         mountPending = false;
         return;
       }
+      const scope = new AbortController();
+      mountScope = scope;
       const created = await createShadowRootUi(ctx, {
         name: INSPECTOR_UI_NAME,
         position: 'inline',
@@ -575,6 +611,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
             });
         },
         onRemove: () => {
+          scope.abort();
+          if (mountScope === scope) mountScope = null;
           disposeRoot?.();
           disposeRoot = null;
           cardElement = null;
@@ -592,8 +630,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
         created.remove();
         return;
       }
-      if (!enabledNow) {
-        // Disable won the mount race: remove the host before it ever shows.
+      if (!visibleNow) {
+        // A hide (site opt-out or the on-page UI gate) won the mount race:
+        // remove the host before it ever shows.
         created.remove();
         return;
       }
@@ -602,9 +641,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // Escape closes the card with the focus inside it, or cancels a live
       // drag first (restore the pre-drag position). Key events never reach
       // the host page from this shadow root (the injection isolates them at
-      // the root), and the listener rides `ctx` so teardown rides the same
-      // abort signal every other callback here does.
-      ctx.addEventListener(created.shadow, 'keydown', (event) => {
+      // the root), and the listener lives as long as this mount (and the
+      // context).
+      listenWhileMounted(created.shadow, 'keydown', (event) => {
         // The same trust gate: a synthetic Escape must not close or cancel a
         // mounted widget's state (real key input is always trusted here).
         if (
@@ -636,17 +675,18 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Apply the gate's next value. Same-value writes are skipped outright:
-   * a foreign origin's write (or a same-value rewrite) must not re-run the
+   * Show or hide the widget. Same-value calls are skipped outright: a
+   * foreign origin's write (or a same-value rewrite) must not re-run the
    * data read, whose only worthwhile input is this origin's entry — the
-   * equality is the equivalence.
+   * equality is the equivalence. A show re-runs the boot path (fresh data
+   * read, fresh mount at the anchor); a hide removes the host.
    *
-   * @param enabled The origin's entry.
+   * @param visible Whether the widget shows (see {@link widgetVisible}).
    */
-  const applyGate = (enabled: boolean): void => {
-    if (enabled === enabledNow) return;
-    enabledNow = enabled;
-    if (enabled) {
+  const applyVisible = (visible: boolean): void => {
+    if (visible === visibleNow) return;
+    visibleNow = visible;
+    if (visible) {
       void refreshData();
       void mountIntoShadow();
       return;
@@ -669,24 +709,47 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   });
 
   /**
-   * Arm-first boot: the watch is the gate's authority once armed, so the
+   * The on-page UI gate outranks the per-site opt-in (`widgetVisible`):
+   * while it is off the widget never mounts and a live off-write removes
+   * it; turning it back on shows it again per the site's opt-in, which the
+   * gate never touches. The widget's boot moment is now (the mount waits
+   * for the body itself).
+   */
+  const pageUi = followGatedSurface(pageUiGateDeps(ctx, log), {
+    start: () => {
+      applyVisible(widgetVisible(true, siteEnabled));
+    },
+    stop: () => {
+      applyVisible(false);
+    }
+  });
+  pageUi.pageReady();
+
+  /** Record this origin's effective opt-in and re-decide the widget. */
+  const applySiteEnabled = (enabled: boolean): void => {
+    siteEnabled = enabled;
+    applyVisible(widgetVisible(pageUi.running(), siteEnabled));
+  };
+
+  /**
+   * Arm-first boot: the watch is the opt-in's authority once armed, so the
    * initial read applies only when no write raced it (the live-theme
    * pattern's counter — read-then-arm would drop exactly that write).
    */
-  let gateWrites = 0;
+  let siteWrites = 0;
   const unwatch = inspectorOriginsStore.watch((raw: unknown) => {
-    gateWrites += 1;
+    siteWrites += 1;
     if (ctx.isInvalid) return;
     const parsed = parseInspectorOrigins(raw);
-    // One resolution for every gate read: no explicit entry here means the
-    // global default on; only a stored entry — either polarity — overrides
-    // it. Corrupt raw degrades to the same unconfigured shape.
-    applyGate(effectiveInspectorEnabled(parsed ?? {}, pageOrigin));
+    // One resolution for every opt-in read: no explicit entry here means
+    // the global default on; only a stored entry — either polarity —
+    // overrides it. Corrupt raw degrades to the same unconfigured shape.
+    applySiteEnabled(effectiveInspectorEnabled(parsed ?? {}, pageOrigin));
   });
   ctx.onInvalidated(unwatch);
 
   void (async () => {
-    const seen = gateWrites;
+    const seen = siteWrites;
     let answer: boolean;
     try {
       answer = await isInspectorOriginEnabled(pageOrigin);
@@ -696,8 +759,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       answer = false;
     }
     if (ctx.isInvalid) return;
-    if (gateWrites === seen) {
-      applyGate(answer);
+    if (siteWrites === seen) {
+      applySiteEnabled(answer);
     }
   })();
 }

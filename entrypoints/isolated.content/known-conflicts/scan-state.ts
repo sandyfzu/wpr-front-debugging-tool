@@ -8,6 +8,7 @@
  * call, so no render path can contradict the state machine.
  */
 
+import type { GatedSurfaceStart } from '../../../lib/page-ui/gated-surface';
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
 
 /**
@@ -131,4 +132,43 @@ export function markerMood(
 ): 'alert' | 'clear' | 'pending' {
   if (findings.length > 0) return 'alert';
   return dbLoading ? 'pending' : 'clear';
+}
+
+/**
+ * How a surface's scanning (re)starts:
+ *
+ * - `two-pass` — the plugins screen's bounded flow (a pass now + one late
+ *   pass). Boot runs it; so does a gate-on resume while the late pass has
+ *   not run yet (a gate-off boot spends the boot without scanning, and a
+ *   single pass could never settle the flow — the card would stay blank);
+ * - `debounced` — HelpScout's boot: the first pass rides the rescan
+ *   debounce like every DOM-churn pass;
+ * - `now` — a resume over a settled flow: rescan at once (the page is
+ *   already settled, no reason to wait).
+ *
+ * @param mode The page's scan surface.
+ * @param cause Boot, or a gate-on resume.
+ * @param latePassRan Whether the plugins screen's late pass has run.
+ * @returns The start plan to run.
+ */
+export function scanStartPlan(
+  mode: ScanSurfaceMode,
+  cause: GatedSurfaceStart,
+  latePassRan: boolean
+): 'two-pass' | 'debounced' | 'now' {
+  if (mode === 'helpscout') return cause === 'boot' ? 'debounced' : 'now';
+  return cause === 'boot' || !latePassRan ? 'two-pass' : 'now';
+}
+
+/**
+ * Whether a two-pass flow should schedule its late pass: not once it has
+ * run, and never a second time while one is pending (quick gate off → on
+ * bursts must not stack timers).
+ *
+ * @param latePassRan Whether the late pass has run.
+ * @param latePassScheduled Whether a late pass is pending.
+ * @returns True when the late pass should be scheduled now.
+ */
+export function latePassDue(latePassRan: boolean, latePassScheduled: boolean): boolean {
+  return !latePassRan && !latePassScheduled;
 }

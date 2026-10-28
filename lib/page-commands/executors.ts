@@ -70,6 +70,8 @@ const BUILDER_FAILURES: Readonly<
   'unsupported-page': 'The browser does not let extensions open it on this page.',
   'not-html': 'This page is not an HTML page.',
   'tab-gone': 'The tab closed before it opened.',
+  // Unreachable from the palette in practice (it dies with the gate), kept honest.
+  'page-ui-off': 'On-page UI is off.',
   failed: 'Opening it failed. Try again from the toolbar button’s menu.'
 };
 

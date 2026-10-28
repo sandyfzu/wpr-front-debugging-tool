@@ -194,3 +194,49 @@ describe('classifyInjectionFailure', () => {
     expect(classifyInjectionFailure('boom')).toBe('failed');
   });
 });
+
+describe('the on-page UI gate', () => {
+  it('an explicit open while the gate is off injects nothing and answers page-ui-off', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const { api, injected, claimed } = injector();
+      expect(await openExclusionOverlay(7, api, () => Promise.resolve(false))).toBe('page-ui-off');
+      expect(claimed).not.toHaveBeenCalled();
+      expect(injected).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('a session re-open while the gate is off injects nothing', async () => {
+    const { api, injected, claimed } = injector();
+    expect(await reopenExclusionOverlay(3, 'open', ORIGIN, api, () => Promise.resolve(false))).toBe(
+      'page-ui-off'
+    );
+    expect(claimed).not.toHaveBeenCalled();
+    expect(injected).not.toHaveBeenCalled();
+  });
+
+  it('opens as usual while the gate is on', async () => {
+    const { api, injected } = injector();
+    expect(await openExclusionOverlay(7, api, () => Promise.resolve(true))).toBe('injected');
+    expect(await reopenExclusionOverlay(3, 'open', ORIGIN, api, () => Promise.resolve(true))).toBe(
+      'reopened'
+    );
+    expect(injected).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed gate read fails the open (logged), injecting nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const { api, injected } = injector();
+      expect(
+        await openExclusionOverlay(7, api, () => Promise.reject(new Error('storage down')))
+      ).toBe('failed');
+      expect(injected).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});

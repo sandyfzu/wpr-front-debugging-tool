@@ -8,13 +8,13 @@
  * fixture-tier helpers cannot: a PARAM-FREE site navigation (the
  * `openFixturePage` `?e2e-tab=N` stamp makes URLs uncached — WP Rocket only
  * caches its `cache_query_strings` params — so every cached-page leg must
- * navigate real cacheable URLs) and the worker-scoped wp-admin login.
+ * navigate real cacheable URLs) and the reused, per-test re-validated wp-admin login.
  */
 
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 import { test } from './extension';
 import type { ExtensionDriver, DriverPage } from './extension';
@@ -153,25 +153,82 @@ export async function loginAdminPage(page: Page): Promise<void> {
   ]);
 }
 
+/** WordPress's login-state cookie prefix (`wordpress_logged_in_<site hash>`). */
+const LOGGED_IN_COOKIE_PREFIX = 'wordpress_logged_in_';
+
 /**
- * The site suites' test: the extension test extended with a worker-scoped
- * logged-in admin page (one wp-login round per suite file; tests navigate it
- * to their own admin pages).
+ * Whether the context holds the site's WordPress login cookie — the cheap
+ * re-check before a test is handed the admin page (no navigation).
+ *
+ * @param context The browser context to read.
+ * @returns True when a `wordpress_logged_in_*` cookie for the site exists.
  */
-interface SiteTestFixtures {
-  /** Marker type: no test-scoped fixture is declared here. */
-  readonly none?: undefined;
+async function hasSiteLogin(context: BrowserContext): Promise<boolean> {
+  const cookies = await context.cookies(SITE_URL);
+  return cookies.some((cookie) => cookie.name.startsWith(LOGGED_IN_COOKIE_PREFIX));
 }
 
-export const siteTest = test.extend<SiteTestFixtures, { adminPage: Page }>({
-  adminPage: [
-    async ({ extension }, use) => {
-      const page = await extension.browserContext.newPage();
-      await loginAdminPage(page);
-      await use(page);
+/** The worker's admin page slot: null until a test first asks for it. */
+interface AdminPageSlot {
+  page: Page | null;
+}
+
+/**
+ * The site suites' admin page, reused across the worker's tests yet always
+ * valid when handed out: re-created (and logged in) when the held page is
+ * closed or belongs to an earlier browser context — a suite's
+ * `extension.relaunch()` closes the context and every page in it — and
+ * logged in again when the profile lost its login cookie (suites clear the
+ * site's cookies to run as anonymous visitors).
+ *
+ * @param slot The worker's slot (updated in place).
+ * @param context The driver's current browser context.
+ * @returns The open, logged-in admin page.
+ */
+async function liveAdminPage(slot: AdminPageSlot, context: BrowserContext): Promise<Page> {
+  const held = slot.page;
+  if (held === null || held.isClosed() || held.context() !== context) {
+    const page = await context.newPage();
+    slot.page = page;
+    await loginAdminPage(page);
+    return page;
+  }
+  if (!(await hasSiteLogin(context))) await loginAdminPage(held);
+  return held;
+}
+
+/**
+ * The site suites' test: the extension test extended with a logged-in admin
+ * page. The page lives in a worker-scoped slot (one wp-login round per run
+ * in the common case; tests navigate it to their own admin pages); the
+ * test-scoped `adminPage` re-validates it per test, so a relaunch or a
+ * cookie wipe in an earlier test or file never hands out a dead page.
+ */
+interface SiteTestFixtures {
+  /** The open, logged-in admin page of the current browser context. */
+  adminPage: Page;
+}
+
+/** The worker-scoped fixtures behind {@link SiteTestFixtures}. */
+interface SiteWorkerFixtures {
+  /** The admin page slot shared by the worker's tests. */
+  adminPageSlot: AdminPageSlot;
+}
+
+export const siteTest = test.extend<SiteTestFixtures, SiteWorkerFixtures>({
+  adminPageSlot: [
+    async ({}, use) => {
+      const slot: AdminPageSlot = { page: null };
+      await use(slot);
       // The browser may already be closed (a relaunch leg) — tolerate that.
-      await page.close().catch(() => undefined);
+      await slot.page?.close().catch(() => undefined);
     },
-    { scope: 'worker', timeout: 60_000 }
+    { scope: 'worker' }
+  ],
+  adminPage: [
+    async ({ extension, adminPageSlot }, use) => {
+      await use(await liveAdminPage(adminPageSlot, extension.browserContext));
+    },
+    { timeout: 60_000 }
   ]
 });
