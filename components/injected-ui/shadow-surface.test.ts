@@ -125,6 +125,9 @@ describe('createShadowSurface', () => {
     await settle();
     expect(renders[0]?.disposals).toBe(1);
     expect(renders[1]?.disposals).toBe(0);
+    // The late disposal (Solid's: empties the shared container) spared the newer view.
+    const shadow = document.querySelector('surface-probe')?.shadowRoot;
+    expect(shadow?.querySelectorAll('.probe-view')).toHaveLength(1);
     surface.hide();
     expect(renders[1]?.disposals).toBe(1);
     // A further hide (and WXT's own stray remove) disposes nothing again.
@@ -132,6 +135,23 @@ describe('createShadowSurface', () => {
     ctx.notifyInvalidated();
     expect(renders[0]?.disposals).toBe(1);
     expect(renders[1]?.disposals).toBe(1);
+  });
+
+  it('a remove in the same tick as the render disposes the late tree before the next mount renders', async () => {
+    const { options } = realOptions();
+    const surface = createShadowSurface(options);
+    await surface.show(() => true);
+    // Rendered, then removed before the resolution reached the surface.
+    renders[0]?.resolve();
+    surface.hide();
+    await surface.show(() => true);
+    await settle();
+    expect(renders[0]?.disposals).toBe(1);
+    renders[1]?.resolve();
+    await settle();
+    const shadow = document.querySelector('surface-probe')?.shadowRoot;
+    expect(shadow?.querySelectorAll('.probe-view')).toHaveLength(1);
+    expect(renders[1]?.disposals).toBe(0);
   });
 
   it('reports a failed render with its original cause; a removed one stays silent', async () => {
@@ -151,6 +171,29 @@ describe('createShadowSurface', () => {
     renders[1]?.reject(new Error('after removal'));
     await settle();
     expect(onRenderError).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed render removes its host: the surface reads hidden and the next show retries', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const onRenderError = vi.fn();
+    const onRemoved = vi.fn();
+    const { options, created } = realOptions({ onRenderError, onRemoved });
+    const surface = createShadowSurface(options);
+    await surface.show(() => true);
+    const failure = new Error('render exploded');
+    renders[0]?.reject(failure);
+    await settle();
+    expect(onRenderError).toHaveBeenCalledWith(failure);
+    expect(hosts()).toBe(0);
+    expect(surface.isShown()).toBe(false);
+    expect(onRemoved).toHaveBeenCalledTimes(1);
+    expect(renders[0]?.signal?.aborted).toBe(true);
+    expect(error).not.toHaveBeenCalled(); // the removal itself did not fail
+    // Not 'already-shown': the retry mounts the same instance afresh.
+    await expect(surface.show(() => true)).resolves.toBe('shown');
+    renders[1]?.resolve();
+    await expect(surface.rendered()).resolves.toBe(true);
+    expect(created()).toBe(1);
   });
 
   it('runs every teardown step and removes the host even when one step throws', async () => {

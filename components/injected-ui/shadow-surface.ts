@@ -16,7 +16,14 @@
  * Each mount is one record: the render (`./mount`, awaited appearance read
  * included) is bound to it, so a remove landing before the render resolves
  * aborts the render (or disposes it the moment it resolves) and never lets
- * a late disposer overwrite a newer mount's. WXT may call `remove` on an
+ * a late disposer overwrite a newer mount's; a failed render removes its
+ * host, so the surface never reads shown over an empty host. Every mount shares WXT's one
+ * container and a view's disposer (Solid's) empties it all, so a late
+ * dispose must never follow a newer render. It cannot: `./mount` re-checks
+ * the signal synchronously right before `render()`, so a removed mount
+ * renders only when the removal lands in the same tick as its render — and
+ * its dispose then runs one microtask later, while any newer mount still
+ * awaits its own appearance read. WXT may call `remove` on an
  * unmounted instance (the invalidation hook after a hide): the hooks treat
  * that as a no-op.
  */
@@ -58,7 +65,10 @@ export interface ShadowSurfaceOptions {
   readonly onMounted?: (mount: ShadowMount) => void;
   /** Runs once a mount's host left the page (after the view's disposal). */
   readonly onRemoved?: () => void;
-  /** Receives the original failure of a render that did not complete. */
+  /**
+   * Receives the original failure of a render that did not complete; the
+   * failed mount's host is removed right after (`onRemoved` runs).
+   */
   readonly onRenderError: (cause: unknown) => void;
 }
 
@@ -108,7 +118,7 @@ function guarded(step: () => void, what: string): void {
   try {
     step();
   } catch (cause) {
-    log.error(`${what} failed during a shadow-host removal`, cause);
+    log.error(`${what} failed during a shadow-host teardown`, cause);
   }
 }
 
@@ -152,7 +162,10 @@ export function createShadowSurface(options: ShadowSurfaceOptions): ShadowSurfac
         return true;
       },
       (cause: unknown) => {
-        if (!record.scope.signal.aborted) options.onRenderError(cause);
+        if (record.scope.signal.aborted) return false; // removed first: nothing to report
+        options.onRenderError(cause);
+        // No empty host left "shown": the surface reads hidden and the next show retries.
+        guarded(() => instance?.remove(), 'Removing a failed render');
         return false;
       }
     );

@@ -219,12 +219,20 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   });
 
   /**
-   * Show the badge unless it is up; the on-page UI gate is re-checked after
-   * the first show's host creation (a gate-off may have won it).
+   * Whether the card may show now: the on-page UI gate is on and the page
+   * is still in one of the scan modes (an SPA navigation may have left).
+   */
+  const showAllowed = (): boolean =>
+    pageUi.running() && scanModeForUrl(new URL(window.location.href)) !== 'none';
+
+  /**
+   * Show the badge unless it is up; the gate and the scan scope are
+   * re-checked after the first show's host creation (a gate-off or a
+   * navigation out of scope may have won it).
    */
   const mountIntoShadow = async (): Promise<void> => {
     try {
-      await surface.show(() => pageUi.running());
+      await surface.show(showAllowed);
     } catch (error) {
       log.error(
         'Mounting the Known Conflicts badge failed',

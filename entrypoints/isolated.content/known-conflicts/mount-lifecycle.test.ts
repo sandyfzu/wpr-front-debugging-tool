@@ -120,4 +120,48 @@ describe('Known Conflicts mount lifecycle', () => {
     expect(hosts()).toBe(0);
     expect(renders).toHaveLength(1);
   });
+
+  it('leaving the scan scope while the first host creation is pending mounts no badge', async () => {
+    let release: () => void = () => undefined;
+    const factory = vi.mocked(createShadowRootUi);
+    const real = factory.getMockImplementation();
+    if (real === undefined) throw new Error('the factory spy lost its implementation');
+    factory.mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return real(...args);
+    });
+    setupKnownConflicts(ctx);
+    await vi.waitFor(() => {
+      expect(factory).toHaveBeenCalledTimes(1);
+    });
+    // An SPA navigation out of both modes; the gate stays on.
+    window.history.replaceState(null, '', '/wp-admin/index.php');
+    release();
+    await settle();
+    expect(hosts()).toBe(0);
+    expect(renders).toHaveLength(0);
+  });
+
+  it('a failed render removes the empty host, and the next scan pass shows it again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await bootShown();
+    renders[0]?.reject(new Error('render exploded'));
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(0);
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('[WPR FDT]'),
+      'render exploded'
+    );
+    // A gate cycle re-runs the pass: the surface reads hidden, so it re-shows.
+    await setPageUiGate(false);
+    await setPageUiGate(true);
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(1);
+    });
+    expect(renders).toHaveLength(2);
+    expect(createShadowRootUi).toHaveBeenCalledTimes(1);
+  });
 });

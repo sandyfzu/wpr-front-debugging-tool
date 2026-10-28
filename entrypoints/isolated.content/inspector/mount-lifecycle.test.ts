@@ -158,4 +158,23 @@ describe('detection widget mount lifecycle', () => {
     expect(hosts()).toBe(0);
     expect(renders).toHaveLength(1);
   });
+
+  it('a failed render removes the empty host; the next show mounts it again', async () => {
+    await bootShown();
+    renders[0]?.reject(new Error('render exploded'));
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(0);
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining('Mounting the detection widget view'),
+      'render exploded'
+    );
+    await setSiteEnabled(false);
+    await setSiteEnabled(true);
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(1);
+    });
+    expect(renders).toHaveLength(2);
+    expect(createShadowRootUi).toHaveBeenCalledTimes(1);
+  });
 });

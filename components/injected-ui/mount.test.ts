@@ -18,13 +18,15 @@ import { optionsStore, FALLBACK, type StoredOptions } from '../../lib/storage/op
  * `solid-js/web` to Solid's server build, and the mount's own contract —
  * palette before render, disposer joins the two cleanups — is what this file
  * pins; the renderer itself is Solid's domain (component tests in P5B/P12).
+ * The disposer clears the whole container, as Solid's does
+ * (`element.textContent = ""`): the container is shared across mounts.
  */
 vi.mock('solid-js/web', (): Record<string, unknown> => ({
   render: (view: () => JSX.Element, container: HTMLElement): (() => void) => {
     const node = (view as unknown as () => HTMLElement)();
     container.append(node);
     return () => {
-      node.remove();
+      container.textContent = '';
     };
   }
 }));
@@ -180,5 +182,31 @@ describe('mountShadowUi', () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(container.dataset.theme).toBe(themed);
     dispose();
+  });
+
+  it('a mount removed during its read never renders, so its disposer cannot wipe a newer view', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = optionsStore.getValue.bind(optionsStore);
+    vi.spyOn(optionsStore, 'getValue').mockImplementationOnce(async () => {
+      await gate;
+      return read();
+    });
+    const { container, shadow } = shadowContainer();
+    const removal = new AbortController();
+    const stale = mountShadowUi(container, shadow, () => probeView('stale'), removal.signal);
+    removal.abort();
+    // The next mount of the same container renders while the stale read hangs.
+    const disposeNewer = await mountShadowUi(container, shadow, () => probeView('newer'));
+    release();
+    const disposeStale = await stale;
+    disposeStale();
+    // Without the re-check right before `render()`, the stale tree would render
+    // and its (container-clearing) disposer would take the newer view with it.
+    expect(container.querySelector('.stale')).toBeNull();
+    expect(container.querySelector('.newer')).not.toBeNull();
+    disposeNewer();
   });
 });

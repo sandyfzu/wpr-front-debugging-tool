@@ -89,4 +89,20 @@ describe('page notice host lifecycle', () => {
     await settle();
     expect(hosts()).toBe(0);
   });
+
+  it('a failed render removes the empty host; the next notice mounts it again', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const host = createNoticeHost(ctx, createLogger('test'));
+    await showNotice(host);
+    const failure = new Error('render exploded');
+    renders[0]?.reject(failure);
+    await vi.waitFor(() => {
+      expect(hosts()).toBe(0);
+    });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('[WPR FDT]'), failure);
+    await showNotice(host);
+    expect(renders).toHaveLength(2);
+    expect(createShadowRootUi).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
 });
