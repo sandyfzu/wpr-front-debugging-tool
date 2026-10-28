@@ -104,7 +104,8 @@ const UNAVAILABLE: DeviceSimState = { available: false, enabled: false };
  * The ask's sender narrowed to the two facts a simulated session is owned
  * by: a rule-encodable tab and its page URL. Anything shapeless (extension
  * surface, hand-crafted sender, missing or unparseable URL) refuses — a
- * session needs a real tab and a real site, and each refusal is logged.
+ * session needs a real tab and a real site, and each refusal is logged (a
+ * tab-less one at debug: expected traffic).
  *
  * @returns The owning tab id with whether its page is the analysis host, or
  *   null when the sender cannot own a session.
@@ -114,7 +115,13 @@ function sessionOwner(
 ): { tabId: number; analysisHost: boolean } | null {
   const tabId = resolveSenderTabId(sender);
   if (tabId === null) {
-    log.warn('Simulation ask from a sender without a tab ignored');
+    // Expected traffic, not a fault: the relay runs in every http(s) frame,
+    // and a browser can run content scripts in frames no tab hosts (Firefox
+    // does) — those can never own a session, so the refusal is the answer.
+    log.debug('Simulation ask from a sender without a tab ignored', {
+      frameId: sender?.frameId,
+      origin: resolveSenderUrl(sender)?.origin
+    });
     return null;
   }
   // The rule id encoding keys positive integers; a tab id below 1 can

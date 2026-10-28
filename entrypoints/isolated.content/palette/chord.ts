@@ -4,7 +4,7 @@
  * on exactly the bound chord and leaves every other keystroke to the page.
  *
  * Decisions are pure (the shared keydown decision and typed-text read, and
- * {@link narrowChordPlatform}); {@link startChordTrigger} binds them to the
+ * the shared platform ask); {@link startChordTrigger} binds them to the
  * page and the extension:
  * - the binding (the stored chord + the keyboard convention) resolves on the
  *   first arm — the chord's watch-first read and the background's platform
@@ -28,12 +28,9 @@
  * so a may-type chord pressed there opens the palette instead of typing.
  */
 import type { Logger } from '../../../lib/logger';
-import {
-  boundedAsk,
-  type AskOutcome,
-  type ScheduleTimer
-} from '../../../lib/messaging/bounded-ask';
+import type { ScheduleTimer } from '../../../lib/messaging/bounded-ask';
 import { followPaletteChord } from '../../../lib/palette-chord/follow';
+import { askChordPlatform, type ChordPlatformAsk } from '../../../lib/palette-chord/platform-ask';
 import {
   chordKeydownAction,
   takesTypedText,
@@ -43,27 +40,10 @@ import { formatChord, type PaletteChord } from '../../../lib/storage/palette-cho
 import type { ChordPlatform } from '../../../lib/storage/palette-chord-platform';
 
 /**
- * Narrow the background's platform answer at the boundary (two bundles meet
- * there, and a missing receiver answers nothing typed): only an explicit
- * `'mac'` is macOS.
- *
- * @param reply The raw reply.
+ * The trigger's seams (the palette module's wiring binds the real ones); the
+ * platform ask's seams come from {@link ChordPlatformAsk}.
  */
-export function narrowChordPlatform(reply: unknown): ChordPlatform {
-  return reply === 'mac' ? 'mac' : 'other';
-}
-
-/**
- * How long the platform ask may stay unanswered before the navigator's
- * platform stands in. The background answers from one local API call; a
- * service worker cold start stays well inside this, and a later answer is
- * dropped (the stand-in agrees with it unless the browser masks its
- * navigator platform).
- */
-export const PLATFORM_ASK_TIMEOUT_MS = 2_000;
-
-/** The trigger's seams (the palette module's wiring binds the real ones). */
-export interface ChordTriggerDeps {
+export interface ChordTriggerDeps extends ChordPlatformAsk {
   /** Where the capture listener goes (the top frame's window). */
   readonly target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
   /**
@@ -75,10 +55,6 @@ export interface ChordTriggerDeps {
   readChord(): Promise<PaletteChord>;
   /** Follow validated chord writes; returns the unwatch. */
   watchChord(onChange: (chord: PaletteChord) => void): () => void;
-  /** Ask the background for the keyboard convention (raw reply; may reject). */
-  askPlatform(): Promise<unknown>;
-  /** The navigator's convention: the stand-in when the ask goes unanswered. */
-  fallbackPlatform(): ChordPlatform;
   /** The ask's deadline timer (cleared with the context). */
   readonly schedule: ScheduleTimer;
   /** Run cleanup when the context dies. */
@@ -150,37 +126,9 @@ export function startChordTrigger(deps: ChordTriggerDeps): ChordTrigger {
     unwatch = followPaletteChord(deps, (next) => {
       chord = next;
     });
-    void (async (): Promise<void> => {
-      try {
-        platform = platformFromOutcome(
-          await boundedAsk({
-            send: () => deps.askPlatform(),
-            parse: narrowChordPlatform,
-            timeoutMs: PLATFORM_ASK_TIMEOUT_MS,
-            schedule: deps.schedule
-          })
-        );
-      } catch (cause) {
-        // A broken seam (the ask never rejects): the majority convention.
-        log.warn('Keyboard convention unresolved — using the Ctrl convention', cause);
-        platform = 'other';
-      }
-    })();
-  };
-
-  /**
-   * The ask's answer, or the navigator's stand-in when it went unanswered
-   * (no receiver, a failed send, the deadline) — never a fixed guess, which
-   * would kill a macOS ⌘ chord for the page's lifetime.
-   */
-  const platformFromOutcome = (outcome: AskOutcome<ChordPlatform>): ChordPlatform => {
-    if (outcome.kind === 'reply') return outcome.reply;
-    const fallback = deps.fallbackPlatform();
-    log.warn(
-      `Keyboard convention unanswered — using the navigator's (${fallback})`,
-      outcome.kind === 'failed' ? outcome.cause : outcome.kind
-    );
-    return fallback;
+    void askChordPlatform(deps).then((resolved) => {
+      platform = resolved;
+    });
   };
 
   const disarm = (): void => {

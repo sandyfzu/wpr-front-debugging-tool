@@ -127,9 +127,9 @@ export interface ProtocolMap {
    */
   openExclusionOverlayOnSenderTab(): ExclusionOverlayOpenOutcome;
   /**
-   * Content script → background (no payload): the palette chord's keyboard
-   * convention. Content scripts cannot call `runtime.getPlatformInfo`, so
-   * the background answers from it; the reply is a closed literal, and a
+   * Content script / DevTools panel → background (no payload): the palette
+   * chord's keyboard convention. Neither can call `runtime.getPlatformInfo`
+   * (Firefox gives DevTools pages none), so the background answers from it; the reply is a closed literal, and a
    * platform-info failure answers `'other'` (logged) rather than rejecting.
    */
   getChordPlatform(): ChordPlatform;

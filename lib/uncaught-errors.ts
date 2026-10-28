@@ -26,6 +26,12 @@
  * throw (`stack`, `message`, string coercion). The last line must never
  * throw out or claim-without-reporting — a failing report degrades to one
  * plain line about the report itself.
+ *
+ * Why the resize-observer loop notice is not an error: browsers fire it as a
+ * script-less `error` event (no `error` object, no source) whenever an
+ * observer's callback changes an observed size within the same frame; the
+ * pending notifications simply arrive one frame later. Claiming it filled
+ * consoles with "Uncaught error" lines for nothing that failed.
  */
 
 import type { Logger } from './logger';
@@ -56,6 +62,25 @@ export function isOwnScriptSource(prefix: string, url: string | undefined): bool
 }
 
 /**
+ * The message browsers (Gecko and Blink alike) give the `error` event they
+ * fire when resize-observer notifications are deferred to the next frame.
+ */
+export const RESIZE_OBSERVER_LOOP_MESSAGE =
+  'ResizeObserver loop completed with undelivered notifications.';
+
+/**
+ * Whether an `error` event is the browser's benign resize-observer loop
+ * notice: exactly its message and no thrown value (a script throwing that
+ * text still carries one and stays reportable).
+ *
+ * @param event The `error` event, or any object carrying its two fields.
+ * @returns True only for the notice itself.
+ */
+export function isResizeObserverLoopNotice(event: Pick<ErrorEvent, 'message' | 'error'>): boolean {
+  return event.message === RESIZE_OBSERVER_LOOP_MESSAGE && (event.error as unknown) == null;
+}
+
+/**
  * The error's stack, hostile-getter safe: cross-world payloads can carry a
  * throwing `stack` getter, and one read feeds both rejection attribution
  * and the pass-along detail, so repeated access can never disagree.
@@ -79,7 +104,9 @@ function readErrorStack(error: unknown): string | undefined {
  * nothing), with the source location, the raw error and its stack as
  * trailing details for consoles that can expand them. Claimed events are
  * cancelled (the native record would double ours). Foreign-source events
- * are skipped untouched: the host page reports its own errors natively.
+ * are skipped untouched: the host page reports its own errors natively. The
+ * resize-observer loop notice ({@link isResizeObserverLoopNotice}) is never
+ * claimed: one debug line per listener, then silence.
  *
  * @param options The surface logger plus the optional own-source prefix.
  * @returns The listener; register it where cleanup is owned — through the
@@ -88,10 +115,18 @@ function readErrorStack(error: unknown): string | undefined {
 export function onUncaughtError(
   options: UncaughtErrorListenerOptions
 ): (event: ErrorEvent) => void {
+  let loopNoticeSeen = false;
   return (event) => {
     const { log, ownPrefix } = options;
     try {
       if (ownPrefix !== undefined && !isOwnScriptSource(ownPrefix, event.filename)) return;
+      if (isResizeObserverLoopNotice(event)) {
+        if (!loopNoticeSeen) {
+          loopNoticeSeen = true;
+          log.debug('Resize observer notifications deferred a frame (benign; logged once)');
+        }
+        return;
+      }
       event.preventDefault();
       const cause: unknown = event.error;
       const summary =

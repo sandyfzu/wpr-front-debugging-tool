@@ -31,8 +31,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 160.9,
-      "gzip": 55.0
+      "raw": 161.2,
+      "gzip": 55.2
     }
   },
   {
@@ -87,7 +87,7 @@
     "surface": "ua-relay content script (isolated world)",
     "globs": ["content-scripts/ua-relay*.js"],
     "maxKb": {
-      "raw": 11
+      "raw": 11.3
     }
   },
   {
@@ -139,7 +139,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1627.4
+      "raw": 1629.0
     }
   }
 ]

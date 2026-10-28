@@ -1,20 +1,17 @@
 /**
  * The palette chord on the page (the shared keydown decision is pinned in
- * `lib/palette-chord/keydown.test.ts`): the platform reply's narrowing, and the trigger
- * over fake seams — watch-first binding resolution, live rebinding, degraded
- * reads, the bounded platform ask and its navigator stand-in, arm / disarm /
+ * `lib/palette-chord/keydown.test.ts`, the platform reply's narrowing in
+ * `lib/palette-chord/platform-ask.test.ts`): the trigger over fake seams —
+ * watch-first binding resolution, live rebinding, degraded reads, the
+ * bounded platform ask and its navigator stand-in, arm / disarm /
  * invalidation of the window listener, the hint, and page safety (a failing
  * handler never throws into the page; an orphaned context never consumes).
  */
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { ChordKeydownFacts } from '../../../lib/palette-chord/keydown';
 import type { PaletteChord } from '../../../lib/storage/palette-chord';
-import {
-  narrowChordPlatform,
-  PLATFORM_ASK_TIMEOUT_MS,
-  startChordTrigger,
-  type ChordTriggerDeps
-} from './chord';
+import { PLATFORM_ASK_TIMEOUT_MS } from '../../../lib/palette-chord/platform-ask';
+import { startChordTrigger, type ChordTriggerDeps } from './chord';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -37,19 +34,6 @@ function keydown(overrides: Partial<ChordKeydownFacts> = {}): ChordKeydownFacts 
     ...overrides
   };
 }
-
-describe('narrowChordPlatform', () => {
-  it.each<[unknown, string]>([
-    ['mac', 'mac'],
-    ['other', 'other'],
-    ['win', 'other'],
-    ['MAC', 'other'],
-    [undefined, 'other'],
-    [{ os: 'mac' }, 'other']
-  ])('%j → %s', (reply, expected) => {
-    expect(narrowChordPlatform(reply)).toBe(expected);
-  });
-});
 
 /** A deferred promise settled by hand. */
 function deferred<T>() {
