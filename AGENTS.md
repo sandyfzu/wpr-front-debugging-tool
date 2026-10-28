@@ -110,7 +110,7 @@ pnpm lint            # eslint — strict typescript-eslint + Solid rules + depen
 pnpm lint:fix        # eslint --fix
 pnpm format          # prettier --write .
 pnpm format:check    # prettier --check .
-pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions)
+pnpm test            # vitest run with coverage — the test gate; thresholds over lib/** + utils/** fail below 90 % (lines/functions/branches)
 pnpm test:watch      # vitest in watch mode (no coverage in the loop)
 pnpm test:coverage   # same as pnpm test, for when `test` is re-pointed later
 pnpm test:e2e        # browser-test tier (tests/e2e/): Playwright, headless Chromium + the unpacked extension; E2E_HEADED=1 for headed, local-only — rebuilds a stale `pnpm build` or fails fast with the diff (`E2E_BUILD_STRICT=1` opts into fail-fast)
@@ -223,7 +223,7 @@ Requirements, not suggestions:
 
 - **Conventional Commits** — enforced by the `commit-msg` hook (`commitlint`); non-conforming messages are rejected. The `pre-commit` hook runs `lint-staged` (eslint --fix + prettier) on staged files with `--no-stash`: worktrees share one `refs/stash` and lint-staged drops its backup by stash index, so a concurrent commit elsewhere could drop the wrong entry; partially staged files stay protected by its patch in the per-worktree git dir (trade-off: a failing task no longer auto-reverts the tree). Hooks are husky v9 — activated by `pnpm install` (`prepare` script).
 - **Semantic Versioning** — bump `package.json` version for every store upload.
-- **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the `known-conflicts DB seed asset` ceiling in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising that one row is expected, never a code regression to hide.
+- **Known Conflicts DB snapshot MUST be re-synced with the server before every release.** `lib/known-conflicts/known-conflicts-db.json` is the offline/first-run fallback seed, and a stale seed ships a blind spot on offline installs; it must mirror the live endpoint (`DB_ENDPOINT` in `entrypoints/background/known-conflicts.ts`) at release time. Refresh it verbatim from that URL, format it with Prettier, then re-pin the row count (the comment in `lib/storage/known-conflicts-seed.ts` + the exact-count assertion in `lib/storage/storage.test.ts`) and re-derive the `known-conflicts DB seed asset (background-owned)` row's ceiling in `scripts/budgets.json` from the new byte size — the payload is server-owned data that grows over time, so raising that one row is expected, never a code regression to hide.
 - Never commit secrets or build output (`.output/`, `.wxt/`).
 
 ## When to update this file
