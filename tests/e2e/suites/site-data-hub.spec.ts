@@ -31,6 +31,12 @@ const TIMED_LOG_PATTERN = /^\[WPR FDT\] Page data processed in \d+(?:\.\d+)? ms$
 /** The page's distinctive content marker (must never appear in our logs). */
 const PAGE_HEADING = 'Debug fixture hub';
 
+/**
+ * Bound for the post-`load` console lines: the pass and the header round trip
+ * normally settle in well under a second; the margin absorbs a busy worker.
+ */
+const ANALYSIS_TIMEOUT_MS = 10_000;
+
 /** Console lines collected from one page. */
 interface ConsoleLine {
   type: string;
@@ -50,14 +56,24 @@ test.describe('site data hub', () => {
       });
     });
 
+    // Both lines print asynchronously after the capture (the analysis waits on
+    // the background's header round trip), so `load` does not imply them: wait
+    // for the analysis line — the sequence's last — before asserting the set.
+    await expect
+      .poll(() => consoleInfo.some((line) => line.text.startsWith(`${LOG_PREFIX} Page analysis`)), {
+        message: 'the organized page-analysis print follows on the real page',
+        timeout: ANALYSIS_TIMEOUT_MS
+      })
+      .toBe(true);
     const timingLog = consoleInfo.filter((line) => TIMED_LOG_PATTERN.test(line.text));
     expect(
       timingLog,
       `one exact timing line (got: ${consoleInfo.map((l) => l.text).join(' | ')})`
     ).toHaveLength(1);
     expect(
-      consoleInfo.some((line) => line.text.startsWith(`${LOG_PREFIX} Page analysis`)),
-      'the organized page-analysis print follows on the real page'
+      consoleInfo.findIndex((line) => TIMED_LOG_PATTERN.test(line.text)) <
+        consoleInfo.findIndex((line) => line.text.startsWith(`${LOG_PREFIX} Page analysis`)),
+      'the organized page-analysis print follows the timing line'
     ).toBe(true);
     await page.page.close();
   });
@@ -76,6 +92,16 @@ test.describe('site data hub', () => {
       p.on('pageerror', (error) => pageErrors.push(error.message));
     });
 
+    // The two mandated lines print asynchronously after `load` (the analysis
+    // waits on the background's header round trip): wait for both, then check
+    // the whole final set.
+    await expect
+      .poll(() => ourLines.length, {
+        message: 'the two mandated lines did print',
+        timeout: ANALYSIS_TIMEOUT_MS
+      })
+      .toBeGreaterThanOrEqual(2);
+
     // Every OUR line is one of the two whitelisted shapes...
     for (const text of ourLines) {
       const whitelisted =
@@ -84,7 +110,6 @@ test.describe('site data hub', () => {
         throw new Error(`Un-whitelisted extension console line: ${text}`);
       }
     }
-    expect(ourLines.length, 'the two mandated lines did print').toBeGreaterThanOrEqual(2);
 
     // ...and none carries page content (the page's heading, or markup).
     for (const text of ourLines) {
