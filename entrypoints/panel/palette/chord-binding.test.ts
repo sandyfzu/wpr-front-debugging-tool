@@ -3,11 +3,13 @@
  * convention resolve, live on rebinding, the convention asked of the
  * background (never `runtime.getPlatformInfo`, which Firefox's DevTools pages
  * lack), an unanswered ask falling back to the navigator's convention, a
- * failed read to the default chord, and stop dropping late answers and
- * unwatching once.
+ * failed read to the default chord, and stop dropping late answers,
+ * clearing the ask's deadline and unwatching once.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { PLATFORM_ASK_TIMEOUT_MS } from '../../../lib/palette-chord/platform-ask';
 import { DEFAULT_PALETTE_CHORD, type PaletteChord } from '../../../lib/storage/palette-chord';
+import type { TimerFunctions } from '../../../utils/context-timers';
 import { createPanelChordBinding, realPanelChordDeps, type PanelChordDeps } from './chord-binding';
 
 const { sendMessage } = vi.hoisted(() => ({
@@ -25,13 +27,17 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 6; i += 1) await Promise.resolve();
 }
 
-/** Seams over a hand-settled read and platform answer (the timer never fires). */
+/** Seams over a hand-settled read and platform answer (the deadline timer never fires). */
 function harness(
   options: { read?: Promise<PaletteChord>; os?: Promise<unknown>; fallback?: 'mac' } = {}
 ) {
   let watcher: ((chord: PaletteChord) => void) | null = null;
   const unwatch = vi.fn();
   const fallbackPlatform = vi.fn(() => options.fallback ?? 'other');
+  const timers = {
+    setTimeout: vi.fn<TimerFunctions['setTimeout']>(() => 7),
+    clearTimeout: vi.fn<TimerFunctions['clearTimeout']>()
+  };
   const deps: PanelChordDeps = {
     readChord: vi.fn(() => options.read ?? Promise.resolve(ALT_P)),
     watchChord: vi.fn((onChange: (chord: PaletteChord) => void) => {
@@ -40,10 +46,16 @@ function harness(
     }),
     askPlatform: vi.fn(() => options.os ?? Promise.resolve('mac')),
     fallbackPlatform,
-    schedule: () => () => undefined,
+    timers,
     log: { warn: vi.fn() }
   };
-  return { deps, unwatch, fallbackPlatform, write: (chord: PaletteChord) => watcher?.(chord) };
+  return {
+    deps,
+    unwatch,
+    fallbackPlatform,
+    timers,
+    write: (chord: PaletteChord) => watcher?.(chord)
+  };
 }
 
 describe('createPanelChordBinding', () => {
@@ -96,6 +108,40 @@ describe('createPanelChordBinding', () => {
     answer('mac');
     h.write(MOD_ALT_O);
     await settle();
+    expect(chord.binding()).toBeNull();
+  });
+
+  it('stop clears a still armed ask deadline, once', async () => {
+    const h = harness({ os: new Promise<unknown>(() => undefined) });
+    const chord = createPanelChordBinding(h.deps);
+    await settle();
+    expect(h.timers.setTimeout).toHaveBeenCalledWith(expect.any(Function), PLATFORM_ASK_TIMEOUT_MS);
+    expect(h.timers.clearTimeout).not.toHaveBeenCalled();
+    chord.stop();
+    chord.stop();
+    expect(h.timers.clearTimeout).toHaveBeenCalledOnce();
+    expect(h.timers.clearTimeout).toHaveBeenCalledWith(7);
+  });
+
+  it('an answered ask clears its deadline before stop', async () => {
+    const h = harness();
+    const chord = createPanelChordBinding(h.deps);
+    await settle();
+    expect(h.timers.clearTimeout).toHaveBeenCalledOnce();
+    chord.stop();
+    expect(h.timers.clearTimeout).toHaveBeenCalledOnce();
+  });
+
+  it('a deadline firing after stop changes nothing', async () => {
+    const h = harness({ os: new Promise<unknown>(() => undefined) });
+    const chord = createPanelChordBinding(h.deps);
+    await settle();
+    const fire = h.timers.setTimeout.mock.calls[0]?.[0];
+    expect(fire).toBeTypeOf('function');
+    chord.stop();
+    fire?.();
+    await settle();
+    expect(h.fallbackPlatform).not.toHaveBeenCalled();
     expect(chord.binding()).toBeNull();
   });
 

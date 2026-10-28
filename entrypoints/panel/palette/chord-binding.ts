@@ -26,18 +26,69 @@ import {
   type PaletteChord
 } from '../../../lib/storage/palette-chord';
 import type { ChordPlatform } from '../../../lib/storage/palette-chord-platform';
+import {
+  contextScheduler,
+  WINDOW_TIMERS,
+  type TimerContext,
+  type TimerFunctions
+} from '../../../utils/context-timers';
 
 /**
- * The binding's seams: the chord store and the platform ask (tests inject
- * doubles; {@link realPanelChordDeps} in production).
+ * The binding's seams: the chord store, the platform ask and the timers its
+ * deadline runs on (tests inject doubles; {@link realPanelChordDeps} in
+ * production). The ask's `schedule` is not a seam: the binding derives it
+ * from `timers`, scoped to its own lifetime.
  */
-export interface PanelChordDeps extends ChordSource, ChordPlatformAsk {}
+export interface PanelChordDeps extends ChordSource, Omit<ChordPlatformAsk, 'schedule'> {
+  /** The platform timers behind the ask's deadline (cleared on stop); the window's by default. */
+  readonly timers?: TimerFunctions;
+}
+
+/** A {@link TimerContext} ended by hand: what the binding's timers die with. */
+interface Lifetime extends TimerContext {
+  /** Invalidate (idempotent): runs and drops every registered cleanup. */
+  end(): void;
+}
+
+/**
+ * Create a lifetime for the binding's timers, so `stop()` clears a still
+ * armed deadline instead of leaving it to fire into a stopped binding.
+ *
+ * @param log Receives a failing cleanup (one never blocks the others).
+ */
+function createLifetime(log: Pick<Logger, 'warn'>): Lifetime {
+  let valid = true;
+  const cleanups = new Set<() => void>();
+  return {
+    get isValid() {
+      return valid;
+    },
+    onInvalidated: (cleanup) => {
+      cleanups.add(cleanup);
+      return () => {
+        cleanups.delete(cleanup);
+      };
+    },
+    end: () => {
+      if (!valid) return;
+      valid = false;
+      for (const cleanup of cleanups) {
+        try {
+          cleanup();
+        } catch (cause) {
+          log.warn('Clearing a palette chord timer failed', cause);
+        }
+      }
+      cleanups.clear();
+    }
+  };
+}
 
 /** The followed binding plus its teardown. */
 export interface PanelChordBinding {
   /** The resolved binding, or null until both the chord and the convention are known. */
   readonly binding: Accessor<ChordBinding | null>;
-  /** Stop following (idempotent); late answers are dropped. */
+  /** Stop following (idempotent): clears the ask's deadline; late answers are dropped. */
   stop(): void;
 }
 
@@ -51,11 +102,14 @@ export function createPanelChordBinding(deps: PanelChordDeps): PanelChordBinding
   const [chord, setChord] = createSignal<PaletteChord | null>(null);
   const [platform, setPlatform] = createSignal<ChordPlatform | null>(null);
   let stopped = false;
+  const lifetime = createLifetime(deps.log);
 
   const unwatch = followPaletteChord(deps, (next) => {
     if (!stopped) setChord(next);
   });
-  void askChordPlatform(deps).then((resolved) => {
+  // The deadline dies with the binding: stop clears it rather than letting it fire.
+  const schedule = contextScheduler(lifetime, deps.timers ?? WINDOW_TIMERS);
+  void askChordPlatform({ ...deps, schedule }).then((resolved) => {
     if (!stopped) setPlatform(resolved);
   });
 
@@ -70,6 +124,7 @@ export function createPanelChordBinding(deps: PanelChordDeps): PanelChordBinding
     stop: () => {
       if (stopped) return;
       stopped = true;
+      lifetime.end();
       try {
         unwatch();
       } catch (cause) {
@@ -82,7 +137,8 @@ export function createPanelChordBinding(deps: PanelChordDeps): PanelChordBinding
 /**
  * The production seams: the validated chord store, the background's
  * `getChordPlatform` answer (`runtime.sendMessage`, which DevTools pages
- * have in every browser) and the navigator stand-in.
+ * have in every browser) and the navigator stand-in; the deadline runs on
+ * the window's timers.
  *
  * @param log The panel's logger.
  */
