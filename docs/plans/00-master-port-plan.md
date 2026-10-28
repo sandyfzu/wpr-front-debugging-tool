@@ -126,7 +126,7 @@ Non-goals retained:i18n until public-distribution need, in-PSI split page (two t
 
 ## 9. Second-baseline acceptance
 
-P11–P14 preserve useful behavior but deliberately change: no incognito-only gate/host-state cookies; per-origin opt-in; stronger per-check fingerprints; no beacon-as-applied claim; panel forms/results+on-page triggers; background-validated fixed endpoint/fetch-before-strip; instance beacon harness suppresses real finalize/write; cleaned optional highlight/observers; all script groups/structured data retained; no chip shortcut (owner decision deferred to P15D). Phase plans own exact proof, not a second checklist here.
+P11–P14 preserve useful behavior but deliberately change: no incognito-only gate/host-state cookies; per-origin opt-in; stronger per-check fingerprints; no beacon-as-applied claim; panel forms/results+on-page triggers; background-validated fixed endpoint/fetch-before-strip; instance beacon harness suppresses real finalize/write; cleaned optional highlight/observers; all script groups/structured data retained; no chip shortcut (owner 2026-10-28). Phase plans own exact proof, not a second checklist here.
 
 ## 10. Coverage/tooling owner
 
