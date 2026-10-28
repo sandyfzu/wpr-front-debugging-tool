@@ -9,7 +9,7 @@
  * The production registration (`initDeviceSimSessions`) is thin wiring by
  * design: these fakes stand in for exactly the `browser.*` calls it binds.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DeviceSimRule, DeviceSimRuleLike } from '../../lib/device-simulation/rule';
 import { deviceSimRule, deviceSimRuleId } from '../../lib/device-simulation/rule';
 import type { DeviceSimState } from '../../lib/device-simulation/state';
@@ -141,6 +141,26 @@ describe('answerGet', () => {
     await expect(model.answerGet({ tab: { id: 3 }, url: '::::' })).resolves.toEqual(UNAVAILABLE);
     expect(store.upserts).toHaveLength(0);
     expect(store.removals).toHaveLength(0);
+  });
+
+  it('a tab-less sender is expected traffic: refused at debug, never warned', async () => {
+    // A content script in a frame no tab hosts (Firefox runs some) asks too.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    try {
+      const { model } = fixture();
+      await expect(
+        model.answerGet({ url: 'https://example.dev/page?q=1', frameId: 0 })
+      ).resolves.toEqual(UNAVAILABLE);
+      expect(warn).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(
+        '[WPR FDT] [device-simulation] Simulation ask from a sender without a tab ignored',
+        { frameId: 0, origin: 'https://example.dev' }
+      );
+    } finally {
+      warn.mockRestore();
+      debug.mockRestore();
+    }
   });
 
   it('refuses everything when the browser has no session DNR', async () => {
