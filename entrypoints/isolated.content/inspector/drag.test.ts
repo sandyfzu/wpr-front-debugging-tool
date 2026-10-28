@@ -12,6 +12,7 @@ import {
   isPointerInitiatedClick,
   DRAG_TUNING,
   type DragBox,
+  type DragController,
   type DragMachineDeps,
   type DragPoint,
   type ViewportSize
@@ -860,6 +861,57 @@ describe('createDragController', () => {
       drag.trackMove({ point: { x: start.x - 100, y: start.y }, pointerId: 1 });
       drag.settle(1);
       expect(drag.restore({ x: -10, y: -10 }), 'after a moved drop').toBe(false);
+      expect(seams.applied.at(-1)).toEqual({ x: -100, y: 0 });
+    });
+
+    it.each([
+      [
+        'cancel()',
+        (drag: DragController): void => {
+          drag.cancel();
+        }
+      ],
+      [
+        'a second pointer’s press',
+        (drag: DragController): void => {
+          drag.beginGrab({ point: { x: 0, y: 0 }, pointerId: 2 });
+        }
+      ]
+    ])('a moved drag ended by %s places nothing: a late restore still applies', (_n, end) => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 100, y: start.y - 50 }, pointerId: 1 });
+      end(drag);
+      expect(drag.isDragging()).toBe(false);
+      expect(drag.settle(1), 'the straggler release after the cancel').toBeNull();
+      expect(drag.restore({ x: -300, y: -200 })).toBe(true);
+      expect(seams.applied.at(-1)).toEqual({ x: -300, y: -200 });
+    });
+
+    it('a click-length press places nothing: a late restore still applies', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x + 2, y: start.y + 2 }, pointerId: 1 });
+      drag.settle(1);
+      expect(drag.restore({ x: -30, y: -20 })).toBe(true);
+    });
+
+    it('a settled moved drop still outranks a late restore after a later cancel', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 100, y: start.y }, pointerId: 1 });
+      drag.settle(1);
+      const next = centerOf(seams.liveBox());
+      drag.beginGrab({ point: next, pointerId: 1 });
+      drag.trackMove({ point: { x: next.x - 50, y: next.y }, pointerId: 1 });
+      drag.cancel();
+      expect(drag.restore({ x: -10, y: -10 })).toBe(false);
       expect(seams.applied.at(-1)).toEqual({ x: -100, y: 0 });
     });
 

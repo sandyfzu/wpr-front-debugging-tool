@@ -729,9 +729,17 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * re-clamp it synchronously — the resting re-clamp reads layout offsets,
    * which are valid mid-entrance, so the corrected position lands in the
    * same task as the render (no frame at the anchor, no visible snap) when
-   * the read already settled. A read landing after the first paint moves the
-   * chrome once, instantly. A later shape change (rows landing, the card
-   * opening) re-clamps through the ordinary containment cycle.
+   * the read already settled.
+   *
+   * Ordering: the read is issued the moment the widget is decided visible,
+   * before the body wait, the shadow host's creation (its stylesheet fetch)
+   * and the appearance read the render itself awaits — so it settles first
+   * in practice, and the restore then runs in the render's own microtasks.
+   * Nothing orders two storage areas' replies, so a read that still loses
+   * moves the chrome once, instantly, after the first paint; the render is
+   * never held for it (a stored hint must not delay the widget). A later
+   * shape change (rows landing, the card opening) re-clamps through the
+   * ordinary containment cycle.
    */
   const restoreRememberedPosition = async (): Promise<void> => {
     const controller = dragController;
@@ -770,7 +778,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   const mountIntoShadow = async (): Promise<void> => {
     try {
-      // The stored position's read runs beside the body wait and the render.
+      // Issued first, ahead of every await the render sits behind (see the restore).
       void readStoredPosition();
       await bodyReady();
       if ((await surface.show(() => visibleNow)) === 'shown') await restoreRememberedPosition();

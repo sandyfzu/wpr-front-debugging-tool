@@ -195,8 +195,10 @@ export interface DragController {
    * Adopt a stored translate as this mount's resting position (the restore
    * leg): applied through the same seam a drag writes, so the wiring's
    * re-clamp then holds it inside the current viewport and shape. Refused
-   * (false, no write) once the user has moved this mount — a live drag or a
-   * settled moved drag outranks a stored hint that arrived late.
+   * (false, no write — never deferred) while a press is live or once a moved
+   * drag of this mount settled: the user's own placement outranks a stored
+   * hint that arrived late. A canceled drag placed nothing (it restored its
+   * pre-drag pose), so it never blocks a later restore.
    *
    * @param position The stored translate (finite CSS px, validated by its store).
    * @returns Whether the position was applied.
@@ -270,8 +272,8 @@ export function createDragController(deps: DragMachineDeps): DragController {
   let clickSuppression = false;
   /** The live drag, or null at rest. */
   let drag: ActiveDrag | null = null;
-  /** Whether a drag of this mount ever moved past the slop (a restore then yields). */
-  let userMoved = false;
+  /** Whether a moved drag of this mount settled (the user placed it; a restore then yields). */
+  let userPlaced = false;
 
   const applyAffordance = (value: boolean): void => {
     if (affordanceOn === value) return;
@@ -309,7 +311,6 @@ export function createDragController(deps: DragMachineDeps): DragController {
         if (Math.hypot(dx, dy) < DRAG_TUNING.moveSlopPx) return;
         // The press became a drag past the slop: only now is it one.
         drag.moved = true;
-        userMoved = true;
         applyAffordance(true);
       }
       const box = deps.readBox();
@@ -340,7 +341,9 @@ export function createDragController(deps: DragMachineDeps): DragController {
       drag = null;
       // The applied translate stays: the dragged position is the commit.
       applyAffordance(false);
-      return moved && applied !== null ? { ...applied } : null;
+      if (!moved) return null;
+      userPlaced = true;
+      return applied !== null ? { ...applied } : null;
     },
 
     cancel() {
@@ -363,7 +366,7 @@ export function createDragController(deps: DragMachineDeps): DragController {
     },
 
     restore(position) {
-      if (drag !== null || userMoved) return false;
+      if (drag !== null || userPlaced) return false;
       applied = { x: position.x, y: position.y };
       deps.applyPosition(applied);
       return true;

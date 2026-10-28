@@ -208,6 +208,36 @@ async function flush(): Promise<void> {
 
 const ORIGIN = (): string => window.location.origin;
 
+/** The four genuinely canceling ends of a live drag, wired as the user triggers them. */
+const CANCEL_PATHS: [string, (root: ShadowRoot, pill: Element) => void][] = [
+  [
+    'Escape',
+    (_root: ShadowRoot, pill: Element): void => {
+      pill.dispatchEvent(
+        trusted(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }))
+      );
+    }
+  ],
+  [
+    'a right-press (contextmenu)',
+    (_root: ShadowRoot, pill: Element): void => {
+      pill.dispatchEvent(trusted(new MouseEvent('contextmenu', { bubbles: true, button: 2 })));
+    }
+  ],
+  [
+    'an OS pointercancel',
+    (_root: ShadowRoot, pill: Element): void => {
+      pointer(pill, 'pointercancel', { x: 0, y: 0 });
+    }
+  ],
+  [
+    'a second pointer',
+    (_root: ShadowRoot, pill: Element): void => {
+      pointer(pill, 'pointerdown', { x: 0, y: 0 }, { pointerId: 2 });
+    }
+  ]
+];
+
 describe('persisting the drop', () => {
   it('a moved drop stores the translate once (release, then its capture loss)', async () => {
     const root = await boot();
@@ -242,47 +272,23 @@ describe('persisting the drop', () => {
     expect(await storedPositions()).toBeUndefined();
   });
 
-  it.each([
-    [
-      'Escape',
-      (_root: ShadowRoot, pill: Element): void => {
-        pill.dispatchEvent(
-          trusted(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }))
-        );
-      }
-    ],
-    [
-      'a right-press (contextmenu)',
-      (_root: ShadowRoot, pill: Element): void => {
-        pill.dispatchEvent(trusted(new MouseEvent('contextmenu', { bubbles: true, button: 2 })));
-      }
-    ],
-    [
-      'an OS pointercancel',
-      (_root: ShadowRoot, pill: Element): void => {
-        pointer(pill, 'pointercancel', { x: 0, y: 0 });
-      }
-    ],
-    [
-      'a second pointer',
-      (_root: ShadowRoot, pill: Element): void => {
-        pointer(pill, 'pointerdown', { x: 0, y: 0 }, { pointerId: 2 });
-      }
-    ]
-  ])('%s restores the pre-drag position and never writes', async (_name, cancel) => {
-    const root = await boot();
-    const pill = part(root, '.ins-pill');
-    const chrome = part(root, '.ins-chrome');
-    pressAndMove(pill, { x: -300, y: -200 });
-    expect(translateOf(chrome)).toEqual({ x: -300, y: -200 });
-    cancel(root, pill);
-    // The drag's own pointer releasing after the cancel commits nothing.
-    pointer(pill, 'pointerup', { x: 0, y: 0 });
-    pointer(pill, 'lostpointercapture', { x: 0, y: 0 });
-    await flush();
-    expect(translateOf(chrome)).toEqual({ x: 0, y: 0 });
-    expect(await storedPositions()).toBeUndefined();
-  });
+  it.each(CANCEL_PATHS)(
+    '%s restores the pre-drag position and never writes',
+    async (_name, cancel) => {
+      const root = await boot();
+      const pill = part(root, '.ins-pill');
+      const chrome = part(root, '.ins-chrome');
+      pressAndMove(pill, { x: -300, y: -200 });
+      expect(translateOf(chrome)).toEqual({ x: -300, y: -200 });
+      cancel(root, pill);
+      // The drag's own pointer releasing after the cancel commits nothing.
+      pointer(pill, 'pointerup', { x: 0, y: 0 });
+      pointer(pill, 'lostpointercapture', { x: 0, y: 0 });
+      await flush();
+      expect(translateOf(chrome)).toEqual({ x: 0, y: 0 });
+      expect(await storedPositions()).toBeUndefined();
+    }
+  );
 
   it('a failed save is logged and leaves the dropped widget where it stands', async () => {
     const root = await boot();
@@ -329,6 +335,25 @@ describe('persisting the drop', () => {
     expect(part(root, '.ins-chrome').classList.contains('ins-open')).toBe(true);
   });
 });
+
+/**
+ * Hold the page's one stored-position read until `release()` (later reads —
+ * the save's own — run free), so a test can act while the read is in flight.
+ */
+function holdPositionRead(): { release: () => void } {
+  const realRead = detectionWidgetPositionsStore.getValue.bind(detectionWidgetPositionsStore);
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(detectionWidgetPositionsStore, 'getValue')
+    .mockImplementationOnce(async () => {
+      await held;
+      return realRead();
+    })
+    .mockImplementation(realRead);
+  return { release };
+}
 
 describe('restoring on mount', () => {
   it('a stored translate is applied with the first render, without a re-settle leg', async () => {
@@ -431,6 +456,41 @@ describe('restoring on mount', () => {
     release();
     await flush();
     expect(translateOf(chrome)).toEqual({ x: -100, y: -40 });
+  });
+
+  it.each(CANCEL_PATHS)(
+    'a drag canceled by %s while the read is in flight still lets the late restore land',
+    async (_name, cancel) => {
+      await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -300, y: -200 } } });
+      const read = holdPositionRead();
+      const root = await boot();
+      const pill = part(root, '.ins-pill');
+      const chrome = part(root, '.ins-chrome');
+      pressAndMove(pill, { x: -100, y: -40 });
+      cancel(root, pill);
+      pointer(pill, 'pointerup', { x: 0, y: 0 });
+      expect(translateOf(chrome)).toEqual({ x: 0, y: 0 });
+      read.release();
+      await vi.waitFor(() => {
+        expect(translateOf(chrome)).toEqual({ x: -300, y: -200 });
+      });
+    }
+  );
+
+  it('a read landing mid-drag is refused, not deferred: the drag keeps the chrome', async () => {
+    await fakeBrowser.storage.local.set({ [POSITIONS]: { [ORIGIN()]: { x: -300, y: -200 } } });
+    const read = holdPositionRead();
+    const root = await boot();
+    const pill = part(root, '.ins-pill');
+    const chrome = part(root, '.ins-chrome');
+    pressAndMove(pill, { x: -100, y: -40 });
+    read.release();
+    await flush();
+    expect(translateOf(chrome)).toEqual({ x: -100, y: -40 });
+    // Canceling afterwards restores the pre-drag anchor; the refused hint stays unapplied.
+    pointer(pill, 'pointercancel', { x: 0, y: 0 });
+    await flush();
+    expect(translateOf(chrome)).toEqual({ x: 0, y: 0 });
   });
 
   it('a hide → show re-mounts where this page last dropped it', async () => {
