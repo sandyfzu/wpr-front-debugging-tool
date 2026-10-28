@@ -31,8 +31,8 @@
     "surface": "isolated content script",
     "globs": ["content-scripts/isolated*.js"],
     "maxKb": {
-      "raw": 158.9,
-      "gzip": 54.4
+      "raw": 160.4,
+      "gzip": 55.0
     }
   },
   {
@@ -139,7 +139,7 @@
     "surface": "whole build (all JS output — ungameable backstop)",
     "globs": ["*.js", "chunks/*.js", "assets/*.js", "content-scripts/*.js"],
     "maxKb": {
-      "raw": 1622.1
+      "raw": 1623.6
     }
   }
 ]

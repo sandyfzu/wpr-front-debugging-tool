@@ -24,6 +24,8 @@ import {
   STORAGE_MECHANISMS,
   createPageCommandExecutors
 } from '../../../lib/page-commands/executors';
+import { WINDOW_TIMERS, contextScheduler } from '../../../utils/context-timers';
+import { isMacPlatform } from '../../../utils/platform';
 import { startChordTrigger } from './chord';
 import { startPaletteModule } from './module';
 import { createNoticeHost } from './notice';
@@ -59,7 +61,10 @@ export function setupCommandPalette(ctx: ContentScriptContext): void {
     target: window,
     readChord: readPaletteChord,
     watchChord: watchPaletteChord,
+    isLive: () => !ctx.isInvalid,
     askPlatform: () => sendMessage('getChordPlatform'),
+    fallbackPlatform: () => (isMacPlatform(navigator) ? 'mac' : 'other'),
+    schedule: contextScheduler(ctx, WINDOW_TIMERS),
     onInvalidated: (cleanup) => {
       ctx.onInvalidated(cleanup);
     },

@@ -8,13 +8,17 @@
  * page and the extension:
  * - the binding (the stored chord + the keyboard convention) resolves on the
  *   first arm — the chord's watch-first read and the background's platform
- *   answer — and follows chord writes live (no reload); until both are known
- *   no keystroke matches;
+ *   answer (bounded; unanswered, the navigator's platform stands in) — and
+ *   follows chord writes live (no reload); until both are known no
+ *   keystroke matches;
  * - the listener exists only while armed (the module arms it with the
  *   `openCommandPalette` receiver while the on-page UI gate is on) and is
  *   removed on disarm (gate off) and with the content script's context;
  * - a match is consumed (`preventDefault` + `stopImmediatePropagation`, so no
- *   page listener after ours acts on it); anything else passes untouched.
+ *   page listener after ours acts on it) — only while the context lives: an
+ *   orphaned script (the extension reloaded under an open tab) lets the
+ *   keystroke through and removes its listener; anything else passes
+ *   untouched.
  *
  * Known limits: page listeners registered on the window's capture phase
  * before the arm see the chord first (the arm waits for the gate read); keys
@@ -24,6 +28,11 @@
  * so a may-type chord pressed there opens the palette instead of typing.
  */
 import type { Logger } from '../../../lib/logger';
+import {
+  boundedAsk,
+  type AskOutcome,
+  type ScheduleTimer
+} from '../../../lib/messaging/bounded-ask';
 import {
   DEFAULT_PALETTE_CHORD,
   chordMayTypeText,
@@ -94,12 +103,15 @@ interface EditableFacts {
   readonly localName?: string;
   readonly type?: unknown;
   readonly isContentEditable?: boolean;
+  readonly ownerDocument?: { readonly designMode?: string } | null;
 }
 
 /**
  * Whether a keydown's target takes typed text: the deepest element on its
  * composed path (inside open shadow roots too) is a `<textarea>`, a text-like
- * `<input>` or editable content (`contenteditable`, inherited by descendants).
+ * `<input>` or editable content (`contenteditable`, inherited by descendants,
+ * or a whole `designMode` document — read directly, since engines disagree
+ * on `isContentEditable` there).
  *
  * @param path The event's `composedPath()` (deepest target first).
  */
@@ -110,6 +122,7 @@ export function isEditableTarget(path: readonly EventTarget[]): boolean {
   );
   if (target === undefined) return false;
   if (target.isContentEditable === true || target.localName === 'textarea') return true;
+  if (target.ownerDocument?.designMode === 'on') return true;
   if (target.localName !== 'input') return false;
   const type = typeof target.type === 'string' ? target.type.toLowerCase() : 'text';
   return !NON_TEXT_INPUT_TYPES.has(type);
@@ -126,16 +139,34 @@ export function narrowChordPlatform(reply: unknown): ChordPlatform {
   return reply === 'mac' ? 'mac' : 'other';
 }
 
+/**
+ * How long the platform ask may stay unanswered before the navigator's
+ * platform stands in. The background answers from one local API call; a
+ * service worker cold start stays well inside this, and a later answer is
+ * dropped (the stand-in agrees with it unless the browser masks its
+ * navigator platform).
+ */
+export const PLATFORM_ASK_TIMEOUT_MS = 2_000;
+
 /** The trigger's seams (the palette module's wiring binds the real ones). */
 export interface ChordTriggerDeps {
   /** Where the capture listener goes (the top frame's window). */
   readonly target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+  /**
+   * Whether the content script's context still lives, read before a match is
+   * consumed (reading it also runs the invalidation cleanup on a dead one).
+   */
+  isLive(): boolean;
   /** Read the validated chord (rejects on a dead context). */
   readChord(): Promise<PaletteChord>;
   /** Follow validated chord writes; returns the unwatch. */
   watchChord(onChange: (chord: PaletteChord) => void): () => void;
   /** Ask the background for the keyboard convention (raw reply; may reject). */
   askPlatform(): Promise<unknown>;
+  /** The navigator's convention: the stand-in when the ask goes unanswered. */
+  fallbackPlatform(): ChordPlatform;
+  /** The ask's deadline timer (cleared with the context). */
+  readonly schedule: ScheduleTimer;
   /** Run cleanup when the context dies. */
   onInvalidated(cleanup: () => void): void;
   readonly log: Logger;
@@ -184,6 +215,11 @@ export function startChordTrigger(deps: ChordTriggerDeps): ChordTrigger {
         isEditableTarget(keydown.composedPath())
       );
       if (action !== 'open') return;
+      // An orphaned script must not take the page's keystroke for nothing.
+      if (!deps.isLive()) {
+        disarm();
+        return;
+      }
       keydown.preventDefault();
       keydown.stopImmediatePropagation();
       fire();
@@ -219,13 +255,35 @@ export function startChordTrigger(deps: ChordTriggerDeps): ChordTrigger {
     })();
     void (async (): Promise<void> => {
       try {
-        platform = narrowChordPlatform(await deps.askPlatform());
+        platform = platformFromOutcome(
+          await boundedAsk({
+            send: () => deps.askPlatform(),
+            parse: narrowChordPlatform,
+            timeoutMs: PLATFORM_ASK_TIMEOUT_MS,
+            schedule: deps.schedule
+          })
+        );
       } catch (cause) {
-        // No receiver (the background restarting) or a dead context.
-        log.warn('Keyboard convention unknown — using the Ctrl convention', cause);
+        // A broken seam (the ask never rejects): the majority convention.
+        log.warn('Keyboard convention unresolved — using the Ctrl convention', cause);
         platform = 'other';
       }
     })();
+  };
+
+  /**
+   * The ask's answer, or the navigator's stand-in when it went unanswered
+   * (no receiver, a failed send, the deadline) — never a fixed guess, which
+   * would kill a macOS ⌘ chord for the page's lifetime.
+   */
+  const platformFromOutcome = (outcome: AskOutcome<ChordPlatform>): ChordPlatform => {
+    if (outcome.kind === 'reply') return outcome.reply;
+    const fallback = deps.fallbackPlatform();
+    log.warn(
+      `Keyboard convention unanswered — using the navigator's (${fallback})`,
+      outcome.kind === 'failed' ? outcome.cause : outcome.kind
+    );
+    return fallback;
   };
 
   const disarm = (): void => {

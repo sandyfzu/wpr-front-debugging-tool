@@ -10,7 +10,8 @@
  * press check), where parity with that library — not the extension's
  * convention — is the point. Keep both: merging them would either make event
  * handlers async or tie the chord to a navigator string instead of the
- * runtime's OS report.
+ * runtime's OS report. The one crossing: a content script whose ask for the
+ * convention goes unanswered uses this read as its stand-in.
  */
 
 /** The navigator facts the platform reads take (tests pass doubles). */

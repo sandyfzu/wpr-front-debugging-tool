@@ -1,11 +1,12 @@
 /**
  * The palette chord on the page: the keydown decision (trusted, unhandled,
  * exact match, may-type chords skipped in editable fields only), the
- * editable-target read over composed paths (open shadow roots included),
- * the platform reply's narrowing, and the trigger over fake seams —
- * watch-first binding resolution, live rebinding, degraded reads, arm /
- * disarm / invalidation of the window listener, the hint, and page safety
- * (a failing handler never throws into the page).
+ * editable-target read over composed paths (open shadow roots included,
+ * `designMode` documents), the platform reply's narrowing, and the trigger
+ * over fake seams — watch-first binding resolution, live rebinding, degraded
+ * reads, the bounded platform ask and its navigator stand-in, arm / disarm /
+ * invalidation of the window listener, the hint, and page safety (a failing
+ * handler never throws into the page; an orphaned context never consumes).
  */
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { PaletteChord } from '../../../lib/storage/palette-chord';
@@ -13,6 +14,7 @@ import {
   chordKeydownAction,
   isEditableTarget,
   narrowChordPlatform,
+  PLATFORM_ASK_TIMEOUT_MS,
   startChordTrigger,
   type ChordBinding,
   type ChordKeydownFacts,
@@ -21,6 +23,7 @@ import {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  document.designMode = 'off';
 });
 
 const ALT_K: PaletteChord = { code: 'KeyK', alt: true };
@@ -136,6 +139,22 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget([target, document.body, document, window])).toBe(expected);
   });
 
+  it('treats every element of a designMode document as editable', () => {
+    const plain = element('<p>x</p>', 'p');
+    expect(isEditableTarget([plain])).toBe(false);
+    document.designMode = 'on';
+    expect(isEditableTarget([plain, document.body])).toBe(true);
+    expect(isEditableTarget([document.body, document, window])).toBe(true);
+    // Without relying on the engine's `isContentEditable` under designMode.
+    const body = { nodeType: 1, localName: 'body', isContentEditable: false };
+    expect(isEditableTarget([{ ...body, ownerDocument: { designMode: 'on' } } as never])).toBe(
+      true
+    );
+    expect(isEditableTarget([{ ...body, ownerDocument: { designMode: 'off' } } as never])).toBe(
+      false
+    );
+  });
+
   it('reads the deepest element, skipping non-element path entries', () => {
     const field = element('<input>', 'input');
     expect(isEditableTarget([document.createTextNode('x'), field, document])).toBe(true);
@@ -203,7 +222,7 @@ function pageKeydown(overrides: Partial<ChordKeydownFacts> = {}, path: EventTarg
 }
 
 /** The trigger over fake seams plus their controls. */
-function harness(options: { platform?: Promise<unknown> } = {}) {
+function harness(options: { platform?: Promise<unknown>; fallback?: 'mac' | 'other' } = {}) {
   const listeners = new Set<(event: Event) => void>();
   const add: Mock<(type: string, listener: unknown, capture: unknown) => void> = vi.fn(
     (_type, listener) => {
@@ -223,17 +242,31 @@ function harness(options: { platform?: Promise<unknown> } = {}) {
   const warn = vi.fn();
   const readChord = vi.fn(() => read.promise);
   const askPlatform = vi.fn(() => options.platform ?? platform.promise);
+  const context = { live: true };
+  const fallbackPlatform = vi.fn(() => options.fallback ?? 'other');
+  /** Pending deadline timers (fired by the test). */
+  const timers: Array<{ run: () => void; ms: number; cancelled: boolean }> = [];
+  const schedule = vi.fn((run: () => void, ms: number) => {
+    const timer = { run, ms, cancelled: false };
+    timers.push(timer);
+    return () => {
+      timer.cancelled = true;
+    };
+  });
   const deps: ChordTriggerDeps = {
     target: {
       addEventListener: add,
       removeEventListener: remove
     },
+    isLive: () => context.live,
     readChord,
     watchChord: vi.fn((onChange: (chord: PaletteChord) => void) => {
       watcher = onChange;
       return unwatch;
     }),
     askPlatform,
+    fallbackPlatform,
+    schedule,
     onInvalidated: (cleanup) => {
       invalidation.push(cleanup);
     },
@@ -251,6 +284,15 @@ function harness(options: { platform?: Promise<unknown> } = {}) {
     platform,
     unwatch,
     warn,
+    context,
+    fallbackPlatform,
+    schedule,
+    /** How many deadlines are still pending (armed, not cancelled). */
+    pendingTimers: () => timers.filter((timer) => !timer.cancelled).length,
+    /** Fire every pending, uncancelled deadline. */
+    expire: () => {
+      for (const timer of timers) if (!timer.cancelled) timer.run();
+    },
     listening: () => listeners.size,
     /** Deliver one keydown to every registered listener. */
     press: (overrides: Partial<ChordKeydownFacts> = {}, path: EventTarget[] = []) => {
@@ -352,21 +394,98 @@ describe('startChordTrigger', () => {
     expect((await resolved(ALT_K, 'win')).trigger.hint()).toBe('Alt+K');
   });
 
-  it('degrades a failed read to the default chord and a failed ask to the Ctrl convention', async () => {
-    const h = harness();
+  it('degrades a failed read to the default chord and an unanswered ask to the navigator’s convention', async () => {
+    const h = harness({ fallback: 'mac' });
     h.trigger.arm(vi.fn());
     h.read.reject(new Error('Extension context invalidated.'));
     h.platform.reject(new Error('Could not establish connection. Receiving end does not exist.'));
     await settle();
-    expect(h.trigger.binding()).toEqual({ chord: { code: 'KeyK', alt: true }, platform: 'other' });
+    expect(h.trigger.binding()).toEqual({ chord: { code: 'KeyK', alt: true }, platform: 'mac' });
     expect(h.warn).toHaveBeenCalledWith(
       'Palette chord unread — using the default',
       new Error('Extension context invalidated.')
     );
     expect(h.warn).toHaveBeenCalledWith(
-      'Keyboard convention unknown — using the Ctrl convention',
-      new Error('Could not establish connection. Receiving end does not exist.')
+      "Keyboard convention unanswered — using the navigator's (mac)",
+      'no-receiver'
     );
+    // A ⌘ chord on macOS stays alive (a fixed Ctrl guess would kill it).
+    h.write(MOD_K);
+    expect(h.trigger.hint()).toBe('⌘K');
+  });
+
+  it('a real ask failure falls back too, logging its cause', async () => {
+    const h = harness({ fallback: 'other' });
+    h.trigger.arm(vi.fn());
+    h.read.resolve(ALT_K);
+    h.platform.reject(new Error('boom'));
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: ALT_K, platform: 'other' });
+    expect(h.warn).toHaveBeenCalledWith(
+      "Keyboard convention unanswered — using the navigator's (other)",
+      new Error('boom')
+    );
+  });
+
+  it('bounds the platform ask: past the deadline the navigator’s convention stands, a late answer is dropped', async () => {
+    const h = harness({ fallback: 'mac' });
+    const onChord = vi.fn();
+    h.trigger.arm(onChord);
+    h.read.resolve(ALT_K);
+    await settle();
+    expect(h.schedule).toHaveBeenCalledWith(expect.any(Function), PLATFORM_ASK_TIMEOUT_MS);
+    expect(h.trigger.binding()).toBeNull();
+    h.expire();
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: ALT_K, platform: 'mac' });
+    expect(h.warn).toHaveBeenCalledWith(
+      "Keyboard convention unanswered — using the navigator's (mac)",
+      'timeout'
+    );
+    h.platform.resolve('other');
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: ALT_K, platform: 'mac' });
+    h.press({ altKey: true });
+    expect(onChord).toHaveBeenCalledOnce();
+  });
+
+  it('an answered ask wins over the navigator and clears its deadline', async () => {
+    const h = await resolved(ALT_K, 'other');
+    expect(h.fallbackPlatform).not.toHaveBeenCalled();
+    expect(h.schedule).toHaveBeenCalledOnce();
+    expect(h.pendingTimers()).toBe(0);
+    h.expire();
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: ALT_K, platform: 'other' });
+  });
+
+  it('a throwing stand-in degrades to the Ctrl convention, never into the page', async () => {
+    const h = harness();
+    h.deps.fallbackPlatform = () => {
+      throw new Error('no navigator');
+    };
+    h.trigger.arm(vi.fn());
+    h.read.resolve(ALT_K);
+    h.platform.reject(new Error('boom'));
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: ALT_K, platform: 'other' });
+    expect(h.warn).toHaveBeenCalledWith(
+      'Keyboard convention unresolved — using the Ctrl convention',
+      new Error('no navigator')
+    );
+  });
+
+  it('an orphaned context lets the chord through and removes the listener', async () => {
+    const h = await resolved();
+    h.context.live = false;
+    // A non-matching key never even reads the context.
+    expect(h.press({ code: 'KeyJ', altKey: true }).preventDefault).not.toHaveBeenCalled();
+    expect(h.listening()).toBe(1);
+    const key = h.press({ altKey: true });
+    expect(key.preventDefault).not.toHaveBeenCalled();
+    expect(key.stopImmediatePropagation).not.toHaveBeenCalled();
+    expect(h.onChord).not.toHaveBeenCalled();
+    expect(h.listening()).toBe(0);
   });
 
   it('a synchronously throwing seam degrades the same way', async () => {
