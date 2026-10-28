@@ -11,6 +11,9 @@
  *   removed; whether it was up (or opening) is remembered.
  * - Gate on: the overlay re-opens if it was up when the gate closed —
  *   never because of a boot-only reason (the record is spent).
+ * - Opens: one at a time, refused while the gate is off or unknown; an
+ *   open the gate crossed mid-flight is dropped, and restarted once the
+ *   gate is back (`createOpenGuard`).
  */
 import type { Logger } from '../../../lib/logger';
 import type { GatedSurfaceHooks } from '../../../lib/page-ui/gated-surface';
@@ -78,6 +81,89 @@ export function createOverlayGate(deps: OverlayGateDeps): OverlayGate {
       reopenOnResume = deps.isOpen() || deps.opening();
       if (deps.isOpen()) deps.close();
       deps.unmount();
+    }
+  };
+}
+
+/** What the open guard reads. */
+export interface OpenGuardDeps {
+  /** Whether the overlay's gated surface runs. */
+  running(): boolean;
+  /** Whether the content script's context is dead. */
+  isInvalid(): boolean;
+}
+
+/** One open in flight. */
+export interface OpenTicket {
+  /**
+   * Whether the gate cut this open since it began (it closed, or closed
+   * and came back: the view was removed meanwhile). A cut open is
+   * abandoned — the caller drops it after cleaning up.
+   */
+  cut(): boolean;
+}
+
+/** Why an open did not start. */
+export type OpenRefusal = 'busy' | 'page-ui-off';
+
+/** The overlay's open serialization under the gate. */
+export interface OpenGuard {
+  /**
+   * Start an open: refused while the overlay is open or an open is in
+   * flight (`busy`: concurrent triggers collapse into one open) and while
+   * the surface does not run (`page-ui-off`: the gate outranks every
+   * trigger; unknown counts as off).
+   */
+  begin(isOpen: boolean): OpenTicket | OpenRefusal;
+  /** Whether an open is in flight. */
+  inFlight(): boolean;
+  /** The overlay's host was removed: every open in flight is stale. */
+  viewRemoved(): void;
+  /**
+   * End an open (always, in `finally`).
+   *
+   * @returns Whether to open again: the open was cut and the gate is
+   *   already back on (the gate-on's re-open met this open in flight and
+   *   was absorbed by the `busy` refusal).
+   */
+  end(ticket: OpenTicket): boolean;
+}
+
+/**
+ * Build the overlay's open guard.
+ *
+ * @param deps The gate and context reads.
+ * @returns The guard, idle.
+ */
+export function createOpenGuard(deps: OpenGuardDeps): OpenGuard {
+  let inFlight = false;
+  /** Bumped by every host removal. */
+  let viewEpoch = 0;
+  /** The tickets cut so far (the one in flight, at most). */
+  const abandoned = new WeakSet<OpenTicket>();
+
+  return {
+    begin(isOpen) {
+      if (isOpen || inFlight) return 'busy';
+      if (!deps.running()) return 'page-ui-off';
+      inFlight = true;
+      const epoch = viewEpoch;
+      const ticket: OpenTicket = {
+        cut() {
+          if (deps.running() && epoch === viewEpoch) return false;
+          abandoned.add(ticket);
+          return true;
+        }
+      };
+      return ticket;
+    },
+    inFlight: () => inFlight,
+    viewRemoved() {
+      viewEpoch += 1;
+    },
+    end(ticket) {
+      inFlight = false;
+      return abandoned.has(ticket) && deps.running() && !deps.isInvalid();
     }
   };
 }

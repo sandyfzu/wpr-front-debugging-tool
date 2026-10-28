@@ -3,11 +3,13 @@
  * gated-surface machine and the real restore record helpers: a gate-off
  * boot consumes the record and opens nothing (and a later gate-on does not
  * resurrect it), a gate-on boot honors the record / auto-flow, a live off
- * closes + unmounts and a live on re-opens only what was up.
+ * closes + unmounts and a live on re-opens only what was up; the open
+ * guard serializes opens, refuses while off, cuts an open the gate crossed
+ * and restarts it only when the gate is already back.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createGatedSurface } from '../../../lib/page-ui/gated-surface';
-import { createOverlayGate } from './page-ui-gate';
+import { createOpenGuard, createOverlayGate, type OpenTicket } from './page-ui-gate';
 import { SBS_OPEN_STATE_KEY, markOverlayOpen, type OpenStateWindow } from './session-open';
 
 const PAGE = 'https://site.test/page';
@@ -155,5 +157,91 @@ describe('live', () => {
     await vi.waitFor(() => {
       expect(h.error).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('createOpenGuard', () => {
+  /** A guard over a switchable gate and context. */
+  function guardHarness() {
+    let running = true;
+    let invalid = false;
+    const guard = createOpenGuard({ running: () => running, isInvalid: () => invalid });
+    return {
+      guard,
+      setRunning: (next: boolean) => {
+        running = next;
+      },
+      invalidate: () => {
+        invalid = true;
+      }
+    };
+  }
+
+  /** Begin an open that must start. */
+  function started(guard: ReturnType<typeof createOpenGuard>): OpenTicket {
+    const ticket = guard.begin(false);
+    if (typeof ticket === 'string') throw new Error(`open refused: ${ticket}`);
+    return ticket;
+  }
+
+  it('refuses while the gate is off (or unknown), without marking an open in flight', () => {
+    const h = guardHarness();
+    h.setRunning(false);
+    expect(h.guard.begin(false)).toBe('page-ui-off');
+    expect(h.guard.inFlight()).toBe(false);
+  });
+
+  it('collapses concurrent triggers into one open, and refuses over an open overlay', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    expect(h.guard.inFlight()).toBe(true);
+    expect(h.guard.begin(false)).toBe('busy');
+    expect(h.guard.end(ticket)).toBe(false);
+    expect(h.guard.inFlight()).toBe(false);
+    expect(h.guard.begin(true)).toBe('busy');
+  });
+
+  it('lets an uncrossed open continue to the end (no restart)', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    expect(ticket.cut()).toBe(false);
+    expect(h.guard.end(ticket)).toBe(false);
+  });
+
+  it('cuts an open while the gate is off and does not restart it while off', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    h.setRunning(false);
+    expect(ticket.cut()).toBe(true);
+    expect(h.guard.end(ticket)).toBe(false);
+  });
+
+  it('cuts an open the view removal crossed even though the gate is back, then restarts it', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    // off → host removed → on, all while the open awaited.
+    h.guard.viewRemoved();
+    expect(ticket.cut()).toBe(true);
+    expect(h.guard.end(ticket)).toBe(true);
+    // A fresh open after the removal is not stale.
+    const next = started(h.guard);
+    expect(next.cut()).toBe(false);
+  });
+
+  it('never restarts on a dead context', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    h.guard.viewRemoved();
+    expect(ticket.cut()).toBe(true);
+    h.invalidate();
+    expect(h.guard.end(ticket)).toBe(false);
+  });
+
+  it('does not restart an open that ended uncut even if the view was removed after its last check', () => {
+    const h = guardHarness();
+    const ticket = started(h.guard);
+    expect(ticket.cut()).toBe(false);
+    h.guard.viewRemoved();
+    expect(h.guard.end(ticket)).toBe(false);
   });
 });

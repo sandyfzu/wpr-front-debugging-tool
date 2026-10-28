@@ -53,7 +53,7 @@ import {
 } from '../../../lib/storage/inspector-origins';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
-import { PAGE_UI_GATE_SOURCE } from '../../../lib/page-ui/gate-follower';
+import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import type { DragBox, DragController, DragMachineDeps } from './drag';
 import { createDragController, isPointerInitiatedClick } from './drag';
@@ -715,24 +715,14 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * gate never touches. The widget's boot moment is now (the mount waits
    * for the body itself).
    */
-  const pageUi = followGatedSurface(
-    {
-      source: PAGE_UI_GATE_SOURCE,
-      isInvalid: invalidNow,
-      onInvalidated: (cleanup) => {
-        ctx.onInvalidated(cleanup);
-      },
-      log
+  const pageUi = followGatedSurface(pageUiGateDeps(ctx, log), {
+    start: () => {
+      applyVisible(widgetVisible(true, siteEnabled));
     },
-    {
-      start: () => {
-        applyVisible(widgetVisible(true, siteEnabled));
-      },
-      stop: () => {
-        applyVisible(false);
-      }
+    stop: () => {
+      applyVisible(false);
     }
-  );
+  });
   pageUi.pageReady();
 
   /** Record this origin's effective opt-in and re-decide the widget. */

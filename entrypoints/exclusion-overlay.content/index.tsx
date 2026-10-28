@@ -45,7 +45,7 @@ import {
   holdStartingOverlay,
   type StartingOverlay
 } from '../../lib/exclusion-session/overlay-slot';
-import { PAGE_UI_GATE_SOURCE, followPageUiGate } from '../../lib/page-ui/gate-follower';
+import { endWhenPageUiOff, pageUiGateDeps } from '../../lib/page-ui/gate-follower';
 import './styles.css';
 
 const log = createLogger('exclusion-overlay');
@@ -205,21 +205,11 @@ export default defineContentScript({
     ctx.onInvalidated(() => {
       slot.release();
     });
-    followPageUiGate(
-      {
-        source: PAGE_UI_GATE_SOURCE,
-        isInvalid: () => ctx.isInvalid,
-        onInvalidated: (cleanup) => {
-          ctx.onInvalidated(cleanup);
-        },
-        log
-      },
-      (enabled) => {
-        // Ends this instance (UI, listeners, slot) without reporting a fold:
-        // the session tab's remembered presentation is what comes back.
-        if (!enabled) ctx.abort('On-page UI turned off');
-      }
-    );
+    // A gate-off ends this instance (UI, listeners, slot) without reporting
+    // a fold: the session tab's remembered presentation is what comes back.
+    endWhenPageUiOff(pageUiGateDeps(ctx, log), (reason) => {
+      ctx.abort(reason);
+    });
     const reportFailure = (cause: unknown): void => {
       // A failed mount must not hold opens up: leave the slot.
       slot.release();

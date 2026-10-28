@@ -60,13 +60,13 @@ import {
 import { isHttpUrl } from '../../../utils/urls';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
 import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
-import { PAGE_UI_GATE_SOURCE } from '../../../lib/page-ui/gate-follower';
+import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { getOverlayUrls, importedSiteUrl, psiEntryUrl } from './urls';
 import type { CompareUrls } from './urls';
 import { isPsiHost } from '../../../lib/side-by-side/analysis-host';
 import { createScrollSyncSession } from './sync-session';
 import { markOverlayClosed, markOverlayOpen } from './session-open';
-import { createOverlayGate } from './page-ui-gate';
+import { createOpenGuard, createOverlayGate } from './page-ui-gate';
 import {
   createFramePresenter,
   engineRescaleFactory,
@@ -352,10 +352,14 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   };
 
   /**
-   * Bumped by every host removal: an open in flight across one (a gate
-   * off, even if it is already back on) is stale — its view is gone.
+   * Serializes the opens under the gate: a host removal (a gate off, even
+   * if it is already back on) makes an open in flight stale — its view is
+   * gone.
    */
-  let viewEpoch = 0;
+  const openGuard = createOpenGuard({
+    running: () => pageUi.running(),
+    isInvalid: () => ctx.isInvalid
+  });
 
   /**
    * Remove the overlay's host (the gate closed): the next open mounts a
@@ -363,7 +367,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
    * the page's scroll baseline are kept (same page).
    */
   const unmountView = (): void => {
-    viewEpoch += 1;
+    openGuard.viewRemoved();
     ui?.remove();
     ui = null;
     viewMounted = Promise.resolve(false);
@@ -386,22 +390,16 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
   };
 
   /** The single open path for both the context menu and the auto-open. */
-  let openInFlight = false;
   const openOverlay = async (): Promise<void> => {
     // The two boot triggers (the carried flow and the reload restore) and
     // the context menu can fire close together: the guard serializes them
-    // to exactly one open.
-    if (isOpen() || openInFlight) return;
-    if (!pageUi.running()) {
-      // Off (or not known yet): the gate outranks every trigger.
+    // to exactly one open, and refuses while the gate is off (or unknown).
+    const ticket = openGuard.begin(isOpen());
+    if (ticket === 'busy') return;
+    if (ticket === 'page-ui-off') {
       log.info('Side-by-Side not opened: on-page UI is off on this page');
       return;
     }
-    openInFlight = true;
-    const epoch = viewEpoch;
-    /** Whether the gate closed (and maybe re-opened) since this open began. */
-    const cut = (): boolean => !pageUi.running() || epoch !== viewEpoch;
-    let abandoned = false;
     try {
       // First open: capture the scroll baseline and resolve the URL pair once.
       if (urls === null) {
@@ -435,14 +433,10 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       // The simulation's ask — and any rule transition it commands — settles
       // BEFORE the view can mount: a first open's halves navigate only after
       // the rule exists, exactly the machine's rule-before-refresh ordering.
-      if (cut()) {
-        abandoned = true;
-        return;
-      }
+      if (ticket.cut()) return;
       const psi = isAutoFlowPage();
       await simMachine.open(psi, simTarget, desktopTarget);
-      if (cut()) {
-        abandoned = true;
+      if (ticket.cut()) {
         await abandonOpen();
         return;
       }
@@ -453,8 +447,7 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       // guard would then keep a "running" engine deaf to the halves until a
       // switch cycle re-armed it (the reported default-on regression).
       const mounted = await viewMounted;
-      if (cut()) {
-        abandoned = true;
+      if (ticket.cut()) {
         await abandonOpen();
         return;
       }
@@ -485,11 +478,9 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
       if (syncOn() && !psi) startSync();
       show();
     } finally {
-      openInFlight = false;
-      // The gate closed and is already back on: the gate-on's re-open met
-      // this open in flight and was absorbed, so the dropped open starts
+      // The gate closed and is already back on: the dropped open starts
       // afresh (its view was removed with the gate-off).
-      if (abandoned && pageUi.running() && !ctx.isInvalid) {
+      if (openGuard.end(ticket)) {
         openOverlay().catch((cause: unknown) => {
           log.error('Re-opening the overlay after the gate came back failed', cause);
         });
@@ -654,24 +645,14 @@ export function setupSideBySide(ctx: ContentScriptContext): void {
     href: () => window.location.href,
     autoFlowPage: isAutoFlowPage,
     isOpen,
-    opening: () => openInFlight,
+    opening: () => openGuard.inFlight(),
     open: openOverlay,
     close,
     unmount: unmountView,
     isInvalid: () => ctx.isInvalid,
     log
   });
-  const pageUi = followGatedSurface(
-    {
-      source: PAGE_UI_GATE_SOURCE,
-      isInvalid: () => ctx.isInvalid,
-      onInvalidated: (cleanup) => {
-        ctx.onInvalidated(cleanup);
-      },
-      log
-    },
-    overlayGate
-  );
+  const pageUi = followGatedSurface(pageUiGateDeps(ctx, log), overlayGate);
 
   /** The boot moment: the restore record is consumed, then the gate decides. */
   const bootReady = (): void => {

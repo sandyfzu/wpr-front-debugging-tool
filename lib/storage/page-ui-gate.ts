@@ -15,8 +15,10 @@
  * Turning the gate off therefore also turns off the on-page palette — the
  * browser's context menu (outside the page, outside the gate) is the way
  * back. Default on: a fresh install, a removed key, and any corrupt or
- * foreign stored value all read as on, so the tool never goes dark by
- * accident.
+ * foreign stored value all read as on, so stored data never darkens the
+ * tool by accident. A read that fails outright (retried once; realistically
+ * only a dead extension context) is not a value: the page's surfaces stay
+ * hidden until the gate's next write rather than mount on a guess.
  */
 import { storage } from 'wxt/utils/storage';
 

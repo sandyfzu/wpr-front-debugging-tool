@@ -37,18 +37,13 @@ import { isHttpUrl } from '../../../utils/urls';
 import { debounce, type DebouncedFunction } from '../../../utils/debounce';
 import { createLogger } from '../../../lib/logger';
 import { mountShadowUi } from '../../../components/injected-ui/mount';
-import { followGatedSurface, type GatedSurfaceStart } from '../../../lib/page-ui/gated-surface';
-import { PAGE_UI_GATE_SOURCE } from '../../../lib/page-ui/gate-follower';
+import { followGatedSurface } from '../../../lib/page-ui/gated-surface';
+import { pageUiGateDeps } from '../../../lib/page-ui/gate-follower';
 import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
-import {
-  dbRowsUsable,
-  emptyStateVisible,
-  mergeFindings,
-  passSettled,
-  surfaceChanged
-} from './scan-state';
+import { createScanFlow } from './scan-flow';
+import { dbRowsUsable, emptyStateVisible, mergeFindings, surfaceChanged } from './scan-state';
 import { KnownConflictsView, type KnownConflictsUiState } from './ui';
 import './known-conflicts.css';
 
@@ -103,8 +98,6 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   let accumulated: readonly KnownConflict[] = [];
   /** Most recent pathname; a change re-baselines the scan state. */
   let currentPathname = initialUrl.pathname;
-  /** True once the plugins screen's bounded late pass has run. */
-  let wpPassesSettled = initialMode === 'helpscout';
   /**
    * Whether a usable DB verdict has landed (the scan machine's plain fact,
    * mirrored to the view's `loading` state at the same write sites — the
@@ -266,16 +259,14 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
   };
 
   /**
-   * One scan pass against the current URL's surface. A pathname change
-   * re-baselines first: accumulated findings clear (the previous ticket's
-   * rows must not bleed into the next one) and the widget resets to its
-   * fresh-opened shape; leaving both modes unmounts the UI entirely and
-   * disconnects the observer.
+   * One scan pass against the current URL's surface (only ever reached
+   * through the flow's gated `scan`). A pathname change re-baselines first:
+   * accumulated findings clear (the previous ticket's rows must not bleed
+   * into the next one) and the widget resets to its fresh-opened shape;
+   * leaving both modes unmounts the UI entirely and disconnects the
+   * observer.
    */
-  const runScan = (): void => {
-    // Scans exist for the card only: none while the on-page UI gate is off
-    // (a gate-on rescans and re-baselines from the URL then).
-    if (!pageUi.running()) return;
+  const scanPass = (): void => {
     const url = new URL(window.location.href);
     const pathnameChanged = surfaceChanged(currentPathname, url.pathname);
     currentPathname = url.pathname;
@@ -299,74 +290,45 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
     accumulated = mergeFindings(accumulated, found);
     setState({
       findings: accumulated,
-      scannedEmpty: emptyStateVisible(accumulated, passSettled(mode, wpPassesSettled), !dbResolved)
+      scannedEmpty: emptyStateVisible(accumulated, flow.settled(), !dbResolved)
     });
     if (shadowUi === null) void mountIntoShadow();
   };
 
-  /**
-   * The plugins screen's bounded two-pass flow: the `load` pass plus one
-   * late pass. The empty state is shown as final only once the late pass
-   * has RUN — settling when the pass is scheduled would let a DB write in
-   * that window render it before the late pass had its chance.
-   */
-  const initialWpScan = (): void => {
-    if (ctx.isInvalid) return;
-    runScan();
-    if (wpPassesSettled) return;
-    later(() => {
-      // Invalidation-cancelled: the flow stays unsettled (nothing scans,
-      // nothing shows a final verdict). A gate-off meanwhile settles the
-      // flow and scans nothing (the guard in `runScan`).
-      if (ctx.isInvalid) return;
-      wpPassesSettled = true;
-      runScan();
-    }, WP_RESCAN_DELAY_MS);
-  };
-
-  /**
-   * Start (or resume) scanning: the page's own first-scan flow at boot, an
-   * immediate rescan on a gate-on (no waiting on a debounce: the page is
-   * already settled).
-   *
-   * @param cause Boot, or a gate-on after a gate-off.
-   */
-  const startScanning = (cause: GatedSurfaceStart): void => {
-    if (ctx.isInvalid) return;
-    if (initialMode === 'wp-admin') {
-      if (cause === 'boot') initialWpScan();
-      else runScan();
-      return;
-    }
-    hsObserver?.observe(document.body, { subtree: true, childList: true });
-    if (cause === 'boot') rescanDebounced?.();
-    else runScan();
-  };
-
-  /**
-   * Stop scanning and remove the card (the gate closed): the observer
-   * disconnects, a pending rescan is dropped, the card resets to its
-   * fresh shape for the next show. Findings stay (same page).
-   */
-  const stopScanning = (): void => {
-    hsObserver?.disconnect();
-    rescanDebounced?.cancel();
+  /** Remove the card (the gate closed) and reset it for the next show. */
+  const removeCard = (): void => {
     shadowUi?.remove();
     shadowUi = null;
     navigationReset();
   };
 
-  const pageUi = followGatedSurface(
-    {
-      source: PAGE_UI_GATE_SOURCE,
-      isInvalid: () => ctx.isInvalid,
-      onInvalidated: (cleanup) => {
-        ctx.onInvalidated(cleanup);
-      },
-      log
+  const flow = createScanFlow({
+    mode: initialMode,
+    latePassDelayMs: WP_RESCAN_DELAY_MS,
+    running: () => pageUi.running(),
+    isInvalid: () => ctx.isInvalid,
+    pass: scanPass,
+    later,
+    observe: () => {
+      hsObserver?.observe(document.body, { subtree: true, childList: true });
     },
-    { start: startScanning, stop: stopScanning }
-  );
+    disconnect: () => {
+      hsObserver?.disconnect();
+    },
+    rescanSoon: () => {
+      rescanDebounced?.();
+    },
+    cancelRescan: () => {
+      rescanDebounced?.cancel();
+    },
+    removeCard
+  });
+  const runScan = flow.scan;
+
+  const pageUi = followGatedSurface(pageUiGateDeps(ctx, log), {
+    start: flow.start,
+    stop: flow.stop
+  });
 
   void bootstrap();
 

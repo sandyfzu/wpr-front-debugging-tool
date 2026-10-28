@@ -8,10 +8,12 @@ import { describe, expect, it } from 'vitest';
 import {
   dbRowsUsable,
   emptyStateVisible,
+  latePassDue,
   loadingCopyVisible,
   markerMood,
   mergeFindings,
   passSettled,
+  scanStartPlan,
   surfaceChanged
 } from './scan-state';
 import type { KnownConflict } from '../../../lib/storage/known-conflicts';
@@ -128,5 +130,33 @@ describe('markerMood', () => {
 
   it('turns calm green only on a served, settled zero verdict', () => {
     expect(markerMood([], false)).toBe('clear');
+  });
+});
+
+describe('scanStartPlan', () => {
+  it('boots the plugins screen into its two-pass flow', () => {
+    expect(scanStartPlan('wp-admin', 'boot', false)).toBe('two-pass');
+  });
+
+  it('resumes into the two-pass flow while the late pass has not run (gate-off boot)', () => {
+    // A single pass could never settle the flow: the card would stay blank.
+    expect(scanStartPlan('wp-admin', 'resume', false)).toBe('two-pass');
+  });
+
+  it('resumes a settled plugins screen with one pass at once', () => {
+    expect(scanStartPlan('wp-admin', 'resume', true)).toBe('now');
+  });
+
+  it('boots HelpScout on the debounce and resumes it at once', () => {
+    expect(scanStartPlan('helpscout', 'boot', false)).toBe('debounced');
+    expect(scanStartPlan('helpscout', 'resume', false)).toBe('now');
+  });
+});
+
+describe('latePassDue', () => {
+  it('schedules only when the late pass neither ran nor is pending', () => {
+    expect(latePassDue(false, false)).toBe(true);
+    expect(latePassDue(false, true)).toBe(false);
+    expect(latePassDue(true, false)).toBe(false);
   });
 });

@@ -7,11 +7,13 @@
  * deduplicated (a same-value rewrite or a foreign write re-delivering the
  * current value applies nothing) and only while the context lives.
  *
- * A boot read that rejects leaves the gate unknown: the consumer mounts
- * nothing on a guess and follows the gate's next write. An invalidated
- * context (extension reload) stops the watch and silences every late
- * delivery.
+ * A boot read that rejects is retried once, at once (no timer: a storage
+ * read either answers or the context is dying); a second rejection leaves
+ * the gate unknown — the consumer mounts nothing on a guess and follows the
+ * gate's next write. An invalidated context (extension reload) stops the
+ * watch and silences every late delivery.
  */
+import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type { Logger } from '../logger';
 import { readPageUiEnabled, watchPageUiGate } from '../storage/page-ui-gate';
 
@@ -91,15 +93,73 @@ export function followPageUiGate(
     unwatch = null;
   });
 
-  deps.source
-    .read()
-    .then((enabled) => {
-      if (!written) deliver(enabled);
-    })
-    .catch((cause: unknown) => {
-      if (deps.isInvalid()) return;
-      log.warn('Reading the on-page UI gate failed — waiting for its next change', cause);
-    });
+  /** Whether the read is moot: a write already decided, or the context died. */
+  const readMoot = (): boolean => written || deps.isInvalid();
+
+  /** One boot read; a rejection is retried once, then waits for a write. */
+  const readOnce = (attempt: 1 | 2): void => {
+    deps.source
+      .read()
+      .then((enabled) => {
+        if (!written) deliver(enabled);
+      })
+      .catch((cause: unknown) => {
+        if (readMoot()) return;
+        if (attempt === 1) {
+          readOnce(2);
+          return;
+        }
+        log.warn('Reading the on-page UI gate failed twice — waiting for its next change', cause);
+      });
+  };
+  readOnce(1);
 
   return { current: () => current };
+}
+
+/**
+ * The follower deps of a content script: the real gate item, the context's
+ * liveness and teardown, the module's logger — the one literal every gated
+ * surface shares.
+ *
+ * @param ctx The content script's context.
+ * @param log The surface's logger.
+ * @returns Deps for {@link followPageUiGate} (and the gated-surface machine).
+ */
+export function pageUiGateDeps(
+  ctx: Pick<ContentScriptContext, 'isInvalid' | 'onInvalidated'>,
+  log: Pick<Logger, 'warn' | 'error'>
+): PageUiGateFollowerDeps {
+  return {
+    source: PAGE_UI_GATE_SOURCE,
+    isInvalid: () => ctx.isInvalid,
+    onInvalidated: (cleanup) => {
+      ctx.onInvalidated(cleanup);
+    },
+    log
+  };
+}
+
+/** Why an instance ended on the gate (the abort reason). */
+export const PAGE_UI_OFF_REASON = 'On-page UI turned off';
+
+/**
+ * Follow the gate for a surface instance that only lives while it is on
+ * (an injected overlay): the first off value — the boot read or a write,
+ * e.g. one racing the injection — ends it, once.
+ *
+ * @param deps The gate source and the host's lifecycle.
+ * @param end Ends the instance (receives {@link PAGE_UI_OFF_REASON}).
+ * @returns The follower.
+ */
+export function endWhenPageUiOff(
+  deps: PageUiGateFollowerDeps,
+  end: (reason: string) => void
+): PageUiGateFollower {
+  let ended = false;
+  return followPageUiGate(deps, (enabled) => {
+    if (enabled || ended) return;
+    ended = true;
+    end(PAGE_UI_OFF_REASON);
+  });
 }

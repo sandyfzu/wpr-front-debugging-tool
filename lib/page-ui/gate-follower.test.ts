@@ -1,8 +1,8 @@
 /**
  * The gate follower over a fake source: arm-first ordering (a write during
- * the boot read wins, never lost), dedupe, storage failure paths (read
- * rejection waits for the next write, a throwing watch still boots from
- * the read), a throwing consumer contained, invalidation (unwatch, late
+ * the boot read wins, never lost), dedupe, storage failure paths (a
+ * rejected read is retried once, then waits for the next write; a throwing
+ * watch still boots from the read), a throwing consumer contained, invalidation (unwatch, late
  * deliveries dropped) — and the real item end to end (missing/corrupt →
  * default on).
  */
@@ -11,7 +11,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PAGE_UI_GATE_KEY } from '../storage/page-ui-gate';
 import {
   PAGE_UI_GATE_SOURCE,
+  PAGE_UI_OFF_REASON,
+  endWhenPageUiOff,
   followPageUiGate,
+  pageUiGateDeps,
   type PageUiGateFollowerDeps,
   type PageUiGateSource
 } from './gate-follower';
@@ -175,6 +178,121 @@ describe('followPageUiGate', () => {
       h.invalidate();
     }).not.toThrow();
     expect(h.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A host whose reads answer from a script, in order (one entry per read). */
+function scriptedReads(answers: ReadonlyArray<boolean | Error>) {
+  let index = 0;
+  let listener: ((enabled: boolean) => void) | null = null;
+  const read = vi.fn(() => {
+    const answer = answers[index];
+    index += 1;
+    if (answer === undefined) return new Promise<boolean>(() => undefined);
+    return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
+  });
+  const warn = vi.fn();
+  const deps: PageUiGateFollowerDeps = {
+    source: {
+      watch: (onChange) => {
+        listener = onChange;
+        return () => undefined;
+      },
+      read
+    },
+    isInvalid: () => false,
+    onInvalidated: () => undefined,
+    log: { warn, error: vi.fn() }
+  };
+  return { deps, read, warn, write: (enabled: boolean) => listener?.(enabled) };
+}
+
+describe('followPageUiGate — read retry', () => {
+  it('retries a rejected boot read once and applies its answer', async () => {
+    const h = scriptedReads([new Error('blip'), true]);
+    const apply = vi.fn();
+    followPageUiGate(h.deps, apply);
+    await settle();
+    expect(h.read).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledWith(true);
+    expect(h.warn).not.toHaveBeenCalled();
+  });
+
+  it('gives up after the second rejection (one warn, nothing applied)', async () => {
+    const h = scriptedReads([new Error('down'), new Error('still down')]);
+    const apply = vi.fn();
+    followPageUiGate(h.deps, apply);
+    await settle();
+    expect(h.read).toHaveBeenCalledTimes(2);
+    expect(apply).not.toHaveBeenCalled();
+    expect(h.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry once a write decided the gate', async () => {
+    const h = scriptedReads([new Error('blip'), true]);
+    const apply = vi.fn();
+    followPageUiGate(h.deps, apply);
+    h.write(false);
+    await settle();
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(apply.mock.calls).toEqual([[false]]);
+  });
+});
+
+describe('pageUiGateDeps', () => {
+  it('binds the real source, the context liveness and teardown, and the logger', () => {
+    const cleanups: Array<() => void> = [];
+    const ctx = {
+      isInvalid: false,
+      onInvalidated: (cleanup: () => void) => {
+        cleanups.push(cleanup);
+        return () => undefined;
+      }
+    };
+    const log = { warn: vi.fn(), error: vi.fn() };
+    const deps = pageUiGateDeps(ctx, log);
+    expect(deps.source).toBe(PAGE_UI_GATE_SOURCE);
+    expect(deps.log).toBe(log);
+    expect(deps.isInvalid()).toBe(false);
+    ctx.isInvalid = true;
+    expect(deps.isInvalid()).toBe(true);
+    const cleanup = vi.fn();
+    deps.onInvalidated(cleanup);
+    expect(cleanups).toEqual([cleanup]);
+  });
+});
+
+describe('endWhenPageUiOff', () => {
+  it('ends the instance once on the first off value (the boot read)', async () => {
+    const h = harness();
+    const end = vi.fn();
+    endWhenPageUiOff(h.deps, end);
+    h.resolveRead(false);
+    await settle();
+    h.write(true);
+    h.write(false);
+    expect(end.mock.calls).toEqual([[PAGE_UI_OFF_REASON]]);
+  });
+
+  it('keeps the instance while on and ends it on a later off write', async () => {
+    const h = harness();
+    const end = vi.fn();
+    endWhenPageUiOff(h.deps, end);
+    h.resolveRead(true);
+    await settle();
+    expect(end).not.toHaveBeenCalled();
+    h.write(false);
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends on an off write racing the boot read (the read is dropped)', async () => {
+    const h = harness();
+    const end = vi.fn();
+    endWhenPageUiOff(h.deps, end);
+    h.write(false);
+    h.resolveRead(true);
+    await settle();
+    expect(end).toHaveBeenCalledTimes(1);
   });
 });
 
