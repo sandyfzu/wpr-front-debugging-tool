@@ -64,7 +64,7 @@ WXT conventions govern the layout — follow them, don't invent a new one. The m
 │                              #   `navigator.userAgent` shadowed per the sim state (`ua-identity/`)
 ├── components/                # Solid components shared by ≥2 entrypoints
 │   ├── ui/                    # design-system primitives
-│   └── injected-ui/           # shadow-root mount, live appearance, input-event isolation, key guard, top-layer z-order + runtime-overlay mount for UIs injected into host pages
+│   └── injected-ui/           # shadow-root mount + cycled surface (one host per surface across hide → show), live appearance, input-event isolation, key guard, top-layer z-order + runtime-overlay mount for UIs injected into host pages
 ├── lib/                       # domain modules — logic + types + data, pure and testable
 │   ├── messaging/             # typed message contracts + boundary validation
 │   ├── storage/               # typed storage items (storage.defineItem)
