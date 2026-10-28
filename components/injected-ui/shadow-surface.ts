@@ -17,7 +17,8 @@
  * included) is bound to it, so a remove landing before the render resolves
  * aborts the render (or disposes it the moment it resolves) and never lets
  * a late disposer overwrite a newer mount's; a failed render removes its
- * host, so the surface never reads shown over an empty host. Every mount shares WXT's one
+ * host (the surface never reads shown over an empty host) and latches shows
+ * off until the owner's next `hide()`, so a failure never loops. Every mount shares WXT's one
  * container and a view's disposer (Solid's) empties it all, so a late
  * dispose must never follow a newer render. It cannot: `./mount` re-checks
  * the signal synchronously right before `render()`, so a removed mount
@@ -67,7 +68,8 @@ export interface ShadowSurfaceOptions {
   readonly onRemoved?: () => void;
   /**
    * Receives the original failure of a render that did not complete; the
-   * failed mount's host is removed right after (`onRemoved` runs).
+   * failed mount's host is removed right after (`onRemoved` runs) and shows
+   * refuse until the next `hide()`.
    */
   readonly onRenderError: (cause: unknown) => void;
 }
@@ -80,14 +82,18 @@ export interface ShadowSurface {
   /**
    * Show the surface: create the UI once (concurrent shows share the
    * creation), then mount it unless the context died or `allowed` turned
-   * false during the creation wait.
+   * false during the creation wait. Refused after a failed render until the
+   * next {@link ShadowSurface.hide} — a failure never self-retries.
    *
    * @param allowed Re-read after the creation wait (a hide may have won it).
    * @throws {@link Error} when the UI cannot be created or its host cannot be
    *   placed (WXT's anchor lookup) — the next show retries.
    */
   show(allowed: () => boolean): Promise<ShowOutcome>;
-  /** Remove the current mount's host (no-op when nothing is shown). */
+  /**
+   * Remove the current mount's host (no-op when nothing is shown) and clear
+   * a failed render's latch, so the next show retries.
+   */
   hide(): void;
   /** Whether a mount's host is on the page. */
   isShown(): boolean;
@@ -132,6 +138,10 @@ export function createShadowSurface(options: ShadowSurfaceOptions): ShadowSurfac
   let instance: ShadowUiInstance | null = null;
   let creating: Promise<ShadowUiInstance> | null = null;
   let current: MountRecord | null = null;
+  /** A render failed: shows refuse until an explicit `hide()` (owner intent). */
+  let renderFailed = false;
+  /** The latch, as a call: the creation wait is exactly where it flips. */
+  const latched = (): boolean => renderFailed;
 
   /** Whether a mount's host is on the page (a call: awaits flip it). */
   const shown = (): boolean => current !== null;
@@ -163,8 +173,13 @@ export function createShadowSurface(options: ShadowSurfaceOptions): ShadowSurfac
       },
       (cause: unknown) => {
         if (record.scope.signal.aborted) return false; // removed first: nothing to report
-        options.onRenderError(cause);
-        // No empty host left "shown": the surface reads hidden and the next show retries.
+        // Latched before the removal: an owner reacting to it (a DOM observer
+        // seeing the host leave) must not re-show into the same failure.
+        renderFailed = true;
+        guarded(() => {
+          options.onRenderError(cause);
+        }, 'The render-error hook');
+        // No empty host left "shown": the surface reads hidden.
         guarded(() => instance?.remove(), 'Removing a failed render');
         return false;
       }
@@ -203,15 +218,16 @@ export function createShadowSurface(options: ShadowSurfaceOptions): ShadowSurfac
   return {
     async show(allowed) {
       if (shown()) return 'already-shown';
-      if (options.isInvalid() || !allowed()) return 'refused';
+      if (latched() || options.isInvalid() || !allowed()) return 'refused';
       const ui = await ensureInstance();
       // Re-checked after the wait: the context or the owner may have moved on.
-      if (options.isInvalid() || !allowed()) return 'refused';
+      if (latched() || options.isInvalid() || !allowed()) return 'refused';
       if (shown()) return 'already-shown'; // a concurrent show won
       ui.mount();
       return 'shown';
     },
     hide() {
+      renderFailed = false;
       if (shown()) instance?.remove();
     },
     isShown: shown,

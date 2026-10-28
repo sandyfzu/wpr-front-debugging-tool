@@ -173,7 +173,7 @@ describe('createShadowSurface', () => {
     expect(onRenderError).toHaveBeenCalledTimes(1);
   });
 
-  it('a failed render removes its host: the surface reads hidden and the next show retries', async () => {
+  it('a failed render removes its host and latches shows off until the next hide', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const onRenderError = vi.fn();
     const onRemoved = vi.fn();
@@ -189,11 +189,36 @@ describe('createShadowSurface', () => {
     expect(onRemoved).toHaveBeenCalledTimes(1);
     expect(renders[0]?.signal?.aborted).toBe(true);
     expect(error).not.toHaveBeenCalled(); // the removal itself did not fail
-    // Not 'already-shown': the retry mounts the same instance afresh.
+    // A failure never self-retries: shows refuse, nothing mounts.
+    await expect(surface.show(() => true)).resolves.toBe('refused');
+    await expect(surface.show(() => true)).resolves.toBe('refused');
+    expect(renders).toHaveLength(1);
+    // The owner's hide (gate cycle, navigation, toggle) clears the latch.
+    surface.hide();
     await expect(surface.show(() => true)).resolves.toBe('shown');
     renders[1]?.resolve();
     await expect(surface.rendered()).resolves.toBe(true);
     expect(created()).toBe(1);
+  });
+
+  it('a throwing render-error hook is logged; the host is still removed and the latch set', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { options } = realOptions({
+      onRenderError: () => {
+        throw new Error('hook exploded');
+      }
+    });
+    const surface = createShadowSurface(options);
+    await surface.show(() => true);
+    const up = surface.rendered();
+    renders[0]?.reject(new Error('render exploded'));
+    // Settles (never rejects) despite the throwing hook.
+    await expect(up).resolves.toBe(false);
+    expect(hosts()).toBe(0);
+    expect(surface.isShown()).toBe(false);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain('The render-error hook');
+    await expect(surface.show(() => true)).resolves.toBe('refused');
   });
 
   it('runs every teardown step and removes the host even when one step throws', async () => {

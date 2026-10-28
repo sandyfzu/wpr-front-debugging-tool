@@ -43,7 +43,13 @@ import { moveFocus, type FocusChoreographyDeps } from '../ui/focus';
 import { createConflictsDb } from './conflicts-db';
 import { extractScanText, scanModeForUrl } from './extract';
 import { createScanFlow } from './scan-flow';
-import { dbRowsUsable, emptyStateVisible, mergeFindings, surfaceChanged } from './scan-state';
+import {
+  dbRowsUsable,
+  emptyStateVisible,
+  mergeFindings,
+  pageChurned,
+  surfaceChanged
+} from './scan-state';
 import { KnownConflictsView, type KnownConflictsUiState } from './ui';
 import './known-conflicts.css';
 
@@ -339,12 +345,13 @@ export function setupKnownConflicts(ctx: ContentScriptContext): void {
       if (!ctx.isInvalid) runScan();
     }, HS_RESCAN_DEBOUNCE_MS);
     rescanDebounced = debounced;
-    hsObserver = new MutationObserver(() => {
+    hsObserver = new MutationObserver((records) => {
       if (ctx.isInvalid) {
         hsObserver?.disconnect();
         return;
       }
-      debounced();
+      // The card's own mount/unmount is not page churn.
+      if (pageChurned(records, (node) => node.nodeName.toLowerCase() === UI_NAME)) debounced();
     });
     const afterLoad = (): void => {
       if (!ctx.isInvalid) pageUi.pageReady();

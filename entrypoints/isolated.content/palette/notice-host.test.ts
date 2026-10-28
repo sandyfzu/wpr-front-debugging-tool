@@ -90,9 +90,10 @@ describe('page notice host lifecycle', () => {
     expect(hosts()).toBe(0);
   });
 
-  it('a failed render removes the empty host; the next notice mounts it again', async () => {
+  it('a failed render removes the empty host; notices resume once its countdown ends', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const host = createNoticeHost(ctx, createLogger('test'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await showNotice(host);
     const failure = new Error('render exploded');
     renders[0]?.reject(failure);
@@ -100,6 +101,13 @@ describe('page notice host lifecycle', () => {
       expect(hosts()).toBe(0);
     });
     expect(error).toHaveBeenCalledWith(expect.stringContaining('[WPR FDT]'), failure);
+    // Latched: a notice during the failed one's countdown mounts nothing.
+    host.show(NOTICE);
+    await vi.advanceTimersByTimeAsync(0); // `settle` would wait on the faked clock
+    expect(hosts()).toBe(0);
+    expect(renders).toHaveLength(1);
+    // The countdown's dismissal is the hide that clears the latch.
+    vi.advanceTimersByTime(NOTICE_DISMISS_MS);
     await showNotice(host);
     expect(renders).toHaveLength(2);
     expect(createShadowRootUi).toHaveBeenCalledTimes(1);
