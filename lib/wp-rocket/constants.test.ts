@@ -252,7 +252,9 @@ describe('platforms and ids', () => {
     expect(Object.values(CONTEXT_MENU_IDS).sort()).toEqual(
       [
         'exclusionBuilder',
+        'openCommandPalette',
         'openNowProcket',
+        'pageUiGate',
         'psiSideBySide',
         'toggleDetectionWidget',
         'updateKnownConflictsDB',
