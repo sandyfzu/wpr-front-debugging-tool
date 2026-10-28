@@ -1704,9 +1704,7 @@ siteTest.describe('site detection widget', () => {
     async ({ extension, adminPage }) => {
       await setWidgetEnabled(extension, true);
       try {
-        // The worker's admin page: re-affirm the login first (cross-file
-        // cookie state is not a leg's input), then navigate.
-        await loginAdminPage(adminPage);
+        // The worker's admin page (the fixture re-validates its login per test).
         await adminPage.goto(`${SITE_URL}/wp-admin/plugins.php`, { waitUntil: 'load' });
         try {
           await expect

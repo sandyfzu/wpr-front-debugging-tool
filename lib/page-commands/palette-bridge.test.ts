@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   PALETTE_BRIDGE_GLOBAL,
   publishPaletteBridge,
+  readChordHint,
   readPaletteBridge,
   retractPaletteBridge,
   type IsolatedWorld,
@@ -19,7 +20,8 @@ function bridge(alive: () => boolean = () => true): PaletteBridge {
     alive,
     run: vi.fn(),
     attach: () => true,
-    detach: vi.fn()
+    detach: vi.fn(),
+    chordHint: () => '⌥K'
   };
 }
 
@@ -41,7 +43,8 @@ describe('palette bridge', () => {
     ['null', null],
     ['a function', (): boolean => true],
     ['a partial object', { alive: (): boolean => true, run: (): void => undefined }],
-    ['a method that is not a function', { ...bridge(), run: 'run' }]
+    ['a method that is not a function', { ...bridge(), run: 'run' }],
+    ['a bridge without the chord hint', { ...bridge(), chordHint: undefined }]
   ])('refuses %s', (_label, value) => {
     expect(readPaletteBridge({ [PALETTE_BRIDGE_GLOBAL]: value })).toBeNull();
   });
@@ -64,5 +67,24 @@ describe('palette bridge', () => {
     expect(world[PALETTE_BRIDGE_GLOBAL]).toBe(newer);
     retractPaletteBridge(world, newer);
     expect(PALETTE_BRIDGE_GLOBAL in world).toBe(false);
+  });
+
+  it.each<[string, unknown, string | null]>([
+    ['a formatted chord', '⌥K', '⌥K'],
+    ['an empty string', '', null],
+    ['a non-string', 42, null],
+    ['null (unresolved)', null, null]
+  ])('reads the chord hint: %s', (_label, value, expected) => {
+    expect(readChordHint({ ...bridge(), chordHint: () => value as string | null })).toBe(expected);
+  });
+
+  it('reads no chord hint from a module that throws', () => {
+    const dead = {
+      ...bridge(),
+      chordHint: (): string | null => {
+        throw new Error('Extension context invalidated.');
+      }
+    };
+    expect(readChordHint(dead)).toBeNull();
   });
 });

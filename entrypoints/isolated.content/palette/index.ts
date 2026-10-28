@@ -1,11 +1,13 @@
 /**
  * The on-page command palette's always-loaded half (top frame only): the
- * gate follower, the `openCommandPalette` receiver, the executors and the
- * page notices. The palette's view — the combobox and its dialog — is a
+ * gate follower, the open triggers (the `openCommandPalette` receiver and
+ * the keyboard chord), the executors and the page notices. The palette's view — the combobox and its dialog — is a
  * runtime content script the background injects on the first open
  * (`entrypoints/command-palette.content`), so a page that never opens the
  * palette pays only this module: one storage read, one watch and one
- * message listener (the content script's key guard covers the view's host).
+ * message listener — plus, while the gate is on, the chord's read, watch,
+ * one platform ask and one window keydown listener (the content script's
+ * key guard covers the view's host).
  *
  * The palette dies with the on-page UI gate: a gate-off write (from the
  * palette's own row, the menu or the options page) disposes the view,
@@ -17,10 +19,12 @@ import { createLogger } from '../../../lib/logger';
 import { onMessage, sendMessage } from '../../../lib/messaging';
 import { parseExclusionOverlayOpenOutcome } from '../../../lib/messaging/exclusion-panel';
 import { readPageUiEnabled, watchPageUiGate } from '../../../lib/storage/page-ui-gate';
+import { readPaletteChord, watchPaletteChord } from '../../../lib/storage/palette-chord';
 import {
   STORAGE_MECHANISMS,
   createPageCommandExecutors
 } from '../../../lib/page-commands/executors';
+import { startChordTrigger } from './chord';
 import { startPaletteModule } from './module';
 import { createNoticeHost } from './notice';
 import { sideBySideTriggers } from './side-by-side-triggers';
@@ -51,20 +55,44 @@ export function setupCommandPalette(ctx: ContentScriptContext): void {
       }
     }
   });
+  const chord = startChordTrigger({
+    target: window,
+    readChord: readPaletteChord,
+    watchChord: watchPaletteChord,
+    askPlatform: () => sendMessage('getChordPlatform'),
+    onInvalidated: (cleanup) => {
+      ctx.onInvalidated(cleanup);
+    },
+    log
+  });
   startPaletteModule({
     watchGate: watchPageUiGate,
     readGate: readPageUiEnabled,
-    listenForOpen: (onOpen) =>
-      onMessage('openCommandPalette', (): true => {
-        onOpen();
-        return true;
-      }),
+    listenForOpen: (onOpen) => {
+      const disarmChord = chord.arm(onOpen);
+      let removeReceiver: () => void;
+      try {
+        removeReceiver = onMessage('openCommandPalette', (): true => {
+          onOpen();
+          return true;
+        });
+      } catch (cause) {
+        // Both triggers or neither: the module logs the failed arm.
+        disarmChord();
+        throw cause;
+      }
+      return () => {
+        disarmChord();
+        removeReceiver();
+      };
+    },
     loadView: () => sendMessage('loadCommandPaletteView'),
     executors,
     page: () => ({ origin: window.location.origin }),
     notices: createNoticeHost(ctx, log),
     // The extension's isolated world: the injected view finds the bridge here.
     world: globalThis,
+    chordHint: () => chord.hint(),
     isInvalid: () => ctx.isInvalid,
     onInvalidated: (cleanup) => {
       ctx.onInvalidated(cleanup);

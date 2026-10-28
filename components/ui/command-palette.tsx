@@ -80,6 +80,8 @@ export interface CommandPaletteProps<T extends PaletteCommand = PaletteCommand> 
   mount?: HTMLElement;
   /** The dialog's accessible description (default: the panel's wording). */
   description?: string;
+  /** Content under the list (e.g. a surface's shortcut hint); none by default. */
+  footer?: JSX.Element;
 }
 
 /**
@@ -132,6 +134,7 @@ function rowId(commandId: string): string {
  * @param props.class Extra panel classes.
  * @param props.mount The injected UI's render node (the dialog's mounted mode).
  * @param props.description The accessible description override.
+ * @param props.footer Content rendered under the list (optional).
  */
 export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
   props: CommandPaletteProps<T>
@@ -164,6 +167,7 @@ export function CommandPalette<T extends PaletteCommand = PaletteCommand>(
           field = element;
         }}
       />
+      {props.footer}
     </ModalDialog>
   );
 }

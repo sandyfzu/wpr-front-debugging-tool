@@ -1,0 +1,441 @@
+/**
+ * The palette chord on the page: the keydown decision (trusted, unhandled,
+ * exact match, may-type chords skipped in editable fields only), the
+ * editable-target read over composed paths (open shadow roots included),
+ * the platform reply's narrowing, and the trigger over fake seams —
+ * watch-first binding resolution, live rebinding, degraded reads, arm /
+ * disarm / invalidation of the window listener, the hint, and page safety
+ * (a failing handler never throws into the page).
+ */
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import type { PaletteChord } from '../../../lib/storage/palette-chord';
+import {
+  chordKeydownAction,
+  isEditableTarget,
+  narrowChordPlatform,
+  startChordTrigger,
+  type ChordBinding,
+  type ChordKeydownFacts,
+  type ChordTriggerDeps
+} from './chord';
+
+afterEach(() => {
+  document.body.innerHTML = '';
+});
+
+const ALT_K: PaletteChord = { code: 'KeyK', alt: true };
+const MOD_K: PaletteChord = { code: 'KeyK', mod: true };
+const MOD_ALT_P: PaletteChord = { code: 'KeyP', mod: true, alt: true };
+const F8: PaletteChord = { code: 'F8' };
+
+/** A trusted, unhandled keydown with no modifiers, overridden per case. */
+function keydown(overrides: Partial<ChordKeydownFacts> = {}): ChordKeydownFacts {
+  return {
+    isTrusted: true,
+    defaultPrevented: false,
+    code: 'KeyK',
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    ...overrides
+  };
+}
+
+const MAC = (chord: PaletteChord): ChordBinding => ({ chord, platform: 'mac' });
+const OTHER = (chord: PaletteChord): ChordBinding => ({ chord, platform: 'other' });
+
+describe('chordKeydownAction', () => {
+  const outside = (): boolean => false;
+  const inside = (): boolean => true;
+
+  it('opens on the exact chord outside an editable field', () => {
+    expect(chordKeydownAction(keydown({ altKey: true }), MAC(ALT_K), outside)).toBe('open');
+    expect(chordKeydownAction(keydown({ altKey: true }), OTHER(ALT_K), outside)).toBe('open');
+    expect(chordKeydownAction(keydown({ metaKey: true }), MAC(MOD_K), outside)).toBe('open');
+    expect(chordKeydownAction(keydown({ ctrlKey: true }), OTHER(MOD_K), outside)).toBe('open');
+  });
+
+  it('passes a script-dispatched or already handled keystroke', () => {
+    expect(
+      chordKeydownAction(keydown({ altKey: true, isTrusted: false }), MAC(ALT_K), outside)
+    ).toBe('pass');
+    expect(
+      chordKeydownAction(keydown({ altKey: true, defaultPrevented: true }), MAC(ALT_K), outside)
+    ).toBe('pass');
+  });
+
+  it.each<[string, Partial<ChordKeydownFacts>]>([
+    ['another key', { altKey: true, code: 'KeyJ' }],
+    ['no modifier', {}],
+    ['an extra Shift', { altKey: true, shiftKey: true }],
+    ['an extra command modifier', { altKey: true, metaKey: true }],
+    ['the foreign Ctrl on macOS', { altKey: true, ctrlKey: true }],
+    ['an auto-repeat', { altKey: true, repeat: true }],
+    ['IME composition', { altKey: true, isComposing: true }],
+    ['IME key code 229', { altKey: true, keyCode: 229 }]
+  ])('passes %s', (_label, overrides) => {
+    expect(chordKeydownAction(keydown(overrides), MAC(ALT_K), outside)).toBe('pass');
+  });
+
+  it('passes AltGr outside macOS (it types), matches Option on macOS Firefox (AltGraph reported)', () => {
+    const altGraph = (key: string): boolean => key === 'AltGraph';
+    const press = keydown({ altKey: true, getModifierState: altGraph });
+    expect(chordKeydownAction(press, OTHER(ALT_K), outside)).toBe('pass');
+    expect(chordKeydownAction(press, MAC(ALT_K), outside)).toBe('open');
+  });
+
+  it('lets a may-type chord type in an editable field (the field is asked only on a match)', () => {
+    const asked = vi.fn(inside);
+    expect(chordKeydownAction(keydown({ altKey: true }), MAC(ALT_K), asked)).toBe('pass');
+    expect(asked).toHaveBeenCalledOnce();
+    asked.mockClear();
+    expect(chordKeydownAction(keydown({ code: 'KeyJ' }), MAC(ALT_K), asked)).toBe('pass');
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+Alt may type outside macOS (AltGr), ⌘⌥ never does on macOS', () => {
+    const press = keydown({ code: 'KeyP', altKey: true, ctrlKey: true });
+    expect(chordKeydownAction(press, OTHER(MOD_ALT_P), inside)).toBe('pass');
+    expect(chordKeydownAction(press, OTHER(MOD_ALT_P), outside)).toBe('open');
+    const macPress = keydown({ code: 'KeyP', altKey: true, metaKey: true });
+    expect(chordKeydownAction(macPress, MAC(MOD_ALT_P), inside)).toBe('open');
+  });
+
+  it('opens a command-modifier or function-key chord even inside an editable field', () => {
+    const asked = vi.fn(inside);
+    expect(chordKeydownAction(keydown({ metaKey: true }), MAC(MOD_K), asked)).toBe('open');
+    expect(chordKeydownAction(keydown({ code: 'F8' }), OTHER(F8), asked)).toBe('open');
+    expect(asked).not.toHaveBeenCalled();
+  });
+});
+
+describe('isEditableTarget', () => {
+  /** Append markup and return the element matching `selector`. */
+  const element = (html: string, selector: string): Element => {
+    document.body.innerHTML = html;
+    const found = document.querySelector(selector);
+    if (found === null) throw new Error(`fixture misses ${selector}`);
+    return found;
+  };
+
+  it.each<[string, string, string, boolean]>([
+    ['a textarea', '<textarea></textarea>', 'textarea', true],
+    ['an untyped input', '<input>', 'input', true],
+    ['a search input', '<input type="search">', 'input', true],
+    ['a password input', '<input type="password">', 'input', true],
+    ['a checkbox', '<input type="checkbox">', 'input', false],
+    ['a submit input', '<input type="submit">', 'input', false],
+    ['a range input', '<input type="range">', 'input', false],
+    ['a button', '<button>Go</button>', 'button', false],
+    ['editable content', '<div contenteditable="true">x</div>', 'div', true],
+    ['a descendant of editable content', '<div contenteditable="true"><b>x</b></div>', 'b', true],
+    ['plain content', '<p>x</p>', 'p', false]
+  ])('%s → %s', (_label, html, selector, expected) => {
+    const target = element(html, selector);
+    expect(isEditableTarget([target, document.body, document, window])).toBe(expected);
+  });
+
+  it('reads the deepest element, skipping non-element path entries', () => {
+    const field = element('<input>', 'input');
+    expect(isEditableTarget([document.createTextNode('x'), field, document])).toBe(true);
+    expect(isEditableTarget([document, window])).toBe(false);
+    expect(isEditableTarget([])).toBe(false);
+  });
+
+  it('sees a field inside an open shadow root through the composed path', () => {
+    const host = element('<x-widget></x-widget>', 'x-widget');
+    const root = host.attachShadow({ mode: 'open' });
+    const field = document.createElement('input');
+    root.append(field);
+    let path: EventTarget[] = [];
+    const record = (event: Event): void => {
+      path = event.composedPath();
+    };
+    window.addEventListener('keydown', record, true);
+    field.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, composed: true }));
+    window.removeEventListener('keydown', record, true);
+    expect(path[0]).toBe(field);
+    expect(isEditableTarget(path)).toBe(true);
+  });
+});
+
+describe('narrowChordPlatform', () => {
+  it.each<[unknown, string]>([
+    ['mac', 'mac'],
+    ['other', 'other'],
+    ['win', 'other'],
+    ['MAC', 'other'],
+    [undefined, 'other'],
+    [{ os: 'mac' }, 'other']
+  ])('%j → %s', (reply, expected) => {
+    expect(narrowChordPlatform(reply)).toBe(expected);
+  });
+});
+
+/** A deferred promise settled by hand. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Wait for queued promise callbacks. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
+}
+
+/** A keydown the listener receives, with its consumption recorders. */
+function pageKeydown(overrides: Partial<ChordKeydownFacts> = {}, path: EventTarget[] = []) {
+  const preventDefault = vi.fn();
+  const stopImmediatePropagation = vi.fn();
+  const event = {
+    ...keydown(overrides),
+    composedPath: () => path,
+    preventDefault,
+    stopImmediatePropagation
+  } as unknown as Event;
+  return { event, preventDefault, stopImmediatePropagation };
+}
+
+/** The trigger over fake seams plus their controls. */
+function harness(options: { platform?: Promise<unknown> } = {}) {
+  const listeners = new Set<(event: Event) => void>();
+  const add: Mock<(type: string, listener: unknown, capture: unknown) => void> = vi.fn(
+    (_type, listener) => {
+      listeners.add(listener as (event: Event) => void);
+    }
+  );
+  const remove: Mock<(type: string, listener: unknown, capture: unknown) => void> = vi.fn(
+    (_type, listener) => {
+      listeners.delete(listener as (event: Event) => void);
+    }
+  );
+  const read = deferred<PaletteChord>();
+  const platform = deferred<unknown>();
+  let watcher: ((chord: PaletteChord) => void) | null = null;
+  const unwatch = vi.fn();
+  const invalidation: Array<() => void> = [];
+  const warn = vi.fn();
+  const readChord = vi.fn(() => read.promise);
+  const askPlatform = vi.fn(() => options.platform ?? platform.promise);
+  const deps: ChordTriggerDeps = {
+    target: {
+      addEventListener: add,
+      removeEventListener: remove
+    },
+    readChord,
+    watchChord: vi.fn((onChange: (chord: PaletteChord) => void) => {
+      watcher = onChange;
+      return unwatch;
+    }),
+    askPlatform,
+    onInvalidated: (cleanup) => {
+      invalidation.push(cleanup);
+    },
+    log: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() }
+  };
+  const trigger = startChordTrigger(deps);
+  return {
+    deps,
+    trigger,
+    readChord,
+    askPlatform,
+    add,
+    remove,
+    read,
+    platform,
+    unwatch,
+    warn,
+    listening: () => listeners.size,
+    /** Deliver one keydown to every registered listener. */
+    press: (overrides: Partial<ChordKeydownFacts> = {}, path: EventTarget[] = []) => {
+      const key = pageKeydown(overrides, path);
+      for (const listener of listeners) listener(key.event);
+      return key;
+    },
+    write: (chord: PaletteChord) => watcher?.(chord),
+    invalidate: () => {
+      for (const cleanup of invalidation) cleanup();
+    }
+  };
+}
+
+/** A harness armed and resolved to `chord` on `platform`. */
+async function resolved(chord: PaletteChord = ALT_K, platform: unknown = 'mac') {
+  const h = harness();
+  const onChord = vi.fn();
+  const disarm = h.trigger.arm(onChord);
+  h.read.resolve(chord);
+  h.platform.resolve(platform);
+  await settle();
+  return { ...h, onChord, disarm };
+}
+
+describe('startChordTrigger', () => {
+  it('is inert until armed: no listener, no read, no platform ask', () => {
+    const h = harness();
+    expect(h.listening()).toBe(0);
+    expect(h.readChord).not.toHaveBeenCalled();
+    expect(h.askPlatform).not.toHaveBeenCalled();
+    expect(h.trigger.hint()).toBeNull();
+  });
+
+  it('arms one window-capture keydown listener and ignores keys until the binding resolves', async () => {
+    const h = harness();
+    const onChord = vi.fn();
+    h.trigger.arm(onChord);
+    expect(h.add).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+    expect(h.listening()).toBe(1);
+    const early = h.press({ altKey: true });
+    expect(early.preventDefault).not.toHaveBeenCalled();
+    h.read.resolve(ALT_K);
+    await settle();
+    // Half resolved (no platform yet): still nothing.
+    h.press({ altKey: true });
+    expect(onChord).not.toHaveBeenCalled();
+    h.platform.resolve('mac');
+    await settle();
+    const key = h.press({ altKey: true });
+    expect(onChord).toHaveBeenCalledOnce();
+    expect(key.preventDefault).toHaveBeenCalledOnce();
+    expect(key.stopImmediatePropagation).toHaveBeenCalledOnce();
+  });
+
+  it('leaves every other keystroke untouched', async () => {
+    const h = await resolved();
+    for (const overrides of [
+      {},
+      { code: 'KeyJ', altKey: true },
+      { altKey: true, shiftKey: true }
+    ]) {
+      const key = h.press(overrides);
+      expect(key.preventDefault).not.toHaveBeenCalled();
+      expect(key.stopImmediatePropagation).not.toHaveBeenCalled();
+    }
+    expect(h.onChord).not.toHaveBeenCalled();
+  });
+
+  it('lets a may-type chord type in an editable target', async () => {
+    const h = await resolved();
+    const field = document.createElement('textarea');
+    const key = h.press({ altKey: true }, [field]);
+    expect(key.preventDefault).not.toHaveBeenCalled();
+    expect(h.onChord).not.toHaveBeenCalled();
+  });
+
+  it('lets a watch delivery during the read win over the read result', async () => {
+    const h = harness();
+    h.trigger.arm(vi.fn());
+    h.write(MOD_K);
+    h.read.resolve(ALT_K);
+    h.platform.resolve('mac');
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: MOD_K, platform: 'mac' });
+  });
+
+  it('re-arms live on a rebinding: the old chord passes, the new one fires', async () => {
+    const h = await resolved();
+    h.write(MOD_K);
+    expect(h.press({ altKey: true }).preventDefault).not.toHaveBeenCalled();
+    expect(h.press({ metaKey: true }).preventDefault).toHaveBeenCalledOnce();
+    expect(h.onChord).toHaveBeenCalledOnce();
+    expect(h.trigger.hint()).toBe('⌘K');
+  });
+
+  it('formats the hint in the platform’s notation', async () => {
+    expect((await resolved(ALT_K, 'mac')).trigger.hint()).toBe('⌥K');
+    expect((await resolved(ALT_K, 'win')).trigger.hint()).toBe('Alt+K');
+  });
+
+  it('degrades a failed read to the default chord and a failed ask to the Ctrl convention', async () => {
+    const h = harness();
+    h.trigger.arm(vi.fn());
+    h.read.reject(new Error('Extension context invalidated.'));
+    h.platform.reject(new Error('Could not establish connection. Receiving end does not exist.'));
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: { code: 'KeyK', alt: true }, platform: 'other' });
+    expect(h.warn).toHaveBeenCalledWith(
+      'Palette chord unread — using the default',
+      new Error('Extension context invalidated.')
+    );
+    expect(h.warn).toHaveBeenCalledWith(
+      'Keyboard convention unknown — using the Ctrl convention',
+      new Error('Could not establish connection. Receiving end does not exist.')
+    );
+  });
+
+  it('a synchronously throwing seam degrades the same way', async () => {
+    const h = harness();
+    h.deps.askPlatform = () => {
+      throw new Error('no runtime');
+    };
+    h.deps.watchChord = () => {
+      throw new Error('no storage');
+    };
+    h.trigger.arm(vi.fn());
+    h.read.resolve(MOD_K);
+    await settle();
+    expect(h.trigger.binding()).toEqual({ chord: MOD_K, platform: 'other' });
+    expect(h.warn).toHaveBeenCalledWith(
+      'Palette chord unwatched — a rebinding applies after a reload',
+      new Error('no storage')
+    );
+  });
+
+  it('disarm removes the listener; a re-arm adds it back without resolving again', async () => {
+    const h = await resolved();
+    h.disarm();
+    expect(h.remove).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+    expect(h.listening()).toBe(0);
+    h.disarm();
+    expect(h.remove).toHaveBeenCalledOnce();
+    const onChord = vi.fn();
+    h.trigger.arm(onChord);
+    expect(h.listening()).toBe(1);
+    h.press({ altKey: true });
+    expect(onChord).toHaveBeenCalledOnce();
+    expect(h.readChord).toHaveBeenCalledOnce();
+    expect(h.askPlatform).toHaveBeenCalledOnce();
+  });
+
+  it('a second arm keeps one listener, and a stale disarm leaves the newer arm alone', async () => {
+    const h = await resolved();
+    const newer = vi.fn();
+    h.trigger.arm(newer);
+    expect(h.add).toHaveBeenCalledOnce();
+    h.disarm();
+    expect(h.listening()).toBe(1);
+    h.press({ altKey: true });
+    expect(newer).toHaveBeenCalledOnce();
+    expect(h.onChord).not.toHaveBeenCalled();
+  });
+
+  it('invalidation removes the listener and the watch; a later arm does nothing', async () => {
+    const h = await resolved();
+    h.invalidate();
+    expect(h.listening()).toBe(0);
+    expect(h.unwatch).toHaveBeenCalledOnce();
+    h.trigger.arm(vi.fn());
+    expect(h.listening()).toBe(0);
+  });
+
+  it('a throwing open is logged, never thrown into the page', async () => {
+    const h = harness();
+    h.trigger.arm(() => {
+      throw new Error('boom');
+    });
+    h.read.resolve(ALT_K);
+    h.platform.resolve('mac');
+    await settle();
+    expect(() => h.press({ altKey: true })).not.toThrow();
+    expect(h.warn).toHaveBeenCalledWith(
+      'Handling a keystroke for the palette chord failed',
+      new Error('boom')
+    );
+  });
+});

@@ -1,9 +1,10 @@
 /**
  * The palette module's runtime: binds the lifecycle (`./lifecycle`) to its
- * seams — the gate's watch and boot read, the `openCommandPalette`
- * receiver, the background's view injection, the bridge the injected view
- * attaches through, the executors and the page notices. Every seam is
- * injected, so the whole choreography (boot, open, attach, gate-off
+ * seams — the gate's watch and boot read, the open triggers (the
+ * `openCommandPalette` receiver and the keyboard chord), the background's
+ * view injection, the bridge the injected view attaches through (it also
+ * reads the chord hint there), the executors and the page notices. Every
+ * seam is injected, so the whole choreography (boot, open, attach, gate-off
  * teardown, failures) is testable without a browser; `./index` binds the
  * real ones.
  *
@@ -44,7 +45,10 @@ export interface PaletteModuleDeps {
   watchGate(onChange: (enabled: boolean) => void): () => void;
   /** Read the validated gate once (rejects on a dead context). */
   readGate(): Promise<boolean>;
-  /** Register the `openCommandPalette` receiver; returns its removal. */
+  /**
+   * Arm the open triggers — the `openCommandPalette` receiver and the
+   * keyboard chord; returns their removal. Armed only while the gate is on.
+   */
   listenForOpen(onOpen: () => void): () => void;
   /** Ask the background to inject the view (resolves once it ran). */
   loadView(): Promise<unknown>;
@@ -56,6 +60,8 @@ export interface PaletteModuleDeps {
   readonly notices: NoticeHost;
   /** The isolated world's global (where the bridge is published). */
   readonly world: IsolatedWorld;
+  /** The opening chord in the platform's notation, or null while unresolved. */
+  chordHint(): string | null;
   /** Whether the content script's context is dead. */
   isInvalid(): boolean;
   /** Run cleanup when the context dies. */
@@ -169,6 +175,14 @@ export function startPaletteModule(deps: PaletteModuleDeps): PaletteModule {
     detach: (view: PaletteViewHandle, reason: unknown): void => {
       // Two bundles meet here: anything but an explicit failure is an end.
       dispatch({ type: 'detach', view, reason: reason === 'failed' ? 'failed' : 'ended' });
+    },
+    chordHint: (): string | null => {
+      try {
+        return deps.chordHint();
+      } catch (cause) {
+        log.warn('Reading the palette chord hint failed', cause);
+        return null;
+      }
     }
   };
 

@@ -63,6 +63,11 @@ export interface PaletteAppProps {
   readonly open: Accessor<boolean>;
   /** The rows to list (read once per open). */
   readonly rows: () => readonly PaletteRowView[];
+  /**
+   * The opening chord in the platform's notation, or null while unresolved
+   * (read once per open, so a rebinding shows on the next open).
+   */
+  readonly chordHint: () => string | null;
   /** Run a row (the view closes first). */
   readonly onRun: (id: PaletteCommandId) => void;
   /** Dismiss (Escape, Tab, an outside pointer or focus move, Cancel). */
@@ -82,6 +87,8 @@ export function PaletteApp(props: PaletteAppProps): JSX.Element {
   const [confirming, setConfirming] = createSignal<PaletteRowView | null>(null);
   // The rows are a snapshot per open (the list never churns under the user).
   const commands = createMemo(() => (props.open() ? props.rows().map(toPaletteCommand) : []));
+  // The chord hint, snapshotted per open like the rows.
+  const chordHint = createMemo(() => (props.open() ? props.chordHint() : null));
 
   createEffect(
     on([() => props.open(), layer], ([isOpen, element]) => {
@@ -128,12 +135,32 @@ export function PaletteApp(props: PaletteAppProps): JSX.Element {
                 onRun={choose}
                 onClose={props.onDismiss}
                 description={PAGE_PALETTE_DESCRIPTION}
+                footer={<ChordHint chord={chordHint()} />}
               />
             </Match>
           </Switch>
         )}
       </Show>
     </div>
+  );
+}
+
+/**
+ * The palette's shortcut hint: the chord that opens it, in the platform's
+ * notation — what the page listener actually matches, never a hardcoded
+ * default. Nothing renders while the chord is unresolved.
+ *
+ * @param props.chord The formatted chord, or null.
+ */
+function ChordHint(props: { readonly chord: string | null }): JSX.Element {
+  return (
+    <Show when={props.chord} keyed>
+      {(chord) => (
+        <p class="cp-hint" data-fdt="palette-hint">
+          Open with <kbd class="cp-kbd">{chord}</kbd>
+        </p>
+      )}
+    </Show>
   );
 }
 
