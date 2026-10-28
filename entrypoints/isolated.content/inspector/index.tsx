@@ -37,6 +37,19 @@
  * tokens; still under reduced motion, where the collapse is the honest
  * instant); a starting drag clears it — direct manipulation never moves
  * through a transition.
+ *
+ * Position persistence (`SB-D12`): a settled moved drop stores the chrome's
+ * drag translate for this origin in the device-local positions item (one
+ * write per drop; cancels never write). The translate is an offset from the
+ * bottom-right stylesheet anchor, which both shapes (pill and card) share,
+ * so one stored value serves either shape and stays edge-anchored to the
+ * default corner when the viewport changes. The page reads it once (first
+ * show) and every mount restores it after its first render, before paint
+ * when the read already landed, then re-clamps it at once through the drag
+ * machine's resting re-clamp — the stored value is a hint the current
+ * viewport and shape decide. A failed or corrupt read is the anchor. The
+ * page's own drops update the remembered value, so a hide → show re-mounts
+ * where the user left it; other tabs pick a drop up at their next load.
  */
 
 import { createMemo } from 'solid-js';
@@ -56,6 +69,11 @@ import {
   type DetectionWidgetSites
 } from '../../../lib/storage/detection-widget-sites';
 import { getOptions, optionsStore, storedOptionsOrFallback } from '../../../lib/storage/options';
+import {
+  getDetectionWidgetPosition,
+  saveDetectionWidgetPosition,
+  type DetectionWidgetPosition
+} from '../../../lib/storage/detection-widget-positions';
 import {
   createShadowSurface,
   type ShadowMount
@@ -139,9 +157,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   let chromeElement: HTMLElement | null = null;
   /**
    * The current mount's drag controller. One controller exists per mount —
-   * a fresh mount (gate enable or a reload) starts at the stylesheet anchor,
-   * so the drag position resets by construction: session-local, P12A.5's
-   * recorded no-persistence shape. Null while nothing is mounted.
+   * a fresh mount starts at the stylesheet anchor until the remembered
+   * position restores into it. Null while nothing is mounted.
    */
   let dragController: DragController | null = null;
   /**
@@ -156,6 +173,69 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * reader below, so this hold is capture-only.
    */
   let grabbedShape: HTMLElement | null = null;
+
+  /**
+   * This origin's remembered drag translate: the stored one once the page's
+   * read lands, then every drop of this page's own. Null = the anchor.
+   */
+  let rememberedPosition: DetectionWidgetPosition | null = null;
+  /** Whether a drop of this page already set {@link rememberedPosition} (a late read yields). */
+  let droppedThisPage = false;
+  /** The page's one stored-position read (first show); null until then. */
+  let positionRead: Promise<void> | null = null;
+
+  /**
+   * Read the stored position once per page. A failure is logged and leaves
+   * the anchor (no retry: the next load reads again); a drop that landed
+   * while the read was in flight wins over the read.
+   */
+  const readStoredPosition = (): Promise<void> => {
+    positionRead ??= getDetectionWidgetPosition(pageOrigin).then(
+      (stored) => {
+        if (!droppedThisPage) rememberedPosition = stored;
+      },
+      (cause: unknown) => {
+        if (ctx.isInvalid) return;
+        log.warn(
+          'Reading the widget\u2019s stored position failed — it rests at its anchor',
+          cause
+        );
+      }
+    );
+    return positionRead;
+  };
+
+  /**
+   * Persist a settled drop's translate for this origin (fire-and-forget by
+   * design, never unhandled): the chrome already stands there, so a failed
+   * write is logged and changes nothing on the page — only the next load
+   * starts at the previous stored value.
+   *
+   * @param position The committed drag translate.
+   */
+  const persistDrop = (position: DetectionWidgetPosition): void => {
+    rememberedPosition = position;
+    droppedThisPage = true;
+    saveDetectionWidgetPosition(pageOrigin, position).catch((cause: unknown) => {
+      if (ctx.isInvalid) return;
+      log.warn('Saving the widget\u2019s dragged position failed — kept for this page only', {
+        position,
+        cause
+      });
+    });
+  };
+
+  /**
+   * Settle the drag's own pointer and persist a moved drop (pointerup and
+   * the capture-loss ender share it; the machine answers a commit at most
+   * once per drag, so the release-then-loss pair writes once).
+   *
+   * @param pointerId The ending pointer.
+   */
+  const settleDrag = (pointerId: number): void => {
+    const committed = dragController?.settle(pointerId) ?? null;
+    if (committed !== null) persistDrop(committed);
+  };
 
   /** The focus choreography rides this context's frames (ui/focus's contract). */
   const focusDeps: FocusChoreographyDeps = {
@@ -430,7 +510,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     });
     listenWhileMounted(chrome, 'pointerup', (event) => {
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
-      dragController?.settle(event.pointerId);
+      settleDrag(event.pointerId);
       // Drop re-settle: the committed position is re-clamped against the
       // live viewport (and moves smoothly when it moved — the owner's
       // "at drop" leg).
@@ -456,7 +536,7 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
       // foreign pointer's loss is a stray release — the machine ignores
       // it). The pointer-id discipline needs the PointerEvent shape.
       if (!(event instanceof PointerEvent) || !isTrustedUserEvent(event)) return;
-      dragController?.settle(event.pointerId);
+      settleDrag(event.pointerId);
       startContainmentCycle(); // the dropped position is re-clamped like any release
     });
     listenWhileMounted(chrome, 'contextmenu', (event) => {
@@ -547,9 +627,9 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
 
   /**
    * A mount's host just landed: one drag controller + containment watcher
-   * per mount (a fresh mount starts at the stylesheet anchor, so a re-show
-   * or a reload resets the session-local drag position — nothing is stored
-   * anywhere), and the mount-scoped Escape listener.
+   * per mount (a fresh mount starts at the stylesheet anchor; the
+   * remembered position restores after the render), and the mount-scoped
+   * Escape listener.
    *
    * @param mount The mount's shadow root and listener scope.
    */
@@ -643,6 +723,27 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
     }
   });
 
+  /**
+   * Restore the remembered position into the mount that just showed: once
+   * its view rendered and the page's read settled, apply the translate and
+   * re-clamp it synchronously — the resting re-clamp reads layout offsets,
+   * which are valid mid-entrance, so the corrected position lands in the
+   * same task as the render (no frame at the anchor, no visible snap) when
+   * the read already settled. A read landing after the first paint moves the
+   * chrome once, instantly. A later shape change (rows landing, the card
+   * opening) re-clamps through the ordinary containment cycle.
+   */
+  const restoreRememberedPosition = async (): Promise<void> => {
+    const controller = dragController;
+    const [rendered] = await Promise.all([surface.rendered(), readStoredPosition()]);
+    // Removed, failed, or replaced by a newer mount meanwhile: nothing to restore.
+    if (!rendered || ctx.isInvalid || controller === null || controller !== dragController) return;
+    const position = rememberedPosition;
+    if (position === null || !controller.restore(position)) return;
+    controller.reclamp();
+    startContainmentCycle();
+  };
+
   /** Whether the page's body wait is in flight (one waiter per page). */
   let bodyWait: Promise<void> | null = null;
 
@@ -669,8 +770,10 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   const mountIntoShadow = async (): Promise<void> => {
     try {
+      // The stored position's read runs beside the body wait and the render.
+      void readStoredPosition();
       await bodyReady();
-      await surface.show(() => visibleNow);
+      if ((await surface.show(() => visibleNow)) === 'shown') await restoreRememberedPosition();
     } catch (error) {
       log.error(
         'Mounting the detection widget failed',
@@ -684,7 +787,8 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * foreign origin's write (or a same-value rewrite) must not re-run the
    * data read, whose only worthwhile input is this origin's entry — the
    * equality is the equivalence. A show re-runs the boot path (fresh data
-   * read, fresh mount at the anchor); a hide removes the host.
+   * read, fresh mount restored to the remembered position); a hide removes
+   * the host.
    *
    * @param visible Whether the widget shows (see {@link widgetVisible}).
    */

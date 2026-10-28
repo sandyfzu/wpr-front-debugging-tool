@@ -748,4 +748,130 @@ describe('createDragController', () => {
     expect(drag.isDragging()).toBe(false);
     expect(seams.affordances.at(-1)).toBe(false);
   });
+
+  describe('the persisted position: settle commits, restore adopts', () => {
+    it('a moved drop answers its committed translate exactly once (release, then the capture loss)', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 200, y: start.y - 100 }, pointerId: 1 });
+      expect(drag.settle(1)).toEqual({ x: -200, y: -100 });
+      // The healthy release's own capture loss settles nothing more.
+      expect(drag.settle(1)).toBeNull();
+    });
+
+    it('the commit is a copy: later machine writes never mutate a value handed out', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 50, y: start.y - 50 }, pointerId: 1 });
+      const committed = drag.settle(1);
+      seams.setViewport({ width: 100, height: 60 });
+      drag.reclamp();
+      expect(committed).toEqual({ x: -50, y: -50 });
+    });
+
+    it('a capture-loss settle commits the clamped follow, not the pointer', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      drag.beginGrab({ point: centerOf(seams.liveBox()), pointerId: 1 });
+      drag.trackMove({ point: { x: -5000, y: -5000 }, pointerId: 1 });
+      expect(drag.settle(1)).toEqual({
+        x: MARGIN - (REST_VIEWPORT.width - ANCHOR_PX - 200),
+        y: MARGIN - (REST_VIEWPORT.height - ANCHOR_PX - 40)
+      });
+    });
+
+    it('a click-length press, a stray pointer and a settle at rest commit nothing', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x + 2, y: start.y + 2 }, pointerId: 1 });
+      expect(drag.settle(9), 'a stray release').toBeNull();
+      expect(drag.settle(1), 'under the slop').toBeNull();
+      expect(drag.settle(1), 'at rest').toBeNull();
+    });
+
+    it('a canceled drag commits nothing, even when its pointer then releases', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 200, y: start.y }, pointerId: 1 });
+      drag.cancel();
+      expect(drag.settle(1)).toBeNull();
+      // A second pointer's press cancels too: the first pointer's release commits nothing.
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 200, y: start.y }, pointerId: 1 });
+      drag.beginGrab({ point: start, pointerId: 2 });
+      expect(drag.settle(1)).toBeNull();
+      expect(seams.applied.at(-1)).toBeNull(); // restored to the anchor
+    });
+
+    it('a moved drag on a chrome dead since the grab commits nothing (no translate exists)', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      seams.setShapeDetached(true);
+      drag.trackMove({ point: { x: start.x - 200, y: start.y }, pointerId: 1 });
+      expect(drag.settle(1)).toBeNull();
+    });
+
+    it('restore applies the stored translate; the re-clamp then holds it on a smaller viewport', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      seams.setViewport({ width: 640, height: 480 });
+      const drag = createDragController(seams.deps);
+      // Stored on a wider screen: far beyond this viewport's left/top edges.
+      expect(drag.restore({ x: -1200, y: -700 })).toBe(true);
+      expect(seams.applied).toEqual([{ x: -1200, y: -700 }]);
+      expect(drag.reclamp()).toBe(true);
+      const box = seams.liveBox();
+      expect(box.left).toBe(MARGIN);
+      expect(box.top).toBe(MARGIN);
+      // The re-clamped pose is the machine's: a next cancel restores it.
+      drag.beginGrab({ point: centerOf(box), pointerId: 1 });
+      drag.trackMove({ point: { x: 600, y: 400 }, pointerId: 1 });
+      drag.cancel();
+      expect(seams.liveBox().left).toBe(MARGIN);
+    });
+
+    it('a restored position re-clamps for the open card (growth) at rest', () => {
+      const seams = recordingSeams({ width: 200, height: 22 });
+      const drag = createDragController(seams.deps);
+      // Parked at the top margin as a pill.
+      drag.restore({ x: -400, y: MARGIN - (REST_VIEWPORT.height - ANCHOR_PX - 22) });
+      expect(drag.reclamp()).toBe(false);
+      // The card opens from the same corner: 352 × 400 breaches the top edge.
+      seams.growShape(352, 400);
+      expect(drag.reclamp()).toBe(true);
+      expect(seams.liveBox().top).toBe(MARGIN);
+    });
+
+    it('restore yields to the user: refused during a drag and after a moved drag', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      expect(drag.restore({ x: -10, y: -10 }), 'mid-press').toBe(false);
+      drag.trackMove({ point: { x: start.x - 100, y: start.y }, pointerId: 1 });
+      drag.settle(1);
+      expect(drag.restore({ x: -10, y: -10 }), 'after a moved drop').toBe(false);
+      expect(seams.applied.at(-1)).toEqual({ x: -100, y: 0 });
+    });
+
+    it('a restored position is the next drag’s cancel target', () => {
+      const seams = recordingSeams({ width: 200, height: 40 });
+      const drag = createDragController(seams.deps);
+      drag.restore({ x: -300, y: -200 });
+      const start = centerOf(seams.liveBox());
+      drag.beginGrab({ point: start, pointerId: 1 });
+      drag.trackMove({ point: { x: start.x - 50, y: start.y - 50 }, pointerId: 1 });
+      drag.cancel();
+      expect(seams.applied.at(-1)).toEqual({ x: -300, y: -200 });
+    });
+  });
 });

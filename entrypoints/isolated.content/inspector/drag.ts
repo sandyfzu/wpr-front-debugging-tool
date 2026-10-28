@@ -3,11 +3,12 @@
  * follow → settle/cancel) over injected seams, so the pointer semantics are
  * unit-pinned without a DOM and the runtime wiring stays thin.
  *
- * Owner decision (P12A.5, 2026-10-13): dragging joins the early start with
- * the position SESSION-LOCAL only — no storage write, no per-origin state;
- * a fresh mount starts at the stylesheet anchor (bottom-right 16/16), so
- * navigation/reload resets it by construction. `SB-D12`'s persisted-position
- * half stays full P12.
+ * Persistence (`SB-D12`): the machine stays storage-free. A settle that
+ * ended a moved drag hands back the committed translate (the wiring stores
+ * it per origin — one write per drop); cancels hand back nothing, so a
+ * restored pre-drag position is never stored. A stored translate re-enters
+ * through `restore`, after which the wiring re-clamps it like any resting
+ * position (the stored value is a hint, never a promise of fit).
  *
  * Owner binding (P12A feedback round, 2026-10-14): the chrome is FULLY
  * contained in the viewport, in both states, at rest and during a drag — no
@@ -165,7 +166,7 @@ export interface DragController {
   trackMove(input: { point: DragPoint; pointerId: number }): void;
   /**
    * The drag's own pointer ended: settle. The applied translate stays — the
-   * dragged position is the session's (nothing persists anywhere else).
+   * dragged position is the one the wiring persists.
    * Two wired enders route here: the pointerup release, and a MID-DRAG
    * capture loss (some engines drop the capture — the pointer leaving the
    * window during a quick release on macOS trackpads/Magic Mice is the
@@ -174,8 +175,14 @@ export interface DragController {
    * commit instead of restoring, so a late straggler release finds the drag
    * already ended and stays a no-op). A pointer id that is not the drag's
    * own is a stray release and settles nothing.
+   *
+   * @returns The committed translate when this settle ended a drag that
+   *   moved past the slop — the one value to persist, exactly once per drop
+   *   (a release followed by its capture loss settles once) — else null: a
+   *   click-length press, a stray pointer, no live drag, or a dead chrome
+   *   that never received a translate.
    */
-  settle(pointerId: number): void;
+  settle(pointerId: number): { x: number; y: number } | null;
   /**
    * Restore the pre-drag position — the GENUINELY canceling ends only (all
    * restore-shaped, never the capture path): Escape, the right-press
@@ -184,6 +191,17 @@ export interface DragController {
   cancel(): void;
   /** Whether a drag is live (the wiring's Escape/capture decisions read it). */
   isDragging(): boolean;
+  /**
+   * Adopt a stored translate as this mount's resting position (the restore
+   * leg): applied through the same seam a drag writes, so the wiring's
+   * re-clamp then holds it inside the current viewport and shape. Refused
+   * (false, no write) once the user has moved this mount — a live drag or a
+   * settled moved drag outranks a stored hint that arrived late.
+   *
+   * @param position The stored translate (finite CSS px, validated by its store).
+   * @returns Whether the position was applied.
+   */
+  restore(position: { x: number; y: number }): boolean;
   /**
    * Re-clamp the RESTING chrome against the live viewport (full containment
    * at rest — the wiring calls it when the viewport changed or the visible
@@ -252,6 +270,8 @@ export function createDragController(deps: DragMachineDeps): DragController {
   let clickSuppression = false;
   /** The live drag, or null at rest. */
   let drag: ActiveDrag | null = null;
+  /** Whether a drag of this mount ever moved past the slop (a restore then yields). */
+  let userMoved = false;
 
   const applyAffordance = (value: boolean): void => {
     if (affordanceOn === value) return;
@@ -289,6 +309,7 @@ export function createDragController(deps: DragMachineDeps): DragController {
         if (Math.hypot(dx, dy) < DRAG_TUNING.moveSlopPx) return;
         // The press became a drag past the slop: only now is it one.
         drag.moved = true;
+        userMoved = true;
         applyAffordance(true);
       }
       const box = deps.readBox();
@@ -313,11 +334,13 @@ export function createDragController(deps: DragMachineDeps): DragController {
     },
 
     settle(pointerId) {
-      if (drag === null || drag.pointerId !== pointerId) return; // A stray release never settles another drag.
-      clickSuppression = drag.moved;
+      if (drag === null || drag.pointerId !== pointerId) return null; // A stray release never settles another drag.
+      const moved = drag.moved;
+      clickSuppression = moved;
       drag = null;
-      // The applied translate stays: the dragged position is the session's.
+      // The applied translate stays: the dragged position is the commit.
       applyAffordance(false);
+      return moved && applied !== null ? { ...applied } : null;
     },
 
     cancel() {
@@ -337,6 +360,13 @@ export function createDragController(deps: DragMachineDeps): DragController {
 
     isDragging() {
       return drag !== null;
+    },
+
+    restore(position) {
+      if (drag !== null || userMoved) return false;
+      applied = { x: position.x, y: position.y };
+      deps.applyPosition(applied);
+      return true;
     },
 
     reclamp() {
