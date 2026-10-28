@@ -119,14 +119,14 @@ P15 evidence/disposition ledger must include:
 - Support report/summary/full headers+names-only cookies/redaction/reference exclusion bridge/complete script copy:P6; Elements Rocket/WPR inventory:P5.
 - KC freshness/refresh:P1/P2/P9; CI:P0/P15; synced live three-way appearance:all surfaces/P9.
 - SBS default-on proportional sync/mobile overlay UA+412×892/device identity/desktop1280-floor:P16–16.4; open verification retained.
-- Meta precedence/source/cache context/native feature coverage:P11/P14.5; opt-in persisted strip+tools:P12; safe-fetch RUCSS TEST MODE:P13; beacon/LCP/live scripts/current-visit CWV:P14.
+- Meta precedence/source/cache context/native feature coverage:P11/P14.5; persisted tool-free strip:P12; safe-fetch RUCSS TEST MODE:P13; beacon/LCP/live scripts/current-visit CWV:P14.
 - `nowprocket` page-scoped context-menu entry:P20.
 
 Non-goals retained:i18n until public-distribution need, in-PSI split page (two tabs instead), commands-API shortcuts (menus suffice — superseded only for the on-page palette by P19 G-2, owner2026-10-20), differential KC sync (full hourly simpler). T8 phone snapshot deferred/T9 speculation viewer dropped inP14.5. Shipped overlay simulation does not approve snapshot or optional panel home.
 
 ## 9. Second-baseline acceptance
 
-P11–P14 preserve useful behavior but deliberately change: no incognito-only gate/host-state cookies; per-origin opt-in; stronger per-check fingerprints; no beacon-as-applied claim; panel forms/results+on-page triggers; background-validated fixed endpoint/fetch-before-strip; instance beacon harness suppresses real finalize/write; cleaned optional highlight/observers; all script groups/structured data retained; Alt+H only. Phase plans own exact proof, not a second checklist here.
+P11–P14 preserve useful behavior but deliberately change: no incognito-only gate/host-state cookies; per-origin opt-in; stronger per-check fingerprints; no beacon-as-applied claim; panel forms/results+on-page triggers; background-validated fixed endpoint/fetch-before-strip; instance beacon harness suppresses real finalize/write; cleaned optional highlight/observers; all script groups/structured data retained; no chip shortcut (owner decision deferred to P15D). Phase plans own exact proof, not a second checklist here.
 
 ## 10. Coverage/tooling owner
 

@@ -2,9 +2,9 @@
 
 ## TLDR
 
-**P12A detections/session drag shipped; full P12/P12.1 remain planned.** Extend the existing KC-style pill/card, origin store, single-pass hub and audited drag; do not rebuild the original narrow always-open strip. P11 supplies final hud registry; P9 supplies the options toggle surface (the popup's Detections row joins additively at deferred P8 — one shared item, no new runtime channel); P13/P14 supply shared executors. FullP12 depends:P11/P3/P5 (+options toggle surface; popup wiring at P8); can parallel P13/P14 after shared contracts. No dependencies planned; installed WXT/Solid/tokens/Vitest/Playwright.
+**P12A detections/session drag shipped; full P12/P12.1 remain planned.** Extend the existing KC-style pill/card, origin store, single-pass hub and audited drag; do not rebuild the original narrow always-open strip. P11 supplies final hud registry; P9 supplies the options toggle surface (the popup's Detections row joins additively at deferred P8 — one shared item, no new runtime channel). No tools on the chip (P12D dropped, owner 2026-10-28). FullP12 depends:P11/P3/P5 (+options toggle surface; popup wiring at P8); can parallel P13/P14 after shared contracts. No dependencies planned; installed WXT/Solid/tokens/Vitest/Playwright.
 
-Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file owns explicit deviations/current implementation. Source v4.1.1 inspector template/styles/draggable behavior: groups/status/drag/Alt+H/tool feedback, not its fixed100px CSS, global keydown assignment, page cookies, incognito-only activation or console dumps.
+Binding [UX/SB decisions](./design-decisions.md) and UI bar apply; this file owns explicit deviations/current implementation. Source v4.1.1 inspector template/styles/draggable behavior: groups/status/drag (tool feedback dropped with P12D; its Alt+H shortcut not ported — owner decision deferred to P15D), not its fixed100px CSS, global keydown assignment, page cookies, incognito-only activation or console dumps.
 
 ## Shipped P12A (2026-10-13/14)
 
@@ -71,39 +71,34 @@ DoD: delayed-read/remove, render-failure, dead-context teardown and normal/live-
 
 ### P12B — Final registry/state/toggle integration
 
-Depends:P11/P9 (existing P12A baseline; the popup's Detections row lands additively at deferred P8). Parallel:P13/P14 executor work. Size:S–M.
+Depends:P11/P9 (existing P12A baseline; the popup's Detections row lands additively at deferred P8). Parallel:P13/P14. Size:S–M.
 
 - [x] Repoint/delete provisional strip registry; native names/group ordering from hud, full-name/unsure reasons (done in P11C). No old SHGF/OCI/ALR tool-internal short labels restored.
 - [ ] Extend existing validated origin item for persisted position/eviction metadata within real sync quota. Old entries parse. Global `features.onPageInspector` — the options page's **show the detection chip on pages by default** row — is **true by default** (owner 2026-10-17; the interim `INSPECTOR_DEFAULT_ENABLED` constant already ships that behavior with per-origin entries winning both ways); popup/Detections/options/context menu share one item/toggle, no new runtime channel; the stored option replaces only the constant's role, never the precedence.
-- [ ] Complete collapse/session visibility and **Alt+H only**, capture:false listener, no document.onkeydown clobber; disabled origin no action, context cleanup. Original text mixed “session-only” and “persisted” shortcut visibility: decide/document that distinction before implementation; persistent activation and persisted position remain required, never silently invent second store.
+- [ ] Complete collapse/session visibility; disabled origin no action, context cleanup. **No chip keyboard shortcut** (owner 2026-10-28: context menus + the Alt/⌥+K palette already cover it) — whether to add one at all (e.g. Alt+H) is an open owner decision for just before release ([P15D](./16-phase-15-hardening-release.md#p15d--docsrelease)); persistent activation and persisted position remain required, never silently invent second store.
 
-DoD: storage origin/coord/quota/eviction/corrupt/legacy tests, mount/unmount/default overrides, same-origin/incognito behavior specified, keyboard host-handler preservation. UI bar §D/gates.
+DoD: storage origin/coord/quota/eviction/corrupt/legacy tests, mount/unmount/default overrides, same-origin/incognito behavior specified, UI bar §D/gates.
 
 ### P12C — Persisted drag/brief reconciliation
 
-Depends:B. Parallel:independent tool executors. Size:S.
+Depends:B. Parallel:P13/P14. Size:S.
 
 - [ ] Persist on settled drop; restore/reclamp through **existing** resting containment seam for current viewport/shape, sane finite coordinates. Session reset only until this lands; no new geometry engine.
 - [ ] Reconcile every SB-D ID against owner-approved KC pill/card/width/value-chip/motion deviations above; controls≥24, one scroll region/header/footer, no host styles/cookies/scroll lock or console narration. Hostile CSS computed diffs both directions, source-class no-copy grep.
 
 DoD: persistence/reload/new viewport/card growth/right-cancel/capture-loss/first Enter, no host text selection/link activation/page-scroll break, touch/multitouch tests+hardware limitation named. Style/focus/palettes/reduce and budgets green (new axe dropped — owner 2026-10-27: no screen-reader support).
 
-### P12D — Tool hooks/banner
+### P12D — dropped (owner 2026-10-28)
 
-Depends:B/C; configs/executorsP13/P14 as available. Parallel:their internals, not shared files. Size:S.
-
-- [ ] RUCSS/beacon/LCP/script overview controls; unavailable/configure-in-panel explanation until executable. Delay-only check-scripts affordance. Panel owns forms, strip calls **same** protocol/executors/persisted config, no second runtime.
-- [ ] Latest single outcome banner as sibling of transformed chrome, top-center,5s pause/close/details per brief. Real route signal only when panel is already open; platform cannot open/focus DevTools, so otherwise location hint, never fake link. Tools/results not draggable. Footer versions/no Notion link; cache age/exclusion evidence shared formatter.
-
-DoD: config/run/timeout/error/unavailable/state→banner tests, no duplicate test-mode copy, renderer-boundary guards, clean teardown/theme/reduce/budgets (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support). FullP12 not declared done before these integrations or explicit named blockers.
+No tool buttons or result banner on the chip: it stays the detection report. RUCSS tester (P13) and beacon/LCP/script tools (P14) are separate surfaces.
 
 ## P12.1 — Browser acceptance
 
-Depends: P12M/B–D/P4.1/P4.2; parallel P13/P14 independent work.
+Depends: P12M/B–C/P4.1/P4.2; parallel P13/P14 independent work.
 
 - [ ] Default on for unconfigured origins; per-origin entries override the global default in both directions and the toggle surfaces live mount/hide/reload per origin, other origin unaffected; persisted drag/restore+clamp, right cancel, no text/link/pan side effects, touch-emulated narrow screen.
-- [ ] Alt+H enabled only; host editor-like keydown handler still fires. Hostile reset/high-specificity page: identical strip, no unscoped style, host computed diff none.
-- [ ] System/Dark/Light live Options writes+OS flips; reduced motion shadow UI (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support); zero-marker honest states/tooltips; tool/banner states.
+- [ ] Hostile reset/high-specificity page: identical strip, no unscoped style, host computed diff none.
+- [ ] System/Dark/Light live Options writes+OS flips; reduced motion shadow UI (keyboard walk/new axe dropped — owner 2026-10-27: no screen-reader support); zero-marker honest states/tooltips.
 - [ ] Brief deviation receipt/size delta and UI bar D1–D7; keep early20 cases, not replace with shallow smoke.
 
 Manual/open: native context-menu clicks, incognito origin sharing, glance≤2s/perceptual resettle at real60/120Hz, real touch/multitouch, Firefox installed-extension smoke. Build-only parity is not runtime. Update privacy README/AGENTS when adding real option/state structure, and index only to actual verification level.

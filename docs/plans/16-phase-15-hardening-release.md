@@ -65,6 +65,7 @@ Depends:A–C. Parallel:—.
 - [ ] README actual features/screenshots/setup/build/zip/browser/privacy notes; concise architecture/detection/protocol references from owning code, no duplicate implementation diary. AGENTS final scripts/deps/permissions/structure/conventions sync; paths/commands checked.
 - [ ] Recheck both behavioral sources past audited v2.2.5/v4.1.1; fold drift into owning scope first. Refresh live KC seed verbatim, format, repin exact row count/comment/asset budget as AGENTS requires.
 - [ ] Authorized1.0.0 version/changelog, both store ZIPs free of development output/secrets;128px icon/listing assets (actual implemented surfaces), manifests/Firefox consent identity/policy review. Build success not store approval.
+- [ ] Owner decision (deferred 2026-10-28): add a chip keyboard shortcut (source had Alt+H) or not — default no; context menus + Alt/⌥+K palette cover it. If yes: plan it in P12 terms (no host keydown clobber, enabled origins only, session vs persisted visibility decided).
 - [ ] CI on release revision, artifacts validated, Conventional history; tag v1.0.0/commit/push/publish **only when separately requested**.
 
 DoD: budgets/speed/security/reliability/UI/ledger/docs/browser artifacts all complete, remaining limitations explicit, no claimed release until owner authorizes.
