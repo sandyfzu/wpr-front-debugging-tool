@@ -93,7 +93,13 @@ function recordHosts(): void {
   }).observe(document, { childList: true, subtree: true });
 }
 
-/** The recorder's log (throws when no recorder runs: a suite bug). */
+/**
+ * The recorder's log.
+ *
+ * @param page The recorded page.
+ * @returns Its `+name`/`-name` entries, in insertion order.
+ * @throws {@link Error} When no recorder runs on the page (a suite bug).
+ */
 async function hostLog(page: Page): Promise<string[]> {
   return await page.evaluate((key: string) => {
     const entries = (window as unknown as Record<string, unknown>)[key];
@@ -102,7 +108,13 @@ async function hostLog(page: Page): Promise<string[]> {
   }, HOST_LOG);
 }
 
-/** Watch a page that must stay quiet for the observation window. */
+/**
+ * Watch a page that must stay quiet for the observation window (the
+ * recorder's log is read afterwards).
+ *
+ * @param page The watched page.
+ * @param ms The window, in milliseconds.
+ */
 async function stayQuiet(page: Page, ms: number): Promise<void> {
   await page.waitForTimeout(ms);
 }

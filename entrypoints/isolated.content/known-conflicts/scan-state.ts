@@ -149,6 +149,7 @@ export function markerMood(
  * @param mode The page's scan surface.
  * @param cause Boot, or a gate-on resume.
  * @param latePassRan Whether the plugins screen's late pass has run.
+ * @returns The start plan to run.
  */
 export function scanStartPlan(
   mode: ScanSurfaceMode,
@@ -166,6 +167,7 @@ export function scanStartPlan(
  *
  * @param latePassRan Whether the late pass has run.
  * @param latePassScheduled Whether a late pass is pending.
+ * @returns True when the late pass should be scheduled now.
  */
 export function latePassDue(latePassRan: boolean, latePassScheduled: boolean): boolean {
   return !latePassRan && !latePassScheduled;

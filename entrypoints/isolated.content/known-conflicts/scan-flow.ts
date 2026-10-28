@@ -56,6 +56,7 @@ export interface ScanFlow {
 export function createScanFlow(deps: ScanFlowDeps): ScanFlow {
   /** Whether the plugins screen's late pass has run. */
   let latePassRan = false;
+  /** Whether a late pass is pending (its timer armed, not yet fired). */
   let latePassScheduled = false;
 
   const scan = (): void => {

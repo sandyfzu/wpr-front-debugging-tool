@@ -200,6 +200,10 @@ automatable — each is named in the owning phase's checklist:
   suites log in themselves). Cookies set by any fixture page persist for
   the later suites on the same origin within a run — a suite pinning exact
   cookie-derived counts clears the context's cookies first.
+- **`siteTest`'s `adminPage` is re-validated per test**: one page held for the
+  worker, re-created + logged in when it is closed or from an earlier context
+  (an `extension.relaunch()` closes every page) and logged in again when the
+  profile lost its `wordpress_logged_in_*` cookie.
 - **Fresh-profile first `/fdt/` visit is cache-served** (green badge, the
   WP Rocket footprint comment + the `cached@` debug marker); WordPress-served
   pages (every uncached query) carry three `Link` header rows and lack the
