@@ -500,6 +500,22 @@ async function storedWidgetPosition(
   );
 }
 
+/**
+ * The site origin's raw stored entry, recency rank included (null when none):
+ * every save re-stamps `used`, so an unchanged entry proves no write landed —
+ * even one that rewrote the same `{ x, y }`.
+ */
+async function storedWidgetEntry(driver: ExtensionDriver): Promise<unknown> {
+  return await driver.evaluateInWorker(
+    async (payload: { key: string; origin: string }) => {
+      const map = (await chrome.storage.local.get([payload.key]))[payload.key] as
+        Record<string, unknown> | undefined;
+      return map?.[payload.origin] ?? null;
+    },
+    { key: POSITIONS_KEY, origin: SITE_ORIGIN }
+  );
+}
+
 /** The chrome's applied drag translate (its custom properties; unset = the anchor). */
 async function chromeTranslate(page: Page): Promise<{ x: number; y: number }> {
   return await page.evaluate((host: string) => {
@@ -514,39 +530,117 @@ async function chromeTranslate(page: Page): Promise<{ x: number; y: number }> {
   }, STRIP_HOST);
 }
 
+/** Animation frames {@link recordRestoreFrames} samples once the chrome exists. */
+const RESTORE_FRAMES = 30;
+
+/** One translate change {@link recordRestoreFrames} saw, as the user saw it. */
+interface RestoreFrame {
+  readonly x: number;
+  readonly y: number;
+  /** Whether the smooth re-settle class rode the frame (a restore never does). */
+  readonly resettle: boolean;
+  /** The pill's resting box (transform-free layout) vs the layout viewport. */
+  readonly air: { left: number; top: number; right: number; bottom: number };
+}
+
 /**
- * Record, from the page's main world, the chrome's drag translate at the
- * first animation frame the widget's chrome exists in — the frame the user
- * first sees. Installed before a navigation (init script), read with
- * {@link firstFrameTranslate}: equal to the final translate means the
- * restore never painted the resting anchor first.
+ * Record, from the page's main world, the chrome's drag translate at each
+ * of the first {@link RESTORE_FRAMES} animation frames the widget's chrome
+ * exists in — the frames the user first sees — keeping only the changes.
+ * Installed before a navigation (init script), read by
+ * {@link expectRestorePainted}.
  *
  * @param page The page about to (re)load.
  */
-async function recordFirstFrameTranslate(page: Page): Promise<void> {
-  await page.addInitScript((host: string) => {
-    const tick = (): void => {
-      const chrome = document
-        .querySelector(host)
-        ?.shadowRoot?.querySelector<HTMLElement>('.ins-chrome');
-      if (chrome === null || chrome === undefined) {
+async function recordRestoreFrames(page: Page): Promise<void> {
+  await page.addInitScript(
+    (payload: { host: string; frames: number }) => {
+      const seen: RestoreFrame[] = [];
+      let left = payload.frames;
+      const tick = (): void => {
+        const root = document.querySelector(payload.host)?.shadowRoot;
+        const chrome = root?.querySelector<HTMLElement>('.ins-chrome');
+        const pill = root?.querySelector<HTMLElement>('.ins-pill');
+        if (chrome !== null && chrome !== undefined && pill !== null && pill !== undefined) {
+          const x = Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0;
+          const y = Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0;
+          const last = seen.at(-1);
+          if (last?.x !== x || last.y !== y) {
+            // The resting box: the chrome's rect (its translate) plus the
+            // pill's transform-free layout offset — an entrance pose aside.
+            const corner = chrome.getBoundingClientRect();
+            const viewport = document.documentElement;
+            const boxLeft = corner.left + pill.offsetLeft;
+            const boxTop = corner.top + pill.offsetTop;
+            seen.push({
+              x,
+              y,
+              resettle: chrome.classList.contains('ins-resettle'),
+              air: {
+                left: boxLeft,
+                top: boxTop,
+                right: viewport.clientWidth - (boxLeft + pill.offsetWidth),
+                bottom: viewport.clientHeight - (boxTop + pill.offsetHeight)
+              }
+            });
+          }
+          left -= 1;
+          if (left === 0) {
+            (window as unknown as { fdtRestoreFrames: unknown }).fdtRestoreFrames = seen;
+            return;
+          }
+        }
         requestAnimationFrame(tick);
-        return;
-      }
-      (window as unknown as { fdtFirstFrame: unknown }).fdtFirstFrame = {
-        x: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-x')) || 0,
-        y: Number.parseFloat(chrome.style.getPropertyValue('--ins-drag-y')) || 0
       };
-    };
-    requestAnimationFrame(tick);
-  }, STRIP_HOST);
+      requestAnimationFrame(tick);
+    },
+    { host: STRIP_HOST, frames: RESTORE_FRAMES }
+  );
 }
 
-/** The translate {@link recordFirstFrameTranslate} saw, or null when not yet recorded. */
-async function firstFrameTranslate(page: Page): Promise<{ x: number; y: number } | null> {
-  return await page.evaluate(
-    () => (window as unknown as { fdtFirstFrame?: { x: number; y: number } }).fdtFirstFrame ?? null
-  );
+/**
+ * Assert the restore's painted contract from {@link recordRestoreFrames}:
+ * the first frame already shows the restored pose (the fast path — the
+ * stored read settled before the render), or — when the read lost the race
+ * to the render — one anchor frame, then the restored pose in one instant
+ * step. Either way the restored pose is already clamped fully inside and
+ * rides no re-settle leg. Later changes are the ordinary containment cycle
+ * (the pill widening when its verdict lands) and are not the restore's. A
+ * lost race is annotated, so a run that keeps taking it is visible.
+ *
+ * @param page The reloaded page.
+ * @param expected The restored translate, when the restore needs no clamp.
+ */
+async function expectRestorePainted(
+  page: Page,
+  expected?: { x: number; y: number }
+): Promise<void> {
+  const read = async (): Promise<RestoreFrame[] | null> =>
+    await page.evaluate(
+      () => (window as unknown as { fdtRestoreFrames?: RestoreFrame[] }).fdtRestoreFrames ?? null
+    );
+  await expect.poll(read, 'the frame recorder finished').not.toBeNull();
+  const frames = (await read()) ?? [];
+  const first = frames[0];
+  if (first === undefined) throw new Error('the frame recorder saw no chrome');
+  const lostRace = first.x === 0 && first.y === 0;
+  if (lostRace) {
+    siteTest.info().annotations.push({
+      type: 'restore-race',
+      description: 'the stored read settled after the first render: one instant move'
+    });
+  }
+  const restored = frames[lostRace ? 1 : 0];
+  if (restored === undefined) throw new Error('the restore never painted');
+  expect(restored.resettle, 'the restore rides no re-settle leg').toBe(false);
+  for (const [edge, air] of Object.entries(restored.air)) {
+    expect(air, `the restored pose is clamped inside (${edge})`).toBeGreaterThanOrEqual(
+      DRAG_CONTAINMENT_MARGIN - 2
+    );
+  }
+  if (expected !== undefined) {
+    expect({ x: restored.x, y: restored.y }, 'the restored translate').toEqual(expected);
+  }
 }
 
 /** Wait for the mounted widget's scan verdict and a still chrome (drag-ready). */
@@ -938,7 +1032,7 @@ siteTest.describe('site detection widget', () => {
 
         // A reload restores it — already in the first frame the chrome exists
         // in (the restore lands in the render's own task, no anchor flash).
-        await recordFirstFrameTranslate(page);
+        await recordRestoreFrames(page);
         await page.reload({ waitUntil: 'load' });
         await settleWidget(page);
         const after = await stripGeometry(page);
@@ -952,10 +1046,7 @@ siteTest.describe('site detection widget', () => {
           Math.abs(againShape.top - draggedShape.top),
           'the reload restored the dropped top'
         ).toBeLessThan(2);
-        expect(
-          await firstFrameTranslate(page),
-          'the first frame already showed the restored position'
-        ).toEqual(await chromeTranslate(page));
+        await expectRestorePainted(page, await chromeTranslate(page));
       } finally {
         await page.close();
         await clearWidgetOptIn(extension);
@@ -1768,6 +1859,8 @@ siteTest.describe('site detection widget', () => {
             x: Math.round(committed.x),
             y: Math.round(committed.y)
           });
+        // The drop's raw entry (rank included): any later save re-stamps it.
+        const dropEntry = await storedWidgetEntry(extension);
 
         // Second drag: Escape mid-press cancels (P12A.5's recorded semantics),
         // the release stays a click and is suppressed — the card never opens.
@@ -1823,12 +1916,11 @@ siteTest.describe('site detection widget', () => {
         ).toBeLessThan(2);
         expect(Math.abs(rightShape.top - backShape.top)).toBeLessThan(2);
 
-        // Neither cancel wrote: the store still holds the first drop, and a
-        // reload rests the pill there (not at a canceled drag's last point).
-        expect(await storedWidgetPosition(extension), 'the cancels stored nothing').toEqual({
-          x: Math.round(committed.x),
-          y: Math.round(committed.y)
-        });
+        // Neither cancel wrote: the store still holds the first drop
+        // (the rank too: a save of the restored value would have re-stamped
+        // it), and a reload rests the pill there (not at a canceled drag's
+        // last point).
+        expect(await storedWidgetEntry(extension), 'the cancels stored nothing').toEqual(dropEntry);
         await page.reload({ waitUntil: 'load' });
         await settleWidget(page);
         const reloaded = (await stripGeometry(page)).shape;
@@ -1869,7 +1961,7 @@ siteTest.describe('site detection widget', () => {
         // edges; the restore re-clamps it in the render's task (first frame
         // already inside), and the stored hint stays untouched.
         await page.setViewportSize({ width: 480, height: 520 });
-        await recordFirstFrameTranslate(page);
+        await recordRestoreFrames(page);
         await page.reload({ waitUntil: 'load' });
         await settleWidget(page);
         const narrow = await stripGeometry(page);
@@ -1887,10 +1979,7 @@ siteTest.describe('site detection widget', () => {
         expect(shape.bottom).toBeLessThanOrEqual(
           narrow.viewport.height - DRAG_CONTAINMENT_MARGIN + 2
         );
-        expect(
-          await firstFrameTranslate(page),
-          'the first frame was already the re-clamped position'
-        ).toEqual(await chromeTranslate(page));
+        await expectRestorePainted(page);
         expect(await storedWidgetPosition(extension), 'a restore never rewrites the hint').toEqual({
           x: Math.round(wide.x),
           y: Math.round(wide.y)
@@ -2033,6 +2122,7 @@ siteTest.describe('site detection widget', () => {
             x: Math.round(committed.x),
             y: Math.round(committed.y)
           });
+        const dropEntry = await storedWidgetEntry(extension);
 
         // Two fingers: a second contact on the pill mid-drag cancels the
         // drag (pre-drag position restored, nothing stored).
@@ -2056,10 +2146,10 @@ siteTest.describe('site detection widget', () => {
           'the second finger canceled'
         ).toBeLessThan(2);
         expect(Math.abs(canceled.top - movedShape.top)).toBeLessThan(2);
-        expect(await storedWidgetPosition(extension), 'the canceled drag stored nothing').toEqual({
-          x: Math.round(committed.x),
-          y: Math.round(committed.y)
-        });
+        // The raw entry, rank included: no save landed, not even the restored value.
+        expect(await storedWidgetEntry(extension), 'the canceled drag stored nothing').toEqual(
+          dropEntry
+        );
       } finally {
         await cdp
           .send('Emulation.setTouchEmulationEnabled', { enabled: false })
@@ -2084,17 +2174,21 @@ siteTest.describe('site detection widget', () => {
         const hostSnapshot = async (): Promise<unknown> =>
           await page.evaluate(() => {
             const pick = (selector: string): Record<string, string> => {
+              // Only real nodes: a missing one would compare `{}` to `{}`.
               const element = document.querySelector(selector);
-              if (element === null) return {};
+              if (element === null) throw new Error(`the host page has no ${selector}`);
               const style = getComputedStyle(element);
               const out: Record<string, string> = {};
               for (const name of Array.from(style)) out[name] = style.getPropertyValue(name);
               return out;
             };
             return {
-              styles: ['html', 'body', 'h1', 'p', 'a', 'header', 'footer', 'main'].map(pick),
-              htmlStyle: document.documentElement.getAttribute('style'),
-              bodyStyle: document.body.getAttribute('style'),
+              styles: ['html', 'body', 'h1', 'p', 'a', 'header', 'footer', 'main', 'nav'].map(pick),
+              attributes: [document.documentElement, document.body].map((element) =>
+                Array.from(element.attributes, (attr) => `${attr.name}=${attr.value}`).sort()
+              ),
+              adoptedStyleSheets: document.adoptedStyleSheets.length,
+              headChildren: document.head.childElementCount,
               cookie: document.cookie,
               local: Object.keys(localStorage).sort(),
               session: Object.keys(sessionStorage).sort(),
@@ -2131,7 +2225,8 @@ siteTest.describe('site detection widget', () => {
         expect(consoleNarration, 'no console narration from a healthy mount/drag').toEqual([]);
 
         /**
-         * Every computed property of the widget's parts, plus their boxes —
+         * The shadow host's own stacking/visibility styles, every computed
+         * property of the widget's parts, plus their boxes —
          * both measured against the layout viewport's bottom-right corner
          * (the anchor): the hostile sheet re-flows the HOST page, which may
          * add a classic scrollbar and shrink the viewport, and a fixed
@@ -2142,8 +2237,26 @@ siteTest.describe('site detection widget', () => {
         const widgetSnapshot = async (): Promise<unknown> => {
           await page.mouse.move(1, 1);
           return await page.evaluate((host: string) => {
-            const root = document.querySelector(host)?.shadowRoot ?? null;
-            if (root === null) throw new Error('the widget is missing');
+            const hostElement = document.querySelector(host);
+            const root = hostElement?.shadowRoot ?? null;
+            if (hostElement === null || root === null) throw new Error('the widget is missing');
+            // The shadow host itself: these are not inherited into the shadow
+            // tree, so only the host's own reset keeps a hostile sheet from
+            // fading, hiding, clipping or burying the whole widget.
+            const hostStyle = getComputedStyle(hostElement);
+            const hostProps = [
+              'opacity',
+              'display',
+              'visibility',
+              'filter',
+              'transform',
+              'z-index',
+              'position',
+              'mix-blend-mode',
+              'isolation',
+              'pointer-events',
+              'clip-path'
+            ].map((name) => `${name}=${hostStyle.getPropertyValue(name)}`);
             const parts = [
               '.ins-chrome',
               '.ins-pill',
@@ -2154,7 +2267,7 @@ siteTest.describe('site detection widget', () => {
               '.ins-chip',
               '.ins-group-label'
             ];
-            return parts.map((selector) => {
+            const partSnapshots = parts.map((selector) => {
               const element = root.querySelector(selector);
               if (element === null) return { selector, missing: true };
               const style = getComputedStyle(element);
@@ -2181,6 +2294,7 @@ siteTest.describe('site detection widget', () => {
                 ].map(Math.round)
               };
             });
+            return { host: hostProps, parts: partSnapshots };
           }, STRIP_HOST);
         };
         const widgetClosed = await widgetSnapshot();
