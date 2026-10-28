@@ -605,8 +605,8 @@ async function recordRestoreFrames(page: Page): Promise<void> {
  * Assert the restore's painted contract from {@link recordRestoreFrames}:
  * the first frame already shows the restored pose (the fast path — the
  * stored read settled before the render), or — when the read lost the race
- * to the render — one anchor frame, then the restored pose in one instant
- * step. Either way the restored pose is already clamped fully inside and
+ * to the render — the anchor pose until the read settles, then the restored
+ * pose in one instant step. Either way the restored pose is already clamped fully inside and
  * rides no re-settle leg. Later changes are the ordinary containment cycle
  * (the pill widening when its verdict lands) and are not the restore's. A
  * lost race is annotated, so a run that keeps taking it is visible.
@@ -627,16 +627,24 @@ async function expectRestorePainted(
   const first = frames[0];
   if (first === undefined) throw new Error('the frame recorder saw no chrome');
   const lostRace = first.x === 0 && first.y === 0;
+  const restored = frames[lostRace ? 1 : 0];
+  if (restored === undefined) throw new Error('the restore never painted');
   if (lostRace) {
     siteTest.info().annotations.push({
       type: 'restore-race',
-      description: 'the stored read settled after the first render: one instant move'
+      description: `the stored read settled after the first render: one instant move (frame ${String(restored.frame)})`
     });
   }
-  const restored = frames[lostRace ? 1 : 0];
-  if (restored === undefined) throw new Error('the restore never painted');
-  // A lost race costs exactly one anchor frame: the restore lands on the next.
-  expect(restored.frame, 'the frame the restore painted in').toBe(lostRace ? 1 : 0);
+  // The fast path paints the restore in the chrome's first frame; a lost
+  // race paints it on whichever later frame the stored read settles in
+  // (unbounded by design — the read is never held for). Its single instant
+  // move is the next two checks: the anchor pose straight to the restored
+  // one, with no re-settle leg in between.
+  if (lostRace) {
+    expect(restored.frame, 'the restore follows the anchor frame').toBeGreaterThanOrEqual(1);
+  } else {
+    expect(restored.frame, 'the fast path paints in the first frame').toBe(0);
+  }
   expect(restored.resettle, 'the restore rides no re-settle leg').toBe(false);
   for (const [edge, air] of Object.entries(restored.air)) {
     expect(air, `the restored pose is clamped inside (${edge})`).toBeGreaterThanOrEqual(
@@ -662,12 +670,13 @@ async function resetAppearance(driver: ExtensionDriver): Promise<void> {
   await driver.evaluateInWorker(async (appearance: string): Promise<void> => {
     const current = (await chrome.storage.sync.get(['options']))['options'] as
       { appearance?: string } | undefined;
+    // `appearance` after the spread: a stored choice must not survive the reset.
     await chrome.storage.sync.set({
       options: {
         improvements: {},
-        appearance,
         features: {},
-        ...(current ?? {})
+        ...(current ?? {}),
+        appearance
       }
     });
   }, 'system');

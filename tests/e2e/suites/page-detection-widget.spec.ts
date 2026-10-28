@@ -17,8 +17,10 @@
  *   never touches the other origin.
  * - **Appearance:** Options tile writes (System/Dark/Light) and emulated OS
  *   `prefers-color-scheme` flips restyle the open pill and card live.
- * - **Reduced motion (D-2):** the shadow root carries no animation after
- *   mount, through the open/close choreography too.
+ * - **Reduced motion (D-2):** every shadow duration is collapsed to a frame
+ *   (closed and open) and each motion open/close starts is a collapsed
+ *   one-shot, read at its start event; a no-preference control proves the
+ *   recorder sees the real transition.
  * - **Zero markers:** a page with no WP Rocket footprint renders the honest
  *   absence (identity, cache chip, mood, tooltips, footer) and claims no
  *   verdict it does not have.
@@ -65,6 +67,22 @@ const PALETTE_PAGE = '/palette/hotkeys.html';
 const SETTLE = { timeout: 15_000, intervals: [100, 250, 500] };
 /** The pill/card surface (`--surface-2`) under each palette. */
 const SURFACE_2 = { dark: 'rgb(23, 27, 33)', light: 'rgb(255, 255, 255)' } as const;
+/** The page-global log {@link recordWidgetHost} fills. */
+const HOST_LOG = '__wprFdtWidgetHostLog';
+/** The page-global log {@link recordMotion} fills. */
+const MOTION_LOG = '__wprFdtMotionLog';
+/**
+ * How long a page is watched for a late widget move once its decision is
+ * due. The widget exposes no "decided" marker: its decision is two storage
+ * reads (or one storage change event, already seen by a sibling tab of the
+ * same write) plus the body wait and the shadow-host creation — milliseconds.
+ * The window starts only after a positive signal (the pass answered, or a
+ * sibling tab reacted to the same write), and the host recorder catches even
+ * a transient mount inside it.
+ */
+const QUIET_WINDOW_MS = 1_500;
+/** A collapsed (reduced-motion) duration ceiling, in ms (`tokens.css`: 0.01ms). */
+const COLLAPSED_MS = 0.01;
 
 /** Remove the override map, the stored positions and the options item. */
 async function resetWidgetState(driver: ExtensionDriver): Promise<void> {
@@ -182,6 +200,165 @@ async function settleVerdict(page: Page): Promise<void> {
     .not.toMatch(/^(…)?$/);
 }
 
+/**
+ * Record every widget host entering (`+`) or leaving (`-`) the page from now
+ * on — run as an init script it watches from document start, so a transient
+ * mount is caught too. Re-running it in a live realm empties the log instead
+ * of stacking a second observer. Runs in the page; self-contained.
+ */
+function recordWidgetHost(args: { host: string; key: string }): void {
+  const scope = window as unknown as Record<string, unknown>;
+  const existing = scope[args.key];
+  if (Array.isArray(existing)) {
+    existing.length = 0;
+    return;
+  }
+  const entries: string[] = [];
+  Object.defineProperty(window, args.key, { value: entries, configurable: true });
+  const note = (node: Node, sign: string): void => {
+    if (!(node instanceof Element)) return;
+    for (const element of [node, ...node.querySelectorAll(args.host)]) {
+      if (element.localName === args.host) entries.push(`${sign}${args.host}`);
+    }
+  };
+  new MutationObserver((records) => {
+    for (const record of records) {
+      record.addedNodes.forEach((node) => {
+        note(node, '+');
+      });
+      record.removedNodes.forEach((node) => {
+        note(node, '-');
+      });
+    }
+  }).observe(document, { childList: true, subtree: true });
+}
+
+/** Start (or restart) the host recorder in a page's live realm. */
+async function watchWidgetHost(page: Page): Promise<void> {
+  await page.evaluate(recordWidgetHost, { host: WIDGET_HOST, key: HOST_LOG });
+}
+
+/** Arm the host recorder for the page's next loads (from document start). */
+async function watchWidgetHostFromBoot(page: Page): Promise<void> {
+  await page.addInitScript(recordWidgetHost, { host: WIDGET_HOST, key: HOST_LOG });
+}
+
+/**
+ * Hold the quiet window, then expect the recorder saw no widget host enter
+ * or leave — a late or transient move inside the window fails.
+ *
+ * @throws {@link Error} When no recorder runs on the page (a suite bug).
+ */
+async function expectHostQuiet(page: Page, why: string): Promise<void> {
+  await page.waitForTimeout(QUIET_WINDOW_MS);
+  const log = await page.evaluate((key: string) => {
+    const entries = (window as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(entries)) throw new Error('no widget host recorder on this page');
+    return entries.map(String);
+  }, HOST_LOG);
+  expect(log, why).toEqual([]);
+}
+
+/**
+ * Record the timing of every animation or transition that starts in the
+ * widget's shadow tree from now on, read at its start event (the animation
+ * is still running then, whatever its length). Re-running it on the same
+ * root empties the log. Runs in the page; self-contained.
+ *
+ * @throws {@link Error} When the widget is not mounted.
+ */
+function recordMotion(args: { host: string; key: string }): void {
+  const root = document.querySelector(args.host)?.shadowRoot;
+  if (root === null || root === undefined) throw new Error('the widget is missing');
+  const scope = window as unknown as Record<string, unknown>;
+  const existing = scope[args.key] as { root: ShadowRoot; entries: unknown[] } | undefined;
+  if (existing?.root === root) {
+    existing.entries.length = 0;
+    return;
+  }
+  const entries: { event: string; duration: number; iterations: number }[] = [];
+  Object.defineProperty(window, args.key, { value: { root, entries }, configurable: true });
+  const note = (event: Event): void => {
+    if (!(event.target instanceof Element)) return;
+    for (const animation of event.target.getAnimations()) {
+      const timing = animation.effect?.getComputedTiming();
+      entries.push({
+        event: event.type,
+        duration: typeof timing?.duration === 'number' ? timing.duration : Number.NaN,
+        iterations: timing?.iterations ?? Number.NaN
+      });
+    }
+  };
+  root.addEventListener('transitionrun', note);
+  root.addEventListener('animationstart', note);
+}
+
+/** Start (or restart) the motion recorder on the mounted widget. */
+async function watchMotion(page: Page): Promise<void> {
+  await page.evaluate(recordMotion, { host: WIDGET_HOST, key: MOTION_LOG });
+}
+
+/**
+ * The motion the recorder saw, after three rendered frames: a style change
+ * creates its transitions on the next frame and their start events dispatch
+ * on the one after.
+ */
+async function recordedMotion(
+  page: Page
+): Promise<{ event: string; duration: number; iterations: number }[]> {
+  return await page.evaluate(async (key: string) => {
+    for (let frame = 0; frame < 3; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const log = (window as unknown as Record<string, unknown>)[key] as
+      { entries: { event: string; duration: number; iterations: number }[] } | undefined;
+    if (log === undefined) throw new Error('no motion recorder on this page');
+    return [...log.entries];
+  }, MOTION_LOG);
+}
+
+/** Expect every recorded motion collapsed to a frame and none looping. */
+function expectCollapsedMotion(
+  motion: readonly { event: string; duration: number; iterations: number }[],
+  label: string
+): void {
+  for (const entry of motion) {
+    expect(entry.duration, `${label}: ${entry.event} collapses to a frame`).toBeLessThanOrEqual(
+      COLLAPSED_MS
+    );
+    expect(Number.isFinite(entry.iterations), `${label}: ${entry.event} never loops`).toBe(true);
+  }
+}
+
+/**
+ * Sweep every shadow node's computed animation/transition timing: no
+ * infinite iteration, every duration collapsed to the token override's frame.
+ */
+async function expectCollapsedTimings(page: Page, label: string): Promise<void> {
+  const timings = await page.evaluate((host: string) => {
+    const root = document.querySelector(host)?.shadowRoot;
+    if (root === null || root === undefined) throw new Error('the widget is missing');
+    return [...root.querySelectorAll('*')].map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        iterations: style.animationIterationCount,
+        durations: [
+          ...style.animationDuration.split(','),
+          ...style.transitionDuration.split(',')
+        ].map((value) => Number.parseFloat(value))
+      };
+    });
+  }, WIDGET_HOST);
+  for (const timing of timings) {
+    expect(timing.iterations, `${label}: no infinite animation`).not.toContain('infinite');
+    for (const seconds of timing.durations) {
+      expect(seconds, `${label}: motion collapses to a frame`).toBeLessThanOrEqual(
+        COLLAPSED_MS / 1000
+      );
+    }
+  }
+}
+
 /** Wait until no animation runs in the widget's shadow root. */
 async function settleAnimations(page: Page): Promise<void> {
   await expect
@@ -221,6 +398,7 @@ test.describe('on-page detection widget (fixture origins)', () => {
       await expectWidget(a.page, false, 'Saved off hides the open page (localhost)');
       await expectWidget(b.page, false, 'Saved off hides the open page (127.0.0.1)');
       expect(await storedEnabled(extension, ORIGIN_A), 'the default writes no entry').toBeNull();
+      expect(await storedEnabled(extension, ORIGIN_B), 'the default writes no entry').toBeNull();
 
       await saveDefault(extension, true);
       await expectWidget(a.page, true, 'Saved on mounts again (localhost)');
@@ -230,12 +408,19 @@ test.describe('on-page detection widget (fixture origins)', () => {
 
       // A fresh load under default off stays hidden from the boot on.
       await saveDefault(extension, false);
+      await expectWidget(a.page, false, 'Saved off hides the open page again');
+      await watchWidgetHostFromBoot(a.page);
       await a.page.reload({ waitUntil: 'load' });
-      // The pass has answered (the isolated world is alive) and still no widget.
+      // The pass has answered (the isolated world is alive); past the quiet
+      // window the host never entered, not even briefly.
       await expect
         .poll(async () => await extension.sendToTab<unknown>(a.tabId, 'getWprDetections'), SETTLE)
         .not.toBeNull();
+      await expectHostQuiet(a.page, 'a reload under default off mounts nothing');
       await expectWidget(a.page, false, 'a reload under default off mounts nothing');
+      // Positive control: the reloaded module was alive and deciding.
+      await saveDefault(extension, true);
+      await expectWidget(a.page, true, 'Saved on mounts the reloaded page live');
     } finally {
       await a.page.close();
       await b.page.close();
@@ -285,23 +470,34 @@ test.describe('on-page detection widget (fixture origins)', () => {
     }
   });
 
-  test('the per-site toggle flips the effective state in every tab of its origin, survives a reload, and leaves the other origin alone', async ({
+  test('the per-site toggle flips the effective state in every tab of its origin under both defaults (an unconfigured origin included), survives a reload, and leaves the other origin alone', async ({
     extension
   }) => {
     const a = await openFixturePage(extension, PALETTE_PAGE);
     const aTwin = await openFixturePage(extension, PLAIN_PAGE);
     const b = await openFixturePage(extension, PLAIN_PAGE, ORIGIN_B);
+    const bPalette = await openFixturePage(extension, PALETTE_PAGE, ORIGIN_B);
+    /** B's stored entry after a step (null until B itself is toggled). */
+    const expectBEntry = async (enabled: boolean | null, why: string): Promise<void> => {
+      expect(await storedEnabled(extension, ORIGIN_B), why).toBe(enabled);
+    };
     try {
       await expectWidget(a.page, true, 'default on');
       await expectWidget(b.page, true, 'default on');
+      await expectWidget(bPalette.page, true, 'default on');
+      for (const page of [a.page, b.page, bPalette.page]) await stampRealm(page);
+      await watchWidgetHost(b.page);
 
       // Default ON, unconfigured: the toggle writes `off` (the effective flip).
       await togglePerSite(extension, a.page, a.tabId);
       await expectWidget(a.page, false, 'the toggle hides it live');
       await expectWidget(aTwin.page, false, 'every tab of the origin follows');
+      // A's tabs reacted to the write: B's (same broadcast) stayed quiet.
+      await expectHostQuiet(b.page, 'the other origin is untouched');
       await expectWidget(b.page, true, 'the other origin is untouched');
       expect(await storedEnabled(extension, ORIGIN_A)).toBe(false);
-      expect(await storedEnabled(extension, ORIGIN_B), 'no entry for the other origin').toBeNull();
+      await expectBEntry(null, 'no entry for the other origin');
+      await watchWidgetHostFromBoot(aTwin.page);
       await aTwin.page.reload({ waitUntil: 'load' });
       await expect
         .poll(
@@ -309,31 +505,55 @@ test.describe('on-page detection widget (fixture origins)', () => {
           SETTLE
         )
         .not.toBeNull();
+      await expectHostQuiet(aTwin.page, 'the choice survives a reload');
       await expectWidget(aTwin.page, false, 'the choice survives a reload');
 
+      // Positive control for the reloaded tab: it follows the next write live.
       await togglePerSite(extension, a.page, a.tabId);
       await expectWidget(a.page, true, 'toggled back on, live');
       await expectWidget(aTwin.page, true, 'the reloaded tab follows live too');
       expect(await storedEnabled(extension, ORIGIN_A)).toBe(true);
+      await expectBEntry(null, 'still no entry for the other origin');
 
-      // Default OFF, unconfigured origin B would be hidden; A's explicit on stays.
+      // Default OFF, unconfigured origin B is hidden; A's explicit on stays.
       await saveDefault(extension, false);
       await expectWidget(b.page, false, 'B follows default off');
+      await expectWidget(bPalette.page, false, 'B follows default off (every tab)');
       await expectWidget(a.page, true, 'A keeps its explicit entry');
+      await expectBEntry(null, 'the default writes no entry');
       // A toggle under default off from an explicit on writes off…
       await togglePerSite(extension, a.page, a.tabId);
       await expectWidget(a.page, false, 'default off: the toggle hides');
       expect(await storedEnabled(extension, ORIGIN_A)).toBe(false);
+      await expectBEntry(null, 'A’s toggle writes nothing for B');
       // …and from there back on — mounted although the default is off.
       await togglePerSite(extension, a.page, a.tabId);
       await expectWidget(a.page, true, 'default off: the toggle shows');
+      expect(await storedEnabled(extension, ORIGIN_A)).toBe(true);
+      await expectBEntry(null, 'A’s toggle writes nothing for B');
+      for (const page of [a.page, b.page, bPalette.page]) await expectRealmAlive(page);
+      await watchWidgetHost(b.page);
       await a.page.reload({ waitUntil: 'load' });
       await expectWidget(a.page, true, 'the shown choice survives a reload under default off');
+      await expectHostQuiet(b.page, 'B never moved');
       await expectWidget(b.page, false, 'B never moved');
+
+      // Default OFF, unconfigured B: its toggle reads the saved `off` default
+      // and writes `on` — B mounts live in every tab; A never moves.
+      await watchWidgetHost(a.page);
+      await togglePerSite(extension, bPalette.page, bPalette.tabId);
+      await expectWidget(bPalette.page, true, 'default off + unconfigured: the toggle shows');
+      await expectWidget(b.page, true, 'every tab of B follows');
+      await expectBEntry(true, 'the first toggle under default off writes on');
+      await expectHostQuiet(a.page, 'A never moved');
+      expect(await storedEnabled(extension, ORIGIN_A), 'A’s entry unchanged').toBe(true);
+      await expectRealmAlive(b.page);
+      await expectRealmAlive(bPalette.page);
     } finally {
       await a.page.close();
       await aTwin.page.close();
       await b.page.close();
+      await bPalette.page.close();
     }
   });
 
@@ -390,10 +610,12 @@ test.describe('on-page detection widget (fixture origins)', () => {
     }
   });
 
-  test('reduced motion: the shadow root runs no animation after mount or through open/close', async ({
+  test('reduced motion: every shadow duration collapses to a frame (closed and open) and every motion started by open/close is a collapsed one-shot; a no-preference control proves the recorder sees real motion', async ({
     extension
   }) => {
     const page = await extension.browserContext.newPage();
+    const pill = page.locator(`${WIDGET_HOST} .ins-pill`);
+    const card = page.locator(`${WIDGET_HOST} .ins-card`);
     try {
       // Emulated before the navigation: the mount's entrance sees it.
       await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -403,34 +625,31 @@ test.describe('on-page detection widget (fixture origins)', () => {
       await settleAnimations(page);
 
       // No infinite loop survives (the pending pulse included) and every
-      // duration is collapsed to the token override's frame.
-      const timings = await page.evaluate((host: string) => {
-        const root = document.querySelector(host)?.shadowRoot;
-        if (root === null || root === undefined) throw new Error('the widget is missing');
-        return [...root.querySelectorAll('*')].map((node) => {
-          const style = getComputedStyle(node);
-          return {
-            iterations: style.animationIterationCount,
-            durations: [
-              ...style.animationDuration.split(','),
-              ...style.transitionDuration.split(',')
-            ].map((value) => Number.parseFloat(value))
-          };
-        });
-      }, WIDGET_HOST);
-      for (const timing of timings) {
-        expect(timing.iterations, 'no infinite animation').not.toContain('infinite');
-        for (const seconds of timing.durations) {
-          expect(seconds, 'motion collapses to a frame').toBeLessThanOrEqual(0.00001);
-        }
-      }
+      // duration is collapsed to the token override's frame — closed, then open.
+      await expectCollapsedTimings(page, 'closed');
 
-      await page.locator(`${WIDGET_HOST} .ins-pill`).click();
-      await expect(page.locator(`${WIDGET_HOST} .ins-card`)).toBeVisible();
-      await settleAnimations(page);
+      // Each motion open/close starts is read at its own start event.
+      await watchMotion(page);
+      await pill.click();
+      await expect(card).toBeVisible();
+      expectCollapsedMotion(await recordedMotion(page), 'open');
+      await expectCollapsedTimings(page, 'open');
+      await watchMotion(page);
       await page.keyboard.press('Escape');
-      await expect(page.locator(`${WIDGET_HOST} .ins-card`)).toBeHidden();
-      await settleAnimations(page);
+      await expect(card).toBeHidden();
+      expectCollapsedMotion(await recordedMotion(page), 'close');
+
+      // Control: the same recorder and read, with motion allowed, sees the
+      // card's real open transition — the checks above can fail.
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await watchMotion(page);
+      await pill.click();
+      await expect(card).toBeVisible();
+      const control = await recordedMotion(page);
+      expect(
+        control.some((entry) => entry.duration > COLLAPSED_MS),
+        'with motion allowed, opening starts a real-length transition'
+      ).toBe(true);
     } finally {
       await page.close();
     }
@@ -480,6 +699,10 @@ test.describe('on-page detection widget (fixture origins)', () => {
       expect(rows.length, 'the registry rows still render, each honest').toBeGreaterThan(0);
       for (const row of rows) {
         expect(row.chip, `no applied verdict is claimed (${row.title})`).not.toMatch(/ins-chip-ok/);
+        // Only the honest absence states: neutral, or attention (unsure).
+        expect(row.chip, `an absence chip state (${row.title})`).toMatch(
+          /\bins-chip-(neutral|attention)\b/
+        );
         // A measured count may show, and on this page it can only be zero.
         if (row.value !== null) {
           expect(row.value, `only an empty count (${row.title})`).toMatch(/^0 \w/);
