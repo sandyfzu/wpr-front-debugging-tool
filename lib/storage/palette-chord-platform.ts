@@ -2,6 +2,12 @@
  * The palette chord's keyboard convention, kept apart from the chord module
  * so the surfaces that resolve it (the background, the options page) bundle
  * this mapping only, not the key tables and the store.
+ *
+ * Not `utils/platform.ts`: that is a synchronous `navigator` read for UI
+ * code that must agree with a library's own platform check inside an event
+ * handler. This convention comes from `runtime.getPlatformInfo` (async,
+ * extension contexts only; content scripts ask the background), resolved
+ * once per surface.
  */
 import type { Logger } from '../logger';
 

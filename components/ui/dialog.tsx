@@ -200,6 +200,10 @@ function dismissOnScrimPress(scrim: HTMLElement, modal: boolean, dismiss: () => 
  * @param props.children The dialog's content (fields, lists, texts).
  */
 export function ModalDialog(props: ModalDialogProps): JSX.Element {
+  // Mounted (injected) dialogs never write into the host document. Read once:
+  // the root and the scrim must agree, and the mount never changes per mount.
+  // eslint-disable-next-line solid/reactivity -- a mount-time read by design
+  const modal = props.mount === undefined;
   /** Set by the first dismissal: later seams (one press seen twice) are no-ops. */
   let dismissed = false;
   const dismiss = (): void => {
@@ -209,8 +213,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
   };
   return (
     <KobalteDialog.Root
-      // Mounted (injected) dialogs never write into the host document.
-      modal={props.mount === undefined}
+      modal={modal}
       // Mount-driven: the caller renders the dialog only while it is open, so
       // it starts open on every mount (a fresh surface per open) and its only
       // transitions are the dismissals funneled into one branch below.
@@ -224,7 +227,7 @@ export function ModalDialog(props: ModalDialogProps): JSX.Element {
           data-fdt="dialog-overlay"
           class={OVERLAY_CLASSES}
           ref={(element) => {
-            onCleanup(dismissOnScrimPress(element, props.mount === undefined, dismiss));
+            onCleanup(dismissOnScrimPress(element, modal, dismiss));
           }}
         />
         <KobalteDialog.Content

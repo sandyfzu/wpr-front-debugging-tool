@@ -219,6 +219,19 @@ describe('ModalDialog dismissals', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores a Ctrl + touch tap on the scrim off macOS (its click too), before and after arming', async () => {
+    // A touchscreen with a keyboard: the tap is a context-menu press the library ignores.
+    stubPlatform('Win32');
+    const { onClose } = renderDialog();
+    pressScrim(modalScrim(), { button: 0, ctrlKey: true, pointerType: 'touch' });
+    await armLibrary();
+    pressScrim(modalScrim(), { button: 0, ctrlKey: true, pointerType: 'touch' });
+    expect(onClose).not.toHaveBeenCalled();
+    // Not stuck: a plain tap still closes on its click.
+    pressScrim(modalScrim(), { button: 0, pointerType: 'touch' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('closes on a pen press on the scrim at its pointerdown', () => {
     const { onClose } = renderDialog();
     modalScrim().dispatchEvent(

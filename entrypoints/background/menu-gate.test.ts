@@ -66,7 +66,8 @@ function harness(read: () => Promise<boolean> = () => Promise.resolve(true)): {
     update: (id, props) => {
       log.push(`update:${id}:${JSON.stringify(props)}`);
       return Promise.resolve();
-    }
+    },
+    gateRowId: 'gate'
   };
   return {
     deps,
@@ -390,6 +391,37 @@ describe('createMenuGateFollower', () => {
     await follower.idle();
     follower.recreate();
     await follower.idle();
+    await expect(follower.toggle()).resolves.toBe(true);
+  });
+
+  it('a refused gate-row edit (rows known) keeps the toggle on what that row still offers', async () => {
+    const h = harness(() => Promise.resolve(true));
+    const follower = createMenuGateFollower(h.deps);
+    await follower.start();
+    await follower.idle();
+    // Rows show on ("Turn off…"); the off delivery lands on every row but the gate row.
+    h.deps.update = (id) =>
+      id === 'gate' ? Promise.reject(new Error('refused')) : Promise.resolve();
+    h.emit(false);
+    await follower.idle();
+    expect(warn).toHaveBeenCalledWith('[WPR FDT] [context-menus] Menu entry update failed', {
+      id: 'gate',
+      cause: new Error('refused')
+    });
+    // The gate row still offers "Turn off…": the click writes off.
+    await expect(follower.toggle()).resolves.toBe(false);
+  });
+
+  it('a refused sibling edit (rows known) still records what the gate row shows', async () => {
+    const h = harness(() => Promise.resolve(true));
+    const follower = createMenuGateFollower(h.deps);
+    await follower.start();
+    await follower.idle();
+    h.deps.update = (id) =>
+      id === 'page' ? Promise.reject(new Error('refused')) : Promise.resolve();
+    h.emit(false);
+    await follower.idle();
+    // The gate row now offers "Turn on…": the click writes on.
     await expect(follower.toggle()).resolves.toBe(true);
   });
 

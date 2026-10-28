@@ -1,6 +1,16 @@
 /**
  * The navigator's platform string, read one way everywhere a surface branches
  * an accommodation on it (never a capability — those are feature-detected).
+ *
+ * Not the palette chord's platform (`lib/storage/palette-chord-platform.ts`):
+ * that one is the extension's own keyboard convention, resolved once and
+ * asynchronously from `runtime.getPlatformInfo` (background/options; content
+ * scripts ask the background). This read is synchronous and mirrors what a
+ * UI library reads inside an event handler (e.g. a dialog's context-menu
+ * press check), where parity with that library — not the extension's
+ * convention — is the point. Keep both: merging them would either make event
+ * handlers async or tie the chord to a navigator string instead of the
+ * runtime's OS report.
  */
 
 /** The navigator facts the platform reads take (tests pass doubles). */
