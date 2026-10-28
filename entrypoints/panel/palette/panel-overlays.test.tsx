@@ -187,9 +187,9 @@ describe('the keyboard overlays in the shell', () => {
       expect(paletteKeys()).toBe('Ctrl / ⌘ K or ⌥K');
     });
     expect(watcher.write).not.toBeNull();
-    watcher.write?.({ code: 'KeyP', mod: true, alt: true });
+    watcher.write?.({ code: 'KeyO', mod: true, alt: true });
     await waitFor(() => {
-      expect(paletteKeys()).toBe('Ctrl / ⌘ K or ⌥⌘P');
+      expect(paletteKeys()).toBe('Ctrl / ⌘ K or ⌥⌘O');
     });
   });
 

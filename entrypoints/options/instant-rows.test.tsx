@@ -538,9 +538,9 @@ describe('the Ctrl+Alt caveat', () => {
   it('outside macOS: captured Ctrl+Alt saves and shows the persistent warning', async () => {
     mount({ platform: 'other' });
     const control = await record();
-    pressWithAltGraph(control, { code: 'KeyP', ctrlKey: true, altKey: true }, false);
+    pressWithAltGraph(control, { code: 'KeyO', ctrlKey: true, altKey: true }, false);
     await waitFor(async () => {
-      expect(await readPaletteChord()).toEqual({ code: 'KeyP', mod: true, alt: true });
+      expect(await readPaletteChord()).toEqual({ code: 'KeyO', mod: true, alt: true });
     });
     const caveat = await waitFor(() => {
       const found = document.getElementById('option-palette-chord-caveat');
@@ -556,7 +556,7 @@ describe('the Ctrl+Alt caveat', () => {
   it('outside macOS: a keystroke the keyboard reports as AltGr is refused with its reason', async () => {
     mount({ platform: 'other' });
     const control = await record();
-    expect(pressWithAltGraph(control, { code: 'KeyP', ctrlKey: true, altKey: true }, true)).toBe(
+    expect(pressWithAltGraph(control, { code: 'KeyO', ctrlKey: true, altKey: true }, true)).toBe(
       true
     );
     expect(fieldStatus().textContent).toContain('reads as AltGr on this keyboard');
@@ -565,7 +565,7 @@ describe('the Ctrl+Alt caveat', () => {
   });
 
   it('on macOS: a Command+Option binding warns with its synced Windows chord', async () => {
-    const chord: PaletteChord = { code: 'KeyP', mod: true, alt: true };
+    const chord: PaletteChord = { code: 'KeyO', mod: true, alt: true };
     await setPaletteChord(chord);
     mount();
     await field();
@@ -574,7 +574,7 @@ describe('the Ctrl+Alt caveat', () => {
       expect(found).toBeTruthy();
       return found as HTMLElement;
     });
-    expect(caveat.textContent).toContain('On Windows this shortcut is Ctrl+Alt+P');
+    expect(caveat.textContent).toContain('On Windows this shortcut is Ctrl+Alt+O');
   });
 
   it('no warning for the default binding', async () => {
@@ -592,7 +592,7 @@ describe('axe per state', () => {
   }
 
   it('recording, refused, gate-off and caveat states raise zero violations', async () => {
-    await setPaletteChord({ code: 'KeyP', mod: true, alt: true }); // Caveat + Reset visible.
+    await setPaletteChord({ code: 'KeyO', mod: true, alt: true }); // Caveat + Reset visible.
     mount({ platform: 'other' });
     const control = await record();
     await audit();

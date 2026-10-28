@@ -9,7 +9,7 @@ import { DEFAULT_PALETTE_CHORD, type PaletteChord } from '../../../lib/storage/p
 import { createPanelChordBinding, type PanelChordDeps } from './chord-binding';
 
 const ALT_P: PaletteChord = { code: 'KeyP', alt: true };
-const MOD_ALT_J: PaletteChord = { code: 'KeyJ', mod: true, alt: true };
+const MOD_ALT_O: PaletteChord = { code: 'KeyO', mod: true, alt: true };
 
 /** Wait for queued promise callbacks. */
 async function settle(): Promise<void> {
@@ -53,8 +53,8 @@ describe('createPanelChordBinding', () => {
     const h = harness();
     const chord = createPanelChordBinding(h.deps);
     await settle();
-    h.write(MOD_ALT_J);
-    expect(chord.binding()).toEqual({ chord: MOD_ALT_J, platform: 'mac' });
+    h.write(MOD_ALT_O);
+    expect(chord.binding()).toEqual({ chord: MOD_ALT_O, platform: 'mac' });
     chord.stop();
   });
 
@@ -84,7 +84,7 @@ describe('createPanelChordBinding', () => {
     chord.stop();
     expect(h.unwatch).toHaveBeenCalledOnce();
     answer({ os: 'mac' });
-    h.write(MOD_ALT_J);
+    h.write(MOD_ALT_O);
     await settle();
     expect(chord.binding()).toBeNull();
   });

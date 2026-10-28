@@ -30,7 +30,7 @@
  * this suite's own legs now — a negative capability claim gets probed
  * before it ships, not asserted.
  */
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { expect, panelPageUrl, test, type ExtensionDriver } from '../helpers/extension';
 import { resetInstantRows } from '../helpers/options';
 
@@ -80,7 +80,7 @@ async function writeChord(driver: ExtensionDriver, chord: unknown): Promise<void
 }
 
 /** The shortcuts overlay's palette row keys chip. */
-function paletteRowKeys(page: Page) {
+function paletteRowKeys(page: Page): Locator {
   return page
     .getByRole('dialog', SHORTCUTS_DIALOG)
     .locator('[data-fdt="shortcut-row"]', { hasText: 'Open or close the command palette' })
@@ -136,9 +136,9 @@ test.describe('panel palette: the chosen chord', () => {
       await page.keyboard.press('/');
       await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥K' : 'Alt+K'}`);
 
-      await writeChord(extension, { code: 'KeyP', mod: true, alt: true });
+      await writeChord(extension, { code: 'KeyO', mod: true, alt: true });
       // The open overlay re-renders from the live binding (no reload).
-      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥⌘P' : 'Ctrl+Alt+P'}`);
+      await expect(paletteRowKeys(page)).toHaveText(`Ctrl / ⌘ K or ${MAC ? '⌥⌘O' : 'Ctrl+Alt+O'}`);
       // A fixed dialog never widens the document, so measure the boxes: the
       // dialog fits the viewport and every row stays inside it (no clipping).
       const fit = await page.evaluate(() => {
@@ -164,9 +164,9 @@ test.describe('panel palette: the chosen chord', () => {
 
       await page.keyboard.press('Alt+KeyK');
       await expect(page.getByRole('combobox')).toHaveCount(0);
-      await page.keyboard.press('ControlOrMeta+Alt+KeyP');
+      await page.keyboard.press('ControlOrMeta+Alt+KeyO');
       await expect(page.getByRole('combobox')).toBeVisible();
-      await page.keyboard.press('ControlOrMeta+Alt+KeyP');
+      await page.keyboard.press('ControlOrMeta+Alt+KeyO');
       await expect(page.getByRole('combobox')).toHaveCount(0);
     } finally {
       await page.close();

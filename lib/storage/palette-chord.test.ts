@@ -340,7 +340,10 @@ describe('reserved chords', () => {
       ...mods(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...mods(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...mods(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
-      ...mods(['KeyR'], { alt: true }),
+      ...mods(['BracketLeft', 'BracketRight', 'Period', 'F5', 'F6']),
+      ...mods(['KeyF', 'KeyS', 'KeyX', 'KeyQ', 'BracketRight'], { shift: true }),
+      ...mods(['KeyR', 'KeyF', 'KeyU', 'KeyB', 'KeyP', 'KeyN', 'KeyZ'], { alt: true }),
+      ...mods(['KeyA', 'KeyI', 'BracketRight'], { alt: true, shift: true }),
       ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code): PaletteChord => ({ code, alt: true })),
       ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code): PaletteChord => ({
         code,
@@ -358,9 +361,23 @@ describe('reserved chords', () => {
         'Digit8',
         'Digit9'
       ]),
+      ...(
+        [
+          'Digit1',
+          'Digit2',
+          'Digit3',
+          'Digit4',
+          'Digit5',
+          'Digit6',
+          'Digit7',
+          'Digit8',
+          'Digit9'
+        ] as const
+      ).map((code): PaletteChord => ({ code, alt: true })),
       ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code): PaletteChord => ({
         code
-      }))
+      })),
+      ...(['F3', 'F5', 'F7', 'F9'] as const).map((code): PaletteChord => ({ code, shift: true }))
     ],
     zoom: [...mods(['Equal', 'Minus', 'Digit0']), ...mods(['Equal'], { shift: true })],
     devtools: [
@@ -371,6 +388,7 @@ describe('reserved chords', () => {
     system: [
       ...mods(['KeyQ', 'KeyM', 'Backquote']),
       ...mods(['Backquote'], { shift: true }),
+      ...mods(['KeyH'], { alt: true }),
       { code: 'F4', alt: true },
       { code: 'F11' }
     ]
@@ -414,7 +432,8 @@ describe('reserved chords', () => {
       { code: 'F10', shift: true },
       { code: 'KeyR', alt: true },
       { code: 'KeyW', alt: true },
-      { code: 'Comma', mod: true, alt: true }
+      { code: 'Comma', mod: true, alt: true },
+      { code: 'KeyO', mod: true, alt: true }
     ] satisfies PaletteChord[]) {
       expect(reservedChordGroup(free)).toBeNull();
       expect(parsePaletteChord(free)).toEqual(free);
@@ -479,6 +498,17 @@ describe('the chord store', () => {
     await setPaletteChord({ code: 'KeyL', mod: true, shift: true });
     await paletteChordStore.removeValue();
     expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
+  });
+
+  it('reads the default, live too, for a stored chord that a later version reserves', async () => {
+    // Written raw, as an older version validated it (⌘⌥P / Ctrl+Alt+P, now page setup).
+    const nowReserved = { code: 'KeyP', mod: true, alt: true };
+    const seen: PaletteChord[] = [];
+    const unwatch = watchPaletteChord((chord) => seen.push(chord));
+    await fakeBrowser.storage.sync.set({ [SYNC_KEY]: nowReserved });
+    expect(await readPaletteChord()).toEqual(DEFAULT_PALETTE_CHORD);
+    expect(seen).toEqual([DEFAULT_PALETTE_CHORD]);
+    unwatch();
   });
 
   it('stores the canonical form and reads it back', async () => {

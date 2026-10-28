@@ -46,10 +46,10 @@ describe('createPaletteChordIO', () => {
     const seen: PaletteChord[] = [];
     const unwatch = io.watch((value) => seen.push(value));
     expect(await io.read()).toEqual(DEFAULT_PALETTE_CHORD);
-    await io.write({ code: 'KeyP', mod: true, shift: false, alt: true });
+    await io.write({ code: 'KeyO', mod: true, shift: false, alt: true });
     await flush();
-    expect(await readPaletteChord()).toEqual({ code: 'KeyP', mod: true, alt: true });
-    expect(seen).toEqual([{ code: 'KeyP', mod: true, alt: true }]);
+    expect(await readPaletteChord()).toEqual({ code: 'KeyO', mod: true, alt: true });
+    expect(seen).toEqual([{ code: 'KeyO', mod: true, alt: true }]);
     unwatch();
   });
 

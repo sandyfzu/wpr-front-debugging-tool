@@ -29,7 +29,6 @@ export interface PanelChordDeps extends ChordSource {
   getPlatformInfo(): Promise<{ readonly os: string }>;
   /** The navigator's convention: the stand-in when the report fails. */
   fallbackPlatform(): ChordPlatform;
-  readonly log: Pick<Logger, 'warn'>;
 }
 
 /** The followed binding plus its teardown. */

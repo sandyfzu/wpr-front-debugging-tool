@@ -68,20 +68,20 @@ describe('classifyCaptureKey', () => {
 
   it('refuses an AltGr keystroke outside macOS; Ctrl+Alt without AltGraph still captures', () => {
     const altGraph = (held: string): boolean => held === 'AltGraph';
-    const altGr = key('KeyP', { ctrlKey: true, altKey: true, getModifierState: altGraph });
+    const altGr = key('KeyO', { ctrlKey: true, altKey: true, getModifierState: altGraph });
     expect(classifyCaptureKey(altGr, 'other')).toEqual({
       kind: 'rejected',
       reason: 'altgraph',
-      chord: { code: 'KeyP', mod: true, alt: true }
+      chord: { code: 'KeyO', mod: true, alt: true }
     });
     // The AltGr key itself (AltRight + AltGraph) is a lone modifier: it waits.
     expect(
       classifyCaptureKey(key('AltRight', { altKey: true, getModifierState: altGraph }), 'other')
     ).toEqual({ kind: 'wait' });
     // Ctrl+Alt the keyboard reports as plain modifiers: saved (with the caveat).
-    expect(classifyCaptureKey(key('KeyP', { ctrlKey: true, altKey: true }), 'other')).toEqual({
+    expect(classifyCaptureKey(key('KeyO', { ctrlKey: true, altKey: true }), 'other')).toEqual({
       kind: 'captured',
-      chord: { code: 'KeyP', mod: true, alt: true }
+      chord: { code: 'KeyO', mod: true, alt: true }
     });
     // macOS: Firefox's AltGraph on every Option press is the chord's own alt.
     expect(
@@ -206,7 +206,7 @@ describe('the prompt and the cancel line', () => {
 });
 
 describe('chordFiringCaveat', () => {
-  const ctrlAlt: PaletteChord = { code: 'KeyP', mod: true, alt: true };
+  const ctrlAlt: PaletteChord = { code: 'KeyO', mod: true, alt: true };
 
   it('warns on a Ctrl+Alt binding outside macOS', () => {
     const caveat = chordFiringCaveat(ctrlAlt, 'other', usLegend);
@@ -217,7 +217,7 @@ describe('chordFiringCaveat', () => {
 
   it('warns on macOS too, naming the synced Windows chord', () => {
     expect(chordFiringCaveat(ctrlAlt, 'mac', usLegend)).toContain(
-      'On Windows this shortcut is Ctrl+Alt+P'
+      'On Windows this shortcut is Ctrl+Alt+O'
     );
     expect(chordFiringCaveat({ ...ctrlAlt, shift: true }, 'mac', () => 'Ü')).toContain(
       'Ctrl+Alt+Shift+Ü'

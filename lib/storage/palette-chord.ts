@@ -227,6 +227,11 @@ function withMod(
   return codes.map((code) => canonicalChord(code, { mod: true, ...extra }));
 }
 
+/** `Digit1`–`Digit9`: the tab-by-number keys (`mod` everywhere, Alt on Linux Firefox). */
+const TAB_DIGITS: readonly ChordKeyCode[] = DIGITS.filter((digit) => digit !== '0').map(
+  (digit) => `Digit${digit}` as const
+);
+
 /**
  * Chords the palette may never take, by owner. The binding is synced, so
  * one stored chord reaches every OS the user signs in on: a chord reserved
@@ -244,7 +249,7 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * commands (Firefox bookmarks sidebar, page source); one owner per chord.
      * Block editor: Alt+F10 nearest toolbar; `mod` + Alt + T/Y insert a
      * block before/after, + V paste styles, + X inline code as the published
-     * shortcuts page documents it (the editor itself binds Shift + Alt + X,
+     * shortcuts page documents it (also Firefox's AI chatbot sidebar) (the editor itself binds Shift + Alt + X,
      * below); `mod` + Shift + `,` settings sidebar, + `\` distraction-free
      * mode (its `mod` + G group block sits under browser: find next).
      * WordPress editors' own registrations (block editor `core/*` shortcuts,
@@ -312,17 +317,30 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
      * tab close (Windows/Linux), Ctrl+H history; bookmark page (D), open
      * file (O), downloads (J), find next/previous (G, Shift+G), settings
      * (⌘,), E (Ctrl+E search from the page on Windows/Linux; ⌘E use the
-     * selection for find, with the Find bar open, on macOS); Shift + A
-     * add-ons, B bookmarks bar, O bookmarks manager/library, P private
-     * window (Firefox), D bookmark all tabs (also the block editor's
-     * duplicate block), H history library (Firefox), Y downloads (Firefox,
-     * Linux); `mod` + Alt + R reader view (Firefox: Ctrl+Alt+R, ⌘⌥R).
-     * Chrome on Windows/Linux, without `mod`: Alt + E/F Chrome menu, Alt + D
-     * address bar; Shift + Alt + T focus toolbar, + A focus inactive
-     * dialogs, + N split view (also the block editor's next editor part),
-     * + I feedback form. Lone keys: F1 help, F3 find next, F5 reload, F6
-     * focus toolbars/address bar, F7 caret browsing, F9 reader view
-     * (Firefox), F10 menu bar/toolbar focus.
+     * selection for find, with the Find bar open, on macOS); `mod` + `[`/`]`
+     * back/forward (macOS; also DevTools' and the Firefox toolbox's
+     * previous/next panel), ⌘. stop (Firefox, macOS), + F5 address bar
+     * (Chrome) or hard reload (Firefox, DevTools), + F6 skip to web contents
+     * (Chrome). `mod` + Shift + A add-ons, B bookmarks bar, O bookmarks
+     * manager/library, P private window (Firefox), D bookmark all tabs (also
+     * the block editor's duplicate block), H history library (Firefox), Y
+     * downloads (Firefox, Linux); Firefox: + F add-ons (Windows/Linux; also
+     * DevTools' search-all drawer), + S screenshot, + X text direction, + Q
+     * quit (Windows), + `]` picture-in-picture (⌘⌥⇧] on macOS). `mod` + Alt +
+     * R reader view (Firefox), + F search the web (Chrome, macOS; also
+     * Firefox's search bar and DevTools' search drawer), + U page source (also
+     * Firefox's tabs sidebar), + B bookmark manager, + P page setup, + N split
+     * view, + Shift + A inactive dialogs (Chrome, macOS), + Shift + I feedback
+     * form (Chrome, macOS) or browser toolbox (Firefox), + Z debugger (Firefox,
+     * macOS) or sidebar (Firefox, Windows/Linux). Chrome on Windows/Linux,
+     * without `mod`: Alt + E/F Chrome menu, Alt + D address bar; Shift + Alt
+     * + T focus toolbar, + A focus inactive dialogs, + N split view (also the
+     * block editor's next editor part), + I feedback form. Firefox on Linux:
+     * Alt + 1–9 tab by number. Lone keys: F1 help, F3 find next, F5 reload,
+     * F6 focus toolbars/address bar, F7 caret browsing, F9 reader view
+     * (Firefox), F10 menu bar/toolbar focus; Shift + F3 find previous, + F5
+     * hard reload (Chrome) or profiler (Firefox), + F7 style editor and + F9
+     * storage inspector (Firefox).
      */
     browser: Object.freeze([
       ...withMod(['KeyF', 'KeyS', 'KeyP', 'KeyR', 'KeyL', 'KeyW', 'KeyT', 'KeyN', 'KeyH', 'F4']),
@@ -330,15 +348,20 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
       ...withMod(['KeyR', 'KeyT', 'KeyN', 'KeyW'], { shift: true }),
       ...withMod(['KeyG', 'KeyA', 'KeyB', 'KeyO', 'KeyP'], { shift: true }),
       ...withMod(['KeyD', 'KeyH', 'KeyY'], { shift: true }),
-      ...withMod(['KeyR'], { alt: true }),
+      ...withMod(['BracketLeft', 'BracketRight', 'Period', 'F5', 'F6']),
+      ...withMod(['KeyF', 'KeyS', 'KeyX', 'KeyQ', 'BracketRight'], { shift: true }),
+      ...withMod(['KeyR', 'KeyF', 'KeyU', 'KeyB', 'KeyP', 'KeyN', 'KeyZ'], { alt: true }),
+      ...withMod(['KeyA', 'KeyI', 'BracketRight'], { alt: true, shift: true }),
       ...(['KeyE', 'KeyF', 'KeyD'] as const).map((code) => canonicalChord(code, { alt: true })),
       ...(['KeyT', 'KeyA', 'KeyN', 'KeyI'] as const).map((code) =>
         canonicalChord(code, { alt: true, shift: true })
       ),
-      ...withMod(DIGITS.filter((digit) => digit !== '0').map((digit) => `Digit${digit}` as const)),
+      ...withMod(TAB_DIGITS),
+      ...TAB_DIGITS.map((code) => canonicalChord(code, { alt: true })),
       ...(['F1', 'F3', 'F5', 'F6', 'F7', 'F9', 'F10'] as const).map((code) =>
         canonicalChord(code, {})
-      )
+      ),
+      ...(['F3', 'F5', 'F7', 'F9'] as const).map((code) => canonicalChord(code, { shift: true }))
     ]),
     /** Page zoom in/out/reset (`mod` + `=`, `+` via Shift on US, `-`, `0`). */
     zoom: Object.freeze([
@@ -357,8 +380,8 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
       ...withMod(['KeyI', 'KeyJ', 'KeyC', 'KeyK', 'KeyM', 'KeyE'], { alt: true })
     ]),
     /**
-     * OS window commands: quit (⌘Q; Ctrl+Q on Linux), hide (⌘H), minimize
-     * (⌘M), close window (Alt+F4, Windows/Linux), full screen (F11);
+     * OS window commands: quit (⌘Q; Ctrl+Q on Linux), hide (⌘H), hide others
+     * (⌘⌥H), minimize (⌘M), close window (Alt+F4, Windows/Linux), full screen (F11);
      * `mod` + `` ` `` and `mod` + Shift + `` ` `` cycle the app's windows on
      * macOS, and are the WordPress editors' next/previous region (Ctrl) on
      * Windows/Linux.
@@ -366,6 +389,7 @@ export const RESERVED_CHORDS: Readonly<Record<ReservedChordGroup, readonly Palet
     system: Object.freeze([
       ...withMod(['KeyQ', 'KeyM', 'Backquote']),
       ...withMod(['Backquote'], { shift: true }),
+      ...withMod(['KeyH'], { alt: true }),
       canonicalChord('F4', { alt: true }),
       canonicalChord('F11', {})
     ])

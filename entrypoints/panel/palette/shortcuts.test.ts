@@ -290,12 +290,12 @@ describe('registerPanelShortcuts — the chosen chord', () => {
 
   it('a command-modifier chosen chord toggles from inside a field too', () => {
     const { toggles, stop } = wireChosen({
-      chord: { code: 'KeyP', mod: true, alt: true },
+      chord: { code: 'KeyO', mod: true, alt: true },
       platform: 'mac'
     });
     const field = document.createElement('textarea');
     document.body.append(field);
-    expect(pressChord('KeyP', { metaKey: true, altKey: true, target: field })).toBe(true);
+    expect(pressChord('KeyO', { metaKey: true, altKey: true, target: field })).toBe(true);
     expect(toggles.palette).toBe(1);
     stop();
   });

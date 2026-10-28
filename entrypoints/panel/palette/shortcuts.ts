@@ -12,9 +12,13 @@
  * The palette also answers the user's chosen page-palette chord (the
  * options' rebindable shortcut, Alt+K by default), followed live: the same
  * shared decision the page trigger runs, so a may-type chord types inside
- * fields instead. A chord DevTools itself claims (its window-level shortcuts)
- * may be handled by DevTools too, or never reach the panel — the binding is
- * the user's, so it is followed, not second-guessed.
+ * fields instead. A chord DevTools itself claims never toggles here: in
+ * Chrome, the script DevTools injects into every extension frame (at frame
+ * creation, so its document `keydown` listener precedes ours)
+ * default-prevents and forwards its global chords, and the shared decision
+ * passes a handled key, so DevTools acts alone. Chords the browser or
+ * DevTools own are refused at capture (the reserved table), so a stored
+ * binding rarely meets one.
  *
  * Esc handling is deliberately NOT here: the dialogs dismiss themselves
  * (topmost first — they never stack), and the search-Esc clearing stays the
