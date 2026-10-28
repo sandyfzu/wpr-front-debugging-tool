@@ -1,5 +1,5 @@
 /**
- * The on-page command palette's keyboard chord (P19F) on a fixture page with
+ * The on-page command palette's keyboard chord on a fixture page with
  * editable fields and a document-capture key recorder: a keystroke the
  * chord consumes stops at the window (the recorder never sees it); every
  * other keystroke reaches the page untouched.
@@ -8,13 +8,16 @@
  *   names the chord in the platform's notation, and nothing else is
  *   consumed: other combinations, and a script-dispatched Alt+K.
  * - A chord that may type (Alt+K) types in editable fields — text input,
- *   textarea, contenteditable content, an input in an open shadow root.
+ *   textarea, contenteditable content, an input in an open shadow root, a
+ *   `designMode` document.
  * - A rebinding re-arms live (no reload): the new chord opens (inside a field
  *   too — a command-modifier chord never types), the old one passes, the
  *   hint follows.
  * - The chord dies with the on-page UI gate and comes back with it.
  * - Perf: opening (first open injects the view), typing and filtering run
- *   no long task (> 50 ms) on the page's main thread.
+ *   no long task (> 50 ms) on the page's main thread — the page's observer
+ *   provably sees tasks of the extension's isolated world (a busy task
+ *   injected there is reported) as well as the page's own.
  *
  * Key names follow the runner's OS (the extension reads the same platform):
  * the command modifier is Meta on macOS, Control elsewhere.
@@ -176,6 +179,14 @@ test.describe('on-page command palette chord', () => {
       expect(await takeKeys(page), `typed through in ${String(editable)}`).toEqual(['alt+KeyK']);
       await expect(field(page)).toHaveCount(0);
     }
+    // A designMode document: the keystroke lands on the (editable) body.
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      document.designMode = 'on';
+    });
+    await page.keyboard.press('Alt+KeyK');
+    expect(await takeKeys(page), 'typed through in a designMode document').toEqual(['alt+KeyK']);
+    await expect(field(page)).toHaveCount(0);
     await page.close();
   });
 
@@ -222,7 +233,7 @@ test.describe('on-page command palette chord', () => {
   });
 
   test('opening, typing and filtering run no long task', async ({ extension }) => {
-    const { page } = await openFixturePage(extension, FIXTURE);
+    const { page, tabId } = await openFixturePage(extension, FIXTURE);
     await page.evaluate(() => {
       const scope = window as unknown as { __longTasks: number[]; __observer: PerformanceObserver };
       scope.__longTasks = [];
@@ -259,7 +270,29 @@ test.describe('on-page command palette chord', () => {
       .info()
       .annotations.push({ type: 'long tasks (ms)', description: JSON.stringify(longTasks) });
     expect(longTasks, 'no task over 50 ms').toEqual([]);
-    // The probe bites: an 80 ms task on the page is reported.
+    // The probe bites on the extension's side: an 80 ms task run in the
+    // isolated world (where the content script and the view run) is reported.
+    await extension.evaluateInWorker(async (target: number) => {
+      await chrome.scripting.executeScript({
+        target: { tabId: target, frameIds: [0] },
+        world: 'ISOLATED',
+        func: () => {
+          setTimeout(() => {
+            const end = performance.now() + 80;
+            while (performance.now() < end) {
+              // Busy: one long task of the isolated world's.
+            }
+          }, 0);
+        }
+      });
+    }, tabId);
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __longTasks: number[] }).__longTasks))
+      .not.toEqual([]);
+    await page.evaluate(() => {
+      (window as unknown as { __longTasks: number[] }).__longTasks = [];
+    });
+    // And on the page's: an 80 ms task of its own is reported.
     await page.evaluate(() => {
       setTimeout(() => {
         const end = performance.now() + 80;

@@ -1,5 +1,5 @@
 /**
- * P19D — the on-page UI gate over every gated surface on the real docker
+ * The on-page UI gate over every gated surface on the real docker
  * site: the detection widget (front page + plugins screen), the Known
  * Conflicts card (plugins screen), the Side-by-Side overlay and the
  * exclusion builder overlay.
@@ -16,9 +16,10 @@
  * - Per-site widget opt-outs hold across gate off → on.
  * - The SBS reload restore cannot survive a gate-off boot (record consumed,
  *   nothing opens, and a later gate-on does not resurrect it).
- * - The command palette: on a gate-off boot neither its chord (Alt+K reaches
- *   the page) nor the menu's send opens it; a gate-on arms both live, a
- *   live off removes the view and frees the chord again.
+ * - The command palette: on a gate-off boot (pressed after several times a
+ *   measured gate-on arm, so the module has settled) neither its chord
+ *   (Alt+K reaches the page) nor the menu's send opens it; a gate-on arms
+ *   both live, a live off removes the view and frees the chord again.
  * - The builder overlay: a live off ends it, and an injection racing a
  *   gate-off write never stays (observed for several times the measured
  *   gate-on mount time — the positive control); the background opener's
@@ -432,6 +433,28 @@ siteTest.describe('on-page UI gate', () => {
   siteTest(
     'the palette follows the gate on a real page: chord and menu open, both die while off',
     async ({ extension }) => {
+      // Calibration (gate on): how long a fresh page takes until the chord
+      // opens the palette — the gate read, then the chord's read and platform
+      // ask, more than a gate-off boot does. The boot-off press below waits
+      // several times that, so it lands in the settled `off` state, never
+      // while the module still boots (where the chord is inert too).
+      await setGate(extension, null);
+      const calibration = await openSitePage(extension, FRONT_URL);
+      let armMs: number;
+      try {
+        const started = Date.now();
+        const openField = calibration.page.locator(`${PALETTE_HOST} [data-fdt="palette-input"]`);
+        await expect
+          .poll(async () => {
+            if ((await openField.count()) === 0) await calibration.page.keyboard.press('Alt+KeyK');
+            return await openField.count();
+          }, SETTLE)
+          .toBe(1);
+        armMs = Date.now() - started;
+      } finally {
+        await calibration.page.close();
+      }
+
       await setGate(extension, false);
       const front = await openSitePage(extension, FRONT_URL);
       const page = front.page;
@@ -439,6 +462,7 @@ siteTest.describe('on-page UI gate', () => {
       try {
         await expectWorldAlive(extension, front.tabId);
         await recordKeys(page);
+        await stayQuiet(page, Math.max(3 * armMs, QUIET_WINDOW_MS));
         // Boot off: the chord is an ordinary keystroke, the menu's send finds no receiver.
         await page.keyboard.press('Alt+KeyK');
         expect(await takeKeys(page), 'not consumed on a gate-off boot').toEqual(['alt+KeyK']);
@@ -447,7 +471,8 @@ siteTest.describe('on-page UI gate', () => {
         ).rejects.toThrow();
         expect(await hosts(page, PALETTE_HOST)).toBe(0);
 
-        // Gate on (no reload): the chord arms and opens the palette.
+        // Gate on (no reload): the chord arms and opens the palette — the
+        // module behind the boot-off press was alive and settled.
         await setGate(extension, true);
         await expect
           .poll(async () => {

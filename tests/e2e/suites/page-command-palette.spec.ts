@@ -1,5 +1,5 @@
 /**
- * The on-page command palette (P19B), opened the way the context menu will:
+ * The on-page command palette, opened the way the context menu will:
  * the background's `openCommandPalette` row sent from the service worker to
  * the fixture tab (native menus are not Playwright-reachable).
  *
