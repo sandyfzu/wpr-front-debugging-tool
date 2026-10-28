@@ -7,7 +7,7 @@
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
-import { mutateOptions, ON_PAGE_INSPECTOR } from '../../../lib/storage/options';
+import { mutateOptions, DETECTION_WIDGET } from '../../../lib/storage/options';
 import { INSPECTOR_UI_NAME } from './strip-state';
 import { setupInspectorWidget } from './index';
 
@@ -58,7 +58,7 @@ function clickPill(element: HTMLElement): void {
 async function setDefault(enabled: boolean): Promise<void> {
   await mutateOptions((options) => ({
     ...options,
-    features: { ...options.features, [ON_PAGE_INSPECTOR]: enabled }
+    features: { ...options.features, [DETECTION_WIDGET]: enabled }
   }));
 }
 

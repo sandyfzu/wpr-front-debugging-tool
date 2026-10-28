@@ -22,7 +22,7 @@ describe('getOptions with corrupt storage', () => {
         sbsScrollSync: true,
         sbsMobileSim: false,
         sbsDesktopWidth: true,
-        onPageInspector: true
+        detectionWidget: true
       }
     });
   });
@@ -61,7 +61,7 @@ describe('getOptions with corrupt storage', () => {
         sbsScrollSync: true,
         sbsMobileSim: false,
         sbsDesktopWidth: true,
-        onPageInspector: true
+        detectionWidget: true
       }
     });
   });
@@ -94,7 +94,7 @@ describe('storedOptionsOrFallback', () => {
           sbsScrollSync: true,
           sbsMobileSim: false,
           sbsDesktopWidth: true,
-          onPageInspector: true
+          detectionWidget: true
         }
       });
     }

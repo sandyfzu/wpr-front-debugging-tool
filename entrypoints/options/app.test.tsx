@@ -74,7 +74,7 @@ function storedDefaults(): StoredOptions {
       sbsScrollSync: true,
       sbsMobileSim: false,
       sbsDesktopWidth: true,
-      onPageInspector: true
+      detectionWidget: true
     }
   };
 }
@@ -381,7 +381,7 @@ describe('the detection widget default toggle', () => {
     fireEvent.click(screen.getByText(WIDGET_DEFAULT_ROW));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
-      expect(getOptions()).resolves.toMatchObject({ features: { onPageInspector: false } })
+      expect(getOptions()).resolves.toMatchObject({ features: { detectionWidget: false } })
     );
     await setPageUiGate(false);
     await waitFor(() => {
@@ -389,7 +389,7 @@ describe('the detection widget default toggle', () => {
         screen.getByRole<HTMLInputElement>('switch', { name: WIDGET_DEFAULT_ROW }).disabled
       ).toBe(true);
     });
-    expect(document.getElementById('option-onPageInspector-note')?.textContent).toBe(
+    expect(document.getElementById('option-detectionWidget-note')?.textContent).toBe(
       ON_PAGE_UI_OFF_NOTE
     );
   });

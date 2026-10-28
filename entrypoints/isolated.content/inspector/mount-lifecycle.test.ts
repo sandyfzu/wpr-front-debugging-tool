@@ -13,7 +13,7 @@ import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import type * as ShadowRootUi from 'wxt/utils/content-script-ui/shadow-root';
 import { setPageUiGate } from '../../../lib/storage/page-ui-gate';
-import { inspectorOriginsStore } from '../../../lib/storage/inspector-origins';
+import { detectionWidgetSitesStore } from '../../../lib/storage/detection-widget-sites';
 import {
   renders,
   resetRenders,
@@ -69,7 +69,7 @@ async function bootShown(): Promise<void> {
 
 /** Store this origin's per-site entry (the context menu's write). */
 async function setSiteEnabled(enabled: boolean): Promise<void> {
-  await inspectorOriginsStore.setValue({ [window.location.origin]: { enabled } });
+  await detectionWidgetSitesStore.setValue({ [window.location.origin]: { enabled } });
 }
 
 describe('detection widget mount lifecycle', () => {

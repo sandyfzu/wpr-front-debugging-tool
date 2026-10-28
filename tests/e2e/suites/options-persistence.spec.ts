@@ -178,7 +178,7 @@ test.describe('options persistence', () => {
         'appearance',
         'page-ui-gate',
         'palette-chord',
-        'onPageInspector',
+        'detectionWidget',
         BADGE_ROW_ID
       ]) {
         const row = page.locator(`[data-fdt="option-row"][data-fdt-option="${rowId}"]`);

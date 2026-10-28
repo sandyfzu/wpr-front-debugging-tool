@@ -42,7 +42,7 @@ import { openSitePage, SITE_URL } from '../helpers/site';
 /** The detection strip's shadow host over the real site (the widget's shape). */
 const STRIP_HOST = 'wpr-fdt-inspector';
 /** The per-origin opt-in map's storage key (the widget's gate seam). */
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 /** The strip's mount settle (the hub's pass answers after the page loads). */
 const MOUNT_SETTLE: { timeout: number; intervals: number[] } = {
   timeout: 15_000,

@@ -29,6 +29,17 @@ export function parseRecency(value: unknown): number | undefined {
 }
 
 /**
+ * Whether a key may be stored in a bounded map: non-empty, and never
+ * `__proto__` — that key would set the prototype of the plain objects the
+ * maps are rebuilt into instead of adding an entry (no real origin is either).
+ *
+ * @param key A caller- or storage-delivered key.
+ */
+export function isStorableKey(key: string): boolean {
+  return key !== '' && key !== '__proto__';
+}
+
+/**
  * The rank a new write stamps: one above the map's highest (1 on an
  * unranked map).
  *
@@ -38,6 +49,40 @@ export function nextRecency(map: Readonly<Record<string, RecencyRanked>>): numbe
   let highest = 0;
   for (const entry of Object.values(map)) highest = Math.max(highest, entry.used ?? 0);
   return highest + 1;
+}
+
+/**
+ * The map with one entry written as the most recent. When the highest rank
+ * has reached the safe-integer ceiling (corrupt storage only — a real
+ * counter never gets there), the ranks are first renumbered 1…n in their
+ * current order, so the stamp stays above every other rank instead of
+ * landing on an unsafe value the next read would drop (which would make the
+ * newest entry the first evicted).
+ *
+ * @param map A validated map.
+ * @param key The entry's key (see {@link isStorableKey}).
+ * @param entry The entry to store; its own `used` is replaced.
+ * @returns A fresh map (the input is not mutated).
+ */
+export function withMostRecent<E extends RecencyRanked>(
+  map: Readonly<Record<string, E>>,
+  key: string,
+  entry: E
+): Record<string, E> {
+  let base: Readonly<Record<string, E>> = map;
+  let next = nextRecency(map);
+  if (!Number.isSafeInteger(next)) {
+    const renumbered: Record<string, E> = {};
+    // `sort` is stable: equal ranks keep their map order.
+    Object.entries(map)
+      .sort(([, a], [, b]) => (a.used ?? 0) - (b.used ?? 0))
+      .forEach(([k, ranked], order) => {
+        renumbered[k] = { ...ranked, used: order + 1 };
+      });
+    base = renumbered;
+    next = Object.keys(map).length + 1;
+  }
+  return { ...base, [key]: { ...entry, used: next } };
 }
 
 /**

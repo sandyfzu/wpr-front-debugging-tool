@@ -1,6 +1,6 @@
 /**
  * The in-page executor contract, over the shipped mechanisms: the storage
- * rows run the real `toggleInspectorOrigin` / `setPageUiGate` against the
+ * rows run the real `toggleDetectionWidgetSite` / `setPageUiGate` against the
  * fake extension storage (the same writes the menu and the gate followers
  * see), the compare and builder rows call their injected triggers exactly
  * once, every builder open outcome maps to its user-facing result, and a
@@ -8,7 +8,7 @@
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getInspectorOrigins } from '../storage/inspector-origins';
+import { getDetectionWidgetSites } from '../storage/detection-widget-sites';
 import { readPageUiEnabled } from '../storage/page-ui-gate';
 import type { ExclusionOverlayOpenOutcome } from '../messaging/exclusion-panel';
 import {
@@ -41,9 +41,9 @@ describe('storage-backed rows (the real writers)', () => {
   it('toggles the detection widget for the page origin, flipping on every run', async () => {
     const { executors } = mechanisms();
     await expect(executors['toggle-detection-widget'](SITE)).resolves.toEqual({ ok: true });
-    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: false, used: 1 } });
+    expect(await getDetectionWidgetSites()).toEqual({ [SITE.origin]: { enabled: false, used: 1 } });
     await executors['toggle-detection-widget'](SITE);
-    expect(await getInspectorOrigins()).toEqual({ [SITE.origin]: { enabled: true, used: 2 } });
+    expect(await getDetectionWidgetSites()).toEqual({ [SITE.origin]: { enabled: true, used: 2 } });
   });
 
   it('refuses an opaque origin instead of writing a "null" site key', async () => {
@@ -52,7 +52,7 @@ describe('storage-backed rows (the real writers)', () => {
       ok: false,
       failure: 'This page has no web address to toggle.'
     });
-    expect(await getInspectorOrigins()).toEqual({});
+    expect(await getDetectionWidgetSites()).toEqual({});
   });
 
   it('turns the on-page UI gate off (the off direction only)', async () => {

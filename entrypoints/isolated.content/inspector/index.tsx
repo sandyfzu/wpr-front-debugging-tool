@@ -48,13 +48,13 @@ import { createLogger } from '../../../lib/logger';
 import type { PageDataSnapshot } from '../data-hub';
 import { pageDataFor } from '../data-hub';
 import {
-  effectiveInspectorEnabled,
-  getInspectorOrigins,
-  inspectorDefaultEnabled,
-  inspectorOriginsStore,
-  parseInspectorOrigins,
-  type InspectorOrigins
-} from '../../../lib/storage/inspector-origins';
+  effectiveDetectionWidgetEnabled,
+  getDetectionWidgetSites,
+  detectionWidgetDefaultEnabled,
+  detectionWidgetSitesStore,
+  parseDetectionWidgetSites,
+  type DetectionWidgetSites
+} from '../../../lib/storage/detection-widget-sites';
 import { getOptions, optionsStore, storedOptionsOrFallback } from '../../../lib/storage/options';
 import {
   createShadowSurface,
@@ -728,13 +728,13 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    * default option. Each is null until its first read or write; the
    * effective state resolves only once both are known.
    */
-  let origins: InspectorOrigins | null = null;
+  let origins: DetectionWidgetSites | null = null;
   let defaultEnabled: boolean | null = null;
 
   /** Re-resolve the effective opt-in once both inputs are known. */
   const resolveSiteEnabled = (): void => {
     if (origins === null || defaultEnabled === null) return;
-    applySiteEnabled(effectiveInspectorEnabled(origins, pageOrigin, defaultEnabled));
+    applySiteEnabled(effectiveDetectionWidgetEnabled(origins, pageOrigin, defaultEnabled));
   };
 
   /**
@@ -746,17 +746,17 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
    */
   let originWrites = 0;
   let optionWrites = 0;
-  const unwatchOrigins = inspectorOriginsStore.watch((raw: unknown) => {
+  const unwatchOrigins = detectionWidgetSitesStore.watch((raw: unknown) => {
     originWrites += 1;
     if (ctx.isInvalid) return;
     // Corrupt raw degrades to the unconfigured shape: every origin follows the default.
-    origins = parseInspectorOrigins(raw) ?? {};
+    origins = parseDetectionWidgetSites(raw) ?? {};
     resolveSiteEnabled();
   });
   const unwatchOptions = optionsStore.watch((raw: unknown) => {
     optionWrites += 1;
     if (ctx.isInvalid) return;
-    defaultEnabled = inspectorDefaultEnabled(storedOptionsOrFallback(raw));
+    defaultEnabled = detectionWidgetDefaultEnabled(storedOptionsOrFallback(raw));
     resolveSiteEnabled();
   });
   ctx.onInvalidated(() => {
@@ -767,21 +767,23 @@ export function setupInspectorWidget(ctx: ContentScriptContext): void {
   void (async () => {
     const seenOrigins = originWrites;
     const seenOptions = optionWrites;
-    let read: [InspectorOrigins, boolean];
-    try {
-      const [map, options] = await Promise.all([getInspectorOrigins(), getOptions()]);
-      read = [map, inspectorDefaultEnabled(options)];
-    } catch (cause) {
-      if (ctx.isInvalid) return;
-      log.error('Reading the widget opt-in failed — the widget stays hidden', cause);
-      // A write that already resolved both inputs is the truth; otherwise
-      // hide until the watches deliver both.
-      if (!siteResolved()) applySiteEnabled(false);
-      return;
-    }
+    // Each item settles on its own: one failed read never discards the
+    // other's good one, so a later write to the failed item alone resolves.
+    const [map, options] = await Promise.allSettled([getDetectionWidgetSites(), getOptions()]);
     if (ctx.isInvalid) return;
-    if (originWrites === seenOrigins) origins = read[0];
-    if (optionWrites === seenOptions) defaultEnabled = read[1];
+    if (map.status === 'fulfilled' && originWrites === seenOrigins) origins = map.value;
+    if (options.status === 'fulfilled' && optionWrites === seenOptions) {
+      defaultEnabled = detectionWidgetDefaultEnabled(options.value);
+    }
     resolveSiteEnabled();
+    for (const failed of [map, options]) {
+      if (failed.status === 'fulfilled') continue;
+      log.error(
+        'Reading the widget opt-in failed — hidden until that setting is next written',
+        failed.reason
+      );
+    }
+    // Unresolved after a failure: hide explicitly until a write delivers the missing input.
+    if (!siteResolved()) applySiteEnabled(false);
   })();
 }

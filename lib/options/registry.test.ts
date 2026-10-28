@@ -80,7 +80,7 @@ describe('option registry integrity', () => {
     expect(optionRowsIn('features').map((row) => row.id)).toEqual([
       'page-ui-gate',
       'palette-chord',
-      'onPageInspector',
+      'detectionWidget',
       'toolbarBadge'
     ]);
     const grouped = OPTION_SECTIONS.flatMap((section) => optionRowsIn(section.id));
@@ -116,7 +116,7 @@ describe('drafted and instant rows', () => {
     expect(DRAFTED_OPTION_ROWS.map((row) => row.id)).toEqual([
       'wp-dashboard-dbugger-entry',
       'appearance',
-      'onPageInspector',
+      'detectionWidget',
       'toolbarBadge'
     ]);
     expect(Object.isFrozen(DRAFTED_OPTION_ROWS)).toBe(true);
@@ -142,7 +142,7 @@ describe('the on-page UI cascade', () => {
     // the toolbar badge are not on-page UI.
     expect(OPTION_ROWS.filter((row) => row.onPage === true).map((row) => row.id)).toEqual([
       'palette-chord',
-      'onPageInspector'
+      'detectionWidget'
     ]);
   });
 
@@ -195,7 +195,7 @@ describe('the on-page UI cascade', () => {
   });
 
   it('the detection widget default row: on by default, cascades from the gate, worded from the page vocabulary', () => {
-    const row = rowOf('onPageInspector');
+    const row = rowOf('detectionWidget');
     expect(row.kind).toBe('boolean');
     expect(readOption(row, FALLBACK)).toBe(true);
     expect(onPageDisabledNote(row, false)).toBe(ON_PAGE_UI_OFF_NOTE);

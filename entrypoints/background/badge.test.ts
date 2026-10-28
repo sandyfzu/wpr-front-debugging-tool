@@ -249,7 +249,7 @@ describe('restart guarantee (the browser outlives this worker)', () => {
         sbsScrollSync: false,
         sbsMobileSim: false,
         sbsDesktopWidth: false,
-        onPageInspector: true
+        detectionWidget: true
       }
     });
     // Stranded state: badges Chrome holds that no fresh state model knows of.

@@ -29,7 +29,7 @@ import {
   PAGE_UI_SURFACES_PROSE
 } from '../page-commands/commands';
 import {
-  ON_PAGE_INSPECTOR,
+  DETECTION_WIDGET,
   storedOptionsOrFallback,
   TOOLBAR_BADGE,
   WP_DASHBOARD_DBUGGER_ENTRY,
@@ -187,7 +187,7 @@ export const OPTION_ROWS: readonly OptionRow[] = freezeRows<OptionRow>([
   },
   {
     kind: 'boolean',
-    id: ON_PAGE_INSPECTOR,
+    id: DETECTION_WIDGET,
     section: 'features',
     onPage: true,
     label: `Show the ${PAGE_SURFACE_NAMES.detectionWidget} on pages by default`,

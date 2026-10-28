@@ -1,10 +1,27 @@
 /**
- * The bounded-map primitives: rank validation, the next rank, the area's
+ * The bounded-map primitives: key and rank validation, the next rank, the
+ * most-recent stamp (renumbering at the safe-integer ceiling), the area's
  * per-item byte measure, and the least-recent-first trim (exact incremental
  * accounting, map-order ties, the never-empty last survivor).
  */
 import { describe, expect, it } from 'vitest';
-import { itemBytes, nextRecency, parseRecency, trimToByteBudget } from './recency-map';
+import {
+  isStorableKey,
+  itemBytes,
+  nextRecency,
+  parseRecency,
+  trimToByteBudget,
+  withMostRecent
+} from './recency-map';
+
+describe('isStorableKey', () => {
+  it('refuses only the empty key and `__proto__`', () => {
+    expect(isStorableKey('https://a.com')).toBe(true);
+    expect(isStorableKey('constructor')).toBe(true);
+    expect(isStorableKey('')).toBe(false);
+    expect(isStorableKey('__proto__')).toBe(false);
+  });
+});
 
 describe('parseRecency', () => {
   it('keeps non-negative safe integers only', () => {
@@ -21,6 +38,38 @@ describe('nextRecency', () => {
     expect(nextRecency({})).toBe(1);
     expect(nextRecency({ a: {}, b: {} })).toBe(1);
     expect(nextRecency({ a: { used: 7 }, b: {}, c: { used: 3 } })).toBe(8);
+  });
+});
+
+describe('withMostRecent', () => {
+  it('stamps the entry above every rank, keeps its fields, leaves the input alone', () => {
+    const map: Record<string, { used?: number; v: number }> = { a: { used: 2, v: 1 }, b: { v: 2 } };
+    expect(withMostRecent<{ used?: number; v: number }>(map, 'b', { v: 3, used: 99 })).toEqual({
+      a: { used: 2, v: 1 },
+      b: { v: 3, used: 3 }
+    });
+    expect(map).toEqual({ a: { used: 2, v: 1 }, b: { v: 2 } });
+  });
+
+  it('at the safe-integer ceiling renumbers 1…n in order (ties in map order), stamp newest', () => {
+    const max = Number.MAX_SAFE_INTEGER;
+    const map: Record<string, { used?: number }> = {
+      a: { used: max },
+      e: {},
+      b: { used: 5 },
+      c: {}
+    };
+    const next = withMostRecent<{ used?: number }>(map, 'd', {});
+    expect(next).toEqual({
+      a: { used: 4 },
+      e: { used: 1 },
+      b: { used: 3 },
+      c: { used: 2 },
+      d: { used: 5 }
+    });
+    // Every rank survives the next read, and the newest still ranks highest.
+    for (const entry of Object.values(next)) expect(parseRecency(entry.used)).toBe(entry.used);
+    expect(trimToByteBudget('k', next, itemBytes('k', { d: next.d }))).toEqual({ d: { used: 5 } });
   });
 });
 
@@ -64,18 +113,25 @@ describe('trimToByteBudget', () => {
   });
 
   it('every trim result fits the budget whenever more than one entry survives', () => {
+    // Unique ranks (a bijection of 0…299 — 7 is coprime to 300) in scrambled
+    // map order, so the eviction order is fully determined and checked.
     const big: Record<string, { used: number }> = {};
     for (let i = 0; i < 300; i += 1)
-      big[`https://site-${String(i)}.example`] = { used: (i * 7) % 301 };
+      big[`https://site-${String(i)}.example`] = { used: (i * 7) % 300 };
     for (const budget of [100, 1000, 4096, 7168]) {
-      const trimmed = trimToByteBudget('inspector-origins', big, budget);
-      expect(itemBytes('inspector-origins', trimmed)).toBeLessThanOrEqual(budget);
+      const trimmed = trimToByteBudget('detection-widget-sites', big, budget);
+      expect(itemBytes('detection-widget-sites', trimmed)).toBeLessThanOrEqual(budget);
       const ranks = Object.values(trimmed).map((entry) => entry.used);
       const evicted = Object.values(big)
         .map((entry) => entry.used)
         .filter((rank) => !ranks.includes(rank));
-      // Every survivor is more recent than every evicted entry.
+      // Every survivor is more recent than every evicted entry: exactly the
+      // top ranks survive, and each entry is either kept or evicted.
       expect(Math.min(...ranks)).toBeGreaterThan(Math.max(...evicted));
+      expect(ranks.length + evicted.length).toBe(300);
+      expect([...ranks].sort((x, y) => x - y)).toEqual(
+        Array.from({ length: ranks.length }, (_, k) => 300 - ranks.length + k)
+      );
     }
   });
 });

@@ -5,7 +5,8 @@
  * the mount at boot, a live option flip mounts or hides the widget on an
  * entryless page (and never on one with an entry), the shared toggle flips
  * the visible state under both defaults, a disabled origin does no widget
- * work at all, and a dead context follows no further writes. The render is
+ * work at all, the boot read yields to a racing write and survives one
+ * item's read failure, and a dead context follows no further writes. The render is
  * the deferred stand-in (the view is `strip-builder.test`'s concern).
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -13,11 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import type * as ShadowRootUi from 'wxt/utils/content-script-ui/shadow-root';
-import { mutateOptions, ON_PAGE_INSPECTOR } from '../../../lib/storage/options';
+import { mutateOptions, DETECTION_WIDGET, optionsStore } from '../../../lib/storage/options';
 import {
-  inspectorOriginsStore,
-  toggleInspectorOrigin
-} from '../../../lib/storage/inspector-origins';
+  detectionWidgetSitesStore,
+  toggleDetectionWidgetSite
+} from '../../../lib/storage/detection-widget-sites';
 import {
   renders,
   resetRenders,
@@ -68,13 +69,13 @@ afterEach(() => {
 async function setDefault(enabled: boolean): Promise<void> {
   await mutateOptions((options) => ({
     ...options,
-    features: { ...options.features, [ON_PAGE_INSPECTOR]: enabled }
+    features: { ...options.features, [DETECTION_WIDGET]: enabled }
   }));
 }
 
 /** Store this origin's explicit entry. */
 async function setEntry(enabled: boolean): Promise<void> {
-  await inspectorOriginsStore.setValue({ [ORIGIN]: { enabled } });
+  await detectionWidgetSitesStore.setValue({ [ORIGIN]: { enabled } });
 }
 
 /** Wait for the host count to land. */
@@ -105,6 +106,72 @@ describe('boot: default option × per-origin entry', () => {
     if (entry !== undefined) await setEntry(entry);
     setupInspectorWidget(ctx);
     await (expected === 1 ? expectHosts(1) : expectSteadyHosts(0));
+  });
+});
+
+/**
+ * Hold one item's boot read until released (it resolves with the value read
+ * before the hold, i.e. the stale one).
+ */
+function holdBootRead(store: { getValue: () => Promise<unknown> }): () => void {
+  const real = store.getValue.bind(store);
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(store, 'getValue').mockImplementationOnce(async () => {
+    const stale = await real();
+    await held;
+    return stale;
+  });
+  return release;
+}
+
+describe('boot read vs racing writes and failures', () => {
+  it('an entry write racing the boot read wins over the stale read', async () => {
+    const release = holdBootRead(detectionWidgetSitesStore);
+    setupInspectorWidget(ctx);
+    await settle();
+    await setEntry(false);
+    release();
+    await expectSteadyHosts(0);
+  });
+
+  it('an options write racing the boot read wins over the stale read', async () => {
+    const release = holdBootRead(optionsStore);
+    setupInspectorWidget(ctx);
+    await settle();
+    await setDefault(false);
+    release();
+    await expectSteadyHosts(0);
+  });
+
+  it('a failed options read keeps the entry read: a later option write alone mounts', async () => {
+    vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(new Error('options read'));
+    setupInspectorWidget(ctx);
+    await expectSteadyHosts(0);
+    await setDefault(true);
+    await expectHosts(1);
+  });
+
+  it('a failed entry read keeps the options read: a later entry write alone decides', async () => {
+    await setDefault(false);
+    vi.spyOn(detectionWidgetSitesStore, 'getValue').mockRejectedValueOnce(new Error('sites read'));
+    setupInspectorWidget(ctx);
+    await expectSteadyHosts(0);
+    await setEntry(true);
+    await expectHosts(1);
+  });
+
+  it('both reads failing stays hidden until both inputs are written', async () => {
+    vi.spyOn(optionsStore, 'getValue').mockRejectedValueOnce(new Error('options read'));
+    vi.spyOn(detectionWidgetSitesStore, 'getValue').mockRejectedValueOnce(new Error('sites read'));
+    setupInspectorWidget(ctx);
+    await expectSteadyHosts(0);
+    await setDefault(true);
+    await expectSteadyHosts(0);
+    await setEntry(true);
+    await expectHosts(1);
   });
 });
 
@@ -155,9 +222,9 @@ describe('the shared toggle flips the visible state live', () => {
     await setDefault(defaultOn);
     setupInspectorWidget(ctx);
     await (defaultOn ? expectHosts(1) : expectSteadyHosts(0));
-    await toggleInspectorOrigin(ORIGIN);
+    await toggleDetectionWidgetSite(ORIGIN);
     await expectHosts(defaultOn ? 0 : 1);
-    await toggleInspectorOrigin(ORIGIN);
+    await toggleDetectionWidgetSite(ORIGIN);
     await expectHosts(defaultOn ? 1 : 0);
   });
 });

@@ -27,7 +27,7 @@ import { loginAdminPage, openSitePage, siteTest, SITE_URL } from '../helpers/sit
 const STRIP_HOST = 'wpr-fdt-inspector';
 
 /** The WXT storage key under `chrome.storage.sync` for the opt-in map. */
-const ORIGINS_KEY = 'inspector-origins';
+const ORIGINS_KEY = 'detection-widget-sites';
 /** The dockered site's origin (every site navigation happens on it). */
 const SITE_ORIGIN = new URL(SITE_URL).origin;
 
@@ -1726,7 +1726,7 @@ siteTest.describe('site detection widget', () => {
               await extension.evaluateInWorker(async (key: string) => {
                 const stored = (await chrome.storage.sync.get([key]))[key];
                 return stored ?? null;
-              }, 'inspector-origins')
+              }, 'detection-widget-sites')
             )}`,
             { cause: mountFailure }
           );
