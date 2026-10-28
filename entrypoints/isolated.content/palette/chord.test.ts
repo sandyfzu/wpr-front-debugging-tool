@@ -489,7 +489,8 @@ describe('startChordTrigger', () => {
   });
 
   it('a synchronously throwing seam degrades the same way', async () => {
-    const h = harness();
+    // A navigator answer other than the Ctrl default proves the stand-in is consulted.
+    const h = harness({ fallback: 'mac' });
     h.deps.askPlatform = () => {
       throw new Error('no runtime');
     };
@@ -499,7 +500,12 @@ describe('startChordTrigger', () => {
     h.trigger.arm(vi.fn());
     h.read.resolve(MOD_K);
     await settle();
-    expect(h.trigger.binding()).toEqual({ chord: MOD_K, platform: 'other' });
+    expect(h.trigger.binding()).toEqual({ chord: MOD_K, platform: 'mac' });
+    expect(h.fallbackPlatform).toHaveBeenCalledOnce();
+    expect(h.warn).toHaveBeenCalledWith(
+      "Keyboard convention unanswered — using the navigator's (mac)",
+      new Error('no runtime')
+    );
     expect(h.warn).toHaveBeenCalledWith(
       'Palette chord unwatched — a rebinding applies after a reload',
       new Error('no storage')
